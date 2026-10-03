@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PPCP;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WalletProperties;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\Module;
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Package;
 
 /**
@@ -131,7 +132,15 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 		$modules = ( require __DIR__ . '/Wallet/modules.php' )();
 		/** This filter is documented in the extension's bootstrap.php. */
 		$modules = apply_filters( 'woocommerce_paypal_payments_modules', $modules ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingSinceComment
-		$modules = is_array( $modules ) ? $modules : array();
+		// Any callback can return anything; Package::addModule() throws a TypeError on a non-module, so keep only real modules.
+		$modules = is_array( $modules ) ? array_values(
+			array_filter(
+				$modules,
+				static function ( $module ): bool {
+					return $module instanceof Module;
+				}
+			)
+		) : array();
 
 		$package = Package::new( WalletProperties::new() );
 		foreach ( $modules as $module ) {

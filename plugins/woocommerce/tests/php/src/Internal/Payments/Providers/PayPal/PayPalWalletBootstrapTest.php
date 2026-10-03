@@ -381,6 +381,42 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should ignore filtered modules that are not Modularity modules instead of fataling.
+	 */
+	public function test_ignores_filtered_modules_that_are_not_modularity_modules(): void {
+		add_filter(
+			'woocommerce_paypal_payments_modules',
+			static function ( $modules ) {
+				$modules[] = new \stdClass();
+				$modules[] = 'not-a-module';
+				$modules[] = new class() {
+					/**
+					 * Looks like a module by name but does not implement the interface.
+					 *
+					 * @return string
+					 */
+					public function id(): string {
+						return 'foreign';
+					}
+				};
+				return $modules;
+			}
+		);
+		$this->build_sut( true );
+
+		try {
+			$this->sut->maybe_boot();
+		} finally {
+			remove_all_filters( 'woocommerce_paypal_payments_modules' );
+		}
+
+		$this->assertTrue( $this->sut->is_booted(), 'A foreign filtered element must not stop the boot' );
+		$this->assertTrue( \Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PPCP::container()->has( 'wcgateway.paypal-gateway' ), 'The wallet modules must still be registered' );
+	}
+
+	/**
 	 * A subclass points the guard at a function the test controls, so the real extension function is never declared here.
 	 *
 	 * @param string $function_name  The function name the guard looks for.
