@@ -1,8 +1,9 @@
 // Client 11.1.0 `components/chip/style.scss`: the colours core's status badge has no variant for.
+// stylelint-disable color-no-hex -- the client's chip palette, which has no upstream token; the improvement pass moves these chips to core's status badges.
 .woocommerce-status-badge {
 	&--error {
 		background: #fcf0f1;
-		color: #8a2424;
+		color: $studio-red-70;
 	}
 
 	&--primary {
@@ -10,3 +11,4 @@
 		color: #0a4b78;
 	}
 }
+// stylelint-enable color-no-hex

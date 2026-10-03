@@ -26,3 +26,9 @@ $woopayments-list-indent: 20px;
 
 // Narrow settings fields stop at 500px (the client's narrow settings fields use the same width); base-styles has no form field width.
 $woopayments-field-max-width: 500px;
+
+// Native admin pages (Overview, loans) stop at 960px; no upstream page width token.
+$woopayments-admin-page-max-width: 960px;
+
+// base-styles' $alert-yellow, which WooCommerce's shared variables redefine as #ffb900; the client's dispute warnings use this one.
+$woopayments-warning-yellow: #f0b849;

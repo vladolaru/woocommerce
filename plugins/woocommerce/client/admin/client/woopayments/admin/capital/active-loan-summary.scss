@@ -1,13 +1,13 @@
 // Client 11.1.0 `components/active-loan-summary/style.scss`: blocks split by dividers, the bottom row tighter.
 .woocommerce-woopayments-loan-summary__header.components-card__header {
 	flex-wrap: wrap;
-	gap: 8px;
+	gap: $gap-smaller;
 
 	h2,
 	h3 {
-		font-size: 20px;
+		font-size: $font-size-x-large;
 		font-weight: 400;
-		line-height: 28px;
+		line-height: $font-line-height-large;
 		margin: 0;
 	}
 
@@ -24,12 +24,12 @@
 	margin: 0;
 
 	& + & {
-		border-top: 1px solid #e0e0e0;
+		border-top: 1px solid $gray-200;
 	}
 
 	&.is-bottom-row {
-		padding-bottom: 24px;
-		padding-top: 24px;
+		padding-bottom: $gap-large;
+		padding-top: $gap-large;
 
 		.woocommerce-woopayments-loan-summary__block {
 			padding-bottom: 0;
@@ -40,28 +40,28 @@
 
 .woocommerce-woopayments-loan-summary__block {
 	margin: 0;
-	padding: 24px 16px;
+	padding: $gap-large $gap;
 
 	& + & {
-		border-inline-start: 1px solid #e0e0e0;
+		border-inline-start: 1px solid $gray-200;
 	}
 
 	dt {
-		color: #949494;
-		font-size: 12px;
-		line-height: 16px;
+		color: $gray-600;
+		font-size: $font-size-small;
+		line-height: $font-line-height-x-small;
 	}
 
 	dd {
-		color: #1e1e1e;
-		font-size: 13px;
-		line-height: 20px;
+		color: $gray-900;
+		font-size: $font-size-medium;
+		line-height: $font-line-height-small;
 		margin: 0;
-		padding: 8px 0;
+		padding: $gap-smaller 0;
 	}
 
 	.is-big {
-		font-size: 20px;
+		font-size: $font-size-x-large;
 		line-height: 27px;
 	}
 }
@@ -77,18 +77,18 @@
 			padding-top: 0;
 
 			.woocommerce-woopayments-loan-summary__block {
-				padding-bottom: 16px;
-				padding-top: 16px;
+				padding-bottom: $gap;
+				padding-top: $gap;
 			}
 		}
 	}
 
 	.woocommerce-woopayments-loan-summary__block {
-		padding: 16px;
+		padding: $gap;
 
 		& + & {
 			border-inline-start: 0;
-			border-top: 1px solid #e0e0e0;
+			border-top: 1px solid $gray-200;
 		}
 	}
 }
