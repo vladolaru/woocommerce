@@ -438,6 +438,55 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	}
 
 	/**
+	 * @testdox A saved-card change notes the card the shopper posted, in the client's format, while the subscription still carries the old card last.
+	 *
+	 * Task 6.3 R3: WCS writes this note before the payment runs, so the last token is still the previous card; native named it as the new one.
+	 */
+	public function test_saved_card_change_names_the_posted_card(): void {
+		$user_id      = self::factory()->user->create();
+		$subscription = $this->create_subscription_order( $user_id );
+		$posted       = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_posted' );
+		$current      = new WC_Payment_Token_CC();
+		$current->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$current->set_user_id( $user_id );
+		$current->set_token( 'pm_current' );
+		$current->set_card_type( 'mastercard' );
+		$current->set_last4( '4444' );
+		$current->set_expiry_month( '11' );
+		$current->set_expiry_year( '2031' );
+		$current->save();
+		$subscription->add_payment_token( $posted );
+		$subscription->add_payment_token( $current );
+		$_POST = array(
+			'_wcsnonce'             => wp_create_nonce( 'wcs_change_payment_method' ),
+			'change_payment_method' => (string) $subscription->get_id(),
+			'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' => (string) $posted->get_id(),
+		);
+
+		$title = $this->sut->get_specific_new_payment_method_title( 'Card', OrderPaymentStore::GATEWAY_ID, $subscription );
+
+		$this->assertSame( 'Visa ending in 4242', $title, 'Client 11.1.0 names the posted token as brand label plus last four (trait-wc-payment-gateway-wcpay-subscriptions.php:154-170), no expiry.' );
+	}
+
+	/**
+	 * @testdox A new-card change notes the gateway title with the new card's last four, as the client builds it from the payment method.
+	 */
+	public function test_new_card_change_names_the_gateway_title_and_last_four(): void {
+		$user_id      = self::factory()->user->create();
+		$subscription = $this->create_subscription_order( $user_id );
+		$subscription->add_payment_token( $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_new' ) );
+		$_POST = array(
+			'_wcsnonce'             => wp_create_nonce( 'wcs_change_payment_method' ),
+			'change_payment_method' => (string) $subscription->get_id(),
+			'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' => 'new',
+		);
+
+		$title = $this->sut->get_specific_new_payment_method_title( 'Card', OrderPaymentStore::GATEWAY_ID, $subscription );
+
+		$this->assertSame( 'Card ending in 4242', $title, 'Client 11.1.0 trait :1080-1083; live client subscription 26 note "to Card ending in 4242".' );
+	}
+
+	/**
 	 * Create a subscription-like order for handler tests.
 	 *
 	 * @param int    $user_id    Customer user ID.

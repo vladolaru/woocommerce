@@ -4257,6 +4257,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$_GET['change_payment_method']       = (string) $order->get_id();
 
 		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = 'new';
+		// The outcome branded the subscription before WCS records the change.
+		$order->set_payment_method_title( 'Visa credit card' );
+		$order->save();
 
 		$return_url_filter = static function ( string $return_url, WC_Order $filtered_order ) use ( $order ): string {
 			return $order->get_id() === $filtered_order->get_id() ? 'https://example.test/my-account/' : $return_url;
@@ -4271,6 +4274,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'success', $result['result'] );
 		$this->assertSame( 'https://example.test/my-account/', $result['redirect'] );
+		$this->assertSame( 'Visa credit card', wc_get_order( $order->get_id() )->get_payment_method_title(), 'Client 11.1.0 brands the subscription after WCS records the change, so the stored title stays the card title, not "Card".' );
 		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
 		$this->assertTrue( $service->last_checkout_context->get_payment_data()['save_payment_method'] ?? false );
 		$this->assertTrue( $service->last_checkout_context->get_provider_data()['recurring_payment'] ?? false );
@@ -6317,6 +6321,11 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 						"order_id" => is_object( $order ) && method_exists( $order, "get_id" ) ? $order->get_id() : 0,
 						"gateway_id" => $gateway_id,
 					);
+					// The real method sets the gateway, whose title then replaces the stored one.
+					if ( is_object( $order ) && method_exists( $order, "set_payment_method_title" ) ) {
+						$order->set_payment_method_title( "Card" );
+						$order->save();
+					}
 				}
 
 				public static function will_subscription_update_all_payment_methods( $order ) {

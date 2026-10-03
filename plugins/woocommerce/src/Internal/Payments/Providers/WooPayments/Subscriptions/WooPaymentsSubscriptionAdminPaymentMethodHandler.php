@@ -8,9 +8,12 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsAmazonPayToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use WC_Order;
 use WC_Payment_Token;
+use WC_Payment_Token_CC;
 use WC_Payment_Tokens;
 
 /**
@@ -379,6 +382,20 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 			return $new_payment_method_title;
 		}
 
+		if ( $this->is_wcs_change_payment_method_request( $subscription ) ) {
+			// Client 11.1.0 reads the method the shopper posted (`get_specific_new_payment_method_title()`). For a saved card WCS writes
+			// the note before the payment runs, while the subscription still carries the previous token last.
+			$token_key = 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token';
+			$posted    = isset( $_POST[ $token_key ] ) ? sanitize_text_field( wp_unslash( $_POST[ $token_key ] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Checked by is_wcs_change_payment_method_request().
+			if ( 'new' === $posted ) {
+				return $this->get_new_payment_method_title( $this->get_payment_token( $subscription ), $new_payment_method_title );
+			}
+			$posted_token = '' !== $posted ? WC_Payment_Tokens::get( absint( $posted ) ) : null;
+			if ( $this->is_valid_subscription_token( $posted_token, $subscription ) ) {
+				return $this->get_payment_method_title_from_token( $posted_token, $new_payment_method_title );
+			}
+		}
+
 		return $this->get_payment_method_title_from_token( $this->get_payment_token( $subscription ), $new_payment_method_title );
 	}
 
@@ -607,7 +624,60 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 			return $fallback;
 		}
 
-		return $token->get_display_name();
+		// Client 11.1.0 `get_payment_method_title_from_token()`: card brand and last four, no expiry.
+		if ( $token instanceof WC_Payment_Token_CC ) {
+			$last4 = $token->get_last4();
+			if ( '' !== $last4 && false === strpos( $fallback, $last4 ) ) {
+				$card_type = $token->get_card_type();
+				$title     = '' !== $card_type ? wc_get_credit_card_type_label( $card_type ) : $fallback;
+				/* translators: 1: payment method, likely a card brand, 2: last four digits. */
+				return sprintf( __( '%1$s ending in %2$s', 'woocommerce' ), $title, $last4 );
+			}
+		}
+
+		if ( $token instanceof WooPaymentsAmazonPayToken ) {
+			$email = (string) $token->get_email();
+			if ( '' !== $email && false === strpos( $fallback, $email ) ) {
+				/* translators: 1: payment method (Amazon Pay), 2: redacted customer email. */
+				return sprintf( __( '%1$s (%2$s)', 'woocommerce' ), $fallback, $email );
+			}
+		}
+
+		if ( $token instanceof WooPaymentsLinkToken ) {
+			$email = (string) $token->get_redacted_email();
+			if ( '' !== $email && false === strpos( $fallback, $email ) ) {
+				/* translators: 1: payment method (Stripe Link), 2: redacted customer email. */
+				return sprintf( __( '%1$s (%2$s)', 'woocommerce' ), __( 'Stripe Link', 'woocommerce' ), $email );
+			}
+		}
+
+		return $fallback;
+	}
+
+	/**
+	 * Get the note title of a method entered as new on the change page, as client 11.1.0 builds it from the payment method.
+	 *
+	 * The client fetches the payment method from the platform; native reads the same details from the token it just attached.
+	 *
+	 * @param mixed  $token    Token attached for the new method.
+	 * @param string $fallback Gateway title.
+	 * @return string
+	 */
+	private function get_new_payment_method_title( $token, string $fallback ): string {
+		if ( $token instanceof WC_Payment_Token_CC && '' !== $token->get_last4() ) {
+			/* translators: 1: payment method likely credit card, 2: last 4 digit. */
+			return sprintf( __( '%1$s ending in %2$s', 'woocommerce' ), $fallback, $token->get_last4() );
+		}
+		if ( $token instanceof WooPaymentsAmazonPayToken && '' !== (string) $token->get_email() ) {
+			/* translators: 1: payment method (Amazon Pay), 2: redacted customer email. */
+			return sprintf( __( '%1$s (%2$s)', 'woocommerce' ), $fallback, (string) $token->get_email() );
+		}
+		if ( $token instanceof WooPaymentsLinkToken && '' !== (string) $token->get_email() ) {
+			/* translators: 1: payment method (Stripe Link), 2: customer email. */
+			return sprintf( __( '%1$s (%2$s)', 'woocommerce' ), __( 'Stripe Link', 'woocommerce' ), (string) $token->get_email() );
+		}
+
+		return $fallback;
 	}
 
 	/**

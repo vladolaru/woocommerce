@@ -2490,7 +2490,13 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return;
 		}
 
+		// WCS resets the title to the gateway's; client 11.1.0 brands the subscription after this call, so it keeps the card title.
+		$branded_title = $order->get_payment_method_title();
 		\WC_Subscriptions_Change_Payment_Gateway::update_payment_method( $order, $this->id );
+		if ( '' !== $branded_title && $branded_title !== $order->get_payment_method_title() ) {
+			$order->set_payment_method_title( $branded_title );
+			$order->save();
+		}
 
 		remove_filter( 'woocommerce_subscriptions_update_payment_via_pay_shortcode', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'update_payment_method_for_subscriptions' ), 10 );
 	}

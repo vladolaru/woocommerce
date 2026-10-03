@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Name the right cards, in the WooPayments plugin's format, in the subscription note written when a shopper changes the payment method, and keep the card title on the subscription.
