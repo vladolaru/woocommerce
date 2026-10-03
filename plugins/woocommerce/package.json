@@ -925,7 +925,8 @@
 					"onlyForDependencies": [
 						"@woocommerce/admin-library",
 						"@woocommerce/block-library",
-						"@woocommerce/classic-assets"
+						"@woocommerce/classic-assets",
+						"@woocommerce/paypal-wallet"
 					],
 					"testEnv": {
 						"start": "env:perf"
@@ -959,7 +960,8 @@
 					"onlyForDependencies": [
 						"@woocommerce/admin-library",
 						"@woocommerce/block-library",
-						"@woocommerce/classic-assets"
+						"@woocommerce/classic-assets",
+						"@woocommerce/paypal-wallet"
 					],
 					"testEnv": {
 						"start": "env:perf"
@@ -1368,6 +1370,7 @@
 	"dependencies": {
 		"@woocommerce/admin-library": "workspace:*",
 		"@woocommerce/block-library": "workspace:*",
-		"@woocommerce/classic-assets": "workspace:*"
+		"@woocommerce/classic-assets": "workspace:*",
+		"@woocommerce/paypal-wallet": "workspace:*"
 	}
 }
