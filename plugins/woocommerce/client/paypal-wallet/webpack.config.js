@@ -4,7 +4,10 @@ const WooCommerceDependencyExtractionWebpackPlugin = require( '@woocommerce/depe
 const defaultConfig = require( '@wordpress/scripts/config/webpack.config' );
 
 // Writes directly to the plugin's assets/client/paypal-wallet/ so PHP (AssetGetter) can enqueue from the final location.
-const BUILD_DIR = path.resolve( __dirname, '../../assets/client/paypal-wallet' );
+const BUILD_DIR = path.resolve(
+	__dirname,
+	'../../assets/client/paypal-wallet'
+);
 
 // Entries per kept module, as in the extension's webpack.config.js; the compiled name is "<module>-<type>-<path with dashes>".
 // ppcp-card-fields has no entries of its own: kept JS imports its Render helper through the alias (see supplement.py).
@@ -18,7 +21,11 @@ const modulesAssets = {
 		'css/gateway.scss',
 		'css/gateway-editor.scss',
 	],
-	'ppcp-button': [ 'js/button.js', 'css/hosted-fields.scss', 'css/gateway.scss' ],
+	'ppcp-button': [
+		'js/button.js',
+		'css/hosted-fields.scss',
+		'css/gateway.scss',
+	],
 	'ppcp-card-fields': [],
 	'ppcp-compat': [ 'js/tracking-compat.js' ],
 	'ppcp-paylater-block': [ 'js/paylater-block.js', 'css/edit.scss' ],
@@ -61,7 +68,10 @@ for ( const [ moduleId, assets ] of Object.entries( modulesAssets ) ) {
 				.join( '-' );
 		entries[ name ] = `./modules/${ moduleId }/resources/${ relativePath }`;
 	}
-	aliases[ '@' + moduleId ] = path.resolve( __dirname, `./modules/${ moduleId }/resources/js` );
+	aliases[ '@' + moduleId ] = path.resolve(
+		__dirname,
+		`./modules/${ moduleId }/resources/js`
+	);
 	if ( moduleId === 'ppcp-button' ) {
 		aliases[ '@' + moduleId ] += '/modules';
 	}
@@ -81,7 +91,8 @@ module.exports = {
 	},
 	plugins: [
 		...defaultConfig.plugins.filter(
-			( plugin ) => plugin.constructor.name !== 'DependencyExtractionWebpackPlugin'
+			( plugin ) =>
+				plugin.constructor.name !== 'DependencyExtractionWebpackPlugin'
 		),
 		new WooCommerceDependencyExtractionWebpackPlugin(),
 		new CopyWebpackPlugin( {
@@ -93,7 +104,10 @@ module.exports = {
 						path.join(
 							'static',
 							path
-								.relative( path.join( __dirname, 'modules' ), absoluteFilename )
+								.relative(
+									path.join( __dirname, 'modules' ),
+									absoluteFilename
+								)
 								.replace( /^([^/]+)\/assets\//, '$1/' )
 						),
 					noErrorOnMissing: true,
@@ -101,7 +115,8 @@ module.exports = {
 				// block.json files PHP registers from ppcp.path-to-plugin-folder . 'modules/<module>/...'.
 				{
 					from: 'modules/**/block.json',
-					to: ( { absoluteFilename } ) => path.relative( __dirname, absoluteFilename ),
+					to: ( { absoluteFilename } ) =>
+						path.relative( __dirname, absoluteFilename ),
 					noErrorOnMissing: true,
 				},
 			],
