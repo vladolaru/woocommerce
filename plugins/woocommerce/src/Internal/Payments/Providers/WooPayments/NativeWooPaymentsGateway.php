@@ -1810,8 +1810,9 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$this->maybe_store_paid_intent_in_session( $outcome );
 
 		$result = self::format_checkout_result( $context, $order, $outcome );
+		// Client 11.1.0 returns get_return_url() for every change, saved method or new, which WooCommerce Subscriptions maps to the subscription.
 		if (
-			$is_subscription_change
+			$is_subscription_payment_method_change
 			&& $this->is_terminal_subscription_change_outcome( $outcome )
 			&& 'success' === ( $result['result'] ?? '' )
 			&& ! $this->is_confirmation_redirect_result( $result )

@@ -4513,9 +4513,19 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
 		$_POST['woocommerce_change_payment']    = (string) $order->get_id();
 		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = '123';
+		// WooCommerce Subscriptions points the return URL at My Account during a change request and then sends the shopper to the subscription.
+		$return_url_filter = static function ( string $return_url, WC_Order $filtered_order ) use ( $order ): string {
+			return $order->get_id() === $filtered_order->get_id() ? 'https://example.test/my-account/' : $return_url;
+		};
+		add_filter( 'woocommerce_get_return_url', $return_url_filter, 11, 2 );
 
-		$gateway->process_payment( $order->get_id() );
+		try {
+			$result = $gateway->process_payment( $order->get_id() );
+		} finally {
+			remove_filter( 'woocommerce_get_return_url', $return_url_filter, 11 );
+		}
 
+		$this->assertSame( 'https://example.test/my-account/', $result['redirect'], 'Client 11.1.0 returns get_return_url() for a saved-method change too, so the shopper lands on the subscription, not on "Order received".' );
 		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
 		$this->assertFalse( $service->last_checkout_context->get_payment_data()['save_payment_method'] ?? false, 'Saved-method handling must keep its existing new-method-only save policy.' );
 		$this->assertTrue( $service->last_checkout_context->get_provider_data()['subscription_payment_method_change'] ?? false, 'Validated saved-method changes must preserve provider billing.' );
