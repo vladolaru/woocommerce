@@ -148,6 +148,13 @@ class WooPaymentsOrderEffectApplier {
 						}
 					}
 					$this->apply_setup_intent_payment_method_display_details( $context->get_order(), $payment_method_details, '', $outcome->get_payment_method_id(), $previous_payment_method_id );
+
+					// The client's process_payment() also ends in update_order_status_from_intent(), so the success note is written here too.
+					return $this->merge_effect_data_into_outcome(
+						$outcome,
+						$this->compose_setup_intent_note_data( $context->get_order(), $outcome, (string) $provider_result['id'] ),
+						$plan
+					);
 				}
 				return $outcome;
 

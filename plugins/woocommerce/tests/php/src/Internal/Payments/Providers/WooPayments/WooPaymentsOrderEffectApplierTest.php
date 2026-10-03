@@ -1056,9 +1056,14 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		};
 		$token_service->init( $details_service, new StaticNativeRuntimeArbiter( true ) );
 
-		$this->create_applier( $token_service )->apply( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_card_identity' ), $outcome, $plan );
+		$result = $this->create_applier( $token_service )->apply( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_card_identity' ), $outcome, $plan );
 		$order  = wc_get_order( $order->get_id() );
 		$tokens = \WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID );
+
+		// The client's process_payment() ends in mark_payment_completed(), so this path carries the success note too (V615: client
+		// subscription 47 got "A test payment of $0.00 USD ... (seti_...)" after a new-card change, native none).
+		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS, $result->get_data()[ PaymentOutcome::DATA_NOTE_TYPE ] ?? null );
+		$this->assertStringContainsString( 'seti_card_identity', (string) ( $result->get_data()[ PaymentOutcome::DATA_NOTE ] ?? '' ) );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'Visa credit card', $order->get_payment_method_title() );
