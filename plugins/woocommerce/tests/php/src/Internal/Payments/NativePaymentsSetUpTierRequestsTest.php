@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderTrackingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use WC_Order;
@@ -26,7 +27,8 @@ use WC_Unit_Test_Case;
  *
  * The client registers its gateway whether or not it is enabled (client 11.1.0 `includes/class-wc-payments.php:730`)
  * and attaches its scheduled-action handlers whenever it loads, WP-CLI included (`includes/class-wc-payments.php:603,657`).
- * Each case runs in its own process because it boots the native payments bootstrap for one request.
+ * Each case boots the native payments bootstrap for one request; tearDown undoes what that boot leaves for the rest of
+ * the process. The WP-CLI case runs in its own process, as it defines WP_CLI.
  */
 class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 
@@ -38,10 +40,18 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	private array $outbound_requests = array();
 
 	/**
+	 * Payment gateways before the case booted the native bootstrap.
+	 *
+	 * @var array<string,mixed>
+	 */
+	private array $original_payment_gateways = array();
+
+	/**
 	 * Block and record outbound HTTP.
 	 */
 	public function setUp(): void {
 		parent::setUp();
+		$this->original_payment_gateways = WC()->payment_gateways()->payment_gateways;
 
 		add_filter(
 			'pre_http_request',
@@ -56,10 +66,27 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Undo what one booted request leaves for the rest of the process: the gateway list rebuilt with native gateways, the
+	 * container's replacements and resolved roots, the REST routes and the two static one-time hook flags.
+	 */
+	public function tearDown(): void {
+		WC()->payment_gateways()->payment_gateways = $this->original_payment_gateways;
+		wc_get_container()->reset_all_replacements();
+		wc_get_container()->reset_all_resolved();
+		$GLOBALS['wp_rest_server'] = null;
+
+		$renewal_hooks = new \ReflectionProperty( WooPaymentsSubscriptionRenewalHooks::class, 'attached' );
+		$renewal_hooks->setAccessible( true );
+		$renewal_hooks->setValue( null, false );
+		$fallback_hooks = new \ReflectionProperty( NativeWooPaymentsGateway::class, 'classic_checkout_fallback_hooks_added' );
+		$fallback_hooks->setAccessible( true );
+		$fallback_hooks->setValue( null, false );
+		parent::tearDown();
+	}
+
+	/**
 	 * @testdox A $label store registers the WooPayments gateway and offers it at checkout only when the tier is active.
 	 * @dataProvider gateway_availability_cases
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 *
 	 * @param string $label     Case label.
 	 * @param string $state     Stored native tier.
@@ -101,8 +128,6 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox An active store whose card gateway onboarding enabled offers it at checkout only once the account can take payments ($label).
 	 * @dataProvider account_readiness_cases
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 *
 	 * @param string $label             Case label.
 	 * @param bool   $details_submitted Whether the account details were submitted.
@@ -151,8 +176,6 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox A connected store keeps the saved-card hooks on requests that never build the gateway list.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_connected_store_keeps_the_saved_card_hooks(): void {
 		$this->arrange_native_owner( NativePaymentsState::CONNECTED );
@@ -193,8 +216,6 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox The Settings > Payments toggle moves a connected store to active when it creates the settings, and back to connected when it updates them.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_classic_toggle_keeps_the_tier_in_step_with_the_gateway(): void {
 		$this->arrange_native_owner( NativePaymentsState::CONNECTED );
@@ -228,8 +249,6 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox The payment gateways REST route moves a connected store to active, and back to connected.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_rest_update_keeps_the_tier_in_step_with_the_gateway(): void {
 		$this->arrange_native_owner( NativePaymentsState::CONNECTED );
@@ -259,8 +278,6 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Writing the shared settings option on a plugin-owned store leaves native's stored tier untouched.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_plugin_owned_settings_write_leaves_the_native_tier_alone(): void {
 		update_option( 'active_plugins', array_merge( (array) get_option( 'active_plugins', array() ), array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) ) );

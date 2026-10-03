@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewayListController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use WC_Payment_Gateway;
@@ -44,6 +45,17 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		WC()->payment_gateways()->payment_gateways = $this->original_payment_gateways;
+		// The bootstrap cases boot native payments for one request; drop what that leaves for the rest of the process.
+		wc_get_container()->reset_all_replacements();
+		wc_get_container()->reset_all_resolved();
+		$GLOBALS['wp_rest_server'] = null;
+
+		$renewal_hooks = new \ReflectionProperty( WooPaymentsSubscriptionRenewalHooks::class, 'attached' );
+		$renewal_hooks->setAccessible( true );
+		$renewal_hooks->setValue( null, false );
+		$fallback_hooks = new \ReflectionProperty( NativeWooPaymentsGateway::class, 'classic_checkout_fallback_hooks_added' );
+		$fallback_hooks->setAccessible( true );
+		$fallback_hooks->setValue( null, false );
 
 		parent::tearDown();
 	}
@@ -154,8 +166,6 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox The Settings > Payments providers REST route of an active native store lists the WooPayments card gateway and none of its split gateways, as the client does.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_providers_rest_route_lists_only_the_main_woopayments_gateway(): void {
 		$this->arrange_native_owner( NativePaymentsState::ACTIVE );
@@ -175,8 +185,6 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Checkout lists every WooPayments gateway at the saved position of the card gateway, in the provider's order, as the client does.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_checkout_places_the_woopayments_block_at_the_saved_card_gateway_position(): void {
 		$this->arrange_native_owner( NativePaymentsState::ACTIVE );
@@ -201,8 +209,6 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Checkout lists the WooPayments gateways first when no gateway order is saved, as the client does.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_checkout_lists_the_woopayments_block_first_without_a_saved_order(): void {
 		$this->arrange_native_owner( NativePaymentsState::ACTIVE );
@@ -219,8 +225,6 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Checkout lists the WooPayments gateways before the saved gateways when the saved order lacks the card gateway, as the client does.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_checkout_lists_the_woopayments_block_first_when_the_saved_order_lacks_the_card_gateway(): void {
 		$this->arrange_native_owner( NativePaymentsState::ACTIVE );

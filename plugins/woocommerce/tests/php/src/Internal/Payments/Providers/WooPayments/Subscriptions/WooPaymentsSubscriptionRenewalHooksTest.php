@@ -21,9 +21,18 @@ use WC_Unit_Test_Case;
  * gateway enabled: `wcpay_init()` runs on `plugins_loaded` (client 11.1.0 `woocommerce-payments.php:214`), builds the
  * card gateway and calls its `init_hooks()` (`includes/class-wc-payments.php:630-649`), which attaches the email filter
  * and the per-gateway renewal actions (`includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:274-298`).
- * Each case runs in its own process because it loads a Subscriptions stand-in class.
+ * Most cases run in their own process because they load a Subscriptions stand-in class; the forwarding case uses only a
+ * spy gateway and runs in the main process.
  */
 class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
+
+	/**
+	 * Drop the roots resolved with a spy gateway, for the cases that run in the main process.
+	 */
+	public function tearDown(): void {
+		wc_get_container()->reset_all_resolved();
+		parent::tearDown();
+	}
 
 	/**
 	 * @testdox A native-owned $state store has the renewal handlers and the failed-renewal email after init, and refuses a renewal across test and live mode.
@@ -126,8 +135,6 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox The renewal root forwards each Subscriptions callback to the card gateway.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_renewal_root_forwards_to_the_card_gateway(): void {
 		$gateway = $this->install_spy_gateway();
