@@ -708,6 +708,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		wp_deregister_script( 'wc-woopayments-checkout' );
 		wp_dequeue_script( 'wc-woopayments-appearance' );
 		wp_deregister_script( 'wc-woopayments-appearance' );
+		wp_deregister_script( 'wc-woopayments-fingerprintjs' );
 		wp_dequeue_style( 'wc-woopayments-checkout' );
 		wp_deregister_style( 'wc-woopayments-checkout' );
 		wp_dequeue_script( 'wcpay-fraud-prevention-token' );
@@ -1508,12 +1509,10 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve the appearance dependency when WooCommerce registers frontend scripts before the bridge.
+	 * @testdox Should register the classic checkout script with its full dependencies when WooCommerce registers frontend scripts first, as on classic themes.
 	 */
-	public function test_payment_fields_preserves_appearance_dependency_after_frontend_script_registration(): void {
+	public function test_payment_fields_registers_full_checkout_script_after_frontend_script_registration(): void {
 		\WC_Frontend_Scripts::load_scripts();
-
-		$this->assertTrue( wp_script_is( 'wc-woopayments-checkout', 'registered' ) );
 
 		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
 		$account_service = $this->create_account_service_for_bridge( true );
@@ -1529,8 +1528,18 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$bridge->render_payment_fields( self::CARD_SUPPORTS, $payment_method_registry->get( 'ideal' ) );
 		ob_end_clean();
 
+		$checkout_script = wp_scripts()->registered['wc-woopayments-checkout'];
+		$this->assertTrue( wp_script_is( 'wc-woopayments-checkout', 'enqueued' ) );
+		$this->assertContains( 'wc-woopayments-fingerprintjs', $checkout_script->deps, 'Without FingerprintJS the classic checkout posts an empty device fingerprint.' );
+		$this->assertContains( 'stripe', $checkout_script->deps );
+		$this->assertContains( 'wc-woopayments-appearance', $checkout_script->deps );
+		$this->assertContains( 'wc-checkout', $checkout_script->deps );
+		$this->assertStringStartsWith( WC()->plugin_url() . '/assets/js/frontend/woopayments-checkout', $checkout_script->src );
+		$this->assertSame( 1, wp_scripts()->get_data( 'wc-woopayments-checkout', 'group' ), 'The checkout script loads in the footer.' );
+		$this->assertFalse( wp_scripts()->get_data( 'wc-woopayments-checkout', 'strategy' ) );
+		$this->assertTrue( wp_script_is( 'stripe', 'registered' ) );
+		$this->assertTrue( wp_script_is( 'wc-woopayments-fingerprintjs', 'registered' ) );
 		$this->assertTrue( wp_script_is( 'wc-woopayments-appearance', 'registered' ) );
-		$this->assertContains( 'wc-woopayments-appearance', wp_scripts()->registered['wc-woopayments-checkout']->deps );
 	}
 
 	/**

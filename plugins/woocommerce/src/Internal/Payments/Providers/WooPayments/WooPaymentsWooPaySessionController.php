@@ -808,7 +808,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register classic WooPay assets when WooCommerce has not registered them yet.
+	 * Register the classic WooPay assets; this controller is their only registrar.
 	 */
 	private function register_classic_woopay_assets(): void {
 		if ( ! wp_script_is( self::CLASSIC_WOOPAY_SCRIPT_HANDLE, 'registered' ) ) {

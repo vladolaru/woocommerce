@@ -262,7 +262,7 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register classic express checkout assets when WooCommerce has not registered them yet.
+	 * Register the classic express checkout assets; this controller is their only registrar.
 	 */
 	private function register_classic_express_checkout_assets(): void {
 		$this->register_stripe_script();

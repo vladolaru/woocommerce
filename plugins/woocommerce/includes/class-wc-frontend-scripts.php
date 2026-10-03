@@ -271,21 +271,6 @@ class WC_Frontend_Scripts {
 				),
 				'version' => $version,
 			),
-			'wc-woopayments-appearance'    => array(
-				'src'     => self::get_asset_url( 'assets/js/frontend/utils/woopayments-appearance' . $suffix . '.js' ),
-				'deps'    => array(),
-				'version' => $version,
-			),
-			'wc-woopayments-checkout'      => array(
-				'src'     => self::get_asset_url( 'assets/js/frontend/woopayments-checkout' . $suffix . '.js' ),
-				'deps'    => array( 'jquery', 'wc-checkout', 'stripe', 'wc-woopayments-appearance' ),
-				'version' => $version,
-			),
-			'wc-woopayments-woopay'        => array(
-				'src'     => self::get_asset_url( 'assets/js/frontend/woopayments-woopay' . $suffix . '.js' ),
-				'deps'    => array( 'jquery' ),
-				'version' => $version,
-			),
 			'wc-country-select'            => array(
 				'src'     => self::get_asset_url( 'assets/js/frontend/country-select' . $suffix . '.js' ),
 				'deps'    => array( 'jquery' ),
@@ -405,12 +390,6 @@ class WC_Frontend_Scripts {
 			),
 		);
 
-		$scripts['wc-woopayments-express-checkout'] = array(
-			'src'     => self::get_asset_url( 'assets/js/frontend/woopayments-express-checkout' . $suffix . '.js' ),
-			'deps'    => array( 'jquery', 'stripe', 'wp-api-fetch' ),
-			'version' => $version,
-		);
-
 		if ( wc_string_to_bool( get_option( 'woocommerce_address_autocomplete_enabled', 'no' ) ) === true ) {
 			$scripts['wc-address-autocomplete-common'] = array(
 				'src'     => self::get_asset_url( 'assets/js/frontend/utils/address-autocomplete-common' . $suffix . '.js' ),
@@ -474,25 +453,6 @@ class WC_Frontend_Scripts {
 				'version' => $version,
 				'has_rtl' => true,
 			),
-			'wc-woopayments-woopay'       => array(
-				'src'     => self::get_asset_url( 'assets/css/woopayments-woopay.css' ),
-				'deps'    => array(),
-				'version' => $version,
-				'has_rtl' => true,
-			),
-			'wc-woopayments-checkout'     => array(
-				'src'     => self::get_asset_url( 'assets/css/woopayments-checkout.css' ),
-				'deps'    => array(),
-				'version' => $version,
-				'has_rtl' => true,
-			),
-		);
-
-		$register_styles['wc-woopayments-express-checkout'] = array(
-			'src'     => self::get_asset_url( 'assets/css/woopayments-express-checkout.css' ),
-			'deps'    => array(),
-			'version' => $version,
-			'has_rtl' => true,
 		);
 
 		if ( wc_string_to_bool( get_option( 'woocommerce_address_autocomplete_enabled', 'no' ) ) === true ) {
