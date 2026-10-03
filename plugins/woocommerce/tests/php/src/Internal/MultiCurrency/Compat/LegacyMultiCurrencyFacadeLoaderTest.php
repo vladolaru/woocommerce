@@ -110,17 +110,20 @@ class LegacyMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox The facade stays absent outside core-owned MultiCurrency.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_facade_stays_absent_outside_core_ownership(): void {
 		$this->assertTrue( class_exists( LegacyMultiCurrencyFacadeLoader::class ), 'The native runtime should provide a dedicated MultiCurrency facade loader.' );
 		if ( ! class_exists( LegacyMultiCurrencyFacadeLoader::class ) ) {
 			return;
 		}
+		// The case that declares the facade runs in its own process; an in-process declaration would show here first.
+		$this->assertFalse( class_exists( 'WCPay\\MultiCurrency\\MultiCurrency', false ), 'Precondition: an earlier in-process test declared the facade.' );
 
 		foreach ( array( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN, MultiCurrencyRuntimeArbiter::OWNER_NONE ) as $owner ) {
-			$this->create_loader( $owner, $this->create_projection_service( 2.0 ) );
+			// Only the declaration loader: the shared runtime loader keeps its projection service across in-process tests.
+			$declaration_loader = new LegacyMultiCurrencyFacadeLoader();
+			$declaration_loader->init( $this->create_arbiter( $owner ) );
+			$declaration_loader->register();
 			$this->assertFalse( class_exists( 'WCPay\\MultiCurrency\\MultiCurrency', false ), 'The plugin and ownerless runtimes must retain authority over the plugin namespace.' );
 		}
 	}
