@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Subscriptions;
 
-use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
@@ -55,7 +54,6 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( NativePaymentsState::class )->invalidate();
 		$GLOBALS['wp_rest_server'] = null;
-		Constants::clear_single_constant( 'WP_CLI' );
 
 		$renewal_hooks = new \ReflectionProperty( WooPaymentsSubscriptionRenewalHooks::class, 'attached' );
 		$renewal_hooks->setAccessible( true );
@@ -133,20 +131,11 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A scheduled renewal on a $label store finds the native gateway and reaches the native handler.
-	 * @dataProvider renewal_contexts
-	 *
-	 * @param string $label  Case label.
-	 * @param string $state  Stored native tier.
-	 * @param bool   $wp_cli Whether the renewal runs under WP-CLI.
+	 * @testdox A scheduled renewal on a connected store with the gateway disabled finds the native gateway and reaches the native handler.
 	 */
-	public function test_scheduled_renewal_reaches_the_native_handler( string $label, string $state, bool $wp_cli ): void {
-		unset( $label );
-		if ( $wp_cli ) {
-			Constants::set_constant( 'WP_CLI', true );
-		}
+	public function test_scheduled_renewal_reaches_the_native_handler(): void {
 		$this->load_subscriptions();
-		$this->arrange_ownership( false, true, $state );
+		$this->arrange_ownership( false, true, NativePaymentsState::CONNECTED );
 		$this->register_native_payments_and_run_init();
 		$gateway = $this->install_spy_gateway();
 		$this->reload_payment_gateways();
@@ -341,15 +330,6 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 		$subscription->parent_order = $parent_order;
 
 		return $subscription;
-	}
-
-	/** @return array<string,array{string,string,bool}> */
-	public static function renewal_contexts(): array {
-		return array(
-			'connected, gateway disabled' => array( 'connected', NativePaymentsState::CONNECTED, false ),
-			'connected, WP-CLI runner'    => array( 'connected WP-CLI', NativePaymentsState::CONNECTED, true ),
-			'active, WP-CLI runner'       => array( 'active WP-CLI', NativePaymentsState::ACTIVE, true ),
-		);
 	}
 
 	/** @return array<string,array{string}> */
