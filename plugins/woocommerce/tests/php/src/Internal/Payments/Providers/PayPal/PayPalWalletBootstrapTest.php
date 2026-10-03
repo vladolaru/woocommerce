@@ -297,6 +297,10 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 		foreach ( $absent_ids as $id ) {
 			$this->assertFalse( $container->has( $id ), "$id must not be registered: its module is not part of the fork" );
 		}
+		$removed_ids = array( 'api.endpoint.billing-plans', 'api.endpoint.catalog-products', 'api.factory.plan', 'api.factory.product', 'api.factory.billing-cycle' );
+		foreach ( $removed_ids as $id ) {
+			$this->assertFalse( $container->has( $id ), "$id serves only PayPal-hosted subscriptions, which the wallet does not offer" );
+		}
 		$availability = $container->get( 'ppcp.module-availability' );
 		$this->assertInstanceOf( \Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ModuleAvailability::class, $availability );
 		$this->assertFalse( $availability->is_loaded( 'applepay' ) );

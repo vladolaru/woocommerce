@@ -17,9 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\A
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Authentication\SdkClientToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Authentication\TokenRateLimiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Authentication\UserIdToken;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\BillingPlans;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\BillingSubscriptions;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\CatalogProducts;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\IdentityToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\LoginSeller;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\OrderEndpoint;
@@ -34,7 +32,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\E
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\AddressFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\AmountFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\AuthorizationFactory;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\BillingCycleFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\CaptureFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\CardAuthenticationResultFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\ContactPreferenceFactory;
@@ -50,9 +47,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\F
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\PayerFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\PaymentPreferencesFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\PaymentsFactory;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\PlanFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\PlatformFeeFactory;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\ProductFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\PurchaseUnitFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\RefundFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\RefundPayerFactory;
@@ -361,22 +356,6 @@ return array(
 	'api.reference-transaction-status'               => static fn ( ContainerInterface $container ): ReferenceTransactionStatus => new ReferenceTransactionStatus(
 		$container->get( 'api.endpoint.partners' )
 	),
-	'api.endpoint.catalog-products'                  => static function ( ContainerInterface $container ): CatalogProducts {
-		return new CatalogProducts(
-			$container->get( 'api.host' ),
-			$container->get( 'api.bearer' ),
-			$container->get( 'api.factory.product' ),
-			$container->get( 'woocommerce.logger.woocommerce' )
-		);
-	},
-	'api.endpoint.billing-plans'                     => static function ( ContainerInterface $container ): BillingPlans {
-		return new BillingPlans(
-			$container->get( 'api.host' ),
-			$container->get( 'api.bearer' ),
-			$container->get( 'api.factory.plan' ),
-			$container->get( 'woocommerce.logger.woocommerce' )
-		);
-	},
 	'api.endpoint.billing-subscriptions'             => static function ( ContainerInterface $container ): BillingSubscriptions {
 		return new BillingSubscriptions(
 			$container->get( 'api.host' ),
@@ -564,20 +543,8 @@ return array(
 	'api.factory.fraud-processor-response'           => static function ( ContainerInterface $container ): FraudProcessorResponseFactory {
 		return new FraudProcessorResponseFactory();
 	},
-	'api.factory.product'                            => static function ( ContainerInterface $container ): ProductFactory {
-		return new ProductFactory();
-	},
-	'api.factory.billing-cycle'                      => static function ( ContainerInterface $container ): BillingCycleFactory {
-		return new BillingCycleFactory( $container->get( 'api.shop.currency.getter' ) );
-	},
 	'api.factory.payment-preferences'                => static function ( ContainerInterface $container ): PaymentPreferencesFactory {
 		return new PaymentPreferencesFactory( $container->get( 'api.shop.currency.getter' ) );
-	},
-	'api.factory.plan'                               => static function ( ContainerInterface $container ): PlanFactory {
-		return new PlanFactory(
-			$container->get( 'api.factory.billing-cycle' ),
-			$container->get( 'api.factory.payment-preferences' )
-		);
 	},
 	'api.factory.card-authentication-result-factory' => static function ( ContainerInterface $container ): CardAuthenticationResultFactory {
 		return new CardAuthenticationResultFactory();
