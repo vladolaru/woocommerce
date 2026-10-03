@@ -41,16 +41,27 @@ final class NativePaymentsBootstrap {
 	private $multi_currency_provider_roots_resolver;
 
 	/**
+	 * Provider-owned hook registrar for sites where the provider's plugin owns the runtime.
+	 *
+	 * @var callable|null
+	 * @phpstan-var (callable(Container|RuntimeContainer): void)|null
+	 */
+	private $plugin_owner_registrar;
+
+	/**
 	 * Create a neutral bootstrap for provider-owned root matrices.
 	 *
-	 * @param callable $root_matrix_resolver                  Provider-owned native payments root matrix resolver.
-	 * @param callable $multi_currency_provider_roots_resolver Provider-owned Multi-Currency roots resolver.
+	 * @param callable      $root_matrix_resolver                  Provider-owned native payments root matrix resolver.
+	 * @param callable      $multi_currency_provider_roots_resolver Provider-owned Multi-Currency roots resolver.
+	 * @param callable|null $plugin_owner_registrar                Provider-owned hooks to add only while the provider's plugin owns the runtime.
 	 * @phpstan-param callable(): array<string,array<string,array<int,class-string>>> $root_matrix_resolver
 	 * @phpstan-param callable(): array<int,class-string> $multi_currency_provider_roots_resolver
+	 * @phpstan-param (callable(Container|RuntimeContainer): void)|null $plugin_owner_registrar
 	 */
-	public function __construct( callable $root_matrix_resolver, callable $multi_currency_provider_roots_resolver ) {
+	public function __construct( callable $root_matrix_resolver, callable $multi_currency_provider_roots_resolver, ?callable $plugin_owner_registrar = null ) {
 		$this->root_matrix_resolver                   = $root_matrix_resolver;
 		$this->multi_currency_provider_roots_resolver = $multi_currency_provider_roots_resolver;
+		$this->plugin_owner_registrar                 = $plugin_owner_registrar;
 	}
 
 	/**
@@ -84,6 +95,10 @@ final class NativePaymentsBootstrap {
 		$request     = $this->classify_request( $is_rest_api_request );
 
 		$this->register_roots( $container, $this->roots_for( $state, $request ) );
+
+		if ( NativePaymentsRuntimeArbiter::OWNER_PLUGIN === $owner && null !== $this->plugin_owner_registrar ) {
+			( $this->plugin_owner_registrar )( $container );
+		}
 
 		/**
 		 * Filters whether read-only native payments shadow mode is enabled.

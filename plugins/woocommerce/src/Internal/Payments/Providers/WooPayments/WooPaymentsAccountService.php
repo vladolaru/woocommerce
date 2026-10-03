@@ -705,6 +705,30 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Rewrite the durable native payments state after the WooPayments plugin writes its account cache.
+	 *
+	 * Without this, a plugin store keeps the state the upgrade repair wrote, so an account that becomes eligible later
+	 * never gets the start notice. Errored or data-less writes keep the prior state, as native's own cache writes do.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param mixed $cache_contents Account cache contents the plugin wrote.
+	 */
+	public function synchronize_after_plugin_account_cache_write( $cache_contents ): void {
+		if (
+			null === $this->runtime_arbiter ||
+			! $this->runtime_arbiter->is_plugin_runtime_active() ||
+			! is_array( $cache_contents ) ||
+			true === ( $cache_contents['errored'] ?? null ) ||
+			! is_array( $cache_contents['data'] ?? null )
+		) {
+			return;
+		}
+
+		$this->synchronize_native_payments_state( $cache_contents['data'], true );
+	}
+
+	/**
 	 * Synchronize durable state without affecting the account source write.
 	 *
 	 * Missing account data preserves the prior state unless native is disabled or the plugin owns the runtime.

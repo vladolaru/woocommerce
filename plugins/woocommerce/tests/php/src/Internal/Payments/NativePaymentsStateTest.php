@@ -291,6 +291,92 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A plugin account cache write moves the state both ways with the account's native eligibility.
+	 */
+	public function test_plugin_account_cache_write_follows_native_eligibility(): void {
+		$this->make_plugin_own_the_runtime();
+		$this->state->write_state( NativePaymentsState::DISABLED );
+
+		$this->account_service->synchronize_after_plugin_account_cache_write( $this->plugin_account_cache( array( 'eligible' => true ) ) );
+		$this->assertSame( NativePaymentsState::AVAILABLE, $this->state->get_state(), 'An account the platform made eligible after the upgrade repair must reach the start notice.' );
+
+		$this->account_service->synchronize_after_plugin_account_cache_write( $this->plugin_account_cache( array( 'eligible' => false ) ) );
+		$this->assertSame( NativePaymentsState::DISABLED, $this->state->get_state(), 'Withdrawn eligibility must write disabled again.' );
+
+		$this->account_service->synchronize_after_plugin_account_cache_write( $this->plugin_account_cache( null ) );
+		$this->assertSame( NativePaymentsState::AVAILABLE, $this->state->get_state(), 'An account without the eligibility block counts as eligible, as in the upgrade repair.' );
+	}
+
+	/**
+	 * @testdox Errored or data-less plugin account cache writes keep the prior state.
+	 */
+	public function test_plugin_account_cache_write_ignores_errored_and_empty_writes(): void {
+		$this->make_plugin_own_the_runtime();
+		$this->state->write_state( NativePaymentsState::DISABLED );
+
+		$errored            = $this->plugin_account_cache( array( 'eligible' => true ) );
+		$errored['errored'] = true;
+		$this->account_service->synchronize_after_plugin_account_cache_write( $errored );
+		$this->account_service->synchronize_after_plugin_account_cache_write(
+			array(
+				'data'    => null,
+				'fetched' => time(),
+				'errored' => false,
+			)
+		);
+		$this->account_service->synchronize_after_plugin_account_cache_write( false );
+
+		$this->assertSame( NativePaymentsState::DISABLED, $this->state->get_state() );
+	}
+
+	/**
+	 * @testdox A plugin account cache write changes nothing once the plugin no longer owns the runtime.
+	 */
+	public function test_plugin_account_cache_write_needs_the_plugin_runtime(): void {
+		$this->state->write_state( NativePaymentsState::DISABLED );
+
+		$this->account_service->synchronize_after_plugin_account_cache_write( $this->plugin_account_cache( array( 'eligible' => true ) ) );
+
+		$this->assertSame( NativePaymentsState::DISABLED, $this->state->get_state() );
+	}
+
+	/**
+	 * @testdox A store without the WooPayments plugin adds no account cache listener.
+	 */
+	public function test_store_without_the_plugin_adds_no_account_cache_listener(): void {
+		$this->assertFalse( has_action( 'add_option_wcpay_account_data' ) );
+		$this->assertFalse( has_action( 'update_option_wcpay_account_data' ) );
+	}
+
+	/**
+	 * Mark the WooPayments plugin active so it owns the payments runtime.
+	 */
+	private function make_plugin_own_the_runtime(): void {
+		update_option( 'active_plugins', array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+	}
+
+	/**
+	 * Build account cache contents in the shape the plugin's Database_Cache writes.
+	 *
+	 * @param array<string,mixed>|null $native_payments Native payments block, or null to leave it out.
+	 * @return array<string,mixed>
+	 */
+	private function plugin_account_cache( ?array $native_payments ): array {
+		$data = array( 'account_id' => 'acct_plugin' );
+		if ( null !== $native_payments ) {
+			$data['native_payments'] = $native_payments;
+		}
+
+		return array(
+			'data'               => $data,
+			'fetched'            => time(),
+			'errored'            => false,
+			'consecutive_errors' => 0,
+		);
+	}
+
+	/**
 	 * Read a private property for the DI wiring regression.
 	 *
 	 * @param object $instance      Object to inspect.

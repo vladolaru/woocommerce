@@ -720,6 +720,33 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertSame( $this->expected_events( array() ), $container->events );
 	}
 
+	/** @testdox The provider's plugin-owner hooks are added only on sites the plugin owns, with nothing resolved from the container. */
+	public function test_plugin_owner_registrar_runs_only_for_the_plugin_owner(): void {
+		$owners = array(
+			NativePaymentsRuntimeArbiter::OWNER_PLUGIN => 1,
+			NativePaymentsRuntimeArbiter::OWNER_NATIVE => 0,
+			NativePaymentsRuntimeArbiter::OWNER_NONE   => 0,
+		);
+
+		foreach ( $owners as $owner => $expected_calls ) {
+			$container = $this->make_container( NativePaymentsState::DISABLED, $owner );
+			$calls     = 0;
+			$sut       = new NativePaymentsBootstrap(
+				array( WooPaymentsProvider::class, 'get_bootstrap_root_matrix' ),
+				array( WooPaymentsProvider::class, 'get_multi_currency_provider_roots' ),
+				static function ( $received ) use ( &$calls, $container ): void {
+					self::assertSame( $container, $received );
+					++$calls;
+				}
+			);
+
+			$sut->register( $container, '__return_false' );
+
+			$this->assertSame( $expected_calls, $calls, $owner );
+			$this->assertSame( $this->expected_events( array() ), $container->events, $owner );
+		}
+	}
+
 	/**
 	 * Build the neutral facade with the WooPayments-owned root matrix.
 	 *
