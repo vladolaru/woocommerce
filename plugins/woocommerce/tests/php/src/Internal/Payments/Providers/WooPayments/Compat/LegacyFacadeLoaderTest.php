@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Compat;
 
-use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\LegacyFacadeLoader;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
@@ -16,30 +15,6 @@ use WC_Unit_Test_Case;
  * Tests the WooPayments legacy facade compatibility boundary.
  */
 class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
-
-	/**
-	 * Server globals as they were before the test, restored for in-process cases that rewrite request facts.
-	 *
-	 * @var array<string,mixed>
-	 */
-	private array $server_snapshot = array();
-
-	/**
-	 * Snapshot the server globals.
-	 */
-	public function setUp(): void {
-		parent::setUp();
-		$this->server_snapshot = $_SERVER;
-	}
-
-	/**
-	 * Restore the server globals and clear the WP_CLI override.
-	 */
-	public function tearDown(): void {
-		$_SERVER = $this->server_snapshot; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Restoring the test's own snapshot.
-		Constants::clear_single_constant( 'WP_CLI' );
-		parent::tearDown();
-	}
 
 	/**
 	 * @testdox The APFS compatibility gate recognizes the native runtime.
@@ -158,9 +133,10 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Legacy facades stay absent when native does not own payments.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_facades_stay_absent_when_native_does_not_own_payments(): void {
-		$this->assert_facades_not_declared_yet();
 		$this->register_legacy_facades( false );
 
 		$this->assertFalse( class_exists( 'WC_Payments', false ), 'The plugin or ownerless runtime must retain authority over the WC_Payments symbol.' );
@@ -189,6 +165,8 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Official WordPress activation requests keep the plugin-owned symbols available.
 	 * @dataProvider official_activation_request_provider
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 *
 	 * @param array<string,mixed>  $request Request parameters.
 	 * @param array<string,string> $server  Server parameters.
@@ -196,7 +174,6 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 	public function test_official_activation_requests_keep_plugin_symbols_available( array $request, array $server ): void {
 		$_REQUEST = $request; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reproducing WordPress's already-authorized plugin activation requests.
 		$_SERVER  = array_merge( $_SERVER, $server );
-		$this->assert_facades_not_declared_yet();
 
 		$this->register_legacy_facades();
 
@@ -251,13 +228,14 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox WP-CLI keeps plugin-owned symbols available for programmatic activation.
 	 * @dataProvider wp_cli_activation_request_provider
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 *
 	 * @param array<int,string> $arguments WP-CLI arguments.
 	 */
 	public function test_wp_cli_keeps_plugin_symbols_available_for_activation( array $arguments ): void {
-		Constants::set_constant( 'WP_CLI', true );
+		define( 'WP_CLI', true );
 		$_SERVER['argv'] = $arguments;
-		$this->assert_facades_not_declared_yet();
 
 		$this->register_legacy_facades();
 
@@ -340,16 +318,6 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( class_exists( 'WC_Payments', false ), 'Unrelated activation requests should retain native WooPayments compatibility.' );
 		$this->assertTrue( class_exists( 'WC_Payments_Features', false ), 'Unrelated activation requests should retain native WooPayments feature compatibility.' );
-	}
-
-	/**
-	 * Fail loudly when an earlier in-process test already declared the facades, so an absence case can never pass on
-	 * someone else's state; the cases that declare them run in their own process.
-	 */
-	private function assert_facades_not_declared_yet(): void {
-		$this->assertFalse( class_exists( 'WC_Payments', false ), 'Precondition: an earlier in-process test declared WC_Payments.' );
-		$this->assertFalse( class_exists( 'WC_Payments_Features', false ), 'Precondition: an earlier in-process test declared WC_Payments_Features.' );
-		$this->assertFalse( defined( 'WCPAY_VERSION_NUMBER' ), 'Precondition: an earlier in-process test defined WCPAY_VERSION_NUMBER.' );
 	}
 
 	/**
