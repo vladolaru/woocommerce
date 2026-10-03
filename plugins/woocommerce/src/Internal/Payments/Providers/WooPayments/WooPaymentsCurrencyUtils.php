@@ -7,6 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrenciesController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
 
 /**
@@ -101,6 +103,30 @@ final class WooPaymentsCurrencyUtils {
 		$minor_unit = self::get_stripe_minor_unit_for_currency( $currency );
 
 		return (int) round( $amount * ( 10 ** $minor_unit ) );
+	}
+
+	/**
+	 * Format an amount with `wc_price()` in its currency's own format, whatever currency the acting user selected.
+	 *
+	 * Order notes written in webhook requests run as the platform's connection user, whose selection would otherwise apply.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param float               $amount   Decimal amount.
+	 * @param string              $currency Currency code.
+	 * @param array<string,mixed> $args     Other `wc_price()` arguments.
+	 * @return string
+	 */
+	public static function format_price_in_currency( float $amount, string $currency, array $args = array() ): string {
+		$args['currency'] = $currency;
+		$format           = static fn(): string => wc_price( $amount, $args );
+
+		$container = wc_get_container();
+		if ( ! $container->get( MultiCurrencyRuntimeArbiter::class )->should_core_register() ) {
+			return $format();
+		}
+
+		return $container->get( MultiCurrencyFrontendCurrenciesController::class )->format_in_order_currency( $currency, $format );
 	}
 
 	/**

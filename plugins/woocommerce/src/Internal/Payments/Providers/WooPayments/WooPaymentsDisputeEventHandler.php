@@ -456,11 +456,9 @@ class WooPaymentsDisputeEventHandler {
 	 */
 	private function get_formatted_dispute_amount( WC_Order $order, int $amount ): string {
 		$currency = $order->get_currency();
-		$price    = wc_price(
+		$price    = WooPaymentsCurrencyUtils::format_price_in_currency(
 			WooPaymentsCurrencyUtils::amount_from_minor_units( $amount, $currency ),
-			array(
-				'currency' => strtoupper( $currency ),
-			)
+			strtoupper( $currency )
 		);
 
 		return MultiCurrencyExplicitPriceProjectionService::get_explicit_price_with_currency(

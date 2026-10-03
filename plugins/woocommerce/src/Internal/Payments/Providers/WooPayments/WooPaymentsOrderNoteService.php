@@ -1277,7 +1277,7 @@ class WooPaymentsOrderNoteService {
 	 */
 	public function format_insufficient_balance_refund_note( WC_Order $order, float $amount, string $currency, string $account_country ): string {
 		$currency         = strtoupper( '' !== $currency ? $currency : $order->get_currency() );
-		$formatted_amount = wc_price( $amount, array( 'currency' => $currency ) );
+		$formatted_amount = WooPaymentsCurrencyUtils::format_price_in_currency( $amount, $currency );
 
 		if ( in_array( strtoupper( $account_country ), self::FROD_UNSUPPORTED_COUNTRIES, true ) ) {
 			$note = sprintf(
@@ -1664,7 +1664,7 @@ class WooPaymentsOrderNoteService {
 	 */
 	private function format_refund_amount( WC_Order $order, float $amount, string $currency ): string {
 		$currency        = strtoupper( '' !== $currency ? $currency : $order->get_currency() );
-		$formatted_price = wc_price( $amount, array( 'currency' => $currency ) );
+		$formatted_price = WooPaymentsCurrencyUtils::format_price_in_currency( $amount, $currency );
 		$formatter       = array( 'WC_Payments_Explicit_Price_Formatter', 'get_explicit_price' );
 
 		if ( class_exists( 'WC_Payments_Explicit_Price_Formatter' ) && is_callable( $formatter ) ) {

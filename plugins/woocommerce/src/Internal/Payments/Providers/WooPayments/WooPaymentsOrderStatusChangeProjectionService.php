@@ -200,7 +200,7 @@ class WooPaymentsOrderStatusChangeProjectionService {
 	 */
 	private function format_in_order_currency( WC_Order $order, float $amount ): string {
 		return html_entity_decode(
-			wp_strip_all_tags( (string) wc_price( $amount, array( 'currency' => $order->get_currency() ) ) ),
+			wp_strip_all_tags( WooPaymentsCurrencyUtils::format_price_in_currency( $amount, $order->get_currency() ) ),
 			ENT_QUOTES,
 			'UTF-8'
 		);

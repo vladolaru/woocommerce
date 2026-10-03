@@ -167,9 +167,9 @@ class WooPaymentsLoanApprovedNote implements RegisterHooksInterface {
 	private function get_note( array $details ): Note {
 		$currency = (string) $details['currency'];
 		// The client calls interpret_stripe_amount() without a currency, so it always divides by 100 (client line 53).
-		$price = wc_price(
+		$price = WooPaymentsCurrencyUtils::format_price_in_currency(
 			WooPaymentsCurrencyUtils::amount_from_minor_units( (int) $details['advance_amount'], 'usd' ),
-			array( 'currency' => $currency )
+			$currency
 		);
 
 		$note = new Note();

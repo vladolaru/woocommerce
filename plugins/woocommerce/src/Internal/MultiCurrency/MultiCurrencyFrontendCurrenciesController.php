@@ -328,6 +328,28 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	}
 
 	/**
+	 * Run a callback with prices formatted in an order's currency instead of the visitor's selected one.
+	 *
+	 * Background and webhook requests can run as a user whose selection differs from the order's currency.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string   $currency Order currency code.
+	 * @param callable $callback Callback that formats prices.
+	 * @phpstan-param callable(): string $callback
+	 * @return string The callback's result.
+	 */
+	public function format_in_order_currency( string $currency, callable $callback ): string {
+		$previous             = $this->order_currency;
+		$this->order_currency = strtoupper( $currency );
+		try {
+			return $callback();
+		} finally {
+			$this->order_currency = $previous;
+		}
+	}
+
+	/**
 	 * Preserve shipping rate args until native shipping decimal handling is added.
 	 *
 	 * @param mixed $args   Shipping rate args.

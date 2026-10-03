@@ -923,7 +923,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			sprintf(
 				/* translators: %1$s: the failed payment amount, %2$s: WooPayments, %3$s: transaction ID. */
 				__( 'A payment of %1$s <strong>failed</strong> using %2$s (<code>%3$s</code>).', 'woocommerce' ),
-				wc_price( $renewal_order->get_total(), array( 'currency' => $renewal_order->get_currency() ) ),
+				WooPaymentsCurrencyUtils::format_price_in_currency( (float) $renewal_order->get_total(), $renewal_order->get_currency() ),
 				'WooPayments',
 				esc_html( $transaction_id )
 			)

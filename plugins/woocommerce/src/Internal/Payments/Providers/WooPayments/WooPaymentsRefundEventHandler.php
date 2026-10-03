@@ -364,12 +364,7 @@ class WooPaymentsRefundEventHandler {
 	 * @return string
 	 */
 	private function format_refund_amount( float $amount, string $currency, WC_Order $order ): string {
-		$formatted_amount = wc_price(
-			$amount,
-			array(
-				'currency' => strtoupper( $currency ),
-			)
-		);
+		$formatted_amount = WooPaymentsCurrencyUtils::format_price_in_currency( $amount, strtoupper( $currency ) );
 
 		$extension_formatter = array( 'WC_Payments_Explicit_Price_Formatter', 'get_explicit_price' );
 		if ( class_exists( 'WC_Payments_Explicit_Price_Formatter' ) && is_callable( $extension_formatter ) ) {
@@ -391,11 +386,9 @@ class WooPaymentsRefundEventHandler {
 	 * @return string
 	 */
 	private function get_insufficient_balance_refund_note( WC_Order $order, int $amount ): string {
-		$formatted_amount = wc_price(
+		$formatted_amount = WooPaymentsCurrencyUtils::format_price_in_currency(
 			WooPaymentsCurrencyUtils::amount_from_minor_units( $amount, $order->get_currency() ),
-			array(
-				'currency' => $order->get_currency(),
-			)
+			$order->get_currency()
 		);
 
 		if ( $this->is_frod_supported( $this->get_account_country() ) ) {

@@ -3,6 +3,19 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrenciesController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyGeolocationService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -100,6 +113,13 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	private array $log_lines = array();
 
 	/**
+	 * Multi-Currency controller whose frontend price hooks a test registered, removed on tear down.
+	 *
+	 * @var MultiCurrencyFrontendCurrenciesController|null
+	 */
+	private ?MultiCurrencyFrontendCurrenciesController $format_controller = null;
+
+	/**
 	 * Set up the handler over a fake transport, connected to the recorded account in test mode, with WooPayments logging on.
 	 *
 	 * The subscription status hooks the module attaches are attached here too, so a change that reached Stripe would show as a request.
@@ -164,6 +184,15 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		try {
+			if ( null !== $this->format_controller ) {
+				foreach ( array( 'woocommerce_currency', 'wc_get_price_decimals', 'wc_get_price_decimal_separator', 'wc_get_price_thousand_separator', 'woocommerce_price_format', 'option_woocommerce_currency_pos', 'woocommerce_order_get_total', 'woocommerce_get_formatted_order_total', 'woocommerce_thankyou_order_id', 'woocommerce_cart_hash', 'woocommerce_shipping_method_add_rate_args', 'before_woocommerce_pay', 'woocommerce_account_view-order_endpoint' ) as $hook ) {
+					remove_all_filters( $hook, 900 );
+				}
+				$this->format_controller = null;
+			}
+			delete_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
+			remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+			wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
 			unset(
 				$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ],
 				$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ],
@@ -254,6 +283,88 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 			$this->get_requests(),
 			'Neither the on-hold step nor the reactivation reaches the Stripe subscription.'
 		);
+	}
+
+	/**
+	 * @testdox The renewal's test-payment note shows the amount in the order's currency format when the webhook runs as a user who selected another currency.
+	 *
+	 * The platform's webhook request runs as the connection owner. At R2 that user had selected EUR, and the note read "24,90 $ USD".
+	 */
+	public function test_renewal_note_amount_keeps_the_order_currency_format_under_another_selection(): void {
+		$this->format_prices_in_selected_currency( 'EUR' );
+		$this->assertSame( '24,90&nbsp;&#36;', wp_strip_all_tags( wc_price( 24.90, array( 'currency' => 'USD' ) ) ), 'Without the order currency, the selection reformats a USD price.' );
+		$this->create_subscription( self::CLOCK_SUBSCRIPTION_ID );
+		$this->queue_response( 200, $this->get_renewal_intent() );
+		$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+
+		$this->sut->handle_event( $this->get_event( 'invoice_paid_renewal' ) );
+
+		$order = $this->get_renewal_orders( self::RENEWAL_INVOICE_ID )[0];
+		$notes = $this->get_notes_containing( $order, 'A test payment of' );
+		$this->assertCount( 1, $notes );
+		$this->assertStringContainsString( 'A test payment of $24.90 was processed', html_entity_decode( wp_strip_all_tags( $notes[0] ), ENT_QUOTES | ENT_HTML5 ) );
+	}
+
+	/**
+	 * Apply Multi-Currency's frontend price formatting for a selected currency, as a webhook request running as a user with that selection does.
+	 *
+	 * @param string $selected_code Selected currency code.
+	 */
+	private function format_prices_in_selected_currency( string $selected_code ): void {
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		update_option( 'active_plugins', array() );
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		$this->assertTrue( wc_get_container()->get( MultiCurrencyRuntimeArbiter::class )->should_core_register() );
+
+		$localization = wc_get_container()->get( MultiCurrencyLocalizationService::class );
+		$usd          = new MultiCurrencyCurrency( $localization, 'USD', 1.0, true );
+		$enabled      = array(
+			'USD'          => $usd,
+			$selected_code => new MultiCurrencyCurrency( $localization, $selected_code, 0.8, false ),
+		);
+		$state        = new MultiCurrencyState( $enabled, $enabled, $usd, $enabled[ $selected_code ] );
+		$builder      = new class( $state ) extends MultiCurrencyStateBuilder {
+			/** @var MultiCurrencyState */
+			private MultiCurrencyState $state;
+
+			/**
+			 * @param MultiCurrencyState $state Fixed state.
+			 */
+			public function __construct( MultiCurrencyState $state ) {
+				$this->state = $state;
+			}
+
+			/**
+			 * @return MultiCurrencyState
+			 */
+			public function build(): MultiCurrencyState {
+				return $this->state;
+			}
+		};
+
+		$controller = new MultiCurrencyFrontendCurrenciesController();
+		$controller->init(
+			wc_get_container()->get( MultiCurrencyRuntimeArbiter::class ),
+			wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class ),
+			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class )
+		);
+		$controller->set_frontend_projection_service( new MultiCurrencyFrontendProjectionService( $builder, $localization, new MultiCurrencyGeolocationService( $localization, static fn() => 'US' ) ) );
+		$controller->set_request_context(
+			new class() extends MultiCurrencyRequestContext {
+				/**
+				 * The webhook request registers the frontend price hooks.
+				 *
+				 * @return bool
+				 */
+				public function should_register_frontend_hooks(): bool {
+					return true;
+				}
+			}
+		);
+		wc_get_container()->replace( MultiCurrencyFrontendCurrenciesController::class, $controller );
+		$controller->register();
+		$this->format_controller = $controller;
 	}
 
 	/**

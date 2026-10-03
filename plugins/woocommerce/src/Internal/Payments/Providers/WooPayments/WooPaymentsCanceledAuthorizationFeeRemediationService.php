@@ -429,16 +429,16 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 					$wcpay_refund_count,
 					$wcpay_refund_count > 1 ? 's' : '',
 					implode( ', ', $wcpay_refund_ids ),
-					wc_price( $wcpay_refund_total, array( 'currency' => $order->get_currency() ) )
+					WooPaymentsCurrencyUtils::format_price_in_currency( (float) $wcpay_refund_total, $order->get_currency() )
 				);
 			}
 
 			if ( ! empty( $fee ) ) {
-				$changes[] = sprintf( 'Removed transaction fee: %s', wc_price( $fee, array( 'currency' => $order->get_currency() ) ) );
+				$changes[] = sprintf( 'Removed transaction fee: %s', WooPaymentsCurrencyUtils::format_price_in_currency( (float) $fee, $order->get_currency() ) );
 			}
 
 			if ( ! empty( $net ) ) {
-				$changes[] = sprintf( 'Removed net amount: %s', wc_price( $net, array( 'currency' => $order->get_currency() ) ) );
+				$changes[] = sprintf( 'Removed net amount: %s', WooPaymentsCurrencyUtils::format_price_in_currency( (float) $net, $order->get_currency() ) );
 			}
 
 			if ( $dry_run ) {
