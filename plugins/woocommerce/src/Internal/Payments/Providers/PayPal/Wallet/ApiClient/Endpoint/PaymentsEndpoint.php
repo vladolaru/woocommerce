@@ -106,7 +106,6 @@ class PaymentsEndpoint {
 		);
 
 		$response = $this->request( $url, $args );
-		$json     = json_decode( $response['body'] );
 
 		if ( is_wp_error( $response ) ) {
 			$error = new RuntimeException(
@@ -122,6 +121,8 @@ class PaymentsEndpoint {
 			);
 			throw $error;
 		}
+
+		$json = json_decode( $response['body'] );
 
 		$status_code = (int) wp_remote_retrieve_response_code( $response );
 		if ( 200 !== $status_code ) {
@@ -176,11 +177,12 @@ class PaymentsEndpoint {
 		);
 
 		$response = $this->request( $url, $args );
-		$json     = json_decode( $response['body'] );
 
 		if ( is_wp_error( $response ) ) {
 			throw new RuntimeException( 'Could not capture authorized payment.' );
 		}
+
+		$json = json_decode( $response['body'] );
 
 		$status_code = (int) wp_remote_retrieve_response_code( $response );
 		if ( 201 !== $status_code ) {
@@ -223,11 +225,12 @@ class PaymentsEndpoint {
 		);
 
 		$response = $this->request( $url, $args );
-		$json     = json_decode( $response['body'] );
 
 		if ( is_wp_error( $response ) ) {
 			throw new RuntimeException( 'Could not reauthorize authorized payment.' );
 		}
+
+		$json = json_decode( $response['body'] );
 
 		$status_code = (int) wp_remote_retrieve_response_code( $response );
 		if ( 201 !== $status_code || ! is_object( $json ) ) {

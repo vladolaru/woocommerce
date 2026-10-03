@@ -17,9 +17,10 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\F
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\CaptureFactory;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
 use Automattic\WooCommerce\Vendor\Psr\Log\NullLogger;
+use WP_Error;
 
 /**
- * Payments endpoint: fetch an authorization and capture it over a stubbed HTTP layer.
+ * Payments endpoint: fetch, capture and reauthorize an authorization over a stubbed HTTP layer.
  *
  * @group paypal-wallet
  */
@@ -109,6 +110,18 @@ class PaymentsEndpointTest extends WalletTestCase {
 	}
 
 	/**
+	 * @testdox Should throw a runtime exception, not fatal, when fetching the authorization fails at the transport level.
+	 */
+	public function test_authorization_throws_when_request_is_a_wp_error(): void {
+		$this->stub_http( new WP_Error( 'http_request_failed', 'Connection timed out' ) );
+		$this->authorization_factory->shouldNotReceive( 'from_paypal_response' );
+
+		$this->expectException( RuntimeException::class );
+
+		$this->make_endpoint()->authorization( 'somekindofid' );
+	}
+
+	/**
 	 * @testdox Should POST to the capture URL of the authorization and return the capture built from the response.
 	 */
 	public function test_capture_posts_to_capture_url(): void {
@@ -132,5 +145,30 @@ class PaymentsEndpointTest extends WalletTestCase {
 		$this->expectException( RuntimeException::class );
 
 		$this->make_endpoint()->capture( 'somekindofid' );
+	}
+
+	/**
+	 * @testdox Should throw a runtime exception, not fatal, when capturing the authorization fails at the transport level.
+	 */
+	public function test_capture_throws_when_request_is_a_wp_error(): void {
+		$this->stub_http( new WP_Error( 'http_request_failed', 'Connection timed out' ) );
+		$this->capture_factory->shouldNotReceive( 'from_paypal_response' );
+
+		$this->expectException( RuntimeException::class );
+
+		$this->make_endpoint()->capture( 'somekindofid' );
+	}
+
+	/**
+	 * New case: the extension has no reauthorize test.
+	 *
+	 * @testdox Should throw a runtime exception, not fatal, when reauthorizing the authorization fails at the transport level.
+	 */
+	public function test_reauthorize_throws_when_request_is_a_wp_error(): void {
+		$this->stub_http( new WP_Error( 'http_request_failed', 'Connection timed out' ) );
+
+		$this->expectException( RuntimeException::class );
+
+		$this->make_endpoint()->reauthorize( 'somekindofid' );
 	}
 }
