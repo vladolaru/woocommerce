@@ -13,9 +13,15 @@
 
 ## Keeping up with the extension
 
-The extension clone is the read-only source. `tools/fork-wallet/path-map.json` maps every forked file to its core path; `tools/fork-wallet/drift-report.sh <extension clone> <since-ref> [<until-ref>]` lists extension commits since the fork point that touch mapped paths, grouped by core file, and marks the ones that touch a shared-contract name. Port or reject each by hand, then record the new fork point here. There is no automatic merge.
+The extension clone is the read-only source. The tooling lives in the session folder `.agents/scratchpad/sessions/2026-09-30-paypal-wallet-in-core-poc/tools/fork-wallet/`, which is git-ignored and not committed, so copy the folder into a new session when porting. There, `path-map.json` maps every forked file to its core path, including the extension's root files (main file, `bootstrap.php`, `modules.php`, `webpack.config.js`, `package.json`, `composer.json`), and marks files dropped in core as `null`. `drift-report.sh <extension clone> <since-ref> [<until-ref>]` lists extension commits since the fork point that touch mapped paths, grouped by core file (dropped files come last under "(dropped in core)"), and marks the ones that touch a shared-contract name. Port or reject each by hand, then record the new fork point here. There is no automatic merge.
 
 The three stored DTO files are always marked as contract: any upstream change to `modules/ppcp-settings/src/DTO/LocationStylingDTO.php`, `PayLaterMessagingDTO.php` or `OAuthConnectionDTO.php` must be mirrored into `Wallet/SerializedClasses/` in the same release (see below).
+
+## Accepted consequences of the cuts
+
+**Fastlane settings migration.** The Tier 1 settings cut (commit `4b11ba4ce2`) removed `FastlaneSettingsMigration` and `FastlaneSettings`. On a store that still has legacy (3.x UI) settings and where core's wallet is the first copy to run the settings migration, core completes the migration without the Fastlane step and sets the shared `woocommerce_ppcp-settings-migration-is-done` marker. The extension then sees the marker and never migrates the legacy Fastlane settings into `woocommerce-ppcp-data-fastlane`, so its Fastlane configuration starts from defaults. At `e69b0cd003` the vendored copy migrated Fastlane too. This is accepted for plan A because the cut is in the spec's Tier 1 list; the alternative is to keep both classes until plan B.
+
+**Hook object types.** `woocommerce_paypal_payments_built_container` and Modularity's own lifecycle hooks now pass core-namespaced (prefixed) objects, so a third-party callback that type-hints the extension's container or module interfaces will not match core's copy, the same as when the extension is absent. The shell also ignores any module returned by the `woocommerce_paypal_payments_modules` filter that is not core's prefixed `Module` interface, instead of failing at boot.
 
 ## Kept from dropped modules
 
