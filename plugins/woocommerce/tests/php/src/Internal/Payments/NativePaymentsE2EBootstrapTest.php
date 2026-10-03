@@ -18,20 +18,25 @@ use WP_REST_Request;
 class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 
 	/**
+	 * Clear what a case leaves for the rest of the process: the routes it registered on the global REST server, the
+	 * services resolved while native was forced on, and the opt-in constant overrides.
+	 */
+	public function tearDown(): void {
+		$GLOBALS['wp_rest_server'] = null;
+		wc_get_container()->reset_all_resolved();
+		Constants::set_constant( 'E2E_WOOPAYMENTS_NATIVE', null );
+		Constants::set_constant( 'E2E_WOOPAYMENTS_TRANSITION', null );
+		parent::tearDown();
+	}
+
+	/**
 	 * @testdox Missing E2E constant leaves native payments disabled.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_missing_constant_leaves_native_disabled(): void {
 		$this->load_bootstrap();
 
-		// EnvironmentIsolation clears this constant for the main process, but a
-		// @runInSeparateProcess test runs in a child that does not inherit those
-		// overrides, so it has to restate the precondition. wp-env defines the
-		// constant for every environment including this container, which would
-		// otherwise make the absent case unreachable on a machine configured to
-		// run the WooPayments native E2E suite while still passing on CI.
+		// wp-env defines the constant for every environment including this container; state the absent precondition on the
+		// layer that decides, so the case stays reachable on a machine configured to run the native E2E suite.
 		Constants::set_constant( 'E2E_WOOPAYMENTS_NATIVE', null );
 
 		$this->assertFalse(
@@ -48,9 +53,6 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Exact true E2E constant enables native payments before owner resolution.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_true_constant_enables_native_before_owner_resolution(): void {
 		$this->define_native_e2e_constant();
@@ -65,9 +67,6 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Active standalone WooPayments plugin wins over the native E2E bootstrap.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_active_standalone_plugin_still_wins(): void {
 		$this->define_native_e2e_constant();
@@ -85,9 +84,6 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Native kill switch disables the E2E native owner.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_kill_switch_disables_native_owner(): void {
 		$this->define_native_e2e_constant();
@@ -106,9 +102,6 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Runtime status route rejects an unauthenticated request.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_status_route_rejects_unauthenticated_request(): void {
 		$this->load_bootstrap();
@@ -125,9 +118,6 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Saved-card evidence route rejects an unauthenticated request.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_saved_card_evidence_route_rejects_unauthenticated_request(): void {
 		$this->load_bootstrap();
@@ -144,9 +134,6 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Saved-card evidence returns exact local token mappings and rate-limit readiness.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_saved_card_evidence_returns_exact_local_tokens_and_creation_readiness(): void {
 		$this->load_bootstrap();
@@ -185,9 +172,6 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Named saved-card evidence proves the exact local mapping and provider customer.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_named_saved_card_evidence_proves_local_mapping_and_provider_customer(): void {
 		$this->define_native_e2e_constant();
@@ -234,9 +218,6 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Named saved-card evidence rejects a mismatched provider payment-method ID.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_named_saved_card_evidence_rejects_mismatched_local_mapping(): void {
 		$this->define_native_e2e_constant();
@@ -264,9 +245,6 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox The E2E runtime does not register a surrogate WooPayments cutover action.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_runtime_does_not_register_surrogate_cutover_action(): void {
 		$this->define_native_e2e_constant();
@@ -281,9 +259,6 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Runtime status never trusts locally writable callback proof.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_status_rejects_locally_writable_callback_proof(): void {
 		$this->define_native_e2e_constant();
@@ -324,8 +299,6 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 	 * @dataProvider invalid_callback_proof_provider
 	 *
 	 * @param array<string,mixed> $proof Invalid callback proof.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_status_rejects_invalid_callback_proof( array $proof ): void {
 		$this->define_native_e2e_constant();
@@ -382,14 +355,8 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 	 * Define the exact opt-in constant.
 	 */
 	private function define_native_e2e_constant(): void {
-		if ( ! defined( 'E2E_WOOPAYMENTS_NATIVE' ) ) {
-			define( 'E2E_WOOPAYMENTS_NATIVE', true );
-		}
-
-		// A real define() is the weakest of the three layers Constants reads: an
-		// override set earlier wins over it, and EnvironmentIsolation sets one to
-		// clear whatever wp-env defined for this container. Set the override so
-		// this test states its precondition on the layer that actually decides.
+		// The runtime reads the constant through Constants, whose override decides; no real define(), so nothing outlives
+		// the case.
 		Constants::set_constant( 'E2E_WOOPAYMENTS_NATIVE', true );
 	}
 
@@ -397,9 +364,8 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 	 * Define the exact transition opt-in constant.
 	 */
 	private function define_transition_e2e_constant(): void {
-		if ( ! defined( 'E2E_WOOPAYMENTS_TRANSITION' ) ) {
-			define( 'E2E_WOOPAYMENTS_TRANSITION', true );
-		}
+		// Nothing reads this constant today; the override keeps the case's stated precondition without a real define().
+		Constants::set_constant( 'E2E_WOOPAYMENTS_TRANSITION', true );
 	}
 
 	/**
