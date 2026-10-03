@@ -962,5 +962,11 @@
 			"amount": 1500,
 			"currency": "usd"
 		}
+	},
+	"GET documents": {
+		"data": []
+	},
+	"GET documents/summary": {
+		"count": 0
 	}
 }
