@@ -444,6 +444,11 @@ class WooPaymentsTest extends WP_UnitTestCase {
 
 	/**
 	 * @testdox Should keep the card stack and Stripe.js off the Blocks cart when no express or WooPay button renders there, and keep the fraud scripts.
+	 *
+	 * A separate process, because an earlier test can define WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT for the rest of the run.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_blocks_cart_without_buttons_depends_only_on_the_fraud_scripts(): void {
 		$this->go_to_block_page( 'woocommerce/cart', 'woocommerce_cart_page_id' );
@@ -461,6 +466,11 @@ class WooPaymentsTest extends WP_UnitTestCase {
 
 	/**
 	 * @testdox Should load the express checkout script and Stripe.js on the Blocks cart without the card stack.
+	 *
+	 * A separate process, because an earlier test can define WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT for the rest of the run.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_blocks_cart_with_express_checkout_loads_what_express_needs(): void {
 		$this->go_to_block_page( 'woocommerce/cart', 'woocommerce_cart_page_id' );
@@ -479,6 +489,11 @@ class WooPaymentsTest extends WP_UnitTestCase {
 
 	/**
 	 * @testdox Should load the WooPay button script on the Blocks cart without the card stack or Stripe.js.
+	 *
+	 * A separate process, because an earlier test can define WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT for the rest of the run.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_blocks_cart_with_woopay_loads_what_woopay_needs(): void {
 		$this->go_to_block_page( 'woocommerce/cart', 'woocommerce_cart_page_id' );

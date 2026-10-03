@@ -364,6 +364,11 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should enqueue the BNPL stylesheet during wp_enqueue_scripts on product and cart pages only, leaving the script to render time.
+	 *
+	 * A separate process, because prior cart tests can pin the WOOCOMMERCE_CART constant, making the home page look like the cart.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 * @testWith ["product", true]
 	 *           ["cart", true]
 	 *           ["home", false]
