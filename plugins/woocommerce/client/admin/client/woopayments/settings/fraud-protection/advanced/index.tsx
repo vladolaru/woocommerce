@@ -26,6 +26,7 @@ import type { KeyboardEvent, ReactNode } from 'react';
  * Internal dependencies
  */
 import '../../../../settings-payments/settings-payments-body.scss';
+import { getCurrency } from '../../../admin/currency-format';
 import { SettingsBusyState } from '../../settings-busy-state';
 import { SettingsSaveBar, SettingsSection } from '../../settings-shell';
 import { SettingsSubpage } from '../../settings-subpage';
@@ -76,16 +77,6 @@ const asBoolean = ( value: unknown, fallback = false ) =>
 const CVC_VERIFICATION_DOC_URL =
 	'https://woocommerce.com/document/woopayments/fraud-and-disputes/fraud-protection/#advanced-configuration';
 const IP_ADDRESS_DOC_URL = 'https://simple.wikipedia.org/wiki/IP_address';
-const COMMON_CURRENCY_SYMBOLS: Record< string, string > = {
-	AUD: '$',
-	CAD: '$',
-	EUR: '€',
-	GBP: '£',
-	JPY: '¥',
-	NZD: '$',
-	USD: '$',
-};
-
 const ADVANCED_RULE_CARD_VIEW_EVENTS: Record< string, string > = {
 	'avs-mismatch-card':
 		'wcpay_fraud_protection_advanced_settings_card_avs_mismatch_viewed',
@@ -114,6 +105,10 @@ const getFraudProtectionEnvironment = ( settings: SettingsRecord ) => {
 			asString( settings.store_currency ) ||
 			asString( settings.account_domestic_currency ) ||
 			'USD',
+		isMultiCurrencyEnabled: asBoolean(
+			settings.is_multi_currency_enabled,
+			false
+		),
 		isReviewFeatureActive: asBoolean(
 			settings.is_fraud_protection_review_feature_active,
 			false
@@ -153,26 +148,19 @@ const getCountryNames = ( countryCodes: string[] ) => {
 	} );
 };
 
-const getCurrencySymbol = ( currency: string ) => {
-	const normalizedCurrency = currency.toUpperCase();
-
-	if ( COMMON_CURRENCY_SYMBOLS[ normalizedCurrency ] ) {
-		return COMMON_CURRENCY_SYMBOLS[ normalizedCurrency ];
+// Client 11.1.0 `purchase-price-threshold.tsx:28-38`: "$" unless Multi-Currency is enabled, then the store currency's symbol.
+const getCurrencySymbol = (
+	currency: string,
+	isMultiCurrencyEnabled: boolean
+) => {
+	const fallbackSymbol = '$';
+	if ( ! isMultiCurrencyEnabled ) {
+		return fallbackSymbol;
 	}
 
-	try {
-		return (
-			new Intl.NumberFormat( undefined, {
-				style: 'currency',
-				currency: normalizedCurrency,
-			} )
-				.formatToParts( 0 )
-				.find( ( part ) => part.type === 'currency' )?.value ||
-			normalizedCurrency
-		);
-	} catch {
-		return normalizedCurrency;
-	}
+	return (
+		getCurrency( currency )?.getCurrencyConfig().symbol || fallbackSymbol
+	);
 };
 
 const hasEnabledRule = ( settings: ProtectionSettingsUI ) =>
@@ -561,7 +549,10 @@ const ThresholdControls = ( {
 				'woocommerce'
 			),
 		} );
-		const currencySymbol = getCurrencySymbol( environment.storeCurrency );
+		const currencySymbol = getCurrencySymbol(
+			environment.storeCurrency,
+			environment.isMultiCurrencyEnabled
+		);
 
 		return (
 			<div className="woopayments-fraud-protection-rule__threshold-details">

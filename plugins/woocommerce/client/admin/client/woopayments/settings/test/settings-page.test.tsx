@@ -600,7 +600,13 @@ const expectPlainLinks = ( hrefs: string[], target?: '_blank' ) => {
 };
 
 describe( 'WooPaymentsSettingsPage', () => {
+	const settingsWindow = window as typeof window & {
+		wcSettings?: Record< string, unknown >;
+	};
+	let initialWcSettings: Record< string, unknown > | undefined;
+
 	beforeEach( () => {
+		initialWcSettings = settingsWindow.wcSettings;
 		jest.clearAllMocks();
 		mockTourKitConfigs.length = 0;
 		delete (
@@ -631,6 +637,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 		// promptly and keeps the module-scoped array from holding references
 		// between tests.
 		mockTourKitConfigs.length = 0;
+		settingsWindow.wcSettings = initialWcSettings;
 	} );
 
 	it( 'renders the native settings manager sections', () => {
@@ -1550,13 +1557,60 @@ describe( 'WooPaymentsSettingsPage', () => {
 			},
 		} );
 
+		// The currency data the admin preload sends for a US store (live :8889 2026-10-03), as client 11.1.0 localizes it.
+		settingsWindow.wcSettings = {
+			...initialWcSettings,
+			admin: {
+				...( initialWcSettings?.admin as Record< string, unknown > ),
+				woopaymentsSettings: {
+					storeCountry: 'US',
+					zeroDecimalCurrencies: [
+						'bif',
+						'clp',
+						'djf',
+						'gnf',
+						'jpy',
+						'kmf',
+						'krw',
+						'mga',
+						'pyg',
+						'rwf',
+						'vnd',
+						'vuv',
+						'xaf',
+						'xof',
+						'xpf',
+					],
+					currencyData: {
+						US: {
+							code: 'USD',
+							symbol: '$',
+							symbolPosition: 'left',
+							thousandSeparator: ',',
+							decimalSeparator: '.',
+							precision: 2,
+						},
+						UG: {
+							code: 'UGX',
+							symbol: 'UGX',
+							symbolPosition: 'left_space',
+							thousandSeparator: ',',
+							decimalSeparator: '.',
+							precision: 0,
+						},
+					},
+				},
+			},
+		};
+
 		render( <WooPaymentsSettingsPage /> );
 
 		const cardFeeButton = screen.getByRole( 'button', {
 			name: 'From 2.61% + $0.27 fee details',
 		} );
 		const zeroDecimalFeeButton = screen.getByRole( 'button', {
-			name: 'From 0% + UGX\u00a0300 fee details',
+			// Client 11.1.0 formatCurrency(): UGX is not zero-decimal, so 300 is 3; UGX precision 0 with the US store's symbol position.
+			name: 'From 0% + UGX3 fee details',
 		} );
 		const discountBadge = screen.getByText( /10% off fees through/ );
 

@@ -31,7 +31,7 @@ import {
 } from './payment-method-definitions';
 import type { PmPromotion } from '../promotions/types';
 import { getSettingsPaymentsProviderRouteUrl } from '../admin/utils';
-import { isWooPaymentsZeroDecimalDisplayCurrency } from '../currency';
+import { formatCurrency } from '../admin/currency-format';
 
 type PaymentMethodStatus = {
 	status?: string;
@@ -299,25 +299,8 @@ const formatFeeCurrency = (
 		return '';
 	}
 
-	const currencyCode = currency.toUpperCase();
-	const isZeroDecimalCurrency =
-		isWooPaymentsZeroDecimalDisplayCurrency( currencyCode );
-
-	try {
-		return new Intl.NumberFormat( undefined, {
-			style: 'currency',
-			currency: currencyCode,
-			currencyDisplay: 'narrowSymbol',
-		} ).format( isZeroDecimalCurrency ? amount : amount / 100 );
-	} catch {
-		return `${ currencyCode } ${ ( isZeroDecimalCurrency
-			? amount
-			: amount / 100
-		).toLocaleString( undefined, {
-			maximumFractionDigits: isZeroDecimalCurrency ? 0 : 2,
-			minimumFractionDigits: isZeroDecimalCurrency ? 0 : 2,
-		} ) }`;
-	}
+	// Client 11.1.0 `utils/account-fees.tsx:273,297` formats fee amounts with formatCurrency() over the store currency data.
+	return formatCurrency( amount, currency.toUpperCase() );
 };
 
 const formatFeeAmount = ( fee?: FeeAmount, multiplier = 1 ) => {

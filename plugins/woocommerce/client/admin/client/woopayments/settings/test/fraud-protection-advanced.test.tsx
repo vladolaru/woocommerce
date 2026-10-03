@@ -403,6 +403,68 @@ describe( 'FraudProtectionAdvancedSettingsPage', () => {
 		);
 	} );
 
+	it.each( [
+		[ 'Multi-Currency off', false, '$' ],
+		[ 'Multi-Currency on', true, '€' ],
+	] )(
+		'shows the purchase price threshold symbol as client 11.1.0 does (%s)',
+		async ( _label, isMultiCurrencyEnabled, expectedSymbol ) => {
+			const settingsWindow = window as typeof window & {
+				wcSettings?: Record< string, unknown >;
+			};
+			const previousWcSettings = settingsWindow.wcSettings;
+			// The currency data the admin preload sends for a German store.
+			settingsWindow.wcSettings = {
+				...previousWcSettings,
+				admin: {
+					woopaymentsSettings: {
+						storeCountry: 'DE',
+						currencyData: {
+							DE: {
+								code: 'EUR',
+								symbol: '€',
+								symbolPosition: 'right_space',
+								thousandSeparator: '.',
+								decimalSeparator: ',',
+								precision: 2,
+							},
+						},
+					},
+				},
+			};
+			mockUseGetSettings.mockReturnValue( {
+				store_currency: 'EUR',
+				is_multi_currency_enabled: isMultiCurrencyEnabled,
+				fraud_protection: {},
+				fraud_protection_allowed_countries: { type: 'all' },
+				is_fraud_protection_review_feature_active: false,
+			} );
+
+			try {
+				const { container } = render(
+					<FraudProtectionAdvancedSettingsPage />
+				);
+				await userEvent.click(
+					screen.getByRole( 'checkbox', {
+						name: 'Enable Purchase Price Threshold filter',
+					} )
+				);
+
+				const prefixes = Array.from(
+					container.querySelectorAll(
+						'.woopayments-fraud-protection-rule__currency-prefix'
+					)
+				).map( ( prefix ) => prefix.textContent );
+				expect( prefixes ).toEqual( [
+					expectedSymbol,
+					expectedSymbol,
+				] );
+			} finally {
+				settingsWindow.wcSettings = previousWcSettings;
+			}
+		}
+	);
+
 	it( 'links AVS unsupported-location warning to selling locations settings', () => {
 		mockUseGetSettings.mockReturnValue( {
 			store_currency: 'USD',
