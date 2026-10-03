@@ -1,0 +1,21 @@
+{
+	"woocommerce-logging": "Logging",
+	"ppcp-admin-notices": "AdminNotices",
+	"ppcp-api-client": "ApiClient",
+	"ppcp-blocks": "Blocks",
+	"ppcp-button": "Button",
+	"ppcp-compat": "Compat",
+	"ppcp-order-endpoints": "OrderEndpoints",
+	"ppcp-paylater-block": "PayLaterBlock",
+	"ppcp-paylater-configurator": "PayLaterConfigurator",
+	"ppcp-paylater-wc-blocks": "PayLaterWCBlocks",
+	"ppcp-save-payment-methods": "SavePaymentMethods",
+	"ppcp-sdk-v6": "SdkV6",
+	"ppcp-session": "Session",
+	"ppcp-settings": "Settings",
+	"ppcp-vault-component": "VaultComponent",
+	"ppcp-wc-gateway": "WcGateway",
+	"ppcp-wc-payment-tokens": "WcPaymentTokens",
+	"ppcp-wc-subscriptions": "WcSubscriptions",
+	"ppcp-webhooks": "Webhooks"
+}

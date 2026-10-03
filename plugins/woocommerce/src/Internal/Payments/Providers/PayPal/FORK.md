@@ -3,7 +3,7 @@
 | Item | Value |
 |------|-------|
 | Source | `woocommerce/woocommerce-paypal-payments`, branch `poc/wallet-in-core-build` at `0083204e7` (local, never pushed): `dev/develop` at `85d6179b7` plus five commits (module availability contract, guarded reads, main-file constant guards, webhook skip filter, Pay Later capability status) |
-| Forked on | 2026-10-02 (the session's `tools/fork-wallet/fork.php`, run once; `supplement.py` adds the pieces listed below) |
+| Forked on | 2026-10-02 (`bin/paypal-wallet-fork/fork.php` in the plugin, run once; `supplement.py` adds the pieces listed below) |
 | Kept | 19 module directories plus the plugin root; see `Wallet/modules.php` |
 | Not forked | ppcp-applepay, ppcp-googlepay, ppcp-axo, ppcp-axo-block, ppcp-card-fields, ppcp-local-alternative-payment-methods, ppcp-order-tracking, ppcp-store-sync, ppcp-paypal-subscriptions, ppcp-fraud-protection, ppcp-abilities, ppcp-status-report, ppcp-uninstall (except the pieces under "Kept from dropped modules") |
 | Namespace | `WooCommerce\PayPalCommerce\` → `Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\`; `…\Vendor\` → `Automattic\WooCommerce\Vendor\`. Prefixed in `lib/packages/` by Mozart: `inpsyde/modularity` 1.12.0, `psr/container` 1.1 and `psr/log` 1.1.4 (the extension's unprefixed PSR-3, rewritten to the prefixed name in the forked code) |
@@ -13,7 +13,7 @@
 
 ## Keeping up with the extension
 
-The extension clone is the read-only source. The tooling lives in the session folder `.agents/scratchpad/sessions/2026-09-30-paypal-wallet-in-core-poc/tools/fork-wallet/`, which is git-ignored and not committed, so copy the folder into a new session when porting. There, `path-map.json` maps every forked file to its core path, including the extension's root files (main file, `bootstrap.php`, `modules.php`, `webpack.config.js`, `package.json`, `composer.json`), and marks files dropped in core as `null`. `drift-report.sh <extension clone> <since-ref> [<until-ref>]` lists extension commits since the fork point that touch mapped paths, grouped by core file (dropped files come last under "(dropped in core)"), and marks the ones that touch a shared-contract name. Port or reject each by hand, then record the new fork point here. There is no automatic merge.
+The extension clone is the read-only source. The tooling lives in the plugin at `bin/paypal-wallet-fork/` (see its `README.md`), and every script finds its sibling files relative to its own location. `bin/paypal-wallet-fork/path-map.json` maps every forked file to its core path, including the extension's root files (main file, `bootstrap.php`, `modules.php`, `webpack.config.js`, `package.json`, `composer.json`), and marks files dropped in core as `null`. `bin/paypal-wallet-fork/drift-report.sh <extension clone> <since-ref> [<until-ref>]` (run from `plugins/woocommerce`) lists extension commits since the fork point that touch mapped paths, grouped by core file (dropped files come last under "(dropped in core)"), and marks the ones that touch a shared-contract name, read from `contract-appendix.md` beside this file (regenerate it with `bin/paypal-wallet-fork/contract-list.sh <extension clone>`, which writes the file itself and leaves it untouched if generation fails). The audit outputs of the one-shot fork stay in the git-ignored session folder `.agents/scratchpad/sessions/2026-09-30-paypal-wallet-in-core-poc/tools/fork-wallet/`. Port or reject each by hand, then record the new fork point here. There is no automatic merge.
 
 The three stored DTO files are always marked as contract: any upstream change to `modules/ppcp-settings/src/DTO/LocationStylingDTO.php`, `PayLaterMessagingDTO.php` or `OAuthConnectionDTO.php` must be mirrored into `Wallet/SerializedClasses/` in the same release (see below).
 
@@ -25,7 +25,7 @@ The three stored DTO files are always marked as contract: any upstream change to
 
 ## Kept from dropped modules
 
-Kept wallet code still reaches a few classes of dropped modules, which the earlier vendored mirror supplied for free. `tools/fork-wallet/supplement.py` adds them under the extension's own namespace paths, so no forked file changed:
+Kept wallet code still reaches a few classes of dropped modules, which the earlier vendored mirror supplied for free. `bin/paypal-wallet-fork/supplement.py` adds them under the extension's own namespace paths, so no forked file changed:
 
 - Fourteen contract stubs, final classes carrying only the gateway `ID`: Apple Pay, Google Pay, Axo, ten local payment methods (Bancontact, Blik, EPS, iDEAL, Multibanco, MyBank, OXXO, P24, PWC, Trustly) and Pay upon Invoice. They are the first entries of plan B's dropped-feature list: plan B replaces each `::ID` read with a literal or a constants class when its feature is cut.
 - Six copies with behavior: the Apple Pay, Google Pay and Axo `PropertiesDictionary` helpers, the order tracking trait `TrackingAvailabilityTrait`, and the Pay upon Invoice helper and product status.
