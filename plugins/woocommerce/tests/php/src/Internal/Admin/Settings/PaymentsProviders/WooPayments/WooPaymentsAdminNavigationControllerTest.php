@@ -2153,9 +2153,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should add Reports after Transactions for a valid native account when Reports are enabled.
+	 * @testdox Should add Reports after Disputes for a valid native account when Reports are enabled, as the client's menu shows it.
 	 */
-	public function test_adds_reports_menu_item_after_transactions_when_reports_are_enabled(): void {
+	public function test_adds_reports_menu_item_after_disputes_when_reports_are_enabled(): void {
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
 
 		$sut = $this->create_controller(
@@ -2173,8 +2173,8 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 				'Overview',
 				'Payouts',
 				'Transactions',
-				'Reports',
 				'Disputes',
+				'Reports',
 				'Settings',
 			),
 			array_column( $items, 0 )

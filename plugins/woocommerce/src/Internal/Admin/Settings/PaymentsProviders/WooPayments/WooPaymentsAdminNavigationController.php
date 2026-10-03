@@ -1026,14 +1026,15 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 			$this->get_transactions_menu_item(),
 		);
 
+		$menu_items[] = $this->get_disputes_menu_item();
+
+		// After Disputes, as the client registers it (client 11.1.0 `includes/admin/class-wc-payments-admin.php:370-381, 530-531`).
 		if ( $this->account_service->is_reports_enabled() ) {
 			$menu_items[] = array(
 				'title' => __( 'Reports', 'woocommerce' ),
 				'path'  => self::PATH_REPORTS,
 			);
 		}
-
-		$menu_items[] = $this->get_disputes_menu_item();
 
 		if ( $this->account_service->is_card_present_eligible() && $this->account_service->has_card_readers_available() ) {
 			$menu_items[] = array(
