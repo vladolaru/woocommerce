@@ -503,15 +503,20 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$settings = $sut->preload_shared_settings( array() );
 
 		$this->assertSame(
-			array( 'loans' => array( 'flxln_active|active', 'flxln_paid|paid' ) ),
-			$settings['woopaymentsSettings']['accountLoans']
+			array(
+				'loans'              => array( 'flxln_active|active', 'flxln_paid|paid' ),
+				'has_active_loan'    => true,
+				'has_previous_loans' => false,
+			),
+			$settings['woopaymentsSettings']['accountLoans'],
+			'The loans page requests the active loan summary only when has_active_loan, as the client mounts its card (capital/index.tsx:216).'
 		);
 	}
 
 	/**
 	 * @testdox Should preload no loans when the cached account has no Capital data.
 	 *
-	 * Source: plugin 11.1.0 `WC_Payments_Account::get_capital()` falls back to `loans => []`.
+	 * Source: plugin 11.1.0 `WC_Payments_Account::get_capital()` falls back to no loans and no active or previous loan.
 	 */
 	public function test_preloads_empty_account_loans_without_capital_data(): void {
 		$_GET['page'] = 'wc-settings';
@@ -527,7 +532,14 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 
 		$settings = $sut->preload_shared_settings( array() );
 
-		$this->assertSame( array( 'loans' => array() ), $settings['woopaymentsSettings']['accountLoans'] );
+		$this->assertSame(
+			array(
+				'loans'              => array(),
+				'has_active_loan'    => false,
+				'has_previous_loans' => false,
+			),
+			$settings['woopaymentsSettings']['accountLoans']
+		);
 	}
 
 	/**

@@ -433,7 +433,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		// Plugin 11.1.0 `class-wc-payments-admin.php:1074-1085` localizes this for the dispute cover letter.
 		$settings['woopaymentsSettings']['formattedStoreAddress'] = $this->get_formatted_store_address();
 		// Plugin 11.1.0 `class-wc-payments-admin.php:1031` localizes this on every page; the transactions list reads it for its Loan filter.
-		$settings['woopaymentsSettings']['accountLoans'] = array( 'loans' => $this->get_capital_loans() );
+		$settings['woopaymentsSettings']['accountLoans'] = $this->get_account_loans();
 		// Plugin 11.1.0 `class-wc-payments-admin.php:930-935,1046`: the list exports send it as `user_email`, the address the platform emails the file to.
 		$current_user                                        = wp_get_current_user();
 		$settings['woopaymentsSettings']['currentUserEmail'] = $current_user->user_email ? $current_user->user_email : get_option( 'admin_email' );
@@ -492,15 +492,21 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * The cached account's Capital loans, like the plugin's `accountLoans.loans`: `<loan id>|<status>` strings.
+	 * The cached account's Capital block, like the plugin's `accountLoans` (`WC_Payments_Account::get_capital()`): the
+	 * `<loan id>|<status>` loan strings and whether there is an active or a previous loan.
 	 *
-	 * @return string[]
+	 * @return array{loans:string[],has_active_loan:bool,has_previous_loans:bool}
 	 */
-	private function get_capital_loans(): array {
+	private function get_account_loans(): array {
 		$capital = $this->account_service->get_cached_account_data()['capital'] ?? array();
-		$loans   = is_array( $capital ) && is_array( $capital['loans'] ?? null ) ? $capital['loans'] : array();
+		$capital = is_array( $capital ) ? $capital : array();
+		$loans   = is_array( $capital['loans'] ?? null ) ? $capital['loans'] : array();
 
-		return array_values( array_filter( $loans, 'is_string' ) );
+		return array(
+			'loans'              => array_values( array_filter( $loans, 'is_string' ) ),
+			'has_active_loan'    => true === ( $capital['has_active_loan'] ?? false ),
+			'has_previous_loans' => true === ( $capital['has_previous_loans'] ?? false ),
+		);
 	}
 
 	/**

@@ -1,0 +1,4 @@
+Significance: patch
+Type: performance
+
+Request the WooPayments active loan summary only for accounts with an active loan, as the WooPayments plugin does.

@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import apiFetch from '@wordpress/api-fetch';
 
 /**
@@ -98,6 +98,18 @@ const mockCapitalApi = ( {
 	} ) as typeof apiFetch );
 };
 
+// The account's Capital block as the admin preload sends it (client 11.1.0 `wcpaySettings.accountLoans`).
+const setHasActiveLoan = ( hasActiveLoan: boolean ) => {
+	window.wcSettings = {
+		...window.wcSettings,
+		admin: {
+			woopaymentsSettings: {
+				accountLoans: { loans: [], has_active_loan: hasActiveLoan },
+			},
+		},
+	};
+};
+
 describe( 'WooPaymentsCapitalPage', () => {
 	beforeEach( () => {
 		window.wcSettings = {
@@ -107,6 +119,7 @@ describe( 'WooPaymentsCapitalPage', () => {
 	} );
 
 	it( 'loads Capital loans and active loan summary from preserved endpoints', async () => {
+		setHasActiveLoan( true );
 		mockCapitalApi();
 
 		render( <WooPaymentsCapitalPage /> );
@@ -147,6 +160,7 @@ describe( 'WooPaymentsCapitalPage', () => {
 	} );
 
 	it( 'renders the reference Capital loan summary and row affordances', async () => {
+		setHasActiveLoan( true );
 		mockCapitalApi( {
 			loans: [ activeLoan, paidLoan ],
 		} );
@@ -187,6 +201,27 @@ describe( 'WooPaymentsCapitalPage', () => {
 			screen.queryByRole( 'link', {
 				name: '$1,000.00 - view transactions for loan loan_test',
 			} )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'requests no active loan summary for an account without an active loan', async () => {
+		setHasActiveLoan( false );
+		mockCapitalApi();
+
+		render( <WooPaymentsCapitalPage /> );
+
+		await waitFor( () =>
+			expect( screen.getByRole( 'status' ) ).toHaveTextContent(
+				'Capital Loans loaded.'
+			)
+		);
+		// Client 11.1.0 mounts the active loan card only when `accountLoans.has_active_loan` (capital/index.tsx:216).
+		expect( mockApiFetch ).not.toHaveBeenCalledWith( {
+			path: SUMMARY_PATH,
+			method: 'GET',
+		} );
+		expect(
+			screen.queryByRole( 'heading', { name: 'Active loan overview' } )
 		).not.toBeInTheDocument();
 	} );
 

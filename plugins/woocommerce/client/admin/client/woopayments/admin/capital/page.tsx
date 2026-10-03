@@ -26,6 +26,7 @@ import {
 	getErrorMessage,
 } from '../money-movement/utils';
 import { WooPaymentsTestModeNotice } from '../test-mode-notice';
+import { getWooPaymentsSettingsBootstrap } from '../../settings/bootstrap';
 
 // Client 11.1.0 `capital/index.tsx:82-84, 118, 157`: loan dates in the site date format.
 const getLoanStatus = ( loan: WooPaymentsCapitalLoan ) =>
@@ -143,6 +144,13 @@ const LoanListSummary = ( { loans }: { loans: WooPaymentsCapitalLoan[] } ) => {
 	);
 };
 
+const hasActiveLoan = () =>
+	(
+		getWooPaymentsSettingsBootstrap().accountLoans as
+			| { has_active_loan?: unknown }
+			| undefined
+	 )?.has_active_loan === true;
+
 export const WooPaymentsCapitalPage = () => {
 	const [ summary, setSummary ] = useState< WooPaymentsCapitalSummary >( {} );
 	const [ loans, setLoans ] = useState< WooPaymentsCapitalLoan[] >( [] );
@@ -156,8 +164,11 @@ export const WooPaymentsCapitalPage = () => {
 			setIsLoading( true );
 
 			try {
+				// Client 11.1.0 mounts the active loan card, and its summary request, only for an account with an active loan.
 				const [ nextSummary, nextLoans ] = await Promise.all( [
-					getWooPaymentsCapitalActiveLoanSummary(),
+					hasActiveLoan()
+						? getWooPaymentsCapitalActiveLoanSummary()
+						: Promise.resolve( {} as WooPaymentsCapitalSummary ),
 					getWooPaymentsCapitalLoans(),
 				] );
 
