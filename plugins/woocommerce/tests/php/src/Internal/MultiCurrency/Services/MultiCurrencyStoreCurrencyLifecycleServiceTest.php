@@ -160,8 +160,6 @@ class MultiCurrencyStoreCurrencyLifecycleServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should honor a custom configured currency admitted by WooCommerce.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_honors_custom_configured_currency_admitted_by_woocommerce(): void {
 		$currencies_filter = $this->get_custom_currencies_filter();
@@ -186,8 +184,6 @@ class MultiCurrencyStoreCurrencyLifecycleServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should ignore an admitted custom currency used only for shopper presentation.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_ignores_admitted_custom_currency_used_only_for_shopper_presentation(): void {
 		$cache_value             = $this->get_currencies_cache_fixture();
@@ -302,11 +298,15 @@ class MultiCurrencyStoreCurrencyLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Expose a fresh filtered currency list to the service in an isolated process.
+	 * Show the service a fresh filtered currency list. WooCommerce memoizes the list when the test suite boots, so the
+	 * mock applies the public filter again; the service asks LegacyProxy, and the mock is reset after every test.
 	 */
 	private function expose_fresh_woocommerce_currencies_to_service(): void {
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- The global currency list is memoized during test bootstrap; this isolated shim reapplies its public filter for the service call.
-		eval( 'namespace Automattic\WooCommerce\Internal\MultiCurrency\Services; function get_woocommerce_currencies() { return apply_filters( "woocommerce_currencies", \get_woocommerce_currencies() ); }' );
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'get_woocommerce_currencies' => static fn() => apply_filters( 'woocommerce_currencies', get_woocommerce_currencies() ),
+			)
+		);
 	}
 
 	/**

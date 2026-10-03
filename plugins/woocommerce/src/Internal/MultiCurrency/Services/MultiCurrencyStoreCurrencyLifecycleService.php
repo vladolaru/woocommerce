@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 
 /**
  * Handles store-currency lifecycle mutations for native multi-currency.
@@ -56,7 +57,7 @@ class MultiCurrencyStoreCurrencyLifecycleService {
 	public function synchronize_store_currency(): bool {
 		$store_currency = strtoupper( (string) get_option( 'woocommerce_currency' ) );
 
-		if ( ! array_key_exists( $store_currency, get_woocommerce_currencies() ) ) {
+		if ( ! array_key_exists( $store_currency, (array) wc_get_container()->get( LegacyProxy::class )->call_function( 'get_woocommerce_currencies' ) ) ) {
 			return false;
 		}
 
