@@ -18,6 +18,19 @@ use WC_Unit_Test_Case;
 class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 
 	/**
+	 * Set up test fixtures.
+	 *
+	 * Earlier tests in the process can leave a guest customer in the shared WooCommerce session, which would make guest-order
+	 * cases find a customer instead of creating one.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+		if ( WC()->session ) {
+			WC()->session->set( 'wcpay_customer_id', null );
+		}
+	}
+
+	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {

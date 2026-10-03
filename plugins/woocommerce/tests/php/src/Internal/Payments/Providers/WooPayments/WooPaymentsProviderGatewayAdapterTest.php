@@ -74,6 +74,10 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_calc_taxes' );
 		update_option( 'woocommerce_currency', $this->original_currency );
 		unset( $GLOBALS['wcpay_test_renewal_order_ids'], $GLOBALS['wcpay_test_subscription_ids'] );
+		// Guest customer creation stores the customer in the shared session; leave none for later classes.
+		if ( WC()->session ) {
+			WC()->session->set( 'wcpay_customer_id', null );
+		}
 		parent::tearDown();
 	}
 

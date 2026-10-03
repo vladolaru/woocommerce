@@ -76,6 +76,10 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		delete_transient( 'wcpay_store_terminal_readers' );
 		delete_transient( 'wcpay_store_terminal_locations' );
 		unset( $_GET['change_payment_method'], $GLOBALS['wcpay_test_subscription_ids'] );
+		// Guest customer creation stores the customer in the shared session; leave none for later classes.
+		if ( WC()->session ) {
+			WC()->session->set( 'wcpay_customer_id', null );
+		}
 		parent::tearDown();
 	}
 
