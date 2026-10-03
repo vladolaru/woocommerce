@@ -41,6 +41,17 @@ final class WooPaymentsCurrencyUtils {
 	);
 
 	/**
+	 * Get the Stripe zero-decimal currency codes, lowercase, as client 11.1.0 `WC_Payments_Utils::zero_decimal_currencies()` lists them.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return string[]
+	 */
+	public static function get_zero_decimal_currencies(): array {
+		return self::ZERO_DECIMAL_CURRENCIES;
+	}
+
+	/**
 	 * Tell whether the currency uses zero decimal places at the provider boundary.
 	 *
 	 * @param string $currency Currency code.

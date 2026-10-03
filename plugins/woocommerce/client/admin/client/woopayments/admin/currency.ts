@@ -6,10 +6,8 @@ import { __ } from '@wordpress/i18n';
 /**
  * Internal dependencies
  */
-import {
-	formatWooPaymentsAmount,
-	normalizeCurrencyCode,
-} from './overview/utils';
+import { formatExplicitCurrency as formatClientExplicitCurrency } from './currency-format';
+import { formatWooPaymentsAmount } from './overview/utils';
 import { getWooPaymentsSettingsBootstrap } from '../settings/bootstrap';
 
 const CURRENCY_NAMES: Record< string, string > = {
@@ -60,18 +58,15 @@ export const formatExplicitCurrency = (
 	skipSymbol = false,
 	isExplicit = shouldUseExplicitPrice()
 ) => {
-	const formatted = formatAmount( amount, currency ?? undefined );
-
-	if ( typeof amount !== 'number' || ! isExplicit ) {
-		return formatted;
+	if ( typeof amount !== 'number' ) {
+		return formatAmount( amount, currency ?? undefined );
 	}
 
-	const currencyCode = normalizeCurrencyCode( currency );
-	const value = skipSymbol
-		? formatted.replace( /[^0-9,.' ]/g, '' ).trim()
-		: formatted;
-
-	return value.includes( currencyCode )
-		? value
-		: `${ value } ${ currencyCode }`;
+	return formatClientExplicitCurrency(
+		amount === 0 ? 0 : amount,
+		( currency || 'usd' ).toUpperCase(),
+		skipSymbol,
+		null,
+		isExplicit
+	);
 };

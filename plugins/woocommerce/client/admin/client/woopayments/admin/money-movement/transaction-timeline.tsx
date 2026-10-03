@@ -33,6 +33,7 @@ import {
 import {
 	composeFxString,
 	formatExplicitMoney,
+	formatFx,
 	formatMoney,
 	getCapturedDetails,
 	getEnvelopeDepositImpact,
@@ -47,7 +48,6 @@ import {
 	type WooPaymentsTimelineItem,
 } from './transaction-timeline-list';
 import { getSettingsPaymentsProviderRouteUrl } from '../utils';
-import { getWooPaymentsAmountFromMinorUnits } from '../../currency';
 import './transaction-timeline.scss';
 
 // Maps platform timeline events to core `Timeline` items the way client 11.1.0
@@ -479,23 +479,17 @@ const getRefundFx = ( event: WooPaymentsTimelineEvent ) => {
 		return undefined;
 	}
 
-	const toMajor = getWooPaymentsAmountFromMinorUnits;
-	const rate =
-		toMajor( toAmount, to ) / toMajor( Math.abs( fromAmount ), from );
-	const unit = toMajor( 100, from ) === 1 ? 100 : 1;
-	// Client 11.1.0 `map-events.js:943-946` and `formatFX()`: both amounts with the explicit currency code.
-	const payout = formatExplicitCurrency( toAmount, to );
-	const formattedRate = rate
-		.toFixed( rate < 1 ? 6 : 5 )
-		.replace( /\.?0+$/, '' );
+	// Client 11.1.0 `map-events.js:433-458` `composeFXString()`: captured amounts first, the store currency as the base.
+	const fromAmountForRate =
+		getAmount( details, 'customer_amount_captured' ) ?? fromAmount;
+	const toAmountForRate =
+		getAmount( details, 'store_amount_captured' ) ??
+		getAmount( details, 'store_amount' );
 
 	return {
-		payout,
-		line: `${ formatExplicitCurrency(
-			unit,
-			from,
-			true
-		) } → ${ formattedRate } ${ to.toUpperCase() }: ${ payout }`,
+		payout: formatExplicitCurrency( toAmount, to ),
+		line:
+			formatFx( from, fromAmountForRate, to, toAmountForRate, to ) ?? '',
 	};
 };
 

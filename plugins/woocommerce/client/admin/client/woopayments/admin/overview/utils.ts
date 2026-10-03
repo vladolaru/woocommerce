@@ -8,6 +8,7 @@ import moment from 'moment';
 /**
  * Internal dependencies
  */
+import { formatCurrency } from '../currency-format';
 import type {
 	WooPaymentsDeposit,
 	WooPaymentsDepositsOverview,
@@ -20,23 +21,15 @@ export { getSettingsPaymentsProviderRouteUrl } from '../utils';
 export const normalizeCurrencyCode = ( currency?: string | null ) =>
 	( currency || 'usd' ).toUpperCase();
 
+// Client 11.1.0 `formatCurrency()`: zero-decimal aware and in the store's currency format; a negated zero reads "$0.00".
 export const formatWooPaymentsAmount = (
 	amount: number,
 	currency?: string | null
-) => {
-	const currencyCode = normalizeCurrencyCode( currency );
-	// Client 11.1.0 `multi-currency/client/utils/currency/index.js:156-200` signs only `amount < 0`: a negated zero fee reads "$0.00".
-	const value = amount === 0 ? 0 : amount / 100;
-
-	try {
-		return new Intl.NumberFormat( undefined, {
-			style: 'currency',
-			currency: currencyCode,
-		} ).format( value );
-	} catch ( _error ) {
-		return `${ value.toFixed( 2 ) } ${ currencyCode }`;
-	}
-};
+) =>
+	formatCurrency(
+		amount === 0 ? 0 : amount,
+		normalizeCurrencyCode( currency )
+	);
 
 export const getDefaultCurrency = (
 	overview: WooPaymentsDepositsOverview | null

@@ -9,7 +9,7 @@ import { __, sprintf } from '@wordpress/i18n';
  * Internal dependencies
  */
 import { getPaymentMethodDefinition } from '~/woopayments/settings/payment-method-definitions';
-import { getWooPaymentsAmountFromMinorUnits } from '../../../currency';
+import { formatCurrency } from '../../currency-format';
 import type { WooPaymentsOverviewAccountFee } from '../types';
 
 interface FeeRate {
@@ -44,19 +44,9 @@ const getCurrencyName = ( currency: string ) => {
 // Client 11.1.0 `utils/fees/index.ts:8-10`.
 const formatFee = ( fee = 0 ) => String( Number( ( fee * 100 ).toFixed( 3 ) ) );
 
-const formatFeeCurrency = ( amount = 0, currency = 'usd' ) => {
-	const currencyCode = currency.toUpperCase();
-	const value = getWooPaymentsAmountFromMinorUnits( amount, currencyCode );
-
-	try {
-		return new Intl.NumberFormat( undefined, {
-			style: 'currency',
-			currency: currencyCode,
-		} ).format( value );
-	} catch {
-		return `${ value } ${ currencyCode }`;
-	}
-};
+// Client 11.1.0 `utils/account-fees.tsx:97-105,273` formats fee amounts with `formatCurrency()`.
+const formatFeeCurrency = ( amount = 0, currency = 'usd' ) =>
+	formatCurrency( amount, currency.toUpperCase() );
 
 const formatEndDate = ( value: string ) => {
 	const date = new Date(

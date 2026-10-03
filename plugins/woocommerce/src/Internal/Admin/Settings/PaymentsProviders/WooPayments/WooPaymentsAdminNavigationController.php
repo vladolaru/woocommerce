@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 defined( 'ABSPATH' ) || exit;
@@ -344,6 +345,41 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Get each country's currency format, keyed by country code, as client 11.1.0 `WC_Payments_Admin::get_js_settings()` builds
+	 * it from WooCommerce's locale data (`class-wc-payments-admin.php:937-964`).
+	 *
+	 * @return array<string,array<string,mixed>>
+	 */
+	private function get_currency_data(): array {
+		$locale_info = include WC()->plugin_path() . '/i18n/locale-info.php';
+		if ( ! is_array( $locale_info ) ) {
+			return array();
+		}
+
+		$symbols       = get_woocommerce_currency_symbols();
+		$currency_data = array();
+		foreach ( $locale_info as $key => $value ) {
+			$currency_code             = $value['currency_code'] ?? '';
+			$default_locale_formatting = $value['locales']['default'] ?? array();
+			$currency_data[ $key ]     = array(
+				'code'              => $currency_code,
+				'symbol'            => $value['short_symbol'] ?? $symbols[ $currency_code ] ?? '',
+				'symbolPosition'    => $value['currency_pos'] ?? '',
+				'thousandSeparator' => $value['thousand_sep'] ?? '',
+				'decimalSeparator'  => $value['decimal_sep'] ?? '',
+				'precision'         => $value['num_decimals'],
+				'defaultLocale'     => array(
+					'symbolPosition'    => $default_locale_formatting['currency_pos'] ?? '',
+					'thousandSeparator' => $default_locale_formatting['thousand_sep'] ?? '',
+					'decimalSeparator'  => $default_locale_formatting['decimal_sep'] ?? '',
+				),
+			);
+		}
+
+		return $currency_data;
+	}
+
+	/**
 	 * Preload native WooPayments settings for the Payments settings page frontend.
 	 *
 	 * @param mixed $settings Shared admin settings.
@@ -389,6 +425,11 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		$settings['woopaymentsSettings']['isSubscriptionsActive'] = $this->is_subscriptions_plugin_active();
 		// Plugin 11.1.0 `class-wc-payments-admin.php:1040` localizes this for `formatExplicitCurrency()`.
 		$settings['woopaymentsSettings']['shouldUseExplicitPrice'] = MultiCurrencyExplicitPriceProjectionService::should_output_explicit_admin_price();
+		// Plugin 11.1.0 `class-wc-payments-admin.php:1007,1023,1047` localizes these for `formatCurrency()`: the store country, the
+		// zero-decimal currencies and each country's currency format.
+		$settings['woopaymentsSettings']['storeCountry']          = WC()->countries->get_base_country();
+		$settings['woopaymentsSettings']['zeroDecimalCurrencies'] = WooPaymentsCurrencyUtils::get_zero_decimal_currencies();
+		$settings['woopaymentsSettings']['currencyData']          = $this->get_currency_data();
 		// Plugin 11.1.0 `class-wc-payments-admin.php:1074-1085` localizes this for the dispute cover letter.
 		$settings['woopaymentsSettings']['formattedStoreAddress'] = $this->get_formatted_store_address();
 		// Plugin 11.1.0 `class-wc-payments-admin.php:1031` localizes this on every page; the transactions list reads it for its Loan filter.

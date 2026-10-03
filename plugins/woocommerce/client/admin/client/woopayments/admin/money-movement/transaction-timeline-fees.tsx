@@ -9,7 +9,10 @@ import type { ReactNode } from 'react';
  */
 import type { WooPaymentsTimelineEvent } from './types';
 import { formatAmount, formatExplicitCurrency } from './utils';
-import { getWooPaymentsAmountFromMinorUnits } from '../../currency';
+import {
+	formatFX,
+	hasSameSymbol as hasSameCurrencySymbol,
+} from '../currency-format';
 
 // Ports the captured-event body of client 11.1.0: map-events.js (the legacy `fee_rates` path)
 // and envelope/compose.js with fee-breakdown-label-map.ts (the `fee_breakdown_v1` path).
@@ -68,81 +71,36 @@ export const formatExplicitMoney = (
 		skipSymbol
 	);
 
-const getDisplaySymbol = ( currency: string ) => {
-	try {
-		return new Intl.NumberFormat( undefined, {
-			style: 'currency',
-			currency: currency.toUpperCase(),
-		} )
-			.formatToParts( 0 )
-			.find( ( part ) => part.type === 'currency' )?.value;
-	} catch {
-		return undefined;
-	}
-};
-
-// Client hasSameSymbol(), compared on the symbol formatAmount() actually prints.
-const hasSameSymbol = ( first?: string, second?: string ) => {
-	if ( ! first || ! second ) {
-		return false;
-	}
-
-	if ( first.toUpperCase() === second.toUpperCase() ) {
-		return false;
-	}
-
-	const symbol = getDisplaySymbol( first );
-
-	return !! symbol && symbol === getDisplaySymbol( second );
-};
+// Client hasSameSymbol(), over the store's currency data; a missing code compares as different.
+const hasSameSymbolOrFalse = ( first?: string, second?: string ) =>
+	!! first && !! second && hasSameCurrencySymbol( first, second );
 
 // Client formatFee(): a rate fraction as a percentage with up to three decimals.
 const formatFeePercentage = ( rate: number ) =>
 	Number( ( rate * 100 ).toFixed( 3 ) );
 
 /**
- * Formats a currency conversion line like the client's formatFX(), for example `€1.00 → 1.13467 USD: $12.47`.
+ * Formats a currency conversion line with the client's formatFX(), for example `€1.00 → 1.13467 USD: $12.47`.
  *
- * @param fromCurrency Source currency code.
- * @param fromAmount   Source amount in minor units.
- * @param toCurrency   Target currency code.
- * @param toAmount     Target amount in minor units.
+ * @param fromCurrency     Source currency code.
+ * @param fromAmount       Source amount in minor units.
+ * @param toCurrency       Target currency code.
+ * @param toAmount         Target amount in minor units.
+ * @param baseCurrencyCode Currency whose separators and symbol position are used; the client passes the store currency.
  */
 export const formatFx = (
 	fromCurrency?: string,
 	fromAmount?: number,
 	toCurrency?: string,
-	toAmount?: number
-) => {
-	if (
-		! fromCurrency ||
-		! toCurrency ||
-		fromAmount === undefined ||
-		toAmount === undefined ||
-		fromAmount === 0
-	) {
-		return undefined;
-	}
-
-	const toMajor = getWooPaymentsAmountFromMinorUnits;
-	const rate = Math.abs(
-		toMajor( toAmount, toCurrency ) / toMajor( fromAmount, fromCurrency )
+	toAmount?: number,
+	baseCurrencyCode?: string
+) =>
+	formatFX(
+		{ currency: fromCurrency, amount: fromAmount },
+		{ currency: toCurrency, amount: toAmount },
+		undefined,
+		baseCurrencyCode ?? null
 	);
-	const unit = toMajor( 100, fromCurrency ) === 1 ? 100 : 1;
-	const formattedRate = rate
-		.toFixed( rate < 1 ? 6 : 5 )
-		.replace( /\.?0+$/, '' );
-
-	// Client 11.1.0 `multi-currency/client/utils/currency/index.js:260-276` `formatFX()`.
-	return `${ formatExplicitMoney(
-		unit,
-		fromCurrency,
-		true
-	) } → ${ formattedRate } ${ toCurrency.toUpperCase() }: ${ formatExplicitMoney(
-		Math.abs( toAmount ),
-		toCurrency
-	) }`;
-};
 
 export const getTransactionDetails = ( event: WooPaymentsTimelineEvent ) =>
 	getRecord( event.transaction_details );
@@ -174,7 +132,8 @@ export const composeFxString = ( event: WooPaymentsTimelineEvent ) => {
 			getNumber( details, 'customer_amount' ),
 		getString( details, 'store_currency' ),
 		getNumber( details, 'store_amount_captured' ) ??
-			getNumber( details, 'store_amount' )
+			getNumber( details, 'store_amount' ),
+		getString( details, 'store_currency' )
 	);
 };
 
@@ -346,7 +305,7 @@ const composeFeeString = ( event: WooPaymentsTimelineEvent ) => {
 
 	const storeCurrency = getString( details, 'store_currency' );
 	const customerCurrency = getString( details, 'customer_currency' );
-	const sameSymbol = hasSameSymbol( storeCurrency, customerCurrency );
+	const sameSymbol = hasSameSymbolOrFalse( storeCurrency, customerCurrency );
 
 	return sprintf(
 		/* translators: 1: fee label, 2: fee percentage, 3: fixed fee, 4: customer currency code suffix, 5: fee amount, 6: store currency code suffix. */
@@ -426,7 +385,7 @@ const composeFeeBreakdown = ( event: WooPaymentsTimelineEvent ) => {
 	}
 
 	const details = getTransactionDetails( event );
-	const sameSymbol = hasSameSymbol(
+	const sameSymbol = hasSameSymbolOrFalse(
 		getString( details, 'store_currency' ),
 		getString( details, 'customer_currency' )
 	);
@@ -734,12 +693,15 @@ const composeCapturedBodyFromBreakdown = (
 				.filter( ( row ): row is TimelineRecord => !! row )
 		: [];
 
-	const fxLine = formatFx(
-		getString( fx, 'from_currency' ),
-		getNumber( fx, 'from_amount' ) ?? 0,
-		getString( fx, 'to_currency' ),
-		getNumber( fx, 'to_amount' ) ?? 0
-	);
+	const fxLine = fx
+		? formatFx(
+				getString( fx, 'from_currency' ),
+				getNumber( fx, 'from_amount' ) ?? 0,
+				getString( fx, 'to_currency' ),
+				getNumber( fx, 'to_amount' ) ?? 0,
+				storeCurrency
+		  )
+		: undefined;
 	if ( fxLine ) {
 		lines.push( fxLine );
 	}
@@ -748,7 +710,7 @@ const composeCapturedBodyFromBreakdown = (
 		getString( fx, 'from_currency' ) ??
 		getString( getTransactionDetails( event ), 'customer_currency' ) ??
 		storeCurrency;
-	const sameSymbol = hasSameSymbol( customerCurrency, storeCurrency );
+	const sameSymbol = hasSameSymbolOrFalse( customerCurrency, storeCurrency );
 	const currencySuffix = sameSymbol ? ` ${ storeCurrency }` : '';
 	const feeAmountText =
 		formatMoney(

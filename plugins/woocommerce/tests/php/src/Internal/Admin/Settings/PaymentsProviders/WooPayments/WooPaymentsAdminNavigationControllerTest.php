@@ -249,6 +249,39 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The money formatter's data is preloaded as client 11.1.0 `WC_Payments_Admin::get_js_settings()` localizes it: the store
+	 * country, the zero-decimal currencies and each country's currency format from WooCommerce's locale data
+	 * (`class-wc-payments-admin.php:937-964,1007,1023,1047`).
+	 */
+	public function test_preloads_the_currency_format_data(): void {
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		update_option( 'woocommerce_default_country', 'FR' );
+
+		$settings = $this->create_controller( true )->preload_shared_settings( array() )['woopaymentsSettings'];
+
+		$this->assertSame( 'FR', $settings['storeCountry'] );
+		$this->assertContains( 'jpy', $settings['zeroDecimalCurrencies'] );
+		$this->assertNotContains( 'usd', $settings['zeroDecimalCurrencies'] );
+		$this->assertSame(
+			array(
+				'code'              => 'JPY',
+				'symbol'            => '¥',
+				'symbolPosition'    => 'left',
+				'thousandSeparator' => ',',
+				'decimalSeparator'  => '.',
+				'precision'         => 0,
+				'defaultLocale'     => array(
+					'symbolPosition'    => 'left',
+					'thousandSeparator' => ',',
+					'decimalSeparator'  => '.',
+				),
+			),
+			$settings['currencyData']['JP']
+		);
+	}
+
+	/**
 	 * @testdox Should preload the test and dev mode flags the test-mode notice reads.
 	 *
 	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:1012-1014` (`devMode`, `testMode` in `wcpaySettings`).
