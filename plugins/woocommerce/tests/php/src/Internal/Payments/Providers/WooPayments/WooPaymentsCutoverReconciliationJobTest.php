@@ -388,6 +388,81 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A switch whose account loses native eligibility after the click defers with the plugin still active, and finishes once eligibility returns.
+	 */
+	public function test_withdrawn_eligibility_defers_the_switch_without_deactivating_the_plugin(): void {
+		$this->arrange_plugin_era_store();
+		$preflight = $this->create_plugin_deactivating_preflight();
+		$origin    = $this->create_state_writing_job( true, $preflight );
+		$this->assertTrue( $origin->enqueue( 'merchant' ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->set_native_eligibility( false );
+
+		$origin->handle_reconcile( $pending['generation'], 1 );
+
+		$deferred = $this->require_state_store()->get_record();
+		$this->assertIsArray( $deferred );
+		$this->assertSame( WooPaymentsCutoverState::DEFERRED, $deferred['state'] );
+		$this->assertSame( array( 'native_payments_ineligible' ), $deferred['deferred_codes'] );
+		$this->assertContains( array( 'code' => 'eligibility_withdrawn' ), $deferred['informational_outcomes'] );
+		$this->assertSame( $deferred['action_id'], $this->require_scheduler()->get_scheduled_action_id( $deferred['generation'], 2 ) );
+		$this->assertSame( array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ), get_option( 'active_plugins' ), 'The plugin must keep the runtime while the store is ineligible.' );
+
+		$this->set_native_eligibility( true );
+		$this->require_scheduler()->cancel( $deferred['generation'], 2 );
+		$origin->handle_reconcile( $deferred['generation'], 2 );
+
+		$verification = $this->require_state_store()->get_record();
+		$this->assertIsArray( $verification );
+		$this->assertSame( 'verify_native_ownership', $verification['current_step'], 'Returned eligibility finishes the switch the merchant already started.' );
+		$this->assertSame( array(), get_option( 'active_plugins' ) );
+	}
+
+	/**
+	 * @testdox A switch still ineligible after the fast retry window closes without finalizing, writes disabled and leaves the plugin active.
+	 */
+	public function test_withdrawn_eligibility_closes_the_switch_after_the_retry_window(): void {
+		$this->arrange_plugin_era_store();
+		$preflight = $this->create_plugin_deactivating_preflight();
+		$origin    = $this->create_state_writing_job( true, $preflight );
+		$this->assertTrue( $origin->enqueue( 'merchant' ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$aged               = $pending;
+		$aged['revision']   = $pending['revision'] + 1;
+		$aged['started_at'] = time() - DAY_IN_SECONDS - 1;
+		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $pending, $aged ) );
+		$this->set_native_eligibility( false );
+
+		$origin->handle_reconcile( $aged['generation'], 1 );
+
+		$closed = $this->require_state_store()->get_record();
+		$this->assertIsArray( $closed );
+		$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $closed['state'] );
+		$this->assertSame( array( 'native_payments_ineligible' ), $closed['deferred_codes'] );
+		$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $closed['generation'], 2 ) );
+		$this->assertSame( NativePaymentsState::DISABLED, get_option( NativePaymentsState::OPTION_NAME ) );
+		$this->assertSame( array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ), get_option( 'active_plugins' ), 'Closing the switch must never leave the store without a payments runtime.' );
+	}
+
+	/**
+	 * Set the cached account's native eligibility, as a platform account refresh would.
+	 *
+	 * @param bool $eligible Whether the platform keeps the account eligible.
+	 */
+	private function set_native_eligibility( bool $eligible ): void {
+		$cache                            = get_option( 'wcpay_account_data' );
+		$cache['data']['native_payments'] = array( 'eligible' => $eligible );
+		$cache['fetched']                 = time();
+		// Clearing the in-memory cache deletes the option, so it goes first.
+		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
+		update_option( 'wcpay_account_data', $cache, false );
+	}
+
+	/**
 	 * @testdox Ownership verification rewrites the tier when the finalization write did not land.
 	 *
 	 * Source: data/task-1.4-dormancy-design.md:84-96 (a failed derived-state write is retried by a later writer; cutover completion is a writer).

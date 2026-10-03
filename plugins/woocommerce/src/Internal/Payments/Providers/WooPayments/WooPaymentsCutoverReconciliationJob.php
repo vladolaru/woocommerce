@@ -36,6 +36,9 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/** Failure code of stores on the bundled WooPayments subscriptions; stored in records, so it never changes. */
 	private const BUNDLED_EXCLUSION_CODE = 'legacy_stripe_billing_subscriptions_present';
 
+	/** Condition code of a switch whose account lost native eligibility after the merchant started it. */
+	private const INELIGIBLE_CODE = 'native_payments_ineligible';
+
 	/** Reconciliation action hook. */
 	public const ACTION_HOOK = WooPaymentsCutoverActionScheduler::ACTION_HOOK;
 
@@ -928,6 +931,10 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 					return;
 				}
 			}
+			if ( ! $this->account_service->is_native_eligible() ) {
+				$this->hold_ineligible_claim( $claimed );
+				return;
+			}
 			$failures = $this->normalize_codes( $this->preflight_service->get_reconciliation_failures() );
 			if ( in_array( 'legacy_stripe_billing_subscriptions_present', $failures, true ) ) {
 				if ( true === ( $claimed['network_cutover'] ?? false ) ) {
@@ -984,6 +991,32 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$this->log_error( 'WooPayments cutover reconciliation resolver failed.', array( 'error' => $error->getMessage() ) );
 			$this->defer( $claimed, array( 'reconciliation_resolver_failed' ) );
 		}
+	}
+
+	/**
+	 * Keep the plugin running a switch whose account lost native eligibility after the merchant started it.
+	 *
+	 * The attempt retries with the usual backoff. Past the fast retry window the generation closes without finalizing and
+	 * the tier goes back to disabled, so the start notice offers the switch again if eligibility returns.
+	 *
+	 * @param array<string,mixed> $claimed Exact running state owned by this worker.
+	 */
+	private function hold_ineligible_claim( array $claimed ): void {
+		if ( time() - $claimed['started_at'] < self::FAST_RETRY_WINDOW ) {
+			$this->defer( $claimed, array( self::INELIGIBLE_CODE ), array( array( 'code' => 'eligibility_withdrawn' ) ) );
+			return;
+		}
+
+		if ( true === ( $claimed['network_cutover'] ?? false ) ) {
+			if ( ! $this->propagate_network_exclusion( $claimed['generation'], self::INELIGIBLE_CODE ) ) {
+				$this->defer( $claimed, array( 'network_exclusion_propagation_pending' ) );
+				return;
+			}
+		} else {
+			$this->exclude( $claimed, self::INELIGIBLE_CODE );
+		}
+		$this->account_service->synchronize_native_payments_state_from_options( true );
+		$this->log_error( 'WooPayments cutover closed without switching: the account is no longer eligible for native payments.', array( 'generation' => $claimed['generation'] ) );
 	}
 
 	/**
