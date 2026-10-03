@@ -2,12 +2,12 @@
 /**
  * Data transfer object. Hold the one-time connection details for the OAuth authentication flow.
  *
- * @package Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\DTO;
+ * @package WooCommerce\PayPalCommerce\Settings\DTO;
  */
 
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\DTO;
+namespace WooCommerce\PayPalCommerce\Settings\DTO;
 
 /**
  * DTO that holds OAuth connection details, that are used to retrieve a

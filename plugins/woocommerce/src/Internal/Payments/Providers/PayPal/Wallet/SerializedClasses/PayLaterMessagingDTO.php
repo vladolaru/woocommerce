@@ -1,7 +1,7 @@
 <?php
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\DTO;
+namespace WooCommerce\PayPalCommerce\Settings\DTO;
 
 /**
  * DTO that collects all Pay Later messaging details of a single location.

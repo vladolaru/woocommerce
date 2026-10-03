@@ -2,12 +2,12 @@
 /**
  * Data transfer object. Stores styling details for a single location.
  *
- * @package Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\DTO;
+ * @package WooCommerce\PayPalCommerce\Settings\DTO;
  */
 
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\DTO;
+namespace WooCommerce\PayPalCommerce\Settings\DTO;
 
 /**
  * DTO that collects all styling details of a single location
