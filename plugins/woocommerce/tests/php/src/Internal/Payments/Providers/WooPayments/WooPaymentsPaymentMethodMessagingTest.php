@@ -175,9 +175,6 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should not process the cart-total AJAX callback for ineligible messaging.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_does_not_process_cart_total_ajax_for_ineligible_messaging(): void {
 		$controller  = $this->create_controller( true, false, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
@@ -206,9 +203,6 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should not process the BNPL availability AJAX callback for ineligible messaging.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_does_not_process_bnpl_availability_ajax_for_ineligible_messaging(): void {
 		$controller  = $this->create_controller( true, false, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );

@@ -258,9 +258,6 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should treat an empty Action Scheduler request as cron before AJAX, REST, and admin.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_empty_action_scheduler_request_precedes_ajax_rest_and_admin_without_resolving_provider_roots(): void {
 		$_REQUEST['action'] = 'as_async_request_queue_runner';
