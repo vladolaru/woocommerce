@@ -437,10 +437,10 @@ describe( 'WooPaymentsDocumentsPage', () => {
 				name: 'I have a valid VAT Number',
 			} )
 		);
-		await userEvent.clear( screen.getByLabelText( 'VAT Number' ) );
+		expect( screen.getByLabelText( 'VAT Number' ) ).toHaveValue( 'DE ' );
 		await userEvent.type(
 			screen.getByLabelText( 'VAT Number' ),
-			'DE123456789'
+			'123456789'
 		);
 		await act( async () => {
 			await userEvent.click(
@@ -448,7 +448,7 @@ describe( 'WooPaymentsDocumentsPage', () => {
 			);
 		} );
 
-		expect( mockValidateVat ).toHaveBeenCalledWith( 'DE123456789' );
+		expect( mockValidateVat ).toHaveBeenCalledWith( '123456789' );
 		const businessName = await screen.findByLabelText( 'Business name' );
 		expect( businessName ).toHaveValue( 'Ada Bakery' );
 		expect( businessName ).toHaveFocus();
@@ -611,14 +611,13 @@ describe( 'WooPaymentsDocumentsPage', () => {
 			} )
 		);
 
-		expect(
+		// Client 11.1.0 `client/vat/form/tasks/vat-number-task.tsx:47-52` names the Australian tax ID "ABN".
+		await userEvent.click(
 			await screen.findByRole( 'checkbox', {
-				name: 'I have a valid Australian Business Number',
+				name: 'I have a valid ABN',
 			} )
-		).toBeInTheDocument();
-		expect(
-			screen.getByLabelText( 'Australian Business Number' )
-		).toBeInTheDocument();
+		);
+		expect( screen.getByLabelText( 'ABN' ) ).toHaveValue( '' );
 	} );
 
 	it( 'runs direct deep-link downloads only when document id and type are present', async () => {

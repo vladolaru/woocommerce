@@ -1319,15 +1319,15 @@ describe( 'WooPaymentsSettingsPage', () => {
 						options?.path === '/wc/v3/payments/vat'
 				);
 		await waitFor( () =>
-			expect( getVatRequest() ).toMatchObject( {
-				method: 'POST',
-				data: {
-					vat_number: null,
-					name: 'Example GmbH',
-					address: 'Alexanderplatz 1, Berlin',
-				},
-			} )
+			expect( getVatRequest() ).toMatchObject( { method: 'POST' } )
 		);
+		// Without a VAT number the client sends only the business details; the route takes no null VAT number.
+		expect(
+			typeof getVatRequest() === 'string' ? null : getVatRequest()?.data
+		).toEqual( {
+			name: 'Example GmbH',
+			address: 'Alexanderplatz 1, Berlin',
+		} );
 		await waitFor( () =>
 			expect(
 				screen.queryByRole( 'dialog', { name: 'Set your tax details' } )

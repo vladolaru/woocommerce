@@ -160,4 +160,21 @@ describe( 'WooPayments Documents data helpers', () => {
 			},
 		} );
 	} );
+
+	it( 'leaves the VAT number out when saving without one, as the client does', async () => {
+		await saveWooPaymentsVatDetails( {
+			vat_number: null,
+			name: 'Ada Bakery',
+			address: '1 Market Street',
+		} );
+
+		expect( mockApiFetch ).toHaveBeenCalledWith( {
+			path: '/wc/v3/payments/vat',
+			method: 'POST',
+			data: {
+				name: 'Ada Bakery',
+				address: '1 Market Street',
+			},
+		} );
+	} );
 } );

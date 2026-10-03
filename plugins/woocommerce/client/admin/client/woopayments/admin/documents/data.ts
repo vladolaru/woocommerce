@@ -120,9 +120,13 @@ export const validateWooPaymentsVatNumber = (
 
 export const saveWooPaymentsVatDetails = (
 	details: WooPaymentsVatDetails
-): Promise< WooPaymentsVatDetails > =>
-	apiFetch< WooPaymentsVatDetails >( {
+): Promise< WooPaymentsVatDetails > => {
+	// Leave the VAT number out when the merchant has none, as the client does: the route only accepts a string.
+	const { vat_number: vatNumber, ...businessDetails } = details;
+
+	return apiFetch< WooPaymentsVatDetails >( {
 		path: VAT_PATH,
 		method: 'POST',
-		data: details,
+		data: vatNumber === null ? businessDetails : details,
 	} );
+};
