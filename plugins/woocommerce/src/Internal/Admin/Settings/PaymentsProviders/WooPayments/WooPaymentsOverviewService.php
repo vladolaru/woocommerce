@@ -11,7 +11,6 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -403,7 +402,8 @@ class WooPaymentsOverviewService {
 	}
 
 	/**
-	 * Get active discounted account fee rows for enabled payment methods.
+	 * Get active discounted account fee rows for enabled payment methods, in the account's fee order, as client 11.1.0
+	 * `client/overview/index.js:146-163` builds them.
 	 *
 	 * @param array<string,mixed> $account_data Preserved account data snapshot.
 	 * @return array<int,array{payment_method:string,fee:array<string,mixed>}>
@@ -413,12 +413,12 @@ class WooPaymentsOverviewService {
 		$enabled_ids = $this->get_enabled_payment_method_ids();
 		$active_fees = array();
 
-		foreach ( $enabled_ids as $payment_method_id ) {
-			if ( ! in_array( $payment_method_id, WooPaymentsSettingsService::get_supported_payment_method_ids(), true ) || ! is_array( $fees[ $payment_method_id ] ?? null ) ) {
+		foreach ( $fees as $payment_method_id => $fee_structure ) {
+			$payment_method_id = (string) $payment_method_id;
+			if ( ! in_array( $payment_method_id, $enabled_ids, true ) || ! is_array( $fee_structure ) ) {
 				continue;
 			}
 
-			$fee_structure = $fees[ $payment_method_id ];
 			if ( ! $this->has_non_empty_array( $fee_structure['discount'] ?? array() ) ) {
 				continue;
 			}

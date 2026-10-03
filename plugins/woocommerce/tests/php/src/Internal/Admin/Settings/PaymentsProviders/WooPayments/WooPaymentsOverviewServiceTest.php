@@ -79,7 +79,7 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 					),
 				),
 				'fees'                 => array(
-					'card'           => array(
+					'card' => array(
 						'base'     => array(
 							'percentage_rate' => 2.9,
 							'fixed_rate'      => 0.3,
@@ -92,15 +92,8 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 							),
 						),
 					),
-					'link'           => array(
+					'link' => array(
 						'discount' => array(),
-					),
-					'invalid_method' => array(
-						'discount' => array(
-							array(
-								'percentage_rate' => 99.9,
-							),
-						),
 					),
 				),
 				'capital'              => array(
@@ -129,7 +122,7 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
-				'upe_enabled_payment_method_ids' => array( 'card', 'link', 'invalid_method' ),
+				'upe_enabled_payment_method_ids' => array( 'card', 'link' ),
 			)
 		);
 		update_option(
@@ -395,6 +388,38 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 				'complete',
 			),
 		);
+	}
+
+	/**
+	 * Discounted fee rows follow the account's fee order and keep every enabled method, as client 11.1.0
+	 * `client/overview/index.js:146-163` builds them; a method without a discount or not enabled is left out.
+	 */
+	public function test_get_overview_lists_discounted_fees_in_account_order_for_enabled_methods(): void {
+		$discounted = static fn( float $rate ): array => array(
+			'base'     => array( 'percentage_rate' => 2.9 ),
+			'discount' => array( array( 'percentage_rate' => $rate ) ),
+		);
+		$this->cache_account_data(
+			array(
+				'account_id' => 'acct_native_test',
+				'fees'       => array(
+					'p24'        => $discounted( 0.5 ),
+					'card'       => $discounted( 1.1 ),
+					'bancontact' => $discounted( 0.7 ),
+					// A method the platform added after this release: the client lists it once enabled.
+					'new_method' => $discounted( 0.3 ),
+					'sepa_debit' => array(
+						'base'     => array( 'percentage_rate' => 0.8 ),
+						'discount' => array(),
+					),
+				),
+			)
+		);
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card', 'sepa_debit', 'p24', 'new_method' ) ) );
+
+		$overview = $this->sut->get_overview();
+
+		$this->assertSame( array( 'p24', 'card', 'new_method' ), array_column( $overview['account_fees'], 'payment_method' ) );
 	}
 
 	/**
