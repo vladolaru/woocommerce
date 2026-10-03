@@ -521,7 +521,8 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$this->assertSame( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-fraud-scripts' ), $dependencies );
 		$loaded = $this->get_dependency_closure( $dependencies );
 		$this->assertContains( 'stripe', $loaded );
-		$this->assertContains( 'wc-woopayments-fingerprintjs', $loaded );
+		// The card script's built asset file lists FingerprintJS (a build external); the integration's part is registering its handle.
+		$this->assertTrue( wp_script_is( 'wc-woopayments-fingerprintjs', 'registered' ) );
 		$this->assertTrue( wp_style_is( 'wc-payment-method-woopayments', 'enqueued' ) );
 	}
 
@@ -546,7 +547,8 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$this->assertContains( 'wc-payment-method-woopayments', $dependencies );
 		$loaded = $this->get_dependency_closure( $dependencies );
 		$this->assertContains( 'stripe', $loaded );
-		$this->assertContains( 'wc-woopayments-fingerprintjs', $loaded );
+		// The card script's built asset file lists FingerprintJS (a build external); the integration's part is registering its handle.
+		$this->assertTrue( wp_script_is( 'wc-woopayments-fingerprintjs', 'registered' ) );
 	}
 
 	/**
