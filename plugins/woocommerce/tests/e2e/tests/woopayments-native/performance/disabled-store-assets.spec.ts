@@ -18,7 +18,7 @@ const STORE_PRODUCTS_API = '/wp-json/wc/store/v1/products?per_page=1';
 // prints, `-js-extra`/`-js-after` inline data included) or by its URL, so a
 // handle renamed to something neutral is still caught by the file it loads.
 const NATIVE_ASSET_PATTERN =
-	/woopayments|wcpay|woocommerce-payments|js\.stripe\.com/i;
+	/woopayments|wcpay|woocommerce-payments|fingerprintjs|js\.stripe\.com/i;
 
 const SHOP_PATHS = [ '/', '/shop/', '/cart/', '/checkout/' ];
 const ADMIN_PATHS = [

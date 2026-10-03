@@ -15,8 +15,9 @@ readonly CLI_HELPER_MARKER='woocommerce-native-perf-helper'
 # run, spawned on shutdown once the snapshot's cron lock expired, draining pending Action
 # Scheduler work mid-sample; the probe now disables WP-Cron, so attempts agree (T.12b).
 readonly STATE_SAMPLES=3
-# A script or style is native when its handle (the tag id WordPress prints) or its URL names the provider.
-readonly NATIVE_ASSET_PATTERN='woopayments|wcpay|woocommerce-payments|js\.stripe\.com'
+# A script or style is native when its handle (the tag id WordPress prints) or its URL names the provider, or is
+# the FingerprintJS copy native ships for it under assets/js/fingerprintjs/.
+readonly NATIVE_ASSET_PATTERN='woopayments|wcpay|woocommerce-payments|fingerprintjs|js\.stripe\.com'
 
 MODE='local'
 STORE_URL='http://localhost:8187'

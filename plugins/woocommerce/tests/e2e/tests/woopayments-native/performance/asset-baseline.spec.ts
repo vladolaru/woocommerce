@@ -30,7 +30,7 @@ import { ADMIN_STATE_PATH } from '../../../playwright.config';
 
 // Kept identical to NATIVE_ASSET_PATTERN in perf-compare.sh, so both measurements count the same files.
 const NATIVE_ASSET_PATTERN =
-	/woopayments|wcpay|woocommerce-payments|js\.stripe\.com/i;
+	/woopayments|wcpay|woocommerce-payments|fingerprintjs|js\.stripe\.com/i;
 
 type Runtime = 'native' | 'client';
 
