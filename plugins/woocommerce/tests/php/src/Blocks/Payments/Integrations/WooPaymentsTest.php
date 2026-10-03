@@ -511,6 +511,30 @@ class WooPaymentsTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * @testdox Should keep the card stack on the cart page when its content also holds the Checkout block.
+	 */
+	public function test_cart_page_with_the_checkout_block_keeps_the_card_stack(): void {
+		$page_id = self::factory()->post->create(
+			array(
+				'post_type'    => 'page',
+				'post_status'  => 'publish',
+				'post_content' => '<!-- wp:woocommerce/cart --><div class="wp-block-woocommerce-cart"></div><!-- /wp:woocommerce/cart --><!-- wp:woocommerce/checkout --><div class="wp-block-woocommerce-checkout"></div><!-- /wp:woocommerce/checkout -->',
+			)
+		);
+		update_option( 'woocommerce_cart_page_id', $page_id );
+		$this->reset_cart_checkout_page_cache();
+		$this->go_to( get_permalink( $page_id ) );
+
+		$api          = new Api( $this->create_payment_method_registry( $this->create_registered_integration() ), $this->createMock( AssetDataRegistry::class ) );
+		$dependencies = $api->add_payment_method_script_dependencies( array(), 'wc-checkout-block-frontend' );
+
+		$this->assertContains( 'wc-payment-method-woopayments', $dependencies );
+		$loaded = $this->get_dependency_closure( $dependencies );
+		$this->assertContains( 'stripe', $loaded );
+		$this->assertContains( 'wc-woopayments-fingerprintjs', $loaded );
+	}
+
+	/**
 	 * @testdox Should source Blocks payment method data from the checkout bridge.
 	 */
 	public function test_get_payment_method_data_uses_checkout_bridge_config(): void {
