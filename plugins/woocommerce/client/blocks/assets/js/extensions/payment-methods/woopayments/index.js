@@ -24,7 +24,6 @@ import {
 	getFontRulesFromPage,
 } from './upe-styles';
 import { recordWooPaymentsUserEvent } from './tracks';
-import enqueueFraudScripts from './fraud-scripts';
 import {
 	handleWooPayEmailInput,
 	shouldHandleWooPayEmailInput,
@@ -1301,7 +1300,6 @@ if ( shouldHandleWooPayEmailInput( defaultSettings ) ) {
 }
 
 window.addEventListener( 'load', () => {
-	enqueueFraudScripts( defaultSettings?.fraudServices || {} );
 	getDeviceFingerprint();
 } );
 

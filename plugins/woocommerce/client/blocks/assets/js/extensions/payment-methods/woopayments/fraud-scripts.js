@@ -37,9 +37,8 @@ const services = {
 /**
  * Enqueue the anti-fraud scripts described by the fraud-services config.
  *
- * Idempotent across bundles: the regular and express payment-method entries
- * can both load on one page, and the Sift snippet must push its account,
- * identity and pageview commands exactly once.
+ * Runs once per page: the Sift snippet must push its account, identity and
+ * pageview commands exactly once.
  *
  * @param {Object} config Fraud-services config keyed by service ID.
  */

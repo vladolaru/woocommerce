@@ -40,6 +40,11 @@ final class WooPayments extends AbstractPaymentMethodType {
 	private const PAYMENT_METHOD_SCRIPT_HANDLE = 'wc-payment-method-woopayments';
 
 	/**
+	 * Blocks anti-fraud loader script handle (Sift and Stripe fraud signals).
+	 */
+	private const FRAUD_SCRIPTS_SCRIPT_HANDLE = 'wc-payment-method-woopayments-fraud-scripts';
+
+	/**
 	 * Blocks WooPay express payment method script handle.
 	 */
 	private const WOOPAY_SCRIPT_HANDLE = 'wc-payment-method-woopayments-woopay';
@@ -157,25 +162,36 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 * @return string[]
 	 */
 	public function get_payment_method_script_handles() {
-		$this->register_stripe_script();
-		// The card script's asset file lists this handle: FingerprintJS is a build external.
-		$this->checkout_bridge->register_fingerprint_script();
-
+		// Client 11.1.0 runs its fraud scripts on every Blocks cart and checkout; this small loader keeps that without the card stack.
 		$this->asset_api->register_script(
-			self::PAYMENT_METHOD_SCRIPT_HANDLE,
-			'assets/client/blocks/wc-payment-method-woopayments.js',
-			array( self::STRIPE_SCRIPT_HANDLE, self::CHECKOUT_BLOCKS_SCRIPT_HANDLE )
-		);
-		$this->asset_api->register_style(
-			self::PAYMENT_METHOD_SCRIPT_HANDLE,
-			'assets/client/blocks/wc-payment-method-woopayments.css',
+			self::FRAUD_SCRIPTS_SCRIPT_HANDLE,
+			'assets/client/blocks/wc-payment-method-woopayments-fraud-scripts.js',
 			array(),
-			'all',
-			true
+			false
 		);
-		$this->maybe_enqueue_blocks_payment_style( self::PAYMENT_METHOD_SCRIPT_HANDLE );
 
-		$handles = array( self::PAYMENT_METHOD_SCRIPT_HANDLE );
+		$handles = array();
+		if ( ! $this->is_blocks_cart_only_surface() ) {
+			$this->register_stripe_script();
+			// The card script's asset file lists this handle: FingerprintJS is a build external.
+			$this->checkout_bridge->register_fingerprint_script();
+
+			$this->asset_api->register_script(
+				self::PAYMENT_METHOD_SCRIPT_HANDLE,
+				'assets/client/blocks/wc-payment-method-woopayments.js',
+				array( self::STRIPE_SCRIPT_HANDLE, self::CHECKOUT_BLOCKS_SCRIPT_HANDLE )
+			);
+			$this->asset_api->register_style(
+				self::PAYMENT_METHOD_SCRIPT_HANDLE,
+				'assets/client/blocks/wc-payment-method-woopayments.css',
+				array(),
+				'all',
+				true
+			);
+			$this->maybe_enqueue_blocks_payment_style( self::PAYMENT_METHOD_SCRIPT_HANDLE );
+			$handles[] = self::PAYMENT_METHOD_SCRIPT_HANDLE;
+		}
+
 		if ( $this->is_base_gateway_integration() && $this->should_enqueue_woopay_assets() ) {
 			$this->asset_api->register_script(
 				self::WOOPAY_SCRIPT_HANDLE,
@@ -194,6 +210,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 		}
 
 		if ( $this->is_base_gateway_integration() && $this->should_enqueue_express_checkout_assets() ) {
+			$this->register_stripe_script();
 			$this->asset_api->register_script(
 				self::EXPRESS_CHECKOUT_SCRIPT_HANDLE,
 				'assets/client/blocks/wc-payment-method-woopayments-express-checkout.js',
@@ -209,6 +226,8 @@ final class WooPayments extends AbstractPaymentMethodType {
 			$this->maybe_enqueue_blocks_payment_style( self::EXPRESS_CHECKOUT_SCRIPT_HANDLE );
 			$handles[] = self::EXPRESS_CHECKOUT_SCRIPT_HANDLE;
 		}
+
+		$handles[] = self::FRAUD_SCRIPTS_SCRIPT_HANDLE;
 
 		return $handles;
 	}
@@ -339,6 +358,31 @@ final class WooPayments extends AbstractPaymentMethodType {
 		}
 
 		return has_block( 'woocommerce/cart', $post ) || has_block( 'woocommerce/checkout', $post );
+	}
+
+	/**
+	 * Tell whether the current request renders the Blocks cart without the Blocks checkout.
+	 *
+	 * The cart renders no regular payment method, so it needs no card script, card style, Stripe.js or FingerprintJS of its own.
+	 * Express, WooPay and BNPL messaging declare what they need themselves. Requests that cannot be identified keep the card stack.
+	 *
+	 * @return bool
+	 */
+	private function is_blocks_cart_only_surface(): bool {
+		if ( is_admin() ) {
+			return false;
+		}
+
+		$post = get_queried_object();
+		if ( ! $post instanceof \WP_Post ) {
+			$post = get_post();
+		}
+		$post = $post instanceof \WP_Post ? $post : null;
+
+		$is_cart     = ( function_exists( 'is_cart' ) && is_cart() ) || ( null !== $post && has_block( 'woocommerce/cart', $post ) );
+		$is_checkout = ( function_exists( 'is_checkout' ) && is_checkout() ) || ( null !== $post && has_block( 'woocommerce/checkout', $post ) );
+
+		return $is_cart && ! $is_checkout;
 	}
 
 	/**

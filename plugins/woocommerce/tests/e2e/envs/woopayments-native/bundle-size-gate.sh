@@ -99,12 +99,14 @@ plugin_assets = {
 # (dist/index.js) has no native counterpart, because core's settings page hosts the native routes.
 CORE_ADMIN_CHUNKS = "plugins/woocommerce/assets/client/admin/chunks/"
 FINGERPRINTJS = "plugins/woocommerce/assets/js/fingerprintjs/fp.umd.min.js"
+# The client bundles its fraud-scripts loader into its Blocks card bundle; native ships it as its own handle.
+BLOCKS_FRAUD_SCRIPTS = "plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-fraud-scripts.js"
 core_assets = {
     "settings-main.js": CORE_ADMIN_CHUNKS + "settings-payments-woopayments.js",
     "settings-main.css": CORE_ADMIN_CHUNKS + "settings-payments-woopayments.style.css",
     "classic-card.js": ["plugins/woocommerce/assets/js/frontend/woopayments-checkout.min.js", FINGERPRINTJS],
     "classic-card.css": "plugins/woocommerce/assets/css/woopayments-checkout.css",
-    "blocks-card.js": ["plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments.js", FINGERPRINTJS],
+    "blocks-card.js": ["plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments.js", FINGERPRINTJS, BLOCKS_FRAUD_SCRIPTS],
     "blocks-card.css": "plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments.css",
     "express-checkout.js": "plugins/woocommerce/assets/js/frontend/woopayments-express-checkout.min.js",
     "express-checkout.css": "plugins/woocommerce/assets/css/woopayments-express-checkout.css",

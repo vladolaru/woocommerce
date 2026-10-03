@@ -406,6 +406,8 @@ const entries = {
 			'./assets/js/extensions/payment-methods/woopayments/woopay/index.js',
 		'wc-payment-method-woopayments-express-checkout':
 			'./assets/js/extensions/payment-methods/woopayments/express-checkout/index.js',
+		'wc-payment-method-woopayments-fraud-scripts':
+			'./assets/js/extensions/payment-methods/woopayments/fraud/index.js',
 		'wc-payment-method-bacs':
 			'./assets/js/extensions/payment-methods/bacs/index.js',
 		'wc-payment-method-cod':

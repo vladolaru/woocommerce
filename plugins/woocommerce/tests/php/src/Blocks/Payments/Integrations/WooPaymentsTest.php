@@ -4,7 +4,12 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Blocks\Payments\Integrations;
 
 use Automattic\WooCommerce\Blocks\Assets\Api as AssetApi;
+use Automattic\WooCommerce\Blocks\Assets\AssetDataRegistry;
+use Automattic\WooCommerce\Blocks\Package;
+use Automattic\WooCommerce\Blocks\Payments\Api;
 use Automattic\WooCommerce\Blocks\Payments\Integrations\WooPayments;
+use Automattic\WooCommerce\Blocks\Payments\PaymentMethodRegistry;
+use Automattic\WooCommerce\Blocks\Utils\CartCheckoutUtils;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
@@ -28,7 +33,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 	public function tearDown(): void {
 		remove_all_filters( 'wcpay_upe_available_payment_methods' );
 
-		foreach ( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-woopay', 'wc-payment-method-woopayments-express-checkout' ) as $handle ) {
+		foreach ( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-woopay', 'wc-payment-method-woopayments-express-checkout', 'wc-payment-method-woopayments-fraud-scripts' ) as $handle ) {
 			wp_dequeue_style( $handle );
 			wp_deregister_style( $handle );
 			wp_dequeue_script( $handle );
@@ -37,6 +42,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		wp_deregister_script( 'stripe' );
 		wp_deregister_script( 'wc-woopayments-fingerprintjs' );
 		wp_reset_postdata();
+		$this->reset_cart_checkout_page_cache();
 		parent::tearDown();
 	}
 
@@ -150,12 +156,20 @@ class WooPaymentsTest extends WP_UnitTestCase {
 			->onlyMethods( array( 'register_script', 'register_style' ) )
 			->getMock();
 		$asset_api
-			->expects( $this->once() )
+			->expects( $this->exactly( 2 ) )
 			->method( 'register_script' )
-			->with(
-				'wc-payment-method-woopayments',
-				'assets/client/blocks/wc-payment-method-woopayments.js',
-				array( 'stripe', 'wc-blocks-checkout' )
+			->withConsecutive(
+				array(
+					'wc-payment-method-woopayments-fraud-scripts',
+					'assets/client/blocks/wc-payment-method-woopayments-fraud-scripts.js',
+					array(),
+					false,
+				),
+				array(
+					'wc-payment-method-woopayments',
+					'assets/client/blocks/wc-payment-method-woopayments.js',
+					array( 'stripe', 'wc-blocks-checkout' ),
+				)
 			);
 		$asset_api
 			->expects( $this->once() )
@@ -181,7 +195,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 
 		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
 
-		$this->assertSame( array( 'wc-payment-method-woopayments' ), $integration->get_payment_method_script_handles() );
+		$this->assertSame( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-fraud-scripts' ), $integration->get_payment_method_script_handles() );
 		$this->assertTrue( wp_script_is( 'stripe', 'registered' ) );
 		$this->assertSame( 'https://js.stripe.com/v3/', wp_scripts()->registered['stripe']->src );
 		// The card script loads FingerprintJS as an external from the vendored handle.
@@ -201,9 +215,15 @@ class WooPaymentsTest extends WP_UnitTestCase {
 			->onlyMethods( array( 'register_script', 'register_style' ) )
 			->getMock();
 		$asset_api
-			->expects( $this->exactly( 2 ) )
+			->expects( $this->exactly( 3 ) )
 			->method( 'register_script' )
 			->withConsecutive(
+				array(
+					'wc-payment-method-woopayments-fraud-scripts',
+					'assets/client/blocks/wc-payment-method-woopayments-fraud-scripts.js',
+					array(),
+					false,
+				),
 				array(
 					'wc-payment-method-woopayments',
 					'assets/client/blocks/wc-payment-method-woopayments.js',
@@ -250,7 +270,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $woopay_session_service, $this->create_express_checkout_service() );
 
 		$this->assertSame(
-			array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-woopay' ),
+			array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-woopay', 'wc-payment-method-woopayments-fraud-scripts' ),
 			$integration->get_payment_method_script_handles()
 		);
 	}
@@ -267,9 +287,15 @@ class WooPaymentsTest extends WP_UnitTestCase {
 			->onlyMethods( array( 'register_script', 'register_style' ) )
 			->getMock();
 		$asset_api
-			->expects( $this->exactly( 2 ) )
+			->expects( $this->exactly( 3 ) )
 			->method( 'register_script' )
 			->withConsecutive(
+				array(
+					'wc-payment-method-woopayments-fraud-scripts',
+					'assets/client/blocks/wc-payment-method-woopayments-fraud-scripts.js',
+					array(),
+					false,
+				),
 				array(
 					'wc-payment-method-woopayments',
 					'assets/client/blocks/wc-payment-method-woopayments.js',
@@ -316,7 +342,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $this->create_woopay_session_service(), $express_checkout_service );
 
 		$this->assertSame(
-			array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-express-checkout' ),
+			array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-express-checkout', 'wc-payment-method-woopayments-fraud-scripts' ),
 			$integration->get_payment_method_script_handles()
 		);
 	}
@@ -361,7 +387,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 
 		$handles = $integration->get_payment_method_script_handles();
 
-		$this->assertSame( array( 'wc-payment-method-woopayments' ), $handles );
+		$this->assertSame( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-fraud-scripts' ), $handles );
 		$this->assertFalse( wp_style_is( 'wc-payment-method-woopayments', 'enqueued' ) );
 		$this->assertFalse( wp_style_is( 'wc-payment-method-woopayments-woopay', 'enqueued' ) );
 		$this->assertFalse( wp_style_is( 'wc-payment-method-woopayments-express-checkout', 'enqueued' ) );
@@ -408,12 +434,80 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$handles = $integration->get_payment_method_script_handles();
 
 		$this->assertSame(
-			array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-woopay', 'wc-payment-method-woopayments-express-checkout' ),
+			array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-woopay', 'wc-payment-method-woopayments-express-checkout', 'wc-payment-method-woopayments-fraud-scripts' ),
 			$handles
 		);
 		$this->assertTrue( wp_style_is( 'wc-payment-method-woopayments', 'enqueued' ) );
 		$this->assertTrue( wp_style_is( 'wc-payment-method-woopayments-woopay', 'enqueued' ) );
 		$this->assertTrue( wp_style_is( 'wc-payment-method-woopayments-express-checkout', 'enqueued' ) );
+	}
+
+	/**
+	 * @testdox Should keep the card stack and Stripe.js off the Blocks cart when no express or WooPay button renders there, and keep the fraud scripts.
+	 */
+	public function test_blocks_cart_without_buttons_depends_only_on_the_fraud_scripts(): void {
+		$this->go_to_block_page( 'woocommerce/cart', 'woocommerce_cart_page_id' );
+
+		$dependencies = $this->get_cart_block_frontend_dependencies( $this->create_registered_integration() );
+
+		$this->assertSame( array( 'wc-payment-method-woopayments-fraud-scripts' ), $dependencies );
+		$this->assertTrue( wp_script_is( 'wc-payment-method-woopayments-fraud-scripts', 'registered' ) );
+		$loaded = $this->get_dependency_closure( $dependencies );
+		$this->assertNotContains( 'wc-payment-method-woopayments', $loaded );
+		$this->assertNotContains( 'stripe', $loaded );
+		$this->assertNotContains( 'wc-woopayments-fingerprintjs', $loaded );
+		$this->assertFalse( wp_style_is( 'wc-payment-method-woopayments', 'enqueued' ) );
+	}
+
+	/**
+	 * @testdox Should load the express checkout script and Stripe.js on the Blocks cart without the card stack.
+	 */
+	public function test_blocks_cart_with_express_checkout_loads_what_express_needs(): void {
+		$this->go_to_block_page( 'woocommerce/cart', 'woocommerce_cart_page_id' );
+
+		$dependencies = $this->get_cart_block_frontend_dependencies( $this->create_registered_integration( false, true ) );
+
+		$this->assertSame( array( 'wc-payment-method-woopayments-express-checkout', 'wc-payment-method-woopayments-fraud-scripts' ), $dependencies );
+		$loaded = $this->get_dependency_closure( $dependencies );
+		$this->assertContains( 'stripe', $loaded );
+		$this->assertTrue( wp_script_is( 'stripe', 'registered' ) );
+		$this->assertNotContains( 'wc-payment-method-woopayments', $loaded );
+		$this->assertNotContains( 'wc-woopayments-fingerprintjs', $loaded );
+		$this->assertTrue( wp_style_is( 'wc-payment-method-woopayments-express-checkout', 'enqueued' ) );
+		$this->assertFalse( wp_style_is( 'wc-payment-method-woopayments', 'enqueued' ) );
+	}
+
+	/**
+	 * @testdox Should load the WooPay button script on the Blocks cart without the card stack or Stripe.js.
+	 */
+	public function test_blocks_cart_with_woopay_loads_what_woopay_needs(): void {
+		$this->go_to_block_page( 'woocommerce/cart', 'woocommerce_cart_page_id' );
+
+		$dependencies = $this->get_cart_block_frontend_dependencies( $this->create_registered_integration( true, false ) );
+
+		$this->assertSame( array( 'wc-payment-method-woopayments-woopay', 'wc-payment-method-woopayments-fraud-scripts' ), $dependencies );
+		$loaded = $this->get_dependency_closure( $dependencies );
+		$this->assertNotContains( 'wc-payment-method-woopayments', $loaded );
+		$this->assertNotContains( 'stripe', $loaded );
+		$this->assertNotContains( 'wc-woopayments-fingerprintjs', $loaded );
+		$this->assertTrue( wp_style_is( 'wc-payment-method-woopayments-woopay', 'enqueued' ) );
+		$this->assertFalse( wp_style_is( 'wc-payment-method-woopayments', 'enqueued' ) );
+	}
+
+	/**
+	 * @testdox Should keep the card stack, Stripe.js, FingerprintJS and the fraud scripts on the Blocks checkout.
+	 */
+	public function test_blocks_checkout_keeps_the_card_stack(): void {
+		$this->go_to_block_page( 'woocommerce/checkout', 'woocommerce_checkout_page_id' );
+
+		$api          = new Api( $this->create_payment_method_registry( $this->create_registered_integration() ), $this->createMock( AssetDataRegistry::class ) );
+		$dependencies = $api->add_payment_method_script_dependencies( array(), 'wc-checkout-block-frontend' );
+
+		$this->assertSame( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-fraud-scripts' ), $dependencies );
+		$loaded = $this->get_dependency_closure( $dependencies );
+		$this->assertContains( 'stripe', $loaded );
+		$this->assertContains( 'wc-woopayments-fingerprintjs', $loaded );
+		$this->assertTrue( wp_style_is( 'wc-payment-method-woopayments', 'enqueued' ) );
 	}
 
 	/**
@@ -490,8 +584,8 @@ class WooPaymentsTest extends WP_UnitTestCase {
 				$integrations
 			)
 		);
-		$this->assertSame( array( 'wc-payment-method-woopayments' ), $integrations[0]->get_payment_method_script_handles() );
-		$this->assertSame( array( 'wc-payment-method-woopayments' ), $integrations[1]->get_payment_method_script_handles() );
+		$this->assertSame( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-fraud-scripts' ), $integrations[0]->get_payment_method_script_handles() );
+		$this->assertSame( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-fraud-scripts' ), $integrations[1]->get_payment_method_script_handles() );
 	}
 
 	/**
@@ -693,6 +787,115 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		global $post;
 		$post = get_post( $page_id ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
 		setup_postdata( $post );
+	}
+
+	/**
+	 * Visit a published page holding one block and make it the matching WooCommerce page.
+	 *
+	 * @param string $block_name  Block name, such as `woocommerce/cart`.
+	 * @param string $page_option WooCommerce page option that should point at the page.
+	 */
+	private function go_to_block_page( string $block_name, string $page_option ): void {
+		$class   = 'wp-block-' . str_replace( '/', '-', $block_name );
+		$page_id = self::factory()->post->create(
+			array(
+				'post_type'    => 'page',
+				'post_status'  => 'publish',
+				'post_content' => sprintf( '<!-- wp:%1$s --><div class="%2$s"></div><!-- /wp:%1$s -->', $block_name, $class ),
+			)
+		);
+		update_option( $page_option, $page_id );
+
+		$this->reset_cart_checkout_page_cache();
+		$this->go_to( get_permalink( $page_id ) );
+	}
+
+	/**
+	 * Reset the cart and checkout page checks WooCommerce caches for the request.
+	 */
+	private function reset_cart_checkout_page_cache(): void {
+		foreach ( array( 'is_cart_page', 'is_checkout_page' ) as $property_name ) {
+			$property = new \ReflectionProperty( CartCheckoutUtils::class, $property_name );
+			$property->setAccessible( true );
+			$property->setValue( null, null );
+		}
+	}
+
+	/**
+	 * Create an active WooPayments Blocks integration that registers through the real Blocks asset API.
+	 *
+	 * @param bool $show_woopay_button  Whether the WooPay button is available.
+	 * @param bool $show_express_button Whether the Apple Pay and Google Pay buttons are available.
+	 * @return WooPayments
+	 */
+	private function create_registered_integration( bool $show_woopay_button = false, bool $show_express_button = false ): WooPayments {
+		$bridge = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'should_expose_checkout_surface' ) )
+			->getMock();
+		$bridge->method( 'should_expose_checkout_surface' )->willReturn( true );
+		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'can_process_payments' ) )
+			->getMock();
+		$provider->method( 'can_process_payments' )->willReturn( true );
+
+		return new WooPayments(
+			Package::container()->get( AssetApi::class ),
+			$this->create_runtime_arbiter(),
+			$bridge,
+			$provider,
+			$this->create_woopay_session_service( $show_woopay_button ),
+			$this->create_express_checkout_service( $show_express_button )
+		);
+	}
+
+	/**
+	 * Create a payment method registry holding one integration.
+	 *
+	 * @param WooPayments $integration Integration to register.
+	 * @return PaymentMethodRegistry
+	 */
+	private function create_payment_method_registry( WooPayments $integration ): PaymentMethodRegistry {
+		$registry = new PaymentMethodRegistry();
+		$registry->register( $integration );
+
+		return $registry;
+	}
+
+	/**
+	 * Get the payment method dependencies the Blocks payments API adds to the Cart block frontend script.
+	 *
+	 * @param WooPayments $integration Integration to register.
+	 * @return string[]
+	 */
+	private function get_cart_block_frontend_dependencies( WooPayments $integration ): array {
+		$api = new Api( $this->create_payment_method_registry( $integration ), $this->createMock( AssetDataRegistry::class ) );
+
+		return $api->add_payment_method_script_dependencies( array(), 'wc-cart-block-frontend' );
+	}
+
+	/**
+	 * Get every registered script handle the given handles load, including their dependencies.
+	 *
+	 * @param string[] $handles Script handles.
+	 * @return string[]
+	 */
+	private function get_dependency_closure( array $handles ): array {
+		$loaded  = array();
+		$pending = $handles;
+		while ( ! empty( $pending ) ) {
+			$handle = array_shift( $pending );
+			if ( in_array( $handle, $loaded, true ) ) {
+				continue;
+			}
+			$loaded[] = $handle;
+			if ( isset( wp_scripts()->registered[ $handle ] ) ) {
+				$pending = array_merge( $pending, wp_scripts()->registered[ $handle ]->deps );
+			}
+		}
+
+		return $loaded;
 	}
 
 	/**
