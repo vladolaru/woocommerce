@@ -92,8 +92,7 @@
 	"autoload": {
 		"exclude-from-classmap": [
 			"includes/legacy",
-			"includes/libraries",
-			"src/Internal/Payments/Providers/PayPal/woocommerce-paypal-payments"
+			"includes/libraries"
 		],
 		"classmap": [
 			"includes/rest-api"

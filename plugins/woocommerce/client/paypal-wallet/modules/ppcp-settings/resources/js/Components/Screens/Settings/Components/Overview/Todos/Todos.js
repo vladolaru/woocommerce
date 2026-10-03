@@ -1,0 +1,82 @@
+import { __ } from '@wordpress/i18n';
+import { useState } from '@wordpress/element';
+import { Button, Icon } from '@wordpress/components';
+import { useDispatch } from '@wordpress/data';
+import { reusableBlock } from '@wordpress/icons';
+import { TodoSettingsBlock } from '@ppcp-settings/Components/ReusableComponents/SettingsBlocks';
+import SettingsCard from '@ppcp-settings/Components/ReusableComponents/SettingsCard';
+import { useTodos } from '@ppcp-settings/data/todos/hooks';
+import { STORE_NAME as COMMON_STORE_NAME } from '@ppcp-settings/data/common';
+import { STORE_NAME as TODOS_STORE_NAME } from '@ppcp-settings/data/todos';
+import useNotices from '@ppcp-settings/hooks/useNotices';
+
+const Todos = () => {
+	const [ isResetting, setIsResetting ] = useState( false );
+	const { todos, isReady: areTodosReady, dismissTodo } = useTodos();
+	// eslint-disable-next-line no-shadow
+	const { setActiveModal } = useDispatch( COMMON_STORE_NAME );
+	const { resetDismissedTodos, setDismissedTodos } =
+		useDispatch( TODOS_STORE_NAME );
+	const { createSuccessNotice } = useNotices();
+
+	const showTodos = areTodosReady && todos.length > 0;
+
+	const resetHandler = async () => {
+		setIsResetting( true );
+		try {
+			await setDismissedTodos( [] );
+			await resetDismissedTodos();
+
+			createSuccessNotice(
+				__(
+					'Dismissed items restored successfully.',
+					'woocommerce'
+				)
+			);
+		} finally {
+			setIsResetting( false );
+		}
+	};
+
+	if ( ! showTodos ) {
+		return null;
+	}
+
+	return (
+		<SettingsCard
+			className="ppcp-r-tab-overview-todo"
+			title={ __( 'Things to do next', 'woocommerce' ) }
+			description={
+				<>
+					<p>
+						{ __(
+							'Complete these tasks to keep your store updated with the latest products and services.',
+							'woocommerce'
+						) }
+					</p>
+					<Button
+						variant="tertiary"
+						onClick={ resetHandler }
+						disabled={ isResetting }
+					>
+						<Icon icon={ reusableBlock } size={ 18 } />
+						{ isResetting
+							? __( 'Restoring…', 'woocommerce' )
+							: __(
+									'Restore dismissed Things To Do',
+									'woocommerce'
+							  ) }
+					</Button>
+				</>
+			}
+		>
+			<TodoSettingsBlock
+				todosData={ todos }
+				setActiveModal={ setActiveModal }
+				onDismissTodo={ dismissTodo }
+			/>
+		</SettingsCard>
+	);
+};
+
+export default Todos;

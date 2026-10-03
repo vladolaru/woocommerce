@@ -1,0 +1,21 @@
+import { __ } from '@wordpress/i18n';
+
+import BadgeBox from '@ppcp-settings/Components/ReusableComponents/BadgeBox';
+import PricingTitleBadge from '@ppcp-settings/Components/ReusableComponents/PricingTitleBadge';
+
+const PayLater = ( { learnMore = '' } ) => {
+	return (
+		<BadgeBox
+			title={ __( 'Pay Later', 'woocommerce' ) }
+			imageBadge={ [ 'icon-payment-method-paypal-small.svg' ] }
+			textBadge={ <PricingTitleBadge item="plater" /> }
+			description={ __(
+				'Offer installment payment options and get paid upfront.',
+				'woocommerce'
+			) }
+			learnMoreLink={ learnMore }
+		/>
+	);
+};
+
+export default PayLater;

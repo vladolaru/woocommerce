@@ -1,0 +1,85 @@
+import { __ } from '@wordpress/i18n';
+import { useEffect, useState } from '@wordpress/element';
+
+import { OptionSelector } from '@ppcp-settings/Components/ReusableComponents/Fields';
+import { OnboardingHooks, BUSINESS_TYPES } from '@ppcp-settings/data';
+import OnboardingHeader from '@ppcp-settings/Components/Screens/Onboarding/Components/OnboardingHeader';
+
+const getBusinessType = ( isCasualSeller ) => {
+	if ( isCasualSeller === null ) {
+		return '';
+	}
+
+	return isCasualSeller
+		? BUSINESS_TYPES.CASUAL_SELLER
+		: BUSINESS_TYPES.BUSINESS;
+};
+
+const StepBusiness = () => {
+	const { isCasualSeller, setIsCasualSeller } = OnboardingHooks.useBusiness();
+	const [ businessChoice, setBusinessChoice ] = useState(
+		getBusinessType( isCasualSeller )
+	);
+
+	useEffect( () => {
+		if ( ! businessChoice ) {
+			return;
+		}
+
+		setIsCasualSeller(
+			BUSINESS_TYPES.CASUAL_SELLER === businessChoice,
+			'user'
+		);
+	}, [ businessChoice, setIsCasualSeller ] );
+
+	const { canUseSubscriptions } = OnboardingHooks.useFlags();
+	const businessChoices = [
+		{
+			value: BUSINESS_TYPES.BUSINESS,
+			title: __( 'Business', 'woocommerce' ),
+			description: __(
+				'Recommended for individuals and organizations that primarily use PayPal to sell goods or services or receive donations, even if your business is not incorporated.',
+				'woocommerce'
+			),
+		},
+		{
+			value: BUSINESS_TYPES.CASUAL_SELLER,
+			title: __( 'Personal Account', 'woocommerce' ),
+			description: __(
+				'Ideal for those who primarily make purchases or send personal transactions to family and friends.',
+				'woocommerce'
+			),
+			contents: canUseSubscriptions ? <DetailsAccountType /> : null,
+		},
+	];
+
+	return (
+		<div className="ppcp-r-page-business">
+			<OnboardingHeader
+				title={ __(
+					'Choose your account type',
+					'woocommerce'
+				) }
+			/>
+			<div className="ppcp-r-inner-container">
+				<OptionSelector
+					multiSelect={ false }
+					options={ businessChoices }
+					onChange={ setBusinessChoice }
+					value={ businessChoice }
+				/>
+			</div>
+		</div>
+	);
+};
+
+const DetailsAccountType = () => (
+	<p>
+		{ __(
+			'* Business account is required for subscriptions.',
+			'woocommerce'
+		) }
+	</p>
+);
+
+export default StepBusiness;

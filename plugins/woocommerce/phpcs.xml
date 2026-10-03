@@ -8,7 +8,7 @@
 	<exclude-pattern>tests/cli/</exclude-pattern>
 	<exclude-pattern>client/admin/docs/examples/</exclude-pattern>
 	<exclude-pattern>includes/libraries/</exclude-pattern>
-	<exclude-pattern>src/Internal/Payments/Providers/PayPal/woocommerce-paypal-payments/</exclude-pattern>
+	<exclude-pattern>src/Internal/Payments/Providers/PayPal/Wallet/</exclude-pattern>
 	<exclude-pattern>includes/legacy/</exclude-pattern>
 	<exclude-pattern>includes/api/legacy/</exclude-pattern>
 	<exclude-pattern>includes/api/v1/</exclude-pattern>
