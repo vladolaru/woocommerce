@@ -710,7 +710,7 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Group `database_cache` (1 hook): the account cache TTL reader.
+	 * Group `database_cache` (1 hook): the database cache TTL reader, probed with the account key.
 	 */
 	private function probe_database_cache(): void {
 		$service        = wc_get_container()->get( WooPaymentsAccountService::class );
@@ -719,7 +719,7 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 			'errored'            => false,
 			'consecutive_errors' => 0,
 		);
-		$this->native_invoke( $service, 'get_account_cache_ttl', array( $cache_contents ) );
+		$this->native_invoke( $service, 'get_database_cache_ttl', array( 'wcpay_account_data', $cache_contents ) );
 	}
 
 	/**

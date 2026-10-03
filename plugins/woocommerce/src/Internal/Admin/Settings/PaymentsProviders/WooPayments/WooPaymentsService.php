@@ -4154,21 +4154,16 @@ class WooPaymentsService {
 	 * @throws Exception If the onboarding fields data could not be retrieved or there was an error.
 	 */
 	private function get_onboarding_kyc_fields( string $location ): array {
-		$native_exception = null;
 		// While the plugin runtime is loaded, it owns the fields route (trunk's path) and the native client stays dormant.
 		if ( ! $this->get_legacy_runtime()->is_loaded() && $this->can_use_native_api_client() ) {
-			try {
-				return $this->prepare_onboarding_kyc_fields(
-					$this->get_native_api_client()->get_onboarding_fields_data( $this->proxy->call_function( 'get_user_locale' ) ),
-					$location
-				);
-			} catch ( Exception $e ) {
-				$native_exception = $e;
+			// The account service caches the fields like the client does behind the fields route.
+			$fields = $this->get_native_account_service()->get_onboarding_fields_data( (string) $this->proxy->call_function( 'get_user_locale' ) );
+			if ( null === $fields ) {
+				// Same message as the client's fields route.
+				throw new Exception( esc_html__( 'Failed to retrieve the onboarding fields.', 'woocommerce' ) );
 			}
-		}
 
-		if ( ! $this->get_legacy_runtime()->is_loaded() && null !== $native_exception ) {
-			throw new Exception( esc_html( $native_exception->getMessage() ) );
+			return $this->prepare_onboarding_kyc_fields( $fields, $location );
 		}
 
 		// Call the WooPayments plugin REST API to get the onboarding fields when the plugin runtime owns the route.

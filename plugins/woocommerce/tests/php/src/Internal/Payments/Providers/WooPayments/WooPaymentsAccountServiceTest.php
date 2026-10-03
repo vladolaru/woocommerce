@@ -1922,6 +1922,156 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should fetch the onboarding fields once and store them in the client's database cache shape, locale marker included.
+	 */
+	public function test_onboarding_fields_data_is_fetched_once_and_stored_in_the_client_cache_shape(): void {
+		$api_client = $this->create_counting_fields_api_client( $this->get_onboarding_fields_payload() );
+		$expected   = array_merge( $this->get_onboarding_fields_payload(), array( '__locale' => 'en_US' ) );
+
+		$first  = $this->create_service_with_api_client( $api_client )->get_onboarding_fields_data( 'en_US' );
+		$stored = get_option( 'wcpay_onboarding_fields_data' );
+		$second = $this->create_service_with_api_client( $api_client )->get_onboarding_fields_data( 'en_US' );
+
+		$this->assertSame( 1, $api_client->calls, 'The second read, in a new request, must come from the cache.' );
+		$this->assertSame( $expected, $first );
+		$this->assertSame( $expected, $second );
+		$this->assertIsArray( $stored );
+		$this->assertEqualsWithDelta( time(), $stored['fetched'], 5 );
+		$this->assertSame(
+			array(
+				'data'               => $expected,
+				'fetched'            => $stored['fetched'],
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			),
+			$stored,
+			'Client 11.1.0 Database_Cache::write_to_cache() writes exactly these keys, in this order (class-database-cache.php:378-382), with __locale inside data (class-wc-payments-onboarding-service.php:161).'
+		);
+		$this->assertOptionNotAutoloaded( 'wcpay_onboarding_fields_data' );
+	}
+
+	/**
+	 * @testdox Should keep cached onboarding fields for a week and refetch them after that.
+	 * @testWith [6, 0]
+	 *           [8, 1]
+	 *
+	 * @param int $age_in_days    Age of the cached entry in days.
+	 * @param int $expected_calls Expected platform fetches.
+	 */
+	public function test_onboarding_fields_data_is_cached_for_a_week( int $age_in_days, int $expected_calls ): void {
+		$this->store_onboarding_fields_cache( 'en_US', time() - ( $age_in_days * DAY_IN_SECONDS ) );
+		$api_client = $this->create_counting_fields_api_client( array( 'business_types' => array() ) );
+
+		$this->create_service_with_api_client( $api_client )->get_onboarding_fields_data( 'en_US' );
+
+		$this->assertSame( $expected_calls, $api_client->calls );
+	}
+
+	/**
+	 * @testdox Should refetch the onboarding fields when a different locale is requested.
+	 */
+	public function test_onboarding_fields_data_refetches_for_a_different_locale(): void {
+		$this->store_onboarding_fields_cache( 'en_US', time() );
+		$api_client = $this->create_counting_fields_api_client( $this->get_onboarding_fields_payload() );
+
+		$result = $this->create_service_with_api_client( $api_client )->get_onboarding_fields_data( 'fr_FR' );
+
+		$this->assertSame( 1, $api_client->calls );
+		$this->assertSame( 'fr_FR', $result['__locale'] );
+		$this->assertSame( 'fr_FR', get_option( 'wcpay_onboarding_fields_data' )['data']['__locale'] );
+	}
+
+	/**
+	 * @testdox Should cache an empty onboarding fields response as valid data.
+	 */
+	public function test_onboarding_fields_data_caches_an_empty_response(): void {
+		$api_client = $this->create_counting_fields_api_client( array() );
+
+		$first  = $this->create_service_with_api_client( $api_client )->get_onboarding_fields_data( 'en_US' );
+		$second = $this->create_service_with_api_client( $api_client )->get_onboarding_fields_data( 'en_US' );
+
+		$this->assertSame( array( '__locale' => 'en_US' ), $first );
+		$this->assertSame( $first, $second );
+		$this->assertSame( 1, $api_client->calls, 'Client 11.1.0 treats only null or false as an error (class-database-cache.php:169).' );
+		$this->assertFalse( get_option( 'wcpay_onboarding_fields_data' )['errored'] );
+	}
+
+	/**
+	 * @testdox Should keep the old onboarding fields on a failed refetch and back off before trying again.
+	 */
+	public function test_onboarding_fields_data_failure_keeps_old_data_and_backs_off(): void {
+		$cached     = $this->store_onboarding_fields_cache( 'en_US', time() - ( 8 * DAY_IN_SECONDS ) );
+		$api_client = $this->create_counting_fields_api_client( null );
+
+		$this->assertSame( $cached, $this->create_service_with_api_client( $api_client )->get_onboarding_fields_data( 'en_US' ) );
+		$stored = get_option( 'wcpay_onboarding_fields_data' );
+		$this->assertSame( $cached, $stored['data'] );
+		$this->assertTrue( $stored['errored'] );
+		$this->assertSame( 1, $stored['consecutive_errors'] );
+
+		$this->assertSame( $cached, $this->create_service_with_api_client( $api_client )->get_onboarding_fields_data( 'en_US' ) );
+		$this->assertSame( 1, $api_client->calls, 'The first error backs off for 2 minutes (class-database-cache.php:466-468, 520-531).' );
+
+		$stored['fetched'] = time() - ( 3 * MINUTE_IN_SECONDS );
+		update_option( 'wcpay_onboarding_fields_data', $stored );
+		$this->create_service_with_api_client( $api_client )->get_onboarding_fields_data( 'en_US' );
+
+		$this->assertSame( 2, $api_client->calls );
+		$this->assertSame( 2, get_option( 'wcpay_onboarding_fields_data' )['consecutive_errors'] );
+	}
+
+	/**
+	 * @testdox Should serve cached onboarding fields without fetching during ajax requests and Action Scheduler jobs.
+	 * @testWith ["ajax"]
+	 *           ["action_scheduler"]
+	 *
+	 * @param string $context Request context that must not refresh.
+	 */
+	public function test_onboarding_fields_data_is_not_refreshed_during_ajax_or_action_scheduler_jobs( string $context ): void {
+		$cached     = $this->store_onboarding_fields_cache( 'en_US', time() - ( 8 * DAY_IN_SECONDS ) );
+		$api_client = $this->create_counting_fields_api_client( $this->get_onboarding_fields_payload() );
+		$sut        = $this->create_service_with_api_client( $api_client );
+		if ( 'ajax' === $context ) {
+			add_filter( 'wp_doing_ajax', '__return_true' );
+		} else {
+			$sut->disable_refresh();
+		}
+
+		$this->assertSame( $cached, $sut->get_onboarding_fields_data( 'en_US' ) );
+		$this->assertSame( 0, $api_client->calls );
+	}
+
+	/**
+	 * @testdox Should serve whatever onboarding fields are cached, regardless of expiry or locale, without a platform connection.
+	 */
+	public function test_onboarding_fields_data_serves_the_cache_without_a_platform_connection(): void {
+		$cached       = $this->store_onboarding_fields_cache( 'en_US', time() - ( 30 * DAY_IN_SECONDS ) );
+		$cache_before = get_option( 'wcpay_onboarding_fields_data' );
+		$api_client   = $this->create_counting_fields_api_client( $this->get_onboarding_fields_payload(), false );
+
+		$this->assertSame( $cached, $this->create_service_with_api_client( $api_client )->get_onboarding_fields_data( 'fr_FR' ), 'Client 11.1.0 reads Database_Cache::get( key, true ) when not connected (class-wc-payments-onboarding-service.php:145-147).' );
+		$this->assertSame( 0, $api_client->calls );
+		$this->assertSame( $cache_before, get_option( 'wcpay_onboarding_fields_data' ) );
+	}
+
+	/**
+	 * @testdox Should drop the cached onboarding fields when WooCommerce updates, so the next read fetches.
+	 */
+	public function test_woocommerce_update_drops_the_onboarding_fields_cache(): void {
+		$this->store_onboarding_fields_cache( 'en_US', time() );
+		$api_client = $this->create_counting_fields_api_client( $this->get_onboarding_fields_payload() );
+		$sut        = $this->create_service_with_api_client( $api_client );
+		$sut->register();
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		do_action( 'woocommerce_updated' );
+
+		$this->assertFalse( get_option( 'wcpay_onboarding_fields_data' ), 'Client 11.1.0 clears this cache on its own update (class-wc-payments-onboarding-service.php:127, 967-970).' );
+		$sut->get_onboarding_fields_data( 'en_US' );
+		$this->assertSame( 1, $api_client->calls );
+	}
+
+	/**
 	 * Create the service under test for a connected store whose account fetches fail, so reads serve the seeded cache.
 	 *
 	 * @return WooPaymentsAccountService
@@ -2225,5 +2375,140 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertContains( $autoload, array( 'yes', 'on' ), sprintf( 'Option %s should be autoloaded, got autoload value "%s".', $option_name, (string) $autoload ) );
+	}
+
+	/**
+	 * Get an onboarding fields payload as the platform returns it.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_onboarding_fields_payload(): array {
+		return array(
+			'business_types'    => array(
+				array(
+					'key'   => 'NZ',
+					'name'  => 'New Zealand',
+					'types' => array(
+						array(
+							'key'        => 'company',
+							'name'       => 'Company',
+							'structures' => array(),
+						),
+					),
+				),
+			),
+			'mccs_display_tree' => array(),
+		);
+	}
+
+	/**
+	 * Store a successful onboarding fields cache entry in the client's shape.
+	 *
+	 * @param string $locale  Locale stored with the data.
+	 * @param int    $fetched Fetch timestamp.
+	 * @return array<string,mixed> The cached data.
+	 */
+	private function store_onboarding_fields_cache( string $locale, int $fetched ): array {
+		$data = array(
+			'business_types' => array( array( 'key' => 'cached' ) ),
+			'__locale'       => $locale,
+		);
+		update_option(
+			'wcpay_onboarding_fields_data',
+			array(
+				'data'               => $data,
+				'fetched'            => $fetched,
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			),
+			false
+		);
+
+		return $data;
+	}
+
+	/**
+	 * Create a fake API client that counts onboarding fields fetches.
+	 *
+	 * @param array<string,mixed>|null $fields_data Fields payload, or null to fail every fetch.
+	 * @param bool                     $available   Whether the site has a platform connection.
+	 * @return WooPaymentsApiClient
+	 */
+	private function create_counting_fields_api_client( ?array $fields_data, bool $available = true ): WooPaymentsApiClient {
+		return new class( $fields_data, $available ) extends WooPaymentsApiClient {
+			/**
+			 * Fields payload, or null to fail.
+			 *
+			 * @var array<string,mixed>|null
+			 */
+			private ?array $fields_data;
+
+			/**
+			 * Whether the site has a platform connection.
+			 *
+			 * @var bool
+			 */
+			private bool $available;
+
+			/**
+			 * Number of onboarding fields fetches.
+			 *
+			 * @var int
+			 */
+			public int $calls = 0;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array<string,mixed>|null $fields_data Fields payload, or null to fail.
+			 * @param bool                     $available   Whether the site has a platform connection.
+			 */
+			public function __construct( ?array $fields_data, bool $available ) {
+				$this->fields_data = $fields_data;
+				$this->available   = $available;
+			}
+
+			/**
+			 * Tell whether the fake client is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return $this->available;
+			}
+
+			/**
+			 * Return the fields payload or fail.
+			 *
+			 * @param string $locale User locale.
+			 * @return array<string,mixed>
+			 * @throws WooPaymentsApiException When set to fail.
+			 */
+			public function get_onboarding_fields_data( string $locale = '' ): array {
+				unset( $locale );
+				++$this->calls;
+				if ( null === $this->fields_data ) {
+					throw new WooPaymentsApiException( 'Temporary failure.', 'wcpay_temporary_failure', 500 );
+				}
+
+				return $this->fields_data;
+			}
+		};
+	}
+
+	/**
+	 * Assert that a WordPress option is not flagged for autoload.
+	 *
+	 * @param string $option_name The option name to inspect.
+	 * @return void
+	 */
+	private function assertOptionNotAutoloaded( string $option_name ): void {
+		global $wpdb;
+
+		$autoload = $wpdb->get_var(
+			$wpdb->prepare( "SELECT autoload FROM {$wpdb->options} WHERE option_name = %s", $option_name )
+		);
+
+		$this->assertContains( $autoload, array( 'no', 'off' ), sprintf( 'Option %s should not be autoloaded, got autoload value "%s".', $option_name, (string) $autoload ) );
 	}
 }
