@@ -10,7 +10,7 @@ declare(strict_types=1);
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway;
 
 use Exception;
-use Psr\Log\LoggerInterface;
+use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 use WC_Order;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\ExperienceContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\PayPalApiException;

@@ -11,7 +11,7 @@ declare(strict_types=1);
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\VaultComponent;
 
-use Psr\Log\LoggerInterface;
+use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 use WC_Payment_Token;
 use WC_Payment_Tokens;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\Order;

@@ -11,7 +11,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Setti
 
 use Throwable;
 use JsonException;
-use Psr\Log\LoggerInterface;
+use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\RuntimeException;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\LoginSeller;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\Orders;

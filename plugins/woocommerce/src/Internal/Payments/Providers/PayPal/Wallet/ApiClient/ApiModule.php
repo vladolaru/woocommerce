@@ -23,7 +23,7 @@ use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ModuleClassNameIdTra
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ServiceModule;
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\Order;
-use Psr\Log\LoggerInterface;
+use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 
 /**
  * Class ApiModule

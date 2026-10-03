@@ -14,7 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\H
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Logging\Logger\NullLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Logging\Logger\WooCommerceLogger;
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
-use Psr\Log\LoggerInterface;
+use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 
 return array(
 

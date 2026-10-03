@@ -15,7 +15,7 @@ declare(strict_types=1);
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SavePaymentMethods;
 
 use Exception;
-use Psr\Log\LoggerInterface;
+use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 use WC_AJAX;
 use WC_Order;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\PaymentMethodTokensEndpoint;

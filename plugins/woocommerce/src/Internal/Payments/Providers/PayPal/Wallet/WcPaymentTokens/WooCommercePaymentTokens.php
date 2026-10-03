@@ -10,7 +10,7 @@ declare(strict_types=1);
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcPaymentTokens;
 
 use Exception;
-use Psr\Log\LoggerInterface;
+use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 use stdClass;
 use WC_Payment_Token;
 use WC_Payment_Token_CC;

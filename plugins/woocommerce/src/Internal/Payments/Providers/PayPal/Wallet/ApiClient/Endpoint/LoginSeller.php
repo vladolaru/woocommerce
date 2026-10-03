@@ -11,7 +11,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiCl
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\PayPalApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\RuntimeException;
-use Psr\Log\LoggerInterface;
+use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 
 /**
  * Class LoginSeller

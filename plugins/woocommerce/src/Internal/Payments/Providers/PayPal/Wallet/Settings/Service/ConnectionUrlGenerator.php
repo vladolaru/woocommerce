@@ -11,7 +11,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Setti
 
 use Exception;
 use RuntimeException;
-use Psr\Log\LoggerInterface;
+use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\PartnerReferrals;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Repository\PartnerReferralsData;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Logging\Logger\NullLogger;

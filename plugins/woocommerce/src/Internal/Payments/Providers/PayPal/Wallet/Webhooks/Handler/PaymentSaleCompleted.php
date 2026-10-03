@@ -9,7 +9,7 @@ declare(strict_types=1);
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\Handler;
 
-use Psr\Log\LoggerInterface;
+use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 use WC_Data_Exception;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PayPalSubscriptions\RenewalHandler;
 use WP_REST_Request;

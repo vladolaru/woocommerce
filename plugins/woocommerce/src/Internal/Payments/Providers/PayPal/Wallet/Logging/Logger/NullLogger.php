@@ -10,8 +10,8 @@ declare(strict_types=1);
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Logging\Logger;
 
-use Psr\Log\LoggerInterface;
-use Psr\Log\LoggerTrait;
+use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
+use Automattic\WooCommerce\Vendor\Psr\Log\LoggerTrait;
 
 /**
  * Class NullLogger
