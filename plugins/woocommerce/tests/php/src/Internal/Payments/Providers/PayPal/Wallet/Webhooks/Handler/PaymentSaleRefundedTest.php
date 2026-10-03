@@ -23,10 +23,9 @@ use WP_REST_Request;
  * A refund PayPal reports for a sale creates one WooCommerce refund, however often the webhook is delivered. Runs over
  * real orders and refunds; the order is found by its transaction ID, which is the PayPal sale ID.
  *
- * The tests run on posts-based order storage. The handler finds the order with wc_get_orders( 'meta_key' =>
- * '_transaction_id' ), which matches nothing under HPOS (the transaction ID is a column of the orders table there), so
- * on an HPOS store the handler never finds the order. That limitation is inherited from the extension and reported
- * separately; it is not pinned here.
+ * Every case runs on both order storages, posts and HPOS (the custom orders table). The transaction ID is a column of
+ * the orders table under HPOS and a meta row under posts, so the handler has to look the order up in a way that works
+ * on both.
  *
  * @group paypal-wallet
  */
@@ -56,14 +55,12 @@ class PaymentSaleRefundedTest extends WalletTestCase {
 	private $hpos_was_enabled;
 
 	/**
-	 * Switch to posts-based order storage and build the handler over a mocked fees updater.
+	 * Remember the order storage in use and build the handler over a mocked fees updater.
 	 */
 	public function setUp(): void {
 		parent::setUp();
 
-		$this->hpos_was_enabled = OrderUtil::custom_orders_table_usage_is_enabled();
-		OrderHelper::toggle_cot_feature_and_usage( false );
-
+		$this->hpos_was_enabled    = OrderUtil::custom_orders_table_usage_is_enabled();
 		$this->refund_fees_updater = $this->mock( RefundFeesUpdater::class );
 		$this->sut                 = new PaymentSaleRefunded( new NullLogger(), $this->refund_fees_updater );
 	}
@@ -72,9 +69,33 @@ class PaymentSaleRefundedTest extends WalletTestCase {
 	 * Restore the order storage the suite runs with.
 	 */
 	public function tearDown(): void {
-		parent::tearDown();
-		wp_cache_flush();
-		OrderHelper::toggle_cot_feature_and_usage( $this->hpos_was_enabled );
+		try {
+			parent::tearDown();
+			wp_cache_flush();
+		} finally {
+			OrderHelper::toggle_cot_feature_and_usage( $this->hpos_was_enabled );
+		}
+	}
+
+	/**
+	 * The two order storages every case runs on.
+	 *
+	 * @return array<string, array{bool}> Whether to store orders in the custom orders table.
+	 */
+	public function provider_order_storages(): array {
+		return array(
+			'posts' => array( false ),
+			'hpos'  => array( true ),
+		);
+	}
+
+	/**
+	 * Store orders in the custom orders table (HPOS) or in posts. Call before creating the order.
+	 *
+	 * @param bool $hpos Whether to use the custom orders table.
+	 */
+	private function use_order_storage( bool $hpos ): void {
+		OrderHelper::toggle_cot_feature_and_usage( $hpos );
 	}
 
 	/**
@@ -125,9 +146,13 @@ class PaymentSaleRefundedTest extends WalletTestCase {
 	}
 
 	/**
+	 * @dataProvider provider_order_storages
 	 * @testdox Should create no refund and answer 200 when the refund ID is already recorded on the order.
+	 *
+	 * @param bool $hpos Whether to use the custom orders table.
 	 */
-	public function test_wc_create_refund_is_not_called_when_refund_id_already_in_meta(): void {
+	public function test_handle_request_creates_no_refund_when_refund_id_already_recorded( bool $hpos ): void {
+		$this->use_order_storage( $hpos );
 		$order = $this->create_paid_order();
 		$order->update_meta_data( PayPalGateway::REFUNDS_META_KEY, array( 'REFUND-ALREADY-PROCESSED' ) );
 		$order->save();
@@ -141,9 +166,13 @@ class PaymentSaleRefundedTest extends WalletTestCase {
 	}
 
 	/**
+	 * @dataProvider provider_order_storages
 	 * @testdox Should create exactly one refund, record its ID on the order and update the fees when the refund ID is new.
+	 *
+	 * @param bool $hpos Whether to use the custom orders table.
 	 */
-	public function test_wc_create_refund_is_called_once_when_refund_id_not_in_meta(): void {
+	public function test_handle_request_creates_one_refund_for_a_new_refund_id( bool $hpos ): void {
+		$this->use_order_storage( $hpos );
 		$order = $this->create_paid_order();
 
 		$this->refund_fees_updater->shouldReceive( 'update' )->once();
@@ -162,9 +191,13 @@ class PaymentSaleRefundedTest extends WalletTestCase {
 	 * order at all. The ID is put back here so the second delivery reaches the order and the recorded refund ID is what
 	 * stops it from refunding again.
 	 *
+	 * @dataProvider provider_order_storages
 	 * @testdox Should refund the order once, not once per delivery, when the same webhook arrives twice.
+	 *
+	 * @param bool $hpos Whether to use the custom orders table.
 	 */
-	public function test_wc_create_refund_is_called_only_once_across_repeated_deliveries(): void {
+	public function test_handle_request_creates_one_refund_when_delivered_twice( bool $hpos ): void {
+		$this->use_order_storage( $hpos );
 		$order = $this->create_paid_order();
 
 		$this->refund_fees_updater->shouldReceive( 'update' )->once();
@@ -187,9 +220,13 @@ class PaymentSaleRefundedTest extends WalletTestCase {
 	/**
 	 * An order without refund meta has no prior refund recorded: the handler proceeds and refunds normally.
 	 *
+	 * @dataProvider provider_order_storages
 	 * @testdox Should create the refund when the order carries no refund meta at all.
+	 *
+	 * @param bool $hpos Whether to use the custom orders table.
 	 */
-	public function test_wc_create_refund_is_called_when_meta_returns_null(): void {
+	public function test_handle_request_creates_refund_when_order_has_no_refund_meta( bool $hpos ): void {
+		$this->use_order_storage( $hpos );
 		$order = $this->create_paid_order();
 		$this->assertSame( '', $order->get_meta( PayPalGateway::REFUNDS_META_KEY ), 'The order should carry no refund meta' );
 
