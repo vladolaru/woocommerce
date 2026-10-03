@@ -308,6 +308,27 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Resolve the order an order-received or view-order page shows to the current visitor.
+	 *
+	 * @return WC_Order|null
+	 */
+	private function get_customer_order_page_order(): ?WC_Order {
+		global $wp;
+
+		if ( is_order_received_page() ) {
+			return $this->get_order_received_order();
+		}
+
+		$order_id = absint( $wp->query_vars['view-order'] ?? 0 );
+		if ( $order_id <= 0 || ! current_user_can( 'view_order', $order_id ) ) {
+			return null;
+		}
+		$order = wc_get_order( $order_id );
+
+		return $order instanceof WC_Order ? $order : null;
+	}
+
+	/**
 	 * Tell the shopper a duplicate-order payment was prevented.
 	 *
 	 * The duplicate-payment guard redirects here with a flag instead of charging a second
@@ -435,6 +456,12 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	 */
 	public function enqueue_assets(): void {
 		if ( ! is_order_received_page() && ! is_view_order_page() ) {
+			return;
+		}
+		// The assets only style and script WooPayments markup, which client 11.1.0 renders only for its own orders
+		// (includes/class-wc-payments-order-success-page.php:182), although it loads them on every order page (:499-515).
+		$order = $this->get_customer_order_page_order();
+		if ( null === $order || 0 !== strpos( $order->get_payment_method(), OrderPaymentStore::GATEWAY_ID ) ) {
 			return;
 		}
 

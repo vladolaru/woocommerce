@@ -189,10 +189,15 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should enqueue native order-success assets on the order-received page.
+	 * @testdox Should enqueue native order-success assets on the order-received page of a WooPayments order.
+	 * @testWith ["woocommerce_payments"]
+	 *           ["woocommerce_payments_multibanco"]
+	 *
+	 * @param string $payment_method Order payment method.
 	 */
-	public function test_enqueues_order_success_assets_on_order_received_page(): void {
+	public function test_enqueues_order_success_assets_on_order_received_page( string $payment_method ): void {
 		$page = $this->create_page( true );
+		$this->create_thankyou_order( 'processing', $payment_method );
 		add_filter( 'woocommerce_is_order_received_page', '__return_true' );
 
 		try {
@@ -205,6 +210,63 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		$this->assertTrue( wp_style_is( 'wc-woopayments-order-success', 'enqueued' ) );
 		$this->assertTrue( wp_script_is( 'wc-woopayments-appearance', 'registered' ) );
 		$this->assertContains( 'wc-woopayments-appearance', wp_scripts()->registered['wc-woopayments-order-success']->deps );
+	}
+
+	/**
+	 * @testdox Should not enqueue native order-success assets on the order-received page of another gateway's order or a key mismatch.
+	 * @testWith ["bacs", true]
+	 *           ["cod", true]
+	 *           ["woocommerce_payments", false]
+	 *
+	 * @param string $payment_method Order payment method.
+	 * @param bool   $key_matches    Whether the request carries the order key.
+	 */
+	public function test_skips_order_success_assets_for_orders_not_shown_as_woopayments_orders( string $payment_method, bool $key_matches ): void {
+		$page = $this->create_page( true );
+		$this->create_thankyou_order( 'processing', $payment_method );
+		if ( ! $key_matches ) {
+			$_GET['key'] = 'wc_order_mismatch';
+		}
+		add_filter( 'woocommerce_is_order_received_page', '__return_true' );
+
+		try {
+			$page->enqueue_assets();
+		} finally {
+			remove_filter( 'woocommerce_is_order_received_page', '__return_true' );
+		}
+
+		$this->assertFalse( wp_script_is( 'wc-woopayments-order-success', 'enqueued' ) );
+		$this->assertFalse( wp_style_is( 'wc-woopayments-order-success', 'enqueued' ) );
+	}
+
+	/**
+	 * @testdox Should enqueue native order-success assets on the view-order page only for the customer who can view the WooPayments order.
+	 * @testWith [true, true]
+	 *           [false, false]
+	 *
+	 * @param bool $is_owner        Whether the current user owns the order.
+	 * @param bool $expect_enqueued Whether the assets should be enqueued.
+	 */
+	public function test_enqueues_order_success_assets_on_view_order_page_for_the_order_owner( bool $is_owner, bool $expect_enqueued ): void {
+		$page        = $this->create_page( true );
+		$customer_id = $this->factory->user->create( array( 'role' => 'customer' ) );
+		$order       = wc_create_order( array( 'customer_id' => $customer_id ) );
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->save();
+		$myaccount_page_id = $this->factory->post->create( array( 'post_type' => 'page' ) );
+		update_option( 'woocommerce_myaccount_page_id', $myaccount_page_id );
+		$this->go_to( get_permalink( $myaccount_page_id ) );
+		$GLOBALS['wp']->query_vars['view-order'] = $order->get_id();
+		wp_set_current_user( $is_owner ? $customer_id : $this->factory->user->create( array( 'role' => 'customer' ) ) );
+
+		try {
+			$page->enqueue_assets();
+		} finally {
+			unset( $GLOBALS['wp']->query_vars['view-order'] );
+		}
+
+		$this->assertSame( $expect_enqueued, wp_script_is( 'wc-woopayments-order-success', 'enqueued' ) );
+		$this->assertSame( $expect_enqueued, wp_style_is( 'wc-woopayments-order-success', 'enqueued' ) );
 	}
 
 	/**
