@@ -3269,7 +3269,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $order->get_payment_method() );
 		$this->assertSame( 'pm_free_trial', $order->get_meta( '_payment_method_id', true ) );
 		$this->assertSame( 'cus_free_trial', $order->get_meta( '_stripe_customer_id', true ) );
-		$this->assertSame( 'seti_free_trial', $order->get_meta( '_intent_id', true ) );
+		// Client 11.1.0 creates no intent for a $0 order paid with a saved card (gw:1688).
+		$this->assertSame( $use_saved_token ? '' : 'seti_free_trial', $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( 'Visa credit card', $subscription->get_payment_method_title() );
 		$this->assertSame( 'pm_free_trial', $subscription->get_meta( '_payment_method_id', true ) );
 		$this->assertSame( 'cus_free_trial', $subscription->get_meta( '_stripe_customer_id', true ) );
@@ -3280,6 +3281,15 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $order->get_payment_tokens() );
 		$this->assertCount( 1, $subscription->get_payment_tokens() );
 		$this->assertStringContainsString( '"type":"card"', (string) $order->get_meta( '_wcpay_payment_method_details', true ) );
+		// Without an intent the client pushes the order's billing details to the saved method itself (gw:1708-1716).
+		$update_jobs = as_get_scheduled_actions(
+			array(
+				'hook'   => 'wcpay_update_saved_payment_method',
+				'status' => \ActionScheduler_Store::STATUS_PENDING,
+			),
+			'ids'
+		);
+		$this->assertCount( $use_saved_token ? 1 : 0, $update_jobs );
 	}
 
 	/**

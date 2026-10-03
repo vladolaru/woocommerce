@@ -562,6 +562,18 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Get a payment method's details for display without saving anything, or an empty array when they cannot be read.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string $payment_method_id Provider payment method ID.
+	 * @return array<string,mixed>
+	 */
+	public function get_payment_method_details_for_display( string $payment_method_id ): array {
+		return '' === trim( $payment_method_id ) ? array() : $this->get_bound_payment_method_details( $payment_method_id );
+	}
+
+	/**
 	 * Get provider details only when their identity matches the requested payment method.
 	 *
 	 * @param string $payment_method_id Provider payment method ID.

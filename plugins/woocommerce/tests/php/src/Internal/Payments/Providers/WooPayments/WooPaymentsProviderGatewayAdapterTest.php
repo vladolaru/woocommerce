@@ -3113,9 +3113,12 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Zero-total scheduled Link renewals should omit online mandate acceptance at transport.
+	 * @testdox A zero-total scheduled Link renewal completes without any intent, as the client's scheduled payment does.
+	 *
+	 * Client scheduled_subscription_payment() builds its payment information from the saved token (subtrait:424-425), so gw:1688
+	 * skips the intent: no transport, so no mandate question either.
 	 */
-	public function test_zero_total_scheduled_link_renewal_omits_online_mandate_at_transport(): void {
+	public function test_zero_total_scheduled_link_renewal_completes_without_intent(): void {
 		$user_id          = $this->factory()->user->create();
 		$order            = $this->create_woopayments_order( '0.00' );
 		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
@@ -3196,16 +3199,13 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 				'key_zero_renewal'
 			);
 
-			$this->assertSame( 'key_zero_renewal', $api_client->last_idempotency_key );
-			$this->assertSame( 'cus_native', $api_client->last_request_data['customer'] );
-			$this->assertSame( 'pm_link', $api_client->last_request_data['payment_method'] );
-			$this->assertSame( array( 'card', 'link' ), $api_client->last_request_data['payment_method_types'] );
-			$this->assertArrayNotHasKey( 'mandate_data', $api_client->last_request_data );
-			$this->assertInstanceOf( WooPaymentsPaymentType::class, $api_client->last_request_data['metadata']['payment_type'] );
-			$this->assertSame( 'recurring', (string) $api_client->last_request_data['metadata']['payment_type'] );
-			$this->assertSame( 'renewal', $api_client->last_request_data['metadata']['subscription_payment'] );
-			$this->assertSame( 'regular_subscription', $api_client->last_request_data['metadata']['payment_context'] );
+			$this->assertSame( '', $api_client->last_idempotency_key, 'No SetupIntent request.' );
 			$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+			$this->assertSame( '', $outcome->get_provider_payment_id() );
+			$this->assertSame( 'pm_link', $outcome->get_payment_method_id() );
+			$this->assertSame( 'cus_native', $outcome->get_customer_id() );
+			$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_ZERO_AMOUNT_WITHOUT_INTENT, $outcome->get_effect_plan()->get_type() );
+			$this->assertSame( $saved_token->get_id(), $outcome->get_effect_plan()->get_provider_result()['token_id'] );
 		} finally {
 			foreach ( $server_state as $server_key => $state ) {
 				if ( $state['present'] ) {
@@ -4197,14 +4197,19 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Charge should prefer native SetupIntent transport for zero-total card checkout.
+	 * @testdox Charge confirms a zero-total checkout paid with a saved card without any intent, as client 11.1.0 does.
+	 *
+	 * Client gw:1688 skips the intent when the order needs no payment and no new payment method is saved; a saved token is never saved again.
 	 */
-	public function test_charge_prefers_native_setup_intent_for_zero_total_checkout(): void {
+	public function test_charge_confirms_zero_total_checkout_with_saved_card_without_intent(): void {
 		$user_id          = $this->factory()->user->create();
 		$order            = $this->create_woopayments_order( '0.00' );
 		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$saved_token      = $this->create_card_token( $user_id, 'pm_zero' );
 		$api_client       = new class() extends WooPaymentsApiClient {
+			/** @var int */
+			public int $setup_intent_calls = 0;
+
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -4215,27 +4220,17 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			}
 
 			/**
-			 * Create and confirm a setup intention.
+			 * Count SetupIntent requests: the client makes none here.
 			 *
 			 * @param array<string,mixed> $request_data Request data.
 			 * @param string              $idempotency_key Idempotency key.
 			 * @return array<string,mixed>
 			 */
 			public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
-				if ( 'cus_native' !== $request_data['customer']
-					|| 'pm_zero' !== $request_data['payment_method']
-					|| array( 'card' ) !== $request_data['payment_method_types']
-					|| 'key_setup' !== $idempotency_key ) {
-					throw new \RuntimeException( 'Unexpected native setup intent request payload.' );
-				}
+				unset( $request_data, $idempotency_key );
+				++$this->setup_intent_calls;
 
-				return array(
-					'id'             => 'seti_native',
-					'status'         => 'succeeded',
-					'client_secret'  => 'seti_native_secret_abc',
-					'customer'       => 'cus_native',
-					'payment_method' => 'pm_native',
-				);
+				return array();
 			}
 		};
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
@@ -4266,18 +4261,16 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertSame( 'seti_native', $outcome->get_provider_payment_id() );
-		$this->assertSame( 'pm_native', $outcome->get_payment_method_id() );
+		$this->assertSame( 0, $api_client->setup_intent_calls );
+		$this->assertSame( '', $outcome->get_provider_payment_id(), 'No intent, so no transaction id (client gw:1702 payment_complete() without one).' );
+		$this->assertSame( 'pm_zero', $outcome->get_payment_method_id() );
 		$this->assertSame( 'cus_native', $outcome->get_customer_id() );
 		$this->assertSame( 0, $gateway->processed_order_id );
-		$this->assertSame( '', $order->get_transaction_id() );
-		$this->assertSame( '', $order->get_meta( '_payment_method_id', true ) );
 		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
-		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_SETUP_INTENT, $outcome->get_effect_plan()->get_type() );
-		// Plugin 11.1.0 stores `Order_Mode::PRODUCTION` for a live account (class-wc-payment-gateway-wcpay.php:1677).
-		$this->assertSame( 'prod', $outcome->get_effect_plan()->get_setup_meta()['_wcpay_mode'] );
-		// Plugin 11.1.0 stores the order currency for setup intents (class-wc-payments-order-service.php:1361).
-		$this->assertSame( 'USD', $outcome->get_effect_plan()->get_setup_meta()['_wcpay_intent_currency'] );
+		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_ZERO_AMOUNT_WITHOUT_INTENT, $outcome->get_effect_plan()->get_type() );
+		$this->assertSame( $saved_token->get_id(), $outcome->get_effect_plan()->get_provider_result()['token_id'] );
+		// Client gw:1675-1679 writes the mode; it writes no intent currency on this branch.
+		$this->assertSame( array( '_wcpay_mode' => 'prod' ), $outcome->get_effect_plan()->get_setup_meta() );
 	}
 
 	/**
@@ -4285,7 +4278,8 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 *
 	 * Free-trial subscription signup and other zero-total checkouts create a native SetupIntent
 	 * (`setup_intent_via_native_transport`), not a PaymentIntent. When that SetupIntent comes back
-	 * `requires_action` (a 3DS challenge on the saved card), the frontend confirmation hash must read
+	 * `requires_action` (a 3DS challenge on the new card the free trial saves; a saved card gets no intent at $0, client
+	 * gw:1688), the frontend confirmation hash must read
 	 * `#wcpay-confirm-si:...`, matching client 11.1.0's own `$payment_needed ? 'pi' : 'si'` branch
 	 * (`gw:2111`, `class-wc-payment-gateway-wcpay.php`): a SetupIntent has no payment to confirm, so the
 	 * frontend must call `stripe.confirmSetup()`, not `confirmPayment()`. Only the codec unit test
@@ -4302,7 +4296,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$user_id               = $this->factory()->user->create();
 		$order                 = $this->create_woopayments_order( '0.00' );
 		$gateway               = new RecordingLegacyGateway( array( 'result' => 'success' ) );
-		$saved_token           = $this->create_card_token( $user_id, 'pm_zero_action' );
 		$recorded              = $this->load_recorded_intent_entry( 'rec-t3-setup-intent-requires-action.json', 'setup_intent_requires_action' );
 		$http_client           = new FakeWooPaymentsHttpClient();
 		$http_client->response = array(
@@ -4318,19 +4311,18 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
 			->getMock();
 		$order->set_customer_id( $user_id );
-		$order->add_payment_token( $saved_token );
 		$order->save();
-		$token_service = $this->create_single_resolution_token_service( $saved_token, $user_id, 'pm_zero_action' );
 
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( (string) $recorded['body']['customer'] );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, $token_service, $account_service );
+		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $account_service );
 		$outcome = $sut->charge(
 			PaymentContext::for_checkout(
 				$order,
 				OrderPaymentStore::GATEWAY_ID,
-				'',
-				array( 'payment_token' => (string) $saved_token->get_id() )
+				'pm_zero_action',
+				array(),
+				array( WooPaymentsIntentRequestBuilder::PROVIDER_DATA_RECURRING_PAYMENT => true )
 			),
 			'key_setup_action'
 		);
@@ -4401,7 +4393,8 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 				$order,
 				OrderPaymentStore::GATEWAY_ID,
 				'pm_platform',
-				array(),
+				// Client 11.1.0 creates a SetupIntent for a $0 order only when it saves the payment method (gw:1688).
+				array( 'save_payment_method' => true ),
 				array( 'is_platform_payment_method' => true )
 			),
 			'key_setup'

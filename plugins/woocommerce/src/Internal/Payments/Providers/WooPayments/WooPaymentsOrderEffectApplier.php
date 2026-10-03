@@ -11,9 +11,11 @@ use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
 use Throwable;
 use WC_Order;
 use WC_Payment_Token;
+use WC_Payment_Tokens;
 
 /**
  * Applies WooPayments-specific order, token, and note effects after provider transport completes.
@@ -147,6 +149,10 @@ class WooPaymentsOrderEffectApplier {
 					}
 					$this->apply_setup_intent_payment_method_display_details( $context->get_order(), $payment_method_details, '', $outcome->get_payment_method_id(), $previous_payment_method_id );
 				}
+				return $outcome;
+
+			case WooPaymentsOrderEffectPlan::TYPE_ZERO_AMOUNT_WITHOUT_INTENT:
+				$this->apply_zero_amount_without_intent( $context->get_order(), $outcome, $plan );
 				return $outcome;
 
 			case WooPaymentsOrderEffectPlan::TYPE_CAPTURE:
@@ -994,6 +1000,44 @@ class WooPaymentsOrderEffectApplier {
 			$order->update_meta_data( $key, $value );
 		}
 		$order->save();
+	}
+
+	/**
+	 * Write what client 11.1.0 writes when it confirms a $0 order without an intent (gw:1673-1771).
+	 *
+	 * The payment method, customer and mode; the card title and details from the payment method; a saved token on the order
+	 * and its subscriptions with the job that pushes the billing details to it. No intent, transaction id or note.
+	 *
+	 * @param WC_Order                   $order   Order being confirmed.
+	 * @param PaymentOutcome             $outcome Completed outcome without a provider reference.
+	 * @param WooPaymentsOrderEffectPlan $plan    Zero-amount plan.
+	 * @return void
+	 */
+	private function apply_zero_amount_without_intent( WC_Order $order, PaymentOutcome $outcome, WooPaymentsOrderEffectPlan $plan ): void {
+		$payment_method_id          = $outcome->get_payment_method_id();
+		$previous_payment_method_id = (string) $order->get_meta( '_payment_method_id', true );
+		$this->persist_setup_intent_details( $order, $outcome, $plan->get_setup_meta() );
+
+		$token_id = (int) ( $plan->get_provider_result()['token_id'] ?? 0 );
+		$token    = 0 < $token_id ? WC_Payment_Tokens::get( $token_id ) : null;
+		// The client skips the payment method fetch for Link tokens (gw:1693-1696).
+		$details = $token instanceof WooPaymentsLinkToken ? array() : $this->token_service->get_payment_method_details_for_display( $payment_method_id );
+		$this->apply_setup_intent_payment_method_display_details( $order, $details, '', $payment_method_id, $previous_payment_method_id );
+
+		if ( ! $token instanceof WC_Payment_Token ) {
+			return;
+		}
+
+		$this->token_service->attach_token_to_order( $order, $token );
+		$this->token_service->sync_related_subscriptions_payment_token( $order, $token, $payment_method_id, $outcome->get_customer_id() );
+		wc_get_container()->get( WooPaymentsActionSchedulerService::class )->schedule_job(
+			WooPaymentsOperationalQueueService::UPDATE_SAVED_PAYMENT_METHOD_ACTION,
+			array(
+				'payment_method' => $payment_method_id,
+				'order_id'       => $order->get_id(),
+				'is_test_mode'   => $this->account_service->is_test_mode_enabled(),
+			)
+		);
 	}
 
 	/**

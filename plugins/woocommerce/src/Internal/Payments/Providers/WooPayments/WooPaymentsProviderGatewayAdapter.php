@@ -736,6 +736,43 @@ class WooPaymentsProviderGatewayAdapter {
 	}
 
 	/**
+	 * Tell whether a $0 order saves a new payment method, the only case client 11.1.0 creates a SetupIntent for.
+	 *
+	 * The client saves when the shopper did not pick a saved token and the payment is recurring or the shopper asked to
+	 * save (`Payment_Information::should_save_payment_method_to_store()`, subtrait:382-394).
+	 *
+	 * @param PaymentContext $context      Payment context.
+	 * @param bool           $is_recurring Whether the payment is recurring.
+	 * @return bool
+	 */
+	private function zero_amount_saves_payment_method( PaymentContext $context, bool $is_recurring ): bool {
+		if ( 0 < $this->get_saved_payment_token_id( $context ) ) {
+			return false;
+		}
+
+		$payment_data  = $context->get_payment_data();
+		$provider_data = $context->get_provider_data();
+
+		// The client counts a payment method change request as recurring (trait-wc-payments-subscriptions-utilities.php:53-66).
+		return $is_recurring
+			|| ! empty( $provider_data[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] )
+			|| ! empty( $payment_data['save_payment_method'] );
+	}
+
+	/**
+	 * Get the saved token the shopper picked, or 0 for a new payment method.
+	 *
+	 * @param PaymentContext $context Payment context.
+	 * @return int
+	 */
+	private function get_saved_payment_token_id( PaymentContext $context ): int {
+		$payment_data = $context->get_payment_data();
+		$token        = isset( $payment_data['payment_token'] ) && is_scalar( $payment_data['payment_token'] ) ? (string) $payment_data['payment_token'] : '';
+
+		return 'new' === $token ? 0 : absint( $token );
+	}
+
+	/**
 	 * Create or confirm a zero-amount setup intent through native transport.
 	 *
 	 * @param PaymentContext $context         Payment context.
@@ -755,6 +792,18 @@ class WooPaymentsProviderGatewayAdapter {
 
 		$customer_id      = $this->get_customer_id_for_context( $context );
 		$woopay_intent_id = $this->get_woopay_intent_id( $context );
+
+		if ( empty( $woopay_intent_id ) && ! WooPaymentsIntentCodec::is_confirmation_token( $payment_credential ) && ! $this->zero_amount_saves_payment_method( $context, $is_recurring ) ) {
+			// Client 11.1.0 confirms a $0 order without an intent unless it saves a new payment method (gw:1688).
+			$outcome = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, '', '', $payment_credential, $customer_id );
+
+			return $outcome->with_effect_plan(
+				WooPaymentsOrderEffectPlan::for_zero_amount_without_intent(
+					array( '_wcpay_mode' => $this->account_service->get_order_mode() ),
+					$this->get_saved_payment_token_id( $context )
+				)
+			);
+		}
 
 		if ( ! empty( $woopay_intent_id ) ) {
 			$this->assert_valid_stripe_id( $woopay_intent_id );

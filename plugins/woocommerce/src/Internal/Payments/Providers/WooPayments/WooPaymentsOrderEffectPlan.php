@@ -62,6 +62,13 @@ class WooPaymentsOrderEffectPlan implements ProviderOperationEffectPlan {
 	public const TYPE_REFUND = 'refund';
 
 	/**
+	 * A $0 order confirmed without an intent, as client 11.1.0 does when no new payment method is saved.
+	 *
+	 * @var string
+	 */
+	public const TYPE_ZERO_AMOUNT_WITHOUT_INTENT = 'zero_amount_without_intent';
+
+	/**
 	 * Effect plan type.
 	 *
 	 * @var string
@@ -156,6 +163,17 @@ class WooPaymentsOrderEffectPlan implements ProviderOperationEffectPlan {
 			$is_recurring,
 			$setup_meta
 		);
+	}
+
+	/**
+	 * Build the effect plan of a $0 order confirmed without an intent (client 11.1.0 gw:1673-1771).
+	 *
+	 * @param array<string,string> $setup_meta Metadata the client writes before confirming.
+	 * @param int                  $token_id   Saved token the shopper used, or 0 for a payment method that is not saved.
+	 * @return self
+	 */
+	public static function for_zero_amount_without_intent( array $setup_meta, int $token_id ): self {
+		return new self( self::TYPE_ZERO_AMOUNT_WITHOUT_INTENT, array( 'token_id' => $token_id ), false, false, $setup_meta );
 	}
 
 	/**

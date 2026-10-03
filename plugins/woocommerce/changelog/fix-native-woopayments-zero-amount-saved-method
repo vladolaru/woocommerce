@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Complete $0 WooPayments orders paid with a saved payment method without creating a setup intent, as the WooPayments plugin does.
