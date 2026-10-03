@@ -233,11 +233,6 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 				add_action( $hook_name, array( $this, 'clear_cache' ) );
 			}
 		}
-
-		// Like client 11.1.0 on its own update, drop the onboarding fields cache when WooCommerce updates.
-		if ( false === has_action( 'woocommerce_updated', array( $this, 'clear_onboarding_fields_cache' ) ) ) {
-			add_action( 'woocommerce_updated', array( $this, 'clear_onboarding_fields_cache' ) );
-		}
 	}
 
 	/**

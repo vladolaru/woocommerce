@@ -4,6 +4,8 @@ declare( strict_types=1 );
 namespace Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -40,6 +42,7 @@ class WooPaymentsController {
 		// Fire only when the Settings or WC Admin page loads, before any output; WC Admin carries the client's legacy links.
 		add_action( 'load-woocommerce_page_wc-settings', array( $this, 'maybe_redirect_to_onboarding' ) );
 		add_action( 'load-woocommerce_page_wc-admin', array( $this, 'maybe_redirect_to_onboarding' ) );
+		add_action( 'woocommerce_updated', array( $this, 'clear_native_onboarding_fields_cache' ) );
 	}
 
 	/**
@@ -53,6 +56,25 @@ class WooPaymentsController {
 	final public function init( Payments $payments, WooPaymentsService $woopayments ): void {
 		$this->payments    = $payments;
 		$this->woopayments = $woopayments;
+	}
+
+	/**
+	 * Drop the native onboarding fields cache when WooCommerce updates.
+	 *
+	 * Client 11.1.0 drops it on its own update; native ships inside WooCommerce. Registered here because this
+	 * controller loads in every native state, and the account service resolves only when the update fires.
+	 *
+	 * @internal
+	 *
+	 * @return void
+	 */
+	public function clear_native_onboarding_fields_cache(): void {
+		$container = wc_get_container();
+		if ( ! $container->get( NativePaymentsRuntimeArbiter::class )->should_native_register() ) {
+			return;
+		}
+
+		$container->get( WooPaymentsAccountService::class )->clear_onboarding_fields_cache();
 	}
 
 	/**

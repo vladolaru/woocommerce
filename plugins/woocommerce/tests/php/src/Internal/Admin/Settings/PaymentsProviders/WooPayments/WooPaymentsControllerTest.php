@@ -26,6 +26,7 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
+		wc_get_container()->reset_all_replacements();
 		unset( $_GET['woopayments-ref'], $_GET['page'], $_GET['tab'], $_GET['path'], $_GET['section'], $_GET['method'], $_GET['id'], $_GET['wcpay-connection-success'] );
 		delete_transient( 'woopayments_referral_code' );
 		delete_option( NativePaymentsState::OPTION_NAME );
@@ -83,6 +84,34 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 		$service->expects( $this->never() )->method( 'handle_onboarding_referral' );
 
 		$this->create_controller( $service )->handle_referral_link();
+	}
+
+	/**
+	 * @testdox A WooCommerce update drops the onboarding fields cache in every native state, and leaves the plugin's own cache alone.
+	 *
+	 * @testWith [true, 1]
+	 *           [false, 0]
+	 *
+	 * @param bool $native_owner Whether native owns the runtime.
+	 * @param int  $clears       Expected cache clears.
+	 */
+	public function test_woocommerce_update_clears_the_native_onboarding_fields_cache( bool $native_owner, int $clears ): void {
+		$arbiter = $this->createMock( NativePaymentsRuntimeArbiter::class );
+		$arbiter->method( 'should_native_register' )->willReturn( $native_owner );
+		$account_service = $this->createMock( WooPaymentsAccountService::class );
+		$account_service->expects( $this->exactly( $clears ) )->method( 'clear_onboarding_fields_cache' );
+		wc_get_container()->replace( NativePaymentsRuntimeArbiter::class, $arbiter );
+		wc_get_container()->replace( WooPaymentsAccountService::class, $account_service );
+		$sut = $this->create_controller( $this->createMock( WooPaymentsService::class ) );
+
+		$sut->register();
+		$registered = has_action( 'woocommerce_updated', array( $sut, 'clear_native_onboarding_fields_cache' ) );
+		remove_action( 'woocommerce_updated', array( $sut, 'clear_native_onboarding_fields_cache' ) );
+
+		// Called directly: the controller core registered at boot listens to the same hook.
+		$sut->clear_native_onboarding_fields_cache();
+
+		$this->assertSame( 10, $registered );
 	}
 
 	/**

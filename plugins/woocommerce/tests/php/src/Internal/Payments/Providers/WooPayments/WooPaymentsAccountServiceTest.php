@@ -2061,10 +2061,10 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		$this->store_onboarding_fields_cache( 'en_US', time() );
 		$api_client = $this->create_counting_fields_api_client( $this->get_onboarding_fields_payload() );
 		$sut        = $this->create_service_with_api_client( $api_client );
-		$sut->register();
+		$sut->get_onboarding_fields_data( 'en_US' );
+		$this->assertSame( 0, $api_client->calls, 'The seeded cache is served first.' );
 
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
-		do_action( 'woocommerce_updated' );
+		$sut->clear_onboarding_fields_cache();
 
 		$this->assertFalse( get_option( 'wcpay_onboarding_fields_data' ), 'Client 11.1.0 clears this cache on its own update (class-wc-payments-onboarding-service.php:127, 967-970).' );
 		$sut->get_onboarding_fields_data( 'en_US' );
