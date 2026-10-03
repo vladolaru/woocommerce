@@ -46,7 +46,9 @@ final class WooPaymentsOutcomeMetadataMapper implements ProviderOutcomeMetadataM
 			$meta['_stripe_customer_id'] = $outcome->get_customer_id();
 		}
 
-		if ( ! isset( $meta['_intention_status'] ) ) {
+		// A $0 order confirmed without an intent has no intention status; the client writes none there (gw:1673-1771).
+		$plan = $outcome->get_effect_plan();
+		if ( ! isset( $meta['_intention_status'] ) && ! ( $plan instanceof WooPaymentsOrderEffectPlan && WooPaymentsOrderEffectPlan::TYPE_ZERO_AMOUNT_WITHOUT_INTENT === $plan->get_type() ) ) {
 			$meta['_intention_status'] = $this->get_default_intention_status( $outcome );
 		}
 

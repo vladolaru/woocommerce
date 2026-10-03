@@ -3271,6 +3271,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'cus_free_trial', $order->get_meta( '_stripe_customer_id', true ) );
 		// Client 11.1.0 creates no intent for a $0 order paid with a saved card (gw:1688).
 		$this->assertSame( $use_saved_token ? '' : 'seti_free_trial', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( $use_saved_token ? '' : 'succeeded', $order->get_meta( '_intention_status', true ), 'No intent, no intention status (V615: client order 51 has none).' );
 		$this->assertSame( 'Visa credit card', $subscription->get_payment_method_title() );
 		$this->assertSame( 'pm_free_trial', $subscription->get_meta( '_payment_method_id', true ) );
 		$this->assertSame( 'cus_free_trial', $subscription->get_meta( '_stripe_customer_id', true ) );
