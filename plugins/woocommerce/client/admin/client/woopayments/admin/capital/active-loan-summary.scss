@@ -1,0 +1,94 @@
+// Client 11.1.0 `components/active-loan-summary/style.scss`: blocks split by dividers, the bottom row tighter.
+.woocommerce-woopayments-loan-summary__header.components-card__header {
+	flex-wrap: wrap;
+	gap: 8px;
+
+	h2,
+	h3 {
+		font-size: 20px;
+		font-weight: 400;
+		line-height: 28px;
+		margin: 0;
+	}
+
+	.components-button.is-link {
+		text-decoration: none;
+	}
+}
+
+.woocommerce-woopayments-loan-summary__body.components-card__body {
+	padding: 0;
+}
+
+.woocommerce-woopayments-loan-summary__row {
+	margin: 0;
+
+	& + & {
+		border-top: 1px solid #e0e0e0;
+	}
+
+	&.is-bottom-row {
+		padding-bottom: 24px;
+		padding-top: 24px;
+
+		.woocommerce-woopayments-loan-summary__block {
+			padding-bottom: 0;
+			padding-top: 0;
+		}
+	}
+}
+
+.woocommerce-woopayments-loan-summary__block {
+	margin: 0;
+	padding: 24px 16px;
+
+	& + & {
+		border-inline-start: 1px solid #e0e0e0;
+	}
+
+	dt {
+		color: #949494;
+		font-size: 12px;
+		line-height: 16px;
+	}
+
+	dd {
+		color: #1e1e1e;
+		font-size: 13px;
+		line-height: 20px;
+		margin: 0;
+		padding: 8px 0;
+	}
+
+	.is-big {
+		font-size: 20px;
+		line-height: 27px;
+	}
+}
+
+// Five blocks do not fit a phone: each row stacks its blocks, divided by top borders.
+@media screen and (max-width: 600px) {
+	.woocommerce-woopayments-loan-summary__body > .woocommerce-woopayments-loan-summary__row {
+		flex-direction: column;
+		gap: 0;
+
+		&.is-bottom-row {
+			padding-bottom: 0;
+			padding-top: 0;
+
+			.woocommerce-woopayments-loan-summary__block {
+				padding-bottom: 16px;
+				padding-top: 16px;
+			}
+		}
+	}
+
+	.woocommerce-woopayments-loan-summary__block {
+		padding: 16px;
+
+		& + & {
+			border-inline-start: 0;
+			border-top: 1px solid #e0e0e0;
+		}
+	}
+}

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Export Balance report Payouts as negative outflows in CSV files.

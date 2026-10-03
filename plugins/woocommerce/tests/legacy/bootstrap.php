@@ -62,6 +62,16 @@ class WC_Unit_Tests_Bootstrap {
 		// load WC.
 		tests_add_filter( 'muplugins_loaded', array( $this, 'load_wc' ) );
 
+		// Undo whatever the surrounding development environment injected into this
+		// container, so a test run does not depend on the machine it runs on. Runs
+		// after load_wc so the Jetpack constants layer is autoloadable, and still
+		// before the WooCommerce singleton is constructed on plugins_loaded.
+		tests_add_filter(
+			'muplugins_loaded',
+			array( \Automattic\WooCommerce\Testing\Tools\EnvironmentIsolation::class, 'apply' ),
+			20
+		);
+
 		// Load admin features.
 		tests_add_filter( 'woocommerce_admin_should_load_features', '__return_true' );
 

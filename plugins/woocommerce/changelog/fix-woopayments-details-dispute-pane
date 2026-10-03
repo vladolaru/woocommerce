@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show WooPayments dispute details inside the payment summary as WooPayments did: the deadline notice, the dispute summary row and a footer with the outcome once the dispute closes.

@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "multi-currency-remove-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "56d628185719d9977fed946d010efb55c79a47a4",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-setup.spec.ts:57::Multi-currency setup › Currency management › can remove a currency"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/multi-currency.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved pre-review evidence SHA f25bebb33cccfb3ef8ccd741ea7cc913c8cc8ab6d11d8e4611874c2ef434abe8 against ledger SHA 3b3b9c6e601f6dd394cb469c5ae2094bfa1d066c9b139baa062d5e32755646b0 with no findings. Exactly the line-57 currency-remove row changes only fields 37-40 to deferred/blocked-environment/blocked-environment:PILOT-NATIVE-READINESS/evidence, preserving its pending disposition, provisional target, pending contract, unresolved owner, frozen fields, and line-53 addition sibling. Core already provides an honest semantic removal, default protection, authenticated persistence, bounded per-currency cleanup, memo reset, and focus-recovery adapter, so no defect or known gap is claimed. The future oracle independently seeds enabled CHF, proves the default cannot be removed and permits a valid default-only result, dispatches exactly one no-replay complete-set removal preserving every companion once, and joins CHF absence across raw state, fresh REST, and reloaded UI. It binds destructive CHF cleanup to complete wildcard option, catalog/rate/account-cache, transient, user-meta, and session journals with direct byte-and-name restoration; requires one worker, zero retries, semantic keyboard accessibility, target drift controls, and exact-resource quarantine; and remains shopper-, payment-, provider-writer-, and listener-free."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing-native readiness fails before the authenticated native removal and persistence join can run; the provisional shared scenario is absent; and the exact target contract, owner, deterministic independently enabled CHF fixture, full wildcard snapshot, occurrence controls, direct restoration mechanism, and row-safe topology remain pending. Core already exposes a semantic non-default removal action, authenticated update route, default protection, bounded per-currency cleanup, refreshed state, and focus recovery, so no product-authority conflict, production defect, or known gap is established.",
+		"affected_scope": "Only one independently seeded non-default CHF removal: join authoritative CHF identity to exactly one enabled row and semantic remove action while the distinct default has no remove action; dispatch exactly one complete-set update equal to the baseline minus CHF while preserving every companion and default once; then join zero CHF and unique companions across raw state, fresh REST, and the reloaded merchant surface. Default removal attempts, shopper behavior, checkout, orders, payments, provider records, line 53 addition, and rate or pricing settings remain separate.",
+		"no_allowlisted_action_reason": "The run cannot establish native account/callback readiness, repair shared sites, invent the pending target/owner/topology, independently seed CHF with stable catalog identity, or allow destructive per-currency cleanup without a complete pre-write byte restoration journal. A success notice, hidden row, component test, or lower-layer persistence test cannot substitute for exactly one request, complete-set preservation, raw/fresh-REST/reload absence, default protection, and exact restoration. No provider writer or listener can unlock this local merchant configuration contract.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy native readiness; approve a row-safe target and implementation owner; provide a deterministic distinct-default store with stable CHF catalog/rate and independently enabled CHF under ordered account/store/currency-settings/catalog ownership, with complete wildcard option, cache, transient, and session snapshots plus separate setup, behavior, and restoration journals. Run one accessible removal with one worker, zero retries, and no replay; join request, response, raw state, fresh REST, reloaded UI, default and companion preservation; restore every deleted or changed byte directly rather than through add/remove endpoints; obtain fresh code, E2E-test, reliability, and accessibility reviews.",
+		"quarantine_status": "No browser context, account, store, option, currency/rate fixture, session, cache, lock, journal, provider object, listener, retention record, or quarantine was created or changed for this row. A future ambiguous or duplicate update, wrong identity, response/body mismatch, companion or default loss, unexpected option deletion or cache refresh, live provider or platform traffic, target drift, lost ownership, incomplete raw join, or incomplete restoration must preserve diagnostics and quarantine the exact store, account/readiness identity, currency-settings graph, catalog/rate/account caches, session drift guards, and journal. Do not retry, normalize, use line 53, or clean through an ordinary add endpoint; no financial or platform provider resource belongs to this contract."
+	}
+}

@@ -1,0 +1,45 @@
+{
+	"_meta": {
+		"what": "Client 11.1.0 WC_REST_Payments_Payment_Intents_Controller::prepare_item_for_response() output for the REC-3 create-and-confirm response (Fixtures/rec-3-eur-charge.json entry 0), produced on the client 11.1.0 store (:8097) on 2026-10-03 by deserializing the recorded body with the client API client and calling the controller method; nothing written to the store."
+	},
+	"client_projection": {
+		"id": "pi_3UJWs2BzWlxcwgpP10KzkjsT",
+		"amount": 1234,
+		"currency": "EUR",
+		"created": "2026-09-25 11:00:50",
+		"customer": "cus_UsIeTbmGHPc9jY",
+		"payment_method": "pm_1UJWs2BzWlxcwgpPrrobU4Cv",
+		"status": "succeeded",
+		"charge": {
+			"id": "ch_3UJWs2BzWlxcwgpP1y9vRrWr",
+			"amount": 1234,
+			"application_fee_amount": 75,
+			"status": "succeeded",
+			"billing_details": {
+				"address": {
+					"city": "",
+					"country": "",
+					"line1": "",
+					"line2": "",
+					"postal_code": "",
+					"state": ""
+				},
+				"email": "",
+				"name": "",
+				"phone": ""
+			},
+			"payment_method_details": {
+				"card": {
+					"amount_authorized": 1234,
+					"brand": "visa",
+					"capture_before": "",
+					"country": "US",
+					"exp_month": 9,
+					"exp_year": 2027,
+					"last4": "4242",
+					"three_d_secure": ""
+				}
+			}
+		}
+	}
+}

@@ -1,0 +1,48 @@
+{
+	"schema_version": 2,
+	"slice_id": "multi-currency-unsupported-theme-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "028f84f330d24130e6d1fbc15b2fd6a7969ee5c3",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:224::Multi-currency on-boarding › Currency Switcher widget › should not offer the currency switcher widget when an unsupported theme is active"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/MultiCurrency/MultiCurrencySettingsControllerTest.php;plugins/woocommerce/tests/php/src/Internal/MultiCurrency/MultiCurrencyFrontendPricesControllerTest.php;plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/MultiCurrency/WooPaymentsCurrencyRateProviderTest.php;plugins/woocommerce/client/blocks/assets/js/blocks/multi-currency-switcher/test/index.js;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/theme-compatibility.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved evidence SHA 6576a1b4a7c14ff5d7e4ef75437867d7da20da5328de2b33994d1af94cf4b518 against ledger SHA a791ff3e3b963201c9028ddb6db9cc3372906f5948637aac82769ed1b40bcc69 with no findings. Exactly the line-224 row changes only fields 37-40 to deferred/blocked-environment/blocked-environment:PILOT-NATIVE-READINESS/evidence, preserving its pending disposition, exact unchanged five-path provisional target, pending target contract, and unresolved owner; the evidence target matches that ledger pair. Frozen and rolling source bytes are identical. The evidence narrows the contract to exact Twenty Twenty-Four identity joined to a successfully loaded authenticated Store settings surface, a stable positive control, zero accessible or focusable Storefront breadcrumb-placement checkboxes, non-actionable Save, zero update requests, and byte-identical settings, while keeping the positive sibling separate and claiming no defect or known gap. It requires ordered ownership, deterministic preinstalled-theme identity, complete theme/settings snapshots and pre-write restoration journal, exact-byte restoration, one worker, zero retries, accessibility and drift controls, exact-resource quarantine, provider-free execution, and an untouched irrelevant listener."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing-native readiness fails before the authenticated native multi-currency settings route can run; the provisional browser target is absent; and the exact target contract, owner, deterministic Twenty Twenty-Four fixture, complete theme/settings snapshot and restoration mechanism, and row-safe topology remain pending. Core already implements and component-tests the exact non-Storefront visibility predicate, so no production defect, known gap, or product-authority conflict is established.",
+		"affected_scope": "Only the exact Twenty Twenty-Four negative eligibility boundary: join authoritative active stylesheet and template identity to one successful authenticated settings response for the same native-owned store/account; require the loaded Store settings heading and a stable positive control; require zero accessible or focusable Storefront breadcrumb-placement checkboxes; and prove a non-actionable Save control, zero update-settings requests, and byte-identical authoritative settings. Generic switcher publishing, Storefront and child-theme eligibility, persistence, historical placement, currency membership or switching, prices, checkout, orders, payments, and provider behavior remain separate.",
+		"no_allowlisted_action_reason": "The run cannot establish native account/callback readiness, repair or restart shared Core E2E sites, invent the pending target/owner/topology, activate a theme without a complete pre-write restoration journal, or accept a negative locator before the exact loaded-surface and theme joins succeed. Component and PHP tests cannot substitute for the authenticated browser/accessibility-tree join, and the adjacent positive Storefront row remains separate. No provider writer or listener can unlock this provider-free visibility contract.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy native readiness; approve a row-safe target and implementation owner or explicitly approve a two-row bundle with the Storefront-positive case; provide a deterministic preinstalled exact Twenty Twenty-Four store with at least two enabled currencies, ordered account/store/theme/settings ownership, complete wildcard option and theme snapshots, and a pre-write restoration journal for any setup mutation. Run the anchored semantic-absence and zero-save oracle once with one worker and zero retries, prove no settings or provider mutation, restore every changed byte and run-owned browser artifact, and obtain fresh code, E2E-test, reliability, and accessibility reviews.",
+		"quarantine_status": "No browser context, account, store, theme, option, currency fixture, widget, lock, journal, provider object, listener, environment, retention record, or quarantine was created or changed for this row. A future ambiguous theme activation, wrong store/account/theme join, settings-load uncertainty, unexpected settings/provider traffic, target drift, lost ownership, or incomplete restoration must preserve diagnostics and quarantine the exact store, theme/settings snapshots, ownership identity, browser artifacts, and restoration journal. A visible checkbox after every prerequisite succeeds is a deterministic contract RED for investigation, not an environment deferral; no financial or provider resource belongs to this contract.",
+		"unlock_satisfactions": [
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:224::Multi-currency on-boarding › Currency Switcher widget › should not offer the currency switcher widget when an unsupported theme is active",
+				"unlock_decision": "Externally satisfy native readiness; approve a row-safe target and implementation owner or explicitly approve a two-row bundle with the Storefront-positive case; provide a deterministic preinstalled exact Twenty Twenty-Four store with at least two enabled currencies, ordered account/store/theme/settings ownership, complete wildcard option and theme snapshots, and a pre-write restoration journal for any setup mutation. Run the anchored semantic-absence and zero-save oracle once with one worker and zero retries, prove no settings or provider mutation, restore every changed byte and run-owned browser artifact, and obtain fresh code, E2E-test, reliability, and accessibility reviews.",
+				"satisfied_on": "2026-08-08",
+				"reference": "calibration-notes:2026-08-08:multi-currency-theme-compatibility-pairing"
+			}
+		]
+	}
+}

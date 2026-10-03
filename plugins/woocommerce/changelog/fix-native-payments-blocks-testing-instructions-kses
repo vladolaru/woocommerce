@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Sanitize the native WooPayments blocks checkout testing instructions before exposing them to the browser.

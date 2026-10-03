@@ -1,0 +1,2762 @@
+{
+	"_meta": {
+		"what": "Captured timeline events and the Fee details note client 11.1.0 WC_Payments_Captured_Event_Note::generate_html_note() renders for each, rendered on the client 11.1.0 store (:8097) on 2026-10-02.",
+		"client": "11.1.0",
+		"wc": "11.2.0-dev",
+		"locale": "en_US",
+		"rendered_at": "2026-10-02T20:49:19+00:00",
+		"sources": "recorded: timelines read from the local platform for :8889 payments on 2026-10-02 (real responses); client-fixture and client-test: the client 11.1.0 test data, for shapes the local platform does not produce (tax, discount, capped, legacy fee_rates, processing fee, refunded application fee). constructed: two cases built from a recorded event for client branches no recorded event reaches (capped base fee, three-decimal rate); each says how in its source."
+	},
+	"cases": {
+		"recorded:pi_3UL1boBzWlxcwgpP1BYPsGdE": {
+			"source": "recorded :8889 timeline 2026-10-02",
+			"event": {
+				"type": "captured",
+				"amount": 1099,
+				"amount_captured": 1099,
+				"fee": 62,
+				"fee_rates": {
+					"percentage": 0.029,
+					"fixed": 30,
+					"fixed_currency": "USD",
+					"history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-us-card-fee",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						}
+					],
+					"tax": null,
+					"before_tax": null,
+					"fee_exchange_rate": null
+				},
+				"currency": "USD",
+				"datetime": 1790690536,
+				"deposit": {
+					"id": "po_1ULCCABzWlxcwgpPC17qpmnl",
+					"arrival_date": 1790726400
+				},
+				"transaction_id": "txn_3UL1boBzWlxcwgpP1eLV8uAS",
+				"transaction_details": {
+					"customer_currency": "USD",
+					"customer_amount": 1099,
+					"customer_amount_captured": 1099,
+					"customer_fee": 62,
+					"store_currency": "USD",
+					"store_amount": 1099,
+					"store_amount_captured": 1099,
+					"store_fee": 62
+				},
+				"fee_breakdown_v1": {
+					"rows": [
+						{
+							"key": "base",
+							"kind": "fee",
+							"label": null,
+							"amount": 62,
+							"display_amount": -62,
+							"currency": "usd",
+							"rate": {
+								"percentage": 0.029,
+								"fixed": 30,
+								"fixed_currency": "usd",
+								"percentage_display": "2.9%"
+							},
+							"meta": {
+								"fee_id": "base-us-card-fee"
+							}
+						}
+					],
+					"totals": {
+						"fee": {
+							"key": null,
+							"amount": 62,
+							"display_amount": -62,
+							"currency": "usd",
+							"rate": {
+								"percentage": 0.029,
+								"fixed": 30,
+								"fixed_currency": "usd",
+								"percentage_display": "2.9%"
+							}
+						},
+						"tax": {
+							"amount": 0,
+							"display_amount": 0,
+							"currency": "usd"
+						},
+						"net": {
+							"amount": 1037,
+							"currency": "usd"
+						},
+						"capture_net": {
+							"amount": 1037,
+							"currency": "usd"
+						},
+						"gross": {
+							"amount": 1099,
+							"currency": "usd"
+						},
+						"fee_plus_tax": {
+							"amount": 62,
+							"currency": "usd"
+						}
+					},
+					"notes": [],
+					"sources": {
+						"balance_transaction_exchange_rate": 0,
+						"refunded_fee_amount_store": 0,
+						"effective_total_store": 62
+					}
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>Fee (2.9% + $0.30): $0.62 USD</p>\n<p>Net payout: $10.37 USD</p>\n</div>"
+		},
+		"recorded:pi_3UL1d6BzWlxcwgpP1NR5ihSi": {
+			"source": "recorded :8889 timeline 2026-10-02",
+			"event": {
+				"type": "captured",
+				"amount": 1001,
+				"amount_captured": 1001,
+				"fee": 59,
+				"fee_rates": {
+					"percentage": 0.029,
+					"fixed": 30,
+					"fixed_currency": "USD",
+					"history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-us-card-fee",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						}
+					],
+					"tax": null,
+					"before_tax": null,
+					"fee_exchange_rate": null
+				},
+				"currency": "USD",
+				"datetime": 1790690617,
+				"deposit": {
+					"id": "po_1ULCCABzWlxcwgpPC17qpmnl",
+					"arrival_date": 1790726400
+				},
+				"transaction_id": "txn_3UL1d6BzWlxcwgpP1veav7c7",
+				"transaction_details": {
+					"customer_currency": "USD",
+					"customer_amount": 1001,
+					"customer_amount_captured": 1001,
+					"customer_fee": 59,
+					"store_currency": "USD",
+					"store_amount": 1001,
+					"store_amount_captured": 1001,
+					"store_fee": 59
+				},
+				"fee_breakdown_v1": {
+					"rows": [
+						{
+							"key": "base",
+							"kind": "fee",
+							"label": null,
+							"amount": 59,
+							"display_amount": -59,
+							"currency": "usd",
+							"rate": {
+								"percentage": 0.029,
+								"fixed": 30,
+								"fixed_currency": "usd",
+								"percentage_display": "2.9%"
+							},
+							"meta": {
+								"fee_id": "base-us-card-fee"
+							}
+						}
+					],
+					"totals": {
+						"fee": {
+							"key": null,
+							"amount": 59,
+							"display_amount": -59,
+							"currency": "usd",
+							"rate": {
+								"percentage": 0.029,
+								"fixed": 30,
+								"fixed_currency": "usd",
+								"percentage_display": "2.9%"
+							}
+						},
+						"tax": {
+							"amount": 0,
+							"display_amount": 0,
+							"currency": "usd"
+						},
+						"net": {
+							"amount": 942,
+							"currency": "usd"
+						},
+						"capture_net": {
+							"amount": 942,
+							"currency": "usd"
+						},
+						"gross": {
+							"amount": 1001,
+							"currency": "usd"
+						},
+						"fee_plus_tax": {
+							"amount": 59,
+							"currency": "usd"
+						}
+					},
+					"notes": [],
+					"sources": {
+						"balance_transaction_exchange_rate": 0,
+						"refunded_fee_amount_store": 0,
+						"effective_total_store": 59
+					}
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>Fee (2.9% + $0.30): $0.59 USD</p>\n<p>Net payout: $9.42 USD</p>\n</div>"
+		},
+		"recorded:pi_3UMBrXBzWlxcwgpP0OjZoist": {
+			"source": "recorded :8889 timeline 2026-10-02",
+			"event": {
+				"type": "captured",
+				"amount": 1000,
+				"amount_captured": 1000,
+				"fee": 74,
+				"fee_rates": {
+					"percentage": 0.044,
+					"fixed": 30,
+					"fixed_currency": "USD",
+					"history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-us-card-fee",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						},
+						{
+							"type": "additional",
+							"additional_type": "international",
+							"fee_id": "additional-us-intl-fee",
+							"percentage_rate": 0.015,
+							"fixed_rate": 0,
+							"currency": "usd"
+						}
+					],
+					"tax": null,
+					"before_tax": null,
+					"fee_exchange_rate": null
+				},
+				"currency": "USD",
+				"datetime": 1790968280,
+				"deposit": null,
+				"transaction_id": "txn_3UMBrXBzWlxcwgpP0ivQyb3o",
+				"transaction_details": {
+					"customer_currency": "USD",
+					"customer_amount": 1000,
+					"customer_amount_captured": 1000,
+					"customer_fee": 74,
+					"store_currency": "USD",
+					"store_amount": 1000,
+					"store_amount_captured": 1000,
+					"store_fee": 74
+				},
+				"fee_breakdown_v1": {
+					"rows": [
+						{
+							"key": "base",
+							"kind": "fee",
+							"label": null,
+							"amount": 74,
+							"display_amount": -74,
+							"currency": "usd",
+							"rate": {
+								"percentage": 0.029,
+								"fixed": 30,
+								"fixed_currency": "usd",
+								"percentage_display": "2.9%"
+							},
+							"meta": {
+								"fee_id": "base-us-card-fee"
+							}
+						},
+						{
+							"key": "additional.international",
+							"kind": "fee",
+							"label": null,
+							"amount": 0,
+							"display_amount": 0,
+							"currency": "usd",
+							"rate": {
+								"percentage": 0.015,
+								"fixed": 0,
+								"fixed_currency": "usd",
+								"percentage_display": "1.5%"
+							},
+							"meta": {
+								"fee_id": "additional-us-intl-fee"
+							}
+						}
+					],
+					"totals": {
+						"fee": {
+							"key": null,
+							"amount": 74,
+							"display_amount": -74,
+							"currency": "usd",
+							"rate": {
+								"percentage": 0.044,
+								"fixed": 30,
+								"fixed_currency": "usd",
+								"percentage_display": "4.4%"
+							}
+						},
+						"tax": {
+							"amount": 0,
+							"display_amount": 0,
+							"currency": "usd"
+						},
+						"net": {
+							"amount": 926,
+							"currency": "usd"
+						},
+						"capture_net": {
+							"amount": 926,
+							"currency": "usd"
+						},
+						"gross": {
+							"amount": 1000,
+							"currency": "usd"
+						},
+						"fee_plus_tax": {
+							"amount": 74,
+							"currency": "usd"
+						}
+					},
+					"notes": [],
+					"sources": {
+						"balance_transaction_exchange_rate": 0,
+						"refunded_fee_amount_store": 0,
+						"effective_total_store": 74
+					}
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>Fee (4.4% + $0.30): $0.74 USD</p>\n<p>&nbsp;&nbsp;&nbsp;&nbsp;Base fee: 2.9% + $0.30</p>\n<p>&nbsp;&nbsp;&nbsp;&nbsp;International card fee: 1.5%</p>\n<p>Net payout: $9.26 USD</p>\n</div>"
+		},
+		"recorded:pi_3UMBsdBzWlxcwgpP0H03QP3h": {
+			"source": "recorded :8889 timeline 2026-10-02",
+			"event": {
+				"type": "captured",
+				"amount": 800,
+				"amount_captured": 800,
+				"fee": 58,
+				"fee_rates": {
+					"percentage": 0.039,
+					"fixed": 30,
+					"fixed_currency": "USD",
+					"history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-us-card-fee",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						},
+						{
+							"type": "additional",
+							"additional_type": "fx",
+							"fee_id": "additional-us-card-fx-fee",
+							"percentage_rate": 0.01,
+							"fixed_rate": 0,
+							"currency": "usd"
+						}
+					],
+					"tax": null,
+					"before_tax": null,
+					"fee_exchange_rate": {
+						"from_currency": "EUR",
+						"to_currency": "USD",
+						"from_amount": 58,
+						"to_amount": 65,
+						"rate": 0.888722993930022
+					}
+				},
+				"currency": "EUR",
+				"datetime": 1790968347,
+				"deposit": null,
+				"transaction_id": "txn_3UMBsdBzWlxcwgpP0P5261dD",
+				"transaction_details": {
+					"customer_currency": "EUR",
+					"customer_amount": 800,
+					"customer_amount_captured": 800,
+					"customer_fee": 58,
+					"store_currency": "USD",
+					"store_amount": 900,
+					"store_amount_captured": 900,
+					"store_fee": 65
+				},
+				"fee_breakdown_v1": {
+					"rows": [
+						{
+							"key": "base",
+							"kind": "fee",
+							"label": null,
+							"amount": 58,
+							"display_amount": -58,
+							"currency": "usd",
+							"rate": {
+								"percentage": 0.029,
+								"fixed": 30,
+								"fixed_currency": "usd",
+								"percentage_display": "2.9%"
+							},
+							"meta": {
+								"fee_id": "base-us-card-fee"
+							}
+						},
+						{
+							"key": "additional.fx",
+							"kind": "fee",
+							"label": null,
+							"amount": 0,
+							"display_amount": 0,
+							"currency": "usd",
+							"rate": {
+								"percentage": 0.01,
+								"fixed": 0,
+								"fixed_currency": "usd",
+								"percentage_display": "1%"
+							},
+							"meta": {
+								"fee_id": "additional-us-card-fx-fee"
+							}
+						}
+					],
+					"totals": {
+						"fee": {
+							"key": null,
+							"amount": 65,
+							"display_amount": -65,
+							"currency": "usd",
+							"rate": {
+								"percentage": 0.039,
+								"fixed": 30,
+								"fixed_currency": "usd",
+								"percentage_display": "3.9%"
+							}
+						},
+						"tax": {
+							"amount": 0,
+							"display_amount": 0,
+							"currency": "usd"
+						},
+						"net": {
+							"amount": 835,
+							"currency": "usd"
+						},
+						"capture_net": {
+							"amount": 835,
+							"currency": "usd"
+						},
+						"gross": {
+							"amount": 900,
+							"currency": "usd"
+						},
+						"fee_plus_tax": {
+							"amount": 65,
+							"currency": "usd"
+						}
+					},
+					"notes": [],
+					"sources": {
+						"balance_transaction_exchange_rate": 1.12521,
+						"refunded_fee_amount_store": 0,
+						"effective_total_store": 65
+					},
+					"fx": {
+						"rate_display": "1 eur → 1.12521 usd",
+						"from_currency": "eur",
+						"to_currency": "usd",
+						"from_amount": 800,
+						"to_amount": 900
+					}
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>1.00 EUR → 1.125 USD: $9.00 USD</p>\n<p>Fee (3.9% + $0.30): $0.65 USD</p>\n<p>&nbsp;&nbsp;&nbsp;&nbsp;Base fee: 2.9% + $0.30</p>\n<p>&nbsp;&nbsp;&nbsp;&nbsp;Currency conversion fee: 1%</p>\n<p>Net payout: $8.35 USD</p>\n</div>"
+		},
+		"recorded:pi_3UMCPqBzWlxcwgpP03P0sTmK": {
+			"source": "recorded :8889 timeline 2026-10-02",
+			"event": {
+				"type": "captured",
+				"amount": 2490,
+				"amount_captured": 2490,
+				"fee": 127,
+				"fee_rates": {
+					"percentage": 0.039,
+					"fixed": 30,
+					"fixed_currency": "USD",
+					"history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-us-card-fee",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						},
+						{
+							"type": "additional",
+							"additional_type": "wcpay-subscription",
+							"fee_id": "additional-subscription-fee",
+							"percentage_rate": 0.01,
+							"fixed_rate": 0,
+							"currency": "usd"
+						}
+					],
+					"tax": null,
+					"before_tax": null,
+					"fee_exchange_rate": null
+				},
+				"currency": "USD",
+				"datetime": 1790970406,
+				"deposit": null,
+				"transaction_id": "txn_3UMCPqBzWlxcwgpP0pPeawCA",
+				"transaction_details": {
+					"customer_currency": "USD",
+					"customer_amount": 2490,
+					"customer_amount_captured": 2490,
+					"customer_fee": 127,
+					"store_currency": "USD",
+					"store_amount": 2490,
+					"store_amount_captured": 2490,
+					"store_fee": 127
+				},
+				"fee_breakdown_v1": {
+					"rows": [
+						{
+							"key": "base",
+							"kind": "fee",
+							"label": null,
+							"amount": 127,
+							"display_amount": -127,
+							"currency": "usd",
+							"rate": {
+								"percentage": 0.029,
+								"fixed": 30,
+								"fixed_currency": "usd",
+								"percentage_display": "2.9%"
+							},
+							"meta": {
+								"fee_id": "base-us-card-fee"
+							}
+						},
+						{
+							"key": "additional.wcpay-subscription",
+							"kind": "fee",
+							"label": null,
+							"amount": 0,
+							"display_amount": 0,
+							"currency": "usd",
+							"rate": {
+								"percentage": 0.01,
+								"fixed": 0,
+								"fixed_currency": "usd",
+								"percentage_display": "1%"
+							},
+							"meta": {
+								"fee_id": "additional-subscription-fee"
+							}
+						}
+					],
+					"totals": {
+						"fee": {
+							"key": null,
+							"amount": 127,
+							"display_amount": -127,
+							"currency": "usd",
+							"rate": {
+								"percentage": 0.039,
+								"fixed": 30,
+								"fixed_currency": "usd",
+								"percentage_display": "3.9%"
+							}
+						},
+						"tax": {
+							"amount": 0,
+							"display_amount": 0,
+							"currency": "usd"
+						},
+						"net": {
+							"amount": 2363,
+							"currency": "usd"
+						},
+						"capture_net": {
+							"amount": 2363,
+							"currency": "usd"
+						},
+						"gross": {
+							"amount": 2490,
+							"currency": "usd"
+						},
+						"fee_plus_tax": {
+							"amount": 127,
+							"currency": "usd"
+						}
+					},
+					"notes": [],
+					"sources": {
+						"balance_transaction_exchange_rate": 0,
+						"refunded_fee_amount_store": 0,
+						"effective_total_store": 127
+					}
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>Fee (3.9% + $0.30): $1.27 USD</p>\n<p>&nbsp;&nbsp;&nbsp;&nbsp;Base fee: 2.9% + $0.30</p>\n<p>&nbsp;&nbsp;&nbsp;&nbsp;Subscription transaction fee: 1%</p>\n<p>Net payout: $23.63 USD</p>\n</div>"
+		},
+		"client-fixture:3-currencies-different-order-settlement-base-fee": {
+			"source": "client 11.1.0 tests/fixtures/captured-payments/3-currencies-different-order-settlement-base-fee.json",
+			"event": {
+				"type": "captured",
+				"amount": 2600,
+				"amount_captured": 2600,
+				"fee": 111,
+				"fee_rates": {
+					"percentage": 0.0335,
+					"fixed": 2,
+					"fixed_currency": "EUR",
+					"history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-se-card-fee",
+							"percentage_rate": 0.015,
+							"fixed_rate": 20,
+							"currency": "sek"
+						},
+						{
+							"type": "discount",
+							"additional_type": "",
+							"fee_id": "wcpay-promo-2023-incentive-10off3m-se",
+							"percentage_rate": -0.0015,
+							"fixed_rate": -2,
+							"currency": "sek"
+						},
+						{
+							"type": "additional",
+							"additional_type": "fx",
+							"fee_id": "additional-se-card-fx-fee",
+							"percentage_rate": 0.02,
+							"fixed_rate": 0,
+							"currency": "sek"
+						}
+					],
+					"tax": {
+						"percentage_rate": 0.25,
+						"amount": 22,
+						"currency": "usd",
+						"description": "SE VAT"
+					},
+					"before_tax": {
+						"amount": 89,
+						"currency": "usd"
+					},
+					"fee_exchange_rate": {
+						"from_currency": "USD",
+						"to_currency": "EUR",
+						"from_amount": 111,
+						"to_amount": 94,
+						"rate": 1.18141725176356
+					}
+				},
+				"currency": "USD",
+				"datetime": 1770202475,
+				"deposit": null,
+				"transaction_id": "txn_3Sx3jDFrftSTz62v178CI0wb",
+				"transaction_details": {
+					"customer_currency": "USD",
+					"customer_amount": 2600,
+					"customer_amount_captured": 2600,
+					"customer_fee": 111,
+					"store_currency": "EUR",
+					"store_amount": 2201,
+					"store_amount_captured": 2201,
+					"store_fee": 94
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>1,00 USD → 0,846538 EUR: 22,01 € EUR</p>\n<p>Fee (3.35% + 0,02 €): -0,75 €</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Base fee: 1.5% + 0,20 kr</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Discount</p>\n<p>&nbsp; &nbsp; <span style=\"font-size: 7px;vertical-align: middle;\">&#9675;</span> Variable fee: -0.15%</p>\n<p>&nbsp; &nbsp; <span style=\"font-size: 7px;vertical-align: middle;\">&#9675;</span> Fixed fee: -0,02 kr</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Currency conversion fee: 2%</p>\n<p>Tax SE VAT (25%): -0,18 €</p>\n<p>Net payout: 21,07 € EUR</p>\n</div>"
+		},
+		"client-fixture:3-currencies-same-order-and-base fee": {
+			"source": "client 11.1.0 tests/fixtures/captured-payments/3-currencies-same-order-and-base fee.json",
+			"event": {
+				"type": "captured",
+				"amount": 24000,
+				"amount_captured": 24000,
+				"fee": 1028,
+				"fee_rates": {
+					"percentage": 0.0335,
+					"fixed": 2,
+					"fixed_currency": "EUR",
+					"history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-se-card-fee",
+							"percentage_rate": 0.015,
+							"fixed_rate": 20,
+							"currency": "sek"
+						},
+						{
+							"type": "discount",
+							"additional_type": "",
+							"fee_id": "wcpay-promo-2023-incentive-10off3m-se",
+							"percentage_rate": -0.0015,
+							"fixed_rate": -2,
+							"currency": "sek"
+						},
+						{
+							"type": "additional",
+							"additional_type": "fx",
+							"fee_id": "additional-se-card-fx-fee",
+							"percentage_rate": 0.02,
+							"fixed_rate": 0,
+							"currency": "sek"
+						}
+					],
+					"tax": {
+						"percentage_rate": 0.25,
+						"amount": 206,
+						"currency": "sek",
+						"description": "SE VAT"
+					},
+					"before_tax": {
+						"amount": 822,
+						"currency": "sek"
+					},
+					"fee_exchange_rate": {
+						"from_currency": "SEK",
+						"to_currency": "EUR",
+						"from_amount": 1028,
+						"to_amount": 97,
+						"rate": 10.577052239003303
+					}
+				},
+				"currency": "SEK",
+				"datetime": 1770202411,
+				"deposit": null,
+				"transaction_id": "txn_3Sx3iAFrftSTz62v1ndGkcn0",
+				"transaction_details": {
+					"customer_currency": "SEK",
+					"customer_amount": 24000,
+					"customer_amount_captured": 24000,
+					"customer_fee": 1028,
+					"store_currency": "EUR",
+					"store_amount": 2269,
+					"store_amount_captured": 2269,
+					"store_fee": 97
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>1,00 SEK → 0,094542 EUR: 22,69 € EUR</p>\n<p>Fee (3.35% + 0,02 €): -0,77 €</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Base fee: 1.5% + 0,20 kr</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Discount</p>\n<p>&nbsp; &nbsp; <span style=\"font-size: 7px;vertical-align: middle;\">&#9675;</span> Variable fee: -0.15%</p>\n<p>&nbsp; &nbsp; <span style=\"font-size: 7px;vertical-align: middle;\">&#9675;</span> Fixed fee: -0,02 kr</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Currency conversion fee: 2%</p>\n<p>Tax SE VAT (25%): -0,19 €</p>\n<p>Net payout: 21,72 € EUR</p>\n</div>"
+		},
+		"client-fixture:3-currencies-same-order-and-settlement": {
+			"source": "client 11.1.0 tests/fixtures/captured-payments/3-currencies-same-order-and-settlement.json",
+			"event": {
+				"type": "captured",
+				"amount": 6200,
+				"amount_captured": 6200,
+				"fee": 106,
+				"fee_rates": {
+					"percentage": 0.0135,
+					"fixed": 2,
+					"fixed_currency": "EUR",
+					"history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-se-card-fee",
+							"percentage_rate": 0.015,
+							"fixed_rate": 20,
+							"currency": "sek"
+						},
+						{
+							"type": "discount",
+							"additional_type": "",
+							"fee_id": "wcpay-promo-2023-incentive-10off3m-se",
+							"percentage_rate": -0.0015,
+							"fixed_rate": -2,
+							"currency": "sek"
+						}
+					],
+					"tax": {
+						"percentage_rate": 0.25,
+						"amount": 21,
+						"currency": "eur",
+						"description": "SE VAT"
+					},
+					"before_tax": {
+						"amount": 85,
+						"currency": "eur"
+					},
+					"fee_exchange_rate": null
+				},
+				"currency": "EUR",
+				"datetime": 1770202445,
+				"deposit": null,
+				"transaction_id": "txn_3Sx3iiFrftSTz62v1PCjHEmg",
+				"transaction_details": {
+					"customer_currency": "EUR",
+					"customer_amount": 6200,
+					"customer_amount_captured": 6200,
+					"customer_fee": 106,
+					"store_currency": "EUR",
+					"store_amount": 6200,
+					"store_amount_captured": 6200,
+					"store_fee": 106
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>Fee (1.35% + 0,02 €): -0,85 €</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Base fee: 1.5% + 0,20 kr</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Discount</p>\n<p>&nbsp; &nbsp; <span style=\"font-size: 7px;vertical-align: middle;\">&#9675;</span> Variable fee: -0.15%</p>\n<p>&nbsp; &nbsp; <span style=\"font-size: 7px;vertical-align: middle;\">&#9675;</span> Fixed fee: -0,02 kr</p>\n<p>Tax SE VAT (25%): -0,21 €</p>\n<p>Net payout: 60,94 € EUR</p>\n</div>"
+		},
+		"client-fixture:discount": {
+			"source": "client 11.1.0 tests/fixtures/captured-payments/discount.json",
+			"event": {
+				"type": "captured",
+				"amount": 10000,
+				"amount_captured": 10000,
+				"fee": 0,
+				"fee_rates": {
+					"percentage": 0,
+					"fixed": 0,
+					"fixed_currency": "USD",
+					"history": [
+						{
+							"type": "base",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						},
+						{
+							"type": "additional",
+							"additional_type": "international",
+							"percentage_rate": 0.01,
+							"fixed_rate": 0,
+							"currency": "usd"
+						},
+						{
+							"type": "additional",
+							"additional_type": "fx",
+							"percentage_rate": 0.01,
+							"fixed_rate": 0,
+							"currency": "usd"
+						},
+						{
+							"type": "discount",
+							"percentage_rate": -0.049,
+							"fixed_rate": -30,
+							"currency": "usd"
+						}
+					],
+					"fee_exchange_rate": {
+						"from_currency": "EUR",
+						"to_currency": "USD",
+						"from_amount": 0,
+						"to_amount": 0,
+						"rate": 1
+					}
+				},
+				"currency": "EUR",
+				"datetime": 1652000468,
+				"deposit": null,
+				"transaction_id": "txn_3Kx5xTR67tFB8u4V1M4qOteU",
+				"transaction_details": {
+					"customer_currency": "EUR",
+					"customer_amount": 10000,
+					"customer_amount_captured": 10000,
+					"customer_fee": 0,
+					"store_currency": "USD",
+					"store_amount": 10548,
+					"store_amount_captured": 10548,
+					"store_fee": 0
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>1.00 EUR → 1.0548 USD: $105.48 USD</p>\n<p>Fee (0% + $0.00): $0.00</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Base fee: 2.9% + $0.30</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> International card fee: 1%</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Currency conversion fee: 1%</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Discount</p>\n<p>&nbsp; &nbsp; <span style=\"font-size: 7px;vertical-align: middle;\">&#9675;</span> Variable fee: -4.9%</p>\n<p>&nbsp; &nbsp; <span style=\"font-size: 7px;vertical-align: middle;\">&#9675;</span> Fixed fee: -$0.30</p>\n<p>Net payout: $105.48 USD</p>\n</div>"
+		},
+		"client-fixture:foreign-card": {
+			"source": "client 11.1.0 tests/fixtures/captured-payments/foreign-card.json",
+			"event": {
+				"type": "captured",
+				"amount": 1800,
+				"amount_captured": 1800,
+				"fee": 109,
+				"fee_rates": {
+					"percentage": 0.044,
+					"fixed": 30,
+					"fixed_currency": "USD",
+					"history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-us-card-fee",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						},
+						{
+							"type": "additional",
+							"additional_type": "international",
+							"fee_id": "additional-us-intl-fee",
+							"percentage_rate": 0.015,
+							"fixed_rate": 0,
+							"currency": "usd"
+						}
+					]
+				},
+				"currency": "USD",
+				"datetime": 1736869781,
+				"deposit": null,
+				"transaction_id": "txn_3QhCN7R3NO9FvHYd0wKleSrw",
+				"transaction_details": {
+					"customer_currency": "USD",
+					"customer_amount": 1800,
+					"customer_amount_captured": 1800,
+					"customer_fee": 109,
+					"store_currency": "USD",
+					"store_amount": 1800,
+					"store_amount_captured": 1800,
+					"store_fee": 109
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>Fee (4.4% + $0.30): -$1.09</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Base fee: 2.9% + $0.30</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> International card fee: 1.5%</p>\n<p>Net payout: $16.91 USD</p>\n</div>"
+		},
+		"client-fixture:fx-decimal": {
+			"source": "client 11.1.0 tests/fixtures/captured-payments/fx-decimal.json",
+			"event": {
+				"type": "captured",
+				"amount": 10000,
+				"amount_captured": 10000,
+				"fee": 418,
+				"fee_rates": {
+					"percentage": 0.039,
+					"fixed": 30,
+					"fixed_currency": "USD",
+					"history": [
+						{
+							"type": "base",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						},
+						{
+							"type": "additional",
+							"additional_type": "fx",
+							"percentage_rate": 0.01,
+							"fixed_rate": 0,
+							"currency": "usd"
+						}
+					],
+					"fee_exchange_rate": {
+						"from_currency": "EUR",
+						"to_currency": "USD",
+						"from_amount": 418,
+						"to_amount": 439,
+						"rate": 0.952164
+					}
+				},
+				"currency": "EUR",
+				"datetime": 1651215495,
+				"deposit": null,
+				"transaction_id": "txn_3Ktnm22EFxam75ai0Sr9SR5A",
+				"transaction_details": {
+					"customer_currency": "EUR",
+					"customer_amount": 10000,
+					"customer_amount_captured": 10000,
+					"customer_fee": 418,
+					"store_currency": "USD",
+					"store_amount": 10504,
+					"store_amount_captured": 10504,
+					"store_fee": 439
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>1.00 EUR → 1.0504 USD: $105.04 USD</p>\n<p>Fee (3.9% + $0.30): -$4.39</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Base fee: 2.9% + $0.30</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Currency conversion fee: 1%</p>\n<p>Net payout: $100.65 USD</p>\n</div>"
+		},
+		"client-fixture:fx-foreign-card": {
+			"source": "client 11.1.0 tests/fixtures/captured-payments/fx-foreign-card.json",
+			"event": {
+				"type": "captured",
+				"amount": 10000,
+				"amount_captured": 10000,
+				"fee": 320,
+				"fee_rates": {
+					"percentage": 0.039,
+					"fixed": 30,
+					"fixed_currency": "USD",
+					"history": [
+						{
+							"type": "base",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						},
+						{
+							"type": "additional",
+							"additional_type": "international",
+							"percentage_rate": 0.01,
+							"fixed_rate": 0,
+							"currency": "usd"
+						}
+					]
+				},
+				"currency": "USD",
+				"datetime": 1651996460,
+				"deposit": null,
+				"transaction_id": "txn_3Kx4w12EFxam75ai0W5q4669",
+				"transaction_details": {
+					"customer_currency": "USD",
+					"customer_amount": 10000,
+					"customer_amount_captured": 10000,
+					"customer_fee": 320,
+					"store_currency": "USD",
+					"store_amount": 10000,
+					"store_amount_captured": 10000,
+					"store_fee": 320
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>Fee (3.9% + $0.30): -$3.20</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Base fee: 2.9% + $0.30</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> International card fee: 1%</p>\n<p>Net payout: $96.80 USD</p>\n</div>"
+		},
+		"client-fixture:fx-partial-capture": {
+			"source": "client 11.1.0 tests/fixtures/captured-payments/fx-partial-capture.json",
+			"event": {
+				"type": "captured",
+				"amount": 2800,
+				"amount_captured": 1400,
+				"fee": 70,
+				"fee_rates": {
+					"percentage": 0.0351,
+					"fixed": 21,
+					"fixed_currency": "GBP",
+					"history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-us-card-fee",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						},
+						{
+							"type": "additional",
+							"additional_type": "fx",
+							"fee_id": "additional-us-card-fx-fee",
+							"percentage_rate": 0.01,
+							"fixed_rate": 0,
+							"currency": "usd"
+						},
+						{
+							"type": "discount",
+							"additional_type": "",
+							"fee_id": "wcpay-promo-2023-incentive-10off3m-us",
+							"percentage_rate": -0.0039,
+							"fixed_rate": -3,
+							"currency": "usd"
+						}
+					],
+					"fee_exchange_rate": {
+						"from_currency": "GBP",
+						"to_currency": "USD",
+						"from_amount": 70,
+						"to_amount": 88,
+						"rate": 0.7954545454545454
+					}
+				},
+				"currency": "GBP",
+				"datetime": 1706898645,
+				"deposit": null,
+				"transaction_id": "txn_3OfRUdR7TXHGtwGa0K754mkQ",
+				"transaction_details": {
+					"customer_currency": "GBP",
+					"customer_amount": 2800,
+					"customer_amount_captured": 1400,
+					"customer_fee": 70,
+					"store_currency": "USD",
+					"store_amount": 3534,
+					"store_amount_captured": 1767,
+					"store_fee": 88
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>1.00 GBP → 1.26214 USD: $17.67 USD</p>\n<p>Fee (3.51% + £0.21): -$0.88</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Base fee: 2.9% + $0.30</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Currency conversion fee: 1%</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Discount</p>\n<p>&nbsp; &nbsp; <span style=\"font-size: 7px;vertical-align: middle;\">&#9675;</span> Variable fee: -0.39%</p>\n<p>&nbsp; &nbsp; <span style=\"font-size: 7px;vertical-align: middle;\">&#9675;</span> Fixed fee: -$0.03</p>\n<p>Net payout: $16.79 USD</p>\n</div>"
+		},
+		"client-fixture:fx-same-currency-symbol": {
+			"source": "client 11.1.0 tests/fixtures/captured-payments/fx-same-currency-symbol.json",
+			"event": {
+				"type": "captured",
+				"amount": 2400,
+				"amount_captured": 2400,
+				"fee": 132,
+				"fee_rates": {
+					"percentage": 0.039,
+					"fixed": 39,
+					"fixed_currency": "CAD",
+					"history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-us-card-fee",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						},
+						{
+							"type": "additional",
+							"additional_type": "fx",
+							"fee_id": "additional-us-card-fx-fee",
+							"percentage_rate": 0.01,
+							"fixed_rate": 0,
+							"currency": "usd"
+						}
+					],
+					"fee_exchange_rate": {
+						"from_currency": "CAD",
+						"to_currency": "USD",
+						"from_amount": 132,
+						"to_amount": 92,
+						"rate": 1.434782608695652
+					}
+				},
+				"currency": "CAD",
+				"datetime": 1736871090,
+				"deposit": null,
+				"transaction_id": "txn_3QhCiER3NO9FvHYd2DQY4k1S",
+				"transaction_details": {
+					"customer_currency": "CAD",
+					"customer_amount": 2400,
+					"customer_amount_captured": 2400,
+					"customer_fee": 132,
+					"store_currency": "USD",
+					"store_amount": 1672,
+					"store_amount_captured": 1672,
+					"store_fee": 92
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>1.00 CAD → 0.696667 USD: $16.72 USD</p>\n<p>Fee (3.9% + $0.39 CAD): -$0.92 USD</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Base fee: 2.9% + $0.30 USD</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Currency conversion fee: 1%</p>\n<p>Net payout: $15.80 USD</p>\n</div>"
+		},
+		"client-fixture:fx-with-capped-fee": {
+			"source": "client 11.1.0 tests/fixtures/captured-payments/fx-with-capped-fee.json",
+			"event": {
+				"type": "captured",
+				"amount": 95000,
+				"amount_captured": 95000,
+				"fee": 2944,
+				"fee_rates": {
+					"percentage": 0.025,
+					"fixed": 600,
+					"fixed_currency": "USD",
+					"history": [
+						{
+							"type": "base",
+							"capped": true,
+							"percentage_rate": 0,
+							"fixed_rate": 600,
+							"currency": "usd"
+						},
+						{
+							"type": "additional",
+							"additional_type": "international",
+							"percentage_rate": 0.015,
+							"fixed_rate": 0,
+							"currency": "usd"
+						},
+						{
+							"type": "additional",
+							"additional_type": "fx",
+							"percentage_rate": 0.01,
+							"fixed_rate": 0,
+							"currency": "usd"
+						}
+					],
+					"fee_exchange_rate": {
+						"from_currency": "EUR",
+						"to_currency": "USD",
+						"from_amount": 2944,
+						"to_amount": 3105,
+						"rate": 0.9481481481481482
+					}
+				},
+				"currency": "EUR",
+				"datetime": 1651998676,
+				"deposit": null,
+				"transaction_id": "txn_3Kx5WG2HDHuit9Eg0ZrUH90z",
+				"transaction_details": {
+					"customer_currency": "EUR",
+					"customer_amount": 95000,
+					"customer_amount_captured": 95000,
+					"customer_fee": 2944,
+					"store_currency": "USD",
+					"store_amount": 100209,
+					"store_amount_captured": 100209,
+					"store_fee": 3105
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>1.00 EUR → 1.05483 USD: $1,002.09 USD</p>\n<p>Fee (2.5% + $6.00): -$31.05</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Base fee: capped at $6.00</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> International card fee: 1.5%</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Currency conversion fee: 1%</p>\n<p>Net payout: $971.04 USD</p>\n</div>"
+		},
+		"client-fixture:fx": {
+			"source": "client 11.1.0 tests/fixtures/captured-payments/fx.json",
+			"event": {
+				"type": "captured",
+				"amount": 2296500,
+				"amount_captured": 2296500,
+				"fee": 96453,
+				"fee_rates": {
+					"percentage": 0.039,
+					"fixed": 30,
+					"fixed_currency": "USD",
+					"history": [
+						{
+							"type": "base",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						},
+						{
+							"type": "additional",
+							"additional_type": "fx",
+							"percentage_rate": 0.01,
+							"fixed_rate": 0,
+							"currency": "usd"
+						}
+					],
+					"fee_exchange_rate": {
+						"from_currency": "VND",
+						"to_currency": "USD",
+						"from_amount": 96453,
+						"to_amount": 420,
+						"rate": 229.65
+					}
+				},
+				"currency": "VND",
+				"datetime": 1651215552,
+				"deposit": null,
+				"transaction_id": "txn_3KtnnI2EFxam75ai06EEZYXQ",
+				"transaction_details": {
+					"customer_currency": "VND",
+					"customer_amount": 2296500,
+					"customer_amount_captured": 2296500,
+					"customer_fee": 96453,
+					"store_currency": "USD",
+					"store_amount": 10004,
+					"store_amount_captured": 10004,
+					"store_fee": 420
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>1 VND → 0.000044 USD: $100.04 USD</p>\n<p>Fee (3.9% + $0.30): -$4.20</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Base fee: 2.9% + $0.30</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Currency conversion fee: 1%</p>\n<p>Net payout: $95.84 USD</p>\n</div>"
+		},
+		"client-fixture:jpy-payment": {
+			"source": "client 11.1.0 tests/fixtures/captured-payments/jpy-payment.json",
+			"event": {
+				"type": "captured",
+				"amount": 3000,
+				"amount_captured": 3000,
+				"fee": 168,
+				"fee_rates": {
+					"percentage": 0.076,
+					"fixed": 0,
+					"fixed_currency": "JPY",
+					"history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-jp-card-fee",
+							"percentage_rate": 0.036,
+							"fixed_rate": 0,
+							"currency": "jpy"
+						},
+						{
+							"type": "additional",
+							"additional_type": "international",
+							"fee_id": "additional-jp-card-intl-fee",
+							"percentage_rate": 0.02,
+							"fixed_rate": 0,
+							"currency": "jpy"
+						},
+						{
+							"type": "additional",
+							"additional_type": "fx",
+							"fee_id": "additional-jp-card-fx-fee",
+							"percentage_rate": 0.02,
+							"fixed_rate": 0,
+							"currency": "jpy"
+						}
+					],
+					"fee_exchange_rate": {
+						"from_currency": "EUR",
+						"to_currency": "JPY",
+						"from_amount": 168,
+						"to_amount": 267,
+						"rate": 0.6292134831460674
+					}
+				},
+				"currency": "EUR",
+				"datetime": 1692261169,
+				"deposit": null,
+				"transaction_id": "txn_3Ng1bqR0ieYFF8cv0JLWiZWo",
+				"transaction_details": {
+					"customer_currency": "EUR",
+					"customer_amount": 3000,
+					"customer_amount_captured": 3000,
+					"customer_fee": 168,
+					"store_currency": "JPY",
+					"store_amount": 4774,
+					"store_amount_captured": 4774,
+					"store_fee": 267
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>1.00 EUR → 159.13333 JPY: ¥4,774 JPY</p>\n<p>Fee (7.6% + ¥0): -¥267</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Base fee: 3.6%</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> International card fee: 2%</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Currency conversion fee: 2%</p>\n<p>Net payout: ¥4,507 JPY</p>\n</div>"
+		},
+		"client-fixture:only-base-fee": {
+			"source": "client 11.1.0 tests/fixtures/captured-payments/only-base-fee.json",
+			"event": {
+				"type": "captured",
+				"amount": 1500,
+				"amount_captured": 1500,
+				"fee": 74,
+				"fee_rates": {
+					"percentage": 0.029,
+					"fixed": 30,
+					"fixed_currency": "USD",
+					"history": [
+						{
+							"type": "base",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						}
+					]
+				},
+				"currency": "USD",
+				"datetime": 1651997740,
+				"deposit": null,
+				"transaction_id": "txn_3Kx5HD2EFxam75ai1FerGksO",
+				"transaction_details": {
+					"customer_currency": "USD",
+					"customer_amount": 1500,
+					"customer_amount_captured": 1500,
+					"customer_fee": 74,
+					"store_currency": "USD",
+					"store_amount": 1500,
+					"store_amount_captured": 1500,
+					"store_fee": 74
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>Base fee (2.9% + $0.30): -$0.74</p>\n<p>Net payout: $14.26 USD</p>\n</div>"
+		},
+		"client-fixture:partial-capture": {
+			"source": "client 11.1.0 tests/fixtures/captured-payments/partial-capture.json",
+			"event": {
+				"type": "captured",
+				"amount": 3600,
+				"amount_captured": 1800,
+				"fee": 82,
+				"fee_rates": {
+					"percentage": 0.029,
+					"fixed": 30,
+					"fixed_currency": "USD",
+					"history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-us-card-fee",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						}
+					]
+				},
+				"currency": "USD",
+				"datetime": 1706788483,
+				"deposit": null,
+				"transaction_id": "txn_3OeyqCR7TXHGtwGa1K8ZkixQ",
+				"transaction_details": {
+					"customer_currency": "USD",
+					"customer_amount": 3600,
+					"customer_amount_captured": 1800,
+					"customer_fee": 82,
+					"store_currency": "USD",
+					"store_amount": 3600,
+					"store_amount_captured": 3600,
+					"store_fee": 82
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>Base fee (2.9% + $0.30): -$0.82</p>\n<p>Net payout: $17.18 USD</p>\n</div>"
+		},
+		"client-fixture:subscription": {
+			"source": "client 11.1.0 tests/fixtures/captured-payments/subscription.json",
+			"event": {
+				"type": "captured",
+				"amount": 5300,
+				"amount_captured": 5300,
+				"fee": 288,
+				"fee_rates": {
+					"percentage": 0.049,
+					"fixed": 30,
+					"fixed_currency": "USD",
+					"history": [
+						{
+							"type": "base",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						},
+						{
+							"type": "additional",
+							"additional_type": "fx",
+							"percentage_rate": 0.01,
+							"fixed_rate": 0,
+							"currency": "usd"
+						},
+						{
+							"type": "additional",
+							"additional_type": "wcpay-subscription",
+							"percentage_rate": 0.01,
+							"fixed_rate": 0,
+							"currency": "usd"
+						}
+					],
+					"fee_exchange_rate": {
+						"from_currency": "EUR",
+						"to_currency": "USD",
+						"from_amount": 288,
+						"to_amount": 304,
+						"rate": 0.9473684210526316
+					}
+				},
+				"currency": "EUR",
+				"datetime": 1651999249,
+				"deposit": null,
+				"transaction_id": "txn_3Kx5fY2HDHuit9Eg0fQ402Ee",
+				"transaction_details": {
+					"customer_currency": "EUR",
+					"customer_amount": 5300,
+					"customer_amount_captured": 5300,
+					"customer_fee": 288,
+					"store_currency": "USD",
+					"store_amount": 5591,
+					"store_amount_captured": 5591,
+					"store_fee": 304
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>1.00 EUR → 1.05491 USD: $55.91 USD</p>\n<p>Fee (4.9% + $0.30): -$3.04</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Base fee: 2.9% + $0.30</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Currency conversion fee: 1%</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Subscription transaction fee: 1%</p>\n<p>Net payout: $52.87 USD</p>\n</div>"
+		},
+		"client-fixture:tax-fx": {
+			"source": "client 11.1.0 tests/fixtures/captured-payments/tax-fx.json",
+			"event": {
+				"type": "captured",
+				"amount": 1902,
+				"amount_captured": 1902,
+				"fee": 162,
+				"fee_rates": {
+					"percentage": 0.05500000000000001,
+					"fixed": 30,
+					"fixed_currency": "USD",
+					"history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-gb-card-fee",
+							"percentage_rate": 0.015,
+							"fixed_rate": 25,
+							"currency": "gbp"
+						},
+						{
+							"type": "additional",
+							"additional_type": "international",
+							"fee_id": "additional-gb-intl-fee",
+							"percentage_rate": 0.02,
+							"fixed_rate": 0,
+							"currency": "gbp"
+						},
+						{
+							"type": "additional",
+							"additional_type": "fx",
+							"fee_id": "additional-gb-card-fx-fee",
+							"percentage_rate": 0.02,
+							"fixed_rate": 0,
+							"currency": "gbp"
+						}
+					],
+					"fee_exchange_rate": {
+						"from_currency": "gbp",
+						"to_currency": "usd",
+						"from_amount": 25,
+						"to_amount": 30,
+						"rate": 0.833333
+					},
+					"tax": {
+						"percentage_rate": 0.2,
+						"amount": 27,
+						"currency": "usd",
+						"description": "GB VAT"
+					},
+					"before_tax": {
+						"amount": 135,
+						"currency": "usd"
+					}
+				},
+				"currency": "USD",
+				"datetime": 1748598948,
+				"deposit": null,
+				"transaction_id": "txn_3RUPfDCE2s87ucX31kt6N9AY",
+				"transaction_details": {
+					"customer_currency": "USD",
+					"customer_amount": 1902,
+					"customer_amount_captured": 1902,
+					"customer_fee": 162,
+					"store_currency": "GBP",
+					"store_amount": 1600,
+					"store_amount_captured": 1600,
+					"store_fee": 136
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>1.00 USD → 0.84122 GBP: £16.00 GBP</p>\n<p>Fee (5.5% + $0.30): -£1.12</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Base fee: 1.5% + £0.25</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> International card fee: 2%</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Currency conversion fee: 2%</p>\n<p>Tax UK VAT (20%): -£0.22</p>\n<p>Net payout: £14.64 GBP</p>\n</div>"
+		},
+		"client-fixture:tax": {
+			"source": "client 11.1.0 tests/fixtures/captured-payments/tax.json",
+			"event": {
+				"type": "captured",
+				"amount": 1501,
+				"amount_captured": 1501,
+				"fee": 94,
+				"fee_rates": {
+					"percentage": 0.035,
+					"fixed": 25,
+					"fixed_currency": "GBP",
+					"history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-gb-card-fee",
+							"percentage_rate": 0.015,
+							"fixed_rate": 25,
+							"currency": "gbp"
+						},
+						{
+							"type": "additional",
+							"additional_type": "international",
+							"fee_id": "additional-gb-intl-fee",
+							"percentage_rate": 0.02,
+							"fixed_rate": 0,
+							"currency": "gbp"
+						}
+					],
+					"fee_exchange_rate": null,
+					"tax": {
+						"percentage_rate": 0.2,
+						"amount": 16,
+						"currency": "gbp",
+						"description": "GB VAT"
+					},
+					"before_tax": {
+						"amount": 78,
+						"currency": "gbp"
+					}
+				},
+				"currency": "GBP",
+				"datetime": 1748530236,
+				"deposit": null,
+				"transaction_id": "txn_3RU7myCE2s87ucX31ZrUhTfa",
+				"transaction_details": {
+					"customer_currency": "GBP",
+					"customer_amount": 1501,
+					"customer_amount_captured": 1501,
+					"customer_fee": 94,
+					"store_currency": "GBP",
+					"store_amount": 1501,
+					"store_amount_captured": 1501,
+					"store_fee": 94
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>Fee (3.5% + £0.25): -£0.78</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> Base fee: 1.5% + £0.25</p>\n<p><span style=\"font-size: 7px;vertical-align: middle;\">&#9679;</span> International card fee: 2%</p>\n<p>Tax UK VAT (20%): -£0.16</p>\n<p>Net payout: £14.07 GBP</p>\n</div>"
+		},
+		"client-test:test_generate_html_note_envelope_path_renders_signed_discount_split": {
+			"source": "client 11.1.0 tests/unit/test-class-wc-payments-captured-event-note.php test_generate_html_note_envelope_path_renders_signed_discount_split",
+			"event": {
+				"type": "captured",
+				"amount": 1000,
+				"amount_captured": 1000,
+				"fee": 57,
+				"transaction_details": {
+					"customer_currency": "USD",
+					"customer_amount": 1000,
+					"customer_amount_captured": 1000,
+					"customer_fee": 57,
+					"store_currency": "USD",
+					"store_amount": 1000,
+					"store_amount_captured": 1000,
+					"store_fee": 57
+				},
+				"fee_rates": {
+					"percentage": 0.0425,
+					"fixed": 28,
+					"fixed_currency": "USD",
+					"history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-us-card-fee",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						}
+					]
+				},
+				"fee_breakdown_v1": {
+					"rows": [
+						{
+							"key": "base",
+							"kind": "fee",
+							"label": null,
+							"amount": 59,
+							"display_amount": -59,
+							"currency": "usd",
+							"rate": {
+								"percentage": 0.029,
+								"fixed": 30,
+								"fixed_currency": "usd",
+								"percentage_display": "2.9%"
+							},
+							"meta": null
+						},
+						{
+							"key": "discount.wcpay-promo-2023",
+							"kind": "adjustment",
+							"label": null,
+							"amount": 0,
+							"display_amount": 0,
+							"currency": "usd",
+							"rate": {
+								"percentage": -0.0015,
+								"fixed": -2,
+								"fixed_currency": "usd",
+								"percentage_display": "-0.15%"
+							},
+							"meta": {
+								"fee_id": "wcpay-promo-2023"
+							}
+						}
+					],
+					"totals": {
+						"fee": {
+							"key": null,
+							"amount": 57,
+							"display_amount": -57,
+							"currency": "usd",
+							"rate": {
+								"percentage": 0.0425,
+								"fixed": 28,
+								"fixed_currency": "usd",
+								"percentage_display": "4.25%"
+							}
+						},
+						"tax": {
+							"amount": 0,
+							"display_amount": 0,
+							"currency": "usd"
+						},
+						"net": {
+							"amount": 943,
+							"currency": "usd"
+						},
+						"capture_net": {
+							"amount": 943,
+							"currency": "usd"
+						},
+						"gross": {
+							"amount": 1000,
+							"currency": "usd"
+						}
+					},
+					"notes": [],
+					"sources": []
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>Fee (4.25% + $0.28): $0.57 USD</p>\n<p>&nbsp;&nbsp;&nbsp;&nbsp;Base fee: 2.9% + $0.30</p>\n<p>&nbsp;&nbsp;&nbsp;&nbsp;Discount</p>\n<p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style=\"font-size: 7px;vertical-align: middle;\">&#9675;</span> Variable fee: -0.15%</p>\n<p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style=\"font-size: 7px;vertical-align: middle;\">&#9675;</span> Fixed fee: -$0.02</p>\n<p>Net payout: $9.43 USD</p>\n</div>"
+		},
+		"client-test:test_generate_html_note_from_breakdown_happy_path": {
+			"source": "client 11.1.0 tests/unit/test-class-wc-payments-captured-event-note.php test_generate_html_note_from_breakdown_happy_path",
+			"event": {
+				"type": "captured",
+				"amount": 1000,
+				"amount_captured": 1000,
+				"fee": 59,
+				"fee_rates": {
+					"percentage": 0.029,
+					"fixed": 30,
+					"fixed_currency": "USD",
+					"history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-us-card-fee",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						}
+					]
+				},
+				"transaction_details": {
+					"customer_currency": "USD",
+					"customer_amount": 1000,
+					"customer_amount_captured": 1000,
+					"customer_fee": 59,
+					"store_currency": "USD",
+					"store_amount": 1000,
+					"store_amount_captured": 1000,
+					"store_fee": 59
+				},
+				"fee_breakdown_v1": {
+					"rows": [
+						{
+							"key": "base",
+							"kind": "fee",
+							"label": null,
+							"amount": 59,
+							"display_amount": -59,
+							"currency": "USD",
+							"rate": {
+								"percentage": 0.029,
+								"fixed": 30,
+								"fixed_currency": "USD",
+								"percentage_display": "2.9%"
+							},
+							"meta": null
+						}
+					],
+					"totals": {
+						"fee": {
+							"amount": 59,
+							"display_amount": -59,
+							"currency": "USD",
+							"key": null,
+							"rate": {
+								"percentage": 0.029,
+								"fixed": 30,
+								"fixed_currency": "USD",
+								"percentage_display": "2.9%"
+							}
+						},
+						"tax": {
+							"amount": 0,
+							"display_amount": 0,
+							"currency": "USD"
+						},
+						"net": {
+							"amount": 941,
+							"currency": "USD"
+						},
+						"capture_net": {
+							"amount": 941,
+							"currency": "USD"
+						},
+						"gross": {
+							"amount": 1000,
+							"currency": "USD"
+						}
+					},
+					"notes": []
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>Fee (2.9% + $0.30): $0.59 USD</p>\n<p>Net payout: $9.41 USD</p>\n</div>"
+		},
+		"client-test:test_generate_html_note_from_breakdown_processing_fee_totals_key": {
+			"source": "client 11.1.0 tests/unit/test-class-wc-payments-captured-event-note.php test_generate_html_note_from_breakdown_processing_fee_totals_key",
+			"event": {
+				"type": "captured",
+				"amount": 1000,
+				"amount_captured": 1000,
+				"fee": 59,
+				"fee_rates": {
+					"percentage": 0.029,
+					"fixed": 30,
+					"fixed_currency": "USD",
+					"history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-us-card-fee",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						}
+					]
+				},
+				"transaction_details": {
+					"customer_currency": "USD",
+					"customer_amount": 1000,
+					"customer_amount_captured": 1000,
+					"customer_fee": 59,
+					"store_currency": "USD",
+					"store_amount": 1000,
+					"store_amount_captured": 1000,
+					"store_fee": 59
+				},
+				"fee_breakdown_v1": {
+					"rows": [
+						{
+							"key": "base",
+							"kind": "fee",
+							"label": null,
+							"amount": 59,
+							"display_amount": -59,
+							"currency": "USD",
+							"rate": {
+								"percentage": 0.029,
+								"fixed": 30,
+								"fixed_currency": "USD",
+								"percentage_display": "2.9%"
+							},
+							"meta": null
+						}
+					],
+					"totals": {
+						"fee": {
+							"amount": 59,
+							"display_amount": -59,
+							"currency": "USD",
+							"key": "processing_fee",
+							"rate": null
+						},
+						"tax": {
+							"amount": 0,
+							"display_amount": 0,
+							"currency": "USD"
+						},
+						"net": {
+							"amount": 941,
+							"currency": "USD"
+						},
+						"capture_net": {
+							"amount": 941,
+							"currency": "USD"
+						},
+						"gross": {
+							"amount": 1000,
+							"currency": "USD"
+						}
+					},
+					"notes": []
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>Processing fee: $0.59 USD</p>\n<p>Net payout: $9.41 USD</p>\n</div>"
+		},
+		"client-test:test_generate_html_note_from_breakdown_application_fee_refunded_note_with_amount": {
+			"source": "client 11.1.0 tests/unit/test-class-wc-payments-captured-event-note.php test_generate_html_note_from_breakdown_application_fee_refunded_note_with_amount",
+			"event": {
+				"type": "captured",
+				"amount": 1000,
+				"amount_captured": 1000,
+				"fee": 59,
+				"fee_rates": {
+					"percentage": 0.029,
+					"fixed": 30,
+					"fixed_currency": "USD",
+					"history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-us-card-fee",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						}
+					]
+				},
+				"transaction_details": {
+					"customer_currency": "USD",
+					"customer_amount": 1000,
+					"customer_amount_captured": 1000,
+					"customer_fee": 59,
+					"store_currency": "USD",
+					"store_amount": 1000,
+					"store_amount_captured": 1000,
+					"store_fee": 59
+				},
+				"fee_breakdown_v1": {
+					"rows": [
+						{
+							"key": "base",
+							"kind": "fee",
+							"label": null,
+							"amount": 59,
+							"display_amount": -59,
+							"currency": "USD",
+							"rate": {
+								"percentage": 0.029,
+								"fixed": 30,
+								"fixed_currency": "USD",
+								"percentage_display": "2.9%"
+							},
+							"meta": null
+						}
+					],
+					"totals": {
+						"fee": {
+							"amount": 59,
+							"display_amount": -59,
+							"currency": "USD",
+							"key": null,
+							"rate": {
+								"percentage": 0.029,
+								"fixed": 30,
+								"fixed_currency": "USD",
+								"percentage_display": "2.9%"
+							}
+						},
+						"tax": {
+							"amount": 0,
+							"display_amount": 0,
+							"currency": "USD"
+						},
+						"net": {
+							"amount": 941,
+							"currency": "USD"
+						},
+						"capture_net": {
+							"amount": 941,
+							"currency": "USD"
+						},
+						"gross": {
+							"amount": 1000,
+							"currency": "USD"
+						}
+					},
+					"notes": [
+						{
+							"code": "application_fee_refunded",
+							"severity": "info",
+							"meta": {
+								"refunded_amount": 41,
+								"refunded_currency": "USD",
+								"reason": "amazon_pay_non_card_double_fee"
+							}
+						}
+					]
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>Fee (2.9% + $0.30): $0.59 USD</p>\n<p>Net payout: $9.41 USD</p>\n<p>WooPayments refunded its $0.41 USD application fee on this transaction.</p>\n</div>"
+		},
+		"client-test:test_generate_html_note_from_breakdown_application_fee_refunded_note_without_amount": {
+			"source": "client 11.1.0 tests/unit/test-class-wc-payments-captured-event-note.php test_generate_html_note_from_breakdown_application_fee_refunded_note_without_amount",
+			"event": {
+				"type": "captured",
+				"amount": 1000,
+				"amount_captured": 1000,
+				"fee": 59,
+				"fee_rates": {
+					"percentage": 0.029,
+					"fixed": 30,
+					"fixed_currency": "USD",
+					"history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-us-card-fee",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						}
+					]
+				},
+				"transaction_details": {
+					"customer_currency": "USD",
+					"customer_amount": 1000,
+					"customer_amount_captured": 1000,
+					"customer_fee": 59,
+					"store_currency": "USD",
+					"store_amount": 1000,
+					"store_amount_captured": 1000,
+					"store_fee": 59
+				},
+				"fee_breakdown_v1": {
+					"rows": [
+						{
+							"key": "base",
+							"kind": "fee",
+							"label": null,
+							"amount": 59,
+							"display_amount": -59,
+							"currency": "USD",
+							"rate": {
+								"percentage": 0.029,
+								"fixed": 30,
+								"fixed_currency": "USD",
+								"percentage_display": "2.9%"
+							},
+							"meta": null
+						}
+					],
+					"totals": {
+						"fee": {
+							"amount": 59,
+							"display_amount": -59,
+							"currency": "USD",
+							"key": null,
+							"rate": {
+								"percentage": 0.029,
+								"fixed": 30,
+								"fixed_currency": "USD",
+								"percentage_display": "2.9%"
+							}
+						},
+						"tax": {
+							"amount": 0,
+							"display_amount": 0,
+							"currency": "USD"
+						},
+						"net": {
+							"amount": 941,
+							"currency": "USD"
+						},
+						"capture_net": {
+							"amount": 941,
+							"currency": "USD"
+						},
+						"gross": {
+							"amount": 1000,
+							"currency": "USD"
+						}
+					},
+					"notes": [
+						{
+							"code": "application_fee_refunded",
+							"severity": "info",
+							"meta": {
+								"refunded_currency": "USD",
+								"reason": "amazon_pay_non_card_double_fee"
+							}
+						}
+					]
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>Fee (2.9% + $0.30): $0.59 USD</p>\n<p>Net payout: $9.41 USD</p>\n<p>WooPayments refunded its application fee on this transaction.</p>\n</div>"
+		},
+		"client-test:test_generate_html_note_from_breakdown_tax_row_rendering": {
+			"source": "client 11.1.0 tests/unit/test-class-wc-payments-captured-event-note.php test_generate_html_note_from_breakdown_tax_row_rendering",
+			"event": {
+				"type": "captured",
+				"amount": 1000,
+				"amount_captured": 1000,
+				"fee": 59,
+				"fee_rates": {
+					"percentage": 0.029,
+					"fixed": 30,
+					"fixed_currency": "USD",
+					"history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-us-card-fee",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						}
+					]
+				},
+				"transaction_details": {
+					"customer_currency": "USD",
+					"customer_amount": 1000,
+					"customer_amount_captured": 1000,
+					"customer_fee": 59,
+					"store_currency": "USD",
+					"store_amount": 1000,
+					"store_amount_captured": 1000,
+					"store_fee": 59
+				},
+				"fee_breakdown_v1": {
+					"rows": [
+						{
+							"key": "base",
+							"kind": "fee",
+							"label": null,
+							"amount": 59,
+							"display_amount": -59,
+							"currency": "USD",
+							"rate": {
+								"percentage": 0.029,
+								"fixed": 30,
+								"fixed_currency": "USD",
+								"percentage_display": "2.9%"
+							},
+							"meta": null
+						},
+						{
+							"key": "tax_on_fee",
+							"kind": "tax",
+							"label": "IT VAT",
+							"amount": 13,
+							"display_amount": -13,
+							"currency": "USD",
+							"rate": {
+								"percentage": 0.22,
+								"percentage_display": "22.00%"
+							},
+							"meta": null
+						}
+					],
+					"totals": {
+						"fee": {
+							"amount": 59,
+							"display_amount": -59,
+							"currency": "USD",
+							"key": null,
+							"rate": {
+								"percentage": 0.029,
+								"fixed": 30,
+								"fixed_currency": "USD",
+								"percentage_display": "2.9%"
+							}
+						},
+						"tax": {
+							"amount": 13,
+							"display_amount": -13,
+							"currency": "USD"
+						},
+						"net": {
+							"amount": 941,
+							"currency": "USD"
+						},
+						"capture_net": {
+							"amount": 941,
+							"currency": "USD"
+						},
+						"gross": {
+							"amount": 1000,
+							"currency": "USD"
+						}
+					},
+					"notes": []
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>Fee (2.9% + $0.30): $0.59 USD</p>\n<p>Tax IT VAT (22.00%): -$0.13</p>\n<p>Net payout: $9.41 USD</p>\n</div>"
+		},
+		"client-test:test_generate_html_note_from_breakdown_escapes_hostile_row_label_and_refunded_currency": {
+			"source": "client 11.1.0 tests/unit/test-class-wc-payments-captured-event-note.php test_generate_html_note_from_breakdown_escapes_hostile_row_label_and_refunded_currency",
+			"event": {
+				"type": "captured",
+				"amount": 1000,
+				"amount_captured": 1000,
+				"fee": 59,
+				"fee_rates": {
+					"percentage": 0.029,
+					"fixed": 30,
+					"fixed_currency": "USD",
+					"history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-us-card-fee",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						}
+					]
+				},
+				"transaction_details": {
+					"customer_currency": "USD",
+					"customer_amount": 1000,
+					"customer_amount_captured": 1000,
+					"customer_fee": 59,
+					"store_currency": "USD",
+					"store_amount": 1000,
+					"store_amount_captured": 1000,
+					"store_fee": 59
+				},
+				"fee_breakdown_v1": {
+					"rows": [
+						{
+							"key": "base",
+							"kind": "fee",
+							"label": null,
+							"amount": 59,
+							"display_amount": -59,
+							"currency": "USD",
+							"rate": {
+								"percentage": 0.029,
+								"fixed": 30,
+								"fixed_currency": "USD",
+								"percentage_display": "2.9%"
+							},
+							"meta": null
+						},
+						{
+							"key": "additional.custom",
+							"kind": "fee",
+							"label": "<script>alert(\"row\")</script>",
+							"amount": 10,
+							"display_amount": -10,
+							"currency": "USD",
+							"rate": null,
+							"meta": null
+						}
+					],
+					"totals": {
+						"fee": {
+							"amount": 59,
+							"display_amount": -59,
+							"currency": "USD",
+							"key": null,
+							"rate": {
+								"percentage": 0.029,
+								"fixed": 30,
+								"fixed_currency": "USD",
+								"percentage_display": "2.9%"
+							}
+						},
+						"tax": {
+							"amount": 0,
+							"display_amount": 0,
+							"currency": "USD"
+						},
+						"net": {
+							"amount": 941,
+							"currency": "USD"
+						},
+						"capture_net": {
+							"amount": 941,
+							"currency": "USD"
+						},
+						"gross": {
+							"amount": 1000,
+							"currency": "USD"
+						}
+					},
+					"notes": [
+						{
+							"code": "application_fee_refunded",
+							"severity": "info",
+							"meta": {
+								"refunded_amount": 41,
+								"refunded_currency": "<img src=x onerror=alert(\"xss\")>",
+								"reason": "amazon_pay_non_card_double_fee"
+							}
+						}
+					]
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>Fee (2.9% + $0.30): $0.59 USD</p>\n<p>&nbsp;&nbsp;&nbsp;&nbsp;Base fee: 2.9% + $0.30</p>\n<p>&nbsp;&nbsp;&nbsp;&nbsp;&lt;script&gt;alert(&quot;row&quot;)&lt;/script&gt;</p>\n<p>Net payout: $9.41 USD</p>\n<p>WooPayments refunded its 0.41 &lt;IMG SRC=X ONERROR=ALERT(&quot;XSS&quot;)&gt; application fee on this transaction.</p>\n</div>"
+		},
+		"client-test:test_generate_html_note_falls_back_to_legacy_composer_when_envelope_is_not_renderable": {
+			"source": "client 11.1.0 tests/unit/test-class-wc-payments-captured-event-note.php test_generate_html_note_falls_back_to_legacy_composer_when_envelope_is_not_renderable",
+			"event": {
+				"type": "captured",
+				"amount": 1000,
+				"amount_captured": 1000,
+				"fee": 59,
+				"fee_rates": {
+					"percentage": 0.029,
+					"fixed": 30,
+					"fixed_currency": "USD",
+					"history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-us-card-fee",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						}
+					]
+				},
+				"transaction_details": {
+					"customer_currency": "USD",
+					"customer_amount": 1000,
+					"customer_amount_captured": 1000,
+					"customer_fee": 59,
+					"store_currency": "USD",
+					"store_amount": 1000,
+					"store_amount_captured": 1000,
+					"store_fee": 59
+				},
+				"fee_breakdown_v1": {
+					"totals": {
+						"fee": {
+							"amount": 59,
+							"currency": "USD",
+							"key": "processing_fee"
+						},
+						"tax": {
+							"amount": 0
+						}
+					}
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>Base fee (2.9% + $0.30): -$0.59</p>\n<p>Net payout: $9.41 USD</p>\n</div>"
+		},
+		"recorded-rec-5a:usd_full_refund_free_text_reason": {
+			"source": "recorded REC-5a timeline (Fixtures/rec-5a-timelines.json, pair usd_full_refund_free_text_reason)",
+			"event": {
+				"type": "captured",
+				"amount": 1099,
+				"amount_captured": 1099,
+				"fee": 62,
+				"fee_rates": {
+					"percentage": 0.029,
+					"fixed": 30,
+					"fixed_currency": "USD",
+					"history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-us-card-fee",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						}
+					],
+					"tax": null,
+					"before_tax": null,
+					"fee_exchange_rate": null
+				},
+				"currency": "USD",
+				"datetime": 1790344413,
+				"deposit": null,
+				"transaction_id": "txn_3UJZZBBzWlxcwgpP070cVw1A",
+				"transaction_details": {
+					"customer_currency": "USD",
+					"customer_amount": 1099,
+					"customer_amount_captured": 1099,
+					"customer_fee": 62,
+					"store_currency": "USD",
+					"store_amount": 1099,
+					"store_amount_captured": 1099,
+					"store_fee": 62
+				},
+				"fee_breakdown_v1": {
+					"rows": [
+						{
+							"key": "base",
+							"kind": "fee",
+							"label": null,
+							"amount": 62,
+							"display_amount": -62,
+							"currency": "usd",
+							"rate": {
+								"percentage": 0.029,
+								"fixed": 30,
+								"fixed_currency": "usd",
+								"percentage_display": "2.9%"
+							},
+							"meta": {
+								"fee_id": "base-us-card-fee"
+							}
+						}
+					],
+					"totals": {
+						"fee": {
+							"key": null,
+							"amount": 62,
+							"display_amount": -62,
+							"currency": "usd",
+							"rate": {
+								"percentage": 0.029,
+								"fixed": 30,
+								"fixed_currency": "usd",
+								"percentage_display": "2.9%"
+							}
+						},
+						"tax": {
+							"amount": 0,
+							"display_amount": 0,
+							"currency": "usd"
+						},
+						"net": {
+							"amount": 1037,
+							"currency": "usd"
+						},
+						"capture_net": {
+							"amount": 1037,
+							"currency": "usd"
+						},
+						"gross": {
+							"amount": 1099,
+							"currency": "usd"
+						},
+						"fee_plus_tax": {
+							"amount": 62,
+							"currency": "usd"
+						}
+					},
+					"notes": [],
+					"sources": {
+						"balance_transaction_exchange_rate": 0,
+						"refunded_fee_amount_store": 0,
+						"effective_total_store": 62
+					}
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>Fee (2.9% + $0.30): $0.62 USD</p>\n<p>Net payout: $10.37 USD</p>\n</div>"
+		},
+		"recorded-rec-5a:eur_full_refund": {
+			"source": "recorded REC-5a timeline (Fixtures/rec-5a-timelines.json, pair eur_full_refund)",
+			"event": {
+				"type": "captured",
+				"amount": 1234,
+				"amount_captured": 1234,
+				"fee": 75,
+				"fee_rates": {
+					"percentage": 0.039,
+					"fixed": 30,
+					"fixed_currency": "USD",
+					"history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-us-card-fee",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						},
+						{
+							"type": "additional",
+							"additional_type": "fx",
+							"fee_id": "additional-us-card-fx-fee",
+							"percentage_rate": 0.01,
+							"fixed_rate": 0,
+							"currency": "usd"
+						}
+					],
+					"tax": null,
+					"before_tax": null,
+					"fee_exchange_rate": {
+						"from_currency": "EUR",
+						"to_currency": "USD",
+						"from_amount": 75,
+						"to_amount": 85,
+						"rate": 0.8779245862780388
+					}
+				},
+				"currency": "EUR",
+				"datetime": 1790334050,
+				"deposit": null,
+				"transaction_id": "txn_3UJWs2BzWlxcwgpP1MLoqLbF",
+				"transaction_details": {
+					"customer_currency": "EUR",
+					"customer_amount": 1234,
+					"customer_amount_captured": 1234,
+					"customer_fee": 75,
+					"store_currency": "USD",
+					"store_amount": 1406,
+					"store_amount_captured": 1406,
+					"store_fee": 85
+				},
+				"fee_breakdown_v1": {
+					"rows": [
+						{
+							"key": "base",
+							"kind": "fee",
+							"label": null,
+							"amount": 75,
+							"display_amount": -75,
+							"currency": "usd",
+							"rate": {
+								"percentage": 0.029,
+								"fixed": 30,
+								"fixed_currency": "usd",
+								"percentage_display": "2.9%"
+							},
+							"meta": {
+								"fee_id": "base-us-card-fee"
+							}
+						},
+						{
+							"key": "additional.fx",
+							"kind": "fee",
+							"label": null,
+							"amount": 0,
+							"display_amount": 0,
+							"currency": "usd",
+							"rate": {
+								"percentage": 0.01,
+								"fixed": 0,
+								"fixed_currency": "usd",
+								"percentage_display": "1%"
+							},
+							"meta": {
+								"fee_id": "additional-us-card-fx-fee"
+							}
+						}
+					],
+					"totals": {
+						"fee": {
+							"key": null,
+							"amount": 85,
+							"display_amount": -85,
+							"currency": "usd",
+							"rate": {
+								"percentage": 0.039,
+								"fixed": 30,
+								"fixed_currency": "usd",
+								"percentage_display": "3.9%"
+							}
+						},
+						"tax": {
+							"amount": 0,
+							"display_amount": 0,
+							"currency": "usd"
+						},
+						"net": {
+							"amount": 1321,
+							"currency": "usd"
+						},
+						"capture_net": {
+							"amount": 1321,
+							"currency": "usd"
+						},
+						"gross": {
+							"amount": 1406,
+							"currency": "usd"
+						},
+						"fee_plus_tax": {
+							"amount": 85,
+							"currency": "usd"
+						}
+					},
+					"notes": [],
+					"sources": {
+						"balance_transaction_exchange_rate": 1.13905,
+						"refunded_fee_amount_store": 0,
+						"effective_total_store": 85
+					},
+					"fx": {
+						"rate_display": "1 eur → 1.13905 usd",
+						"from_currency": "eur",
+						"to_currency": "usd",
+						"from_amount": 1234,
+						"to_amount": 1406
+					}
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>1.00 EUR → 1.13938 USD: $14.06 USD</p>\n<p>Fee (3.9% + $0.30): $0.85 USD</p>\n<p>&nbsp;&nbsp;&nbsp;&nbsp;Base fee: 2.9% + $0.30</p>\n<p>&nbsp;&nbsp;&nbsp;&nbsp;Currency conversion fee: 1%</p>\n<p>Net payout: $13.21 USD</p>\n</div>"
+		},
+		"constructed:capped-base-fee": {
+			"source": "constructed from recorded:pi_3UL1boBzWlxcwgpP1BYPsGdE with totals.fee.rate.capped and cap_amount set the way the platform builder sets them for a base-only capped fee (class-fee-breakdown-builder.php:270-277); covers the client capped branch no recorded event reaches",
+			"event": {
+				"type": "captured",
+				"amount": 1099,
+				"amount_captured": 1099,
+				"fee": 62,
+				"fee_rates": {
+					"percentage": 0.029,
+					"fixed": 30,
+					"fixed_currency": "USD",
+					"history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-us-card-fee",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						}
+					],
+					"tax": null,
+					"before_tax": null,
+					"fee_exchange_rate": null
+				},
+				"currency": "USD",
+				"datetime": 1790690536,
+				"deposit": {
+					"id": "po_1ULCCABzWlxcwgpPC17qpmnl",
+					"arrival_date": 1790726400
+				},
+				"transaction_id": "txn_3UL1boBzWlxcwgpP1eLV8uAS",
+				"transaction_details": {
+					"customer_currency": "USD",
+					"customer_amount": 1099,
+					"customer_amount_captured": 1099,
+					"customer_fee": 62,
+					"store_currency": "USD",
+					"store_amount": 1099,
+					"store_amount_captured": 1099,
+					"store_fee": 62
+				},
+				"fee_breakdown_v1": {
+					"rows": [
+						{
+							"key": "base",
+							"kind": "fee",
+							"label": null,
+							"amount": 62,
+							"display_amount": -62,
+							"currency": "usd",
+							"rate": {
+								"percentage": 0.029,
+								"fixed": 30,
+								"fixed_currency": "usd",
+								"percentage_display": "2.9%"
+							},
+							"meta": {
+								"fee_id": "base-us-card-fee"
+							}
+						}
+					],
+					"totals": {
+						"fee": {
+							"key": null,
+							"amount": 62,
+							"display_amount": -62,
+							"currency": "usd",
+							"rate": {
+								"percentage": 0.029,
+								"fixed": 30,
+								"fixed_currency": "usd",
+								"percentage_display": "2.9%",
+								"capped": true,
+								"cap_amount": 30
+							}
+						},
+						"tax": {
+							"amount": 0,
+							"display_amount": 0,
+							"currency": "usd"
+						},
+						"net": {
+							"amount": 1037,
+							"currency": "usd"
+						},
+						"capture_net": {
+							"amount": 1037,
+							"currency": "usd"
+						},
+						"gross": {
+							"amount": 1099,
+							"currency": "usd"
+						},
+						"fee_plus_tax": {
+							"amount": 62,
+							"currency": "usd"
+						}
+					},
+					"notes": [],
+					"sources": {
+						"balance_transaction_exchange_rate": 0,
+						"refunded_fee_amount_store": 0,
+						"effective_total_store": 62
+					}
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>Fee (capped at $0.30): $0.62 USD</p>\n<p>Net payout: $10.37 USD</p>\n</div>"
+		},
+		"constructed:three-decimal-rate": {
+			"source": "constructed from recorded:pi_3UL1boBzWlxcwgpP1BYPsGdE with totals.fee.rate.percentage 0.02175; covers the client three-decimal rounding no recorded event reaches",
+			"event": {
+				"type": "captured",
+				"amount": 1099,
+				"amount_captured": 1099,
+				"fee": 62,
+				"fee_rates": {
+					"percentage": 0.029,
+					"fixed": 30,
+					"fixed_currency": "USD",
+					"history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-us-card-fee",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						}
+					],
+					"tax": null,
+					"before_tax": null,
+					"fee_exchange_rate": null
+				},
+				"currency": "USD",
+				"datetime": 1790690536,
+				"deposit": {
+					"id": "po_1ULCCABzWlxcwgpPC17qpmnl",
+					"arrival_date": 1790726400
+				},
+				"transaction_id": "txn_3UL1boBzWlxcwgpP1eLV8uAS",
+				"transaction_details": {
+					"customer_currency": "USD",
+					"customer_amount": 1099,
+					"customer_amount_captured": 1099,
+					"customer_fee": 62,
+					"store_currency": "USD",
+					"store_amount": 1099,
+					"store_amount_captured": 1099,
+					"store_fee": 62
+				},
+				"fee_breakdown_v1": {
+					"rows": [
+						{
+							"key": "base",
+							"kind": "fee",
+							"label": null,
+							"amount": 62,
+							"display_amount": -62,
+							"currency": "usd",
+							"rate": {
+								"percentage": 0.029,
+								"fixed": 30,
+								"fixed_currency": "usd",
+								"percentage_display": "2.9%"
+							},
+							"meta": {
+								"fee_id": "base-us-card-fee"
+							}
+						}
+					],
+					"totals": {
+						"fee": {
+							"key": null,
+							"amount": 62,
+							"display_amount": -62,
+							"currency": "usd",
+							"rate": {
+								"percentage": 0.02175,
+								"fixed": 30,
+								"fixed_currency": "usd",
+								"percentage_display": "2.9%"
+							}
+						},
+						"tax": {
+							"amount": 0,
+							"display_amount": 0,
+							"currency": "usd"
+						},
+						"net": {
+							"amount": 1037,
+							"currency": "usd"
+						},
+						"capture_net": {
+							"amount": 1037,
+							"currency": "usd"
+						},
+						"gross": {
+							"amount": 1099,
+							"currency": "usd"
+						},
+						"fee_plus_tax": {
+							"amount": 62,
+							"currency": "usd"
+						}
+					},
+					"notes": [],
+					"sources": {
+						"balance_transaction_exchange_rate": 0,
+						"refunded_fee_amount_store": 0,
+						"effective_total_store": 62
+					}
+				}
+			},
+			"client_html": "<div class=\"captured-event-details\">\n<p>Fee (2.175% + $0.30): $0.62 USD</p>\n<p>Net payout: $10.37 USD</p>\n</div>"
+		}
+	}
+}

@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Add provider-free render smoke coverage proving the native WooPayments runtime keeps the storefront product listing, gateway resolution and the My Account entry surface working.

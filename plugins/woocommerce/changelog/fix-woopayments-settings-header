@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+WooPayments settings pages now use the Payments settings header with a back link, open their subpages without reloading, and share one save bar and section layout.

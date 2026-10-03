@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+Comment: Register the WooPayments woopayments/express-checkout/refresh-ui Store API cart update callback natively and send it when a wallet flow that changed the cart is canceled on the Cart and Checkout blocks.
+

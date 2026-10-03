@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Guard against invalid user timezones when formatting WooPayments transaction dates.

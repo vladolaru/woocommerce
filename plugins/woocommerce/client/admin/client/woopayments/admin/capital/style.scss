@@ -1,0 +1,85 @@
+.woocommerce-woopayments-capital {
+	display: grid;
+	gap: 16px;
+	max-width: 960px;
+
+	&__section {
+		background: #fff;
+		border: 1px solid #dcdcde;
+		padding: 20px;
+	}
+
+	&__section h2,
+	&__section h3 {
+		margin-top: 0;
+	}
+
+	&__status {
+		margin: 16px 0 0;
+	}
+
+	&__list-summary {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 12px;
+		margin: 0 0 16px;
+	}
+
+	&__list-summary span {
+		background: #f6f7f7;
+		border: 1px solid #dcdcde;
+		border-radius: 2px;
+		color: #1e1e1e;
+		display: inline-block;
+		font-weight: 600;
+		padding: 6px 10px;
+	}
+
+	&__table {
+		border-collapse: collapse;
+		width: 100%;
+	}
+
+	&__table th,
+	&__table td {
+		border-bottom: 1px solid #dcdcde;
+		padding: 12px;
+		text-align: left;
+		vertical-align: top;
+	}
+
+	&__table th:nth-child(n + 3),
+	&__table td:nth-child(n + 3) {
+		text-align: right;
+	}
+
+	&__loan-action {
+		white-space: nowrap;
+	}
+
+	&__loan-action:focus-visible {
+		outline: 2px solid #2271b1;
+		outline-offset: 2px;
+	}
+
+	&__status-chip {
+		border: 1px solid #8c8f94;
+		border-radius: 2px;
+		display: inline-block;
+		font-weight: 600;
+		line-height: 1.5;
+		padding: 2px 8px;
+
+		&.is-active {
+			background: #fcf9e8;
+			border-color: #dba617;
+			color: #4f3500;
+		}
+
+		&.is-paid-off {
+			background: #f0f6fc;
+			border-color: #72aee6;
+			color: #0a4b78;
+		}
+	}
+}

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Consolidate native WooPayments currency and note handling, improve payment failure logging, and heal split gateway settings drift.

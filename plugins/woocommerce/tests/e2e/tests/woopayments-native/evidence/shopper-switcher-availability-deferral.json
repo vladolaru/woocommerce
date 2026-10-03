@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "shopper-switcher-availability-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "1fba85b2fbf1aa18f94af2031721f84c4be869da",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": ["plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:40::Shopper Multi-Currency widget › should display currency switcher widget if multi-currency is enabled",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:122::Shopper Multi-Currency widget › should not display currency switcher widget if multi-currency is disabled"
+	],
+	"targets": [{"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/multi-currency.spec.ts", "contract": "pending"}],
+	"implementation_commits": [], "verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh independent review approved pre-review switcher SHA 32aa3b839f53b1d46a1cf8aab1b4170b9d6b3230c1f588d0c1c5f86498b21d23, context-switching SHA adad6de54f961c90c2eee8554288cc9d9d8f0d5721abcb392ec5a3c2559d70a9, order-received SHA 08f4cf266ce95e9f35e4567578cb11855337cdcd1f042c558eb9048c0d16fee5, historical-order SHA e7710661c3d71114ce472975a4e63e7bfbb51485e372be94cfcaea9350cc1734 and pay-for-order SHA d5c63e6eae3c0af549c4151ffb36b3a1b353b60c08bee8fae2a3696843de27fb against mutated ledger SHA ff9521f565ec2195ba46b710706eeebf88d7c67bb21f79e14527092754d7a4a4 and baseline 2fb5e5b50cd574c256e537f8c5d447c805216faf4b1a72e485f2c91c3ffc82a6 at 1fba85b2fbf1aa18f94af2031721f84c4be869da, with no findings. Exactly eight rows change only fields 37-40 across honest 2/3/1/1/1 groups. Enabled/disabled owner semantics, exact USD 10.00 to EUR 8.00 continuity, the sole 1000 usd provider/listener graph, provider-free historical/pay-for-order boundaries, zero replay, exact restoration, retention, quarantine, accessibility and drift are preserved; disabled behavior remains only a future RED and no unsupported claim is made."
+		}
+	],
+	"closures": [], "known_gaps": [],
+	"deferral": {
+		"blocker": "The native switcher target is absent with pending contract and owner, and standing readiness cannot allocate the exact Core-owned runtime, byte-restorable multi-currency feature/settings graph, theme placement, or fresh shopper state. Core statically owns one accessible switcher projection when enabled. Its raw disabled-flag ownership behavior is only a defect candidate until an exact ready-runtime RED exists; no defect or known gap is claimed.",
+		"affected_scope": "Two provider-free fresh-process graphs over one run-owned supported switcher placement and deterministic USD default with EUR/GBP enabled. Enabled proves Core is the sole owner/effect set and exposes exactly one keyboard-operable combobox named Currency with unique USD/EUR/GBP options and USD selected. Disabled journals one full raw-feature write, expects owner none and zero registered effects or enabled switching controls, rejects one EUR selection without creating currency state, and preserves an exact USD 10.00 product. Each graph has independent context, state receipt and verdict.",
+		"no_allowlisted_action_reason": "No allowlisted local action can assign the absent target/owner, establish readiness, provision the exact placement/settings graph, or resolve the disabled-owner candidate without the row-scoped runtime. A CSS selector, missing widget, source-only arbiter inspection or ordinary helper normalization cannot prove these contracts. Use one writer per feature setup, zero retries/replay, fresh-process reads and halt on any owner or restoration ambiguity; no provider writer or listener is involved.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Approve the target/owner and row-safe topology, satisfy exact native readiness, and provision a disposable placement plus raw byte snapshots for feature, wildcard currency options, caches, theme and session state. Execute enabled and disabled graphs once with semantic keyboard/focus and owner/effect assertions, restore exact existence/autoload/serialized bytes without blanket widget removal, quarantine local uncertainty, obtain code/E2E/reliability/accessibility/drift reviews, and enter the defect protocol only if the disabled graph produces an anchored RED.",
+		"quarantine_status": "No browser, placement, option, cache, session, product, lock, writer, listener, provider record, mutation or quarantine was created; the separately owned listener remains untouched. Future owner/effect, option, placement, selection, visibility, focus, price, restoration, publication or drift mismatch must preserve diagnostics and quarantine the exact store/settings/theme/session/product graph without broad normalization, provider claims, replay or listener action.",
+		"unlock_satisfactions": [
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:40::Shopper Multi-Currency widget › should display currency switcher widget if multi-currency is enabled",
+				"unlock_decision": "Approve the target/owner and row-safe topology, satisfy exact native readiness, and provision a disposable placement plus raw byte snapshots for feature, wildcard currency options, caches, theme and session state. Execute enabled and disabled graphs once with semantic keyboard/focus and owner/effect assertions, restore exact existence/autoload/serialized bytes without blanket widget removal, quarantine local uncertainty, obtain code/E2E/reliability/accessibility/drift reviews, and enter the defect protocol only if the disabled graph produces an anchored RED.",
+				"satisfied_on": "2026-08-07",
+				"reference": "calibration-notes:2026-08-07:switcher-family-smoke"
+			}
+		]
+	}
+}

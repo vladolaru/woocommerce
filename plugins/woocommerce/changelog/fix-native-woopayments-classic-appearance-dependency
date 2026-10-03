@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Load WooPayments appearance assets before classic checkout so local payment methods render their payment fields.

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Print the billing address on the WooPayments payment details page in the store's address format, as the WooPayments plugin does.

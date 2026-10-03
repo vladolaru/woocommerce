@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show WooPayments payment method fees and the fraud protection price threshold symbol in the same currency format as the WooPayments plugin.

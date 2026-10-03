@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Add a provider-free WooPayments-native E2E smoke proving invalid card input yields accessible field-associated errors before any payment dispatch, and reopen the six provider-JS validation contracts under the family-smoke acceptance.

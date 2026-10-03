@@ -1,0 +1,72 @@
+{
+	"schema_version": 2,
+	"slice_id": "multi-currency-geolocation-preview-retirement",
+	"wc_base_commit": "1a4c8f6fb9e984f412144f29c080ef22fa68da23",
+	"verified_at_commit": "1a4c8f6fb9e984f412144f29c080ef22fa68da23",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [],
+	"source_test_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:174::Multi-currency on-boarding › Geolocation features › should preview currency switch by geolocation correctly with USD and GBP"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/MultiCurrency/Services/MultiCurrencyGeolocationServiceTest.php",
+			"contract": "Retired as a wizard-only preview affordance; the underlying automatic geolocation capability is carried by: default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:165::Multi-currency on-boarding › Geolocation features › should offer currency switch by geolocation"
+		},
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/MultiCurrency/Services/MultiCurrencyFrontendProjectionServiceTest.php",
+			"contract": "Retired as a wizard-only preview affordance; the underlying automatic geolocation capability is carried by: default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:165::Multi-currency on-boarding › Geolocation features › should offer currency switch by geolocation"
+		},
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/MultiCurrency/MultiCurrencySelectedCurrencyControllerTest.php",
+			"contract": "Retired as a wizard-only preview affordance; the underlying automatic geolocation capability is carried by: default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:165::Multi-currency on-boarding › Geolocation features › should offer currency switch by geolocation"
+		},
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/multi-currency-settings-management.spec.ts",
+			"contract": "Retired as a wizard-only preview affordance; the underlying automatic geolocation capability is carried by: default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:165::Multi-currency on-boarding › Geolocation features › should offer currency switch by geolocation"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [
+		{
+			"command": "pnpm --dir plugins/woocommerce test:php:env -- --filter 'MultiCurrency(GeolocationService|FrontendProjectionService|SelectedCurrencyController)Test'",
+			"exit_code": 0,
+			"summary": "Parent-session verification passed: OK (38 tests, 127 assertions)."
+		},
+		{
+			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 --grep='The multi-currency settings screen offers a comprehensible automatic geolocation currency-switch opt-in that persists when saved' tests/e2e/tests/woopayments-native/merchant/multi-currency-settings-management.spec.ts",
+			"exit_code": 0,
+			"summary": "Parent-session retained E2E verification passed 1/1 in 6.7 seconds; the test body completed in 5.5 seconds."
+		},
+		{
+			"command": "pnpm --dir plugins/woocommerce test:e2e:woopayments:contract-map:unit",
+			"exit_code": 0,
+			"summary": "All 60 contract-map validator unit tests passed."
+		},
+		{
+			"command": "pnpm --dir plugins/woocommerce test:e2e:woopayments:contract-map",
+			"exit_code": 0,
+			"summary": "Validated all 181 WooPayments client contracts."
+		}
+	],
+	"reviews": [
+		{
+			"role": "disposition-authority",
+			"verdict": "APPROVE",
+			"source_test_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+			"summary": "The 2026-08-08 human decision classes this preview as a wizard-only affordance and authorizes retirement against the retained automatic-geolocation opt-in contract."
+		}
+	],
+	"closures": [],
+	"retirements": [
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:174::Multi-currency on-boarding › Geolocation features › should preview currency switch by geolocation correctly with USD and GBP",
+			"retained_contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:165::Multi-currency on-boarding › Geolocation features › should offer currency switch by geolocation",
+			"approver": "human-approved:multi-currency-settings-native-equivalent-2026-08-08",
+			"rationale": "The preview is a wizard-only explanatory affordance rather than an independent geolocation capability. Native coverage verifies geolocation resolution, frontend currency projection, selected-currency control and settings management, while the retained contract owns the merchant-visible automatic-geolocation opt-in. Recreating the legacy preview iframe and its exact copy would preserve obsolete plugin structure rather than add distinct behavioural coverage."
+		}
+	],
+	"known_gaps": [],
+	"deferral": null
+}

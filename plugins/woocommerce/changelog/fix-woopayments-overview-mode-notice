@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments Overview test and sandbox account notice is now a banner notice with its help icon at the end of the line, like WooPayments, instead of wrapping the message around the icon.

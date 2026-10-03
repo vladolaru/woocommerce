@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Port the already-paid and requires-capture guards, the thank-you duplicate-payment notice and per-attempt idempotency keys to the native WooPayments charge path.

@@ -1,0 +1,23 @@
+{
+	"_meta": {
+		"recording": "REC-T63-PUBLIC-FRAUD-SERVICES",
+		"source": "Local WPCOM (wpcom-local) WCPay public REST endpoint, wpcom checkout on trunk at 51d10cf8161, reached at http://host.docker.internal:30001/wp-json/wpcom/v2/wcpay/accounts/fraud_services",
+		"store": "native WooCommerce :8889 (woocommerce-develop-2, branch exp/core-native-payments at 40845fd09e6); its wpcom-local store transport rewrites public-api.wordpress.com to the local WPCOM",
+		"captured_via": "wp_remote_get( 'https://public-api.wordpress.com/wpcom/v2/wcpay/accounts/fraud_services' ) from WP-CLI on :8889, the same unauthenticated GET WooPaymentsApiClient::fetch_public_fraud_services_config() sends; one request, 2026-10-02 19:22 EEST",
+		"sanitized": "nothing to sanitize: the endpoint is public and the body carries no identifiers; body kept verbatim as the raw string",
+		"used_by": "NativeWooPaymentsGatewayTest payment_fields cases and WooPaymentsPluginHookArityContractTest (wcpay_payment_fields_js_config), through Fixtures/RecordedPublicFraudServices.php"
+	},
+	"entries": [
+		{
+			"request": {
+				"method": "GET",
+				"path": "/wpcom/v2/wcpay/accounts/fraud_services"
+			},
+			"response": {
+				"status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"body": "{\"stripe\":[]}"
+			}
+		}
+	]
+}

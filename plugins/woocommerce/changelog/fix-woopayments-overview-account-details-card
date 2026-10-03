@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments Overview account details card now shows the account and payout status as coloured chips, like WooPayments, instead of two status tiles.

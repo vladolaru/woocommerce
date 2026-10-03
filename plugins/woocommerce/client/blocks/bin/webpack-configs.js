@@ -441,6 +441,18 @@ const getPaymentsConfig = ( options = {} ) => {
 		plugins: [
 			...getSharedPlugins( {
 				bundleAnalyzerReportTitle: 'Payment Method Extensions',
+				// FingerprintJS already ships as the vendored UMD build behind
+				// the `wc-woopayments-fingerprintjs` handle, which sets
+				// `window.FingerprintJS`. Load it from there instead of
+				// bundling a second copy into the WooPayments card script.
+				dependencyRequestToExternal: ( request ) =>
+					request === '@fingerprintjs/fingerprintjs'
+						? 'FingerprintJS'
+						: requestToExternal( request ),
+				dependencyRequestToHandle: ( request ) =>
+					request === '@fingerprintjs/fingerprintjs'
+						? 'wc-woopayments-fingerprintjs'
+						: requestToHandle( request ),
 			} ),
 			new ProgressBarPlugin(
 				getProgressBarPluginConfig( 'Payment Method Extensions' )

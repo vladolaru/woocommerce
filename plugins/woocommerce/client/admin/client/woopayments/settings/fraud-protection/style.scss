@@ -1,0 +1,65 @@
+.woopayments-fraud-protection {
+	h3 {
+		margin: 0 0 8px;
+		font-size: 14px;
+		line-height: 20px;
+		font-weight: 600;
+	}
+}
+
+.woopayments-fraud-protection-levels {
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
+.woopayments-fraud-protection-levels__option {
+	padding: 16px 0;
+
+	& + & {
+		border-top: 1px solid #dcdcde;
+	}
+}
+
+.woopayments-fraud-protection-levels__option--advanced {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+}
+
+.woopayments-fraud-protection-levels__advanced-content {
+	flex: 1;
+	min-width: 0;
+}
+
+.woopayments-fraud-protection-levels__header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+
+	input[type="radio"] {
+		margin: 0;
+	}
+
+	.components-button.has-icon {
+		min-width: 24px;
+		height: 20px;
+		padding: 0;
+	}
+}
+
+.woopayments-fraud-protection-levels__copy {
+	margin: 4px 0 0 24px;
+	color: $gray-700;
+}
+
+.woopayments-fraud-protection-modal__body {
+	display: grid;
+	gap: 16px;
+
+	p,
+	ul {
+		margin: 0;
+	}
+}

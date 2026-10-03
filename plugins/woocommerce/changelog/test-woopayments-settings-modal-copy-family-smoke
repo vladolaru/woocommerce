@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Add a provider-free WooPayments-native E2E smoke covering the manual-capture confirmation modal copy and method-incompatibility UI, and reopen the three settings-modal-copy contracts under the family-smoke acceptance.

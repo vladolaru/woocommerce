@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments settings page now links Manage in Stripe and the failed-payout notice to the account's dashboard link, as WooPayments does, instead of a link the payouts data never carries.

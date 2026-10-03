@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+WooPayments payments that are not linked to an order can be refunded in full from the payment details page.

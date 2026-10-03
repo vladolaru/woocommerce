@@ -7,6 +7,7 @@ namespace Automattic\WooCommerce\Internal\Admin;
 
 defined( 'ABSPATH' ) || exit;
 
+use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Admin\RemoteInboxNotifications\RemoteInboxNotificationsEngine;
 use Automattic\WooCommerce\Internal\Admin\Notes\CustomizeStoreWithBlocks;
 use Automattic\WooCommerce\Internal\Admin\Notes\CustomizingProductCatalog;
@@ -26,8 +27,6 @@ use Automattic\WooCommerce\Internal\Admin\Notes\NewSalesRecord;
 use Automattic\WooCommerce\Internal\Admin\Notes\OnboardingPayments;
 use Automattic\WooCommerce\Internal\Admin\Notes\OnlineClothingStore;
 use Automattic\WooCommerce\Internal\Admin\Notes\OrderMilestones;
-use Automattic\WooCommerce\Internal\Admin\Notes\PaymentsMoreInfoNeeded;
-use Automattic\WooCommerce\Internal\Admin\Notes\PaymentsRemindMeLater;
 use Automattic\WooCommerce\Internal\Admin\Notes\PerformanceOnMobile;
 use Automattic\WooCommerce\Internal\Admin\Notes\PersonalizeStore;
 use Automattic\WooCommerce\Internal\Admin\Notes\RealTimeOrderAlerts;
@@ -35,7 +34,6 @@ use Automattic\WooCommerce\Internal\Admin\Notes\ScheduledUpdatesPromotion;
 use Automattic\WooCommerce\Internal\Admin\Notes\SellingOnlineCourses;
 use Automattic\WooCommerce\Internal\Admin\Notes\TrackingOptIn;
 use Automattic\WooCommerce\Internal\Admin\Notes\UnsecuredReportFiles;
-use Automattic\WooCommerce\Internal\Admin\Notes\WooCommercePayments;
 use Automattic\WooCommerce\Internal\Admin\Notes\WooCommerceSubscriptions;
 use Automattic\WooCommerce\Internal\Admin\Notes\WooSubscriptionsNotes;
 use Automattic\WooCommerce\Internal\Admin\Schedulers\MailchimpScheduler;
@@ -83,14 +81,11 @@ class Events {
 		NewSalesRecord::class,
 		OnboardingPayments::class,
 		OnlineClothingStore::class,
-		PaymentsMoreInfoNeeded::class,
-		PaymentsRemindMeLater::class,
 		PerformanceOnMobile::class,
 		PersonalizeStore::class,
 		RealTimeOrderAlerts::class,
 		ScheduledUpdatesPromotion::class,
 		TrackingOptIn::class,
-		WooCommercePayments::class,
 		WooCommerceSubscriptions::class,
 	);
 
@@ -140,6 +135,7 @@ class Events {
 		$this->possibly_add_notes();
 		$this->possibly_delete_notes();
 		$this->possibly_update_notes();
+		$this->possibly_delete_deprecated_notes();
 		$this->possibly_refresh_data_source_pollers();
 
 		if ( $this->is_remote_inbox_notifications_enabled() ) {
@@ -198,9 +194,7 @@ class Events {
 	/**
 	 * Deletes notes that should be deleted.
 	 */
-	protected function possibly_delete_notes() {
-		PaymentsRemindMeLater::delete_if_not_applicable();
-		PaymentsMoreInfoNeeded::delete_if_not_applicable();
+	protected function possibly_delete_notes(): void {
 		FullRefundFixDataToolNotice::delete_if_not_applicable();
 	}
 
@@ -213,6 +207,13 @@ class Events {
 				$note_class::possibly_update_note();
 			}
 		}
+	}
+
+	/**
+	 * Deletes notes whose surfaces were removed from core.
+	 */
+	protected function possibly_delete_deprecated_notes(): void {
+		Notes::delete_notes_with_name( 'wc-admin-woocommerce-payments' );
 	}
 
 	/**

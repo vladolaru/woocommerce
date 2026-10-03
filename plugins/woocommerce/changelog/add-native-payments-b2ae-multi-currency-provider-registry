@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Wire native multi-currency state builders to the WooPayments rate provider registry.

@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Add reusable native WooPayments card-protection checkout coverage.

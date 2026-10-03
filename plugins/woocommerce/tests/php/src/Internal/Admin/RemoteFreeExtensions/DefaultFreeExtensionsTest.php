@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Admin\RemoteFreeExtensions;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Admin\RemoteFreeExtensions\DefaultFreeExtensions;
 use Automattic\WooCommerce\Internal\Admin\RemoteFreeExtensions\EvaluateExtension;
 use WC_Unit_Test_Case;
@@ -162,6 +163,79 @@ class DefaultFreeExtensionsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Default extension bundles should not offer WooPayments as a plugin install when core owns it.
+	 */
+	public function test_default_extension_bundles_do_not_offer_woopayments_as_a_plugin_install(): void {
+		$this->assertNotContains( 'woocommerce-payments', $this->get_default_extension_plugin_slugs() );
+	}
+
+	/**
+	 * @testdox Default extension bundles should retain WooPayments plugin metadata for merged feature development.
+	 */
+	public function test_default_extension_bundles_preserve_woopayments_plugin_metadata_for_merged_feature_development(): void {
+		Constants::set_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS', true );
+
+		try {
+			$this->assertContains( 'woocommerce-payments', $this->get_default_extension_plugin_slugs() );
+		} finally {
+			Constants::clear_single_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' );
+		}
+	}
+
+	/**
+	 * @testdox Core profiler WooPayments plugin visibility should follow the store country when merged plugins are allowed.
+	 * @dataProvider core_profiler_woocommerce_payments_visibility_provider
+	 *
+	 * @param string $country        Store country and optional state.
+	 * @param bool   $should_include Whether WooPayments should be recommended.
+	 */
+	public function test_core_profiler_woocommerce_payments_visibility_by_country( string $country, bool $should_include ): void {
+		Constants::set_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS', true );
+
+		try {
+			update_option( 'woocommerce_default_country', $country );
+			update_option( 'woocommerce_store_address', '1 Test Street' );
+			update_option( 'woocommerce_remote_variant_assignment', 60 );
+			update_option( 'active_plugins', array() );
+			update_option( 'woocommerce_onboarding_profile', array() );
+
+			$results = EvaluateExtension::evaluate_bundles(
+				DefaultFreeExtensions::get_all(),
+				array( 'obw/core-profiler' )
+			);
+
+			$this->assertSame( array(), $results['errors'], 'The real core profiler bundle should evaluate without errors.' );
+			$this->assertCount( 1, $results['bundles'], 'Only the core profiler bundle should be evaluated.' );
+			$plugin_slugs = array_map(
+				static function ( $plugin ) {
+					return $plugin->key;
+				},
+				$results['bundles'][0]['plugins']
+			);
+
+			if ( $should_include ) {
+				$this->assertContains( 'woocommerce-payments', $plugin_slugs );
+			} else {
+				$this->assertNotContains( 'woocommerce-payments', $plugin_slugs );
+			}
+		} finally {
+			Constants::clear_single_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' );
+		}
+	}
+
+	/**
+	 * Store countries for core profiler WooPayments visibility.
+	 *
+	 * @return array<string, array{string, bool}>
+	 */
+	public function core_profiler_woocommerce_payments_visibility_provider(): array {
+		return array(
+			'AU:NT' => array( 'AU:NT', true ),
+			'AF'    => array( 'AF', false ),
+		);
+	}
+
+	/**
 	 * Evaluates bundles passed as argument and extracts keys of recommended plugins.
 	 *
 	 * @param array $bundles Array of bundles to evaluate.
@@ -184,6 +258,23 @@ class DefaultFreeExtensionsTest extends WC_Unit_Test_Case {
 			},
 			$results['bundles'][0]['plugins']
 		);
+	}
+
+	/**
+	 * Get all plugin slugs from the default extension bundles.
+	 *
+	 * @return string[]
+	 */
+	private function get_default_extension_plugin_slugs(): array {
+		$plugin_slugs = array();
+
+		foreach ( DefaultFreeExtensions::get_all() as $bundle ) {
+			foreach ( $bundle->plugins as $plugin ) {
+				$plugin_slugs[] = $plugin->key;
+			}
+		}
+
+		return $plugin_slugs;
 	}
 
 	/**

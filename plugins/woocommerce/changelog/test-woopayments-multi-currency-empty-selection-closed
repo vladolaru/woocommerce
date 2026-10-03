@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Close the multi-currency empty-selection guard contract as supported.

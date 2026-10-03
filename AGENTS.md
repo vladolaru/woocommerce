@@ -32,6 +32,7 @@ The `.ai/skills/` directory contains procedural HOW-TO instructions:
 - **`woocommerce-git-draft-pr`** - Create draft PRs with proper template, changelog, and milestone handling
 - **`woocommerce-email-editor`** - Email editor development setup and Mailpit configuration
 - **`woocommerce-performance`** - Performance guardrails. **Invoke when writing or reviewing PHP code.**
+- **`woocommerce-native-payments`** - Neutral-layer boundary and client-version bump policy for the native payments runtime. **Invoke when changing code under `plugins/woocommerce/src/Internal/Payments/`.**
 
 ## Project Architecture
 

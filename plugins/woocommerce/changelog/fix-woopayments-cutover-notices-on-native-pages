@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the WooPayments switch notices (switch in progress, reconnect, completed) on the WooPayments pages of the Payments settings tab.

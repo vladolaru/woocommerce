@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Prevent the multi-currency Add enabled currencies modal from submitting an empty selection, which silently removed every additional enabled currency.

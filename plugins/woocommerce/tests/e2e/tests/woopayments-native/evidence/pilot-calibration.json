@@ -1,0 +1,241 @@
+{
+	"schema_version": 2,
+	"slice_id": "000-pilot-calibration",
+	"wc_base_commit": "244e7d48a9cb44768f7b8a7592877bd0ae3ee1d5",
+	"verified_at_commit": "b692db7b004a7e1d73441e57839c2521b02548f9",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/saved-method-cutover.spec.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/checkout.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/saved-cards.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/store-transition.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/provider-evidence.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/record-evidence.ts"
+	],
+	"source_test_sha256": "ae55a768a61a02394d068d0e26d82c21a65a37fa5e954cde218be27b402ed54e",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-admin-transactions.spec.ts:14::Admin transactions › page should load without errors",
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-manual-capture.spec.ts:39::Order › Manual Capture › should create an \"On hold\" order then capture the charge",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase.spec.ts:53::Successful purchase › Carding protection false › using a basic card",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:93::Saved cards › When using a 3ds card added on checkout › should process a payment with the saved card",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:93::Saved cards › When using a basic card added on checkout › should process a payment with the saved card",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-saved-card-checkout-and-usage.spec.ts:71::WooCommerce Blocks › Saved cards › should process a payment with the saved card from Blocks checkout"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/merchant-manual-capture.spec.ts",
+			"contract": "merchant manually captures one exact authorization and restores capture mode"
+		},
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/merchant-transaction-navigation.spec.ts",
+			"contract": "merchant reaches the exact transaction created by this atomic journey"
+		},
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/saved-method-cutover.spec.ts",
+			"contract": "plugin default saved method survives ephemeral native cutover"
+		},
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/shopper-card-payment.spec.ts",
+			"contract": "shopper card payment retains exact order and provider evidence"
+		},
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/overview-transactions.spec.ts",
+			"contract": "Admin transactions › page should load without errors"
+		},
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/card-payment.ts",
+			"contract": "Successful purchase › Carding protection false › using a basic card"
+		},
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/transitions/historical-tokens.spec.ts",
+			"contract": "Saved cards › When using a 3ds card added on checkout › should process a payment with the saved card"
+		}
+	],
+	"implementation_commits": [
+		"2edeeafbcf99f4ca61c306d881dd1aa018619553",
+		"6cf3169e9612ca185e723aea6188657d5ff309f9"
+	],
+	"verification": [
+		{
+			"command": "pnpm --dir plugins/woocommerce test:e2e:woopayments:controller",
+			"exit_code": 0,
+			"summary": "Phase 1 controller passed at the pinned base commit; no real pilot execution is claimed"
+		},
+		{
+			"command": "pnpm --dir plugins/woocommerce test:e2e:woopayments:controller",
+			"exit_code": 0,
+			"summary": "Dry calibration run 1 passed 134 contract-map tests, 181-row validation, routing, read-only setup, and 117 Playwright unit tests"
+		},
+		{
+			"command": "pnpm --dir plugins/woocommerce test:e2e:woopayments:controller",
+			"exit_code": 0,
+			"summary": "Dry calibration run 2 reproduced the exact run 1 counts and gates without tracked residual state"
+		},
+		{
+			"command": "pnpm --dir plugins/woocommerce exec playwright test --config=tests/e2e/envs/woopayments-native/unit.playwright.config.ts tests/e2e/utils/woopayments-native/known-gap-runner.test.ts tests/e2e/utils/woopayments-native/resource-quarantine.test.ts",
+			"exit_code": 0,
+			"summary": "All 10 exact known-gap and quarantine meta-tests passed with one worker"
+		},
+		{
+			"command": "E2E_TRANSITION_RUN_ID=pilot-calibration-20260727174138 pnpm --dir plugins/woocommerce test:e2e:woopayments:transition-saved-method",
+			"exit_code": 0,
+			"summary": "Playwright 1.61.1 ran plugin default saved method survives ephemeral native cutover once with one worker and zero retries against rolling reference 265e275802e9d8cadefe61c68c492911d14a1534 and approved seed sha256 85cf0f70afbf23db118dec6f163a169b6886ee81b98a128677750ff7b7628997; exact plugin-origin basic method correlation and one classic plus one Blocks payment passed, both exact cards were deleted, the disposable workspace was removed, and the redacted run artifact is redacted:transition-log:sha256:1d36ee6760abe5bd76097d75f0ecea7c40a9d7cae6c1b852897a1f88e47a1621"
+		},
+		{
+			"command": "E2E_TRANSITION_RUN_ID=repair-recalibration-20260730085627 pnpm --dir plugins/woocommerce test:e2e:woopayments:transition-saved-method",
+			"exit_code": 0,
+			"summary": "Playwright ran plugin default saved method survives ephemeral native cutover once with one worker and zero retries against the immutable WooPayments 10.5.0 seed; the retained plugin-origin default basic saved method funded one Classic and one Blocks order with successful captured USD 10.99 evidence and one charge/capture occurrence each, the exact saved cards were deleted, the disposable workspace was removed, and the redacted run artifact is redacted:transition-log:sha256:9a563c86ad912e751160736e79d1b5d0f00bd84fb005e936c99c4eeca8d8536e"
+		},
+		{
+			"command": "E2E_TRANSITION_RUN_ID=slice1-reclose-20260801222519 pnpm --dir plugins/woocommerce test:e2e:woopayments:transition-saved-method",
+			"exit_code": 0,
+			"summary": "Playwright ran plugin default saved method survives ephemeral native cutover exactly once with one worker and zero retries against the deterministic WooPayments 10.5.0 seed with transport SHA-256 899fea3b8594b6823a9454572404bf3736d0c4ad4713e4a60abd28575488f178 and canonical tar SHA-256 8c4cbfe257f23ab19bfe0cca4c4de5b1f76c1d3658048847e72ab55009583b1b; the plugin-origin default basic saved method funded one Classic and one Blocks order with successful captured USD 10.99 evidence and one charge/capture occurrence each, all exact saved cards were deleted, disposable teardown completed, 21 of 21 listener deliveries returned HTTP 200, no active lock, journal, or quarantine residue remained, and the redacted run artifact is redacted:transition-log:sha256:39edea9135787e7079b60a70e6053a46b47ab420520e84466238a68e9ad4c332"
+		}
+	],
+	"reviews": [
+		{
+			"role": "ecosystem-integration",
+			"verdict": "APPROVE",
+			"source_test_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"summary": "Frozen-source review approved the corrected three-eligible and three-open classification with zero findings"
+		},
+		{
+			"role": "e2e-tests",
+			"verdict": "APPROVE",
+			"source_test_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"summary": "E2E review approved exact annotations, provider correlation, prerequisites, cleanup, and conservative gaps with zero findings"
+		},
+		{
+			"role": "decision-critic",
+			"verdict": "APPROVE",
+			"source_test_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"summary": "Seven-step correction-cycle decision review returned STAND with no failed or uncertain claims"
+		},
+		{
+			"role": "reliability-dry-calibration",
+			"verdict": "APPROVE",
+			"source_test_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"summary": "Reliability review approved identical controller counts and fail-closed terminal, expected-failure, and quarantine behavior with zero findings"
+		},
+		{
+			"role": "ecosystem-integration-final-closure",
+			"verdict": "APPROVE",
+			"source_test_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"summary": "Final ecosystem review approved only the exact basic saved-token classic and Blocks closures with zero findings; manual capture and three partial contracts remain open"
+		},
+		{
+			"role": "e2e-tests-final-closure",
+			"verdict": "APPROVE",
+			"source_test_sha256": "6d831bf3212b8af4cdcf918ae1147b2c8adee0f712dd6579afe2e7f324a43bb6",
+			"summary": "Final E2E review approved exact token and provider identity, one worker, zero retries, cleanup, and disposable teardown for only the two saved-token closures"
+		},
+		{
+			"role": "reliability-final-closure",
+			"verdict": "APPROVE",
+			"source_test_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"summary": "Final reliability review approved the single transition proof and bounded cleanup while requiring manual capture and the other three unexecuted clauses to remain open"
+		},
+		{
+			"role": "decision-critic-final-closure",
+			"verdict": "APPROVE",
+			"source_test_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"summary": "Seven-step final closure decision returned STAND with C1-C5 and A1-A2 verified, no failed or uncertain claims, and exactly two closures"
+		},
+		{
+			"role": "code-final-closure-correction",
+			"verdict": "APPROVE",
+			"source_test_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"summary": "Correction-cycle code review approved closure-valid evidence and the conservative two-row ledger transition with zero findings"
+		},
+		{
+			"role": "code-review-root-cause-correction",
+			"verdict": "APPROVE",
+			"source_test_sha256": "eb485e490de260d39916bcaf916ce3a27537ed6741c99fa652f3b0f351dba74a",
+			"summary": "Reviewed the exact saved-method pilot and shared fixture bundle after the quarantine-before-release correction; focused runtime and source-binding tests passed"
+		},
+		{
+			"role": "code-review-saved-card-cleanup-correction",
+			"verdict": "APPROVE",
+			"source_test_sha256": "510266cbc3df46c2cca977a6ed6144d7e265ac8b464aaf7e5b5575dbea89027e",
+			"summary": "Reviewed the exact saved-method pilot and shared fixture after provider-detachment proof, cleanup quarantine, and exact admin credential corrections; focused pilot and lock suites passed"
+		},
+		{
+			"role": "code-review-lock-release-correction",
+			"verdict": "APPROVE",
+			"source_test_sha256": "eb030b164db64f97fa537b8547a6dfec57963f14cf39edc21bcc4ce232f22865",
+			"summary": "Confirmed that every acquired lock is preflighted, required quarantine is durable before release, and publication failure retains all surviving locks"
+		}
+	],
+	"closures": [
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:93::Saved cards › When using a basic card added on checkout › should process a payment with the saved card",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/saved-method-cutover.spec.ts",
+				"contract": "plugin default saved method survives ephemeral native cutover"
+			},
+			"verification": [
+				{
+					"command": "E2E_TRANSITION_RUN_ID=slice1-reclose-20260801222519 pnpm --dir plugins/woocommerce test:e2e:woopayments:transition-saved-method",
+					"exit_code": 0,
+					"summary": "Playwright ran plugin default saved method survives ephemeral native cutover exactly once with one worker and zero retries against the deterministic WooPayments 10.5.0 seed with transport SHA-256 899fea3b8594b6823a9454572404bf3736d0c4ad4713e4a60abd28575488f178 and canonical tar SHA-256 8c4cbfe257f23ab19bfe0cca4c4de5b1f76c1d3658048847e72ab55009583b1b; the plugin-origin default basic saved method funded one Classic and one Blocks order with successful captured USD 10.99 evidence and one charge/capture occurrence each, all exact saved cards were deleted, disposable teardown completed, 21 of 21 listener deliveries returned HTTP 200, no active lock, journal, or quarantine residue remained, and the redacted run artifact is redacted:transition-log:sha256:39edea9135787e7079b60a70e6053a46b47ab420520e84466238a68e9ad4c332"
+				}
+			],
+			"reviews": [
+				{
+					"role": "code",
+					"verdict": "APPROVE",
+					"source_test_sha256": "ae55a768a61a02394d068d0e26d82c21a65a37fa5e954cde218be27b402ed54e",
+					"summary": "The exact bundle proves plugin-origin default-token continuity through native cutover, Classic and Blocks payments with exact order/provider/charge correlation, and fail-closed cleanup, journaling, locking, quarantine, and ephemeral teardown."
+				},
+				{
+					"role": "e2e-tests",
+					"verdict": "APPROVE",
+					"source_test_sha256": "ae55a768a61a02394d068d0e26d82c21a65a37fa5e954cde218be27b402ed54e",
+					"summary": "The independently verified six-file bundle uses a serialized zero-retry pilot to prove the exact plugin-origin default token survives native cutover and completes distinct Classic and Blocks orders with exact run, payment-method, provider, charge, USD 10.99 capture, occurrence, and cleanup evidence; the single successful clean run legitimately supports both rows."
+				},
+				{
+					"role": "reliability",
+					"verdict": "APPROVE",
+					"source_test_sha256": "ae55a768a61a02394d068d0e26d82c21a65a37fa5e954cde218be27b402ed54e",
+					"summary": "Recomputed six-file bundle matched; the single zero-retry pass proves exact saved-method attribution and provider outcomes, with fail-closed journals/quarantine, complete listener delivery, immutable seed, exact cleanup, teardown, and no residual state."
+				}
+			]
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-saved-card-checkout-and-usage.spec.ts:71::WooCommerce Blocks › Saved cards › should process a payment with the saved card from Blocks checkout",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/saved-method-cutover.spec.ts",
+				"contract": "plugin default saved method survives ephemeral native cutover"
+			},
+			"verification": [
+				{
+					"command": "E2E_TRANSITION_RUN_ID=slice1-reclose-20260801222519 pnpm --dir plugins/woocommerce test:e2e:woopayments:transition-saved-method",
+					"exit_code": 0,
+					"summary": "Playwright ran plugin default saved method survives ephemeral native cutover exactly once with one worker and zero retries against the deterministic WooPayments 10.5.0 seed with transport SHA-256 899fea3b8594b6823a9454572404bf3736d0c4ad4713e4a60abd28575488f178 and canonical tar SHA-256 8c4cbfe257f23ab19bfe0cca4c4de5b1f76c1d3658048847e72ab55009583b1b; the plugin-origin default basic saved method funded one Classic and one Blocks order with successful captured USD 10.99 evidence and one charge/capture occurrence each, all exact saved cards were deleted, disposable teardown completed, 21 of 21 listener deliveries returned HTTP 200, no active lock, journal, or quarantine residue remained, and the redacted run artifact is redacted:transition-log:sha256:39edea9135787e7079b60a70e6053a46b47ab420520e84466238a68e9ad4c332"
+				}
+			],
+			"reviews": [
+				{
+					"role": "code",
+					"verdict": "APPROVE",
+					"source_test_sha256": "ae55a768a61a02394d068d0e26d82c21a65a37fa5e954cde218be27b402ed54e",
+					"summary": "The exact bundle proves plugin-origin default-token continuity through native cutover, Classic and Blocks payments with exact order/provider/charge correlation, and fail-closed cleanup, journaling, locking, quarantine, and ephemeral teardown."
+				},
+				{
+					"role": "e2e-tests",
+					"verdict": "APPROVE",
+					"source_test_sha256": "ae55a768a61a02394d068d0e26d82c21a65a37fa5e954cde218be27b402ed54e",
+					"summary": "The independently verified six-file bundle uses a serialized zero-retry pilot to prove the exact plugin-origin default token survives native cutover and completes distinct Classic and Blocks orders with exact run, payment-method, provider, charge, USD 10.99 capture, occurrence, and cleanup evidence; the single successful clean run legitimately supports both rows."
+				},
+				{
+					"role": "reliability",
+					"verdict": "APPROVE",
+					"source_test_sha256": "ae55a768a61a02394d068d0e26d82c21a65a37fa5e954cde218be27b402ed54e",
+					"summary": "Recomputed six-file bundle matched; the single zero-retry pass proves exact saved-method attribution and provider outcomes, with fail-closed journals/quarantine, complete listener delivery, immutable seed, exact cleanup, teardown, and no residual state."
+				}
+			]
+		}
+	],
+	"known_gaps": [],
+	"deferral": null
+}

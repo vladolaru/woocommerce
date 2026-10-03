@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Fix WooPayments express checkout for variable products in the Add to Cart + Options block.

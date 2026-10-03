@@ -1,0 +1,612 @@
+// Client 11.1.0 `payment-details/summary/style.scss`, `components/horizontal-list/style.scss` and `components/card-notice/styles.scss`.
+.woocommerce-woopayments-payment-summary {
+	&__main {
+		display: flex;
+		flex: 1;
+		gap: 16px;
+
+		@media screen and (max-width: 782px) {
+			flex-direction: column;
+		}
+	}
+
+	&__section {
+		flex-grow: 1;
+	}
+
+	&__amount-wrapper {
+		align-items: center;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+
+	&__amount {
+		align-items: center;
+		display: flex;
+		font-size: 32px;
+		font-weight: 300;
+		line-height: 48px;
+		margin: 0;
+	}
+
+	&__amount-currency {
+		color: #50575e;
+		font-size: 16px;
+		margin: 0 8px;
+		text-transform: uppercase;
+	}
+
+	&__breakdown > div {
+		color: #757575;
+		display: inline-flex;
+		font-size: 12px;
+		font-weight: 600;
+		margin: 4px 16px 0 0;
+		text-transform: uppercase;
+
+		&:last-child {
+			margin-inline-end: 0;
+		}
+	}
+
+	&__breakdown &__settlement-currency {
+		border-inline-end: 1px solid #e0e0e0;
+		padding-inline-end: 16px;
+	}
+
+	&__review-actions {
+		display: flex;
+		gap: 8px;
+		justify-content: flex-end;
+		margin-bottom: 8px;
+	}
+
+	&__id {
+		color: #787c82;
+		display: flex;
+		flex-direction: column;
+		margin-top: 8px;
+
+		@media screen and (min-width: 782px) {
+			align-items: flex-end;
+		}
+
+		> div {
+			white-space: nowrap;
+
+			// The settings screen keeps 30px gutters on phones, so a whole ID no longer fits on one line there.
+			@media screen and (max-width: 600px) {
+				white-space: normal;
+			}
+		}
+	}
+
+	&__id-value {
+		font-family: monospace;
+		overflow-wrap: anywhere;
+	}
+
+	// One row of labelled values, stacked on narrow screens.
+	&__list {
+		display: flex;
+		flex-direction: column;
+		margin: 0;
+
+		@media screen and (min-width: 801px) {
+			flex-direction: row;
+		}
+
+		> div {
+			border-bottom: 1px solid #f0f0f0;
+			padding: 12px 0;
+
+			@media screen and (min-width: 801px) {
+				border-bottom: 0;
+				border-inline-start: 1px solid #f0f0f0;
+				padding: 0 16px;
+
+				&:first-child {
+					border-inline-start: 0;
+					padding-inline-start: 0;
+				}
+
+				&:last-child {
+					padding-inline-end: 0;
+				}
+			}
+
+			&:last-child {
+				border-bottom: 0;
+			}
+		}
+
+		dt {
+			color: #757575;
+			font-size: 11px;
+			font-weight: 600;
+			line-height: 18px;
+			text-transform: uppercase;
+		}
+
+		dd {
+			align-items: center;
+			color: #2c3338;
+			display: flex;
+			font-size: 14px;
+			line-height: 20px;
+			margin: 0;
+		}
+	}
+
+	&__notice.components-card__footer {
+		background-color: #fff8ee;
+		gap: 10px;
+
+		@media screen and (max-width: 660px) {
+			align-items: flex-start;
+			flex-direction: column;
+		}
+	}
+}
+
+// Client 11.1.0 `payment-details/payment-details/index.tsx`: `<Page maxWidth={ 1032 }>`, 24px between cards.
+.woocommerce-woopayments-money-movement--details {
+	max-width: 1032px;
+
+	.woocommerce-woopayments-money-movement__detail-sections {
+		gap: 24px;
+	}
+}
+
+// Client 11.1.0 `client/style.scss:95-138`: two columns of label and value.
+.woocommerce-woopayments-payment-method-details {
+	align-items: flex-start;
+	display: flex;
+
+	@media screen and (max-width: 1023px) {
+		display: block;
+	}
+
+	&__column {
+		flex: 0 0 50%;
+		margin: 0;
+
+		> div {
+			align-items: flex-start;
+			display: flex;
+			font-size: 14px;
+			line-height: 20px;
+		}
+
+		dt {
+			color: #50575e;
+			flex: 0 0 36%;
+			padding: 4px 0;
+
+			@media screen and (max-width: 470px) {
+				flex-basis: 40%;
+			}
+		}
+
+		dd {
+			color: #2c3338;
+			margin: 0;
+			overflow-wrap: anywhere;
+			padding: 4px 0;
+		}
+	}
+}
+
+// Client 11.1.0 `payment-details/dispute-details/style.scss` and `summary/style.scss:127-135`.
+.woocommerce-woopayments-dispute-pane {
+	> .woocommerce-woopayments-money-movement__dispute-label {
+		margin: 12px 24px 0;
+	}
+
+	&__details {
+		padding: 0 24px 5px;
+
+		hr {
+			border: 0;
+			border-top: 1px solid #e0e0e0;
+			margin: 0;
+		}
+
+		// Beats the page's `.woocommerce-woopayments-money-movement h2 { margin: 0 }` for the pane's own heading only, not
+		// the "Steps you can take" accordion title below it.
+		.woocommerce-woopayments-money-movement & > h2 {
+			color: #1e1e1e;
+			font-size: 15px;
+			font-weight: 500;
+			line-height: 20px;
+			margin: 24px 0;
+		}
+	}
+
+	&__notice.components-notice {
+		margin: 0;
+
+		.components-notice__content {
+			align-items: flex-start;
+			display: flex;
+			font-size: 14px;
+			gap: 5px;
+			line-height: 1.5em;
+			margin: 16px;
+		}
+	}
+
+	&__notice-icon {
+		fill: #cc1818;
+		flex-shrink: 0;
+		height: 22px;
+		width: 22px;
+	}
+
+	&__summary {
+		margin-top: 40px;
+
+		dd .components-dropdown {
+			margin-inline-start: 4px;
+		}
+	}
+
+	&__due-urgent {
+		color: #cc1818;
+		font-size: 13px;
+		font-weight: 600;
+	}
+
+	&__help-link {
+		margin: 24px 0;
+	}
+
+	.woocommerce-woopayments-money-movement__dispute-response {
+		display: block;
+	}
+
+	.woocommerce-woopayments-money-movement__dispute-actions {
+		display: flex;
+		gap: 8px;
+		margin: 24px 0 16px;
+	}
+
+	&__footer.components-card__footer {
+		background-color: #f2f4f5;
+		color: #2f2f2f;
+
+		p {
+			margin: 0;
+		}
+	}
+
+	&__footer--primary.components-card__footer {
+		background-color: #f0f6fc;
+	}
+
+	&__footer-actions {
+		flex-shrink: 0;
+	}
+
+	@media screen and (max-width: 600px) {
+		.woocommerce-woopayments-money-movement__dispute-actions {
+			flex-direction: column;
+
+			.components-button {
+				justify-content: center;
+				width: 100%;
+			}
+		}
+
+		&__footer .components-flex {
+			align-items: flex-start;
+			flex-direction: column;
+		}
+	}
+}
+
+// Client 11.1.0 `summary/style.scss:68-85`: the fee breakdown behind the Fees help icon.
+.woocommerce-woopayments-payment-summary__fee-breakdown {
+	display: flex;
+	flex-direction: column;
+	font-size: 14px;
+	gap: 8px;
+	margin: 0;
+	padding: 4px;
+
+	> div {
+		display: flex;
+		gap: 16px;
+		justify-content: space-between;
+	}
+
+	> div:last-child {
+		border-top: 1px solid #e0e0e0;
+		padding-top: 8px;
+	}
+
+	dt {
+		color: #757575;
+	}
+
+	dd {
+		margin: 0;
+	}
+}
+
+.woocommerce-woopayments-payment-summary__breakdown .components-dropdown {
+	margin-inline-start: 2px;
+	text-transform: none;
+}
+
+// Client 11.1.0 `components/accordion/style.scss`: a bordered panel with a toggle row.
+.woocommerce-woopayments-accordion {
+	background: #fff;
+	border: 1px solid #e0e0e0;
+	border-radius: 8px;
+	padding: 8px;
+
+	&__title {
+		margin: 0;
+	}
+
+	&__toggle.components-button {
+		box-shadow: none;
+		color: #1e1e1e;
+		font-size: 15px;
+		font-weight: 500;
+		height: auto;
+		padding: 16px 48px 16px 16px;
+		position: relative;
+		text-align: start;
+		width: 100%;
+	}
+
+	&__title-content {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	&__subtitle {
+		color: #757575;
+		font-size: 13px;
+		font-weight: 400;
+		line-height: 20px;
+	}
+
+	&__arrow {
+		fill: currentColor;
+		inset-inline-end: 16px;
+		position: absolute;
+		top: 50%;
+		transform: translateY(-50%);
+	}
+
+	&__content {
+		padding: 0 16px 16px;
+	}
+}
+
+// Client 11.1.0 `components/dispute-step-item/style.scss`.
+.woocommerce-woopayments-dispute-steps {
+	margin-top: 40px;
+
+	&__notice.components-notice {
+		font-size: 14px;
+		margin: 0;
+
+		.components-notice__content {
+			align-items: flex-start;
+			display: flex;
+			gap: 5px;
+		}
+	}
+
+	&__notice-icon {
+		fill: #0a4b78;
+		flex-shrink: 0;
+		height: 22px;
+		width: 22px;
+	}
+}
+
+.woocommerce-woopayments-dispute-step {
+	align-items: center;
+	border-bottom: 1px solid #f0f0f0;
+	display: flex;
+	padding: 16px 0;
+
+	&:first-child {
+		padding: 12px 0 16px;
+	}
+
+	&:last-child {
+		border-bottom: 0;
+		padding-bottom: 28px;
+	}
+
+	&__icon {
+		align-items: center;
+		border: 1px solid #e0e0e0;
+		border-radius: 2px;
+		display: flex;
+		flex-shrink: 0;
+		height: 44px;
+		justify-content: center;
+		margin-inline-end: 12px;
+		padding: 10px;
+		width: 44px;
+
+		svg {
+			fill: #757575;
+			height: 24px;
+			width: 24px;
+		}
+	}
+
+	&__content {
+		flex: 1;
+		min-width: 0;
+	}
+
+	&__name {
+		color: #1e1e1e;
+		font-size: 13px;
+		font-weight: 500;
+		line-height: 20px;
+		margin: 0 0 4px;
+	}
+
+	&__description {
+		color: #757575;
+		font-size: 13px;
+		line-height: 20px;
+	}
+
+	&__action {
+		flex-shrink: 0;
+		margin-inline-start: 16px;
+	}
+
+	@media screen and (max-width: 600px) {
+		align-items: flex-start;
+		flex-direction: column;
+		gap: 12px;
+
+		&__icon {
+			display: none;
+		}
+
+		&__action {
+			margin-inline-start: 0;
+			width: 100%;
+
+			.components-button {
+				justify-content: center;
+				width: 100%;
+			}
+		}
+	}
+}
+
+// Client 11.1.0 `components/accordion/style.scss:122-146`: the subtitle under the toggle, lined up with the title.
+.woocommerce-woopayments-accordion__subtitle--external {
+	padding: 0 48px 8px 16px;
+}
+
+// Client 11.1.0 `payment-details/dispute-recommendations/style.scss`.
+.woocommerce-woopayments-dispute-recommendations__show-more {
+	margin-top: 8px;
+
+	summary {
+		align-items: center;
+		color: #3858e9;
+		cursor: pointer;
+		display: inline-flex;
+		font-size: 13px;
+		gap: 4px;
+		line-height: 20px;
+		list-style: none;
+		user-select: none;
+
+		&::-webkit-details-marker {
+			display: none;
+		}
+
+		&::before {
+			border-inline-end: 4px solid transparent;
+			border-inline-start: 4px solid transparent;
+			border-top: 5px solid currentColor;
+			content: "";
+			display: inline-block;
+			height: 0;
+			transition: transform 0.15s ease;
+			width: 0;
+		}
+	}
+
+	&[open] > summary::before {
+		transform: rotate(-180deg);
+	}
+}
+
+.woocommerce-woopayments-dispute-recommendation {
+	.woocommerce-woopayments-dispute-step__icon {
+		border: 0;
+	}
+
+	&.is-positive .woocommerce-woopayments-dispute-step__icon svg {
+		fill: #4ab866;
+	}
+
+	&.is-critical .woocommerce-woopayments-dispute-step__icon svg,
+	&.is-tip .woocommerce-woopayments-dispute-step__icon svg {
+		fill: #f0b849;
+	}
+}
+
+// Client 11.1.0 `components/loadable`: grey blocks in the shape of the summary and timeline cards.
+.woocommerce-woopayments-payment-details-placeholder {
+	&__row {
+		align-items: flex-start;
+		display: flex;
+		gap: 16px;
+		justify-content: space-between;
+
+		&.is-start {
+			justify-content: flex-start;
+		}
+	}
+
+	&__block {
+		@include placeholder();
+		border-radius: 2px;
+		display: block;
+		height: 18px;
+
+		&.is-amount {
+			height: 48px;
+			margin-bottom: 4px;
+			max-width: 100%;
+			width: 272px;
+		}
+
+		&.is-short {
+			width: 80px;
+		}
+
+		&.is-wide {
+			max-width: 40%;
+			width: 256px;
+		}
+
+		&.is-tall {
+			height: 52px;
+		}
+
+		&.is-title {
+			width: 74px;
+		}
+
+		&.is-line {
+			height: 40px;
+		}
+	}
+
+	&__lines {
+		display: grid;
+		gap: 12px;
+	}
+}
+
+// Client 11.1.0 `disputes/redirect-to-transaction-details/style.scss`: the spinner near the middle of the viewport.
+.woocommerce-woopayments-dispute-details-redirect {
+	position: relative;
+	top: 10vh;
+
+	.components-flex-item {
+		text-align: center;
+	}
+}

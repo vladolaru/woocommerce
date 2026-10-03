@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "account-balance-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "3fe17eefc7ea3061f9c978ab9fc6bf9d6108fe34",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-admin-account-balance.spec.ts:18::Merchant account balance overview › View the total and available account balance for a single deposit currency"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/overview-transactions.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved this exact line-18 blocked-environment deferral, its four-field-only transition, retained authorization and semantic discoverability, exact ISO currency C and authoritative A and A plus P reconciliation from one account, response, and observation window, strict one-row boundary, earliest native-readiness blocker, later deterministic read-only prerequisites, lower-layer and reference non-substitution, unresolved owner and target preservation, listener irrelevance to the preferred pre-existing snapshot oracle, calibration bundle, and zero quarantine."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native ownership, account, and callback readiness fails first. The run also lacks an approved deterministic fully onboarded single-deposit-currency account fixture with exact stable available minor units A, pending minor units P, and ISO currency C (or an equally bounded read-only authoritative oracle); a resolved concrete native E2E owner and exact target contract; authenticated semantic merchant navigation and stable accessible balance locators; one observation window that binds authoritative and rendered values; and the required rolling-reference comparison.",
+		"affected_scope": "Only the exact line-18 read-only account-balance observation: an authorized merchant can semantically discover and enter the native WooPayments Overview and find a comprehensible Balance summary for one fully onboarded account with exactly one supported deposit currency C; the represented currency identity equals authoritative ISO currency C; Available funds equals authoritative A formatted for C; Total balance equals A plus authoritative pending P formatted for C; and all values belong to the same account, response, and observation window rather than a stale, cross-account, cross-currency, partially loaded, ambiguous-symbol, or independently formatted value.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair standing native readiness, approve or supply the deterministic account-balance fixture or authoritative oracle, assign the unresolved native target owner or exact contract, or establish the required authenticated semantic surface and atomic observation. Existing mocked component, utility, page/data, REST-controller, API-client, and WooPayments client tests prove useful pieces but cannot substitute for native full-stack merchant discoverability, exact ISO currency identity, or same-account authoritative A and A plus P reconciliation. Direct route success, a loading shell, generic currency-looking text, or the rolling reference's formatting-only regex is insufficient.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally provide a standing store that passes the existing native ownership, account, and callback readiness gate; approve a deterministic fully onboarded single-deposit-currency account fixture with stable authoritative A, P, and C or an equally bounded read-only oracle; and resolve the concrete owner and exact target contract. Then execute one serialized zero-retry authenticated native observation through semantic merchant navigation, bind the rendered balance and authoritative response to the same account and observation window, and reconcile exact ISO C, Available funds A, and Total balance A plus P while using the rolling reference for parity rather than financial authority. A pre-existing read-only snapshot needs no listener; if a later design creates balance state or attributes fresh webhooks, it must separately obtain one exclusively owned listener interval and the appropriate mutation/restoration controls.",
+		"quarantine_status": "This deferral allocated and mutated nothing, acquired no lease or lock, opened no provider-write or restoration journal, performed no browser or provider run, and created no quarantine. The existing separately owned listener is irrelevant to the preferred read-only unlock and remains untouched."
+	}
+}

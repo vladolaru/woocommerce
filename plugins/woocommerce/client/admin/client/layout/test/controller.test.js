@@ -176,3 +176,25 @@ describe( 'updateLinkHref', () => {
 		expect( event.preventDefault ).toHaveBeenCalledTimes( 1 );
 	} );
 } );
+
+describe( 'getPages', () => {
+	const originalFeatures = window.wcAdminFeatures;
+
+	afterEach( () => {
+		window.wcAdminFeatures = originalFeatures;
+	} );
+
+	it( 'should not register the deprecated WooPayments welcome page route', () => {
+		window.wcAdminFeatures = {
+			'wc-pay-welcome-page': true,
+		};
+
+		const pages = getPages();
+
+		expect( pages ).not.toContainEqual(
+			expect.objectContaining( {
+				path: '/wc-pay-welcome-page',
+			} )
+		);
+	} );
+} );

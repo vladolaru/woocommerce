@@ -1,0 +1,4 @@
+Significance: minor
+Type: add
+
+Show the WooPayments "Increase conversion at checkout" inbox note to stores that accept cards but have not enabled Link by Stripe.

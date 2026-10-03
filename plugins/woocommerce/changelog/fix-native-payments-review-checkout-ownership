@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Add an order-customer ownership check to the native WooPayments classic-checkout update_order_status AJAX handler.

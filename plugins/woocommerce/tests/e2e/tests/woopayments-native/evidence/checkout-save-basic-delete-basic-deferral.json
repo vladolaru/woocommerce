@@ -1,0 +1,34 @@
+{
+	"schema_version": 2,
+	"slice_id": "checkout-save-basic-delete-basic-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "502b3d45fa50ccd440ec003ca4e71f4d504f3c85",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": ["plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:68::Saved cards › When using a basic card added on checkout › should save the card",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:109::Saved cards › When using a basic card added on checkout › should delete the card"
+	],
+	"targets": [{"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/saved-method.ts", "contract": "pending"}],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh independent review approved pre-review basic save/delete SHA 35182748ec541caab6b191c721b12cffcb429114316aacf65cd62eb8d7e6961d, 3DS save SHA c8c0b74e66bb8528fb25c888dc817cb86ef03a3a270d169350022e1cf999e7d3, guest eligibility SHA 6b92895797f112b7dbbd33710fe7c4a5507c62f5724148b8357d86957a79e78f and duplicate-retirements SHA 0ee9af2098e98f37635b1a7edbe7bd98f1d03c1ebad6c703045668f04135d6b1 against mutated ledger SHA 2fb5e5b50cd574c256e537f8c5d447c805216faf4b1a72e485f2c91c3ffc82a6 and baseline 2286900cc3e6600a0adbdd12b41a6a3c0acb258efd90e33145146fc17a9659a3 at 502b3d45fa50ccd440ec003ca4e71f4d504f3c85, with no findings. Exactly six rows change only fields 37-40: four readiness deferrals and two retirement-authority deferrals. The evidence preserves exact save/delete/provider identity, mandatory same-intent 3DS, provider-free guest accessibility and zero dispatch, duplicate-only retirement reasoning, one writer/listener, no retry/replay, journals, exact restoration, retention, quarantine and drift, with no unsupported defect, gap, implementation, verification, closure or retirement claim."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native readiness fails before this basic save-and-delete lifecycle may allocate the exact site/blog/account, disposable customer, provider writer, or exclusively owned listener. The saved-method target is absent with pending contract and owner, and no approved one-shot save-at-checkout adapter, exact local/provider token reader, detach reader, or restoration protocol exists. Core implements native save and exact-token deletion statically, but the frozen retrying checkout and label-first deletion helpers cannot prove identity or cardinality; no product defect is established.",
+		"affected_scope": "One fresh authenticated customer/session/cart and unique USD 10.99 product create exactly one 4242 order, intent, payment method, charge and capture after the semantic Core Save to account control is checked and Place order is activated once. Exact before/after deltas bind one new local token to the same user, provider customer, provider payment method, native gateway, order, brand, ending and expiry; the provider customer and one accessible My Account row each contain that method once. Only after the save checkpoint is immutable, one exact token-bound Delete action and nonce produce one role-alert success, zero local mappings and zero provider-customer attachments for that method while every pre-existing mapping remains unchanged. No second order or token exists for deletion.",
+		"no_allowlisted_action_reason": "No allowlisted local action can establish readiness, assign the target/owner, allocate the writer/listener, create an isolated provider customer, or prove provider attachment and detach around the swallowed-detach-error boundary. UI label/expiry and disappearance alone are insufficient. Use one worker, zero retries, separate durable checkout and detach journals, one semantic submission and delete, bounded reads only, no replay, and halt before deletion or later work after ambiguity.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy exact native readiness, approve the target/owner, allocate a disposable customer/store plus one provider writer and one exclusive listener, and supply exact token/customer/payment-method/order readers with one-shot save/delete drivers. Snapshot local/provider token lists and reversible account/gateway/session state, journal each write, execute the single save then exact delete with zero retries/replay, retain redacted financial/event evidence, prove provider detach and unchanged pre-existing methods, restore reversible state exactly, quarantine uncertainty, and obtain fresh code, E2E-test, reliability, concurrency, accessibility, security and provider-evidence reviews.",
+		"quarantine_status": "No browser, allocation, writer, listener, lock, journal, state mutation, customer, token, order or provider record was created; the separately owned listener remains untouched. Any future readiness, save, identity, delta, dispatch, attachment, delete, detach, cardinality, listener, lock, restoration, retention, publication or drift mismatch must preserve journals and financial history and quarantine the exact account/store/customer/session/product/order/token/provider/event graph without replay, provider deletion, broad reset, or listener takeover."
+	}
+}

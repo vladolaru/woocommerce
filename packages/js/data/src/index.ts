@@ -45,6 +45,9 @@ export type {
 	EnableGatewayResponse,
 	PaymentsProviderLink,
 	RecommendedPaymentMethod,
+	WooPaymentsAdminNotice,
+	WooPaymentsAdminNoticeAction,
+	WooPaymentsAdminNoticeId,
 	PluginData,
 } from './payment-settings/types';
 export { PaymentsProviderType } from './payment-settings/types';

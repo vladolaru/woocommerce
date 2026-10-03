@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the customer name, phone, email and IP address in one row on the WooPayments dispute challenge page.

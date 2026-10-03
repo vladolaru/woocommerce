@@ -3,8 +3,13 @@
 	"phpVersion": "8.1",
 	"testsEnvironment": false,
 	"plugins": [ "." ],
+	"mappings": {
+		"wp-content/mu-plugins/woopayments-native-runtime.php": "./tests/e2e/test-plugins/woopayments-native-runtime/woopayments-native-runtime.php"
+	},
 	"config": {
 		"JETPACK_AUTOLOAD_DEV": true,
+		"WP_MEMORY_LIMIT": "512M",
+		"WP_MAX_MEMORY_LIMIT": "512M",
 		"WP_DEBUG_LOG": true,
 		"WP_DEBUG_DISPLAY": true,
 		"ALTERNATE_WP_CRON": true

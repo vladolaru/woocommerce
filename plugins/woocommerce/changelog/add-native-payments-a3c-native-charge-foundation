@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Add a core-owned WooPayments native checkout charge foundation for positive-amount card payments.

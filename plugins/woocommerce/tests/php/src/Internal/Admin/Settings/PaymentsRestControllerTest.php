@@ -419,6 +419,43 @@ class PaymentsRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Test the providers response keeps the native WooPayments marker and adds none to other providers.
+	 */
+	public function test_get_payment_providers_keeps_native_marker() {
+		// Arrange.
+		$this->mock_service
+			->expects( $this->once() )
+			->method( 'get_payment_providers' )
+			->willReturn(
+				array(
+					array(
+						'id'      => 'woocommerce_payments',
+						'_order'  => 0,
+						'_type'   => PaymentsProviders::TYPE_GATEWAY,
+						'_native' => true,
+					),
+					array(
+						'id'     => WC_Gateway_Paypal::ID,
+						'_order' => 1,
+						'_type'  => PaymentsProviders::TYPE_GATEWAY,
+					),
+				)
+			);
+		$this->mock_extension_suggestions_categories();
+
+		// Act.
+		$request = new WP_REST_Request( 'POST', self::ENDPOINT . '/providers' );
+		$request->set_param( 'location', 'US' );
+		$response = $this->server->dispatch( $request );
+
+		// Assert.
+		$this->assertSame( 200, $response->get_status() );
+		$data = $response->get_data();
+		$this->assertTrue( $data['providers'][0]['_native'] );
+		$this->assertArrayNotHasKey( '_native', $data['providers'][1] );
+	}
+
+	/**
 	 * Test getting payment providers with no registered payment gateways (regular or offline PM).
 	 */
 	public function test_get_payment_providers_without_any_pgs() {

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the WooPayments AVS Mismatch filter as off, not on, when the fraud protection settings could not be loaded.

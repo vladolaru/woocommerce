@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Register native WooPayments and Multi-Currency REST routes for internal requests made from admin pages.

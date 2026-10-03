@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "multi-currency-enable-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "d0965a5a339dff716390d1c50675d20747708853",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-setup.spec.ts:46::Multi-currency setup › can enable the multi-currency feature"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/multi-currency.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved pre-review evidence SHA e29c1cf914dfa2274cd1d591b3d58166be6734f26ece9b15e848e72249403a63 against ledger SHA b524ed54118a81a983f7080e0548971c82e4951fadd4bbe1bfb39460ab192c1d with no findings. Exactly the line-46 enable row changes fields 37-40 to deferred/blocked-environment/blocked-environment:PILOT-NATIVE-READINESS/evidence, preserving its pending disposition, provisional shared-scenario target, pending target contract, unresolved owner, frozen fields, and line-42 sibling. Core's semantic merchant control and exact 1 persistence are honest; raw-0 unconditional Core ownership and the operational snapshot's hardcoded false value remain source-anchored defect candidates, not invented known gaps before post-readiness REDs. The isolated oracle proves raw 0, settings false, owner none, absent Core hooks, and an ineffective fresh-shopper EUR request before mutation; performs one accessible activation and exactly one acknowledged full-settings save with companions preserved; then joins raw 1, fresh settings true, checked reload state, fresh-process Core ownership and hooks, exact EUR shopper currency and amount, and one truthful platform sync. It requires one worker, zero retries and no replay, line-42 isolation, complete settings, currency, cache, scheduler, session, WooPay-webhook, and external snapshots, pre-write journals, exact restoration, accessibility and drift controls, and fail-closed quarantine. Checkout, orders, payments, financial-provider records, provider-writer allocation, and listener attribution remain outside this row."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing-native readiness fails before the authenticated native settings, disabled-baseline, platform-sync, and fresh-shopper joins can run; the provisional shared scenario is absent; and the exact target contract, owner, deterministic initial-off fixture, complete local and external snapshots, occurrence controls, restoration mechanism, and row-safe topology remain pending. Static inspection shows two concrete defect candidates: native ownership currently ignores raw 0, invalidating the disabled baseline, and the operational store-setup snapshot hardcodes multi_currency_enabled false after an enable save. Neither has an admissible post-prerequisite failure fingerprint yet, so no formal known gap is claimed.",
+		"affected_scope": "Only isolated customer multi-currency enablement: prove raw 0, settings false, owner none, no Core hook groups, and an ineffective EUR shopper request before mutation; activate the accessible Enable multi-currency checkbox once; dispatch exactly one full-settings save with true and unchanged companions; join acknowledgement to raw 1, fresh settings true, checked reload state, fresh-process owner Core with expected hook groups, and a new shopper using EUR at the exact converted amount; attribute exactly one truthful platform snapshot with multi_currency_enabled true. Checkout, orders, payments, financial provider records, and line 42 remain separate.",
+		"no_allowlisted_action_reason": "The run cannot establish native account/callback readiness, repair or restart shared sites, invent the pending target/owner/topology, safely dispatch a full settings save without local and external journals, or accept a post-enable shopper result when the precondition was already active. Source inspection cannot promote either mismatch to a formal gap, and component/service tests or a success notice cannot substitute for disabled-before causality, one save, raw and reload persistence, fresh-process ownership, exact shopper currency/amount, truthful platform sync, and byte-exact restoration. The payment listener remains untouched and cannot unlock this contract.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy native readiness; approve the row-safe shared-scenario target and owner; provide a deterministic explicit-off USD/EUR product and rate fixture with ordered account/store/global-settings/multi-currency/operational-sync/WooPay-webhook ownership, complete local raw and external store-setup snapshots, pre-warmed canonical account and fraud state, exact REST and platform occurrence observers, and a pre-write restoration journal. Run the disabled baseline once; if raw 0 still yields Core ownership, retain the RED and follow the bounded defect protocol. Only after the baseline is truly disabled, run one zero-retry enable save and shopper oracle; fingerprint and resolve or formally record a false platform payload; restore every local, session, webhook, and external byte; obtain fresh code, E2E-test, reliability, and accessibility reviews.",
+		"quarantine_status": "No browser context, account, store, option, currency/rate/product fixture, shopper session, lock, journal, platform/provider resource, listener, webhook, retention record, or quarantine was created or changed for this row. A future ambiguous or duplicate save, wrong identity, active raw-0 baseline, unexpected account/capability/fraud/webhook traffic, false or duplicate platform snapshot, companion-option drift, session leakage, target drift, ownership loss, or incomplete restoration must preserve diagnostics and quarantine the exact account/store/settings/multi-currency/session/webhook/platform-sync graph and journal. A fully identified raw-0 owner-Core baseline or false enable snapshot is a product-contract RED for bounded defect handling, not an environment ambiguity; no financial provider resource belongs to this contract."
+	}
+}

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Use the WooPayments plugin's General and Payments accepted on checkout section descriptions, and show the same descriptions while settings load.

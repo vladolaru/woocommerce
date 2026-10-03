@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Enforce inbound WooPay request signatures, carry the platform customer and Tracks identity, and sync currency and order status in native WooPayments WooPay sessions.

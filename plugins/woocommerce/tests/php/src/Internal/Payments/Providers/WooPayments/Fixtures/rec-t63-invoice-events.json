@@ -1,0 +1,1618 @@
+{
+	"_meta": {
+		"recording": "REC-T63-EVENTS",
+		"source": "Local WPCOM (wpcom-local v0.37.0) Transact platform on branch feat/native-payments-eligibility-contract at 439d30cf3e6, blog 4, account acct_1TrY2nBzWlxcwgpP (default currency USD), Stripe test mode",
+		"store": "native WooCommerce :8889 (woocommerce-develop-2, branch exp/core-native-payments at cde3d7ea7e, WooPayments plugin inactive, WooCommerce Subscriptions 9.0.1 active, test mode, store currency USD)",
+		"captured_via": "Read-only poller of local WPCOM async job rows (SELECT ... FROM wpj_jobs every 0.3 s through docker exec wpcom-local-mariadb-1, data read as CONVERT(data USING utf8mb4)), saving each Remote_Site_Client::handle_async_webhook_send row (type wcpay_process_job) before the worker ran it; the fixture body is the job's body array, which Remote_Site_Client::send_webhook() wp_json_encode()s and POSTs to the store at ?rest_route=/wc/v3/payments/webhook (Event::get_body_for_forwarding(true)). Events were produced by Stripe for subscriptions created through the platform (create_subscription), the renewal and failure by advancing Stripe test clock clock_1UM1X2BzWlxcwgpPRLlygxwI",
+		"sanitized": "hosted_invoice_url, invoice_pdf, emails and any string containing an at sign replaced with REDACTED where non-null; job envelope omitted; bodies otherwise verbatim (Stripe API version without basil changes: invoice.payment_intent, invoice.charge, invoice.subscription and lines.data[].price / subscription_item present)",
+		"store_observation": "Native at the recording commit logged 'Retired WooPayments Stripe Billing invoice event reached native webhook processing' (source native-payments-webhook) for every forwarded invoice event, with the event id, and processed nothing; no job failed (wpj_job_failures unchanged)",
+		"notes": "data/rec-t63-api-recordings.md in the 2026-09-03-native-payments-program-orientation session folder"
+	},
+	"entries": [
+		{
+			"pair": "invoice_paid_parent",
+			"context": "invoice.paid for the subscription_create invoice of sub_1UM1XLBzWlxcwgpPwEbcmZJt (clock_success customer), marked paid out of band by charge_invoice; total 2490, amount_paid 0, paid_out_of_band true, charge and payment_intent null",
+			"event_id": "evt_1UM1XZBzWlxcwgpPcPaIB5Jg",
+			"queued_at": "2026-10-02T08:10:01+00:00",
+			"wpcom_job_id": 143921,
+			"delivery": {
+				"method": "POST",
+				"store_route": "/wc/v3/payments/webhook",
+				"blog_id": 4,
+				"content_type": "application/json"
+			},
+			"body": {
+				"id": "evt_1UM1XZBzWlxcwgpPcPaIB5Jg",
+				"type": "invoice.paid",
+				"livemode": false,
+				"account": "acct_1TrY2nBzWlxcwgpP",
+				"data": {
+					"object": {
+						"id": "in_1UM1XLBzWlxcwgpP07gQmTQd",
+						"object": "invoice",
+						"account_country": "US",
+						"account_name": "woocommerce",
+						"account_tax_ids": null,
+						"amount_due": 2490,
+						"amount_overpaid": 0,
+						"amount_paid": 0,
+						"amount_remaining": 2490,
+						"amount_shipping": 0,
+						"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+						"attempt_count": 0,
+						"attempted": false,
+						"auto_advance": false,
+						"automatic_tax": {
+							"disabled_reason": null,
+							"enabled": false,
+							"liability": null,
+							"provider": null,
+							"status": null
+						},
+						"automatically_finalizes_at": null,
+						"billing_reason": "subscription_create",
+						"collection_method": "charge_automatically",
+						"created": 1790928567,
+						"currency": "usd",
+						"custom_fields": null,
+						"customer": "cus_VMl3pvnqTAX638",
+						"customer_account": null,
+						"customer_address": null,
+						"customer_email": null,
+						"customer_name": "REC-T63-success",
+						"customer_phone": null,
+						"customer_shipping": null,
+						"customer_tax_exempt": "none",
+						"customer_tax_ids": [],
+						"default_payment_method": null,
+						"default_source": null,
+						"default_tax_rates": [],
+						"description": null,
+						"discounts": [],
+						"due_date": null,
+						"effective_at": 1790928567,
+						"ending_balance": 0,
+						"footer": null,
+						"from_invoice": null,
+						"hosted_invoice_url": "REDACTED",
+						"invoice_pdf": "REDACTED",
+						"issuer": {
+							"type": "self"
+						},
+						"last_finalization_error": null,
+						"latest_revision": null,
+						"lines": {
+							"object": "list",
+							"data": [
+								{
+									"id": "il_1UM1X1BzWlxcwgpPGN6lKCAw",
+									"object": "line_item",
+									"amount": 2490,
+									"currency": "usd",
+									"description": "1 × REC-T63 Coffee Box Deluxe (at $24.90 / month)",
+									"discount_amounts": [],
+									"discountable": true,
+									"discounts": [],
+									"invoice": "in_1UM1XLBzWlxcwgpP07gQmTQd",
+									"livemode": false,
+									"metadata": {
+										"subscription_source": "woo_subscriptions"
+									},
+									"parent": {
+										"invoice_item_details": null,
+										"subscription_item_details": {
+											"invoice_item": null,
+											"proration": false,
+											"proration_details": {
+												"credited_items": null
+											},
+											"subscription": "sub_1UM1XLBzWlxcwgpPwEbcmZJt",
+											"subscription_item": "si_VMl3Lmi1aDKj2h"
+										},
+										"type": "subscription_item_details",
+										"license_fee_subscription_details": null
+									},
+									"period": {
+										"end": 1793606967,
+										"start": 1790928567
+									},
+									"pretax_credit_amounts": [],
+									"pricing": {
+										"price_details": {
+											"price": "price_1UM1XLBzWlxcwgpPWCQkLtRS",
+											"product": "prod_VMl10VL0VK371N"
+										},
+										"type": "price_details",
+										"unit_amount_decimal": "2490"
+									},
+									"quantity": 1,
+									"quantity_decimal": "1",
+									"subtotal": 2490,
+									"taxes": [],
+									"amount_excluding_tax": 2490,
+									"plan": {
+										"id": "price_1UM1XLBzWlxcwgpPWCQkLtRS",
+										"object": "plan",
+										"active": false,
+										"aggregate_usage": null,
+										"amount": 2490,
+										"amount_decimal": "2490",
+										"billing_scheme": "per_unit",
+										"created": 1790928587,
+										"currency": "usd",
+										"interval": "month",
+										"interval_count": 1,
+										"livemode": false,
+										"metadata": [],
+										"meter": null,
+										"nickname": null,
+										"product": "prod_VMl10VL0VK371N",
+										"tiers_mode": null,
+										"transform_usage": null,
+										"trial_period_days": null,
+										"usage_type": "licensed"
+									},
+									"price": {
+										"id": "price_1UM1XLBzWlxcwgpPWCQkLtRS",
+										"object": "price",
+										"active": false,
+										"billing_scheme": "per_unit",
+										"created": 1790928587,
+										"currency": "usd",
+										"custom_unit_amount": null,
+										"livemode": false,
+										"lookup_key": null,
+										"metadata": [],
+										"nickname": null,
+										"product": "prod_VMl10VL0VK371N",
+										"recurring": {
+											"aggregate_usage": null,
+											"interval": "month",
+											"interval_count": 1,
+											"meter": null,
+											"trial_period_days": null,
+											"usage_type": "licensed"
+										},
+										"tax_behavior": "unspecified",
+										"tiers_mode": null,
+										"transform_quantity": null,
+										"type": "recurring",
+										"unit_amount": 2490,
+										"unit_amount_decimal": "2490"
+									},
+									"proration": false,
+									"proration_details": {
+										"credited_items": null
+									},
+									"subscription": "sub_1UM1XLBzWlxcwgpPwEbcmZJt",
+									"subscription_item": "si_VMl3Lmi1aDKj2h",
+									"tax_amounts": [],
+									"tax_rates": [],
+									"type": "subscription",
+									"unit_amount_excluding_tax": "2490"
+								}
+							],
+							"has_more": false,
+							"total_count": 1,
+							"url": "/v1/invoices/in_1UM1XLBzWlxcwgpP07gQmTQd/lines"
+						},
+						"livemode": false,
+						"metadata": [],
+						"next_payment_attempt": null,
+						"number": "CINNCURI-0001",
+						"on_behalf_of": null,
+						"parent": {
+							"quote_details": null,
+							"subscription_details": {
+								"metadata": {
+									"subscription_source": "woo_subscriptions"
+								},
+								"subscription": "sub_1UM1XLBzWlxcwgpPwEbcmZJt"
+							},
+							"type": "subscription_details"
+						},
+						"payment_settings": {
+							"default_mandate": null,
+							"payment_method_options": null,
+							"payment_method_types": null
+						},
+						"period_end": 1790928567,
+						"period_start": 1790928567,
+						"post_payment_credit_notes_amount": 0,
+						"pre_payment_credit_notes_amount": 0,
+						"receipt_number": null,
+						"rendering": null,
+						"shipping_cost": null,
+						"shipping_details": null,
+						"starting_balance": 0,
+						"statement_descriptor": null,
+						"status": "paid",
+						"status_transitions": {
+							"finalized_at": 1790928567,
+							"marked_uncollectible_at": null,
+							"paid_at": 1790928567,
+							"voided_at": null
+						},
+						"subtotal": 2490,
+						"subtotal_excluding_tax": 2490,
+						"test_clock": "clock_1UM1X2BzWlxcwgpPRLlygxwI",
+						"total": 2490,
+						"total_discount_amounts": [],
+						"total_excluding_tax": 2490,
+						"total_pretax_credit_amounts": [],
+						"total_taxes": [],
+						"webhooks_delivered_at": 1790928567,
+						"application_fee_amount": null,
+						"charge": null,
+						"discount": null,
+						"paid": true,
+						"paid_out_of_band": true,
+						"payment_intent": null,
+						"quote": null,
+						"rendering_options": null,
+						"subscription": "sub_1UM1XLBzWlxcwgpPwEbcmZJt",
+						"subscription_details": {
+							"metadata": {
+								"subscription_source": "woo_subscriptions"
+							}
+						},
+						"tax": null,
+						"total_tax_amounts": [],
+						"transfer_data": null
+					}
+				}
+			}
+		},
+		{
+			"pair": "invoice_paid_renewal",
+			"context": "invoice.paid for the subscription_cycle renewal of sub_1UM1XLBzWlxcwgpPwEbcmZJt after advancing the test clock past the period end; Stripe charged the subscription's default_payment_method; charge ch_3UM1YABzWlxcwgpP0Fazmyr5, payment_intent pi_3UM1YABzWlxcwgpP0GYqv6LC",
+			"event_id": "evt_1UM1YFBzWlxcwgpPLnAwSrZZ",
+			"queued_at": "2026-10-02T08:10:43+00:00",
+			"wpcom_job_id": 143929,
+			"delivery": {
+				"method": "POST",
+				"store_route": "/wc/v3/payments/webhook",
+				"blog_id": 4,
+				"content_type": "application/json"
+			},
+			"body": {
+				"id": "evt_1UM1YFBzWlxcwgpPLnAwSrZZ",
+				"type": "invoice.paid",
+				"livemode": false,
+				"account": "acct_1TrY2nBzWlxcwgpP",
+				"data": {
+					"object": {
+						"id": "in_1UM1XzBzWlxcwgpPNhLoAcln",
+						"object": "invoice",
+						"account_country": "US",
+						"account_name": "woocommerce",
+						"account_tax_ids": null,
+						"amount_due": 2490,
+						"amount_overpaid": 0,
+						"amount_paid": 2490,
+						"amount_remaining": 0,
+						"amount_shipping": 0,
+						"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+						"attempt_count": 1,
+						"attempted": true,
+						"auto_advance": false,
+						"automatic_tax": {
+							"disabled_reason": null,
+							"enabled": false,
+							"liability": null,
+							"provider": null,
+							"status": null
+						},
+						"automatically_finalizes_at": null,
+						"billing_reason": "subscription_cycle",
+						"collection_method": "charge_automatically",
+						"created": 1793606967,
+						"currency": "usd",
+						"custom_fields": null,
+						"customer": "cus_VMl3pvnqTAX638",
+						"customer_account": null,
+						"customer_address": null,
+						"customer_email": null,
+						"customer_name": "REC-T63-success",
+						"customer_phone": null,
+						"customer_shipping": null,
+						"customer_tax_exempt": "none",
+						"customer_tax_ids": [],
+						"default_payment_method": null,
+						"default_source": null,
+						"default_tax_rates": [],
+						"description": null,
+						"discounts": [],
+						"due_date": null,
+						"effective_at": 1793610567,
+						"ending_balance": 0,
+						"footer": null,
+						"from_invoice": null,
+						"hosted_invoice_url": "REDACTED",
+						"invoice_pdf": "REDACTED",
+						"issuer": {
+							"type": "self"
+						},
+						"last_finalization_error": null,
+						"latest_revision": null,
+						"lines": {
+							"object": "list",
+							"data": [
+								{
+									"id": "il_1UXGJ1BzWlxcwgpP4rTTh693",
+									"object": "line_item",
+									"amount": 2490,
+									"currency": "usd",
+									"description": "1 × REC-T63 Coffee Box Deluxe (at $24.90 / month)",
+									"discount_amounts": [],
+									"discountable": true,
+									"discounts": [],
+									"invoice": "in_1UM1XzBzWlxcwgpPNhLoAcln",
+									"livemode": false,
+									"metadata": {
+										"subscription_source": "woo_subscriptions"
+									},
+									"parent": {
+										"invoice_item_details": null,
+										"subscription_item_details": {
+											"invoice_item": null,
+											"proration": false,
+											"proration_details": {
+												"credited_items": null
+											},
+											"subscription": "sub_1UM1XLBzWlxcwgpPwEbcmZJt",
+											"subscription_item": "si_VMl3Lmi1aDKj2h"
+										},
+										"type": "subscription_item_details",
+										"license_fee_subscription_details": null
+									},
+									"period": {
+										"end": 1796198967,
+										"start": 1793606967
+									},
+									"pretax_credit_amounts": [],
+									"pricing": {
+										"price_details": {
+											"price": "price_1UM1XLBzWlxcwgpPWCQkLtRS",
+											"product": "prod_VMl10VL0VK371N"
+										},
+										"type": "price_details",
+										"unit_amount_decimal": "2490"
+									},
+									"quantity": 1,
+									"quantity_decimal": "1",
+									"subtotal": 2490,
+									"taxes": [],
+									"amount_excluding_tax": 2490,
+									"plan": {
+										"id": "price_1UM1XLBzWlxcwgpPWCQkLtRS",
+										"object": "plan",
+										"active": false,
+										"aggregate_usage": null,
+										"amount": 2490,
+										"amount_decimal": "2490",
+										"billing_scheme": "per_unit",
+										"created": 1790928587,
+										"currency": "usd",
+										"interval": "month",
+										"interval_count": 1,
+										"livemode": false,
+										"metadata": [],
+										"meter": null,
+										"nickname": null,
+										"product": "prod_VMl10VL0VK371N",
+										"tiers_mode": null,
+										"transform_usage": null,
+										"trial_period_days": null,
+										"usage_type": "licensed"
+									},
+									"price": {
+										"id": "price_1UM1XLBzWlxcwgpPWCQkLtRS",
+										"object": "price",
+										"active": false,
+										"billing_scheme": "per_unit",
+										"created": 1790928587,
+										"currency": "usd",
+										"custom_unit_amount": null,
+										"livemode": false,
+										"lookup_key": null,
+										"metadata": [],
+										"nickname": null,
+										"product": "prod_VMl10VL0VK371N",
+										"recurring": {
+											"aggregate_usage": null,
+											"interval": "month",
+											"interval_count": 1,
+											"meter": null,
+											"trial_period_days": null,
+											"usage_type": "licensed"
+										},
+										"tax_behavior": "unspecified",
+										"tiers_mode": null,
+										"transform_quantity": null,
+										"type": "recurring",
+										"unit_amount": 2490,
+										"unit_amount_decimal": "2490"
+									},
+									"proration": false,
+									"proration_details": {
+										"credited_items": null
+									},
+									"subscription": "sub_1UM1XLBzWlxcwgpPwEbcmZJt",
+									"subscription_item": "si_VMl3Lmi1aDKj2h",
+									"tax_amounts": [],
+									"tax_rates": [],
+									"type": "subscription",
+									"unit_amount_excluding_tax": "2490"
+								}
+							],
+							"has_more": false,
+							"total_count": 1,
+							"url": "/v1/invoices/in_1UM1XzBzWlxcwgpPNhLoAcln/lines"
+						},
+						"livemode": false,
+						"metadata": [],
+						"next_payment_attempt": null,
+						"number": "CINNCURI-0002",
+						"on_behalf_of": null,
+						"parent": {
+							"quote_details": null,
+							"subscription_details": {
+								"metadata": {
+									"subscription_source": "woo_subscriptions"
+								},
+								"subscription": "sub_1UM1XLBzWlxcwgpPwEbcmZJt"
+							},
+							"type": "subscription_details"
+						},
+						"payment_settings": {
+							"default_mandate": null,
+							"payment_method_options": null,
+							"payment_method_types": null
+						},
+						"period_end": 1793606967,
+						"period_start": 1790928567,
+						"post_payment_credit_notes_amount": 0,
+						"pre_payment_credit_notes_amount": 0,
+						"receipt_number": null,
+						"rendering": null,
+						"shipping_cost": null,
+						"shipping_details": null,
+						"starting_balance": 0,
+						"statement_descriptor": null,
+						"status": "paid",
+						"status_transitions": {
+							"finalized_at": 1793610567,
+							"marked_uncollectible_at": null,
+							"paid_at": 1793610567,
+							"voided_at": null
+						},
+						"subtotal": 2490,
+						"subtotal_excluding_tax": 2490,
+						"test_clock": "clock_1UM1X2BzWlxcwgpPRLlygxwI",
+						"total": 2490,
+						"total_discount_amounts": [],
+						"total_excluding_tax": 2490,
+						"total_pretax_credit_amounts": [],
+						"total_taxes": [],
+						"webhooks_delivered_at": 1793606967,
+						"application_fee_amount": 127,
+						"charge": "ch_3UM1YABzWlxcwgpP0Fazmyr5",
+						"discount": null,
+						"paid": true,
+						"paid_out_of_band": false,
+						"payment_intent": "pi_3UM1YABzWlxcwgpP0GYqv6LC",
+						"quote": null,
+						"rendering_options": null,
+						"subscription": "sub_1UM1XLBzWlxcwgpPwEbcmZJt",
+						"subscription_details": {
+							"metadata": {
+								"subscription_source": "woo_subscriptions"
+							}
+						},
+						"tax": null,
+						"total_tax_amounts": [],
+						"transfer_data": null
+					}
+				}
+			}
+		},
+		{
+			"pair": "invoice_upcoming",
+			"context": "invoice.upcoming for sub_1UM1XLBzWlxcwgpPwEbcmZJt after advancing the test clock to two days before the period end; the invoice has no id (upcoming preview)",
+			"event_id": "evt_1UM1XnBzWlxcwgpPekb60Vgm",
+			"queued_at": "2026-10-02T08:10:16+00:00",
+			"wpcom_job_id": 143925,
+			"delivery": {
+				"method": "POST",
+				"store_route": "/wc/v3/payments/webhook",
+				"blog_id": 4,
+				"content_type": "application/json"
+			},
+			"body": {
+				"id": "evt_1UM1XnBzWlxcwgpPekb60Vgm",
+				"type": "invoice.upcoming",
+				"livemode": false,
+				"account": "acct_1TrY2nBzWlxcwgpP",
+				"data": {
+					"object": {
+						"object": "invoice",
+						"account_country": "US",
+						"account_name": "woocommerce",
+						"account_tax_ids": null,
+						"amount_due": 2490,
+						"amount_overpaid": 0,
+						"amount_paid": 0,
+						"amount_remaining": 2490,
+						"amount_shipping": 0,
+						"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+						"attempt_count": 0,
+						"attempted": false,
+						"automatic_tax": {
+							"disabled_reason": null,
+							"enabled": false,
+							"liability": null,
+							"provider": null,
+							"status": null
+						},
+						"automatically_finalizes_at": null,
+						"billing_reason": "upcoming",
+						"collection_method": "charge_automatically",
+						"created": 1793606967,
+						"currency": "usd",
+						"custom_fields": null,
+						"customer": "cus_VMl3pvnqTAX638",
+						"customer_account": null,
+						"customer_address": null,
+						"customer_email": null,
+						"customer_name": "REC-T63-success",
+						"customer_phone": null,
+						"customer_shipping": null,
+						"customer_tax_exempt": "none",
+						"customer_tax_ids": [],
+						"default_payment_method": null,
+						"default_source": null,
+						"default_tax_rates": [],
+						"description": null,
+						"discounts": [],
+						"due_date": null,
+						"effective_at": null,
+						"ending_balance": 0,
+						"footer": null,
+						"from_invoice": null,
+						"issuer": {
+							"type": "self"
+						},
+						"last_finalization_error": null,
+						"latest_revision": null,
+						"lines": {
+							"object": "list",
+							"data": [
+								{
+									"id": "il_tmp_13ecd0BzWlxcwgpP300407b5",
+									"object": "line_item",
+									"amount": 2490,
+									"currency": "usd",
+									"description": "1 × REC-T63 Coffee Box Deluxe (at $24.90 / month)",
+									"discount_amounts": [],
+									"discountable": true,
+									"discounts": [],
+									"invoice": null,
+									"livemode": false,
+									"metadata": {
+										"subscription_source": "woo_subscriptions"
+									},
+									"parent": {
+										"invoice_item_details": null,
+										"subscription_item_details": {
+											"invoice_item": null,
+											"proration": false,
+											"proration_details": {
+												"credited_items": null
+											},
+											"subscription": "sub_1UM1XLBzWlxcwgpPwEbcmZJt",
+											"subscription_item": "si_VMl3Lmi1aDKj2h"
+										},
+										"type": "subscription_item_details",
+										"license_fee_subscription_details": null
+									},
+									"period": {
+										"end": 1796198967,
+										"start": 1793606967
+									},
+									"pretax_credit_amounts": [],
+									"pricing": {
+										"price_details": {
+											"price": "price_1UM1XLBzWlxcwgpPWCQkLtRS",
+											"product": "prod_VMl10VL0VK371N"
+										},
+										"type": "price_details",
+										"unit_amount_decimal": "2490"
+									},
+									"quantity": 1,
+									"quantity_decimal": "1",
+									"subtotal": 2490,
+									"taxes": [],
+									"amount_excluding_tax": 2490,
+									"plan": {
+										"id": "price_1UM1XLBzWlxcwgpPWCQkLtRS",
+										"object": "plan",
+										"active": false,
+										"aggregate_usage": null,
+										"amount": 2490,
+										"amount_decimal": "2490",
+										"billing_scheme": "per_unit",
+										"created": 1790928587,
+										"currency": "usd",
+										"interval": "month",
+										"interval_count": 1,
+										"livemode": false,
+										"metadata": [],
+										"meter": null,
+										"nickname": null,
+										"product": "prod_VMl10VL0VK371N",
+										"tiers_mode": null,
+										"transform_usage": null,
+										"trial_period_days": null,
+										"usage_type": "licensed"
+									},
+									"price": {
+										"id": "price_1UM1XLBzWlxcwgpPWCQkLtRS",
+										"object": "price",
+										"active": false,
+										"billing_scheme": "per_unit",
+										"created": 1790928587,
+										"currency": "usd",
+										"custom_unit_amount": null,
+										"livemode": false,
+										"lookup_key": null,
+										"metadata": [],
+										"nickname": null,
+										"product": "prod_VMl10VL0VK371N",
+										"recurring": {
+											"aggregate_usage": null,
+											"interval": "month",
+											"interval_count": 1,
+											"meter": null,
+											"trial_period_days": null,
+											"usage_type": "licensed"
+										},
+										"tax_behavior": "unspecified",
+										"tiers_mode": null,
+										"transform_quantity": null,
+										"type": "recurring",
+										"unit_amount": 2490,
+										"unit_amount_decimal": "2490"
+									},
+									"proration": false,
+									"proration_details": {
+										"credited_items": null
+									},
+									"subscription": "sub_1UM1XLBzWlxcwgpPwEbcmZJt",
+									"subscription_item": "si_VMl3Lmi1aDKj2h",
+									"tax_amounts": [],
+									"tax_rates": [],
+									"type": "subscription",
+									"unit_amount_excluding_tax": "2490"
+								}
+							],
+							"has_more": false,
+							"total_count": 1,
+							"url": "/v1/invoices/upcoming/lines?customer=cus_VMl3pvnqTAX638&subscription=sub_1UM1XLBzWlxcwgpPwEbcmZJt"
+						},
+						"livemode": false,
+						"metadata": [],
+						"next_payment_attempt": 1793610567,
+						"number": null,
+						"on_behalf_of": null,
+						"parent": {
+							"quote_details": null,
+							"subscription_details": {
+								"metadata": {
+									"subscription_source": "woo_subscriptions"
+								},
+								"subscription": "sub_1UM1XLBzWlxcwgpPwEbcmZJt"
+							},
+							"type": "subscription_details"
+						},
+						"payment_settings": {
+							"default_mandate": null,
+							"payment_method_options": null,
+							"payment_method_types": null
+						},
+						"period_end": 1793606967,
+						"period_start": 1790928567,
+						"post_payment_credit_notes_amount": 0,
+						"pre_payment_credit_notes_amount": 0,
+						"receipt_number": null,
+						"rendering": null,
+						"shipping_cost": null,
+						"shipping_details": null,
+						"starting_balance": 0,
+						"statement_descriptor": null,
+						"status": "draft",
+						"status_transitions": {
+							"finalized_at": null,
+							"marked_uncollectible_at": null,
+							"paid_at": null,
+							"voided_at": null
+						},
+						"subtotal": 2490,
+						"subtotal_excluding_tax": 2490,
+						"test_clock": "clock_1UM1X2BzWlxcwgpPRLlygxwI",
+						"total": 2490,
+						"total_discount_amounts": [],
+						"total_excluding_tax": 2490,
+						"total_pretax_credit_amounts": [],
+						"total_taxes": [],
+						"webhooks_delivered_at": null,
+						"application_fee_amount": null,
+						"charge": null,
+						"discount": null,
+						"paid": false,
+						"paid_out_of_band": false,
+						"payment_intent": null,
+						"quote": null,
+						"rendering_options": null,
+						"subscription": "sub_1UM1XLBzWlxcwgpPwEbcmZJt",
+						"subscription_details": {
+							"metadata": {
+								"subscription_source": "woo_subscriptions"
+							}
+						},
+						"tax": null,
+						"total_tax_amounts": [],
+						"transfer_data": null
+					}
+				}
+			}
+		},
+		{
+			"pair": "invoice_payment_failed",
+			"context": "invoice.payment_failed for the subscription_cycle renewal of sub_1UM1XOBzWlxcwgpP3eeyov4u (clock_fail customer, pm_card_chargeCustomerFail); attempt_count 1, next_payment_attempt set, charge ch_3UM1YGBzWlxcwgpP1SAxlxl8",
+			"event_id": "evt_1UM1YOBzWlxcwgpP2tyxAM5E",
+			"queued_at": "2026-10-02T08:10:53+00:00",
+			"wpcom_job_id": 143931,
+			"delivery": {
+				"method": "POST",
+				"store_route": "/wc/v3/payments/webhook",
+				"blog_id": 4,
+				"content_type": "application/json"
+			},
+			"body": {
+				"id": "evt_1UM1YOBzWlxcwgpP2tyxAM5E",
+				"type": "invoice.payment_failed",
+				"livemode": false,
+				"account": "acct_1TrY2nBzWlxcwgpP",
+				"data": {
+					"object": {
+						"id": "in_1UM1Y0BzWlxcwgpPefRU4SSy",
+						"object": "invoice",
+						"account_country": "US",
+						"account_name": "woocommerce",
+						"account_tax_ids": null,
+						"amount_due": 2190,
+						"amount_overpaid": 0,
+						"amount_paid": 0,
+						"amount_remaining": 2190,
+						"amount_shipping": 0,
+						"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+						"attempt_count": 1,
+						"attempted": true,
+						"auto_advance": true,
+						"automatic_tax": {
+							"disabled_reason": null,
+							"enabled": false,
+							"liability": null,
+							"provider": null,
+							"status": null
+						},
+						"automatically_finalizes_at": null,
+						"billing_reason": "subscription_cycle",
+						"collection_method": "charge_automatically",
+						"created": 1793606967,
+						"currency": "usd",
+						"custom_fields": null,
+						"customer": "cus_VMl3df99GPhQaW",
+						"customer_account": null,
+						"customer_address": null,
+						"customer_email": null,
+						"customer_name": "REC-T63-fail",
+						"customer_phone": null,
+						"customer_shipping": null,
+						"customer_tax_exempt": "none",
+						"customer_tax_ids": [],
+						"default_payment_method": null,
+						"default_source": null,
+						"default_tax_rates": [],
+						"description": null,
+						"discounts": [],
+						"due_date": null,
+						"effective_at": 1793610567,
+						"ending_balance": 0,
+						"footer": null,
+						"from_invoice": null,
+						"hosted_invoice_url": "REDACTED",
+						"invoice_pdf": "REDACTED",
+						"issuer": {
+							"type": "self"
+						},
+						"last_finalization_error": null,
+						"latest_revision": null,
+						"lines": {
+							"object": "list",
+							"data": [
+								{
+									"id": "il_1UXGJ1BzWlxcwgpPa1wixiy9",
+									"object": "line_item",
+									"amount": 2190,
+									"currency": "usd",
+									"description": "1 × REC-T63 Coffee Box Deluxe (at $21.90 / month)",
+									"discount_amounts": [],
+									"discountable": true,
+									"discounts": [],
+									"invoice": "in_1UM1Y0BzWlxcwgpPefRU4SSy",
+									"livemode": false,
+									"metadata": {
+										"subscription_source": "woo_subscriptions"
+									},
+									"parent": {
+										"invoice_item_details": null,
+										"subscription_item_details": {
+											"invoice_item": null,
+											"proration": false,
+											"proration_details": {
+												"credited_items": null
+											},
+											"subscription": "sub_1UM1XOBzWlxcwgpP3eeyov4u",
+											"subscription_item": "si_VMl3Tua3Z2QiQ7"
+										},
+										"type": "subscription_item_details",
+										"license_fee_subscription_details": null
+									},
+									"period": {
+										"end": 1796198967,
+										"start": 1793606967
+									},
+									"pretax_credit_amounts": [],
+									"pricing": {
+										"price_details": {
+											"price": "price_1UM1XOBzWlxcwgpPRhEvD9hr",
+											"product": "prod_VMl10VL0VK371N"
+										},
+										"type": "price_details",
+										"unit_amount_decimal": "2190"
+									},
+									"quantity": 1,
+									"quantity_decimal": "1",
+									"subtotal": 2190,
+									"taxes": [],
+									"amount_excluding_tax": 2190,
+									"plan": {
+										"id": "price_1UM1XOBzWlxcwgpPRhEvD9hr",
+										"object": "plan",
+										"active": false,
+										"aggregate_usage": null,
+										"amount": 2190,
+										"amount_decimal": "2190",
+										"billing_scheme": "per_unit",
+										"created": 1790928590,
+										"currency": "usd",
+										"interval": "month",
+										"interval_count": 1,
+										"livemode": false,
+										"metadata": [],
+										"meter": null,
+										"nickname": null,
+										"product": "prod_VMl10VL0VK371N",
+										"tiers_mode": null,
+										"transform_usage": null,
+										"trial_period_days": null,
+										"usage_type": "licensed"
+									},
+									"price": {
+										"id": "price_1UM1XOBzWlxcwgpPRhEvD9hr",
+										"object": "price",
+										"active": false,
+										"billing_scheme": "per_unit",
+										"created": 1790928590,
+										"currency": "usd",
+										"custom_unit_amount": null,
+										"livemode": false,
+										"lookup_key": null,
+										"metadata": [],
+										"nickname": null,
+										"product": "prod_VMl10VL0VK371N",
+										"recurring": {
+											"aggregate_usage": null,
+											"interval": "month",
+											"interval_count": 1,
+											"meter": null,
+											"trial_period_days": null,
+											"usage_type": "licensed"
+										},
+										"tax_behavior": "unspecified",
+										"tiers_mode": null,
+										"transform_quantity": null,
+										"type": "recurring",
+										"unit_amount": 2190,
+										"unit_amount_decimal": "2190"
+									},
+									"proration": false,
+									"proration_details": {
+										"credited_items": null
+									},
+									"subscription": "sub_1UM1XOBzWlxcwgpP3eeyov4u",
+									"subscription_item": "si_VMl3Tua3Z2QiQ7",
+									"tax_amounts": [],
+									"tax_rates": [],
+									"type": "subscription",
+									"unit_amount_excluding_tax": "2190"
+								}
+							],
+							"has_more": false,
+							"total_count": 1,
+							"url": "/v1/invoices/in_1UM1Y0BzWlxcwgpPefRU4SSy/lines"
+						},
+						"livemode": false,
+						"metadata": [],
+						"next_payment_attempt": 1793770919,
+						"number": "LP2UG4J7-0002",
+						"on_behalf_of": null,
+						"parent": {
+							"quote_details": null,
+							"subscription_details": {
+								"metadata": {
+									"subscription_source": "woo_subscriptions"
+								},
+								"subscription": "sub_1UM1XOBzWlxcwgpP3eeyov4u"
+							},
+							"type": "subscription_details"
+						},
+						"payment_settings": {
+							"default_mandate": null,
+							"payment_method_options": null,
+							"payment_method_types": null
+						},
+						"period_end": 1793606967,
+						"period_start": 1790928567,
+						"post_payment_credit_notes_amount": 0,
+						"pre_payment_credit_notes_amount": 0,
+						"receipt_number": null,
+						"rendering": null,
+						"shipping_cost": null,
+						"shipping_details": null,
+						"starting_balance": 0,
+						"statement_descriptor": null,
+						"status": "open",
+						"status_transitions": {
+							"finalized_at": 1793610567,
+							"marked_uncollectible_at": null,
+							"paid_at": null,
+							"voided_at": null
+						},
+						"subtotal": 2190,
+						"subtotal_excluding_tax": 2190,
+						"test_clock": "clock_1UM1X2BzWlxcwgpPRLlygxwI",
+						"total": 2190,
+						"total_discount_amounts": [],
+						"total_excluding_tax": 2190,
+						"total_pretax_credit_amounts": [],
+						"total_taxes": [],
+						"webhooks_delivered_at": 1793606967,
+						"application_fee_amount": 115,
+						"charge": "ch_3UM1YGBzWlxcwgpP1SAxlxl8",
+						"discount": null,
+						"paid": false,
+						"paid_out_of_band": false,
+						"payment_intent": "pi_3UM1YGBzWlxcwgpP1t4mpgFd",
+						"quote": null,
+						"rendering_options": null,
+						"subscription": "sub_1UM1XOBzWlxcwgpP3eeyov4u",
+						"subscription_details": {
+							"metadata": {
+								"subscription_source": "woo_subscriptions"
+							}
+						},
+						"tax": null,
+						"total_tax_amounts": [],
+						"transfer_data": null
+					}
+				}
+			}
+		}
+	],
+	"supporting_entries": [
+		{
+			"pair": "payment_intent_succeeded_with_invoice",
+			"context": "supporting (spec section 10 item 6): payment_intent.succeeded for the renewal intent, which carries invoice in_1UM1XzBzWlxcwgpPNhLoAcln and no order_id metadata; queued about a second before invoice.paid",
+			"event_id": "evt_3UM1YABzWlxcwgpP0SzyBApl",
+			"queued_at": "2026-10-02T08:10:42+00:00",
+			"wpcom_job_id": 143928,
+			"delivery": {
+				"method": "POST",
+				"store_route": "/wc/v3/payments/webhook",
+				"blog_id": 4,
+				"content_type": "application/json"
+			},
+			"body": {
+				"id": "evt_3UM1YABzWlxcwgpP0SzyBApl",
+				"type": "payment_intent.succeeded",
+				"livemode": false,
+				"account": "acct_1TrY2nBzWlxcwgpP",
+				"data": {
+					"object": {
+						"id": "pi_3UM1YABzWlxcwgpP0GYqv6LC",
+						"object": "payment_intent",
+						"allowed_payment_method_types": null,
+						"amount": 2490,
+						"amount_capturable": 0,
+						"amount_details": {
+							"tip": []
+						},
+						"amount_received": 2490,
+						"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+						"application_fee_amount": 127,
+						"automatic_payment_methods": null,
+						"canceled_at": null,
+						"cancellation_reason": null,
+						"capture_method": "automatic",
+						"client_secret": "REDACTED",
+						"confirmation_method": "automatic",
+						"created": 1790928639,
+						"currency": "usd",
+						"customer": "cus_VMl3pvnqTAX638",
+						"customer_account": null,
+						"description": "Subscription update",
+						"excluded_payment_method_types": null,
+						"last_payment_error": null,
+						"latest_charge": "ch_3UM1YABzWlxcwgpP0Fazmyr5",
+						"livemode": false,
+						"managed_payments": {
+							"enabled": false
+						},
+						"metadata": [],
+						"next_action": null,
+						"on_behalf_of": null,
+						"payment_details": {
+							"customer_reference": null,
+							"order_reference": "in_1UM1XzBzWlxcwgpPNhLoAcln"
+						},
+						"payment_method": "pm_1UM1X5BzWlxcwgpPpbuVcMaw",
+						"payment_method_configuration_details": null,
+						"payment_method_options": {
+							"card": {
+								"installments": null,
+								"mandate_options": null,
+								"network": null,
+								"request_three_d_secure": "automatic"
+							}
+						},
+						"payment_method_types": [
+							"card"
+						],
+						"payment_record": null,
+						"processing": null,
+						"receipt_email": null,
+						"review": null,
+						"setup_future_usage": null,
+						"shared_payment_granted_token": null,
+						"shipping": null,
+						"source": null,
+						"statement_descriptor": null,
+						"statement_descriptor_suffix": null,
+						"status": "succeeded",
+						"transfer_data": null,
+						"transfer_group": null,
+						"charges": {
+							"object": "list",
+							"data": [
+								{
+									"id": "ch_3UM1YABzWlxcwgpP0Fazmyr5",
+									"object": "charge",
+									"amount": 2490,
+									"amount_captured": 2490,
+									"amount_refunded": 0,
+									"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+									"application_fee": "fee_1UM1YDBzWlxcwgpPuJbgtwYD",
+									"application_fee_amount": 127,
+									"balance_transaction": "txn_3UM1YABzWlxcwgpP0tCiQoKI",
+									"billing_details": {
+										"address": {
+											"city": null,
+											"country": null,
+											"line1": null,
+											"line2": null,
+											"postal_code": null,
+											"state": null
+										},
+										"email": null,
+										"name": null,
+										"phone": null,
+										"tax_id": null
+									},
+									"calculated_statement_descriptor": "WOOCOMMERCE",
+									"captured": true,
+									"created": 1790928640,
+									"currency": "usd",
+									"customer": "cus_VMl3pvnqTAX638",
+									"description": "Subscription update",
+									"destination": null,
+									"dispute": null,
+									"disputed": false,
+									"failure_balance_transaction": null,
+									"failure_code": null,
+									"failure_message": null,
+									"fraud_details": [],
+									"invoice": "in_1UM1XzBzWlxcwgpPNhLoAcln",
+									"livemode": false,
+									"metadata": [],
+									"on_behalf_of": null,
+									"order": null,
+									"outcome": {
+										"advice_code": null,
+										"network_advice_code": null,
+										"network_decline_code": null,
+										"network_status": "approved_by_network",
+										"reason": null,
+										"risk_level": "normal",
+										"risk_score": 45,
+										"seller_message": "Payment complete.",
+										"type": "authorized"
+									},
+									"paid": true,
+									"payment_intent": "pi_3UM1YABzWlxcwgpP0GYqv6LC",
+									"payment_method": "pm_1UM1X5BzWlxcwgpPpbuVcMaw",
+									"payment_method_details": {
+										"card": {
+											"amount_authorized": 2490,
+											"authorization_code": "780632",
+											"brand": "visa",
+											"checks": {
+												"address_line1_check": null,
+												"address_postal_code_check": null,
+												"cvc_check": null
+											},
+											"country": "US",
+											"description": "Visa Classic",
+											"electronic_commerce_indicator": "02",
+											"exp_month": 10,
+											"exp_year": 2027,
+											"extended_authorization": {
+												"status": "disabled"
+											},
+											"fingerprint": "REDACTED",
+											"funding": "credit",
+											"iin": "424242",
+											"incremental_authorization": {
+												"status": "unavailable"
+											},
+											"installments": null,
+											"issuer": "Stripe Payments UK Limited",
+											"last4": "4242",
+											"mandate": null,
+											"moto": null,
+											"multicapture": {
+												"status": "unavailable"
+											},
+											"network": "visa",
+											"network_token": {
+												"used": false
+											},
+											"network_transaction_id": "119727611598658",
+											"overcapture": {
+												"maximum_amount_capturable": 2490,
+												"status": "unavailable"
+											},
+											"regulated_status": "unregulated",
+											"three_d_secure": null,
+											"transaction_link_id": null,
+											"wallet": null
+										},
+										"type": "card"
+									},
+									"radar_options": [],
+									"receipt_email": null,
+									"receipt_number": null,
+									"receipt_url": "REDACTED",
+									"refunded": false,
+									"refunds": {
+										"object": "list",
+										"data": [],
+										"has_more": false,
+										"total_count": 0,
+										"url": "/v1/charges/ch_3UM1YABzWlxcwgpP0Fazmyr5/refunds"
+									},
+									"review": null,
+									"shipping": null,
+									"source": null,
+									"source_transfer": null,
+									"statement_descriptor": null,
+									"statement_descriptor_suffix": null,
+									"status": "succeeded",
+									"transfer_data": null,
+									"transfer_group": null,
+									"fee_breakdown_v1": {
+										"rows": [
+											{
+												"key": "base",
+												"kind": "fee",
+												"label": null,
+												"amount": 127,
+												"display_amount": -127,
+												"currency": "usd",
+												"rate": null,
+												"meta": null
+											}
+										],
+										"totals": {
+											"fee": {
+												"key": null,
+												"amount": 127,
+												"display_amount": -127,
+												"currency": "usd",
+												"rate": null
+											},
+											"tax": {
+												"amount": 0,
+												"display_amount": 0,
+												"currency": "usd"
+											},
+											"net": {
+												"amount": 2363,
+												"currency": "usd"
+											},
+											"capture_net": {
+												"amount": 2363,
+												"currency": "usd"
+											},
+											"gross": {
+												"amount": 2490,
+												"currency": "usd"
+											},
+											"fee_plus_tax": {
+												"amount": 127,
+												"currency": "usd"
+											}
+										},
+										"notes": [],
+										"sources": {
+											"balance_transaction_exchange_rate": 0.0,
+											"refunded_fee_amount_store": 0
+										}
+									}
+								}
+							],
+							"has_more": false,
+							"total_count": 1,
+							"url": "/v1/charges?payment_intent=pi_3UM1YABzWlxcwgpP0GYqv6LC"
+						},
+						"invoice": "in_1UM1XzBzWlxcwgpPNhLoAcln",
+						"level3": null,
+						"fee_breakdown_v1": {
+							"rows": [
+								{
+									"key": "base",
+									"kind": "fee",
+									"label": null,
+									"amount": 127,
+									"display_amount": -127,
+									"currency": "usd",
+									"rate": null,
+									"meta": null
+								}
+							],
+							"totals": {
+								"fee": {
+									"key": null,
+									"amount": 127,
+									"display_amount": -127,
+									"currency": "usd",
+									"rate": null
+								},
+								"tax": {
+									"amount": 0,
+									"display_amount": 0,
+									"currency": "usd"
+								},
+								"net": {
+									"amount": 2363,
+									"currency": "usd"
+								},
+								"capture_net": {
+									"amount": 2363,
+									"currency": "usd"
+								},
+								"gross": {
+									"amount": 2490,
+									"currency": "usd"
+								},
+								"fee_plus_tax": {
+									"amount": 127,
+									"currency": "usd"
+								}
+							},
+							"notes": [],
+							"sources": {
+								"balance_transaction_exchange_rate": 0.0,
+								"refunded_fee_amount_store": 0
+							}
+						}
+					}
+				}
+			}
+		},
+		{
+			"pair": "invoice_paid_parent_user_1",
+			"context": "supporting: invoice.paid for the main-chain subscription_create invoice (user_1 customer, not on a clock), marked paid out of band by the charge_invoice entry of rec-t63-billing-api.json",
+			"event_id": "evt_1UM1WFBzWlxcwgpPOQhMdi3g",
+			"queued_at": "2026-10-02T08:08:39+00:00",
+			"wpcom_job_id": 143919,
+			"delivery": {
+				"method": "POST",
+				"store_route": "/wc/v3/payments/webhook",
+				"blog_id": 4,
+				"content_type": "application/json"
+			},
+			"body": {
+				"id": "evt_1UM1WFBzWlxcwgpPOQhMdi3g",
+				"type": "invoice.paid",
+				"livemode": false,
+				"account": "acct_1TrY2nBzWlxcwgpP",
+				"data": {
+					"object": {
+						"id": "in_1UM1VrBzWlxcwgpPgrIwNSlu",
+						"object": "invoice",
+						"account_country": "US",
+						"account_name": "woocommerce",
+						"account_tax_ids": null,
+						"amount_due": 2490,
+						"amount_overpaid": 0,
+						"amount_paid": 0,
+						"amount_remaining": 2490,
+						"amount_shipping": 0,
+						"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+						"attempt_count": 0,
+						"attempted": false,
+						"auto_advance": false,
+						"automatic_tax": {
+							"disabled_reason": null,
+							"enabled": false,
+							"liability": null,
+							"provider": null,
+							"status": null
+						},
+						"automatically_finalizes_at": null,
+						"billing_reason": "subscription_create",
+						"collection_method": "charge_automatically",
+						"created": 1790928495,
+						"currency": "usd",
+						"custom_fields": null,
+						"customer": "cus_UsIeTbmGHPc9jY",
+						"customer_account": null,
+						"customer_address": {
+							"city": "Amsterdam",
+							"country": "NL",
+							"line1": "Damrak 1",
+							"line2": "",
+							"postal_code": "1012 LG",
+							"state": ""
+						},
+						"customer_email": "REDACTED",
+						"customer_name": "Lpm Checkout",
+						"customer_phone": "+15555550123",
+						"customer_shipping": {
+							"address": {
+								"city": "Amsterdam",
+								"country": "NL",
+								"line1": "Damrak 1",
+								"line2": "",
+								"postal_code": "1012 LG",
+								"state": ""
+							},
+							"name": "Lpm Checkout",
+							"phone": null
+						},
+						"customer_tax_exempt": "none",
+						"customer_tax_ids": [],
+						"default_payment_method": null,
+						"default_source": null,
+						"default_tax_rates": [],
+						"description": null,
+						"discounts": [],
+						"due_date": null,
+						"effective_at": 1790928495,
+						"ending_balance": 0,
+						"footer": null,
+						"from_invoice": null,
+						"hosted_invoice_url": "REDACTED",
+						"invoice_pdf": "REDACTED",
+						"issuer": {
+							"type": "self"
+						},
+						"last_finalization_error": null,
+						"latest_revision": null,
+						"lines": {
+							"object": "list",
+							"data": [
+								{
+									"id": "il_1UM1VrBzWlxcwgpPBigYSwk8",
+									"object": "line_item",
+									"amount": 2490,
+									"currency": "usd",
+									"description": "1 × REC-T63 Coffee Box Deluxe (at $24.90 / month)",
+									"discount_amounts": [],
+									"discountable": true,
+									"discounts": [],
+									"invoice": "in_1UM1VrBzWlxcwgpPgrIwNSlu",
+									"livemode": false,
+									"metadata": {
+										"subscription_source": "woo_subscriptions"
+									},
+									"parent": {
+										"invoice_item_details": null,
+										"subscription_item_details": {
+											"invoice_item": null,
+											"proration": false,
+											"proration_details": {
+												"credited_items": null
+											},
+											"subscription": "sub_1UM1VrBzWlxcwgpP6A3GwGLe",
+											"subscription_item": "si_VMl1spZLBBt5VE"
+										},
+										"type": "subscription_item_details",
+										"license_fee_subscription_details": null
+									},
+									"period": {
+										"end": 1793606895,
+										"start": 1790928495
+									},
+									"pretax_credit_amounts": [],
+									"pricing": {
+										"price_details": {
+											"price": "price_1UM1VrBzWlxcwgpPDDLxBee1",
+											"product": "prod_VMl10VL0VK371N"
+										},
+										"type": "price_details",
+										"unit_amount_decimal": "2490"
+									},
+									"quantity": 1,
+									"quantity_decimal": "1",
+									"subtotal": 2490,
+									"taxes": [],
+									"amount_excluding_tax": 2490,
+									"plan": {
+										"id": "price_1UM1VrBzWlxcwgpPDDLxBee1",
+										"object": "plan",
+										"active": false,
+										"aggregate_usage": null,
+										"amount": 2490,
+										"amount_decimal": "2490",
+										"billing_scheme": "per_unit",
+										"created": 1790928495,
+										"currency": "usd",
+										"interval": "month",
+										"interval_count": 1,
+										"livemode": false,
+										"metadata": [],
+										"meter": null,
+										"nickname": null,
+										"product": "prod_VMl10VL0VK371N",
+										"tiers_mode": null,
+										"transform_usage": null,
+										"trial_period_days": null,
+										"usage_type": "licensed"
+									},
+									"price": {
+										"id": "price_1UM1VrBzWlxcwgpPDDLxBee1",
+										"object": "price",
+										"active": false,
+										"billing_scheme": "per_unit",
+										"created": 1790928495,
+										"currency": "usd",
+										"custom_unit_amount": null,
+										"livemode": false,
+										"lookup_key": null,
+										"metadata": [],
+										"nickname": null,
+										"product": "prod_VMl10VL0VK371N",
+										"recurring": {
+											"aggregate_usage": null,
+											"interval": "month",
+											"interval_count": 1,
+											"meter": null,
+											"trial_period_days": null,
+											"usage_type": "licensed"
+										},
+										"tax_behavior": "unspecified",
+										"tiers_mode": null,
+										"transform_quantity": null,
+										"type": "recurring",
+										"unit_amount": 2490,
+										"unit_amount_decimal": "2490"
+									},
+									"proration": false,
+									"proration_details": {
+										"credited_items": null
+									},
+									"subscription": "sub_1UM1VrBzWlxcwgpP6A3GwGLe",
+									"subscription_item": "si_VMl1spZLBBt5VE",
+									"tax_amounts": [],
+									"tax_rates": [],
+									"type": "subscription",
+									"unit_amount_excluding_tax": "2490"
+								}
+							],
+							"has_more": false,
+							"total_count": 1,
+							"url": "/v1/invoices/in_1UM1VrBzWlxcwgpPgrIwNSlu/lines"
+						},
+						"livemode": false,
+						"metadata": [],
+						"next_payment_attempt": null,
+						"number": "A6RN8PRC-0001",
+						"on_behalf_of": null,
+						"parent": {
+							"quote_details": null,
+							"subscription_details": {
+								"metadata": {
+									"subscription_source": "woo_subscriptions"
+								},
+								"subscription": "sub_1UM1VrBzWlxcwgpP6A3GwGLe"
+							},
+							"type": "subscription_details"
+						},
+						"payment_settings": {
+							"default_mandate": null,
+							"payment_method_options": null,
+							"payment_method_types": null
+						},
+						"period_end": 1790928495,
+						"period_start": 1790928495,
+						"post_payment_credit_notes_amount": 0,
+						"pre_payment_credit_notes_amount": 0,
+						"receipt_number": null,
+						"rendering": null,
+						"shipping_cost": null,
+						"shipping_details": null,
+						"starting_balance": 0,
+						"statement_descriptor": null,
+						"status": "paid",
+						"status_transitions": {
+							"finalized_at": 1790928495,
+							"marked_uncollectible_at": null,
+							"paid_at": 1790928518,
+							"voided_at": null
+						},
+						"subtotal": 2490,
+						"subtotal_excluding_tax": 2490,
+						"test_clock": null,
+						"total": 2490,
+						"total_discount_amounts": [],
+						"total_excluding_tax": 2490,
+						"total_pretax_credit_amounts": [],
+						"total_taxes": [],
+						"webhooks_delivered_at": 1790928498,
+						"application_fee_amount": null,
+						"charge": null,
+						"discount": null,
+						"paid": true,
+						"paid_out_of_band": true,
+						"payment_intent": null,
+						"quote": null,
+						"rendering_options": null,
+						"subscription": "sub_1UM1VrBzWlxcwgpP6A3GwGLe",
+						"subscription_details": {
+							"metadata": {
+								"subscription_source": "woo_subscriptions"
+							}
+						},
+						"tax": null,
+						"total_tax_amounts": [],
+						"transfer_data": null
+					}
+				}
+			}
+		}
+	]
+}

@@ -1,0 +1,32 @@
+// Client 11.1.0 `components/tooltip/style.scss:12-27`: a 16px grey help glyph on the text baseline.
+.woocommerce-woopayments-overview__help-popover {
+	display: inline-flex;
+	margin: 0 0.4em;
+	vertical-align: text-bottom;
+
+	.components-button.has-icon.woocommerce-woopayments-overview__help-popover-toggle {
+		color: #949494;
+		height: 16px;
+		min-width: 0;
+		padding: 0;
+		vertical-align: text-bottom;
+		width: 16px;
+
+		&:hover,
+		&:focus,
+		&:active {
+			color: var(--wp-admin-theme-color, #3858e9);
+		}
+
+		// Client 11.1.0 `components/account-details/payout-status-wrapper.tsx:35`: `buttonSize={ 24 }`.
+		&.is-large {
+			height: 24px;
+			width: 24px;
+		}
+	}
+}
+
+// Client 11.1.0 `components/tooltip` lays its text out up to 300px; without a width the popover shrinks to about 100px.
+.woocommerce-woopayments-overview__help-popover-content {
+	width: max-content;
+}

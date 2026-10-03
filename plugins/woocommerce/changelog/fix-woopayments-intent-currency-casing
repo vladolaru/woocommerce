@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+Comment: Match the casing WooPayments 11.1.0 stores in _wcpay_intent_currency for native WooPayments payment intents that need action, captures and in-person payments.
+

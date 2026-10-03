@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "refund-confirm-process-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "f93817f4da28937a7f6ba9a5e6ca1289f17e7c83",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-status-change.spec.ts:141::Order › Status Change › Change Status of order to Refunded › Show Refund Confirmation modal, process Refund if confirmed"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/refund.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad revision review approved evidence SHA c384089c6c2044f0489c0285d94f385223c89c45cdb1d76835049b4825d49c98 against unchanged ledger SHA 104d5e917c84d27a5f94cda7e2f8f37d4c5417b958bc2182402db9dc345983ae: exactly row 57 moves through the four permitted fields from planned/not-assessed to deferred/blocked-environment under blocked-environment:PILOT-NATIVE-READINESS, while its pending accepted disposition, absent provisional target, pending target contract, unresolved owner, and sibling rows remain unchanged. The retained contract requires one accessible merchant confirmation to dispatch exactly one full refund for exact amount and currency; exactly one payment-refunded local refund linked to exactly one terminal-succeeded provider refund on the original charge; preserved payment-intent/charge identities; exact amount, currency, status, and occurrence joins; captured amount fully refunded; persisted Refunded status; zero remaining refundable balance; and exactly one Processing-to-Refunded transition. The source's empty/omitted reason remains unchanged unless an approved adapter explicitly specifies and binds another value. Synchronous and webhook observations must converge on the same graph: at most one canonical note per provider-refund lifecycle state, with one pending note plus one successful note allowed for a legitimate pending-to-succeeded progression, while repeated same-state deliveries create no duplicate row, provider refund, note, or status transition. Core's refund UI and native pipeline are a plausible thin adapter whose deterministic tests support but do not close the real contract, and no defect or known gap is invented. Native readiness remains primary and Core readiness secondary. The evidence preserves sibling/drift boundaries and requires an exclusive listener/provider-writer interval, ordered locks, separate checkout/refund journals, idempotency binding, zero replay, bounded convergence, byte-exact restoration, terminal financial retention, safe cleanup, fail-closed quarantine, one worker, and zero retries while truthfully claiming zero current resources or quarantine."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing-native readiness fails before account, callback, fixture, or browser work; the provisional scenario target is absent; and the exact native full-refund adapter target contract and owner remain pending. Core has a plausible standard refund UI and implemented native refund pipeline, so no production defect is established before an approved target can run.",
+		"affected_scope": "Only the exact confirmed full-refund contract: one accessible merchant confirmation dispatches exactly one full refund for the captured order's complete amount and currency; exactly one local refund is linked to exactly one terminal-succeeded provider refund on the original charge; the order persists Refunded with zero remaining refundable balance; and synchronous plus duplicate webhook observations converge without duplicate refund rows, provider refunds, status transitions, or notes for the same provider-refund lifecycle state. A legitimate pending-to-succeeded progression may retain one pending note and one successful note. All no-op and cancellation branches remain separate.",
+		"no_allowlisted_action_reason": "The run cannot enable native ownership, establish account/callback readiness, repair shared Core E2E sites, allocate an unapproved provider lane, invent the pending row-specific target or owner, or decide whether the approved thin adapter uses Core's standard refund UI or requires a status-selector shortcut. Existing deterministic refund pipeline tests do not prove the exact irreversible merchant action and joined real local/provider graph.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy native and Core E2E readiness and allocate an eligible account/store with one exclusive listener/provider-writer interval; approve a drift-safe row-specific target, owner, and adapter topology; complete an exact captured-order fixture plus local/provider occurrence readers with ordered locks, separate checkout and refund journals, deterministic idempotency binding, zero replay, shrinking-deadline convergence, byte-exact setting restoration, retained terminal financial evidence, safe cleanup, and quarantine controls; then run once with one worker and zero retries and obtain fresh required reviews.",
+		"quarantine_status": "No browser context, account, store, order, product, payment, refund, provider record, listener, lock, journal, setting, retention record, or quarantine was created or changed for this row. The separately owned listener remains untouched."
+	}
+}

@@ -1,0 +1,308 @@
+.wc-block-checkout__payment-method {
+	.wc-block-components-payment-method-label.wc-block-components-payment-method-label--with-icon {
+		display: flex;
+		align-items: center;
+		width: 100%;
+
+		.wcpay-payment-method-icon {
+			height: 24px;
+			width: auto;
+			order: 2;
+			margin-left: auto;
+		}
+
+		.payment-methods--logos {
+			height: 24px;
+			order: 2;
+			margin-left: auto;
+		}
+
+		.test-mode.badge {
+			background-color: #fff2d7;
+			border-radius: 4px;
+			padding: 4px 6px;
+			font-size: 12px;
+			font-weight: 400;
+			line-height: 16px;
+			color: #4d3716;
+			margin-left: 8px;
+			display: none;
+			order: 1;
+		}
+	}
+
+	input:checked
+		~ div
+		.wc-block-components-radio-control__label:where( [id^='radio-control-wc-payment-method-options-woocommerce_payments'][id$='__label'] )
+		> .wc-block-components-payment-method-label
+		.test-mode.badge {
+		display: inline-block;
+	}
+}
+
+.payment-methods--logos {
+	> div {
+		display: flex;
+		align-items: center;
+		flex-wrap: nowrap;
+		min-width: 0;
+		max-width: 100%;
+		overflow: hidden;
+	}
+
+	img {
+		width: 37px;
+		height: 24px;
+		margin-right: 4px;
+		flex-shrink: 1;
+		min-width: 0;
+		max-width: 100%;
+	}
+}
+
+.payment-methods--logos-count {
+	width: 38px;
+	height: 24px;
+	background-color: rgba( 117, 117, 117, 0.1 );
+	color: var( --wp--preset--color--contrast, #1e1e1e );
+	text-align: center;
+	line-height: 24px;
+	border-radius: 3px;
+	font-size: 11px;
+	font-weight: 600;
+	white-space: nowrap;
+	flex-shrink: 1;
+	text-overflow: ellipsis;
+	overflow: hidden;
+}
+
+.logo-popover {
+	background-color: #fff;
+	border: 1px solid #ddd;
+	border-radius: 3px;
+	padding: 8px;
+	box-sizing: border-box;
+	box-shadow: 0 0 10px 0 rgba( 0, 0, 0, 0.1 );
+	display: grid;
+	gap: 8px;
+	justify-content: center;
+	cursor: pointer;
+	width: fit-content;
+	position: absolute;
+	z-index: 1000;
+
+	> img {
+		width: 38px;
+		height: 24px;
+		box-shadow: 0 0 0 1px rgba( 0, 0, 0, 0.1 );
+	}
+}
+
+.js-woopayments-copy-test-number {
+	line-height: 1.2;
+	vertical-align: middle;
+	border-radius: 0;
+	border: none !important;
+	background-color: transparent !important;
+	font-weight: normal;
+	display: inline-flex;
+	cursor: pointer;
+	color: inherit !important;
+	font-family: inherit !important;
+	font-size: inherit;
+	padding: 2px 1px !important;
+	align-items: center;
+	box-shadow: none !important;
+
+	span {
+		margin-right: 4px;
+	}
+
+	i {
+		order: 1;
+		display: block;
+		width: 1.2em;
+		height: 1.2em;
+		mask-image: url(data:image/svg+xml;base64,PHN2ZyBmaWxsPSJub25lIiBoZWlnaHQ9IjI0IiB2aWV3Qm94PSIzIDMgMjAgMjAiIHdpZHRoPSIyNCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Im01IDQuNWgxMWMuMTMyNiAwIC4yNTk4LjA1MjY4LjM1MzYuMTQ2NDUuMDkzNy4wOTM3Ni4xNDY0LjIyMDk0LjE0NjQuMzUzNTV2MTFjMCAuMTMyNi0uMDUyNy4yNTk4LS4xNDY0LjM1MzYtLjA5MzguMDkzNy0uMjIxLjE0NjQtLjM1MzYuMTQ2NGgtMTFjLS4xMzI2MSAwLS4yNTk3OS0uMDUyNy0uMzUzNTUtLjE0NjQtLjA5Mzc3LS4wOTM4LS4xNDY0NS0uMjIxLS4xNDY0NS0uMzUzNnYtMTFjMC0uMTMyNjEuMDUyNjgtLjI1OTc5LjE0NjQ1LS4zNTM1NS4wOTM3Ni0uMDkzNzcuMjIwOTQtLjE0NjQ1LjM1MzU1LS4xNDY0NXptLTIgLjVjMC0uNTMwNDMuMjEwNzEtMS4wMzkxNC41ODU3OS0xLjQxNDIxLjM3NTA3LS4zNzUwOC44ODM3OC0uNTg1NzkgMS40MTQyMS0uNTg1NzloMTFjLjUzMDQgMCAxLjAzOTEuMjEwNzEgMS40MTQyLjU4NTc5LjM3NTEuMzc1MDcuNTg1OC44ODM3OC41ODU4IDEuNDE0MjF2MTFjMCAuNTMwNC0uMjEwNyAxLjAzOTEtLjU4NTggMS40MTQycy0uODgzOC41ODU4LTEuNDE0Mi41ODU4aC0xMWMtLjUzMDQzIDAtMS4wMzkxNC0uMjEwNy0xLjQxNDIxLS41ODU4LS4zNzUwOC0uMzc1MS0uNTg1NzktLjg4MzgtLjU4NTc5LTEuNDE0MnptMTcgM3YxMC43NWMwIC42OS0uNTYgMS4yNS0xLjI1IDEuMjVoLTEyLjc1djEuNWgxMi43NWMuNzI5MyAwIDEuNDI4OC0uMjg5NyAxLjk0NDUtLjgwNTUuNTE1OC0uNTE1Ny44MDU1LTEuMjE1Mi44MDU1LTEuOTQ0NXYtMTAuNzV6IiBmaWxsPSIjMTAxNTE3IiBmaWxsLXJ1bGU9ImV2ZW5vZGQiLz48L3N2Zz4K);
+		mask-size: contain;
+		mask-repeat: no-repeat;
+		mask-position: center;
+		background-color: currentColor;
+	}
+
+	&:hover {
+		background-color: transparent;
+		opacity: 0.7;
+
+		i {
+			opacity: 0.7;
+		}
+	}
+
+	&:active i {
+		transform: scale( 0.9 );
+	}
+
+	&:focus:not(:focus-visible) {
+		outline: none;
+	}
+
+	&:focus-visible,
+	&.state--success {
+		outline: 2px solid currentColor;
+		outline-offset: 2px;
+	}
+
+	&.state--success span {
+		text-decoration: underline;
+	}
+
+	@media ( forced-colors: active ) {
+
+		&.state--success {
+			outline-color: Highlight;
+		}
+	}
+}
+
+#remember-me:empty {
+	margin-bottom: 0;
+}
+
+.woopay-save-new-user-container {
+	.save-details-header {
+		display: flex;
+		align-items: flex-start;
+		gap: 12px;
+		position: relative;
+
+		> div {
+			flex: 1;
+		}
+
+		label {
+			display: flex;
+			align-items: flex-start;
+			margin: 0;
+			padding: 0;
+			text-indent: 0;
+		}
+	}
+
+	.save-details-form {
+		margin-top: 16px;
+
+		label {
+			display: block;
+			margin-bottom: 6px;
+		}
+
+		input[type='tel'] {
+			box-sizing: border-box;
+			width: 100%;
+			min-height: 48px;
+			padding: 11px 12px;
+			border: 1px solid currentColor;
+			border-radius: 4px;
+			background: #fff;
+			font: inherit;
+		}
+	}
+
+	h2 {
+		margin-bottom: 4px;
+	}
+}
+
+/*
+ * WooPay email-input / OTP flow — ported from the WooPayments plugin's
+ * checkout/woopay/style.scss. The one-time-code iframe slides up as a
+ * full-screen sheet on narrow viewports and floats next to the email field
+ * behind a dimmed backdrop on wide ones.
+ */
+#contact-fields {
+	.wc-block-components-text-input {
+		display: inline-block;
+		position: relative;
+		width: 100%;
+
+		.wc-block-components-spinner {
+			right: 10px;
+			width: 24px;
+		}
+	}
+}
+
+/* Address-form email field spinner alignment. */
+.wc-block-components-address-form__email {
+	position: relative;
+
+	.wc-block-components-spinner {
+		top: 50%;
+		left: auto;
+		right: 10px;
+		width: 24px;
+		height: 24px;
+		transform: translateY(-50%);
+	}
+}
+
+.woopay-otp-iframe {
+	transition: top 500ms;
+	width: 100%;
+	height: 100dvh; /* stylelint-disable-line unit-no-unknown */
+	position: fixed;
+	top: 100%;
+	left: 0;
+	z-index: 355000;
+	border: 0;
+	background: #fff;
+
+	&.open {
+		top: 0;
+	}
+}
+
+.woopay-otp-iframe-wrapper {
+	.arrow {
+		position: fixed;
+		top: 100%;
+	}
+}
+
+@media screen and (min-width: 768px) {
+	.woopay-otp-iframe-wrapper {
+		position: fixed;
+		background: rgba(117, 117, 117, 0.6);
+		top: 0;
+		left: 0;
+		width: 100vw;
+		height: 100vh;
+		content: " ";
+		display: block;
+		z-index: 355000;
+
+		.woopay-otp-iframe {
+			transition: none;
+			height: 90vh;
+			max-height: 650px;
+			position: absolute;
+			max-width: 374px;
+			border-radius: 8px;
+			right: 50px;
+			left: auto;
+		}
+
+		.arrow {
+			position: absolute;
+			right: calc(15px / 2);
+			background: transparent;
+			width: 0;
+			height: 0;
+			z-index: 355001;
+			border-top: 15px solid transparent;
+			border-bottom: 15px solid transparent;
+			border-right: 15px solid #fff;
+		}
+	}
+}

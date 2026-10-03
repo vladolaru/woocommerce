@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments settings test account notice sits above the settings sections, like in the WooPayments plugin.

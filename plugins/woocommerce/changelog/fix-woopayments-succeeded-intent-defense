@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+When something fails after a WooPayments payment has already succeeded, the order keeps its status, gets a note explaining the error, and the shopper sees the order confirmation instead of a payment error.

@@ -1,0 +1,121 @@
+{
+	"schema_version": 2,
+	"slice_id": "historical-money-records-closure",
+	"wc_base_commit": "1959648f0ae08d2869207fa0a7a8286006418ef1",
+	"verified_at_commit": "8facbae9b935591252f7debcb2c7da0eb09448ff",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/multi-currency.spec.ts",
+		"plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsCutoverReconciliationJobTest.php"
+	],
+	"source_test_sha256": "bc25efaaba2f394c75540ad862760aba59a035c4685e63ec4d1273cea880225a",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/multi-currency-checkout.spec.ts:84::Multi-currency checkout › My account › should display the correct currency in the my account order history table",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:96::Shopper Multi-Currency widget › Should not affect prices › at My account › Orders"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/multi-currency.spec.ts",
+			"contract": "historical orders keep their stored money and WooPayments metadata when shopper currency changes"
+		}
+	],
+	"implementation_commits": [
+		"8e83cc817d0dd89bcc38ea05f245176e8df25bfc",
+		"8facbae9b935591252f7debcb2c7da0eb09448ff"
+	],
+	"execution_fixture": {
+		"site": "local shared WooCommerce store",
+		"runtime_owner": "native",
+		"migration_state": "WooPayments client plugin inactive; native and multi-currency runtimes active; provider-free readonly project",
+		"producer_shape": "WooPayments 11.1.0 FrontendPrices order metadata, confirmed against local client order 2210",
+		"orders": [
+			{
+				"currency": "USD",
+				"total": "10.00",
+				"status": "completed",
+				"gateway": "woocommerce_payments",
+				"payment_method_title": "Visa credit card",
+				"multi_currency_meta": {}
+			},
+			{
+				"currency": "EUR",
+				"total": "12.34",
+				"status": "completed",
+				"gateway": "woocommerce_payments",
+				"payment_method_title": "Visa credit card",
+				"multi_currency_meta": {
+					"_wcpay_multi_currency_order_exchange_rate": "0.88",
+					"_wcpay_multi_currency_order_default_currency": "USD",
+					"_wcpay_multi_currency_stripe_exchange_rate": "1.14382"
+				}
+			}
+		]
+	},
+	"verification": [
+		{
+			"command": "pnpm test:php:env -- --filter test_reconciliation_preserves_plugin_origin_multi_currency_orders",
+			"exit_code": 0,
+			"summary": "Passed 1 test with 25 assertions. The actual cutover normalization runner reached normalization version 4, the controlled flow then deferred only at plugin_deactivation_failed, and exact cold-read USD and EUR tuples remained unchanged."
+		},
+		{
+			"command": "pnpm test:php:env -- --filter WooPaymentsCutoverReconciliationJobTest",
+			"exit_code": 0,
+			"summary": "Passed 105 tests with 2094 assertions; 12 multisite-only cases were skipped in the single-site environment."
+		},
+		{
+			"command": "WCPAY_RUNTIME=native provider-free readonly shared-store run of tests/e2e/tests/woopayments-native/shopper/multi-currency.spec.ts with one worker and zero retries",
+			"exit_code": 0,
+			"raw_result_sha256": "458f347c6aa9ac97dae9bd576b9a3a6919dd23fc226c702f696181913134ea62",
+			"summary": "Passed 2/2. The historical case created the exact USD and EUR records for one customer, bound both IDs to their My Account rows and details, selected EUR, hard-reloaded, and proved the rendered and cold-read tuples remained exact."
+		},
+		{
+			"command": "Post-cleanup focused provider-free readonly shared-store run with one worker, zero retries, and grep 'historical orders'",
+			"exit_code": 0,
+			"raw_result_sha256": "812713603c87cc88f20294c0ec3d9992647395975c9db36296affd91d22b14b1",
+			"summary": "Passed 1/1 after review fixes record cleanup ownership before metadata seeding and reassert EUR after every My Account navigation. A subsequent read-only ownership query returned an empty array, proving zero run-owned historical orders remained."
+		},
+		{
+			"command": "Targeted Prettier, ESLint, PHP lint, Semgrep, git diff --check, and verify-staged",
+			"exit_code": 0,
+			"summary": "All scoped checks passed. Branch-wide lint remains red on unrelated pre-existing branch files; PHPStan cannot load the PHPUnit bootstrap for this test and reports existing undefined assertion methods. Semgrep's single finding is on an unchanged dynamic URL assertion elsewhere in the spec."
+		}
+	],
+	"provider_write_audit": {
+		"provider_writes": 0,
+		"provider_journal_entries": 0,
+		"listener_actions": 0,
+		"quarantine_receipts": 0,
+		"owned_order_residue": 0
+	},
+	"reviews": [
+		{
+			"role": "fresh Sol code review",
+			"verdict": "APPROVE",
+			"reviewed_range": "1959648f0ae08d2869207fa0a7a8286006418ef1...8facbae9b935591252f7debcb2c7da0eb09448ff",
+			"source_test_sha256": "bc25efaaba2f394c75540ad862760aba59a035c4685e63ec4d1273cea880225a",
+			"summary": "The first pass found that My Account navigation did not reassert the selected EUR context and that metadata seeding could fail before cleanup ownership was recorded. Commit 8facbae9b9 resolves both; the focused re-review approved the corrected range with no remaining findings or regressions."
+		}
+	],
+	"closures": [
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/multi-currency-checkout.spec.ts:84::Multi-currency checkout › My account › should display the correct currency in the my account order history table",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/multi-currency.spec.ts",
+				"contract": "historical orders keep their stored money and WooPayments metadata when shopper currency changes"
+			},
+			"fidelity_claim": "multi-currency-settlement",
+			"fidelity_case": "historical USD and EUR My Account currency"
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:96::Shopper Multi-Currency widget › Should not affect prices › at My account › Orders",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/multi-currency.spec.ts",
+				"contract": "historical orders keep their stored money and WooPayments metadata when shopper currency changes"
+			},
+			"fidelity_claim": "multi-currency-settlement",
+			"fidelity_case": "shopper currency change leaves historical orders unchanged"
+		}
+	],
+	"known_gaps": [],
+	"deferral": null
+}

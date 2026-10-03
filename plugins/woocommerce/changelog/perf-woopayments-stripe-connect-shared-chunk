@@ -1,0 +1,4 @@
+Significance: patch
+Type: performance
+
+Load the Stripe Connect library used by WooPayments admin pages from one shared script chunk instead of two copies, reducing the plugin download size.

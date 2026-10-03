@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "multi-currency-post-switcher-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "15f6a73404f27f8623ccf490cb756d0fa2cb0a73",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency.spec.ts:61::Multi-currency › can add the currency switcher to a post/page and verify on frontend"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/multi-currency.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved pre-review evidence SHA 346fbadaa2f3e6a71941316e69d5fa157d3ef9a2594bae38d3f15e7fd3880a5b against ledger SHA 1fcc9d72f20cb66e7646dc884d801f9a4e7d05d896c2de63d293396682347773 with no findings. Exactly fields 37-40 change on the line-61 row while the pending disposition, provisional target, target contract, owner, line 55, and all siblings remain untouched. Frozen and rolling source are byte-identical, and Core honestly preserves the public dynamic-block slug, null serialization, server rendering, and accessible Currency label. The evidence correctly requires one insert and publish REST join, parsed raw serialization, editor reload, fresh anonymous combobox oracle, exact post/editor/settings/theme journals and restoration, quarantine, source/target/asset drift controls, and zero provider/listener activity, while keeping classic sidebar widgets, currency switching, repricing, checkout, orders, and payments separate."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing-native readiness fails before the authenticated Core editor, publish REST, parsed-content reload, and anonymous dynamic-render joins can run. The broad provisional target is absent; its target contract and owner remain pending; and no approved deterministic native currency/theme/editor/post fixture, exact post journal, byte restoration, or row-safe bundle exists. Core already registers and lower-layer-tests the preserved public dynamic block and accessible renderer, so no current product defect, compatibility break, known gap, or authority conflict is established.",
+		"affected_scope": "Only one merchant-authored post publication contract: discover and insert the supported woocommerce-payments/multi-currency-switcher block exactly once, publish one uniquely identified run-owned post with no replay, join the exact REST response and parsed dynamic-block serialization, prove an intact editor reload, then prove exactly one accessible Currency combobox with USD/EUR/GBP renders for a fresh anonymous visitor. Styling properties, classic sidebar widgets, historical widget data, currency selection/repricing, option ordering, carts, checkout, orders, payments, provider records, and exact DOM or theme structure remain separate.",
+		"no_allowlisted_action_reason": "The run cannot establish native readiness, approve the pending target/owner, provide a deployed editor bundle and exact restorable store/editor/theme/currency fixture, or safely create and publish content without a durable pre-write post/restoration journal. Lower-layer registration/render tests, the source's CSS holder, merchant-authenticated frontend visit, destructive currency normalization, persistent editor preferences, untitled post, or CI retry cannot substitute for semantic insertion, one publish occurrence, authoritative raw-content parsing, reload persistence, anonymous accessibility, exact cleanup, and byte restoration. No provider writer or listener can unlock this provider-free row.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy exact-store/account/callback native readiness; approve a row-safe target contract and implementation owner; provide the built editor asset, stable read-only theme, exact USD/EUR/GBP fixture, disposable or byte-restorable editor profile, unique post namespace, ordered ownership, and complete settings/editor/post restoration journals. Run semantic insert, one publish, parsed serialization, fresh editor reload, and fresh anonymous accessible-render once with one worker and zero retries; delete only the exact post and its revisions/autosaves, restore every setup byte, and obtain fresh code, E2E-test, reliability, and accessibility reviews.",
+		"quarantine_status": "No browser context, account, store, option, currency fixture, theme, editor profile, post, lock, journal, provider object, listener, retention record, or quarantine was created or changed for this row. A future wrong identity/owner, target or asset drift, duplicate block/post/publish, ambiguous write, invalid serialization, unowned post or outbound effect, settings/session/preference drift, cleanup failure, or incomplete restoration must preserve diagnostics and quarantine the exact store/post/editor/settings graph and journal without replay. No provider, listener, payment, order, or financial resource belongs to this contract."
+	}
+}

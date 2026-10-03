@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Add regression coverage for reading legacy multi-currency cache entries without error metadata.

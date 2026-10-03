@@ -4,6 +4,8 @@ declare( strict_types=1 );
 namespace Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -35,6 +37,12 @@ class WooPaymentsController {
 	 */
 	public function register() {
 		add_action( 'admin_init', array( $this, 'handle_returns_from_wpcom' ) );
+		add_action( 'admin_init', array( $this, 'handle_referral_link' ), 13 );
+		add_action( 'admin_init', array( $this, 'maybe_activate_woopay' ) );
+		// Fire only when the Settings or WC Admin page loads, before any output; WC Admin carries the client's legacy links.
+		add_action( 'load-woocommerce_page_wc-settings', array( $this, 'maybe_redirect_to_onboarding' ) );
+		add_action( 'load-woocommerce_page_wc-admin', array( $this, 'maybe_redirect_to_onboarding' ) );
+		add_action( 'woocommerce_updated', array( $this, 'clear_native_onboarding_fields_cache' ) );
 	}
 
 	/**
@@ -48,6 +56,88 @@ class WooPaymentsController {
 	final public function init( Payments $payments, WooPaymentsService $woopayments ): void {
 		$this->payments    = $payments;
 		$this->woopayments = $woopayments;
+	}
+
+	/**
+	 * Drop the native onboarding fields cache when WooCommerce updates.
+	 *
+	 * Client 11.1.0 drops it on its own update; native ships inside WooCommerce. Registered here because this
+	 * controller loads in every native state, and the account service resolves only when the update fires.
+	 *
+	 * @internal
+	 *
+	 * @return void
+	 */
+	public function clear_native_onboarding_fields_cache(): void {
+		$container = wc_get_container();
+		if ( ! $container->get( NativePaymentsRuntimeArbiter::class )->should_native_register() ) {
+			return;
+		}
+
+		$container->get( WooPaymentsAccountService::class )->clear_onboarding_fields_cache();
+	}
+
+	/**
+	 * Send merchants from native WooPayments admin pages to onboarding in every native payments state.
+	 *
+	 * The admin navigation controller only loads for connected stores; this covers the rest. The redirect is resolved
+	 * only for a guarded WooPayments route and decides once per request, so connected stores are not handled twice.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @internal
+	 */
+	public function maybe_redirect_to_onboarding(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only redirect for native admin routes.
+		if ( '' === WooPaymentsOnboardingRedirect::get_guarded_path( $_GET ) ) {
+			return;
+		}
+
+		$this->get_onboarding_redirect()->maybe_redirect();
+	}
+
+	/**
+	 * Resolve the shared onboarding redirect.
+	 *
+	 * @return WooPaymentsOnboardingRedirect
+	 */
+	protected function get_onboarding_redirect(): WooPaymentsOnboardingRedirect {
+		return wc_get_container()->get( WooPaymentsOnboardingRedirect::class );
+	}
+
+	/**
+	 * Turn WooPay on when the merchant lands after KYC, like client 11.1.0 WC_Payments_Account::maybe_activate_woopay().
+	 *
+	 * @since 11.2.0
+	 *
+	 * @internal
+	 */
+	public function maybe_activate_woopay(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only marks the landing page, like the plugin; the stored platform answer decides.
+		if ( ! isset( $_GET['wcpay-connection-success'] ) ) {
+			return;
+		}
+
+		$this->woopayments->maybe_activate_woopay_enabled_by_default();
+	}
+
+	/**
+	 * Store the referral code from a `woopayments-ref` partner link and continue to onboarding.
+	 *
+	 * @internal
+	 */
+	public function handle_referral_link(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Partner links carry no nonce; the capability check guards the redirect.
+		if ( wp_doing_ajax() || ! current_user_can( 'manage_woocommerce' ) || ! isset( $_GET['woopayments-ref'] ) ) {
+			return;
+		}
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$redirect_url = $this->woopayments->handle_onboarding_referral( sanitize_text_field( wp_unslash( $_GET['woopayments-ref'] ) ) );
+		if ( '' !== $redirect_url ) {
+			wp_safe_redirect( $redirect_url );
+			exit;
+		}
 	}
 
 	/**

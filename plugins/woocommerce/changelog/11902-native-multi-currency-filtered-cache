@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Avoid invalidating the Multi-Currency rate cache for visitor-filtered currencies.

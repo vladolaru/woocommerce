@@ -86,6 +86,19 @@ class WooPaymentsRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should register only onboarding routes.
+	 */
+	public function test_registers_only_onboarding_routes(): void {
+		$routes = $this->server->get_routes();
+
+		$this->assertArrayNotHasKey( self::ENDPOINT . '/account', $routes );
+		$this->assertArrayNotHasKey( self::ENDPOINT . '/overview', $routes );
+		$this->assertArrayNotHasKey( '/wc/v3/payments/settings', $routes );
+		$this->assertArrayNotHasKey( '/wc/v3/payments/pm-promotions', $routes );
+		$this->assertArrayNotHasKey( '/wc/v3/payments/file', $routes );
+	}
+
+	/**
 	 * Test getting onboarding details by a user without the needed capabilities.
 	 */
 	public function test_get_onboarding_details_by_user_without_caps() {

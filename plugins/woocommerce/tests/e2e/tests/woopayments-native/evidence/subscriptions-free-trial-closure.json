@@ -1,0 +1,53 @@
+{
+  "schema_version": 2,
+  "slice_id": "subscriptions-free-trial-closure",
+  "wc_base_commit": "1a4c8f6fb9e984f412144f29c080ef22fa68da23",
+  "verified_at_commit": "1a4c8f6fb9e984f412144f29c080ef22fa68da23",
+  "reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+  "source_test_paths": [
+    "plugins/woocommerce/tests/e2e/test-plugins/woopayments-native-runtime/woopayments-native-runtime.php",
+    "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/free-trial-3ds.spec.ts",
+    "plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/classic-card-authentication.test.ts",
+    "plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/classic-card-authentication.ts",
+    "plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/subscriptions.ts",
+    "plugins/woocommerce/tests/e2e/utils/woopayments-native/provider-evidence.ts"
+  ],
+  "source_test_sha256": "bb0e8d3a7245a75ebf11dcfc1038e99e992a598b43927f30748dc0d07b59f6dc",
+  "contract_ids": [
+    "default::chromium::tests/e2e/specs/subscriptions/shopper/shopper-subscriptions-purchase-free-trial.spec.ts:77::Shopper: Subscriptions - Purchase Free Trial › Shopper should be able to purchase a free trial"
+  ],
+  "targets": [
+    {
+      "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/free-trial-3ds.spec.ts",
+      "contract": "a shopper sees a 14-day free trial on the product, cart, and classic checkout, sees the same timezone-safe first-renewal date and a zero initial total in cart and checkout, completes one required SetupIntent challenge, and one journaled USD 9.99 renewal succeeds on that exact reusable credential"
+    }
+  ],
+  "implementation_commits": [],
+  "execution_fixture": {
+    "site": "http://store8891.localhost:8891",
+    "wpcom_blog_id": 9,
+    "account_id": "acct_1U1lUVQyxU4hIRSI",
+    "runtime_owner": "native",
+    "migration_state": "WooPayments client deactivated after preserving the existing merchant database; WooCommerce Subscriptions 9.0.1 active"
+  },
+  "verification": [
+    {
+      "command": "WCPAY_RUNTIME=native BASE_URL=http://store8891.localhost:8891 playwright test --project=woopayments-native-provider --workers=1 --retries=0 tests/e2e/tests/woopayments-native/shopper/free-trial-3ds.spec.ts",
+      "exit_code": 0,
+      "raw_result_sha256": "91a8b43121c0bce1370496584a8e1ea67e8f52944864a72395d2861291c367bb",
+      "summary": "Passed 1/1 in 65.001 seconds with zero retries. The shopper saw the exact 14-day trial, matching store-timezone renewal date, and zero initial total; one mandatory SetupIntent challenge produced the exact reusable credential, active subscription, and zero-total parent; one separately journaled USD 9.99 renewal then succeeded on that credential. Cleanup left no run-owned product, order, subscription, token, attachment, quarantine, or unresolved provider attempt on the fresh fixture."
+    }
+  ],
+  "reviews": [],
+  "closures": [
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/subscriptions/shopper/shopper-subscriptions-purchase-free-trial.spec.ts:77::Shopper: Subscriptions - Purchase Free Trial › Shopper should be able to purchase a free trial",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/free-trial-3ds.spec.ts",
+        "contract": "a shopper sees a 14-day free trial on the product, cart, and classic checkout, sees the same timezone-safe first-renewal date and a zero initial total in cart and checkout, completes one required SetupIntent challenge, and one journaled USD 9.99 renewal succeeds on that exact reusable credential"
+      }
+    }
+  ],
+  "known_gaps": [],
+  "deferral": null
+}

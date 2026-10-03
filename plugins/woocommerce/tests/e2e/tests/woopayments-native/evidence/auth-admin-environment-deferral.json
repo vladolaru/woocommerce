@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "auth-admin-environment-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "46100e143a7a4a51d13f2c05043c5dba274de470",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::setup::tests/e2e/specs/auth.setup.ts:41::authenticate as admin"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/fixtures/auth.setup.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved evidence SHA 6e54d988bd207afa6f36e951d8a141e9584ba7db3e6bc499ccd5cd53a1fe36e5 against ledger SHA 4a108e318047ed81f6f103837c5a71884e7218a812297744cc1c1406018ea41c: exactly the administrator-authentication row moves through the four permitted fields from planned/not-assessed to deferred/blocked-environment, with customer and editor rows untouched and the target path, pending contract, and owner-decision-required preserved. The evidence binds the canonical calibration bundle, accurately reuses the pre-fixture Core readiness failures at :8086, :8087, and :8889, preserves lower-layer and cached-state non-substitution, makes no browser/provider/resource/quarantine claim, and records the smallest complete unlock of externally ready dual-runtime targets plus an approved row-specific target and owner followed by fresh-state/fresh-context Dashboard proof with zero retries and fresh reviews."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "The exact administrator-session contract cannot execute in an approved Core E2E runtime: localhost:8086 refuses connections, localhost:8087 has no active WooCommerce REST route, and localhost:8889 rejects the first exact Core REST request with HTTP 401. The target contract and row owner also remain pending.",
+		"affected_scope": "Only the exact runtime-neutral administrator authentication setup row: fresh seeded-admin login, persisted Core admin state, and fresh-context WordPress Dashboard proof against both intended runtimes. No WooPayments account, payment capability, or downstream merchant behavior is claimed.",
+		"no_allowlisted_action_reason": "The run cannot start, repair, restart, reseed, reconfigure, or supply credentials for shared E2E sites, and it cannot invent the pending row-specific target contract or owner. Static fixture inspection, cached state, request-only authentication, and downstream tests do not substitute for a fresh browser session consumed at the protected Dashboard boundary.",
+		"reference": "blocked-environment:PILOT-CORE-E2E-ENVIRONMENT-READINESS",
+		"unlock_decision": "Externally provide reachable configured Core and second intended-runtime E2E targets with active WooCommerce and valid seeded administrator access; approve a row-specific target contract and owner separated from customer and editor setup; then prove fresh-state login plus fresh-context Dashboard access once per runtime with zero retries and fresh required reviews.",
+		"quarantine_status": "No browser fixture, storage state, account, store, provider record, listener, lock, journal, or quarantine was created or changed for this row. The separately owned listener remains untouched."
+	}
+}

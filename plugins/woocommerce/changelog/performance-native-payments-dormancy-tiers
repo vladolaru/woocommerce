@@ -1,0 +1,4 @@
+Significance: patch
+Type: performance
+
+Reduce storefront overhead by loading native WooPayments services only when the store and request need them.

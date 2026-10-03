@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments settings save bar now names the field that blocks saving and moves focus to it, changing a setting back to its saved value no longer counts as an unsaved change, and leaving the page with unsaved changes now asks for confirmation.

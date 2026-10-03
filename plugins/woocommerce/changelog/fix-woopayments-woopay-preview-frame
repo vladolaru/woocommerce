@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the WooPay checkout preview without an extra frame, with the plugin's dash and dot characters, so it fits narrow screens as the WooPayments plugin does.

@@ -1,0 +1,78 @@
+{
+	"schema_version": 2,
+	"slice_id": "dispute-lifecycle-fidelity-closure",
+	"wc_base_commit": "95f5562f9f23993ed5cf39041b25bf67a9f987e5",
+	"verified_at_commit": "95f5562f9f23993ed5cf39041b25bf67a9f987e5",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/provider-fidelity-disputes.spec.ts"
+	],
+	"source_test_sha256": "79d86ec6252815cbf9a035013cc0c9a3bfdaee5ac0ef9ea50ee20fddf354e1c7",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-disputes-respond.spec.ts:103::Disputes › Respond to a dispute › Accept a dispute",
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-disputes-respond.spec.ts:158::Disputes › Respond to a dispute › Challenge a dispute with winning evidence",
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-disputes-respond.spec.ts:340::Disputes › Respond to a dispute › Challenge a dispute with losing evidence",
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-disputes-view-details-via-order-notice.spec.ts:40::Disputes › View dispute details via disputed order notice › should navigate to dispute details when disputed order notice button clicked"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/provider-fidelity-disputes.spec.ts",
+			"contract": "the dispute-lifecycle provider-fidelity family"
+		}
+	],
+	"implementation_commits": [],
+	"execution_fixture": {
+		"site": "http://store8889.localhost:8889",
+		"wpcom_blog_id": 4,
+		"account_id": "acct_1TrY2nBzWlxcwgpP",
+		"runtime_owner": "native",
+		"migration_state": "WooPayments client plugin inactive; native runtime owner; Stripe test mode"
+	},
+	"verification": [
+		{
+			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep \"@fidelity:dispute-lifecycle\"",
+			"exit_code": 0,
+			"summary": "Passed 4/4 in 3.3 minutes with one worker and zero retries, on approval 2026-08-20-dispute-lifecycle-closure. Three independent USD 50.00 disputes were raised by the provider and carried through voluntary acceptance, winning evidence and losing evidence; the lock directory ended with zero quarantine receipts and zero unresolved provider write attempts. The on-hold transition this family had been blamed for missing is present in the order's own durable record - \"Order status changed from Processing to On hold.\" sits directly under the dispute-created note - and the two readings that were never separated were both wrong. DP2 and DP3 assert the absence of an update effect as a tripwire; see the 2026-08-20 correction in FIDELITY-CLAIMS.md."
+		},
+		{
+			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep \"@fidelity:dispute-lifecycle\"",
+			"exit_code": 1,
+			"summary": "Retained rather than tidied away: two earlier runs failed at the shared creation step when the third disputed-card checkout stored the test card PAN appended to billing_phone, created no provider object and never reached its receipt, while the first two shoppers of the same runs were clean. The Playwright trace shows every card entry going into the provider iframe, so the driver is not typing in the wrong place; the corruption appears between the browser form state and the stored order. It is intermittent - it did not occur on the closing run or on three others - and the driver now refuses to submit a checkout whose phone field holds a card number, so a recurrence fails at the corruption instead of at a receipt that never arrives. Both PAN-carrying orders were deleted; their facts are recorded in the run's quarantine resolutions."
+		}
+	],
+	"reviews": [],
+	"closures": [
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-disputes-respond.spec.ts:103::Disputes › Respond to a dispute › Accept a dispute",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/provider-fidelity-disputes.spec.ts",
+				"contract": "Accepting one dispute closes that exact dispute as lost with one closed effect and one capped local dispute refund, and submits no evidence"
+			},
+			"fidelity_claim": "dispute-lifecycle"
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-disputes-respond.spec.ts:158::Disputes › Respond to a dispute › Challenge a dispute with winning evidence",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/provider-fidelity-disputes.spec.ts",
+				"contract": "One winning-evidence submission carries the same dispute through under review to won with one closed-won effect and no relayed update effect"
+			},
+			"fidelity_claim": "dispute-lifecycle"
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-disputes-respond.spec.ts:340::Disputes › Respond to a dispute › Challenge a dispute with losing evidence",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/provider-fidelity-disputes.spec.ts",
+				"contract": "One losing-evidence submission carries the same dispute through under review to lost with one capped local dispute refund and no relayed update effect"
+			},
+			"fidelity_claim": "dispute-lifecycle"
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-disputes-view-details-via-order-notice.spec.ts:40::Disputes › View dispute details via disputed order notice › should navigate to dispute details when disputed order notice button clicked",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/provider-fidelity-disputes.spec.ts",
+				"contract": "Each disputed order carries one dispute-created notice whose link reaches the dispute details surface for that exact dispute and order"
+			},
+			"fidelity_claim": "dispute-lifecycle"
+		}
+	]
+}

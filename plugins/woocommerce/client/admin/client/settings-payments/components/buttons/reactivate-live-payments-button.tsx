@@ -7,6 +7,7 @@ import { useState } from '@wordpress/element';
 import { dispatch, useDispatch } from '@wordpress/data';
 import { paymentSettingsStore } from '@woocommerce/data';
 import apiFetch from '@wordpress/api-fetch';
+import type { MouseEvent } from 'react';
 
 /**
  * Internal dependencies
@@ -27,6 +28,22 @@ interface ReactivateLivePaymentsButtonProps {
 	 * The settings URL to navigate to when the enable gateway button is clicked.
 	 */
 	settingsHref: string;
+	/**
+	 * Called after live mode is enabled successfully.
+	 */
+	onSuccess?: () => void;
+	/**
+	 * Reports whether the live-mode request is pending.
+	 */
+	onUpdatingChange?: ( isUpdating: boolean ) => void;
+	/**
+	 * Prevents activation while another notice action is pending.
+	 */
+	disabled?: boolean;
+	/**
+	 * Renders a button when navigation is not the control's primary action.
+	 */
+	asButton?: boolean;
 }
 
 /**
@@ -35,6 +52,10 @@ interface ReactivateLivePaymentsButtonProps {
 export const ReactivateLivePaymentsButton = ( {
 	buttonText = __( 'Reactivate payments', 'woocommerce' ),
 	settingsHref,
+	onSuccess,
+	onUpdatingChange,
+	disabled = false,
+	asButton = false,
 }: ReactivateLivePaymentsButtonProps ) => {
 	const [ isUpdating, setIsUpdating ] = useState( false );
 	const { createSuccessNotice, createErrorNotice } =
@@ -42,9 +63,13 @@ export const ReactivateLivePaymentsButton = ( {
 	const { invalidateResolutionForStoreSelector } =
 		useDispatch( paymentSettingsStore );
 
-	const disableTestModePayments = ( e: React.MouseEvent ) => {
+	const disableTestModePayments = ( e: MouseEvent ) => {
 		e.preventDefault();
+		if ( isUpdating || disabled ) {
+			return;
+		}
 		setIsUpdating( true );
+		onUpdatingChange?.( true );
 
 		recordPaymentsEvent( 'reactivate_payments_button_click', {
 			provider_id: wooPaymentsProviderId,
@@ -81,12 +106,14 @@ export const ReactivateLivePaymentsButton = ( {
 				void invalidateResolutionForStoreSelector(
 					'getPaymentProviders'
 				);
-
 				setIsUpdating( false );
+				onUpdatingChange?.( false );
+				onSuccess?.();
 			} )
 			.catch( () => {
 				// In case of errors, redirect to the gateway settings page.
 				setIsUpdating( false );
+				onUpdatingChange?.( false );
 
 				recordPaymentsEvent( 'reactivate_payments_error', {
 					provider_id: wooPaymentsProviderId,
@@ -117,9 +144,10 @@ export const ReactivateLivePaymentsButton = ( {
 		<Button
 			variant={ 'primary' }
 			isBusy={ isUpdating }
-			disabled={ isUpdating }
+			disabled={ isUpdating || disabled }
+			aria-disabled={ isUpdating || disabled }
 			onClick={ disableTestModePayments }
-			href={ settingsHref }
+			href={ asButton ? undefined : settingsHref }
 		>
 			{ buttonText }
 		</Button>

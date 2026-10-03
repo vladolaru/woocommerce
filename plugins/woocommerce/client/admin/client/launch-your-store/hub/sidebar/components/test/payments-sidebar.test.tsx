@@ -194,12 +194,9 @@ jest.mock( '~/launch-your-store/data/setup-payments-context', () => ( {
 	useSetUpPaymentsContext: () => mockSetUpPaymentsContext,
 } ) );
 
-jest.mock(
-	'~/settings-payments/onboarding/providers/woopayments/data/onboarding-context',
-	() => ( {
-		useOnboardingContext: () => mockOnboardingContext,
-	} )
-);
+jest.mock( '~/woopayments/onboarding', () => ( {
+	useOnboardingContext: () => mockOnboardingContext,
+} ) );
 
 /**
  * Internal dependencies
@@ -376,6 +373,9 @@ describe( 'PaymentsSidebar', () => {
 			// First should be Install step (completed)
 			expect( sidebarItems[ 0 ] ).toHaveClass( 'install-woopayments' );
 			expect( sidebarItems[ 0 ] ).toHaveClass( 'is-complete' );
+			expect( sidebarItems[ 0 ] ).toHaveTextContent(
+				/Set up.*WooPayments/i
+			);
 
 			// Other steps should be present
 			expect( sidebarItems[ 1 ] ).toHaveTextContent(

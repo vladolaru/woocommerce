@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Fail closed when the native WooPayments runtime arbiter is absent, shorten the file-classification cache window, and stop the file endpoint from stacking an anonymous REST filter.

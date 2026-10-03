@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The accept dispute confirmation now says the dispute will be marked as lost and names the dispute fee that will not be returned.

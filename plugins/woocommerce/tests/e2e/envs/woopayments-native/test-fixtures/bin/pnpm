@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+printf '%s\tpnpm %s\n' "$PWD" "$*" >> "$E2E_FAKE_COMMAND_LOG"
+
+if [[ "$*" == *"wc-native-payments status"* ]]; then
+	echo 'Owner: native'
+	exit 0
+fi
+
+if [[ "$*" == *"active_theme_exists"* ]]; then
+	if [[ "${E2E_FAKE_NATIVE_THEME_MISSING:-0}" == '1' ]]; then
+		printf 'wp-env starting\n{"active_theme_exists":false,"active_stylesheet":"twentytwentyone","fallback_stylesheet":"twentytwentyfive"}\nwp-env done\n'
+	else
+		printf 'wp-env starting\n{"active_theme_exists":true,"active_stylesheet":"twentytwentyfive","fallback_stylesheet":"twentytwentyfive"}\nwp-env done\n'
+	fi
+	exit 0
+fi
+
+if [[ "$*" == *"/wc-native-payments-e2e/v1/status"* ]]; then
+	if [[ "${E2E_FAKE_NATIVE_DISABLED:-0}" == '1' ]]; then
+		printf 'wp-env starting\n{"site_url":"http://native.test","wpcom_blog_id":2,"runtime_owner":"native","native_enabled":false,"account_id":"acct_native","account_connected":true,"gateway_enabled":true,"test_mode":true,"enabled_payment_methods":["card"],"last_webhook_fetch":0,"callback_probe":{"registered":false,"reachable":false,"wpcom_blog_id":0}}wp-env done\n'
+	else
+		printf 'wp-env starting\n{"site_url":"http://native.test","wpcom_blog_id":2,"runtime_owner":"native","native_enabled":true,"account_id":"acct_native","account_connected":true,"gateway_enabled":true,"test_mode":true,"enabled_payment_methods":["card"],"last_webhook_fetch":0,"callback_probe":{"registered":false,"reachable":false,"wpcom_blog_id":0}}wp-env done\n'
+	fi
+	exit 0
+fi
+
+if [[ "$*" == *'"runtime_owner"'* ]]; then
+	printf 'pnpm wrapper\n{"site_url":"http://client.test","wpcom_blog_id":1,"runtime_owner":"plugin","native_enabled":false,"account_id":"acct_client","account_connected":true,"gateway_enabled":true,"test_mode":true,"enabled_payment_methods":["card"],"last_webhook_fetch":0,"callback_probe":{"registered":false,"reachable":false,"wpcom_blog_id":0}}\npnpm done\n'
+	exit 0
+fi
+
+if [[ "$*" == *"/wc/v3/payments/accounts"* ]]; then
+	if [[ "${E2E_FAKE_ACCOUNT_ERROR:-0}" == '1' ]]; then
+		printf 'runner starting\n{"status":500,"is_error":true,"account_id":"acct_native","test_mode":true}runner done\n'
+	elif [[ "${E2E_FAKE_ACCOUNT_NOT_TEST_MODE:-0}" == '1' ]]; then
+		printf 'runner starting\n{"status":200,"is_error":false,"account_id":"acct_native","test_mode":false}runner done\n'
+	elif [[ "${E2E_FAKE_ACCOUNT_ID_MISMATCH:-0}" == '1' ]]; then
+		printf 'runner starting\n{"status":200,"is_error":false,"account_id":"acct_other","test_mode":true}runner done\n'
+	else
+		printf 'runner starting\n{"status":200,"is_error":false,"account_id":"acct_native","test_mode":true}runner done\n'
+	fi
+	exit 0
+fi
+
+if [[ "$*" == *"playwright test"* && "$*" == *"--list"* ]]; then
+	if [[ "${E2E_FAKE_LIST_FAIL:-0}" == '1' ]]; then
+		echo 'fake playwright listing failure' >&2
+		exit 1
+	fi
+	tags_json='[]'
+	if [[ -n "${E2E_FAKE_LIST_TAGS:-}" ]]; then
+		# shellcheck disable=SC2086 # word-splitting the space-separated tags is intended
+		tags_json="$(printf '%s\n' ${E2E_FAKE_LIST_TAGS} | jq -R . | jq -cs .)"
+	fi
+	annotations_json='[]'
+	if [[ "${E2E_FAKE_LIST_PROFILE_UNAVAILABLE:-0}" == '1' ]]; then
+		annotations_json='[{"type":"profile-unavailable","description":"RULE 5 fixture"}]'
+	fi
+	printf '{"config":{"projects":[]},"errors":[],"suites":[{"title":"fake.spec.ts","specs":[{"title":"fake","tags":%s,"tests":[{"annotations":%s}]}],"suites":[]}]}\n' "$tags_json" "$annotations_json"
+	exit 0
+fi
+
+# Shopper fixture provisioning: the store either has the shared test
+# customer already or gains it, and setup prints which.
+if [[ "$*" == *'wp_insert_user'* ]]; then
+	printf 'created\n'
+	exit 0
+fi
+
+echo "Unexpected fake pnpm invocation: $*" >&2
+exit 1

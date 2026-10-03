@@ -1,0 +1,2283 @@
+{
+	"_meta": {
+		"recording": "REC-T63-API",
+		"customers": {
+			"user_1": "cus_UsIeTbmGHPc9jY (store user 1 test customer, the REC-T3 customer; saved card pm_1UJhOFBzWlxcwgpPvcySvyc5)",
+			"clock_success": "cus_VMl3pvnqTAX638 (created directly at Stripe on the connected account, bound to test clock clock_1UM1X2BzWlxcwgpPRLlygxwI)",
+			"clock_fail": "cus_VMl3df99GPhQaW (same clock, card that fails on charge)"
+		},
+		"source": "Local WPCOM (wpcom-local v0.37.0) Transact platform on branch feat/native-payments-eligibility-contract at 439d30cf3e6, blog 4, account acct_1TrY2nBzWlxcwgpP (default currency USD), Stripe test mode",
+		"store": "native WooCommerce :8889 (woocommerce-develop-2, branch exp/core-native-payments at cde3d7ea7e, WooPayments plugin inactive, WooCommerce Subscriptions 9.0.1 active, test mode, store currency USD)",
+		"captured_via": "wcpay_api_request_response filter (raw transport response before native parsing) and wcpay_api_request_params at PHP_INT_MAX (the exact params request() sends); one transport attempt per entry (Idempotent-Replayed header empty on all), no retries. native_exception / native_returned_type record what native request() did with the response",
+		"sanitized": "client_secret, receipt_url, request_log_url, hosted_invoice_url, invoice_pdf, card fingerprints, emails (customer_email and any string containing an at sign) replaced with REDACTED where non-null; customer ids in request summaries abstracted (response bodies keep test-mode ids); response bodies are JSON-decoded and otherwise verbatim",
+		"values": "amounts chosen to avoid native test catalog values (2490, 2990, 2190, 75 minor units; order id 5821; wc_item_id 4711+); 100 (recurring minimum) and the fees are platform-derived",
+		"notes": "data/rec-t63-api-recordings.md in the 2026-09-03-native-payments-program-orientation session folder"
+	},
+	"entries": [
+		{
+			"pair": "get_product_by_id",
+			"client_method": "get_product_by_id",
+			"recorded_at": "2026-10-02T08:08:10+00:00",
+			"context": "GET products/{id} for the product created by create_product (product service existence check)",
+			"request": {
+				"transport": "WooPaymentsApiClient::request_list( $params, 'products/prod_VMl10VL0VK371N', 'GET' ) (recording stand-in for send_site_request(); same private request())",
+				"method": "GET",
+				"path": "/sites/4/wcpay/products/prod_VMl10VL0VK371N?test_mode=1 (wpcom/v2 via Jetpack blog token)",
+				"body": null,
+				"body_note": "the params request() sends (wcpay_api_request_params at PHP_INT_MAX); GET/DELETE params travel as the query string; request() adds test_mode; POST requests also carry an Idempotency-Key header (not a body param here)"
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": {
+					"wcpay_product_id": "prod_VMl10VL0VK371N"
+				}
+			},
+			"native_returned_type": "dict"
+		},
+		{
+			"pair": "create_product",
+			"client_method": "create_product",
+			"recorded_at": "2026-10-02T08:07:34+00:00",
+			"context": "client product service shape: name and description only (get_product_data); no price fields, so no wcpay_price_id comes back",
+			"request": {
+				"transport": "WooPaymentsApiClient::request_list( $params, 'products', 'POST' ) (recording stand-in for send_site_request(); same private request())",
+				"method": "POST",
+				"path": "/sites/4/wcpay/products (wpcom/v2 via Jetpack blog token)",
+				"body": {
+					"test_mode": true,
+					"description": "REC-T63 monthly coffee box, Stripe Billing recording",
+					"name": "REC-T63 Coffee Box"
+				},
+				"body_note": "the params request() sends (wcpay_api_request_params at PHP_INT_MAX); GET/DELETE params travel as the query string; request() adds test_mode; POST requests also carry an Idempotency-Key header (not a body param here)"
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": {
+					"wcpay_product_id": "prod_VMl10VL0VK371N"
+				}
+			},
+			"native_returned_type": "dict"
+		},
+		{
+			"pair": "update_product",
+			"client_method": "update_product",
+			"recorded_at": "2026-10-02T08:08:11+00:00",
+			"context": "client update_products shape: name, description and test_mode in the params (request() would add test_mode anyway)",
+			"request": {
+				"transport": "WooPaymentsApiClient::request_list( $params, 'products/prod_VMl10VL0VK371N', 'POST' ) (recording stand-in for send_site_request(); same private request())",
+				"method": "POST",
+				"path": "/sites/4/wcpay/products/prod_VMl10VL0VK371N (wpcom/v2 via Jetpack blog token)",
+				"body": {
+					"test_mode": true,
+					"description": "REC-T63 monthly coffee box, renamed",
+					"name": "REC-T63 Coffee Box Deluxe"
+				},
+				"body_note": "the params request() sends (wcpay_api_request_params at PHP_INT_MAX); GET/DELETE params travel as the query string; request() adds test_mode; POST requests also carry an Idempotency-Key header (not a body param here)"
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": {
+					"wcpay_product_id": "prod_VMl10VL0VK371N"
+				}
+			},
+			"native_returned_type": "dict"
+		},
+		{
+			"pair": "update_price",
+			"client_method": "update_price",
+			"recorded_at": "2026-10-02T08:08:12+00:00",
+			"context": "client archive_price shape: active 'false' plus test_mode; the price comes from a legacy price-bearing product (supporting_entries[0]); the client method returns nothing, the platform returns the Stripe price",
+			"request": {
+				"transport": "WooPaymentsApiClient::request_list( $params, 'products/prices/price_1UM1VFBzWlxcwgpPfqFOGkZ2', 'POST' ) (recording stand-in for send_site_request(); same private request())",
+				"method": "POST",
+				"path": "/sites/4/wcpay/products/prices/price_1UM1VFBzWlxcwgpPfqFOGkZ2 (wpcom/v2 via Jetpack blog token)",
+				"body": {
+					"test_mode": true,
+					"active": "false"
+				},
+				"body_note": "the params request() sends (wcpay_api_request_params at PHP_INT_MAX); GET/DELETE params travel as the query string; request() adds test_mode; POST requests also carry an Idempotency-Key header (not a body param here)"
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": {
+					"id": "price_1UM1VFBzWlxcwgpPfqFOGkZ2",
+					"object": "price",
+					"active": false,
+					"billing_scheme": "per_unit",
+					"created": 1790928457,
+					"currency": "usd",
+					"custom_unit_amount": null,
+					"livemode": false,
+					"lookup_key": null,
+					"metadata": [],
+					"nickname": null,
+					"product": "prod_VMl1fRBycUk6wP",
+					"recurring": {
+						"aggregate_usage": null,
+						"interval": "month",
+						"interval_count": 1,
+						"meter": null,
+						"trial_period_days": null,
+						"usage_type": "licensed"
+					},
+					"tax_behavior": "unspecified",
+					"tiers_mode": null,
+					"transform_quantity": null,
+					"type": "recurring",
+					"unit_amount": 2490,
+					"unit_amount_decimal": "2490"
+				}
+			},
+			"native_returned_type": "dict"
+		},
+		{
+			"pair": "get_subscription",
+			"client_method": "get_subscription",
+			"recorded_at": "2026-10-02T08:08:32+00:00",
+			"context": "fetched right after create_subscription, status incomplete (payment_behavior default_incomplete set by the platform)",
+			"request": {
+				"transport": "WooPaymentsApiClient::request_list( $params, 'subscriptions/sub_1UM1VrBzWlxcwgpP6A3GwGLe', 'GET' ) (recording stand-in for send_site_request(); same private request())",
+				"method": "GET",
+				"path": "/sites/4/wcpay/subscriptions/sub_1UM1VrBzWlxcwgpP6A3GwGLe?test_mode=1 (wpcom/v2 via Jetpack blog token)",
+				"body": null,
+				"body_note": "the params request() sends (wcpay_api_request_params at PHP_INT_MAX); GET/DELETE params travel as the query string; request() adds test_mode; POST requests also carry an Idempotency-Key header (not a body param here)"
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": {
+					"id": "sub_1UM1VrBzWlxcwgpP6A3GwGLe",
+					"object": "subscription",
+					"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+					"application_fee_percent": null,
+					"automatic_tax": {
+						"disabled_reason": null,
+						"enabled": false,
+						"liability": null
+					},
+					"billing_cycle_anchor": 1790928495,
+					"billing_cycle_anchor_config": null,
+					"billing_mode": {
+						"flexible": null,
+						"type": "classic"
+					},
+					"billing_thresholds": null,
+					"cancel_at": null,
+					"cancel_at_period_end": false,
+					"canceled_at": null,
+					"cancellation_details": {
+						"comment": null,
+						"feedback": null,
+						"feedback_option": null,
+						"reason": null
+					},
+					"collection_method": "charge_automatically",
+					"created": 1790928495,
+					"currency": "usd",
+					"current_period_end": 1793606895,
+					"current_period_start": 1790928495,
+					"customer": "cus_UsIeTbmGHPc9jY",
+					"customer_account": null,
+					"days_until_due": null,
+					"default_payment_method": null,
+					"default_source": null,
+					"default_tax_rates": [],
+					"description": null,
+					"discount": null,
+					"discounts": [],
+					"ended_at": null,
+					"invoice_settings": {
+						"account_tax_ids": null,
+						"custom_fields": null,
+						"description": null,
+						"footer": null,
+						"issuer": {
+							"type": "self"
+						}
+					},
+					"items": {
+						"object": "list",
+						"data": [
+							{
+								"id": "si_VMl1spZLBBt5VE",
+								"object": "subscription_item",
+								"billing_thresholds": null,
+								"created": 1790928495,
+								"current_period_end": 1793606895,
+								"current_period_start": 1790928495,
+								"current_trial": null,
+								"discounts": [],
+								"metadata": {
+									"wc_item_id": "4711"
+								},
+								"plan": {
+									"id": "price_1UM1VrBzWlxcwgpPDDLxBee1",
+									"object": "plan",
+									"active": false,
+									"aggregate_usage": null,
+									"amount": 2490,
+									"amount_decimal": "2490",
+									"billing_scheme": "per_unit",
+									"created": 1790928495,
+									"currency": "usd",
+									"interval": "month",
+									"interval_count": 1,
+									"livemode": false,
+									"metadata": [],
+									"meter": null,
+									"nickname": null,
+									"product": "prod_VMl10VL0VK371N",
+									"tiers_mode": null,
+									"transform_usage": null,
+									"trial_period_days": null,
+									"usage_type": "licensed"
+								},
+								"price": {
+									"id": "price_1UM1VrBzWlxcwgpPDDLxBee1",
+									"object": "price",
+									"active": false,
+									"billing_scheme": "per_unit",
+									"created": 1790928495,
+									"currency": "usd",
+									"custom_unit_amount": null,
+									"livemode": false,
+									"lookup_key": null,
+									"metadata": [],
+									"nickname": null,
+									"product": "prod_VMl10VL0VK371N",
+									"recurring": {
+										"aggregate_usage": null,
+										"interval": "month",
+										"interval_count": 1,
+										"meter": null,
+										"trial_period_days": null,
+										"usage_type": "licensed"
+									},
+									"tax_behavior": "unspecified",
+									"tiers_mode": null,
+									"transform_quantity": null,
+									"type": "recurring",
+									"unit_amount": 2490,
+									"unit_amount_decimal": "2490"
+								},
+								"quantity": 1,
+								"subscription": "sub_1UM1VrBzWlxcwgpP6A3GwGLe",
+								"tax_rates": []
+							}
+						],
+						"has_more": false,
+						"total_count": 1,
+						"url": "/v1/subscription_items?subscription=sub_1UM1VrBzWlxcwgpP6A3GwGLe"
+					},
+					"latest_invoice": "in_1UM1VrBzWlxcwgpPgrIwNSlu",
+					"livemode": false,
+					"managed_payments": {
+						"enabled": false
+					},
+					"metadata": {
+						"subscription_source": "woo_subscriptions"
+					},
+					"next_pending_invoice_item_invoice": null,
+					"on_behalf_of": null,
+					"pause_collection": null,
+					"payment_settings": {
+						"payment_method_options": null,
+						"payment_method_types": null,
+						"save_default_payment_method": "off"
+					},
+					"pending_invoice_item_interval": null,
+					"pending_setup_intent": null,
+					"pending_update": null,
+					"plan": {
+						"id": "price_1UM1VrBzWlxcwgpPDDLxBee1",
+						"object": "plan",
+						"active": false,
+						"aggregate_usage": null,
+						"amount": 2490,
+						"amount_decimal": "2490",
+						"billing_scheme": "per_unit",
+						"created": 1790928495,
+						"currency": "usd",
+						"interval": "month",
+						"interval_count": 1,
+						"livemode": false,
+						"metadata": [],
+						"meter": null,
+						"nickname": null,
+						"product": "prod_VMl10VL0VK371N",
+						"tiers_mode": null,
+						"transform_usage": null,
+						"trial_period_days": null,
+						"usage_type": "licensed"
+					},
+					"quantity": 1,
+					"schedule": null,
+					"start_date": 1790928495,
+					"status": "incomplete",
+					"test_clock": null,
+					"transfer_data": null,
+					"trial_end": null,
+					"trial_settings": {
+						"end_behavior": {
+							"billing_cycle_anchor": "now",
+							"missing_payment_method": "create_invoice"
+						}
+					},
+					"trial_start": null
+				}
+			},
+			"native_returned_type": "dict"
+		},
+		{
+			"pair": "create_subscription",
+			"client_method": "create_subscription",
+			"recorded_at": "2026-10-02T08:08:14+00:00",
+			"context": "prepare_wcpay_subscription_data shape for one 24.90 USD monthly line item (price_data with product, unit_amount_decimal as a float, recurring) plus metadata.subscription_source woo_subscriptions, on the user 1 customer; the platform adds payment_behavior default_incomplete and proration_behavior none, so the subscription comes back incomplete with an open latest_invoice",
+			"request": {
+				"transport": "WooPaymentsApiClient::request_list( $params, 'subscriptions', 'POST' ) (recording stand-in for send_site_request(); same private request())",
+				"method": "POST",
+				"path": "/sites/4/wcpay/subscriptions (wpcom/v2 via Jetpack blog token)",
+				"body": {
+					"test_mode": true,
+					"customer": "cus_* (user_1, see _meta.customers)",
+					"items": [
+						{
+							"metadata": {
+								"wc_item_id": 4711
+							},
+							"quantity": 1,
+							"price_data": {
+								"currency": "USD",
+								"product": "prod_VMl10VL0VK371N",
+								"unit_amount_decimal": 2490,
+								"recurring": {
+									"interval": "month",
+									"interval_count": 1
+								}
+							}
+						}
+					],
+					"metadata": {
+						"subscription_source": "woo_subscriptions"
+					}
+				},
+				"body_note": "the params request() sends (wcpay_api_request_params at PHP_INT_MAX); GET/DELETE params travel as the query string; request() adds test_mode; POST requests also carry an Idempotency-Key header (not a body param here)"
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": {
+					"id": "sub_1UM1VrBzWlxcwgpP6A3GwGLe",
+					"object": "subscription",
+					"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+					"application_fee_percent": null,
+					"automatic_tax": {
+						"disabled_reason": null,
+						"enabled": false,
+						"liability": null
+					},
+					"billing_cycle_anchor": 1790928495,
+					"billing_cycle_anchor_config": null,
+					"billing_mode": {
+						"flexible": null,
+						"type": "classic"
+					},
+					"billing_thresholds": null,
+					"cancel_at": null,
+					"cancel_at_period_end": false,
+					"canceled_at": null,
+					"cancellation_details": {
+						"comment": null,
+						"feedback": null,
+						"feedback_option": null,
+						"reason": null
+					},
+					"collection_method": "charge_automatically",
+					"created": 1790928495,
+					"currency": "usd",
+					"current_period_end": 1793606895,
+					"current_period_start": 1790928495,
+					"customer": "cus_UsIeTbmGHPc9jY",
+					"customer_account": null,
+					"days_until_due": null,
+					"default_payment_method": null,
+					"default_source": null,
+					"default_tax_rates": [],
+					"description": null,
+					"discount": null,
+					"discounts": [],
+					"ended_at": null,
+					"invoice_settings": {
+						"account_tax_ids": null,
+						"custom_fields": null,
+						"description": null,
+						"footer": null,
+						"issuer": {
+							"type": "self"
+						}
+					},
+					"items": {
+						"object": "list",
+						"data": [
+							{
+								"id": "si_VMl1spZLBBt5VE",
+								"object": "subscription_item",
+								"billing_thresholds": null,
+								"created": 1790928495,
+								"current_period_end": 1793606895,
+								"current_period_start": 1790928495,
+								"current_trial": null,
+								"discounts": [],
+								"metadata": {
+									"wc_item_id": "4711"
+								},
+								"plan": {
+									"id": "price_1UM1VrBzWlxcwgpPDDLxBee1",
+									"object": "plan",
+									"active": false,
+									"aggregate_usage": null,
+									"amount": 2490,
+									"amount_decimal": "2490",
+									"billing_scheme": "per_unit",
+									"created": 1790928495,
+									"currency": "usd",
+									"interval": "month",
+									"interval_count": 1,
+									"livemode": false,
+									"metadata": [],
+									"meter": null,
+									"nickname": null,
+									"product": "prod_VMl10VL0VK371N",
+									"tiers_mode": null,
+									"transform_usage": null,
+									"trial_period_days": null,
+									"usage_type": "licensed"
+								},
+								"price": {
+									"id": "price_1UM1VrBzWlxcwgpPDDLxBee1",
+									"object": "price",
+									"active": false,
+									"billing_scheme": "per_unit",
+									"created": 1790928495,
+									"currency": "usd",
+									"custom_unit_amount": null,
+									"livemode": false,
+									"lookup_key": null,
+									"metadata": [],
+									"nickname": null,
+									"product": "prod_VMl10VL0VK371N",
+									"recurring": {
+										"aggregate_usage": null,
+										"interval": "month",
+										"interval_count": 1,
+										"meter": null,
+										"trial_period_days": null,
+										"usage_type": "licensed"
+									},
+									"tax_behavior": "unspecified",
+									"tiers_mode": null,
+									"transform_quantity": null,
+									"type": "recurring",
+									"unit_amount": 2490,
+									"unit_amount_decimal": "2490"
+								},
+								"quantity": 1,
+								"subscription": "sub_1UM1VrBzWlxcwgpP6A3GwGLe",
+								"tax_rates": []
+							}
+						],
+						"has_more": false,
+						"total_count": 1,
+						"url": "/v1/subscription_items?subscription=sub_1UM1VrBzWlxcwgpP6A3GwGLe"
+					},
+					"latest_invoice": "in_1UM1VrBzWlxcwgpPgrIwNSlu",
+					"livemode": false,
+					"managed_payments": {
+						"enabled": false
+					},
+					"metadata": {
+						"subscription_source": "woo_subscriptions"
+					},
+					"next_pending_invoice_item_invoice": null,
+					"on_behalf_of": null,
+					"pause_collection": null,
+					"payment_settings": {
+						"payment_method_options": null,
+						"payment_method_types": null,
+						"save_default_payment_method": "off"
+					},
+					"pending_invoice_item_interval": null,
+					"pending_setup_intent": null,
+					"pending_update": null,
+					"plan": {
+						"id": "price_1UM1VrBzWlxcwgpPDDLxBee1",
+						"object": "plan",
+						"active": false,
+						"aggregate_usage": null,
+						"amount": 2490,
+						"amount_decimal": "2490",
+						"billing_scheme": "per_unit",
+						"created": 1790928495,
+						"currency": "usd",
+						"interval": "month",
+						"interval_count": 1,
+						"livemode": false,
+						"metadata": [],
+						"meter": null,
+						"nickname": null,
+						"product": "prod_VMl10VL0VK371N",
+						"tiers_mode": null,
+						"transform_usage": null,
+						"trial_period_days": null,
+						"usage_type": "licensed"
+					},
+					"quantity": 1,
+					"schedule": null,
+					"start_date": 1790928495,
+					"status": "incomplete",
+					"test_clock": null,
+					"transfer_data": null,
+					"trial_end": null,
+					"trial_settings": {
+						"end_behavior": {
+							"billing_cycle_anchor": "now",
+							"missing_payment_method": "create_invoice"
+						}
+					},
+					"trial_start": null
+				}
+			},
+			"native_returned_type": "dict"
+		},
+		{
+			"pair": "update_subscription",
+			"client_method": "update_subscription",
+			"recorded_at": "2026-10-02T08:09:00+00:00",
+			"context": "client update_wcpay_subscription_payment_method shape: default_payment_method only (user 1's saved card); the platform recomputes application_fee_percent from the card (5.1)",
+			"request": {
+				"transport": "WooPaymentsApiClient::request_list( $params, 'subscriptions/sub_1UM1VrBzWlxcwgpP6A3GwGLe', 'POST' ) (recording stand-in for send_site_request(); same private request())",
+				"method": "POST",
+				"path": "/sites/4/wcpay/subscriptions/sub_1UM1VrBzWlxcwgpP6A3GwGLe (wpcom/v2 via Jetpack blog token)",
+				"body": {
+					"test_mode": true,
+					"default_payment_method": "pm_1UJhOFBzWlxcwgpPvcySvyc5"
+				},
+				"body_note": "the params request() sends (wcpay_api_request_params at PHP_INT_MAX); GET/DELETE params travel as the query string; request() adds test_mode; POST requests also carry an Idempotency-Key header (not a body param here)"
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": {
+					"id": "sub_1UM1VrBzWlxcwgpP6A3GwGLe",
+					"object": "subscription",
+					"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+					"application_fee_percent": 5.1,
+					"automatic_tax": {
+						"disabled_reason": null,
+						"enabled": false,
+						"liability": null
+					},
+					"billing_cycle_anchor": 1790928495,
+					"billing_cycle_anchor_config": null,
+					"billing_mode": {
+						"flexible": null,
+						"type": "classic"
+					},
+					"billing_thresholds": null,
+					"cancel_at": null,
+					"cancel_at_period_end": false,
+					"canceled_at": null,
+					"cancellation_details": {
+						"comment": null,
+						"feedback": null,
+						"feedback_option": null,
+						"reason": null
+					},
+					"collection_method": "charge_automatically",
+					"created": 1790928495,
+					"currency": "usd",
+					"current_period_end": 1793606895,
+					"current_period_start": 1790928495,
+					"customer": "cus_UsIeTbmGHPc9jY",
+					"customer_account": null,
+					"days_until_due": null,
+					"default_payment_method": "pm_1UJhOFBzWlxcwgpPvcySvyc5",
+					"default_source": null,
+					"default_tax_rates": [],
+					"description": null,
+					"discount": null,
+					"discounts": [],
+					"ended_at": null,
+					"invoice_settings": {
+						"account_tax_ids": null,
+						"custom_fields": null,
+						"description": null,
+						"footer": null,
+						"issuer": {
+							"type": "self"
+						}
+					},
+					"items": {
+						"object": "list",
+						"data": [
+							{
+								"id": "si_VMl1spZLBBt5VE",
+								"object": "subscription_item",
+								"billing_thresholds": null,
+								"created": 1790928495,
+								"current_period_end": 1793606895,
+								"current_period_start": 1790928495,
+								"current_trial": null,
+								"discounts": [],
+								"metadata": {
+									"wc_item_id": "4711"
+								},
+								"plan": {
+									"id": "price_1UM1VrBzWlxcwgpPDDLxBee1",
+									"object": "plan",
+									"active": false,
+									"aggregate_usage": null,
+									"amount": 2490,
+									"amount_decimal": "2490",
+									"billing_scheme": "per_unit",
+									"created": 1790928495,
+									"currency": "usd",
+									"interval": "month",
+									"interval_count": 1,
+									"livemode": false,
+									"metadata": [],
+									"meter": null,
+									"nickname": null,
+									"product": "prod_VMl10VL0VK371N",
+									"tiers_mode": null,
+									"transform_usage": null,
+									"trial_period_days": null,
+									"usage_type": "licensed"
+								},
+								"price": {
+									"id": "price_1UM1VrBzWlxcwgpPDDLxBee1",
+									"object": "price",
+									"active": false,
+									"billing_scheme": "per_unit",
+									"created": 1790928495,
+									"currency": "usd",
+									"custom_unit_amount": null,
+									"livemode": false,
+									"lookup_key": null,
+									"metadata": [],
+									"nickname": null,
+									"product": "prod_VMl10VL0VK371N",
+									"recurring": {
+										"aggregate_usage": null,
+										"interval": "month",
+										"interval_count": 1,
+										"meter": null,
+										"trial_period_days": null,
+										"usage_type": "licensed"
+									},
+									"tax_behavior": "unspecified",
+									"tiers_mode": null,
+									"transform_quantity": null,
+									"type": "recurring",
+									"unit_amount": 2490,
+									"unit_amount_decimal": "2490"
+								},
+								"quantity": 1,
+								"subscription": "sub_1UM1VrBzWlxcwgpP6A3GwGLe",
+								"tax_rates": []
+							}
+						],
+						"has_more": false,
+						"total_count": 1,
+						"url": "/v1/subscription_items?subscription=sub_1UM1VrBzWlxcwgpP6A3GwGLe"
+					},
+					"latest_invoice": "in_1UM1VrBzWlxcwgpPgrIwNSlu",
+					"livemode": false,
+					"managed_payments": {
+						"enabled": false
+					},
+					"metadata": {
+						"subscription_source": "woo_subscriptions"
+					},
+					"next_pending_invoice_item_invoice": null,
+					"on_behalf_of": null,
+					"pause_collection": null,
+					"payment_settings": {
+						"payment_method_options": null,
+						"payment_method_types": null,
+						"save_default_payment_method": "off"
+					},
+					"pending_invoice_item_interval": null,
+					"pending_setup_intent": null,
+					"pending_update": null,
+					"plan": {
+						"id": "price_1UM1VrBzWlxcwgpPDDLxBee1",
+						"object": "plan",
+						"active": false,
+						"aggregate_usage": null,
+						"amount": 2490,
+						"amount_decimal": "2490",
+						"billing_scheme": "per_unit",
+						"created": 1790928495,
+						"currency": "usd",
+						"interval": "month",
+						"interval_count": 1,
+						"livemode": false,
+						"metadata": [],
+						"meter": null,
+						"nickname": null,
+						"product": "prod_VMl10VL0VK371N",
+						"tiers_mode": null,
+						"transform_usage": null,
+						"trial_period_days": null,
+						"usage_type": "licensed"
+					},
+					"quantity": 1,
+					"schedule": null,
+					"start_date": 1790928495,
+					"status": "active",
+					"test_clock": null,
+					"transfer_data": null,
+					"trial_end": null,
+					"trial_settings": {
+						"end_behavior": {
+							"billing_cycle_anchor": "now",
+							"missing_payment_method": "create_invoice"
+						}
+					},
+					"trial_start": null
+				}
+			},
+			"native_returned_type": "dict"
+		},
+		{
+			"pair": "cancel_subscription",
+			"client_method": "cancel_subscription",
+			"recorded_at": "2026-10-02T08:12:24+00:00",
+			"context": "DELETE subscriptions/{id} on the main-chain subscription after the other calls",
+			"request": {
+				"transport": "WooPaymentsApiClient::request_list( $params, 'subscriptions/sub_1UM1VrBzWlxcwgpP6A3GwGLe', 'DELETE' ) (recording stand-in for send_site_request(); same private request())",
+				"method": "DELETE",
+				"path": "/sites/4/wcpay/subscriptions/sub_1UM1VrBzWlxcwgpP6A3GwGLe?test_mode=1 (wpcom/v2 via Jetpack blog token)",
+				"body": null,
+				"body_note": "the params request() sends (wcpay_api_request_params at PHP_INT_MAX); GET/DELETE params travel as the query string; request() adds test_mode; POST requests also carry an Idempotency-Key header (not a body param here)"
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": {
+					"id": "sub_1UM1VrBzWlxcwgpP6A3GwGLe",
+					"object": "subscription",
+					"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+					"application_fee_percent": 5.1,
+					"automatic_tax": {
+						"disabled_reason": null,
+						"enabled": false,
+						"liability": null
+					},
+					"billing_cycle_anchor": 1790928495,
+					"billing_cycle_anchor_config": null,
+					"billing_mode": {
+						"flexible": null,
+						"type": "classic"
+					},
+					"billing_thresholds": null,
+					"cancel_at": null,
+					"cancel_at_period_end": false,
+					"canceled_at": 1790928745,
+					"cancellation_details": {
+						"comment": null,
+						"feedback": null,
+						"feedback_option": null,
+						"reason": "cancellation_requested"
+					},
+					"collection_method": "charge_automatically",
+					"created": 1790928495,
+					"currency": "usd",
+					"current_period_end": 1793606895,
+					"current_period_start": 1790928495,
+					"customer": "cus_UsIeTbmGHPc9jY",
+					"customer_account": null,
+					"days_until_due": null,
+					"default_payment_method": "pm_1UJhOFBzWlxcwgpPvcySvyc5",
+					"default_source": null,
+					"default_tax_rates": [],
+					"description": null,
+					"discount": null,
+					"discounts": [],
+					"ended_at": 1790928745,
+					"invoice_settings": {
+						"account_tax_ids": null,
+						"custom_fields": null,
+						"description": null,
+						"footer": null,
+						"issuer": {
+							"type": "self"
+						}
+					},
+					"items": {
+						"object": "list",
+						"data": [
+							{
+								"id": "si_VMl1spZLBBt5VE",
+								"object": "subscription_item",
+								"billing_thresholds": null,
+								"created": 1790928495,
+								"current_period_end": 1793606895,
+								"current_period_start": 1790928495,
+								"current_trial": null,
+								"discounts": [],
+								"metadata": {
+									"wc_item_id": "4711"
+								},
+								"plan": {
+									"id": "price_1UM1WdBzWlxcwgpPTdu1MSjd",
+									"object": "plan",
+									"active": false,
+									"aggregate_usage": null,
+									"amount": 2990,
+									"amount_decimal": "2990",
+									"billing_scheme": "per_unit",
+									"created": 1790928543,
+									"currency": "usd",
+									"interval": "month",
+									"interval_count": 1,
+									"livemode": false,
+									"metadata": [],
+									"meter": null,
+									"nickname": null,
+									"product": "prod_VMl10VL0VK371N",
+									"tiers_mode": null,
+									"transform_usage": null,
+									"trial_period_days": null,
+									"usage_type": "licensed"
+								},
+								"price": {
+									"id": "price_1UM1WdBzWlxcwgpPTdu1MSjd",
+									"object": "price",
+									"active": false,
+									"billing_scheme": "per_unit",
+									"created": 1790928543,
+									"currency": "usd",
+									"custom_unit_amount": null,
+									"livemode": false,
+									"lookup_key": null,
+									"metadata": [],
+									"nickname": null,
+									"product": "prod_VMl10VL0VK371N",
+									"recurring": {
+										"aggregate_usage": null,
+										"interval": "month",
+										"interval_count": 1,
+										"meter": null,
+										"trial_period_days": null,
+										"usage_type": "licensed"
+									},
+									"tax_behavior": "unspecified",
+									"tiers_mode": null,
+									"transform_quantity": null,
+									"type": "recurring",
+									"unit_amount": 2990,
+									"unit_amount_decimal": "2990"
+								},
+								"quantity": 2,
+								"subscription": "sub_1UM1VrBzWlxcwgpP6A3GwGLe",
+								"tax_rates": []
+							}
+						],
+						"has_more": false,
+						"total_count": 1,
+						"url": "/v1/subscription_items?subscription=sub_1UM1VrBzWlxcwgpP6A3GwGLe"
+					},
+					"latest_invoice": "in_1UM1VrBzWlxcwgpPgrIwNSlu",
+					"livemode": false,
+					"managed_payments": {
+						"enabled": false
+					},
+					"metadata": {
+						"subscription_source": "woo_subscriptions"
+					},
+					"next_pending_invoice_item_invoice": null,
+					"on_behalf_of": null,
+					"pause_collection": null,
+					"payment_settings": {
+						"payment_method_options": null,
+						"payment_method_types": null,
+						"save_default_payment_method": "off"
+					},
+					"pending_invoice_item_interval": null,
+					"pending_setup_intent": null,
+					"pending_update": null,
+					"plan": {
+						"id": "price_1UM1WdBzWlxcwgpPTdu1MSjd",
+						"object": "plan",
+						"active": false,
+						"aggregate_usage": null,
+						"amount": 2990,
+						"amount_decimal": "2990",
+						"billing_scheme": "per_unit",
+						"created": 1790928543,
+						"currency": "usd",
+						"interval": "month",
+						"interval_count": 1,
+						"livemode": false,
+						"metadata": [],
+						"meter": null,
+						"nickname": null,
+						"product": "prod_VMl10VL0VK371N",
+						"tiers_mode": null,
+						"transform_usage": null,
+						"trial_period_days": null,
+						"usage_type": "licensed"
+					},
+					"quantity": 2,
+					"schedule": null,
+					"start_date": 1790928495,
+					"status": "canceled",
+					"test_clock": null,
+					"transfer_data": null,
+					"trial_end": null,
+					"trial_settings": {
+						"end_behavior": {
+							"billing_cycle_anchor": "now",
+							"missing_payment_method": "create_invoice"
+						}
+					},
+					"trial_start": null
+				}
+			},
+			"native_returned_type": "dict"
+		},
+		{
+			"pair": "update_subscription_item",
+			"client_method": "update_subscription_item",
+			"recorded_at": "2026-10-02T08:09:02+00:00",
+			"context": "client get_repair_data_for_wcpay_items shape: quantity 2 and price_data (currency kept from the Stripe item in lower case, 29.90 per unit); the platform adds proration_behavior none",
+			"request": {
+				"transport": "WooPaymentsApiClient::request_list( $params, 'subscriptions/items/si_VMl1spZLBBt5VE', 'POST' ) (recording stand-in for send_site_request(); same private request())",
+				"method": "POST",
+				"path": "/sites/4/wcpay/subscriptions/items/si_VMl1spZLBBt5VE (wpcom/v2 via Jetpack blog token)",
+				"body": {
+					"test_mode": true,
+					"quantity": 2,
+					"price_data": {
+						"currency": "usd",
+						"product": "prod_VMl10VL0VK371N",
+						"unit_amount_decimal": 2990,
+						"recurring": {
+							"interval": "month",
+							"interval_count": 1
+						}
+					}
+				},
+				"body_note": "the params request() sends (wcpay_api_request_params at PHP_INT_MAX); GET/DELETE params travel as the query string; request() adds test_mode; POST requests also carry an Idempotency-Key header (not a body param here)"
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": {
+					"id": "si_VMl1spZLBBt5VE",
+					"object": "subscription_item",
+					"billing_thresholds": null,
+					"created": 1790928495,
+					"current_period_end": 1793606895,
+					"current_period_start": 1790928495,
+					"current_trial": null,
+					"discounts": [],
+					"metadata": {
+						"wc_item_id": "4711"
+					},
+					"plan": {
+						"id": "price_1UM1WdBzWlxcwgpPTdu1MSjd",
+						"object": "plan",
+						"active": false,
+						"aggregate_usage": null,
+						"amount": 2990,
+						"amount_decimal": "2990",
+						"billing_scheme": "per_unit",
+						"created": 1790928543,
+						"currency": "usd",
+						"interval": "month",
+						"interval_count": 1,
+						"livemode": false,
+						"metadata": [],
+						"meter": null,
+						"nickname": null,
+						"product": "prod_VMl10VL0VK371N",
+						"tiers_mode": null,
+						"transform_usage": null,
+						"trial_period_days": null,
+						"usage_type": "licensed"
+					},
+					"price": {
+						"id": "price_1UM1WdBzWlxcwgpPTdu1MSjd",
+						"object": "price",
+						"active": false,
+						"billing_scheme": "per_unit",
+						"created": 1790928543,
+						"currency": "usd",
+						"custom_unit_amount": null,
+						"livemode": false,
+						"lookup_key": null,
+						"metadata": [],
+						"nickname": null,
+						"product": "prod_VMl10VL0VK371N",
+						"recurring": {
+							"aggregate_usage": null,
+							"interval": "month",
+							"interval_count": 1,
+							"meter": null,
+							"trial_period_days": null,
+							"usage_type": "licensed"
+						},
+						"tax_behavior": "unspecified",
+						"tiers_mode": null,
+						"transform_quantity": null,
+						"type": "recurring",
+						"unit_amount": 2990,
+						"unit_amount_decimal": "2990"
+					},
+					"quantity": 2,
+					"subscription": "sub_1UM1VrBzWlxcwgpP6A3GwGLe",
+					"tax_rates": []
+				}
+			},
+			"native_returned_type": "dict"
+		},
+		{
+			"pair": "charge_invoice",
+			"client_method": "charge_invoice",
+			"recorded_at": "2026-10-02T08:08:37+00:00",
+			"context": "client maybe_record_invoice_payment shape: paid_out_of_band 'true' on the subscription_create invoice of the main chain; the invoice comes back paid with amount_paid 0 and paid_out_of_band true",
+			"request": {
+				"transport": "WooPaymentsApiClient::request_list( $params, 'invoices/in_1UM1VrBzWlxcwgpPgrIwNSlu/pay', 'POST' ) (recording stand-in for send_site_request(); same private request())",
+				"method": "POST",
+				"path": "/sites/4/wcpay/invoices/in_1UM1VrBzWlxcwgpPgrIwNSlu/pay (wpcom/v2 via Jetpack blog token)",
+				"body": {
+					"test_mode": true,
+					"paid_out_of_band": "true"
+				},
+				"body_note": "the params request() sends (wcpay_api_request_params at PHP_INT_MAX); GET/DELETE params travel as the query string; request() adds test_mode; POST requests also carry an Idempotency-Key header (not a body param here)"
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": {
+					"id": "in_1UM1VrBzWlxcwgpPgrIwNSlu",
+					"object": "invoice",
+					"account_country": "US",
+					"account_name": "woocommerce",
+					"account_tax_ids": null,
+					"amount_due": 2490,
+					"amount_overpaid": 0,
+					"amount_paid": 0,
+					"amount_remaining": 2490,
+					"amount_shipping": 0,
+					"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+					"application_fee_amount": null,
+					"attempt_count": 0,
+					"attempted": false,
+					"auto_advance": false,
+					"automatic_tax": {
+						"disabled_reason": null,
+						"enabled": false,
+						"liability": null,
+						"provider": null,
+						"status": null
+					},
+					"automatically_finalizes_at": null,
+					"billing_reason": "subscription_create",
+					"charge": null,
+					"collection_method": "charge_automatically",
+					"created": 1790928495,
+					"currency": "usd",
+					"custom_fields": null,
+					"customer": "cus_UsIeTbmGHPc9jY",
+					"customer_account": null,
+					"customer_address": {
+						"city": "Amsterdam",
+						"country": "NL",
+						"line1": "Damrak 1",
+						"line2": "",
+						"postal_code": "1012 LG",
+						"state": ""
+					},
+					"customer_email": "REDACTED",
+					"customer_name": "Lpm Checkout",
+					"customer_phone": "+15555550123",
+					"customer_shipping": {
+						"address": {
+							"city": "Amsterdam",
+							"country": "NL",
+							"line1": "Damrak 1",
+							"line2": "",
+							"postal_code": "1012 LG",
+							"state": ""
+						},
+						"name": "Lpm Checkout",
+						"phone": null
+					},
+					"customer_tax_exempt": "none",
+					"customer_tax_ids": [],
+					"default_payment_method": null,
+					"default_source": null,
+					"default_tax_rates": [],
+					"description": null,
+					"discount": null,
+					"discounts": [],
+					"due_date": null,
+					"effective_at": 1790928495,
+					"ending_balance": 0,
+					"footer": null,
+					"from_invoice": null,
+					"hosted_invoice_url": "REDACTED",
+					"invoice_pdf": "REDACTED",
+					"issuer": {
+						"type": "self"
+					},
+					"last_finalization_error": null,
+					"latest_revision": null,
+					"lines": {
+						"object": "list",
+						"data": [
+							{
+								"id": "il_1UM1VrBzWlxcwgpPBigYSwk8",
+								"object": "line_item",
+								"amount": 2490,
+								"amount_excluding_tax": 2490,
+								"currency": "usd",
+								"description": "1 × REC-T63 Coffee Box Deluxe (at $24.90 / month)",
+								"discount_amounts": [],
+								"discountable": true,
+								"discounts": [],
+								"invoice": "in_1UM1VrBzWlxcwgpPgrIwNSlu",
+								"livemode": false,
+								"metadata": {
+									"subscription_source": "woo_subscriptions"
+								},
+								"parent": {
+									"invoice_item_details": null,
+									"license_fee_subscription_details": null,
+									"subscription_item_details": {
+										"invoice_item": null,
+										"proration": false,
+										"proration_details": {
+											"credited_items": null
+										},
+										"subscription": "sub_1UM1VrBzWlxcwgpP6A3GwGLe",
+										"subscription_item": "si_VMl1spZLBBt5VE"
+									},
+									"type": "subscription_item_details"
+								},
+								"period": {
+									"end": 1793606895,
+									"start": 1790928495
+								},
+								"plan": {
+									"id": "price_1UM1VrBzWlxcwgpPDDLxBee1",
+									"object": "plan",
+									"active": false,
+									"aggregate_usage": null,
+									"amount": 2490,
+									"amount_decimal": "2490",
+									"billing_scheme": "per_unit",
+									"created": 1790928495,
+									"currency": "usd",
+									"interval": "month",
+									"interval_count": 1,
+									"livemode": false,
+									"metadata": [],
+									"meter": null,
+									"nickname": null,
+									"product": "prod_VMl10VL0VK371N",
+									"tiers_mode": null,
+									"transform_usage": null,
+									"trial_period_days": null,
+									"usage_type": "licensed"
+								},
+								"pretax_credit_amounts": [],
+								"price": {
+									"id": "price_1UM1VrBzWlxcwgpPDDLxBee1",
+									"object": "price",
+									"active": false,
+									"billing_scheme": "per_unit",
+									"created": 1790928495,
+									"currency": "usd",
+									"custom_unit_amount": null,
+									"livemode": false,
+									"lookup_key": null,
+									"metadata": [],
+									"nickname": null,
+									"product": "prod_VMl10VL0VK371N",
+									"recurring": {
+										"aggregate_usage": null,
+										"interval": "month",
+										"interval_count": 1,
+										"meter": null,
+										"trial_period_days": null,
+										"usage_type": "licensed"
+									},
+									"tax_behavior": "unspecified",
+									"tiers_mode": null,
+									"transform_quantity": null,
+									"type": "recurring",
+									"unit_amount": 2490,
+									"unit_amount_decimal": "2490"
+								},
+								"pricing": {
+									"price_details": {
+										"price": "price_1UM1VrBzWlxcwgpPDDLxBee1",
+										"product": "prod_VMl10VL0VK371N"
+									},
+									"type": "price_details",
+									"unit_amount_decimal": "2490"
+								},
+								"proration": false,
+								"proration_details": {
+									"credited_items": null
+								},
+								"quantity": 1,
+								"quantity_decimal": "1",
+								"subscription": "sub_1UM1VrBzWlxcwgpP6A3GwGLe",
+								"subscription_item": "si_VMl1spZLBBt5VE",
+								"subtotal": 2490,
+								"tax_amounts": [],
+								"tax_rates": [],
+								"taxes": [],
+								"type": "subscription",
+								"unit_amount_excluding_tax": "2490"
+							}
+						],
+						"has_more": false,
+						"total_count": 1,
+						"url": "/v1/invoices/in_1UM1VrBzWlxcwgpPgrIwNSlu/lines"
+					},
+					"livemode": false,
+					"metadata": [],
+					"next_payment_attempt": null,
+					"number": "A6RN8PRC-0001",
+					"on_behalf_of": null,
+					"paid": true,
+					"paid_out_of_band": true,
+					"parent": {
+						"quote_details": null,
+						"subscription_details": {
+							"metadata": {
+								"subscription_source": "woo_subscriptions"
+							},
+							"subscription": "sub_1UM1VrBzWlxcwgpP6A3GwGLe"
+						},
+						"type": "subscription_details"
+					},
+					"payment_intent": null,
+					"payment_settings": {
+						"default_mandate": null,
+						"payment_method_options": null,
+						"payment_method_types": null
+					},
+					"period_end": 1790928495,
+					"period_start": 1790928495,
+					"post_payment_credit_notes_amount": 0,
+					"pre_payment_credit_notes_amount": 0,
+					"quote": null,
+					"receipt_number": null,
+					"rendering": null,
+					"rendering_options": null,
+					"shipping_cost": null,
+					"shipping_details": null,
+					"starting_balance": 0,
+					"statement_descriptor": null,
+					"status": "paid",
+					"status_transitions": {
+						"finalized_at": 1790928495,
+						"marked_uncollectible_at": null,
+						"paid_at": 1790928518,
+						"voided_at": null
+					},
+					"subscription": "sub_1UM1VrBzWlxcwgpP6A3GwGLe",
+					"subscription_details": {
+						"metadata": {
+							"subscription_source": "woo_subscriptions"
+						}
+					},
+					"subtotal": 2490,
+					"subtotal_excluding_tax": 2490,
+					"tax": null,
+					"test_clock": null,
+					"total": 2490,
+					"total_discount_amounts": [],
+					"total_excluding_tax": 2490,
+					"total_pretax_credit_amounts": [],
+					"total_tax_amounts": [],
+					"total_taxes": [],
+					"transfer_data": null,
+					"webhooks_delivered_at": 1790928498
+				}
+			},
+			"native_returned_type": "dict"
+		},
+		{
+			"pair": "update_invoice",
+			"client_method": "update_invoice",
+			"recorded_at": "2026-10-02T08:12:11+00:00",
+			"context": "client record_subscription_payment_context shape: subscription_context stripe_billing on a renewal invoice (subscription_cycle, test-clock chain) that has a payment_intent; the platform GETs the invoice, then writes the context onto the invoice's payment intent metadata, and returns the invoice as fetched",
+			"request": {
+				"transport": "WooPaymentsApiClient::request_list( $params, 'invoices/in_1UM1XzBzWlxcwgpPNhLoAcln', 'POST' ) (recording stand-in for send_site_request(); same private request())",
+				"method": "POST",
+				"path": "/sites/4/wcpay/invoices/in_1UM1XzBzWlxcwgpPNhLoAcln (wpcom/v2 via Jetpack blog token)",
+				"body": {
+					"test_mode": true,
+					"subscription_context": "stripe_billing"
+				},
+				"body_note": "the params request() sends (wcpay_api_request_params at PHP_INT_MAX); GET/DELETE params travel as the query string; request() adds test_mode; POST requests also carry an Idempotency-Key header (not a body param here)"
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": {
+					"id": "in_1UM1XzBzWlxcwgpPNhLoAcln",
+					"object": "invoice",
+					"account_country": "US",
+					"account_name": "woocommerce",
+					"account_tax_ids": null,
+					"amount_due": 2490,
+					"amount_overpaid": 0,
+					"amount_paid": 2490,
+					"amount_remaining": 0,
+					"amount_shipping": 0,
+					"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+					"application_fee_amount": 127,
+					"attempt_count": 1,
+					"attempted": true,
+					"auto_advance": false,
+					"automatic_tax": {
+						"disabled_reason": null,
+						"enabled": false,
+						"liability": null,
+						"provider": null,
+						"status": null
+					},
+					"automatically_finalizes_at": null,
+					"billing_reason": "subscription_cycle",
+					"charge": "ch_3UM1YABzWlxcwgpP0Fazmyr5",
+					"collection_method": "charge_automatically",
+					"created": 1793606967,
+					"currency": "usd",
+					"custom_fields": null,
+					"customer": "cus_VMl3pvnqTAX638",
+					"customer_account": null,
+					"customer_address": null,
+					"customer_email": null,
+					"customer_name": "REC-T63-success",
+					"customer_phone": null,
+					"customer_shipping": null,
+					"customer_tax_exempt": "none",
+					"customer_tax_ids": [],
+					"default_payment_method": null,
+					"default_source": null,
+					"default_tax_rates": [],
+					"description": null,
+					"discount": null,
+					"discounts": [],
+					"due_date": null,
+					"effective_at": 1793610567,
+					"ending_balance": 0,
+					"footer": null,
+					"from_invoice": null,
+					"hosted_invoice_url": "REDACTED",
+					"invoice_pdf": "REDACTED",
+					"issuer": {
+						"type": "self"
+					},
+					"last_finalization_error": null,
+					"latest_revision": null,
+					"lines": {
+						"object": "list",
+						"data": [
+							{
+								"id": "il_1UXGJ1BzWlxcwgpP4rTTh693",
+								"object": "line_item",
+								"amount": 2490,
+								"amount_excluding_tax": 2490,
+								"currency": "usd",
+								"description": "1 × REC-T63 Coffee Box Deluxe (at $24.90 / month)",
+								"discount_amounts": [],
+								"discountable": true,
+								"discounts": [],
+								"invoice": "in_1UM1XzBzWlxcwgpPNhLoAcln",
+								"livemode": false,
+								"metadata": {
+									"subscription_source": "woo_subscriptions"
+								},
+								"parent": {
+									"invoice_item_details": null,
+									"license_fee_subscription_details": null,
+									"subscription_item_details": {
+										"invoice_item": null,
+										"proration": false,
+										"proration_details": {
+											"credited_items": null
+										},
+										"subscription": "sub_1UM1XLBzWlxcwgpPwEbcmZJt",
+										"subscription_item": "si_VMl3Lmi1aDKj2h"
+									},
+									"type": "subscription_item_details"
+								},
+								"period": {
+									"end": 1796198967,
+									"start": 1793606967
+								},
+								"plan": {
+									"id": "price_1UM1XLBzWlxcwgpPWCQkLtRS",
+									"object": "plan",
+									"active": false,
+									"aggregate_usage": null,
+									"amount": 2490,
+									"amount_decimal": "2490",
+									"billing_scheme": "per_unit",
+									"created": 1790928587,
+									"currency": "usd",
+									"interval": "month",
+									"interval_count": 1,
+									"livemode": false,
+									"metadata": [],
+									"meter": null,
+									"nickname": null,
+									"product": "prod_VMl10VL0VK371N",
+									"tiers_mode": null,
+									"transform_usage": null,
+									"trial_period_days": null,
+									"usage_type": "licensed"
+								},
+								"pretax_credit_amounts": [],
+								"price": {
+									"id": "price_1UM1XLBzWlxcwgpPWCQkLtRS",
+									"object": "price",
+									"active": false,
+									"billing_scheme": "per_unit",
+									"created": 1790928587,
+									"currency": "usd",
+									"custom_unit_amount": null,
+									"livemode": false,
+									"lookup_key": null,
+									"metadata": [],
+									"nickname": null,
+									"product": "prod_VMl10VL0VK371N",
+									"recurring": {
+										"aggregate_usage": null,
+										"interval": "month",
+										"interval_count": 1,
+										"meter": null,
+										"trial_period_days": null,
+										"usage_type": "licensed"
+									},
+									"tax_behavior": "unspecified",
+									"tiers_mode": null,
+									"transform_quantity": null,
+									"type": "recurring",
+									"unit_amount": 2490,
+									"unit_amount_decimal": "2490"
+								},
+								"pricing": {
+									"price_details": {
+										"price": "price_1UM1XLBzWlxcwgpPWCQkLtRS",
+										"product": "prod_VMl10VL0VK371N"
+									},
+									"type": "price_details",
+									"unit_amount_decimal": "2490"
+								},
+								"proration": false,
+								"proration_details": {
+									"credited_items": null
+								},
+								"quantity": 1,
+								"quantity_decimal": "1",
+								"subscription": "sub_1UM1XLBzWlxcwgpPwEbcmZJt",
+								"subscription_item": "si_VMl3Lmi1aDKj2h",
+								"subtotal": 2490,
+								"tax_amounts": [],
+								"tax_rates": [],
+								"taxes": [],
+								"type": "subscription",
+								"unit_amount_excluding_tax": "2490"
+							}
+						],
+						"has_more": false,
+						"total_count": 1,
+						"url": "/v1/invoices/in_1UM1XzBzWlxcwgpPNhLoAcln/lines"
+					},
+					"livemode": false,
+					"metadata": [],
+					"next_payment_attempt": null,
+					"number": "CINNCURI-0002",
+					"on_behalf_of": null,
+					"paid": true,
+					"paid_out_of_band": false,
+					"parent": {
+						"quote_details": null,
+						"subscription_details": {
+							"metadata": {
+								"subscription_source": "woo_subscriptions"
+							},
+							"subscription": "sub_1UM1XLBzWlxcwgpPwEbcmZJt"
+						},
+						"type": "subscription_details"
+					},
+					"payment_intent": "pi_3UM1YABzWlxcwgpP0GYqv6LC",
+					"payment_settings": {
+						"default_mandate": null,
+						"payment_method_options": null,
+						"payment_method_types": null
+					},
+					"period_end": 1793606967,
+					"period_start": 1790928567,
+					"post_payment_credit_notes_amount": 0,
+					"pre_payment_credit_notes_amount": 0,
+					"quote": null,
+					"receipt_number": null,
+					"rendering": null,
+					"rendering_options": null,
+					"shipping_cost": null,
+					"shipping_details": null,
+					"starting_balance": 0,
+					"statement_descriptor": null,
+					"status": "paid",
+					"status_transitions": {
+						"finalized_at": 1793610567,
+						"marked_uncollectible_at": null,
+						"paid_at": 1793610567,
+						"voided_at": null
+					},
+					"subscription": "sub_1UM1XLBzWlxcwgpPwEbcmZJt",
+					"subscription_details": {
+						"metadata": {
+							"subscription_source": "woo_subscriptions"
+						}
+					},
+					"subtotal": 2490,
+					"subtotal_excluding_tax": 2490,
+					"tax": null,
+					"test_clock": "clock_1UM1X2BzWlxcwgpPRLlygxwI",
+					"total": 2490,
+					"total_discount_amounts": [],
+					"total_excluding_tax": 2490,
+					"total_pretax_credit_amounts": [],
+					"total_tax_amounts": [],
+					"total_taxes": [],
+					"transfer_data": null,
+					"webhooks_delivered_at": 1793606967
+				}
+			},
+			"native_returned_type": "dict"
+		},
+		{
+			"pair": "get_currency_minimum_recurring_amount",
+			"client_method": "get_currency_minimum_recurring_amount",
+			"recorded_at": "2026-10-02T08:08:13+00:00",
+			"context": "GET subscriptions/minimum_amount/usd; the body is a bare JSON integer (100 = 2 x the 50 sale minimum), not an object",
+			"request": {
+				"transport": "WooPaymentsApiClient::request_list( $params, 'subscriptions/minimum_amount/usd', 'GET' ) (recording stand-in for send_site_request(); same private request())",
+				"method": "GET",
+				"path": "/sites/4/wcpay/subscriptions/minimum_amount/usd?test_mode=1 (wpcom/v2 via Jetpack blog token)",
+				"body": null,
+				"body_note": "the params request() sends (wcpay_api_request_params at PHP_INT_MAX); GET/DELETE params travel as the query string; request() adds test_mode; POST requests also carry an Idempotency-Key header (not a body param here)"
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": 100
+			},
+			"native_returned_type": "list (empty array)"
+		},
+		{
+			"pair": "update_charge",
+			"client_method": "update_charge",
+			"recorded_at": "2026-10-02T08:12:21+00:00",
+			"context": "client update_charge_details shape: metadata.order_id on the renewal charge; the platform returns its charges-cache record, not a Stripe charge",
+			"request": {
+				"transport": "WooPaymentsApiClient::request_list( $params, 'charges/ch_3UM1YABzWlxcwgpP0Fazmyr5', 'POST' ) (recording stand-in for send_site_request(); same private request())",
+				"method": "POST",
+				"path": "/sites/4/wcpay/charges/ch_3UM1YABzWlxcwgpP0Fazmyr5 (wpcom/v2 via Jetpack blog token)",
+				"body": {
+					"test_mode": true,
+					"metadata": {
+						"order_id": 5821
+					}
+				},
+				"body_note": "the params request() sends (wcpay_api_request_params at PHP_INT_MAX); GET/DELETE params travel as the query string; request() adds test_mode; POST requests also carry an Idempotency-Key header (not a body param here)"
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": {
+					"stripe_account_id": "acct_1TrY2nBzWlxcwgpP",
+					"charge_id": "ch_3UM1YABzWlxcwgpP0Fazmyr5",
+					"amount": 2490,
+					"net": 2363,
+					"amount_captured": 2490,
+					"amount_refunded": 0,
+					"is_captured": true,
+					"created": "2026-10-02 08:10:40",
+					"channel": "online",
+					"currency": "usd",
+					"payment_intent_id": "pi_3UM1YABzWlxcwgpP0GYqv6LC",
+					"refunded": false,
+					"order_id": 5821,
+					"status": "succeeded",
+					"fees": 127,
+					"transaction_id": "txn_3UM1YABzWlxcwgpP0tCiQoKI",
+					"source": "visa",
+					"source_identifier": "4242",
+					"customer_name": null,
+					"customer_email": null,
+					"customer_country": null,
+					"risk_level": 0,
+					"outcome_type": "authorized",
+					"wcpay_charges_cache_id": 3110
+				}
+			},
+			"native_returned_type": "dict"
+		},
+		{
+			"pair": "update_transaction",
+			"client_method": "update_transaction",
+			"recorded_at": "2026-10-02T08:12:23+00:00",
+			"context": "client update_transaction_details shape: billing first/last name, email, country on the renewal charge's balance transaction; the platform returns its transactions-cache record",
+			"request": {
+				"transport": "WooPaymentsApiClient::request_list( $params, 'transactions/txn_3UM1YABzWlxcwgpP0tCiQoKI', 'POST' ) (recording stand-in for send_site_request(); same private request())",
+				"method": "POST",
+				"path": "/sites/4/wcpay/transactions/txn_3UM1YABzWlxcwgpP0tCiQoKI (wpcom/v2 via Jetpack blog token)",
+				"body": {
+					"test_mode": true,
+					"customer_first_name": "Rec",
+					"customer_last_name": "Renewal",
+					"customer_email": "REDACTED",
+					"customer_country": "US"
+				},
+				"body_note": "the params request() sends (wcpay_api_request_params at PHP_INT_MAX); GET/DELETE params travel as the query string; request() adds test_mode; POST requests also carry an Idempotency-Key header (not a body param here)"
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": {
+					"transaction_id": "txn_3UM1YABzWlxcwgpP0tCiQoKI",
+					"stripe_account_id": "acct_1TrY2nBzWlxcwgpP",
+					"channel": null,
+					"source_device": null,
+					"loan_id": null,
+					"customer_name": "Rec Renewal",
+					"customer_email": "REDACTED",
+					"customer_country": "US",
+					"wcpay_transactions_cache_id": 6093
+				}
+			},
+			"native_returned_type": "dict"
+		},
+		{
+			"pair": "error_amount_too_small",
+			"client_method": "create_subscription",
+			"recorded_at": "2026-10-02T08:08:34+00:00",
+			"context": "create_subscription with a 0.75 USD monthly item: the platform creates the Stripe subscription, reads the upcoming invoice, finds 75 below the 100 recurring minimum, cancels the subscription and answers amount_too_small",
+			"request": {
+				"transport": "WooPaymentsApiClient::request_list( $params, 'subscriptions', 'POST' ) (recording stand-in for send_site_request(); same private request())",
+				"method": "POST",
+				"path": "/sites/4/wcpay/subscriptions (wpcom/v2 via Jetpack blog token)",
+				"body": {
+					"test_mode": true,
+					"customer": "cus_* (user_1, see _meta.customers)",
+					"items": [
+						{
+							"metadata": {
+								"wc_item_id": 4713
+							},
+							"quantity": 1,
+							"price_data": {
+								"currency": "USD",
+								"product": "prod_VMl10VL0VK371N",
+								"unit_amount_decimal": 75,
+								"recurring": {
+									"interval": "month",
+									"interval_count": 1
+								}
+							}
+						}
+					],
+					"metadata": {
+						"subscription_source": "woo_subscriptions"
+					}
+				},
+				"body_note": "the params request() sends (wcpay_api_request_params at PHP_INT_MAX); GET/DELETE params travel as the query string; request() adds test_mode; POST requests also carry an Idempotency-Key header (not a body param here)"
+			},
+			"response": {
+				"http_status": 400,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": {
+					"code": "amount_too_small",
+					"message": "Requested amount is below the minimum for the currency.",
+					"data": {
+						"minimum_amount": 100,
+						"currency": "usd"
+					},
+					"additional_data": [
+						{
+							"status": 400
+						}
+					]
+				}
+			},
+			"native_exception": {
+				"class": "Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\Api\\WooPaymentsApiException",
+				"message": "Requested amount is below the minimum for the currency.",
+				"code": "amount_too_small",
+				"http_code": 400
+			}
+		},
+		{
+			"pair": "error_combine_currencies",
+			"client_method": "create_subscription",
+			"recorded_at": "2026-10-02T08:08:33+00:00",
+			"context": "create_subscription in EUR for the user 1 customer, which already has an incomplete USD subscription; Stripe's invalid_request_error comes back in the platform's top-level code/message shape",
+			"request": {
+				"transport": "WooPaymentsApiClient::request_list( $params, 'subscriptions', 'POST' ) (recording stand-in for send_site_request(); same private request())",
+				"method": "POST",
+				"path": "/sites/4/wcpay/subscriptions (wpcom/v2 via Jetpack blog token)",
+				"body": {
+					"test_mode": true,
+					"customer": "cus_* (user_1, see _meta.customers)",
+					"items": [
+						{
+							"metadata": {
+								"wc_item_id": 4712
+							},
+							"quantity": 1,
+							"price_data": {
+								"currency": "EUR",
+								"product": "prod_VMl10VL0VK371N",
+								"unit_amount_decimal": 2390,
+								"recurring": {
+									"interval": "month",
+									"interval_count": 1
+								}
+							}
+						}
+					],
+					"metadata": {
+						"subscription_source": "woo_subscriptions"
+					}
+				},
+				"body_note": "the params request() sends (wcpay_api_request_params at PHP_INT_MAX); GET/DELETE params travel as the query string; request() adds test_mode; POST requests also carry an Idempotency-Key header (not a body param here)"
+			},
+			"response": {
+				"http_status": 400,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": {
+					"code": "invalid_request_error",
+					"message": "You cannot combine currencies on a single customer. This customer has an active subscription, subscription schedule, discount, quote, or invoice item with currency usd.",
+					"data": {
+						"status": 400
+					}
+				}
+			},
+			"native_exception": {
+				"class": "Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\Api\\WooPaymentsApiException",
+				"message": "Error: You cannot combine currencies on a single customer. This customer has an active subscription, subscription schedule, discount, quote, or invoice item with currency usd.",
+				"code": "invalid_request_error",
+				"http_code": 400
+			}
+		}
+	],
+	"supporting_entries": [
+		{
+			"pair": "create_product_with_price_legacy",
+			"client_method": "create_product",
+			"recorded_at": "2026-10-02T08:07:36+00:00",
+			"context": "supporting: the platform's legacy price-bearing product create (currency, interval, interval_count, unit_amount), used only to obtain a wcpay_price_id for update_price; client 11.1.0 no longer sends these fields",
+			"request": {
+				"transport": "WooPaymentsApiClient::request_list( $params, 'products', 'POST' ) (recording stand-in for send_site_request(); same private request())",
+				"method": "POST",
+				"path": "/sites/4/wcpay/products (wpcom/v2 via Jetpack blog token)",
+				"body": {
+					"test_mode": true,
+					"description": "REC-T63 legacy price-bearing product",
+					"name": "REC-T63 Legacy Tea Box",
+					"currency": "usd",
+					"interval": "month",
+					"interval_count": 1,
+					"unit_amount": 2490
+				},
+				"body_note": "the params request() sends (wcpay_api_request_params at PHP_INT_MAX); GET/DELETE params travel as the query string; request() adds test_mode; POST requests also carry an Idempotency-Key header (not a body param here)"
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": {
+					"wcpay_product_id": "prod_VMl1fRBycUk6wP",
+					"wcpay_price_id": "price_1UM1VFBzWlxcwgpPfqFOGkZ2"
+				}
+			},
+			"native_returned_type": "dict"
+		},
+		{
+			"pair": "get_charge_for_update_transaction",
+			"client_method": "get_charge",
+			"recorded_at": "2026-10-02T08:12:13+00:00",
+			"context": "supporting: GET charges/{id} for the renewal charge, the read update_transaction_details makes to find balance_transaction.id (balance_transaction is expanded)",
+			"request": {
+				"transport": "WooPaymentsApiClient::request_list( $params, 'charges/ch_3UM1YABzWlxcwgpP0Fazmyr5', 'GET' ) (recording stand-in for send_site_request(); same private request())",
+				"method": "GET",
+				"path": "/sites/4/wcpay/charges/ch_3UM1YABzWlxcwgpP0Fazmyr5?test_mode=1 (wpcom/v2 via Jetpack blog token)",
+				"body": null,
+				"body_note": "the params request() sends (wcpay_api_request_params at PHP_INT_MAX); GET/DELETE params travel as the query string; request() adds test_mode; POST requests also carry an Idempotency-Key header (not a body param here)"
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": {
+					"id": "ch_3UM1YABzWlxcwgpP0Fazmyr5",
+					"object": "charge",
+					"amount": 2490,
+					"amount_captured": 2490,
+					"amount_refunded": 0,
+					"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+					"application_fee": "fee_1UM1YDBzWlxcwgpPuJbgtwYD",
+					"application_fee_amount": 127,
+					"balance_transaction": {
+						"id": "txn_3UM1YABzWlxcwgpP0tCiQoKI",
+						"object": "balance_transaction",
+						"amount": 2490,
+						"available_on": 1791244800,
+						"balance_type": "payments",
+						"created": 1790928640,
+						"currency": "usd",
+						"description": "Subscription update",
+						"exchange_rate": null,
+						"fee": 127,
+						"fee_details": [
+							{
+								"amount": 127,
+								"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+								"currency": "usd",
+								"description": "DEV Shared Account WCPay application fee",
+								"type": "application_fee"
+							}
+						],
+						"net": 2363,
+						"reporting_category": "charge",
+						"source": "ch_3UM1YABzWlxcwgpP0Fazmyr5",
+						"status": "pending",
+						"type": "charge"
+					},
+					"billing_details": {
+						"address": {
+							"city": null,
+							"country": null,
+							"line1": null,
+							"line2": null,
+							"postal_code": null,
+							"state": null
+						},
+						"email": null,
+						"name": null,
+						"phone": null,
+						"tax_id": null
+					},
+					"calculated_statement_descriptor": "WOOCOMMERCE",
+					"captured": true,
+					"created": 1790928640,
+					"currency": "usd",
+					"customer": "cus_VMl3pvnqTAX638",
+					"description": "Subscription update",
+					"destination": null,
+					"dispute": null,
+					"disputed": false,
+					"failure_balance_transaction": null,
+					"failure_code": null,
+					"failure_message": null,
+					"fraud_details": [],
+					"invoice": "in_1UM1XzBzWlxcwgpPNhLoAcln",
+					"livemode": false,
+					"metadata": [],
+					"on_behalf_of": null,
+					"order": null,
+					"outcome": {
+						"advice_code": null,
+						"network_advice_code": null,
+						"network_decline_code": null,
+						"network_status": "approved_by_network",
+						"reason": null,
+						"risk_level": "normal",
+						"risk_score": 45,
+						"seller_message": "Payment complete.",
+						"type": "authorized"
+					},
+					"paid": true,
+					"payment_intent": "pi_3UM1YABzWlxcwgpP0GYqv6LC",
+					"payment_method": "pm_1UM1X5BzWlxcwgpPpbuVcMaw",
+					"payment_method_details": {
+						"card": {
+							"amount_authorized": 2490,
+							"authorization_code": "780632",
+							"brand": "visa",
+							"checks": {
+								"address_line1_check": null,
+								"address_postal_code_check": null,
+								"cvc_check": null
+							},
+							"country": "US",
+							"description": "Visa Classic",
+							"electronic_commerce_indicator": "02",
+							"exp_month": 10,
+							"exp_year": 2027,
+							"extended_authorization": {
+								"status": "disabled"
+							},
+							"fingerprint": "REDACTED",
+							"funding": "credit",
+							"iin": "424242",
+							"incremental_authorization": {
+								"status": "unavailable"
+							},
+							"installments": null,
+							"issuer": "Stripe Payments UK Limited",
+							"last4": "4242",
+							"mandate": null,
+							"moto": null,
+							"multicapture": {
+								"status": "unavailable"
+							},
+							"network": "visa",
+							"network_token": {
+								"used": false
+							},
+							"network_transaction_id": "119727611598658",
+							"overcapture": {
+								"maximum_amount_capturable": 2490,
+								"status": "unavailable"
+							},
+							"regulated_status": "unregulated",
+							"three_d_secure": null,
+							"transaction_link_id": null,
+							"wallet": null
+						},
+						"type": "card"
+					},
+					"radar_options": [],
+					"receipt_email": null,
+					"receipt_number": null,
+					"receipt_url": "REDACTED",
+					"refunded": false,
+					"refunds": {
+						"object": "list",
+						"data": [],
+						"has_more": false,
+						"total_count": 0,
+						"url": "/v1/charges/ch_3UM1YABzWlxcwgpP0Fazmyr5/refunds"
+					},
+					"review": null,
+					"shipping": null,
+					"source": null,
+					"source_transfer": null,
+					"statement_descriptor": null,
+					"statement_descriptor_suffix": null,
+					"status": "succeeded",
+					"transfer_data": null,
+					"transfer_group": null,
+					"fee_breakdown_v1": {
+						"rows": [
+							{
+								"key": "base",
+								"kind": "fee",
+								"label": null,
+								"amount": 127,
+								"display_amount": -127,
+								"currency": "usd",
+								"rate": null,
+								"meta": null
+							}
+						],
+						"totals": {
+							"fee": {
+								"key": null,
+								"amount": 127,
+								"display_amount": -127,
+								"currency": "usd",
+								"rate": null
+							},
+							"tax": {
+								"amount": 0,
+								"display_amount": 0,
+								"currency": "usd"
+							},
+							"net": {
+								"amount": 2363,
+								"currency": "usd"
+							},
+							"capture_net": {
+								"amount": 2363,
+								"currency": "usd"
+							},
+							"gross": {
+								"amount": 2490,
+								"currency": "usd"
+							},
+							"fee_plus_tax": {
+								"amount": 127,
+								"currency": "usd"
+							}
+						},
+						"notes": [],
+						"sources": {
+							"balance_transaction_exchange_rate": 0,
+							"refunded_fee_amount_store": 0
+						}
+					}
+				}
+			},
+			"native_returned_type": "dict"
+		},
+		{
+			"pair": "create_subscription_test_clock_customer",
+			"client_method": "create_subscription",
+			"recorded_at": "2026-10-02T08:09:47+00:00",
+			"context": "supporting (spec section 10 item 3): create_subscription for a customer created directly at Stripe on the connected account and bound to test clock clock_1UM1X2BzWlxcwgpPRLlygxwI; accepted, test_clock echoed",
+			"request": {
+				"transport": "WooPaymentsApiClient::request_list( $params, 'subscriptions', 'POST' ) (recording stand-in for send_site_request(); same private request())",
+				"method": "POST",
+				"path": "/sites/4/wcpay/subscriptions (wpcom/v2 via Jetpack blog token)",
+				"body": {
+					"test_mode": true,
+					"customer": "cus_* (clock_success, see _meta.customers)",
+					"items": [
+						{
+							"metadata": {
+								"wc_item_id": 4721
+							},
+							"quantity": 1,
+							"price_data": {
+								"currency": "USD",
+								"product": "prod_VMl10VL0VK371N",
+								"unit_amount_decimal": 2490,
+								"recurring": {
+									"interval": "month",
+									"interval_count": 1
+								}
+							}
+						}
+					],
+					"metadata": {
+						"subscription_source": "woo_subscriptions"
+					}
+				},
+				"body_note": "the params request() sends (wcpay_api_request_params at PHP_INT_MAX); GET/DELETE params travel as the query string; request() adds test_mode; POST requests also carry an Idempotency-Key header (not a body param here)"
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": {
+					"id": "sub_1UM1XLBzWlxcwgpPwEbcmZJt",
+					"object": "subscription",
+					"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+					"application_fee_percent": null,
+					"automatic_tax": {
+						"disabled_reason": null,
+						"enabled": false,
+						"liability": null
+					},
+					"billing_cycle_anchor": 1790928567,
+					"billing_cycle_anchor_config": null,
+					"billing_mode": {
+						"flexible": null,
+						"type": "classic"
+					},
+					"billing_thresholds": null,
+					"cancel_at": null,
+					"cancel_at_period_end": false,
+					"canceled_at": null,
+					"cancellation_details": {
+						"comment": null,
+						"feedback": null,
+						"feedback_option": null,
+						"reason": null
+					},
+					"collection_method": "charge_automatically",
+					"created": 1790928567,
+					"currency": "usd",
+					"current_period_end": 1793606967,
+					"current_period_start": 1790928567,
+					"customer": "cus_VMl3pvnqTAX638",
+					"customer_account": null,
+					"days_until_due": null,
+					"default_payment_method": null,
+					"default_source": null,
+					"default_tax_rates": [],
+					"description": null,
+					"discount": null,
+					"discounts": [],
+					"ended_at": null,
+					"invoice_settings": {
+						"account_tax_ids": null,
+						"custom_fields": null,
+						"description": null,
+						"footer": null,
+						"issuer": {
+							"type": "self"
+						}
+					},
+					"items": {
+						"object": "list",
+						"data": [
+							{
+								"id": "si_VMl3Lmi1aDKj2h",
+								"object": "subscription_item",
+								"billing_thresholds": null,
+								"created": 1790928567,
+								"current_period_end": 1793606967,
+								"current_period_start": 1790928567,
+								"current_trial": null,
+								"discounts": [],
+								"metadata": {
+									"wc_item_id": "4721"
+								},
+								"plan": {
+									"id": "price_1UM1XLBzWlxcwgpPWCQkLtRS",
+									"object": "plan",
+									"active": false,
+									"aggregate_usage": null,
+									"amount": 2490,
+									"amount_decimal": "2490",
+									"billing_scheme": "per_unit",
+									"created": 1790928587,
+									"currency": "usd",
+									"interval": "month",
+									"interval_count": 1,
+									"livemode": false,
+									"metadata": [],
+									"meter": null,
+									"nickname": null,
+									"product": "prod_VMl10VL0VK371N",
+									"tiers_mode": null,
+									"transform_usage": null,
+									"trial_period_days": null,
+									"usage_type": "licensed"
+								},
+								"price": {
+									"id": "price_1UM1XLBzWlxcwgpPWCQkLtRS",
+									"object": "price",
+									"active": false,
+									"billing_scheme": "per_unit",
+									"created": 1790928587,
+									"currency": "usd",
+									"custom_unit_amount": null,
+									"livemode": false,
+									"lookup_key": null,
+									"metadata": [],
+									"nickname": null,
+									"product": "prod_VMl10VL0VK371N",
+									"recurring": {
+										"aggregate_usage": null,
+										"interval": "month",
+										"interval_count": 1,
+										"meter": null,
+										"trial_period_days": null,
+										"usage_type": "licensed"
+									},
+									"tax_behavior": "unspecified",
+									"tiers_mode": null,
+									"transform_quantity": null,
+									"type": "recurring",
+									"unit_amount": 2490,
+									"unit_amount_decimal": "2490"
+								},
+								"quantity": 1,
+								"subscription": "sub_1UM1XLBzWlxcwgpPwEbcmZJt",
+								"tax_rates": []
+							}
+						],
+						"has_more": false,
+						"total_count": 1,
+						"url": "/v1/subscription_items?subscription=sub_1UM1XLBzWlxcwgpPwEbcmZJt"
+					},
+					"latest_invoice": "in_1UM1XLBzWlxcwgpP07gQmTQd",
+					"livemode": false,
+					"managed_payments": {
+						"enabled": false
+					},
+					"metadata": {
+						"subscription_source": "woo_subscriptions"
+					},
+					"next_pending_invoice_item_invoice": null,
+					"on_behalf_of": null,
+					"pause_collection": null,
+					"payment_settings": {
+						"payment_method_options": null,
+						"payment_method_types": null,
+						"save_default_payment_method": "off"
+					},
+					"pending_invoice_item_interval": null,
+					"pending_setup_intent": null,
+					"pending_update": null,
+					"plan": {
+						"id": "price_1UM1XLBzWlxcwgpPWCQkLtRS",
+						"object": "plan",
+						"active": false,
+						"aggregate_usage": null,
+						"amount": 2490,
+						"amount_decimal": "2490",
+						"billing_scheme": "per_unit",
+						"created": 1790928587,
+						"currency": "usd",
+						"interval": "month",
+						"interval_count": 1,
+						"livemode": false,
+						"metadata": [],
+						"meter": null,
+						"nickname": null,
+						"product": "prod_VMl10VL0VK371N",
+						"tiers_mode": null,
+						"transform_usage": null,
+						"trial_period_days": null,
+						"usage_type": "licensed"
+					},
+					"quantity": 1,
+					"schedule": null,
+					"start_date": 1790928567,
+					"status": "incomplete",
+					"test_clock": "clock_1UM1X2BzWlxcwgpPRLlygxwI",
+					"transfer_data": null,
+					"trial_end": null,
+					"trial_settings": {
+						"end_behavior": {
+							"billing_cycle_anchor": "now",
+							"missing_payment_method": "create_invoice"
+						}
+					},
+					"trial_start": null
+				}
+			},
+			"native_returned_type": "dict"
+		}
+	]
+}

@@ -1,0 +1,194 @@
+// DataViews ships its styles apart from its script, and WordPress registers no
+// handle for them. Sass inlines the stylesheet here, so it lands once in the
+// shared native WooPayments stylesheet with the pages that render DataViews.
+// With a `.css` extension Sass would leave a plain CSS `@import` instead.
+// stylelint-disable-next-line scss/at-import-partial-extension
+@import "@wordpress/dataviews/build-style/style";
+
+// Client 11.1.0 `TableCard`: one top row with the title, search, actions and then the column
+// menu. DataViews puts the title and actions after its own controls, so the header wrappers
+// step aside (`display: contents`) and `order` puts the title first and the column menu last.
+.woocommerce-woopayments-money-movement-dataviews {
+	.dataviews__view-actions {
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 8px 16px;
+
+		> :last-child,
+		.woocommerce-woopayments-money-movement-dataviews__header {
+			display: contents;
+		}
+
+		// Without a search or filters, DataViews' search group is empty; it should not add a gap.
+		.dataviews__search:empty {
+			display: none;
+		}
+
+		// The "View options" menu, the client's column menu.
+		> :last-child > .components-dropdown {
+			order: 1;
+		}
+	}
+
+	// Client 11.1.0 `TableCard` search: the suggestions float over the table. The sticky row stacks
+	// them on its own layer, so it sits above the sticky table header and footer.
+	.dataviews__view-actions {
+		z-index: 3;
+	}
+
+	// While the suggestions are open, the card and the list clip only sideways, so the suggestions
+	// also float past the end of a short list.
+	&:has(.woocommerce-select-control__listbox) {
+		.components-card__body,
+		.dataviews-wrapper {
+			overflow-x: clip;
+			overflow-y: visible;
+		}
+	}
+
+	.woocommerce-woopayments-money-movement-dataviews__title {
+		font-size: 16px;
+		font-weight: 600;
+		line-height: 1.5;
+		margin: 0;
+		order: -1;
+	}
+
+	.woocommerce-woopayments-money-movement-dataviews__actions {
+		align-items: center;
+		display: flex;
+		flex: 1 1 auto;
+		flex-wrap: wrap;
+		gap: 8px;
+		justify-content: flex-end;
+
+		// The transactions and blocked searches take the room left in the row, as in the client.
+		> :not(.components-button) {
+			flex: 1 1 240px;
+		}
+	}
+
+	// On a narrow card the title takes the free room, so the actions and the column menu sit at the
+	// end of its row. With a search, the client keeps the menu beside the title and wraps the search
+	// and actions onto the next row.
+	@container dataviews-wrapper (max-width: 430px) {
+		.dataviews__view-actions {
+			column-gap: 8px;
+		}
+
+		// A search takes its own row with the actions.
+		.woocommerce-woopayments-money-movement-dataviews__actions:has(> :not(.components-button)) {
+			flex-basis: 100%;
+		}
+
+		.woocommerce-woopayments-money-movement-dataviews__actions > :not(.components-button) {
+			flex-basis: 120px;
+		}
+
+		.woocommerce-woopayments-money-movement-dataviews__title {
+			flex: 1 1 0;
+			min-width: 0;
+			order: -2;
+		}
+
+		.dataviews__view-actions:has(.woocommerce-woopayments-money-movement-dataviews__actions > :not(.components-button)) > :last-child > .components-dropdown {
+			order: -1;
+		}
+	}
+
+	// Client 11.1.0 `@woocommerce/components` `table/style.scss`: the header row sits on a grey band
+	// with a line below it. The line above it is the client's card header border (`CardHeader`); on
+	// the header row it stays right above the header when DataViews shows its filter row.
+	.dataviews-view-table thead th {
+		background-color: #f8f9fa;
+		border-block-end: 1px solid #e2e4e7;
+		border-block-start: 1px solid rgba(0, 0, 0, 0.1);
+	}
+
+	// Client 11.1.0 `style.scss` `.info-button`: the details column is as wide as its icon.
+	td:has(.woocommerce-woopayments-money-movement__details-link) {
+		padding-inline-end: 0;
+		width: 1%;
+
+		> .dataviews-view-table__cell-content-wrapper {
+			min-width: 0;
+		}
+	}
+}
+
+// Client 11.1.0 `@woocommerce/components` `filters/style.scss`: 24px between the "Show" select and
+// the list card, 16px below 782px.
+.woocommerce-woopayments-money-movement__list {
+	display: grid;
+	gap: 24px;
+
+	@media (max-width: 781px) {
+		gap: 16px;
+	}
+}
+
+// wp-admin's `forms.css` gives every `select` a 2.71429 line-height, taller than the pager's 24px
+// select, so the page number sat below the "Page" and "of N" labels.
+.woocommerce-woopayments-money-movement-dataviews,
+.woocommerce-woopayments-reports {
+	.dataviews-pagination__page-select .components-select-control__input {
+		line-height: 1;
+	}
+}
+
+// Client 11.1.0 `TableCard` footer: the summary centered under the table. Core's `Card` wraps its
+// children in a content element, so the footer is not a direct child of the card.
+.woocommerce-woopayments-money-movement-dataviews .components-card__footer {
+	justify-content: center;
+}
+
+// Client 11.1.0 `@woocommerce/components` `.woocommerce-table__empty-item`: the empty list's message.
+.woocommerce-woopayments-money-movement-dataviews__empty {
+	color: #757575;
+	font-size: 18px;
+	font-weight: bold;
+	margin: 0;
+	padding: 16px 24px;
+	text-align: center;
+
+	@media (max-width: 781px) {
+		font-size: 13px;
+	}
+}
+
+// Client 11.1.0 `components/clickable-cell/style.scss`: a details link that reads as the cell's text
+// and fills the cell's width.
+.woocommerce-woopayments-money-movement__clickable-cell {
+	color: inherit;
+	display: block;
+	text-decoration: none;
+
+	&:hover {
+		color: var(--wp-admin-theme-color);
+	}
+}
+
+// Client 11.1.0 `style.scss` `.info-button`: the grey info icon that starts a disputes or payouts row.
+.woocommerce-woopayments-money-movement__details-link {
+	display: inline-flex;
+	fill: #8c8f94;
+
+	&:hover,
+	&:focus {
+		fill: var(--wp-admin-theme-color);
+	}
+}
+
+// Client 11.1.0 `transactions/list/style.scss:11-17`: a converted amount ends at the cell's end, after
+// a grey sync icon 6px before it.
+.woocommerce-woopayments-money-movement__converted-amount {
+	align-items: center;
+	display: flex;
+	justify-content: flex-end;
+}
+
+.woocommerce-woopayments-money-movement__conversion-indicator {
+	display: inline-flex;
+	fill: #8c8f94;
+	margin-inline-end: 6px;
+}

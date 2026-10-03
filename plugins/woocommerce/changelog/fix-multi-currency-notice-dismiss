@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Align the dismiss control of multi-currency admin notices with the notice text.

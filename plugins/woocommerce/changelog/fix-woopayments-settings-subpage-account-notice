@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the test account notice on the WooPayments Apple Pay / Google Pay, WooPay and Amazon Pay settings pages.

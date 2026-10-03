@@ -1,0 +1,58 @@
+{
+	"assets": {
+		"blocks-express-checkout.css": {
+			"allow_new": true,
+			"raw_bytes": 766,
+			"gzip_bytes": 269
+		},
+		"blocks-express-checkout.js": {
+			"allow_new": true,
+			"raw_bytes": 33572,
+			"gzip_bytes": 10970
+		},
+		"multi-currency-analytics.js": {
+			"allow_missing": true
+		},
+		"multi-currency-setup.css": {
+			"allow_missing": true
+		},
+		"multi-currency-setup.js": {
+			"allow_missing": true
+		},
+		"multi-currency-switcher-block.js": {
+			"allow_missing": true
+		},
+		"classic-card.css": {
+			"raw_growth_bytes": 2633,
+			"gzip_growth_bytes": 747
+		},
+		"woopay-direct-checkout.js": {
+			"raw_bytes": 27769,
+			"gzip_bytes": 10391
+		},
+		"woopay.js": {
+			"raw_growth_bytes": 20485,
+			"gzip_growth_bytes": 7005
+		},
+		"admin-capital.js": {
+			"raw_bytes": 10437,
+			"gzip_bytes": 3175
+		},
+		"admin-fraud-protection.js": {
+			"raw_bytes": 29707,
+			"gzip_bytes": 8924
+		},
+		"admin-overview.js": {
+			"raw_bytes": 111061,
+			"gzip_bytes": 29974
+		},
+		"admin-payouts.js": {
+			"raw_bytes": 29486,
+			"gzip_bytes": 9225
+		},
+		"admin-shared.css": {
+			"raw_bytes": 162886,
+			"gzip_bytes": 20422
+		}
+	}
+}

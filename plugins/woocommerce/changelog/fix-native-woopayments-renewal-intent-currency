@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Store the WooPayments intent currency on Stripe Billing renewal orders in upper case, as the WooPayments plugin does.

@@ -11,7 +11,7 @@ import { __ } from '@wordpress/i18n';
 import { useEffect, renderToString } from '@wordpress/element';
 import { speak } from '@wordpress/a11y';
 import clsx from 'clsx';
-import { Button } from '@wordpress/components';
+import { Button, Icon } from '@wordpress/components';
 import { check, info } from '@wordpress/icons';
 import NoticeOutlineIcon from 'gridicons/dist/notice-outline';
 import NoticeIcon from 'gridicons/dist/notice';
@@ -67,6 +67,12 @@ interface Props {
 	 */
 	status?: Status;
 	/**
+	 * Whether to display the default icon based on status or the icon to display.
+	 *
+	 * @default undefined
+	 */
+	icon?: boolean | JSX.Element;
+	/**
 	 * Whether the notice should be dismissible or not.
 	 *
 	 * @default true
@@ -107,6 +113,7 @@ interface Props {
 }
 
 const BannerNotice: React.FC< Props > = ( {
+	icon,
 	children,
 	actions = [],
 	className,
@@ -115,6 +122,12 @@ const BannerNotice: React.FC< Props > = ( {
 	onRemove,
 } ) => {
 	useSpokenMessage( status, children );
+
+	// Gridicons type their `size` prop narrower than `Icon` expects; they render the same.
+	const iconToDisplay = ( icon === true ? statusIconMap[ status ] : icon ) as
+		| ComponentProps< typeof Icon >[ 'icon' ]
+		| false
+		| undefined;
 
 	const classes = clsx(
 		className,
@@ -126,6 +139,12 @@ const BannerNotice: React.FC< Props > = ( {
 
 	return (
 		<div className={ classes }>
+			{ iconToDisplay && (
+				<Icon
+					icon={ iconToDisplay }
+					className="woopayments-banner-notice__icon"
+				/>
+			) }
 			<div className="woopayments-banner-notice__content">
 				{ children }
 				{ actions.length > 0 && (

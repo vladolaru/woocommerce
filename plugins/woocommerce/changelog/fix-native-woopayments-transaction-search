@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Keep WooPayments transaction searches in Settings and restore order number suggestions.

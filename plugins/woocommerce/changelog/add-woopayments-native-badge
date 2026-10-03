@@ -1,0 +1,4 @@
+Significance: patch
+Type: add
+
+Show a Native badge on the WooPayments row of the Payments settings when WooPayments runs built into WooCommerce.

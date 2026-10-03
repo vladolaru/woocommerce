@@ -145,11 +145,38 @@ class MetaDataUtilTest extends WC_Unit_Test_Case {
 	 */
 	public function test_update_ignores_non_array_meta_data(): void {
 		$order = wc_create_order();
+		// A freshly created order is not meta-free: the data store adds its own
+		// entries, and which ones depends on the order storage in use. Compare
+		// against what this order actually started with, so the assertion is
+		// about what update() did rather than about the storage backend.
+		$keys_before = $this->get_meta_keys( $order );
 
 		MetaDataUtil::update( null, $order );
 		MetaDataUtil::update( 'string', $order );
 
-		$this->assertEmpty( $order->get_meta_data(), 'No meta should be added for non-array meta_data' );
+		$this->assertSame(
+			$keys_before,
+			$this->get_meta_keys( $order ),
+			'No meta should be added for non-array meta_data'
+		);
+	}
+
+	/**
+	 * Sorted meta keys currently held by an object.
+	 *
+	 * @param \WC_Data $object_with_meta Object to read.
+	 * @return string[]
+	 */
+	private function get_meta_keys( $object_with_meta ): array {
+		$keys = array();
+
+		foreach ( $object_with_meta->get_meta_data() as $meta ) {
+			$keys[] = $meta->key;
+		}
+
+		sort( $keys );
+
+		return $keys;
 	}
 
 	/**
@@ -178,9 +205,15 @@ class MetaDataUtilTest extends WC_Unit_Test_Case {
 			99
 		);
 
-		$meta_data = $order->get_meta_data();
-		$this->assertCount( 1, $meta_data );
-		$this->assertSame( 'k', $meta_data[0]->key );
-		$this->assertSame( 'v', $meta_data[0]->value );
+		// Assert the entry this call added rather than the order's total meta
+		// count: the data store contributes entries of its own, and which ones
+		// depends on the order storage in use.
+		$meta_by_key = array();
+		foreach ( $order->get_meta_data() as $meta ) {
+			$meta_by_key[ $meta->key ] = $meta->value;
+		}
+
+		$this->assertArrayHasKey( 'k', $meta_by_key );
+		$this->assertSame( 'v', $meta_by_key['k'] );
 	}
 }

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Apply the WooPay and Apple Pay / Google Pay choices a merchant makes during WooPayments onboarding, and apply the onboarding choices when the verification session starts and when a test account is created, as the WooPayments plugin does.

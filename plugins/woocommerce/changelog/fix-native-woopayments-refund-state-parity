@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Ensure native WooPayments refunds retain provider details and display partial or full refund status.

@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Add native merchant overview, payouts, currency switcher block, and switcher visibility E2E coverage and close their eleven contracts.

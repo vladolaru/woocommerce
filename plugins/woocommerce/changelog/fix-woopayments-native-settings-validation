@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Validate statement descriptor, business support details and account communications email before native WooPayments pushes merchant settings to the platform.

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the WooPayments test account notice on the settings page right away instead of after the settings finish loading.

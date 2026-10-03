@@ -1,0 +1,493 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
+
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderStatusChangeController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderStatusChangeProjectionService;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
+use WC_Order;
+use WC_Unit_Test_Case;
+
+/**
+ * Tests for the WooPaymentsOrderStatusChangeController class.
+ */
+class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
+
+	private const SCRIPT_HANDLE = 'wc-admin-woopayments-order-status-change';
+
+	/**
+	 * The System Under Test.
+	 *
+	 * @var WooPaymentsOrderStatusChangeController
+	 */
+	private $sut;
+
+	/**
+	 * Script entries handed to the fake asset registrar.
+	 *
+	 * @var string[]
+	 */
+	private array $registered_entries = array();
+
+	/**
+	 * Tear down test fixtures.
+	 */
+	public function tearDown(): void {
+		if ( $this->sut instanceof WooPaymentsOrderStatusChangeController ) {
+			remove_action( 'admin_enqueue_scripts', array( $this->sut, 'handle_admin_enqueue_scripts' ) );
+			remove_action( 'woocommerce_admin_order_data_after_payment_info', array( $this->sut, 'render_payment_details_container' ) );
+			remove_action( 'woocommerce_admin_order_totals_after_total', array( $this->sut, 'render_woopay_payment_method_name' ) );
+			remove_action( 'woocommerce_admin_order_totals_after_total', array( $this->sut, 'render_transaction_fee_row' ) );
+		}
+
+		wp_dequeue_script( self::SCRIPT_HANDLE );
+		wp_deregister_script( self::SCRIPT_HANDLE );
+
+		unset( $GLOBALS['theorder'] );
+		set_current_screen( 'front' );
+
+		parent::tearDown();
+	}
+
+	/**
+	 * @testdox Should not register or enqueue anything when the native runtime does not own payments.
+	 */
+	public function test_does_nothing_when_native_does_not_own_the_runtime(): void {
+		$this->sut = $this->create_controller( false );
+		$this->set_current_order( $this->create_order() );
+		$this->set_order_edit_screen( 'shop_order' );
+
+		$this->sut->register();
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Re-firing WordPress' hook to prove the controller never joins it.
+		do_action( 'admin_enqueue_scripts' );
+
+		$this->assertFalse(
+			has_action( 'admin_enqueue_scripts', array( $this->sut, 'handle_admin_enqueue_scripts' ) ),
+			'A plugin-owned runtime should not register the native confirmation script hook.'
+		);
+		$this->assertFalse( wp_script_is( self::SCRIPT_HANDLE, 'enqueued' ) );
+	}
+
+	/**
+	 * @testdox Should register the admin enqueue hook once when the native runtime owns payments.
+	 */
+	public function test_registers_the_admin_enqueue_hook_once(): void {
+		$this->sut = $this->create_controller( true );
+
+		$this->sut->register();
+		$this->sut->register();
+
+		$this->assertSame(
+			10,
+			has_action( 'admin_enqueue_scripts', array( $this->sut, 'handle_admin_enqueue_scripts' ) ),
+			'Native-owned runtime should register the confirmation script hook.'
+		);
+		$this->assertSame(
+			10,
+			has_action( 'woocommerce_admin_order_data_after_payment_info', array( $this->sut, 'render_payment_details_container' ) ),
+			'Native-owned runtime should print the order notice mount point after the payment info.'
+		);
+	}
+
+	/**
+	 * @testdox Should print the order notice mount point after the payment info only for WooPayments orders.
+	 *
+	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:174,277-282`.
+	 */
+	public function test_prints_the_payment_details_mount_point_only_for_woopayments_orders(): void {
+		$this->sut = $this->create_controller( true );
+
+		ob_start();
+		$this->sut->render_payment_details_container( $this->create_order() );
+		$woopayments_output = ob_get_clean();
+
+		ob_start();
+		$this->sut->render_payment_details_container( $this->create_order( 'bacs' ) );
+		$other_output = ob_get_clean();
+
+		ob_start();
+		$this->sut->render_payment_details_container( null );
+		$no_order_output = ob_get_clean();
+
+		$this->assertSame( '<div id="woocommerce-woopayments-order-payment-details"></div>', $woopayments_output );
+		$this->assertSame( '', $other_output );
+		$this->assertSame( '', $no_order_output );
+	}
+
+	/**
+	 * @testdox Should show the WooPayments transaction fee below the order totals, like the client.
+	 *
+	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:183,1329-1363`.
+	 */
+	public function test_prints_the_transaction_fee_row_after_the_order_total(): void {
+		$this->sut = $this->create_controller( true );
+		$this->sut->register();
+
+		$order = $this->create_order();
+		$order->update_meta_data( '_wcpay_transaction_fee', '0.78' );
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->save();
+
+		$output = $this->render_totals_after_total( $order );
+
+		$this->assertStringContainsString( '<td class="label wcpay-transaction-fee">', $output );
+		$this->assertStringContainsString( 'This represents the fee WooPayments collects for the transaction.', $output, 'The row carries the client help tip.' );
+		$this->assertMatchesRegularExpression( '#</span>\s+Transaction Fee:#', $output, 'The label is spaced from its help tip.' );
+		$this->assertStringContainsString( '-' . wp_kses( wc_price( 0.78, array( 'currency' => $order->get_currency() ) ), 'post' ), $output, 'The fee shows as a negative amount in the order currency.' );
+	}
+
+	/**
+	 * @testdox Should not show a transaction fee while the payment awaits capture or when no fee is stored.
+	 *
+	 * @testWith ["requires_capture", "0.78"]
+	 *           ["succeeded", ""]
+	 *
+	 * @param string $intent_status Stored intent status.
+	 * @param string $fee           Stored transaction fee.
+	 */
+	public function test_hides_the_transaction_fee_row( string $intent_status, string $fee ): void {
+		$this->sut = $this->create_controller( true );
+		$this->sut->register();
+
+		$order = $this->create_order();
+		$order->update_meta_data( '_intention_status', $intent_status );
+		if ( '' !== $fee ) {
+			$order->update_meta_data( '_wcpay_transaction_fee', $fee );
+		}
+		$order->save();
+
+		$this->assertStringNotContainsString( 'Transaction Fee:', $this->render_totals_after_total( $order ) );
+	}
+
+	/**
+	 * @testdox Should show the WooPay payment line with the card's last four digits on WooPay orders.
+	 *
+	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:182,1304-1322`.
+	 */
+	public function test_prints_the_woopay_payment_method_name_for_woopay_orders(): void {
+		$this->sut = $this->create_controller( true );
+		$this->sut->register();
+
+		$order = $this->create_order();
+		$order->update_meta_data( 'is_woopay', '1' );
+		$order->update_meta_data( 'last4', '4242' );
+		$order->save();
+
+		$output = $this->render_totals_after_total( $order );
+
+		$this->assertStringContainsString( '<div class="wc-payment-gateway-method-name-woopay-wrapper">', $output );
+		$this->assertStringContainsString( 'Paid with', $output );
+		$this->assertStringContainsString( '<img alt="WooPay" src="' . esc_url_raw( WC()->plugin_url() . '/assets/images/payment-methods/woo-short-color.svg' ) . '">', $output );
+		$this->assertMatchesRegularExpression( '/Card ending in\s+4242/', $output );
+
+		$plain = $this->create_order();
+		$this->assertStringNotContainsString( 'woopay-wrapper', $this->render_totals_after_total( $plain ), 'Orders not paid with WooPay get no WooPay line.' );
+	}
+
+	/**
+	 * @testdox Should do nothing outside the order edit screens.
+	 */
+	public function test_does_nothing_outside_the_order_edit_screens(): void {
+		$this->sut = $this->create_controller( true );
+		$this->set_current_order( $this->create_order() );
+		set_current_screen( 'dashboard' );
+
+		$this->sut->handle_admin_enqueue_scripts();
+
+		$this->assertSame( array(), $this->registered_entries, 'No asset should be registered off the order screen.' );
+		$this->assertFalse( wp_script_is( self::SCRIPT_HANDLE, 'enqueued' ) );
+	}
+
+	/**
+	 * @testdox Should do nothing when no order is being edited.
+	 */
+	public function test_does_nothing_when_no_order_is_being_edited(): void {
+		$this->sut = $this->create_controller( true );
+		$this->set_order_edit_screen( 'shop_order' );
+
+		$this->sut->handle_admin_enqueue_scripts();
+
+		$this->assertSame( array(), $this->registered_entries );
+		$this->assertFalse( wp_script_is( self::SCRIPT_HANDLE, 'enqueued' ) );
+	}
+
+	/**
+	 * @testdox Should do nothing for an order paid with another gateway.
+	 */
+	public function test_does_nothing_for_a_non_woopayments_order(): void {
+		$this->sut = $this->create_controller( true );
+		$this->set_current_order( $this->create_order( 'bacs' ) );
+		$this->set_order_edit_screen( 'shop_order' );
+
+		$this->sut->handle_admin_enqueue_scripts();
+
+		$this->assertSame( array(), $this->registered_entries );
+		$this->assertFalse( wp_script_is( self::SCRIPT_HANDLE, 'enqueued' ) );
+	}
+
+	/**
+	 * @testdox Should do nothing when the confirmation script bundle has not been built.
+	 */
+	public function test_does_nothing_when_the_script_bundle_is_not_built(): void {
+		$this->sut = $this->create_controller( true, false );
+		$this->set_current_order( $this->create_order() );
+		$this->set_order_edit_screen( 'shop_order' );
+
+		$this->sut->handle_admin_enqueue_scripts();
+
+		$this->assertSame( array(), $this->registered_entries, 'A missing bundle should degrade to no modal, not a fatal.' );
+		$this->assertFalse( wp_script_is( self::SCRIPT_HANDLE, 'enqueued' ) );
+	}
+
+	/**
+	 * @testdox Should enqueue the confirmation script with the projected config on the order edit screens.
+	 *
+	 * @dataProvider order_edit_screen_provider
+	 *
+	 * @param int $screen_index Index into the supported order edit screen IDs.
+	 */
+	public function test_enqueues_the_confirmation_script_with_the_projected_config( int $screen_index ): void {
+		$screen_ids = $this->get_order_edit_screen_ids();
+		if ( ! isset( $screen_ids[ $screen_index ] ) ) {
+			$this->markTestSkipped( 'This installation does not expose a second order edit screen.' );
+		}
+
+		$order = $this->create_order();
+		$order->set_status( 'processing' );
+		$order->save();
+
+		$this->sut = $this->create_controller( true );
+		$this->set_current_order( $order );
+		$this->set_order_edit_screen( $screen_ids[ $screen_index ] );
+
+		$this->sut->handle_admin_enqueue_scripts();
+
+		$this->assertSame( array( 'woopayments-order-status-change' ), $this->registered_entries );
+		$this->assertTrue( wp_script_is( self::SCRIPT_HANDLE, 'enqueued' ), 'The confirmation script should be enqueued.' );
+
+		$inline = $this->get_inline_script();
+		$this->assertStringContainsString( 'window.woocommerceWooPaymentsOrderStatusChange = ', $inline );
+		$this->assertStringNotContainsString( '"refund_amount":"25"', $inline, 'Amounts must not cross as strings.' );
+		$this->assertStringContainsString( '"can_refund":false', $inline, 'Booleans must cross as booleans.' );
+
+		$config = $this->parse_emitted_config( $inline );
+
+		$this->assertSame(
+			array( 'order_status', 'can_refund', 'refund_amount', 'formatted_refund_amount', 'refunded_amount', 'charge_id', 'has_open_authorization', 'test_mode', 'disable_manual_refunds', 'should_use_explicit_price' ),
+			array_keys( $config ),
+			'The config contract is consumed by the browser and must not drift.'
+		);
+		$this->assertSame( 'wc-processing', $config['order_status'] );
+		$this->assertIsBool( $config['can_refund'], 'The browser branches on can_refund being false.' );
+		$this->assertIsString( $config['formatted_refund_amount'] );
+		$this->assertStringNotContainsString( '&', $config['formatted_refund_amount'], 'The browser renders this as text, so entities must already be decoded.' );
+
+		// JSON has no int/float distinction, so an integral amount encodes as `25` and PHP decodes it
+		// back as an int. What the contract needs is that it crosses unquoted, i.e. the browser gets a
+		// number rather than a string - which the raw assertions above and below pin directly.
+		$this->assertIsNotString( $config['refund_amount'], 'The browser branches on refund_amount not being positive.' );
+		$this->assertEqualsWithDelta( 25.0, $config['refund_amount'], 0.001 );
+		$this->assertStringContainsString( '"refund_amount":25', $inline, 'Amounts must cross as JSON numbers.' );
+		$this->assertIsNotString( $config['refunded_amount'] );
+		$this->assertEqualsWithDelta( 0.0, $config['refunded_amount'], 0.001 );
+		$this->assertStringContainsString( '"refunded_amount":0', $inline, 'Amounts must cross as JSON numbers.' );
+		$this->assertSame( '', $config['charge_id'], 'An order without a provider charge must not trigger a charge read.' );
+	}
+
+	/**
+	 * Client 11.1.0 `client/components/confirmation-modal/styles.scss`: at most 600px wide, 24px header and
+	 * content padding, paragraphs without margins and a full-width separator above the footer.
+	 *
+	 * @testdox Should size and space the status-change confirmation dialogs like the client.
+	 */
+	public function test_styles_the_confirmation_dialogs_like_the_client(): void {
+		$css = $this->enqueue_for_a_woopayments_order_and_get_inline_style();
+
+		$this->assertStringContainsString( '.woocommerce-woopayments-order-status-change__modal.woocommerce-woopayments-order-status-change__modal{max-width:600px}', $css );
+		$this->assertStringContainsString( '.woocommerce-woopayments-order-status-change__modal .components-modal__header{padding:24px}', $css );
+		$this->assertStringContainsString( '.woocommerce-woopayments-order-status-change__modal .components-modal__content{display:flex;flex-direction:column;padding:0 24px 24px}', $css );
+		$this->assertStringContainsString( '.woocommerce-woopayments-order-status-change__modal .components-modal__content p{margin:0;padding:0 0 1em}', $css );
+		$this->assertStringContainsString( '.woocommerce-woopayments-order-status-change__modal-separator{margin:24px -24px}', $css );
+	}
+
+	/**
+	 * Client 11.1.0 `client/components/inline-notice/styles.scss`: warning notices use the `#fcf9e8` fill, and the
+	 * icon box is a centred flex container, so the one-line test-mode notice is as tall as its 22px icon row.
+	 *
+	 * @testdox Should fill the order screen warning notices and centre their icon like the client.
+	 */
+	public function test_styles_the_order_notices_like_the_client(): void {
+		$css = $this->enqueue_for_a_woopayments_order_and_get_inline_style();
+
+		$this->assertStringContainsString( '#woocommerce-woopayments-order-payment-details .components-notice.is-warning{background-color:#fcf9e8}', $css );
+		$this->assertStringContainsString( '#woocommerce-woopayments-order-payment-details .woocommerce-woopayments-order-notice__icon{align-items:center;align-self:flex-start;display:flex;margin-inline-end:5px}', $css );
+	}
+
+	/**
+	 * Enqueue the order screen assets for a WooPayments order and get the inline style they add.
+	 *
+	 * @return string
+	 */
+	private function enqueue_for_a_woopayments_order_and_get_inline_style(): string {
+		if ( ! wp_style_is( 'woocommerce_admin_styles', 'registered' ) ) {
+			wp_register_style( 'woocommerce_admin_styles', false, array(), WC_VERSION );
+		}
+		wp_styles()->add_data( 'woocommerce_admin_styles', 'after', array() );
+
+		$order = $this->create_order();
+		$order->set_status( 'processing' );
+		$order->save();
+
+		$this->sut = $this->create_controller( true );
+		$this->set_current_order( $order );
+		$this->set_order_edit_screen( $this->get_order_edit_screen_ids()[0] );
+
+		$this->sut->handle_admin_enqueue_scripts();
+
+		$chunks = wp_styles()->get_data( 'woocommerce_admin_styles', 'after' );
+		$this->assertIsArray( $chunks, 'The order screen styles should be added inline.' );
+
+		return implode( "\n", array_filter( $chunks, 'is_string' ) );
+	}
+
+	/**
+	 * Supported order edit screens.
+	 *
+	 * @return array<string,array{0:int}>
+	 */
+	public function order_edit_screen_provider(): array {
+		return array(
+			'first order edit screen'  => array( 0 ),
+			'second order edit screen' => array( 1 ),
+		);
+	}
+
+	/**
+	 * Get the inline script emitted before the confirmation script.
+	 *
+	 * @return string
+	 */
+	private function get_inline_script(): string {
+		$chunks = wp_scripts()->get_data( self::SCRIPT_HANDLE, 'before' );
+
+		$this->assertIsArray( $chunks, 'The confirmation config should be emitted as an inline script.' );
+
+		return implode( "\n", array_filter( $chunks, 'is_string' ) );
+	}
+
+	/**
+	 * Parse the config the browser actually receives out of the emitted inline script.
+	 *
+	 * @param string $inline Emitted inline script.
+	 * @return array<string,mixed>
+	 */
+	private function parse_emitted_config( string $inline ): array {
+		$assignment = 'window.woocommerceWooPaymentsOrderStatusChange = ';
+		$offset     = strpos( $inline, $assignment );
+
+		$this->assertNotFalse( $offset, 'The config assignment should be present in the inline script.' );
+
+		$json   = rtrim( trim( substr( $inline, $offset + strlen( $assignment ) ) ), ';' );
+		$config = json_decode( $json, true );
+
+		$this->assertSame( JSON_ERROR_NONE, json_last_error(), 'The emitted config should be valid JSON.' );
+		$this->assertIsArray( $config );
+
+		return $config;
+	}
+
+	/**
+	 * Create the System Under Test.
+	 *
+	 * @param bool $native_register  Whether native owns the runtime.
+	 * @param bool $asset_available  Whether the script bundle is built.
+	 * @return WooPaymentsOrderStatusChangeController
+	 */
+	private function create_controller( bool $native_register, bool $asset_available = true ): WooPaymentsOrderStatusChangeController {
+		$controller = new WooPaymentsOrderStatusChangeController();
+		$controller->init(
+			new StaticNativeRuntimeArbiter( $native_register ),
+			wc_get_container()->get( WooPaymentsOrderStatusChangeProjectionService::class )
+		);
+
+		$controller->set_asset_available_resolver(
+			function () use ( $asset_available ) {
+				return $asset_available;
+			}
+		);
+		$controller->set_asset_registrar(
+			function ( string $entry ) {
+				$this->registered_entries[] = $entry;
+				wp_register_script( self::SCRIPT_HANDLE, '', array(), '1.0.0', true );
+			}
+		);
+
+		return $controller;
+	}
+
+	/**
+	 * Create a saved order with a known total.
+	 *
+	 * @param string $payment_method Order payment method ID.
+	 * @return WC_Order
+	 */
+	private function create_order( string $payment_method = 'woocommerce_payments' ): WC_Order {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+
+		$order->set_payment_method( $payment_method );
+		$order->set_total( '25.00' );
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * Fire the order totals hook the way the order items box does and capture its output.
+	 *
+	 * @param WC_Order $order Order being displayed.
+	 * @return string
+	 */
+	private function render_totals_after_total( WC_Order $order ): string {
+		ob_start();
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Re-firing core's order totals hook.
+		do_action( 'woocommerce_admin_order_totals_after_total', $order->get_id() );
+
+		return (string) ob_get_clean();
+	}
+
+	/**
+	 * Make an order the one being edited.
+	 *
+	 * @param WC_Order $order Order being edited.
+	 */
+	private function set_current_order( WC_Order $order ): void {
+		$GLOBALS['theorder'] = $order;
+	}
+
+	/**
+	 * Put the request on an order edit screen.
+	 *
+	 * @param string $screen_id Order edit screen ID.
+	 */
+	private function set_order_edit_screen( string $screen_id ): void {
+		set_current_screen( $screen_id );
+
+		$this->assertSame( $screen_id, get_current_screen()->id, 'The test needs the order edit screen to be current.' );
+	}
+
+	/**
+	 * Get order edit screen IDs that should receive the confirmation script.
+	 *
+	 * @return string[]
+	 */
+	private function get_order_edit_screen_ids(): array {
+		$screen_ids = array( 'shop_order' );
+		if ( function_exists( 'wc_get_page_screen_id' ) ) {
+			$screen_ids[] = wc_get_page_screen_id( 'shop-order' );
+		}
+
+		return array_values( array_unique( array_filter( $screen_ids ) ) );
+	}
+}

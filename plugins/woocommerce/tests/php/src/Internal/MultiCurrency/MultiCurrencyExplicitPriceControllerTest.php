@@ -1,0 +1,304 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
+
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyExplicitPriceController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
+use WC_Unit_Test_Case;
+
+/**
+ * Tests for the MultiCurrencyExplicitPriceController class.
+ */
+class MultiCurrencyExplicitPriceControllerTest extends WC_Unit_Test_Case {
+
+	/**
+	 * Hooks touched by the explicit price controller.
+	 *
+	 * @var string[]
+	 */
+	private array $hooks = array(
+		'woocommerce_cart_total',
+		'woocommerce_get_formatted_order_total',
+		'woocommerce_admin_order_totals_after_tax',
+		'woocommerce_admin_order_totals_after_total',
+		'wc_price_args',
+		'wcpay_multi_currency_should_output_explicit_price',
+	);
+
+	/**
+	 * Tear down test fixtures.
+	 */
+	public function tear_down(): void {
+		foreach ( $this->hooks as $hook ) {
+			remove_all_filters( $hook );
+		}
+
+		parent::tear_down();
+	}
+
+	/**
+	 * @testdox Should register explicit price hooks once when core owns runtime.
+	 */
+	public function test_registers_explicit_price_hooks_once_when_core_owns_runtime(): void {
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true );
+
+		$sut->register();
+		$sut->register();
+
+		$this->assertSame( 100, has_filter( 'woocommerce_cart_total', array( $sut, 'get_explicit_price' ) ) );
+		$this->assertSame( 100, has_filter( 'woocommerce_get_formatted_order_total', array( $sut, 'get_explicit_price' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_admin_order_totals_after_tax', array( $sut, 'register_formatted_woocommerce_price_filter' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_admin_order_totals_after_total', array( $sut, 'unregister_formatted_woocommerce_price_filter' ) ) );
+	}
+
+	/**
+	 * @testdox Should not register explicit price hooks when plugin owns runtime.
+	 */
+	public function test_does_not_register_explicit_price_hooks_when_plugin_owns_runtime(): void {
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN, true );
+
+		$sut->register();
+
+		$this->assertFalse( has_filter( 'woocommerce_cart_total', array( $sut, 'get_explicit_price' ) ) );
+		$this->assertFalse( has_filter( 'woocommerce_get_formatted_order_total', array( $sut, 'get_explicit_price' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_admin_order_totals_after_tax', array( $sut, 'register_formatted_woocommerce_price_filter' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_admin_order_totals_after_total', array( $sut, 'unregister_formatted_woocommerce_price_filter' ) ) );
+	}
+
+	/**
+	 * @testdox Should format explicit prices only when additional currencies are enabled.
+	 */
+	public function test_formats_explicit_prices_only_when_additional_currencies_are_enabled(): void {
+		$multi_currency  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true );
+		$single_currency = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false );
+		$order           = $this->createMock( \WC_Order::class );
+		$order->method( 'get_currency' )->willReturn( 'BRL' );
+
+		$this->assertSame( 'R$ 5,90 BRL', $multi_currency->get_explicit_price( 'R$ 5,90', $order ) );
+		$this->assertSame( '$10.30 USD', $multi_currency->get_explicit_price( '$10.30' ) );
+		$this->assertSame( 'R$ 5,90', $single_currency->get_explicit_price( 'R$ 5,90', $order ) );
+	}
+
+	/**
+	 * @testdox Should temporarily add explicit wc price args for admin order totals.
+	 */
+	public function test_temporarily_adds_explicit_wc_price_args_for_admin_order_totals(): void {
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true );
+
+		$sut->register_formatted_woocommerce_price_filter();
+
+		$this->assertSame( 100, has_filter( 'wc_price_args', array( $sut, 'get_explicit_price_args' ) ) );
+		$this->assertSame(
+			array(
+				'price_format' => '%1$s%2$s&nbsp;USD',
+				'currency'     => 'USD',
+			),
+			$sut->get_explicit_price_args(
+				array(
+					'price_format' => '%1$s%2$s',
+					'currency'     => 'USD',
+				)
+			)
+		);
+
+		$sut->unregister_formatted_woocommerce_price_filter();
+
+		$this->assertFalse( has_filter( 'wc_price_args', array( $sut, 'get_explicit_price_args' ) ) );
+	}
+
+	/**
+	 * @testdox Should append exactly the given currency to the admin order Total row, never substituting the store default.
+	 *
+	 * WooCommerce core populates `wc_price_args['currency']` for the admin order Total row from the
+	 * order's own currency, not from Multi-Currency's selected-currency machinery (a shopper-facing,
+	 * front-end concept with no admin-order-total equivalent) -- `get_explicit_price_args()` never
+	 * reads a "selected currency" at all; it only ever sees whatever currency the caller already
+	 * resolved. This proves it appends exactly that currency (EUR) and never substitutes the store
+	 * default (`get_woocommerce_currency()`, USD here) for it.
+	 * `test_temporarily_adds_explicit_wc_price_args_for_admin_order_totals` above only exercises the
+	 * case where the given currency and the store default happen to coincide (both USD), so it cannot
+	 * catch a regression that silently swapped in the store default for a currency-converted order.
+	 */
+	public function test_admin_order_total_never_substitutes_the_store_default_for_the_given_currency(): void {
+		$original_currency = get_option( 'woocommerce_currency', 'USD' );
+		update_option( 'woocommerce_currency', 'USD' );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true );
+
+		try {
+			$sut->register_formatted_woocommerce_price_filter();
+
+			$args = $sut->get_explicit_price_args(
+				array(
+					'price_format' => '%1$s%2$s',
+					'currency'     => 'EUR',
+				)
+			);
+		} finally {
+			$sut->unregister_formatted_woocommerce_price_filter();
+			update_option( 'woocommerce_currency', $original_currency );
+		}
+
+		$this->assertSame(
+			array(
+				'price_format' => '%1$s%2$s&nbsp;EUR',
+				'currency'     => 'EUR',
+			),
+			$args
+		);
+	}
+
+	/**
+	 * @testdox Should let the public filter disable every configured explicit-price projection.
+	 */
+	public function test_public_filter_disables_configured_cart_order_and_admin_explicit_price_projections(): void {
+		$sut   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true );
+		$order = $this->createMock( \WC_Order::class );
+		$order->method( 'get_currency' )->willReturn( 'BRL' );
+		add_filter( 'wcpay_multi_currency_should_output_explicit_price', '__return_false' );
+		$sut->register();
+
+		$this->assertSame( '$10.30', apply_filters( 'woocommerce_cart_total', '$10.30' ) );
+		$this->assertSame( 'R$ 5,90', apply_filters( 'woocommerce_get_formatted_order_total', 'R$ 5,90', $order ) );
+		do_action( 'woocommerce_admin_order_totals_after_tax', 123 );
+		$this->assertSame(
+			array(
+				'price_format' => '%1$s%2$s',
+				'currency'     => 'USD',
+			),
+			apply_filters(
+				'wc_price_args',
+				array(
+					'price_format' => '%1$s%2$s',
+					'currency'     => 'USD',
+				)
+			)
+		);
+		do_action( 'woocommerce_admin_order_totals_after_total', 123 );
+	}
+
+	/**
+	 * @testdox Should let the public filter force explicit output after state construction fails.
+	 */
+	public function test_public_filter_can_force_explicit_output_after_state_construction_fails(): void {
+		$controller = new MultiCurrencyExplicitPriceController();
+		$factory    = $this->getMockBuilder( MultiCurrencyStateBuilderFactory::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'create' ) )
+			->getMock();
+		$factory->method( 'create' )->willThrowException( new \RuntimeException( 'State failed.' ) );
+		$controller->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_CORE ), $factory );
+		$defaults = array();
+		add_filter(
+			'wcpay_multi_currency_should_output_explicit_price',
+			static function ( bool $current_default ) use ( &$defaults ): bool {
+				$defaults[] = $current_default;
+				return true;
+			}
+		);
+
+		$this->assertSame( '$10.30 USD', $controller->get_explicit_price( '$10.30' ) );
+		$this->assertSame( array( false ), $defaults );
+	}
+
+	/**
+	 * @testdox Should run the public filter once before empty-currency and existing-suffix guards.
+	 */
+	public function test_public_filter_runs_once_before_output_guards(): void {
+		$controller = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false );
+		$empty      = $this->createMock( \WC_Order::class );
+		$empty->method( 'get_currency' )->willReturn( '' );
+		$defaults = array();
+		add_filter(
+			'wcpay_multi_currency_should_output_explicit_price',
+			static function ( bool $current_default ) use ( &$defaults ): bool {
+				$defaults[] = $current_default;
+				return true;
+			}
+		);
+
+		$this->assertSame( '$10.30', $controller->get_explicit_price( '$10.30', $empty ) );
+		$this->assertSame( '$10.30 USD', $controller->get_explicit_price( '$10.30 USD' ) );
+		$this->assertSame( array( false, false ), $defaults );
+	}
+
+	/**
+	 * Create an explicit price controller.
+	 *
+	 * @param string $owner                            Runtime owner.
+	 * @param bool   $has_additional_currencies_enabled Whether state has additional enabled currencies.
+	 * @return MultiCurrencyExplicitPriceController
+	 */
+	private function create_controller( string $owner, bool $has_additional_currencies_enabled ): MultiCurrencyExplicitPriceController {
+		$controller = new MultiCurrencyExplicitPriceController();
+		$controller->init(
+			$this->create_arbiter( $owner ),
+			$this->create_state_builder_factory( $has_additional_currencies_enabled )
+		);
+
+		return $controller;
+	}
+
+	/**
+	 * Create a state builder factory.
+	 *
+	 * @param bool $has_additional_currencies_enabled Whether state has additional enabled currencies.
+	 * @return MultiCurrencyStateBuilderFactory
+	 */
+	private function create_state_builder_factory( bool $has_additional_currencies_enabled ): MultiCurrencyStateBuilderFactory {
+		$state = $this->createMock( MultiCurrencyState::class );
+		$state->method( 'has_additional_currencies_enabled' )->willReturn( $has_additional_currencies_enabled );
+
+		$builder = $this->getMockBuilder( MultiCurrencyStateBuilder::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'build' ) )
+			->getMock();
+		$builder->method( 'build' )->willReturn( $state );
+
+		$factory = $this->getMockBuilder( MultiCurrencyStateBuilderFactory::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'create' ) )
+			->getMock();
+		$factory->method( 'create' )->willReturn( $builder );
+
+		return $factory;
+	}
+
+	/**
+	 * Create an arbiter with static ownership.
+	 *
+	 * @param string $owner Runtime owner.
+	 * @return MultiCurrencyRuntimeArbiter
+	 */
+	private function create_arbiter( string $owner ): MultiCurrencyRuntimeArbiter {
+		return new class( $owner ) extends MultiCurrencyRuntimeArbiter {
+			/**
+			 * Runtime owner.
+			 *
+			 * @var string
+			 */
+			private string $owner;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param string $owner Runtime owner.
+			 */
+			public function __construct( string $owner ) {
+				$this->owner = $owner;
+			}
+
+			/**
+			 * Tell whether core multi-currency may register.
+			 *
+			 * @return bool
+			 */
+			public function should_core_register(): bool {
+				return MultiCurrencyRuntimeArbiter::OWNER_CORE === $this->owner;
+			}
+		};
+	}
+}

@@ -7,7 +7,9 @@ use WC_Helper_Order;
 use WC_Helper_Product;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\StoreApi\Exceptions\RouteException;
+use Automattic\WooCommerce\StoreApi\Utilities\LocalPickupUtils;
 use Automattic\WooCommerce\StoreApi\Utilities\OrderController;
+use Automattic\WooCommerce\Utilities\ShippingUtil;
 use Automattic\WooCommerce\RestApi\UnitTests\Helpers\CouponHelper;
 
 /**
@@ -15,11 +17,57 @@ use Automattic\WooCommerce\RestApi\UnitTests\Helpers\CouponHelper;
  */
 class OrderControllerTests extends \WC_Unit_Test_Case {
 	/**
+	 * Shipping options and transients changed by the deterministic fixture.
+	 */
+	private const SHIPPING_OPTION_NAMES = array(
+		'woocommerce_flat_rate_settings',
+		'woocommerce_flat_rate',
+		'_transient_shipping-transient-version',
+		'_transient_timeout_shipping-transient-version',
+		'_transient_wc_shipping_method_count',
+		'_transient_timeout_wc_shipping_method_count',
+	);
+
+	/**
 	 * The system under test.
 	 *
 	 * @var OrderController
 	 */
 	private $sut;
+
+	/**
+	 * Shipping options and transients that the deterministic fixture changes.
+	 *
+	 * @var array<string, array{exists: bool, value: mixed}>
+	 */
+	private $original_shipping_options = array();
+
+	/**
+	 * Shipping option state before this class runs.
+	 *
+	 * @var array<string, array{exists: bool, value: mixed}>
+	 */
+	private static $shipping_options_before_class = array();
+
+	/**
+	 * Capture exact shipping state before any test fixture runs.
+	 */
+	public static function setUpBeforeClass(): void {
+		parent::setUpBeforeClass();
+		self::$shipping_options_before_class = self::capture_shipping_options();
+	}
+
+	/**
+	 * Assert that the class restored the exact shipping state it inherited.
+	 */
+	public static function tearDownAfterClass(): void {
+		try {
+			self::assertSame( self::$shipping_options_before_class, self::capture_shipping_options(), 'OrderControllerTests must restore the exact shipping option and transient state it inherited.' );
+		} finally {
+			self::$shipping_options_before_class = array();
+			parent::tearDownAfterClass();
+		}
+	}
 
 	/**
 	 * Set up before test.
@@ -35,6 +83,13 @@ class OrderControllerTests extends \WC_Unit_Test_Case {
 		// The per-test database rollback restores the option.
 		update_option( 'woocommerce_checkout_phone_field', 'optional' );
 
+		$this->original_shipping_options = self::capture_shipping_options();
+
+		\WC_Helper_Shipping::create_simple_flat_rate();
+		\WC_Cache_Helper::get_transient_version( 'shipping', true );
+		delete_transient( 'wc_shipping_method_count' );
+		WC()->cart->empty_cart();
+		WC()->shipping()->reset_shipping();
 		$this->sut = new class() extends OrderController {
 			/**
 			 * Check all required address fields are set and return errors if not. Parent is protected.
@@ -47,6 +102,24 @@ class OrderControllerTests extends \WC_Unit_Test_Case {
 				parent::validate_address_fields( $order, $address_type, $errors );
 			}
 		};
+	}
+
+	/**
+	 * Tear down after test.
+	 */
+	public function tearDown(): void {
+		try {
+			WC()->cart->empty_cart();
+			WC()->shipping()->reset_shipping();
+			WC()->shipping()->unregister_shipping_methods();
+
+			self::restore_shipping_options( $this->original_shipping_options );
+		} finally {
+			WC()->countries->locale          = null;
+			$this->sut                       = null;
+			$this->original_shipping_options = array();
+			parent::tearDown();
+		}
 	}
 
 	/**
@@ -220,7 +293,7 @@ class OrderControllerTests extends \WC_Unit_Test_Case {
 	}
 
 	/**
-	 * test_validate_order_before_payment_invalid_addresses.
+	 * @testdox Rejects an invalid shipping country for ordinary checkout with a selected non-local-pickup rate.
 	 */
 	public function test_validate_order_before_payment_invalid_addresses() {
 		$this->expectException( RouteException::class );
@@ -236,13 +309,21 @@ class OrderControllerTests extends \WC_Unit_Test_Case {
 		$item  = reset( $array );
 		$this->assertInstanceOf( \WC_Order_Item_Product::class, $item );
 
-		WC()->cart->add_to_cart( $item->get_product()->get_id() );
+		$cart_item_key = WC()->cart->add_to_cart( $item->get_product()->get_id() );
+		$this->select_shipping_rate( 'flat_rate' );
+		$selected_shipping_rates = ShippingUtil::get_selected_shipping_rates_from_packages( WC()->shipping()->get_packages() );
+
+		$this->assertNotFalse( $cart_item_key, 'The invalid-country checkout fixture product must be added to the cart.' );
+		$this->assertGreaterThan( 0, wc_get_shipping_method_count( true ), 'The invalid-country checkout fixture must have shipping enabled.' );
+		$this->assertTrue( WC()->cart->needs_shipping(), 'The invalid-country checkout fixture must need shipping.' );
+		$this->assertCount( 1, $selected_shipping_rates, 'The invalid-country checkout fixture must select one shipping rate.' );
+		$this->assertSame( 'flat_rate', reset( $selected_shipping_rates )->get_method_id(), 'The selected fixture rate must not be local pickup.' );
 
 		$this->sut->validate_order_before_payment( $order );
 	}
 
 	/**
-	 * test_validate_existing_order_before_payment_invalid_addresses.
+	 * @testdox Rejects an invalid shipping country for an existing non-local-pickup order with no selected live rate.
 	 */
 	public function test_validate_existing_order_before_payment_invalid_addresses() {
 		$this->expectException( RouteException::class );
@@ -252,6 +333,16 @@ class OrderControllerTests extends \WC_Unit_Test_Case {
 		$order = WC_Helper_Order::create_order();
 		$order->set_shipping_country( 'Invalid' );
 		$order->save();
+		WC()->shipping()->reset_shipping();
+		$selected_shipping_rates = ShippingUtil::get_selected_shipping_rates_from_packages( WC()->shipping()->get_packages() );
+		$shipping_methods        = $order->get_shipping_methods();
+
+		$this->assertTrue( $order->needs_shipping(), 'The invalid-country existing-order fixture must need shipping.' );
+		$this->assertEmpty( $selected_shipping_rates, 'The existing-order fixture must not inherit a live selected shipping rate.' );
+		$this->assertNotEmpty( $shipping_methods, 'The existing-order fixture must contain a persisted shipping method.' );
+		foreach ( $shipping_methods as $shipping_method ) {
+			$this->assertNotContains( $shipping_method->get_method_id(), LocalPickupUtils::get_local_pickup_method_ids(), 'Every persisted fixture method must be non-local pickup.' );
+		}
 
 		// validate_addresses() inspects the selected shipping rates from the global cart's
 		// packages even for existing orders, so the cart must contain the shippable product
@@ -264,6 +355,200 @@ class OrderControllerTests extends \WC_Unit_Test_Case {
 		WC()->cart->add_to_cart( $item->get_product()->get_id() );
 
 		$this->sut->validate_existing_order_before_payment( $order );
+	}
+
+	/**
+	 * @testdox Allows an invalid shipping country for an existing local-pickup order with no selected live rate.
+	 */
+	public function test_validate_existing_local_pickup_order_allows_invalid_shipping_country_without_selected_rates(): void {
+		$order = WC_Helper_Order::create_order();
+		$this->set_shipping_address(
+			$order,
+			array(
+				'country' => 'Invalid',
+				'phone'   => '555-555-5555',
+			)
+		);
+
+		$shipping_methods = $this->set_persisted_shipping_method_id( $order, 'local_pickup' );
+		$this->assertNotEmpty( $shipping_methods, 'The existing-order fixture must contain a persisted shipping method.' );
+		$order->save();
+
+		WC()->shipping()->reset_shipping();
+		$selected_shipping_rates = ShippingUtil::get_selected_shipping_rates_from_packages( WC()->shipping()->get_packages() );
+
+		$this->assertTrue( $order->needs_shipping(), 'The local-pickup existing-order fixture must contain a shippable product.' );
+		$this->assertEmpty( $selected_shipping_rates, 'The local-pickup existing-order fixture must not inherit a live selected shipping rate.' );
+		$this->assertNull( $this->sut->validate_existing_order_before_payment( $order ) );
+	}
+
+	/**
+	 * @testdox Uses a live local-pickup rate instead of an ordinary checkout order's persisted non-local method.
+	 */
+	public function test_validate_order_before_payment_uses_live_shipping_rate_authority(): void {
+		$order = WC_Helper_Order::create_order();
+		$this->set_shipping_address(
+			$order,
+			array(
+				'country' => 'Invalid',
+				'phone'   => '555-555-5555',
+			)
+		);
+		$order->save();
+
+		$shipping_methods = $order->get_shipping_methods();
+		$this->assertNotEmpty( $shipping_methods, 'The ordinary checkout fixture must contain a persisted shipping method.' );
+		foreach ( $shipping_methods as $shipping_method ) {
+			$this->assertNotContains( $shipping_method->get_method_id(), LocalPickupUtils::get_local_pickup_method_ids(), 'The persisted fixture method must conflict with the live local-pickup rate.' );
+		}
+
+		/** @var \WC_Order_Item_Product $item */
+		$order_items   = $order->get_items();
+		$item          = reset( $order_items );
+		$cart_item_key = WC()->cart->add_to_cart( $item->get_product()->get_id() );
+		$this->select_shipping_rate( 'local_pickup' );
+
+		$this->assertNotFalse( $cart_item_key, 'The ordinary checkout fixture product must be added to the cart.' );
+		$this->assertNull( $this->sut->validate_order_before_payment( $order ) );
+	}
+
+	/**
+	 * @testdox Ignores a live local-pickup rate when an existing order has persisted non-local delivery.
+	 */
+	public function test_validate_existing_non_local_order_ignores_live_local_pickup_rate(): void {
+		$this->expectException( RouteException::class );
+		$this->expectExceptionCode( 400 );
+		$this->expectExceptionMessage( 'Sorry, we do not ship orders to the provided country (Invalid)' );
+
+		$order = WC_Helper_Order::create_order();
+		$this->set_shipping_address(
+			$order,
+			array(
+				'country' => 'Invalid',
+				'phone'   => '555-555-5555',
+			)
+		);
+		$order->save();
+		$this->select_shipping_rate( 'local_pickup' );
+		$shipping_methods        = $order->get_shipping_methods();
+		$selected_shipping_rates = ShippingUtil::get_selected_shipping_rates_from_packages( WC()->shipping()->get_packages() );
+
+		$this->assertNotEmpty( $shipping_methods, 'The existing order must contain persisted non-local delivery.' );
+		$this->assertNotContains( reset( $shipping_methods )->get_method_id(), LocalPickupUtils::get_local_pickup_method_ids(), 'The persisted order method must be non-local pickup.' );
+		$this->assertSame( 'local_pickup', reset( $selected_shipping_rates )->get_method_id(), 'The unrelated live rate must conflict as local pickup.' );
+
+		$this->sut->validate_existing_order_before_payment( $order );
+	}
+
+	/**
+	 * @testdox Ignores a live non-local rate when an existing order has persisted local pickup.
+	 */
+	public function test_validate_existing_local_pickup_order_ignores_live_non_local_rate(): void {
+		$order = WC_Helper_Order::create_order();
+		$this->set_shipping_address(
+			$order,
+			array(
+				'country' => 'Invalid',
+				'phone'   => '555-555-5555',
+			)
+		);
+		$shipping_methods = $this->set_persisted_shipping_method_id( $order, 'local_pickup' );
+		$order->save();
+		$this->select_shipping_rate( 'flat_rate' );
+		$selected_shipping_rates = ShippingUtil::get_selected_shipping_rates_from_packages( WC()->shipping()->get_packages() );
+
+		$this->assertSame( 'local_pickup', reset( $shipping_methods )->get_method_id(), 'The persisted order method must be local pickup.' );
+		$this->assertSame( 'flat_rate', reset( $selected_shipping_rates )->get_method_id(), 'The unrelated live rate must conflict as non-local delivery.' );
+
+		$this->assertNull( $this->sut->validate_existing_order_before_payment( $order ) );
+	}
+
+	/**
+	 * @testdox Rejects an invalid shipping country when an existing shippable order has no persisted or live shipping methods.
+	 */
+	public function test_validate_existing_order_rejects_invalid_country_without_any_shipping_methods(): void {
+		$this->expectException( RouteException::class );
+		$this->expectExceptionCode( 400 );
+		$this->expectExceptionMessage( 'Sorry, we do not ship orders to the provided country (Invalid)' );
+
+		$order = WC_Helper_Order::create_order();
+		$order->set_shipping_country( 'Invalid' );
+		foreach ( $order->get_shipping_methods() as $shipping_method ) {
+			$order->remove_item( $shipping_method->get_id() );
+		}
+		$order->save();
+		WC()->shipping()->reset_shipping();
+
+		$this->assertTrue( $order->needs_shipping(), 'The method-less existing-order fixture must contain a shippable product.' );
+		$this->assertEmpty( $order->get_shipping_methods(), 'The existing order must not contain a persisted shipping method.' );
+		$this->assertEmpty( ShippingUtil::get_selected_shipping_rates_from_packages( WC()->shipping()->get_packages() ), 'The existing-order fixture must not inherit a live selected shipping rate.' );
+
+		$this->sut->validate_existing_order_before_payment( $order );
+	}
+
+	/**
+	 * @testdox Existing-order validators continue to dispatch protected address-validation overrides.
+	 */
+	public function test_existing_order_validators_dispatch_validate_addresses_override(): void {
+		$controller = new class() extends OrderController {
+			/**
+			 * Number of protected address-validation override calls.
+			 *
+			 * @var int
+			 */
+			public $validate_addresses_calls = 0;
+
+			/**
+			 * Record dynamic dispatch through the protected extension point.
+			 *
+			 * @param \WC_Order $order Order object.
+			 * @param bool      $needs_shipping Whether the order needs shipping.
+			 */
+			protected function validate_addresses( \WC_Order $order, bool $needs_shipping ) { // phpcs:ignore Generic.CodeAnalysis.UselessOverridingMethod.Found
+				++$this->validate_addresses_calls;
+			}
+		};
+
+		$order = WC_Helper_Order::create_order();
+		$this->set_shipping_address( $order, array( 'phone' => '555-555-5555' ) );
+		$order->save();
+
+		$controller->validate_existing_order_before_payment( $order );
+		$this->assertSame( 1, $controller->validate_addresses_calls, 'Existing-order payment validation must dispatch validate_addresses() exactly once.' );
+		$controller->validate_existing_order_before_update( $order );
+		$this->assertSame( 2, $controller->validate_addresses_calls, 'Existing-order update validation must dispatch validate_addresses() exactly once.' );
+	}
+
+	/**
+	 * @testdox Existing-order shipping-method authority is restored after address validation throws.
+	 */
+	public function test_existing_order_shipping_method_authority_is_restored_after_exception(): void {
+		$order = WC_Helper_Order::create_order();
+		$this->set_shipping_address(
+			$order,
+			array(
+				'country' => 'Invalid',
+				'phone'   => '555-555-5555',
+			)
+		);
+		$order->save();
+		$this->select_shipping_rate( 'local_pickup' );
+
+		try {
+			$this->sut->validate_existing_order_before_payment( $order );
+			$this->fail( 'Persisted non-local delivery must reject the invalid shipping country.' );
+		} catch ( RouteException $error ) {
+			$this->assertSame( 400, $error->getCode() );
+		}
+
+		/** @var \WC_Order_Item_Product $item */
+		$order_items   = $order->get_items();
+		$item          = reset( $order_items );
+		$cart_item_key = WC()->cart->add_to_cart( $item->get_product()->get_id() );
+		$this->select_shipping_rate( 'local_pickup' );
+
+		$this->assertNotFalse( $cart_item_key, 'The ordinary checkout fixture product must be added to the cart.' );
+		$this->assertNull( $this->sut->validate_order_before_payment( $order ), 'Ordinary checkout must regain live local-pickup authority after the existing-order exception.' );
 	}
 
 	/**
@@ -454,6 +739,77 @@ class OrderControllerTests extends \WC_Unit_Test_Case {
 
 		foreach ( $override_data as $key => $value ) {
 			$order->{"set_shipping_$key"}( $value );
+		}
+	}
+
+	/**
+	 * Set every persisted order shipping method to one method ID.
+	 *
+	 * @param \WC_Order $order Order object.
+	 * @param string    $method_id Shipping method ID.
+	 * @return \WC_Order_Item_Shipping[]
+	 */
+	private function set_persisted_shipping_method_id( \WC_Order $order, string $method_id ): array {
+		$shipping_methods = $order->get_shipping_methods();
+		foreach ( $shipping_methods as $shipping_method ) {
+			$shipping_method->set_method_id( $method_id );
+			$shipping_method->save();
+		}
+
+		return $shipping_methods;
+	}
+
+	/**
+	 * Select a deterministic shipping rate.
+	 *
+	 * @param string $method_id Shipping method ID.
+	 */
+	private function select_shipping_rate( string $method_id ): void {
+		$rate = new \WC_Shipping_Rate( $method_id . ':1', 'Shipping rate', 0, array(), $method_id, 1 );
+
+		WC()->shipping()->packages = array(
+			array(
+				'rates' => array(
+					$rate->get_id() => $rate,
+				),
+			),
+		);
+		WC()->session->set( 'chosen_shipping_methods', array( $rate->get_id() ) );
+	}
+
+	/**
+	 * Capture exact option existence and values for the shipping fixture.
+	 *
+	 * @return array<string, array{exists: bool, value: mixed}>
+	 */
+	private static function capture_shipping_options(): array {
+		$captured_options      = array();
+		$missing_option_marker = new \stdClass();
+
+		foreach ( self::SHIPPING_OPTION_NAMES as $option_name ) {
+			$option_value                     = get_option( $option_name, $missing_option_marker );
+			$option_exists                    = $missing_option_marker !== $option_value;
+			$captured_options[ $option_name ] = array(
+				'exists' => $option_exists,
+				'value'  => $option_exists ? $option_value : null,
+			);
+		}
+
+		return $captured_options;
+	}
+
+	/**
+	 * Restore exact option existence and values for the shipping fixture.
+	 *
+	 * @param array<string, array{exists: bool, value: mixed}> $captured_options Captured shipping options.
+	 */
+	private static function restore_shipping_options( array $captured_options ): void {
+		foreach ( $captured_options as $option_name => $original_option ) {
+			if ( $original_option['exists'] ) {
+				update_option( $option_name, $original_option['value'] );
+			} else {
+				delete_option( $option_name );
+			}
 		}
 	}
 }
