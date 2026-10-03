@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingApi;
@@ -201,6 +202,18 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertSame( self::RENEWAL_CHARGE_ID, $order->get_meta( '_charge_id', true ) );
 		$this->assertSame( self::RENEWAL_CUSTOMER_ID, $order->get_meta( '_stripe_customer_id', true ), 'The client stores the intent customer (`class-wc-payments-order-service.php:1360`).' );
 		$this->assertCount( 1, $this->get_notes_containing( $order, 'A test payment of' ), 'A test-mode renewal gets the test wording.' );
+		$this->assertTrue(
+			as_has_scheduled_action(
+				WooPaymentsOperationalQueueService::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+				array(
+					'order_id'     => $order->get_id(),
+					'intent_id'    => self::RENEWAL_INTENT_ID,
+					'is_test_mode' => true,
+				),
+				'woocommerce_payments'
+			),
+			'The renewal gets its Fee details note from the job its payment note schedules (sweep row 177, decided).'
+		);
 
 		$subscription = wc_get_order( $subscription->get_id() );
 		$this->assertSame( 'active', $subscription->get_status() );
