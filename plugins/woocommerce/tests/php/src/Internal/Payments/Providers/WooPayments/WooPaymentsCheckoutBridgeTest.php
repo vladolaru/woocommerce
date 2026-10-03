@@ -23,6 +23,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Unit_Test_Case;
 
 /**
@@ -696,7 +697,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		$this->reset_frontend_surface_state();
-		unset( $_GET['change_payment_method'], $_GET['pay_for_order'], $_GET['key'], $_POST['email'], $GLOBALS['wcpay_test_subscription_ids'] );
+		unset( $_GET['change_payment_method'], $_GET['pay_for_order'], $_GET['key'], $_POST['email'], $GLOBALS['wcpay_test_subscription_ids'], $GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ] );
 		delete_option( '_wcpay_feature_woopay_express_checkout' );
 		remove_all_filters( 'wcpay_woopay_enabled' );
 		delete_option( '_wcpay_feature_dynamic_checkout_place_order_button' );
@@ -852,14 +853,10 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should flag a renewal-only cart as containing a subscription, like the extension.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_get_payment_fields_js_config_flags_renewal_cart_as_subscription(): void {
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; this isolated test needs its public cart contract.
-		eval( 'namespace { class WC_Subscriptions_Cart { public static function cart_contains_subscription() { return false; } } }' );
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; this isolated test needs its public renewal detector.
-		eval( 'namespace { function wcs_cart_contains_renewal() { return true; } }' );
+		WooCommerceSubscriptionsDoubles::load_cart();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ] = true;
 
 		$bridge = new WooPaymentsCheckoutBridge();
 		$bridge->init(

@@ -40,6 +40,7 @@ use Automattic\WooCommerce\StoreApi\Legacy as StoreApiLegacy;
 use Automattic\WooCommerce\StoreApi\Payments\PaymentContext as StoreApiPaymentContext;
 use Automattic\WooCommerce\StoreApi\Payments\PaymentResult as StoreApiPaymentResult;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPublicFraudServices;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Order;
 use WC_Payment_Token_CC;
 use WC_Unit_Test_Case;
@@ -5291,7 +5292,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should hide a checked save-payment control for a subscription cart.
 	 */
 	public function test_save_payment_method_checkbox_hides_checked_control_for_subscription_cart(): void {
-		$this->ensure_wcs_cart_double();
+		WooCommerceSubscriptionsDoubles::load_cart();
 		$GLOBALS['wcpay_test_cart_contains_subscription'] = true;
 
 		$gateway = new NativeWooPaymentsGateway();
@@ -5309,7 +5310,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should keep the save-payment control visible and unchecked for a regular cart.
 	 */
 	public function test_save_payment_method_checkbox_keeps_visible_unchecked_control_for_regular_cart(): void {
-		$this->ensure_wcs_cart_double();
+		WooCommerceSubscriptionsDoubles::load_cart();
 		$GLOBALS['wcpay_test_cart_contains_subscription'] = false;
 
 		$gateway = new NativeWooPaymentsGateway();
@@ -5327,8 +5328,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should keep the visible unchecked save control on a renewal-only classic cart, like the extension.
 	 */
 	public function test_save_payment_method_checkbox_stays_visible_for_renewal_only_cart(): void {
-		$this->ensure_wcs_cart_double();
-		$this->ensure_wcs_cart_renewal_double();
+		WooCommerceSubscriptionsDoubles::load_cart();
 		$GLOBALS['wcpay_test_cart_contains_subscription'] = false;
 		$GLOBALS['wcpay_test_cart_contains_renewal']      = true;
 
@@ -6250,20 +6250,6 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Ensure a minimal renewal-cart detector double exists.
-	 *
-	 * @return void
-	 */
-	private function ensure_wcs_cart_renewal_double(): void {
-		if ( function_exists( 'wcs_cart_contains_renewal' ) ) {
-			return;
-		}
-
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public renewal detector.
-		eval( 'namespace { function wcs_cart_contains_renewal() { return (bool) ( $GLOBALS["wcpay_test_cart_contains_renewal"] ?? false ); } }' );
-	}
-
-	/**
 	 * Ensure a minimal renewal-subscriptions lookup double exists.
 	 *
 	 * @return void
@@ -6275,20 +6261,6 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public renewal lookup.
 		eval( 'namespace { function wcs_get_subscriptions_for_renewal_order( $order_id ) { $ids = $GLOBALS["wcpay_test_renewal_subscription_ids"][ $order_id ] ?? array(); return array_map( "wc_get_order", $ids ); } }' );
-	}
-
-	/**
-	 * Ensure a minimal WooCommerce Subscriptions cart double exists.
-	 *
-	 * @return void
-	 */
-	private function ensure_wcs_cart_double(): void {
-		if ( class_exists( 'WC_Subscriptions_Cart', false ) ) {
-			return;
-		}
-
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public cart contract.
-		eval( 'class WC_Subscriptions_Cart { public static function cart_contains_subscription() { return (bool) ( $GLOBALS["wcpay_test_cart_contains_subscription"] ?? false ); } }' );
 	}
 
 	/**

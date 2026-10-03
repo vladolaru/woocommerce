@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEx
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Unit_Test_Case;
 
 /**
@@ -43,7 +44,14 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'woocommerce_is_cart' );
 		remove_all_filters( 'woocommerce_is_product' );
 		$this->set_order_pay_query_var( 0 );
-		unset( $GLOBALS['product'] );
+		unset(
+			$GLOBALS['product'],
+			$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_PRODUCT_IDS ],
+			$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SUBSCRIPTION ],
+			$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ],
+			$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RESUBSCRIBE ],
+			$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SWITCHES ]
+		);
 		wp_reset_postdata();
 		parent::tearDown();
 	}
@@ -219,13 +227,9 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should flag has_subscription on the product page for a subscription product.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_product_page_has_subscription_for_subscription_product(): void {
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Test double for an absent WCS class.
-		eval( 'namespace { class WC_Subscriptions_Product { public static function is_subscription( $product ) { return true; } } }' );
+		WooCommerceSubscriptionsDoubles::load_product();
 
 		update_option( 'woocommerce_default_country', 'US:CA' );
 		update_option( 'woocommerce_currency', 'USD' );
@@ -238,6 +242,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 				'price'         => '10',
 			)
 		);
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_PRODUCT_IDS ] = array( $product->get_id() );
 		$this->set_current_product( $product );
 
 		$params = $this->create_service()->get_express_checkout_params( 'product' );
@@ -247,13 +252,11 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should not use an unrelated cart subscription on an ordinary product page.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_product_page_subscription_context_ignores_global_cart(): void {
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Test doubles for absent WCS symbols.
-		eval( 'namespace { class WC_Subscriptions_Product { public static function is_subscription( $product ) { return false; } } class WC_Subscriptions_Cart { public static function cart_contains_subscription() { return true; } } }' );
+		WooCommerceSubscriptionsDoubles::load_product();
+		WooCommerceSubscriptionsDoubles::load_cart();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SUBSCRIPTION ] = true;
 
 		$product = \WC_Helper_Product::create_simple_product(
 			true,
@@ -273,8 +276,6 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should expose subscription state for each supported cart detector.
 	 *
 	 * @dataProvider provider_checkout_subscription_contexts
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 *
 	 * @param bool        $initial     Whether the initial cart detector matches.
 	 * @param array|false $renewal     Renewal detector result.
@@ -283,14 +284,11 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	 * @param bool        $expected    Expected localized subscription state.
 	 */
 	public function test_checkout_subscription_context_uses_supported_cart_detectors( bool $initial, $renewal, $resubscribe, $switch_result, bool $expected ): void {
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Test doubles for absent WCS symbols use the public detector return shapes.
-		eval( 'namespace { class WC_Subscriptions_Cart { public static function cart_contains_subscription() { return $GLOBALS["wcpay_ece_subscription_detectors"]["initial"]; } } function wcs_cart_contains_renewal() { return $GLOBALS["wcpay_ece_subscription_detectors"]["renewal"]; } function wcs_cart_contains_resubscribe() { return $GLOBALS["wcpay_ece_subscription_detectors"]["resubscribe"]; } function wcs_cart_contains_switches() { return $GLOBALS["wcpay_ece_subscription_detectors"]["switch"]; } }' );
-		$GLOBALS['wcpay_ece_subscription_detectors'] = array(
-			'initial'     => $initial,
-			'renewal'     => $renewal,
-			'resubscribe' => $resubscribe,
-			'switch'      => $switch_result,
-		);
+		WooCommerceSubscriptionsDoubles::load_cart();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SUBSCRIPTION ] = $initial;
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ]      = $renewal;
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RESUBSCRIBE ]  = $resubscribe;
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SWITCHES ]     = $switch_result;
 
 		$this->assertSame( $expected, $this->create_service()->get_express_checkout_params( 'checkout' )['has_subscription'] );
 	}
@@ -312,13 +310,9 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should require login confirmation on a subscription product page even with guest checkout enabled.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_login_confirmation_required_for_subscription_product_page(): void {
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Test double for an absent WCS class.
-		eval( 'namespace { class WC_Subscriptions_Product { public static function is_subscription( $product ) { return true; } } }' );
+		WooCommerceSubscriptionsDoubles::load_product();
 
 		wp_set_current_user( 0 );
 		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
@@ -335,6 +329,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 				'price'         => '10',
 			)
 		);
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_PRODUCT_IDS ] = array( $product->get_id() );
 		$this->set_current_product( $product );
 
 		$params = $this->create_service()->get_express_checkout_params( 'product' );
@@ -344,13 +339,9 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should not require login confirmation on a subscription product page when subscription signup is allowed.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_login_confirmation_false_when_subscription_signup_possible(): void {
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Test double for an absent WCS class.
-		eval( 'namespace { class WC_Subscriptions_Product { public static function is_subscription( $product ) { return true; } } }' );
+		WooCommerceSubscriptionsDoubles::load_product();
 
 		wp_set_current_user( 0 );
 		update_option( 'woocommerce_enable_guest_checkout', 'no' );
@@ -369,6 +360,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 				'price'         => '10',
 			)
 		);
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_PRODUCT_IDS ] = array( $product->get_id() );
 		$this->set_current_product( $product );
 
 		$params = $this->create_service()->get_express_checkout_params( 'product' );

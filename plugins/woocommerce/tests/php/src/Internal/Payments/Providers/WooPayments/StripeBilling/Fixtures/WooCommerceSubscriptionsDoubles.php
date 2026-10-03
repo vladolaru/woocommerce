@@ -10,7 +10,7 @@ declare( strict_types=1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures;
 
 /**
- * Defines stand-ins for the parts of WooCommerce Subscriptions' public API the Stripe Billing module calls.
+ * Defines stand-ins for the parts of WooCommerce Subscriptions' public API the Stripe Billing module and the native WooPayments checkout call.
  *
  * WooCommerce Subscriptions is not installed in the test environment. PHPUnit includes every file under `tests/php`
  * when it builds the suite, so the doubles are only defined when a test calls `load()`. Each double answers as if
@@ -55,13 +55,30 @@ final class WooCommerceSubscriptionsDoubles {
 	public const RENEWAL_ORDER_ERROR = 'wcpay_test_renewal_order_error';
 
 	/**
+	 * Global that makes `WC_Subscriptions_Cart::cart_contains_subscription()` report a subscription cart when true.
+	 */
+	public const CART_CONTAINS_SUBSCRIPTION = 'wcpay_test_cart_contains_subscription';
+
+	/**
+	 * Global holding what `wcs_cart_contains_renewal()` returns; `false`, meaning no renewal, when unset.
+	 */
+	public const CART_CONTAINS_RENEWAL = 'wcpay_test_cart_contains_renewal';
+
+	/**
+	 * Global holding what `wcs_cart_contains_resubscribe()` returns; `false`, meaning no resubscribe, when unset.
+	 */
+	public const CART_CONTAINS_RESUBSCRIBE = 'wcpay_test_cart_contains_resubscribe';
+
+	/**
+	 * Global holding what `wcs_cart_contains_switches()` returns; `false`, meaning no switch, when unset.
+	 */
+	public const CART_CONTAINS_SWITCHES = 'wcpay_test_cart_contains_switches';
+
+	/**
 	 * Define the doubles that are not defined yet, and load registered subscriptions as `SubscriptionDouble` until the test ends.
 	 */
 	public static function load(): void {
-		if ( ! class_exists( 'WC_Subscriptions_Product' ) ) {
-			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public product helper in the global namespace.
-			eval( 'namespace { class WC_Subscriptions_Product { public static function is_subscription( $product ) { $product_id = $product instanceof WC_Product ? $product->get_id() : absint( $product ); return in_array( $product_id, $GLOBALS["' . self::SUBSCRIPTION_PRODUCT_IDS . '"] ?? array(), true ); } public static function get_sign_up_fee( $product ) { return $product instanceof WC_Product ? (float) $product->get_meta( "_subscription_sign_up_fee" ) : 0; } public static function needs_one_time_shipping( $product ) { return $product instanceof WC_Product && "yes" === $product->get_meta( "_subscription_one_time_shipping" ); } } }' );
-		}
+		self::load_product();
 
 		if ( ! function_exists( 'wcs_get_subscriptions_for_order' ) ) {
 			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Same double as the other native tests define, reading the same registry.
@@ -105,6 +122,38 @@ final class WooCommerceSubscriptionsDoubles {
 
 		// The test's hook snapshot removes this filter when the test ends.
 		add_filter( 'woocommerce_order_class', array( self::class, 'get_subscription_order_class' ), 10, 3 );
+	}
+
+	/**
+	 * Define the product helper, which reports only the products registered in `SUBSCRIPTION_PRODUCT_IDS` as subscriptions.
+	 */
+	public static function load_product(): void {
+		if ( ! class_exists( 'WC_Subscriptions_Product' ) ) {
+			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public product helper in the global namespace.
+			eval( 'namespace { class WC_Subscriptions_Product { public static function is_subscription( $product ) { $product_id = $product instanceof WC_Product ? $product->get_id() : absint( $product ); return in_array( $product_id, $GLOBALS["' . self::SUBSCRIPTION_PRODUCT_IDS . '"] ?? array(), true ); } public static function get_sign_up_fee( $product ) { return $product instanceof WC_Product ? (float) $product->get_meta( "_subscription_sign_up_fee" ) : 0; } public static function needs_one_time_shipping( $product ) { return $product instanceof WC_Product && "yes" === $product->get_meta( "_subscription_one_time_shipping" ); } } }' );
+		}
+	}
+
+	/**
+	 * Define the cart detectors, which report an ordinary cart until a test sets their `CART_CONTAINS_*` globals.
+	 */
+	public static function load_cart(): void {
+		if ( ! class_exists( 'WC_Subscriptions_Cart' ) ) {
+			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public cart contract.
+			eval( 'namespace { class WC_Subscriptions_Cart { public static function cart_contains_subscription() { return (bool) ( $GLOBALS["' . self::CART_CONTAINS_SUBSCRIPTION . '"] ?? false ); } } }' );
+		}
+
+		$detectors = array(
+			'wcs_cart_contains_renewal'     => self::CART_CONTAINS_RENEWAL,
+			'wcs_cart_contains_resubscribe' => self::CART_CONTAINS_RESUBSCRIBE,
+			'wcs_cart_contains_switches'    => self::CART_CONTAINS_SWITCHES,
+		);
+		foreach ( $detectors as $function_name => $global_name ) {
+			if ( ! function_exists( $function_name ) ) {
+				// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public cart detectors.
+				eval( 'namespace { function ' . $function_name . '() { return $GLOBALS["' . $global_name . '"] ?? false; } }' );
+			}
+		}
 	}
 
 	/**
