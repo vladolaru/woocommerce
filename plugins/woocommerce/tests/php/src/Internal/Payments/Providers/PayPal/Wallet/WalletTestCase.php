@@ -12,6 +12,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Authentication\Bearer;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\Token;
 use Mockery;
+use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
 use Mockery\MockInterface;
 use WC_Unit_Test_Case;
 use WP_Error;
@@ -26,6 +27,9 @@ use WpOrg\Requests\Utility\CaseInsensitiveDictionary;
  * and through the test's request assertions.
  */
 abstract class WalletTestCase extends WC_Unit_Test_Case {
+
+	// Counts the Mockery expectations as assertions, so a test that only sets expectations is not flagged as risky.
+	use MockeryPHPUnitIntegration;
 
 	/**
 	 * Options written through set_wallet_option(), deleted on tearDown.
