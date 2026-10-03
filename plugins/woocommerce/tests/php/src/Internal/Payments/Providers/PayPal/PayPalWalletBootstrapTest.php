@@ -238,39 +238,6 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should drop the non-wallet modules and keep the wallet ones when filtering the module list.
-	 */
-	public function test_module_filter_drops_only_non_wallet_modules(): void {
-		$this->build_sut( true );
-		$kept    = new \stdClass();
-		$dropped = $this->getMockBuilder( \stdClass::class )->setMockClassName( 'WooCommerce_PayPalCommerce_OrderTracking_OrderTrackingModule_Mock' )->getMock();
-
-		$modules = array( $kept, $dropped );
-		$result  = $this->sut->filter_modules( $modules, array( get_class( $dropped ) ) );
-
-		$this->assertSame( array( $kept ), $result );
-	}
-
-	/**
-	 * @group paypal-wallet-boot
-	 *
-	 * @testdox Should name only module classes that exist in the vendored tree in the drop list.
-	 */
-	public function test_dropped_module_classes_exist_in_the_vendored_tree(): void {
-		$autoload = PayPalWalletBootstrap::VENDORED_DIR . '/vendor/autoload.php';
-		if ( ! file_exists( $autoload ) ) {
-			$this->markTestSkipped( 'Vendored extension is not present.' );
-		}
-		if ( ! class_exists( '\WooCommerce\PayPalCommerce\PluginModule' ) ) {
-			require $autoload;
-		}
-		foreach ( PayPalWalletBootstrap::DROPPED_MODULE_CLASSES as $class ) {
-			$this->assertTrue( class_exists( $class ), "$class must exist in the vendored tree, or the filter drops nothing" );
-		}
-		$this->assertCount( 7, PayPalWalletBootstrap::DROPPED_MODULE_CLASSES );
-	}
-
-	/**
 	 * @testdox Should remove the card button and keep the other methods when filtering the payment methods.
 	 */
 	public function test_payment_methods_filter_removes_only_the_card_button(): void {
@@ -301,25 +268,21 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Booting sets PPCP container process state, so this test is tagged to allow isolated runs.
-	 *
 	 * @group paypal-wallet-boot
 	 *
-	 * @testdox Should boot the vendored container once when native owns the site, registering the PayPal gateway.
+	 * @testdox Should boot the forked wallet once when native owns the site, registering the PayPal gateway and only wallet modules.
 	 */
-	public function test_boots_vendored_extension_when_native_owns(): void {
-		if ( ! file_exists( PayPalWalletBootstrap::VENDORED_DIR . '/vendor/autoload.php' ) ) {
-			$this->markTestSkipped( 'Vendored extension is not present.' );
-		}
+	public function test_boots_the_forked_wallet_when_native_owns(): void {
 		$this->build_sut( true );
 
 		$this->sut->maybe_boot();
 		$this->sut->maybe_boot(); // Second call must be a no-op.
 
 		$this->assertTrue( $this->sut->is_booted() );
-		$this->assertTrue( class_exists( '\WooCommerce\PayPalCommerce\PPCP' ) );
-		$container = \WooCommerce\PayPalCommerce\PPCP::container();
-		$this->assertTrue( $container->has( 'wcgateway.paypal-gateway' ), 'The vendored gateway service must exist' );
+		$container = \Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PPCP::container();
+		$this->assertTrue( $container->has( 'wcgateway.paypal-gateway' ), 'The gateway service must exist' );
+		$this->assertSame( \Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WalletProperties::EXTENSION_VERSION, $container->get( 'ppcp.plugin-version' ) );
+		$this->assertFalse( $container->has( 'ppcp.path-to-plugin-main-file' ), 'The fork has no plugin main file' );
 		$absent_ids = array(
 			'applepay.available',
 			'googlepay.available',
@@ -332,76 +295,85 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 			'agentic.logger.default', // The store-sync module's prefix.
 		);
 		foreach ( $absent_ids as $id ) {
-			$this->assertFalse( $container->has( $id ), "$id must not be registered: its module is dropped" );
+			$this->assertFalse( $container->has( $id ), "$id must not be registered: its module is not part of the fork" );
 		}
 		$availability = $container->get( 'ppcp.module-availability' );
-		$this->assertInstanceOf( \WooCommerce\PayPalCommerce\ModuleAvailability::class, $availability );
+		$this->assertInstanceOf( \Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ModuleAvailability::class, $availability );
 		$this->assertFalse( $availability->is_loaded( 'applepay' ) );
 		$this->assertFalse( $availability->is_eligible( 'ppcp-local-apms' ) );
-		$this->assertSame( 10, has_filter( 'woocommerce_paypal_payments_modules', array( $this->sut, 'filter_modules' ) ), 'The module filter must be in place' );
-		foreach ( PayPalWalletBootstrap::DISABLED_FEATURE_FLAGS as $flag ) {
-			$this->assertSame( 10, has_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.' . $flag, '__return_false' ), "$flag must be forced off" );
+		$this->assertInstanceOf( \Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\FeaturesEligibilityService::class, $container->get( 'settings.service.features_eligibilities' ) );
+		$this->assertInstanceOf( \Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\PaymentMethodsEligibilityService::class, $container->get( 'settings.service.payment_methods_eligibilities' ) );
+		foreach ( PayPalWalletBootstrap::get_extension_constants() as $name => $value ) {
+			$this->assertTrue( defined( $name ), "$name must be defined after boot" );
 		}
-		$this->assertFalse( has_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.vault_component_enabled' ), 'Wallet flags must be left alone' );
-		$this->assertFalse( has_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.sdk_v6_enabled' ), 'Wallet flags must be left alone' );
+		$this->assertFalse( has_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.vault_component_enabled' ), 'Wallet flags are not forced' );
 		$this->assertSame( 10, has_filter( 'woocommerce_paypal_payments_gateway_group_cards', '__return_empty_array' ), 'The card group must stay empty' );
 		$this->assertSame( 10, has_filter( 'woocommerce_paypal_payments_gateway_group_apm', '__return_empty_array' ), 'The APM group must stay empty' );
 		$this->assertSame( 10, has_filter( 'woocommerce_paypal_payments_payment_methods', array( $this->sut, 'filter_payment_methods' ) ), 'The card button must be hidden from the settings data' );
-		$this->assertContains( \WooCommerce\PayPalCommerce\WcGateway\Gateway\CardButtonGateway::ID, PayPalWalletBootstrap::HIDDEN_PAYMENT_METHOD_IDS, 'The hidden ID must match the vendored card button ID' );
-		$this->assertInstanceOf( \WooCommerce\PayPalCommerce\Settings\Service\FeaturesEligibilityService::class, $container->get( 'settings.service.features_eligibilities' ) );
-		$this->assertInstanceOf( \WooCommerce\PayPalCommerce\Settings\Service\PaymentMethodsEligibilityService::class, $container->get( 'settings.service.payment_methods_eligibilities' ) );
+		$this->assertContains( \Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CardButtonGateway::ID, PayPalWalletBootstrap::HIDDEN_PAYMENT_METHOD_IDS, 'The hidden ID must match the forked card button ID' );
 
-		// What is offered: the card, wallet and local APM gateways are connection-gated by the extension and the test store is not connected, so only the main PayPal gateway is observable.
+		// What is offered: card and wallet gateways are connection-gated by the extension's logic and the test store is not connected, so only the main PayPal gateway is observable.
 		$offered_ids = array_map(
 			static function ( $gateway ): string {
 				return $gateway->id;
 			},
 			apply_filters( 'woocommerce_payment_gateways', array() ) // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 		);
-		$this->assertContains( \WooCommerce\PayPalCommerce\WcGateway\Gateway\PayPalGateway::ID, $offered_ids, 'The PayPal gateway must be offered' );
-		$not_offered = array(
-			\WooCommerce\PayPalCommerce\Applepay\ApplePayGateway::ID,
-			\WooCommerce\PayPalCommerce\Googlepay\GooglePayGateway::ID,
-			\WooCommerce\PayPalCommerce\Axo\Gateway\AxoGateway::ID,
-			\WooCommerce\PayPalCommerce\WcGateway\Gateway\CreditCardGateway::ID,
-			\WooCommerce\PayPalCommerce\WcGateway\Gateway\CardButtonGateway::ID,
-			\WooCommerce\PayPalCommerce\LocalAlternativePaymentMethods\IDealGateway::ID,
-			\WooCommerce\PayPalCommerce\LocalAlternativePaymentMethods\BancontactGateway::ID,
-			\WooCommerce\PayPalCommerce\LocalAlternativePaymentMethods\PWCGateway::ID,
-		);
+		$this->assertContains( 'ppcp-gateway', $offered_ids, 'The PayPal gateway must be offered' );
+		$not_offered = array( 'ppcp-applepay', 'ppcp-googlepay', 'ppcp-axo-gateway', 'ppcp-credit-card-gateway', 'ppcp-card-button-gateway', 'ppcp-ideal', 'ppcp-bancontact', 'ppcp-pwc' );
 		$this->assertSame( array(), array_values( array_intersect( $not_offered, $offered_ids ) ), 'No card, wallet or local APM gateway may be offered' );
 	}
 
 	/**
-	 * The Jetpack classmap can list the vendored classes and is first in the autoload chain, so a class_exists check is not proof the vendored loader is registered.
+	 * The extension saves DTO objects in the options, and a stored object carries its class name, so core has to read the extension's class names.
 	 *
 	 * @group paypal-wallet-boot
 	 *
-	 * @testdox Should register the vendored Composer autoloader when native owns the site.
+	 * @testdox Should read a Pay Later messaging option the extension stored, and write it back under the extension's class name.
 	 */
-	public function test_registers_the_vendored_autoloader_when_native_owns(): void {
-		if ( ! file_exists( PayPalWalletBootstrap::VENDORED_DIR . '/vendor/autoload.php' ) ) {
-			$this->markTestSkipped( 'Vendored extension is not present.' );
-		}
+	public function test_reads_and_writes_the_extensions_stored_objects(): void {
+		$this->build_sut( true );
+		$this->sut->maybe_boot();
+
+		$messaging = unserialize( 'O:60:"WooCommerce\\PayPalCommerce\\Settings\\DTO\\PayLaterMessagingDTO":9:{s:8:"location";s:4:"cart";s:7:"enabled";b:1;s:6:"layout";s:4:"flex";s:9:"logo_type";s:6:"inline";s:13:"logo_position";s:4:"left";s:10:"text_color";s:5:"black";s:9:"text_size";s:2:"12";s:10:"flex_color";s:4:"blue";s:10:"flex_ratio";s:3:"8x1";}' ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_unserialize -- Fixture of the stored format.
+		update_option( 'woocommerce-ppcp-data-paylater-messaging', array( 'cart' => $messaging ) );
+
+		$settings = \Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PPCP::container()->get( 'settings.data.paylater-messaging-settings' );
+		$settings->load();
+		$cart = $settings->get_cart();
+
+		$this->assertInstanceOf( \Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\DTO\PayLaterMessagingDTO::class, $cart );
+		$this->assertSame( 'flex', $cart->layout, 'The stored values must come through' );
+
+		$settings->save();
+		global $wpdb;
+		$raw = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", 'woocommerce-ppcp-data-paylater-messaging' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Reading the stored bytes.
+		$this->assertStringContainsString( 'O:60:"WooCommerce\\PayPalCommerce\\Settings\\DTO\\PayLaterMessagingDTO"', $raw, 'Core must write the extension\'s class name' );
+		$this->assertStringNotContainsString( 'Automattic', $raw, 'No wallet-namespace class name may reach the stored value' );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should let the modules filter add a module before boot.
+	 */
+	public function test_applies_the_modules_filter(): void {
+		$seen = null;
+		add_filter(
+			'woocommerce_paypal_payments_modules',
+			static function ( $modules ) use ( &$seen ) {
+				$seen = $modules;
+				return $modules;
+			}
+		);
 		$this->build_sut( true );
 
 		$this->sut->maybe_boot();
 
-		$vendored_dir = realpath( PayPalWalletBootstrap::VENDORED_DIR );
-		$registered   = false;
-		foreach ( spl_autoload_functions() as $loader ) {
-			if ( ! is_array( $loader ) || ! $loader[0] instanceof \Composer\Autoload\ClassLoader ) {
-				continue;
-			}
-			$prefixes = $loader[0]->getPrefixesPsr4();
-			foreach ( $prefixes['WooCommerce\\PayPalCommerce\\'] ?? array() as $dir ) {
-				$real = realpath( $dir );
-				if ( false !== $real && 0 === strpos( $real, $vendored_dir ) ) {
-					$registered = true;
-				}
-			}
-		}
-		$this->assertTrue( $registered, 'The vendored Composer loader must be registered for WooCommerce\\PayPalCommerce\\' );
+		remove_all_filters( 'woocommerce_paypal_payments_modules' );
+		$this->assertIsArray( $seen, 'The modules filter must run with the module list' );
+		$this->assertInstanceOf( \Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PluginModule::class, $seen[0] );
+		$this->assertTrue( $this->sut->is_booted() );
 	}
 
 	/**
@@ -469,24 +441,5 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $this->build_guarded_sut( 'wc_test_no_such_extension_init' )->is_extension_loaded_elsewhere() );
 		$this->build_sut( true );
 		$this->assertFalse( $this->sut->is_extension_loaded_elsewhere(), 'The real extension function must not exist in the test process' );
-	}
-
-	/**
-	 * @testdox Should define the same constants, with the same values, as the vendored main file.
-	 */
-	public function test_constants_match_the_vendored_main_file(): void {
-		$main_file = PayPalWalletBootstrap::VENDORED_DIR . '/woocommerce-paypal-payments.php';
-		if ( ! file_exists( $main_file ) ) {
-			$this->markTestSkipped( 'Vendored extension is not present.' );
-		}
-		$source = file_get_contents( $main_file ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a local fixture.
-		preg_match_all( "/^\s*(?:!\s*defined\(\s*'[A-Z_]+'\s*\)\s*&&\s*)?define\(\s*'([A-Z_]+)'\s*,\s*'([^']*)'\s*\)\s*;/m", $source, $matches, PREG_SET_ORDER );
-		$expected = array();
-		foreach ( $matches as $match ) {
-			$expected[ $match[1] ] = $match[2];
-		}
-
-		$this->assertNotEmpty( $expected, 'The vendored main file must define constants' );
-		$this->assertSame( $expected, PayPalWalletBootstrap::get_extension_constants() );
 	}
 }

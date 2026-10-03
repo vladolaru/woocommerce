@@ -13,7 +13,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\Asse
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Http\RedirectorInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Http\WpRedirector;
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Package;
-use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Properties\PluginProperties;
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Properties\Properties;
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
 
@@ -52,13 +51,6 @@ return array(
 		$properties = $container->get( Package::PROPERTIES );
 
 		return $properties->basePath();
-	},
-	'ppcp.path-to-plugin-main-file' => function ( ContainerInterface $container ): string {
-		/** @var PluginProperties $properties */
-		$properties = $container->get( Package::PROPERTIES );
-
-		/** @psalm-suppress UndefinedInterfaceMethod */
-		return $properties->pluginMainFile();
 	},
 	'ppcp.module-availability'      => static function ( ContainerInterface $container ): ModuleAvailability {
 		return new ModuleAvailability( $container );

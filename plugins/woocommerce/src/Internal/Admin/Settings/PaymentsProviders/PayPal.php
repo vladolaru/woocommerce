@@ -69,6 +69,30 @@ class PayPal extends PaymentGateway {
 	}
 
 	/**
+	 * Get the booted PayPal container of the copy that runs in this request: core's wallet when it registers natively, the extension's otherwise.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @param WC_Payment_Gateway $payment_gateway The payment gateway object.
+	 *
+	 * @return \Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface|null The container (the extension's container offers the same has() and get()), or null when no copy is booted.
+	 */
+	private function get_paypal_container( WC_Payment_Gateway $payment_gateway ) {
+		try {
+			if ( $this->is_core_provided( $payment_gateway ) ) {
+				return \Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PPCP::container();
+			}
+			if ( class_exists( '\WooCommerce\PayPalCommerce\PPCP' ) ) {
+				return \WooCommerce\PayPalCommerce\PPCP::container();
+			}
+		} catch ( \Throwable $e ) {
+			return null;
+		}
+
+		return null;
+	}
+
+	/**
 	 * Try to determine if the payment gateway is in test mode.
 	 *
 	 * This is a best-effort attempt, as there is no standard way to determine this.
@@ -146,10 +170,9 @@ class PayPal extends PaymentGateway {
 	 *               Null if the environment could not be determined.
 	 */
 	private function is_paypal_in_sandbox_mode( WC_Payment_Gateway $payment_gateway ): ?bool {
-		if ( class_exists( '\WooCommerce\PayPalCommerce\PPCP' ) ) {
+		$container = $this->get_paypal_container( $payment_gateway );
+		if ( null !== $container ) {
 			try {
-				$container = \WooCommerce\PayPalCommerce\PPCP::container();
-
 				if ( $container->has( 'settings.connection-state' ) ) {
 					$state = $container->get( 'settings.connection-state' );
 
@@ -190,10 +213,9 @@ class PayPal extends PaymentGateway {
 	 *               Null if we failed to determine the onboarding status.
 	 */
 	private function is_paypal_onboarded( WC_Payment_Gateway $payment_gateway ): ?bool {
-		if ( class_exists( '\WooCommerce\PayPalCommerce\PPCP' ) ) {
+		$container = $this->get_paypal_container( $payment_gateway );
+		if ( null !== $container ) {
 			try {
-				$container = \WooCommerce\PayPalCommerce\PPCP::container();
-
 				if ( $container->has( 'settings.connection-state' ) ) {
 					$state = $container->get( 'settings.connection-state' );
 

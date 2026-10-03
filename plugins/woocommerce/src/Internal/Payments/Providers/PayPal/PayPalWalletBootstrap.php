@@ -7,17 +7,18 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PPCP;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WalletProperties;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Package;
 
 /**
- * Boots the vendored PayPal Payments extension from core when the native wallet owns the site.
+ * Boots the forked PayPal wallet from core when the native wallet owns the site.
  *
- * Mirrors what the extension's main plugin file does on plugins_loaded (constants, autoloader,
- * bootstrap, PPCP::init, built-container action, version/migration hook), gated by the arbiter and
- * trimmed through the extension's own feature flags and module filter: Apple Pay, Google Pay, card
- * fields, Fastlane and store sync are forced off, and the seven flag-less non-wallet modules are
- * dropped. The kept modules tolerate the absent ones through the extension's availability contract.
- * When the extension owns the site nothing is required, so the two copies never load together.
+ * Mirrors what the extension's main plugin file does on plugins_loaded (constants, module list, Modularity
+ * package, PPCP::init, built-container action, version/migration hook), gated by the arbiter. The wallet code
+ * is core's own copy under Wallet/, loaded by core's autoloader; the module list in Wallet/modules.php holds only
+ * the wallet modules. When the extension owns the site nothing is booted, so the two copies never run together.
  *
  * @since 11.3.0
  * @internal POC component for the PayPal Wallet in core proof of concept.
@@ -25,37 +26,8 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 class PayPalWalletBootstrap implements RegisterHooksInterface {
 
 	/**
-	 * Absolute path of the vendored extension (no trailing slash).
-	 */
-	public const VENDORED_DIR = __DIR__ . '/woocommerce-paypal-payments';
-
-	/**
-	 * Feature flags (suffixes of woocommerce.feature-flags.woocommerce_paypal_payments.*) forced off.
-	 */
-	public const DISABLED_FEATURE_FLAGS = array(
-		'applepay_enabled',
-		'googlepay_enabled',
-		'card_fields_enabled',
-		'axo_enabled',
-		'store_sync_enabled',
-	);
-
-	/**
-	 * Module classes removed from the extension's module list. They have no feature flag; the kept modules read their services through the extension's availability contract.
-	 */
-	public const DROPPED_MODULE_CLASSES = array(
-		'WooCommerce\\PayPalCommerce\\LocalAlternativePaymentMethods\\LocalAlternativePaymentMethodsModule',
-		'WooCommerce\\PayPalCommerce\\OrderTracking\\OrderTrackingModule',
-		'WooCommerce\\PayPalCommerce\\PayPalSubscriptions\\PayPalSubscriptionsModule',
-		'WooCommerce\\PayPalCommerce\\FraudProtection\\FraudProtectionModule',
-		'WooCommerce\\PayPalCommerce\\Abilities\\AbilitiesModule',
-		'WooCommerce\\PayPalCommerce\\StatusReport\\StatusReportModule',
-		'WooCommerce\\PayPalCommerce\\Uninstall\\UninstallModule',
-	);
-
-	/**
-	 * Payment method IDs removed from the extension's settings payment methods list.
-	 * The card button sits in the PayPal group, which the group filters do not cover.
+	 * Payment method IDs removed from the settings payment methods list. The card button sits in the PayPal group, which the group filters do not cover.
+	 * Plan B's card cut removes this list together with the filter that applies it.
 	 *
 	 * @since 11.3.0
 	 */
@@ -64,8 +36,8 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	);
 
 	/**
-	 * Constants the extension's main file defines, copied so core can define them without including that file.
-	 * A unit test compares this map to the vendored main file to catch drift.
+	 * Constants the extension's main file defines, copied so core defines them without that file. Both copies
+	 * guard them with defined(), so whichever loads first wins and the values are identical.
 	 */
 	private const EXTENSION_CONSTANTS = array(
 		'PAYPAL_API_URL'                  => 'https://api-m.paypal.com',
@@ -90,7 +62,7 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	private PayPalWalletRuntimeArbiter $arbiter;
 
 	/**
-	 * Whether the vendored container has been booted in this request.
+	 * Whether the wallet container has been booted in this request.
 	 *
 	 * @var bool
 	 */
@@ -115,7 +87,7 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Whether the vendored container was booted in this request.
+	 * Whether the wallet container was booted in this request.
 	 *
 	 * @return bool
 	 */
@@ -124,7 +96,7 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Boot the vendored extension if native owns the site. Safe to call more than once.
+	 * Boot the wallet if native owns the site. Safe to call more than once.
 	 */
 	public function maybe_boot(): void {
 		if ( $this->booted ) {
@@ -150,23 +122,28 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 		if ( ! $this->arbiter->should_native_register() ) {
 			return;
 		}
-		$autoload = self::VENDORED_DIR . '/vendor/autoload.php';
-		if ( ! file_exists( $autoload ) ) {
-			return;
-		}
 
 		$this->define_constants();
-		// Core's Jetpack classmap is built from the vendored tree despite the fence, goes stale between core dumps, and comes first in the chain,
-		// so a class_exists check was met by the wrong loader. Always register the vendored one.
-		require_once $autoload;
+		// The DTOs the wallet stores as PHP objects keep the extension's class names; see the loader for why.
+		require_once __DIR__ . '/Wallet/SerializedClasses/load.php';
 		$this->add_trimming_filters();
 
-		$bootstrap = require self::VENDORED_DIR . '/bootstrap.php';
-		$container = $bootstrap( self::VENDORED_DIR );
-		\WooCommerce\PayPalCommerce\PPCP::init( $container );
+		$modules = ( require __DIR__ . '/Wallet/modules.php' )();
+		/** This filter is documented in the extension's bootstrap.php. */
+		$modules = apply_filters( 'woocommerce_paypal_payments_modules', $modules ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingSinceComment
+		$modules = is_array( $modules ) ? $modules : array();
+
+		$package = Package::new( WalletProperties::new() );
+		foreach ( $modules as $module ) {
+			$package->addModule( $module );
+		}
+		$package->boot();
+		$container = $package->container();
+
+		PPCP::init( $container );
 		$this->booted = true;
 
-		/** This action is documented in the vendored woocommerce-paypal-payments.php. */
+		/** This action is documented in the extension's woocommerce-paypal-payments.php. */
 		do_action( 'woocommerce_paypal_payments_built_container', $container ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingSinceComment
 
 		add_action( 'init', array( $this, 'maybe_run_migrations' ), -1 );
@@ -175,8 +152,8 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	/**
 	 * Whether the extension's main file has already been included, from a folder core does not boot from.
 	 *
-	 * Core never includes the vendored main file (the bootstrap only reads its header), so its init function
-	 * existing means another copy of the extension is loaded, for example from a renamed folder or an mu-plugin.
+	 * Core never includes the extension's main file, so its init function existing means another copy of the
+	 * extension is loaded, for example from the plugins folder or an mu-plugin.
 	 *
 	 * @since 11.3.0
 	 *
@@ -236,38 +213,19 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 		if ( ! $this->booted ) {
 			return;
 		}
-		$current_version   = \WooCommerce\PayPalCommerce\PPCP::container()->get( 'ppcp.plugin-version' );
+		$current_version   = PPCP::container()->get( 'ppcp.plugin-version' );
 		$installed_version = get_option( 'woocommerce-ppcp-version' );
 		if ( $installed_version === $current_version ) {
 			return;
 		}
 		update_option( 'woocommerce-ppcp-version', $current_version );
 
-		/** This action is documented in the vendored woocommerce-paypal-payments.php. */
+		/** This action is documented in the extension's woocommerce-paypal-payments.php. */
 		do_action( 'woocommerce_paypal_payments_gateway_migrate', $installed_version ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingSinceComment
 		if ( $installed_version ) {
-			/** This action is documented in the vendored woocommerce-paypal-payments.php. */
+			/** This action is documented in the extension's woocommerce-paypal-payments.php. */
 			do_action( 'woocommerce_paypal_payments_gateway_migrate_on_update' ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingSinceComment
 		}
-	}
-
-	/**
-	 * Remove the given module classes from a Modularity module list.
-	 *
-	 * @param array    $modules         Module instances.
-	 * @param string[] $dropped_classes Fully qualified class names to drop.
-	 * @return array
-	 */
-	public function filter_modules( $modules, array $dropped_classes = self::DROPPED_MODULE_CLASSES ): array {
-		$modules = is_array( $modules ) ? $modules : array();
-		return array_values(
-			array_filter(
-				$modules,
-				static function ( $module ) use ( $dropped_classes ): bool {
-					return ! is_object( $module ) || ! in_array( get_class( $module ), $dropped_classes, true );
-				}
-			)
-		);
 	}
 
 	/**
@@ -289,12 +247,23 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	 * The constants core defines on the extension's behalf, by name.
 	 *
 	 * @since 11.3.0
-	 * @internal Exposed for the drift test against the vendored main file.
+	 * @internal Exposed for the boot test.
 	 *
 	 * @return array<string, string>
 	 */
 	public static function get_extension_constants(): array {
 		return self::EXTENSION_CONSTANTS;
+	}
+
+	/**
+	 * Keep the card and local payment method groups out of the settings data, and the card button out of the payment methods list.
+	 *
+	 * The kept Settings module still lists those methods from static ID lists. Plan B's card and APM cuts remove the lists and these filters together.
+	 */
+	private function add_trimming_filters(): void {
+		add_filter( 'woocommerce_paypal_payments_gateway_group_cards', '__return_empty_array' );
+		add_filter( 'woocommerce_paypal_payments_gateway_group_apm', '__return_empty_array' );
+		add_filter( 'woocommerce_paypal_payments_payment_methods', array( $this, 'filter_payment_methods' ) );
 	}
 
 	/**
@@ -306,18 +275,5 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 				define( $name, $value );
 			}
 		}
-	}
-
-	/**
-	 * Add the filters that trim the extension to the wallet.
-	 */
-	private function add_trimming_filters(): void {
-		foreach ( self::DISABLED_FEATURE_FLAGS as $flag ) {
-			add_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.' . $flag, '__return_false' );
-		}
-		add_filter( 'woocommerce_paypal_payments_modules', array( $this, 'filter_modules' ) );
-		add_filter( 'woocommerce_paypal_payments_gateway_group_cards', '__return_empty_array' );
-		add_filter( 'woocommerce_paypal_payments_gateway_group_apm', '__return_empty_array' );
-		add_filter( 'woocommerce_paypal_payments_payment_methods', array( $this, 'filter_payment_methods' ) );
 	}
 }

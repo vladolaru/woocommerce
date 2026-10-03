@@ -25,18 +25,18 @@ class AssetGetter {
 	}
 
 	/**
-	 * Returns URL for the compiled asset in the root assets/ dir.
+	 * Returns URL for the compiled asset in the wallet's built-assets directory.
 	 *
 	 * @param string $asset_name The asset name like 'index.js'.
 	 */
 	public function get_asset_url( string $asset_name ): string {
 		$compiled_name = $this->get_compiled_asset_name( $asset_name );
 
-		return $this->base_plugin_url . 'assets/' . $compiled_name;
+		return $this->base_plugin_url . $compiled_name;
 	}
 
 	/**
-	 * Returns the path of the .asset.php file for the compiled asset in the root assets/ dir.
+	 * Returns the path of the .asset.php file for the compiled asset in the wallet's built-assets directory.
 	 *
 	 * @param string $asset_name The asset name like 'index.js'.
 	 */
@@ -44,7 +44,7 @@ class AssetGetter {
 		$compiled_name = $this->get_compiled_asset_name( $asset_name );
 		$without_ext   = pathinfo( $compiled_name, PATHINFO_FILENAME );
 
-		return trailingslashit( $this->plugin_folder_path ) . 'assets/' . "$without_ext.asset.php";
+		return trailingslashit( $this->plugin_folder_path ) . "$without_ext.asset.php";
 	}
 
 	/**
@@ -74,12 +74,12 @@ class AssetGetter {
 	}
 
 	/**
-	 * Returns URL for the static asset (images, ...) in the module assets/ dir.
+	 * Returns URL for the static asset (images, ...) copied to static/<module>/ by the wallet build.
 	 *
 	 * @param string $asset_name The asset name like 'images/icon.svg'.
 	 */
 	public function get_static_asset_url( string $asset_name ): string {
-		return $this->base_plugin_url . "modules/{$this->module_name}/assets/$asset_name";
+		return $this->base_plugin_url . "static/{$this->module_name}/$asset_name";
 	}
 
 	public function get_asset_handle( string $suffix ): string {
