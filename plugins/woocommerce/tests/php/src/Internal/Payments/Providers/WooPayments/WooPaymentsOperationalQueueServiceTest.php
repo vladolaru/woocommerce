@@ -23,6 +23,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\ClientRenderedCapturedEvents;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Data_Store;
 use WC_Order;
 use WC_Unit_Test_Case;
@@ -457,8 +458,6 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should report the Stripe Billing toggle in the store setup snapshot while WooCommerce Subscriptions is active (client `class-wc-payments-account.php:2977`).
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 * @testWith ["1", true]
 	 *           ["0", false]
 	 *
@@ -466,8 +465,12 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 * @param bool   $expected Reported `stripe_billing_enabled`.
 	 */
 	public function test_store_setup_sync_reports_stripe_billing( string $toggle, bool $expected ): void {
-		require_once __DIR__ . '/Fixtures/LateLoadedSubscriptions.php';
-		class_alias( Fixtures\LateLoadedSubscriptions::class, 'WC_Subscriptions' );
+		// The module asks LegacyProxy whether WooCommerce Subscriptions is active; the mock is reset after every test.
+		wc_get_container()->get( LegacyProxy::class )->register_function_mocks(
+			array(
+				'class_exists' => static fn( $class_name, ...$args ) => 'WC_Subscriptions' === $class_name || class_exists( $class_name, ...$args ),
+			)
+		);
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
 		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, $toggle );
 		$module = new WooPaymentsStripeBillingModule();
