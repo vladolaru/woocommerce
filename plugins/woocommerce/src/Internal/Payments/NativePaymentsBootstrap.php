@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Container;
 use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyBootstrap;
@@ -120,7 +121,7 @@ final class NativePaymentsBootstrap {
 	 */
 	private function classify_request( callable $is_rest_api_request ): string {
 		return self::classify_signals(
-			defined( 'WP_CLI' ) && WP_CLI,
+			Constants::is_true( 'WP_CLI' ),
 			wp_doing_cron() || wc_is_running_from_async_action_scheduler(),
 			wp_doing_ajax(),
 			(bool) $is_rest_api_request(),

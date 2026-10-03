@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Subscriptions;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
@@ -22,8 +23,8 @@ use WC_Unit_Test_Case;
  * card gateway and calls its `init_hooks()` (`includes/class-wc-payments.php:630-649`), which attaches the email filter
  * and the per-gateway renewal actions (`includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:274-298`).
  * Each case boots the native payments bootstrap for one request; tearDown undoes what that boot leaves for the rest of
- * the process. The WP-CLI renewals, the legacy facade case and the staging case run in their own process, as they define
- * WP_CLI, declare WC_Payments or alias WCS_Staging.
+ * the process. The legacy facade case and the staging case run in their own process, as they declare WC_Payments or
+ * alias WCS_Staging.
  */
 class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 
@@ -54,6 +55,7 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( NativePaymentsState::class )->invalidate();
 		$GLOBALS['wp_rest_server'] = null;
+		Constants::clear_single_constant( 'WP_CLI' );
 
 		$renewal_hooks = new \ReflectionProperty( WooPaymentsSubscriptionRenewalHooks::class, 'attached' );
 		$renewal_hooks->setAccessible( true );
@@ -133,8 +135,6 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A scheduled renewal on a $label store finds the native gateway and reaches the native handler.
 	 * @dataProvider renewal_contexts
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 *
 	 * @param string $label  Case label.
 	 * @param string $state  Stored native tier.
@@ -143,7 +143,7 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 	public function test_scheduled_renewal_reaches_the_native_handler( string $label, string $state, bool $wp_cli ): void {
 		unset( $label );
 		if ( $wp_cli ) {
-			define( 'WP_CLI', true );
+			Constants::set_constant( 'WP_CLI', true );
 		}
 		$this->load_subscriptions();
 		$this->arrange_ownership( false, true, $state );

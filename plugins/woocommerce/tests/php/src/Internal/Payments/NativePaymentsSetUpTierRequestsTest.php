@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use ActionScheduler;
 use ActionScheduler_Store;
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
@@ -28,7 +29,7 @@ use WC_Unit_Test_Case;
  * The client registers its gateway whether or not it is enabled (client 11.1.0 `includes/class-wc-payments.php:730`)
  * and attaches its scheduled-action handlers whenever it loads, WP-CLI included (`includes/class-wc-payments.php:603,657`).
  * Each case boots the native payments bootstrap for one request; tearDown undoes what that boot leaves for the rest of
- * the process. The WP-CLI case runs in its own process, as it defines WP_CLI.
+ * the process.
  */
 class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 
@@ -74,6 +75,7 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 		wc_get_container()->reset_all_replacements();
 		wc_get_container()->reset_all_resolved();
 		$GLOBALS['wp_rest_server'] = null;
+		Constants::clear_single_constant( 'WP_CLI' );
 
 		$renewal_hooks = new \ReflectionProperty( WooPaymentsSubscriptionRenewalHooks::class, 'attached' );
 		$renewal_hooks->setAccessible( true );
@@ -190,13 +192,11 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox An Action Scheduler run under WP-CLI on a $state store reaches the native order-tracking handler.
 	 * @dataProvider set_up_states
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 *
 	 * @param string $state Stored native tier.
 	 */
 	public function test_action_scheduler_run_under_wp_cli_reaches_the_native_handler( string $state ): void {
-		define( 'WP_CLI', true );
+		Constants::set_constant( 'WP_CLI', true );
 		$order = new WC_Order();
 		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
 		$order->update_meta_data( '_payment_method_id', 'pm_test_cli' );
