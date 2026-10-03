@@ -2283,10 +2283,6 @@ export const WooPaymentsSettingsPage = () => {
 	const [ notificationsValidationError, setNotificationsValidationError ] =
 		useState< FieldValidationError | null >( null );
 	const settings = asSettingsRecord( useGetSettings() );
-	const [ enabledPaymentMethodIds ] =
-		useEnabledPaymentMethodIds() as StringArraySetting;
-	const [ isCardPresentEligible ] =
-		useCardPresentEligible() as BooleanSetting;
 	const [ vatDetailsModalState, setVatDetailsModalState ] =
 		useState< VatDetailsModalState >( {
 			isOpen: false,
@@ -2445,18 +2441,6 @@ export const WooPaymentsSettingsPage = () => {
 					/>
 					<FraudProtectionSettingsSection />
 					<AdvancedSettingsSection />
-					{ isCardPresentEligible && (
-						<p className="woopayments-settings-muted">
-							{ sprintf(
-								/* translators: %d: Number of enabled payment methods. */
-								__(
-									'%d payment methods are currently enabled, including in-person eligible methods.',
-									'woocommerce'
-								),
-								enabledPaymentMethodIds.length
-							) }
-						</p>
-					) }
 					<SaveSettingsSection
 						disabled={ isSaving }
 						validationError={
