@@ -15,6 +15,8 @@ readonly CLI_HELPER_MARKER='woocommerce-native-perf-helper'
 # run, spawned on shutdown once the snapshot's cron lock expired, draining pending Action
 # Scheduler work mid-sample; the probe now disables WP-Cron, so attempts agree (T.12b).
 readonly STATE_SAMPLES=3
+# A script or style is native when its handle (the tag id WordPress prints) or its URL names the provider.
+readonly NATIVE_ASSET_PATTERN='woopayments|wcpay|woocommerce-payments|js\.stripe\.com'
 
 MODE='local'
 STORE_URL='http://localhost:8187'
@@ -511,6 +513,86 @@ write_header_rows() {
 	done
 }
 
+# Prints one line per native script, style or asset-loading link tag in an HTML body: absolute URL ('-' for
+# inline content) and the raw and gzip byte counts of inline content. A tag is native when its id or URL
+# matches NATIVE_ASSET_PATTERN. Other links (canonical, alternate, oEmbed) carry page URLs, so they are skipped.
+native_asset_tags() {
+	python3 - "$1" "$REQUEST_BASE" "$NATIVE_ASSET_PATTERN" <<'PY'
+import gzip, html, re, sys
+body = open(sys.argv[1], encoding="utf-8", errors="replace").read()
+base, pattern = sys.argv[2], re.compile(sys.argv[3], re.I)
+for match in re.finditer(r"<(script|style|link)\b([^>]*)>", body, re.I):
+    tag = match.group(1).lower()
+    values = {name.lower(): html.unescape(value) for name, _, value in re.findall(r"\b(id|src|href|rel)\s*=\s*([\"'])(.*?)\2", match.group(2), re.I)}
+    if tag == "link" and not re.search(r"\b(stylesheet|preload|modulepreload)\b", values.get("rel", ""), re.I):
+        continue
+    url = values.get("src" if tag == "script" else "href", "")
+    if not pattern.search(values.get("id", "")) and not pattern.search(url):
+        continue
+    inline = b""
+    if tag != "link" and not url:
+        end = body.find("</" + tag, match.end())
+        inline = body[match.end():end].encode() if end >= 0 else b""
+    if url.startswith("//"):
+        url = base.split(":", 1)[0] + ":" + url
+    elif url.startswith("/"):
+        url = base + url
+    print(f"{url or '-'}\t{len(inline)}\t{len(gzip.compress(inline, 9, mtime=0)) if inline else 0}")
+PY
+}
+
+# Prints a page body's native tag count and the raw and gzip bytes of their same-origin files and inline
+# data. Each file is fetched once per run; a third-party file (Stripe.js) is counted but not fetched, so the
+# totals never depend on another host.
+native_asset_totals() {
+	local body="$1" tags="$1.native-tags" url inline_raw inline_gzip cache raw gzip
+	local count=0 total_raw=0 total_gzip=0
+	native_asset_tags "$body" > "$tags" || return 1
+	while IFS=$'\t' read -r url inline_raw inline_gzip; do
+		count=$((count + 1))
+		if [[ "$url" == - ]]; then
+			raw="$inline_raw"; gzip="$inline_gzip"
+		elif [[ "$url" == "$REQUEST_BASE"/* ]]; then
+			cache="$TEMP_ROOT/asset-$(printf '%s' "$url" | cksum | tr ' ' '-').bin"
+			if [[ ! -f "$cache" ]] && ! PERF_COMPARE_SAMPLE_KIND=asset curl --fail --location --max-redirs 3 --silent --show-error -o "$cache" "$url" > /dev/null; then
+				echo "Native asset bytes: could not fetch $url" >&2
+				return 1
+			fi
+			IFS=$'\t' read -r raw gzip <<< "$(python3 -c 'import gzip, sys; data = open(sys.argv[1], "rb").read(); print(f"{len(data)}\t{len(gzip.compress(data, 9, mtime=0))}")' "$cache")"
+		else
+			continue
+		fi
+		total_raw=$((total_raw + raw)); total_gzip=$((total_gzip + gzip))
+	done < "$tags"
+	printf '%s\t%s\t%s\n' "$count" "$total_raw" "$total_gzip"
+}
+
+# Appends one 'assets:<page>' row per sampled state and shop page, read from the first capture's body.
+# Column reuse: queries = native script and style tags, used_peak_bytes and hooks = their raw and gzip bytes.
+# A disabled store must print no native tag; every other row is recorded for the asset baseline.
+write_asset_rows() {
+	local state page body totals native raw gzip verdict
+	local states=(baseline_noop disabled available connected active_native active_plugin)
+	local pages=(front shop product cart checkout)
+	for state in "${states[@]}"; do
+		if [[ "$MODE" == 'ci' && "$state" != 'baseline_noop' && "$state" != 'disabled' && "$state" != 'active_native' ]]; then continue; fi
+		for page in "${pages[@]}"; do
+			body="$TEMP_ROOT/$state-$page-capture-r1.body"
+			if [[ ! -f "$body" ]] || ! totals="$(native_asset_totals "$body")"; then
+				printf '%s\tassets:%s\tNA\tNA\tNA\tNA\tNA\tNA\tNA\tfail\n' "$state" "$page" >> "$OUTPUT"
+				GATE_FAILED=1
+				continue
+			fi
+			IFS=$'\t' read -r native raw gzip <<< "$totals"
+			verdict=informational
+			if [[ "$state" == 'disabled' ]]; then
+				if [[ "$native" == 0 ]]; then verdict=pass; else verdict=fail; GATE_FAILED=1; fi
+			fi
+			printf '%s\tassets:%s\t%s\t%s\t%s\tNA\tNA\tNA\tNA\t%s\n' "$state" "$page" "$native" "$raw" "$gzip" "$verdict" >> "$OUTPUT"
+		done
+	done
+}
+
 timing_gate() {
 	local pair state first second cookie metrics elapsed result median_native median_plugin percentage verdict
 	local native_times="$TEMP_ROOT/native-times" plugin_times="$TEMP_ROOT/plugin-times"
@@ -576,6 +658,7 @@ main() {
 	write_rows
 	write_gateway_rows
 	write_header_rows
+	write_asset_rows
 	if [[ "$MODE" == local ]]; then
 		if [[ $SAMPLE_FAILED -ne 0 ]]; then
 			printf 'active_native\tcheckout_median\tNA\tNA\tNA\tactive_plugin\tNA\tNA\tNA\tNA,NA,NA,fail\n' >> "$OUTPUT"
