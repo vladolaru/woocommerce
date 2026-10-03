@@ -871,10 +871,12 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	 * @return array{gatewayEnabled:bool,accountState:string,allowedRoutes:array<string,bool>}
 	 */
 	private function get_admin_route_availability(): array {
+		// Client 11.1.0 shows the account's pages only with a working WordPress.com connection, and sends everything else to connect.
 		$gateway_enabled  = $this->account_service->is_gateway_enabled();
-		$restricted       = $this->account_service->is_account_rejected() || $this->account_service->is_account_under_review();
-		$valid_account    = $this->account_service->has_valid_account_for_admin_navigation();
-		$onboarding       = ! $restricted && ! $valid_account && ( ! $this->account_service->has_account() || ! $this->account_service->is_details_submitted() );
+		$connected        = $this->onboarding_redirect->has_working_connection();
+		$restricted       = $connected && ( $this->account_service->is_account_rejected() || $this->account_service->is_account_under_review() );
+		$valid_account    = $connected && $this->account_service->has_valid_account_for_admin_navigation();
+		$onboarding       = ! $connected || ( ! $restricted && ! $valid_account && ( ! $this->account_service->has_account() || ! $this->account_service->is_details_submitted() ) );
 		$full_access      = $valid_account && ! $restricted;
 		$reduced_access   = $restricted;
 		$protected_access = $full_access || $reduced_access;
@@ -967,6 +969,16 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	 * @return array<int,array{title:string,path:string,query?:array<string,string>,badge_count?:int}>
 	 */
 	private function get_menu_items(): array {
+		// Client 11.1.0 renders no sub-items without a working connection; its menu links to the connect page (class-wc-payments-admin.php:383-394).
+		if ( ! $this->onboarding_redirect->has_working_connection() ) {
+			return array(
+				array(
+					'title' => __( 'Onboarding', 'woocommerce' ),
+					'path'  => self::PATH_ONBOARDING,
+				),
+			);
+		}
+
 		if ( $this->account_service->is_account_rejected() || $this->account_service->is_account_under_review() ) {
 			return $this->get_reduced_menu_items();
 		}

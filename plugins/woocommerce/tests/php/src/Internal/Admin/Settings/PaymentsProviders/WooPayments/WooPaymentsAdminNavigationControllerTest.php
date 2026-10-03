@@ -1835,6 +1835,34 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should offer only onboarding when the WordPress.com connection is broken, even for a valid cached account.
+	 *
+	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:383-394`: the full menu needs `has_working_jetpack_connection()`
+	 * and a valid Stripe account; otherwise the menu links to the connect page.
+	 */
+	public function test_offers_only_onboarding_without_a_working_connection(): void {
+		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
+
+		$sut = $this->create_controller( true, array( 'has_valid_admin_account_state' => true ), array(), null, false );
+		$sut->add_menu_items();
+
+		$this->assertSame(
+			array( 'Onboarding' ),
+			array_map(
+				static function ( array $item ): string {
+					return wp_strip_all_tags( $item[0] );
+				},
+				$this->get_payments_submenu_items()
+			)
+		);
+		$availability = $this->preload_route_availability( $sut );
+		$this->assertSame( 'onboarding', $availability['accountState'] );
+		$this->assertTrue( $availability['allowedRoutes']['/woopayments/onboarding'] );
+		$this->assertFalse( $availability['allowedRoutes']['/woopayments/overview'] );
+		$this->assertFalse( $availability['allowedRoutes']['/woopayments/payouts'] );
+	}
+
+	/**
 	 * @testdox Should add full WooPayments navigation for a valid native account.
 	 */
 	public function test_adds_full_menu_items_for_valid_native_account(): void {

@@ -186,6 +186,18 @@ class WooPaymentsOnboardingRedirect {
 	}
 
 	/**
+	 * Tell whether the WordPress.com connection works, the first half of the client's full-menu condition.
+	 *
+	 * Client 11.1.0 `has_working_jetpack_connection()`: a connected site with a connection owner.
+	 *
+	 * @internal
+	 * @return bool
+	 */
+	public function has_working_connection(): bool {
+		return $this->api_client->is_available();
+	}
+
+	/**
 	 * Redirect to onboarding when the current request asks for a guarded route without a working connection and a valid account.
 	 *
 	 * Decides once per request, so a second caller in the same request does nothing.
@@ -212,7 +224,7 @@ class WooPaymentsOnboardingRedirect {
 		}
 
 		// Client `has_working_jetpack_connection() && is_stripe_account_valid()`; no connection skips the account read.
-		if ( $this->api_client->is_available() && $this->account_service->has_valid_account_for_admin_navigation() ) {
+		if ( $this->has_working_connection() && $this->account_service->has_valid_account_for_admin_navigation() ) {
 			return;
 		}
 
