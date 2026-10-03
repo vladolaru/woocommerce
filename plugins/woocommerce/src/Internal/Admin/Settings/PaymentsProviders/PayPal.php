@@ -78,15 +78,23 @@ class PayPal extends PaymentGateway {
 	 * @return \Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface|null The container (the extension's container offers the same has() and get()), or null when no copy is booted.
 	 */
 	private function get_paypal_container( WC_Payment_Gateway $payment_gateway ) {
+		// Core owning the site does not mean its wallet booted in this request (it skips update.php, the extension's activation request and a copy loaded from another folder), so a failure here falls through to the extension.
 		try {
 			if ( $this->is_core_provided( $payment_gateway ) ) {
 				return \Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PPCP::container();
 			}
-			if ( class_exists( '\WooCommerce\PayPalCommerce\PPCP' ) ) {
-				return \WooCommerce\PayPalCommerce\PPCP::container();
-			}
 		} catch ( \Throwable $e ) {
-			return null;
+			// The wallet container is not available; try the extension's below.
+			unset( $e );
+		}
+
+		if ( class_exists( '\WooCommerce\PayPalCommerce\PPCP' ) ) {
+			try {
+				return \WooCommerce\PayPalCommerce\PPCP::container();
+			} catch ( \Throwable $e ) {
+				// The extension container is not available either.
+				unset( $e );
+			}
 		}
 
 		return null;
