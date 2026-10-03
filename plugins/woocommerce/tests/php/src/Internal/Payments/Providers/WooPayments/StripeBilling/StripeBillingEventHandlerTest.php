@@ -446,6 +446,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$order = wc_get_order( $order->get_id() );
 		$this->assertSame( self::RENEWAL_INTENT_ID, $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( self::RENEWAL_CHARGE_ID, $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( self::RENEWAL_INTENT_ID, $order->get_transaction_id(), 'The client attach sets the transaction id whatever the order status (`class-wc-payments-order-service.php:1408`); live client renewal 28 carries it.' );
 		$this->assertCount( 1, $this->get_notes_containing( $order, 'A test payment of' ) );
 		$this->assertSame( 0, did_action( 'woocommerce_payment_complete' ) - $payments );
 		$this->assertSame( array(), $transitions->list, 'A paid renewal does not put the subscription on hold.' );

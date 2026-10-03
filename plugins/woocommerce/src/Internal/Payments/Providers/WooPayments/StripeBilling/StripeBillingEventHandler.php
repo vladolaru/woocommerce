@@ -275,7 +275,9 @@ class StripeBillingEventHandler {
 		}
 
 		if ( null !== $intent && ! $was_succeeded ) {
-			// The client attaches the fetched intent here, which stores its currency upper case; the webhook's lower-case write only covers other payments.
+			// The client attaches the fetched intent here: the transaction id even on an order a retry already paid, where
+			// payment_complete() ignores it, and the currency upper case, where the webhook writes it lower case.
+			$order->set_transaction_id( $intent_id );
 			$order->update_meta_data( '_wcpay_intent_currency', strtoupper( isset( $intent['currency'] ) && is_string( $intent['currency'] ) ? $intent['currency'] : $order->get_currency() ) );
 			$order->save();
 		}
