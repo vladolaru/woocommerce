@@ -101,7 +101,11 @@ class WooPaymentsPaymentDetailsRestController implements RegisterHooksInterface 
 	public function register_routes(): void {
 		register_rest_route( self::NAMESPACE, '/payments/charges/(?P<charge_id>\w+)', $this->get_readable_route( 'get_charge' ) );
 		register_rest_route( self::NAMESPACE, '/payments/charges/order/(?P<order_id>\w+)', $this->get_readable_route( 'generate_charge_from_order' ) );
-		register_rest_route( self::NAMESPACE, '/payments/payment_intents', $this->get_creatable_route( 'create_payment_intent' ) );
+		register_rest_route(
+			self::NAMESPACE,
+			'/payments/payment_intents',
+			array_merge( $this->get_creatable_route( 'create_payment_intent' ), array( 'schema' => array( $this, 'get_payment_intent_schema' ) ) )
+		);
 		register_rest_route( self::NAMESPACE, '/payments/payment_intents/(?P<payment_intent_id>\w+)', $this->get_readable_route( 'get_payment_intent' ) );
 		register_rest_route( self::NAMESPACE, '/payments/timeline/(?P<intention_id>\w+)', $this->get_readable_route( 'get_timeline' ) );
 		register_rest_route( self::NAMESPACE, '/payments/refund', $this->get_creatable_route( 'process_refund' ) );
@@ -192,19 +196,17 @@ class WooPaymentsPaymentDetailsRestController implements RegisterHooksInterface 
 		}
 
 		try {
-			return new WP_REST_Response(
-				$this->order_service->enrich_payment_intent_response(
-					$this->api_client->create_and_confirm_payment_intention(
-						$this->order_service->build_create_payment_intent_request_from_order(
-							$order,
-							(string) $request->get_param( 'customer' ),
-							(string) $request->get_param( 'payment_method' ),
-							$this->is_manual_capture_enabled()
-						),
-						'payment_intent_order_' . $order->get_id()
-					)
-				)
+			$intent = $this->api_client->create_and_confirm_payment_intention(
+				$this->order_service->build_create_payment_intent_request_from_order(
+					$order,
+					(string) $request->get_param( 'customer' ),
+					(string) $request->get_param( 'payment_method' ),
+					$this->is_manual_capture_enabled()
+				),
+				'payment_intent_order_' . $order->get_id()
 			);
+
+			return new WP_REST_Response( $this->prepare_payment_intent_for_response( $intent, $request ) );
 		} catch ( WooPaymentsApiException $exception ) {
 			return $this->api_exception_to_wp_error( $exception );
 		}
@@ -499,6 +501,247 @@ class WooPaymentsPaymentDetailsRestController implements RegisterHooksInterface 
 			'methods'             => WP_REST_Server::CREATABLE,
 			'callback'            => array( $this, $callback ),
 			'permission_callback' => array( $this, 'check_permission' ),
+		);
+	}
+
+	/**
+	 * Get the created payment intent the way client 11.1.0 `WC_REST_Payments_Payment_Intents_Controller::prepare_item_for_response()`
+	 * shapes it: intent fields and the latest charge's summary, filtered by the route schema.
+	 *
+	 * @param array<string,mixed> $intent  Created payment intent.
+	 * @param WP_REST_Request     $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return array<string,mixed>
+	 */
+	private function prepare_payment_intent_for_response( array $intent, WP_REST_Request $request ): array {
+		$charges = isset( $intent['charges']['data'] ) && is_array( $intent['charges']['data'] ) && 0 < (int) ( $intent['charges']['total_count'] ?? count( $intent['charges']['data'] ) )
+			? $intent['charges']['data']
+			: array();
+		$charge  = empty( $charges ) ? null : end( $charges );
+		$charge  = is_array( $charge ) ? $charge : null;
+
+		$payment_method = $intent['payment_method'] ?? $intent['source'] ?? null;
+		$item           = array(
+			'id'             => $intent['id'] ?? null,
+			'amount'         => $intent['amount'] ?? null,
+			// The client's intent model uppercases the currency.
+			'currency'       => isset( $intent['currency'] ) ? strtoupper( (string) $intent['currency'] ) : null,
+			'created'        => gmdate( 'Y-m-d H:i:s', (int) ( $intent['created'] ?? 0 ) ),
+			'customer'       => $intent['customer'] ?? $charge['customer'] ?? null,
+			'payment_method' => is_array( $payment_method ) ? ( $payment_method['id'] ?? null ) : $payment_method,
+			'status'         => $intent['status'] ?? null,
+		);
+
+		if ( null !== $charge ) {
+			$item['charge'] = array(
+				'id'                     => $charge['id'] ?? null,
+				'amount'                 => $charge['amount'] ?? null,
+				'application_fee_amount' => $charge['application_fee_amount'] ?? null,
+				'status'                 => $charge['status'] ?? null,
+			);
+
+			$billing_details = is_array( $charge['billing_details'] ?? null ) ? $charge['billing_details'] : array();
+			if ( isset( $billing_details['address'] ) ) {
+				foreach ( array( 'city', 'country', 'line1', 'line2', 'postal_code', 'state' ) as $key ) {
+					$item['charge']['billing_details']['address'][ $key ] = $billing_details['address'][ $key ] ?? '';
+				}
+			}
+			foreach ( array( 'email', 'name', 'phone' ) as $key ) {
+				$item['charge']['billing_details'][ $key ] = $billing_details[ $key ] ?? '';
+			}
+
+			$card = $charge['payment_method_details']['card'] ?? null;
+			if ( is_array( $card ) ) {
+				foreach ( array( 'amount_authorized', 'brand', 'capture_before', 'country', 'exp_month', 'exp_year', 'last4', 'three_d_secure' ) as $key ) {
+					$item['charge']['payment_method_details']['card'][ $key ] = $card[ $key ] ?? '';
+				}
+			}
+		}
+
+		$context = is_string( $request['context'] ?? null ) ? $request['context'] : 'view';
+
+		return (array) rest_filter_response_by_context( $item, $this->get_payment_intent_schema(), $context );
+	}
+
+	/**
+	 * Get the schema of a created payment intent, as client 11.1.0 declares it.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public function get_payment_intent_schema(): array {
+		return array(
+			'$schema'    => 'http://json-schema.org/draft-04/schema#',
+			'title'      => 'payment_intent',
+			'type'       => 'object',
+			'properties' => array(
+				'id'       => array(
+					'description' => __( 'ID for the payment intent.', 'woocommerce' ),
+					'type'        => 'string',
+					'context'     => array( 'view' ),
+				),
+				'amount'   => array(
+					'description' => __( 'The amount of the transaction.', 'woocommerce' ),
+					'type'        => 'integer',
+					'context'     => array( 'view' ),
+				),
+				'currency' => array(
+					'description' => __( 'The currency of the transaction.', 'woocommerce' ),
+					'type'        => 'string',
+					'context'     => array( 'view' ),
+				),
+				'created'  => array(
+					'description' => __( 'The date when the payment intent was created.', 'woocommerce' ),
+					'type'        => 'string',
+					'context'     => array( 'view' ),
+				),
+				'customer' => array(
+					'description' => __( 'The customer id of the intent', 'woocommerce' ),
+					'type'        => 'string',
+					'context'     => array( 'view' ),
+				),
+				'status'   => array(
+					'description' => __( 'The status of the payment intent.', 'woocommerce' ),
+					'type'        => 'string',
+					'context'     => array( 'view' ),
+				),
+				'charge'   => array(
+					'description' => __( 'Charge object associated with this payment intention.', 'woocommerce' ),
+					'type'        => 'object',
+					'context'     => array( 'view' ),
+					'properties'  => array(
+						'id'                     => array(
+							'description' => 'ID for the charge.',
+							'type'        => 'string',
+							'context'     => array( 'view' ),
+						),
+						'amount'                 => array(
+							'description' => 'The amount of the charge.',
+							'type'        => 'integer',
+							'context'     => array( 'view' ),
+						),
+						'payment_method_details' => array(
+							'description' => 'Details for the payment method used for the charge.',
+							'type'        => 'object',
+							'properties'  => array(
+								'card' => array(
+									'description' => 'Details for a card payment method.',
+									'type'        => 'object',
+									'properties'  => array(
+										'amount_authorized' => array(
+											'description' => 'The amount authorized by the card.',
+											'type'        => 'integer',
+										),
+										'brand'          => array(
+											'description' => 'The brand of the card.',
+											'type'        => 'string',
+										),
+										'capture_before' => array(
+											'description' => 'Timestamp for when the authorization must be captured.',
+											'type'        => 'string',
+										),
+										'country'        => array(
+											'description' => 'The ISO country code.',
+											'type'        => 'string',
+										),
+										'exp_month'      => array(
+											'description' => 'The expiration month of the card.',
+											'type'        => 'integer',
+										),
+										'exp_year'       => array(
+											'description' => 'The expiration year of the card.',
+											'type'        => 'integer',
+										),
+										'last4'          => array(
+											'description' => 'The last 4 digits of the card.',
+											'type'        => 'string',
+										),
+										'three_d_secure' => array(
+											'description' => 'Details for 3D Secure authentication.',
+											'type'        => 'object',
+										),
+									),
+								),
+							),
+						),
+						'billing_details'        => array(
+							'description' => __( 'Billing details for the payment method.', 'woocommerce' ),
+							'type'        => 'object',
+							'context'     => array( 'view' ),
+							'properties'  => array(
+								'address' => array(
+									'description' => __( 'Address associated with the billing details.', 'woocommerce' ),
+									'type'        => 'object',
+									'context'     => array( 'view' ),
+									'properties'  => array(
+										'city'        => array(
+											'description' => __( 'City of the billing address.', 'woocommerce' ),
+											'type'        => 'string',
+											'context'     => array( 'view' ),
+										),
+										'country'     => array(
+											'description' => __( 'Country of the billing address.', 'woocommerce' ),
+											'type'        => 'string',
+											'context'     => array( 'view' ),
+										),
+										'line1'       => array(
+											'description' => __( 'Line 1 of the billing address.', 'woocommerce' ),
+											'type'        => 'string',
+											'context'     => array( 'view' ),
+										),
+										'line2'       => array(
+											'description' => __( 'Line 2 of the billing address.', 'woocommerce' ),
+											'type'        => 'string',
+											'context'     => array( 'view' ),
+										),
+										'postal_code' => array(
+											'description' => __( 'Postal code of the billing address.', 'woocommerce' ),
+											'type'        => 'string',
+											'context'     => array( 'view' ),
+										),
+										'state'       => array(
+											'description' => __( 'State of the billing address.', 'woocommerce' ),
+											'type'        => 'string',
+											'context'     => array( 'view' ),
+										),
+									),
+								),
+								'email'   => array(
+									'description' => __( 'Email associated with the billing details.', 'woocommerce' ),
+									'type'        => 'string',
+									'format'      => 'email',
+									'context'     => array( 'view' ),
+								),
+								'name'    => array(
+									'description' => __( 'Name associated with the billing details.', 'woocommerce' ),
+									'type'        => 'string',
+									'context'     => array( 'view' ),
+								),
+								'phone'   => array(
+									'description' => __( 'Phone number associated with the billing details.', 'woocommerce' ),
+									'type'        => 'string',
+									'context'     => array( 'view' ),
+								),
+							),
+						),
+						'payment_method'         => array(
+							'description' => 'The payment method associated with this charge.',
+							'type'        => 'string',
+							'context'     => array( 'view' ),
+						),
+						'application_fee_amount' => array(
+							'description' => 'The application fee amount.',
+							'type'        => 'integer',
+							'context'     => array( 'view' ),
+						),
+						'status'                 => array(
+							'description' => 'The status of the payment intent created.',
+							'type'        => 'string',
+							'context'     => array( 'view' ),
+						),
+					),
+				),
+
+			),
 		);
 	}
 

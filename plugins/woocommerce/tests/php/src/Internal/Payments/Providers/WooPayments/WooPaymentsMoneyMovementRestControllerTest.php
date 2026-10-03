@@ -391,6 +391,33 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
+	 * The create-intent route answers with the projection client 11.1.0 `prepare_item_for_response()` builds; for the
+	 * recorded REC-3 intent, the client's own output is in `Fixtures/rec-n296-payment-intent-projection.json`.
+	 */
+	public function test_payment_detail_create_intent_route_answers_with_the_client_projection(): void {
+		$order    = $this->create_order_for_generated_charge();
+		$fixtures = __DIR__ . '/Fixtures/';
+		// phpcs:disable WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads local immutable test fixtures.
+		$this->api_client->response = json_decode( (string) file_get_contents( $fixtures . 'rec-3-eur-charge.json' ), true )['entries'][0]['response']['body'];
+		$expected                   = json_decode( (string) file_get_contents( $fixtures . 'rec-n296-payment-intent-projection.json' ), true )['client_projection'];
+		// phpcs:enable WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+		$this->create_payment_details_controller( true )->register_routes();
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/payment_intents' );
+		$request->set_body_params(
+			array(
+				'order_id'       => $order->get_id(),
+				'customer'       => 'cus_UsIeTbmGHPc9jY',
+				'payment_method' => 'pm_1UJWs2BzWlxcwgpPrrobU4Cv',
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( $expected, $response->get_data() );
+	}
+
+	/**
 	 * @testdox Payment detail create-intent route preserves the plugin-compatible missing-order error shape.
 	 */
 	public function test_payment_detail_create_intent_route_rejects_missing_order(): void {
