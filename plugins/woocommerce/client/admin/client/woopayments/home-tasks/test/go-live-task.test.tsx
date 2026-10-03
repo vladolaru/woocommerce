@@ -17,24 +17,10 @@ import { recordEvent } from '@woocommerce/tracks';
 /**
  * Internal dependencies
  */
-// The WC Home task list loads its fills from here; importing it proves the go-live fill is wired in.
-import '~/task-lists/fills';
+// `task-lists/fills/test/woopayments-go-live-task.test.tsx` covers when the WC Home task list loads this fill.
+import '~/woopayments/home-tasks/go-live-task';
 
 jest.mock( '@woocommerce/tracks', () => ( { recordEvent: jest.fn() } ) );
-// Keep the other core task fills out of this test; only the WooPayments go-live fill matters here.
-jest.mock( '~/task-lists/fills/PaymentGatewaySuggestions', () => ( {} ) );
-jest.mock( '~/task-lists/fills/shipping', () => ( {} ) );
-jest.mock( '~/task-lists/fills/Marketing', () => ( {} ) );
-jest.mock( '~/task-lists/fills/appearance', () => ( {} ) );
-jest.mock( '~/task-lists/fills/tax', () => ( {} ) );
-jest.mock( '~/task-lists/fills/deprecated-tasks', () => ( {} ) );
-jest.mock( '~/task-lists/fills/launch-your-store', () => ( {} ) );
-jest.mock( '~/task-lists/fills/products', () => ( {} ) );
-jest.mock( '~/task-lists/fills/import-products', () => ( {} ) );
-jest.mock( '~/task-lists/fills/shipping-recommendation', () => ( {} ) );
-jest.mock( '~/task-lists/fills/utils', () => ( {
-	isImportProduct: () => false,
-} ) );
 
 // Stands in for core's DefaultTaskItem, which the task list hands to a fill (`task-list-item.tsx:268-276`).
 const DefaultTaskItem = ( { onClick }: { onClick?: () => void } ) => (

@@ -3,12 +3,13 @@
  */
 import { Card, CardBody } from '@wordpress/components';
 import { lazy, Suspense } from '@wordpress/element';
-import { __, sprintf } from '@wordpress/i18n';
+import { __ } from '@wordpress/i18n';
 
 /**
  * Internal dependencies
  */
 import { registerSettingsPaymentsProviderRoute } from '~/settings-payments/provider-routes';
+import { ProviderRouteLoading } from '~/settings-payments/components/provider-route-loading';
 import { getSettingsPaymentsProviderRouteUrl } from './utils';
 
 // Share the chunk name with the Payments settings tab in `settings-payments/index.tsx`
@@ -175,13 +176,7 @@ const getFallbackRoutePath = () => {
 };
 
 const LoadingFallback = () => (
-	<div role="status" aria-live="polite" aria-busy="true">
-		{ sprintf(
-			/* translators: %s: WooPayments */
-			__( 'Loading %s…', 'woocommerce' ),
-			'WooPayments'
-		) }
-	</div>
+	<ProviderRouteLoading providerName="WooPayments" />
 );
 
 const WooPaymentsAdminAreaUnavailable = () => {

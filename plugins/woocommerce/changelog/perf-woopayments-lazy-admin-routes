@@ -1,0 +1,4 @@
+Significance: patch
+Type: performance
+
+Load the WooPayments admin pages and Home task code only when a store needs them.
