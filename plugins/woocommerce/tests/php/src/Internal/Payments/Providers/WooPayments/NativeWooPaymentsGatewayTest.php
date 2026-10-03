@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingApi;
@@ -12,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
@@ -123,6 +125,32 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'WooPayments (Cash App Afterpay)', $gateway->get_method_title() );
 		$this->assertSame( 'WooPayments (Cash App Afterpay)', $gateway->get_method_title() );
+	}
+
+	/**
+	 * @testdox Should enqueue the classic checkout fallback stack only when the account can take payments.
+	 * @testWith [true, 1]
+	 *           [false, 0]
+	 *
+	 * @param bool $can_process_payments Whether the provider can take payments.
+	 * @param int  $expected_enqueues    Expected fallback enqueue calls.
+	 */
+	public function test_classic_checkout_fallback_enqueues_only_when_account_can_take_payments( bool $can_process_payments, int $expected_enqueues ): void {
+		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'should_native_register' ) )
+			->getMock();
+		$arbiter->method( 'should_native_register' )->willReturn( true );
+		wc_get_container()->replace( NativePaymentsRuntimeArbiter::class, $arbiter );
+		$provider = $this->createMock( WooPaymentsProvider::class );
+		$provider->method( 'can_process_payments' )->willReturn( $can_process_payments );
+		$bridge = $this->createMock( WooPaymentsCheckoutBridge::class );
+		$bridge->expects( $this->exactly( $expected_enqueues ) )->method( 'enqueue_classic_checkout_assets_without_fields' );
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $this->createMock( PaymentProcessingService::class ), $provider, $bridge );
+		/** This action is documented in templates/checkout/form-checkout.php */
+		do_action( 'woocommerce_after_checkout_form', WC()->checkout() );
 	}
 
 	/**

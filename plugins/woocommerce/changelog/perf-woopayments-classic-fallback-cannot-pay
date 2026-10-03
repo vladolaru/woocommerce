@@ -1,0 +1,4 @@
+Significance: patch
+Type: performance
+
+Stop loading the WooPayments checkout scripts on classic checkout pages while the WooPayments account cannot take payments yet.

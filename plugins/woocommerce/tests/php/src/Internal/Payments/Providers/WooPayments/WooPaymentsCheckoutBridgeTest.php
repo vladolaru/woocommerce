@@ -638,8 +638,11 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
 		update_option( 'woocommerce_' . OrderPaymentStore::GATEWAY_ID . '_settings', array( 'saved_cards' => 'yes' ) );
 
+		$provider = $this->createMock( WooPaymentsProvider::class );
+		$provider->method( 'can_process_payments' )->willReturn( true );
+
 		$gateway = new NativeWooPaymentsGateway();
-		$gateway->init( $this->createMock( PaymentProcessingService::class ), $this->createMock( WooPaymentsProvider::class ), $bridge );
+		$gateway->init( $this->createMock( PaymentProcessingService::class ), $provider, $bridge );
 
 		return $gateway;
 	}

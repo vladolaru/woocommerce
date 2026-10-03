@@ -325,6 +325,11 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		if ( ! wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->should_native_register() ) {
 			return;
 		}
+		// No WooPayments gateway can become available on this page without it (see is_available()), so skip the stack.
+		// Client 11.1.0 loads it on every classic checkout (includes/class-wc-payments-checkout.php:103,162-166).
+		if ( ! $this->get_provider()->can_process_payments() ) {
+			return;
+		}
 
 		$this->get_checkout_bridge()->enqueue_classic_checkout_assets_without_fields( $this->supports );
 	}
