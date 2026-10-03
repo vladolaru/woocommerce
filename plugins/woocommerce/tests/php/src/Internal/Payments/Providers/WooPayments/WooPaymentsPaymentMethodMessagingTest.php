@@ -130,6 +130,7 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 		$this->assertSame( 10, has_action( 'woocommerce_single_product_summary', array( $active_bnpl, 'render_site_messaging' ) ) );
 		$this->assertSame( 5, has_action( 'woocommerce_proceed_to_checkout', array( $active_bnpl, 'render_site_messaging' ) ) );
 		$this->assertSame( 10, has_action( 'woocommerce_blocks_enqueue_cart_block_scripts_after', array( $active_bnpl, 'render_site_messaging' ) ) );
+		$this->assertSame( 10, has_action( 'wp_enqueue_scripts', array( $active_bnpl, 'enqueue_site_messaging_style' ) ) );
 		$this->assertSame( 10, has_action( 'wc_ajax_wcpay_get_cart_total', array( $active_bnpl, 'handle_get_cart_total' ) ) );
 		$this->assertSame( 10, has_action( 'wc_ajax_wcpay_check_bnpl_availability', array( $active_bnpl, 'handle_check_bnpl_availability' ) ) );
 	}
@@ -360,6 +361,34 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should enqueue the BNPL stylesheet during wp_enqueue_scripts on product and cart pages only, leaving the script to render time.
+	 * @testWith ["product", true]
+	 *           ["cart", true]
+	 *           ["home", false]
+	 *
+	 * @param string $surface         Page type of the simulated request.
+	 * @param bool   $expect_enqueued Whether the stylesheet should be enqueued.
+	 */
+	public function test_enqueues_messaging_stylesheet_during_wp_enqueue_scripts_on_messaging_surfaces( string $surface, bool $expect_enqueued ): void {
+		if ( 'product' === $surface ) {
+			$this->set_current_product( \WC_Helper_Product::create_simple_product( true, array( 'regular_price' => '50.00' ) ) );
+			// The global product is set only once the loop starts, after the head.
+			unset( $GLOBALS['product'] );
+		} elseif ( 'cart' === $surface ) {
+			add_filter( 'woocommerce_is_cart', '__return_true' );
+		}
+		$controller = $this->create_controller( true, true, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
+		$controller->register();
+		$this->registered_controllers[] = $controller;
+
+		/** This action is documented in wp-includes/script-loader.php */
+		do_action( 'wp_enqueue_scripts' );
+
+		$this->assertSame( $expect_enqueued, wp_style_is( self::STYLE_HANDLE, 'enqueued' ) );
+		$this->assertFalse( wp_script_is( self::SCRIPT_HANDLE, 'enqueued' ), 'The messaging script and its config stay at render time.' );
+	}
+
+	/**
 	 * @testdox Should report BNPL availability from native amount limits.
 	 */
 	public function test_reports_bnpl_availability_from_native_amount_limits(): void {
@@ -502,6 +531,7 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 			'woocommerce_single_product_summary'    => 'render_site_messaging',
 			'woocommerce_proceed_to_checkout'       => 'render_site_messaging',
 			'woocommerce_blocks_enqueue_cart_block_scripts_after' => 'render_site_messaging',
+			'wp_enqueue_scripts'                    => 'enqueue_site_messaging_style',
 			'wc_ajax_wcpay_get_cart_total'          => 'handle_get_cart_total',
 			'wc_ajax_wcpay_check_bnpl_availability' => 'handle_check_bnpl_availability',
 		);

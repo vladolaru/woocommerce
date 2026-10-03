@@ -131,6 +131,10 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 			add_action( 'woocommerce_blocks_enqueue_cart_block_scripts_after', array( $this, 'render_site_messaging' ) );
 		}
 
+		if ( false === has_action( 'wp_enqueue_scripts', array( $this, 'enqueue_site_messaging_style' ) ) ) {
+			add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_site_messaging_style' ) );
+		}
+
 		if ( false === has_action( 'wc_ajax_wcpay_get_cart_total', array( $this, 'handle_get_cart_total' ) ) ) {
 			add_action( 'wc_ajax_wcpay_get_cart_total', array( $this, 'handle_get_cart_total' ) );
 		}
@@ -156,6 +160,24 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 		if ( ! $is_cart_block ) {
 			echo '<div id="payment-method-message"></div>';
 		}
+	}
+
+	/**
+	 * Enqueue the BNPL messaging stylesheet early, so it prints in the head and sizes the placeholder from first paint.
+	 *
+	 * Classic themes only: block themes render the template before `wp_head`, so the render-time enqueue already prints in the head.
+	 * Client 11.1.0 enqueues it at render time on every theme (includes/class-wc-payments-payment-method-messaging-element.php:137-142).
+	 *
+	 * @internal
+	 */
+	public function enqueue_site_messaging_style(): void {
+		if ( wp_is_block_theme() || ! $this->is_supported_surface() || ! $this->is_messaging_eligible() ) {
+			return;
+		}
+
+		$is_cart_block = function_exists( 'is_cart' ) && is_cart() && has_block( 'woocommerce/cart' );
+		$this->register_site_messaging_assets( $is_cart_block );
+		wp_enqueue_style( $is_cart_block ? self::CART_BLOCK_STYLE_HANDLE : self::STYLE_HANDLE );
 	}
 
 	/**
