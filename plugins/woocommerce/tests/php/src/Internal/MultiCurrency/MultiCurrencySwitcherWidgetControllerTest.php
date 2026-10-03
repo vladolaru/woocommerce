@@ -211,13 +211,11 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should delegate to the client facade only when the plugin owns multi-currency.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_delegates_to_client_facade_only_when_plugin_owns_multi_currency(): void {
 		if ( ! function_exists( 'WC_Payments_Multi_Currency' ) ) {
-			eval( 'function WC_Payments_Multi_Currency() { return $GLOBALS["row_86_multi_currency_client"]; }' ); // phpcs:ignore Squiz.PHP.Eval.Discouraged -- Isolated process fixture for the client-first compatibility function.
+			// The function stays defined for later tests; returning null without a client makes the controller treat it as absent.
+			eval( 'function WC_Payments_Multi_Currency() { return $GLOBALS["row_86_multi_currency_client"] ?? null; }' ); // phpcs:ignore Squiz.PHP.Eval.Discouraged -- Fixture for the client-first compatibility function.
 		}
 		$client                                  = new class() {
 			/**
