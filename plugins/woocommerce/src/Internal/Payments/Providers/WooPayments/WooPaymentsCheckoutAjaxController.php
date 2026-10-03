@@ -219,7 +219,8 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 			$this->confirm_intent_for_order(
 				$order,
 				$intent_id,
-				$this->should_save_payment_method( $request ) || $is_subscription_payment_method_change
+				$this->should_save_payment_method( $request ) || $is_subscription_payment_method_change,
+				$is_subscription_payment_method_change
 			);
 
 			if ( $is_subscription_payment_method_change ) {
@@ -250,18 +251,19 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 * @param WC_Order $order               Order being confirmed.
 	 * @param string   $intent_id           PaymentIntent or SetupIntent ID.
 	 * @param bool     $save_payment_method Whether to persist the payment method.
+	 * @param bool     $is_payment_method_change Whether this confirms a subscription payment method change.
 	 * @throws WooPaymentsApiException When intent retrieval fails.
 	 * @throws WooPaymentsIntentConfirmationException When the intent cannot be authorized or a required token cannot be saved.
 	 * @throws Throwable When lifecycle, token, or payment-method effects fail.
 	 *
 	 * @since 11.0.0
 	 */
-	public function confirm_intent_for_order( WC_Order $order, string $intent_id, bool $save_payment_method ): void {
+	public function confirm_intent_for_order( WC_Order $order, string $intent_id, bool $save_payment_method, bool $is_payment_method_change = false ): void {
 		$intent = 0.0 >= (float) $order->get_total()
 			? $this->api_client->get_setup_intention( $intent_id )
 			: $this->api_client->get_payment_intention( $intent_id );
 
-		$this->confirm_fetched_intent_for_order( $order, $intent, $save_payment_method );
+		$this->confirm_fetched_intent_for_order( $order, $intent, $save_payment_method, false, ! $is_payment_method_change );
 	}
 
 	// phpcs:disable Squiz.Commenting.FunctionCommentThrowTag.WrongNumber -- The method explicitly throws its domain exception and can propagate downstream Throwables.
@@ -272,12 +274,13 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 * @param array<string,mixed> $intent                     PaymentIntent or SetupIntent response.
 	 * @param bool                $save_payment_method        Whether to persist the payment method.
 	 * @param bool                $fail_on_setup_intent_error Whether a SetupIntent's `last_setup_error` fails the order (redirect return only).
+	 * @param bool                $zero_amount_plain_note     Whether a $0 SetupIntent completes with the order-status callback's plain note (not on a payment method change).
 	 * @throws WooPaymentsIntentConfirmationException When the intent cannot be authorized or a required token cannot be saved.
 	 * @throws Throwable When confirmation is rejected or lifecycle, token, or payment-method effects fail.
 	 *
 	 * @since 11.0.0
 	 */
-	public function confirm_fetched_intent_for_order( WC_Order $order, array $intent, bool $save_payment_method, bool $fail_on_setup_intent_error = false ): void {
+	public function confirm_fetched_intent_for_order( WC_Order $order, array $intent, bool $save_payment_method, bool $fail_on_setup_intent_error = false, bool $zero_amount_plain_note = false ): void {
 		$status                                        = isset( $intent['status'] ) ? (string) $intent['status'] : '';
 		$should_apply_display_details_before_lifecycle = false;
 		$payment_method_details                        = array();
@@ -317,7 +320,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 			}
 		}
 
-		$event = $this->build_lifecycle_event_from_intent( $intent, $order, $fail_on_setup_intent_error );
+		$event = $this->build_lifecycle_event_from_intent( $intent, $order, $fail_on_setup_intent_error, $zero_amount_plain_note );
 		$this->lifecycle_service->apply( $order, $event, new WooPaymentsPersistenceProfile() );
 		if ( $this->is_authorized_intent_status( $status ) && ! $should_apply_display_details_before_lifecycle ) {
 			$this->apply_payment_method_display_details( $order, $intent );
@@ -455,9 +458,10 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 * @param array<string,mixed> $intent                     Native intent response.
 	 * @param WC_Order            $order                      Order being updated.
 	 * @param bool                $fail_on_setup_intent_error Whether a SetupIntent's `last_setup_error` fails the order.
+	 * @param bool                $zero_amount_plain_note     Whether a completed $0 SetupIntent gets the order-status callback's plain note.
 	 * @return PaymentLifecycleEvent
 	 */
-	private function build_lifecycle_event_from_intent( array $intent, WC_Order $order, bool $fail_on_setup_intent_error ): PaymentLifecycleEvent {
+	private function build_lifecycle_event_from_intent( array $intent, WC_Order $order, bool $fail_on_setup_intent_error, bool $zero_amount_plain_note = false ): PaymentLifecycleEvent {
 		$intent_id             = isset( $intent['id'] ) ? (string) $intent['id'] : '';
 		$is_setup              = 0.0 >= (float) $order->get_total() || 0 === strpos( $intent_id, 'seti_' );
 		$provider_redirect_url = esc_url_raw( WooPaymentsIntentCodec::raw_next_action_redirect_url( $intent ) );
@@ -502,8 +506,16 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		$note_equivalents = isset( $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] ) && is_array( $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] )
 			? $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ]
 			: array();
-		$profile          = new WooPaymentsPersistenceProfile();
-		$meta             = $profile->get_outcome_meta( $outcome );
+		if ( $zero_amount_plain_note && $is_setup && 0.0 >= (float) $order->get_total() && PaymentOutcome::STATUS_COMPLETED === $outcome->get_status() ) {
+			// Client update_order_status() completes a $0 order itself with a plain note; its order service then sees a paid order
+			// and writes no success note, so no fee job either (gw:4248-4275, os:2747-2764).
+			$note_equivalents = $order->is_paid() ? array() : wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_zero_amount_setup_success_note_candidates( $order, $intent_id );
+			$note             = $note_equivalents[0] ?? null;
+			$note_type        = null === $note ? null : PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_COMPLETE;
+		}
+
+		$profile = new WooPaymentsPersistenceProfile();
+		$meta    = $profile->get_outcome_meta( $outcome );
 		if ( ( $intent['status'] ?? '' ) !== $provider_status ) {
 			$meta['_intention_status'] = $provider_status;
 		}

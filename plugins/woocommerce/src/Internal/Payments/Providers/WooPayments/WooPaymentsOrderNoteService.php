@@ -125,6 +125,29 @@ class WooPaymentsOrderNoteService {
 	}
 
 	/**
+	 * Build the note client 11.1.0 writes when its order-status callback completes a $0 order's SetupIntent.
+	 *
+	 * Client `update_order_status()` (gw:4248-4275) writes this plain line instead of the success note: no explicit
+	 * currency code, no emphasis, the SetupIntent ID without a link.
+	 *
+	 * @param WC_Order $order           Order object.
+	 * @param string   $setup_intent_id SetupIntent ID.
+	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
+	 *
+	 * @since 11.2.0
+	 */
+	public function format_zero_amount_setup_success_note_candidates( WC_Order $order, string $setup_intent_id ): array {
+		$amount = WooPaymentsCurrencyUtils::format_price_in_currency( (float) $order->get_total(), $order->get_currency() );
+
+		return $this->unique_note_candidates(
+			/* translators: %1$s: the successfully charged amount, %2$s: WooPayments, %3$s: SetupIntent ID. */
+			sprintf( __( 'A payment of %1$s was successfully charged using %2$s (%3$s).', 'woocommerce' ), $amount, 'WooPayments', esc_html( $setup_intent_id ) ),
+			/* translators: %1$s: the successfully charged amount, %2$s: WooPayments, %3$s: SetupIntent ID. */
+			sprintf( __( 'A payment of %1$s was successfully charged using %2$s (%3$s).', 'woocommerce-payments' ), $amount, 'WooPayments', esc_html( $setup_intent_id ) ) // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+		);
+	}
+
+	/**
 	 * Build exact Core- and plugin-catalog renderings of a payment-started note.
 	 *
 	 * @param WC_Order $order     Order object.

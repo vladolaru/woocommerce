@@ -96,6 +96,13 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$reloaded = wc_get_order( $order->get_id() );
 
 		$this->assertSame( 'test', $enriched->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_mode'] );
+		// Client mark_payment_completed() writes the success note for a succeeded SetupIntent, with no transaction link
+		// (os:404-406, 1565-1600; compose_transaction_url() returns '' for seti_). Live client subscription 26: "A test payment of $0.00 … (seti_…)".
+		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS, $enriched->get_data()[ PaymentOutcome::DATA_NOTE_TYPE ] ?? null );
+		$note = (string) ( $enriched->get_data()[ PaymentOutcome::DATA_NOTE ] ?? '' );
+		$this->assertStringContainsString( 'payment of', $note );
+		$this->assertStringContainsString( 'seti_read_only', $note );
+		$this->assertStringNotContainsString( 'href', $note );
 		$this->assertInstanceOf( WC_Order::class, $reloaded );
 		$this->assertSame( '', $reloaded->get_meta( '_payment_method_id', true ) );
 		$this->assertSame( '', $reloaded->get_meta( '_stripe_customer_id', true ) );

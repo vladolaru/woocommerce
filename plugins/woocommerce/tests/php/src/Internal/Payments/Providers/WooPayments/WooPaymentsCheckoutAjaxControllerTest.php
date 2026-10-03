@@ -167,8 +167,12 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'prod', $order->get_meta( '_wcpay_mode', true ) );
 		// Plugin 11.1.0 stores the order currency for setup intents (class-wc-payments-order-service.php:1361).
 		$this->assertSame( 'USD', $order->get_meta( '_wcpay_intent_currency', true ) );
-		$this->assert_order_has_no_note_containing( $order, 'A payment of' );
+		// Client 11.1.0 update_order_status() completes the $0 order with this plain note (gw:4263-4271); its order service then
+		// sees a paid order and writes no success note (os:2747-2764).
+		$notes = array_map( static fn( $note ): string => wp_strip_all_tags( html_entity_decode( (string) $note->content ) ), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertContains( 'A payment of $0.00 was successfully charged using WooPayments (' . $recorded['body']['id'] . ').', $notes );
 		$this->assert_order_has_no_note_containing( $order, 'A test payment of' );
+		$this->assert_order_has_no_note_containing( $order, '<strong>successfully charged</strong>' );
 	}
 
 	/**
