@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyBootstrap;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyExplicitPriceController;
@@ -50,6 +51,12 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyAdminNoticesController',
 		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyAdminNoteController',
 	);
+
+	/** Clear the WP_CLI override the CLI case sets. */
+	public function tearDown(): void {
+		Constants::clear_single_constant( 'WP_CLI' );
+		parent::tearDown();
+	}
 
 	/** @testdox Should retain core roots when no provider roots are configured. */
 	public function test_empty_provider_resolver_keeps_core_registration_providerless(): void {
@@ -283,14 +290,9 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should not resolve provider roots for an empty CLI request.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_empty_cli_request_does_not_resolve_provider_roots(): void {
-		if ( ! defined( 'WP_CLI' ) ) {
-			define( 'WP_CLI', true );
-		}
+		Constants::set_constant( 'WP_CLI', true );
 
 		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, false );
 		$resolver_calls = 0;
