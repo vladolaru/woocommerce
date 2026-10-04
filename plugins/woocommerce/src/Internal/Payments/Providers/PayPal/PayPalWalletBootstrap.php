@@ -27,16 +27,6 @@ use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Package;
 class PayPalWalletBootstrap implements RegisterHooksInterface {
 
 	/**
-	 * Payment method IDs removed from the settings payment methods list. The card button sits in the PayPal group, which the group filters do not cover.
-	 * Plan B's card cut removes this list together with the filter that applies it.
-	 *
-	 * @since 11.3.0
-	 */
-	public const HIDDEN_PAYMENT_METHOD_IDS = array(
-		'ppcp-card-button-gateway',
-	);
-
-	/**
 	 * Constants the extension's main file defines, copied so core defines them without that file. Both copies
 	 * guard them with defined(), so whichever loads first wins and the values are identical.
 	 */
@@ -127,7 +117,6 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 		$this->define_constants();
 		// The DTOs the wallet stores as PHP objects keep the extension's class names; see the loader for why.
 		require_once __DIR__ . '/Wallet/SerializedClasses/load.php';
-		$this->add_trimming_filters();
 
 		$modules = ( require __DIR__ . '/Wallet/modules.php' )();
 		/** This filter is documented in the extension's bootstrap.php. */
@@ -238,21 +227,6 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Remove the hidden payment methods from the settings payment methods data, which is keyed by method ID.
-	 *
-	 * @since 11.3.0
-	 *
-	 * @param mixed $payment_methods Payment methods data, keyed by method ID.
-	 * @return mixed The data without the hidden methods, or the input unchanged when it is not an array.
-	 */
-	public function filter_payment_methods( $payment_methods ) {
-		if ( ! is_array( $payment_methods ) ) {
-			return $payment_methods;
-		}
-		return array_diff_key( $payment_methods, array_flip( self::HIDDEN_PAYMENT_METHOD_IDS ) );
-	}
-
-	/**
 	 * The constants core defines on the extension's behalf, by name.
 	 *
 	 * @since 11.3.0
@@ -262,17 +236,6 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	 */
 	public static function get_extension_constants(): array {
 		return self::EXTENSION_CONSTANTS;
-	}
-
-	/**
-	 * Keep the card and local payment method groups out of the settings data, and the card button out of the payment methods list.
-	 *
-	 * The kept Settings module still lists those methods from static ID lists. Plan B's card and APM cuts remove the lists and these filters together.
-	 */
-	private function add_trimming_filters(): void {
-		add_filter( 'woocommerce_paypal_payments_gateway_group_cards', '__return_empty_array' );
-		add_filter( 'woocommerce_paypal_payments_gateway_group_apm', '__return_empty_array' );
-		add_filter( 'woocommerce_paypal_payments_payment_methods', array( $this, 'filter_payment_methods' ) );
 	}
 
 	/**

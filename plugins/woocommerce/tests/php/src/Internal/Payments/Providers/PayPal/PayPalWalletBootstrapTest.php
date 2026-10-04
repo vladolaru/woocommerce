@@ -97,14 +97,14 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not boot and not add trimming filters when the extension owns the site.
+	 * @testdox Should not boot and not add wallet filters when the extension owns the site.
 	 */
 	public function test_does_not_boot_when_extension_owns(): void {
 		$this->build_sut( false );
 		$this->sut->maybe_boot();
 
 		$this->assertFalse( $this->sut->is_booted() );
-		$this->assertFalse( has_filter( 'woocommerce_paypal_payments_modules' ), 'No trimming filter must be added while dormant' );
+		$this->assertFalse( has_filter( 'woocommerce_paypal_payments_modules' ), 'No wallet filter must be added while dormant' );
 		$this->assertFalse( has_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.card_fields_enabled' ) );
 	}
 
@@ -238,36 +238,6 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should remove the card button and keep the other methods when filtering the payment methods.
-	 */
-	public function test_payment_methods_filter_removes_only_the_card_button(): void {
-		$this->build_sut( true );
-		$methods = array(
-			'__meta'                   => array( 'x' => 1 ),
-			'ppcp-gateway'             => array( 'id' => 'ppcp-gateway' ),
-			'venmo'                    => array( 'id' => 'venmo' ),
-			'pay-later'                => array( 'id' => 'pay-later' ),
-			'ppcp-card-button-gateway' => array( 'id' => 'ppcp-card-button-gateway' ),
-			'paypalShowLogo'           => true,
-		);
-
-		$result = $this->sut->filter_payment_methods( $methods );
-
-		unset( $methods['ppcp-card-button-gateway'] );
-		$this->assertSame( $methods, $result );
-	}
-
-	/**
-	 * @testdox Should return the input unchanged when the payment methods are not an array.
-	 */
-	public function test_payment_methods_filter_returns_non_array_unchanged(): void {
-		$this->build_sut( true );
-
-		$this->assertSame( 'oops', $this->sut->filter_payment_methods( 'oops' ) );
-		$this->assertNull( $this->sut->filter_payment_methods( null ) );
-	}
-
-	/**
 	 * @group paypal-wallet-boot
 	 *
 	 * @testdox Should boot the forked wallet once when native owns the site, registering the PayPal gateway and only wallet modules.
@@ -307,10 +277,20 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 			$this->assertTrue( defined( $name ), "$name must be defined after boot" );
 		}
 		$this->assertFalse( has_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.vault_component_enabled' ), 'Wallet flags are not forced' );
-		$this->assertSame( 10, has_filter( 'woocommerce_paypal_payments_gateway_group_cards', '__return_empty_array' ), 'The card group must stay empty' );
-		$this->assertSame( 10, has_filter( 'woocommerce_paypal_payments_gateway_group_apm', '__return_empty_array' ), 'The APM group must stay empty' );
-		$this->assertSame( 10, has_filter( 'woocommerce_paypal_payments_payment_methods', array( $this->sut, 'filter_payment_methods' ) ), 'The card button must be hidden from the settings data' );
-		$this->assertContains( 'ppcp-card-button-gateway', PayPalWalletBootstrap::HIDDEN_PAYMENT_METHOD_IDS, 'The hidden ID must match the extension\'s card button gateway ID' );
+		$this->assertFalse( has_filter( 'woocommerce_paypal_payments_gateway_group_cards' ), 'The card group is empty by definition, with no filter attached' );
+		$this->assertFalse( has_filter( 'woocommerce_paypal_payments_gateway_group_apm' ), 'The APM group is empty by definition, with no filter attached' );
+		// The settings module filters this hook itself, so check that the shell attached nothing to it.
+		foreach ( $GLOBALS['wp_filter']['woocommerce_paypal_payments_payment_methods']->callbacks ?? array() as $callbacks ) {
+			foreach ( $callbacks as $callback ) {
+				$function = $callback['function'];
+				$this->assertFalse( is_array( $function ) && $function[0] instanceof PayPalWalletBootstrap, 'The shell must not filter the payment methods data' );
+			}
+		}
+
+		$methods = $container->get( 'settings.data.definition.methods' );
+		$this->assertSame( array( 'ppcp-gateway', 'venmo', 'pay-later' ), array_column( $methods->group_paypal_methods(), 'id' ), 'The PayPal group lists the wallet methods and no card button' );
+		$this->assertSame( array(), $methods->group_card_methods(), 'The cards group must be empty' );
+		$this->assertSame( array(), $methods->group_apms(), 'The APM group must be empty' );
 
 		// What is offered: card and wallet gateways are connection-gated by the extension's logic and the test store is not connected, so only the main PayPal gateway is observable.
 		$offered_ids = array_map(
