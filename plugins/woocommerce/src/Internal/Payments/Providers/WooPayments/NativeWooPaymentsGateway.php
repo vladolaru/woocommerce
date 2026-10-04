@@ -1799,6 +1799,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$this->maybe_bump_failed_transaction_rate_limiter( $outcome );
 		self::maybe_add_failed_checkout_notice( $outcome );
 		$this->maybe_store_paid_intent_in_session( $outcome );
+		$this->get_duplicate_payment_prevention_service()->maybe_remove_session_processing_order_for_offline_voucher( (int) $order_id, $outcome );
 
 		$result = self::format_checkout_result( $context, $order, $outcome );
 		// Client 11.1.0 returns get_return_url() for every change, saved method or new, which WooCommerce Subscriptions maps to the subscription.

@@ -28,6 +28,10 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEx
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFailedTransactionRateLimiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentMappingContext;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
@@ -4318,6 +4322,71 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$deleted_order = wc_get_order( $second_order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $deleted_order );
 		$this->assertSame( 'trash', $deleted_order->get_status() );
+	}
+
+	/**
+	 * @testdox A checkout that ends with $label $outcome the order from duplicate-payment session tracking.
+	 *
+	 * Client 11.1.0 process_payment_for_order() removes the session's processing order when the intent succeeded or is
+	 * an offline method waiting for the shopper, that is a Multibanco voucher (gw:2021, 2147-2148; Payment_Method::OFFLINE_PAYMENT_METHODS).
+	 * An authorized card stays tracked until its order-received page.
+	 *
+	 * @testWith ["a Multibanco voucher", "requires_action", "removes"]
+	 *           ["an authorized card payment", "requires_capture", "keeps"]
+	 *
+	 * @param string $label   Case label.
+	 * @param string $status  PaymentIntent status.
+	 * @param string $outcome Whether the gateway removes or keeps the tracked order.
+	 */
+	public function test_process_payment_clears_session_processing_order_for_offline_voucher( string $label, string $status, string $outcome ): void {
+		unset( $label );
+		$order   = $this->create_order();
+		$session = $this->create_session();
+		$service = new RecordingPaymentProcessingService();
+		$intent  = array(
+			'id'       => 'pi_session_marker',
+			'status'   => $status,
+			'amount'   => 1200,
+			'currency' => 'eur',
+			'metadata' => array( 'order_id' => $order->get_id() ),
+		);
+		if ( 'requires_action' === $status ) {
+			$intent['next_action'] = array(
+				'type'                       => 'multibanco_display_details',
+				'multibanco_display_details' => array(
+					'reference'          => '123 456 789',
+					'entity'             => '12345',
+					'hosted_voucher_url' => 'https://payments.stripe.com/multibanco/voucher/test',
+					'expires_at'         => time() + DAY_IN_SECONDS,
+				),
+			);
+		}
+		// The outcome the real provider hands the gateway: the codec's mapping enriched with the order effects.
+		$service->checkout_outcome = wc_get_container()->get( WooPaymentsOrderEffectApplier::class )->enrich_outcome_for_lifecycle(
+			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID ),
+			WooPaymentsIntentCodec::outcome_from_intention( $intent, WooPaymentsIntentMappingContext::for_native( $order->get_id(), $order->get_checkout_order_received_url() ) ),
+			WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false )
+		);
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init(
+			$service,
+			new WooPaymentsProvider(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_fraud_prevention_service( false, $session ),
+			new WooPaymentsFailedTransactionRateLimiter( $session ),
+			$this->create_duplicate_payment_prevention_service( $session )
+		);
+		$_POST['wcpay-payment-method'] = 'pm_session_marker';
+
+		$gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 1, $service->checkout_attempt_count );
+		$this->assertSame( 'removes' === $outcome ? null : $order->get_id(), $session->get( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER ) );
 	}
 
 	/**

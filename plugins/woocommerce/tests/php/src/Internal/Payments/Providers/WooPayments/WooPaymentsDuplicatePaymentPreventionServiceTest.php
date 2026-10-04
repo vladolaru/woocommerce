@@ -49,6 +49,41 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	}
 
 	/**
+	 * @testdox Landing on the order-received page of $page decides whether a later same-cart order is still treated as a duplicate.
+	 *
+	 * Client 11.1.0 src/Internal/Service/DuplicatePaymentPreventionService.php:100-107 clears the session's processing order
+	 * when the shopper reaches that order's order-received page, so a later legitimate repeat order is not deleted.
+	 *
+	 * @testWith ["the processing order", true]
+	 *           ["another order", false]
+	 *
+	 * @param string $page           Whose order-received page the shopper lands on.
+	 * @param bool   $repeat_is_kept Whether the later repeat order goes ahead.
+	 */
+	public function test_landing_on_order_received_page_clears_the_processing_order( string $page, bool $repeat_is_kept ): void {
+		global $wp;
+		$session       = $this->create_session();
+		$sut           = $this->create_service( $session );
+		$customer_id   = self::factory()->user->create();
+		$session_order = $this->create_order( 'same-cart-hash', 'completed', $customer_id );
+		$other_order   = $this->create_order( 'other-cart-hash', 'completed', $customer_id );
+		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $session_order->get_id() );
+		add_filter( 'woocommerce_is_order_received_page', '__return_true' );
+		$wp->query_vars['order-received'] = (string) ( 'the processing order' === $page ? $session_order->get_id() : $other_order->get_id() );
+
+		try {
+			$sut->clear_session_processing_order_after_landing_order_received_page();
+		} finally {
+			unset( $wp->query_vars['order-received'] );
+		}
+		$repeat_order = $this->create_order( 'same-cart-hash', 'pending', $customer_id );
+		$result       = $sut->check_against_session_processing_order( $repeat_order, $this->create_gateway() );
+
+		// A non-null result is the redirect to the earlier order after deleting the repeat one.
+		$this->assertSame( $repeat_is_kept, null === $result );
+	}
+
+	/**
 	 * @testdox Should continue processing when the session order is not a paid matching duplicate.
 	 *
 	 * @dataProvider session_processing_order_mismatch_data

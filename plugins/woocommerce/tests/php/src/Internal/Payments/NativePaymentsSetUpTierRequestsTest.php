@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderTrackingService;
@@ -215,6 +216,18 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 		// The client hooks the link on init of every request and skips AJAX, REST and WP-CLI inside it (client 11.1.0
 		// `includes/class-wc-payments.php:605`, `includes/class-wc-payments-fraud-service.php:82,151-167`).
 		$this->assertSame( $expected ? 10 : null, $this->get_callback_priority( 'init', WooPaymentsFraudService::class, 'link_session_if_user_just_logged_in' ) );
+	}
+
+	/**
+	 * @testdox An active store clears the session's processing-order marker on the order-received page of a front request.
+	 */
+	public function test_active_front_request_clears_processing_order_marker_on_order_received(): void {
+		$this->arrange_native_owner( NativePaymentsState::ACTIVE );
+
+		$this->run_bootstrap( '__return_false' );
+
+		// Client 11.1.0 hooks it on template_redirect at 21, right after core's cart clearing (src/Internal/Service/DuplicatePaymentPreventionService.php:66-69).
+		$this->assertSame( 21, $this->get_callback_priority( 'template_redirect', WooPaymentsDuplicatePaymentPreventionService::class, 'clear_session_processing_order_after_landing_order_received_page' ) );
 	}
 
 	/**

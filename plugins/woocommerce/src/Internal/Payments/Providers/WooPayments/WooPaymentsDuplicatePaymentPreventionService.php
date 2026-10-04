@@ -121,7 +121,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	}
 
 	/**
-	 * Register session cleanup after WooCommerce completes a payment.
+	 * Register session cleanup after WooCommerce completes a payment and when the shopper lands on the order-received page.
 	 *
 	 * @internal
 	 */
@@ -131,6 +131,42 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		}
 
 		add_action( 'woocommerce_payment_complete', array( $this, 'handle_woocommerce_payment_complete' ) );
+		// Priority 21 runs right after core's wc_clear_cart_after_payment(), as in client 11.1.0 (src/Internal/Service/DuplicatePaymentPreventionService.php:66-69).
+		add_action( 'template_redirect', array( $this, 'clear_session_processing_order_after_landing_order_received_page' ), 21 );
+	}
+
+	/**
+	 * Clear the order from duplicate-payment session tracking once the shopper reaches its order-received page.
+	 *
+	 * Client 11.1.0 src/Internal/Service/DuplicatePaymentPreventionService.php:100-107.
+	 *
+	 * @internal
+	 */
+	public function clear_session_processing_order_after_landing_order_received_page(): void {
+		global $wp;
+
+		if ( is_order_received_page() && isset( $wp->query_vars['order-received'] ) ) {
+			$this->remove_session_processing_order( absint( $wp->query_vars['order-received'] ) );
+		}
+	}
+
+	/**
+	 * Clear an order from duplicate-payment session tracking when its checkout ended with an offline voucher.
+	 *
+	 * The client clears it when the intent succeeded or is an offline method waiting for the shopper (gw:2147-2148);
+	 * a succeeded intent is cleared through `woocommerce_payment_complete`, and a Multibanco voucher is the only
+	 * `requires_action` intent native maps to an authorized outcome.
+	 *
+	 * @param int            $order_id Order ID.
+	 * @param PaymentOutcome $outcome  Checkout outcome.
+	 */
+	public function maybe_remove_session_processing_order_for_offline_voucher( int $order_id, PaymentOutcome $outcome ): void {
+		$data = $outcome->get_data();
+		$meta = isset( $data[ PaymentOutcome::DATA_META ] ) && is_array( $data[ PaymentOutcome::DATA_META ] ) ? $data[ PaymentOutcome::DATA_META ] : array();
+
+		if ( PaymentOutcome::STATUS_AUTHORIZED === $outcome->get_status() && 'requires_action' === ( $meta['_intention_status'] ?? '' ) ) {
+			$this->remove_session_processing_order( $order_id );
+		}
 	}
 
 	/**
