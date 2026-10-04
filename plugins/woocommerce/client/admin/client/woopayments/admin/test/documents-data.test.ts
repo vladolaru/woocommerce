@@ -14,7 +14,11 @@ import {
 	saveWooPaymentsVatDetails,
 	validateWooPaymentsVatNumber,
 } from '../documents/data';
-import { dataViewsViewToDocumentsQuery } from '../documents/query';
+import {
+	buildDocumentsRoutePath,
+	dataViewsViewToDocumentsQuery,
+	parseDocumentsQuery,
+} from '../documents/query';
 
 jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 
@@ -99,6 +103,27 @@ describe( 'WooPayments Documents data helpers', () => {
 			path: '/wc/v3/payments/documents/summary?match=any&date_after=2026-06-01&type_is=vat_invoice',
 			method: 'GET',
 		} );
+	} );
+
+	it( "keeps the list sort in the client's `orderby`/`order` URL params", () => {
+		// Client 11.1.0 `documents/filters/config.ts:38` and `data/documents/hooks.ts:59-60`.
+		expect(
+			parseDocumentsQuery( '?paged=2&orderby=date&order=asc' )
+		).toEqual(
+			expect.objectContaining( { sort: 'date', direction: 'asc' } )
+		);
+
+		const routePath = buildDocumentsRoutePath( '/woopayments/documents', {
+			page: 2,
+			sort: 'date',
+			direction: 'asc',
+		} );
+		const params = new URLSearchParams( routePath.split( '?' )[ 1 ] );
+
+		expect( params.get( 'orderby' ) ).toBe( 'date' );
+		expect( params.get( 'order' ) ).toBe( 'asc' );
+		expect( params.has( 'sort' ) ).toBe( false );
+		expect( params.has( 'direction' ) ).toBe( false );
 	} );
 
 	it( 'maps DataViews filters to preserved REST query params', () => {

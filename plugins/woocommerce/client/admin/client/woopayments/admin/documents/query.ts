@@ -36,6 +36,12 @@ export const DOCUMENT_LIST_QUERY_PARAM_ORDER = [
 	...DOCUMENT_FILTER_PARAMS,
 ] as const;
 
+// Client 11.1.0 keeps the documents sort in `orderby`/`order` (`documents/filters/config.ts:38`); the API takes `sort`/`direction`.
+const DOCUMENT_SORT_URL_PARAMS: Record< string, string > = {
+	sort: 'orderby',
+	direction: 'order',
+};
+
 export const DOCUMENT_SUMMARY_QUERY_PARAM_ORDER = [
 	...DOCUMENT_FILTER_PARAMS,
 ] as const;
@@ -190,13 +196,16 @@ export const parseDocumentsQuery = (
 			params.get( 'per_page' ),
 		DEFAULT_DOCUMENTS_QUERY.pagesize
 	);
-	const direction = isSortDirection( params.get( 'direction' ) )
-		? ( params.get( 'direction' ) as 'asc' | 'desc' )
+	const urlDirection = params.get( DOCUMENT_SORT_URL_PARAMS.direction );
+	const direction = isSortDirection( urlDirection )
+		? urlDirection
 		: DEFAULT_DOCUMENTS_QUERY.direction;
 	const query: WooPaymentsDocumentsQuery = {
 		page,
 		pagesize,
-		sort: params.get( 'sort' ) || DEFAULT_DOCUMENTS_QUERY.sort,
+		sort:
+			params.get( DOCUMENT_SORT_URL_PARAMS.sort ) ||
+			DEFAULT_DOCUMENTS_QUERY.sort,
 		direction,
 	};
 
@@ -213,12 +222,13 @@ export const parseDocumentsQuery = (
 
 export const serializeDocumentsQuery = (
 	query: WooPaymentsDocumentsQuery = {},
-	paramOrder: readonly string[] = DOCUMENT_LIST_QUERY_PARAM_ORDER
+	paramOrder: readonly string[] = DOCUMENT_LIST_QUERY_PARAM_ORDER,
+	paramNames: Record< string, string > = {}
 ): string => {
 	const params = new URLSearchParams();
 
 	paramOrder.forEach( ( key ) => {
-		addParam( params, key, query[ key ] );
+		addParam( params, paramNames[ key ] || key, query[ key ] );
 	} );
 
 	return params.toString();
@@ -228,7 +238,11 @@ export const buildDocumentsRoutePath = (
 	pathname: string,
 	query: WooPaymentsDocumentsQuery
 ): string => {
-	const queryString = serializeDocumentsQuery( query );
+	const queryString = serializeDocumentsQuery(
+		query,
+		DOCUMENT_LIST_QUERY_PARAM_ORDER,
+		DOCUMENT_SORT_URL_PARAMS
+	);
 
 	return queryString ? `${ pathname }?${ queryString }` : pathname;
 };
