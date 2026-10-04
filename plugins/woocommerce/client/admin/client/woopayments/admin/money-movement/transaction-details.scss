@@ -89,6 +89,11 @@
 	&__id-value {
 		font-family: monospace;
 		overflow-wrap: anywhere;
+
+		// One size down on phones, so a whole ID fits on its own line under the label.
+		@media screen and (max-width: 600px) {
+			font-size: $font-size-small;
+		}
 	}
 
 	// One row of labelled values, stacked on narrow screens.
