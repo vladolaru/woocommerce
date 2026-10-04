@@ -190,6 +190,16 @@ class PaymentProcessingService {
 			$payment_reference       = $outcome->get_provider_payment_id();
 			$existing_transaction_id = (string) $reloaded_order->get_transaction_id();
 			if ( '' !== $payment_reference && '' !== $existing_transaction_id && $payment_reference !== $existing_transaction_id ) {
+				// A different transaction ID on the order points to a second payment this order does not link to.
+				wc_get_logger()->error(
+					'Native payment reconciliation context was not saved: the order already has a different transaction ID.',
+					array(
+						'source'                  => 'native-payments',
+						'order_id'                => $reloaded_order->get_id(),
+						'payment_reference'       => $payment_reference,
+						'existing_transaction_id' => $existing_transaction_id,
+					)
+				);
 				return false;
 			}
 

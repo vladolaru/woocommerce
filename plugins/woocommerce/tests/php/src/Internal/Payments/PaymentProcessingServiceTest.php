@@ -2425,6 +2425,48 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A post-charge apply failure on an order that already has a different transaction ID logs both IDs.
+	 */
+	public function test_process_checkout_outcome_logs_a_transaction_id_mismatch_when_apply_throws(): void {
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->set_transaction_id( 'pi_first_payment' );
+		$order->save();
+
+		$sut         = $this->build_sut_with_lifecycle( $this->create_throwing_lifecycle_service() );
+		$provider    = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_second_payment', '', 'pm_second_payment' ) );
+		$fake_logger = $this->create_fake_logger();
+		add_filter(
+			'woocommerce_logging_class',
+			function () use ( $fake_logger ) {
+				return $fake_logger;
+			}
+		);
+
+		$this->expect_outcome_apply_exception(
+			static fn() => $sut->process_checkout_outcome( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_second_payment' ), $provider )
+		);
+
+		remove_all_filters( 'woocommerce_logging_class' );
+
+		$mismatch_logs = array_values(
+			array_filter(
+				$fake_logger->error_calls,
+				static fn( array $call ): bool => 'Native payment reconciliation context was not saved: the order already has a different transaction ID.' === $call['message']
+			)
+		);
+		$this->assertCount( 1, $mismatch_logs, 'The transaction ID mismatch must be logged on its own line.' );
+		$this->assertSame(
+			array(
+				'source'                  => 'native-payments',
+				'order_id'                => $order->get_id(),
+				'payment_reference'       => 'pi_second_payment',
+				'existing_transaction_id' => 'pi_first_payment',
+			),
+			$mismatch_logs[0]['context']
+		);
+	}
+
+	/**
 	 * @testdox Should match the first unlinked refund using provider supplied meta keys.
 	 */
 	public function test_process_refund_skips_refunds_linked_by_provider_meta_keys(): void {
