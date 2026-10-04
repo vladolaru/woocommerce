@@ -3,7 +3,7 @@
 | Item | Value |
 |------|-------|
 | Source | `woocommerce/woocommerce-paypal-payments`, branch `poc/wallet-in-core-build` at `0083204e7` (local, never pushed): `dev/develop` at `85d6179b7` plus five commits (module availability contract, guarded reads, main-file constant guards, webhook skip filter, Pay Later capability status) |
-| Forked on | 2026-10-02 (`bin/paypal-wallet-fork/fork.php` in the plugin, run once; `supplement.py` added the pieces that plan B has since removed) |
+| Forked on | 2026-10-02 (`bin/paypal-wallet-fork/fork.php` in the plugin, run once; `supplement.py` added stubs and copies of dropped-module classes that have since been removed, see below) |
 | Kept | 19 module directories plus the plugin root; see `Wallet/modules.php` |
 | Not forked | ppcp-applepay, ppcp-googlepay, ppcp-axo, ppcp-axo-block, ppcp-card-fields, ppcp-local-alternative-payment-methods, ppcp-order-tracking, ppcp-store-sync, ppcp-paypal-subscriptions, ppcp-fraud-protection, ppcp-abilities, ppcp-status-report, ppcp-uninstall |
 | Namespace | `WooCommerce\PayPalCommerce\` → `Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\`; `…\Vendor\` → `Automattic\WooCommerce\Vendor\`. Prefixed in `lib/packages/` by Mozart: `inpsyde/modularity` 1.12.0, `psr/container` 1.1 and `psr/log` 1.1.4 (the extension's unprefixed PSR-3, rewritten to the prefixed name in the forked code) |
@@ -19,13 +19,13 @@ The three stored DTO files are always marked as contract: any upstream change to
 
 ## Accepted consequences of the cuts
 
-**Fastlane settings migration.** The Tier 1 settings cut (commit `4b11ba4ce2`) removed `FastlaneSettingsMigration` and `FastlaneSettings`. On a store that still has legacy (3.x UI) settings and where core's wallet is the first copy to run the settings migration, core completes the migration without the Fastlane step and sets the shared `woocommerce_ppcp-settings-migration-is-done` marker. The extension then sees the marker and never migrates the legacy Fastlane settings into `woocommerce-ppcp-data-fastlane`, so its Fastlane configuration starts from defaults. At `e69b0cd003` the vendored copy migrated Fastlane too. This is accepted for plan A because the cut is in the spec's Tier 1 list; the alternative is to keep both classes until plan B.
+**Fastlane settings migration.** The settings cut (commit `4b11ba4ce2`) removed `FastlaneSettingsMigration` and `FastlaneSettings`. On a store that still has legacy (3.x UI) settings and where core's wallet is the first copy to run the settings migration, core completes the migration without the Fastlane step and sets the shared `woocommerce_ppcp-settings-migration-is-done` marker. The extension then sees the marker and never migrates the legacy Fastlane settings into `woocommerce-ppcp-data-fastlane`, so its Fastlane configuration starts from defaults. At `e69b0cd003` the vendored copy migrated Fastlane too. This is accepted because Fastlane is outside the wallet; the alternative was to keep both classes. The legacy `axo_enabled` flag is still mapped to the stored Fastlane gateway ID, so a merchant's old choice is not lost.
 
 **Hook object types.** `woocommerce_paypal_payments_built_container` and Modularity's own lifecycle hooks now pass core-namespaced (prefixed) objects, so a third-party callback that type-hints the extension's container or module interfaces will not match core's copy, the same as when the extension is absent. The shell also ignores any module returned by the `woocommerce_paypal_payments_modules` filter that is not core's prefixed `Module` interface, instead of failing at boot.
 
-## None since plan B
+## Kept from dropped modules: none since plan B
 
-At the fork, kept wallet code still reached a few classes of dropped modules (gateway ID stubs, helper copies and two card-fields JS files), which `bin/paypal-wallet-fork/supplement.py` added under the extension's own namespace paths. Plan B cut every reader and deleted them, in the commits `2630e8b0f9..79349b32ca`. No class, trait or JS file of a dropped module is kept now, and the script's lists are empty, so re-running it adds nothing. Gateway IDs that kept code still recognises in shared state live in `Wallet/WcGateway/Helper/GatewayIds.php`.
+At the fork, kept wallet code still reached a few classes of dropped modules (gateway ID stubs, helper copies and two card-fields JS files), which `bin/paypal-wallet-fork/supplement.py` added under the extension's own namespace paths. Every reader was cut and the pieces were deleted, in the commits `2630e8b0f9..79349b32ca`. No class, trait or JS file of a dropped module is kept now, and the script's lists are empty, so re-running it adds nothing. Gateway IDs that kept code still recognises in shared state live in `Wallet/WcGateway/Helper/GatewayIds.php`.
 
 ## Names stopped in core
 
@@ -51,6 +51,13 @@ This is a shim, not a design to keep: the extension is expected to store arrays 
 
 Known residue: the Jetpack autoloader's manifest still lists the three classes (it scans PSR-4 roots as plain classmaps), so with the extension active its loader can serve core's copy. That is harmless only while the files stay identical to the extension's. The session and seller-status caches that hold entity objects are checked with `instanceof` by their readers and rebuild themselves, so they need no shim.
 
-## Conventions until plan B lifts them
+## Conventions until plan C lifts them
 
-`Wallet/` is excluded from core's phpcs and PHPStan runs (it keeps the extension's style); the JS package's ESLint keeps inherited code at warning level for 20 rules. The shell adds no settings filters: the card and local payment method groups are empty by definition (their hooks still fire over an empty array) and the card button gateway no longer exists. The package's `eslint.config.mjs` lists the rules still at that level. Card funding in the PayPal button stack is disabled by core (`DisabledFundingSources`) until a merchant setting exists, which plan C designs.
+These are deliberate departures from core's usual rules. Plan C, the next pass over the fork, removes them one by one.
+
+- **Lint excludes.** `Wallet/` is excluded from core's phpcs and PHPStan runs (it keeps the extension's style), and the JS package's ESLint keeps inherited code under `modules/` at warning level for 20 rules, listed in the package's `eslint.config.mjs`. Core-authored files, including every test under `tests/php/.../Wallet/`, are linted as usual.
+- **The stored-class shim.** `Wallet/SerializedClasses/` keeps three classes under the extension's names so that objects stored in shared options still load (see "Stored class names" above).
+- **Fired-but-empty group filters.** The card and local payment method groups of the payment methods definition are empty. Their hooks, `woocommerce_paypal_payments_gateway_group_cards` and `woocommerce_paypal_payments_gateway_group_apm`, still fire over an empty array, so third-party callbacks stay valid. The shell adds no settings filters of its own.
+- **Dormant mode.** When the store has no connected PayPal account (the connection options of the extension's settings say so), the wallet is not built and none of its hooks, scripts or routes load, except on its own admin pages (the settings route and the old `section=ppcp-gateway` URL) and its REST routes (`/wc/v3/wc_paypal` and `/paypal/v1`), where it boots so a merchant can connect. The Payments settings list shows a placeholder "PayPal Wallet" row (`DormantPayPalGateway`, which shares the wallet gateway's ID and only reads its settings) with a setup button that opens the wallet's settings route. The placeholder never writes an option.
+- **The settings route.** The wallet's settings page lives at `admin.php?page=wc-settings&tab=checkout&path=/paypal-wallet`, inside the Payments settings app. The old `section=ppcp-gateway` URL, and the sections of the extension's other gateways, redirect to it with a 302 that keeps the query arguments, so links and the onboarding return keep working.
+- **Card funding.** Card funding in the PayPal button stack is disabled by core (`DisabledFundingSources`) until a merchant setting exists, which plan C designs.
