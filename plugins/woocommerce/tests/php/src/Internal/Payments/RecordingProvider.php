@@ -182,7 +182,7 @@ class RecordingProvider implements ProviderContract, ProviderOutcomeMetadataMapp
 	 * Refund a payment through the provider.
 	 *
 	 * @param PaymentContext $context         Payment context.
-	 * @param string         $idempotency_key Deterministic idempotency key.
+	 * @param string         $idempotency_key Key minted fresh for this refund call.
 	 * @return PaymentOutcome
 	 */
 	public function refund( PaymentContext $context, string $idempotency_key ): PaymentOutcome {

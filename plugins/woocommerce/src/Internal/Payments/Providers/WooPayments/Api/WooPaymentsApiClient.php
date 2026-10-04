@@ -318,7 +318,7 @@ class WooPaymentsApiClient {
 	 * @param int|null    $amount           Minor-unit amount.
 	 * @param string|null $reason           Merchant reason.
 	 * @param string      $source           Refund source identifier.
-	 * @param string      $idempotency_key  Deterministic idempotency key.
+	 * @param string      $idempotency_key  Key minted fresh for this refund call by the caller, reused across transport retries.
 	 * @return array<string,mixed>
 	 */
 	public function refund_charge( string $charge_id, ?int $amount, ?string $reason, string $source, string $idempotency_key ): array {
