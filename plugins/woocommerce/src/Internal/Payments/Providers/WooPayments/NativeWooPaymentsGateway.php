@@ -796,6 +796,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @param float    $amount        Renewal amount.
 	 * @param WC_Order $renewal_order Renewal order.
 	 * @return void
+	 * @throws Throwable When a requires-action hook callback throws, so the scheduled action fails as on the client.
 	 */
 	public function scheduled_subscription_payment( $amount, $renewal_order ): void {
 		unset( $amount );
@@ -873,6 +874,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @param WC_Order       $renewal_order Renewal order.
 	 * @param PaymentOutcome $outcome       Provider payment outcome.
 	 * @return void
+	 * @throws Throwable When a requires-action hook callback throws; the renewal is left as it was.
 	 */
 	private function maybe_handle_subscription_customer_action_required( WC_Order $renewal_order, PaymentOutcome $outcome ): void {
 		if ( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION !== $outcome->get_status() ) {
@@ -915,7 +917,9 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 				$renewal_order->get_currency()
 			);
 		} catch ( Throwable $exception ) {
-			$this->get_logger()->log_throwable(
+			// Client gw:1921 does not catch, so the scheduled action fails and the renewal stays pending
+			// (monitor ruling 2026-10-04 (2)); the line is written whatever the logging setting.
+			$this->get_logger()->log_throwable_always(
 				'Failed to run WooPayments subscription renewal authentication hooks: ' . $exception->getMessage(),
 				$exception,
 				array(
@@ -923,6 +927,8 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 					'intent_id' => $outcome->get_provider_payment_id(),
 				)
 			);
+
+			throw $exception;
 		}
 
 		if ( ! $renewal_order->has_status( 'failed' ) ) {

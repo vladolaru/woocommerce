@@ -2005,9 +2005,17 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should still fail scheduled renewals when a customer-action hook callback throws.
+	 * @testdox A customer-action hook callback that throws a $throwable_class leaves the renewal pending and fails the scheduled action.
+	 *
+	 * Client 11.1.0 `gw:1921` runs the hook without a catch, so the throwable reaches Action Scheduler before
+	 * `mark_payment_failed()` (monitor ruling 2026-10-04 (2)). Native logs it whatever the logging setting.
+	 *
+	 * @testWith ["RuntimeException"]
+	 *           ["TypeError"]
+	 *
+	 * @param string $throwable_class Class the hook callback throws.
 	 */
-	public function test_scheduled_subscription_payment_fails_when_requires_action_hook_throws(): void {
+	public function test_scheduled_subscription_payment_rethrows_when_requires_action_hook_throws( string $throwable_class ): void {
 		$user_id = self::factory()->user->create();
 		$order   = $this->create_order();
 		$order->set_customer_id( $user_id );
@@ -2029,26 +2037,32 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			)
 		);
 
+		$thrown = new $throwable_class( 'email callback failed' );
 		add_action(
 			'woocommerce_woocommerce_payments_payment_requires_action',
-			static function (): void {
-				throw new \RuntimeException( 'email callback failed' );
+			static function () use ( $thrown ): void {
+				throw $thrown;
 			}
 		);
+		$logger = RecordingWcLogger::install();
 
 		$gateway = new NativeWooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
+		$caught = null;
 		try {
 			$gateway->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
-		} catch ( \RuntimeException $exception ) {
-			$this->fail( 'Requires-action hook exceptions should not prevent renewal failure handling.' );
+		} catch ( \Throwable $throwable ) {
+			$caught = $throwable;
 		}
 
+		$this->assertSame( $thrown, $caught, 'The hook failure reaches the scheduled action.' );
 		$order = wc_get_order( $order->get_id() );
-
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertSame( 'pending', $order->get_status() );
+		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'Failed to run WooPayments subscription renewal authentication hooks: email callback failed' === $line[1] ) );
+		$this->assertCount( 1, $lines, 'The failure is logged whatever the logging setting.' );
+		$this->assertSame( $throwable_class, $logger->contexts[ $lines[0] ]['exception'] ?? '' );
 	}
 
 	/**
