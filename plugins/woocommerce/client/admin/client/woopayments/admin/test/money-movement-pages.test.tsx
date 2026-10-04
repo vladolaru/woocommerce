@@ -2074,7 +2074,7 @@ describe( 'WooPayments money movement pages', () => {
 	it( "records the client's transactions export click before the large-export question, even when it is declined", async () => {
 		mockGetTransactions.mockResolvedValue( {
 			data: [ { transaction_id: 'txn_test', type: 'charge' } ],
-			total_count: 12000,
+			total_count: 11999,
 		} as never );
 		mockGetTransactionsSummary.mockResolvedValue( {
 			count: 12000,
@@ -3110,7 +3110,7 @@ describe( 'WooPayments money movement pages', () => {
 					currency: 'usd',
 				},
 			],
-			total_count: 1500,
+			total_count: 1499,
 		} );
 		mockGetDisputesSummary.mockResolvedValue( {
 			count: 1500,
