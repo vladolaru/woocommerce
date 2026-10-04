@@ -9,7 +9,6 @@ declare(strict_types=1);
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Assets;
 
-use Exception;
 use WC_Cart;
 use WC_Order;
 use WC_Product;

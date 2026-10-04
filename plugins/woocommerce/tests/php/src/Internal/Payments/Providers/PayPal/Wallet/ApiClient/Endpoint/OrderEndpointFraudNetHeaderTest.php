@@ -16,7 +16,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\E
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\OrderFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\PatchCollectionFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\FraudNet\FraudNet;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Helper\SubscriptionHelper;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
 use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 use Mockery;
@@ -55,7 +54,6 @@ class OrderEndpointFraudNetHeaderTest extends WalletTestCase {
 			$this->mock( PatchCollectionFactory::class ),
 			'CAPTURE',
 			$this->mock( LoggerInterface::class )->shouldIgnoreMissing(),
-			$this->mock( SubscriptionHelper::class ),
 			$fraudnet_enabled,
 			$fraudnet
 		);

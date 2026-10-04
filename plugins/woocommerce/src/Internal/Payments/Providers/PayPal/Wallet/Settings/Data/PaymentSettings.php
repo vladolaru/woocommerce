@@ -309,13 +309,15 @@ class PaymentSettings extends AbstractDataModel {
 	}
 
 	/**
-	 * Whether the domain verification for ApplePay completed successfully.
+	 * Stored format, no reader in core: the domain verification flag.
 	 */
 	public function get_applepay_validated(): bool {
 		return (bool) $this->data['applepay_validated'];
 	}
 
 	/**
+	 * Stored format, no writer in core.
+	 *
 	 * @see self::get_applepay_validated()
 	 */
 	public function set_applepay_validated( bool $value ): void {
@@ -323,14 +325,14 @@ class PaymentSettings extends AbstractDataModel {
 	}
 
 	/**
-	 * Get Apple Pay checkout data mode.
+	 * Stored format, no reader in core: the checkout data mode.
 	 */
 	public function get_applepay_checkout_data_mode(): string {
 		return (string) $this->data['applepay_checkout_data_mode'];
 	}
 
 	/**
-	 * Todo: This setter is not used anywhere/no UI option.
+	 * Stored format, no writer in core.
 	 *
 	 * @see self::get_applepay_checkout_data_mode()
 	 */
@@ -339,42 +341,42 @@ class PaymentSettings extends AbstractDataModel {
 	}
 
 	/**
-	 * Get Pay upon Invoice brand name.
+	 * Stored format, no reader in core: the invoice brand name.
 	 */
 	public function get_pui_brand_name(): string {
 		return (string) $this->data['pui_brand_name'];
 	}
 
 	/**
-	 * Set Pay upon Invoice brand name.
+	 * Stored format; written only by the settings migration.
 	 */
 	public function set_pui_brand_name( string $value ): void {
 		$this->data['pui_brand_name'] = $value;
 	}
 
 	/**
-	 * Get Pay upon Invoice logo URL.
+	 * Stored format, no reader in core: the invoice logo URL.
 	 */
 	public function get_pui_logo_url(): string {
 		return (string) $this->data['pui_logo_url'];
 	}
 
 	/**
-	 * Set Pay upon Invoice logo URL.
+	 * Stored format; written only by the settings migration.
 	 */
 	public function set_pui_logo_url( string $value ): void {
 		$this->data['pui_logo_url'] = $value;
 	}
 
 	/**
-	 * Get Pay upon Invoice customer service instructions.
+	 * Stored format, no reader in core: the invoice customer service instructions.
 	 */
 	public function get_pui_customer_service_instructions(): string {
 		return (string) $this->data['pui_customer_service_instructions'];
 	}
 
 	/**
-	 * Set Pay upon Invoice customer service instructions.
+	 * Stored format; written only by the settings migration.
 	 */
 	public function set_pui_customer_service_instructions( string $value ): void {
 		$this->data['pui_customer_service_instructions'] = $value;

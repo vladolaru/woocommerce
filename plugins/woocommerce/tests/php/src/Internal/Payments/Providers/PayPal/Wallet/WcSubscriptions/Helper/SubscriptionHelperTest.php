@@ -16,11 +16,9 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Walle
 use Mockery;
 use Mockery\MockInterface;
 use WC_Helper_Product;
-use WC_Order;
-use WC_Payment_Token_CC;
 
 /**
- * Real WordPress state (product page, order-pay endpoint, orders and payment tokens, filters) with a Mockery partial of
+ * Real WordPress state (product page, order-pay endpoint, filters) with a Mockery partial of
  * the helper where a test fixes the signals the method under test reads from its own class. WooCommerce Subscriptions
  * is not loaded in core's suite, so `plugin_is_active()` is really false here.
  *
@@ -84,52 +82,6 @@ class SubscriptionHelperTest extends WalletTestCase {
 		$settings_provider->allows( 'merchant_data' )->andReturn( new MerchantConnectionDTO( false, $client_id, '', '' ) );
 
 		return $settings_provider;
-	}
-
-	/**
-	 * @testdox Should return the transaction of the earlier order paid with the same vault token and payment method (wallet).
-	 */
-	public function test_previous_transaction_finds_the_earlier_order_paid_with_the_vault_token(): void {
-		$user_id = self::factory()->user->create();
-
-		$token = new WC_Payment_Token_CC();
-		$token->set_token( 'token12345' );
-		$token->set_gateway_id( 'ppcp-gateway' );
-		$token->set_user_id( $user_id );
-		$token->set_card_type( 'visa' );
-		$token->set_last4( '1234' );
-		$token->set_expiry_month( '12' );
-		$token->set_expiry_year( '2099' );
-		$token->save();
-
-		$make_order = static function ( string $transaction_id, string $status, ?WC_Payment_Token_CC $with_token ): WC_Order {
-			$order = wc_create_order();
-			$order->set_payment_method( 'ppcp-gateway' );
-			$order->set_transaction_id( $transaction_id );
-			$order->set_status( $status );
-			if ( $with_token ) {
-				$order->add_payment_token( $with_token );
-			}
-			$order->save();
-
-			return $order;
-		};
-
-		$first   = $make_order( 'ABC123', 'processing', $token );
-		$second  = $make_order( 'OTHER', 'completed', null );
-		$current = $make_order( 'CURRENT', 'pending', null );
-
-		$subscription = $this->mock( 'WC_Subscription' );
-		$subscription->allows( 'get_related_orders' )->andReturn(
-			array(
-				$first->get_id()   => $first->get_id(),
-				$current->get_id() => $current->get_id(),
-				$second->get_id()  => $second->get_id(),
-			)
-		);
-
-		$this->assertSame( 'ABC123', ( new SubscriptionHelper() )->previous_transaction( $subscription, 'token12345' ) );
-		$this->assertSame( '', ( new SubscriptionHelper() )->previous_transaction( $subscription, 'another-token' ), 'No earlier order used another token' );
 	}
 
 	/**
@@ -272,17 +224,12 @@ class SubscriptionHelperTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should resolve the disabled mode when the mode-disabled filter forces it, whatever the vaulting and renewal settings (wallet).
+	 * @testdox Should resolve the disabled mode when the mode-disabled filter forces it, whatever the vaulting setting (wallet).
 	 */
 	public function test_resolve_subscription_mode_returns_disabled_when_forced_by_filter(): void {
 		$seen = $this->spy_filter( 'woocommerce_paypal_payments_subscription_mode_disabled', true );
 
-		$helper = $this->partial_helper(
-			array(
-				'plugin_is_active'       => true,
-				'accept_manual_renewals' => false,
-			)
-		);
+		$helper = $this->partial_helper( array( 'plugin_is_active' => true ) );
 
 		$this->assertSame(
 			SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_DISABLED,
@@ -293,47 +240,39 @@ class SubscriptionHelperTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should resolve the mode from the renewal and vaulting settings: $name (wallet).
+	 * @testdox Should resolve the mode from the vaulting setting: $name (wallet).
 	 *
 	 * @dataProvider wallet_subscription_mode_provider
 	 *
-	 * @param string $name                   Case name.
-	 * @param bool   $accept_manual_renewals Whether manual renewals are accepted.
-	 * @param bool   $save_paypal_and_venmo  Whether vaulting is on.
-	 * @param string $expected_mode          The expected mode.
+	 * @param string $name                  Case name.
+	 * @param bool   $save_paypal_and_venmo Whether vaulting is on.
+	 * @param string $expected_mode         The expected mode.
 	 */
-	public function test_resolve_subscription_mode_decides_between_disabled_and_vaulting( string $name, bool $accept_manual_renewals, bool $save_paypal_and_venmo, string $expected_mode ): void {
+	public function test_resolve_subscription_mode_decides_between_disabled_and_vaulting( string $name, bool $save_paypal_and_venmo, string $expected_mode ): void {
 		unset( $name );
 
-		$helper = $this->partial_helper(
-			array(
-				'plugin_is_active'       => true,
-				'accept_manual_renewals' => $accept_manual_renewals,
-			)
-		);
+		$helper = $this->partial_helper( array( 'plugin_is_active' => true ) );
 
 		$this->assertSame( $expected_mode, $helper->resolve_subscription_mode( $this->settings_provider( $save_paypal_and_venmo ) ) );
 	}
 
 	/**
-	 * The mode rows: vaulting decides, and manual renewals do not change the answer.
+	 * The mode rows: vaulting decides.
 	 *
-	 * @return array<string, array{string, bool, bool, string}>
+	 * @return array<string, array{string, bool, string}>
 	 */
 	public function wallet_subscription_mode_provider(): array {
 		return array(
-			'manual renewal accepted and vaulting disabled disables PayPal subscriptions' => array( 'manual renewal accepted and vaulting disabled', true, false, SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_DISABLED ),
-			'automatic renewal and vaulting disabled disables PayPal subscriptions'      => array( 'automatic renewal and vaulting disabled', false, false, SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_DISABLED ),
-			'vaulting enabled resolves to the vaulting API'                               => array( 'vaulting enabled', false, true, SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_VAULTING ),
+			'vaulting disabled resolves to the disabled mode' => array( 'vaulting disabled', false, SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_DISABLED ),
+			'vaulting enabled resolves to the vaulting API'   => array( 'vaulting enabled', true, SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_VAULTING ),
 		);
 	}
 
 	/**
-	 * @testdox Should treat a cart without a subscription as processable without resolving the mode or checking the button (wallet).
+	 * @testdox Should treat a cart without a subscription as processable without checking the button (wallet).
 	 */
 	public function test_subscription_cart_processable_returns_true_when_cart_has_no_subscription(): void {
 		$helper = $this->partial_helper( array( 'cart_contains_subscription' => false ) );
-		$helper->shouldNotReceive( 'resolve_subscription_mode' );
 		$helper->shouldNotReceive( 'paypal_subscription_button_allowed' );
 
 		$this->assertTrue( $helper->subscription_cart_processable( $this->settings_provider( true ) ) );
@@ -387,7 +326,6 @@ class SubscriptionHelperTest extends WalletTestCase {
 		$helper = $this->partial_helper(
 			array(
 				'cart_contains_subscription' => true,
-				'plugin_is_active'           => true,
 				'accept_manual_renewals'     => false,
 			)
 		);

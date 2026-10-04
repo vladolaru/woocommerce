@@ -32,8 +32,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\F
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\ShippingOptionFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\ShippingPreferenceFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\CurrencyGetter;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\PaymentLevelEligibility;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\PaymentLevelHelper;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Session\CartData;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Session\CartDataFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Session\CartDataTransientStorage;
@@ -46,7 +44,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\F
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\MerchantDetails;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Shipping\ShippingCallbackUrlFactory;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Helper\SubscriptionHelper;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
 use Automattic\WooCommerce\Vendor\Psr\Log\NullLogger;
 use ArrayObject;
@@ -165,7 +162,6 @@ class CreateOrderEndpointPayloadTest extends WalletTestCase {
 		$this->settings_provider->shouldReceive( 'brand_name' )->andReturn( 'Test Brand' );
 		$this->settings_provider->shouldReceive( 'landing_page_enum' )->andReturn( 'LOGIN' );
 		$this->settings_provider->shouldReceive( 'instant_payments_only' )->andReturn( false );
-		$this->settings_provider->shouldReceive( 'is_payment_level_processing_enabled' )->andReturn( false );
 		$this->early_order_handler->shouldReceive( 'should_create_early_order' )->andReturn( false );
 		$this->cart_data->shouldReceive( 'generate_key' );
 		$this->cart_data->shouldReceive( 'key' )->andReturn( 'cart-key-1' );
@@ -761,9 +757,6 @@ class CreateOrderEndpointPayloadTest extends WalletTestCase {
 			$item_factory,
 			new ShippingFactory( $address_factory, new ShippingOptionFactory( $money_factory ) ),
 			$this->mock( PaymentsFactory::class ),
-			new PaymentLevelHelper( $this->settings_provider ),
-			new PaymentLevelEligibility( 'US', $currency ),
-			$this->settings_provider,
 			'WC-'
 		);
 
@@ -793,7 +786,6 @@ class CreateOrderEndpointPayloadTest extends WalletTestCase {
 			$this->mock( PatchCollectionFactory::class ),
 			'CAPTURE',
 			new NullLogger(),
-			$this->mock( SubscriptionHelper::class ),
 			false,
 			$this->mock( FraudNet::class )
 		);

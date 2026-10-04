@@ -338,7 +338,18 @@ class SdkV6Manager {
 			|| $this->subscription_helper->cart_contains_subscription()
 			|| $this->subscription_helper->order_pay_contains_subscription();
 
-		return $has_subscription && ! apply_filters( 'woocommerce_paypal_payments_subscription_mode_disabled', false );
+		if ( ! $has_subscription ) {
+			return false;
+		}
+
+		/**
+		 * Allows disabling the subscription mode.
+		 *
+		 * @see \Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Helper\SubscriptionHelper::resolve_subscription_mode()
+		 *
+		 * @param bool $subscription_mode_disabled True to disable the subscription mode. Default false.
+		 */
+		return ! apply_filters( 'woocommerce_paypal_payments_subscription_mode_disabled', false );
 	}
 
 	/**

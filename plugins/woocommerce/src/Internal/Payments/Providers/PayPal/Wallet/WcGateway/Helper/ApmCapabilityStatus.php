@@ -14,8 +14,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\H
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\SellerStatus;
 
 /**
- * Reads the APM seller capability for features that use it as a proxy (Pay Later
- * messaging).
+ * Answers whether the seller has the Pay Later messaging capability.
+ *
+ * It reads the alternative payment methods seller capability as a proxy. The class
+ * name, the service ID and the cache key keep their original names because the
+ * PayPal Payments extension shares the cached answer.
  */
 class ApmCapabilityStatus extends ProductStatus {
 	/**

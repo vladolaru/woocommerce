@@ -13,14 +13,12 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGat
 
 use WooCommerce;
 use Automattic\WooCommerce\Admin\Notes\Note;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\RuntimeException;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\ReferenceTransactionStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\Cache;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetter;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetterFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Helper\MessagesApply;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Helper\MessagesDisclaimers;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Session\CartDataTransientStorage;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Common\Pattern\SingletonDecorator;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\Definition\FeaturesDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsModel;
@@ -559,50 +557,6 @@ return array(
 			false
 		);
 	},
-	'wcgateway.helper.vaulting-scope'                      => static function ( ContainerInterface $container ): bool {
-		try {
-			$token = $container->get( 'api.bearer' )->bearer();
-
-			return $token->vaulting_available();
-		} catch ( RuntimeException $exception ) {
-			return false;
-		}
-	},
-
-	'button.helper.vaulting-label'                         => static function ( ContainerInterface $container ): string {
-		$vaulting_label = '';
-		if ( ! $container->get( 'wcgateway.helper.vaulting-scope' ) ) {
-			$vaulting_label .= sprintf(
-			// translators: %1$s and %2$s are the opening and closing of HTML <a> tag.
-				__( ' To use vaulting features, you must %1$senable vaulting on your account%2$s.', 'woocommerce' ),
-				'<a
-					href="https://docs.woocommerce.com/document/woocommerce-paypal-payments/#enable-vaulting-on-your-live-account"
-					target="_blank"
-				>',
-				'</a>'
-			);
-		}
-
-		$vaulting_label .= '<p class="description">';
-		$vaulting_label .= sprintf(
-		// translators: %1$s, %2$s, %3$s and %4$s are the opening and closing of HTML <a> tag.
-			__( 'This will disable all %1$sPay Later%2$s features and %3$sAlternative Payment Methods%4$s on your site.', 'woocommerce' ),
-			'<a
-					href="https://woocommerce.com/document/woocommerce-paypal-payments/#pay-later"
-					target="_blank"
-				>',
-			'</a>',
-			'<a
-					href="https://woocommerce.com/document/woocommerce-paypal-payments/#alternative-payment-methods"
-					target="_blank"
-				>',
-			'</a>'
-		);
-		$vaulting_label .= '</p>';
-
-		return $vaulting_label;
-	},
-
 	'wcgateway.enable-reference-transactions-url-sandbox'  => static function ( ContainerInterface $container ): string {
 		return 'https://www.sandbox.paypal.com/bizsignup/entry?product=ADVANCED_VAULTING';
 	},

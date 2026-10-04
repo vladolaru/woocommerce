@@ -34,26 +34,6 @@ class DCCProductStatus extends ProductStatus {
 		$this->dcc_applies = $dcc_applies;
 	}
 
-	public function check_local_state( bool $skip_filters = false ): ?bool {
-		if ( ! $skip_filters ) {
-			/**
-			 * Force BCDC (Standard Cards) for merchants migrated from legacy UI.
-			 *
-			 * This filter allows migrated merchants that used Standard Card buttons
-			 * in the legacy UI to maintain BCDC functionality in the new UI, regardless
-			 * of ACDC eligibility API responses.
-			 */
-			$bcdc_override = apply_filters( 'woocommerce_paypal_payments_override_acdc_status_with_bcdc', null );
-
-			if ( $bcdc_override === true ) {
-				// When overriding, short-circuit and mark ACDC as not available.
-				return false;
-			}
-		}
-
-		return parent::check_local_state();
-	}
-
 	protected function check_api_response( SellerStatus $seller_status ): bool {
 		foreach ( $seller_status->products() as $product ) {
 			if ( ! in_array(

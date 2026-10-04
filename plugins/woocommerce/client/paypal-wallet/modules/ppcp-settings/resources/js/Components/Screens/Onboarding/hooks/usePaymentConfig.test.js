@@ -7,93 +7,80 @@ jest.mock( '@ppcp-settings/data/index', () => ( {
 } ) );
 
 const EXPECTED_PAYMENT_METHODS = [
-	[ 'US', [ 'PayWithPayPal', 'PayLater', 'Venmo' ], [] ],
-	[ 'GB', [ 'PayWithPayPal', 'PayInThree' ], [] ],
-	[ 'AU', [ 'PayWithPayPal', 'PayLater' ], [] ],
-	[ 'MX', [ 'PayWithPayPal', 'PayLater' ], [] ],
+	[ 'US', [ 'PayWithPayPal', 'PayLater', 'Venmo' ] ],
+	[ 'GB', [ 'PayWithPayPal', 'PayInThree' ] ],
+	[ 'AU', [ 'PayWithPayPal', 'PayLater' ] ],
+	[ 'MX', [ 'PayWithPayPal', 'PayLater' ] ],
 ];
+
+const CARD_ICONS = [ 'visa', 'mastercard', 'amex', 'discover' ];
 
 describe( 'usePaymentConfig hook', () => {
 	describe( 'Payment Methods for countries', () => {
 		test.each( EXPECTED_PAYMENT_METHODS )(
 			'Country %s should have valid methods',
-			( country, includedMethods, optionalMethods ) => {
+			( country, includedMethods ) => {
 				const { result } = renderHook( () =>
 					usePaymentConfig( country, true, false )
 				);
 
-				expect( result.current.includedMethods ).toHaveLength(
-					includedMethods.length
-				);
 				expect(
 					result.current.includedMethods.map(
 						( method ) => method.name
 					)
 				).toEqual( includedMethods );
-
-				expect(
-					result.current.optionalMethods.map(
-						( method ) => method.name
-					)
-				).toEqual( optionalMethods );
 			}
 		);
+
 		test.each( [ 'US', 'GB', 'AU' ] )(
-			'Country %s should offer no optional methods when card payments are unavailable',
+			'Country %s should list the same methods whether or not card payments are available',
 			( country ) => {
-				const { result } = renderHook( () =>
-					usePaymentConfig( country, false, false )
-				);
+				const names = ( canUseCardPayments ) =>
+					renderHook( () =>
+						usePaymentConfig( country, canUseCardPayments, false )
+					).result.current.includedMethods.map(
+						( method ) => method.name
+					);
 
-				expect( result.current.optionalMethods ).toEqual( [] );
+				expect( names( false ) ).toEqual( names( true ) );
 			}
 		);
+	} );
 
-		test.each( [ 'US', 'GB', 'AU' ] )(
-			'Country %s should contain only OwnBrand methods when ownBrandOnly is true',
+	describe( 'Payment icons', () => {
+		test( 'US should show PayPal, Venmo and the card icons', () => {
+			const { result } = renderHook( () =>
+				usePaymentConfig( 'US', true, false )
+			);
+
+			expect( result.current.icons ).toEqual( [
+				'paypal',
+				'venmo',
+				...CARD_ICONS,
+			] );
+		} );
+
+		test( 'GB should show PayPal and the card icons, without Venmo', () => {
+			const { result } = renderHook( () =>
+				usePaymentConfig( 'GB', true, false )
+			);
+
+			expect( result.current.icons ).toEqual( [
+				'paypal',
+				...CARD_ICONS,
+			] );
+		} );
+
+		test.each( [ 'US', 'GB' ] )(
+			'Country %s should show only the own-brand icons when ownBrandOnly is true',
 			( country ) => {
 				const { result } = renderHook( () =>
 					usePaymentConfig( country, true, true )
 				);
 
-				expect( result.current.optionalMethods ).toEqual( [] );
-			}
-		);
-	} );
-
-	describe( 'Local payment methods', () => {
-		test.each( [ 'US', 'GB', 'AU', 'MX' ] )(
-			'Country %s should offer no local payment method tile or icon',
-			( country ) => {
-				const { result } = renderHook( () =>
-					usePaymentConfig( country, true, false )
+				expect( result.current.icons ).toEqual(
+					country === 'US' ? [ 'paypal', 'venmo' ] : [ 'paypal' ]
 				);
-				const methodNames = result.current.optionalMethods.map(
-					( method ) => method.name
-				);
-
-				expect( methodNames ).not.toContain( 'APMs' );
-				[ 'blik', 'ideal', 'bancontact', 'oxxo' ].forEach( ( icon ) =>
-					expect( result.current.icons ).not.toContain( icon )
-				);
-			}
-		);
-	} );
-
-	describe( 'Digital wallets', () => {
-		test.each( [ 'US', 'GB', 'AU', 'MX' ] )(
-			'Country %s should offer no digital wallet method or icon',
-			( country ) => {
-				const { result } = renderHook( () =>
-					usePaymentConfig( country, true, false )
-				);
-				const methodNames = result.current.optionalMethods.map(
-					( method ) => method.name
-				);
-
-				expect( methodNames ).not.toContain( 'DigitalWallets' );
-				expect( result.current.icons ).not.toContain( 'apple-pay' );
-				expect( result.current.icons ).not.toContain( 'google-pay' );
 			}
 		);
 	} );

@@ -11,7 +11,7 @@ The fork point is extension commit `0083204e7`. The session folder holds the aud
 | `path-map.json` | Maps every forked extension path to its core path. `null` marks a file dropped in core. |
 | `module-map.json` | Maps each kept extension module to its segment under `Wallet/`. Read by `fork.php`. |
 | `fork.php` | The one-shot fork. Copies the kept modules, rewrites namespaces and the text domain, and writes `path-map.json`. Kept as the record; do not run it again on a forked tree. |
-| `supplement.py` | Adds the few classes of dropped modules that kept code still reaches, and records them in `path-map.json`. Idempotent. |
+| `supplement.py` | Adds classes of dropped modules that kept code still reaches, and records them in `path-map.json`. Its lists are empty since plan B, so it adds nothing. |
 
 ## Usage
 
@@ -22,7 +22,7 @@ bash bin/paypal-wallet-fork/drift-report.sh [--appendix <path>] <extension clone
 # Regenerate the contract appendix next to FORK.md; the script writes the file itself and leaves it untouched on failure
 bash bin/paypal-wallet-fork/contract-list.sh [--out <path>|--out -] <extension clone>
 
-# The one-shot fork and its supplement (already applied)
+# The one-shot fork and its supplement (already applied; the supplement's lists are empty)
 php bin/paypal-wallet-fork/fork.php --extension=<extension clone> --core=<core clone> [--dry-run]
 python3 bin/paypal-wallet-fork/supplement.py <extension clone> <core clone>
 ```

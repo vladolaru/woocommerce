@@ -11,7 +11,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Settings;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Helper\MessagesApply;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ModuleAvailability;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\Definition\FeaturesDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\Definition\PaymentMethodsDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\Definition\TodosDefinition;
@@ -41,15 +40,13 @@ use RuntimeException;
 class OptionalModulesServicesTest extends WalletTestCase {
 
 	/**
-	 * A container that serves only what the wallet modules register, plus 'ppcp.module-availability' built on it.
+	 * A container that serves only what the wallet modules register.
 	 *
 	 * @param array<string, mixed> $services The services by ID.
 	 * @return ContainerInterface&MockInterface
 	 */
 	private function wallet_only_container( array $services ) {
 		$container = $this->mock( ContainerInterface::class );
-
-		$services['ppcp.module-availability'] = new ModuleAvailability( $container );
 
 		$container->shouldReceive( 'has' )->andReturnUsing(
 			static function ( string $id ) use ( $services ): bool {
@@ -179,8 +176,6 @@ class OptionalModulesServicesTest extends WalletTestCase {
 	 * @return TodosEligibilityService
 	 */
 	private function todos_eligibility_service(): TodosEligibilityService {
-		delete_option( 'woocommerce_ppcp-recaptcha_settings' );
-
 		$general = $this->mock( GeneralSettings::class );
 		$general->shouldReceive( 'get_merchant_country' )->andReturn( 'MX' );
 		$settings = $this->mock( SettingsModel::class );
@@ -236,7 +231,6 @@ class OptionalModulesServicesTest extends WalletTestCase {
 				'add_paypal_buttons_product'           => false,
 				'enable_installments'                  => true,
 				'apply_for_working_capital'            => false,
-				'enable_recaptcha_protection'          => true,
 			),
 			$checks
 		);
@@ -274,7 +268,6 @@ class OptionalModulesServicesTest extends WalletTestCase {
 				'add_paypal_buttons_product',
 				'enable_installments',
 				'apply_for_working_capital',
-				'enable_recaptcha_protection',
 				'check_settings_after_migration',
 			),
 			$todo_ids

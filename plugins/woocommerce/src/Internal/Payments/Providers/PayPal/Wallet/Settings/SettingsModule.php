@@ -542,7 +542,6 @@ class SettingsModule implements ServiceModule, ExecutableModule {
 		 * In branded-only mode, we completely disable all white label features.
 		 */
 		add_filter( 'woocommerce_paypal_payments_is_eligible_for_save_payment_methods', '__return_false' );
-		add_filter( 'woocommerce_paypal_payments_is_acdc_active', '__return_false' );
 	}
 
 	/**

@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """Supplement to fork.php.
 
-fork.php copied only the 19 kept modules. Kept code still reaches a handful of classes in dropped modules
-(gateway ID constants, three PropertiesDictionary helpers, TrackingAvailabilityTrait, the Pay upon Invoice helper
-and product status). The vendored mirror had them for free; the fork does not. This script adds them, under the
-extension's own namespace layout so no `use` line changes:
+fork.php copied only the kept modules. Kept code could reach a few classes of dropped modules (gateway ID constants,
+helpers, one trait, two JS files), so this script added them under the extension's own namespace layout. Plan B cut
+every one of those readers and deleted the files, so the lists below are empty. Re-running the script changes nothing;
+re-adding an entry would bring the file back, so add one only for a reader that is meant to stay.
 
 * STUBS: gateway classes that kept code touches only through `X::ID`; written as final classes carrying that constant.
 * COPIES: classes with behavior kept code executes; copied with fork.php's rewrite rules.
+* JS_COPIES: files of a dropped module's JS that kept JS imports, copied into the JS package.
 
-Also copies the one dropped module whose JS kept JS imports (ppcp-card-fields: Render.js, CardFieldsHelper.js)
-into the JS package, and records every file it writes in path-map.json (extension path -> core path).
+Every file it writes is recorded in path-map.json (extension path -> core path).
 
 Usage: supplement.py <extension clone> <core clone>   (idempotent)
 """
@@ -24,39 +24,11 @@ if len(sys.argv) < 3 or sys.argv[1] in ("-h", "--help"):
 EXT, CORE = sys.argv[1].rstrip('/'), sys.argv[2].rstrip('/')
 WALLET = CORE + '/plugins/woocommerce/src/Internal/Payments/Providers/PayPal/Wallet'
 NS_NEW = 'Automattic\\WooCommerce\\Internal\\Payments\\Providers\\PayPal\\Wallet'
-MODULE_DIR = {
-    'Applepay': 'ppcp-applepay',
-    'Googlepay': 'ppcp-googlepay',
-    'Axo': 'ppcp-axo',
-    'LocalAlternativePaymentMethods': 'ppcp-local-alternative-payment-methods',
-    'OrderTracking': 'ppcp-order-tracking',
-    'PayPalSubscriptions': 'ppcp-paypal-subscriptions',
-}
+MODULE_DIR = {}  # first segment of a STUBS/COPIES name -> the extension module directory
 
-STUBS = [
-    'Applepay\\ApplePayGateway',
-    'Axo\\Gateway\\AxoGateway',
-    'Googlepay\\GooglePayGateway',
-    'LocalAlternativePaymentMethods\\BancontactGateway',
-    'LocalAlternativePaymentMethods\\BlikGateway',
-    'LocalAlternativePaymentMethods\\EPSGateway',
-    'LocalAlternativePaymentMethods\\IDealGateway',
-    'LocalAlternativePaymentMethods\\MultibancoGateway',
-    'LocalAlternativePaymentMethods\\MyBankGateway',
-    'LocalAlternativePaymentMethods\\OXXOGateway',
-    'LocalAlternativePaymentMethods\\P24Gateway',
-    'LocalAlternativePaymentMethods\\PWCGateway',
-    'LocalAlternativePaymentMethods\\TrustlyGateway',
-    'LocalAlternativePaymentMethods\\PayUponInvoice\\PayUponInvoiceGateway',
-]
-COPIES = [
-    'Applepay\\Assets\\PropertiesDictionary',
-    'Googlepay\\Helper\\PropertiesDictionary',
-    'Axo\\Helper\\PropertiesDictionary',
-    'OrderTracking\\TrackingAvailabilityTrait',
-    'LocalAlternativePaymentMethods\\PayUponInvoice\\PayUponInvoiceHelper',
-    'LocalAlternativePaymentMethods\\PayUponInvoice\\PayUponInvoiceProductStatus',
-]
+STUBS = []
+COPIES = []
+JS_COPIES = []  # paths under the extension's modules/ directory, for example 'ppcp-card-fields/resources/js/Render.js'
 
 
 def source_path(fqcn):
@@ -102,7 +74,7 @@ namespace %(ns_full)s;
  * Carries only the gateway ID, which kept wallet code still compares and keys settings by.
  *
  * The gateway itself belongs to a feature the wallet does not ship. Remove this stub together with the last
- * reference to it when the feature's branches are cut (plan B).
+ * reference to it when the feature's branches are cut.
  *
  * @since 11.3.0
  * @internal
@@ -123,16 +95,18 @@ for fqcn in COPIES:
     open(path, 'w').write(rewrite(open(source_path(fqcn)).read()))
     print('copy', fqcn)
 
-# JS: the card-fields module is imported by kept JS (save-payment-methods, button); copy its two files.
+# JS: files of a dropped module that kept JS imports.
 CLIENT = CORE + '/plugins/woocommerce/client/paypal-wallet/modules'
-JS_COPIES = ['ppcp-card-fields/resources/js/Render.js', 'ppcp-card-fields/resources/js/CardFieldsHelper.js']
 for rel in JS_COPIES:
     dst = '%s/%s' % (CLIENT, rel)
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     open(dst, 'w').write(open('%s/modules/%s' % (EXT, rel)).read())
     print('js copy', rel)
 
-# Path map: record what this script added.
+# Path map: record what this script added (nothing to add while the lists are empty).
+if not (STUBS or COPIES or JS_COPIES):
+    print('nothing to supplement')
+    sys.exit(0)
 pm_path = str(Path(__file__).resolve().parent / 'path-map.json')
 pm = json.load(open(pm_path))
 core_rel = lambda p: p[len(CORE) + 1:]

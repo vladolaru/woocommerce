@@ -84,17 +84,8 @@ class FeaturesDefinitionTest extends WalletTestCase {
 				FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING,
 				FeaturesDefinition::FEATURE_INSTALLMENTS,
 			),
-			array_values(
-				array_intersect(
-					array_keys( $features ),
-					array(
-						FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO,
-						FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING,
-						FeaturesDefinition::FEATURE_INSTALLMENTS,
-					)
-				)
-			),
-			'The three wallet cards should be listed in this order'
+			array_keys( $features ),
+			'Exactly the three wallet cards should be listed, in this order'
 		);
 	}
 
@@ -164,6 +155,5 @@ class FeaturesDefinitionTest extends WalletTestCase {
 		);
 
 		$this->assertArrayNotHasKey( 'pwc', $features->all_available_features() );
-		$this->assertArrayNotHasKey( 'pwc', $features->eligible_features() );
 	}
 }

@@ -52,7 +52,4 @@ return array(
 
 		return $properties->basePath();
 	},
-	'ppcp.module-availability'      => static function ( ContainerInterface $container ): ModuleAvailability {
-		return new ModuleAvailability( $container );
-	},
 );

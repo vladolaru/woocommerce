@@ -69,10 +69,8 @@ export const usePaymentMethods = () => {
 
 	const payPalCheckout = removeEmpty( [ paypal, venmo, payLater ] );
 
-	const paymentMethods = [ ...payPalCheckout ];
-
 	return {
-		all: paymentMethods,
+		all: payPalCheckout,
 		paypal: payPalCheckout,
 	};
 };

@@ -27,10 +27,6 @@ const ExpertSettings = ( { hasContactModule } ) => {
 			contentContainer={ false }
 		>
 			<ContentWrapper>
-				{ /*<Content>
-					<ConnectionDetails />
-				</Content>*/ }
-
 				<Content>
 					<Troubleshooting />
 				</Content>

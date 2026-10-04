@@ -16,8 +16,8 @@ import { FundingSources } from './utils/fundingSources';
 import { amountFromCartTotals } from './utils/amount';
 import { continuationRedirectUrl } from './utils/continuation';
 
-// The gateway that processes an order.
-const DEFAULT_PAYMENT_METHOD = 'ppcp-gateway';
+// The ID of the PayPal gateway, which processes every order.
+const GATEWAY_ID = 'ppcp-gateway';
 
 /**
  * The shopper's details for a create-order request, read from wherever the
@@ -78,7 +78,7 @@ function submitPayOrderForm() {
 	}
 
 	const gatewayRadio = document.querySelector(
-		`#payment_method_${ DEFAULT_PAYMENT_METHOD }`
+		`#payment_method_${ GATEWAY_ID }`
 	);
 	if ( gatewayRadio && ! gatewayRadio.checked ) {
 		gatewayRadio.checked = true;
@@ -179,7 +179,7 @@ export async function createOrder( config, context, fundingSource ) {
 	const body = {
 		context,
 		purchase_units: units,
-		payment_method: DEFAULT_PAYMENT_METHOD,
+		payment_method: GATEWAY_ID,
 		funding_source: fundingSource || FundingSources.PAYPAL,
 		save_order_in_session: 1,
 	};
@@ -291,7 +291,7 @@ export async function approveOrder( config, context, fundingSource, orderId ) {
 			// it, not whichever payment method radio happens to be checked, so
 			// the express path switches to PayPal.
 			const gatewayRadio = document.querySelector(
-				`#payment_method_${ DEFAULT_PAYMENT_METHOD }`
+				`#payment_method_${ GATEWAY_ID }`
 			);
 			if ( gatewayRadio && ! gatewayRadio.checked ) {
 				gatewayRadio.checked = true;

@@ -253,7 +253,7 @@ class SettingsModel extends AbstractDataModel {
 	}
 
 	/**
-	 * Converts the 3D Secure setting value to the corresponding API enum string.
+	 * Stored format, no reader in core: converts the stored 3D Secure value to its API enum string.
 	 *
 	 * @param string|null $three_d_secure The 3D Secure setting ('no-3d-secure', 'only-required-3d-secure', 'always-3d-secure').
 	 * @return string The corresponding API enum string ('NO_3D_SECURE', 'SCA_WHEN_REQUIRED', 'SCA_ALWAYS').
@@ -274,7 +274,7 @@ class SettingsModel extends AbstractDataModel {
 	}
 
 	/**
-	 * Sets the 3D Secure setting.
+	 * Stored format, no reader in core; written by the settings migration: sets the 3D Secure setting.
 	 *
 	 * @param string $setting The 3D Secure setting to set.
 	 */
@@ -393,7 +393,7 @@ class SettingsModel extends AbstractDataModel {
 	}
 
 	/**
-	 * Gets the save card details setting.
+	 * Stored format, no reader in core: gets the save card details setting.
 	 *
 	 * @return bool True if saving card details is enabled, false otherwise.
 	 */
@@ -402,7 +402,7 @@ class SettingsModel extends AbstractDataModel {
 	}
 
 	/**
-	 * Sets the save card details setting.
+	 * Stored format, no reader in core; written by the settings migration: sets the save card details setting.
 	 *
 	 * @param bool $save Whether to save card details.
 	 */
@@ -447,7 +447,7 @@ class SettingsModel extends AbstractDataModel {
 	}
 
 	/**
-	 * Gets the disabled cards.
+	 * Stored format, no reader in core: gets the disabled cards.
 	 *
 	 * @return array The array of disabled cards.
 	 */
@@ -456,7 +456,7 @@ class SettingsModel extends AbstractDataModel {
 	}
 
 	/**
-	 * Sets the disabled cards.
+	 * Stored format, no reader in core; written by the settings migration: sets the disabled cards.
 	 *
 	 * @param array $cards The array of cards to disable.
 	 */
@@ -468,7 +468,7 @@ class SettingsModel extends AbstractDataModel {
 	}
 
 	/**
-	 * Gets the card icons.
+	 * Stored format, no reader in core: gets the card icons.
 	 *
 	 * @return array The array of card icons.
 	 */
@@ -477,7 +477,7 @@ class SettingsModel extends AbstractDataModel {
 	}
 
 	/**
-	 * Sets the card icons.
+	 * Stored format, no reader in core; written by the settings migration: sets the card icons.
 	 *
 	 * @param array $icons The array of card icons.
 	 */
@@ -507,7 +507,7 @@ class SettingsModel extends AbstractDataModel {
 	}
 
 	/**
-	 * Get payment level processing.
+	 * Stored format, no reader in core: gets the payment level processing flag.
 	 *
 	 * @return bool
 	 */
@@ -516,7 +516,7 @@ class SettingsModel extends AbstractDataModel {
 	}
 
 	/**
-	 * Set payment level processing.
+	 * Stored format, no reader in core; written by the settings migrations and the settings REST field: sets the payment level processing flag.
 	 *
 	 * @param bool $save Whether to save the payment level processing.
 	 * @return void

@@ -11,16 +11,13 @@ declare(strict_types=1);
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Helper;
 
-use WC_Order;
 use WC_Product;
 use WC_Product_Variable;
-use WC_Subscription;
 use WC_Subscriptions;
 use WC_Subscriptions_Product;
 use WCS_Manual_Renewal_Manager;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Exception\NotFoundException;
-use WP_Query;
 
 /**
  * Class SubscriptionHelper
@@ -296,72 +293,5 @@ class SubscriptionHelper {
 			'payorder' => ( is_wc_endpoint_url( 'order-pay' ) && $this->order_pay_contains_subscription() ) || $cart_contains_renewal,
 			'cart'     => $this->cart_contains_subscription() && ! $cart_contains_renewal,
 		);
-	}
-
-	/**
-	 * Returns previous order transaction from the given subscription.
-	 *
-	 * @param WC_Subscription $subscription WooCommerce Subscription.
-	 * @param string          $vault_token_id Vault token id.
-	 * @return string
-	 */
-	public function previous_transaction( WC_Subscription $subscription, string $vault_token_id ): string {
-		$orders = $subscription->get_related_orders( 'ids', array( 'parent', 'renewal' ) );
-		if ( ! $orders || ! $vault_token_id ) {
-			return '';
-		}
-
-		// Sort orders by order ID descending.
-		rsort( $orders );
-		$current_order = wc_get_order( array_shift( $orders ) );
-		if ( ! $current_order instanceof WC_Order ) {
-			return '';
-		}
-
-		foreach ( $orders as $order_id ) {
-			$order = wc_get_order( $order_id );
-			if (
-				$order instanceof WC_Order
-				&& in_array( $order->get_status(), array( 'processing', 'completed' ), true )
-				&& $current_order->get_payment_method() === $order->get_payment_method()
-			) {
-				$transaction_id = $order->get_transaction_id();
-				$tokens         = $order->get_payment_tokens();
-				foreach ( $tokens as $token ) {
-					$wc_token = \WC_Payment_Tokens::get( $token );
-					if ( $transaction_id && $wc_token instanceof \WC_Payment_Token && $wc_token->get_token() === $vault_token_id ) {
-						return $transaction_id;
-					}
-				}
-			}
-		}
-
-		return '';
-	}
-
-	/**
-	 * Checks if any subscription products exist.
-	 *
-	 * @return bool
-	 */
-	public function has_subscription_products(): bool {
-		// Query for subscription products.
-		$args = array(
-			'post_type'      => 'product',
-			'post_status'    => 'publish',
-			'posts_per_page' => 1,
-			// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query
-			'tax_query'      => array(
-				array(
-					'taxonomy' => 'product_type',
-					'field'    => 'slug',
-					'terms'    => 'subscription',
-				),
-			),
-		);
-
-		$subscription_products = new WP_Query( $args );
-
-		return $subscription_products->have_posts();
 	}
 }

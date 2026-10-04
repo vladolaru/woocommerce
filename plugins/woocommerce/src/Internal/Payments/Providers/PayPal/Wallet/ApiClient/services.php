@@ -65,8 +65,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\H
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\OrderHelper;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\OrderTransient;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\PartnerAttribution;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\PaymentLevelEligibility;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\PaymentLevelHelper;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\PurchaseUnitSanitizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\ReferenceTransactionStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\ProductStatusResultCache;
@@ -306,7 +304,6 @@ return array(
 		$settings = $container->get( 'settings.settings-provider' );
 		assert( $settings instanceof SettingsProvider );
 
-		$subscription_helper = $container->get( 'wc-subscriptions.helper' );
 		return new OrderEndpoint(
 			$container->get( 'api.host' ),
 			$container->get( 'api.bearer' ),
@@ -314,7 +311,6 @@ return array(
 			$patch_collection_factory,
 			$settings->authorize_only() ? 'AUTHORIZE' : 'CAPTURE',
 			$logger,
-			$subscription_helper,
 			$container->get( 'wcgateway.is-fraudnet-enabled' ),
 			$container->get( 'wcgateway.fraudnet' ),
 			$bn_code
@@ -337,7 +333,6 @@ return array(
 			$container->get( 'api.factory.patch-collection-factory' ),
 			$intent,
 			$container->get( 'woocommerce.logger.woocommerce' ),
-			$container->get( 'wc-subscriptions.helper' ),
 			$container->get( 'wcgateway.is-fraudnet-enabled' ),
 			$container->get( 'wcgateway.fraudnet' ),
 			$bn_code
@@ -433,9 +428,6 @@ return array(
 			$item_factory,
 			$shipping_factory,
 			$payments_factory,
-			$container->get( 'api.helpers.paymentLevelHelper' ),
-			$container->get( 'api.helpers.paymentLevelEligibility' ),
-			$container->get( 'settings.settings-provider' ),
 			$prefix,
 			$soft_descriptor,
 			$sanitizer
@@ -893,14 +885,5 @@ return array(
 		 */
 		$subscription_mode_disabled = (bool) apply_filters( 'woocommerce_paypal_payments_subscription_mode_disabled', false );
 		return $subscription_mode_disabled ? SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_DISABLED : $subscription_mode_value;
-	},
-	'api.helpers.paymentLevelHelper'                 => static function ( ContainerInterface $container ): PaymentLevelHelper {
-		return new PaymentLevelHelper( $container->get( 'settings.settings-provider' ) );
-	},
-	'api.helpers.paymentLevelEligibility'            => static function ( ContainerInterface $container ): PaymentLevelEligibility {
-		return new PaymentLevelEligibility(
-			$container->get( 'api.merchant.country' ),
-			$container->get( 'api.shop.currency.getter' )
-		);
 	},
 );

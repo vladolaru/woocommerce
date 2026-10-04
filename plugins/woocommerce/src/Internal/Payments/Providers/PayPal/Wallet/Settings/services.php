@@ -13,7 +13,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\H
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetter;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetterFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Helper\MessagesApply;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ModuleAvailability;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\Definition\FeaturesDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\Definition\PaymentMethodsDependenciesDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\GeneralSettings;
@@ -90,9 +89,8 @@ return array(
 	'settings.data.onboarding'                            => static function ( ContainerInterface $container ): OnboardingProfile {
 		$can_use_casual_selling      = $container->get( 'settings.casual-selling.eligible' );
 		$can_use_vaulting            = $container->has( 'save-payment-methods.eligible' ) && $container->get( 'save-payment-methods.eligible' );
-		$availability                = $container->get( 'ppcp.module-availability' );
-		assert( $availability instanceof ModuleAvailability );
-		$can_use_card_payments       = ( $availability->eligibility_check( 'card-fields' ) )();
+		// No card module in core; the flag path stays (it feeds the onboarding data).
+		$can_use_card_payments       = false;
 		// No Apple Pay or Google Pay module in core; the flag path stays (it feeds the onboarding data).
 		$can_use_digital_wallets     = false;
 		$can_use_subscriptions       = $container->has( 'wc-subscriptions.helper' ) && $container->get( 'wc-subscriptions.helper' )
@@ -525,9 +523,6 @@ return array(
 
 		$is_working_capital_eligible = $container->get( 'settings.data.general' )->get_merchant_country() === 'US' && $settings_model->get_stay_updated();
 
-		$recaptcha_settings = get_option( 'woocommerce_ppcp-recaptcha_settings', array() );
-		$is_recaptcha_enabled = wc_string_to_bool( $recaptcha_settings['enabled'] ?? 'no' );
-
 		/**
 		 * Initializes TodosEligibilityService with eligibility conditions for various PayPal features.
 		 * Each parameter determines whether a specific feature should be shown in the Things To Do list.
@@ -546,7 +541,6 @@ return array(
 		 * @param bool $is_paypal_buttons_product_eligible - Show if PayPal buttons are not enabled on product page.
 		 * @param bool $is_enable_installments_eligible - Show if merchant has installments capability and merchant country is MX.
 		 * @param bool $is_working_capital_eligible - Show if feature flag is enabled, merchant country is US and "Stay Updated" is turned On.
-		 * @param bool $is_recaptcha_protection_eligible - Show if reCAPTCHA is not already enabled.
 		 */
 		return new TodosEligibilityService(
 			$is_pay_later_messaging_enabled_for_any_location,                                             // Enable Pay Later messaging.
@@ -557,8 +551,7 @@ return array(
 			! $button_locations['block_checkout_enabled'],                                                // Add PayPal buttons to block checkout.
 			! $button_locations['product_enabled'],                                                       // Add PayPal buttons to product.
 			! $capabilities[ FeaturesDefinition::FEATURE_INSTALLMENTS ] && 'MX' === $container->get( 'settings.data.general' )->get_merchant_country(), // Enable Installments for Mexico.
-			$is_working_capital_feature_flag_enabled && $is_working_capital_eligible, // Enable Working Capital.
-			! $is_recaptcha_enabled,
+			$is_working_capital_feature_flag_enabled && $is_working_capital_eligible // Enable Working Capital.
 		);
 	},
 	'settings.rest.features'                              => static function ( ContainerInterface $container ): FeaturesRestEndpoint {

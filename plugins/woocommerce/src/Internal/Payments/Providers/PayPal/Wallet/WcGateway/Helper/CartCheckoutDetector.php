@@ -114,16 +114,6 @@ class CartCheckoutDetector {
 	}
 
 	/**
-	 * Check if the Checkout page is using the classic checkout.
-	 *
-	 * @return bool
-	 */
-	public static function has_classic_checkout(): bool {
-		$checkout_page_id = wc_get_page_id( 'checkout' );
-		return $checkout_page_id && ( has_block( 'woocommerce/classic-shortcode', $checkout_page_id ) || self::has_classic_shortcode( $checkout_page_id, 'woocommerce_checkout' ) );
-	}
-
-	/**
 	 * Check if the Cart page is using the classic cart.
 	 *
 	 * @return bool

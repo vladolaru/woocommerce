@@ -7,8 +7,6 @@ export const learnMoreLinks = {
 		PayLater:
 			'https://www.paypal.com/us/business/accept-payments/checkout/installments',
 		Venmo: 'https://www.paypal.com/us/enterprise/payment-processing/accept-venmo',
-		OptionalMethods:
-			'https://www.paypal.com/us/business/accept-payments/checkout/integration#expanded-checkout',
 	},
 	CA: {
 		PaymentDetails:

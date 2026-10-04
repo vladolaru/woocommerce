@@ -117,9 +117,9 @@ class WooCommerceOrderCreator {
 			$this->configure_addresses( $wc_order, $payer, $shipping, $cart_data->needs_shipping() );
 			$this->configure_coupons( $wc_order, $cart_data->coupons() );
 
-			// Mirror WC_Checkout::create_order() so the order carries the cart hash. Downstream
-			// gates (e.g. the order approval guards) compare this against the hash
-			// captured at approval time; an unset hash makes a legitimate express purchase fail.
+			// Mirror WC_Checkout::create_order() so the order carries the cart hash, as every
+			// WooCommerce order does. WooCommerce and extensions compare it against the cart
+			// hash; an unset hash can make a legitimate express purchase fail those checks.
 			$wc_order->set_cart_hash( $cart_data->cart_hash() );
 
 			$wc_order->calculate_totals();

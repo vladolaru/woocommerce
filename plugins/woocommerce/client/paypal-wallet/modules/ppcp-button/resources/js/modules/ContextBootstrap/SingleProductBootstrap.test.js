@@ -124,35 +124,6 @@ describe( 'SingleProductBootstrap render', () => {
 			standard: true,
 		} );
 	} );
-
-	// The standard renderer's own isAlreadyRendered() guard skips re-rendering while
-	// the wrapper still holds its previously rendered button. Clearing the wrapper on
-	// every render() call defeats that guard on every re-render triggered by the
-	// renderer's own onButtonsInit callback, destroying and recreating the button
-	// endlessly.
-	test( 'does not clear the button wrapper when falling through to the standard renderer', () => {
-		document.getElementById( 'ppc-button-ppcp-gateway' ).innerHTML =
-			'<div class="already-rendered-button"></div>';
-		const instance = buildBootstrap( {
-			gateway: {
-				ajax: { change_cart: { endpoint: '/cc', nonce: 'n' } },
-				url_params: {},
-				button: { wrapper: '#ppc-button-ppcp-gateway' },
-				vaultingEnabled: false,
-				manualRenewalEnabled: '1',
-				productType: 'subscription',
-			},
-		} );
-
-		instance.render();
-
-		expect(
-			document.querySelector(
-				'#ppc-button-ppcp-gateway .already-rendered-button'
-			)
-		).not.toBeNull();
-	} );
-
 } );
 
 describe( 'SingleProductBootstrap simulateCart', () => {

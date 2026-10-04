@@ -94,7 +94,7 @@ class CompatServicesTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should keep the legacy PayPal Express, plugin detection and blueprint services the module wires (wallet).
+	 * @testdox Should keep the legacy PayPal Express and blueprint services the module wires (wallet).
 	 */
 	public function test_wallet_services_are_defined(): void {
 		$services = $this->services();
@@ -103,8 +103,6 @@ class CompatServicesTest extends WalletTestCase {
 			'compat.ppec.mock-gateway',
 			'compat.ppec.billing-agreement-converter',
 			'compat.ppec.subscriptions-handler',
-			'compat.plugin-detector',
-			'compat.product-customization-detector',
 			'compat.blueprint.is_available',
 			'compat.blueprint.bootstrap',
 		) as $id ) {

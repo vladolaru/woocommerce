@@ -15,7 +15,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\F
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\PatchCollectionFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\FraudNet\FraudNet;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Helper\SubscriptionHelper;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
 use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 use WC_Order;
@@ -41,7 +40,6 @@ class OrderEndpointCachedTest extends WalletTestCase {
 			$this->mock( PatchCollectionFactory::class ),
 			'CAPTURE',
 			$this->mock( LoggerInterface::class )->shouldIgnoreMissing(),
-			$this->mock( SubscriptionHelper::class ),
 			false,
 			$this->mock( FraudNet::class )
 		);

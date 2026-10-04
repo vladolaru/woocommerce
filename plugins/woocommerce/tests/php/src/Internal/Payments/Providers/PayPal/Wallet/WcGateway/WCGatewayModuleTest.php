@@ -56,11 +56,6 @@ class WCGatewayModuleTest extends WalletTestCase {
 		);
 
 		$container = $this->mock( ContainerInterface::class );
-		$container->shouldReceive( 'has' )->andReturnUsing(
-			static function ( $id ) use ( $services ) {
-				return isset( $services[ $id ] );
-			}
-		);
 		$container->shouldReceive( 'get' )->andReturnUsing(
 			static function ( $id ) use ( $services ) {
 				return $services[ $id ];

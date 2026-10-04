@@ -31,7 +31,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscript
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
 use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 use Exception;
-use Mockery;
 use Mockery\MockInterface;
 use WC_Order;
 use WC_Session_Handler;

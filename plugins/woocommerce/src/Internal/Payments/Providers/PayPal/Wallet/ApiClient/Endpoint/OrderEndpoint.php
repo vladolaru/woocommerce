@@ -29,7 +29,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\F
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\ErrorResponse;
 use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Helper\SubscriptionHelper;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\FraudNet\FraudNet;
 use WP_Error;
 
@@ -39,13 +38,6 @@ use WP_Error;
 class OrderEndpoint {
 
 	use RequestTrait;
-
-	/**
-	 * The subscription helper
-	 *
-	 * @var SubscriptionHelper
-	 */
-	protected $subscription_helper;
 
 	/**
 	 * The host.
@@ -119,7 +111,6 @@ class OrderEndpoint {
 	 * @param PatchCollectionFactory $patch_collection_factory The patch collection factory.
 	 * @param string                 $intent The intent.
 	 * @param LoggerInterface        $logger The logger.
-	 * @param SubscriptionHelper     $subscription_helper The subscription helper.
 	 * @param bool                   $is_fraudnet_enabled true if FraudNet support is enabled in settings, otherwise false.
 	 * @param FraudNet               $fraudnet The FraudNet entity.
 	 * @param string                 $bn_code The BN Code.
@@ -131,7 +122,6 @@ class OrderEndpoint {
 		PatchCollectionFactory $patch_collection_factory,
 		string $intent,
 		LoggerInterface $logger,
-		SubscriptionHelper $subscription_helper,
 		bool $is_fraudnet_enabled,
 		FraudNet $fraudnet,
 		string $bn_code = ''
@@ -145,7 +135,6 @@ class OrderEndpoint {
 		$this->logger                   = $logger;
 		$this->bn_code                  = $bn_code;
 		$this->is_fraudnet_enabled      = $is_fraudnet_enabled;
-		$this->subscription_helper      = $subscription_helper;
 		$this->fraudnet                 = $fraudnet;
 	}
 

@@ -14,10 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\E
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\PurchaseUnit;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\Shipping;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\RuntimeException;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\PaymentLevelEligibility;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\PaymentLevelHelper;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\PurchaseUnitSanitizer;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\CustomIds;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\Address;
 
@@ -54,12 +51,6 @@ class PurchaseUnitFactory {
 	 */
 	private $payments_factory;
 
-	protected PaymentLevelHelper $payment_level_helper;
-
-	protected PaymentLevelEligibility $payment_level_eligibility;
-
-	protected SettingsProvider $settings;
-
 	/**
 	 * The Prefix.
 	 *
@@ -86,24 +77,18 @@ class PurchaseUnitFactory {
 		ItemFactory $item_factory,
 		ShippingFactory $shipping_factory,
 		PaymentsFactory $payments_factory,
-		PaymentLevelHelper $payment_level_helper,
-		PaymentLevelEligibility $payment_level_eligibility,
-		SettingsProvider $settings,
 		string $prefix = 'WC-',
 		string $soft_descriptor = '',
 		?PurchaseUnitSanitizer $sanitizer = null
 	) {
 
-		$this->amount_factory            = $amount_factory;
-		$this->item_factory              = $item_factory;
-		$this->shipping_factory          = $shipping_factory;
-		$this->payments_factory          = $payments_factory;
-		$this->payment_level_helper      = $payment_level_helper;
-		$this->payment_level_eligibility = $payment_level_eligibility;
-		$this->settings                  = $settings;
-		$this->prefix                    = $prefix;
-		$this->soft_descriptor           = $soft_descriptor;
-		$this->sanitizer                 = $sanitizer;
+		$this->amount_factory   = $amount_factory;
+		$this->item_factory     = $item_factory;
+		$this->shipping_factory = $shipping_factory;
+		$this->payments_factory = $payments_factory;
+		$this->prefix           = $prefix;
+		$this->soft_descriptor  = $soft_descriptor;
+		$this->sanitizer        = $sanitizer;
 	}
 
 	/**
@@ -113,7 +98,7 @@ class PurchaseUnitFactory {
 	 *
 	 * @return PurchaseUnit
 	 */
-	public function from_wc_order( \WC_Order $order, string $payment_method = '' ): PurchaseUnit {
+	public function from_wc_order( \WC_Order $order ): PurchaseUnit {
 		$amount = $this->amount_factory->from_wc_order( $order );
 		$items  = array_filter(
 			$this->item_factory->from_wc_order( $order ),
@@ -133,12 +118,6 @@ class PurchaseUnitFactory {
 		$custom_id       = (string) $order->get_id();
 		$invoice_id      = $this->prefix . $order->get_order_number();
 		$soft_descriptor = $this->sanitize_soft_descriptor( $this->soft_descriptor );
-		$payment_level   = null;
-		$payment_method  = ! empty( $payment_method ) ? $payment_method : $order->get_payment_method();
-
-		if ( $this->payment_level_eligibility->is_eligible( $payment_method ) && $this->settings->is_payment_level_processing_enabled() ) {
-			$payment_level = $this->payment_level_helper->build( $amount, $items, $shipping );
-		}
 
 		$purchase_unit = new PurchaseUnit(
 			$amount,
@@ -148,9 +127,7 @@ class PurchaseUnitFactory {
 			$description,
 			$custom_id,
 			$invoice_id,
-			$soft_descriptor,
-			null,
-			$payment_level['supplementary_data'] ?? null
+			$soft_descriptor
 		);
 
 		$this->init_purchase_unit( $purchase_unit );
@@ -173,7 +150,7 @@ class PurchaseUnitFactory {
 	 *
 	 * @return PurchaseUnit
 	 */
-	public function from_wc_cart( ?\WC_Cart $cart = null, bool $with_shipping_options = false, string $payment_method = '' ): PurchaseUnit {
+	public function from_wc_cart( ?\WC_Cart $cart = null, bool $with_shipping_options = false ): PurchaseUnit {
 		if ( ! $cart ) {
 			$cart = WC()->cart ?? new \WC_Cart();
 		}
@@ -217,11 +194,6 @@ class PurchaseUnitFactory {
 		}
 		$invoice_id      = '';
 		$soft_descriptor = $this->sanitize_soft_descriptor( $this->soft_descriptor );
-		$payment_level   = null;
-
-		if ( $this->payment_level_eligibility->is_eligible( $payment_method ) && $this->settings->is_payment_level_processing_enabled() ) {
-			$payment_level = $this->payment_level_helper->build( $amount, $items, $shipping );
-		}
 
 		$purchase_unit = new PurchaseUnit(
 			$amount,
@@ -231,9 +203,7 @@ class PurchaseUnitFactory {
 			$description,
 			$custom_id,
 			$invoice_id,
-			$soft_descriptor,
-			null,
-			$payment_level['supplementary_data'] ?? null
+			$soft_descriptor
 		);
 
 		$this->init_purchase_unit( $purchase_unit );

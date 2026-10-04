@@ -39,7 +39,7 @@ class ConfigurationFlagsDTO {
 	public bool $use_card_payments = false;
 
 	/**
-	 * Whether digital wallets (Apple Pay/Google Pay) should be enabled.
+	 * Whether digital wallets should be enabled.
 	 *
 	 * @var bool
 	 */
