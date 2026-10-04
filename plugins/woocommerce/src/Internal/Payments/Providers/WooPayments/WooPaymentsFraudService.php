@@ -131,6 +131,11 @@ class WooPaymentsFraudService implements RegisterHooksInterface {
 			return;
 		}
 
+		// A logged-out visitor cannot have just logged in; skip the connection check for them.
+		if ( 0 === get_current_user_id() ) {
+			return;
+		}
+
 		if ( ! $this->api_client->is_available() || ! $this->session_service->user_just_logged_in() ) {
 			return;
 		}
