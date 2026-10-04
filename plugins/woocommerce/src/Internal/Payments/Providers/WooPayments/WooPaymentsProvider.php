@@ -310,8 +310,9 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 				if ( 'front' !== $request ) {
 					$matrix[ $state ][ $request ][] = WooPaymentsGatewaySettingsSynchronizer::class;
 				}
-				// The first page after a login links the pre-login Sift session; the client hooks it on init of every connected
-				// request and skips AJAX, REST and WP-CLI (client 11.1.0 `includes/class-wc-payments-fraud-service.php:82,151-167`).
+				// The first page after a login links the pre-login Sift session; the client hooks it on init of every request,
+				// returns early without a connection, and skips AJAX, REST and WP-CLI (client 11.1.0 `includes/class-wc-payments.php:605`,
+				// `includes/class-wc-payments-fraud-service.php:82,151-177`).
 				if ( 'front' === $request || 'admin' === $request ) {
 					$matrix[ $state ][ $request ][] = WooPaymentsFraudService::class;
 				}

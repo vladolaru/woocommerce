@@ -254,8 +254,8 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 			// Client gw:2376-2382: of these outcomes only an intent error throws, and its catch fails the order with a note.
 			if ( $this->intent_has_error( $intent, $is_payment_intent ) ) {
 				if ( $is_payment_intent ) {
-					// The confirmation already failed the order; a SetupIntent's confirmation also writes this note.
-					$this->fail_order( $fresh_order, $intent_id, null, $this->get_charge_id( $intent ) );
+					// The PaymentIntent confirmation failed the order without a note; a SetupIntent's confirmation writes this note itself.
+					$this->fail_order( $fresh_order, $intent_id, null );
 				}
 				$this->redirect_to_checkout( __( "We're not able to process this payment. Please try again later.", 'woocommerce' ) );
 			}
@@ -263,7 +263,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether a fetched intent carries the error the client's redirect return fails on (gw:2351, 2373).
+	 * Tell whether a fetched intent carries the error the client's redirect return fails on (gw:2354, 2374).
 	 *
 	 * @param array<string,mixed> $intent            Fetched intent.
 	 * @param bool                $is_payment_intent Whether the intent is a PaymentIntent.
@@ -279,10 +279,9 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * @param WC_Order    $order             Order object.
 	 * @param string      $intent_id         Requested intent ID.
 	 * @param string|null $exception_message Message of the exception that ended the return, or null for an intent error.
-	 * @param string      $charge_id         Charge ID read from the intent, if any.
 	 */
-	private function fail_order( WC_Order $order, string $intent_id, ?string $exception_message, string $charge_id = '' ): void {
-		$note_candidates = $this->note_service->format_redirect_payment_failed_note_candidates( $order, $intent_id, $exception_message, $charge_id );
+	private function fail_order( WC_Order $order, string $intent_id, ?string $exception_message ): void {
+		$note_candidates = $this->note_service->format_redirect_payment_failed_note_candidates( $order, $intent_id, $exception_message );
 
 		try {
 			$this->lifecycle_service->apply(
@@ -301,18 +300,6 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 		} catch ( Throwable $failure ) {
 			$this->log_return_error( $order, $failure );
 		}
-	}
-
-	/**
-	 * Get the ID of a PaymentIntent's charge.
-	 *
-	 * @param array<string,mixed> $intent PaymentIntent response.
-	 * @return string
-	 */
-	private function get_charge_id( array $intent ): string {
-		$charge_id = $intent['charges']['data'][0]['id'] ?? $intent['charge']['id'] ?? '';
-
-		return is_string( $charge_id ) ? $charge_id : '';
 	}
 
 	/**

@@ -423,15 +423,14 @@ class WooPaymentsOrderNoteService {
 	 * @param WC_Order    $order             Order object.
 	 * @param string      $intent_id         Intent ID.
 	 * @param string|null $exception_message Message of the exception that ended the return, or null for the intent-error message.
-	 * @param string      $charge_id         Charge ID read from the intent, if any.
 	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
 	 *
 	 * @since 11.2.0
 	 */
-	public function format_redirect_payment_failed_note_candidates( WC_Order $order, string $intent_id, ?string $exception_message = null, string $charge_id = '' ): array {
+	public function format_redirect_payment_failed_note_candidates( WC_Order $order, string $intent_id, ?string $exception_message = null ): array {
 		return $this->format_amount_note_candidates(
 			$order,
-			function ( string $text_domain, string $formatted_amount ) use ( $order, $intent_id, $exception_message, $charge_id ): string {
+			function ( string $text_domain, string $formatted_amount ) use ( $order, $intent_id, $exception_message ): string {
 				if ( 'woocommerce-payments' === $text_domain ) {
 					/* translators: %s: localized exception message. */
 					$message = sprintf( __( 'UPE payment failed: %s', 'woocommerce-payments' ), $exception_message ?? __( "We're not able to process this payment. Please try again later.", 'woocommerce-payments' ) ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
@@ -440,7 +439,7 @@ class WooPaymentsOrderNoteService {
 					$message = sprintf( __( 'UPE payment failed: %s', 'woocommerce' ), $exception_message ?? __( "We're not able to process this payment. Please try again later.", 'woocommerce' ) );
 				}
 
-				return $this->format_payment_failed_note_for_domain( $order, $intent_id, $charge_id, array(), $text_domain, $formatted_amount, $message );
+				return $this->format_payment_failed_note_for_domain( $order, $intent_id, '', array(), $text_domain, $formatted_amount, $message );
 			}
 		);
 	}
