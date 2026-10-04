@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeEventHandler;
 use WC_Order;
@@ -243,7 +244,7 @@ class OrderPaymentLifecycleService {
 				if ( null !== $event->get_payment_reference() && '' !== (string) $event->get_payment_reference() ) {
 					$order->set_transaction_id( (string) $event->get_payment_reference() );
 				}
-				$order->update_status( 'on-hold' );
+				$order->update_status( OrderStatus::ON_HOLD );
 				return true;
 
 			case PaymentLifecycleEvent::STATUS_FAILED:
@@ -252,11 +253,11 @@ class OrderPaymentLifecycleService {
 					return false;
 				}
 
-				$order->update_status( 'failed' );
+				$order->update_status( OrderStatus::FAILED );
 				return true;
 
 			case PaymentLifecycleEvent::STATUS_CANCELED:
-				$order->update_status( 'cancelled' );
+				$order->update_status( OrderStatus::CANCELLED );
 				return true;
 
 			case PaymentLifecycleEvent::STATUS_STARTED:
@@ -422,7 +423,7 @@ class OrderPaymentLifecycleService {
 			&& in_array( $note_type, array( PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_COMPLETE, PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS ), true )
 			&& '' !== $payment_reference
 			&& $payment_reference === (string) $order->get_transaction_id()
-			&& $order->has_status( array( 'processing', 'completed' ) );
+			&& $order->has_status( array( OrderStatus::PROCESSING, OrderStatus::COMPLETED ) );
 	}
 
 	/**
