@@ -557,79 +557,28 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A PHP error loading the API client skips the detach and is logged whatever the logging setting.
+	 * @testdox A dependency that cannot be built fails the token service's resolution instead of being skipped.
 	 *
-	 * The client injects its API client, so there is no counterpart; a PHP error is logged with its class, code and trace
-	 * instead of vanishing (review 34 F5), and the token deletion goes on without the detach.
+	 * Client 11.1.0 requires its API client and customer service in the constructor (`class-wc-payments-token-service.php:49-52`),
+	 * so a dependency that cannot be built fatals when the service is created. Native's container builds every `init()`
+	 * argument the same way; no lookup later swallows the failure and skips the detach, sync or fetch (unit 2a-9a).
 	 */
-	public function test_php_error_loading_api_client_is_logged_and_skips_detach(): void {
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
-		add_filter( 'wcpay_dev_mode', '__return_false' );
-		$user_id      = $this->factory()->user->create();
-		$native_token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_delete' );
-		$this->create_service( array(), null, null, $this->create_account_service( true ) );
-		// The typed property assignment of a wrong object raises a TypeError inside the lookup.
-		wc_get_container()->replace( WooPaymentsApiClient::class, new \stdClass() );
-		$logger = RecordingWcLogger::install();
-
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token deletion hook.
-		do_action( 'woocommerce_payment_token_deleted', $native_token->get_id(), $native_token );
-
-		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => str_starts_with( $line[1], 'Error loading ' . WooPaymentsApiClient::class ) ) );
-		$this->assertCount( 1, $lines );
-		$this->assertSame( array( 'error', 'woopayments' ), array( $logger->lines[ $lines[0] ][0], $logger->lines[ $lines[0] ][2] ) );
-		$this->assertSame( 'TypeError', $logger->contexts[ $lines[0] ]['exception'] ?? '' );
-	}
-
-	/**
-	 * @testdox A PHP error loading the account service, which the WooPayments logger also needs, is logged and the detach goes on.
-	 *
-	 * The lookup returns null as it did before the log line was added: the line is written straight to the WooCommerce
-	 * logger under woopayments when the WooPayments logger cannot be built (review 35 F5).
-	 */
-	public function test_php_error_loading_account_service_is_logged_without_the_woopayments_logger(): void {
-		$user_id      = $this->factory()->user->create();
-		$native_token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_delete' );
-		$api_client   = new class() extends WooPaymentsApiClient {
-			/**
-			 * Detached payment method IDs.
-			 *
-			 * @var string[]
-			 */
-			public array $detached_payment_method_ids = array();
-
-			/**
-			 * Detach a payment method.
-			 *
-			 * @param string $payment_method_id Payment method ID.
-			 * @return array<string,mixed>
-			 */
-			public function detach_payment_method( string $payment_method_id ): array {
-				$this->detached_payment_method_ids[] = $payment_method_id;
-
-				return array( 'id' => $payment_method_id );
-			}
-		};
-		$this->create_service( array(), $api_client );
-		// The typed property assignment of a wrong object raises a TypeError in the lookup, and building the logger
-		// passes the same object to WooPaymentsLogger::init().
+	public function test_dependency_that_cannot_be_built_fails_the_token_service_resolution(): void {
+		// The typed account-service arguments of the token service and its dependencies refuse this object with a TypeError.
 		wc_get_container()->replace( WooPaymentsAccountService::class, new \stdClass() );
 		wc_get_container()->reset_all_resolved();
-		$logger = RecordingWcLogger::install();
 
+		$thrown = null;
 		try {
-			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token deletion hook.
-			do_action( 'woocommerce_payment_token_deleted', $native_token->get_id(), $native_token );
+			wc_get_container()->get( WooPaymentsTokenService::class );
+		} catch ( \Throwable $throwable ) {
+			$thrown = $throwable;
 		} finally {
 			$this->reset_container_replacements();
 			wc_get_container()->reset_all_resolved();
 		}
 
-		$this->assertSame( array( 'pm_delete' ), $api_client->detached_payment_method_ids );
-		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => str_starts_with( $line[1], 'Error loading ' . WooPaymentsAccountService::class ) ) );
-		$this->assertCount( 1, $lines );
-		$this->assertSame( array( 'error', 'woopayments' ), array( $logger->lines[ $lines[0] ][0], $logger->lines[ $lines[0] ][2] ) );
-		$this->assertSame( 'TypeError', $logger->contexts[ $lines[0] ]['exception'] ?? '' );
+		$this->assertInstanceOf( \TypeError::class, $thrown );
 	}
 
 	/**
@@ -2205,7 +2154,10 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 				}
 				// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
 			},
-			new StaticNativeRuntimeArbiter( true )
+			new StaticNativeRuntimeArbiter( true ),
+			wc_get_container()->get( WooPaymentsApiClient::class ),
+			wc_get_container()->get( WooPaymentsCustomerService::class ),
+			wc_get_container()->get( WooPaymentsAccountService::class )
 		);
 		$this->created_services[] = $sut;
 		$logger                   = RecordingWcLogger::install();
@@ -2267,7 +2219,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		};
 
 		$sut = new WooPaymentsTokenService();
-		$sut->init( $details_service, $arbiter ?? new StaticNativeRuntimeArbiter( true ), $api_client, $customer_service, $account_service );
+		$sut->init( $details_service, $arbiter ?? new StaticNativeRuntimeArbiter( true ), $api_client ?? wc_get_container()->get( WooPaymentsApiClient::class ), $customer_service ?? wc_get_container()->get( WooPaymentsCustomerService::class ), $account_service ?? wc_get_container()->get( WooPaymentsAccountService::class ) );
 		$this->created_services[] = $sut;
 
 		return $sut;

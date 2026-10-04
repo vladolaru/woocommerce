@@ -1808,7 +1808,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$service = new RecordingPaymentProcessingService();
 		$gateway = new NativeWooPaymentsGateway();
-		$gateway->init( $service, new WooPaymentsProvider(), null, null, null, new WooPaymentsTokenService() );
+		$gateway->init( $service, new WooPaymentsProvider(), null, null, null, $this->create_unhooked_token_service() );
 
 		$gateway->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
 
@@ -6742,6 +6742,25 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Create a token service built from the container's dependencies, with no hooks registered.
+	 *
+	 * @return WooPaymentsTokenService
+	 */
+	private function create_unhooked_token_service(): WooPaymentsTokenService {
+		$container     = wc_get_container();
+		$token_service = new WooPaymentsTokenService();
+		$token_service->init(
+			$container->get( WooPaymentsPaymentMethodDetailsService::class ),
+			new StaticNativeRuntimeArbiter( false ),
+			$container->get( WooPaymentsApiClient::class ),
+			$container->get( WooPaymentsCustomerService::class ),
+			$container->get( WooPaymentsAccountService::class )
+		);
+
+		return $token_service;
+	}
+
+	/**
 	 * Create a saved WooPayments card token.
 	 *
 	 * @param int    $user_id           User ID.
@@ -7148,7 +7167,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			new StaticNativeRuntimeArbiter( true )
 		);
 		$token_service = new WooPaymentsTokenService();
-		$token_service->init( $details_service, new StaticNativeRuntimeArbiter( true ) );
+		$token_service->init( $details_service, new StaticNativeRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
 		wc_get_container()->replace( WooPaymentsTokenService::class, $token_service );
 
 		$GLOBALS['wcpay_test_renewal_subscription_ids'] = array( $renewal->get_id() => array( $subscription->get_id() ) );

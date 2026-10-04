@@ -114,7 +114,7 @@ class WooPaymentsForeignHookValuesTest extends WC_Unit_Test_Case {
 				break;
 			case 'woocommerce_get_customer_payment_tokens':
 			case 'woocommerce_payment_methods_list_item':
-				( new WooPaymentsTokenService() )->init( $container->get( WooPaymentsPaymentMethodDetailsService::class ), $arbiter );
+				( new WooPaymentsTokenService() )->init( $container->get( WooPaymentsPaymentMethodDetailsService::class ), $arbiter, $container->get( WooPaymentsApiClient::class ), $container->get( WooPaymentsCustomerService::class ), $container->get( WooPaymentsAccountService::class ) );
 				break;
 			case 'woocommerce_address_providers':
 				$provider = new WooPaymentsAddressProvider();

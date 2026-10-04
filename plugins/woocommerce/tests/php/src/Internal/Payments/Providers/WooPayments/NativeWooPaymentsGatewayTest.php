@@ -14,6 +14,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
@@ -22,6 +24,7 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\Fak
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use Automattic\WooCommerce\Tests\Internal\Payments\RecordingPaymentProcessingService;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
 use WC_Order;
 use WC_Payment_Token;
 use WC_Unit_Test_Case;
@@ -422,7 +425,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$note_count = count( wc_get_order_notes( array( 'order_id' => $renewal->get_id() ) ) );
 		$service    = new RecordingPaymentProcessingService();
 		$gateway    = new NativeWooPaymentsGateway();
-		$gateway->init( $service, new WooPaymentsProvider(), null, null, null, new WooPaymentsTokenService() );
+		$gateway->init( $service, new WooPaymentsProvider(), null, null, null, $this->create_unhooked_token_service() );
 
 		$gateway->scheduled_subscription_payment( 10.0, wc_get_order( $renewal->get_id() ) );
 
@@ -729,6 +732,25 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Create a token service built from the container's dependencies, with no hooks registered.
+	 *
+	 * @return WooPaymentsTokenService
+	 */
+	private function create_unhooked_token_service(): WooPaymentsTokenService {
+		$container     = wc_get_container();
+		$token_service = new WooPaymentsTokenService();
+		$token_service->init(
+			$container->get( WooPaymentsPaymentMethodDetailsService::class ),
+			new StaticNativeRuntimeArbiter( false ),
+			$container->get( WooPaymentsApiClient::class ),
+			$container->get( WooPaymentsCustomerService::class ),
+			$container->get( WooPaymentsAccountService::class )
+		);
+
+		return $token_service;
+	}
+
+	/**
 	 * Create a saved card for a customer.
 	 *
 	 * @param int $user_id Customer user ID.
@@ -785,7 +807,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$service                   = new RecordingPaymentProcessingService();
 		$service->checkout_outcome = new PaymentOutcome( $outcome_status, 'seti_1UM1VrBzWlxcwgpPChgT63' );
 		$gateway                   = new NativeWooPaymentsGateway();
-		$gateway->init( $service, new WooPaymentsProvider(), null, null, null, new WooPaymentsTokenService() );
+		$gateway->init( $service, new WooPaymentsProvider(), null, null, null, $this->create_unhooked_token_service() );
 
 		$gateway->process_payment( $subscription->get_id() );
 	}

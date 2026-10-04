@@ -366,7 +366,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 				throw new \RuntimeException( 'Token storage unavailable.' );
 			}
 		};
-		$token_service->init( $this->createMock( WooPaymentsPaymentMethodDetailsService::class ), new StaticNativeRuntimeArbiter( true ) );
+		$token_service->init( $this->createMock( WooPaymentsPaymentMethodDetailsService::class ), new StaticNativeRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
 		$logger = new RedirectReturnRecordingLogger();
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
 		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client, $token_service ), $api_client );
@@ -2142,7 +2142,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			}
 		};
 		$token_service   = new WooPaymentsTokenService();
-		$token_service->init( $details_service, new StaticNativeRuntimeArbiter( true ) );
+		$token_service->init( $details_service, new StaticNativeRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
 
 		return $token_service;
 	}

@@ -91,36 +91,39 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	/**
 	 * Native API client.
 	 *
-	 * @var WooPaymentsApiClient|null
+	 * @var WooPaymentsApiClient
 	 */
-	private ?WooPaymentsApiClient $api_client = null;
+	private WooPaymentsApiClient $api_client;
 
 	/**
 	 * Native customer service.
 	 *
-	 * @var WooPaymentsCustomerService|null
+	 * @var WooPaymentsCustomerService
 	 */
-	private ?WooPaymentsCustomerService $customer_service = null;
+	private WooPaymentsCustomerService $customer_service;
 
 	/**
 	 * Native account service.
 	 *
-	 * @var WooPaymentsAccountService|null
+	 * @var WooPaymentsAccountService
 	 */
-	private ?WooPaymentsAccountService $account_service = null;
+	private WooPaymentsAccountService $account_service;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
+	 * Every dependency is required, as the client's constructor requires its API client and customer service
+	 * (`class-wc-payments-token-service.php:49-52`): a dependency that cannot be built fails this service's resolution.
+	 *
 	 * @param WooPaymentsPaymentMethodDetailsService $payment_method_details_service Payment method details service.
 	 * @param NativePaymentsRuntimeArbiter           $arbiter                        Runtime owner arbiter.
-	 * @param WooPaymentsApiClient|null              $api_client                     Optional native API client.
-	 * @param WooPaymentsCustomerService|null        $customer_service               Optional native customer service.
-	 * @param WooPaymentsAccountService|null         $account_service                Optional native account service.
+	 * @param WooPaymentsApiClient                   $api_client                     Native API client.
+	 * @param WooPaymentsCustomerService             $customer_service               Native customer service.
+	 * @param WooPaymentsAccountService              $account_service                Native account service.
 	 */
-	final public function init( WooPaymentsPaymentMethodDetailsService $payment_method_details_service, NativePaymentsRuntimeArbiter $arbiter, ?WooPaymentsApiClient $api_client = null, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsAccountService $account_service = null ): void {
+	final public function init( WooPaymentsPaymentMethodDetailsService $payment_method_details_service, NativePaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsCustomerService $customer_service, WooPaymentsAccountService $account_service ): void {
 		$this->payment_method_details_service = $payment_method_details_service;
 		$this->arbiter                        = $arbiter;
 		$this->api_client                     = $api_client;
@@ -218,14 +221,11 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			return;
 		}
 
-		$api_client = $this->get_api_client();
-		if ( null !== $api_client ) {
-			try {
-				$api_client->detach_payment_method( (string) $token->get_token() );
-			} catch ( Throwable $exception ) {
-				// Client 11.1.0 ts:420 logs this at info level.
-				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Error detaching payment method:' . $exception->getMessage(), $exception, array(), 'info' );
-			}
+		try {
+			$this->api_client->detach_payment_method( (string) $token->get_token() );
+		} catch ( Throwable $exception ) {
+			// Client 11.1.0 ts:420 logs this at info level.
+			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Error detaching payment method:' . $exception->getMessage(), $exception, array(), 'info' );
 		}
 
 		$this->clear_cached_payment_methods_for_user( $token->get_user_id() );
@@ -247,15 +247,12 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			return;
 		}
 
-		$customer_service = $this->get_customer_service();
-		if ( null !== $customer_service ) {
-			$customer_id = $customer_service->get_customer_id_by_user_id( $token->get_user_id() );
-			if ( null !== $customer_id ) {
-				try {
-					$customer_service->set_default_payment_method_for_customer( $customer_id, (string) $token->get_token() );
-				} catch ( Throwable $exception ) {
-					wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Error setting native WooPayments default payment method: ' . $exception->getMessage(), $exception );
-				}
+		$customer_id = $this->customer_service->get_customer_id_by_user_id( $token->get_user_id() );
+		if ( null !== $customer_id ) {
+			try {
+				$this->customer_service->set_default_payment_method_for_customer( $customer_id, (string) $token->get_token() );
+			} catch ( Throwable $exception ) {
+				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Error setting native WooPayments default payment method: ' . $exception->getMessage(), $exception );
 			}
 		}
 
@@ -925,10 +922,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			return $tokens;
 		}
 
-		$customer_service = $this->get_customer_service();
-		if ( null === $customer_service ) {
-			return $tokens;
-		}
+		$customer_service = $this->customer_service;
 
 		try {
 			$customer_id = $customer_service->get_customer_id_by_user_id( $user_id );
@@ -1074,12 +1068,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 * @return string[]|null Enabled payment method IDs, or null when the setting is unavailable.
 	 */
 	private function get_enabled_payment_method_ids(): ?array {
-		$account_service = $this->get_account_service();
-		if ( null === $account_service ) {
-			return null;
-		}
-
-		$enabled_method_ids = $account_service->get_gateway_setting( 'upe_enabled_payment_method_ids', array( self::PAYMENT_METHOD_TYPE_CARD ) );
+		$enabled_method_ids = $this->account_service->get_gateway_setting( 'upe_enabled_payment_method_ids', array( self::PAYMENT_METHOD_TYPE_CARD ) );
 
 		return is_array( $enabled_method_ids ) ? $enabled_method_ids : null;
 	}
@@ -1194,104 +1183,12 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the native API client when available.
-	 *
-	 * @return WooPaymentsApiClient|null
-	 */
-	private function get_api_client(): ?WooPaymentsApiClient {
-		if ( null !== $this->api_client ) {
-			return $this->api_client;
-		}
-
-		try {
-			$this->api_client = wc_get_container()->get( WooPaymentsApiClient::class );
-		} catch ( Throwable $exception ) {
-			$this->log_service_lookup_error( WooPaymentsApiClient::class, $exception );
-			return null;
-		}
-
-		return $this->api_client;
-	}
-
-	/**
-	 * Get the native customer service when available.
-	 *
-	 * @return WooPaymentsCustomerService|null
-	 */
-	private function get_customer_service(): ?WooPaymentsCustomerService {
-		if ( null !== $this->customer_service ) {
-			return $this->customer_service;
-		}
-
-		try {
-			$this->customer_service = wc_get_container()->get( WooPaymentsCustomerService::class );
-		} catch ( Throwable $exception ) {
-			$this->log_service_lookup_error( WooPaymentsCustomerService::class, $exception );
-			return null;
-		}
-
-		return $this->customer_service;
-	}
-
-	/**
-	 * Get the native account service when available.
-	 *
-	 * @return WooPaymentsAccountService|null
-	 */
-	private function get_account_service(): ?WooPaymentsAccountService {
-		if ( null !== $this->account_service ) {
-			return $this->account_service;
-		}
-
-		try {
-			$this->account_service = wc_get_container()->get( WooPaymentsAccountService::class );
-		} catch ( Throwable $exception ) {
-			$this->log_service_lookup_error( WooPaymentsAccountService::class, $exception );
-			return null;
-		}
-
-		return $this->account_service;
-	}
-
-	/**
-	 * Log a failed service lookup when it is a PHP Error, whatever the logging setting; an Exception stays quiet.
-	 *
-	 * The caller then skips the detach, sync or fetch that needed the service. The client injects these services, so it
-	 * has no counterpart (review 34 F5). The WooPayments logger needs the account service, so when the logger cannot be
-	 * built either the line is written straight to the WooCommerce logger and the lookup still returns null (review 35 F5).
-	 *
-	 * @param string    $service   Class name of the service.
-	 * @param Throwable $exception Lookup failure.
-	 */
-	private function log_service_lookup_error( string $service, Throwable $exception ): void {
-		if ( $exception instanceof Exception ) {
-			return;
-		}
-
-		$message = 'Error loading ' . $service . ' for WooPayments tokens: ' . $exception->getMessage();
-		try {
-			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( $message, $exception );
-		} catch ( Throwable $logger_exception ) {
-			wc_get_logger()->error(
-				$message,
-				array(
-					'source'    => WooPaymentsLogger::SOURCE,
-					'exception' => get_class( $exception ),
-				)
-			);
-		}
-	}
-
-	/**
 	 * Determine whether a remote detach should be skipped for the current environment.
 	 *
 	 * @return bool
 	 */
 	private function should_skip_remote_detach_for_environment(): bool {
-		$account_service = $this->get_account_service();
-
-		return null !== $account_service
-			&& ! $account_service->is_test_mode_enabled()
+		return ! $this->account_service->is_test_mode_enabled()
 			&& is_admin()
 			&& 'production' !== wp_get_environment_type();
 	}
