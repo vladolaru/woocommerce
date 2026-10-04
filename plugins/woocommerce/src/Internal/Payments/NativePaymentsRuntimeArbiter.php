@@ -24,8 +24,8 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
  * hooks that follow the plugin's account cache writes, and shadow mode when it is enabled. Outside that
  * bootstrap, WooCommerce also registers, for example, the status report and Site Health checks, the
  * restore-service option listeners, the CLI command and the legacy facade loaders while the plugin is
- * active. Native owns the site only
- * once the plugin is no longer active and the native runtime is enabled.
+ * active. Native owns the site only once the plugin is no longer active and the native runtime is
+ * enabled.
  * A merchant moves from plugin to native by **deactivating the plugin** — surfaced (and, at the
  * cutover release, performed automatically) by the migration-notice / auto-deactivation component,
  * which is modeled on WooCommerce's merged-package handling (`src/Packages.php`). This arbiter is the

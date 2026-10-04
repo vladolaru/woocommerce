@@ -283,7 +283,8 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	/**
 	 * Name the browser tab after the native WooPayments page on first paint, in WooCommerce admin's header format.
 	 *
-	 * A detail page's title is followed by its list's title, the same title `admin/routes.tsx` sets after load.
+	 * A detail page's title is followed by its list's title: the same sections `admin/routes.tsx` sets after load, with each
+	 * parent taken from the client's `client/index.js` breadcrumbs (client 11.1.0).
 	 * Settings pages keep the WooCommerce settings title.
 	 *
 	 * @since 11.2.0
@@ -1112,8 +1113,9 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	/**
 	 * Get the titles of the native WooPayments pages, keyed by route path.
 	 *
-	 * The submenu reads the list pages' titles. The first-paint browser tab title reads them all, matching the
-	 * detail page titles the client registers (client 11.1.0 `includes/admin/class-wc-payments-admin.php:567-593`).
+	 * The submenu reads the list pages' titles. The first-paint browser tab title reads them all: the same sections
+	 * `admin/routes.tsx` sets, with each detail page's parent taken from the client's `client/index.js` breadcrumbs
+	 * (client 11.1.0). The client's server-side parent chains differ for payout details and challenge dispute.
 	 *
 	 * @return array<string,string>
 	 */
