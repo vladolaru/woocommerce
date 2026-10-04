@@ -58,12 +58,12 @@ final class WooPaymentsOutcomeMetadataMapper implements ProviderOutcomeMetadataM
 	}
 
 	/**
-	 * Map a failed authorization operation to WooPayments order metadata.
+	 * Map a failed capture or cancel to WooPayments order metadata.
 	 *
 	 * @param PaymentOutcome $outcome Provider outcome.
 	 * @return array<string,string>
 	 */
-	public function get_capture_failure_outcome_meta( PaymentOutcome $outcome ): array {
+	public function get_failed_capture_or_cancel_outcome_meta( PaymentOutcome $outcome ): array {
 		$meta                      = $this->get_outcome_meta( $outcome );
 		$meta['_intention_status'] = 'requires_capture';
 		ksort( $meta );

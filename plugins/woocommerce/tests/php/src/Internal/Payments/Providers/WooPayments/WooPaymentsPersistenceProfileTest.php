@@ -179,7 +179,7 @@ class WooPaymentsPersistenceProfileTest extends WC_Unit_Test_Case {
 				'_intent_id'        => 'pi_123',
 				'_intention_status' => 'requires_capture',
 			),
-			$this->sut->get_capture_failure_outcome_meta( $outcome )
+			$this->sut->get_failed_capture_or_cancel_outcome_meta( $outcome )
 		);
 	}
 

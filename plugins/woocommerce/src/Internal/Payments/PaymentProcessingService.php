@@ -887,7 +887,7 @@ class PaymentProcessingService {
 
 			// A failed authorization operation leaves the original authorization active, regardless of whether
 			// the attempted operation was capture or cancellation.
-			$meta = $this->get_capture_failure_outcome_meta( $outcome, $provider );
+			$meta = $this->get_failed_capture_or_cancel_outcome_meta( $outcome, $provider );
 
 			$this->lifecycle_service->apply_unlocked(
 				$order,
@@ -998,14 +998,14 @@ class PaymentProcessingService {
 	}
 
 	/**
-	 * Map failed authorization metadata through the optional provider port.
+	 * Map a failed capture or cancel outcome to metadata through the optional provider port.
 	 *
 	 * @param PaymentOutcome   $outcome  Provider outcome.
 	 * @param ProviderContract $provider Provider.
 	 * @return array<string,string>
 	 */
-	private function get_capture_failure_outcome_meta( PaymentOutcome $outcome, ProviderContract $provider ): array {
-		return $provider instanceof ProviderOutcomeMetadataMapper ? $provider->get_capture_failure_outcome_meta( $outcome ) : array();
+	private function get_failed_capture_or_cancel_outcome_meta( PaymentOutcome $outcome, ProviderContract $provider ): array {
+		return $provider instanceof ProviderOutcomeMetadataMapper ? $provider->get_failed_capture_or_cancel_outcome_meta( $outcome ) : array();
 	}
 
 	/**

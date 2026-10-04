@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\ProviderContract;
 use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 
 /**
  * Test provider that records operation calls.
@@ -120,8 +121,8 @@ class RecordingProvider implements ProviderContract, ProviderOutcomeMetadataMapp
 	 * @param PaymentOutcome $outcome Provider outcome.
 	 * @return array<string,string>
 	 */
-	public function get_capture_failure_outcome_meta( PaymentOutcome $outcome ): array {
-		return ( new WooPaymentsOutcomeMetadataMapper() )->get_capture_failure_outcome_meta( $outcome );
+	public function get_failed_capture_or_cancel_outcome_meta( PaymentOutcome $outcome ): array {
+		return ( new WooPaymentsOutcomeMetadataMapper() )->get_failed_capture_or_cancel_outcome_meta( $outcome );
 	}
 
 	/**

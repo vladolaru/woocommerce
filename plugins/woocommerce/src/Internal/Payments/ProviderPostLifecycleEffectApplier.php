@@ -8,10 +8,11 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments;
 
 /**
- * Optional provider port for effects that must run after the generic payment lifecycle.
+ * Optional provider port that runs after OrderPaymentLifecycleService::apply_unlocked() has applied the outcome.
  *
- * This is separate from ProviderOperationEffectApplier so existing provider implementations do not
- * gain a new required method.
+ * PaymentProcessingService calls it under the order payment lock from process_checkout_outcome() and
+ * run_provider_order_operation() (capture, cancel), never for refunds, passing the context, the applied outcome
+ * and the operation. It may update the order but cannot change the outcome. Without it, nothing runs afterwards.
  *
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.

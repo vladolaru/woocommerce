@@ -180,14 +180,14 @@ class WooPaymentsPersistenceProfile implements ProviderPersistenceVocabulary {
 	}
 
 	/**
-	 * Map a failed capture outcome to WooPayments order meta.
+	 * Map a failed capture or cancel to WooPayments order meta.
 	 *
 	 * @param PaymentOutcome $outcome Provider outcome.
 	 * @return array<string,string>
 	 *
 	 * @since 11.0.0
 	 */
-	public function get_capture_failure_outcome_meta( PaymentOutcome $outcome ): array {
-		return ( new WooPaymentsOutcomeMetadataMapper() )->get_capture_failure_outcome_meta( $outcome );
+	public function get_failed_capture_or_cancel_outcome_meta( PaymentOutcome $outcome ): array {
+		return ( new WooPaymentsOutcomeMetadataMapper() )->get_failed_capture_or_cancel_outcome_meta( $outcome );
 	}
 }
