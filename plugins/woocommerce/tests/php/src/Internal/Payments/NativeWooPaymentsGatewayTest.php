@@ -2452,7 +2452,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should show the client's filtered message when the setup intent lookup fails with an API error: $_dataName.
 	 *
 	 * Oracle: client 11.1.0 `class-wc-payment-gateway-wcpay.php:4467-4468` passes every exception through
-	 * `WC_Payments_Utils::get_filtered_error_message()` (`class-wc-payments-utils.php:769-819`).
+	 * `WC_Payments_Utils::get_filtered_error_message()` (`class-wc-payments-utils.php:769-819`) and logs it at info
+	 * level (`:4471`).
 	 *
 	 * @dataProvider add_payment_method_api_error_provider
 	 *
@@ -2470,11 +2471,14 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->getMock();
 		$api_client->method( 'get_setup_intention' )->willThrowException( $exception );
 
+		$this->enable_debug_logging();
+		$logger  = RecordingWcLogger::install();
 		$gateway = new NativeWooPaymentsGateway();
 		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client );
 
 		$this->assertSame( array( 'result' => 'error' ), $gateway->add_payment_method() );
 		$this->assertSame( $expected, wc_get_notices( 'error' )[0]['notice'] ?? '' );
+		$this->assertContains( array( 'info', 'Error when adding payment method: ' . $exception->getMessage(), 'woopayments' ), $logger->lines );
 	}
 
 	/**
@@ -6592,6 +6596,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$renewal->save();
 
 		$GLOBALS['wcpay_test_renewal_subscription_ids'] = array( $renewal->get_id() => array( $subscription->get_id() ) );
+		$this->enable_debug_logging();
+		$logger = RecordingWcLogger::install();
 
 		$service = new RecordingPaymentProcessingService();
 		$gateway = new NativeWooPaymentsGateway();
@@ -6606,6 +6612,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertNull( $service->last_checkout_context );
 		$renewal_fresh = wc_get_order( $renewal->get_id() );
 		$this->assertSame( 'failed', $renewal_fresh->get_status() );
+		// Client 11.1.0 trait:415.
+		$this->assertContains( array( 'error', 'There is no saved payment token for order #' . $renewal->get_id(), 'woopayments' ), $logger->lines );
 	}
 
 	/**

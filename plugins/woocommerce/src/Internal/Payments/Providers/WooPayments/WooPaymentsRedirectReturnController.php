@@ -345,18 +345,14 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Log an error that ended a redirect return.
+	 * Log an error that ended a redirect return, as client 11.1.0 gw:2429 does with Logger::exception().
 	 *
 	 * @param WC_Order  $order     Order object.
 	 * @param Throwable $exception Error.
 	 */
 	private function log_return_error( WC_Order $order, Throwable $exception ): void {
 		wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
-			sprintf(
-				'Error completing native WooPayments redirect return for order %1$d: %2$s',
-				$order->get_id(),
-				$exception->getMessage()
-			),
+			'Error occurred during the redirect payment process. Exception: ' . $exception->getMessage(),
 			$exception,
 			array( 'order_id' => $order->get_id() )
 		);

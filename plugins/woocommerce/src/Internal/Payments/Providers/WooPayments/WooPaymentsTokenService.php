@@ -184,7 +184,8 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			try {
 				$api_client->detach_payment_method( (string) $token->get_token() );
 			} catch ( Throwable $exception ) {
-				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Error detaching native WooPayments payment method: ' . $exception->getMessage(), $exception );
+				// Client 11.1.0 ts:420 logs this at info level.
+				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Error detaching payment method:' . $exception->getMessage(), $exception, array(), 'info' );
 			}
 		}
 

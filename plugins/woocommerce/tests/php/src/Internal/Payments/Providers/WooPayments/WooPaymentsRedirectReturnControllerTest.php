@@ -344,7 +344,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	 * @testdox A token-save error on the redirect return is logged and the order still completes, even for a recurring order.
 	 *
 	 * Client 11.1.0 process_redirect_payment() catches the token-save exception, logs "Error when saving payment method: ..."
-	 * through its gated Logger and goes on to update the order from the intent (gw:2389-2406). Only the order-status
+	 * at info level through its gated Logger (gw:4312) and goes on to update the order from the intent (gw:2389-2406). Only the order-status
 	 * callback stops a recurring order on that error (gw:4309-4321).
 	 */
 	public function test_handle_wp_completes_order_when_token_save_fails(): void {
@@ -379,8 +379,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'processing', $reloaded->get_status() );
 		$this->assertCount( 0, $reloaded->get_payment_tokens() );
 		$this->assertSame( array(), wc_get_notices( 'error' ) );
-		$messages = array_column( $logger->error_calls, 'message' );
-		$this->assertCount( 1, array_filter( $messages, static fn( $message ): bool => false !== strpos( (string) $message, 'Token storage unavailable.' ) ) );
+		$this->assertSame( array( 'Error when saving payment method: Token storage unavailable.' ), array_column( $logger->info_calls, 'message' ) );
 	}
 
 	/**
@@ -874,7 +873,11 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'failed', $reloaded->get_status() );
 		$this->assert_failed_note_with_message( $reloaded, 'pi_api_error', 'UPE payment failed: Transport unavailable.' );
 		$this->assertCount( 1, $logger->error_calls );
-		$this->assertStringContainsString( 'Transport unavailable.', $logger->error_calls[0]['message'] );
+		// Client gw:2429 writes Logger::exception() (includes/class-logger.php:100-112).
+		$this->assertSame( 'Error occurred during the redirect payment process. Exception: Transport unavailable.', $logger->error_calls[0]['message'] );
+		$this->assertSame( WooPaymentsApiException::class, $logger->error_calls[0]['context']['exception'] ?? '' );
+		$this->assertArrayHasKey( 'code', $logger->error_calls[0]['context'] );
+		$this->assertArrayHasKey( 'trace', $logger->error_calls[0]['context'] );
 	}
 
 	/**
@@ -2139,6 +2142,9 @@ class RedirectReturnRecordingLogger implements \WC_Logger_Interface {
 	/** @var array<int,array{message:mixed,context:array<string,mixed>}> */
 	public array $error_calls = array();
 
+	/** @var array<int,array{message:mixed,context:array<string,mixed>}> */
+	public array $info_calls = array();
+
 	public function add( $handle, $message, $level = \WC_Log_Levels::NOTICE ) {
 		unset( $handle, $message, $level );
 		return true;
@@ -2147,6 +2153,8 @@ class RedirectReturnRecordingLogger implements \WC_Logger_Interface {
 	public function log( $level, $message, $context = array() ) {
 		if ( \WC_Log_Levels::ERROR === $level ) {
 			$this->error( $message, $context );
+		} elseif ( \WC_Log_Levels::INFO === $level ) {
+			$this->info( $message, $context );
 		}
 	}
 
@@ -2171,7 +2179,10 @@ class RedirectReturnRecordingLogger implements \WC_Logger_Interface {
 	}
 
 	public function info( $message, $context = array() ) {
-		unset( $message, $context );
+		$this->info_calls[] = array(
+			'message' => $message,
+			'context' => $context,
+		);
 	}
 
 	public function warning( $message, $context = array() ) {

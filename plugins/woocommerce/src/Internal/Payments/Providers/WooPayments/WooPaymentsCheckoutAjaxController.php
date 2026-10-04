@@ -821,7 +821,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Log a token-save error (client 11.1.0 gw:4312 logs it through its gated Logger).
+	 * Log a token-save error at info level, as client 11.1.0 gw:4312 does.
 	 *
 	 * @param WC_Order  $order             Order being updated.
 	 * @param string    $payment_method_id Provider payment method ID.
@@ -829,13 +829,13 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 */
 	private function log_token_save_error( WC_Order $order, string $payment_method_id, Throwable $exception ): void {
 		wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
-			sprintf(
-				'Failed to save native WooPayments payment method %1$s: %2$s',
-				$payment_method_id,
-				$exception->getMessage()
-			),
+			'Error when saving payment method: ' . $exception->getMessage(),
 			$exception,
-			array( 'order_id' => $order->get_id() )
+			array(
+				'order_id'          => $order->get_id(),
+				'payment_method_id' => $payment_method_id,
+			),
+			'info'
 		);
 	}
 

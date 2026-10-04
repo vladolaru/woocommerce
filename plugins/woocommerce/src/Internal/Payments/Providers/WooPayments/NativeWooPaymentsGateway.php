@@ -777,14 +777,15 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 				'redirect' => apply_filters( 'wcpay_get_add_payment_method_redirect_url', wc_get_endpoint_url( 'payment-methods' ) ),
 			);
 		} catch ( WooPaymentsApiException $exception ) {
-			$this->get_logger()->error( 'Error when adding native WooPayments payment method: ' . $exception->getMessage() );
+			// Client 11.1.0 gw:4471 logs this at info level.
+			$this->get_logger()->log_throwable( 'Error when adding payment method: ' . $exception->getMessage(), $exception, array(), 'info' );
 
 			// Client 11.1.0 gw:4467-4468 filters API errors through get_filtered_error_message().
 			return $this->add_payment_method_error(
 				WooPaymentsErrorMessages::get_shopper_message( $exception->get_error_type(), $exception->get_error_code(), $exception->get_decline_code(), $exception->getMessage() )
 			);
 		} catch ( Throwable $exception ) {
-			$this->get_logger()->log_throwable( 'Error when adding native WooPayments payment method: ' . $exception->getMessage(), $exception );
+			$this->get_logger()->log_throwable( 'Error when adding payment method: ' . $exception->getMessage(), $exception, array(), 'info' );
 
 			return $this->add_payment_method_error( __( "We're not able to add this payment method. Please try again later", 'woocommerce' ) );
 		}
@@ -823,6 +824,8 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		// Authorized divergence: plan.md revision log 2026-09-25 10:15; data/t7-network-saved-cards-usage.md.
 		if ( ! $token instanceof WC_Payment_Token ) {
 			$renewal_order->add_order_note( __( 'Subscription renewal failed: No saved payment method found.', 'woocommerce' ) );
+			// Client 11.1.0 trait:415.
+			$this->get_logger()->error( 'There is no saved payment token for order #' . $renewal_order->get_id() );
 			$renewal_order->update_status( 'failed' );
 			return;
 		}
