@@ -7,8 +7,10 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsMerchantRestController;
 use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
@@ -456,6 +458,115 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 			$this->assertSame( $expected_calls, $calls, $owner );
 			$this->assertSame( $this->expected_events( array() ), $container->events, $owner );
+		}
+	}
+
+	/**
+	 * WooCommerce runs this bootstrap inside its constructor, before WC() has an instance to return, so any WC() call on this
+	 * path constructs WooCommerce again and recurses until PHP gives up. The test reproduces that by clearing the instance;
+	 * a WC() call then re-enters the bootstrap, which the bootstrap filter records.
+	 *
+	 * @testdox The payments and Multi-Currency bootstrap makes no WC() call in a $request request with the $theme theme in the $state tier.
+	 * @dataProvider bootstrap_request_themes
+	 *
+	 * @param string $request Request class: front, ajax, rest, admin, cron or cli.
+	 * @param string $theme   Active theme stylesheet and template.
+	 * @param string $state   Native payments tier.
+	 */
+	public function test_bootstrap_makes_no_wc_call( string $request, string $theme, string $state ): void {
+		add_filter( 'pre_http_request', static fn() => new \WP_Error( 'blocked', 'Outbound HTTP is blocked in this test.' ) );
+		add_filter( 'pre_option_stylesheet', static fn() => $theme );
+		add_filter( 'pre_option_template', static fn() => $theme );
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		update_option( 'active_plugins', array_values( array_diff( (array) get_option( 'active_plugins', array() ), array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) ) ) );
+		update_option( NativePaymentsState::OPTION_NAME, $state );
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
+		update_option( 'wcpay_multi_currency_enable_storefront_switcher', 'yes' );
+		wc_get_container()->reset_all_resolved();
+
+		$wc_call  = null;
+		$entries  = 0;
+		$recorder = static function ( $enabled ) use ( &$entries, &$wc_call ) {
+			if ( 1 < ++$entries && null === $wc_call ) {
+				$wc_call = 'WC() was called';
+				foreach ( debug_backtrace( DEBUG_BACKTRACE_IGNORE_ARGS ) as $frame ) { // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_debug_backtrace
+					if ( 'WC' === $frame['function'] && ! isset( $frame['class'] ) ) {
+						$wc_call .= ' from ' . ( $frame['file'] ?? '?' ) . ':' . ( $frame['line'] ?? '?' );
+						break;
+					}
+				}
+				throw new \LogicException( 'WC() was called while the bootstrap ran.' );
+			}
+
+			return $enabled;
+		};
+		add_filter( NativePaymentsBootstrap::FILTER_BOOTSTRAP_ENABLED, $recorder );
+
+		$sut      = new NativePaymentsBootstrap(
+			static fn(): array => WooPaymentsProvider::get_bootstrap_root_matrix(),
+			static fn(): array => WooPaymentsProvider::get_multi_currency_provider_roots()
+		);
+		$instance = new \ReflectionProperty( \WooCommerce::class, '_instance' );
+		$instance->setAccessible( true );
+		$woocommerce = $instance->getValue();
+		$instance->setValue( null, null );
+		try {
+			$this->register_as( $sut, $request );
+		} catch ( \LogicException $e ) {
+			unset( $e );
+		} finally {
+			$instance->setValue( null, $woocommerce );
+			wc_get_container()->reset_all_resolved();
+		}
+
+		$this->assertNull( $wc_call, (string) $wc_call );
+		$this->assertSame( 1, $entries, 'The bootstrap must run once.' );
+	}
+
+	/** @return array<string,array{string,string,string}> */
+	public static function bootstrap_request_themes(): array {
+		$cases = array();
+		foreach ( array( 'front', 'ajax', 'rest', 'admin', 'cron', 'cli' ) as $request ) {
+			foreach ( array( 'storefront', 'twentytwentyfive' ) as $theme ) {
+				foreach ( array( NativePaymentsState::AVAILABLE, NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ) as $state ) {
+					$cases[ "$request, $theme, $state" ] = array( $request, $theme, $state );
+				}
+			}
+		}
+
+		return $cases;
+	}
+
+	/**
+	 * Run the bootstrap as WooCommerce loads it in one request class, with the shared container.
+	 *
+	 * @param NativePaymentsBootstrap $sut     Bootstrap under test.
+	 * @param string                  $request Request class: front, ajax, rest, admin, cron or cli.
+	 */
+	private function register_as( NativePaymentsBootstrap $sut, string $request ): void {
+		$filter = array(
+			'ajax' => 'wp_doing_ajax',
+			'cron' => 'wp_doing_cron',
+		)[ $request ] ?? null;
+		if ( null !== $filter ) {
+			add_filter( $filter, '__return_true' );
+		}
+		if ( 'cli' === $request ) {
+			Constants::set_constant( 'WP_CLI', true );
+		}
+		if ( 'admin' === $request ) {
+			set_current_screen( 'edit-page' );
+		}
+
+		try {
+			$sut->register( wc_get_container(), 'rest' === $request ? '__return_true' : '__return_false' );
+		} finally {
+			if ( null !== $filter ) {
+				remove_filter( $filter, '__return_true' );
+			}
+			Constants::clear_single_constant( 'WP_CLI' );
+			set_current_screen( 'front' );
 		}
 	}
 
