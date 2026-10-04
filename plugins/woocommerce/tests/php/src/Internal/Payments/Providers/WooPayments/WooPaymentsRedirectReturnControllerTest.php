@@ -881,6 +881,28 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox With debug logging off, an API failure fetching the intent still fails the order but writes no log line.
+	 *
+	 * Client 11.1.0 logs it through Logger::exception() (gw:2429), which writes only with debug logging on or in dev mode
+	 * (`src/Internal/Logger.php:64-91`).
+	 */
+	public function test_handle_wp_does_not_log_api_fetch_failure_with_logging_off(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$order                 = $this->create_order();
+		$api_client            = new RedirectReturnApiClientStub();
+		$api_client->exception = new WooPaymentsApiException( 'Transport unavailable.', 'wcpay_http_request_failed', 503 );
+		$logger                = new RedirectReturnRecordingLogger();
+		add_filter( 'woocommerce_logging_class', static fn() => $logger );
+		$this->sut = $this->create_controller( true, null, $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_api_error' );
+
+		$this->assertSame( wc_get_checkout_url(), $this->handle_wp_expecting_redirect() );
+		$this->assertSame( 'failed', wc_get_order( $order->get_id() )->get_status() );
+		$this->assertSame( array(), $logger->error_calls );
+	}
+
+	/**
 	 * @testdox A non-API error fetching the intent shows only the generic notice and is logged with its class even with debug logging off.
 	 *
 	 * Decided divergence (monitor ruling 2026-10-04): client 11.1.0 shows a non-API exception's raw message
