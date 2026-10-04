@@ -158,7 +158,7 @@ class PaymentProcessingService {
 				$reconciliation_persisted = $this->persist_reconciliation_context( $order, $provider_outcome, $provider );
 				$this->log_post_provider_apply_failure( $order, $provider_outcome, 'charge', $apply_exception, $reconciliation_persisted );
 
-				throw new PaymentOutcomeApplyException( $provider_outcome, $apply_exception );
+				throw new PaymentOutcomeApplyException( $provider_outcome, $apply_exception, $reconciliation_persisted );
 			}
 
 			return $outcome;

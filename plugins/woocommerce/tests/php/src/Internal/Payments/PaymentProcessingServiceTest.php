@@ -842,6 +842,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( $outcome, $exception->get_outcome(), 'A post-charge apply failure must hand back the successful outcome, not a downgraded one.' );
 		$this->assertSame( 'Simulated lifecycle failure after a successful charge.', $exception->get_failure()->getMessage() );
 		$this->assertSame( 'pi_post_charge', $order->get_transaction_id(), 'The provider payment reference must be persisted so the charge stays reconcilable.' );
+		$this->assertTrue( $exception->was_reconciliation_context_persisted(), 'The exception must report that the reference was saved.' );
 
 		$this->assertCount( 1, $fake_logger->error_calls, 'A post-charge apply failure must be logged at error level.' );
 		$context = $fake_logger->error_calls[0]['context'];
@@ -973,6 +974,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( $outcome, $exception->get_outcome() );
 		$this->assertSame( 'pi_existing_reference', $order->get_transaction_id(), 'An existing transaction reference must be preserved.' );
+		$this->assertFalse( $exception->was_reconciliation_context_persisted(), 'The exception must report that the reference was not saved.' );
 	}
 
 	/**
