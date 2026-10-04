@@ -95,12 +95,6 @@ export const loadPaypalScriptPromise = ( config ) => {
 	} );
 };
 
-export const loadPaypalJsScript = ( options, buttons, container ) => {
-	loadScript( options ).then( ( paypal ) => {
-		paypal.Buttons( buttons ).render( container );
-	} );
-};
-
 export const loadPaypalJsScriptPromise = ( options ) => {
 	return new Promise( ( resolve, reject ) => {
 		loadScript( options ).then( resolve ).catch( reject );

@@ -13,7 +13,7 @@ use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
 
 /**
  * Optional modules (Fastlane, card fields,
- * order tracking, PayPal Subscriptions) load behind feature flags or may be
+ * order tracking) load behind feature flags or may be
  * left out by a host. Code in other modules asks this service instead of
  * reading those modules' container IDs directly, so an absent module reads as
  * "not loaded, not eligible, not available" rather than as a missing service.

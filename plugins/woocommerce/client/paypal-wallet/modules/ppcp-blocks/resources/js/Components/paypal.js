@@ -8,16 +8,11 @@ import {
 import { convertKeysToSnakeCase } from '../Helper/Helper';
 import buttonModuleWatcher from '../../../../ppcp-button/resources/js/modules/ButtonModuleWatcher';
 import { normalizeStyleForFundingSource } from '../../../../ppcp-button/resources/js/modules/Helper/Style';
-import {
-	cartHasSubscriptionProducts,
-	isPayPalSubscription,
-} from '../Helper/Subscription';
+import { cartHasSubscriptionProducts } from '../Helper/Subscription';
 import {
 	createOrder,
-	createSubscription,
 	createVaultSetupToken,
 	handleApprove,
-	handleApproveSubscription,
 	onApproveSavePayment,
 } from '../paypal-config';
 import { useRef } from 'react';
@@ -467,43 +462,6 @@ export const PayPalComponent = ( {
 				onApprove={ ( { vaultSetupToken } ) =>
 					onApproveSavePayment( vaultSetupToken, config, onSubmit )
 				}
-			/>
-		);
-	}
-
-	if ( isPayPalSubscription( config.scriptData ) ) {
-		return (
-			<PayPalButton
-				fundingSource={ fundingSource }
-				style={ style }
-				onClick={ handleClick }
-				onCancel={ handleCancel }
-				onError={ onClose }
-				createSubscription={ ( data, actions ) =>
-					createSubscription( data, actions, config )
-				}
-				onApprove={ ( data, actions ) =>
-					handleApproveSubscription(
-						data,
-						actions,
-						config,
-						shouldHandleShippingInPayPal,
-						shippingData,
-						setPaypalOrder,
-						shouldskipFinalConfirmation,
-						getCheckoutRedirectUrl,
-						setGotoContinuationOnError,
-						onSubmit,
-						onError,
-						onClose
-					)
-				}
-				onShippingOptionsChange={ getOnShippingOptionsChange(
-					fundingSource
-				) }
-				onShippingAddressChange={ getOnShippingAddressChange(
-					fundingSource
-				) }
 			/>
 		);
 	}

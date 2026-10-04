@@ -59,7 +59,7 @@ class DisableGateways {
 		}
 
 		// Hide the PayPal gateway when the subscription cart cannot be processed (e.g. vaulting
-		// disabled for a subscription that requires it, with no PayPal plan or manual renewals),
+		// disabled for a subscription that requires it, with no manual renewals),
 		// instead of showing it with a disabled button.
 		if (
 			isset( $methods[ PayPalGateway::ID ] )

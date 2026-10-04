@@ -179,6 +179,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 		$this->subscription_helper->shouldReceive( 'cart_contains_subscription' )->andReturn( false )->byDefault();
 		$this->subscription_helper->shouldReceive( 'current_product_is_subscription' )->andReturn( false )->byDefault();
 		$this->subscription_helper->shouldReceive( 'order_pay_contains_subscription' )->andReturn( false )->byDefault();
+		$this->subscription_helper->shouldReceive( 'accept_manual_renewals' )->andReturn( false )->byDefault();
 
 		$this->free_trial_helper = $this->mock( FreeTrialSubscriptionHelper::class );
 		$this->free_trial_helper->shouldReceive( 'is_free_trial_cart' )->andReturn( false )->byDefault();
@@ -237,15 +238,15 @@ class SdkV6ManagerTest extends WalletTestCase {
 	/**
 	 * Build the manager.
 	 *
-	 * @param bool          $final_review_enabled   Whether the final review step is on.
-	 * @param callable|null $get_subscriptions_mode The subscriptions mode callable.
-	 * @param string        $class_name             The class to build.
+	 * @param bool   $final_review_enabled Whether the final review step is on.
+	 * @param string $class_name           The class to build.
+	 * @param bool   $vaulting_enabled     Whether "Save PayPal and Venmo" is on.
 	 * @return SdkV6Manager
 	 */
 	private function create_sut(
 		bool $final_review_enabled = false,
-		?callable $get_subscriptions_mode = null,
-		string $class_name = SdkV6Manager::class
+		string $class_name = SdkV6Manager::class,
+		bool $vaulting_enabled = false
 	): SdkV6Manager {
 		return new $class_name(
 			$this->asset_getter,
@@ -257,10 +258,9 @@ class SdkV6ManagerTest extends WalletTestCase {
 			$this->session_handler,
 			$this->cancel_view,
 			$final_review_enabled,
-			false,
+			$vaulting_enabled,
 			$this->subscription_helper,
 			$this->free_trial_helper,
-			$get_subscriptions_mode ?? static fn(): string => SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_VAULTING,
 			$this->message_style_mapper,
 			$this->messages_eligibility,
 			$this->fastlane_config
@@ -464,51 +464,74 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not load the SDK when native PayPal Subscriptions mode holds a subscription cart (wallet).
+	 * @testdox Should not load the SDK when a subscription cart cannot be vaulted and manual renewals are off (wallet).
 	 */
-	public function test_should_not_load_when_native_paypal_subscription_in_cart(): void {
+	public function test_should_not_load_when_subscription_in_cart_without_vaulting(): void {
 		$this->stub_page( 'checkout' );
 		$this->stub_buttons_everywhere( true );
 		$this->subscription_helper->shouldReceive( 'cart_contains_subscription' )->andReturn( true );
 
-		$sut = $this->create_sut( false, static fn(): string => SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_SUBSCRIPTIONS );
-
-		$this->assertFalse( $sut->should_load_on_current_page() );
+		$this->assertFalse( $this->create_sut()->should_load_on_current_page() );
 	}
 
 	/**
-	 * @testdox Should load the SDK in native subscriptions mode when no subscription is present (wallet).
+	 * @testdox Should load the SDK without vaulting when no subscription is present (wallet).
 	 */
-	public function test_should_load_when_subscriptions_mode_active_but_no_subscription_present(): void {
+	public function test_should_load_without_vaulting_when_no_subscription_present(): void {
 		$this->stub_page( 'checkout' );
 		$this->stub_buttons_everywhere( true );
 
-		$sut = $this->create_sut( false, static fn(): string => SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_SUBSCRIPTIONS );
-
-		$this->assertTrue( $sut->should_load_on_current_page() );
+		$this->assertTrue( $this->create_sut()->should_load_on_current_page() );
 	}
 
 	/**
-	 * @testdox Should load the SDK in vaulting mode with a subscription in the cart (wallet).
+	 * @testdox Should load the SDK with vaulting on and a subscription in the cart (wallet).
 	 */
-	public function test_should_load_when_vaulting_mode_with_subscription_in_cart(): void {
+	public function test_should_load_when_vaulting_with_subscription_in_cart(): void {
 		$this->stub_page( 'checkout' );
 		$this->stub_buttons_everywhere( true );
 		$this->subscription_helper->shouldReceive( 'cart_contains_subscription' )->andReturn( true );
 
-		$sut = $this->create_sut( false, static fn(): string => SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_VAULTING );
-
-		$this->assertTrue( $sut->should_load_on_current_page() );
+		$this->assertTrue( $this->create_sut( false, SdkV6Manager::class, true )->should_load_on_current_page() );
 	}
 
 	/**
-	 * @testdox Should render no v6 location when native PayPal Subscriptions mode holds a subscription product (wallet).
+	 * @testdox Should load the SDK with manual renewals on, vaulting off and a subscription in the cart (wallet).
 	 */
-	public function test_determine_render_places_empty_when_native_paypal_subscription_product(): void {
+	public function test_should_load_when_manual_renewals_with_subscription_in_cart(): void {
+		$this->stub_page( 'checkout' );
+		$this->stub_buttons_everywhere( true );
+		$this->subscription_helper->shouldReceive( 'cart_contains_subscription' )->andReturn( true );
+		$this->subscription_helper->shouldReceive( 'accept_manual_renewals' )->andReturn( true );
+
+		$this->assertTrue( $this->create_sut()->should_load_on_current_page() );
+	}
+
+	/**
+	 * @testdox Should load the SDK on a subscription page without vaulting when the subscription mode filter opts out (wallet).
+	 */
+	public function test_should_load_when_subscription_mode_filter_opts_out(): void {
+		$this->stub_page( 'checkout' );
+		$this->stub_buttons_everywhere( true );
+		$this->subscription_helper->shouldReceive( 'cart_contains_subscription' )->andReturn( true );
+		add_filter( 'woocommerce_paypal_payments_subscription_mode_disabled', '__return_true' );
+
+		try {
+			$loads = $this->create_sut()->should_load_on_current_page();
+		} finally {
+			remove_filter( 'woocommerce_paypal_payments_subscription_mode_disabled', '__return_true' );
+		}
+
+		$this->assertTrue( $loads );
+	}
+
+	/**
+	 * @testdox Should render no v6 location when a subscription product cannot be vaulted and manual renewals are off (wallet).
+	 */
+	public function test_determine_render_places_empty_when_subscription_product_without_vaulting(): void {
 		$this->context->shouldReceive( 'init_context' )->never();
+		$this->stub_buttons_everywhere( true );
 		$this->subscription_helper->shouldReceive( 'current_product_is_subscription' )->andReturn( true );
-
-		$sut = $this->create_sut( false, static fn(): string => SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_SUBSCRIPTIONS );
 
 		$this->assertSame(
 			array(
@@ -518,7 +541,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 				'pay-now'   => false,
 				'mini-cart' => false,
 			),
-			$sut->determine_render_places()
+			$this->create_sut()->determine_render_places()
 		);
 	}
 
@@ -1429,7 +1452,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 		$this->stub_buttons_everywhere( true );
 		$this->stub_cart( array( 'needs_payment' => true ) );
 
-		$sut                     = $this->create_sut( false, null, SdkV6ManagerFreeTrialStub::class );
+		$sut                     = $this->create_sut( false, SdkV6ManagerFreeTrialStub::class );
 		$sut->free_trial_product = $free_trial_product;
 
 		$this->assertSame( $expected_product, $sut->determine_render_places()['product'] );
@@ -1444,7 +1467,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 		$this->settings_status->shouldReceive( 'is_smart_button_enabled_for_location' )->andReturn( true );
 		$this->stub_cart( array( 'needs_payment' => true ) );
 
-		$sut                     = $this->create_sut( false, null, SdkV6ManagerFreeTrialStub::class );
+		$sut                     = $this->create_sut( false, SdkV6ManagerFreeTrialStub::class );
 		$sut->free_trial_product = false;
 
 		$this->assertFalse( $sut->determine_render_places()['product'] );
@@ -1458,7 +1481,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 		$this->stub_buttons_everywhere( true );
 		$this->stub_cart( array( 'needs_payment' => true ) );
 
-		$sut                     = $this->create_sut( false, null, SdkV6ManagerFreeTrialStub::class );
+		$sut                     = $this->create_sut( false, SdkV6ManagerFreeTrialStub::class );
 		$sut->free_trial_product = true;
 		$result                  = $sut->determine_render_places();
 

@@ -2,7 +2,6 @@ import 'formdata-polyfill';
 import onApprove from '../OnApproveHandler/onApproveForPayNow.js';
 import { payerData } from '../Helper/PayerData';
 import { getCurrentPaymentMethod } from '../Helper/CheckoutMethodState';
-import validateCheckoutForm from '../Helper/CheckoutFormValidation';
 import ResumeFlowHelper from '../Helper/ResumeFlowHelper';
 
 class CheckoutActionHandler {
@@ -10,43 +9,6 @@ class CheckoutActionHandler {
 		this.config = config;
 		this.errorHandler = errorHandler;
 		this.spinner = spinner;
-	}
-
-	subscriptionsConfiguration( subscription_plan_id ) {
-		return {
-			createSubscription: async ( data, actions ) => {
-				try {
-					await validateCheckoutForm( this.config );
-				} catch {
-					throw { type: 'form-validation-error' };
-				}
-
-				return actions.subscription.create( {
-					plan_id: subscription_plan_id,
-					custom_id: this.config.subscription_custom_id,
-				} );
-			},
-			onApprove: ( data, _actions ) => {
-				fetch( this.config.ajax.approve_subscription.endpoint, {
-					method: 'POST',
-					credentials: 'same-origin',
-					body: JSON.stringify( {
-						nonce: this.config.ajax.approve_subscription.nonce,
-						order_id: data.orderID,
-						subscription_id: data.subscriptionID,
-					} ),
-				} )
-					.then( ( res ) => {
-						return res.json();
-					} )
-					.then( ( _data ) => {
-						document.querySelector( '#place_order' ).click();
-					} );
-			},
-			onError: ( err ) => {
-				console.error( err );
-			},
-		};
 	}
 
 	configuration() {

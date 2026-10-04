@@ -562,7 +562,6 @@ return array(
 		 * @param bool $is_pay_later_messaging_product_eligible - Show if Pay Later is not enabled anywhere and specifically not on product page.
 		 * @param bool $is_pay_later_messaging_cart_eligible - Show if Pay Later is not enabled anywhere and specifically not on cart.
 		 * @param bool $is_pay_later_messaging_checkout_eligible - Show if Pay Later is not enabled anywhere and specifically not on checkout.
-		 * @param bool $is_subscription_eligible - Show if WooCommerce Subscriptions plugin is active but merchant is not eligible for PayPal Vaulting.
 		 * @param bool $is_paypal_buttons_cart_eligible - Show if PayPal buttons are not enabled on cart page.
 		 * @param bool $is_paypal_buttons_block_checkout_eligible - Show if PayPal buttons are not enabled on blocks checkout.
 		 * @param bool $is_paypal_buttons_product_eligible - Show if PayPal buttons are not enabled on product page.
@@ -577,10 +576,6 @@ return array(
 			! $is_pay_later_messaging_enabled_for_any_location && ! $pay_later_statuses['product'],       // Add Pay Later messaging (Product page).
 			! $is_pay_later_messaging_enabled_for_any_location && ! $pay_later_statuses['cart'],          // Add Pay Later messaging (Cart).
 			! $is_pay_later_messaging_enabled_for_any_location && ! $pay_later_statuses['checkout'],      // Add Pay Later messaging (Checkout).
-			$container->has( 'save-payment-methods.eligible' ) &&
-			! $container->get( 'save-payment-methods.eligible' ) &&
-			$container->has( 'wc-subscriptions.helper' ) &&
-			$container->get( 'wc-subscriptions.helper' )->plugin_is_active(),                             // Configure a PayPal Subscription.
 			! $button_locations['cart_enabled'],                                                          // Add PayPal buttons to cart.
 			! $button_locations['block_checkout_enabled'],                                                // Add PayPal buttons to block checkout.
 			! $button_locations['product_enabled'],                                                       // Add PayPal buttons to product.

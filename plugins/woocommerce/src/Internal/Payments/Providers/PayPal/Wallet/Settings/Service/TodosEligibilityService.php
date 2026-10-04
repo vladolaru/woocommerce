@@ -3,8 +3,7 @@
  * Eligibility service for Todos.
  *
  * This file contains the TodosEligibilityService class which manages eligibility checks
- * for various features including Fastlane, card payments, Pay Later messaging,
- * and subscriptions.
+ * for various features including Fastlane, card payments, and Pay Later messaging.
  *
  * @package Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service
  */
@@ -51,13 +50,6 @@ class TodosEligibilityService {
 	 * @var bool
 	 */
 	private bool $is_pay_later_messaging_checkout_eligible;
-
-	/**
-	 * Whether subscriptions are eligible.
-	 *
-	 * @var bool
-	 */
-	private bool $is_subscription_eligible;
 
 	/**
 	 * Whether PayPal buttons for cart are eligible.
@@ -123,7 +115,6 @@ class TodosEligibilityService {
 	 * @param bool $is_pay_later_messaging_product_eligible Whether Pay Later messaging for product page is eligible.
 	 * @param bool $is_pay_later_messaging_cart_eligible Whether Pay Later messaging for cart is eligible.
 	 * @param bool $is_pay_later_messaging_checkout_eligible Whether Pay Later messaging for checkout is eligible.
-	 * @param bool $is_subscription_eligible            Whether subscriptions are eligible.
 	 * @param bool $is_paypal_buttons_cart_eligible     Whether PayPal buttons for cart are eligible.
 	 * @param bool $is_paypal_buttons_block_checkout_eligible Whether PayPal buttons for block checkout are eligible.
 	 * @param bool $is_paypal_buttons_product_eligible  Whether PayPal buttons for product page are eligible.
@@ -139,7 +130,6 @@ class TodosEligibilityService {
 		bool $is_pay_later_messaging_product_eligible,
 		bool $is_pay_later_messaging_cart_eligible,
 		bool $is_pay_later_messaging_checkout_eligible,
-		bool $is_subscription_eligible,
 		bool $is_paypal_buttons_cart_eligible,
 		bool $is_paypal_buttons_block_checkout_eligible,
 		bool $is_paypal_buttons_product_eligible,
@@ -154,7 +144,6 @@ class TodosEligibilityService {
 		$this->is_pay_later_messaging_product_eligible   = $is_pay_later_messaging_product_eligible;
 		$this->is_pay_later_messaging_cart_eligible      = $is_pay_later_messaging_cart_eligible;
 		$this->is_pay_later_messaging_checkout_eligible  = $is_pay_later_messaging_checkout_eligible;
-		$this->is_subscription_eligible                  = $is_subscription_eligible;
 		$this->is_paypal_buttons_cart_eligible           = $is_paypal_buttons_cart_eligible;
 		$this->is_paypal_buttons_block_checkout_eligible = $is_paypal_buttons_block_checkout_eligible;
 		$this->is_paypal_buttons_product_eligible        = $is_paypal_buttons_product_eligible;
@@ -177,7 +166,6 @@ class TodosEligibilityService {
 			'add_pay_later_messaging_product_page' => fn() => $this->is_pay_later_messaging_product_eligible,
 			'add_pay_later_messaging_cart'         => fn() => $this->is_pay_later_messaging_cart_eligible,
 			'add_pay_later_messaging_checkout'     => fn() => $this->is_pay_later_messaging_checkout_eligible,
-			'configure_paypal_subscription'        => fn() => $this->is_subscription_eligible,
 			'add_paypal_buttons_cart'              => fn() => $this->is_paypal_buttons_cart_eligible,
 			'add_paypal_buttons_block_checkout'    => fn() => $this->is_paypal_buttons_block_checkout_eligible,
 			'add_paypal_buttons_product'           => fn() => $this->is_paypal_buttons_product_eligible,

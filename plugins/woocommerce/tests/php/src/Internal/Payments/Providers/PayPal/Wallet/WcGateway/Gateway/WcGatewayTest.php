@@ -421,7 +421,6 @@ class WcGatewayTest extends WalletTestCase {
 
 		$this->assertSame( 'success', $result['result'] );
 		$this->assertSame( $this->create_gateway()->get_return_url( $order ), $result['redirect'] );
-		$this->assertSame( '', WC()->session->get( 'ppcp_subscription_id' ), 'The subscription ID should be cleared from the session' );
 	}
 
 	/**

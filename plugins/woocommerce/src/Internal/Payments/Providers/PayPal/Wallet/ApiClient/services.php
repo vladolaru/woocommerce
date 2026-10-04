@@ -17,7 +17,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\A
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Authentication\SdkClientToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Authentication\TokenRateLimiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Authentication\UserIdToken;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\BillingSubscriptions;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\IdentityToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\LoginSeller;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\OrderEndpoint;
@@ -44,7 +43,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\F
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\PatchCollectionFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\PayeeFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\PayerFactory;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\PaymentPreferencesFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\PaymentsFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\PlatformFeeFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\PurchaseUnitFactory;
@@ -355,13 +353,6 @@ return array(
 	'api.reference-transaction-status'               => static fn ( ContainerInterface $container ): ReferenceTransactionStatus => new ReferenceTransactionStatus(
 		$container->get( 'api.endpoint.partners' )
 	),
-	'api.endpoint.billing-subscriptions'             => static function ( ContainerInterface $container ): BillingSubscriptions {
-		return new BillingSubscriptions(
-			$container->get( 'api.host' ),
-			$container->get( 'api.bearer' ),
-			$container->get( 'woocommerce.logger.woocommerce' )
-		);
-	},
 	'api.endpoint.payment-method-tokens'             => static function ( ContainerInterface $container ): PaymentMethodTokensEndpoint {
 		return new PaymentMethodTokensEndpoint(
 			$container->get( 'api.host' ),
@@ -540,9 +531,6 @@ return array(
 	},
 	'api.factory.fraud-processor-response'           => static function ( ContainerInterface $container ): FraudProcessorResponseFactory {
 		return new FraudProcessorResponseFactory();
-	},
-	'api.factory.payment-preferences'                => static function ( ContainerInterface $container ): PaymentPreferencesFactory {
-		return new PaymentPreferencesFactory( $container->get( 'api.shop.currency.getter' ) );
 	},
 	'api.helpers.dccapplies'                         => static function ( ContainerInterface $container ): DccApplies {
 		return new DccApplies(
@@ -896,7 +884,7 @@ return array(
 		}
 
 		$vaulting                = $settings_provider->save_paypal_and_venmo();
-		$subscription_mode_value = $vaulting ? SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_VAULTING : SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_SUBSCRIPTIONS;
+		$subscription_mode_value = $vaulting ? SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_VAULTING : SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_DISABLED;
 
 		/**
 		 * Allows disabling the subscription mode when using the new settings UI.

@@ -93,24 +93,6 @@ export const paypalPayerToWc = ( payer ) => {
 };
 
 /**
- * @param {Object} subscriber
- * @return {Object}
- */
-export const paypalSubscriberToWc = ( subscriber ) => {
-	const firstName = subscriber?.name?.given_name ?? '';
-	const lastName = subscriber?.name?.surname ?? '';
-	const address = subscriber.address
-		? paypalAddressToWc( subscriber.shipping_address.address )
-		: {};
-	return {
-		...address,
-		first_name: firstName,
-		last_name: lastName,
-		email: subscriber.email_address,
-	};
-};
-
-/**
  * @param {Object} order
  * @return {Object}
  */
@@ -163,17 +145,6 @@ export const paypalOrderToWcAddresses = ( order ) => {
 		}
 	}
 
-	return { billingAddress, shippingAddress };
-};
-
-/**
- *
- * @param  subscription
- * @return {{shippingAddress: Object, billingAddress: Object}}
- */
-export const paypalSubscriptionToWcAddresses = ( subscription ) => {
-	const shippingAddress = paypalSubscriberToWc( subscription.subscriber );
-	const billingAddress = shippingAddress;
 	return { billingAddress, shippingAddress };
 };
 

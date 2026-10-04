@@ -116,17 +116,6 @@ class TodosDefinition {
 				),
 				'priority'    => 4,
 			),
-			'configure_paypal_subscription'        => array(
-				'title'       => __( 'Configure a PayPal Subscription', 'woocommerce' ),
-				'description' => __( 'Connect a subscriptions-type product from WooCommerce with PayPal', 'woocommerce' ),
-				'isEligible'  => $eligibility_checks['configure_paypal_subscription'],
-				'action'      => array(
-					'type'            => 'external',
-					'url'             => 'https://woocommerce.com/document/woocommerce-paypal-payments/#paypal-subscriptions',
-					'completeOnClick' => true,
-				),
-				'priority'    => 5,
-			),
 			'add_paypal_buttons_cart'              => array(
 				'title'       => __( 'Add PayPal buttons to the Cart page', 'woocommerce' ),
 				'description' => __( 'Allow customers to check out quickly and securely from the Cart page. Customers save time and get through checkout in fewer clicks.', 'woocommerce' ),

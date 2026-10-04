@@ -9,48 +9,6 @@ class CartActionHandler {
 		this.errorHandler = errorHandler;
 	}
 
-	subscriptionsConfiguration( subscriptionPlanId ) {
-		return {
-			createSubscription: ( data, actions ) => {
-				return actions.subscription.create( {
-					plan_id: subscriptionPlanId,
-					custom_id: this.config.subscription_custom_id,
-				} );
-			},
-			onApprove: ( data ) => {
-				fetch( this.config.ajax.approve_subscription.endpoint, {
-					method: 'POST',
-					credentials: 'same-origin',
-					body: JSON.stringify( {
-						nonce: this.config.ajax.approve_subscription.nonce,
-						order_id: data.orderID,
-						subscription_id: data.subscriptionID,
-						should_create_wc_order:
-							! this.config.vaultingEnabled ||
-							data.paymentSource !== 'venmo',
-					} ),
-				} )
-					.then( ( res ) => {
-						return res.json();
-					} )
-					.then( ( data ) => {
-						if ( ! data.success ) {
-							throw Error( data.data.message );
-						}
-
-						const orderReceivedUrl = data.data?.order_received_url;
-
-						location.href = orderReceivedUrl
-							? orderReceivedUrl
-							: this.config.redirect;
-					} );
-			},
-			onError: ( err ) => {
-				console.error( err );
-			},
-		};
-	}
-
 	configuration() {
 		const errorHandler = this.errorHandler;
 		const createOrder = () => {

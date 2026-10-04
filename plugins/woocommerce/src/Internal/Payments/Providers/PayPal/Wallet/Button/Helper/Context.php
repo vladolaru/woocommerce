@@ -4,9 +4,6 @@ declare(strict_types=1);
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Helper;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\OrderStatus;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\PayPalApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\RuntimeException;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PayPalSubscriptions\SubscriptionStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Session\SessionHandler;
 
 class Context {
@@ -14,25 +11,12 @@ class Context {
 	protected SessionHandler $session_handler;
 
 	/**
-	 * The PayPal Subscriptions status helper, or null when that module is not loaded.
-	 *
-	 * @var SubscriptionStatus|null
-	 */
-	protected ?SubscriptionStatus $subscription_status;
-
-	/**
 	 * Context constructor.
 	 *
-	 * @param SessionHandler          $session_handler     The session handler.
-	 * @param SubscriptionStatus|null $subscription_status The subscription status helper, null when PayPal Subscriptions is not loaded.
+	 * @param SessionHandler $session_handler The session handler.
 	 */
-	public function __construct(
-		SessionHandler $session_handler,
-		?SubscriptionStatus $subscription_status = null
-	) {
-
-		$this->session_handler     = $session_handler;
-		$this->subscription_status = $subscription_status;
+	public function __construct( SessionHandler $session_handler ) {
+		$this->session_handler = $session_handler;
 	}
 
 	/**
@@ -272,30 +256,8 @@ class Context {
 			return false;
 		}
 
-		/** @var string $subscription_id */
-		$subscription_id = wc()->session->get( 'ppcp_subscription_id' );
-
 		if ( ! $order->status()->is( OrderStatus::APPROVED )
 			&& ! $order->status()->is( OrderStatus::COMPLETED )
-			&& ! $subscription_id
-		) {
-			return false;
-		}
-
-		$subscription_status = '';
-		if ( $subscription_id ) {
-			if ( null === $this->subscription_status ) {
-				return false;
-			}
-			try {
-				$subscription_status = $this->subscription_status->get_status( $subscription_id );
-			} catch ( RuntimeException | PayPalApiException $exception ) {
-				return false;
-			}
-		}
-
-		if ( $subscription_id &&
-			'ACTIVE' !== $subscription_status
 		) {
 			return false;
 		}

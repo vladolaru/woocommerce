@@ -2,8 +2,6 @@ import UpdateCart from '@ppcp-button/Helper/UpdateCart';
 import SingleProductActionHandler from '@ppcp-button/ActionHandler/SingleProductActionHandler';
 import { hide, show } from '@ppcp-button/Helper/Hiding';
 import BootstrapHelper from '@ppcp-button/Helper/BootstrapHelper';
-import { loadPaypalJsScript } from '@ppcp-button/Helper/ScriptLoading';
-import { getPlanIdFromVariation } from '@ppcp-button/Helper/Subscriptions';
 import SimulateCart from '@ppcp-button/Helper/SimulateCart';
 import { strRemoveWord, strAddWord, throttle } from '@ppcp-button/Helper/Utils';
 import merge from 'deepmerge';
@@ -38,8 +36,6 @@ class SingleProductBootstrap {
 			},
 			true
 		);
-
-		this.subscriptionButtonsLoaded = false;
 	}
 
 	form() {
@@ -47,8 +43,6 @@ class SingleProductBootstrap {
 	}
 
 	handleChange() {
-		this.subscriptionButtonsLoaded = false;
-
 		if ( ! this.shouldRender() ) {
 			this.renderer.disableSmartButtons( this.gateway.button.wrapper );
 			hide( this.gateway.button.wrapper, this.formSelector );
@@ -250,61 +244,6 @@ class SingleProductBootstrap {
 		);
 
 		if (
-			PayPalCommerceGateway.data_client_id.has_subscriptions &&
-			PayPalCommerceGateway.data_client_id.paypal_subscriptions_enabled
-		) {
-			const subscription_plan =
-				this.variations() !== null
-					? getPlanIdFromVariation( this.variations() )
-					: PayPalCommerceGateway.subscription_plan_id;
-
-			// Manual renewals mean the merchant bills renewals themselves, so
-			// no PayPal subscription plan is required; fall through to the
-			// standard button below instead of leaving the wrapper empty.
-			const manualRenewalStandardCheckout =
-				! this.gateway.vaultingEnabled &&
-				this.gateway.manualRenewalEnabled === '1';
-
-			if ( ! subscription_plan && ! manualRenewalStandardCheckout ) {
-				return;
-			}
-
-			if ( subscription_plan ) {
-				if ( this.subscriptionButtonsLoaded ) {
-					return;
-				}
-
-				// Only clear the wrapper right before this render path
-				// actually uses it: the standard renderer below has its own
-				// isAlreadyRendered() guard, which clearing here would
-				// defeat on every re-render triggered by its own
-				// onButtonsInit callback, causing a destroy/recreate loop.
-				const buttonWrapper = document.getElementById(
-					'ppc-button-ppcp-gateway'
-				);
-				buttonWrapper.innerHTML = '';
-
-				loadPaypalJsScript(
-					{
-						clientId: PayPalCommerceGateway.client_id,
-						currency: PayPalCommerceGateway.currency,
-						intent: 'subscription',
-						vault: true,
-						disable_funding:
-							this.gateway.url_params[ 'disable-funding' ],
-					},
-					actionHandler.subscriptionsConfiguration(
-						subscription_plan
-					),
-					this.gateway.button.wrapper
-				);
-
-				this.subscriptionButtonsLoaded = true;
-				return;
-			}
-		}
-
-		if (
 			! this.gateway.vaultingEnabled &&
 			[ 'subscription', 'variable-subscription' ].includes(
 				this.gateway.productType
@@ -329,13 +268,7 @@ class SingleProductBootstrap {
 			this.errorHandler
 		);
 
-		const hasSubscriptions =
-			PayPalCommerceGateway.data_client_id.has_subscriptions &&
-			PayPalCommerceGateway.data_client_id.paypal_subscriptions_enabled;
-
-		const products = hasSubscriptions
-			? actionHandler.getSubscriptionProducts()
-			: actionHandler.getProducts();
+		const products = actionHandler.getProducts();
 
 		new SimulateCart(
 			this.gateway.ajax.simulate_cart.endpoint,

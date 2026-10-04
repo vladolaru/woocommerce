@@ -15,7 +15,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Asse
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Assets\SmartButton;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Assets\SmartButtonInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint\ApproveOrderEndpoint;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Endpoint\ApproveSubscriptionEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Endpoint\CartScriptParamsEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint\ChangeCartEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint\CreateOrderEndpoint;
@@ -180,27 +179,10 @@ return array(
 	'button.endpoint.approve-order'               => static function ( ContainerInterface $container ): ApproveOrderEndpoint {
 		return $container->get( 'order-endpoints.endpoint.approve-order' );
 	},
-	'button.endpoint.approve-subscription'        => static function ( ContainerInterface $container ): ApproveSubscriptionEndpoint {
-		return new ApproveSubscriptionEndpoint(
-			$container->get( 'button.request-data' ),
-			$container->get( 'api.endpoint.order' ),
-			$container->get( 'session.handler' ),
-			$container->get( 'blocks.settings.final_review_enabled' ),
-			$container->get( 'button.helper.wc-order-creator' ),
-			$container->get( 'wcgateway.paypal-gateway' ),
-			$container->get( 'button.helper.context' ),
-			$container->get( 'api.endpoint.billing-subscriptions' ),
-			$container->get( 'woocommerce.logger.woocommerce' ),
-			$container->get( 'wc-subscriptions.helper' )
-		);
-	},
 	'button.helper.context'                       => static function ( ContainerInterface $container ): Context {
 		$session_handler = $container->get( 'session.handler' );
-		$subscription_status = $container->get( 'ppcp.module-availability' )->is_loaded( 'paypal-subscriptions' )
-			? $container->get( 'paypal-subscriptions.status' )
-			: null;
 
-		return new Context( $session_handler, $subscription_status );
+		return new Context( $session_handler );
 	},
 	'button.checkout-form-saver'                  => static function ( ContainerInterface $container ): CheckoutFormSaver {
 		return new CheckoutFormSaver(

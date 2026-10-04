@@ -9,10 +9,8 @@ const baseData = ( overrides = {} ) => ( {
 	context: 'cart',
 	is_free_trial_cart: false,
 	can_save_vault_token: false,
-	subscription_product_allowed: false,
 	data_client_id: {
 		has_subscriptions: false,
-		paypal_subscriptions_enabled: false,
 	},
 	...overrides,
 } );
@@ -48,35 +46,13 @@ describe( 'paypalSubscriptionButtonAllowed', () => {
 		).toBe( true );
 	} );
 
-	it( 'falls back to hide in vaulting mode when vaulting is disabled', () => {
+	it( 'falls back to hide when vaulting is disabled', () => {
 		const data = baseData( { can_save_vault_token: false } );
 		expect( paypalSubscriptionButtonAllowed( data ) ).toBe( false );
 	} );
 
-	it( 'falls back to show in vaulting mode when vaulting is enabled', () => {
+	it( 'falls back to show when vaulting is enabled', () => {
 		const data = baseData( { can_save_vault_token: true } );
-		expect( paypalSubscriptionButtonAllowed( data ) ).toBe( true );
-	} );
-
-	it( 'falls back to hide in subscriptions mode when the product is not allowed', () => {
-		const data = baseData( {
-			data_client_id: {
-				has_subscriptions: true,
-				paypal_subscriptions_enabled: true,
-			},
-			subscription_product_allowed: false,
-		} );
-		expect( paypalSubscriptionButtonAllowed( data ) ).toBe( false );
-	} );
-
-	it( 'falls back to show in subscriptions mode when the product is allowed', () => {
-		const data = baseData( {
-			data_client_id: {
-				has_subscriptions: true,
-				paypal_subscriptions_enabled: true,
-			},
-			subscription_product_allowed: true,
-		} );
 		expect( paypalSubscriptionButtonAllowed( data ) ).toBe( true );
 	} );
 } );

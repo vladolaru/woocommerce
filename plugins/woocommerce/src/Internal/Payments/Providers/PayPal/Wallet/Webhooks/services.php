@@ -15,15 +15,10 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\E
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\WebhookFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetter;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetterFactory;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ModuleAvailability;
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\Endpoint\ResubscribeEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\Endpoint\SimulateEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\Endpoint\SimulationStateEndpoint;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\Handler\BillingPlanPricingChangeActivated;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\Handler\BillingPlanUpdated;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\Handler\BillingSubscriptionCancelled;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\Handler\CatalogProductUpdated;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\Handler\CheckoutOrderApproved;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\Handler\CheckoutOrderCompleted;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\Handler\CheckoutPaymentApprovalReversed;
@@ -31,7 +26,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\Ha
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\Handler\PaymentCapturePending;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\Handler\PaymentCaptureRefunded;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\Handler\PaymentCaptureReversed;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\Handler\PaymentSaleCompleted;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\Handler\PaymentSaleRefunded;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\Handler\VaultPaymentTokenDeleted;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\OwnWebhookResolver;
@@ -118,17 +112,7 @@ return array(
 			new VaultPaymentTokenDeleted( $logger ),
 			new PaymentCapturePending( $logger ),
 			new PaymentSaleRefunded( $logger, $refund_fees_updater ),
-			new BillingSubscriptionCancelled( $logger ),
-			new BillingPlanPricingChangeActivated( $logger ),
-			new CatalogProductUpdated( $logger ),
-			new BillingPlanUpdated( $logger ),
 		);
-
-		$availability = $container->get( 'ppcp.module-availability' );
-		assert( $availability instanceof ModuleAvailability );
-		if ( $availability->is_loaded( 'paypal-subscriptions' ) ) {
-			$handlers[] = new PaymentSaleCompleted( $logger, $container->get( 'paypal-subscriptions.renewal-handler' ) );
-		}
 
 		return $handlers;
 	},

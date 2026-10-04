@@ -75,14 +75,6 @@ class SdkV6Manager {
 	private SubscriptionHelper $subscription_helper;
 	private FreeTrialSubscriptionHelper $free_trial_helper;
 
-	/**
-	 * Resolves the current subscriptions mode ('subscriptions_api',
-	 * 'vaulting_api', …). Native PayPal Subscriptions run in 'subscriptions_api'.
-	 *
-	 * @var callable():string
-	 */
-	private $get_subscriptions_mode;
-
 	private MessageStyleMapper $message_style_mapper;
 	private MessagesEligibility $messages_eligibility;
 	private FastlaneConfig $fastlane_config;
@@ -115,7 +107,6 @@ class SdkV6Manager {
 		bool $vaulting_enabled,
 		SubscriptionHelper $subscription_helper,
 		FreeTrialSubscriptionHelper $free_trial_helper,
-		callable $get_subscriptions_mode,
 		MessageStyleMapper $message_style_mapper,
 		MessagesEligibility $messages_eligibility,
 		FastlaneConfig $fastlane_config
@@ -132,7 +123,6 @@ class SdkV6Manager {
 		$this->vaulting_enabled            = $vaulting_enabled;
 		$this->subscription_helper         = $subscription_helper;
 		$this->free_trial_helper           = $free_trial_helper;
-		$this->get_subscriptions_mode      = $get_subscriptions_mode;
 		$this->message_style_mapper        = $message_style_mapper;
 		$this->messages_eligibility        = $messages_eligibility;
 		$this->fastlane_config             = $fastlane_config;
@@ -191,12 +181,12 @@ class SdkV6Manager {
 	 * @return array<string, bool> Location => enabled (product, cart, checkout, pay-now, mini-cart).
 	 */
 	public function determine_render_places(): array {
-		// Native PayPal Subscriptions defer to v5 (see should_load_on_current_page);
+		// Subscription pages that cannot vault defer to v5 (see should_load_on_current_page);
 		// print no v6 wrappers so the classic page hands off cleanly. These render
 		// hooks key on the smart-button locations rather than that method, so they
 		// need this guard explicitly. Every location is returned false (rather than
 		// an empty array) to keep the array shape callers index into.
-		if ( $this->is_native_paypal_subscription_page() ) {
+		if ( $this->is_subscription_page_without_vaulting() ) {
 			return array(
 				'product'   => false,
 				'cart'      => false,
@@ -293,12 +283,11 @@ class SdkV6Manager {
 	 * The uncached answer for should_load_on_current_page().
 	 */
 	private function resolve_should_load(): bool {
-		// Native PayPal Subscriptions (subscriptions_api mode) have no v6 path: v6
-		// can only carry a subscription by vaulting, which that mode disables. Hand
-		// the whole page back to the v5 stack, which creates the subscription via
-		// actions.subscription.create. Checked before every other gate so it also
+		// A subscription page with vaulting off and manual renewals off has no v6
+		// path: v6 can only carry a subscription by vaulting. Hand the whole page
+		// back to the v5 stack. Checked before every other gate so it also
 		// overrides the sitewide mini-cart fallback below.
-		if ( $this->is_native_paypal_subscription_page() ) {
+		if ( $this->is_subscription_page_without_vaulting() ) {
 			return false;
 		}
 
@@ -341,19 +330,23 @@ class SdkV6Manager {
 	}
 
 	/**
-	 * Whether the current page involves a native PayPal Subscription that the v5
-	 * stack must handle: subscriptions_api mode with a subscription in the current
-	 * context. v6 has no native-subscription flow (it can only carry a subscription
-	 * by vaulting, which this mode disables), so it defers the page to v5.
+	 * Whether the current page holds a subscription that PayPal cannot take.
+	 *
+	 * That is a subscription in the current context while "Save PayPal and Venmo"
+	 * and manual renewals are both off. v6 can only carry a subscription by
+	 * vaulting, so it defers the page to v5. The
+	 * `woocommerce_paypal_payments_subscription_mode_disabled` filter opts out.
 	 */
-	private function is_native_paypal_subscription_page(): bool {
-		if ( SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_SUBSCRIPTIONS !== ( $this->get_subscriptions_mode )() ) {
+	private function is_subscription_page_without_vaulting(): bool {
+		if ( $this->vaulting_enabled || $this->subscription_helper->accept_manual_renewals() ) {
 			return false;
 		}
 
-		return $this->subscription_helper->current_product_is_subscription()
+		$has_subscription = $this->subscription_helper->current_product_is_subscription()
 			|| $this->subscription_helper->cart_contains_subscription()
 			|| $this->subscription_helper->order_pay_contains_subscription();
+
+		return $has_subscription && ! apply_filters( 'woocommerce_paypal_payments_subscription_mode_disabled', false );
 	}
 
 	/**

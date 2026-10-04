@@ -377,40 +377,6 @@ return array(
 	'wcgateway.admin.fees-renderer'                        => static function ( ContainerInterface $container ): FeesRenderer {
 		return new FeesRenderer();
 	},
-	'wcgateway.settings.fields.subscriptions_mode_options' => static function ( ContainerInterface $container ): array {
-		return array(
-			'vaulting_api'                 => __( 'PayPal Vaulting', 'woocommerce' ),
-			'subscriptions_api'            => __( 'PayPal Subscriptions', 'woocommerce' ),
-			'disable_paypal_subscriptions' => __( 'Disable PayPal for subscriptions', 'woocommerce' ),
-		);
-	},
-	'wcgateway.settings.fields.subscriptions_mode'         => static function ( ContainerInterface $container ): array {
-		$subscription_mode_options = $container->get( 'wcgateway.settings.fields.subscriptions_mode_options' );
-
-		$reference_transaction_status = $container->get( 'api.reference-transaction-status' );
-		assert( $reference_transaction_status instanceof ReferenceTransactionStatus );
-
-		if ( ! $reference_transaction_status->reference_transaction_enabled() ) {
-			unset( $subscription_mode_options['vaulting_api'] );
-		}
-
-		return array(
-			'title'        => __( 'Subscriptions Mode', 'woocommerce' ),
-			'type'         => 'select',
-			'class'        => array(),
-			'input_class'  => array( 'wc-enhanced-select' ),
-			'desc_tip'     => true,
-			'description'  => __( 'Utilize PayPal Vaulting for flexible subscription processing with saved payment methods, create “PayPal Subscriptions” to bill customers at regular intervals, or disable PayPal for subscription-type products.', 'woocommerce' ),
-			'default'      => array_key_first( $subscription_mode_options ),
-			'options'      => $subscription_mode_options,
-			'screens'      => array(
-				8,
-			),
-			'requirements' => array(),
-			'gateway'      => 'paypal',
-		);
-	},
-
 	'wcgateway.all-funding-sources'                        => static function ( ContainerInterface $container ): array {
 		return array(
 			'card'       => _x( 'Credit or debit cards', 'Name of payment method', 'woocommerce' ),

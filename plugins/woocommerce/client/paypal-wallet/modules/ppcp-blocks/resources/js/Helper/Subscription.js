@@ -1,16 +1,5 @@
 /**
  * @param {Object} scriptData
- * @return {boolean} Whether the store runs in PayPal Subscriptions mode.
- */
-export const isPayPalSubscription = ( scriptData ) => {
-	return (
-		scriptData.data_client_id.has_subscriptions &&
-		scriptData.data_client_id.paypal_subscriptions_enabled
-	);
-};
-
-/**
- * @param {Object} scriptData
  * @return {boolean} Whether the cart contains at least one subscription product.
  */
 export const cartHasSubscriptionProducts = ( scriptData ) => {
@@ -44,7 +33,7 @@ export const paypalPaymentMethodAllowed = ( scriptData, cartData ) => {
 /**
  * Whether the PayPal button is allowed for the current (subscription) cart.
  *
- * Single, mode-aware rule shared by the block cart, classic cart and mini-cart
+ * Single rule shared by the block cart, classic cart and mini-cart
  * so the button is shown (or hidden) consistently. Prefers the authoritative
  * server flag `subscription_button_allowed`; the explicit checks act as a
  * fallback and also cover the free-trial guest case on the block cart.
@@ -71,20 +60,9 @@ export const paypalSubscriptionButtonAllowed = ( scriptData ) => {
 		return !! scriptData.subscription_button_allowed;
 	}
 
-	// Vaulting mode but vaulting disabled.
-	if (
-		! isPayPalSubscription( scriptData ) &&
-		! scriptData.can_save_vault_token
-	) {
-		return false;
-	}
-
-	// PayPal Subscriptions mode but product not associated with a PayPal plan
-	// (or the cart contains more than one item).
-	if (
-		isPayPalSubscription( scriptData ) &&
-		! scriptData.subscription_product_allowed
-	) {
+	// The cart holds a subscription, which can only be paid for by saving the
+	// PayPal payment method.
+	if ( ! scriptData.can_save_vault_token ) {
 		return false;
 	}
 

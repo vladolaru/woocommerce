@@ -13,7 +13,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSub
 
 use WC_Order;
 use WC_Product;
-use WC_Product_Subscription_Variation;
 use WC_Product_Variable;
 use WC_Subscription;
 use WC_Subscriptions;
@@ -28,9 +27,8 @@ use WP_Query;
  */
 class SubscriptionHelper {
 
-	public const SUBSCRIPTION_MODE_VALUE_VAULTING      = 'vaulting_api';
-	public const SUBSCRIPTION_MODE_VALUE_SUBSCRIPTIONS = 'subscriptions_api';
-	public const SUBSCRIPTION_MODE_VALUE_DISABLED      = 'disable_paypal_subscriptions';
+	public const SUBSCRIPTION_MODE_VALUE_VAULTING = 'vaulting_api';
+	public const SUBSCRIPTION_MODE_VALUE_DISABLED = 'disable_paypal_subscriptions';
 
 	/**
 	 * Whether the current product is a subscription.
@@ -157,72 +155,21 @@ class SubscriptionHelper {
 	}
 
 	/**
-	 * Checks whether subscription needs subscription intent.
-	 *
-	 * @param string $subscription_mode The subscription mode.
-	 * @return bool
-	 */
-	public function need_subscription_intent( string $subscription_mode ): bool {
-		if ( $subscription_mode !== 'subscriptions_api' ) {
-			return false;
-		}
-
-		if ( $this->current_product_is_subscription() ) {
-			// Manual renewals mean no PayPal subscription plan is required for
-			// this product, so the standard (non-subscription) checkout flow
-			// is used instead - the SDK must not be forced into subscription
-			// intent in that case.
-			if ( $this->accept_manual_renewals() && ! $this->paypal_subscription_id() ) {
-				return false;
-			}
-
-			return true;
-		}
-
-		return ( is_cart() || is_checkout() ) && $this->cart_contains_subscription();
-	}
-
-	/**
-	 * Checks if subscription product is allowed.
-	 *
-	 * @return bool
-	 * @throws NotFoundException If setting is not found.
-	 */
-	public function checkout_subscription_product_allowed(): bool {
-		if (
-			! $this->paypal_subscription_id()
-			|| ! $this->cart_contains_only_one_item()
-		) {
-			return false;
-		}
-
-		return true;
-	}
-
-	/**
 	 * Whether the PayPal button is allowed for the current (subscription) cart.
 	 *
-	 * This is the single, mode-aware rule shared by the classic cart, block cart
-	 * and mini-cart so the button is displayed (or hidden) consistently:
+	 * This is the single rule shared by the classic cart, block cart and mini-cart so the
+	 * button is displayed (or hidden) consistently:
 	 * - A non-subscription cart is always allowed.
-	 * - In PayPal Subscriptions mode the product must be allowed
-	 *   (has a PayPal plan and the cart contains a single item).
 	 * - A manual-renewal-only subscription (Accept Manual Renewals enabled) is always
 	 *   allowed, since it is processed as a plain Orders API payment.
-	 * - Otherwise (vaulting mode) a vault token must be savable.
+	 * - Otherwise a vault token must be savable.
 	 *
-	 * @param bool $is_paypal_subscription Whether PayPal Subscriptions mode applies.
-	 * @param bool $can_save_vault_token   Whether a vault token can be saved.
+	 * @param bool $can_save_vault_token Whether a vault token can be saved.
 	 * @return bool
-	 * @throws NotFoundException If setting is not found.
 	 */
-	public function paypal_subscription_button_allowed( bool $is_paypal_subscription, bool $can_save_vault_token ): bool {
+	public function paypal_subscription_button_allowed( bool $can_save_vault_token ): bool {
 		if ( ! $this->cart_contains_subscription() ) {
 			return true;
-		}
-
-		if ( $is_paypal_subscription ) {
-			return $this->checkout_subscription_product_allowed();
 		}
 
 		if ( $this->accept_manual_renewals() ) {
@@ -235,8 +182,8 @@ class SubscriptionHelper {
 	/**
 	 * Whether the current (subscription) cart can actually be processed by the PayPal gateway.
 	 *
-	 * This resolves the mode-aware {@see self::paypal_subscription_button_allowed()} rule from
-	 * settings, so callers that only have a {@see SettingsProvider} (such as the classic-checkout
+	 * This resolves the {@see self::paypal_subscription_button_allowed()} rule from settings, so
+	 * callers that only have a {@see SettingsProvider} (such as the classic-checkout
 	 * gateway-availability filter) can hide the PayPal gateway when it could not fulfil the payment
 	 * instead of leaving it visible with a disabled button. A non-subscription cart is always
 	 * processable.
@@ -250,14 +197,12 @@ class SubscriptionHelper {
 			return true;
 		}
 
-		$is_paypal_subscription = self::SUBSCRIPTION_MODE_VALUE_SUBSCRIPTIONS === $this->resolve_subscription_mode( $settings_provider );
-
 		// Mirrors SmartButton::can_save_vault_token(): a token can only be saved with a
 		// connected merchant and vaulting ("Save PayPal and Venmo") enabled.
 		$can_save_vault_token = ! empty( $settings_provider->merchant_data()->client_id )
 			&& $settings_provider->save_paypal_and_venmo();
 
-		return $this->paypal_subscription_button_allowed( $is_paypal_subscription, $can_save_vault_token );
+		return $this->paypal_subscription_button_allowed( $can_save_vault_token );
 	}
 
 	/**
@@ -267,9 +212,8 @@ class SubscriptionHelper {
 	 * - WooCommerce Subscriptions inactive yields an empty string.
 	 * - The `woocommerce_paypal_payments_subscription_mode_disabled` filter forces the
 	 *   disabled mode.
-	 * - A manual-renewal-only subscription with vaulting disabled also resolves to the
-	 *   disabled mode: it needs a one-time charge, not a linked PayPal plan.
-	 * - Otherwise vaulting decides between the vaulting and PayPal Subscriptions APIs.
+	 * - Otherwise vaulting ("Save PayPal and Venmo") yields the vaulting mode, and no
+	 *   vaulting yields the disabled mode.
 	 *
 	 * @param SettingsProvider $settings_provider The settings provider.
 	 * @return string One of the SUBSCRIPTION_MODE_VALUE_* constants, or an empty string
@@ -289,15 +233,9 @@ class SubscriptionHelper {
 			return self::SUBSCRIPTION_MODE_VALUE_DISABLED;
 		}
 
-		$save_paypal_and_venmo = $settings_provider->save_paypal_and_venmo();
-
-		if ( $this->accept_manual_renewals() && ! $save_paypal_and_venmo ) {
-			return self::SUBSCRIPTION_MODE_VALUE_DISABLED;
-		}
-
-		return $save_paypal_and_venmo
+		return $settings_provider->save_paypal_and_venmo()
 			? self::SUBSCRIPTION_MODE_VALUE_VAULTING
-			: self::SUBSCRIPTION_MODE_VALUE_SUBSCRIPTIONS;
+			: self::SUBSCRIPTION_MODE_VALUE_DISABLED;
 	}
 
 	/**
@@ -343,62 +281,6 @@ class SubscriptionHelper {
 		}
 
 		return '';
-	}
-
-	/**
-	 * Returns variations for variable PayPal subscription product.
-	 *
-	 * @return array
-	 */
-	public function variable_paypal_subscription_variations(): array {
-		$variations = array();
-		if ( ! $this->current_product_is_subscription() ) {
-			return $variations;
-		}
-
-		$product = wc_get_product();
-		assert( $product instanceof WC_Product );
-		if ( $product->get_type() !== 'variable-subscription' ) {
-			return $variations;
-		}
-
-		$variation_ids = $product->get_children();
-		foreach ( $variation_ids as $id ) {
-			$product = wc_get_product( $id );
-			if ( ! ( $product instanceof WC_Product_Subscription_Variation ) ) {
-				continue;
-			}
-
-			$subscription_plan = $product->get_meta( 'ppcp_subscription_plan' ) ?? array();
-			$variations[]      = array(
-				'id'                => $product->get_id(),
-				'attributes'        => $product->get_attributes(),
-				'subscription_plan' => $subscription_plan['id'] ?? '',
-			);
-		}
-
-		return $variations;
-	}
-
-	/**
-	 * Checks if cart contains only one item.
-	 *
-	 * @return bool
-	 */
-	public function cart_contains_only_one_item(): bool {
-		if ( ! $this->plugin_is_active() ) {
-			return false;
-		}
-		$cart = WC()->cart;
-		if ( ! $cart || $cart->is_empty() ) {
-			return false;
-		}
-
-		if ( count( $cart->get_cart() ) > 1 ) {
-			return false;
-		}
-
-		return true;
 	}
 
 	/**
@@ -455,63 +337,6 @@ class SubscriptionHelper {
 		}
 
 		return '';
-	}
-
-	/**
-	 * Returns the variation subscription plan id from the cart.
-	 *
-	 * @return string
-	 */
-	public function paypal_subscription_variation_from_cart(): string {
-		$cart = WC()->cart ?? null;
-		if ( ! $cart || $cart->is_empty() ) {
-			return '';
-		}
-
-		$items = $cart->get_cart_contents();
-		foreach ( $items as $item ) {
-			$variation_id = $item['variation_id'] ?? 0;
-			if ( $variation_id ) {
-				$variation_product = wc_get_product( $variation_id ) ?? '';
-				if ( $variation_product && $variation_product->meta_exists( 'ppcp_subscription_plan' ) ) {
-					return $variation_product->get_meta( 'ppcp_subscription_plan' )['id'];
-				}
-			}
-		}
-
-		return '';
-	}
-
-	/**
-	 * Whether the cart contains a PayPal-subscription product (subscriptions_api mode).
-	 *
-	 * @return bool
-	 */
-	public function cart_contains_paypal_subscription_product(): bool {
-		if ( ! $this->plugin_is_active() ) {
-			return false;
-		}
-
-		$cart = WC()->cart;
-		if ( ! $cart || empty( $cart->cart_contents ) ) {
-			return false;
-		}
-
-		foreach ( $cart->get_cart() as $item ) {
-			if ( ! isset( $item['data'] ) || ! is_a( $item['data'], WC_Product::class ) ) {
-				continue;
-			}
-
-			$product = $item['data'];
-			if (
-				in_array( $product->get_type(), array( 'subscription', 'variable-subscription' ), true )
-				&& $product->get_meta( '_ppcp_enable_subscription_product', true ) === 'yes'
-			) {
-				return true;
-			}
-		}
-
-		return false;
 	}
 
 	/**

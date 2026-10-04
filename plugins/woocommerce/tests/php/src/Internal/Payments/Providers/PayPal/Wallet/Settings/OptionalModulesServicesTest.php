@@ -22,7 +22,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Da
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\FeaturesEligibilityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\PaymentMethodsEligibilityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\TodosEligibilityService;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Helper\SubscriptionHelper;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
 use Mockery\MockInterface;
@@ -30,12 +29,12 @@ use RuntimeException;
 
 /**
  * The settings and gateway wiring must resolve when the optional modules (Fastlane, local APMs,
- * order tracking, PayPal Subscriptions) are not loaded: no service-not-found, and every optional feature reads as not
+ * order tracking) are not loaded: no service-not-found, and every optional feature reads as not
  * eligible.
  *
- * Only the four settings and gateway wiring cases are ported. The extension's fifth case (the webhook handler list
- * without PayPal Subscriptions) belongs to the webhooks module, which no cut touches. The extension's card capability
- * assertion is gone with the cards cut.
+ * Only the four settings and gateway wiring cases are ported. The extension's fifth case (the webhook handler list)
+ * lives in `WebhookHandlersServicesTest`, next to the webhooks module. The extension's card capability assertion is
+ * gone with the cards cut.
  *
  * @group paypal-wallet
  */
@@ -186,8 +185,6 @@ class OptionalModulesServicesTest extends WalletTestCase {
 		$general->shouldReceive( 'get_merchant_country' )->andReturn( 'MX' );
 		$settings = $this->mock( SettingsModel::class );
 		$settings->shouldReceive( 'get_stay_updated' )->andReturn( true );
-		$subscriptions = $this->mock( SubscriptionHelper::class );
-		$subscriptions->shouldReceive( 'plugin_is_active' )->andReturn( true );
 
 		$container = $this->wallet_only_container(
 			array(
@@ -212,8 +209,6 @@ class OptionalModulesServicesTest extends WalletTestCase {
 				'settings.data.settings'                 => $settings,
 				'settings.data.general'                  => $general,
 				'button.helper.messages-apply'           => $this->mock( MessagesApply::class ),
-				'save-payment-methods.eligible'          => false,
-				'wc-subscriptions.helper'                => $subscriptions,
 				'ppcp-local-apms.pwc.eligibility.check'  => static fn(): bool => true,
 			)
 		);
@@ -240,7 +235,6 @@ class OptionalModulesServicesTest extends WalletTestCase {
 				'add_pay_later_messaging_product_page' => false,
 				'add_pay_later_messaging_cart'         => true,
 				'add_pay_later_messaging_checkout'     => false,
-				'configure_paypal_subscription'        => true,
 				'add_paypal_buttons_cart'              => false,
 				'add_paypal_buttons_block_checkout'    => true,
 				'add_paypal_buttons_product'           => false,
@@ -282,7 +276,6 @@ class OptionalModulesServicesTest extends WalletTestCase {
 				'add_pay_later_messaging_product_page',
 				'add_pay_later_messaging_cart',
 				'add_pay_later_messaging_checkout',
-				'configure_paypal_subscription',
 				'add_paypal_buttons_cart',
 				'add_paypal_buttons_block_checkout',
 				'add_paypal_buttons_product',

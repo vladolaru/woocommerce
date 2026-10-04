@@ -107,9 +107,6 @@ return array(
 			$settings_provider->save_paypal_and_venmo(),
 			$container->get( 'wc-subscriptions.helper' ),
 			$container->get( 'wc-subscriptions.free-trial-subscription-helper' ),
-			// Same mode callable the v5 SmartButton uses; drives deferring native
-			// PayPal Subscriptions (subscriptions_api mode) back to the v5 stack.
-			$container->get( 'button.subscriptions-mode' ),
 			$container->get( 'sdk-v6.message-style-mapper' ),
 			$container->get( 'sdk-v6.messages-eligibility' ),
 			$container->get( 'sdk-v6.fastlane-config' )

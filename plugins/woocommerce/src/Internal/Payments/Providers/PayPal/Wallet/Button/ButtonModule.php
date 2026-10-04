@@ -13,7 +13,6 @@ use WC_Order;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\OrderEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\ReturnUrlFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Assets\SmartButtonInterface;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Endpoint\ApproveSubscriptionEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Endpoint\CartScriptParamsEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint\CreateOrderEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Endpoint\DataClientIdEndpoint;
@@ -127,16 +126,6 @@ class ButtonModule implements ServiceModule, ExecutableModule {
 				 *
 				 * @var SimulateCartEndpoint $endpoint
 				 */
-				$endpoint->handle_request();
-			}
-		);
-
-		add_action(
-			'wc_ajax_' . ApproveSubscriptionEndpoint::ENDPOINT,
-			static function () use ( $container ) {
-				$endpoint = $container->get( 'button.endpoint.approve-subscription' );
-				assert( $endpoint instanceof ApproveSubscriptionEndpoint );
-
 				$endpoint->handle_request();
 			}
 		);

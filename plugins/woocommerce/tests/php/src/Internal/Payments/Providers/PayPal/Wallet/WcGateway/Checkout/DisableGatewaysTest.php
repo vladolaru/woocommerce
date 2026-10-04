@@ -76,7 +76,6 @@ class DisableGatewaysTest extends WalletTestCase {
 		$this->settings_status->allows( 'is_smart_button_enabled_for_location' )->andReturn( true );
 
 		$this->subscription_helper = $this->mock( SubscriptionHelper::class );
-		$this->subscription_helper->allows( 'cart_contains_paypal_subscription_product' )->andReturn( false );
 		$this->subscription_helper->allows( 'cart_contains_subscription' )->andReturn( false );
 
 		$this->context = $this->mock( Context::class );
@@ -137,7 +136,6 @@ class DisableGatewaysTest extends WalletTestCase {
 		$this->settings_status->allows( 'is_smart_button_enabled_for_location' )->with( 'checkout' )->andReturn( false );
 		$this->subscription_helper = $this->mock( SubscriptionHelper::class );
 		$this->subscription_helper->allows( 'cart_contains_subscription' )->andReturn( true );
-		$this->subscription_helper->allows( 'cart_contains_paypal_subscription_product' )->andReturn( false );
 		$this->subscription_helper->allows( 'subscription_cart_processable' )->andReturn( true );
 
 		$methods = $this->create_handler()->handler(

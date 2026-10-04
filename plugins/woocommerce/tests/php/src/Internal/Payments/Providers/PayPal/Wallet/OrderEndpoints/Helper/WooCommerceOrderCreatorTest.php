@@ -307,7 +307,7 @@ class WooCommerceOrderCreatorTest extends WalletTestCase {
 	}
 
 	/**
-	 * Downstream gates, like the PayPal subscription replay guard, compare the order's cart hash with the hash captured
+	 * Downstream gates, like the order approval guards, compare the order's cart hash with the hash captured
 	 * at approval time.
 	 *
 	 * @testdox Should set the WC order's cart hash from the cart data and fire the order-created-from-cart action.

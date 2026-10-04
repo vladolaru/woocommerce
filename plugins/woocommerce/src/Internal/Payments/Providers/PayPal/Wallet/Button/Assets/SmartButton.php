@@ -15,7 +15,6 @@ use WC_Order;
 use WC_Product;
 use WC_Product_Variable;
 use WC_Product_Variation;
-use WC_Session_Handler;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\Money;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\PayerFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\CurrencyGetter;
@@ -23,7 +22,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\H
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetter;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint\UpdateShippingEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint\ApproveOrderEndpoint;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Endpoint\ApproveSubscriptionEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Endpoint\CartScriptParamsEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint\ChangeCartEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint\CreateOrderEndpoint;
@@ -50,7 +48,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\H
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\FreeTrialHandlerTrait;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Helper\SubscriptionHelper;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\CustomIds;
 
 /**
  * Class SmartButton
@@ -801,10 +798,7 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 		if ( ! $this->subscription_helper->plugin_is_active() ) {
 			return false;
 		}
-		if (
-			$this->subscription_helper->accept_manual_renewals()
-			&& $this->paypal_subscriptions_enabled() !== true
-		) {
+		if ( $this->subscription_helper->accept_manual_renewals() ) {
 			return false;
 		}
 		if ( is_product() ) {
@@ -818,24 +812,12 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 	}
 
 	/**
-	 * Whether PayPal subscriptions is enabled or not.
-	 *
-	 * @return bool
-	 */
-	private function paypal_subscriptions_enabled(): bool {
-		return ( $this->get_subscriptions_mode )() === 'subscriptions_api';
-	}
-
-	/**
 	 * Whether the PayPal button is allowed for the current (subscription) cart.
 	 *
 	 * @return bool
 	 */
 	private function subscription_button_allowed(): bool {
-		return $this->subscription_helper->paypal_subscription_button_allowed(
-			$this->has_subscriptions() && $this->paypal_subscriptions_enabled(),
-			$this->can_save_vault_token()
-		);
+		return $this->subscription_helper->paypal_subscription_button_allowed( $this->can_save_vault_token() );
 	}
 
 	/**
@@ -859,26 +841,6 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 	 *
 	 * @return array
 	 */
-	/**
-	 * The session-bound custom_id used to tie a PayPal subscription/order to the
-	 * current shopper. Mirrors the value stamped on cart orders by
-	 * PurchaseUnitFactory::from_wc_cart(); both must stay in sync so that
-	 * ApproveSubscriptionEndpoint can validate ownership on approval.
-	 *
-	 * @return string
-	 */
-	private function subscription_custom_id(): string {
-		$session = WC()->session;
-		if ( $session instanceof WC_Session_Handler ) {
-			$session_id = $session->get_customer_unique_id();
-			if ( $session_id ) {
-				return CustomIds::CUSTOMER_ID_PREFIX . $session_id;
-			}
-		}
-
-		return '';
-	}
-
 	public function script_data(): array {
 		$is_free_trial_cart = $this->is_free_trial_cart();
 
@@ -893,12 +855,11 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 			'client_id'                               => $this->client_id,
 			'currency'                                => $this->currency->get(),
 			'data_client_id'                          => array(
-				'set_attribute'                => $this->can_save_vault_token(),
-				'endpoint'                     => \WC_AJAX::get_endpoint( DataClientIdEndpoint::ENDPOINT ),
-				'nonce'                        => wp_create_nonce( DataClientIdEndpoint::nonce() ),
-				'user'                         => get_current_user_id(),
-				'has_subscriptions'            => $this->has_subscriptions(),
-				'paypal_subscriptions_enabled' => $this->paypal_subscriptions_enabled(),
+				'set_attribute'     => $this->can_save_vault_token(),
+				'endpoint'          => \WC_AJAX::get_endpoint( DataClientIdEndpoint::ENDPOINT ),
+				'nonce'             => wp_create_nonce( DataClientIdEndpoint::nonce() ),
+				'user'              => get_current_user_id(),
+				'has_subscriptions' => $this->has_subscriptions(),
 			),
 			'redirect'                                => wc_get_checkout_url(),
 			'context'                                 => $current_context,
@@ -926,10 +887,6 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 				'get_order'                      => array(
 					'endpoint' => \WC_AJAX::get_endpoint( GetOrderEndpoint::ENDPOINT ),
 					'nonce'    => wp_create_nonce( GetOrderEndpoint::nonce() ),
-				),
-				'approve_subscription'           => array(
-					'endpoint' => \WC_AJAX::get_endpoint( ApproveSubscriptionEndpoint::ENDPOINT ),
-					'nonce'    => wp_create_nonce( ApproveSubscriptionEndpoint::nonce() ),
 				),
 				'save_checkout_form'             => array(
 					'endpoint' => \WC_AJAX::get_endpoint( SaveCheckoutFormEndpoint::ENDPOINT ),
@@ -971,11 +928,6 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 				),
 			),
 			'cart_contains_subscription'              => $this->subscription_helper->cart_contains_subscription(),
-			'subscription_plan_id'                    => $this->subscription_helper->paypal_subscription_id(),
-			'subscription_custom_id'                  => $this->subscription_custom_id(),
-			'variable_paypal_subscription_variations' => $this->subscription_helper->variable_paypal_subscription_variations(),
-			'variable_paypal_subscription_variation_from_cart' => $this->subscription_helper->paypal_subscription_variation_from_cart(),
-			'subscription_product_allowed'            => $this->subscription_helper->checkout_subscription_product_allowed(),
 			'subscription_button_allowed'             => $this->subscription_button_allowed(),
 			'locations_with_subscription_product'     => $this->subscription_helper->locations_with_subscription_product(),
 			'subscriptions_accept_manual_renewals'    => $this->subscription_helper->accept_manual_renewals(),
@@ -1155,7 +1107,7 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 			'currency'         => $this->currency->get(),
 			'integration-date' => PAYPAL_INTEGRATION_DATE,
 			'components'       => implode( ',', $this->components() ),
-			'vault'            => ( $this->can_save_vault_token() || $this->subscription_helper->need_subscription_intent( $subscription_mode ) ) ? 'true' : 'false',
+			'vault'            => $this->can_save_vault_token() ? 'true' : 'false',
 			'commit'           => in_array( $current_context, $this->pay_now_contexts, true ) ? 'true' : 'false',
 			'intent'           => $intent,
 		);
@@ -1812,11 +1764,6 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 	 * @return string
 	 */
 	private function intent(): string {
-		$subscription_mode = ( $this->get_subscriptions_mode )();
-		if ( $this->subscription_helper->need_subscription_intent( $subscription_mode ) ) {
-			return 'subscription';
-		}
-
 		$intent = $this->settings_provider->payment_intent();
 
 		return strtolower( apply_filters( 'woocommerce_paypal_payments_order_intent', $intent ) );
