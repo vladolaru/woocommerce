@@ -64,6 +64,31 @@ const mockRecordEvent = recordEvent as jest.MockedFunction<
 >;
 const mockSpeak = speak as jest.MockedFunction< typeof speak >;
 
+/**
+ * The evidence form shows a save or upload result once, announced through `speak()` as the client's snackbars are
+ * (new-evidence/index.tsx:517,540), and moves focus to it. No live region repeats the announcement.
+ *
+ * @param message    The notice text.
+ * @param politeness The `speak()` politeness.
+ */
+const expectEvidenceNotice = async (
+	message: string,
+	politeness: 'polite' | 'assertive'
+) => {
+	const notice = ( await screen.findByText( message ) ).closest(
+		'.woocommerce-woopayments-dispute-evidence__notice'
+	);
+
+	expect( notice ).not.toBeNull();
+	await waitFor( () => expect( notice ).toHaveFocus() );
+	expect(
+		mockSpeak.mock.calls.filter( ( [ spoken ] ) => spoken === message )
+	).toEqual( [ [ message, politeness ] ] );
+	expect(
+		notice?.closest( '[aria-live], [role="alert"], [role="status"]' )
+	).toBeNull();
+};
+
 const makeDispute = (
 	overrides: Partial< WooPaymentsDispute > = {}
 ): WooPaymentsDispute => ( {
@@ -1155,8 +1180,9 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		await screen.findByText( 'customer-email.pdf' );
 		await uploadFile( 'Upload order receipt', tooLarge );
 
-		expect( await screen.findByRole( 'alert' ) ).toHaveTextContent(
-			'The selected files exceed the 4.5 MB dispute evidence limit.'
+		await expectEvidenceNotice(
+			'The selected files exceed the 4.5 MB dispute evidence limit.',
+			'assertive'
 		);
 		expect( mockUploadFile ).not.toHaveBeenCalled();
 	} );
@@ -1333,7 +1359,7 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 				dispute_id: 'dp_test',
 			} )
 		);
-		expect( mockSpeak ).toHaveBeenCalledWith( 'Evidence saved!', 'polite' );
+		await expectEvidenceNotice( 'Evidence saved!', 'polite' );
 	} );
 
 	it( "rehydrates a saved draft's product type and description from dispute metadata", async () => {
@@ -1570,7 +1596,7 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		).not.toBeInTheDocument();
 	} );
 
-	it( 'should surface update failures in an alert', async () => {
+	it( 'should surface update failures in a notice', async () => {
 		mockGetDispute.mockResolvedValue( makeDispute() );
 		mockUpdateDispute.mockRejectedValueOnce(
 			new Error( 'Provider failed' )
@@ -1580,13 +1606,7 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		await screen.findByRole( 'button', { name: 'Save for later' } );
 		await clickButton( 'Save for later' );
 
-		expect( await screen.findByRole( 'alert' ) ).toHaveTextContent(
-			'Provider failed'
-		);
-		expect( mockSpeak ).toHaveBeenCalledWith(
-			'Provider failed',
-			'assertive'
-		);
+		await expectEvidenceNotice( 'Provider failed', 'assertive' );
 		expect( mockRecordEvent ).toHaveBeenCalledWith(
 			'wcpay_dispute_save_evidence_failed',
 			expect.objectContaining( {
@@ -1595,20 +1615,14 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		);
 	} );
 
-	it( 'should surface upload failures in an alert', async () => {
+	it( 'should surface upload failures in a notice', async () => {
 		mockGetDispute.mockResolvedValue( makeDispute() );
 		mockUploadFile.mockRejectedValueOnce( new Error( 'Upload failed' ) );
 
 		renderChallengePage();
 		await uploadFile( 'Upload order receipt' );
 
-		expect( await screen.findByRole( 'alert' ) ).toHaveTextContent(
-			'Upload failed'
-		);
-		expect( mockSpeak ).toHaveBeenCalledWith(
-			'Upload failed',
-			'assertive'
-		);
+		await expectEvidenceNotice( 'Upload failed', 'assertive' );
 		expect( mockRecordEvent ).toHaveBeenCalledWith(
 			'wcpay_dispute_file_upload_failed',
 			expect.objectContaining( {

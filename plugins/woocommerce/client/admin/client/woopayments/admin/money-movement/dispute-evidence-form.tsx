@@ -991,14 +991,11 @@ export const DisputeEvidenceForm = ( {
 				</Panel>
 			) }
 			{ notice && (
-				// The wrapper takes focus after an update; `updateNotice` speaks the message, so the `Notice` stays silent.
+				// The wrapper takes focus after an update. `updateNotice` announces the message once through `speak()`, as the
+				// client's snackbars do (new-evidence/index.tsx:517,540), so neither the wrapper nor the `Notice` is a live region.
 				<div
 					ref={ noticeRef }
 					className="woocommerce-woopayments-dispute-evidence__notice"
-					role={ notice.type === 'error' ? 'alert' : 'status' }
-					aria-live={
-						notice.type === 'error' ? 'assertive' : 'polite'
-					}
 					tabIndex={ -1 }
 				>
 					<Notice
