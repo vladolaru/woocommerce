@@ -690,11 +690,12 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	/**
 	 * Render the classic checkout payment fields.
 	 *
-	 * @param string[]                                $supports                  Card gateway support features.
-	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
+	 * @param string[]                                $supports                     Card gateway support features.
+	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition    Optional payment method definition.
+	 * @param callable|null                           $render_saved_payment_methods Optional callback that prints the saved payment methods, below the test-mode instructions.
 	 * @return void
 	 */
-	public function render_payment_fields( array $supports, ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null ): void {
+	public function render_payment_fields( array $supports, ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null, ?callable $render_saved_payment_methods = null ): void {
 		$config      = $this->complete_payment_fields_js_config( $this->get_payment_list_config_base( $supports ), $payment_method_definition );
 		$json_config = wp_json_encode( $config );
 
@@ -720,6 +721,12 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 				echo wp_kses_post( $testing_instructions );
 				echo '</p>';
 			}
+		}
+
+		// The client prints the saved payment methods here, below the test-mode instructions (client 11.1.0
+		// includes/class-wc-payments-checkout.php:474-499).
+		if ( null !== $render_saved_payment_methods ) {
+			$render_saved_payment_methods();
 		}
 
 		echo '<fieldset style="padding: 7px" class="wc-payment-form">';

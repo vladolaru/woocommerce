@@ -1537,6 +1537,44 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should print the test-mode instructions above the saved payment methods, inside the payment form, as client 11.1.0 does.
+	 */
+	public function test_render_payment_fields_prints_test_mode_instructions_above_saved_payment_methods(): void {
+		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
+		$account_service = $this->create_account_service_for_bridge( true );
+		$legacy_runtime->method( 'get_gateway_prepared_customer_data' )->willReturn( array() );
+		$legacy_runtime->method( 'can_handle_checkout_bridge_callbacks' )->willReturn( true );
+
+		$bridge = new WooPaymentsCheckoutBridge();
+		$bridge->init( $legacy_runtime, $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+
+		ob_start();
+		$bridge->render_payment_fields(
+			self::CARD_SUPPORTS,
+			null,
+			static function (): void {
+				echo '<ul class="woocommerce-SavedPaymentMethods"></ul>';
+			}
+		);
+		$output = (string) ob_get_clean();
+
+		// Client 11.1.0 includes/class-wc-payments-checkout.php:462-502: the form wrapper opens, then the test-mode
+		// instructions, then the saved payment methods, then the fieldset with the card element.
+		$wrapper      = strpos( $output, 'id="wcpay-core-checkout-form"' );
+		$instructions = strpos( $output, 'wcpay-core-test-mode-instructions' );
+		$saved        = strpos( $output, 'woocommerce-SavedPaymentMethods' );
+		$fieldset     = strpos( $output, '<fieldset style="padding: 7px" class="wc-payment-form">' );
+
+		$this->assertIsInt( $wrapper );
+		$this->assertIsInt( $instructions );
+		$this->assertIsInt( $saved );
+		$this->assertIsInt( $fieldset );
+		$this->assertLessThan( $instructions, $wrapper );
+		$this->assertLessThan( $saved, $instructions, 'The test-mode instructions print above the saved payment methods.' );
+		$this->assertLessThan( $fieldset, $saved, 'The saved payment methods print above the card element.' );
+	}
+
+	/**
 	 * @testdox Should register the classic checkout script with its full dependencies when WooCommerce registers frontend scripts first, as on classic themes.
 	 */
 	public function test_payment_fields_registers_full_checkout_script_after_frontend_script_registration(): void {

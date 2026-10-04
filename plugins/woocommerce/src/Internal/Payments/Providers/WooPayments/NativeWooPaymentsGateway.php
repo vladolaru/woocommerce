@@ -650,6 +650,27 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
+	 * Output the payment fields, with the saved payment methods inside the WooPayments form so they print below the
+	 * test-mode instructions, as in client 11.1.0 (includes/class-wc-payments-checkout.php:462-502).
+	 *
+	 * @return void
+	 */
+	public function payment_fields() {
+		if ( ! ( $this->supports( PaymentGatewayFeature::TOKENIZATION ) && is_checkout() ) ) {
+			$this->form();
+			return;
+		}
+
+		$this->tokenization_script();
+		$this->get_checkout_bridge()->render_payment_fields(
+			$this->get_card_gateway_supports(),
+			$this->payment_method_definition,
+			array( $this, 'saved_payment_methods' )
+		);
+		$this->save_payment_method_checkbox();
+	}
+
+	/**
 	 * Render the native WooPayments payment form.
 	 *
 	 * @return void

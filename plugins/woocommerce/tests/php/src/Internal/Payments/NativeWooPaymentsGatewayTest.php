@@ -5884,9 +5884,13 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->expects( $this->once() )
 			->method( 'render_payment_fields' )
 			->willReturnCallback(
-				static function ( array $supports ) use ( &$received_supports ): void {
+				static function ( array $supports, $payment_method_definition = null, ?callable $render_saved_payment_methods = null ) use ( &$received_supports ): void {
 					$received_supports = $supports;
-					echo '<div id="wcpay-bridge-marker"></div>';
+					echo '<div id="wcpay-bridge-marker">';
+					if ( null !== $render_saved_payment_methods ) {
+						$render_saved_payment_methods();
+					}
+					echo '</div>';
 				}
 			);
 
@@ -5914,6 +5918,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'wcpay-bridge-marker', $output );
 		$this->assertStringContainsString( 'wc-woocommerce_payments-new-payment-method', $output );
 		$this->assertStringContainsString( 'wc-woocommerce_payments-payment-token-new', $output );
+		// The bridge prints the saved payment methods inside its form, below the test-mode instructions, as in
+		// client 11.1.0 (includes/class-wc-payments-checkout.php:474-499); the save checkbox follows the form.
+		$this->assertMatchesRegularExpression( '/<div id="wcpay-bridge-marker">.*wc-woocommerce_payments-payment-token-new.*<\/div>.*wc-woocommerce_payments-new-payment-method/s', $output );
 		$this->assertMatchesRegularExpression( '/<input[^>]+id="wc-woocommerce_payments-new-payment-method"[^>]+type="checkbox"[^>]*>/', $output );
 		$this->assertDoesNotMatchRegularExpression( '/<input[^>]+id="wc-woocommerce_payments-new-payment-method"[^>]+checked[^>]*>/', $output );
 	}
