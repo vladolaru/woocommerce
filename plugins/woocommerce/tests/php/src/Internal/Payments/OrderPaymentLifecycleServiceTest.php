@@ -997,6 +997,42 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Applying an event should release the order payment lock when applying the outcome throws.
+	 */
+	public function test_apply_releases_the_lock_when_applying_the_outcome_throws(): void {
+		$order = $this->create_woopayments_order();
+		$sut   = new class() extends OrderPaymentLifecycleService {
+			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double always throws.
+			/**
+			 * Fail every outcome application.
+			 *
+			 * @param WC_Order                                                                $order               Order object.
+			 * @param PaymentLifecycleEvent                                                   $event               Lifecycle event.
+			 * @param \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
+			 * @throws \RuntimeException Always.
+			 */
+			public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $persistence_profile ): void {
+				unset( $order, $event, $persistence_profile );
+				throw new \RuntimeException( 'Simulated lifecycle failure.' );
+			}
+			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+		};
+		$sut->init( $this->order_payment_store );
+
+		$thrown = null;
+		try {
+			$sut->apply( $order, $this->completed_event( 'pi_apply_throws' ), $this->persistence_profile );
+		} catch ( \RuntimeException $exception ) {
+			$thrown = $exception;
+		}
+
+		$this->assertInstanceOf( \RuntimeException::class, $thrown, 'The application failure must reach the caller.' );
+		$this->assertFalse( get_transient( $this->persistence_profile->get_order_lock_key( $order ) ), 'A throwing application must release the order payment lock.' );
+		$this->assertTrue( $this->order_payment_store->claim_order_payment_lock( $order, $this->persistence_profile, 'next_operation' ), 'The next operation must be able to claim the lock.' );
+		$this->order_payment_store->release_order_payment_lock( $order, $this->persistence_profile, 'next_operation' );
+	}
+
+	/**
 	 * @testdox A lifecycle event skipped because the order is lock-contested is logged as a warning with full context.
 	 */
 	public function test_skipped_locked_event_is_logged_with_context(): void {

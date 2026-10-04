@@ -873,6 +873,86 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The order payment lock should be released when applying a $operation outcome throws.
+	 * @dataProvider provide_operations_whose_outcome_application_throws
+	 *
+	 * @param string $operation Operation to run: checkout, capture, cancel, or refund.
+	 * @param string $status    Provider outcome status.
+	 * @param string $reference Provider payment reference.
+	 */
+	public function test_order_payment_lock_is_released_when_outcome_application_throws( string $operation, string $status, string $reference ): void {
+		$order = $this->create_woopayments_order( '10.00' );
+		if ( 'refund' === $operation ) {
+			wc_create_refund(
+				array(
+					'order_id'       => $order->get_id(),
+					'amount'         => 2.50,
+					'reason'         => 'Adjustment',
+					'refund_payment' => false,
+				)
+			);
+		}
+
+		$provider = new class( new PaymentOutcome( $status, $reference ) ) extends RecordingProvider implements ProviderOperationEffectApplier {
+			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double always throws.
+			/**
+			 * Fail local outcome application after the provider answered.
+			 *
+			 * @param PaymentContext $context   Payment context.
+			 * @param PaymentOutcome $outcome   Provider outcome.
+			 * @param string         $operation Operation name.
+			 * @return PaymentOutcome
+			 * @throws RuntimeException Always.
+			 */
+			public function apply_operation_effects( PaymentContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
+				unset( $context, $outcome, $operation );
+				throw new RuntimeException( 'Local outcome application failed.' );
+			}
+			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+		};
+
+		$thrown = null;
+		try {
+			switch ( $operation ) {
+				case 'checkout':
+					$this->sut->process_checkout_outcome( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_apply_throws' ), $provider );
+					break;
+				case 'capture':
+					$this->sut->capture( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID ), $provider );
+					break;
+				case 'cancel':
+					$this->sut->cancel( PaymentContext::for_cancel( $order, OrderPaymentStore::GATEWAY_ID ), $provider );
+					break;
+				case 'refund':
+					$this->sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.50, 'Adjustment' ), $provider );
+					break;
+			}
+		} catch ( RuntimeException $exception ) {
+			$thrown = $exception;
+		}
+
+		$this->assertInstanceOf( RuntimeException::class, $thrown, 'The application failure must reach the caller.' );
+		$this->assertFalse( get_transient( $this->persistence_profile->get_order_lock_key( $order ) ), 'A throwing outcome application must release the order payment lock.' );
+		$this->assertTrue( $this->store->claim_order_payment_lock( $order, $this->persistence_profile, 'next_operation' ), 'The next operation must be able to claim the lock.' );
+		$this->store->release_order_payment_lock( $order, $this->persistence_profile, 'next_operation' );
+	}
+
+	/**
+	 * Operations whose local outcome application throws out of the service.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string}>
+	 */
+	public function provide_operations_whose_outcome_application_throws(): array {
+		return array(
+			'failed checkout'     => array( 'checkout', PaymentOutcome::STATUS_FAILED, '' ),
+			'successful checkout' => array( 'checkout', PaymentOutcome::STATUS_COMPLETED, 'pi_apply_throws' ),
+			'failed capture'      => array( 'capture', PaymentOutcome::STATUS_FAILED, '' ),
+			'failed cancel'       => array( 'cancel', PaymentOutcome::STATUS_FAILED, '' ),
+			'failed refund'       => array( 'refund', PaymentOutcome::STATUS_FAILED, '' ),
+		);
+	}
+
+	/**
 	 * @testdox A post-charge apply failure must not overwrite a transaction reference the order already carries.
 	 */
 	public function test_process_checkout_outcome_does_not_overwrite_existing_transaction_reference(): void {
