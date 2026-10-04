@@ -53,16 +53,24 @@ class NeutralLayerPlacementTest extends WC_Unit_Test_Case {
 	 */
 	public function provider_reference_sources(): array {
 		return array(
-			'use import'             => array( 'use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;', true ),
-			'namespace alias import' => array( 'use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;', true ),
-			'group import'           => array( 'use Automattic\WooCommerce\Internal\Payments\Providers\{WooPayments\WooPaymentsProvider};', true ),
-			'relative new'           => array( '$provider = new Providers\WooPayments\WooPaymentsProvider();', true ),
-			'qualified static call'  => array( '\Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider::instance();', true ),
-			'instanceof'             => array( '$is = $provider instanceof Providers\WooPayments\WooPaymentsProvider;', true ),
-			'class string'           => array( '$id = \'Automattic\\\\WooCommerce\\\\Internal\\\\Payments\\\\Providers\\\\WooPayments\\\\WooPaymentsProvider\';', true ),
-			'line comment'           => array( '// Mirrors Providers\WooPayments\WooPaymentsProvider.', false ),
-			'docblock'               => array( '/** {@see Providers\WooPayments\WooPaymentsProviderGatewayAdapter} */', false ),
-			'plugin prose and slug'  => array( '$file = \'woocommerce-payments/woocommerce-payments.php\'; $label = \'WooPayments\';', false ),
+			'use import'                      => array( 'use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;', true ),
+			'namespace alias import'          => array( 'use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;', true ),
+			'group import'                    => array( 'use Automattic\WooCommerce\Internal\Payments\Providers\{WooPayments\WooPaymentsProvider};', true ),
+			'relative new'                    => array( '$provider = new Providers\WooPayments\WooPaymentsProvider();', true ),
+			'qualified static call'           => array( '\Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider::instance();', true ),
+			'instanceof'                      => array( '$is = $provider instanceof Providers\WooPayments\WooPaymentsProvider;', true ),
+			'class string'                    => array( '$id = \'Automattic\\\\WooCommerce\\\\Internal\\\\Payments\\\\Providers\\\\WooPayments\\\\WooPaymentsProvider\';', true ),
+			'line comment'                    => array( '// Mirrors Providers\WooPayments\WooPaymentsProvider.', false ),
+			'docblock'                        => array( '/** {@see Providers\WooPayments\WooPaymentsProviderGatewayAdapter} */', false ),
+			'plugin prose and slug'           => array( '$file = \'woocommerce-payments/woocommerce-payments.php\'; $label = \'WooPayments\';', false ),
+			'lower-case use import'           => array( 'use automattic\woocommerce\internal\payments\providers\woopayments\WooPaymentsProvider;', true ),
+			'mixed-case relative new'         => array( '$provider = new providers\WOOPAYMENTS\WooPaymentsProvider();', true ),
+			'group import, not first'         => array( 'use Automattic\WooCommerce\Internal\Payments\Providers\{ Foo, WooPayments\WooPaymentsProvider };', true ),
+			'multi-line group import of a function, not first' => array( "use Automattic\\WooCommerce\\Internal\\Payments\\Providers\\{\n\tFoo,\n\tfunction woopayments\\bar,\n};", true ),
+			'group import of other providers' => array( 'use Automattic\WooCommerce\Internal\Payments\Providers\{ Foo, Bar\Baz };', false ),
+			'group import of a nested WooPayments namespace' => array( 'use Automattic\WooCommerce\Internal\Payments\Providers\{ Foo, Other\WooPayments\Bar };', false ),
+			'group import in a comment'       => array( '# use Automattic\WooCommerce\Internal\Payments\Providers\{ Foo, WooPayments\Bar };', false ),
+			'lower-case name in a docblock'   => array( '/** @see providers\woopayments\WooPaymentsProvider */', false ),
 		);
 	}
 
@@ -118,11 +126,13 @@ class NeutralLayerPlacementTest extends WC_Unit_Test_Case {
 	/**
 	 * Tell whether PHP source names the `Providers\WooPayments` namespace outside comments.
 	 *
+	 * PHP namespace names are case-insensitive, and a group import can name `WooPayments\...` as any of its items.
+	 *
 	 * @param string $source PHP source.
 	 * @return bool
 	 */
 	private function references_provider( string $source ): bool {
-		return 1 === preg_match( '/Providers\\\\+\{?\s*WooPayments\b/', $this->code_without_comments( $source ) );
+		return 1 === preg_match( '/Providers\\\\+(?:\{(?:[^{}]*,)?\s*(?:(?:function|const)\s+)?)?WooPayments\b/i', $this->code_without_comments( $source ) );
 	}
 
 	/**
