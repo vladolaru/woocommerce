@@ -7,13 +7,17 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Exception;
+use Throwable;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
  * Writes WooPayments log lines under one source, only when debug logging is on or in dev mode.
  *
  * Mirrors client 11.1.0 `src/Internal/Logger.php:22,64-91`: every level is gated, and the setting is read
- * from the gateway settings option so no gateway needs to be initialized.
+ * from the gateway settings option so no gateway needs to be initialized. The one exception is a PHP Error
+ * caught where the client catches only exceptions: see log_throwable().
  *
  * @since 11.2.0
  * @internal
@@ -24,6 +28,11 @@ class WooPaymentsLogger {
 	 * Log source the client writes to.
 	 */
 	public const SOURCE = 'woopayments';
+
+	/**
+	 * Number of stack frames written for a caught throwable.
+	 */
+	private const TRACE_FRAMES = 5;
 
 	/**
 	 * Account service.
@@ -75,5 +84,63 @@ class WooPaymentsLogger {
 	 */
 	public function error( string $message, array $context = array() ): void {
 		$this->log( $message, 'error', $context );
+	}
+
+	/**
+	 * Log a caught throwable with its class, code and a short trace.
+	 *
+	 * An Exception follows the logging setting, as on the client (`includes/class-logger.php:100-112`). Any other
+	 * throwable is a PHP Error the client would let fatal, so it is always written at error level (monitor rule 2026-10-04).
+	 *
+	 * @param string              $message   Message.
+	 * @param Throwable           $throwable Caught throwable.
+	 * @param array<string,mixed> $context   Context, such as order_id or intent_id.
+	 * @param string              $level     Log level for an Exception.
+	 */
+	public function log_throwable( string $message, Throwable $throwable, array $context = array(), string $level = 'error' ): void {
+		if ( $throwable instanceof Exception ) {
+			$this->log( $message, $level, array_merge( $context, self::get_throwable_context( $throwable ) ) );
+			return;
+		}
+
+		$this->log_throwable_always( $message, $throwable, $context );
+	}
+
+	/**
+	 * Write an error line for a caught throwable whatever the logging setting.
+	 *
+	 * @param string              $message   Message.
+	 * @param Throwable           $throwable Caught throwable.
+	 * @param array<string,mixed> $context   Context, such as order_id or intent_id.
+	 */
+	public function log_throwable_always( string $message, Throwable $throwable, array $context = array() ): void {
+		wc_get_logger()->error( $message, array_merge( $context, self::get_throwable_context( $throwable ), array( 'source' => self::SOURCE ) ) );
+	}
+
+	/**
+	 * Get a throwable's class, code and first stack frames, without call arguments.
+	 *
+	 * @param Throwable $throwable Caught throwable.
+	 * @return array{exception:string,code:int|string,trace:string}
+	 */
+	private static function get_throwable_context( Throwable $throwable ): array {
+		$frames = array();
+		foreach ( array_slice( $throwable->getTrace(), 0, self::TRACE_FRAMES ) as $index => $frame ) {
+			$frames[] = sprintf(
+				'#%d %s(%s): %s%s%s()',
+				$index,
+				$frame['file'] ?? '[internal function]',
+				$frame['line'] ?? '',
+				$frame['class'] ?? '',
+				$frame['type'] ?? '',
+				$frame['function']
+			);
+		}
+
+		return array(
+			'exception' => get_class( $throwable ),
+			'code'      => $throwable->getCode(),
+			'trace'     => implode( "\n", $frames ),
+		);
 	}
 }

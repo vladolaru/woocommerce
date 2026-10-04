@@ -59,6 +59,56 @@ class WooPaymentsLoggerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 42, $lines[0][2]['order_id'] );
 	}
 
+	/**
+	 * @testdox With debug logging off, a caught $throwable_class is written: $expected.
+	 *
+	 * The client catches only exceptions at these sites, so a PHP Error would fatal there; native writes it always.
+	 *
+	 * @testWith ["TypeError", true]
+	 *           ["RuntimeException", false]
+	 *
+	 * @param string $throwable_class Class of the caught throwable.
+	 * @param bool   $expected        Whether the line is written.
+	 */
+	public function test_writes_a_php_error_whatever_the_logging_setting( string $throwable_class, bool $expected ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$account_service = new WooPaymentsAccountService();
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ) );
+		$sut = new WooPaymentsLogger();
+		$sut->init( $account_service );
+		$throwable = ( static function ( string $secret ) use ( $throwable_class ) {
+			unset( $secret ); // Only here to put an argument in the trace.
+			return new $throwable_class( 'Argument #1 must be of type array', 7 );
+		} )( 'secret-call-argument' );
+
+		$written = array();
+		$filter  = function ( $message, $level, $context ) use ( &$written ) {
+			$written[] = array( $level, $message, $context );
+			return $message;
+		};
+		add_filter( 'woocommerce_logger_log_message', $filter, 10, 3 );
+		try {
+			$sut->log_throwable( 'Error completing the payment: Argument #1 must be of type array', $throwable, array( 'order_id' => 42 ), 'info' );
+		} finally {
+			remove_filter( 'woocommerce_logger_log_message', $filter, 10 );
+		}
+
+		$lines = array_values( array_filter( $written, static fn( array $line ): bool => 'Error completing the payment: Argument #1 must be of type array' === $line[1] ) );
+		if ( ! $expected ) {
+			$this->assertSame( array(), $lines );
+			return;
+		}
+		$this->assertNotSame( array(), $lines );
+		$this->assertSame( 'error', $lines[0][0], 'A PHP Error is written at error level whatever level the site asks for.' );
+		$this->assertSame( 'woopayments', $lines[0][2]['source'] );
+		$this->assertSame( 42, $lines[0][2]['order_id'] );
+		$this->assertSame( 'TypeError', $lines[0][2]['exception'] );
+		$this->assertSame( 7, $lines[0][2]['code'] );
+		$this->assertStringContainsString( __CLASS__ . '->' . __FUNCTION__ . '()', $lines[0][2]['trace'] );
+		$this->assertStringNotContainsString( 'secret-call-argument', $lines[0][2]['trace'], 'The trace leaves out call arguments.' );
+	}
+
 	/** @return array<string,array{string,bool,bool}> */
 	public static function logging_states(): array {
 		return array(

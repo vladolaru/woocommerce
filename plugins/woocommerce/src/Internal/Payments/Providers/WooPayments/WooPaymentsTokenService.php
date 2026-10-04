@@ -184,7 +184,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			try {
 				$api_client->detach_payment_method( (string) $token->get_token() );
 			} catch ( Throwable $exception ) {
-				wc_get_container()->get( WooPaymentsLogger::class )->error( 'Error detaching native WooPayments payment method: ' . $exception->getMessage() );
+				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Error detaching native WooPayments payment method: ' . $exception->getMessage(), $exception );
 			}
 		}
 
@@ -214,7 +214,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 				try {
 					$customer_service->set_default_payment_method_for_customer( $customer_id, (string) $token->get_token() );
 				} catch ( Throwable $exception ) {
-					wc_get_container()->get( WooPaymentsLogger::class )->error( 'Error setting native WooPayments default payment method: ' . $exception->getMessage() );
+					wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Error setting native WooPayments default payment method: ' . $exception->getMessage(), $exception );
 				}
 			}
 		}
@@ -868,7 +868,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 
 			$payment_methods = $this->get_payment_methods_from_provider( $customer_service, $user_id, $customer_id, $retrieved_payment_method_types );
 		} catch ( Throwable $exception ) {
-			wc_get_container()->get( WooPaymentsLogger::class )->error( 'Failed to fetch payment methods for customer: ' . $exception->getMessage() );
+			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Failed to fetch payment methods for customer: ' . $exception->getMessage(), $exception );
 
 			return $tokens;
 		}
