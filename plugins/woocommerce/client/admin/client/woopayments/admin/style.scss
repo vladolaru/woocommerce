@@ -572,6 +572,14 @@
 	// stylelint-enable declaration-property-value-disallowed-list
 }
 
+// Client 11.1.0 `assets/css/admin.css:29-34`: list rows draw the brand at its full 32x20; only the details cell shrinks it.
+.woocommerce-woopayments-money-movement__card-brand--list {
+	// stylelint-disable declaration-property-value-disallowed-list -- sized by the card brand asset.
+	height: 20px;
+	width: 32px;
+	// stylelint-enable declaration-property-value-disallowed-list
+}
+
 .woocommerce-woopayments-money-movement__dispute-label {
 	color: $studio-gray-50;
 	font-size: $font-size-small;

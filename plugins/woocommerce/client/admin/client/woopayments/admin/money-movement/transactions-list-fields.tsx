@@ -186,7 +186,7 @@ export const PaymentSource = ( {
 	return (
 		<span className="woocommerce-woopayments-money-movement__card-summary">
 			<img
-				className="woocommerce-woopayments-money-movement__card-brand"
+				className="woocommerce-woopayments-money-movement__card-brand woocommerce-woopayments-money-movement__card-brand--list"
 				src={ iconUrl }
 				alt={ label }
 			/>
