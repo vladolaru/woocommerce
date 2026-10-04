@@ -200,6 +200,23 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should queue nothing and track nothing while the WooPayments gateway is disabled.
+	 *
+	 * Client 11.1.0 `should_enable_tracking()` returns false when the gateway is disabled (`class-woopay-tracker.php:242-246`),
+	 * so a connected store with the gateway off loads no Tracks script on its thank-you page (review 36 F3).
+	 */
+	public function test_tracking_is_off_while_the_gateway_is_disabled(): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		$sut = $this->create_controller( true, $this->create_account_service( true, false ) );
+
+		$sut->queue_user_event( 'order_success_page_view', array( 'theme_type' => 'blocks' ) );
+
+		$this->assertFalse( has_action( 'wp_footer', array( $sut, 'enqueue_frontend_events_script' ) ) );
+		$this->assertFalse( $sut->is_shopper_tracking_enabled( false, true ) );
+	}
+
+	/**
 	 * @testdox Should queue nothing when WooPay is off, as client 11.1.0's frontend sender drops page views when isShopperTrackingEnabled is false.
 	 */
 	public function test_queue_user_event_is_a_no_op_when_woopay_is_off(): void {
@@ -207,8 +224,9 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_allow_tracking', 'yes' );
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'can_process_payments', 'get_cached_account_data', 'get_gateway_setting' ) )
+			->onlyMethods( array( 'can_process_payments', 'get_cached_account_data', 'get_gateway_setting', 'is_gateway_enabled' ) )
 			->getMock();
+		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
 		$account_service->method( 'can_process_payments' )->willReturn( true );
 		$account_service->method( 'get_cached_account_data' )->willReturn( array( 'platform_checkout_eligible' => true ) );
 		$account_service->method( 'get_gateway_setting' )->willReturn( 'no' );
@@ -228,8 +246,9 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_allow_tracking', 'yes' );
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'can_process_payments', 'get_cached_account_data', 'get_gateway_setting' ) )
+			->onlyMethods( array( 'can_process_payments', 'get_cached_account_data', 'get_gateway_setting', 'is_gateway_enabled' ) )
 			->getMock();
+		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
 		$account_service->method( 'can_process_payments' )->willReturn( true );
 		$account_service->method( 'get_cached_account_data' )->willReturn( array( 'platform_checkout_eligible' => true ) );
 		$account_service->method( 'get_gateway_setting' )->willReturn( 'no' );
@@ -332,15 +351,17 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create an account service double.
 	 *
-	 * @param bool $test_mode Whether the account is in test mode.
+	 * @param bool $test_mode       Whether the account is in test mode.
+	 * @param bool $gateway_enabled Whether the WooPayments gateway is enabled.
 	 * @return WooPaymentsAccountService
 	 */
-	private function create_account_service( bool $test_mode ): WooPaymentsAccountService {
+	private function create_account_service( bool $test_mode, bool $gateway_enabled = true ): WooPaymentsAccountService {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'can_process_payments', 'get_cached_account_data', 'get_gateway_setting', 'is_test_mode_enabled' ) )
+			->onlyMethods( array( 'can_process_payments', 'get_cached_account_data', 'get_gateway_setting', 'is_test_mode_enabled', 'is_gateway_enabled' ) )
 			->getMock();
 
+		$account_service->method( 'is_gateway_enabled' )->willReturn( $gateway_enabled );
 		$account_service->method( 'can_process_payments' )->willReturn( true );
 		$account_service->method( 'get_cached_account_data' )->willReturn(
 			array(

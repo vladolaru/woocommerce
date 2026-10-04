@@ -553,6 +553,11 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 			return false;
 		}
 
+		// No tracking while the gateway is disabled, as on the client (`class-woopay-tracker.php:242-246`).
+		if ( ! $this->get_account_service()->is_gateway_enabled() ) {
+			return false;
+		}
+
 		return $this->get_account_service()->can_process_payments() && $this->is_country_tracks_eligible();
 	}
 

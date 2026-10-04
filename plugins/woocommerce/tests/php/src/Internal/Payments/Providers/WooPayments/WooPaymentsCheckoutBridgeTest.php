@@ -259,7 +259,10 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 					'country'                    => 'US',
 					'platform_checkout_eligible' => true,
 				),
-				array( 'platform_checkout' => 'yes' )
+				array(
+					'enabled'           => 'yes',
+					'platform_checkout' => 'yes',
+				)
 			)
 		);
 		$sut = new WooPaymentsCheckoutBridge();
@@ -359,7 +362,10 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 					'country'                    => 'US',
 					'platform_checkout_eligible' => true,
 				),
-				array( 'platform_checkout' => 'yes' )
+				array(
+					'enabled'           => 'yes',
+					'platform_checkout' => 'yes',
+				)
 			)
 		);
 		$woopay = $this->getMockBuilder( WooPaymentsWooPaySessionService::class )
