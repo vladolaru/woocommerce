@@ -274,6 +274,43 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		if ( false === has_action( 'adminmenu', array( $this, 'open_payments_menu' ) ) ) {
 			add_action( 'adminmenu', array( $this, 'open_payments_menu' ) );
 		}
+
+		if ( false === has_filter( 'admin_title', array( $this, 'set_admin_title' ) ) ) {
+			add_filter( 'admin_title', array( $this, 'set_admin_title' ) );
+		}
+	}
+
+	/**
+	 * Name the browser tab after the native WooPayments page on first paint, in WooCommerce admin's header format.
+	 *
+	 * Detail pages take their list's title, as the client's server-side title does; `admin/routes.tsx` then refines it.
+	 * Settings pages keep the WooCommerce settings title.
+	 *
+	 * @since 11.2.0
+	 * @internal
+	 *
+	 * @param mixed $admin_title The admin page title.
+	 * @return mixed
+	 */
+	public function set_admin_title( $admin_title ) {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only page title.
+		$current_path = $this->is_payments_settings_request() ? $this->get_request_scalar( $_GET, 'path' ) : '';
+		if ( ! in_array( $current_path, self::REGISTERED_ROUTE_PATHS, true ) ) {
+			return $admin_title;
+		}
+
+		foreach ( $this->get_page_titles() as $page_path => $page_title ) {
+			if ( $current_path === $page_path || str_starts_with( $current_path, $page_path . '/' ) ) {
+				return sprintf(
+					/* translators: 1: The page title. 2: The name of the website. */
+					esc_html__( '%1$s &lsaquo; %2$s &#8212; WooCommerce', 'woocommerce' ),
+					esc_html( $page_title ) . ' &lsaquo; ' . esc_html__( 'Payments', 'woocommerce' ),
+					esc_html( get_bloginfo( 'name' ) )
+				);
+			}
+		}
+
+		return $admin_title;
 	}
 
 	/**
@@ -1014,13 +1051,14 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	 * @return array<int,array{title:string,path:string,query?:array<string,string>,badge_count?:int}>
 	 */
 	private function get_full_menu_items(): array {
-		$menu_items = array(
+		$page_titles = $this->get_page_titles();
+		$menu_items  = array(
 			array(
-				'title' => __( 'Overview', 'woocommerce' ),
+				'title' => $page_titles[ self::PATH_OVERVIEW ],
 				'path'  => self::PATH_OVERVIEW,
 			),
 			array(
-				'title' => __( 'Payouts', 'woocommerce' ),
+				'title' => $page_titles[ self::PATH_PAYOUTS ],
 				'path'  => self::PATH_PAYOUTS,
 			),
 			$this->get_transactions_menu_item(),
@@ -1031,28 +1069,28 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		// After Disputes, as the client registers it (client 11.1.0 `includes/admin/class-wc-payments-admin.php:370-381, 530-531`).
 		if ( $this->account_service->is_reports_enabled() ) {
 			$menu_items[] = array(
-				'title' => __( 'Reports', 'woocommerce' ),
+				'title' => $page_titles[ self::PATH_REPORTS ],
 				'path'  => self::PATH_REPORTS,
 			);
 		}
 
 		if ( $this->account_service->is_card_present_eligible() && $this->account_service->has_card_readers_available() ) {
 			$menu_items[] = array(
-				'title' => __( 'Card Readers', 'woocommerce' ),
+				'title' => $page_titles[ self::PATH_CARD_READERS ],
 				'path'  => self::PATH_CARD_READERS,
 			);
 		}
 
 		if ( $this->account_service->has_previous_capital_loans() ) {
 			$menu_items[] = array(
-				'title' => __( 'Capital Loans', 'woocommerce' ),
+				'title' => $page_titles[ self::PATH_LOANS ],
 				'path'  => self::PATH_LOANS,
 			);
 		}
 
 		if ( $this->account_service->is_documents_enabled() ) {
 			$menu_items[] = array(
-				'title' => __( 'Documents', 'woocommerce' ),
+				'title' => $page_titles[ self::PATH_DOCUMENTS ],
 				'path'  => self::PATH_DOCUMENTS,
 			);
 		}
@@ -1066,6 +1104,26 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Get the Payments submenu titles of the native WooPayments list pages, keyed by route path.
+	 *
+	 * The submenu and the first-paint browser tab title both read them.
+	 *
+	 * @return array<string,string>
+	 */
+	private function get_page_titles(): array {
+		return array(
+			self::PATH_OVERVIEW     => __( 'Overview', 'woocommerce' ),
+			self::PATH_PAYOUTS      => __( 'Payouts', 'woocommerce' ),
+			self::PATH_TRANSACTIONS => __( 'Transactions', 'woocommerce' ),
+			self::PATH_DISPUTES     => __( 'Disputes', 'woocommerce' ),
+			self::PATH_REPORTS      => __( 'Reports', 'woocommerce' ),
+			self::PATH_CARD_READERS => __( 'Card Readers', 'woocommerce' ),
+			self::PATH_LOANS        => __( 'Capital Loans', 'woocommerce' ),
+			self::PATH_DOCUMENTS    => __( 'Documents', 'woocommerce' ),
+		);
+	}
+
+	/**
 	 * Get the reduced native WooPayments submenu for restricted accounts.
 	 *
 	 * @return array<int,array{title:string,path:string,query?:array<string,string>,badge_count?:int}>
@@ -1073,7 +1131,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	private function get_reduced_menu_items(): array {
 		return array(
 			array(
-				'title' => __( 'Overview', 'woocommerce' ),
+				'title' => $this->get_page_titles()[ self::PATH_OVERVIEW ],
 				'path'  => self::PATH_OVERVIEW,
 			),
 			$this->get_transactions_menu_item(),
@@ -1088,7 +1146,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	 */
 	private function get_transactions_menu_item(): array {
 		$menu_item = array(
-			'title' => __( 'Transactions', 'woocommerce' ),
+			'title' => $this->get_page_titles()[ self::PATH_TRANSACTIONS ],
 			'path'  => self::PATH_TRANSACTIONS,
 		);
 
@@ -1107,7 +1165,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	 */
 	private function get_disputes_menu_item(): array {
 		$menu_item = array(
-			'title' => __( 'Disputes', 'woocommerce' ),
+			'title' => $this->get_page_titles()[ self::PATH_DISPUTES ],
 			'path'  => self::PATH_DISPUTES,
 		);
 

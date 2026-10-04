@@ -100,6 +100,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 10, has_filter( 'woocommerce_admin_shared_settings', array( $sut, 'preload_shared_settings' ) ) );
 		$this->assertSame( 10, has_filter( 'submenu_file', array( $sut, 'highlight_current_payments_submenu' ) ) );
 		$this->assertSame( 10, has_action( 'adminmenu', array( $sut, 'open_payments_menu' ) ) );
+		$this->assertSame( 10, has_filter( 'admin_title', array( $sut, 'set_admin_title' ) ) );
 
 		remove_filter( 'submenu_file', array( $sut, 'highlight_current_payments_submenu' ) );
 		remove_action( 'adminmenu', array( $sut, 'open_payments_menu' ) );
@@ -2030,6 +2031,55 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 				),
 			),
 		);
+	}
+
+	/**
+	 * Client 11.1.0 names its pages through WooCommerce admin's header (`%1$s &lsaquo; %2$s &#8212; WooCommerce`);
+	 * detail pages take their list's title on first paint.
+	 *
+	 * @testdox Should title $path as "$expected_page" in the browser tab on first paint.
+	 * @dataProvider provider_native_page_titles
+	 *
+	 * @param string $path          Native WooPayments route path.
+	 * @param string $expected_page Expected page section of the title.
+	 */
+	public function test_sets_the_admin_title_for_native_payments_pages( string $path, string $expected_page ): void {
+		update_option( 'blogname', 'Shop & Co' );
+		$sut          = $this->create_controller( true );
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		$_GET['path'] = $path;
+
+		$this->assertSame( "{$expected_page} &lsaquo; Payments &lsaquo; Shop &amp; Co &#8212; WooCommerce", $sut->set_admin_title( 'WooCommerce settings' ) );
+	}
+
+	/**
+	 * Native routes and the page section of their first-paint title.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function provider_native_page_titles(): array {
+		return array(
+			'overview'          => array( '/woopayments/overview', 'Overview' ),
+			'payout details'    => array( '/woopayments/payouts/details', 'Payouts' ),
+			'dispute challenge' => array( '/woopayments/disputes/challenge', 'Disputes' ),
+			'card readers'      => array( '/woopayments/card-readers', 'Card Readers' ),
+		);
+	}
+
+	/**
+	 * @testdox Should leave the admin title alone outside the native WooPayments pages.
+	 * @dataProvider provider_requests_outside_native_payments_pages
+	 *
+	 * @param array<string,string> $request Query request.
+	 */
+	public function test_does_not_change_the_admin_title_outside_native_payments_pages( array $request ): void {
+		$sut = $this->create_controller( true );
+		foreach ( $request as $key => $value ) {
+			$_GET[ $key ] = $value;
+		}
+
+		$this->assertSame( 'WooCommerce settings', $sut->set_admin_title( 'WooCommerce settings' ) );
 	}
 
 	/**

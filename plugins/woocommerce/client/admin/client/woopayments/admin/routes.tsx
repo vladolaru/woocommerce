@@ -274,7 +274,7 @@ const WooPaymentsDocumentTitle = ( { path: routePath }: { path: string } ) => {
 		document.title = decodeEntities(
 			sprintf(
 				/* translators: 1: The page title. 2: The name of the website. */
-				__( '%1$s &lsaquo; %2$s &#8212; WordPress', 'woocommerce' ),
+				__( '%1$s &lsaquo; %2$s &#8212; WooCommerce', 'woocommerce' ),
 				title,
 				siteTitle
 			)
