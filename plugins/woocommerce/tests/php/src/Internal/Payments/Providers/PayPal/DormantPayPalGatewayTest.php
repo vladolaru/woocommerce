@@ -93,7 +93,7 @@ class DormantPayPalGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should report that it needs setup, which is what swaps the enable toggle for a Finish setup button.
+	 * @testdox Should report that it needs setup, which is what swaps the enable toggle for a setup button.
 	 */
 	public function test_needs_setup(): void {
 		$this->assertTrue( $this->sut->needs_setup() );

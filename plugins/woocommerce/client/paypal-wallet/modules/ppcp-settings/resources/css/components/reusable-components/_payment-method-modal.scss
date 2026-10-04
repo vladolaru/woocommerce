@@ -88,14 +88,6 @@
 		flex-direction: column;
 		gap: 18px;
 
-		&--acdc {
-			gap: 18px;
-
-			.ppcp-r-modal__field-row--save {
-				margin-top: 2px;
-			}
-		}
-
 		.components-radio-control {
 			label {
 				@include font(14, 20, 400);

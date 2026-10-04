@@ -19,10 +19,7 @@ const modulesAssets = {
 		'css/gateway.scss',
 		'css/gateway-editor.scss',
 	],
-	'ppcp-button': [
-		'js/button.js',
-		'css/gateway.scss',
-	],
+	'ppcp-button': [ 'js/button.js', 'css/gateway.scss' ],
 	'ppcp-paylater-block': [ 'js/paylater-block.js', 'css/edit.scss' ],
 	'ppcp-paylater-wc-blocks': [
 		'js/CartPayLaterMessagesBlock/cart-paylater-block.js',

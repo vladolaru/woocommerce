@@ -75,7 +75,7 @@ class CreateSetupTokenTest extends WalletTestCase {
 	 */
 	public function payment_method_scenarios(): array {
 		return array(
-			'paypal payment method' => array( array( 'payment_method' => 'ppcp-gateway' ) ),
+			'paypal payment method'                       => array( array( 'payment_method' => 'ppcp-gateway' ) ),
 			'a request that still names the card gateway' => array(
 				array(
 					'payment_method'      => 'ppcp-credit-card-gateway',

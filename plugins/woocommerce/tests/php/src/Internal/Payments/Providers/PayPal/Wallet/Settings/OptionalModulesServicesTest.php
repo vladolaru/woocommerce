@@ -237,7 +237,7 @@ class OptionalModulesServicesTest extends WalletTestCase {
 	 */
 	public function data_todo_wirings(): array {
 		return array(
-			'Mexico, partly enabled'                  => array(
+			'Mexico, partly enabled'                 => array(
 				array(),
 				array(
 					'enable_pay_later_messaging'           => false,
@@ -251,7 +251,7 @@ class OptionalModulesServicesTest extends WalletTestCase {
 					'apply_for_working_capital'            => false,
 				),
 			),
-			'United States, the opposite locations'   => array(
+			'United States, the opposite locations'  => array(
 				$this->todo_inputs(
 					array(
 						'country'      => 'US',
@@ -280,7 +280,7 @@ class OptionalModulesServicesTest extends WalletTestCase {
 					'apply_for_working_capital'            => true,
 				),
 			),
-			'Pay Later messaging on at one location'  => array(
+			'Pay Later messaging on at one location' => array(
 				$this->todo_inputs( array( 'any_pay_later' => true ) ),
 				array(
 					'enable_pay_later_messaging'           => true,

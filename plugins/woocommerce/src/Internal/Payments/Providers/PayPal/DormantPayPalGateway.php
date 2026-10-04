@@ -13,7 +13,7 @@ use WC_Payment_Gateway;
  * Placeholder gateway that stands in for the PayPal wallet while it is dormant.
  *
  * A dormant wallet is not built, so its gateway does not exist. This placeholder gives the Payments settings list
- * a "PayPal Wallet" row with a "Finish setup" button until a merchant connects. It shares the wallet gateway's ID
+ * a "PayPal Wallet" row with a setup button until a merchant connects. It shares the wallet gateway's ID
  * and so its stored settings, which the wallet owns: this class only reads them and never writes them.
  *
  * @since 11.3.0
@@ -87,7 +87,7 @@ final class DormantPayPalGateway extends WC_Payment_Gateway {
 	}
 
 	/**
-	 * The placeholder always needs setup, so the Payments settings list offers "Finish setup" instead of an enable toggle.
+	 * The placeholder always needs setup, so the Payments settings list offers a setup button instead of an enable toggle.
 	 *
 	 * @return bool
 	 */

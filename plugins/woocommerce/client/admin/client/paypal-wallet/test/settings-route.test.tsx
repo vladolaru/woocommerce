@@ -16,15 +16,15 @@ jest.mock( '~/settings-payments/components/header/header', () => ( {
 
 const RELOAD_MARKER_KEY = 'wc_paypal_wallet_settings_reloaded_at';
 
+const setReadyState = ( readyState: 'interactive' | 'complete' ) =>
+	Object.defineProperty( document, 'readyState', {
+		configurable: true,
+		get: () => readyState,
+	} );
+
 describe( 'PayPalWalletSettingsRoute', () => {
 	const originalLocation = window.location;
 	let reload: jest.Mock;
-
-	const setReadyState = ( readyState: 'interactive' | 'complete' ) =>
-		Object.defineProperty( document, 'readyState', {
-			configurable: true,
-			get: () => readyState,
-		} );
 
 	beforeEach( () => {
 		setReadyState( 'complete' );

@@ -122,10 +122,10 @@ class AddPaymentMethodManagerTest extends WalletTestCase {
 	 */
 	public function should_load_provider(): array {
 		return array(
-			'logged out never loads'            => array( 'logged out', false, true, true, false ),
+			'logged out never loads'                       => array( 'logged out', false, true, true, false ),
 			'logged in but no vaulting enabled does not load' => array( 'no vaulting', true, false, true, false ),
 			'paypal vaulting but wrong page does not load' => array( 'wrong page', true, true, false, false ),
-			'paypal vaulting on the page loads' => array( 'paypal only', true, true, true, true ),
+			'paypal vaulting on the page loads'            => array( 'paypal only', true, true, true, true ),
 		);
 	}
 
