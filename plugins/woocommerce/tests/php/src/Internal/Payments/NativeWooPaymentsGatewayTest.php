@@ -2154,7 +2154,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->willReturn( $this->create_card_token( $user_id, (string) $recorded['body']['payment_method'] ) );
 
 		$gateway = new NativeWooPaymentsGateway();
-		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service );
+		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service, $this->create_customer_service_for_user( $user_id, (string) $recorded['body']['customer'] ) );
 
 		$result = $gateway->add_payment_method();
 
@@ -2197,7 +2197,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$token_service->expects( $this->never() )->method( 'get_or_create_token_for_user' );
 
 		$gateway = new NativeWooPaymentsGateway();
-		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service );
+		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service, $this->create_customer_service_for_user( $user_id, (string) $recorded['body']['customer'] ) );
 
 		$result = $gateway->add_payment_method();
 
@@ -2251,6 +2251,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				array(
 					'id'             => 'seti_sepa',
 					'status'         => 'succeeded',
+					'customer'       => 'cus_me',
 					'payment_method' => 'pm_sepa',
 				)
 			);
@@ -2275,7 +2276,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertNotNull( $definition );
 
 		$gateway = new NativeWooPaymentsGateway( $definition );
-		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service );
+		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service, $this->create_customer_service_for_user( $user_id, 'cus_me' ) );
 
 		$result = $gateway->add_payment_method();
 
@@ -2396,6 +2397,86 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should refuse to save a setup intent without a customer to bind it to: $_dataName.
+	 *
+	 * The client refuses a user with no stored WooPayments customer before it reads the intent, with its "not able"
+	 * copy (client 11.1.0 `class-wc-payment-gateway-wcpay.php:4434-4439`). Native also refuses an intent without a
+	 * customer, with the non-succeeded copy its customer comparison already uses (`:4448`).
+	 *
+	 * @dataProvider setup_intent_without_customer_provider
+	 *
+	 * @param string|null $user_customer   Customer stored for the current user.
+	 * @param string|null $intent_customer Customer on the SetupIntent.
+	 * @param bool        $reads_intent    Whether the SetupIntent is read.
+	 * @param string      $expected        Expected shopper notice.
+	 */
+	public function test_add_payment_method_refuses_setup_intent_without_a_customer_to_bind( ?string $user_customer, ?string $intent_customer, bool $reads_intent, string $expected ): void {
+		wc_clear_notices();
+		$user_id = self::factory()->user->create();
+		wp_set_current_user( $user_id );
+		$_POST['wcpay-setup-intent'] = 'seti_foreign';
+
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_setup_intention' ) )
+			->getMock();
+		$api_client
+			->expects( $reads_intent ? $this->once() : $this->never() )
+			->method( 'get_setup_intention' )
+			->willReturn(
+				array_filter(
+					array(
+						'id'             => 'seti_foreign',
+						'status'         => 'succeeded',
+						'customer'       => $intent_customer,
+						'payment_method' => 'pm_foreign',
+					)
+				)
+			);
+
+		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_token_for_user' ) )
+			->getMock();
+		$token_service->expects( $this->never() )->method( 'get_or_create_token_for_user' );
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service, $this->create_customer_service_for_user( $user_id, $user_customer ) );
+
+		$this->assertSame( array( 'result' => 'error' ), $gateway->add_payment_method() );
+		$this->assertSame( $expected, wc_get_notices( 'error' )[0]['notice'] ?? '' );
+	}
+
+	/**
+	 * Customer pairs add_payment_method() has nothing to bind the intent to.
+	 *
+	 * @return array<string,array{0:?string,1:?string,2:bool,3:string}>
+	 */
+	public function setup_intent_without_customer_provider(): array {
+		return array(
+			'user without a WooPayments customer' => array( null, 'cus_victim', false, "We're not able to add this payment method. Please try again later" ),
+			'intent without a customer'           => array( 'cus_me', null, true, 'Failed to add the provided payment method. Please try again later' ),
+		);
+	}
+
+	/**
+	 * Create a customer service that knows one user's stored WooPayments customer.
+	 *
+	 * @param int         $user_id     User ID.
+	 * @param string|null $customer_id Stored customer ID, or null when the user has none.
+	 * @return WooPaymentsCustomerService
+	 */
+	private function create_customer_service_for_user( int $user_id, ?string $customer_id ): WooPaymentsCustomerService {
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_customer_id_by_user_id' ) )
+			->getMock();
+		$customer_service->method( 'get_customer_id_by_user_id' )->with( $user_id )->willReturn( $customer_id );
+
+		return $customer_service;
+	}
+
+	/**
 	 * @testdox Should refuse a setup intent it cannot save with the client's copy: $_dataName.
 	 *
 	 * Oracle: client 11.1.0 `class-wc-payment-gateway-wcpay.php:4437` "We're not able to add this payment
@@ -2426,6 +2507,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 					array(
 						'id'             => 'seti_native',
 						'status'         => 'succeeded',
+						'customer'       => 'cus_me',
 						'payment_method' => 'no_payment_method' === $failure ? null : 'pm_added',
 					)
 				)
@@ -2439,7 +2521,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$token_service->method( 'get_or_create_token_for_user' )->willReturn( null );
 
 		$gateway = new NativeWooPaymentsGateway();
-		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service );
+		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service, $this->create_customer_service_for_user( $user_id, 'cus_me' ) );
 
 		$result = $gateway->add_payment_method();
 
@@ -2465,7 +2547,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_add_payment_method_filters_api_errors_like_the_client( WooPaymentsApiException $exception, string $expected ): void {
 		wc_clear_notices();
-		wp_set_current_user( self::factory()->user->create() );
+		$user_id = self::factory()->user->create();
+		wp_set_current_user( $user_id );
 		$_POST['wcpay-setup-intent'] = 'seti_native';
 
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
@@ -2477,7 +2560,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->enable_debug_logging();
 		$logger  = RecordingWcLogger::install();
 		$gateway = new NativeWooPaymentsGateway();
-		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client );
+		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, null, $this->create_customer_service_for_user( $user_id, 'cus_me' ) );
 
 		$this->assertSame( array( 'result' => 'error' ), $gateway->add_payment_method() );
 		$this->assertSame( $expected, wc_get_notices( 'error' )[0]['notice'] ?? '' );

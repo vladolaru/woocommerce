@@ -735,19 +735,22 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 				return $this->add_payment_method_error( $fraud_prevention_error );
 			}
 
+			// The My Account form creates the customer before the SetupIntent, so a user without one cannot own the
+			// intent; the client refuses before reading it (client 11.1.0 gw:4434-4439).
+			$user_customer = (string) $this->get_customer_service()->get_customer_id_by_user_id( $user_id );
+			if ( '' === $user_customer ) {
+				return $this->add_payment_method_error( __( "We're not able to add this payment method. Please try again later", 'woocommerce' ) );
+			}
+
 			$setup_intent = $this->get_api_client()->get_setup_intention( $setup_intent_id );
 			$status       = isset( $setup_intent['status'] ) ? (string) $setup_intent['status'] : '';
 			if ( 'succeeded' !== $status ) {
 				return $this->add_payment_method_error( __( 'Failed to add the provided payment method. Please try again later', 'woocommerce' ) );
 			}
 
-			// Reject SetupIntents owned by a different WooPayments customer to prevent attaching another
-			// user's payment method. This is a no-op when either customer ID is unknown (e.g. the server
-			// already scopes the intent, or the user has no WooPayments customer yet), so we only reject
-			// on a real mismatch between two known IDs.
-			$intent_customer = $this->get_setup_intent_customer_id( $setup_intent );
-			$user_customer   = (string) $this->get_customer_service()->get_customer_id_by_user_id( $user_id );
-			if ( '' !== $intent_customer && '' !== $user_customer && $intent_customer !== $user_customer ) {
+			// Save only an intent made for this user's customer, so a posted SetupIntent id of another shopper cannot
+			// attach their payment method here. The client checks only that the user has a customer (gw:4434-4454).
+			if ( ! hash_equals( $user_customer, $this->get_setup_intent_customer_id( $setup_intent ) ) ) {
 				return $this->add_payment_method_error( __( 'Failed to add the provided payment method. Please try again later', 'woocommerce' ) );
 			}
 
