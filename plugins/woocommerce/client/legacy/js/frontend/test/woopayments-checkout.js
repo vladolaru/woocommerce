@@ -1480,6 +1480,155 @@ describe( 'WooPayments checkout', () => {
 		} );
 	} );
 
+	// Card-on-file mandate text: the Payment Element shows it for reusable methods only when its `terms` option is
+	// 'always'. Expected values come from client 11.1.0: upe-utils.js:85-101 reads the save checkbox (the server
+	// renders it hidden and checked on My Account > Add payment method, on a subscription payment change and for a
+	// subscription cart, class-wc-payments-checkout.php:513-515) or cartContainsSubscription, and
+	// payment-processing.js:411-425 follows the checkbox when the shopper toggles it.
+	describe( 'card-on-file mandate terms', () => {
+		function renderForm( formAttributes, saveCheckbox ) {
+			document.body.innerHTML =
+				'<form ' +
+				formAttributes +
+				'>' +
+				'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
+				'<div id="wcpay-core-payment-element"></div>' +
+				( saveCheckbox || '' ) +
+				'</form>';
+		}
+
+		const visibleSaveCheckbox =
+			'<input id="wc-woocommerce_payments-new-payment-method" type="checkbox" />';
+		const hiddenCheckedSaveCheckbox =
+			'<div style="display:none;"><input id="wc-woocommerce_payments-new-payment-method" type="checkbox" checked="checked" /></div>';
+
+		function toggleSaveCheckbox( checked ) {
+			const checkbox = document.getElementById(
+				'wc-woocommerce_payments-new-payment-method'
+			);
+			checkbox.checked = checked;
+			checkbox.dispatchEvent(
+				new window.Event( 'change', {
+					bubbles: true,
+					cancelable: true,
+				} )
+			);
+		}
+
+		test( 'shows the terms on the My Account add-payment-method form, which always saves', () => {
+			renderForm( 'id="add_payment_method"' );
+			window.wcpay_core_checkout_config.isCheckout = false;
+
+			require( '../woopayments-checkout' );
+
+			expect( paymentElementOptions.terms ).toEqual( {
+				card: 'always',
+			} );
+		} );
+
+		test( 'hides the terms on classic checkout while the save checkbox is unchecked', () => {
+			renderForm( 'class="checkout"', visibleSaveCheckbox );
+
+			require( '../woopayments-checkout' );
+
+			expect( paymentElementOptions.terms ).toEqual( {
+				card: 'never',
+			} );
+		} );
+
+		test( 'shows the terms on classic checkout when the save checkbox is already checked at mount', () => {
+			renderForm(
+				'class="checkout"',
+				'<input id="wc-woocommerce_payments-new-payment-method" type="checkbox" checked />'
+			);
+
+			require( '../woopayments-checkout' );
+
+			expect( paymentElementOptions.terms ).toEqual( {
+				card: 'always',
+			} );
+		} );
+
+		test( 'follows the save checkbox on classic checkout as the shopper toggles it', () => {
+			renderForm( 'class="checkout"', visibleSaveCheckbox );
+
+			require( '../woopayments-checkout' );
+
+			toggleSaveCheckbox( true );
+			expect( updatePaymentElement ).toHaveBeenLastCalledWith( {
+				terms: { card: 'always' },
+			} );
+
+			toggleSaveCheckbox( false );
+			expect( updatePaymentElement ).toHaveBeenLastCalledWith( {
+				terms: { card: 'never' },
+			} );
+		} );
+
+		test( 'shows the terms on classic checkout for a subscription cart', () => {
+			renderForm( 'class="checkout"', hiddenCheckedSaveCheckbox );
+			window.wcpay_core_checkout_config.cartContainsSubscription = true;
+
+			require( '../woopayments-checkout' );
+
+			expect( paymentElementOptions.terms ).toEqual( {
+				card: 'always',
+			} );
+		} );
+
+		test( 'shows the terms for a subscription cart even without a save checkbox', () => {
+			renderForm( 'class="checkout"' );
+			window.wcpay_core_checkout_config.cartContainsSubscription = true;
+
+			require( '../woopayments-checkout' );
+
+			expect( paymentElementOptions.terms ).toEqual( {
+				card: 'always',
+			} );
+		} );
+
+		test( 'shows the terms on the subscription change-payment-method form', () => {
+			renderForm( 'id="order_review"', hiddenCheckedSaveCheckbox );
+			window.wcpay_core_checkout_config.isChangingPayment = true;
+
+			require( '../woopayments-checkout' );
+
+			expect( paymentElementOptions.terms ).toEqual( {
+				card: 'always',
+			} );
+		} );
+
+		test( 'hides the terms on order-pay until the shopper checks the save checkbox', () => {
+			renderForm( 'id="order_review"', visibleSaveCheckbox );
+			window.wcpay_core_checkout_config.isOrderPay = true;
+			window.wcpay_core_checkout_config.orderId = 123;
+
+			require( '../woopayments-checkout' );
+
+			expect( paymentElementOptions.terms ).toEqual( {
+				card: 'never',
+			} );
+
+			toggleSaveCheckbox( true );
+			expect( updatePaymentElement ).toHaveBeenLastCalledWith( {
+				terms: { card: 'always' },
+			} );
+		} );
+
+		test( 'shows the terms on order-pay when the cart holds a subscription', () => {
+			renderForm( 'id="order_review"', hiddenCheckedSaveCheckbox );
+			window.wcpay_core_checkout_config.isOrderPay = true;
+			window.wcpay_core_checkout_config.orderId = 123;
+			window.wcpay_core_checkout_config.cartContainsSubscription = true;
+
+			require( '../woopayments-checkout' );
+
+			expect( paymentElementOptions.terms ).toEqual( {
+				card: 'always',
+			} );
+		} );
+	} );
+
 	test( 'handles PaymentIntent confirmation hashes through next actions', async () => {
 		window.location.hash =
 			'#wcpay-confirm-pi:123:pi_native_secret_abc:nonce';

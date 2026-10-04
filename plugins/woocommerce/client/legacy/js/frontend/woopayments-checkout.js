@@ -869,8 +869,12 @@
 						? 'auto'
 						: 'never',
 			},
+			// The My Account form always saves, so it shows the card-on-file terms. Client 11.1.0 gets
+			// there through a hidden, checked save checkbox (class-wc-payments-checkout.php:513-515).
 			terms: getReusablePaymentMethodTerms(
-				shouldSavePaymentMethod() || config.cartContainsSubscription
+				isAddPaymentMethodForm() ||
+					shouldSavePaymentMethod() ||
+					config.cartContainsSubscription
 					? 'always'
 					: 'never'
 			),
