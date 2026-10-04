@@ -150,7 +150,7 @@ class WooPaymentsProviderGatewayAdapter {
 	 * Charge an order through the active WooPayments transport.
 	 *
 	 * @param PaymentContext $context         Payment context.
-	 * @param string         $idempotency_key Deterministic idempotency key.
+	 * @param string         $idempotency_key Key minted fresh for this payment attempt.
 	 * @return PaymentOutcome
 	 */
 	public function charge( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
@@ -362,7 +362,8 @@ class WooPaymentsProviderGatewayAdapter {
 	 * Charge an order through the native WooPayments transport.
 	 *
 	 * @param PaymentContext $context         Payment context.
-	 * @param string         $idempotency_key Deterministic idempotency key.
+	 * @param string         $idempotency_key Key minted fresh for this payment attempt. A charge key already stored on
+	 *                                        the order is sent instead until a definitive outcome retires it.
 	 * @return PaymentOutcome
 	 * @throws WooPaymentsApiException When the provider request fails.
 	 */
@@ -772,7 +773,7 @@ class WooPaymentsProviderGatewayAdapter {
 	 * Create or confirm a zero-amount setup intent through native transport.
 	 *
 	 * @param PaymentContext $context         Payment context.
-	 * @param string         $idempotency_key Deterministic idempotency key.
+	 * @param string         $idempotency_key Key minted fresh for this payment attempt.
 	 * @return PaymentOutcome
 	 * @throws WooPaymentsApiException When the provider request fails.
 	 */

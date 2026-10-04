@@ -43,7 +43,7 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
  *
  * The arbiter is necessary but not sufficient for money-safety: the binding invariant — only one
  * runtime may submit a payment/refund/capture for a given site+order at a time — is additionally
- * backed by a shared order lock + deterministic idempotency key in the processing path (introduced
+ * backed by a shared order lock and provider idempotency keys in the processing path (introduced
  * with native processing, not here).
  *
  * Resolved as a single instance by the runtime DI container (auto-wired; the container caches one

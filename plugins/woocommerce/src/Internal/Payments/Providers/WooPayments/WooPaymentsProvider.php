@@ -443,7 +443,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 	 * Charge an order through WooPayments.
 	 *
 	 * @param PaymentContext $context         Payment context.
-	 * @param string         $idempotency_key Deterministic idempotency key.
+	 * @param string         $idempotency_key Key minted fresh for this payment attempt.
 	 * @return PaymentOutcome
 	 */
 	public function charge( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
@@ -454,7 +454,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 	 * Capture an authorized WooPayments charge.
 	 *
 	 * @param PaymentContext $context         Payment context.
-	 * @param string         $idempotency_key Deterministic idempotency key.
+	 * @param string         $idempotency_key Operation lock key; not sent to the provider.
 	 * @return PaymentOutcome
 	 */
 	public function capture( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
@@ -469,7 +469,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 	 * Cancel an authorized WooPayments charge.
 	 *
 	 * @param PaymentContext $context         Payment context.
-	 * @param string         $idempotency_key Deterministic idempotency key.
+	 * @param string         $idempotency_key Operation lock key; not sent to the provider.
 	 * @return PaymentOutcome
 	 */
 	public function cancel( PaymentContext $context, string $idempotency_key ): PaymentOutcome {

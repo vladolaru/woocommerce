@@ -671,7 +671,7 @@ class PaymentProcessingService {
 	 *
 	 * @param PaymentContext   $context         Payment context.
 	 * @param ProviderContract $provider        Provider.
-	 * @param string           $idempotency_key Deterministic idempotency key.
+	 * @param string           $idempotency_key Key minted fresh for this payment attempt.
 	 * @return PaymentOutcome
 	 */
 	private function charge_provider( PaymentContext $context, ProviderContract $provider, string $idempotency_key ): PaymentOutcome {
@@ -778,7 +778,7 @@ class PaymentProcessingService {
 	 *
 	 * @param WC_Order       $order           Order being processed.
 	 * @param string         $operation       Provider operation.
-	 * @param string         $idempotency_key Deterministic operation key.
+	 * @param string         $idempotency_key Operation key: the per-attempt key for charges, the derived key otherwise.
 	 * @param Throwable      $exception       Provider throwable.
 	 * @param PaymentOutcome $outcome         Normalized failed outcome.
 	 */

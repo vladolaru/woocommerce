@@ -51,7 +51,8 @@ class PaymentOperationIdempotency {
 	 * provider would treat the second operation as a retry of the first and replay the
 	 * cached response, silently dropping a real money movement. It is only folded into
 	 * the key when provided, so keys for operations that do not need a per-instance
-	 * dimension (such as charges) remain unchanged.
+	 * dimension (such as captures and cancels) remain unchanged. Charges never use a
+	 * derived key; they use mint_attempt_key().
 	 *
 	 * @since 11.0.0
 	 *
