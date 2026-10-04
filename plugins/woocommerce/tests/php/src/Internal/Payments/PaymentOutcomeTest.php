@@ -55,7 +55,7 @@ class PaymentOutcomeTest extends WC_Unit_Test_Case {
 		$outcome = new PaymentOutcome(
 			PaymentOutcome::STATUS_COMPLETED,
 			'pi_effect_plan',
-			'',
+			'https://example.com/return',
 			'pm_effect_plan',
 			'cus_effect_plan',
 			array( 'meta' => array( '_charge_id' => 'ch_effect_plan' ) )
@@ -70,6 +70,7 @@ class PaymentOutcomeTest extends WC_Unit_Test_Case {
 		$this->assertSame( $plan, $planned_outcome->get_effect_plan() );
 		$this->assertSame( $outcome->get_status(), $planned_outcome->get_status() );
 		$this->assertSame( $outcome->get_provider_payment_id(), $planned_outcome->get_provider_payment_id() );
+		$this->assertSame( $outcome->get_redirect_url(), $planned_outcome->get_redirect_url() );
 		$this->assertSame( $outcome->get_payment_method_id(), $planned_outcome->get_payment_method_id() );
 		$this->assertSame( $outcome->get_customer_id(), $planned_outcome->get_customer_id() );
 		$this->assertSame( $outcome->get_data(), $planned_outcome->get_data() );
