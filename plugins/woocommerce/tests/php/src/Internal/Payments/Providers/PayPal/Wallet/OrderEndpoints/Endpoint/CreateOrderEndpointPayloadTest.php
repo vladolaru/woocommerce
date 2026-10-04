@@ -169,22 +169,13 @@ class CreateOrderEndpointPayloadTest extends WalletTestCase {
 	}
 
 	/**
-	 * Put the session back and undo the shipping setup the tests may have made.
+	 * Put the session back and undo the shipping setup the tests may have made. WalletTestCase puts the customer's address back.
 	 */
 	public function tearDown(): void {
 		try {
 			WC()->session = $this->original_session;
 			WC()->cart->empty_cart();
 			WC_Helper_Shipping::delete_simple_flat_rate();
-
-			$customer = WC()->customer;
-			$customer->set_shipping_country( '' );
-			$customer->set_shipping_state( '' );
-			$customer->set_shipping_postcode( '' );
-			$customer->set_shipping_city( '' );
-			$customer->set_shipping_address_1( '' );
-			$customer->set_shipping_first_name( '' );
-			$customer->set_shipping_last_name( '' );
 		} finally {
 			parent::tearDown();
 		}
