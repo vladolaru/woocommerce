@@ -158,6 +158,41 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 		if ( false === has_filter( 'woocommerce_payment_methods_list_item', array( $this, 'handle_woocommerce_payment_methods_list_item' ) ) ) {
 			add_filter( 'woocommerce_payment_methods_list_item', array( $this, 'handle_woocommerce_payment_methods_list_item' ), 10, 2 );
 		}
+
+		if ( false === has_filter( 'woocommerce_get_credit_card_type_label', array( $this, 'normalize_saved_method_label' ) ) ) {
+			add_filter( 'woocommerce_get_credit_card_type_label', array( $this, 'normalize_saved_method_label' ) );
+		}
+	}
+
+	/**
+	 * Restore the casing of the SEPA and Link saved-method brands after core title-cases them.
+	 *
+	 * Core's wc_get_credit_card_type_label() turns an unknown brand into "Sepa Iban" or "Stripe Link Email"; the client
+	 * restores its labels the same way (client 11.1.0 `includes/class-wc-payments-token-service.php:65-66,529-549`).
+	 *
+	 * @internal
+	 *
+	 * @param mixed $label Card type label.
+	 * @return mixed
+	 */
+	public function normalize_saved_method_label( $label ) {
+		if ( ! is_string( $label ) ) {
+			return $label;
+		}
+
+		$normalized = strtolower( $label );
+		$brands     = array(
+			'sepa iban'         => __( 'SEPA IBAN', 'woocommerce' ),
+			'stripe link email' => __( 'Stripe Link email', 'woocommerce' ),
+		);
+		foreach ( $brands as $english => $brand ) {
+			// Core lower-cases the brand and turns hyphens and underscores into spaces before title-casing it.
+			if ( $english === $normalized || str_replace( array( '-', '_' ), ' ', strtolower( $brand ) ) === $normalized ) {
+				return $brand;
+			}
+		}
+
+		return $label;
 	}
 
 	/**

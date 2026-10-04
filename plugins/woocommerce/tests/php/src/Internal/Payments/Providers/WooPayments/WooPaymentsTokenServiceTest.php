@@ -53,6 +53,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 			remove_action( 'woocommerce_payment_token_set_default', array( $service, 'handle_woocommerce_payment_token_set_default' ), 10 );
 			remove_filter( 'woocommerce_get_customer_payment_tokens', array( $service, 'handle_woocommerce_get_customer_payment_tokens' ), 10 );
 			remove_filter( 'woocommerce_payment_methods_list_item', array( $service, 'handle_woocommerce_payment_methods_list_item' ), 10 );
+			remove_filter( 'woocommerce_get_credit_card_type_label', array( $service, 'normalize_saved_method_label' ), 10 );
 		}
 		$this->created_services = array();
 		if ( null !== $this->gateway_initializer ) {
@@ -1555,6 +1556,9 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $expected_method['brand'], $result['method']['brand'] );
 		$this->assertSame( $expected_method['last4'], $result['method']['last4'] );
+		// My Account and the Store API render the brand through core's label helper, which title-cases unknown brands;
+		// the client restores its own casing (client 11.1.0 `includes/class-wc-payments-token-service.php:65-66,529-549`).
+		$this->assertSame( $expected_method['brand'], wc_get_credit_card_type_label( $result['method']['brand'] ), 'The rendered label must keep the brand casing.' );
 	}
 
 	/**
