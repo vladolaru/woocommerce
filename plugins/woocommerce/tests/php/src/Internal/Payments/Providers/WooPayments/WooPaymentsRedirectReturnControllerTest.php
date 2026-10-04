@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableControlle
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
@@ -960,25 +961,20 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 				$concurrent_order->save();
 			}
 		};
-		if ( 'a webhook put on hold just before the lock' === $change ) {
-			// The lock writes its holder record right after the claim: the latest moment a webhook's write can precede it.
-			$held = false;
-			add_filter(
-				'query',
-				static function ( $query ) use ( $order, &$held ) {
-					if ( ! $held && 0 === strpos( ltrim( (string) $query ), 'INSERT' ) && false !== strpos( (string) $query, '_holder' ) ) {
-						$held = true;
-						wc_get_order( $order->get_id() )->update_status( 'on-hold' );
-					}
 
-					return $query;
-				}
-			);
+		$container = wc_get_container();
+		if ( 'a webhook put on hold just before the lock' === $change ) {
+			// A webhook takes the order payment lock, writes on-hold and releases it right before this return claims it.
+			$container->replace( OrderPaymentStore::class, new RedirectReturnWebhookFirstOrderPaymentStore() );
 		}
 		$this->sut = $this->create_controller( true, null, $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_held_during_fetch' );
 
-		$this->sut->handle_wp();
+		try {
+			$this->sut->handle_wp();
+		} finally {
+			$container->reset_replacement( OrderPaymentStore::class );
+		}
 		$reloaded = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $reloaded );
@@ -2442,6 +2438,36 @@ class RedirectReturnRedirectIntercepted extends \RuntimeException {
 	public function __construct( string $location ) {
 		parent::__construct( 'Redirect intercepted: ' . $location );
 		$this->location = $location;
+	}
+}
+
+/**
+ * Order payment store where a webhook settles the order on hold just before the first claim made for the redirect return.
+ */
+class RedirectReturnWebhookFirstOrderPaymentStore extends OrderPaymentStore {
+	/** @var bool */
+	private bool $webhook_ran = false;
+
+	/**
+	 * Let a webhook take the lock, write on-hold and release it, then claim the lock for the caller.
+	 *
+	 * @param WC_Order                      $order               Order object.
+	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
+	 * @param string|null                   $payment_reference   Payment reference.
+	 * @param string                        $operation           Operation claiming the lock.
+	 * @return string|null
+	 */
+	public function claim_order_payment_lock_for_operation( WC_Order $order, ProviderPersistenceVocabulary $persistence_profile, ?string $payment_reference, string $operation ): ?string {
+		if ( ! $this->webhook_ran ) {
+			$this->webhook_ran = true;
+			$webhook_token     = parent::claim_order_payment_lock_for_operation( $order, $persistence_profile, $payment_reference, 'payment status update' );
+			if ( null !== $webhook_token ) {
+				wc_get_order( $order->get_id() )->update_status( 'on-hold' );
+				parent::release_order_payment_lock( $order, $persistence_profile, $webhook_token );
+			}
+		}
+
+		return parent::claim_order_payment_lock_for_operation( $order, $persistence_profile, $payment_reference, $operation );
 	}
 }
 

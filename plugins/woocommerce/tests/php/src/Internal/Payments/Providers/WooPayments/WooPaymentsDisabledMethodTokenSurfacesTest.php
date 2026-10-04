@@ -171,16 +171,18 @@ class WooPaymentsDisabledMethodTokenSurfacesTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox The admin subscription select lists a disabled method's tokens only under that method's own gateway.
 	 *
-	 * Native and client 11.1.0 render the select for the card and Amazon Pay gateways only; a SEPA field falls back to
-	 * the card gateway's tokens.
+	 * Native and client 11.1.0 add the payment-meta field for the reusable card and Amazon Pay gateways only (client
+	 * `trait-wc-payment-gateway-wcpay-subscriptions.php:646-666`), so a SEPA subscription has no token field in the admin.
 	 */
 	public function test_admin_subscription_select_lists_disabled_tokens_only_under_their_own_gateway(): void {
 		$handler      = new WooPaymentsSubscriptionAdminPaymentMethodHandler( $this->create_service( array( 'card' ) ) );
 		$subscription = wc_create_order( array( 'customer_id' => $this->user_id ) );
 
-		$this->assertSame( array( $this->card_token->get_id() ), $this->get_selectable_token_ids( $handler, $subscription, OrderPaymentStore::GATEWAY_ID ) );
-		$this->assertSame( array( $this->card_token->get_id() ), $this->get_selectable_token_ids( $handler, $subscription, self::SEPA_GATEWAY_ID ) );
-		$this->assertSame( array( $this->amazon_pay_token->get_id() ), $this->get_selectable_token_ids( $handler, $subscription, self::AMAZON_PAY_GATEWAY_ID ) );
+		$fields = $this->get_admin_payment_meta_fields( $handler, $subscription );
+
+		$this->assertSame( array( OrderPaymentStore::GATEWAY_ID, self::AMAZON_PAY_GATEWAY_ID ), array_keys( $fields ), 'Only the card and Amazon Pay gateways get a token field.' );
+		$this->assertSame( array( $this->card_token->get_id() ), $this->get_selectable_token_ids( $subscription, OrderPaymentStore::GATEWAY_ID ) );
+		$this->assertSame( array( $this->amazon_pay_token->get_id() ), $this->get_selectable_token_ids( $subscription, self::AMAZON_PAY_GATEWAY_ID ) );
 	}
 
 	/**
@@ -328,16 +330,35 @@ class WooPaymentsDisabledMethodTokenSurfacesTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Get the token IDs the admin subscription select offers for a gateway's payment-meta field.
+	 * Get the payment-meta fields WooCommerce Subscriptions shows in the subscription admin, keyed by gateway ID.
 	 *
 	 * @param WooPaymentsSubscriptionAdminPaymentMethodHandler $handler      Admin handler.
 	 * @param WC_Order                                         $subscription Subscription.
-	 * @param string                                           $gateway_id   Gateway in the field ID.
+	 * @return array<string,mixed>
+	 */
+	private function get_admin_payment_meta_fields( WooPaymentsSubscriptionAdminPaymentMethodHandler $handler, WC_Order $subscription ): array {
+		remove_all_filters( 'woocommerce_subscription_payment_meta' );
+		add_filter( 'woocommerce_subscription_payment_meta', array( $handler, 'add_subscription_payment_meta' ), 10, 2 );
+		try {
+			$fields = apply_filters( 'woocommerce_subscription_payment_meta', array(), $subscription );
+		} finally {
+			remove_filter( 'woocommerce_subscription_payment_meta', array( $handler, 'add_subscription_payment_meta' ), 10 );
+		}
+
+		return is_array( $fields ) ? $fields : array();
+	}
+
+	/**
+	 * Get the token IDs a gateway's payment-meta field offers, rendered through the action WooCommerce Subscriptions fires
+	 * for the field (`woocommerce_subscription_payment_meta_input_{gateway}_{table}_{key}`).
+	 *
+	 * @param WC_Order $subscription Subscription.
+	 * @param string   $gateway_id   Gateway ID.
 	 * @return int[]
 	 */
-	private function get_selectable_token_ids( WooPaymentsSubscriptionAdminPaymentMethodHandler $handler, WC_Order $subscription, string $gateway_id ): array {
+	private function get_selectable_token_ids( WC_Order $subscription, string $gateway_id ): array {
 		ob_start();
-		$handler->render_custom_payment_meta_input( $subscription, '_payment_method_meta[' . $gateway_id . '][wc_order_tokens][token]', null );
+		do_action( 'woocommerce_subscription_payment_meta_input_' . $gateway_id . '_wc_order_tokens_token', $subscription, '_payment_method_meta[' . $gateway_id . '][wc_order_tokens][token]', null );
 		$html = (string) ob_get_clean();
 		preg_match_all( '/<option value="(\d+)"/', $html, $matches );
 
