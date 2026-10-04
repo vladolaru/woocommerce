@@ -151,6 +151,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'woocommerce_is_order_received_page' );
 		remove_all_filters( 'woocommerce_logging_class' );
 		remove_all_filters( 'woocommerce_woopayments_is_recurring_payment' );
+		remove_all_filters( 'wcpay_dev_mode' );
 		WC()->cart->empty_cart();
 		wc_clear_notices();
 		wp_set_current_user( 0 );
@@ -831,6 +832,33 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assert_failed_note_with_message( $reloaded, 'pi_api_error', 'UPE payment failed: Transport unavailable.' );
 		$this->assertCount( 1, $logger->error_calls );
 		$this->assertStringContainsString( 'Transport unavailable.', $logger->error_calls[0]['message'] );
+	}
+
+	/**
+	 * @testdox A non-API error fetching the intent shows only the generic notice and is logged with its class even with debug logging off.
+	 *
+	 * Decided divergence (monitor ruling 2026-10-04): client 11.1.0 shows a non-API exception's raw message
+	 * (get_filtered_error_message(), utils:770-800, via gw:2447) and logs it only with debug logging on. Native shows the
+	 * generic notice and always logs the throwable's class and message.
+	 */
+	public function test_handle_wp_hides_non_api_fetch_error_and_always_logs_it(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$order                 = $this->create_order();
+		$api_client            = new RedirectReturnApiClientStub();
+		$api_client->exception = new \RuntimeException( 'Undefined array key "client_secret" in /var/www/html/api.php' );
+		$logger                = new RedirectReturnRecordingLogger();
+		add_filter( 'woocommerce_logging_class', static fn() => $logger );
+		$this->sut = $this->create_controller( true, null, $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_runtime_error' );
+
+		$location = $this->handle_wp_expecting_redirect();
+
+		$this->assertSame( wc_get_checkout_url(), $location );
+		$this->assert_single_error_notice( "We're not able to process this payment. Please try again later." );
+		$this->assertCount( 1, $logger->error_calls );
+		$this->assertStringContainsString( 'RuntimeException', $logger->error_calls[0]['message'] );
+		$this->assertStringContainsString( 'Undefined array key "client_secret"', $logger->error_calls[0]['message'] );
 	}
 
 	/**
