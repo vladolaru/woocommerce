@@ -797,8 +797,8 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @param float    $amount        Renewal amount.
 	 * @param WC_Order $renewal_order Renewal order.
 	 * @return void
-	 * @throws Throwable When a requires-action hook callback throws or the token repair raises a PHP Error, so the
-	 *                   scheduled action fails as on the client.
+	 * @throws Throwable When a requires-action hook callback throws, or the token repair or applying the payment raises
+	 *                   a PHP Error, so the scheduled action fails as on the client.
 	 */
 	public function scheduled_subscription_payment( $amount, $renewal_order ): void {
 		unset( $amount );
@@ -861,12 +861,19 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			);
 		} catch ( PaymentOutcomeApplyException $exception ) {
 			// The processing service logged the failure and tried to save the payment reference on the renewal; see was_reconciliation_context_persisted().
+			$failure = $exception->get_failure();
+			$outcome = $exception->get_outcome();
 			$this->get_logger()->log_throwable(
 				'Error applying the WooPayments subscription renewal payment: ' . $exception->getMessage(),
-				$exception->get_failure(),
+				$failure,
 				array( 'order_id' => $renewal_order->get_id() )
 			);
-			$outcome = $exception->get_outcome();
+
+			// Client trait:426 catches only API_Exception, so a PHP Error fails the scheduled action and leaves the renewal
+			// pending (monitor ruling 2026-10-04 on renewal apply errors). A requires-action outcome still runs its hooks below.
+			if ( ! $failure instanceof Exception && PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION !== $outcome->get_status() ) {
+				throw $failure;
+			}
 		}
 
 		$this->maybe_handle_subscription_customer_action_required( $renewal_order, $outcome );

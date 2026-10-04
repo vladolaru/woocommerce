@@ -3759,6 +3759,48 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A PHP error applying a renewal's outcome fails the scheduled action and leaves the renewal pending.
+	 *
+	 * Client 11.1.0 catches only API_Exception around the renewal payment (`trait-wc-payment-gateway-wcpay-subscriptions.php:426`),
+	 * so a PHP error escapes to Action Scheduler, which fails the action (monitor ruling 2026-10-04 on renewal apply errors).
+	 * Native logs it whatever the logging setting and rethrows it; the charge stays reconcilable on the renewal.
+	 */
+	public function test_scheduled_subscription_payment_rethrows_php_error_applying_outcome(): void {
+		$user_id = self::factory()->user->create();
+		$order   = $this->create_order();
+		$token   = $this->create_card_token( $user_id, 'pm_renewal_card' );
+		$order->set_customer_id( $user_id );
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->add_payment_token( $token );
+		$order->save();
+		$error    = new \TypeError( 'Argument #1 must be of type array, null given' );
+		$provider = $this->create_provider_failing_after_charge(
+			new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_renewal_error', '', 'pm_renewal_card' ),
+			'operation_effects',
+			$error
+		);
+		$gateway  = new NativeWooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
+		$logger = RecordingWcLogger::install();
+
+		$thrown = null;
+		try {
+			$gateway->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
+		} catch ( \Throwable $throwable ) {
+			$thrown = $throwable;
+		}
+
+		$this->assertSame( $error, $thrown, 'The PHP error must reach Action Scheduler.' );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'pending', $order->get_status() );
+		$this->assertSame( 'pi_renewal_error', $order->get_transaction_id() );
+		$lines = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'woopayments' === $line[2] && str_starts_with( $line[1], 'Error applying the WooPayments subscription renewal payment' ) ) );
+		$this->assertCount( 1, $lines, 'The PHP error is logged whatever the logging setting.' );
+		$this->assertSame( 'error', $lines[0][0] );
+	}
+
+	/**
 	 * @testdox Should fail the order, add the failure note and return failure when post-payment processing throws before the intent succeeded.
 	 *
 	 * Oracle: WooPayments 11.1.0 `tests/unit/test-class-wc-payment-gateway-wcpay.php:4594`: without a succeeded intent
