@@ -4273,8 +4273,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * order on hold; a retry then creates a new order and authorizes the card again. Native answers as it does for an
 	 * authorized payment once a fresh read shows the order on hold for the outcome's intent, and keeps the refusal when the
 	 * order is bound to another intent (monitor ruling 2026-10-04 on review 34 F2). The error is logged whatever the setting.
-	 * A Multibanco voucher also puts the order on hold but its intent is `requires_action`, so it keeps the refusal and the
-	 * shopper keeps the voucher page (review 35 F7). When the fresh read itself throws, the original error is still logged
+	 * A Multibanco voucher also puts the order on hold but its intent is `requires_action`, so it keeps the refusal: the
+	 * shopper is returned to checkout with the generic error, while the voucher stays on the on-hold order and expires if
+	 * unpaid (review 35 F7, review 37 F5). When the fresh read itself throws, the original error is still logged
 	 * and checkout keeps the refusal instead of letting the read failure escape (review 35 F3).
 	 *
 	 * @testWith ["its intent", "success"]

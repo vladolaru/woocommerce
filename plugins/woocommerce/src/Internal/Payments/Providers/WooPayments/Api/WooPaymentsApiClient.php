@@ -29,9 +29,9 @@ class WooPaymentsApiClient {
 	 * Tell whether a failed request has an ambiguous provider outcome.
 	 *
 	 * Transport failures keep the original `WP_Error` code in the `transport_error_code` error data. Every 5xx counts,
-	 * with a readable body or not: the platform passes Stripe's status and error body through unchanged, and its Stripe
-	 * client classes a 5xx as retryable. Stripe's `idempotency_key_in_use` (409) counts too: a request sent under the
-	 * same key is still running.
+	 * with a readable body or not: the platform passes Stripe's status and error body through unchanged, Stripe treats a
+	 * 500 as indeterminate, and the platform can fail after its Stripe call. Stripe's `idempotency_key_in_use` (409)
+	 * counts too: a request sent under the same key is still running.
 	 *
 	 * @param WooPaymentsApiException $exception Request failure.
 	 * @return bool

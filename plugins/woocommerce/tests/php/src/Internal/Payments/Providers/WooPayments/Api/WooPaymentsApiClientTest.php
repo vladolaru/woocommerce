@@ -57,8 +57,8 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	 * Provide ambiguous and definitive charge failures.
 	 *
 	 * The platform passes Stripe's status and error body through unchanged (wpcom `wcpay/class-base-controller.php:476-490`
-	 * `stripe_proxy_request()`), and its Stripe client classes every 5xx as retryable (`wcpay/stripe/class-stripe-client.php:365-369`),
-	 * so a 5xx with a readable body is as ambiguous as one without. Stripe's `idempotency_key_in_use` (409) means a request
+	 * `stripe_proxy_request()`), Stripe's idempotency docs treat a 500 as indeterminate, and the platform can fail after its
+	 * Stripe call (`Platform_Failure_Exception`, 502), so a 5xx with a readable body is as ambiguous as one without. Stripe's `idempotency_key_in_use` (409) means a request
 	 * under the same key is still running, for example after a connection reset and the same-key transport retry.
 	 *
 	 * @return array<string,array{string,int,string,bool}>
