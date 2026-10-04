@@ -399,6 +399,11 @@ class WooPaymentsProviderGatewayAdapter {
 
 				$customer_id              = $this->customer_service->recreate_customer_for_order( $order );
 				$request_data['customer'] = $customer_id;
+				// A different body under the same key would be refused, so the retry gets its own key, kept on the order
+				// so that an ambiguous failure of the retry replays the retry.
+				$idempotency_key = self::get_customer_recovery_idempotency_key( $idempotency_key );
+				$order->update_meta_data( self::CHARGE_IDEMPOTENCY_KEY_META, $idempotency_key );
+				$order->save_meta_data();
 				try {
 					$result = $this->api_client->create_and_confirm_payment_intention( $request_data, $idempotency_key );
 				} catch ( WooPaymentsApiException $exception ) {
@@ -436,6 +441,18 @@ class WooPaymentsProviderGatewayAdapter {
 		$order->save_meta_data();
 
 		return $candidate;
+	}
+
+	/**
+	 * Derive the idempotency key for the retry after a missing customer was recreated.
+	 *
+	 * The retry sends another customer, and a provider refuses a reused key with a different body.
+	 *
+	 * @param string $idempotency_key Key of the request that reported the missing customer.
+	 * @return string
+	 */
+	private static function get_customer_recovery_idempotency_key( string $idempotency_key ): string {
+		return $idempotency_key . ':customer-recovery';
 	}
 
 	/**
@@ -818,7 +835,8 @@ class WooPaymentsProviderGatewayAdapter {
 
 				$customer_id              = $this->customer_service->recreate_customer_for_order( $order );
 				$request_data['customer'] = $customer_id;
-				$result                   = $this->create_setup_intent( $request_data, $payment_credential, $idempotency_key );
+				// SetupIntent keys are not kept on the order, so only the key changes for the different body.
+				$result = $this->create_setup_intent( $request_data, $payment_credential, self::get_customer_recovery_idempotency_key( $idempotency_key ) );
 			}
 		}
 

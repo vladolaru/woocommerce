@@ -1528,7 +1528,10 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Charge should recreate and retry when the native transport reports a missing customer.
+	 * @testdox Charge should recreate and retry under a derived key, kept on the order, when the native transport reports a missing customer.
+	 *
+	 * The retry sends another customer, and Stripe refuses a reused idempotency key with a different body, so the retry
+	 * gets its own key; the order keeps it so an ambiguous failure of the retry replays the retry (area 2a #15).
 	 */
 	public function test_charge_retries_after_missing_customer_by_recreating_customer(): void {
 		$order            = $this->create_woopayments_order();
@@ -1540,6 +1543,13 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			 * @var int
 			 */
 			private int $attempt = 0;
+
+			/**
+			 * Idempotency keys sent.
+			 *
+			 * @var string[]
+			 */
+			public array $keys = array();
 
 			/**
 			 * Tell whether the transport is available.
@@ -1558,7 +1568,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			 * @return array<string,mixed>
 			 */
 			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
-				unset( $idempotency_key );
+				$this->keys[] = $idempotency_key;
 				++$this->attempt;
 
 				if ( 1 === $this->attempt ) {
@@ -1606,6 +1616,10 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
 		$this->assertSame( 'cus_recreated', $outcome->get_customer_id() );
 		$this->assertSame( 0, $gateway->processed_order_id );
+		$this->assertSame( array( 'key_charge', 'key_charge:customer-recovery' ), $api_client->keys );
+		$fresh_order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $fresh_order );
+		$this->assertSame( 'key_charge:customer-recovery', $fresh_order->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
 	}
 
 	/**
@@ -1758,7 +1772,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @dataProvider provider_subscription_change_transport_provider
-	 * @testdox Validated subscription changes recreate a missing remote customer and retry the same native intent idempotently.
+	 * @testdox Validated subscription changes recreate a missing remote customer and retry the native intent under a derived key.
 	 *
 	 * @param string $total Order total selecting PaymentIntent or SetupIntent transport.
 	 * @param string $expected_intent Expected intent type.
@@ -1785,7 +1799,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'cus_missing', $api_client->intent_requests[0]['request_data']['customer'] );
 		$this->assertSame( 'cus_created', $api_client->intent_requests[1]['request_data']['customer'] );
 		$this->assertSame( 'key_recovery_real', $api_client->intent_requests[0]['idempotency_key'] );
-		$this->assertSame( 'key_recovery_real', $api_client->intent_requests[1]['idempotency_key'] );
+		$this->assertSame( 'key_recovery_real:customer-recovery', $api_client->intent_requests[1]['idempotency_key'], 'The retry sends another customer, so it needs its own key (area 2a #15).' );
 	}
 
 	/**
