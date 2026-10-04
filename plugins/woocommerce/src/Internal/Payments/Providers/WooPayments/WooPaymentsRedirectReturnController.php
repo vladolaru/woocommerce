@@ -320,9 +320,11 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	/**
 	 * Fail the order unless it is settled or locked, then send the shopper back to checkout with the notice.
 	 *
-	 * The shopper stays on order-received when the failure was not written and the payment may have gone through, so a
-	 * resubmit cannot pay a second time. An intent error proves this payment failed, so that return always goes back to
-	 * checkout, as the client's catch does (gw:2447-2454) even when its own write was skipped.
+	 * The shopper stays on order-received when the failure write was skipped (the order is settled, bound to another
+	 * intent, or locked by another holder) and the payment may have gone through, so a resubmit cannot pay a second time.
+	 * A failure write that throws still sends the shopper to checkout, with an always-on error line: no money moved on
+	 * these paths. An intent error proves this payment failed, so that return always goes back to checkout, as the
+	 * client's catch does (gw:2447-2454) even when its own write was skipped.
 	 *
 	 * @param WC_Order    $order          Order object.
 	 * @param string      $intent_id      Requested intent ID.
@@ -386,7 +388,21 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 
 			$this->lifecycle_service->apply_unlocked( $fresh_order, $this->build_failure_event( $fresh_order, $intent_id, $exception_message, $intent_status ), $persistence_profile );
 		} catch ( Throwable $failure ) {
-			$this->log_return_error( $order, $failure );
+			// The order should be failed but is not, so support needs this line whatever the logging setting. The client's
+			// mark_payment_failed() in its catch (gw:2440) has no catch of its own, so the same failure is visible there.
+			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable_always(
+				sprintf(
+					'Failing order #%1$d after its redirect return raised %2$s: %3$s. The order may not show the failure.',
+					$order->get_id(),
+					get_class( $failure ),
+					$failure->getMessage()
+				),
+				$failure,
+				array(
+					'order_id'  => $order->get_id(),
+					'intent_id' => $intent_id,
+				)
+			);
 		} finally {
 			$order_payment_store->release_order_payment_lock( $order, $persistence_profile, $lock_token );
 		}

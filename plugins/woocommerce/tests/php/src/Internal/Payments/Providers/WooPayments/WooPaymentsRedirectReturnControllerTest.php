@@ -1084,6 +1084,57 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A failure write that throws on a failed return is logged whatever the logging setting, and the shopper still goes back to checkout.
+	 *
+	 * Client 11.1.0 calls mark_payment_failed() inside its catch (gw:2440) with no catch around it, so a second failure
+	 * there is visible. Native keeps the redirect (no money moved) and writes one always-on error line, since the order
+	 * should be failed but is not (review 41 F2).
+	 */
+	public function test_handle_wp_always_logs_a_failure_write_that_throws(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$order                      = $this->create_order();
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = array(
+			'id'                 => 'pi_write_throws',
+			'status'             => 'requires_payment_method',
+			'currency'           => 'usd',
+			'amount'             => 5000,
+			'customer'           => 'cus_return',
+			'payment_method'     => null,
+			'metadata'           => array( 'order_id' => $order->get_id() ),
+			'last_payment_error' => array(
+				'type'    => 'card_error',
+				'code'    => 'card_declined',
+				'message' => 'Your card was declined.',
+			),
+		);
+		$lifecycle                  = $this->getMockBuilder( OrderPaymentLifecycleService::class )->onlyMethods( array( 'apply_unlocked' ) )->getMock();
+		$lifecycle->method( 'apply_unlocked' )->willThrowException( new \RuntimeException( 'Database write failed.' ) );
+		$logger = new RedirectReturnRecordingLogger();
+		add_filter( 'woocommerce_logging_class', static fn() => $logger );
+		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client, null, null, $lifecycle );
+		$this->set_payment_intent_return_request( $order, 'pi_write_throws' );
+
+		$location = $this->handle_wp_expecting_redirect();
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertSame( wc_get_checkout_url(), $location );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'pending', $reloaded->get_status() );
+		$write_failures = array_values(
+			array_filter(
+				$logger->error_calls,
+				static fn( array $call ): bool => \RuntimeException::class === ( $call['context']['exception'] ?? '' )
+			)
+		);
+		$this->assertCount( 1, $write_failures, 'One line, written with debug logging off.' );
+		$this->assertSame( WooPaymentsLogger::SOURCE, $write_failures[0]['context']['source'] ?? '' );
+		$this->assertSame( $order->get_id(), $write_failures[0]['context']['order_id'] ?? null );
+		$this->assertStringContainsString( 'raised RuntimeException: Database write failed.', (string) $write_failures[0]['message'] );
+	}
+
+	/**
 	 * @testdox A canceled PaymentIntent that carries a payment error fails the order without cancelling it first.
 	 *
 	 * Client 11.1.0 process_redirect_payment() throws on any last_payment_error before reading the status (gw:2376-2382),
@@ -2083,9 +2134,10 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsApiClient|null              $api_client         API client.
 	 * @param WooPaymentsTokenService|null           $token_service      Token service.
 	 * @param WooPaymentsCustomerService|null        $customer_service   Customer service.
+	 * @param OrderPaymentLifecycleService|null      $lifecycle_service  Order payment lifecycle service, or the container's.
 	 * @return WooPaymentsRedirectReturnController
 	 */
-	private function create_controller( bool $native_owner, ?WooPaymentsCheckoutAjaxController $confirmation_owner = null, ?WooPaymentsApiClient $api_client = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsCustomerService $customer_service = null ): WooPaymentsRedirectReturnController {
+	private function create_controller( bool $native_owner, ?WooPaymentsCheckoutAjaxController $confirmation_owner = null, ?WooPaymentsApiClient $api_client = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsCustomerService $customer_service = null, ?OrderPaymentLifecycleService $lifecycle_service = null ): WooPaymentsRedirectReturnController {
 		$arbiter = $this->createMock( NativePaymentsRuntimeArbiter::class );
 		$arbiter->method( 'should_native_register' )->willReturn( $native_owner );
 
@@ -2096,7 +2148,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			$api_client ?? new RedirectReturnApiClientStub(),
 			$token_service ?? $this->createMock( WooPaymentsTokenService::class ),
 			$customer_service ?? $this->createMock( WooPaymentsCustomerService::class ),
-			wc_get_container()->get( OrderPaymentLifecycleService::class ),
+			$lifecycle_service ?? wc_get_container()->get( OrderPaymentLifecycleService::class ),
 			new WooPaymentsOrderNoteService()
 		);
 
