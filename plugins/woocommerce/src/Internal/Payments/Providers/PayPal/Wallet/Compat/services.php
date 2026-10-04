@@ -9,9 +9,6 @@ declare(strict_types=1);
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Compat;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetter;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetterFactory;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Compat\Assets\CompatAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Compat\WooCommerceBlueprint\ConnectionDataSanitizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Compat\WooCommerceBlueprint\PayPalBlueprintBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Compat\WooCommerceBlueprint\PayPalSettingsExporter;
@@ -57,9 +54,7 @@ return array(
 			'ppcp-wc-payment-tokens-myaccount-payments',
 			'ppcp-gateway-settings',
 			'ppcp-webhooks-status-page',
-			'ppcp-tracking',
 			'ppcp-fraudnet',
-			'ppcp-tracking-compat',
 		);
 	},
 
@@ -67,32 +62,10 @@ return array(
 		return array(
 			'button.js',
 			'gateway-settings.js',
-			'order-edit-page.js',
 			'fraudnet.js',
-			'tracking-compat.js',
 		);
 	},
 
-	'compat.shiptastic.is_supported_plugin_version_active' => function (): bool {
-		return function_exists( 'wc_stc_get_shipments' );
-	},
-
-	'compat.wc_shipment_tracking.is_supported_plugin_version_active' => function (): bool {
-		return class_exists( 'WC_Shipment_Tracking' );
-	},
-
-	'compat.ywot.is_supported_plugin_version_active'       => function (): bool {
-		return function_exists( 'yith_ywot_init' );
-	},
-	'compat.dhl.is_supported_plugin_version_active'        => function (): bool {
-		return function_exists( 'PR_DHL' );
-	},
-	'compat.shipstation.is_supported_plugin_version_active' => function (): bool {
-		return function_exists( 'woocommerce_shipstation_init' );
-	},
-	'compat.wc_shipping_tax.is_supported_plugin_version_active' => function (): bool {
-		return class_exists( 'WC_Connect_Loader' );
-	},
 	'compat.nyp.is_supported_plugin_version_active'        => function (): bool {
 		return function_exists( 'wc_nyp_init' );
 	},
@@ -108,24 +81,6 @@ return array(
 		return new PluginDetector\ProductCustomizationDetector(
 			$container->get( 'compat.plugin-detector' ),
 			$container->get( 'woocommerce.logger.woocommerce' )
-		);
-	},
-
-	'compat.asset_getter'                                  => static function ( ContainerInterface $container ): AssetGetter {
-		$factory = $container->get( 'assets.asset_getter_factory' );
-		assert( $factory instanceof AssetGetterFactory );
-
-		return $factory->for_module( 'ppcp-compat' );
-	},
-
-	'compat.assets'                                        => function ( ContainerInterface $container ): CompatAssets {
-		return new CompatAssets(
-			$container->get( 'compat.asset_getter' ),
-			$container->get( 'ppcp.asset-version' ),
-			$container->get( 'compat.shiptastic.is_supported_plugin_version_active' ),
-			$container->get( 'compat.wc_shipment_tracking.is_supported_plugin_version_active' ),
-			$container->get( 'compat.wc_shipping_tax.is_supported_plugin_version_active' ),
-			$container->get( 'api.bearer' )
 		);
 	},
 

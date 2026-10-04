@@ -13,7 +13,6 @@ use Exception;
 use WC_Order;
 use WC_Order_Item_Product;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Session\CartData;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ModuleAvailability;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\MerchantCountrySupport;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\PaymentSettings;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
@@ -23,7 +22,6 @@ use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ModuleClassNameIdTra
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ServiceModule;
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Helper\Context;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Compat\Assets\CompatAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Exception\NotFoundException;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Settings\Settings;
 
@@ -51,18 +49,6 @@ class CompatModule implements ServiceModule, ExecutableModule {
 			'woocommerce_init',
 			function () use ( $c ) {
 				$this->initialize_ppec_compat_layer( $c );
-				$this->initialize_tracking_compat_layer( $c );
-			}
-		);
-
-		add_action(
-			'init',
-			function () use ( $c ) {
-				$asset_loader = $c->get( 'compat.assets' );
-				assert( $asset_loader instanceof CompatAssets );
-
-				$asset_loader->register();
-				add_action( 'admin_enqueue_scripts', array( $asset_loader, 'enqueue' ) );
 			}
 		);
 
@@ -168,27 +154,6 @@ class CompatModule implements ServiceModule, ExecutableModule {
 	private function initialize_ppec_compat_layer( ContainerInterface $container ): void {
 		$handler = $container->get( 'compat.ppec.subscriptions-handler' );
 		$handler->maybe_hook();
-	}
-
-	/**
-	 * Sets up the 3rd party plugins compatibility layer for PayPal tracking.
-	 *
-	 * @param ContainerInterface $c The Container.
-	 * @return void
-	 */
-	protected function initialize_tracking_compat_layer( ContainerInterface $c ): void {
-		$availability = $c->get( 'ppcp.module-availability' );
-		assert( $availability instanceof ModuleAvailability );
-		if ( ! $availability->is_loaded( 'order-tracking' ) ) {
-			return;
-		}
-
-		$order_tracking_integrations = $c->get( 'order-tracking.integrations' );
-
-		foreach ( $order_tracking_integrations as $integration ) {
-			assert( $integration instanceof Integration );
-			$integration->integrate();
-		}
 	}
 
 	/**

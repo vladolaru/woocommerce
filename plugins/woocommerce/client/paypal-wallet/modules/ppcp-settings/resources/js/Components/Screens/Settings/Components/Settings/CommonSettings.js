@@ -6,12 +6,8 @@ import SavePaymentMethods from './Blocks/SavePaymentMethods';
 import InvoicePrefix from './Blocks/InvoicePrefix';
 import PayNowExperience from './Blocks/PayNowExperience';
 import StayUpdated from './Blocks/StayUpdated';
-import { useRegisteredSettings, SLOTS } from '@ppcp-settings/extensions';
 
 const CommonSettings = () => {
-	// Get registered settings for common settings
-	const footerSettings = useRegisteredSettings( SLOTS.COMMON_SETTINGS_END );
-
 	return (
 		<SettingsCard
 			icon="icon-settings-common.svg"
@@ -27,11 +23,6 @@ const CommonSettings = () => {
 			<SavePaymentMethods />
 			<PayNowExperience />
 			<StayUpdated />
-
-			{ /* Extension point */ }
-			{ footerSettings.map( ( { component: Component, id } ) => (
-				<Component key={ id } />
-			) ) }
 		</SettingsCard>
 	);
 };

@@ -6,13 +6,10 @@ import {
 } from '@ppcp-settings/Components/ReusableComponents/Elements';
 import Troubleshooting from './Blocks/Troubleshooting';
 import PaypalSettings from './Blocks/PaypalSettings';
-import { useRegisteredSettings, SLOTS } from '@ppcp-settings/extensions';
 import BlueprintExportImport from './Blocks/BlueprintExportImport';
 import data from '../../../../../utils/data';
 
 const ExpertSettings = ( { hasContactModule } ) => {
-	// Get registered settings for expert settings
-	const footerSettings = useRegisteredSettings( SLOTS.EXPERT_SETTINGS_END );
 	const { blueprint } = data();
 
 	return (
@@ -47,13 +44,6 @@ const ExpertSettings = ( { hasContactModule } ) => {
 						<BlueprintExportImport />
 					</Content>
 				) }
-
-				{ /* Extension point */ }
-				{ footerSettings.map( ( { component: Component, id } ) => (
-					<Content key={ id }>
-						<Component />
-					</Content>
-				) ) }
 			</ContentWrapper>
 		</SettingsCard>
 	);

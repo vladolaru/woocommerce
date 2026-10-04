@@ -23,7 +23,6 @@ const modulesAssets = {
 		'js/button.js',
 		'css/gateway.scss',
 	],
-	'ppcp-compat': [ 'js/tracking-compat.js' ],
 	'ppcp-paylater-block': [ 'js/paylater-block.js', 'css/edit.scss' ],
 	'ppcp-paylater-wc-blocks': [
 		'js/CartPayLaterMessagesBlock/cart-paylater-block.js',
