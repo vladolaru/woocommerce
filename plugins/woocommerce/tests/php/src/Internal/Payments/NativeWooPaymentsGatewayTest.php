@@ -3705,6 +3705,54 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A $throwable_class after the payment succeeded with debug logging $logging keeps the order and is logged with its trace: $written.
+	 *
+	 * Client 11.1.0 writes `Logger::exception( 'Error occurred during the payment process.', $e )` with the class, code and
+	 * trace before its succeeded-intent check (`class-wc-payment-gateway-wcpay.php:1274`, `includes/class-logger.php:100-112`),
+	 * behind the debug setting; a PHP error, which fatals there, is written whatever the setting (review 34 F4). The
+	 * succeeded-intent warning and the success answer stay as they are.
+	 *
+	 * @testWith ["TypeError", "no", true]
+	 *           ["RuntimeException", "yes", true]
+	 *           ["RuntimeException", "no", false]
+	 *
+	 * @param string $throwable_class Class thrown after the payment.
+	 * @param string $logging         Gateway `enable_logging` setting.
+	 * @param bool   $written         Whether the error line is written.
+	 */
+	public function test_process_payment_succeeded_intent_failure_is_logged_with_trace( string $throwable_class, string $logging, bool $written ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => $logging ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$order    = $this->create_order();
+		$provider = $this->create_provider_failing_after_charge(
+			new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_downstream', '', 'pm_card_visa' ),
+			'post_lifecycle_effects',
+			new $throwable_class( 'Downstream step failed' )
+		);
+		$gateway  = new NativeWooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
+		$_POST['wcpay-payment-method'] = 'pm_card_visa';
+		$logger                        = RecordingWcLogger::install();
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'success', $result['result'] ?? '' );
+		$this->assertSame( 'completed', wc_get_order( $order->get_id() )->get_status() );
+		$warnings = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] && str_starts_with( $line[1], 'Payment intent already succeeded' ) ) );
+		$this->assertCount( 1, $warnings, 'The succeeded-intent warning is written whatever the setting.' );
+		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'Error occurred during the payment process. Exception: Downstream step failed' === $line[1] ) );
+		if ( ! $written ) {
+			$this->assertSame( array(), $lines );
+			return;
+		}
+		$this->assertCount( 1, $lines );
+		$this->assertSame( array( 'error', 'woopayments' ), array( $logger->lines[ $lines[0] ][0], $logger->lines[ $lines[0] ][2] ) );
+		$this->assertSame( $throwable_class, $logger->contexts[ $lines[0] ]['exception'] ?? '' );
+		$this->assertSame( 0, $logger->contexts[ $lines[0] ]['code'] ?? null );
+		$this->assertNotSame( '', $logger->contexts[ $lines[0] ]['trace'] ?? '' );
+	}
+
+	/**
 	 * @testdox Should keep a charged order and return success when applying the charge fails before the order records it.
 	 *
 	 * Oracle: WooPayments 11.1.0 attaches the succeeded intent to the order before any later step can throw

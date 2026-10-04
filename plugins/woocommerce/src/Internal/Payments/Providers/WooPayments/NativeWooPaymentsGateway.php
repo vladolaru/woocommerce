@@ -1719,6 +1719,9 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		} catch ( Exception $exception ) {
 			$failure = $exception instanceof PaymentOutcomeApplyException ? $exception->get_failure() : $exception;
 			if ( $this->has_succeeded_intent( $order ) || $this->is_succeeded_intent_outcome( $exception ) ) {
+				// Client 11.1.0 logs the failure with its class, code and trace before this check (gw:1274).
+				$this->log_checkout_payment_failure( $order, $failure );
+
 				return $this->keep_succeeded_intent_order( $order, $failure->getMessage(), get_class( $failure ) );
 			}
 
@@ -3031,11 +3034,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return array<string,string>
 	 */
 	private function fail_checkout_after_exception( WC_Order $order, Throwable $failure ): array {
-		$this->get_logger()->log_throwable(
-			'Error occurred during the payment process. Exception: ' . $failure->getMessage(),
-			$failure,
-			array( 'order_id' => $order->get_id() )
-		);
+		$this->log_checkout_payment_failure( $order, $failure );
 
 		if ( ! $this->is_subscription_payment_method_change_request( $order ) ) {
 			$order->update_status( OrderStatus::FAILED );
@@ -3054,6 +3053,20 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			'result'         => 'failure',
 			'redirect'       => '',
 			'payment_method' => '',
+		);
+	}
+
+	/**
+	 * Log a failure raised while paying at checkout, as client 11.1.0 `Logger::exception()` does (gw:1274).
+	 *
+	 * @param WC_Order  $order   Order being paid.
+	 * @param Throwable $failure Failure raised while processing the payment.
+	 */
+	private function log_checkout_payment_failure( WC_Order $order, Throwable $failure ): void {
+		$this->get_logger()->log_throwable(
+			'Error occurred during the payment process. Exception: ' . $failure->getMessage(),
+			$failure,
+			array( 'order_id' => $order->get_id() )
 		);
 	}
 
