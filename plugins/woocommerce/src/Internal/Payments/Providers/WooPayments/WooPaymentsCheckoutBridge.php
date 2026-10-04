@@ -704,7 +704,12 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 
 		$this->enqueue_classic_checkout_assets( $config );
 
-		echo '<div id="wcpay-core-checkout-form" class="wcpay-core-checkout-form" data-wcpay-config="' . esc_attr( $json_config ) . '">';
+		$payment_method_type = null === $payment_method_definition ? 'card' : $payment_method_definition->get_id();
+
+		// The client's classes (`wcpay-upe-form`, `wc-payment-form`, `wcpay-upe-element`) stay beside native's: core's
+		// tokenization-form.js hides `.wc-payment-form` while a saved method is selected, and the woocommerce.com theme
+		// styles `.payment_box .wc-payment-form .wcpay-upe-element`.
+		echo '<div id="wcpay-core-checkout-form" class="wcpay-core-checkout-form wcpay-upe-form" data-payment-method-type="' . esc_attr( $payment_method_type ) . '" data-wcpay-config="' . esc_attr( $json_config ) . '">';
 
 		if ( ! empty( $config['testMode'] ) ) {
 			$testing_instructions = $config['paymentMethodsConfig']['card']['testingInstructions'] ?? '';
@@ -715,7 +720,9 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			}
 		}
 
-		echo '<div id="wcpay-core-payment-element" class="wcpay-core-payment-element"></div>';
+		echo '<div class="wc-payment-form">';
+		echo '<div id="wcpay-core-payment-element" class="wcpay-core-payment-element wcpay-upe-element" data-payment-method-type="' . esc_attr( $payment_method_type ) . '"></div>';
+		echo '</div>';
 		echo '<div class="woocommerce-error wcpay-core-payment-errors" role="alert" hidden></div>';
 
 		if ( ! $this->should_expose_checkout_surface() ) {
