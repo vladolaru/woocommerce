@@ -2,7 +2,7 @@
  * External dependencies
  */
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { dispatch } from '@wordpress/data';
+import { dispatch, select } from '@wordpress/data';
 import { userStore } from '@woocommerce/data';
 
 /**
@@ -26,6 +26,15 @@ const hydrateCurrentUser = ( woocommerceMeta: Record< string, string > ) => {
 	store.receiveCurrentUser( { id: 7, woocommerce_meta: woocommerceMeta } );
 	store.finishResolution( 'getCurrentUser', [] );
 };
+
+// The preference value in the user store. Core's updateUserPreferences() writes it there
+// synchronously, before any request, so a wrong write shows up here right after act().
+const storedPreference = ( key: string ) =>
+	(
+		select( userStore ).getCurrentUser() as {
+			woocommerce_meta?: Record< string, string >;
+		}
+	 ).woocommerce_meta?.[ key ];
 
 const renderUncapturedHook = () =>
 	renderHook( () =>
@@ -155,6 +164,9 @@ describe( 'WooPayments list hidden columns', () => {
 		await act( async () => {
 			result.current.saveFields( [ 'date', 'amount' ] );
 		} );
+		expect(
+			storedPreference( 'wc_payments_transactions_hidden_columns' )
+		).toBe( '' );
 		expect( writes() ).toHaveLength( 0 );
 
 		// Showing a default-hidden column stores the rest of the defaults, including columns this view lacks.
@@ -188,6 +200,11 @@ describe( 'WooPayments list hidden columns', () => {
 			] );
 		} );
 
+		expect(
+			storedPreference(
+				'wc_payments_transactions_uncaptured_hidden_columns'
+			)
+		).toBe( JSON.stringify( [ 'risk_level', 'customer_email' ] ) );
 		// Core may re-read the current user at any time; only a write stores a preference.
 		expect(
 			mockFetch.mock.calls.filter(
