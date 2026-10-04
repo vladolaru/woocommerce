@@ -200,7 +200,7 @@ final class NativePaymentsBootstrap {
 			$is_registry = NativePaymentsGatewayRegistry::class === $root;
 			if ( ! in_array( $root, $registered, true ) ) {
 				$missing[] = $root;
-				if ( $is_registry ) {
+				if ( $is_registry && isset( $roots[ $index + 1 ] ) ) {
 					$missing[] = $roots[ $index + 1 ];
 				}
 			}
@@ -222,7 +222,7 @@ final class NativePaymentsBootstrap {
 		$count = count( $roots );
 		for ( $index = 0; $index < $count; ++$index ) {
 			$root = $roots[ $index ];
-			if ( NativePaymentsGatewayRegistry::class === $root ) {
+			if ( NativePaymentsGatewayRegistry::class === $root && isset( $roots[ $index + 1 ] ) ) {
 				/**
 				 * Gateway registry.
 				 *

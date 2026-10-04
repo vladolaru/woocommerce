@@ -634,6 +634,26 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		}
 	}
 
+	/** @testdox A gateway registry listed last, with no provider root after it, registers without a provider. */
+	public function test_registry_listed_last_registers_without_a_provider(): void {
+		$container = $this->make_container( NativePaymentsState::AVAILABLE, NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		$sut       = new NativePaymentsBootstrap(
+			static fn(): array => array( NativePaymentsState::AVAILABLE => array( 'cron' => array( WooPaymentsCutoverReconciliationJob::class, NativePaymentsGatewayRegistry::class ) ) ),
+			static fn(): array => array()
+		);
+
+		$sut->register( $container, '__return_false' );
+		do_action( 'action_scheduler_before_execute', 1, 'WP Cron' );
+
+		$this->assertSame(
+			array_merge(
+				$this->expected_events( array( WooPaymentsCutoverReconciliationJob::class ) ),
+				array( 'get:' . NativePaymentsGatewayRegistry::class, 'register:' . NativePaymentsGatewayRegistry::class )
+			),
+			$container->events
+		);
+	}
+
 	/** @return array<string,array{string,string,array<int,string>}> */
 	public static function unique_matrix_compositions(): array {
 		return array(
