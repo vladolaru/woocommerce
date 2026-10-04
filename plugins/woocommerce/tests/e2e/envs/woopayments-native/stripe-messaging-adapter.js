@@ -215,6 +215,7 @@
 		validatePaymentElementsOptions( elementsOptions );
 		validatePaymentOptions( paymentOptions );
 		let mountedFrame = null;
+		const readyCallbacks = [];
 		const call = {
 			type: 'payment',
 			stripeOptions: copy( stripeOptions ),
@@ -249,14 +250,27 @@
 				mountedFrame = iframe;
 				call.mount = '#' + target.id;
 				call.lifecycle.push( 'mount' );
+				// Stripe fires `ready` once the mounted element has rendered.
+				readyCallbacks.forEach( ( callback ) =>
+					window.setTimeout( callback, 0 )
+				);
 			},
 			on( event, callback ) {
-				if ( event !== 'loaderror' || typeof callback !== 'function' ) {
+				if (
+					! [ 'loaderror', 'ready' ].includes( event ) ||
+					typeof callback !== 'function'
+				) {
 					throw rejection(
 						'Stripe adapter rejected payment event binding.'
 					);
 				}
-				call.lifecycle.push( 'loaderror-listener' );
+				call.lifecycle.push( event + '-listener' );
+				if ( event === 'ready' ) {
+					readyCallbacks.push( callback );
+					if ( mountedFrame ) {
+						window.setTimeout( callback, 0 );
+					}
+				}
 			},
 			update( nextOptions ) {
 				assertKeys( nextOptions, [ 'terms' ], 'payment update' );
