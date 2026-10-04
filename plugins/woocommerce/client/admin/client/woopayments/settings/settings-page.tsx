@@ -651,43 +651,46 @@ const ManualCaptureConfirmationModal = ( {
 	<Modal
 		title={ __( 'Enable manual capture', 'woocommerce' ) }
 		onRequestClose={ onClose }
-		className="woopayments-settings-modal"
 	>
-		<p>
-			<strong>
+		<div className="woopayments-settings-modal">
+			<p>
+				<strong>
+					{ __(
+						'Payments must be captured on the order details screen within 7 days of authorization',
+						'woocommerce'
+					) }
+				</strong>
 				{ __(
-					'Payments must be captured on the order details screen within 7 days of authorization',
+					', otherwise the authorization and order will be canceled.',
 					'woocommerce'
 				) }
-			</strong>
-			{ __(
-				', otherwise the authorization and order will be canceled.',
-				'woocommerce'
-			) }
-			<br />
-			{ createInterpolateElement(
-				__(
-					'<learnMoreLink>Learn more about manual capture</learnMoreLink>.',
+				<br />
+				{ createInterpolateElement(
+					__(
+						'<learnMoreLink>Learn more about manual capture</learnMoreLink>.',
+						'woocommerce'
+					),
+					{
+						learnMoreLink: (
+							<TextLink href={ MANUAL_CAPTURE_DOC_URL } />
+						),
+					}
+				) }
+			</p>
+			<Notice status="info" isDismissible={ false }>
+				{ __(
+					"Manual capture is available for card payments only. Payment methods that don't support it will be disabled.",
 					'woocommerce'
-				),
-				{
-					learnMoreLink: <TextLink href={ MANUAL_CAPTURE_DOC_URL } />,
-				}
-			) }
-		</p>
-		<Notice status="info" isDismissible={ false }>
-			{ __(
-				"Manual capture is available for card payments only. Payment methods that don't support it will be disabled.",
-				'woocommerce'
-			) }
-		</Notice>
-		<div className="woopayments-settings-modal__actions">
-			<Button variant="tertiary" onClick={ onClose }>
-				{ __( 'Cancel', 'woocommerce' ) }
-			</Button>
-			<Button variant="primary" onClick={ onConfirm }>
-				{ __( 'Enable manual capture', 'woocommerce' ) }
-			</Button>
+				) }
+			</Notice>
+			<div className="woopayments-settings-modal__actions">
+				<Button variant="tertiary" onClick={ onClose }>
+					{ __( 'Cancel', 'woocommerce' ) }
+				</Button>
+				<Button variant="primary" onClick={ onConfirm }>
+					{ __( 'Enable manual capture', 'woocommerce' ) }
+				</Button>
+			</div>
 		</div>
 	</Modal>
 );
