@@ -120,7 +120,7 @@ final class NativePaymentsState {
 		}
 
 		update_option( self::OPTION_NAME, $state, true );
-		wp_set_option_autoload_values( array( self::OPTION_NAME => 'yes' ) );
+		wp_set_option_autoload_values( array( self::OPTION_NAME => true ) );
 		wp_cache_delete( self::OPTION_NAME, 'options' );
 
 		if ( get_option( self::OPTION_NAME, null ) !== $state || ! array_key_exists( self::OPTION_NAME, wp_load_alloptions( true ) ) ) {
