@@ -49,7 +49,9 @@ interface ProviderContract extends PaymentGatewayProviderContract {
 	 * Capture a previously authorized payment through the provider.
 	 *
 	 * @param PaymentContext $context         Payment context.
-	 * @param string         $idempotency_key Deterministic idempotency key.
+	 * @param string         $idempotency_key Deterministic operation key: the order payment lock token and log
+	 *                                        correlation ID. Do not send it as the provider request key, or a
+	 *                                        retry after a failure replays that failure.
 	 * @return PaymentOutcome
 	 */
 	public function capture( PaymentContext $context, string $idempotency_key ): PaymentOutcome;
@@ -58,7 +60,9 @@ interface ProviderContract extends PaymentGatewayProviderContract {
 	 * Cancel a previously authorized payment through the provider.
 	 *
 	 * @param PaymentContext $context         Payment context.
-	 * @param string         $idempotency_key Deterministic idempotency key.
+	 * @param string         $idempotency_key Deterministic operation key: the order payment lock token and log
+	 *                                        correlation ID. Do not send it as the provider request key, or a
+	 *                                        retry after a failure replays that failure.
 	 * @return PaymentOutcome
 	 */
 	public function cancel( PaymentContext $context, string $idempotency_key ): PaymentOutcome;

@@ -5288,7 +5288,8 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
 		$this->assertSame( 'pi_captured', $outcome->get_provider_payment_id() );
-		$this->assertSame( 'key_capture', $gateway->last_idempotency_key );
+		$this->assertSame( 1, $gateway->capture_calls );
+		$this->assertSame( '', $gateway->last_idempotency_key, 'Legacy capture must not send the derived key: the client mints a fresh key per request.' );
 		$this->assertContains(
 			$outcome->get_data()[ PaymentOutcome::DATA_NOTE ],
 			$outcome->get_data()[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ]
@@ -5386,7 +5387,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$outcome = $sut->capture( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID ), 'key_capture' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertSame( '', $gateway->last_idempotency_key );
+		$this->assertSame( 0, $gateway->capture_calls, 'The legacy gateway must not be consulted.' );
 	}
 
 	/**
@@ -5474,7 +5475,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$outcome = $sut->capture( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID, 4.25 ), 'key_capture' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertSame( '', $gateway->last_idempotency_key );
+		$this->assertSame( 0, $gateway->capture_calls, 'The legacy gateway must not be consulted.' );
 	}
 
 	/**
@@ -5628,7 +5629,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_TYPE, $data );
 		$this->assertSame( 'The authorization could not be captured.', $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
 		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
-		$this->assertSame( '', $gateway->last_idempotency_key );
+		$this->assertSame( 0, $gateway->capture_calls, 'The legacy gateway must not be consulted.' );
 	}
 
 	/**
@@ -5710,7 +5711,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $plan );
 		$this->assertSame( 'cancel', $plan->get_type() );
 		$this->assertSame( 'requires_capture', $plan->get_provider_result()['status'], 'The re-read status rides on the plan so the applier can record it.' );
-		$this->assertSame( '', $gateway->last_idempotency_key, 'The legacy gateway must not be consulted after a native transport failure.' );
+		$this->assertSame( 0, $gateway->cancel_calls, 'The legacy gateway must not be consulted after a native transport failure.' );
 	}
 
 	/**
@@ -5972,7 +5973,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$outcome = $sut->capture( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID ), 'key_capture' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertSame( '', $gateway->last_idempotency_key );
+		$this->assertSame( 0, $gateway->capture_calls, 'The legacy gateway must not be consulted.' );
 	}
 
 	/**
@@ -5995,7 +5996,8 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( PaymentOutcome::STATUS_CANCELED, $outcome->get_status() );
 		$this->assertSame( 'pi_canceled', $outcome->get_provider_payment_id() );
-		$this->assertSame( 'key_cancel', $gateway->last_idempotency_key );
+		$this->assertSame( 1, $gateway->cancel_calls );
+		$this->assertSame( '', $gateway->last_idempotency_key, 'Legacy cancel must not send the derived key: the client mints a fresh key per request.' );
 		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
 		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_CANCEL, $outcome->get_effect_plan()->get_type() );
 		$this->assertSame( 'pi_canceled', $outcome->get_effect_plan()->get_provider_result()['id'] );
@@ -6037,7 +6039,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$outcome = $sut->cancel( PaymentContext::for_cancel( $order, OrderPaymentStore::GATEWAY_ID ), 'key_cancel' );
 
 		$this->assertSame( PaymentOutcome::STATUS_CANCELED, $outcome->get_status() );
-		$this->assertSame( '', $gateway->last_idempotency_key );
+		$this->assertSame( 0, $gateway->cancel_calls, 'The legacy gateway must not be consulted.' );
 		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
 		$this->assertSame( 'cancel', $outcome->get_effect_plan()->get_type() );
 		$this->assertSame( 'ch_cancel', $outcome->get_effect_plan()->get_provider_result()['charges']['data'][0]['id'] );
@@ -6083,7 +6085,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META_TO_DELETE, $outcome->get_data() );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE, $outcome->get_data() );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_TYPE, $outcome->get_data() );
-		$this->assertSame( '', $gateway->last_idempotency_key );
+		$this->assertSame( 0, $gateway->cancel_calls, 'The legacy gateway must not be consulted.' );
 	}
 
 	/**
@@ -6117,7 +6119,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$outcome = $sut->cancel( PaymentContext::for_cancel( $order, OrderPaymentStore::GATEWAY_ID ), 'key_cancel' );
 
 		$this->assertSame( PaymentOutcome::STATUS_CANCELED, $outcome->get_status() );
-		$this->assertSame( '', $gateway->last_idempotency_key );
+		$this->assertSame( 0, $gateway->cancel_calls, 'The legacy gateway must not be consulted.' );
 	}
 
 	/**

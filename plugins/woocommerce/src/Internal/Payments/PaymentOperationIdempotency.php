@@ -16,9 +16,11 @@ use WC_Order;
  * (`mint_attempt_key()`): WooCommerce cannot tell whether a resubmitted checkout retries a
  * failed attempt or starts a genuinely new one, and a reused key would make the provider
  * replay the first attempt's cached failure instead of charging. Duplicate-charge protection
- * comes from the application-level guards, not the key. Refunds, captures, and cancels use
- * deterministic derived keys (`derive_key()`), where replay on retry is exactly the
- * protection wanted.
+ * comes from the application-level guards, not the key. Refunds use deterministic derived
+ * keys (`derive_key()`) sent to the provider, where replay on retry is exactly the protection
+ * wanted. Captures and cancels also derive a key, but only as the order payment lock token and
+ * log correlation ID: their provider requests carry a fresh key per call, so a retry after a
+ * failed capture reaches the provider instead of replaying the stored failure.
  *
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.

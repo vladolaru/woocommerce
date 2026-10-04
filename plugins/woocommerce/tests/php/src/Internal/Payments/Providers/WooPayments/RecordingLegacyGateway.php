@@ -68,6 +68,20 @@ class RecordingLegacyGateway {
 	public string $last_idempotency_key = '';
 
 	/**
+	 * Number of capture_charge() calls.
+	 *
+	 * @var int
+	 */
+	public int $capture_calls = 0;
+
+	/**
+	 * Number of cancel_authorization() calls.
+	 *
+	 * @var int
+	 */
+	public int $cancel_calls = 0;
+
+	/**
 	 * Whether the fake gateway is available.
 	 *
 	 * @var bool
@@ -167,6 +181,7 @@ class RecordingLegacyGateway {
 	public function capture_charge( WC_Order $order ): array {
 		unset( $order );
 
+		++$this->capture_calls;
 		$this->record_idempotency_key();
 
 		return $this->capture_result;
@@ -181,6 +196,7 @@ class RecordingLegacyGateway {
 	public function cancel_authorization( WC_Order $order ): array {
 		unset( $order );
 
+		++$this->cancel_calls;
 		$this->record_idempotency_key();
 
 		return $this->cancel_result;

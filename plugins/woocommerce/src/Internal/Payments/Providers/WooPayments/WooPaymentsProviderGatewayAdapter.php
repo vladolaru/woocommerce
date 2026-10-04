@@ -240,10 +240,14 @@ class WooPaymentsProviderGatewayAdapter {
 	 * Capture an authorized payment through the active WooPayments transport.
 	 *
 	 * @param PaymentContext $context         Payment context.
-	 * @param string         $idempotency_key Deterministic idempotency key.
+	 * @param string         $idempotency_key Operation lock key; not sent to the provider.
 	 * @return PaymentOutcome
 	 */
 	public function capture( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+		// Like the client, each capture request carries its own key, so a merchant's retry after a
+		// failed capture reaches the provider instead of replaying the stored failure.
+		unset( $idempotency_key );
+
 		$order = $context->get_order();
 		if ( $this->api_client->is_available() ) {
 			$intent_id = $this->get_order_intent_id( $order );
@@ -287,12 +291,7 @@ class WooPaymentsProviderGatewayAdapter {
 			return $this->unavailable_outcome( 'capture' );
 		}
 
-		$result = $this->with_idempotency_key(
-			$idempotency_key,
-			static function () use ( $gateway, $context ) {
-				return $gateway->capture_charge( $context->get_order() );
-			}
-		);
+		$result = $gateway->capture_charge( $context->get_order() );
 		$result = is_array( $result ) ? $result : array();
 		$order  = $this->reload_order( $order );
 
@@ -307,10 +306,13 @@ class WooPaymentsProviderGatewayAdapter {
 	 * Cancel an authorized payment through the active WooPayments transport.
 	 *
 	 * @param PaymentContext $context         Payment context.
-	 * @param string         $idempotency_key Deterministic idempotency key.
+	 * @param string         $idempotency_key Operation lock key; not sent to the provider.
 	 * @return PaymentOutcome
 	 */
 	public function cancel( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+		// Each cancel request carries its own key, as for capture.
+		unset( $idempotency_key );
+
 		$order = $context->get_order();
 		if ( $this->api_client->is_available() ) {
 			$intent_id = $this->get_order_intent_id( $order );
@@ -347,13 +349,7 @@ class WooPaymentsProviderGatewayAdapter {
 			return $this->unavailable_outcome( 'cancel' );
 		}
 
-		$result = $this->with_idempotency_key(
-			$idempotency_key,
-			static function () use ( $gateway, $context ) {
-				return $gateway->cancel_authorization( $context->get_order() );
-			}
-		);
-
+		$result  = $gateway->cancel_authorization( $context->get_order() );
 		$result  = is_array( $result ) ? $result : array();
 		$outcome = WooPaymentsIntentCodec::outcome_from_cancel_result( $result );
 
