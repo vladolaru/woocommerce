@@ -387,4 +387,37 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 		$this->assertSame( 1, $option_reads, 'The filter override must be applied after resolving the kill-switch-backed default.' );
 		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, $this->sut->get_runtime_owner() );
 	}
+
+	/**
+	 * @testdox The kill switch stays off for stored false-like values.
+	 * @testWith ["no"]
+	 *           ["false"]
+	 *           ["0"]
+	 *           [""]
+	 *
+	 * @param string $stored Stored kill-switch value.
+	 */
+	public function test_kill_switch_stays_off_for_false_like_values( string $stored ): void {
+		$this->fake_plugin();
+		update_option( 'woocommerce_native_payments_enabled', 'yes' );
+		update_option( 'woocommerce_native_payments_killswitch', $stored );
+
+		$this->assertTrue( $this->sut->is_native_runtime_enabled(), "A kill switch stored as '{$stored}' must leave native enabled." );
+	}
+
+	/**
+	 * @testdox The kill switch engages for stored true-like values.
+	 * @testWith ["yes"]
+	 *           ["true"]
+	 *           ["1"]
+	 *
+	 * @param string $stored Stored kill-switch value.
+	 */
+	public function test_kill_switch_engages_for_true_like_values( string $stored ): void {
+		$this->fake_plugin();
+		update_option( 'woocommerce_native_payments_enabled', 'yes' );
+		update_option( 'woocommerce_native_payments_killswitch', $stored );
+
+		$this->assertFalse( $this->sut->is_native_runtime_enabled(), "A kill switch stored as '{$stored}' must disable native." );
+	}
 }

@@ -109,7 +109,7 @@ final class WooCommerce_WooPayments_Native_E2E_Runtime {
 			return $enabled;
 		}
 
-		return ! (bool) get_option( self::KILL_SWITCH_OPTION, false );
+		return ! wc_string_to_bool( get_option( self::KILL_SWITCH_OPTION, false ) );
 	}
 
 	/**
@@ -196,7 +196,7 @@ final class WooCommerce_WooPayments_Native_E2E_Runtime {
 				'wpcom_blog_id'           => $this->get_wpcom_blog_id(),
 				'runtime_owner'           => (string) ( $status_data['runtime_owner'] ?? 'none' ),
 				'native_enabled'          => (bool) ( $status_data['native_enabled'] ?? false ),
-				'kill_switch'             => (bool) get_option( self::KILL_SWITCH_OPTION, false ),
+				'kill_switch'             => wc_string_to_bool( get_option( self::KILL_SWITCH_OPTION, false ) ),
 				'account_id'              => (string) ( $status_data['account_id'] ?? '' ),
 				'account_connected'       => (bool) ( $status_data['account_connected'] ?? false ),
 				'gateway_enabled'         => (bool) ( $status_data['gateway_enabled'] ?? false ),

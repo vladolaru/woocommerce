@@ -206,7 +206,7 @@ class NativePaymentsRuntimeArbiter {
 	 */
 	public function is_native_runtime_enabled(): bool {
 		$option_enabled     = 'yes' === get_option( self::FILTER_NATIVE_ENABLED, 'no' );
-		$kill_switch_active = (bool) get_option( self::NATIVE_RUNTIME_KILL_SWITCH_OPTION, false );
+		$kill_switch_active = wc_string_to_bool( get_option( self::NATIVE_RUNTIME_KILL_SWITCH_OPTION, false ) );
 		$filter_default     = $kill_switch_active ? false : $option_enabled;
 
 		/**
