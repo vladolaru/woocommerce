@@ -1264,19 +1264,6 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Get the active WooCommerce Subscriptions version.
-	 *
-	 * @return string|null
-	 */
-	public function get_subscriptions_plugin_version(): ?string {
-		if ( ! class_exists( 'WC_Subscriptions' ) || ! isset( \WC_Subscriptions::$version ) ) {
-			return null;
-		}
-
-		return (string) \WC_Subscriptions::$version;
-	}
-
-	/**
 	 * Tell whether a WooPayments account is connected, like client 11.1.0 WC_Payment_Gateway_WCPay::is_connected().
 	 *
 	 * The Payments settings providers list reads this for the account connected state.

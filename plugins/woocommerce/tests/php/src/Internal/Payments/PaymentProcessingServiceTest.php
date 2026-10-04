@@ -3301,7 +3301,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			$token_service,
 			new WooPaymentsOrderDataService(),
 			$account_service,
-			$legacy_runtime,
 			new WooPaymentsOrderNoteService(),
 			new WooPaymentsPaymentMethodRegistry()
 		);

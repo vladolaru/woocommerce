@@ -9,7 +9,6 @@ use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
@@ -909,7 +908,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		);
 
 		try {
-			$this->create_applier( $token_service, null, null, null, $note_service )->apply(
+			$this->create_applier( $token_service, null, null, $note_service )->apply(
 				PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_ordered' ),
 				$outcome,
 				$plan
@@ -1783,7 +1782,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->expectExceptionMessage( 'Local refund note formatting failed.' );
 
 		try {
-			$this->create_applier( null, null, null, null, $note_service )->apply(
+			$this->create_applier( null, null, null, $note_service )->apply(
 				PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.50, 'Adjustment' ),
 				$outcome->with_effect_plan( $plan ),
 				$plan
@@ -1814,11 +1813,10 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsTokenService|null     $token_service      Token service.
 	 * @param WooPaymentsOrderDataService|null $order_data_service Order data service.
 	 * @param WooPaymentsAccountService|null   $account_service    Account service.
-	 * @param WooPaymentsLegacyRuntime|null    $legacy_runtime     Legacy runtime.
 	 * @param WooPaymentsOrderNoteService|null $note_service       Order note service.
 	 * @return WooPaymentsOrderEffectApplier
 	 */
-	private function create_applier( ?WooPaymentsTokenService $token_service = null, ?WooPaymentsOrderDataService $order_data_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsLegacyRuntime $legacy_runtime = null, ?WooPaymentsOrderNoteService $note_service = null ): WooPaymentsOrderEffectApplier {
+	private function create_applier( ?WooPaymentsTokenService $token_service = null, ?WooPaymentsOrderDataService $order_data_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsOrderNoteService $note_service = null ): WooPaymentsOrderEffectApplier {
 		$token_service      = $token_service ?? $this->getMockBuilder( WooPaymentsTokenService::class )
 			->disableOriginalConstructor()
 			->getMock();
@@ -1834,20 +1832,12 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			$account_service->method( 'get_account_default_currency' )->willReturn( 'usd' );
 			$account_service->method( 'get_mode' )->willReturn( 'live' );
 		}
-		if ( null === $legacy_runtime ) {
-			$legacy_runtime = $this->getMockBuilder( WooPaymentsLegacyRuntime::class )
-				->disableOriginalConstructor()
-				->onlyMethods( array( 'get_logger' ) )
-				->getMock();
-			$legacy_runtime->method( 'get_logger' )->willReturn( null );
-		}
 
 		$applier = new WooPaymentsOrderEffectApplier();
 		$applier->init(
 			$token_service,
 			$order_data_service,
 			$account_service,
-			$legacy_runtime,
 			$note_service ?? new WooPaymentsOrderNoteService(),
 			new WooPaymentsPaymentMethodRegistry()
 		);

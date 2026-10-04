@@ -68,7 +68,6 @@ class WooPaymentsOrderEffectApplier {
 	 * @param WooPaymentsTokenService          $token_service      WooPayments token service.
 	 * @param WooPaymentsOrderDataService      $order_data_service WooPayments order data service.
 	 * @param WooPaymentsAccountService        $account_service    WooPayments account service.
-	 * @param WooPaymentsLegacyRuntime         $legacy_runtime     Unused since log lines go through WooPaymentsLogger; kept so callers need no change.
 	 * @param WooPaymentsOrderNoteService      $note_service       WooPayments order note service.
 	 * @param WooPaymentsPaymentMethodRegistry $payment_method_registry Payment method registry.
 	 */
@@ -76,7 +75,6 @@ class WooPaymentsOrderEffectApplier {
 		WooPaymentsTokenService $token_service,
 		WooPaymentsOrderDataService $order_data_service,
 		WooPaymentsAccountService $account_service,
-		WooPaymentsLegacyRuntime $legacy_runtime,
 		WooPaymentsOrderNoteService $note_service,
 		WooPaymentsPaymentMethodRegistry $payment_method_registry
 	): void {
@@ -85,8 +83,6 @@ class WooPaymentsOrderEffectApplier {
 		$this->account_service         = $account_service;
 		$this->note_service            = $note_service;
 		$this->payment_method_registry = $payment_method_registry;
-
-		unset( $legacy_runtime );
 	}
 
 	/**

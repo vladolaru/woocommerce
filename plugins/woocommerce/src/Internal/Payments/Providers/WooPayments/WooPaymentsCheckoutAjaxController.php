@@ -102,7 +102,6 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 * @param OrderPaymentLifecycleService          $lifecycle_service       Order lifecycle service.
 	 * @param WooPaymentsTokenService               $token_service           WooPayments token service.
 	 * @param WooPaymentsAccountService             $account_service         WooPayments account service.
-	 * @param WooPaymentsOrderDataService|null      $order_data_service      Legacy compatibility dependency; no longer used.
 	 * @param WooPaymentsPaymentMethodRegistry|null $payment_method_registry Optional payment method registry.
 	 * @param WooPaymentsOrderEffectApplier|null    $order_effect_applier    Optional order effect applier.
 	 */
@@ -113,7 +112,6 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		OrderPaymentLifecycleService $lifecycle_service,
 		WooPaymentsTokenService $token_service,
 		WooPaymentsAccountService $account_service,
-		?WooPaymentsOrderDataService $order_data_service = null,
 		?WooPaymentsPaymentMethodRegistry $payment_method_registry = null,
 		?WooPaymentsOrderEffectApplier $order_effect_applier = null
 	): void {

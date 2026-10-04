@@ -5393,7 +5393,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			$token_service,
 			wc_get_container()->get( WooPaymentsOrderDataService::class ),
 			$account_service,
-			wc_get_container()->get( WooPaymentsLegacyRuntime::class ),
 			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
 			new WooPaymentsPaymentMethodRegistry()
 		);
