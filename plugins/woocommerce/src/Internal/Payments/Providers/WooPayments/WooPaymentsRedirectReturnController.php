@@ -188,12 +188,10 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 
 			// Decided divergence (money hazard): client gw:2428-2444 fails the order read at request start, and its paid check
 			// (os:2863) misses on-hold, so a webhook that authorized the payment during the fetch leaves a charge on a failed order.
-			$fresh_order = $this->reread_order_authoritatively( $order );
-			if ( $fresh_order->has_status( array( 'processing', 'completed', 'on-hold' ) ) || ! $this->order_matches_intent( $fresh_order, $intent_id ) ) {
+			if ( ! $this->fail_order_unless_settled( $order, $intent_id, $exception->getMessage() ) ) {
 				return;
 			}
 
-			$this->fail_order( $fresh_order, $intent_id, $exception->getMessage() );
 			$this->redirect_to_checkout( $this->get_shopper_message_for_fetch_error( $exception ) );
 			return;
 		}
@@ -281,25 +279,82 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * @param string|null $exception_message Message of the exception that ended the return, or null for an intent error.
 	 */
 	private function fail_order( WC_Order $order, string $intent_id, ?string $exception_message ): void {
-		$note_candidates = $this->note_service->format_redirect_payment_failed_note_candidates( $order, $intent_id, $exception_message );
+		$event = $this->build_failure_event( $order, $intent_id, $exception_message );
 
 		try {
-			$this->lifecycle_service->apply(
-				$order,
-				new PaymentLifecycleEvent(
-					PaymentLifecycleEvent::STATUS_FAILED,
-					$intent_id,
-					array(),
-					array(),
-					$note_candidates[0],
-					PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED,
-					$note_candidates
-				),
-				new WooPaymentsPersistenceProfile()
-			);
+			$this->lifecycle_service->apply( $order, $event, new WooPaymentsPersistenceProfile() );
 		} catch ( Throwable $failure ) {
 			$this->log_return_error( $order, $failure );
 		}
+	}
+
+	/**
+	 * Fail the order after a failed intent fetch, unless a fresh read under the order payment lock shows it is settled.
+	 *
+	 * Webhooks write the order status under the same lock, so an on-hold written just before this claims the lock is seen
+	 * here (review 33 F1). The lifecycle's own late-failure check stays on paid statuses only: a Multibanco voucher expiry
+	 * must still move an on-hold order to failed.
+	 *
+	 * @param WC_Order $order             Order object.
+	 * @param string   $intent_id         Requested intent ID.
+	 * @param string   $exception_message Message of the fetch failure.
+	 * @return bool Whether the shopper goes back to checkout; false when the order is settled or bound to another intent.
+	 */
+	private function fail_order_unless_settled( WC_Order $order, string $intent_id, string $exception_message ): bool {
+		$persistence_profile = new WooPaymentsPersistenceProfile();
+		$order_payment_store = wc_get_container()->get( OrderPaymentStore::class );
+		if ( ! $order_payment_store->claim_order_payment_lock_for_operation( $order, $persistence_profile, $intent_id, 'payment status update' ) ) {
+			// As before: the lifecycle skips a failure it cannot lock and the shopper still goes back to checkout.
+			$order_payment_store->log_order_payment_lock_refusal(
+				$order,
+				$persistence_profile,
+				'payment status update',
+				'native-payments-webhook',
+				array(
+					'payment_reference' => $intent_id,
+					'event_type'        => PaymentLifecycleEvent::STATUS_FAILED,
+					'reason'            => 'order_locked',
+				)
+			);
+			return true;
+		}
+
+		try {
+			$fresh_order = $this->reread_order_authoritatively( $order );
+			if ( $fresh_order->has_status( array( 'processing', 'completed', 'on-hold' ) ) || ! $this->order_matches_intent( $fresh_order, $intent_id ) ) {
+				return false;
+			}
+
+			$this->lifecycle_service->apply_unlocked( $fresh_order, $this->build_failure_event( $fresh_order, $intent_id, $exception_message ), $persistence_profile );
+		} catch ( Throwable $failure ) {
+			$this->log_return_error( $order, $failure );
+		} finally {
+			$order_payment_store->release_order_payment_lock( $order, $persistence_profile, $intent_id );
+		}
+
+		return true;
+	}
+
+	/**
+	 * Build the failure event with the "UPE payment failed" note.
+	 *
+	 * @param WC_Order    $order             Order object.
+	 * @param string      $intent_id         Requested intent ID.
+	 * @param string|null $exception_message Message of the exception that ended the return, or null for an intent error.
+	 * @return PaymentLifecycleEvent
+	 */
+	private function build_failure_event( WC_Order $order, string $intent_id, ?string $exception_message ): PaymentLifecycleEvent {
+		$note_candidates = $this->note_service->format_redirect_payment_failed_note_candidates( $order, $intent_id, $exception_message );
+
+		return new PaymentLifecycleEvent(
+			PaymentLifecycleEvent::STATUS_FAILED,
+			$intent_id,
+			array(),
+			array(),
+			$note_candidates[0],
+			PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED,
+			$note_candidates
+		);
 	}
 
 	/**

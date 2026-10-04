@@ -935,9 +935,12 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	 * Decided divergence (money hazard): client 11.1.0 fails the order read at request start (gw:2428-2444), and its paid
 	 * check covers only processing and completed (os:2863-2880), so an authorized charge would end on a failed order.
 	 * An order now bound to another intent belongs to another attempt, as in the client's early return (gw:2305-2307).
+	 * The order is read again under the order payment lock, so an on-hold a webhook writes after the fetch and before the
+	 * failure takes the lock is kept too (review 33 F1).
 	 *
 	 * @testWith ["a webhook put on hold", "on-hold"]
 	 *           ["another payment attempt bound to its intent", "pending"]
+	 *           ["a webhook put on hold just before the lock", "on-hold"]
 	 *
 	 * @param string $change          What happened to the order during the fetch.
 	 * @param string $expected_status Order status after the return.
@@ -952,10 +955,26 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 				$concurrent_order->update_status( 'on-hold' );
 				return;
 			}
-			$concurrent_order->update_meta_data( '_intent_id', 'pi_other' );
-			$concurrent_order->save();
+			if ( 'another payment attempt bound to its intent' === $change ) {
+				$concurrent_order->update_meta_data( '_intent_id', 'pi_other' );
+				$concurrent_order->save();
+			}
 		};
-		$this->sut                                = $this->create_controller( true, null, $api_client );
+		if ( 'a webhook put on hold just before the lock' === $change ) {
+			// The lock records its holder right after the claim: the latest moment a webhook's write can precede it.
+			$held = false;
+			add_action(
+				'set_transient',
+				static function ( $transient ) use ( $order, &$held ): void {
+					if ( $held || ! str_ends_with( (string) $transient, '_holder' ) ) {
+						return;
+					}
+					$held = true;
+					wc_get_order( $order->get_id() )->update_status( 'on-hold' );
+				}
+			);
+		}
+		$this->sut = $this->create_controller( true, null, $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_held_during_fetch' );
 
 		$this->sut->handle_wp();
