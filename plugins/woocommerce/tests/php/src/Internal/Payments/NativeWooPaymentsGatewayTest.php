@@ -5096,7 +5096,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			public function process_refund( PaymentContext $context, ProviderContract $provider ) {
 				parent::process_refund( $context, $provider );
 
-				return new \WP_Error( 'native_payment_refund_locked', 'A refund is already in progress for this order.' );
+				return new \WP_Error( 'native_payment_refund_locked', 'A payment operation is already in progress for this order.' );
 			}
 		};
 		$gateway = new NativeWooPaymentsGateway();

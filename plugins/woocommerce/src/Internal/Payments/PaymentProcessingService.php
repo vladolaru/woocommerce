@@ -282,7 +282,7 @@ class PaymentProcessingService {
 		$refund_scope_key = $this->idempotency->derive_key( $order, $provider->get_id(), 'refund-scope', $amount, (string) $order->get_currency(), $reason );
 		if ( ! $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $profile, $refund_scope_key, 'refund' ) ) {
 			$this->order_payment_store->log_order_payment_lock_refusal( $order, $profile, 'refund' );
-			return new WP_Error( 'native_payment_refund_locked', __( 'A refund is already in progress for this order.', 'woocommerce' ) );
+			return new WP_Error( 'native_payment_refund_locked', __( 'A payment operation is already in progress for this order.', 'woocommerce' ) );
 		}
 
 		try {
