@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaym
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -276,6 +277,58 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 		$this->assertSame( $items, $result );
 	}
 
+	/**
+	 * @testdox WooCommerce Subscriptions copies no charge idempotency key into a subscription, a parent, a renewal or a resubscribe order.
+	 *
+	 * The key belongs to one order's charge. Subscriptions 9.0.1 copies a parent order's meta to its subscription
+	 * (`includes/core/class-wc-subscriptions-checkout.php:191`) and the subscription's meta to every renewal
+	 * (`includes/core/wcs-order-functions.php:242`, `includes/early-renewal/class-wcs-cart-early-renewal.php:150`), all
+	 * through the data copier's `wc_subscriptions_object_data` filter (`includes/core/class-wc-subscriptions-data-copier.php:162`).
+	 * A renewal carrying the parent's key would send it with another body, which Stripe refuses for 24 hours (review 37 F1);
+	 * without the key the renewal charge mints a fresh one.
+	 */
+	public function test_subscriptions_copies_leave_out_the_charge_idempotency_key(): void {
+		$this->load_subscriptions( true );
+		$this->arrange_ownership( false, true, NativePaymentsState::ACTIVE );
+		$this->register_native_payments_and_run_init();
+
+		foreach ( array( 'subscription', 'parent', 'renewal_order', 'resubscribe_order' ) as $copy_type ) {
+			$data = array(
+				WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META => 'key_parent_charge',
+				'_payment_method_id' => 'pm_saved',
+			);
+
+			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fired as WooCommerce Subscriptions' data copier does.
+			$copied = apply_filters( 'wc_subscriptions_object_data', $data, new WC_Order(), new WC_Order(), $copy_type );
+
+			$this->assertSame( array( '_payment_method_id' => 'pm_saved' ), $copied, "A $copy_type copy must leave out only the charge key." );
+		}
+		$this->assertFalse( has_filter( 'wcs_renewal_order_meta_query', array( WooPaymentsSubscriptionRenewalHooks::class, 'exclude_charge_idempotency_key_from_meta_query' ) ), 'The deprecated meta query filter must stay unhooked, or Subscriptions logs a deprecation.' );
+	}
+
+	/**
+	 * @testdox Subscriptions versions without the data copier copy no charge idempotency key either.
+	 *
+	 * Before the data copier, `wcs_copy_order_meta()` selected the meta to copy with a query filtered by
+	 * `wcs_{$type}_meta_query`, which the data copier still fires as deprecated (Subscriptions 9.0.1
+	 * `includes/core/class-wc-subscriptions-data-copier.php:398`).
+	 */
+	public function test_subscriptions_without_the_data_copier_leave_out_the_charge_idempotency_key(): void {
+		$this->load_subscriptions();
+		$this->arrange_ownership( false, true, NativePaymentsState::ACTIVE );
+		$this->register_native_payments_and_run_init();
+		$query = 'SELECT `meta_key`, `meta_value` FROM wp_postmeta WHERE `post_id` = 123';
+
+		foreach ( array( 'subscription', 'parent', 'renewal_order', 'resubscribe_order' ) as $copy_type ) {
+			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fired as older WooCommerce Subscriptions versions do.
+			$filtered = apply_filters( "wcs_{$copy_type}_meta_query", $query, new WC_Order(), new WC_Order() );
+
+			$this->assertStringStartsWith( $query, $filtered );
+			$this->assertStringContainsString( " AND `meta_key` NOT IN ('_wcpay_charge_idempotency_key')", $filtered, "The $copy_type meta query must leave out the charge key." );
+		}
+		$this->assertFalse( has_filter( 'wc_subscriptions_object_data', array( WooPaymentsSubscriptionRenewalHooks::class, 'exclude_charge_idempotency_key' ) ) );
+	}
+
 	/** @return array<string,array{string,string,?string}> */
 	public static function renewal_modes(): array {
 		return array(
@@ -448,11 +501,14 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 	/**
 	 * Report the WooCommerce Subscriptions core library as loaded, which is how the gateway and the renewal root detect
 	 * Subscriptions. They ask LegacyProxy; the mock is reset after every test.
+	 *
+	 * @param bool $with_data_copier Whether to report Subscriptions' data copier as loaded too.
 	 */
-	private function load_subscriptions(): void {
+	private function load_subscriptions( bool $with_data_copier = false ): void {
+		$loaded = $with_data_copier ? array( 'WC_Subscriptions_Core_Plugin', 'WC_Subscriptions_Data_Copier' ) : array( 'WC_Subscriptions_Core_Plugin' );
 		$this->register_legacy_proxy_function_mocks(
 			array(
-				'class_exists' => static fn( $class_name, ...$args ) => 'WC_Subscriptions_Core_Plugin' === $class_name || class_exists( $class_name, ...$args ),
+				'class_exists' => static fn( $class_name, ...$args ) => in_array( $class_name, $loaded, true ) || class_exists( $class_name, ...$args ),
 			)
 		);
 	}

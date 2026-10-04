@@ -11,7 +11,9 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderMode;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -122,7 +124,53 @@ class WooPaymentsSubscriptionRenewalHooks implements RegisterHooksInterface {
 			add_filter( 'wcs_renewal_order_items', array( self::class, 'check_renewal_mode' ), 10, 3 );
 		}
 
+		// Subscriptions before its data copier filtered only the meta query; the client switches the same way for its own
+		// renewal meta (client 11.1.0 `includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:315-320`).
+		if ( wc_get_container()->get( LegacyProxy::class )->call_function( 'class_exists', 'WC_Subscriptions_Data_Copier' ) ) {
+			add_filter( 'wc_subscriptions_object_data', array( self::class, 'exclude_charge_idempotency_key' ), 10, 1 );
+		} else {
+			foreach ( array( 'subscription', 'parent', 'renewal_order', 'resubscribe_order' ) as $copy_type ) {
+				add_filter( "wcs_{$copy_type}_meta_query", array( self::class, 'exclude_charge_idempotency_key_from_meta_query' ), 10, 1 );
+			}
+		}
+
 		return true;
+	}
+
+	/**
+	 * Leave the charge idempotency key out of the data Subscriptions copies between orders and subscriptions.
+	 *
+	 * The key belongs to one order's charge. Subscriptions copies a parent order's meta to its subscription, and the
+	 * subscription's meta to every renewal, so a key kept after an ambiguous parent charge would be sent again by a
+	 * renewal with another body, which the provider refuses within 24 hours (review 37 F1).
+	 *
+	 * @internal
+	 *
+	 * @param mixed $data Data to copy, keyed by meta key.
+	 * @return mixed
+	 */
+	public static function exclude_charge_idempotency_key( $data ) {
+		if ( is_array( $data ) ) {
+			unset( $data[ WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META ] );
+		}
+
+		return $data;
+	}
+
+	/**
+	 * Leave the charge idempotency key out of the meta query older Subscriptions versions copy with.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $meta_query SQL query selecting the meta to copy.
+	 * @return mixed
+	 */
+	public static function exclude_charge_idempotency_key_from_meta_query( $meta_query ) {
+		if ( ! is_string( $meta_query ) ) {
+			return $meta_query;
+		}
+
+		return $meta_query . sprintf( " AND `meta_key` NOT IN ('%s')", WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META );
 	}
 
 	/**
