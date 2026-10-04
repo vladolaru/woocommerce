@@ -1671,10 +1671,13 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$this->assertSame( 2, $builds, 'A render after the payment list builds fresh config.' );
 		$this->assertSame( 4, $filtered, 'Each gateway config still passes the wcpay_payment_fields_js_config filter.' );
 		$this->assertSame( array( 'woocommerce_payments', 'woocommerce_payments_klarna', 'woocommerce_payments_affirm' ), $gateways );
+		$localized = (string) wp_scripts()->get_data( 'wc-woopayments-checkout', 'data' );
+		$this->assertStringContainsString( 'var wcpay_core_checkout_config = ', $localized, 'The card gateway config is localized under the base object.' );
+		$this->assertStringNotContainsString( 'var wcpay_core_checkout_config_woocommerce_payments =', $localized, 'The checkout script reads the card config from the base object only.' );
 	}
 
 	/**
-	 * What core fires around each classic checkout payment list: the checkout page and update_order_review.
+	 * What core fires around each classic payment list: the checkout page, the order-pay page and update_order_review.
 	 *
 	 * @return array<string,array{0:callable,1:callable}>
 	 */
@@ -1683,6 +1686,10 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			'checkout page'       => array(
 				static fn() => do_action( 'woocommerce_review_order_before_payment' ),
 				static fn() => do_action( 'woocommerce_review_order_after_payment' ),
+			),
+			'order-pay page'      => array(
+				static fn() => do_action( 'woocommerce_pay_order_before_payment' ),
+				static fn() => do_action( 'woocommerce_pay_order_after_submit' ),
 			),
 			'update_order_review' => array(
 				static fn() => do_action( 'woocommerce_checkout_update_order_review', '' ),
