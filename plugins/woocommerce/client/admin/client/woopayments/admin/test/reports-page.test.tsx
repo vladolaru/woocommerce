@@ -10,7 +10,7 @@ import {
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { speak } from '@wordpress/a11y';
 import { recordEvent } from '@woocommerce/tracks';
 import { downloadCSVFile } from '@woocommerce/csv-export';
@@ -235,6 +235,15 @@ const LocationProbe = () => {
 	);
 };
 
+const BackButton = () => {
+	const navigate = useNavigate();
+	return (
+		<button type="button" onClick={ () => navigate( -1 ) }>
+			Browser back
+		</button>
+	);
+};
+
 const renderReportsPage = ( initialEntries = [ '/woopayments/reports' ] ) =>
 	render(
 		<MemoryRouter initialEntries={ initialEntries }>
@@ -242,6 +251,7 @@ const renderReportsPage = ( initialEntries = [ '/woopayments/reports' ] ) =>
 				now={ new Date( '2026-06-19T12:00:00Z' ) }
 			/>
 			<LocationProbe />
+			<BackButton />
 		</MemoryRouter>
 	);
 
@@ -1097,6 +1107,98 @@ describe( 'WooPaymentsReportsPage', () => {
 					'2026-04-30T23:59:59.999Z',
 				],
 				user_timezone: expect.stringMatching( /^[+-]\d{2}:\d{2}$/ ),
+			} )
+		);
+	} );
+
+	it( "loads the Fees sort, paging and filters from the client's URL params", async () => {
+		// Client 11.1.0 `reports/fees/use-fees-url-sync.ts:167-195`.
+		renderReportsPage( [
+			'/woopayments/reports?report_tab=fees&orderby=amount&order=asc&paged=2&per_page=50&search%5B%5D=txn_9&date_after=2026-04-01&payment_method_type=card&type=charge',
+		] );
+
+		await waitFor( () =>
+			expect( mockGetFees ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					page: 2,
+					per_page: 50,
+					sort: 'amount',
+					direction: 'asc',
+					search: [ 'txn_9' ],
+					date_after: '2026-04-01',
+					payment_method_type: 'card',
+					type: [ 'charge' ],
+				} )
+			)
+		);
+		expect( mockGetFees ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	it( 'writes Fees view changes to the URL with the client param names', async () => {
+		renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
+
+		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Apply detailed fees view' } )
+		);
+
+		// Client 11.1.0 `reports/fees/use-fees-url-sync.ts:122-129`.
+		expect( screen.getByTestId( 'location' ) ).toHaveTextContent(
+			'/woopayments/reports?report_tab=fees&orderby=date&order=desc&paged=3&per_page=50&search%5B%5D=txn_456&date_between%5B%5D=2026-04-01&date_between%5B%5D=2026-04-30&type=charge'
+		);
+	} );
+
+	it( 'writes a Fees search to the URL only after typing pauses', async () => {
+		renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
+
+		fireEvent.change(
+			await screen.findByRole( 'searchbox', { name: 'Search fees' } ),
+			{ target: { value: 'txn_456' } }
+		);
+
+		// Client 11.1.0 `reports/fees/use-fees-url-sync.ts:26,226-230`: the search write waits 500ms.
+		expect( screen.getByTestId( 'location' ) ).not.toHaveTextContent(
+			'txn_456'
+		);
+		await waitFor(
+			() =>
+				expect( screen.getByTestId( 'location' ) ).toHaveTextContent(
+					'search%5B%5D=txn_456'
+				),
+			{ timeout: 2000 }
+		);
+	} );
+
+	it( 'restores the previous Fees view on browser back', async () => {
+		renderReportsPage( [
+			'/woopayments/reports?report_tab=fees&orderby=amount&order=asc',
+		] );
+
+		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Apply detailed fees view' } )
+		);
+		await waitFor( () =>
+			expect( mockGetFees ).toHaveBeenLastCalledWith(
+				expect.objectContaining( { page: 3, search: [ 'txn_456' ] } )
+			)
+		);
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Browser back' } )
+		);
+
+		// Client 11.1.0 `reports/fees/use-fees-url-sync.ts:160-166,193-195`: popstate re-derives the view from the URL.
+		await waitFor( () =>
+			expect( mockGetFees ).toHaveBeenLastCalledWith(
+				expect.not.objectContaining( { search: expect.anything() } )
+			)
+		);
+		expect( mockGetFees ).toHaveBeenLastCalledWith(
+			expect.objectContaining( {
+				page: 1,
+				sort: 'amount',
+				direction: 'asc',
 			} )
 		);
 	} );

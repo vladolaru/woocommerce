@@ -3,10 +3,12 @@
  */
 import {
 	buildReportsFeesQueryFromView,
+	parseReportsFeesViewFromSearch,
 	serializeReportsBalanceQuery,
 	serializeReportsFeesExportQuery,
 	serializeReportsFeesListQuery,
 	serializeReportsFeesSummaryQuery,
+	serializeReportsFeesViewToSearch,
 } from '../reports/query';
 
 describe( 'WooPayments Reports query helpers', () => {
@@ -159,5 +161,106 @@ describe( 'WooPayments Reports query helpers', () => {
 		expect( serializeReportsFeesExportQuery( query ) ).toBe(
 			'type%5B%5D=charge&user_timezone=%2B03%3A00&user_email=merchant%40example.com&locale=en_US'
 		);
+	} );
+
+	describe( 'Fees URL state (client 11.1.0 `reports/fees/use-fees-url-sync.ts`)', () => {
+		it( 'reads sort, paging, search and filters from the client link params', () => {
+			// The client writes arrays through `addQueryArgs`, as `search[0]` and `date_between[0]`.
+			expect(
+				parseReportsFeesViewFromSearch(
+					'?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Freports&report_tab=fees&orderby=amount&order=asc&paged=3&per_page=50&search%5B0%5D=txn_1&date_between%5B0%5D=2026-04-01&date_between%5B1%5D=2026-04-30&payment_method_type=card&type=charge'
+				)
+			).toEqual( {
+				page: 3,
+				perPage: 50,
+				sort: { field: 'amount', direction: 'asc' },
+				search: 'txn_1',
+				filters: [
+					{
+						field: 'date',
+						operator: 'between',
+						value: [ '2026-04-01', '2026-04-30' ],
+					},
+					{ field: 'payment_method', operator: 'is', value: 'card' },
+					{ field: 'type', operator: 'is', value: 'charge' },
+				],
+			} );
+		} );
+
+		it( 'falls back to the default view when the URL has no Fees params', () => {
+			expect(
+				parseReportsFeesViewFromSearch( '?report_tab=fees' )
+			).toEqual( {
+				page: 1,
+				perPage: 25,
+				sort: { field: 'date', direction: 'desc' },
+				search: '',
+				filters: [],
+			} );
+		} );
+
+		it( 'reads a same-day range as "on" and single dates as "before" and "after"', () => {
+			expect(
+				parseReportsFeesViewFromSearch(
+					'?date_between[]=2026-04-02&date_between[]=2026-04-02'
+				).filters
+			).toEqual( [
+				{ field: 'date', operator: 'on', value: '2026-04-02' },
+			] );
+			expect(
+				parseReportsFeesViewFromSearch( '?date_before=2026-04-02' )
+					.filters
+			).toEqual( [
+				{ field: 'date', operator: 'before', value: '2026-04-02' },
+			] );
+			expect(
+				parseReportsFeesViewFromSearch( '?date_after=2026-04-02' )
+					.filters
+			).toEqual( [
+				{ field: 'date', operator: 'after', value: '2026-04-02' },
+			] );
+		} );
+
+		it( 'writes the view with the client param names and reads it back unchanged', () => {
+			const view = {
+				page: 2,
+				perPage: 50,
+				sort: { field: 'fees', direction: 'asc' as const },
+				search: 'txn_1',
+				filters: [
+					{ field: 'date', operator: 'on', value: '2026-04-02' },
+					{ field: 'payment_method', operator: 'is', value: 'card' },
+					{ field: 'type', operator: 'is', value: 'refund' },
+				],
+			};
+			const search = serializeReportsFeesViewToSearch( view );
+
+			expect( search ).toBe(
+				'orderby=fees&order=asc&paged=2&per_page=50&search%5B%5D=txn_1&date_between%5B%5D=2026-04-02&date_between%5B%5D=2026-04-02&payment_method_type=card&type=refund'
+			);
+			expect( parseReportsFeesViewFromSearch( search ) ).toEqual( view );
+		} );
+
+		it( 'keeps the native "is any of" type filter across a reload', () => {
+			const view = {
+				page: 1,
+				perPage: 25,
+				sort: { field: 'date', direction: 'desc' as const },
+				search: '',
+				filters: [
+					{
+						field: 'type',
+						operator: 'isAny',
+						value: [ 'charge', 'refund' ],
+					},
+				],
+			};
+
+			expect(
+				parseReportsFeesViewFromSearch(
+					serializeReportsFeesViewToSearch( view )
+				)
+			).toEqual( view );
+		} );
 	} );
 } );

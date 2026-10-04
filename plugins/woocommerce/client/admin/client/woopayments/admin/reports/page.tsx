@@ -36,7 +36,11 @@ import {
 	getWooPaymentsReportsFeesSummary,
 	requestWooPaymentsReportsFeesExport,
 } from './data';
-import { buildReportsFeesQueryFromView } from './query';
+import {
+	buildReportsFeesQueryFromView,
+	parseReportsFeesViewFromSearch,
+	serializeReportsFeesViewToSearch,
+} from './query';
 import { ReportState } from './report-state';
 import {
 	confirmWooPaymentsExport,
@@ -1243,11 +1247,43 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 	);
 };
 
+// Client 11.1.0 `reports/fees/use-fees-url-sync.ts:26,208-233`: a search reaches the URL after typing pauses.
+const FEES_SEARCH_URL_DEBOUNCE_MS = 500;
+
+// The Fees params in a location search, normalized so equal views compare equal.
+const getFeesUrlKey = ( search: string ) =>
+	serializeReportsFeesViewToSearch(
+		parseReportsFeesViewFromSearch( search )
+	);
+
+/**
+ * The Fees params that change the URL at once: everything but the debounced search, and the page reset a search causes.
+ *
+ * Client 11.1.0 `reports/fees/use-fees-url-sync.ts:131-144,208-224`.
+ *
+ * @param search           Serialized Fees params.
+ * @param dropSearchPaging Whether to ignore `paged` as well.
+ */
+const getImmediateFeesParams = (
+	search: string,
+	dropSearchPaging: boolean
+) => {
+	const params = new URLSearchParams( search );
+
+	params.delete( 'search[]' );
+	if ( dropSearchPaging ) {
+		params.delete( 'paged' );
+	}
+
+	return params.toString();
+};
+
 const FeesReport = ( { now }: { now: Date } ) => {
-	const [ view, setView ] = useState< View >( {
+	const location = useLocation();
+	const navigate = useNavigate();
+	// Client 11.1.0 `reports/fees/use-fees-url-sync.ts:167-195`: sort, paging, search and filters come from the URL.
+	const [ view, setView ] = useState< View >( () => ( {
 		type: 'table',
-		page: 1,
-		perPage: 25,
 		fields: [
 			'date',
 			'payment_method',
@@ -1258,12 +1294,12 @@ const FeesReport = ( { now }: { now: Date } ) => {
 			'amount',
 			'fees',
 		],
-		sort: {
-			field: 'date',
-			direction: 'desc',
-		},
-		filters: [],
-	} );
+		...parseReportsFeesViewFromSearch( location.search ),
+	} ) );
+	const feesUrlKeyRef = useRef( getFeesUrlKey( location.search ) );
+	const searchUrlTimerRef = useRef< ReturnType< typeof setTimeout > | null >(
+		null
+	);
 	const [ rowsState, setRowsState ] = useState< AsyncState< ReportsFee[] > >(
 		{
 			isLoading: true,
@@ -1314,9 +1350,66 @@ const FeesReport = ( { now }: { now: Date } ) => {
 	useEffect(
 		() => () => {
 			mountedRef.current = false;
+			if ( searchUrlTimerRef.current ) {
+				clearTimeout( searchUrlTimerRef.current );
+			}
 		},
 		[]
 	);
+
+	// Back, forward or a pasted link re-seeds the view; the page's own writes do not, so staged filter chips stay.
+	useEffect( () => {
+		const urlKey = getFeesUrlKey( location.search );
+
+		if ( urlKey === feesUrlKeyRef.current ) {
+			return;
+		}
+
+		feesUrlKeyRef.current = urlKey;
+		setView( ( previousView: View ) => ( {
+			...previousView,
+			...parseReportsFeesViewFromSearch( location.search ),
+		} ) );
+	}, [ location.search ] );
+
+	const applyView = ( nextView: View ) => {
+		const currentSearch = serializeReportsFeesViewToSearch( view );
+		const nextSearch = serializeReportsFeesViewToSearch( nextView );
+		const hasSearchChange =
+			new URLSearchParams( currentSearch ).get( 'search[]' ) !==
+			new URLSearchParams( nextSearch ).get( 'search[]' );
+		const isSearchPageReset =
+			hasSearchChange &&
+			new URLSearchParams( nextSearch ).get( 'paged' ) === '1';
+		const writeUrl = () => {
+			searchUrlTimerRef.current = null;
+			feesUrlKeyRef.current = getFeesUrlKey( nextSearch );
+			navigateReportsRoute(
+				location.search,
+				navigate,
+				`report_tab=fees&${ nextSearch }`
+			);
+		};
+
+		setView( nextView );
+
+		if ( searchUrlTimerRef.current ) {
+			clearTimeout( searchUrlTimerRef.current );
+			searchUrlTimerRef.current = null;
+		}
+
+		if (
+			getImmediateFeesParams( currentSearch, isSearchPageReset ) !==
+			getImmediateFeesParams( nextSearch, isSearchPageReset )
+		) {
+			writeUrl();
+		} else if ( hasSearchChange ) {
+			searchUrlTimerRef.current = setTimeout(
+				writeUrl,
+				FEES_SEARCH_URL_DEBOUNCE_MS
+			);
+		}
+	};
 
 	const load = useCallback( async () => {
 		const requestQuery = JSON.parse( serializedQuery ) as ReportsFeesQuery;
@@ -1565,7 +1658,7 @@ const FeesReport = ( { now }: { now: Date } ) => {
 			}
 		} );
 
-		setView( nextView );
+		applyView( nextView );
 	};
 
 	const handlePresetChange = ( nextPreset: string | null ) => {
@@ -1583,11 +1676,11 @@ const FeesReport = ( { now }: { now: Date } ) => {
 			),
 		} );
 
-		setView( ( previousView: View ) => ( {
-			...previousView,
+		applyView( {
+			...view,
 			page: 1,
 			filters: [
-				...( previousView.filters ?? [] ).filter(
+				...( view.filters ?? [] ).filter(
 					( filter: DataViewsFilter ) => filter.field !== 'date'
 				),
 				{
@@ -1596,7 +1689,7 @@ const FeesReport = ( { now }: { now: Date } ) => {
 					value: dateFilter.value,
 				},
 			],
-		} ) );
+		} );
 	};
 
 	// Client 11.1.0 `reports/fees-export-button.tsx:118-200`: the request sends the user's email and
