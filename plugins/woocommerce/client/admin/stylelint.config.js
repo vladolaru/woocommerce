@@ -2,8 +2,12 @@
 const woopaymentsLiteralPx =
 	/(?:^|[^\w.$-])-?(?:[2-9]|[1-9]\d+|1\.\d+)(?:\.\d+)?px\b/;
 
-// A four-value margin or padding shorthand, which sets the physical left and right sides.
-const woopaymentsFourValues = /^\S+\s+\S+\s+\S+\s+\S+$/;
+// A margin or padding shorthand of one to three values; a fourth value sets the physical left side.
+// A parenthesised group (calc(), var()) counts as one value.
+const woopaymentsValue = '(?:[^\\s()]|\\((?:[^()]|\\([^()]*\\))*\\))+';
+const woopaymentsUpToThreeValues = new RegExp(
+	`^${ woopaymentsValue }(?:\\s+${ woopaymentsValue }){0,2}$`
+);
 
 module.exports = {
 	extends: '@wordpress/stylelint-config/scss',
@@ -55,11 +59,11 @@ module.exports = {
 						'/^(start|end|center|justify|inherit|initial|unset)$/',
 					],
 					float: [ '/^(none|inline-start|inline-end|inherit|initial|unset)$/' ],
+					'/^(margin|padding)$/': [ woopaymentsUpToThreeValues ],
 				},
 				'declaration-property-value-disallowed-list': [
 					{
 						'/^(margin|padding)(-.+)?$/': [ woopaymentsLiteralPx ],
-						'/^(margin|padding)$/': [ woopaymentsFourValues ],
 						'/^(row-|column-)?gap$/': [ woopaymentsLiteralPx ],
 						'font-size': [ woopaymentsLiteralPx ],
 						'/^border(-.+)?-radius$/': [ woopaymentsLiteralPx ],
@@ -67,10 +71,8 @@ module.exports = {
 							[ woopaymentsLiteralPx ],
 					},
 					{
-						message: ( property, value ) =>
-							woopaymentsFourValues.test( value )
-								? `Use ${ property }-block and ${ property }-inline (logical) instead of a four-value shorthand.`
-								: `Use an upstream token or client/woopayments/_tokens.scss for "${ property }" instead of a literal px value above 1px.`,
+						message: ( property ) =>
+							`Use an upstream token or client/woopayments/_tokens.scss for "${ property }" instead of a literal px value above 1px.`,
 					},
 				],
 			},
