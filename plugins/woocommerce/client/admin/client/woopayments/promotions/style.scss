@@ -98,7 +98,8 @@
 	}
 }
 
-.woopayments-promotion-spotlight__badge {
+// Scoped: the badge is core's Pill, whose Text component injects `margin: 0` at one-class specificity at run time.
+.woopayments-promotion-spotlight .woopayments-promotion-spotlight__badge {
 	margin-block-end: $gap-small;
 	white-space: nowrap;
 }

@@ -1,6 +1,6 @@
 // Client 11.1.0 `components/chip/style.scss`: the colours core's status badge has no variant for.
 // stylelint-disable color-no-hex -- core's status badge has no red or blue variant and these colours have no upstream token; the only native badge palette.
-// Doubled class: core's base `.woocommerce-status-badge` background loads after this file in every route chunk.
+// Doubled class: on most native routes core's base `.woocommerce-status-badge` grey loads after this file, in the route chunk.
 .woocommerce-status-badge {
 	&.woocommerce-status-badge--error {
 		background: #fcf0f1;
