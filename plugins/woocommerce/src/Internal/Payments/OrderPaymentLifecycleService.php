@@ -91,30 +91,38 @@ class OrderPaymentLifecycleService {
 	 * @return WC_Order Freshly read order.
 	 */
 	public function get_fresh_order_from_data_store( WC_Order $order ): WC_Order {
+		$fresh_order = clone $order;
+		$this->reread_order_from_data_store( $fresh_order );
+
+		return $fresh_order;
+	}
+
+	/**
+	 * Read an order again from its data store into the same object, past the post, meta and HPOS order caches.
+	 *
+	 * The same read as get_fresh_order_from_data_store(), for a caller whose later code, and every other holder of the
+	 * object, must see what the read returned. Changes not yet saved on the object are discarded.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WC_Order $order Order object, read again in place.
+	 */
+	public function reread_order_from_data_store( WC_Order $order ): void {
 		$order_id = $order->get_id();
 		clean_post_cache( $order_id );
-
-		$fresh_order = clone $order;
-		$fresh_order->delete_meta_cache();
+		$order->delete_meta_cache();
 
 		/**
 		 * Order data store.
 		 *
 		 * @var \WC_Object_Data_Store_Interface $data_store
 		 */
-		$data_store = $fresh_order->get_data_store();
+		$data_store = $order->get_data_store();
 		if ( is_callable( array( $data_store, 'clear_cached_data' ) ) ) {
 			// Only the HPOS data store keeps its own order data cache.
 			call_user_func( array( $data_store, 'clear_cached_data' ), array( $order_id ) );
 		}
-		$data_store->read( $fresh_order );
-		/**
-		 * Freshly read order.
-		 *
-		 * @var WC_Order $fresh_order
-		 */
-
-		return $fresh_order;
+		$data_store->read( $order );
 	}
 
 	/**

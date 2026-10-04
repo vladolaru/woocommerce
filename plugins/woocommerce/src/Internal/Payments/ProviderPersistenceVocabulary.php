@@ -75,4 +75,16 @@ interface ProviderPersistenceVocabulary {
 	 * @since 11.2.0
 	 */
 	public function get_payment_reference_meta_key(): string;
+
+	/**
+	 * Get the order meta key holding the idempotency key a charge keeps on the order while its outcome is unknown.
+	 *
+	 * A new value under this key since the order was loaded means another request attempted a charge. Return '' when the
+	 * provider keeps no such key.
+	 *
+	 * @return string
+	 *
+	 * @since 11.2.0
+	 */
+	public function get_charge_idempotency_key_meta_key(): string;
 }

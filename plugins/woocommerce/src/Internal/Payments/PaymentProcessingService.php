@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments;
 
-use Automattic\WooCommerce\Enums\OrderStatus;
 use Throwable;
 use WC_Logger_Interface;
 use WC_Order;
@@ -109,6 +108,9 @@ class PaymentProcessingService {
 	/**
 	 * Process checkout payment through a provider and return the neutral outcome.
 	 *
+	 * Under the order payment lock the context's order is read again in place, so every holder of that object sees the
+	 * order as the charge saw it (get_outcome_for_order_changed_before_claim()).
+	 *
 	 * @since 11.0.0
 	 *
 	 * @param PaymentContext   $context  Payment context.
@@ -119,8 +121,6 @@ class PaymentProcessingService {
 	 */
 	public function process_checkout_outcome( PaymentContext $context, ProviderContract $provider ): PaymentOutcome {
 		$order           = $context->get_order();
-		$amount          = (float) $order->get_total();
-		$currency        = (string) $order->get_currency();
 		$idempotency_key = $this->idempotency->mint_attempt_key();
 		$profile         = $provider->get_persistence_profile();
 
@@ -136,7 +136,7 @@ class PaymentProcessingService {
 				return $changed_order_outcome;
 			}
 
-			$provider_outcome = 0.0 >= $amount && ! $this->should_call_provider_for_zero_total_checkout( $context, $provider )
+			$provider_outcome = 0.0 >= (float) $order->get_total() && ! $this->should_call_provider_for_zero_total_checkout( $context, $provider )
 				? new PaymentOutcome( PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT )
 				: $this->charge_provider( $context, $provider, $idempotency_key );
 			$outcome          = $provider_outcome;
@@ -183,43 +183,50 @@ class PaymentProcessingService {
 	}
 
 	/**
-	 * Stop a checkout charge when another request paid or bound the order before this one claimed the lock.
+	 * Read the order again under the checkout lock, and stop the charge when another request touched its payment since this one loaded it.
 	 *
 	 * The gateway's duplicate-payment checks run before the lock, so two submissions of one order can both pass them.
-	 * Under the lock the order is read again and compared with the order this request loaded: a new paid status, a new
-	 * payment reference, or a new hold with a payment on record means another request got there first. Client 11.1.0
-	 * takes no lock in process_payment() (class-wc-payment-gateway-wcpay.php:1251-1268) and would charge again.
+	 * The order is read again in place, so the charge and everything after it use what the read returns, including a
+	 * charge key another attempt kept. Compared with what this request loaded: a new paid status answers as already paid;
+	 * any other status change, a new payment reference, or a new kept charge key (a charge whose outcome is unknown)
+	 * means another request is at work, so the charge is refused. Client 11.1.0 takes no lock in process_payment()
+	 * (class-wc-payment-gateway-wcpay.php:1251-1268) and would charge again.
 	 *
-	 * @param WC_Order                      $order   Order as this request loaded it, before the claim.
+	 * @param WC_Order                      $order   Order as this request loaded it, read again in place.
 	 * @param ProviderPersistenceVocabulary $profile Provider persistence vocabulary.
 	 * @return PaymentOutcome|null The outcome to return instead of charging, or null to charge.
 	 */
 	private function get_outcome_for_order_changed_before_claim( WC_Order $order, ProviderPersistenceVocabulary $profile ): ?PaymentOutcome {
-		$fresh_order       = $this->lifecycle_service->get_fresh_order_from_data_store( $order );
 		$paid_statuses     = wc_get_is_paid_statuses();
+		$loaded_status     = $order->get_status();
+		$loaded_was_paid   = $order->has_status( $paid_statuses );
 		$loaded_references = $this->get_recorded_payment_references( $order, $profile );
-		$fresh_references  = $this->get_recorded_payment_references( $fresh_order, $profile );
+		$loaded_charge_key = $this->get_kept_charge_key( $order, $profile );
 
-		if ( $fresh_order->has_status( $paid_statuses ) && ! $order->has_status( $paid_statuses ) ) {
+		$this->lifecycle_service->reread_order_from_data_store( $order );
+
+		if ( $order->has_status( $paid_statuses ) && ! $loaded_was_paid ) {
 			$this->log_checkout_refused_after_claim( $order, 'order_paid' );
 
 			return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, '', '', '', '', array( PaymentOutcome::DATA_ORDER_PAID_BY_ANOTHER_REQUEST => true ) );
 		}
 
-		if ( $fresh_references !== $loaded_references ) {
-			$this->log_checkout_refused_after_claim( $order, 'payment_reference_changed' );
-
-			return $this->get_checkout_in_progress_outcome();
+		$reason = null;
+		if ( $order->get_status() !== $loaded_status ) {
+			$reason = 'order_status_changed';
+		} elseif ( $this->get_recorded_payment_references( $order, $profile ) !== $loaded_references ) {
+			$reason = 'payment_reference_changed';
+		} elseif ( $this->get_kept_charge_key( $order, $profile ) !== $loaded_charge_key ) {
+			$reason = 'kept_charge_key_changed';
 		}
 
-		// A manual-capture authorization puts the order on hold, which is not a paid status.
-		if ( $fresh_order->has_status( OrderStatus::ON_HOLD ) && ! $order->has_status( OrderStatus::ON_HOLD ) && array( '', '' ) !== $fresh_references ) {
-			$this->log_checkout_refused_after_claim( $order, 'order_on_hold' );
-
-			return $this->get_checkout_in_progress_outcome();
+		if ( null === $reason ) {
+			return null;
 		}
 
-		return null;
+		$this->log_checkout_refused_after_claim( $order, $reason );
+
+		return $this->get_checkout_in_progress_outcome();
 	}
 
 	/**
@@ -234,6 +241,19 @@ class PaymentProcessingService {
 			(string) $order->get_transaction_id(),
 			(string) $order->get_meta( $profile->get_payment_reference_meta_key(), true ),
 		);
+	}
+
+	/**
+	 * Get the charge idempotency key the provider keeps on the order while a charge outcome is unknown.
+	 *
+	 * @param WC_Order                      $order   Order object.
+	 * @param ProviderPersistenceVocabulary $profile Provider persistence vocabulary.
+	 * @return string The kept key, or '' when there is none or the provider keeps none.
+	 */
+	private function get_kept_charge_key( WC_Order $order, ProviderPersistenceVocabulary $profile ): string {
+		$meta_key = $profile->get_charge_idempotency_key_meta_key();
+
+		return '' === $meta_key ? '' : (string) $order->get_meta( $meta_key, true );
 	}
 
 	/**

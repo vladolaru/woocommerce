@@ -18,6 +18,7 @@ use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHtmlUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
@@ -759,6 +760,15 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 					 */
 					public function get_payment_reference_meta_key(): string {
 						return '_offline_intent_id';
+					}
+
+					/**
+					 * Get the order meta key holding a kept charge idempotency key: this provider keeps none.
+					 *
+					 * @return string
+					 */
+					public function get_charge_idempotency_key_meta_key(): string {
+						return '';
 					}
 
 				};
@@ -1603,23 +1613,25 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	public function test_process_checkout_does_not_charge_an_order_paid_after_it_was_loaded(): void {
 		$order       = $this->create_woopayments_order( '10.00' );
 		$second_view = wc_get_order( $order->get_id() );
+		$third_view  = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $second_view );
+		$this->assertInstanceOf( WC_Order::class, $third_view );
 
-		// The first submission completes after the second passed the gateway's checks but before it claims the lock.
+		// The first submission completes after the others passed the gateway's checks but before they claim the lock.
+		// Each later submission is its own request with its own order object, which the re-check reads again in place.
 		$first = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_first' ) );
 		$this->sut->process_checkout_outcome( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_first' ), $first );
 
 		$second  = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_second' ) );
-		$context = PaymentContext::for_checkout( $second_view, OrderPaymentStore::GATEWAY_ID, 'pm_second' );
-		$outcome = $this->sut->process_checkout_outcome( $context, $second );
-		$result  = $this->sut->process_checkout( $context, $second );
+		$outcome = $this->sut->process_checkout_outcome( PaymentContext::for_checkout( $second_view, OrderPaymentStore::GATEWAY_ID, 'pm_second' ), $second );
+		$result  = $this->sut->process_checkout( PaymentContext::for_checkout( $third_view, OrderPaymentStore::GATEWAY_ID, 'pm_second' ), $second );
 		$order   = wc_get_order( $order->get_id() );
 
 		$this->assertSame( 0, $second->charge_calls, 'An order paid while this request waited for the lock must not be charged again.' );
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
 		$this->assertTrue( $outcome->get_data()[ PaymentOutcome::DATA_ORDER_PAID_BY_ANOTHER_REQUEST ] ?? false );
 		$this->assertSame( 'success', $result['result'] );
-		$this->assertSame( $second_view->get_checkout_order_received_url(), $result['redirect'] );
+		$this->assertSame( $third_view->get_checkout_order_received_url(), $result['redirect'] );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'pi_first', $order->get_transaction_id() );
 		$this->assertFalse( get_transient( $this->persistence_profile->get_order_lock_key( $order ) ), 'The refusal must release the lock.' );
@@ -1706,6 +1718,121 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->sut->process_checkout_outcome( PaymentContext::for_checkout( $loaded, OrderPaymentStore::GATEWAY_ID, 'pm_new' ), $provider );
 
 		$this->assertSame( 1, $provider->charge_calls, 'The re-check under the lock must only refuse changes made after the load.' );
+	}
+
+	/**
+	 * @testdox Should not charge a second submission after the first one's charge failed with an unknown outcome, and a later submission replays the first key.
+	 *
+	 * The first submission's charge gets a 502, so its outcome is unknown: the order goes to failed and keeps the charge
+	 * key, with no payment reference. A second submission loaded before the first ran must not charge under a new key.
+	 */
+	public function test_process_checkout_does_not_charge_after_an_earlier_submission_failed_with_an_unknown_outcome(): void {
+		$order       = $this->create_woopayments_order( '10.00' );
+		$second_view = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $second_view );
+		$sent_keys = new \ArrayObject();
+		$provider  = $this->ambiguous_first_charge_provider( $sent_keys );
+
+		$first_outcome = $this->sut->process_checkout_outcome( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_first' ), $provider );
+		$after_first   = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $after_first );
+		$kept_key = (string) $after_first->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $first_outcome->get_status() );
+		$this->assertSame( 'failed', $after_first->get_status() );
+		$this->assertSame( '', $after_first->get_meta( '_intent_id', true ) );
+		$this->assertSame( array( $kept_key ), $sent_keys->getArrayCopy(), 'The ambiguous failure must keep the key it sent.' );
+
+		$second_outcome = $this->sut->process_checkout_outcome( PaymentContext::for_checkout( $second_view, OrderPaymentStore::GATEWAY_ID, 'pm_second' ), $provider );
+
+		$this->assertSame( array( $kept_key ), $sent_keys->getArrayCopy(), 'A submission loaded before the ambiguous attempt must not send a charge.' );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $second_outcome->get_status() );
+		$this->assertSame( 'A payment operation is already in progress for this order.', $second_outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ] ?? null );
+		$this->assertFalse( get_transient( $this->persistence_profile->get_order_lock_key( $order ) ), 'The refusal must release the lock.' );
+
+		$retry = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $retry );
+		$this->sut->process_checkout_outcome( PaymentContext::for_checkout( $retry, OrderPaymentStore::GATEWAY_ID, 'pm_first' ), $provider );
+
+		$this->assertSame( array( $kept_key, $kept_key ), $sent_keys->getArrayCopy(), 'A submission that loads the order after the ambiguous attempt replays its key.' );
+	}
+
+	/**
+	 * @testdox Should not charge an order another submission changed since this request loaded it: $_dataName.
+	 *
+	 * @dataProvider provide_unpaid_changes_by_another_submission
+	 *
+	 * @param string $status   Status another submission writes.
+	 * @param string $kept_key Charge idempotency key another submission keeps on the order.
+	 */
+	public function test_process_checkout_does_not_charge_an_order_another_submission_changed( string $status, string $kept_key ): void {
+		$order  = $this->create_woopayments_order( '10.00' );
+		$loaded = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $loaded );
+
+		$order->set_status( $status );
+		$order->update_meta_data( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, $kept_key );
+		$order->save();
+
+		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_second' ) );
+		$outcome  = $this->sut->process_checkout_outcome( PaymentContext::for_checkout( $loaded, OrderPaymentStore::GATEWAY_ID, 'pm_second' ), $provider );
+
+		$this->assertSame( 0, $provider->charge_calls, 'Another submission is at work on this order.' );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'A payment operation is already in progress for this order.', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ] ?? null );
+	}
+
+	/**
+	 * Unpaid changes another submission makes between this request's load and its claim.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function provide_unpaid_changes_by_another_submission(): array {
+		return array(
+			'status only'                => array( 'failed', '' ),
+			'kept charge key only'       => array( 'pending', 'key_unknown_outcome' ),
+			'status and kept charge key' => array( 'failed', 'key_unknown_outcome' ),
+		);
+	}
+
+	/**
+	 * @testdox Should charge with the order as read under the lock, and leave the caller's order object showing it.
+	 */
+	public function test_process_checkout_charges_with_the_order_read_under_the_lock(): void {
+		$order  = $this->create_woopayments_order( '10.00' );
+		$loaded = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $loaded );
+
+		// Written by another request after this one loaded the order; no payment field changes, so the charge goes ahead.
+		$order->update_meta_data( '_written_after_load', 'fresh' );
+		$order->save();
+
+		$provider = new class( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_fresh' ) ) extends RecordingProvider {
+			/**
+			 * Meta value the charge saw on its order.
+			 *
+			 * @var string
+			 */
+			public string $seen_meta = '';
+
+			/**
+			 * Record what the charge's order shows, then charge.
+			 *
+			 * @param PaymentContext $context         Payment context.
+			 * @param string         $idempotency_key Idempotency key.
+			 * @return PaymentOutcome
+			 */
+			public function charge( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+				$this->seen_meta = (string) $context->get_order()->get_meta( '_written_after_load', true );
+
+				return parent::charge( $context, $idempotency_key );
+			}
+		};
+		$this->sut->process_checkout_outcome( PaymentContext::for_checkout( $loaded, OrderPaymentStore::GATEWAY_ID, 'pm_fresh' ), $provider );
+
+		$this->assertSame( 1, $provider->charge_calls );
+		$this->assertSame( 'fresh', $provider->seen_meta, 'The charge must see what the read under the lock returned.' );
+		$this->assertSame( 'fresh', $loaded->get_meta( '_written_after_load', true ), 'The caller continues with the order as read under the lock.' );
+		$this->assertTrue( $loaded->has_status( wc_get_is_paid_statuses() ), 'The caller sees the outcome applied on the same order.' );
 	}
 
 	/**
@@ -3557,6 +3684,101 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			$adapter,
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient::class ),
 			wc_get_container()->get( WooPaymentsAccountService::class ),
+			null,
+			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
+		);
+
+		return $provider;
+	}
+
+	/**
+	 * Build a real WooPayments provider whose transport answers the first charge with a 502, so its outcome is unknown.
+	 *
+	 * Later charges succeed. Every idempotency key sent is recorded.
+	 *
+	 * @param \ArrayObject $sent_keys Idempotency keys sent to the platform, in order.
+	 * @return WooPaymentsProvider
+	 */
+	private function ambiguous_first_charge_provider( \ArrayObject $sent_keys ): WooPaymentsProvider {
+		$api_client      = new class( $sent_keys ) extends WooPaymentsApiClient {
+			/**
+			 * Idempotency keys sent.
+			 *
+			 * @var \ArrayObject<int,string>
+			 */
+			private \ArrayObject $sent_keys;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param \ArrayObject $sent_keys Idempotency keys sent.
+			 */
+			public function __construct( \ArrayObject $sent_keys ) {
+				$this->sent_keys = $sent_keys;
+			}
+
+			/**
+			 * Use the native transport.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Answer the first charge with a 502 and later ones with a succeeded intent.
+			 *
+			 * @param array<string,mixed> $request_data    Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 * @throws WooPaymentsApiException On the first charge.
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				unset( $request_data );
+				$this->sent_keys[] = $idempotency_key;
+				if ( 1 === count( $this->sent_keys ) ) {
+					throw new WooPaymentsApiException( 'Error: Upstream provider unavailable.', 'api_connection_error', 502, 'api_error' );
+				}
+
+				return array(
+					'id'     => 'pi_replayed',
+					'status' => 'succeeded',
+				);
+			}
+		};
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_account_country', 'get_mode' ) )
+			->getMock();
+		$account_service->method( 'get_account_country' )->willReturn( 'US' );
+		$account_service->method( 'get_mode' )->willReturn( 'test' );
+		$legacy_runtime = $this->getMockBuilder( WooPaymentsLegacyRuntime::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_logger' ) )
+			->getMock();
+		$legacy_runtime->method( 'get_logger' )->willReturn( null );
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_ambiguous' );
+		$adapter = new WooPaymentsProviderGatewayAdapter();
+		$adapter->init(
+			$legacy_runtime,
+			$api_client,
+			$customer_service,
+			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder::class ),
+			$account_service,
+			new WooPaymentsOrderDataService(),
+			new WooPaymentsOrderNoteService(),
+			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService::class )
+		);
+		$provider = new WooPaymentsProvider();
+		$provider->init(
+			$adapter,
+			$api_client,
+			$account_service,
 			null,
 			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
 		);
