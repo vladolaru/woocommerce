@@ -494,7 +494,9 @@ export const WooPaymentsPayoutDetailsPage = () => {
 													{ bankReferenceId }
 												</span>
 												<Button
+													className="woocommerce-woopayments-payout-details__copy"
 													icon={ copy }
+													iconSize={ 16 }
 													size="small"
 													onClick={
 														copyBankReferenceId
