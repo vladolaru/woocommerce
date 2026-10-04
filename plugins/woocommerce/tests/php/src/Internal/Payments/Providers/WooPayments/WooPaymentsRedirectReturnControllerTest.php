@@ -1150,14 +1150,15 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A failure while confirming the return fails the order with the client note, adds the notice and returns to checkout with the cart kept.
+	 * @testdox A failure while confirming a return whose intent holds no money fails the order with the client note, adds the notice and returns to checkout with the cart kept.
 	 * @dataProvider confirmation_failure_provider
 	 *
 	 * Client 11.1.0 process_redirect_payment(): any Exception inside the try (gw:2321-2427) reaches the catch (gw:2428-2455),
 	 * which calls mark_payment_failed() with "UPE payment failed: <message>" and the fetched status (os:463-478, 2889-2895),
 	 * adds the filtered notice and redirects to wc_get_checkout_url(). A PHP Error fatals on the client (catch Exception);
 	 * native takes the same path and logs it whatever the logging setting. The notice for a non-API throwable is the
-	 * generic message (decided divergence, monitor ruling 2026-10-04).
+	 * generic message (decided divergence, monitor ruling 2026-10-04). The intent here is requires_action, which has moved
+	 * no money; an intent that has is covered by test_handle_wp_keeps_the_order_when_confirmation_throws_after_money_moved().
 	 *
 	 * @param Throwable $failure          What the order payment lifecycle throws.
 	 * @param bool      $logged_always    Whether the failure is logged with debug logging off.
@@ -1169,7 +1170,17 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$product = \WC_Helper_Product::create_simple_product();
 		WC()->cart->add_to_cart( $product->get_id() );
 		$api_client                 = new RedirectReturnApiClientStub();
-		$api_client->payment_intent = $this->successful_payment_intent( $order, 'pi_confirm_throws', 'pm_confirm_throws' );
+		$api_client->payment_intent = array_merge(
+			$this->successful_payment_intent( $order, 'pi_confirm_throws', 'pm_confirm_throws' ),
+			array(
+				'status'      => 'requires_action',
+				'next_action' => array( 'type' => 'use_stripe_sdk' ),
+				'charges'     => array(
+					'total_count' => 0,
+					'data'        => array(),
+				),
+			)
+		);
 		$lifecycle                  = $this->createMock( OrderPaymentLifecycleService::class );
 		$lifecycle->method( 'apply' )->willThrowException( $failure );
 		$logger = new RedirectReturnRecordingLogger();
@@ -1186,9 +1197,74 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $reloaded );
 		$this->assertSame( 'failed', $reloaded->get_status() );
 		$this->assert_failed_note_with_message( $reloaded, 'pi_confirm_throws', 'UPE payment failed: ' . $failure->getMessage() );
-		$this->assertSame( 'succeeded', $reloaded->get_meta( '_intention_status', true ) );
+		$this->assertSame( 'requires_action', $reloaded->get_meta( '_intention_status', true ) );
 		$logged_classes = array_map( static fn( array $call ) => $call['context']['exception'] ?? '', $logger->error_calls );
 		$this->assertSame( $logged_always ? array( get_class( $failure ) ) : array(), $logged_classes );
+	}
+
+	/**
+	 * @testdox A $failure_label while confirming a $intent_status return leaves the pending order unfailed on order-received, with no notice and an always-on log line naming the error class.
+	 * @dataProvider money_moved_confirmation_failure_provider
+	 *
+	 * Better than the client (monitor ruling 2026-10-05): client 11.1.0 fails the order for any Exception in the try
+	 * (gw:2428-2455) and fatals on a PHP Error, so a succeeded, requires_capture or processing intent can end on a failed
+	 * order with the money taken. Native leaves the order for the webhook or the next intent sync, as at checkout (review
+	 * 34 F2, checkout ruling 4).
+	 *
+	 * @param string    $intent_status Fetched intent status.
+	 * @param string    $failure_label What the order payment lifecycle throws, for the test name.
+	 * @param Throwable $failure       What the order payment lifecycle throws.
+	 */
+	public function test_handle_wp_keeps_the_order_when_confirmation_throws_after_money_moved( string $intent_status, string $failure_label, Throwable $failure ): void {
+		unset( $failure_label );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$order                      = $this->create_order();
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = array_merge(
+			$this->successful_payment_intent( $order, 'pi_money_moved', 'pm_money_moved' ),
+			array( 'status' => $intent_status )
+		);
+		$lifecycle                  = $this->createMock( OrderPaymentLifecycleService::class );
+		$lifecycle->method( 'apply' )->willThrowException( $failure );
+		$logger = new RedirectReturnRecordingLogger();
+		add_filter( 'woocommerce_logging_class', static fn() => $logger );
+		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client, null, $lifecycle ), $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_money_moved' );
+
+		try {
+			$this->sut->handle_wp();
+		} catch ( RedirectReturnRedirectIntercepted $redirect ) {
+			$this->fail( 'The shopper must stay on order-received, not go to ' . $redirect->location );
+		}
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'pending', $reloaded->get_status() );
+		$this->assertSame( array(), wc_get_notices( 'error' ) );
+		$failure_notes = array_filter(
+			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+			static fn( $note ): bool => false !== strpos( $note->content, '<strong>failed</strong>' )
+		);
+		$this->assertSame( array(), $failure_notes );
+		$this->assertCount( 1, $logger->error_calls, 'One line, written with debug logging off.' );
+		$this->assertSame( get_class( $failure ), $logger->error_calls[0]['context']['exception'] ?? '' );
+		$this->assertSame( WooPaymentsLogger::SOURCE, $logger->error_calls[0]['context']['source'] ?? '' );
+		$this->assertStringContainsString( 'raised ' . get_class( $failure ) . ': ' . $failure->getMessage(), (string) $logger->error_calls[0]['message'] );
+	}
+
+	/**
+	 * Intent statuses that have moved or held money, with what stops the confirmation.
+	 *
+	 * @return array<string,array{0:string,1:string,2:Throwable}>
+	 */
+	public function money_moved_confirmation_failure_provider(): array {
+		return array(
+			'succeeded, lifecycle failure'        => array( 'succeeded', 'lifecycle failure', new \RuntimeException( 'Order payment lifecycle write failed.' ) ),
+			'requires_capture, lifecycle failure' => array( 'requires_capture', 'lifecycle failure', new \RuntimeException( 'Order payment lifecycle write failed.' ) ),
+			'processing, lifecycle failure'       => array( 'processing', 'lifecycle failure', new \RuntimeException( 'Order payment lifecycle write failed.' ) ),
+			'succeeded, PHP error'                => array( 'succeeded', 'PHP error', new \TypeError( 'Return value must be of type array, null returned' ) ),
+		);
 	}
 
 	/**

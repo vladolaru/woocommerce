@@ -252,8 +252,12 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 				true // The redirect return: it completes the order despite a token-save error and does not throw for an unauthorized status.
 			);
 		} catch ( Throwable $exception ) {
-			$this->end_return_with_failure( $fresh_order, $intent_id, $intent_status, $exception );
-			return;
+			if ( ! $is_payment_intent || ! WooPaymentsIntentCodec::is_authorized_native_intent_status( $intent_status ) ) {
+				$this->end_return_with_failure( $fresh_order, $intent_id, $intent_status, $exception );
+				return;
+			}
+
+			$this->log_failure_kept_for_settlement( $fresh_order, $intent_id, $intent_status, $exception );
 		}
 
 		// A requires_action intent stays on order-received until the webhook settles it: the client's next-action redirect
@@ -264,10 +268,41 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Log a confirmation failure on a PaymentIntent that has moved or held money, which leaves the order as it is.
+	 *
+	 * Better than the client (monitor ruling 2026-10-05): its catch (gw:2428-2455) fails the order for any Exception and
+	 * fatals on a PHP Error, so a succeeded, requires_capture or processing intent can end on a failed order with the money
+	 * taken. Native never fails such an order, whatever the throwable: the shopper stays on order-received with no notice,
+	 * and the webhook or the next intent sync settles the order, as at checkout (review 34 F2, checkout ruling 4).
+	 *
+	 * @param WC_Order  $order         Order object.
+	 * @param string    $intent_id     Requested intent ID.
+	 * @param string    $intent_status Fetched intent status.
+	 * @param Throwable $exception     What stopped the confirmation.
+	 */
+	private function log_failure_kept_for_settlement( WC_Order $order, string $intent_id, string $intent_status, Throwable $exception ): void {
+		wc_get_container()->get( WooPaymentsLogger::class )->log_throwable_always(
+			sprintf(
+				'Confirming the %1$s intent of order #%2$d on its redirect return raised %3$s: %4$s. The order is left for the webhook or the next intent sync.',
+				$intent_status,
+				$order->get_id(),
+				get_class( $exception ),
+				$exception->getMessage()
+			),
+			$exception,
+			array(
+				'order_id'  => $order->get_id(),
+				'intent_id' => $intent_id,
+			)
+		);
+	}
+
+	/**
 	 * End the return as the client's catch does (gw:2428-2455): fail the order with the "UPE payment failed" note, add
 	 * the shopper notice and send the shopper back to checkout with the cart kept.
 	 *
 	 * The client catches only Exception, so a PHP Error fatals there; native takes the same path and logs it always-on.
+	 * A confirmation failure on a PaymentIntent that moved or held money never comes here (log_failure_kept_for_settlement()).
 	 * Decided exceptions, through fail_order_unless_settled(): an order a fresh locked read shows as processing, completed
 	 * or on-hold keeps its order-received page (like the checkout ruling of review 34 F2), and an order locked by another
 	 * claim is left to that holder.
