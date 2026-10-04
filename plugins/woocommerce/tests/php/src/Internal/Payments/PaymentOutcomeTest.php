@@ -49,7 +49,7 @@ class PaymentOutcomeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Provider effect plans stay in memory without changing serialized outcome data.
+	 * @testdox Provider effect plans attach to a copy without changing the outcome data.
 	 */
 	public function test_provider_effect_plan_is_not_serialized_as_outcome_data(): void {
 		$outcome = new PaymentOutcome(
@@ -68,7 +68,11 @@ class PaymentOutcomeTest extends WC_Unit_Test_Case {
 		$this->assertNotSame( $outcome, $planned_outcome );
 		$this->assertNull( $outcome->get_effect_plan() );
 		$this->assertSame( $plan, $planned_outcome->get_effect_plan() );
-		$this->assertSame( $outcome->to_array(), $planned_outcome->to_array() );
+		$this->assertSame( $outcome->get_status(), $planned_outcome->get_status() );
+		$this->assertSame( $outcome->get_provider_payment_id(), $planned_outcome->get_provider_payment_id() );
+		$this->assertSame( $outcome->get_payment_method_id(), $planned_outcome->get_payment_method_id() );
+		$this->assertSame( $outcome->get_customer_id(), $planned_outcome->get_customer_id() );
+		$this->assertSame( $outcome->get_data(), $planned_outcome->get_data() );
 	}
 
 	/**

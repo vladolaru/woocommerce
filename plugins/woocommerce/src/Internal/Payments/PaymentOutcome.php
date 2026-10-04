@@ -380,20 +380,4 @@ class PaymentOutcome {
 	public function get_effect_plan(): ?ProviderOperationEffectPlan {
 		return $this->effect_plan;
 	}
-
-	/**
-	 * Convert the outcome to a machine-readable array.
-	 *
-	 * @return array<string,mixed>
-	 */
-	public function to_array(): array {
-		return array(
-			'status'              => $this->status,
-			'provider_payment_id' => $this->provider_payment_id,
-			'redirect_url'        => $this->redirect_url,
-			'payment_method_id'   => $this->payment_method_id,
-			'customer_id'         => $this->customer_id,
-			'data'                => $this->data,
-		);
-	}
 }
