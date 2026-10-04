@@ -3893,13 +3893,23 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A PHP error applying a renewal's outcome fails the scheduled action and leaves the renewal pending.
+	 * @testdox A PHP error applying a $outcome_status renewal outcome is rethrown: $rethrown; the renewal ends $expected_status.
 	 *
 	 * Client 11.1.0 catches only API_Exception around the renewal payment (`trait-wc-payment-gateway-wcpay-subscriptions.php:426`),
 	 * so a PHP error escapes to Action Scheduler, which fails the action (monitor ruling 2026-10-04 on renewal apply errors).
-	 * Native logs it whatever the logging setting and rethrows it; the charge stays reconcilable on the renewal.
+	 * Native logs it whatever the logging setting and rethrows it; the charge stays reconcilable on the renewal. A renewal
+	 * that needs customer action is the exception: it still runs the requires-action handling, which fails the renewal and
+	 * fires the authentication hook, as the client does for that outcome (gw:1921), instead of the scheduled action failing
+	 * (review 35 F7).
+	 *
+	 * @testWith ["completed", true, "pending"]
+	 *           ["requires_customer_action", false, "failed"]
+	 *
+	 * @param string $outcome_status  Provider outcome status.
+	 * @param bool   $rethrown        Whether the PHP error reaches Action Scheduler.
+	 * @param string $expected_status Renewal status afterwards.
 	 */
-	public function test_scheduled_subscription_payment_rethrows_php_error_applying_outcome(): void {
+	public function test_scheduled_subscription_payment_rethrows_php_error_applying_outcome( string $outcome_status, bool $rethrown, string $expected_status ): void {
 		$user_id = self::factory()->user->create();
 		$order   = $this->create_order();
 		$token   = $this->create_card_token( $user_id, 'pm_renewal_card' );
@@ -3909,13 +3919,20 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order->save();
 		$error    = new \TypeError( 'Argument #1 must be of type array, null given' );
 		$provider = $this->create_provider_failing_after_charge(
-			new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_renewal_error', '', 'pm_renewal_card' ),
+			new PaymentOutcome( $outcome_status, 'pi_renewal_error', '', 'pm_renewal_card' ),
 			'operation_effects',
 			$error
 		);
 		$gateway  = new NativeWooPaymentsGateway();
 		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
-		$logger = RecordingWcLogger::install();
+		$logger              = RecordingWcLogger::install();
+		$authentication_hook = 0;
+		add_action(
+			'woocommerce_woocommerce_payments_payment_requires_action',
+			static function () use ( &$authentication_hook ): void {
+				++$authentication_hook;
+			}
+		);
 
 		$thrown = null;
 		try {
@@ -3924,11 +3941,12 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$thrown = $throwable;
 		}
 
-		$this->assertSame( $error, $thrown, 'The PHP error must reach Action Scheduler.' );
+		$this->assertSame( $rethrown ? $error : null, $thrown, $rethrown ? 'The PHP error must reach Action Scheduler.' : 'A requires-action renewal must not fail the scheduled action.' );
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'pending', $order->get_status() );
+		$this->assertSame( $expected_status, $order->get_status() );
 		$this->assertSame( 'pi_renewal_error', $order->get_transaction_id() );
+		$this->assertSame( $rethrown ? 0 : 1, $authentication_hook );
 		$lines = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'woopayments' === $line[2] && str_starts_with( $line[1], 'Error applying the WooPayments subscription renewal payment' ) ) );
 		$this->assertCount( 1, $lines, 'The PHP error is logged whatever the logging setting.' );
 		$this->assertSame( 'error', $lines[0][0] );
@@ -4255,11 +4273,13 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * order on hold; a retry then creates a new order and authorizes the card again. Native answers as it does for an
 	 * authorized payment once a fresh read shows the order on hold for the outcome's intent, and keeps the refusal when the
 	 * order is bound to another intent (monitor ruling 2026-10-04 on review 34 F2). The error is logged whatever the setting.
-	 * When the fresh read itself throws, the original error is still logged and checkout keeps the refusal instead of
-	 * letting the read failure escape (review 35 F3).
+	 * A Multibanco voucher also puts the order on hold but its intent is `requires_action`, so it keeps the refusal and the
+	 * shopper keeps the voucher page (review 35 F7). When the fresh read itself throws, the original error is still logged
+	 * and checkout keeps the refusal instead of letting the read failure escape (review 35 F3).
 	 *
 	 * @testWith ["its intent", "success"]
 	 *           ["another intent", "failure"]
+	 *           ["its intent, as a Multibanco voucher", "failure"]
 	 *           ["its intent, on an order that cannot be read again", "failure"]
 	 *
 	 * @param string $intent Which intent the order is bound to when the error strikes.
@@ -4290,8 +4310,18 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				}
 			);
 		}
+		$outcome  = 'its intent, as a Multibanco voucher' === $intent
+			? new PaymentOutcome(
+				PaymentOutcome::STATUS_AUTHORIZED,
+				'pi_authorized',
+				$order->get_checkout_order_received_url(),
+				'pm_card_visa',
+				'',
+				array( PaymentOutcome::DATA_META => array( '_intention_status' => 'requires_action' ) )
+			)
+			: new PaymentOutcome( PaymentOutcome::STATUS_AUTHORIZED, 'pi_authorized', '', 'pm_card_visa' );
 		$provider = $this->create_provider_failing_after_charge(
-			new PaymentOutcome( PaymentOutcome::STATUS_AUTHORIZED, 'pi_authorized', '', 'pm_card_visa' ),
+			$outcome,
 			'post_lifecycle_effects',
 			new \TypeError( 'Argument #1 must be of type array, null given' )
 		);
