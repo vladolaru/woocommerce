@@ -459,6 +459,44 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( '123 456 789', $email->get_content_html(), 'The on-hold email must carry the Multibanco reference.' );
 	}
 
+	/**
+	 * @testdox $label invalidates the checkout appearance cache.
+	 * @dataProvider style_change_requests
+	 *
+	 * @param string $label   Case label.
+	 * @param string $state   Stored native tier.
+	 * @param string $request Request class the change happens in.
+	 * @param string $hook    Hook WordPress or WooCommerce fires for the change.
+	 */
+	public function test_style_change_invalidates_the_appearance_cache( string $label, string $state, string $request, string $hook ): void {
+		unset( $label );
+		update_option( 'wcpay_styles_cache_version', 'cached-version', true );
+		// Only the native listener is under test; core's own callbacks on these hooks write unrelated state.
+		remove_all_actions( $hook );
+		$this->arrange_native_owner( $state );
+		$this->arrange_request( $request );
+
+		$this->run_bootstrap( 'rest' === $request ? '__return_true' : '__return_false' );
+		do_action( $hook ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fires the core hook a theme, style or WooCommerce change fires.
+
+		// The client hooks its styles-cache invalidation on every request (client 11.1.0 `includes/class-wc-payments.php:378-383`).
+		$this->assertFalse( get_option( 'wcpay_styles_cache_version' ), 'The stored appearance version must be dropped so checkout recomputes it.' );
+	}
+
+	/** @return array<string,array{string,string,string,string}> */
+	public static function style_change_requests(): array {
+		return array(
+			'A theme switch in a connected store admin'    => array( 'A theme switch in a connected store admin', NativePaymentsState::CONNECTED, 'admin', 'after_switch_theme' ),
+			'A theme switch in an active store admin'      => array( 'A theme switch in an active store admin', NativePaymentsState::ACTIVE, 'admin', 'after_switch_theme' ),
+			'A global styles save over REST'               => array( 'A global styles save over REST', NativePaymentsState::ACTIVE, 'rest', 'save_post_wp_global_styles' ),
+			'A Customizer save over AJAX'                  => array( 'A Customizer save over AJAX', NativePaymentsState::CONNECTED, 'ajax', 'customize_save_after' ),
+			'A theme switch from WP-CLI'                   => array( 'A theme switch from WP-CLI', NativePaymentsState::ACTIVE, 'cli', 'after_switch_theme' ),
+			'A WooCommerce update finishing in cron'       => array( 'A WooCommerce update finishing in cron', NativePaymentsState::CONNECTED, 'cron', 'woocommerce_updated' ),
+			'A WooCommerce update finishing on a page'     => array( 'A WooCommerce update finishing on a page', NativePaymentsState::CONNECTED, 'front', 'woocommerce_updated' ),
+			'A WooCommerce update on an active store page' => array( 'A WooCommerce update on an active store page', NativePaymentsState::ACTIVE, 'front', 'woocommerce_updated' ),
+		);
+	}
+
 	/** @return array<string,array{string,string,string}> */
 	public static function on_hold_email_requests(): array {
 		return array(

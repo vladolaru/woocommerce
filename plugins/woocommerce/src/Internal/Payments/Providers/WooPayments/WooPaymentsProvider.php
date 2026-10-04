@@ -221,7 +221,6 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 					array(
 						WooPaymentsAccountService::class,
 						WooPaymentsWebhookReliabilityService::class,
-						WooPaymentsFrontendStylesService::class,
 						WooPaymentsCheckoutBridge::class,
 						WooPaymentsAddressProvider::class,
 						WooPaymentsCustomerService::class,
@@ -305,6 +304,10 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 				// the client hooks these on every request (client 11.1.0 `includes/class-wc-payments.php:588`,
 				// `includes/class-wc-payments-order-success-page.php:40`).
 				$matrix[ $state ][ $request ][] = WooPaymentsOrderSuccessPage::class;
+				// Theme, template and style saves happen in admin, REST, AJAX and WP-CLI requests, and a WooCommerce update
+				// finishes on the init of any request; each must drop the stored checkout appearance version, as the client's
+				// hooks on every request do (client 11.1.0 `includes/class-wc-payments.php:378-383`).
+				$matrix[ $state ][ $request ][] = WooPaymentsFrontendStylesService::class;
 				// The gateway settings can be written directly (classic toggle, REST, WP-CLI); keep the tier in step.
 				if ( 'front' !== $request ) {
 					$matrix[ $state ][ $request ][] = WooPaymentsGatewaySettingsSynchronizer::class;
