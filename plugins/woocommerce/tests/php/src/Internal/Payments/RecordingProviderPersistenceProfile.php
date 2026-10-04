@@ -34,13 +34,4 @@ class RecordingProviderPersistenceProfile extends WooPaymentsPersistenceProfile 
 	public function get_gateway_id(): string {
 		return $this->provider_id;
 	}
-
-	/**
-	 * Get the provider gateway ID prefix.
-	 *
-	 * @return string
-	 */
-	public function get_gateway_id_prefix(): string {
-		return $this->provider_id . '_';
-	}
 }

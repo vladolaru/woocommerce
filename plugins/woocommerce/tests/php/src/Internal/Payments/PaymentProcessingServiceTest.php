@@ -712,15 +712,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 					}
 
 					/**
-					 * Get the provider gateway ID prefix.
-					 *
-					 * @return string
-					 */
-					public function get_gateway_id_prefix(): string {
-						return 'offline_redirect_provider_';
-					}
-
-					/**
 					 * Get the order payment lock key.
 					 *
 					 * @param WC_Order $order Order object.
