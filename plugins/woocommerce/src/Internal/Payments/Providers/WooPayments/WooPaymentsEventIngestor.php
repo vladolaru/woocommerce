@@ -330,7 +330,7 @@ class WooPaymentsEventIngestor {
 
 		if ( $this->is_stripe_billing_invoice_event( $event_type ) ) {
 			if ( ! $this->get_stripe_billing_module()->is_loaded() ) {
-				$this->refuse_stripe_billing_invoice_event_without_module( $event_type, $event );
+				$this->refuse_stripe_billing_invoice_event_without_module( $event_type );
 			}
 
 			$this->get_stripe_billing_module()->handle_invoice_event( $event );
@@ -1290,32 +1290,19 @@ class WooPaymentsEventIngestor {
 	 *
 	 * Client 11.1.0 loads its event handler without WooCommerce Subscriptions too; its subscription lookup then finds nothing,
 	 * so it refuses the event with these reasons (`class-wc-payments-subscriptions-event-handler.php:79,138,233`), the
-	 * webhook answers 400 and nothing is recorded. The refusal is logged with the event ID, as the module logs its own.
+	 * webhook answers 400 and nothing is recorded. As on the client, the webhook route or the failed-event job that catches
+	 * the refusal logs it, so it is not logged here.
 	 *
-	 * @param string              $event_type Event type.
-	 * @param array<string,mixed> $event      Event payload.
+	 * @param string $event_type Event type.
 	 * @throws InvalidArgumentException Always.
 	 */
-	private function refuse_stripe_billing_invoice_event_without_module( string $event_type, array $event ): void {
+	private function refuse_stripe_billing_invoice_event_without_module( string $event_type ): void {
 		$reasons = array(
 			'invoice.upcoming'       => __( 'Cannot find subscription to handle the "invoice.upcoming" event.', 'woocommerce' ),
 			'invoice.paid'           => __( 'Cannot find subscription for the incoming "invoice.paid" event.', 'woocommerce' ),
 			'invoice.payment_failed' => __( 'Cannot find subscription for the incoming "invoice.payment_failed" event.', 'woocommerce' ),
 		);
 		$reason  = $reasons[ $event_type ] ?? '';
-
-		$logger = $this->legacy_runtime->get_logger();
-		if ( is_object( $logger ) && is_callable( array( $logger, 'error' ) ) ) {
-			$logger->error(
-				sprintf(
-					'WooPayments webhook event %1$s (%2$s) was refused: %3$s',
-					is_scalar( $event['id'] ?? null ) ? (string) $event['id'] : '',
-					$event_type,
-					$reason
-				),
-				array( 'source' => 'native-payments-webhook' )
-			);
-		}
 
 		// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
 		throw new InvalidArgumentException( $reason );

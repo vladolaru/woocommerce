@@ -192,15 +192,15 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	/**
 	 * Process a queued failed webhook event.
 	 *
-	 * The stored event is removed once the ingestor handles it, or when it is malformed, since a malformed event can never
-	 * succeed. Any other failure of a retried event type schedules the same job again, at most three more times after
-	 * 1 minute, 10 minutes and 1 hour; after the last attempt the event is removed and an error is logged. Other types
-	 * get this one attempt, as on the client. Action Scheduler does not retry a failed action by itself. The exception
-	 * is always re-thrown, so Action Scheduler records the failed attempt.
+	 * The stored event is removed once the ingestor handles it. An event the ingestor refuses as malformed can never
+	 * succeed: as on the client, it is removed, one error line names it and the job completes. Any other failure of a
+	 * retried event type schedules the same job again, at most three more times after 1 minute, 10 minutes and 1 hour;
+	 * after the last attempt the event is removed and an error is logged. Other types get this one attempt, as on the
+	 * client. Action Scheduler does not retry a failed action by itself. Such a failure is re-thrown, so Action Scheduler
+	 * records the failed attempt.
 	 *
 	 * @param string $event_id Event ID.
-	 * @throws \InvalidArgumentException When the event is malformed; it is dropped.
-	 * @throws \Throwable When the ingestor fails otherwise; the event is kept for the next attempt unless none is left.
+	 * @throws \Throwable When the ingestor fails other than by refusing the event; the event is kept for the next attempt unless none is left.
 	 */
 	public function process_event( string $event_id ): void {
 		$event = $this->failed_event_store->get_event( $event_id );
@@ -215,7 +215,12 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 			$this->event_ingestor->process( $event );
 		} catch ( \InvalidArgumentException $exception ) {
 			$this->failed_event_store->delete_event( $event_id );
-			throw $exception;
+			// Client 11.1.0 `class-wc-payments-webhook-reliability-service.php:146-148`.
+			wc_get_logger()->error(
+				sprintf( 'Failed processing event %1$s. Reason: %2$s', $event_id, $exception->getMessage() ),
+				array( 'source' => 'native-payments-webhook' )
+			);
+			return;
 		} catch ( \Throwable $exception ) {
 			if ( $this->event_ingestor->is_retried_event( $event ) ) {
 				$this->schedule_retry_or_give_up( $event_id, $event, $attempts, $exception );

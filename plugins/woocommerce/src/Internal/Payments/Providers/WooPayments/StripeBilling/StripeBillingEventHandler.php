@@ -101,9 +101,10 @@ class StripeBillingEventHandler {
 	/**
 	 * Handle one invoice event.
 	 *
-	 * An event with missing data, or about a subscription this store does not have, is logged with its ID and the reason,
-	 * and refused with an `InvalidArgumentException`, which the webhook answers with 400 and does not retry. Other failures,
-	 * such as a platform call that fails, are passed on so the event is retried.
+	 * An event with missing data, or about a subscription this store does not have, is refused with an
+	 * `InvalidArgumentException`, which the webhook answers with 400 and does not retry. As on the client, the webhook route
+	 * or the failed-event job that catches the refusal logs it. Other failures, such as a platform call that fails, are
+	 * passed on so the event is retried.
 	 *
 	 * @param array<string,mixed> $event Event payload.
 	 * @throws InvalidArgumentException When the event has missing data or names no subscription of this store.
@@ -124,16 +125,6 @@ class StripeBillingEventHandler {
 					break;
 			}
 		} catch ( StripeBillingException $exception ) {
-			wc_get_logger()->error(
-				sprintf(
-					'WooPayments webhook event %1$s (%2$s) was refused: %3$s',
-					is_scalar( $event['id'] ?? null ) ? (string) $event['id'] : '',
-					$event_type,
-					$exception->getMessage()
-				),
-				array( 'source' => 'native-payments-webhook' )
-			);
-
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
 			throw new InvalidArgumentException( $exception->getMessage(), 0, $exception );
 		}

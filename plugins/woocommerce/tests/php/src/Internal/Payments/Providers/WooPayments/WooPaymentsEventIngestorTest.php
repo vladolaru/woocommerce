@@ -2801,7 +2801,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Without the Stripe Billing module, $event_type is refused with the client's reason, after the before-delivery hook only, and is not marked processed.
+	 * @testdox Without the Stripe Billing module, $event_type is refused with the client's reason, after the before-delivery hook only, is not marked processed and is not logged here.
 	 *
 	 * Client 11.1.0 without WooCommerce Subscriptions: the event handler's subscription lookup finds nothing and throws
 	 * `Invalid_Webhook_Data_Exception` (`class-wc-payments-subscriptions-event-handler.php:79,138,233`), so the
@@ -2844,9 +2844,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array( $reason, $reason ), $refusals, 'Each delivery is refused: a refused event is not marked processed.' );
 		$this->assertSame( array( "before $event_type", "before $event_type" ), $hook_calls );
-		$this->assertCount( 2, $logger->entries );
-		$this->assertSame( "WooPayments webhook event evt_invoice_without_module ($event_type) was refused: $reason", $logger->entries[0][0] );
-		$this->assertSame( 'native-payments-webhook', $logger->entries[0][1]['source'] );
+		// As on the client, the webhook route or the failed-event job that catches the refusal writes its one log line.
+		$this->assertSame( array(), $logger->entries );
 	}
 
 	/**

@@ -32,6 +32,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use InvalidArgumentException;
@@ -493,7 +494,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An event with missing data, or about a subscription or renewal this store cannot find or create, is refused as malformed and logged with its ID: $expected_message
+	 * @testdox An event with missing data, or about a subscription or renewal this store cannot find or create, is refused as malformed without a log line of its own: $expected_message
 	 * @dataProvider malformed_events
 	 *
 	 * Event handler :58-79, :117-155, :211-264 and `get_event_property()` :323-337; the client answers 400 for these (`class-wc-rest-payments-webhook-controller.php:81-83`).
@@ -504,12 +505,13 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	 * @param bool                $renewal_order_fails  Whether creating the renewal order fails.
 	 * @param string              $expected_message     Reason given.
 	 */
-	public function test_malformed_event_is_refused_and_logged( string $pair, array $object_changes, string $subscription_id, bool $renewal_order_fails, string $expected_message ): void {
+	public function test_malformed_event_is_refused_without_logging( string $pair, array $object_changes, string $subscription_id, bool $renewal_order_fails, string $expected_message ): void {
 		if ( '' !== $subscription_id ) {
 			$this->create_subscription( $subscription_id );
 		}
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::RENEWAL_ORDER_ERROR ] = $renewal_order_fails;
-		$event = $this->get_event( $pair, $object_changes );
+		$event  = $this->get_event( $pair, $object_changes );
+		$logger = RecordingWcLogger::install();
 
 		try {
 			$this->sut->handle_event( $event );
@@ -518,7 +520,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 			$this->assertSame( $expected_message, $exception->getMessage() );
 		}
 
-		$this->assertContains( array( 'error', sprintf( 'WooPayments webhook event %1$s (%2$s) was refused: %3$s', $event['id'], $event['type'], $expected_message ), 'native-payments-webhook' ), $this->log_lines );
+		$this->assertSame( array(), $logger->get_errors(), 'The webhook route or the failed-event job that catches the refusal logs it, as on the client.' );
 		$this->assertSame( array(), $this->get_requests() );
 	}
 
@@ -541,14 +543,15 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An upcoming invoice that lacks an item of the subscription is refused as malformed and logged, after the Stripe subscription read only.
+	 * @testdox An upcoming invoice that lacks an item of the subscription is refused as malformed without a log line of its own, after the Stripe subscription read only.
 	 *
 	 * The client throws `Rest_Request_Exception` here (`class-wc-payments-invoice-service.php:443`), which its webhook controller answers with 500; neither is retried.
 	 */
 	public function test_upcoming_invoice_missing_a_subscription_item_is_refused(): void {
 		$this->create_subscription( self::CLOCK_SUBSCRIPTION_ID, array( '_schedule_next_payment' => '2026-11-02 08:08:15' ), 'active', 'si_rec63NotOnInvoice' );
 		$this->queue_billing( 'get_subscription' );
-		$event = $this->get_event( 'invoice_upcoming' );
+		$event  = $this->get_event( 'invoice_upcoming' );
+		$logger = RecordingWcLogger::install();
 
 		try {
 			$this->sut->handle_event( $event );
@@ -557,7 +560,8 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 			$this->assertSame( 'The WooPayments invoice items do not match WC subscription items.', $exception->getMessage() );
 		}
 
-		$this->assertContains( array( 'error', sprintf( 'WooPayments webhook event %s (invoice.upcoming) was refused: The WooPayments invoice items do not match WC subscription items.', $event['id'] ), 'native-payments-webhook' ), $this->log_lines );
+		// The invoice service logs the mismatch before refusing, as the client does (`class-wc-payments-invoice-service.php:442-443`); the handler adds no line of its own.
+		$this->assertSame( array( array( 'error', 'The WooPayments invoice items do not match WC subscription items.', 'woopayments' ) ), $logger->get_errors() );
 		$this->assertCount( 1, $this->get_requests() );
 	}
 

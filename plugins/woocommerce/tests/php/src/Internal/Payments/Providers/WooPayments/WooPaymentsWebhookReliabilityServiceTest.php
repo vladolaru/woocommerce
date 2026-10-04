@@ -10,6 +10,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFailedEventStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFailedEventsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookReliabilityService;
 use WC_Unit_Test_Case;
 
@@ -50,6 +51,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$this->unschedule_reliability_actions();
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
 		$this->reset_legacy_proxy_mocks();
+		wc_get_container()->reset_all_replacements();
 		foreach ( array( 'evt_1', 'evt_process', 'evt_backlog_1', 'evt_backlog_2', 'evt_backlog_3', 'evt_backlog_4', 'evt_backlog_5' ) as $event_id ) {
 			delete_transient( WooPaymentsFailedEventStore::TRANSIENT_PREFIX . md5( $event_id ) );
 		}
@@ -421,20 +423,19 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		try {
-			$service->process_event( 'evt_malformed' );
-		} catch ( \InvalidArgumentException $exception ) {
-			unset( $exception );
-		}
+		$service->process_event( 'evt_malformed' );
 
 		$this->assertNull( $store->get_event( 'evt_malformed' ) );
 		$this->assertSame( array(), $scheduler->scheduled_jobs );
 	}
 
 	/**
-	 * @testdox Processing drops the stored event when the ingestor reports it is malformed.
+	 * @testdox A refused event is dropped, one error line names it and the job completes, as on the client.
+	 *
+	 * Client 11.1.0 `class-wc-payments-webhook-reliability-service.php:136-149`: the stored event is deleted, and an
+	 * `Invalid_Webhook_Data_Exception` is logged as "Failed processing event {id}. Reason: {message}" and not re-thrown.
 	 */
-	public function test_process_event_drops_event_on_invalid_argument(): void {
+	public function test_process_event_drops_and_logs_a_refused_event_without_failing_the_job(): void {
 		$store   = wc_get_container()->get( WooPaymentsFailedEventStore::class );
 		$service = $this->create_service(
 			new RecordingActionSchedulerService(),
@@ -442,7 +443,6 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			new StaticFailedEventsProvider(),
 			new ThrowingEventIngestor( new \InvalidArgumentException( 'malformed event' ) )
 		);
-
 		$store->set_event(
 			'evt_process',
 			array(
@@ -450,16 +450,52 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 				'type' => 'payment_intent.succeeded',
 			)
 		);
+		$logger = RecordingWcLogger::install();
 
-		$thrown = null;
-		try {
-			$service->process_event( 'evt_process' );
-		} catch ( \InvalidArgumentException $exception ) {
-			$thrown = $exception;
-		}
+		$service->process_event( 'evt_process' );
 
-		$this->assertInstanceOf( \InvalidArgumentException::class, $thrown, 'A malformed event should still surface the failure to the caller.' );
-		$this->assertNull( $store->get_event( 'evt_process' ), 'A malformed event should be dropped so it does not retry forever.' );
+		$this->assertNull( $store->get_event( 'evt_process' ), 'A refused event should be dropped so it is not processed again.' );
+		$this->assertSame(
+			array( array( 'error', 'Failed processing event evt_process. Reason: malformed event', 'native-payments-webhook' ) ),
+			$logger->get_errors()
+		);
+	}
+
+	/**
+	 * @testdox Without the Stripe Billing module, a stored invoice event is refused with exactly one error line, from the job.
+	 */
+	public function test_invoice_event_refused_without_the_stripe_billing_module_logs_one_line(): void {
+		$module = $this->getMockBuilder( WooPaymentsStripeBillingModule::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_loaded', 'handle_invoice_event' ) )
+			->getMock();
+		$module->method( 'is_loaded' )->willReturn( false );
+		$module->expects( $this->never() )->method( 'handle_invoice_event' );
+		wc_get_container()->replace( WooPaymentsStripeBillingModule::class, $module );
+		add_filter( WooPaymentsEventIngestor::FILTER_LIVE_MODE, '__return_false' );
+
+		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$scheduler = new RecordingActionSchedulerService();
+		$service   = $this->create_service( $scheduler, $store, new StaticFailedEventsProvider(), wc_get_container()->get( WooPaymentsEventIngestor::class ) );
+		$store->set_event(
+			'evt_process',
+			array(
+				'id'       => 'evt_process',
+				'type'     => 'invoice.paid',
+				'livemode' => false,
+				'data'     => array( 'object' => array( 'id' => 'in_123' ) ),
+			)
+		);
+		$logger = RecordingWcLogger::install();
+
+		$service->process_event( 'evt_process' );
+
+		$this->assertNull( $store->get_event( 'evt_process' ) );
+		$this->assertSame( array(), $scheduler->scheduled_jobs );
+		$this->assertSame(
+			array( array( 'error', 'Failed processing event evt_process. Reason: Cannot find subscription for the incoming "invoice.paid" event.', 'native-payments-webhook' ) ),
+			$logger->get_errors()
+		);
 	}
 
 	/**

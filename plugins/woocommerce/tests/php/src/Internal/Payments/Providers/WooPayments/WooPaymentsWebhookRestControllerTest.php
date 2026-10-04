@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookRestController;
@@ -51,6 +52,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->remove_rest_hook();
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
 		$this->reset_legacy_proxy_mocks();
+		wc_get_container()->reset_all_replacements();
 		parent::tearDown();
 	}
 
@@ -268,6 +270,46 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 400, $response->get_status() );
 		$this->assertNull( wc_get_container()->get( WooPaymentsFailedEventStore::class )->get_event( 'evt_malformed_controller' ) );
 		$this->assertSame( array(), $this->scheduler->scheduled_jobs );
+	}
+
+	/**
+	 * @testdox Without the Stripe Billing module, an invoice event is answered with 400 and exactly one error line, from the route.
+	 *
+	 * Client 11.1.0: the refusing handler logs nothing; the webhook controller logs the exception once
+	 * (`class-wc-rest-payments-webhook-controller.php:81-83`).
+	 */
+	public function test_invoice_event_refused_without_the_stripe_billing_module_logs_one_line(): void {
+		$module = $this->getMockBuilder( WooPaymentsStripeBillingModule::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_loaded', 'handle_invoice_event' ) )
+			->getMock();
+		$module->method( 'is_loaded' )->willReturn( false );
+		$module->expects( $this->never() )->method( 'handle_invoice_event' );
+		wc_get_container()->replace( WooPaymentsStripeBillingModule::class, $module );
+		add_filter( WooPaymentsEventIngestor::FILTER_LIVE_MODE, '__return_false' );
+		$logger     = RecordingWcLogger::install();
+		$controller = new WooPaymentsWebhookRestController();
+		$controller->init(
+			wc_get_container()->get( NativePaymentsRuntimeArbiter::class ),
+			wc_get_container()->get( WooPaymentsEventIngestor::class ),
+			wc_get_container()->get( WooPaymentsLegacyRuntime::class ),
+			wc_get_container()->get( WooPaymentsWebhookReliabilityService::class )
+		);
+
+		$response = $controller->handle_webhook(
+			$this->create_post_request(
+				array(
+					'id'       => 'evt_invoice_controller',
+					'type'     => 'invoice.paid',
+					'livemode' => false,
+					'data'     => array( 'object' => array( 'id' => 'in_123' ) ),
+				)
+			)
+		);
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( array( 'result' => 'bad_request' ), $response->get_data() );
+		$this->assertSame( array( array( 'error', 'Cannot find subscription for the incoming "invoice.paid" event.', 'native-payments-webhook' ) ), $logger->get_errors() );
 	}
 
 	/**
