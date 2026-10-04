@@ -18,8 +18,11 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
  * single per-request authority that prevents that.
  *
  * Rule: **the plugin wins whenever it is active.** While the WooPayments plugin is active the native
- * runtime stays dormant (registers nothing) and the plugin processes payments exactly as before;
- * native owns the site only once the plugin is no longer active and the native runtime is enabled.
+ * runtime registers no gateways, checkout, webhook or payment processing, and the plugin processes
+ * payments exactly as before. Native registers only what moves the store off the plugin: the cutover
+ * controller and reconciliation job (admin and cron, once native is available), the hooks that follow
+ * the plugin's account cache writes, and shadow mode when it is enabled. Native owns the site only once
+ * the plugin is no longer active and the native runtime is enabled.
  * A merchant moves from plugin to native by **deactivating the plugin** — surfaced (and, at the
  * cutover release, performed automatically) by the migration-notice / auto-deactivation component,
  * which is modeled on WooCommerce's merged-package handling (`src/Packages.php`). This arbiter is the
@@ -46,8 +49,8 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
  *
  * Lifecycle — TRANSITIONAL, not permanent core API. It exists only while the standalone plugin can
  * coexist with native; once the plugin is sunset, the plugin-detection path is dead and this should
- * collapse to a plain "is native enabled" gate or be removed. It ships dormant at the keystone stage
- * (no consumers yet); it becomes live when the boot wires it and native registrations consult it.
+ * collapse to a plain "is native enabled" gate or be removed. The native payments bootstrap, the
+ * gateway registry and the other native registrations consult it on every request.
  *
  * @since 11.0.0
  * @internal Transitional internal component (not a public API); slated to simplify/remove once the standalone plugin is sunset.
