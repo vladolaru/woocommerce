@@ -319,6 +319,153 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A claim should win when only an unexpired expiry row is left behind, and replace that expiry.
+	 */
+	public function test_claim_wins_over_a_leftover_expiry_row_without_a_value_row(): void {
+		$this->skip_when_transients_live_in_object_cache();
+		$order    = wc_create_order();
+		$lock_key = $this->persistence_profile->get_order_lock_key( $order );
+		// A release that stopped between deleting the value row and the expiry row leaves the expiry alone.
+		$this->insert_lock_row( '_transient_timeout_' . $lock_key, (string) ( time() + 100 ) );
+
+		$this->assertTrue( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'this_request_key' ), 'A leftover expiry row without a value row must not block a claim.' );
+		$this->assertSame( 'this_request_key', $this->read_lock_row( '_transient_' . $lock_key ) );
+		$this->assertGreaterThanOrEqual( time() + 290, (int) $this->read_lock_row( '_transient_timeout_' . $lock_key ), 'The claim must replace the leftover expiry with a full TTL.' );
+		$this->assertFalse( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'later_key' ), 'The claimed lock must block the next claim.' );
+	}
+
+	/**
+	 * @testdox A claim should lose when a takeover replaces its value row before it replaces an expired leftover expiry.
+	 */
+	public function test_claim_loses_to_a_takeover_before_it_replaces_an_expired_leftover_expiry(): void {
+		$this->skip_when_transients_live_in_object_cache();
+		$order    = wc_create_order();
+		$lock_key = $this->persistence_profile->get_order_lock_key( $order );
+		$this->insert_lock_row( '_transient_timeout_' . $lock_key, (string) ( time() - 10 ) );
+
+		// Right after this request inserts its value row, a rival sees it next to the expired expiry and takes over.
+		$value_inserted = false;
+		$took_over      = false;
+		$rival          = function ( $query ) use ( &$rival, &$value_inserted, &$took_over, $lock_key ) {
+			if ( ! $value_inserted ) {
+				$value_inserted = 0 === strpos( ltrim( $query ), 'INSERT' ) && false !== strpos( $query, "'_transient_{$lock_key}'" );
+				return $query;
+			}
+			$took_over = true;
+			remove_filter( 'query', $rival );
+			$this->update_lock_row( '_transient_' . $lock_key, 'rival_key' );
+			$this->update_lock_row( '_transient_timeout_' . $lock_key, (string) ( time() + 299 ) );
+			return $query;
+		};
+		add_filter( 'query', $rival );
+
+		$claimed = $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'this_request_key' );
+		remove_filter( 'query', $rival );
+
+		$this->assertTrue( $took_over, 'The rival takeover must have run.' );
+		$this->assertFalse( $claimed, 'Only the rival may hold the lock after taking it over.' );
+		$this->assertSame( 'rival_key', $this->read_lock_row( '_transient_' . $lock_key ) );
+	}
+
+	/**
+	 * @testdox Releasing the lock should retry once when its delete fails.
+	 */
+	public function test_release_retries_a_failed_delete_once(): void {
+		$this->skip_when_transients_live_in_object_cache();
+		$order    = wc_create_order();
+		$lock_key = $this->persistence_profile->get_order_lock_key( $order );
+		$this->assertTrue( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'this_request_key' ) );
+
+		// Fail the first delete, as a deadlock victim would.
+		$failed = false;
+		$fail   = function ( $query ) use ( &$fail, &$failed ) {
+			if ( 0 === strpos( ltrim( $query ), 'DELETE lock_value' ) ) {
+				$failed = true;
+				remove_filter( 'query', $fail );
+				return 'DELETE FROM a_table_that_does_not_exist';
+			}
+			return $query;
+		};
+		add_filter( 'query', $fail );
+		$suppressed = $GLOBALS['wpdb']->suppress_errors( true );
+
+		$this->sut->release_order_payment_lock( $order, $this->persistence_profile, 'this_request_key' );
+		$GLOBALS['wpdb']->suppress_errors( $suppressed );
+		remove_filter( 'query', $fail );
+
+		$this->assertTrue( $failed, 'The first delete must have failed.' );
+		$this->assertNull( $this->read_lock_row( '_transient_' . $lock_key ), 'The retried delete must release the lock.' );
+		$this->assertNull( $this->read_lock_row( '_transient_timeout_' . $lock_key ) );
+	}
+
+	/**
+	 * @testdox A claim should refuse a leftover value row without an expiry row and give that row an expiry.
+	 */
+	public function test_claim_refuses_a_leftover_value_row_without_an_expiry_row(): void {
+		$this->skip_when_transients_live_in_object_cache();
+		$order    = wc_create_order();
+		$lock_key = $this->persistence_profile->get_order_lock_key( $order );
+		// A claim that stopped between writing its value row and its expiry row leaves the value alone.
+		$this->insert_lock_row( '_transient_' . $lock_key, 'orphan_key' );
+
+		$this->assertFalse( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'this_request_key' ), 'A value row without an expiry must be treated as held.' );
+		$this->assertSame( 'orphan_key', $this->read_lock_row( '_transient_' . $lock_key ) );
+		$this->assertGreaterThanOrEqual( time() + 290, (int) $this->read_lock_row( '_transient_timeout_' . $lock_key ), 'The refused claim must give the leftover value row an expiry.' );
+
+		// Once that expiry passes, the leftover lock can be taken over.
+		$this->update_lock_row( '_transient_timeout_' . $lock_key, (string) ( time() - 1 ) );
+		$this->assertTrue( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'this_request_key' ) );
+		$this->assertSame( 'this_request_key', $this->read_lock_row( '_transient_' . $lock_key ) );
+	}
+
+	/**
+	 * @testdox Reading an expired lock for a refusal log should not delete the rows of a takeover that ran meanwhile.
+	 */
+	public function test_refusal_log_read_of_an_expired_lock_keeps_a_concurrent_takeover(): void {
+		$this->skip_when_transients_live_in_object_cache();
+		$order    = wc_create_order();
+		$lock_key = $this->persistence_profile->get_order_lock_key( $order );
+		$this->insert_lock_rows( $lock_key, 'stale_key', time() - 10 );
+
+		// Right after this request reads the expired expiry row, another request takes the lock over.
+		$timeout_read = false;
+		$took_over    = false;
+		$takeover     = function ( $query ) use ( &$takeover, &$timeout_read, &$took_over, $lock_key ) {
+			if ( ! $timeout_read ) {
+				$timeout_read = 0 === strpos( ltrim( $query ), 'SELECT' ) && false !== strpos( $query, "'_transient_timeout_{$lock_key}'" );
+				return $query;
+			}
+			$took_over = true;
+			remove_filter( 'query', $takeover );
+			$this->update_lock_row( '_transient_' . $lock_key, 'taker_key' );
+			$this->update_lock_row( '_transient_timeout_' . $lock_key, (string) ( time() + 300 ) );
+			return $query;
+		};
+		add_filter( 'query', $takeover );
+
+		$this->sut->log_order_payment_lock_refusal( $order, $this->persistence_profile, 'refund' );
+		remove_filter( 'query', $takeover );
+
+		$this->assertTrue( $took_over, 'The concurrent takeover must have run.' );
+		$this->assertSame( 'taker_key', $this->read_lock_row( '_transient_' . $lock_key ), 'Reading an expired lock must not delete the new holder value.' );
+		$this->assertNotNull( $this->read_lock_row( '_transient_timeout_' . $lock_key ), 'Reading an expired lock must not delete the new holder expiry.' );
+		$this->assertFalse( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'third_key' ), 'A third claimant must not win while the taker holds the lock.' );
+	}
+
+	/**
+	 * @testdox Checking whether an order is locked should not delete an expired lock.
+	 */
+	public function test_is_order_payment_locked_does_not_delete_an_expired_lock(): void {
+		$this->skip_when_transients_live_in_object_cache();
+		$order    = wc_create_order();
+		$lock_key = $this->persistence_profile->get_order_lock_key( $order );
+		$this->insert_lock_rows( $lock_key, 'stale_key', time() - 10 );
+
+		$this->assertFalse( $this->sut->is_order_payment_locked( $order, $this->persistence_profile, 'stale_key' ), 'An expired lock must not count as held.' );
+		$this->assertSame( 'stale_key', $this->read_lock_row( '_transient_' . $lock_key ), 'Only a takeover may replace an expired lock.' );
+	}
+
+	/**
 	 * Skip a test that drives the database lock path when transients live in a persistent object cache.
 	 */
 	private function skip_when_transients_live_in_object_cache(): void {
@@ -335,23 +482,27 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 	 * @param int    $expiration Lock expiry timestamp.
 	 */
 	private function insert_lock_rows( string $lock_key, string $value, int $expiration ): void {
+		$this->insert_lock_row( '_transient_timeout_' . $lock_key, (string) $expiration );
+		$this->insert_lock_row( '_transient_' . $lock_key, $value );
+	}
+
+	/**
+	 * Store one lock row directly in the database, as a concurrent or interrupted request would.
+	 *
+	 * @param string $name  Option name.
+	 * @param string $value Option value.
+	 */
+	private function insert_lock_row( string $name, string $value ): void {
 		global $wpdb;
 
-		$rows = array(
-			'_transient_timeout_' . $lock_key => (string) $expiration,
-			'_transient_' . $lock_key         => $value,
+		$wpdb->insert(
+			$wpdb->options,
+			array(
+				'option_name'  => $name,
+				'option_value' => $value,
+				'autoload'     => 'off',
+			)
 		);
-
-		foreach ( $rows as $name => $row_value ) {
-			$wpdb->insert(
-				$wpdb->options,
-				array(
-					'option_name'  => $name,
-					'option_value' => $row_value,
-					'autoload'     => 'off',
-				)
-			);
-		}
 	}
 
 	/**
