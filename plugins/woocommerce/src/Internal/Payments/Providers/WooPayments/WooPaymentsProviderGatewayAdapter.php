@@ -254,12 +254,16 @@ class WooPaymentsProviderGatewayAdapter {
 		if ( $this->api_client->is_available() ) {
 			$intent_id = $this->get_order_intent_id( $order );
 			if ( '' !== $intent_id ) {
+				$amount_to_capture = $this->order_data_service->prepare_amount( $context->get_amount() ?? (float) $order->get_total(), (string) $order->get_currency() );
+				// The order's line items describe the order total only; a partial capture goes without Level 3 data, as the
+				// client's captures do when they have none to match (client 11.1.0 `class-wc-rest-payments-orders-controller.php:228`).
+				$is_order_total = $this->order_data_service->prepare_amount( (float) $order->get_total(), (string) $order->get_currency() ) === $amount_to_capture;
 				try {
 					$result  = $this->api_client->capture_intention(
 						$intent_id,
-						$this->order_data_service->prepare_amount( $context->get_amount() ?? (float) $order->get_total(), (string) $order->get_currency() ),
+						$amount_to_capture,
 						$this->capture_metadata( $order ),
-						$this->capture_level3_data( $order )
+						$is_order_total ? $this->capture_level3_data( $order ) : array()
 					);
 					$outcome = WooPaymentsIntentCodec::outcome_from_native_capture_result( $result, $intent_id );
 					$plan    = WooPaymentsOrderEffectPlan::for_capture( $result );

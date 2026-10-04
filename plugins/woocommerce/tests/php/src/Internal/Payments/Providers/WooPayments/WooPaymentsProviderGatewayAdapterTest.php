@@ -17,6 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
@@ -5728,6 +5729,90 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
 		$this->assertSame( 0, $gateway->capture_calls, 'The legacy gateway must not be consulted.' );
+	}
+
+	/**
+	 * The client captures the order total with Level 3 data from the order (class-wc-payment-gateway-wcpay.php:3964-3986)
+	 * and captures without Level 3 when it has none to match (class-wc-rest-payments-orders-controller.php:228). A partial
+	 * capture is native-only, and the order's line items do not describe the captured part.
+	 *
+	 * @testdox A capture of $_dataName sends Level 3 data only when it captures the order total.
+	 * @dataProvider capture_level3_cases
+	 *
+	 * @param float|null $amount       Capture amount, or null for the order total.
+	 * @param bool       $sends_level3 Whether the order's Level 3 data is sent.
+	 */
+	public function test_capture_sends_level3_only_for_the_order_total( ?float $amount, bool $sends_level3 ): void {
+		$order       = $this->create_woopayments_order( '10.00' );
+		$level3_data = array(
+			'merchant_reference' => (string) $order->get_id(),
+			'line_items'         => array( array( 'product_description' => 'Hoodie' ) ),
+		);
+		$level3      = new class( $level3_data ) extends WooPaymentsLevel3Service {
+			/**
+			 * Level 3 data for every order.
+			 *
+			 * @var array<string,mixed>
+			 */
+			private array $data;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array<string,mixed> $data Level 3 data for every order.
+			 */
+			public function __construct( array $data ) {
+				$this->data = $data;
+			}
+
+			/**
+			 * Get Level 3 data for an order.
+			 *
+			 * @param WC_Order $order Order.
+			 * @return array<string,mixed>
+			 */
+			public function get_data_from_order( WC_Order $order ): array {
+				unset( $order );
+				return $this->data;
+			}
+		};
+		wc_get_container()->replace( WooPaymentsLevel3Service::class, $level3 );
+		$order->set_transaction_id( 'pi_capture_level3' );
+		$order->save();
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_available', 'capture_intention' ) )
+			->getMock();
+		$api_client->method( 'is_available' )->willReturn( true );
+		$api_client->expects( $this->once() )
+			->method( 'capture_intention' )
+			->with( 'pi_capture_level3', $this->anything(), $this->anything(), $sends_level3 ? $level3_data : array() )
+			->willReturn(
+				array(
+					'id'     => 'pi_capture_level3',
+					'status' => 'succeeded',
+				)
+			);
+
+		try {
+			$this->create_adapter( new RecordingLegacyGateway( array( 'result' => 'success' ), true ), $api_client )
+				->capture( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID, $amount ), 'key_capture_level3' );
+		} finally {
+			wc_get_container()->reset_replacement( WooPaymentsLevel3Service::class );
+		}
+	}
+
+	/**
+	 * Capture amounts and whether Level 3 data goes with them.
+	 *
+	 * @return array<string,array{?float,bool}>
+	 */
+	public function capture_level3_cases(): array {
+		return array(
+			'the order total'           => array( null, true ),
+			'the order total, explicit' => array( 10.0, true ),
+			'part of the order'         => array( 4.25, false ),
+		);
 	}
 
 	/**
