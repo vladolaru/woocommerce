@@ -292,6 +292,15 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	private bool $base_classic_config_localized = false;
 
 	/**
+	 * Config bases shared by the gateways of the payment list being rendered, keyed by card gateway supports; null outside that render.
+	 *
+	 * Client 11.1.0 builds the classic config once per request (includes/class-wc-payments-checkout.php:408-423).
+	 *
+	 * @var array<string,array{config:array<string,mixed>,saved_cards_enabled:bool,currency:string}>|null
+	 */
+	private ?array $payment_list_config_bases = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -355,6 +364,16 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		}
 		if ( false === has_action( 'woocommerce_store_api_checkout_order_processed', array( $this, 'record_checkout_order_placed' ) ) ) {
 			add_action( 'woocommerce_store_api_checkout_order_processed', array( $this, 'record_checkout_order_placed' ), 10, 2 );
+		}
+		foreach ( array( 'woocommerce_review_order_before_payment', 'woocommerce_pay_order_before_payment' ) as $hook ) {
+			if ( false === has_action( $hook, array( $this, 'start_payment_list_render' ) ) ) {
+				add_action( $hook, array( $this, 'start_payment_list_render' ), 10, 0 );
+			}
+		}
+		foreach ( array( 'woocommerce_review_order_after_payment', 'woocommerce_pay_order_after_submit' ) as $hook ) {
+			if ( false === has_action( $hook, array( $this, 'end_payment_list_render' ) ) ) {
+				add_action( $hook, array( $this, 'end_payment_list_render' ), 10, 0 );
+			}
 		}
 		foreach ( array( 'woocommerce_after_cart', 'woocommerce_blocks_enqueue_cart_block_scripts_after', 'woocommerce_after_single_product', 'before_woocommerce_pay_form', 'woocommerce_payments_save_user_in_woopay' ) as $hook ) {
 			if ( false === has_action( $hook, array( $this, 'record_shopper_funnel_event' ) ) ) {
@@ -486,6 +505,24 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 */
 	public function should_expose_checkout_surface(): bool {
 		return $this->get_account_service()->can_process_payments();
+	}
+
+	/**
+	 * Share one config base between the gateways of the classic checkout or order-pay payment list about to render.
+	 *
+	 * @internal
+	 */
+	public function start_payment_list_render(): void {
+		$this->payment_list_config_bases = array();
+	}
+
+	/**
+	 * Stop sharing the config base once the payment list has rendered, so later renders see fresh state.
+	 *
+	 * @internal
+	 */
+	public function end_payment_list_render(): void {
+		$this->payment_list_config_bases = null;
 	}
 
 	/**
@@ -636,7 +673,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 * @return void
 	 */
 	public function render_payment_fields( array $supports, ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null ): void {
-		$config      = $this->get_payment_fields_js_config( $supports, $payment_method_definition );
+		$config      = $this->complete_payment_fields_js_config( $this->get_payment_list_config_base( $supports ), $payment_method_definition );
 		$json_config = wp_json_encode( $config );
 
 		if ( ! is_string( $json_config ) ) {
@@ -666,6 +703,25 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		}
 
 		echo '</div>';
+	}
+
+	/**
+	 * Get the config base, built once for all gateways while a payment list renders.
+	 *
+	 * @param string[] $supports Card gateway support features.
+	 * @return array{config:array<string,mixed>,saved_cards_enabled:bool,currency:string}
+	 */
+	private function get_payment_list_config_base( array $supports ): array {
+		if ( null === $this->payment_list_config_bases ) {
+			return $this->get_payment_fields_js_config_base( $supports );
+		}
+
+		$key = implode( ',', $supports );
+		if ( ! isset( $this->payment_list_config_bases[ $key ] ) ) {
+			$this->payment_list_config_bases[ $key ] = $this->get_payment_fields_js_config_base( $supports );
+		}
+
+		return $this->payment_list_config_bases[ $key ];
 	}
 
 	/**
@@ -875,10 +931,12 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 */
 	private function enqueue_classic_checkout_assets( array $config ): void {
 		$this->register_classic_assets();
-		wp_localize_script( self::CLASSIC_SCRIPT_HANDLE, $this->get_classic_script_config_object_name( (string) $config['gatewayId'] ), $config );
+		// The checkout script reads the card gateway's config from the base object, so it is localized once.
 		if ( OrderPaymentStore::GATEWAY_ID === $config['gatewayId'] ) {
 			wp_localize_script( self::CLASSIC_SCRIPT_HANDLE, 'wcpay_core_checkout_config', $config );
 			$this->base_classic_config_localized = true;
+		} else {
+			wp_localize_script( self::CLASSIC_SCRIPT_HANDLE, $this->get_classic_script_config_object_name( (string) $config['gatewayId'] ), $config );
 		}
 		wp_enqueue_style( self::CLASSIC_STYLE_HANDLE );
 		wp_enqueue_script( self::CLASSIC_SCRIPT_HANDLE );

@@ -1612,6 +1612,61 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Gateways rendered in one classic payment list build the gateway-independent config once, each with its own keys, filter pass and config attribute.
+	 *
+	 * Client 11.1.0 builds the classic config once per request (`includes/class-wc-payments-checkout.php:408-423`).
+	 */
+	public function test_classic_payment_list_builds_the_shared_config_once(): void {
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
+		$account_service = $this->create_account_service_for_bridge( true );
+		$legacy_runtime->method( 'get_gateway_prepared_customer_data' )->willReturn( array() );
+		$legacy_runtime->method( 'can_handle_checkout_bridge_callbacks' )->willReturn( true );
+		$bridge = new WooPaymentsCheckoutBridge();
+		$bridge->init( $legacy_runtime, $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$registry = new WooPaymentsPaymentMethodRegistry();
+		$builds   = 0;
+		$filtered = 0;
+		$count    = static function ( $value ) use ( &$builds ) {
+			++$builds;
+			return $value;
+		};
+		$filter   = static function ( $config ) use ( &$filtered ) {
+			++$filtered;
+			return $config;
+		};
+		add_filter( 'wc_payments_account_id_for_intent_confirmation', $count );
+		add_filter( 'wcpay_payment_fields_js_config', $filter );
+
+		$gateways = array();
+		try {
+			$bridge->register();
+			ob_start();
+			do_action( 'woocommerce_review_order_before_payment' );
+			foreach ( array( 'card', 'klarna', 'affirm' ) as $payment_method_id ) {
+				ob_start();
+				$bridge->render_payment_fields( self::CARD_SUPPORTS, $registry->get( $payment_method_id ) );
+				$this->assertSame( 1, preg_match( '/data-wcpay-config="([^"]*)"/', (string) ob_get_clean(), $matches ) );
+				$gateways[] = json_decode( html_entity_decode( $matches[1], ENT_QUOTES ), true )['gatewayId'] ?? '';
+			}
+			do_action( 'woocommerce_review_order_after_payment' );
+			$builds_in_list = $builds;
+
+			$bridge->render_payment_fields( self::CARD_SUPPORTS );
+			ob_end_clean();
+		} finally {
+			remove_filter( 'wc_payments_account_id_for_intent_confirmation', $count );
+			remove_filter( 'wcpay_payment_fields_js_config', $filter );
+			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		}
+
+		$this->assertSame( 1, $builds_in_list, 'The payment list builds the shared config once.' );
+		$this->assertSame( 2, $builds, 'A render after the payment list builds fresh config.' );
+		$this->assertSame( 4, $filtered, 'Each gateway config still passes the wcpay_payment_fields_js_config filter.' );
+		$this->assertSame( array( 'woocommerce_payments', 'woocommerce_payments_klarna', 'woocommerce_payments_affirm' ), $gateways );
+	}
+
+	/**
 	 * @testdox Should include WooPay save-user data in Blocks payment method data.
 	 */
 	public function test_get_blocks_payment_method_data_includes_woopay_save_user_data(): void {
