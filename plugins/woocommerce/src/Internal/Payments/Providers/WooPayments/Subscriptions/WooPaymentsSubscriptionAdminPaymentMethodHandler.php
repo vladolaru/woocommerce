@@ -441,15 +441,22 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	/**
 	 * Render a token selector for WCS admin payment metadata.
 	 *
+	 * WooCommerce Subscriptions passes null as the value when the subscription has no stored token
+	 * (`class-wcs-change-payment-method-admin.php:72`), so the value is coerced as the client does (trait:924).
+	 *
 	 * @internal
 	 *
-	 * @param mixed  $subscription Subscription object.
-	 * @param string $field_id     Field ID.
-	 * @param string $field_value  Field value.
+	 * @param mixed $subscription Subscription object.
+	 * @param mixed $field_id     Field ID.
+	 * @param mixed $field_value  Field value: a token ID, or null when none is stored.
 	 * @return void
 	 */
-	public function render_custom_payment_meta_input( $subscription, string $field_id, string $field_value ): void {
-		$field_value = ctype_digit( $field_value ) ? absint( $field_value ) : 0;
+	public function render_custom_payment_meta_input( $subscription, $field_id, $field_value ): void {
+		if ( ! is_string( $field_id ) ) {
+			return;
+		}
+
+		$field_value = is_string( $field_value ) && ctype_digit( $field_value ) ? absint( $field_value ) : ( is_int( $field_value ) ? $field_value : 0 );
 		$user_id     = $subscription instanceof WC_Order ? $subscription->get_user_id() : 0;
 		$gateway_id  = $this->get_gateway_id_from_payment_meta_field( $field_id );
 		$options     = array();

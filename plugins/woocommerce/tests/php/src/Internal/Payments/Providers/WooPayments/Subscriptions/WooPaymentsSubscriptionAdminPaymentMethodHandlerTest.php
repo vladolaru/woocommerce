@@ -304,6 +304,42 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	}
 
 	/**
+	 * @testdox With no stored token, WooCommerce Subscriptions passes a null value and the selector renders for a customer with $tokens.
+	 *
+	 * WCS passes null when the payment meta value is empty (`class-wcs-change-payment-method-admin.php:72`, `:78`), which is
+	 * every subscription without a WooPayments token. Client 11.1.0 takes the value untyped and coerces it (trait:924-931),
+	 * then lists the customer's tokens or shows "No payment methods found for customer" (trait:960-973). Review 36 F1: a `string` parameter made the Edit Subscription screen fatal.
+	 *
+	 * @testWith ["no saved token"]
+	 *           ["a saved token"]
+	 *
+	 * @param string $tokens Which saved tokens the customer has.
+	 */
+	public function test_render_custom_payment_meta_input_accepts_the_null_value_wcs_passes( string $tokens ): void {
+		$user_id      = self::factory()->user->create();
+		$subscription = $this->create_subscription_order( $user_id, 'bacs' );
+		$token        = null;
+		if ( 'a saved token' === $tokens ) {
+			$token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_listed' );
+		}
+		$this->sut->add_subscription_payment_meta( array(), $subscription );
+		$field_id = '_payment_method_meta[' . OrderPaymentStore::GATEWAY_ID . '][wc_order_tokens][token]';
+
+		ob_start();
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fired as WooCommerce Subscriptions fires it.
+		do_action( 'woocommerce_subscription_payment_meta_input_' . OrderPaymentStore::GATEWAY_ID . '_wc_order_tokens_token', $subscription, $field_id, null, array() );
+		$output = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'name="' . esc_attr( $field_id ) . '"', $output );
+		$this->assertStringNotContainsString( 'Please select a payment method', $output );
+		if ( null === $token ) {
+			$this->assertMatchesRegularExpression( '/<option value="0"\s+selected=\'selected\'\s+disabled=\'disabled\'>\s*No payment methods found for customer/', $output );
+			return;
+		}
+		$this->assertMatchesRegularExpression( '/<option value="' . $token->get_id() . '"\s+>\s*Visa ending in 4242/', $output );
+	}
+
+	/**
 	 * @testdox Should render Amazon Pay tokens in the preserved gateway's WCS admin selector.
 	 */
 	public function test_render_custom_payment_meta_input_outputs_amazon_pay_tokens(): void {
