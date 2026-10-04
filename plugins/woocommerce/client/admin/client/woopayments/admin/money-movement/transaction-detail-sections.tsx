@@ -991,7 +991,11 @@ export const WooPaymentsPaymentSummarySection = ( {
 			aria-label={ __( 'Summary', 'woocommerce' ) }
 		>
 			<CardBody>
-				<Flex direction="row" align="start">
+				<Flex
+					className="woocommerce-woopayments-payment-summary__header"
+					direction="row"
+					align="start"
+				>
 					<div className="woocommerce-woopayments-payment-summary__main">
 						<div className="woocommerce-woopayments-payment-summary__section">
 							<div className="woocommerce-woopayments-payment-summary__amount-wrapper">

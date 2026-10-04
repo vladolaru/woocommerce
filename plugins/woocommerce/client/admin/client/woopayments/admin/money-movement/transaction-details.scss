@@ -16,6 +16,28 @@
 		flex-grow: 1;
 	}
 
+	// Stacked, the actions menu takes only the amount's row, so the IDs below use the card's whole width.
+	@media screen and (max-width: 782px) {
+		&__header.components-flex {
+			display: grid;
+			gap: $gap $gap-smaller;
+			grid-template-columns: minmax(0, 1fr) auto;
+		}
+
+		&__header &__main {
+			display: contents;
+		}
+
+		&__header &__section + &__section {
+			grid-column: 1 / -1;
+		}
+
+		&__header > &__main ~ * {
+			grid-column: 2;
+			grid-row: 1;
+		}
+	}
+
 	&__amount-wrapper {
 		align-items: center;
 		display: flex;
