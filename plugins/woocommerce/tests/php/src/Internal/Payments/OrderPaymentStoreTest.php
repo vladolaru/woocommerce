@@ -368,6 +368,131 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A claim should win, with an expiry, when the holder releases the lock between the claim's expiry read and its value insert.
+	 */
+	public function test_claim_wins_when_the_holder_releases_between_its_expiry_read_and_value_insert(): void {
+		$this->skip_when_transients_live_in_object_cache();
+		$order    = wc_create_order();
+		$lock_key = $this->persistence_profile->get_order_lock_key( $order );
+		$this->insert_lock_rows( $lock_key, 'holder_key', time() + 100 );
+
+		$released = false;
+		$filter   = $this->run_before_query_after(
+			fn( string $query ): bool => $this->is_expiry_read( $query, $lock_key ),
+			function () use ( &$released, $order ): void {
+				$released = true;
+				$this->sut->release_order_payment_lock( $order, $this->persistence_profile, 'holder_key' );
+			}
+		);
+
+		$claimed = $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'this_request_key' );
+		remove_filter( 'query', $filter );
+
+		$this->assertTrue( $released, 'The holder release must have run.' );
+		$this->assertTrue( $claimed, 'A claim must win a lock the holder released before the claim inserted its value.' );
+		$this->assertSame( 'this_request_key', $this->read_lock_row( '_transient_' . $lock_key ) );
+		$this->assertGreaterThanOrEqual( time() + 290, (int) $this->read_lock_row( '_transient_timeout_' . $lock_key ), 'The winning claim must leave an expiry row.' );
+		$this->assertFalse( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'later_key' ), 'The claimed lock must block the next claim.' );
+	}
+
+	/**
+	 * @testdox A claim should keep a lock whose expiry a refused rival filled in after the holder released the lock.
+	 */
+	public function test_claim_keeps_the_lock_when_a_refused_rival_fills_in_its_expiry(): void {
+		$this->skip_when_transients_live_in_object_cache();
+		$order    = wc_create_order();
+		$lock_key = $this->persistence_profile->get_order_lock_key( $order );
+		$this->insert_lock_rows( $lock_key, 'holder_key', time() + 100 );
+
+		// The holder releases right after the claim reads the expiry; a rival claims right after the claim inserts its value.
+		$release_filter = $this->run_before_query_after(
+			fn( string $query ): bool => $this->is_expiry_read( $query, $lock_key ),
+			fn() => $this->sut->release_order_payment_lock( $order, $this->persistence_profile, 'holder_key' )
+		);
+		$rival_claimed  = null;
+		$rival_filter   = $this->run_before_query_after(
+			fn( string $query ): bool => $this->is_value_insert( $query, $lock_key ),
+			function () use ( &$rival_claimed, $order ): void {
+				$rival_claimed = $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'rival_key' );
+			}
+		);
+
+		$claimed = $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'this_request_key' );
+		remove_filter( 'query', $release_filter );
+		remove_filter( 'query', $rival_filter );
+
+		$this->assertFalse( $rival_claimed, 'The rival claim must have run and been refused.' );
+		$this->assertTrue( $claimed, 'The claim that inserted the value row must keep the lock.' );
+		$this->assertSame( 'this_request_key', $this->read_lock_row( '_transient_' . $lock_key ) );
+		$this->assertNotNull( $this->read_lock_row( '_transient_timeout_' . $lock_key ), 'The lock must keep an expiry row.' );
+	}
+
+	/**
+	 * @testdox A claim should win over a leftover expiry row equal to the expiry it writes.
+	 */
+	public function test_claim_wins_over_a_leftover_expiry_equal_to_its_own(): void {
+		$this->skip_when_transients_live_in_object_cache();
+		$order      = wc_create_order();
+		$lock_key   = $this->persistence_profile->get_order_lock_key( $order );
+		$expiration = (string) ( time() + $this->persistence_profile->get_lock_ttl_seconds() );
+		$this->insert_lock_row( '_transient_timeout_' . $lock_key, $expiration );
+
+		$this->assertTrue( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'this_request_key' ) );
+		$this->assertSame( 'this_request_key', $this->read_lock_row( '_transient_' . $lock_key ) );
+		$this->assertGreaterThanOrEqual( (int) $expiration, (int) $this->read_lock_row( '_transient_timeout_' . $lock_key ) );
+	}
+
+	/**
+	 * @testdox A claim should write an expiry row when the holder, whose expiry equals the claim's, releases between the claim's expiry read and value insert.
+	 */
+	public function test_claim_writes_an_expiry_when_a_holder_with_the_same_expiry_releases(): void {
+		$this->skip_when_transients_live_in_object_cache();
+		$order    = wc_create_order();
+		$lock_key = $this->persistence_profile->get_order_lock_key( $order );
+		$this->insert_lock_rows( $lock_key, 'holder_key', time() + $this->persistence_profile->get_lock_ttl_seconds() );
+
+		$filter = $this->run_before_query_after(
+			fn( string $query ): bool => $this->is_expiry_read( $query, $lock_key ),
+			fn() => $this->sut->release_order_payment_lock( $order, $this->persistence_profile, 'holder_key' )
+		);
+
+		$claimed = $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'this_request_key' );
+		remove_filter( 'query', $filter );
+
+		$this->assertTrue( $claimed );
+		$this->assertSame( 'this_request_key', $this->read_lock_row( '_transient_' . $lock_key ) );
+		$this->assertNotNull( $this->read_lock_row( '_transient_timeout_' . $lock_key ), 'A held lock must never be left without an expiry row.' );
+	}
+
+	/**
+	 * @testdox A claim should lose when a takeover with the same lock value replaces an expired leftover expiry after the claim inserts its value.
+	 */
+	public function test_claim_loses_to_a_same_value_takeover_of_an_expired_leftover_expiry(): void {
+		$this->skip_when_transients_live_in_object_cache();
+		$order    = wc_create_order();
+		$lock_key = $this->persistence_profile->get_order_lock_key( $order );
+		$this->insert_lock_row( '_transient_timeout_' . $lock_key, (string) ( time() - 10 ) );
+
+		// A second request for the same payment reference sees the value row next to the expired expiry and takes over.
+		$rival_expiry = (string) ( time() + 299 );
+		$took_over    = false;
+		$filter       = $this->run_before_query_after(
+			fn( string $query ): bool => $this->is_value_insert( $query, $lock_key ),
+			function () use ( &$took_over, $lock_key, $rival_expiry ): void {
+				$took_over = true;
+				$this->update_lock_row( '_transient_timeout_' . $lock_key, $rival_expiry );
+			}
+		);
+
+		$claimed = $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'pi_shared' );
+		remove_filter( 'query', $filter );
+
+		$this->assertTrue( $took_over, 'The rival takeover must have run.' );
+		$this->assertFalse( $claimed, 'Two requests for the same payment reference must not both hold the lock.' );
+		$this->assertSame( $rival_expiry, $this->read_lock_row( '_transient_timeout_' . $lock_key ), 'The refused claim must leave the taker expiry.' );
+	}
+
+	/**
 	 * @testdox Releasing the lock should retry once when its delete fails.
 	 */
 	public function test_release_retries_a_failed_delete_once(): void {
@@ -472,6 +597,51 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 		if ( wp_using_ext_object_cache() ) {
 			$this->markTestSkipped( 'The database lock path only runs without a persistent object cache.' );
 		}
+	}
+
+	/**
+	 * Run an action once, as another request would, right before the query that follows the first matching query.
+	 *
+	 * @param callable $matches Receives each query and returns true for the query to run the action after.
+	 * @param callable $action  Action standing in for the concurrent request.
+	 * @return callable The 'query' filter, to remove once the code under test has run.
+	 */
+	private function run_before_query_after( callable $matches, callable $action ): callable {
+		$matched = false;
+		$filter  = function ( $query ) use ( &$filter, &$matched, $matches, $action ) {
+			if ( ! $matched ) {
+				$matched = $matches( $query );
+				return $query;
+			}
+			remove_filter( 'query', $filter );
+			$action();
+			return $query;
+		};
+		add_filter( 'query', $filter );
+
+		return $filter;
+	}
+
+	/**
+	 * Tell whether a query is a claim's read of the lock expiry row.
+	 *
+	 * @param string $query    SQL query.
+	 * @param string $lock_key Lock transient key.
+	 * @return bool
+	 */
+	private function is_expiry_read( string $query, string $lock_key ): bool {
+		return 0 === strpos( ltrim( $query ), 'SELECT' ) && false !== strpos( $query, "'_transient_timeout_{$lock_key}'" );
+	}
+
+	/**
+	 * Tell whether a query is a claim's insert of the lock value row.
+	 *
+	 * @param string $query    SQL query.
+	 * @param string $lock_key Lock transient key.
+	 * @return bool
+	 */
+	private function is_value_insert( string $query, string $lock_key ): bool {
+		return 0 === strpos( ltrim( $query ), 'INSERT' ) && false !== strpos( $query, "'_transient_{$lock_key}'" );
 	}
 
 	/**
