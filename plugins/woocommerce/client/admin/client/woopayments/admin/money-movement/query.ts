@@ -573,8 +573,7 @@ export const sanitizeWooPaymentsAuthorizationsQuery = (
 			return;
 		}
 
-		sanitized[ key ] =
-			key === 'sort' && value === 'capture_by' ? 'created' : value;
+		sanitized[ key ] = value;
 	} );
 
 	return sanitized;
@@ -585,6 +584,12 @@ export const serializeWooPaymentsAuthorizationsQuery = (
 ): string => {
 	const sanitized = sanitizeWooPaymentsAuthorizationsQuery( query );
 	const params = new URLSearchParams();
+
+	// Client 11.1.0 `data/authorizations/resolvers.ts:38-41`: "Capture by" is derived from `created`, so the API sorts
+	// by `created` while the URL keeps `capture_by`.
+	if ( sanitized.sort === 'capture_by' ) {
+		sanitized.sort = 'created';
+	}
 
 	AUTHORIZATION_QUERY_PARAM_ORDER.forEach( ( key ) => {
 		const value = sanitized[ key ];

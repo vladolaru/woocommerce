@@ -175,6 +175,7 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 				data-total-pages={ paginationInfo?.totalPages }
 				data-visible-fields={ view.fields?.join( ',' ) }
 				data-view-filters={ JSON.stringify( view.filters || [] ) }
+				data-view-sort={ JSON.stringify( view.sort || null ) }
 				data-discoverable-filter-fields={ discoverableFilterFields.join(
 					','
 				) }
@@ -214,6 +215,17 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 					}
 				>
 					Mock change DataViews columns
+				</button>
+				<button
+					type="button"
+					onClick={ () =>
+						onChangeView?.( {
+							...view,
+							sort: { field: 'capture_by', direction: 'desc' },
+						} )
+					}
+				>
+					Mock sort by Capture by
 				</button>
 				<button
 					type="button"
@@ -2282,6 +2294,78 @@ describe( 'WooPayments money movement pages', () => {
 				name: 'View payment details for order #124',
 			} )
 		).not.toBeInTheDocument();
+	} );
+
+	it( 'lists uncaptured authorizations oldest first by default', async () => {
+		mockGetAuthorizations.mockResolvedValue( { data: [], total_count: 0 } );
+		mockGetAuthorizationsSummary.mockResolvedValue( {
+			count: 0,
+			total: 0,
+		} );
+
+		render(
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/transactions?view=uncaptured',
+				] }
+			>
+				<WooPaymentsTransactionsPage />
+			</MemoryRouter>
+		);
+
+		// Client 11.1.0 `data/authorizations/hooks.ts:36-37` and `data/authorizations/resolvers.ts:31-36`.
+		await waitFor( () =>
+			expect( mockGetAuthorizations ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					sort: 'created',
+					direction: 'asc',
+				} )
+			)
+		);
+		expect(
+			screen.getByTestId( 'money-movement-dataviews' )
+		).toHaveAttribute(
+			'data-view-sort',
+			JSON.stringify( { field: 'created', direction: 'asc' } )
+		);
+	} );
+
+	it( 'keeps a "Capture by" sort in the URL and on its column', async () => {
+		mockGetAuthorizations.mockResolvedValue( { data: [], total_count: 0 } );
+		mockGetAuthorizationsSummary.mockResolvedValue( {
+			count: 0,
+			total: 0,
+		} );
+
+		render(
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/transactions?view=uncaptured',
+				] }
+			>
+				<MoneyMovementRouterBridge />
+				<WooPaymentsTransactionsPage />
+			</MemoryRouter>
+		);
+
+		await screen.findByText( summaryItem( '0 authorization(s)' ) );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Mock sort by Capture by' } )
+		);
+
+		// Client 11.1.0 keeps `orderby=capture_by` in the URL and maps it to `created` only for the API
+		// (`data/authorizations/resolvers.ts:38-41`, covered by the data helper tests).
+		await waitFor( () =>
+			expect(
+				screen.getByTestId( 'money-movement-route' )
+			).toHaveTextContent( 'orderby=capture_by&order=desc' )
+		);
+		expect(
+			screen.getByTestId( 'money-movement-dataviews' )
+		).toHaveAttribute(
+			'data-view-sort',
+			JSON.stringify( { field: 'capture_by', direction: 'desc' } )
+		);
 	} );
 
 	it( 'uses sanitized uncaptured query state and separate DataViews preferences', async () => {

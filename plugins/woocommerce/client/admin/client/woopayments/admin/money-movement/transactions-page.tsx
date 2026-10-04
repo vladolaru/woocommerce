@@ -236,11 +236,12 @@ export const WooPaymentsTransactionsPage = () => {
 	const resourceQuery = useMemo(
 		() =>
 			sanitizeWooPaymentsAuthorizationsQuery(
+				// Client 11.1.0 `data/authorizations/hooks.ts:36-37`: oldest authorization first.
 				parseMoneyMovementQuery( location.search, {
 					page: 1,
 					pagesize: 25,
 					sort: 'created',
-					direction: 'desc',
+					direction: 'asc',
 				} )
 			),
 		[ location.search ]
