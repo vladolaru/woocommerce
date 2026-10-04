@@ -428,21 +428,26 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertSame( $expected, $actual );
 	}
 
-	/** @testdox Should classify all request signals with the required precedence. */
+	/** @testdox Should classify every request type and preserve CLI, cron, AJAX, REST, and admin precedence for both bootstraps. */
 	public function test_classifies_request_signals_with_required_precedence(): void {
-		$this->assertTrue( method_exists( MultiCurrencyBootstrap::class, 'classify_signals' ) );
-		if ( ! method_exists( MultiCurrencyBootstrap::class, 'classify_signals' ) ) {
-			return;
-		}
-		$method = new \ReflectionMethod( MultiCurrencyBootstrap::class, 'classify_signals' );
-		$method->setAccessible( true );
+		$classifier = new \ReflectionMethod( MultiCurrencyBootstrap::class, 'classify_signals' );
+		$classifier->setAccessible( true );
+		$cases = array(
+			'CLI'            => array( array( true, false, false, false, false ), 'cli' ),
+			'cron'           => array( array( false, true, false, false, false ), 'cron' ),
+			'AJAX'           => array( array( false, false, true, false, false ), 'ajax' ),
+			'REST'           => array( array( false, false, false, true, false ), 'rest' ),
+			'admin'          => array( array( false, false, false, false, true ), 'admin' ),
+			'front'          => array( array( false, false, false, false, false ), 'front' ),
+			'CLI collision'  => array( array( true, true, true, true, true ), 'cli' ),
+			'cron collision' => array( array( false, true, true, true, true ), 'cron' ),
+			'AJAX collision' => array( array( false, false, true, true, true ), 'ajax' ),
+			'REST collision' => array( array( false, false, false, true, true ), 'rest' ),
+		);
 
-		$this->assertSame( 'cli', $method->invoke( null, true, true, true, true, true ) );
-		$this->assertSame( 'cron', $method->invoke( null, false, true, true, true, true ) );
-		$this->assertSame( 'ajax', $method->invoke( null, false, false, true, true, true ) );
-		$this->assertSame( 'rest', $method->invoke( null, false, false, false, true, true ) );
-		$this->assertSame( 'admin', $method->invoke( null, false, false, false, false, true ) );
-		$this->assertSame( 'front', $method->invoke( null, false, false, false, false, false ) );
+		foreach ( $cases as $label => list( $signals, $expected ) ) {
+			$this->assertSame( $expected, $classifier->invokeArgs( null, $signals ), $label );
+		}
 	}
 
 	/**

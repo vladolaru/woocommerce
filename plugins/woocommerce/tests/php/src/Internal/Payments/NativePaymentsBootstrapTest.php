@@ -660,33 +660,6 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		}
 	}
 
-	/** @testdox Should classify every request type and preserve CLI, cron, AJAX, REST, and admin precedence. */
-	public function test_classifies_all_request_types_with_collision_precedence(): void {
-		$this->assertTrue( method_exists( NativePaymentsBootstrap::class, 'classify_signals' ), 'The facade should own the in-place classifier.' );
-		if ( ! method_exists( NativePaymentsBootstrap::class, 'classify_signals' ) ) {
-			return;
-		}
-
-		$classifier = new ReflectionMethod( NativePaymentsBootstrap::class, 'classify_signals' );
-		$classifier->setAccessible( true );
-		$cases = array(
-			'CLI'            => array( array( true, false, false, false, false ), 'cli' ),
-			'cron'           => array( array( false, true, false, false, false ), 'cron' ),
-			'AJAX'           => array( array( false, false, true, false, false ), 'ajax' ),
-			'REST'           => array( array( false, false, false, true, false ), 'rest' ),
-			'admin'          => array( array( false, false, false, false, true ), 'admin' ),
-			'front'          => array( array( false, false, false, false, false ), 'front' ),
-			'CLI collision'  => array( array( true, true, true, true, true ), 'cli' ),
-			'cron collision' => array( array( false, true, true, true, true ), 'cron' ),
-			'AJAX collision' => array( array( false, false, true, true, true ), 'ajax' ),
-			'REST collision' => array( array( false, false, false, true, true ), 'rest' ),
-		);
-
-		foreach ( $cases as $label => list( $signals, $expected ) ) {
-			$this->assertSame( $expected, $classifier->invokeArgs( null, $signals ), $label );
-		}
-	}
-
 	/** @testdox Plugin-owned sites retain the available effective state without default shadow cost. */
 	public function test_plugin_owner_uses_the_available_effective_state_without_default_shadow(): void {
 		$container = $this->make_container( NativePaymentsState::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_PLUGIN );

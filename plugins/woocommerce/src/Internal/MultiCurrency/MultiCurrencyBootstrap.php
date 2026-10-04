@@ -133,7 +133,7 @@ final class MultiCurrencyBootstrap {
 			return;
 		}
 
-		$request = $this->classify_request( $is_rest_api_request );
+		$request = self::classify_request( $is_rest_api_request );
 		$roots   = $this->get_core_roots( $container, $request );
 		if ( empty( $roots ) ) {
 			return;
@@ -204,12 +204,15 @@ final class MultiCurrencyBootstrap {
 	}
 
 	/**
-	 * Classify the current request without resolving another service.
+	 * Classify the current request without resolving another service. The native payments bootstrap uses it too.
+	 *
+	 * @since 11.2.0
+	 * @internal
 	 *
 	 * @param callable $is_rest_api_request Whether the current request is a REST request.
-	 * @return string Request class.
+	 * @return string Request class: cli, cron, ajax, rest, admin or front.
 	 */
-	private function classify_request( callable $is_rest_api_request ): string {
+	public static function classify_request( callable $is_rest_api_request ): string {
 		return self::classify_signals(
 			Constants::is_true( 'WP_CLI' ),
 			wp_doing_cron() || wc_is_running_from_async_action_scheduler(),
