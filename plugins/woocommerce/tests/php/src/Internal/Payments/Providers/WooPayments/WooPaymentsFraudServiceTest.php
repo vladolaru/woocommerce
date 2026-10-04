@@ -421,9 +421,20 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 				break;
 		}
 
+		// With debug logging on, a link refused later by the API client would still leave a tracking error line.
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'test_mode'      => 'yes',
+				'enable_logging' => 'yes',
+			)
+		);
+		$logger = RecordingWcLogger::install();
+
 		$this->make_link_sut( $http_client )->link_session_if_user_just_logged_in();
 
 		$this->assertSame( 0, $http_client->request_count );
+		$this->assertSame( array(), array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], '[Tracking]' ) ) );
 	}
 
 	/**

@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderTrackingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
@@ -191,6 +192,29 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 		// Look at the attached callbacks rather than resolve the service here, which would attach them itself.
 		$this->assertTrue( $this->has_token_service_callback( 'woocommerce_payment_token_deleted' ), 'Deleting a saved card must detach it at the provider.' );
 		$this->assertTrue( $this->has_token_service_callback( 'woocommerce_get_customer_payment_tokens' ), 'Saved-card lists must be reconciled with the provider.' );
+	}
+
+	/**
+	 * @testdox $label: the Sift session link is hooked on init only on front and admin page requests.
+	 * @dataProvider session_link_requests
+	 *
+	 * @param string $label    Case label.
+	 * @param string $state    Stored native tier.
+	 * @param string $request  Request class: 'front', 'admin' or 'rest'.
+	 * @param bool   $expected Whether the init callback is attached.
+	 */
+	public function test_sift_session_link_is_hooked_on_page_requests( string $label, string $state, string $request, bool $expected ): void {
+		unset( $label );
+		$this->arrange_native_owner( $state );
+		if ( 'admin' === $request ) {
+			set_current_screen( 'dashboard' );
+		}
+
+		$this->run_bootstrap( 'rest' === $request ? '__return_true' : '__return_false' );
+
+		// The client hooks the link on init of every request and skips AJAX, REST and WP-CLI inside it (client 11.1.0
+		// `includes/class-wc-payments.php:605`, `includes/class-wc-payments-fraud-service.php:82,151-167`).
+		$this->assertSame( $expected ? 10 : null, $this->get_callback_priority( 'init', WooPaymentsFraudService::class, 'link_session_if_user_just_logged_in' ) );
 	}
 
 	/**
@@ -436,6 +460,17 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 		);
 	}
 
+	/** @return array<string,array{string,string,string,bool}> */
+	public static function session_link_requests(): array {
+		return array(
+			'connected front' => array( 'connected front', NativePaymentsState::CONNECTED, 'front', true ),
+			'active front'    => array( 'active front', NativePaymentsState::ACTIVE, 'front', true ),
+			'active admin'    => array( 'active admin', NativePaymentsState::ACTIVE, 'admin', true ),
+			'connected REST'  => array( 'connected REST', NativePaymentsState::CONNECTED, 'rest', false ),
+			'active REST'     => array( 'active REST', NativePaymentsState::ACTIVE, 'rest', false ),
+		);
+	}
+
 	/** @return array<string,array{string}> */
 	public static function set_up_states(): array {
 		return array(
@@ -462,6 +497,28 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Get the priority a class's method is attached to a hook at, without resolving the class from the container.
+	 *
+	 * @param string $hook        Hook name.
+	 * @param string $class_name  Class of the attached object.
+	 * @param string $method_name Attached method.
+	 * @return int|null The priority, or null when the callback is not attached.
+	 */
+	private function get_callback_priority( string $hook, string $class_name, string $method_name ): ?int {
+		global $wp_filter;
+
+		foreach ( isset( $wp_filter[ $hook ] ) ? $wp_filter[ $hook ]->callbacks : array() as $priority => $callbacks ) {
+			foreach ( $callbacks as $callback ) {
+				if ( is_array( $callback['function'] ) && $callback['function'][0] instanceof $class_name && $method_name === $callback['function'][1] ) {
+					return (int) $priority;
+				}
+			}
+		}
+
+		return null;
 	}
 
 	/**
