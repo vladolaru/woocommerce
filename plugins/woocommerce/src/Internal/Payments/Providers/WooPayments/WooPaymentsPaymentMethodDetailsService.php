@@ -59,54 +59,43 @@ class WooPaymentsPaymentMethodDetailsService {
 	 * @throws Throwable A PHP Error raised while fetching the payment method.
 	 */
 	public function get_payment_method_details( string $payment_method_id ): array {
+		try {
+			return $this->fetch_payment_method_details( $payment_method_id );
+		} catch ( Exception $exception ) {
+			$this->log_fetch_error( $payment_method_id, $exception );
+			return array();
+		}
+	}
+
+	/**
+	 * Get payment method details, letting every failure through to the caller.
+	 *
+	 * For core's PaymentInfo, which logs a failed fetch under `payment-info` whatever the WooPayments logging setting,
+	 * as trunk does (review 37 F4).
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string $payment_method_id Payment method ID.
+	 * @return array<string,mixed>
+	 * @throws Throwable When the fetch fails.
+	 */
+	public function fetch_payment_method_details( string $payment_method_id ): array {
 		if ( '' === $payment_method_id ) {
 			return array();
 		}
 
 		if ( ! $this->legacy_runtime->is_loaded() ) {
-			return $this->get_native_payment_method_details( $payment_method_id );
-		}
-
-		return $this->get_legacy_payment_method_details( $payment_method_id );
-	}
-
-	/**
-	 * Get payment method details from the active WooPayments plugin runtime.
-	 *
-	 * @param string $payment_method_id Payment method ID.
-	 * @return array<string,mixed>
-	 * @throws Throwable A PHP Error raised while fetching the payment method.
-	 */
-	private function get_legacy_payment_method_details( string $payment_method_id ): array {
-		try {
-			$api_client = $this->legacy_runtime->get_payments_api_client();
-			if ( ! is_object( $api_client ) || ! is_callable( array( $api_client, 'get_payment_method' ) ) ) {
-				return array();
-			}
-
-			$details = $api_client->get_payment_method( $payment_method_id );
-
-			return is_array( $details ) ? $details : array();
-		} catch ( Exception $exception ) {
-			$this->log_fetch_error( $payment_method_id, $exception );
-			return array();
-		}
-	}
-
-	/**
-	 * Get payment method details from the native transport.
-	 *
-	 * @param string $payment_method_id Payment method ID.
-	 * @return array<string,mixed>
-	 * @throws Throwable A PHP Error raised while fetching the payment method.
-	 */
-	private function get_native_payment_method_details( string $payment_method_id ): array {
-		try {
 			return $this->api_client->get_payment_method( $payment_method_id );
-		} catch ( Exception $exception ) {
-			$this->log_fetch_error( $payment_method_id, $exception );
+		}
+
+		$api_client = $this->legacy_runtime->get_payments_api_client();
+		if ( ! is_object( $api_client ) || ! is_callable( array( $api_client, 'get_payment_method' ) ) ) {
 			return array();
 		}
+
+		$details = $api_client->get_payment_method( $payment_method_id );
+
+		return is_array( $details ) ? $details : array();
 	}
 
 	/**

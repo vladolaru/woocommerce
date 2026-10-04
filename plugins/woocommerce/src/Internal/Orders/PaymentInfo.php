@@ -115,7 +115,7 @@ class PaymentInfo {
 			}
 
 			try {
-				$payment_details = wc_get_container()->get( WooPaymentsPaymentMethodDetailsService::class )->get_payment_method_details( (string) $payment_method_id );
+				$payment_details = wc_get_container()->get( WooPaymentsPaymentMethodDetailsService::class )->fetch_payment_method_details( (string) $payment_method_id );
 			} catch ( \Throwable $ex ) {
 				$order_id = $order->get_id();
 				$message  = $ex->getMessage();

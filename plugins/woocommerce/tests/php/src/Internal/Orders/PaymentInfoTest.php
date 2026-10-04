@@ -145,13 +145,22 @@ class PaymentInfoTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A PHP error fetching the WooPayments payment method leaves the order totals without card info and is logged.
+	 * @testdox A failed WooPayments payment-method fetch ($failure) leaves the order totals without card info and logs trunk's payment-info line.
+	 * @dataProvider fetch_failures
 	 *
-	 * Trunk catches every throwable around the fetch, logs it under `payment-info` and returns no card info, so the
-	 * order-received page, My Account and order emails still render their totals. The details service lets a PHP error
-	 * through, so this caller keeps that catch.
+	 * Trunk catches every throwable around the fetch, logs it under `payment-info` whatever the WooPayments logging
+	 * setting and returns no card info, so the order-received page, My Account and order emails still render their
+	 * totals. An API failure is an Exception (the client's `API_Exception`); review 37 F4 found it logged only behind the
+	 * WooPayments logging setting.
+	 *
+	 * @param string $failure         Case label.
+	 * @param string $throwable_class Class the API client throws.
+	 * @param string $message         Message it throws with.
 	 */
-	public function test_get_card_info_wcpay_php_error_fetching_details_returns_no_card_info(): void {
+	public function test_get_card_info_wcpay_failed_fetch_returns_no_card_info_and_logs( string $failure, string $throwable_class, string $message ): void {
+		unset( $failure );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
 		$order = OrderHelper::create_order();
 		$order->set_payment_method( 'woocommerce_payments' );
 		$order->set_payment_method_title( 'Credit card / debit card' );
@@ -179,19 +188,33 @@ class PaymentInfoTest extends WC_Unit_Test_Case {
 		$this->register_legacy_proxy_static_mocks(
 			array(
 				'WC_Payments' => array(
-					'get_payments_api_client' => function () {
-						return new class() {
+					'get_payments_api_client' => function () use ( $throwable_class, $message ) {
+						return new class( $throwable_class, $message ) {
+							/** @var string */
+							private string $throwable_class;
+							/** @var string */
+							private string $message;
+
+							/**
+							 * @param string $throwable_class Class to throw.
+							 * @param string $message         Message to throw with.
+							 */
+							public function __construct( string $throwable_class, string $message ) {
+								$this->throwable_class = $throwable_class;
+								$this->message         = $message;
+							}
+
 							// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
 							/**
-							 * Fail as a client whose response body was null.
+							 * Fail the fetch.
 							 *
 							 * @param string $payment_method_id Payment method ID.
 							 * @return array<string,mixed>
-							 * @throws \TypeError Always.
+							 * @throws \Throwable Always.
 							 */
 							public function get_payment_method( string $payment_method_id ): array {
 								unset( $payment_method_id );
-								throw new \TypeError( 'Return value must be of type array, null returned' );
+								throw new $this->throwable_class( $this->message ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Test double; the message is never output.
 							}
 							// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
 						};
@@ -208,7 +231,19 @@ class PaymentInfoTest extends WC_Unit_Test_Case {
 		$this->assertSame( '', $card_info['brand'] );
 		$this->assertSame( '', $card_info['last4'] );
 		$this->assertSame( '', wc_get_order( $order->get_id() )->get_meta( '_wcpay_raw_payment_method_details', true ), 'Nothing is cached after a failed fetch.' );
-		$expected = sprintf( 'PaymentInfo - retrieving info for payment method pm_fetch_error for order %d: Return value must be of type array, null returned', $order->get_id() );
+		$expected = sprintf( 'PaymentInfo - retrieving info for payment method pm_fetch_error for order %d: %s', $order->get_id(), $message );
 		$this->assertContains( array( 'error', $expected, 'payment-info' ), $logger->lines );
+	}
+
+	/**
+	 * Failures of the payment-method fetch.
+	 *
+	 * @return array<string,array{string,string,string}>
+	 */
+	public static function fetch_failures(): array {
+		return array(
+			'PHP error'     => array( 'PHP error', \TypeError::class, 'Return value must be of type array, null returned' ),
+			'API exception' => array( 'API exception', \Exception::class, 'Error: No such PaymentMethod: pm_fetch_error' ),
+		);
 	}
 }
