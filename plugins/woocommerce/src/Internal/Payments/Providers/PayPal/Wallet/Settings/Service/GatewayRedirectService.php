@@ -9,13 +9,19 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\GatewayIds;
 
 /**
- * GatewayRedirectService class. Handles redirects from individual gateway
- * settings URLs to the new Settings UI page.
+ * GatewayRedirectService class. Redirects the wallet gateway's legacy settings section and the extension's individual
+ * gateway settings sections to the wallet's route in the Payments settings app.
  */
 class GatewayRedirectService {
+
+	/**
+	 * The Payments settings route that serves the wallet's settings app.
+	 */
+	private const ROUTE_PATH = '/paypal-wallet';
 
 	/**
 	 * List of gateways to redirect.
@@ -82,17 +88,31 @@ class GatewayRedirectService {
 			return;
 		}
 
-		// Check if we're on one of the gateway settings pages we want to redirect.
-		if ( in_array( $section, $this->gateways, true ) ) {
-			$redirect_url = admin_url(
-				sprintf(
-					'admin.php?page=wc-settings&tab=checkout&section=ppcp-gateway&panel=payment-methods&highlight=%s',
-					$section
-				)
-			);
-
-			wp_safe_redirect( $redirect_url );
-			exit;
+		$is_wallet_section = PayPalGateway::ID === $section;
+		if ( ! $is_wallet_section && ! in_array( $section, $this->gateways, true ) ) {
+			return;
 		}
+
+		// Keep what the old URL carried (the app's panel and highlight, and the arguments PayPal appends when it returns a merchant from onboarding).
+		$carried = array();
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		foreach ( wp_unslash( $_GET ) as $name => $value ) {
+			if ( is_string( $value ) && ! in_array( $name, array( 'page', 'tab', 'section', 'path' ), true ) ) {
+				$carried[ $name ] = wc_clean( $value );
+			}
+		}
+
+		if ( ! $is_wallet_section ) {
+			$carried['panel']     = 'payment-methods';
+			$carried['highlight'] = $section;
+		}
+
+		$redirect_url = 'admin.php?page=wc-settings&tab=checkout&path=' . self::ROUTE_PATH;
+		if ( $carried ) {
+			$redirect_url .= '&' . http_build_query( $carried, '', '&', PHP_QUERY_RFC3986 );
+		}
+
+		wp_safe_redirect( admin_url( $redirect_url ), 302 );
+		exit;
 	}
 }

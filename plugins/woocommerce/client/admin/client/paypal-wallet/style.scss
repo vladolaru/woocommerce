@@ -1,0 +1,9 @@
+// The wallet's settings app renders its own header, so it sits flush under the wc-admin header, where the Payments
+// settings screens put theirs (same inline offset and no top margin on the page body).
+.paypal-wallet-settings {
+	margin-inline: -30px;
+}
+
+#wpbody:has(.paypal-wallet-settings) {
+	margin-block-start: 0;
+}

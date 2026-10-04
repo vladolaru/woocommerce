@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 
 use Automattic\WooCommerce\Internal\Logging\SafeGlobalFunctionProxy;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\DormantPayPalGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\GeneralSettings;
 use WC_Payment_Gateway;
@@ -89,14 +90,14 @@ class PayPal extends PaymentGateway {
 	}
 
 	/**
-	 * The wallet's settings section, where a merchant connects their PayPal account.
+	 * The wallet's settings route, where a merchant connects their PayPal account.
 	 *
 	 * @since 11.3.0
 	 *
 	 * @return string
 	 */
 	private function get_wallet_settings_url(): string {
-		return admin_url( 'admin.php?page=wc-settings&tab=checkout&section=ppcp-gateway' );
+		return PayPalWalletBootstrap::get_settings_url();
 	}
 
 	/**

@@ -124,7 +124,7 @@ final class DormantPayPalGateway extends WC_Payment_Gateway {
 	 * @return void
 	 */
 	public function admin_options() {
-		$url = admin_url( 'admin.php?page=wc-settings&tab=checkout&section=ppcp-gateway' );
+		$url = PayPalWalletBootstrap::get_settings_url();
 
 		echo '<p>' . esc_html__( 'Connect your PayPal account to start accepting payments.', 'woocommerce' ) . '</p>';
 		echo '<p><a class="button button-primary" href="' . esc_url( $url ) . '">' . esc_html__( 'Finish setup', 'woocommerce' ) . '</a></p>';

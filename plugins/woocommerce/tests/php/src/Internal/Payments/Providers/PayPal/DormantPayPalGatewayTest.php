@@ -114,14 +114,14 @@ class DormantPayPalGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should print a link to the PayPal wallet settings section in its admin options.
+	 * @testdox Should print a link to the PayPal wallet settings route in its admin options.
 	 */
 	public function test_admin_options_link_to_the_wallet_settings(): void {
 		ob_start();
 		$this->sut->admin_options();
 		$output = (string) ob_get_clean();
 
-		$this->assertStringContainsString( esc_url( admin_url( 'admin.php?page=wc-settings&tab=checkout&section=ppcp-gateway' ) ), $output );
+		$this->assertStringContainsString( esc_url( admin_url( 'admin.php?page=wc-settings&tab=checkout&path=/paypal-wallet' ) ), $output );
 		$this->assertStringContainsString( 'Finish setup', $output );
 	}
 

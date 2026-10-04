@@ -50,6 +50,13 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	);
 
 	/**
+	 * The Payments settings route that serves the wallet's settings app.
+	 *
+	 * @since 11.3.0
+	 */
+	public const SETTINGS_ROUTE_PATH = '/paypal-wallet';
+
+	/**
 	 * The runtime arbiter.
 	 *
 	 * @var PayPalWalletRuntimeArbiter
@@ -79,6 +86,17 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	 */
 	public function register() {
 		add_action( 'plugins_loaded', array( $this, 'maybe_boot' ), 10 );
+	}
+
+	/**
+	 * The URL of the wallet's settings, a route of the Payments settings app.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @return string
+	 */
+	public static function get_settings_url(): string {
+		return admin_url( 'admin.php?page=wc-settings&tab=checkout&path=' . self::SETTINGS_ROUTE_PATH );
 	}
 
 	/**
@@ -226,7 +244,7 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 		if ( is_admin() && isset( $_GET['page'] ) && 'wc-settings' === $_GET['page'] ) {
 			$path    = isset( $_GET['path'] ) && is_string( $_GET['path'] ) ? sanitize_text_field( wp_unslash( $_GET['path'] ) ) : '';
 			$section = isset( $_GET['section'] ) && is_string( $_GET['section'] ) ? sanitize_text_field( wp_unslash( $_GET['section'] ) ) : '';
-			if ( 0 === strpos( $path, '/paypal-wallet' ) || 'ppcp-gateway' === $section ) {
+			if ( 0 === strpos( $path, self::SETTINGS_ROUTE_PATH ) || 'ppcp-gateway' === $section ) {
 				return true;
 			}
 		}

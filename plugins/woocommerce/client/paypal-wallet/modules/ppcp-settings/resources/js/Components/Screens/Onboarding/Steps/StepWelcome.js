@@ -31,7 +31,7 @@ const StepWelcome = ( { onNext } ) => {
 		<div className="ppcp-r-page-welcome">
 			<OnboardingHeader
 				title={ __(
-					'Welcome to PayPal Payments',
+					'Welcome to PayPal Wallet',
 					'woocommerce'
 				) }
 				description={ onboardingHeaderDescription }
@@ -52,7 +52,7 @@ const StepWelcome = ( { onNext } ) => {
 						onClick={ onNext }
 					>
 						{ __(
-							'Activate PayPal Payments',
+							'Activate PayPal Wallet',
 							'woocommerce'
 						) }
 					</Button>

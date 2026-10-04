@@ -41,6 +41,13 @@ abstract class WalletTestCase extends WC_Unit_Test_Case {
 	private array $written_options = array();
 
 	/**
+	 * The screen and query arguments before simulate_admin_request() replaced them, or null when it was not called.
+	 *
+	 * @var array{screen: mixed, get: array}|null
+	 */
+	private ?array $request_before_simulation = null;
+
+	/**
 	 * Block the network: answer every request with a WP_Error until the test stubs HTTP.
 	 */
 	public function setUp(): void {
@@ -63,9 +70,45 @@ abstract class WalletTestCase extends WC_Unit_Test_Case {
 			$this->written_options = array();
 			remove_all_filters( 'pre_http_request' );
 			Mockery::close();
+			$this->restore_request();
 		} finally {
 			parent::tearDown();
 		}
+	}
+
+	/**
+	 * Make the rest of the test run as an admin request with the given query arguments. The screen and the query
+	 * arguments are put back on tearDown.
+	 *
+	 * @param array $query The query arguments of the request.
+	 */
+	protected function simulate_admin_request( array $query ): void {
+		if ( null === $this->request_before_simulation ) {
+			$this->request_before_simulation = array(
+				'screen' => $GLOBALS['current_screen'] ?? null,
+				'get'    => $_GET, // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			);
+		}
+
+		set_current_screen( 'dashboard' );
+		$_GET = $query;
+	}
+
+	/**
+	 * Put back what simulate_admin_request() replaced.
+	 */
+	private function restore_request(): void {
+		if ( null === $this->request_before_simulation ) {
+			return;
+		}
+
+		if ( null === $this->request_before_simulation['screen'] ) {
+			unset( $GLOBALS['current_screen'] );
+		} else {
+			set_current_screen( $this->request_before_simulation['screen'] );
+		}
+		$_GET                            = $this->request_before_simulation['get']; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$this->request_before_simulation = null;
 	}
 
 	/**

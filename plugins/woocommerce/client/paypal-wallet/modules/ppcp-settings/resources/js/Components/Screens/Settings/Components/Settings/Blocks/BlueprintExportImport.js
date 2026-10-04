@@ -55,7 +55,7 @@ const BlueprintExportImport = () => {
 					'woocommerce'
 				) }
 				description={ __(
-					'Export or import your current PayPal Payments settings across WooCommerce sites. Connection credentials are excluded from the export unless you choose to include them.',
+					'Export or import your current PayPal Wallet settings across WooCommerce sites. Connection credentials are excluded from the export unless you choose to include them.',
 					'woocommerce'
 				) }
 				actionProps={ {

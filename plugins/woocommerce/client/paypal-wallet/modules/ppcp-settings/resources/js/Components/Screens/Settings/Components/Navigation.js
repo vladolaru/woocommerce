@@ -22,7 +22,7 @@ const SettingsNavigation = ( {
 	setActivePanel = () => {},
 } ) => {
 	const { persistAll } = useStoreManager();
-	const title = __( 'PayPal Payments', 'woocommerce' );
+	const title = __( 'PayPal Wallet', 'woocommerce' );
 	const [ isSaving, setIsSaving ] = useState( false );
 
 	const handleSave = () => {

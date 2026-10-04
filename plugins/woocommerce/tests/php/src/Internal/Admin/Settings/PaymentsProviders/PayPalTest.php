@@ -395,7 +395,7 @@ class PayPalTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce-ppcp-data-common' );
 		$gateway  = new DormantPayPalGateway();
 		$previous = $this->swap_wallet_container( null );
-		$url      = admin_url( 'admin.php?page=wc-settings&tab=checkout&section=ppcp-gateway' );
+		$url      = admin_url( 'admin.php?page=wc-settings&tab=checkout&path=/paypal-wallet' );
 
 		try {
 			$needs_setup = $this->sut->needs_setup( $gateway );

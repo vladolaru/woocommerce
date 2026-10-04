@@ -15,7 +15,7 @@ import StepCompleteSetup from './StepCompleteSetup';
 const ALL_STEPS = [
 	{
 		id: 'welcome',
-		title: __( 'PayPal Payments', 'woocommerce' ),
+		title: __( 'PayPal Wallet', 'woocommerce' ),
 		StepComponent: StepWelcome,
 		canProceed: () => true,
 	},

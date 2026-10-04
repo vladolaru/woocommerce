@@ -30,7 +30,7 @@ const SendOnlyMessage = () => {
 					</p>
 					<p>
 						{ __(
-							'Since receiving payments is essential for using the PayPal Payments extension, you are unable to connect your PayPal account while operating from a "send-only" country.',
+							'Since receiving payments is essential for using PayPal Wallet, you are unable to connect your PayPal account while operating from a "send-only" country.',
 							'woocommerce'
 						) }
 					</p>

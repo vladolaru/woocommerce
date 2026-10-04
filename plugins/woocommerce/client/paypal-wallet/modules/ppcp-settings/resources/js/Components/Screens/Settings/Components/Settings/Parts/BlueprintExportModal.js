@@ -67,7 +67,7 @@ const BlueprintExportModal = ( { onExport, onCancel } ) => {
 			className="ppcp--modal-blueprint-export"
 			title={ __( 'Export settings', 'woocommerce' ) }
 			description={ __(
-				'Exports your PayPal Payments settings so they can be imported into another WooCommerce store.',
+				'Exports your PayPal Wallet settings so they can be imported into another WooCommerce store.',
 				'woocommerce'
 			) }
 			toggle={ {

@@ -147,7 +147,8 @@ return array(
 
 		// phpcs:disable WordPress.Security.NonceVerification
 		$is_wc_settings     = isset( $_GET['page'] ) && 'wc-settings' === $_GET['page'];
-		$is_plugin_settings = isset( $_GET['section'] ) && PayPalGateway::ID === $_GET['section'];
+		$path               = isset( $_GET['path'] ) && is_string( $_GET['path'] ) ? sanitize_text_field( wp_unslash( $_GET['path'] ) ) : '';
+		$is_plugin_settings = ( isset( $_GET['section'] ) && PayPalGateway::ID === $_GET['section'] ) || 0 === strpos( $path, '/paypal-wallet' );
 
 		// phpcs:enable WordPress.Security.NonceVerification
 
@@ -584,7 +585,7 @@ return array(
 			: $container->get( 'wcgateway.enable-reference-transactions-url-sandbox' );
 
 		$button_url = $enabled
-			? admin_url( 'admin.php?page=wc-settings&tab=checkout&section=ppcp-gateway#field-paypal_saved_payments' )
+			? admin_url( 'admin.php?page=wc-settings&tab=checkout&path=/paypal-wallet#field-paypal_saved_payments' )
 			: $enable_url;
 
 		return sprintf(
@@ -762,15 +763,13 @@ return array(
 	},
 
 	'wcgateway.settings.wc-tasks.pay-later-task-config'    => static function ( ContainerInterface $container ): array {
-		$section_id       = PayPalGateway::ID;
-
 		if ( $container->has( 'paylater-configurator.is-available' ) && $container->get( 'paylater-configurator.is-available' ) ) {
 			return array(
 				array(
 					'id'           => 'pay-later-messaging-task',
 					'title'        => __( 'Configure PayPal Pay Later messaging', 'woocommerce' ),
 					'description'  => __( 'Decide where you want dynamic Pay Later messaging to show up and how you want it to look on your site.', 'woocommerce' ),
-					'redirect_url' => admin_url( "admin.php?page=wc-settings&tab=checkout&section={$section_id}" ),
+					'redirect_url' => admin_url( 'admin.php?page=wc-settings&tab=checkout&path=/paypal-wallet' ),
 				),
 			);
 		}
@@ -787,8 +786,8 @@ return array(
 				array(
 					'id'           => 'connect-to-paypal-task',
 					'title'        => __( 'Connect PayPal to complete setup', 'woocommerce' ),
-					'description'  => __( 'PayPal Payments is almost ready. To get started, connect your account with the Activate PayPal Payments button.', 'woocommerce' ),
-					'redirect_url' => admin_url( 'admin.php?page=wc-settings&tab=checkout&section=ppcp-gateway' ),
+					'description'  => __( 'PayPal Wallet is almost ready. To get started, connect your account with the Activate PayPal Wallet button.', 'woocommerce' ),
+					'redirect_url' => admin_url( 'admin.php?page=wc-settings&tab=checkout&path=/paypal-wallet' ),
 				),
 			);
 		}

@@ -707,6 +707,32 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 	/**
 	 * @group paypal-wallet-boot
 	 *
+	 * @testdox Should enqueue the settings app on $description: $expected.
+	 * @testWith ["the Payments settings route", {"page": "wc-settings", "tab": "checkout", "path": "/paypal-wallet"}, true]
+	 *           ["another WooCommerce settings tab", {"page": "wc-settings", "tab": "shipping"}, false]
+	 *           ["another route of the Payments settings app", {"page": "wc-settings", "tab": "checkout", "path": "/offline"}, false]
+	 *
+	 * @param string $description What the request is.
+	 * @param array  $query       The query arguments of the request.
+	 * @param bool   $expected    Whether the settings app is enqueued.
+	 */
+	public function test_enqueues_the_settings_app_on_its_route_only( string $description, array $query, bool $expected ): void {
+		$this->set_connected_merchant_option();
+		set_current_screen( 'woocommerce_page_wc-settings' );
+		$_GET                  = $query;
+		$GLOBALS['wp_scripts'] = new \WP_Scripts(); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- A registry no earlier case has enqueued into; tearDown restores the saved one.
+		$this->build_sut( true );
+		$this->sut->maybe_boot();
+		$this->assertTrue( $this->sut->is_booted() );
+
+		do_action( 'admin_enqueue_scripts', 'woocommerce_page_wc-settings' );
+
+		$this->assertSame( $expected, wp_script_is( 'ppcp-admin-settings', 'enqueued' ), $description );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
 	 * @testdox Should boot a not-connected wallet on the legacy gateway settings section.
 	 */
 	public function test_boots_dormant_wallet_on_its_legacy_settings_section(): void {

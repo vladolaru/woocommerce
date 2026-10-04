@@ -152,23 +152,17 @@ class SettingsModule implements ServiceModule, ExecutableModule {
 					return;
 				}
 
+				// The settings app runs on its Payments settings route only.
+				if ( ! $container->get( 'wcgateway.is-plugin-settings-page' ) ) {
+					return;
+				}
+
+				$this->initialize_branded_only( $container );
+
 				$script_data_handler = $container->get( 'settings.service.script-data-handler' );
 				assert( $script_data_handler instanceof ScriptDataHandler );
 
 				$script_data_handler->localize_scripts( $hook_suffix );
-			}
-		);
-
-		add_action(
-			'woocommerce_paypal_payments_gateway_admin_options_wrapper',
-			function () use ( $container ): void {
-				global $hide_save_button;
-				$hide_save_button = true;
-
-				$this->initialize_branded_only( $container );
-
-				$this->render_header();
-				$this->render_content();
 			}
 		);
 
@@ -573,26 +567,6 @@ class SettingsModule implements ServiceModule, ExecutableModule {
 		$path_repository->persist();
 
 		$partner_attribution->initialize_bn_code( $general_settings->get_installation_path() );
-	}
-
-	/**
-	 * Outputs the settings page header (title and back-link).
-	 *
-	 * @return void
-	 */
-	protected function render_header(): void {
-		echo '<h2>' . esc_html__( 'PayPal', 'woocommerce' );
-		wc_back_link( __( 'Return to payments', 'woocommerce' ), admin_url( 'admin.php?page=wc-settings&tab=checkout' ) );
-		echo '</h2>';
-	}
-
-	/**
-	 * Renders the container for the React app.
-	 *
-	 * @return void
-	 */
-	protected function render_content(): void {
-		echo '<div id="ppcp-settings-container"></div>';
 	}
 
 	/**
