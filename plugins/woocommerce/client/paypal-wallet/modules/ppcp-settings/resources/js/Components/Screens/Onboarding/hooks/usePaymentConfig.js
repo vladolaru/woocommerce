@@ -8,11 +8,9 @@ import {
 	Venmo,
 	Crypto,
 	PayInThree,
-	CardFields,
 	DigitalWallets,
 	AlternativePaymentMethods,
 	Fastlane,
-	CreditDebitCards,
 } from '../Components/PaymentOptions';
 
 // List of all payment icons and which requirements they have.
@@ -48,18 +46,6 @@ const DEFAULT_CONFIG = {
 		{ name: 'PayLater', Component: PayLater },
 	],
 	extendedMethods: [
-		{
-			name: 'CreditDebitCards',
-			Component: CreditDebitCards,
-			isOwnBrand: false,
-			isAcdc: false,
-		},
-		{
-			name: 'CardFields',
-			Component: CardFields,
-			isOwnBrand: false,
-			isAcdc: true,
-		},
 		{
 			name: 'DigitalWallets',
 			Component: DigitalWallets,
@@ -128,7 +114,7 @@ const getUIText = ( country, canUseCardPayments, onlyBranded ) => {
 			'woocommerce'
 		),
 		US_EXPANDED: __(
-			'Accept debit/credit cards, PayPal, Apple Pay, Google Pay, and more. Note: Additional application required for some methods',
+			'Accept PayPal, Apple Pay, Google Pay, and more. Note: Additional application required for some methods',
 			'woocommerce'
 		),
 	};

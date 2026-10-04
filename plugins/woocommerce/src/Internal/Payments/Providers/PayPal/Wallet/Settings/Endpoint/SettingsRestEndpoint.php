@@ -83,10 +83,6 @@ class SettingsRestEndpoint extends RestEndpoint {
 			'js_name'  => 'enableContactModule',
 			'sanitize' => 'to_boolean',
 		),
-		'save_card_details'                               => array(
-			'js_name'  => 'saveCardDetails',
-			'sanitize' => 'to_boolean',
-		),
 		'enable_pay_now'                                  => array(
 			'js_name'  => 'enablePayNow',
 			'sanitize' => 'to_boolean',
@@ -98,13 +94,6 @@ class SettingsRestEndpoint extends RestEndpoint {
 		'stay_updated'                                    => array(
 			'js_name'  => 'stayUpdated',
 			'sanitize' => 'to_boolean',
-		),
-		'disabled_cards'                                  => array(
-			'js_name' => 'disabledCards',
-		),
-		'three_d_secure'                                  => array(
-			'js_name'  => 'threeDSecure',
-			'sanitize' => 'sanitize_text_field',
 		),
 		'payment_level_processing'                        => array(
 			'js_name'  => 'paymentLevelProcessing',

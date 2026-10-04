@@ -31,21 +31,6 @@ export function createVaultSetupToken( config ) {
 }
 
 /**
- * Requests a card setup token (with the store's 3DS/SCA contingency) from the
- * existing WC AJAX endpoint, for the card save session to confirm.
- *
- * @param {Object} config - The wc_ppcp_sdk_v6 config object.
- * @return {Promise<string>} Resolves to the setup token id.
- */
-export async function createCardSetupToken( config ) {
-	const data = await postJson( config.ajax.create_setup_token, {
-		payment_method: config.card_fields?.payment_method,
-		verification_method: config.verification_method,
-	} );
-	return data.id;
-}
-
-/**
  * Exchanges an approved setup token for a stored WC payment token.
  *
  * Logged-in buyers get a token linked to their account; the guest endpoint

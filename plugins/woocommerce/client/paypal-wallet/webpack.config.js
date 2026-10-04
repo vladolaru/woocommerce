@@ -10,12 +10,10 @@ const BUILD_DIR = path.resolve(
 );
 
 // Entries per kept module, as in the extension's webpack.config.js; the compiled name is "<module>-<type>-<path with dashes>".
-// ppcp-card-fields has no entries of its own: kept JS imports its Render helper through the alias (see supplement.py).
 const modulesAssets = {
 	'ppcp-admin-notices': [ 'js/boot-admin.js', 'css/styles.scss' ],
 	'ppcp-blocks': [
 		'js/checkout-block.js',
-		'js/advanced-card-checkout-block.js',
 		'js/ProductPayLaterMessagesBlock/product-paylater-block.js',
 		'js/ProductSmartButtonsBlock/product-smart-buttons-block.js',
 		'css/gateway.scss',
@@ -23,10 +21,8 @@ const modulesAssets = {
 	],
 	'ppcp-button': [
 		'js/button.js',
-		'css/hosted-fields.scss',
 		'css/gateway.scss',
 	],
-	'ppcp-card-fields': [],
 	'ppcp-compat': [ 'js/tracking-compat.js' ],
 	'ppcp-paylater-block': [ 'js/paylater-block.js', 'css/edit.scss' ],
 	'ppcp-paylater-wc-blocks': [

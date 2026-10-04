@@ -23,5 +23,4 @@ export const FundingSources = {
 	PAYLATER: 'paylater',
 	GOOGLEPAY: 'googlepay',
 	APPLEPAY: 'applepay',
-	CARD: 'card', // BCDC button ("Guest Payments").
 };

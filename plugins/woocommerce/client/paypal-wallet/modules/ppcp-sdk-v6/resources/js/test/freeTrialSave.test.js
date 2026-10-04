@@ -10,7 +10,6 @@ jest.mock( '../utils/errorHandler', () => ( {
 
 import {
 	createVaultSetupToken,
-	createCardSetupToken,
 	exchangeSetupToken,
 	createFreeTrialPayPalSession,
 } from '../sessions/freeTrialSave';
@@ -22,8 +21,6 @@ const baseConfig = ( overrides = {} ) => ( {
 		create_payment_token_for_guest: { endpoint: '/cptg', nonce: 'n-cptg' },
 	},
 	user: { is_logged: true },
-	card_fields: { payment_method: 'ppcp-credit-card-gateway' },
-	verification_method: 'SCA_ALWAYS',
 	is_free_trial_cart: true,
 	...overrides,
 } );
@@ -42,23 +39,6 @@ describe( 'createVaultSetupToken', () => {
 			baseConfig().ajax.create_setup_token
 		);
 		expect( result ).toEqual( { vaultSetupToken: 'SETUP1' } );
-	} );
-} );
-
-describe( 'createCardSetupToken', () => {
-	test( 'posts the card payment method and verification method, resolving to the setup token id', async () => {
-		mockPostJson.mockResolvedValueOnce( { id: 'CARDSETUP1' } );
-
-		const result = await createCardSetupToken( baseConfig() );
-
-		expect( mockPostJson ).toHaveBeenCalledWith(
-			baseConfig().ajax.create_setup_token,
-			{
-				payment_method: 'ppcp-credit-card-gateway',
-				verification_method: 'SCA_ALWAYS',
-			}
-		);
-		expect( result ).toBe( 'CARDSETUP1' );
 	} );
 } );
 

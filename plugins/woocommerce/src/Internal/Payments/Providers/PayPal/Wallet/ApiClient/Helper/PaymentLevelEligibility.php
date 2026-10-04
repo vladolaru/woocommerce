@@ -9,7 +9,7 @@ declare(strict_types=1);
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CreditCardGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\GatewayIds;
 
 class PaymentLevelEligibility {
 
@@ -87,7 +87,7 @@ class PaymentLevelEligibility {
 		 */
 		$allowed_methods = apply_filters(
 			'woocommerce_paypal_payments_level_processing_payment_methods',
-			array( CreditCardGateway::ID )
+			array( GatewayIds::CREDIT_CARD )
 		);
 
 		return in_array( $payment_method, $allowed_methods, true );

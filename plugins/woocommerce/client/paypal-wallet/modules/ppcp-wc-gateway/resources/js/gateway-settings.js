@@ -32,34 +32,14 @@ document.addEventListener( 'DOMContentLoaded', () => {
 
 	initializePayLaterPreview();
 
-	const separateCardButtonCheckbox = document.querySelector(
-		'#ppcp-allow_card_button_gateway'
-	);
-	if ( separateCardButtonCheckbox ) {
-		separateCardButtonCheckbox.addEventListener( 'change', () => {
-			setVisibleByClass(
-				'#field-button_layout',
-				! separateCardButtonCheckbox.checked,
-				'hide'
-			);
-			setVisibleByClass(
-				'#field-button_general_layout',
-				! separateCardButtonCheckbox.checked,
-				'hide'
-			);
-		} );
-	}
-
 	[
 		{
 			layoutSelector: '#ppcp-button_layout',
 			taglineSelector: '#field-button_tagline',
-			canHaveSeparateButtons: true,
 		},
 		{
 			layoutSelector: '#ppcp-button_general_layout',
 			taglineSelector: '#field-button_general_tagline',
-			canHaveSeparateButtons: true,
 		},
 		{
 			layoutSelector: '#ppcp-button_product_layout',
@@ -80,24 +60,12 @@ document.addEventListener( 'DOMContentLoaded', () => {
 			const setTaglineFieldVisibility = () => {
 				const supportsTagline =
 					jQuery( layoutSelect ).val() === 'horizontal' &&
-					( ! location.canHaveSeparateButtons ||
-						( separateCardButtonCheckbox &&
-							! separateCardButtonCheckbox.checked ) ) &&
 					isVisible( layoutSelect.parentElement );
 				setVisibleByClass( taglineField, supportsTagline, 'hide' );
 			};
 			setTaglineFieldVisibility();
 			// looks like only jQuery event fires for WC selects
 			jQuery( layoutSelect ).change( setTaglineFieldVisibility );
-			if (
-				location.canHaveSeparateButtons &&
-				separateCardButtonCheckbox
-			) {
-				separateCardButtonCheckbox.addEventListener(
-					'change',
-					setTaglineFieldVisibility
-				);
-			}
 		}
 	} );
 
@@ -152,7 +120,6 @@ document.addEventListener( 'DOMContentLoaded', () => {
 			wrapper.innerHTML = '';
 
 			const renderer = new Renderer(
-				null,
 				previewSettings,
 				( data, actions ) => actions.reject(),
 				null
@@ -187,13 +154,6 @@ document.addEventListener( 'DOMContentLoaded', () => {
 		);
 	}
 
-	function shouldDisableCardButton() {
-		return (
-			PayPalCommerceGatewaySettings.is_acdc_enabled ||
-			jQuery( '#ppcp-allow_card_button_gateway' ).is( ':checked' )
-		);
-	}
-
 	function getPaypalScriptSettings() {
 		const disableFundingInput = jQuery(
 			'[name="ppcp[disable_funding][]"]'
@@ -223,18 +183,6 @@ document.addEventListener( 'DOMContentLoaded', () => {
 
 		if ( ! shouldShowPayLaterButton() ) {
 			disabledSources = disabledSources.concat( 'credit' );
-		}
-
-		if ( shouldDisableCardButton() ) {
-			const standardCardButtonInput = document.querySelector(
-				'#woocommerce_ppcp-card-button-gateway_enabled'
-			);
-
-			if ( standardCardButtonInput ) {
-				standardCardButtonInput.disabled = true;
-			}
-
-			disabledSources = disabledSources.concat( 'card' );
 		}
 
 		if ( disabledSources?.length ) {
@@ -480,7 +428,7 @@ document.addEventListener( 'DOMContentLoaded', () => {
 			} );
 
 			/**
-			 * Inspect DOM to find APM button previews; on tabs like "Advanced Card Payments".
+			 * Inspect DOM to find APM button previews; on tabs that show more than one payment method button.
 			 *
 			 * How it works:
 			 *
@@ -529,19 +477,6 @@ document.addEventListener( 'DOMContentLoaded', () => {
 
 			createButtonPreview( () =>
 				getButtonDefaultSettings( '#ppcpPayLaterButtonPreview' )
-			);
-
-			const apmFieldPrefix = '#ppcp-card_button_';
-			createButtonPreview( () =>
-				getButtonSettings(
-					'#ppcpCardButtonPreview',
-					{
-						color: apmFieldPrefix + 'color',
-						shape: apmFieldPrefix + 'shape',
-						poweredby_tagline: apmFieldPrefix + 'poweredby_tagline',
-					},
-					'card'
-				)
 			);
 		} );
 	}

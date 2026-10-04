@@ -1,10 +1,9 @@
 /**
  * Placement concerns for a method that is its own payment-method row.
  *
- * On classic checkout Google Pay, Apple Pay and the Basic Card button are
- * gateways rather than express buttons, so each row starts hidden until it
- * proves it can pay, and its button takes the place of "Place order" while that
- * row is selected.
+ * On classic checkout Google Pay and Apple Pay are gateways rather than
+ * express buttons, so each row starts hidden until it proves it can pay, and
+ * its button takes the place of "Place order" while that row is selected.
  *
  * Visibility is decided here for all of them at once rather than by each bridge
  * for itself, because the elements are shared: "Place order" and the express

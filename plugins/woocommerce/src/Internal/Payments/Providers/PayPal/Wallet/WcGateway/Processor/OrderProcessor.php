@@ -26,7 +26,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\F
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\PurchaseUnitFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\ShippingPreferenceFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\OrderHelper;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Helper\ThreeDSecure;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\Environment;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Session\SessionHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Helper\SubscriptionHelper;
@@ -45,7 +44,6 @@ class OrderProcessor {
 	private SessionHandler $session_handler;
 	private OrderEndpoint $order_endpoint;
 	private OrderFactory $order_factory;
-	private ThreeDSecure $threed_secure;
 	private AuthorizedPaymentsProcessor $authorized_payments_processor;
 	private SettingsProvider $settings_provider;
 	private LoggerInterface $logger;
@@ -67,7 +65,6 @@ class OrderProcessor {
 		SessionHandler $session_handler,
 		OrderEndpoint $order_endpoint,
 		OrderFactory $order_factory,
-		ThreeDSecure $three_d_secure,
 		AuthorizedPaymentsProcessor $authorized_payments_processor,
 		SettingsProvider $settings_provider,
 		LoggerInterface $logger,
@@ -83,7 +80,6 @@ class OrderProcessor {
 		$this->session_handler               = $session_handler;
 		$this->order_endpoint                = $order_endpoint;
 		$this->order_factory                 = $order_factory;
-		$this->threed_secure                 = $three_d_secure;
 		$this->authorized_payments_processor = $authorized_payments_processor;
 		$this->settings_provider             = $settings_provider;
 		$this->environment                   = $environment;
@@ -511,27 +507,7 @@ class OrderProcessor {
 	 * @return bool
 	 */
 	private function order_is_ready_for_process( Order $order ): bool {
-		if ( $order->status()->is( OrderStatus::APPROVED ) || $order->status()->is( OrderStatus::CREATED ) ) {
-			return true;
-		}
-
-		$payment_source = $order->payment_source();
-		if ( ! $payment_source ) {
-			return false;
-		}
-
-		if ( $payment_source->name() !== 'card' ) {
-			return false;
-		}
-
-		return in_array(
-			$this->threed_secure->proceed_with_order( $order ),
-			array(
-				ThreeDSecure::NO_DECISION,
-				ThreeDSecure::PROCEED,
-			),
-			true
-		);
+		return $order->status()->is( OrderStatus::APPROVED ) || $order->status()->is( OrderStatus::CREATED );
 	}
 
 	/**

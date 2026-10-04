@@ -302,7 +302,7 @@ class Context {
 
 		$source = $order->payment_source();
 		if ( $source && $source->name() === 'card' ) {
-			return false; // Ignore for DCC.
+			return false; // Ignore for card payment sources.
 		}
 
 		if ( 'card' === $this->session_handler->funding_source() ) {

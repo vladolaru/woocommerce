@@ -42,7 +42,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoi
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Helper\EarlyOrderHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Session\SessionHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\CardBillingMode;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\FraudNet\FraudNet;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\MerchantDetails;
@@ -814,7 +813,6 @@ class CreateOrderEndpointPayloadTest extends WalletTestCase {
 			$cart_data_factory,
 			$this->cart_data_storage,
 			false,
-			CardBillingMode::MINIMAL_INPUT,
 			false,
 			array( 'checkout' ),
 			$handle_shipping_in_paypal,

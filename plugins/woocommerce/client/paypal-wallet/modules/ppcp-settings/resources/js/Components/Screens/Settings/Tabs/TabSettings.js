@@ -5,7 +5,6 @@ import SpinnerOverlay from '@ppcp-settings/Components/ReusableComponents/Spinner
 import { CommonHooks, SettingsHooks } from '@ppcp-settings/data';
 
 const TabSettings = () => {
-	const { ownBrandOnly } = CommonHooks.useWooSettings();
 	const { isReady } = SettingsHooks.useStore();
 	const { features } = CommonHooks.useMerchantInfo();
 
@@ -18,7 +17,6 @@ const TabSettings = () => {
 			<ConnectionStatus />
 			<CommonSettings />
 			<ExpertSettings
-				ownBradOnly={ ownBrandOnly }
 				hasContactModule={ features?.contact_module?.enabled }
 			/>
 		</div>

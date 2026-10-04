@@ -27,8 +27,6 @@ import {
 	createFreeTrialPayPalSession,
 	createVaultSetupToken,
 } from './sessions/freeTrialSave';
-import { initCardFields } from './cardFields/renderer';
-import { initCardButton } from './cardButton/renderCardButton';
 import { hasJQuery } from './utils/api';
 import { watchViewedTotal } from './utils/viewedTotal';
 import { watchProductAmount } from './messages/productAmount';
@@ -82,30 +80,6 @@ const ELIGIBILITY_REFRESH_DEBOUNCE_MS = 300;
 			}
 		}
 		document.querySelector( PLACE_ORDER_SELECTOR )?.click();
-	}
-
-	/**
-	 * Advanced Card Fields (ACDC): mounts into the existing WC card-form inputs
-	 * rather than a button wrapper, so it runs outside the render loop below.
-	 * Deferred like renderAll(), since it also queries checkout-form DOM.
-	 */
-	function initCardFieldsSafely() {
-		initCardFields( config, () => amount ).catch( ( error ) => {
-			// eslint-disable-next-line no-console
-			console.error( '[PPCP SDK v6]', error );
-		} );
-	}
-
-	/**
-	 * Renders on its own pass, not via renderTarget(): with the checkout smart
-	 * button switched off there is no express wrapper to draw into, and BCDC
-	 * can still be on.
-	 */
-	function initCardButtonSafely() {
-		initCardButton( config, ensureSessions ).catch( ( error ) => {
-			// eslint-disable-next-line no-console
-			console.error( '[PPCP SDK v6]', error );
-		} );
 	}
 
 	// PHP only prints wrappers for enabled locations, so targets are selected by
@@ -204,12 +178,6 @@ const ELIGIBILITY_REFRESH_DEBOUNCE_MS = 300;
 				MERCHANT_PRESENTED_METHODS.includes( method ) &&
 				! isMethodEnabled( config, method )
 			) {
-				continue;
-			}
-
-			// Same reason as the wallets: paypal-guest-payments is only
-			// requested where the card button renders.
-			if ( method === FundingSources.CARD && ! config.card_button?.row ) {
 				continue;
 			}
 
@@ -399,8 +367,8 @@ const ELIGIBILITY_REFRESH_DEBOUNCE_MS = 300;
 	/**
 	 * Hides the native WC place order button while the PayPal gateway
 	 * is selected with a NEW payment method — the v6 PayPal buttons stand in for
-	 * it — and restores it for cards, saved PayPal tokens (charged via Place
-	 * Order), and every other method. The v6 express button is hidden for a saved
+	 * it — and restores it for saved PayPal tokens (charged via Place
+	 * Order) and every other method. The v6 express button is hidden for a saved
 	 * token so it does not compete with it. Re-run on updated_checkout /
 	 * payment_method_selected / token change because WC rebuilds the #payment DOM
 	 * (and this inline style) on each update.
@@ -460,8 +428,6 @@ const ELIGIBILITY_REFRESH_DEBOUNCE_MS = 300;
 
 	function initialRender() {
 		renderAll();
-		initCardFieldsSafely();
-		initCardButtonSafely();
 		initMessagesSafely();
 		trackProductTotal();
 		initProductButtonGate( config );
@@ -489,10 +455,6 @@ const ELIGIBILITY_REFRESH_DEBOUNCE_MS = 300;
 				} );
 			}
 		);
-
-		// The same DOM replacement rebuilds the card button's row and restores
-		// the hide-style PHP printed, so it needs rendering and revealing again.
-		jQuery( document.body ).on( 'updated_checkout', initCardButtonSafely );
 
 		// WC rebuilds #place_order on these too, and the selected method can
 		// change without a DOM rebuild, so re-sync the button on both.

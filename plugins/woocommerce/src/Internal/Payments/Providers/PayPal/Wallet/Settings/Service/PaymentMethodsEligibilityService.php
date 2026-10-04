@@ -22,11 +22,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAltern
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\PWCGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\TrustlyGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\Definition\FeaturesDefinition;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CardButtonGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CreditCardGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\OXXOGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\PayUponInvoice\PayUponInvoiceGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\DCCProductStatus;
 
 /**
  * Manages eligibility checks for various PayPal Commerce features.
@@ -49,23 +46,11 @@ class PaymentMethodsEligibilityService {
 	private array $merchant_capabilities;
 
 	/**
-	 * ACDC Seller status.
-	 */
-	private DCCProductStatus $dcc_product_status;
-
-	/**
 	 * Whether Axo is eligible.
 	 *
 	 * @var callable
 	 */
 	private $axo_eligible;
-
-	/**
-	 * Whether Card Fields is eligible.
-	 *
-	 * @var callable
-	 */
-	private $card_fields_eligible;
 
 	/**
 	 * Whether Apple Pay is available
@@ -81,18 +66,14 @@ class PaymentMethodsEligibilityService {
 		string $merchant_country,
 		bool $is_apm_eligible,
 		array $merchant_capabilities,
-		DCCProductStatus $dcc_product_status,
 		callable $axo_eligible,
-		callable $card_fields_eligible,
 		bool $apple_pay_available,
 		bool $google_pay_available
 	) {
 		$this->merchant_country      = $merchant_country;
 		$this->is_apm_eligible       = $is_apm_eligible;
 		$this->merchant_capabilities = $merchant_capabilities;
-		$this->dcc_product_status    = $dcc_product_status;
 		$this->axo_eligible          = $axo_eligible;
-		$this->card_fields_eligible  = $card_fields_eligible;
 		$this->apple_pay_available   = $apple_pay_available;
 		$this->google_pay_available  = $google_pay_available;
 	}
@@ -115,11 +96,9 @@ class PaymentMethodsEligibilityService {
 			OXXOGateway::ID                  => fn() => $this->is_mexico_merchant() && $this->is_apm_eligible,
 			PWCGateway::ID            => fn() => $this->has_pwc_capability() && $this->is_apm_eligible,
 			PayUponInvoiceGateway::ID => fn() => $this->merchant_country === 'DE',
-			CreditCardGateway::ID     => fn() => $this->is_mexico_merchant() || $this->is_card_fields_supported(),
-			CardButtonGateway::ID     => fn() => $this->is_mexico_merchant() || ! $this->is_card_fields_supported(),
 			GooglePayGateway::ID      => fn() => $this->google_pay_available,
 			ApplePayGateway::ID       => fn() => $this->apple_pay_available,
-			AxoGateway::ID            => fn() => $this->dcc_product_status->is_active() && call_user_func( $this->axo_eligible ),
+			AxoGateway::ID            => fn() => call_user_func( $this->axo_eligible ),
 			'venmo'                   => fn() => $this->merchant_country === 'US',
 		);
 	}
@@ -131,15 +110,6 @@ class PaymentMethodsEligibilityService {
 	 */
 	private function is_mexico_merchant(): bool {
 		return $this->merchant_country === 'MX';
-	}
-
-	/**
-	 * Whether Card Fields is supported. It requires also ACDC to be supported.
-	 *
-	 * @return bool
-	 */
-	private function is_card_fields_supported(): bool {
-		return $this->dcc_product_status->is_active() && call_user_func( $this->card_fields_eligible );
 	}
 
 	/**

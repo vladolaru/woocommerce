@@ -26,9 +26,9 @@ const StepWelcome = ( { onNext } ) => {
 	);
 
 	const onboardingHeaderDescription =
-		( canUseCardPayments || canUseDigitalWallets ) && ! ownBrandOnly
+		canUseDigitalWallets && ! ownBrandOnly
 			? __(
-					'Your all-in-one integration for PayPal checkout solutions that enable buyers to pay via PayPal, Pay Later, all major credit/debit cards, Apple Pay, Google Pay, and more.',
+					'Your all-in-one integration for PayPal checkout solutions that enable buyers to pay via PayPal, Pay Later, Apple Pay, Google Pay, and more.',
 					'woocommerce'
 			  )
 			: __(

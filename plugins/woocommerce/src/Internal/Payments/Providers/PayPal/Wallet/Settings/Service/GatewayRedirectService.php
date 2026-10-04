@@ -21,8 +21,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAltern
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\P24Gateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\PWCGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\TrustlyGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CardButtonGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CreditCardGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\GatewayIds;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\OXXOGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\PayUponInvoice\PayUponInvoiceGateway;
 
@@ -47,8 +46,8 @@ class GatewayRedirectService {
 			AxoGateway::ID,
 			GooglePayGateway::ID,
 			ApplePayGateway::ID,
-			CreditCardGateway::ID,
-			CardButtonGateway::ID,
+			GatewayIds::CREDIT_CARD,
+			GatewayIds::CARD_BUTTON,
 			BancontactGateway::ID,
 			BlikGateway::ID,
 			EPSGateway::ID,

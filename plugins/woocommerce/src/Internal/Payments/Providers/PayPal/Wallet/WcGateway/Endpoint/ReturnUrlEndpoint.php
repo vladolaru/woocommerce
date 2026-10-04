@@ -9,15 +9,11 @@ declare(strict_types=1);
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Endpoint;
 
-use DomainException;
 use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 use Exception;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\OrderEndpoint;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\Order;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Session\SessionHandler;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\RuntimeException;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CreditCardGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 
 /**
@@ -81,8 +77,6 @@ class ReturnUrlEndpoint {
 	public function handle_request(): void {
 		// phpcs:disable WordPress.Security.NonceVerification.Recommended
 		if ( ! isset( $_GET['token'] ) ) {
-			$this->maybe_resume_card_3ds();
-
 			wc_add_notice( __( 'Payment session expired. Please try placing your order again.', 'woocommerce' ), 'error' );
 			wp_safe_redirect( $this->get_checkout_url_with_error() );
 			exit();
@@ -97,18 +91,6 @@ class ReturnUrlEndpoint {
 			wc_add_notice( __( 'Could not retrieve payment information. Please try again.', 'woocommerce' ), 'error' );
 			wp_safe_redirect( $this->get_checkout_url_with_error() );
 			exit();
-		}
-
-		// Handle 3DS completion if needed.
-		if ( $this->needs_3ds_completion( $order ) ) {
-			try {
-				$order = $this->complete_3ds_verification( $order );
-			} catch ( Exception $e ) {
-				$this->logger->warning( "3DS completion failed for order $token: " . $e->getMessage() );
-				wc_add_notice( $this->get_3ds_error_message( $e ), 'error' );
-				wp_safe_redirect( $this->get_checkout_url_with_error() );
-				exit();
-			}
 		}
 
 		// Replace session order for approved/completed orders.
@@ -177,60 +159,6 @@ class ReturnUrlEndpoint {
 	}
 
 	/**
-	 * Resumes a vaulted-card payment after a 3D Secure challenge.
-	 *
-	 * PayPal returns from a vaulted-card 3DS challenge without the order token, so
-	 * the order is identified by the WC order id that CaptureCardPayment encoded
-	 * in the return URL. Re-runs the gateway's payment processing, which captures
-	 * the now-authenticated order and completes it. Exits on a handled success;
-	 * returns so the caller can fall back to the error redirect otherwise.
-	 */
-	private function maybe_resume_card_3ds(): void {
-		// phpcs:disable WordPress.Security.NonceVerification.Recommended
-		$wc_order_id = isset( $_GET['ppcp_resume_wc_order'] ) ? absint( wp_unslash( $_GET['ppcp_resume_wc_order'] ) ) : 0;
-
-		// wp_unslash() can return an array, so the value is sanitized on the next line behind an is_string() guard.
-		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-		$provided_nonce = wp_unslash( $_GET['ppcp_resume_nonce'] ?? '' );
-		$provided_nonce = is_string( $provided_nonce ) ? sanitize_text_field( $provided_nonce ) : '';
-		// phpcs:enable WordPress.Security.NonceVerification.Recommended
-
-		if ( ! $wc_order_id || ! $provided_nonce ) {
-			return;
-		}
-
-		$wc_order = wc_get_order( $wc_order_id );
-		if ( ! ( $wc_order instanceof \WC_Order ) ) {
-			return;
-		}
-
-		// The order id arrives from a public, guessable query argument; require the
-		// one-time nonce stored on the order to match before any payment handling,
-		// so a hand-crafted return URL cannot trigger a resume.
-		$stored_nonce = (string) $wc_order->get_meta( CreditCardGateway::THREE_DS_RESUME_META );
-		if ( ! $stored_nonce || ! hash_equals( $stored_nonce, $provided_nonce ) ) {
-			return;
-		}
-
-		$gateway = $this->get_payment_gateway( $wc_order->get_payment_method() );
-		if ( ! $gateway ) {
-			return;
-		}
-
-		try {
-			$result = $gateway->process_payment( $wc_order_id );
-		} catch ( Exception $exception ) {
-			$this->logger->warning( "Card 3DS resume failed for WC order $wc_order_id: " . $exception->getMessage() );
-			return;
-		}
-
-		if ( isset( $result['result'] ) && 'success' === $result['result'] ) {
-			wp_safe_redirect( $result['redirect'] );
-			exit();
-		}
-	}
-
-	/**
 	 * Get checkout URL with additional error parameters.
 	 *
 	 * Applies the 'ppcp_return_url_error_args' filter to allow external modules to add error parameters.
@@ -244,69 +172,6 @@ class ReturnUrlEndpoint {
 			$url = add_query_arg( $args, $url );
 		}
 		return $url;
-	}
-
-	/**
-	 * Check if order needs 3DS completion.
-	 *
-	 * @param Order $order The PayPal order.
-	 * @return bool
-	 */
-	private function needs_3ds_completion( Order $order ): bool {
-		// If order is still CREATED after 3DS redirect, it needs to be captured.
-		return $order->status()->is( OrderStatus::CREATED );
-	}
-
-	/**
-	 * Complete 3DS verification by capturing the order.
-	 *
-	 * @param mixed $order The PayPal order.
-	 * @return mixed The processed order.
-	 * @throws Exception When 3DS completion fails.
-	 * @throws RuntimeException When API errors occur that don't match decline patterns.
-	 */
-	private function complete_3ds_verification( $order ) {
-		try {
-			$captured_order = $this->order_endpoint->capture( $order );
-
-			// Check if capture actually succeeded vs. payment declined.
-			if ( $captured_order->status()->is( OrderStatus::COMPLETED ) ) {
-				return $captured_order;
-			} else {
-				// Capture API succeeded but payment was declined.
-				throw new Exception( __( 'Payment was declined by the payment provider. Please try a different payment method.', 'woocommerce' ) );
-			}
-		} catch ( DomainException $e ) {
-			throw new Exception( __( '3D Secure authentication was unavailable or failed. Please try a different payment method or contact your bank.', 'woocommerce' ) );
-		} catch ( RuntimeException $e ) {
-			if ( strpos( $e->getMessage(), 'declined' ) !== false ||
-				strpos( $e->getMessage(), 'PAYMENT_DENIED' ) !== false ||
-				strpos( $e->getMessage(), 'INSTRUMENT_DECLINED' ) !== false ||
-				strpos( $e->getMessage(), 'Payment provider declined' ) !== false ) {
-				throw new Exception( __( 'Your payment was declined after 3D Secure verification. Please try a different payment method or contact your bank.', 'woocommerce' ) );
-			}
-			throw $e;
-		}
-	}
-
-	/**
-	 * Get user-friendly error message for 3DS failures.
-	 *
-	 * @param Exception $exception The exception.
-	 * @return string
-	 */
-	private function get_3ds_error_message( Exception $exception ): string {
-		$error_message = $exception->getMessage();
-
-		if ( strpos( $error_message, '3D Secure' ) !== false ) {
-			return $error_message;
-		}
-
-		if ( strpos( $error_message, 'declined' ) !== false ) {
-			return __( 'Your payment was declined after 3D Secure verification. Please try a different payment method or contact your bank.', 'woocommerce' );
-		}
-
-		return __( 'There was an error processing your payment. Please try again or contact support.', 'woocommerce' );
 	}
 
 	/**

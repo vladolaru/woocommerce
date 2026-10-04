@@ -21,8 +21,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Da
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\GeneralSettings;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsModel;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\PaymentSettings;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CreditCardGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CardButtonGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\Definition\PaymentMethodsDefinition;
 
 /**
@@ -205,20 +203,7 @@ class SettingsDataManager {
 		$this->payment_methods->toggle_method_state( PayPalGateway::ID, true );
 		$this->payment_methods->toggle_method_state( 'venmo', true );
 
-		if ( ! $flags->is_business_seller && $flags->use_card_payments ) {
-			// Use BCDC for casual sellers.
-			$this->payment_methods->toggle_method_state( CardButtonGateway::ID, true );
-		}
-
 		if ( $flags->is_business_seller ) {
-			if ( $flags->use_card_payments ) {
-				// Enable ACDC for business sellers.
-				$this->payment_methods->toggle_method_state( CreditCardGateway::ID, true );
-
-				// Enable BCDC for business sellers without ACDC.
-				$this->payment_methods->toggle_method_state( CardButtonGateway::ID, true );
-			}
-
 			if ( $flags->use_digital_wallets ) {
 				$this->payment_methods->toggle_method_state( ApplePayGateway::ID, true );
 				$this->payment_methods->toggle_method_state( GooglePayGateway::ID, true );
@@ -258,7 +243,6 @@ class SettingsDataManager {
 
 		if ( $flags->is_business_seller && $flags->use_subscriptions ) {
 			$this->payment_settings->set_save_paypal_and_venmo( true );
-			$this->payment_settings->set_save_card_details( true );
 		}
 
 		$this->payment_settings->save();

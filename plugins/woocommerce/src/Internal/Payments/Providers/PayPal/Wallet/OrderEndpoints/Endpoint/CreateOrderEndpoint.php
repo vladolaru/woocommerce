@@ -37,9 +37,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Vali
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Helper\EarlyOrderHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Session\SessionHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\FreeTrialHandlerTrait;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\CardBillingMode;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CardButtonGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CreditCardGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\ContactPreferenceFactory;
@@ -145,13 +142,6 @@ class CreateOrderEndpoint implements EndpointInterface {
 	private $registration_needed;
 
 	/**
-	 * The value of card_billing_data_mode from the settings.
-	 *
-	 * @var string
-	 */
-	protected $card_billing_data_mode;
-
-	/**
 	 * Whether to execute WC validation of the checkout form.
 	 *
 	 * @var bool
@@ -215,7 +205,6 @@ class CreateOrderEndpoint implements EndpointInterface {
 	 * @param CartDataFactory           $cart_data_factory
 	 * @param CartDataTransientStorage  $cart_data_transient_storage
 	 * @param bool                      $registration_needed  Whether a new user must be registered during checkout.
-	 * @param string                    $card_billing_data_mode The value of card_billing_data_mode from the settings.
 	 * @param bool                      $early_validation_enabled Whether to execute WC validation of the checkout form.
 	 * @param string[]                  $pay_now_contexts The contexts that should have the Pay Now button.
 	 * @param bool                      $handle_shipping_in_paypal If true, the shipping methods are sent to PayPal allowing the customer to select it inside the popup.
@@ -238,7 +227,6 @@ class CreateOrderEndpoint implements EndpointInterface {
 		CartDataFactory $cart_data_factory,
 		CartDataTransientStorage $cart_data_transient_storage,
 		bool $registration_needed,
-		string $card_billing_data_mode,
 		bool $early_validation_enabled,
 		array $pay_now_contexts,
 		bool $handle_shipping_in_paypal,
@@ -261,7 +249,6 @@ class CreateOrderEndpoint implements EndpointInterface {
 		$this->cart_data_factory                     = $cart_data_factory;
 		$this->cart_data_transient_storage           = $cart_data_transient_storage;
 		$this->registration_needed                   = $registration_needed;
-		$this->card_billing_data_mode                = $card_billing_data_mode;
 		$this->early_validation_enabled              = $early_validation_enabled;
 		$this->pay_now_contexts                      = $pay_now_contexts;
 		$this->handle_shipping_in_paypal             = $handle_shipping_in_paypal;
@@ -338,8 +325,7 @@ class CreateOrderEndpoint implements EndpointInterface {
 
 				// The cart does not have any info about payment method, so we must handle free trial here.
 				if ( $this->is_free_trial_cart() ) {
-					$is_card = in_array( $payment_method, array( CreditCardGateway::ID, CardButtonGateway::ID ), true )
-						|| ( PayPalGateway::ID === $payment_method && 'card' === $funding_source );
+					$is_card = PayPalGateway::ID === $payment_method && 'card' === $funding_source;
 
 					if ( $is_card ) {
 						$this->purchase_unit->set_amount(
@@ -380,7 +366,7 @@ class CreateOrderEndpoint implements EndpointInterface {
 			if ( $this->early_validation_enabled
 				&& $this->form
 				&& 'checkout' === $data['context']
-				&& in_array( $payment_method, array( PayPalGateway::ID, CardButtonGateway::ID, CreditCardGateway::ID ), true )
+				&& PayPalGateway::ID === $payment_method
 			) {
 				$this->validate_form( $this->form );
 			}
@@ -508,25 +494,6 @@ class CreateOrderEndpoint implements EndpointInterface {
 
 		$action = in_array( $this->parsed_request_data['context'], $this->pay_now_contexts, true ) ?
 			ExperienceContext::USER_ACTION_PAY_NOW : ExperienceContext::USER_ACTION_CONTINUE;
-
-		if ( 'card' === $funding_source ) {
-			if ( CardBillingMode::MINIMAL_INPUT === $this->card_billing_data_mode ) {
-				if ( ExperienceContext::SHIPPING_PREFERENCE_SET_PROVIDED_ADDRESS === $shipping_preference ) {
-					if ( $payer ) {
-						$payer->set_address( null );
-					}
-				}
-				if ( ExperienceContext::SHIPPING_PREFERENCE_NO_SHIPPING === $shipping_preference ) {
-					if ( $payer ) {
-						$payer->set_name( null );
-					}
-				}
-			}
-
-			if ( CardBillingMode::NO_WC === $this->card_billing_data_mode ) {
-				$payer = null;
-			}
-		}
 
 		if ( 'venmo' === $funding_source ) {
 			$payment_source_key = 'venmo';

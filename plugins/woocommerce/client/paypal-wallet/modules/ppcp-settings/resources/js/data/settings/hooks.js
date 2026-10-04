@@ -77,17 +77,10 @@ export const useSettings = () => {
 	const [ contactModule, setContactModule ] = usePersistent(
 		'enableContactModule'
 	);
-	const [ saveCardDetails, setSaveCardDetails ] =
-		usePersistent( 'saveCardDetails' );
 	const [ payNowExperience, setPayNowExperience ] =
 		usePersistent( 'enablePayNow' );
 	const [ logging, setLogging ] = usePersistent( 'enableLogging' );
 	const [ stayUpdated, setStayUpdated ] = usePersistent( 'stayUpdated' );
-
-	const [ disabledCards, setDisabledCards ] =
-		usePersistent( 'disabledCards' );
-
-	const [ threeDSecure, setThreeDSecure ] = usePersistent( 'threeDSecure' );
 
 	const [ paymentLevelProcessing, setPaymentLevelProcessing ] = usePersistent(
 		'paymentLevelProcessing'
@@ -107,8 +100,6 @@ export const useSettings = () => {
 		setSavePaypalAndVenmo,
 		contactModule,
 		setContactModule,
-		saveCardDetails,
-		setSaveCardDetails,
 		payNowExperience,
 		setPayNowExperience,
 		logging,
@@ -127,10 +118,6 @@ export const useSettings = () => {
 		setLandingPage,
 		buttonLanguage,
 		setButtonLanguage,
-		disabledCards,
-		setDisabledCards,
-		threeDSecure,
-		setThreeDSecure,
 		paymentLevelProcessing,
 		setPaymentLevelProcessing,
 		shipsFromPostalCode,

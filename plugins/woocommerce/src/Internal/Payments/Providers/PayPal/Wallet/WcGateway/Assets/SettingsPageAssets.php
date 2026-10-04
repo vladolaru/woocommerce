@@ -92,13 +92,6 @@ class SettingsPageAssets {
 	 */
 	private $is_settings_page;
 
-	/**
-	 * Whether the ACDC gateway is enabled.
-	 *
-	 * @var bool
-	 */
-	private $is_acdc_enabled;
-
 	private ReferenceTransactionStatus $reference_transaction_status;
 
 	/**
@@ -120,7 +113,6 @@ class SettingsPageAssets {
 	 * @param array                      $disabled_sources The list of disabled funding sources.
 	 * @param array                      $all_funding_sources The list of all existing funding sources.
 	 * @param bool                       $is_settings_page Whether it's a settings page of this plugin.
-	 * @param bool                       $is_acdc_enabled Whether the ACDC gateway is enabled.
 	 * @param ReferenceTransactionStatus $reference_transaction_status
 	 * @param bool                       $is_paypal_payment_method_page Whether we're on a settings page for our plugin's payment methods.
 	 */
@@ -136,7 +128,6 @@ class SettingsPageAssets {
 		array $disabled_sources,
 		array $all_funding_sources,
 		bool $is_settings_page,
-		bool $is_acdc_enabled,
 		ReferenceTransactionStatus $reference_transaction_status,
 		bool $is_paypal_payment_method_page
 	) {
@@ -151,7 +142,6 @@ class SettingsPageAssets {
 		$this->disabled_sources              = $disabled_sources;
 		$this->all_funding_sources           = $all_funding_sources;
 		$this->is_settings_page              = $is_settings_page;
-		$this->is_acdc_enabled               = $is_acdc_enabled;
 		$this->reference_transaction_status  = $reference_transaction_status;
 		$this->is_paypal_payment_method_page = $is_paypal_payment_method_page;
 	}
@@ -212,7 +202,6 @@ class SettingsPageAssets {
 					'environment'                    => $this->environment->current_environment(),
 					'integration_date'               => PAYPAL_INTEGRATION_DATE,
 					'is_pay_later_button_enabled'    => $this->is_pay_later_button_enabled,
-					'is_acdc_enabled'                => $this->is_acdc_enabled,
 					'disabled_sources'               => $this->disabled_sources,
 					'all_funding_sources'            => $this->all_funding_sources,
 					'components'                     => array( 'buttons', 'funding-eligibility', 'messages' ),

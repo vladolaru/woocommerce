@@ -50,9 +50,6 @@ const defaultTransient = Object.freeze( {
 		save_paypal_and_venmo: {
 			enabled: false,
 		},
-		advanced_credit_and_debit_cards: {
-			enabled: false,
-		},
 		apple_pay: {
 			enabled: false,
 		},

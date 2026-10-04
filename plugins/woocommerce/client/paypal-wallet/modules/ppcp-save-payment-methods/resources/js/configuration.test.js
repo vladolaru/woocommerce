@@ -7,14 +7,12 @@ jest.mock(
 		getCurrentPaymentMethod: jest.fn(),
 		PaymentMethods: {
 			PAYPAL: 'ppcp-gateway',
-			CARDS: 'ppcp-credit-card-gateway',
 		},
 	} )
 );
 
 import {
 	buttonConfiguration,
-	cardFieldsConfiguration,
 	addPaymentMethodConfiguration,
 } from './configuration';
 import { getCurrentPaymentMethod } from '@ppcp-button/Helper/CheckoutMethodState';
@@ -36,7 +34,6 @@ describe( 'Configuration', () => {
 			client_id: 'test-client-id',
 			merchant_id: 'test-merchant-id',
 			error_message: 'Payment failed. Please try again.',
-			verification_method: 'SCA_WHEN_REQUIRED',
 			payment_methods_page:
 				'https://example.com/my-account/payment-methods',
 			view_subscriptions_page:
@@ -264,89 +261,6 @@ describe( 'Configuration', () => {
 			const tokenId = await buttonConfig.createVaultSetupToken();
 
 			expect( tokenId ).toBe( 'setup-token-123' );
-		} );
-	} );
-
-	describe( 'cardFieldsConfiguration', () => {
-		test( 'should submit checkout form when context is checkout', async () => {
-			document.body.innerHTML =
-				'<button id="place_order">Place Order</button>';
-			const placeOrderButton = document.querySelector( '#place_order' );
-			const clickSpy = jest.fn();
-			placeOrderButton.click = clickSpy;
-
-			const config = {
-				...mockConfig,
-				context: 'checkout',
-			};
-
-			// Mock payment token creation
-			global.fetch.mockResolvedValueOnce( {
-				ok: true,
-				json: async () => ( {
-					success: true,
-					data: 'wc-token-123',
-				} ),
-			} );
-
-			const cardConfig = cardFieldsConfiguration(
-				config,
-				mockErrorHandler
-			);
-			await cardConfig.onApprove( { vaultSetupToken: 'vault-token' } );
-
-			expect( clickSpy ).toHaveBeenCalled();
-		} );
-
-		test( 'should include is_free_trial_cart flag in API request', async () => {
-			const config = {
-				...mockConfig,
-				is_free_trial_cart: true,
-			};
-
-			global.fetch.mockResolvedValueOnce( {
-				ok: true,
-				json: async () => ( {
-					success: true,
-					data: 'token',
-				} ),
-			} );
-
-			const cardConfig = cardFieldsConfiguration(
-				config,
-				mockErrorHandler
-			);
-			await cardConfig.onApprove( { vaultSetupToken: 'vault-token' } );
-
-			const requestBody = JSON.parse(
-				global.fetch.mock.calls[ 0 ][ 1 ].body
-			);
-			expect( requestBody.is_free_trial_cart ).toBe( true );
-			// jsdom doesn't support navigation, so it logs an error
-			expect( console ).toHaveErrored();
-		} );
-
-		test( 'should include verification_method in request', async () => {
-			global.fetch.mockResolvedValueOnce( {
-				ok: true,
-				json: async () => ( { data: { id: 'token-123' } } ),
-			} );
-
-			const cardConfig = cardFieldsConfiguration(
-				mockConfig,
-				mockErrorHandler
-			);
-			await cardConfig.createVaultSetupToken();
-
-			const requestBody = JSON.parse(
-				global.fetch.mock.calls[ 0 ][ 1 ].body
-			);
-			expect( requestBody.verification_method ).toBe(
-				'SCA_WHEN_REQUIRED'
-			);
-			expect( requestBody.payment_method ).toBe(
-				'ppcp-credit-card-gateway'
-			);
 		} );
 	} );
 

@@ -9,9 +9,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\Definition;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Applepay\ApplePayGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Axo\Gateway\AxoGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Googlepay\GooglePayGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\BancontactGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\BlikGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\EPSGateway;
@@ -23,8 +21,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAltern
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\TrustlyGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\PaymentSettings;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\GeneralSettings;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CardButtonGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CreditCardGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\OXXOGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\PayUponInvoice\PayUponInvoiceGateway;
@@ -72,33 +68,23 @@ class PaymentMethodsDefinition {
 	private ?array $wc_gateways = null;
 
 	/**
-	 * Whether the v6 SDK is active.
-	 *
-	 * @var bool
-	 */
-	private bool $sdk_v6_active;
-
-	/**
 	 * Constructor.
 	 *
 	 * @param PaymentSettings $settings                        Payment methods data model.
 	 * @param GeneralSettings $general_settings                General plugin settings model.
 	 * @param string          $axo_checkout_config_notice      Axo checkout config conflict notice.
 	 * @param string          $axo_incompatible_plugins_notice Axo incompatible plugins notice.
-	 * @param bool            $sdk_v6_active                   Whether the v6 SDK is active.
 	 */
 	public function __construct(
 		PaymentSettings $settings,
 		GeneralSettings $general_settings,
 		string $axo_checkout_config_notice = '',
-		string $axo_incompatible_plugins_notice = '',
-		bool $sdk_v6_active = false
+		string $axo_incompatible_plugins_notice = ''
 	) {
 		$this->settings                        = $settings;
 		$this->general_settings                = $general_settings;
 		$this->axo_checkout_config_notice      = $axo_checkout_config_notice;
 		$this->axo_incompatible_plugins_notice = $axo_incompatible_plugins_notice;
-		$this->sdk_v6_active                   = $sdk_v6_active;
 	}
 
 	/**
@@ -184,13 +170,11 @@ class PaymentMethodsDefinition {
 				),
 			);
 
-			if ( CreditCardGateway::ID !== $gateway_id ) {
-				$base_fields['checkoutPageDescription'] = array(
-					'type'    => 'text',
-					'default' => $gateway_description,
-					'label'   => __( 'Checkout page description', 'woocommerce' ),
-				);
-			}
+			$base_fields['checkoutPageDescription'] = array(
+				'type'    => 'text',
+				'default' => $gateway_description,
+				'label'   => __( 'Checkout page description', 'woocommerce' ),
+			);
 
 			$config['fields'] = array_merge( $base_fields, $fields );
 		}
@@ -242,90 +226,16 @@ class PaymentMethodsDefinition {
 			),
 		);
 
-		// This CardButtonGateway is a branded gateway!
-		$group[] = array(
-			'id'          => CardButtonGateway::ID,
-			'title'       => __( 'Credit and debit card payments', 'woocommerce' ),
-			'description' => __( "Accept all major credit and debit cards - even if your customer doesn't have a PayPal account . ", 'woocommerce' ),
-			'icon'        => 'payment-method-cards',
-		);
-
 		return apply_filters( 'woocommerce_paypal_payments_gateway_group_paypal', $group );
 	}
 
 	/**
-	 * Define embedded payment methods, which are only available in whitelabel mode.
+	 * Define embedded payment methods. The wallet offers none; the hook stays fired for third parties.
 	 *
 	 * @return array
 	 */
 	public function group_card_methods(): array {
-		$group    = array();
-		$warnings = $this->get_warning_messages();
-
-		$card_fields = array();
-
-		// The cardholder-name toggle is offered under v5 only. The stored value
-		// stays, so turning v6 off restores the merchant's choice.
-		if ( ! $this->sdk_v6_active ) {
-			$card_fields['cardholderName'] = array(
-				'type'    => 'toggle',
-				'default' => $this->settings->get_cardholder_name(),
-				'label'   => __(
-					'Display cardholder name',
-					'woocommerce'
-				),
-			);
-		}
-
-		$card_fields['showCardLogos'] = array(
-			'type'    => 'toggle',
-			'default' => $this->settings->get_show_card_logos(),
-			'label'   => __(
-				'Show logos of supported cards',
-				'woocommerce'
-			),
-		);
-
-		if ( ! $this->general_settings->own_brand_only() ) {
-			$group[] = array(
-				'id'          => CreditCardGateway::ID,
-				'title'       => __( 'Advanced Credit and Debit Card Payments', 'woocommerce' ),
-				'description' => __( "Present custom credit and debit card fields to your payers so they can pay with credit and debit cards using your site's branding.", 'woocommerce' ),
-				'icon'        => 'payment-method-advanced-cards',
-				'fields'      => $card_fields,
-			);
-			$group[] = array(
-				'id'              => AxoGateway::ID,
-				'title'           => __( 'Fastlane by PayPal', 'woocommerce' ),
-				'description'     => __( "Tap into the scale and trust of PayPal's customer network to recognize shoppers and make guest checkout more seamless than ever.", 'woocommerce' ),
-				'icon'            => 'payment-method-fastlane',
-				'fields'          => array(
-					'fastlaneDisplayWatermark' => array(
-						'type'    => 'toggle',
-						'default' => $this->settings->get_fastlane_display_watermark(),
-						'label'   => __(
-							'Display Fastlane Watermark',
-							'woocommerce'
-						),
-					),
-				),
-				'warningMessages' => $warnings[ AxoGateway::ID ] ?? array(),
-			);
-			$group[] = array(
-				'id'          => ApplePayGateway::ID,
-				'title'       => __( 'Apple Pay', 'woocommerce' ),
-				'description' => __( 'Allow customers to pay via their Apple Pay digital wallet.', 'woocommerce' ),
-				'icon'        => 'payment-method-apple-pay',
-			);
-			$group[] = array(
-				'id'          => GooglePayGateway::ID,
-				'title'       => __( 'Google Pay', 'woocommerce' ),
-				'description' => __( 'Allow customers to pay via their Google Pay digital wallet.', 'woocommerce' ),
-				'icon'        => 'payment-method-google-pay',
-			);
-		}
-
-		return apply_filters( 'woocommerce_paypal_payments_gateway_group_cards', $group );
+		return apply_filters( 'woocommerce_paypal_payments_gateway_group_cards', array() );
 	}
 
 	/**

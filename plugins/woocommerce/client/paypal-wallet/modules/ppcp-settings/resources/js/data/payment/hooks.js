@@ -63,10 +63,8 @@ export const usePaymentMethods = () => {
 	const [ paypal ] = usePersistent( 'ppcp-gateway' );
 	const [ venmo ] = usePersistent( 'venmo' );
 	const [ payLater ] = usePersistent( 'pay-later' );
-	const [ creditCard ] = usePersistent( 'ppcp-card-button-gateway' );
 
 	// Online card Payments.
-	const [ advancedCreditCard ] = usePersistent( 'ppcp-credit-card-gateway' );
 	const [ fastlane ] = usePersistent( 'ppcp-axo-gateway' );
 	const [ applePay ] = usePersistent( 'ppcp-applepay' );
 	const [ googlePay ] = usePersistent( 'ppcp-googlepay' );
@@ -87,18 +85,8 @@ export const usePaymentMethods = () => {
 	const removeEmpty = ( list ) =>
 		list.filter( ( item ) => item && item.id?.length );
 
-	const payPalCheckout = removeEmpty( [
-		paypal,
-		venmo,
-		payLater,
-		creditCard,
-	] );
-	const onlineCardPayments = removeEmpty( [
-		advancedCreditCard,
-		fastlane,
-		applePay,
-		googlePay,
-	] );
+	const payPalCheckout = removeEmpty( [ paypal, venmo, payLater ] );
+	const onlineCardPayments = removeEmpty( [ fastlane, applePay, googlePay ] );
 	const alternative = removeEmpty( [
 		pwc,
 		bancontact,
@@ -122,7 +110,6 @@ export const usePaymentMethods = () => {
 	return {
 		all: paymentMethods,
 		paypal: payPalCheckout,
-		cardPayment: onlineCardPayments,
 		apm: alternative,
 	};
 };
@@ -131,8 +118,6 @@ export const usePaymentMethodsModal = () => {
 	const { usePersistent } = useStoreData();
 
 	const [ paypalShowLogo ] = usePersistent( 'paypalShowLogo' );
-	const [ cardholderName ] = usePersistent( 'cardholderName' );
-	const [ showCardLogos ] = usePersistent( 'showCardLogos' );
 	const [ fastlaneDisplayWatermark ] = usePersistent(
 		'fastlaneDisplayWatermark'
 	);
@@ -144,8 +129,6 @@ export const usePaymentMethodsModal = () => {
 
 	return {
 		paypalShowLogo,
-		cardholderName,
-		showCardLogos,
 		fastlaneDisplayWatermark,
 		puiBrandName,
 		puiLogoUrl,

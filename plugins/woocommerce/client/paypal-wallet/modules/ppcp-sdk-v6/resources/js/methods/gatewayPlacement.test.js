@@ -336,30 +336,30 @@ describe( 'revealMethodGateway()', () => {
 		);
 
 		test(
-			"selecting the card button's row hides the wallet " +
+			"selecting the standalone gateway's row hides the wallet " +
 				'container, the express wrapper and "Place order", while ' +
-				"showing the card row's own button",
+				"showing the row's own button",
 			() => {
 				document.body.innerHTML =
 					'<div id="wallet-wrapper"><button></button></div>' +
-					'<div id="card-button-wrapper"><button></button></div>' +
+					'<div id="test-gateway-wrapper"><button></button></div>' +
 					'<div id="express-wrapper"></div>' +
 					'<div id="place_order"></div>';
 
 				reveal( { expressSelector: '#express-wrapper' } );
 				reveal( {
-					methodId: 'ppcp-card-button-gateway',
-					wrapperSelector: '#card-button-wrapper',
+					methodId: 'ppcp-test-gateway',
+					wrapperSelector: '#test-gateway-wrapper',
 				} );
 				mockGetCurrentPaymentMethod.mockReturnValue(
-					'ppcp-card-button-gateway'
+					'ppcp-test-gateway'
 				);
 				jQuery( document.body ).trigger( 'payment_method_selected' );
 
 				expect( displayOf( '#wallet-wrapper' ) ).toBe( 'none' );
 				expect( displayOf( '#express-wrapper' ) ).toBe( 'none' );
 				expect( displayOf( '#place_order' ) ).toBe( 'none' );
-				expect( displayOf( '#card-button-wrapper' ) ).toBe( '' );
+				expect( displayOf( '#test-gateway-wrapper' ) ).toBe( '' );
 			}
 		);
 
@@ -386,15 +386,15 @@ describe( 'revealMethodGateway()', () => {
 	} );
 
 	describe( "PayPal's row and the express container", () => {
-		const cardRow = {
-			methodId: 'ppcp-card-button-gateway',
-			wrapperSelector: '#card-button-wrapper',
+		const gatewayRow = {
+			methodId: 'ppcp-test-gateway',
+			wrapperSelector: '#test-gateway-wrapper',
 			expressSelector: '#express-wrapper',
 		};
 
 		function setDomWithEmptyExpress() {
 			document.body.innerHTML =
-				'<div id="card-button-wrapper"><button></button></div>' +
+				'<div id="test-gateway-wrapper"><button></button></div>' +
 				'<div id="express-wrapper"></div>' +
 				'<div id="place_order"></div>';
 		}
@@ -406,7 +406,7 @@ describe( 'revealMethodGateway()', () => {
 				setDomWithEmptyExpress();
 				mockGetCurrentPaymentMethod.mockReturnValue( 'ppcp-gateway' );
 
-				reveal( { ...cardRow, pageContext } );
+				reveal( { ...gatewayRow, pageContext } );
 
 				expect( displayOf( '#place_order' ) ).toBe( 'none' );
 			}
@@ -417,12 +417,12 @@ describe( 'revealMethodGateway()', () => {
 				'outside the checkout page contexts',
 			() => {
 				document.body.innerHTML =
-					'<div id="card-button-wrapper"><button></button></div>' +
+					'<div id="test-gateway-wrapper"><button></button></div>' +
 					'<div id="express-wrapper"><button></button></div>' +
 					'<div id="place_order"></div>';
 				mockGetCurrentPaymentMethod.mockReturnValue( 'ppcp-gateway' );
 
-				reveal( { ...cardRow, pageContext: '' } );
+				reveal( { ...gatewayRow, pageContext: '' } );
 
 				expect( displayOf( '#place_order' ) ).toBe( '' );
 				expect( displayOf( '#express-wrapper' ) ).toBe( '' );
@@ -431,25 +431,25 @@ describe( 'revealMethodGateway()', () => {
 
 		test( 'keeps "Place order" when the express container is not in the DOM', () => {
 			document.body.innerHTML =
-				'<div id="card-button-wrapper"><button></button></div>' +
+				'<div id="test-gateway-wrapper"><button></button></div>' +
 				'<div id="place_order"></div>';
 			mockGetCurrentPaymentMethod.mockReturnValue( 'ppcp-gateway' );
 
-			reveal( cardRow );
+			reveal( gatewayRow );
 
 			expect( displayOf( '#place_order' ) ).toBe( '' );
 		} );
 
 		test(
-			'keeps "Place order" hidden after switching to the card row, ' +
+			'keeps "Place order" hidden after switching to the gateway row, ' +
 				'with the express container hidden too',
 			() => {
 				setDomWithEmptyExpress();
 				mockGetCurrentPaymentMethod.mockReturnValue( 'ppcp-gateway' );
-				reveal( cardRow );
+				reveal( gatewayRow );
 
 				mockGetCurrentPaymentMethod.mockReturnValue(
-					'ppcp-card-button-gateway'
+					'ppcp-test-gateway'
 				);
 				jQuery( document.body ).trigger( 'payment_method_selected' );
 

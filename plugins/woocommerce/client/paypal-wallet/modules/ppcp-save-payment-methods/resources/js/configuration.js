@@ -1,7 +1,4 @@
-import {
-	getCurrentPaymentMethod,
-	PaymentMethods,
-} from '@ppcp-button/Helper/CheckoutMethodState';
+import { getCurrentPaymentMethod } from '@ppcp-button/Helper/CheckoutMethodState';
 
 const CONTEXTS = {
 	CHECKOUT: 'checkout',
@@ -108,25 +105,20 @@ function submitCheckoutForm() {
 /**
  * Creates a vault setup token
  *
- * @param {Object}      config                     - Configuration object
- * @param {Object}      errorHandler               - Error handler object
- * @param {Object}      options                    - Additional options for setup token creation
- * @param {string|null} options.paymentMethod      - Payment method type
- * @param {string|null} options.verificationMethod - Verification method
+ * @param {Object}      config                - Configuration object
+ * @param {Object}      errorHandler          - Error handler object
+ * @param {Object}      options               - Additional options for setup token creation
+ * @param {string|null} options.paymentMethod - Payment method type
  * @return {Promise<string|undefined>} Setup token ID or undefined on error
  */
 async function createVaultSetupToken( config, errorHandler, options = {} ) {
-	const { paymentMethod = null, verificationMethod = null } = options;
+	const { paymentMethod = null } = options;
 
 	try {
 		const additionalData = {};
 
 		if ( paymentMethod ) {
 			additionalData.payment_method = paymentMethod;
-		}
-
-		if ( verificationMethod ) {
-			additionalData.verification_method = verificationMethod;
 		}
 
 		const result = await makeApiRequest(
@@ -286,55 +278,6 @@ export function buttonConfiguration( addPaymentMethodConfig, errorHandler ) {
 				addPaymentMethodConfig,
 				errorHandler,
 				vaultSetupToken
-			);
-		},
-		onError: ( error ) => {
-			handleError(
-				error,
-				errorHandler,
-				addPaymentMethodConfig.error_message
-			);
-		},
-	};
-}
-
-/**
- * Configuration for card fields payment method addition
- *
- * @param {Object} addPaymentMethodConfig - Configuration from server
- * @param {Object} errorHandler           - Error handler object
- * @return {Object} Card fields configuration object
- */
-export function cardFieldsConfiguration(
-	addPaymentMethodConfig,
-	errorHandler
-) {
-	return {
-		createVaultSetupToken: async () => {
-			return await createVaultSetupToken(
-				addPaymentMethodConfig,
-				errorHandler,
-				{
-					paymentMethod: PaymentMethods.CARDS,
-					verificationMethod:
-						addPaymentMethodConfig.verification_method,
-				}
-			);
-		},
-		onApprove: async ( { vaultSetupToken } ) => {
-			const isFreeTrialCart =
-				addPaymentMethodConfig?.is_free_trial_cart ?? false;
-			const context = addPaymentMethodConfig?.context ?? null;
-
-			return await handleApproval(
-				addPaymentMethodConfig,
-				errorHandler,
-				vaultSetupToken,
-				{
-					paymentMethod: PaymentMethods.CARDS,
-					context,
-					isFreeTrialCart,
-				}
 			);
 		},
 		onError: ( error ) => {

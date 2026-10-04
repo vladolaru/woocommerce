@@ -1,8 +1,6 @@
 export const PaymentMethods = {
 	PAYPAL: 'ppcp-gateway',
-	CARDS: 'ppcp-credit-card-gateway',
 	OXXO: 'ppcp-oxxo-gateway',
-	CARD_BUTTON: 'ppcp-card-button-gateway',
 	GOOGLEPAY: 'ppcp-googlepay',
 	APPLEPAY: 'ppcp-applepay',
 };
@@ -40,11 +38,6 @@ export const getCurrentPaymentMethod = () => {
 	}
 
 	return el.value;
-};
-
-export const isSavedCardSelected = () => {
-	const savedCardList = document.querySelector( '#saved-credit-card' );
-	return savedCardList && savedCardList.value !== '';
 };
 
 /**

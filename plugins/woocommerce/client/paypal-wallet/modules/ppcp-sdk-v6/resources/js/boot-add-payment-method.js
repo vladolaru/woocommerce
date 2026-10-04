@@ -1,11 +1,10 @@
 /**
  * PayPal SDK v6 Bootstrap for My Account › Add Payment Method.
  *
- * Renders the v6 "save for later" surfaces that replace the v5
- * add-payment-method.js: the PayPal wallet button (createPayPalSavePaymentSession)
- * and the advanced card fields (createCardFieldsSavePaymentSession). The WC
- * "Add payment method" submit button drives the card save; it is hidden while
- * the PayPal method is selected, where the PayPal button is the submit control.
+ * Renders the v6 "save for later" surface that replaces the v5
+ * add-payment-method.js: the PayPal wallet button (createPayPalSavePaymentSession).
+ * The WC "Add payment method" submit button is hidden while the PayPal method
+ * is selected, where the PayPal button is the submit control.
  *
  * @package
  */
@@ -19,7 +18,6 @@ import { setVisible, setVisibleByClass } from '@ppcp-button/Helper/Hiding';
 import { loadSdkV6 } from './sdkLoader';
 import { checkVaultEligibility } from './eligibility';
 import { createSavePayPalSession } from './sessions/createSaveSession';
-import { initCardSaveFields } from './cardFields/saveRenderer';
 import { postJson } from './utils/api';
 import { handleError, setErrorLabels } from './utils/errorHandler';
 
@@ -80,7 +78,7 @@ import { handleError, setErrorLabels } from './utils/errorHandler';
 	/**
 	 * Shows the PayPal button only when PayPal is the selected method and a
 	 * button actually rendered; otherwise the WC submit button stays visible
-	 * (card save flow, or PayPal ineligible). Replaces the visibility handling
+	 * (PayPal ineligible). Replaces the visibility handling
 	 * the (now-suppressed) v5 script used to do.
 	 */
 	function syncVisibility() {
@@ -115,12 +113,6 @@ import { handleError, setErrorLabels } from './utils/errorHandler';
 			const session = createSavePayPalSession( sdk, config );
 			wrapper.innerHTML = '';
 			wrapper.appendChild( createPayPalButton( session ) );
-		}
-
-		// Card saving is independent of the PayPal wrapper; gate it only on
-		// card eligibility and the card fields being enabled.
-		if ( eligibility.card && config.card_fields?.enabled ) {
-			initCardSaveFields( config );
 		}
 	}
 

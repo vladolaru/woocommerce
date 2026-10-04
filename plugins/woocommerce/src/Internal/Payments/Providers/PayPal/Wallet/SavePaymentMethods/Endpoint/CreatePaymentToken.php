@@ -16,7 +16,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Endp
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint\RequestData;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Exception\NonceValidationException;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcPaymentTokens\WooCommercePaymentTokens;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Helper\FreeTrialSubscriptionHelper;
 
 /**
  * Class CreatePaymentToken
@@ -46,18 +45,14 @@ class CreatePaymentToken implements EndpointInterface {
 	 */
 	private $wc_payment_tokens;
 
-	private FreeTrialSubscriptionHelper $free_trial_helper;
-
 	public function __construct(
 		RequestData $request_data,
 		PaymentMethodTokensEndpoint $payment_method_tokens_endpoint,
-		WooCommercePaymentTokens $wc_payment_tokens,
-		FreeTrialSubscriptionHelper $free_trial_helper
+		WooCommercePaymentTokens $wc_payment_tokens
 	) {
 		$this->request_data                   = $request_data;
 		$this->payment_method_tokens_endpoint = $payment_method_tokens_endpoint;
 		$this->wc_payment_tokens              = $wc_payment_tokens;
-		$this->free_trial_helper              = $free_trial_helper;
 	}
 
 	/**
@@ -111,16 +106,6 @@ class CreatePaymentToken implements EndpointInterface {
 						$result->id,
 						$email
 					);
-				}
-
-				if ( isset( $result->payment_source->card ) ) {
-					$wc_token_id = $this->wc_payment_tokens->create_payment_token_card( $current_user_id, $result );
-
-					// Asked of the cart, not the request: the client's answer
-					// predates any coupon applied on the checkout.
-					if ( $this->free_trial_helper->is_free_trial_cart() ) {
-						WC()->session->set( 'ppcp_card_payment_token_for_free_trial', $wc_token_id );
-					}
 				}
 			}
 

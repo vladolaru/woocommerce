@@ -99,42 +99,6 @@ describe( 'createMethodButton', () => {
 } );
 
 describe( 'renderButtons', () => {
-	test( 'the card button is never bundled with the PayPal express buttons, even with a card session present', () => {
-		const wrapper = document.createElement( 'div' );
-		document.body.appendChild( wrapper );
-
-		const rendered = renderButtons( {
-			wrapper,
-			sessions: { paypal: {}, card: {} },
-			styles: {},
-			createOrderForFunding: () => noop,
-		} );
-
-		expect( wrapper.querySelector( 'paypal-basic-card-button' ) ).toBeNull();
-		expect( rendered.some( ( el ) => el.tagName === 'PAYPAL-BUTTON' ) ).toBe(
-			true
-		);
-
-		document.body.removeChild( wrapper );
-	} );
-
-	test( 'renders nothing at all into the express wrapper when card is the only session', () => {
-		const wrapper = document.createElement( 'div' );
-		document.body.appendChild( wrapper );
-
-		const rendered = renderButtons( {
-			wrapper,
-			sessions: { card: {} },
-			styles: {},
-			createOrderForFunding: () => noop,
-		} );
-
-		expect( rendered ).toHaveLength( 0 );
-		expect( wrapper.childElementCount ).toBe( 0 );
-
-		document.body.removeChild( wrapper );
-	} );
-
 	test( 'skips the pay later button when payLaterEnabled is not set, even with a valid session and product details', () => {
 		const wrapper = document.createElement( 'div' );
 		document.body.appendChild( wrapper );

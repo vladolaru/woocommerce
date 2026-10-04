@@ -77,8 +77,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Se
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\SettingsDataManager;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\Definition\PaymentMethodsDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PayLaterConfigurator\Factory\ConfigFactory;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CardButtonGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CreditCardGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\GatewayIds;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\OXXOGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\PayUponInvoice\PayUponInvoiceGateway;
@@ -394,9 +393,6 @@ return array(
 		);
 	},
 	'settings.service.script-data-handler'                => static function ( ContainerInterface $container ): ScriptDataHandler {
-		$check_override = $container->get( 'settings.migration.bcdc-override-check' );
-		assert( is_callable( $check_override ) );
-
 		return new ScriptDataHandler(
 			$container->get( 'settings.asset_getter' ),
 			$container->get( 'paylater-configurator.is-available' ),
@@ -405,8 +401,6 @@ return array(
 			$container->get( 'wcgateway.wp-paypal-locales-map' ),
 			$container->get( 'api.helper.partner-attribution' ),
 			$container->get( 'settings.settings-provider' ),
-			$container->get( 'api.helpers.paymentLevelEligibility' ),
-			$check_override(),
 			// The module registers its services only behind its feature flag, so
 			// presence means v6 is active; has() does not instantiate it. Per-page
 			// ownership is moot: one admin screen configures every page.
@@ -432,9 +426,6 @@ return array(
 	'settings.service.data-migration.payment-settings'    => static fn( ContainerInterface $c ): PaymentSettingsMigration => new PaymentSettingsMigration(
 		(array) get_option( 'woocommerce-ppcp-settings', array() ),
 		$c->get( 'settings.data.payment' ),
-		$c->get( 'api.helpers.dccapplies' ),
-		$c->get( 'wcgateway.helper.dcc-product-status' ),
-		$c->get( 'wcgateway.configuration.card-configuration' ),
 		$c->get( 'ppcp.module-availability' )->is_loaded( 'ppcp-local-apms' ) ? $c->get( 'ppcp-local-apms.payment-methods' ) : array(),
 	),
 	'settings.service.seller-type-resolver'               => static fn(): SellerTypeResolver => new SellerTypeResolver(),
@@ -473,11 +464,7 @@ return array(
 			$container->get( 'settings.data.payment' ),
 			$container->get( 'settings.data.general' ),
 			$container->get( 'ppcp.module-availability' )->is_loaded( 'axo' ) ? $container->get( 'axo.checkout-config-notice.raw' ) : '',
-			$container->get( 'ppcp.module-availability' )->is_loaded( 'axo' ) ? $container->get( 'axo.incompatible-plugins-notice.raw' ) : '',
-			// The module registers its services only behind its feature flag, so
-			// presence means v6 is active; has() does not instantiate it. Per-page
-			// ownership is moot: one admin screen configures every page.
-			$container->has( 'sdk-v6.owns-current-page' )
+			$container->get( 'ppcp.module-availability' )->is_loaded( 'axo' ) ? $container->get( 'axo.incompatible-plugins-notice.raw' ) : ''
 		);
 	},
 	'settings.data.definition.method_dependencies'        => static function ( ContainerInterface $container ): PaymentMethodsDependenciesDefinition {
@@ -522,7 +509,6 @@ return array(
 			'apple_pay'   => $settings['data']['ppcp-applepay']['enabled'] ?? false,
 			'google_pay'  => $settings['data']['ppcp-googlepay']['enabled'] ?? false,
 			'axo'         => $settings['data']['ppcp-axo-gateway']['enabled'] ?? false,
-			'card-button' => $settings['data']['ppcp-card-button-gateway']['enabled'] ?? false,
 			'pwc'         => $settings['data']['ppcp-pwc']['enabled'] ?? false,
 		);
 	},
@@ -546,7 +532,6 @@ return array(
 		return array(
 			FeaturesDefinition::FEATURE_APPLE_PAY        => ( $features[ FeaturesDefinition::FEATURE_APPLE_PAY ]['enabled'] ?? false ) && ! $general_settings->own_brand_only(),
 			FeaturesDefinition::FEATURE_GOOGLE_PAY       => ( $features[ FeaturesDefinition::FEATURE_GOOGLE_PAY ]['enabled'] ?? false ) && ! $general_settings->own_brand_only(),
-			FeaturesDefinition::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS => ( $features[ FeaturesDefinition::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS ]['enabled'] ?? false ) && ! $general_settings->own_brand_only(),
 			FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO => $features[ FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO ]['enabled'] ?? false,
 			FeaturesDefinition::FEATURE_ALTERNATIVE_PAYMENT_METHODS => $features[ FeaturesDefinition::FEATURE_ALTERNATIVE_PAYMENT_METHODS ]['enabled'] ?? false,
 			FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING => $features[ FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING ]['enabled'] ?? false,
@@ -577,7 +562,6 @@ return array(
 		assert( $availability instanceof ModuleAvailability );
 		$applepay_eligible  = $availability->is_eligible( 'applepay' );
 		$googlepay_eligible = $availability->is_eligible( 'googlepay' );
-		$axo_eligible       = $availability->is_eligible( 'axo' );
 		$applepay_validated = $availability->is_loaded( 'applepay' ) && $container->get( 'applepay.is_validated' );
 		$pwc_eligible       = ( $availability->eligibility_check( 'ppcp-local-apms.pwc' ) )();
 
@@ -622,7 +606,7 @@ return array(
 		 * @param bool $is_recaptcha_protection_eligible - Show if reCAPTCHA is not already enabled.
 		 */
 		return new TodosEligibilityService(
-			$axo_eligible && $capabilities[ FeaturesDefinition::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS ] && ! $gateways['axo'],                  // Enable Fastlane.
+			false,                                                                                        // Enable Fastlane. The card capability is dropped from merchant_capabilities; the todo goes in Task 8.
 			$is_pay_later_messaging_enabled_for_any_location,                                             // Enable Pay Later messaging.
 			! $is_pay_later_messaging_enabled_for_any_location && ! $pay_later_statuses['product'],       // Add Pay Later messaging (Product page).
 			! $is_pay_later_messaging_enabled_for_any_location && ! $pay_later_statuses['cart'],          // Add Pay Later messaging (Cart).
@@ -635,15 +619,15 @@ return array(
 			! $button_locations['block_checkout_enabled'],                                                // Add PayPal buttons to block checkout.
 			! $button_locations['product_enabled'],                                                       // Add PayPal buttons to product.
 			$applepay_eligible && $capabilities[ FeaturesDefinition::FEATURE_APPLE_PAY ] && ! $applepay_validated,  // Register Domain for Apple Pay.
-			$capabilities[ FeaturesDefinition::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS ] && ! ( $capabilities[ FeaturesDefinition::FEATURE_APPLE_PAY ] && $capabilities[ FeaturesDefinition::FEATURE_GOOGLE_PAY ] ),     // Add digital wallets to your account.
-			$applepay_eligible && $capabilities[ FeaturesDefinition::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS ] && ! $capabilities[ FeaturesDefinition::FEATURE_APPLE_PAY ],                                        // Add Apple Pay to your account.
-			$googlepay_eligible && $capabilities[ FeaturesDefinition::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS ] && ! $capabilities[ FeaturesDefinition::FEATURE_GOOGLE_PAY ],                                       // Add Google Pay to your account.
+			false,                                                                                        // Add digital wallets to your account. The card capability is dropped from merchant_capabilities; the todo goes in Task 5.
+			false,                                                                                        // Add Apple Pay to your account. The card capability is dropped from merchant_capabilities; the todo goes in Task 5.
+			false,                                                                                        // Add Google Pay to your account. The card capability is dropped from merchant_capabilities; the todo goes in Task 5.
 			$applepay_eligible && $capabilities[ FeaturesDefinition::FEATURE_APPLE_PAY ] && ! $gateways[ FeaturesDefinition::FEATURE_APPLE_PAY ],                                       // Enable Apple Pay.
 			$googlepay_eligible && $capabilities[ FeaturesDefinition::FEATURE_GOOGLE_PAY ] && ! $gateways[ FeaturesDefinition::FEATURE_GOOGLE_PAY ],
 			! $capabilities[ FeaturesDefinition::FEATURE_INSTALLMENTS ] && 'MX' === $container->get( 'settings.data.general' )->get_merchant_country(), // Enable Installments for Mexico.
 			$is_working_capital_feature_flag_enabled && $is_working_capital_eligible, // Enable Working Capital.
 			$capabilities[ FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO ] && ! $gateways[ FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO ] && $pwc_eligible, // Enable Pay with Crypto.
-			$capabilities[ FeaturesDefinition::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS ] && ! $capabilities[ FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO ] && $pwc_eligible, // Apply for Pay with Crypto.
+			false,                                                                                        // Apply for Pay with Crypto. The card capability is dropped from merchant_capabilities; the todo goes in Task 9.
 			! $is_recaptcha_enabled,
 		);
 	},
@@ -659,13 +643,6 @@ return array(
 			array()
 		);
 
-		$payment_endpoint = $container->get( 'settings.rest.payment' );
-		$settings         = $payment_endpoint->get_details()->get_data();
-
-		// Settings status.
-		$gateways = array(
-			'card-button' => $settings['data']['ppcp-card-button-gateway']['enabled'] ?? false,
-		);
 		// Merchant capabilities serve to show active or inactive badge and buttons.
 		$capabilities = array(
 			FeaturesDefinition::FEATURE_APPLE_PAY        => $features[ FeaturesDefinition::FEATURE_APPLE_PAY ]['enabled'] ?? false,
@@ -682,15 +659,14 @@ return array(
 		$merchant_capabilities = array(
 			FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO => $capabilities[ FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO ],
 			// Save PayPal and Venmo eligibility.
-			FeaturesDefinition::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS => $capabilities[ FeaturesDefinition::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS ],
-			// Advanced credit and debit cards eligibility.
 			FeaturesDefinition::FEATURE_ALTERNATIVE_PAYMENT_METHODS => $capabilities[ FeaturesDefinition::FEATURE_ALTERNATIVE_PAYMENT_METHODS ],
 			// Alternative payment methods eligibility.
+			// The seller-status card capability still gates Google Pay, Apple Pay and Pay Later until Task 5 deletes the first two.
 			FeaturesDefinition::FEATURE_GOOGLE_PAY       => $capabilities[ FeaturesDefinition::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS ] && $capabilities[ FeaturesDefinition::FEATURE_GOOGLE_PAY ],
 			// Google Pay eligibility.
 			FeaturesDefinition::FEATURE_APPLE_PAY        => $capabilities[ FeaturesDefinition::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS ] && $capabilities[ FeaturesDefinition::FEATURE_APPLE_PAY ],
 			// Apple Pay eligibility.
-			FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING => $capabilities[ FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING ] && $capabilities[ FeaturesDefinition::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS ] && ! $gateways['card-button'],
+			FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING => $capabilities[ FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING ] && $capabilities[ FeaturesDefinition::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS ],
 			// Pay Later eligibility.
 			FeaturesDefinition::FEATURE_INSTALLMENTS     => $capabilities[ FeaturesDefinition::FEATURE_INSTALLMENTS ],
 			// Installments eligibility.
@@ -715,7 +691,6 @@ return array(
 
 		return new FeaturesEligibilityService(
 			$container->get( 'save-payment-methods.eligible' ), // Save PayPal and Venmo eligibility.
-			$availability->eligibility_check( 'card-fields' ), // Advanced credit and debit cards eligibility.
 			( $availability->eligibility_check( 'ppcp-local-apms' ) )(), // Alternative payment methods eligibility.
 			$availability->eligibility_check( 'googlepay' ), // Google Pay eligibility.
 			$availability->eligibility_check( 'applepay' ), // Apple Pay eligibility.
@@ -747,9 +722,7 @@ return array(
 			$container->get( 'api.merchant.country' ),
 			( $availability->eligibility_check( 'ppcp-local-apms' ) )(),
 			$container->get( 'settings.service.merchant_capabilities' ),
-			$container->get( 'wcgateway.helper.dcc-product-status' ),
 			$availability->eligibility_check( 'axo' ),
-			$availability->eligibility_check( 'card-fields' ),
 			$apple_pay_available,
 			$google_pay_available,
 		);
@@ -773,8 +746,8 @@ return array(
 	'settings.config.all-gateway-ids'                     => static function (): array {
 		return array(
 			PayPalGateway::ID,
-			CardButtonGateway::ID,
-			CreditCardGateway::ID,
+			GatewayIds::CARD_BUTTON,
+			GatewayIds::CREDIT_CARD,
 			AxoGateway::ID,
 			ApplePayGateway::ID,
 			GooglePayGateway::ID,
@@ -810,8 +783,5 @@ return array(
 		$eligibility_checks = $container->get( 'wcgateway.feature-eligibility.list' );
 
 		return new MerchantDetails( $merchant_country, $woo_data['country'], $eligibility_checks );
-	},
-	'settings.migration.bcdc-override-check'              => static function (): callable {
-		return static fn(): bool => (bool) get_option( PaymentSettingsMigration::OPTION_NAME_BCDC_MIGRATION_OVERRIDE );
 	},
 );

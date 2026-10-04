@@ -5,9 +5,6 @@ import CheckoutBootstrap from './modules/ContextBootstrap/CheckoutBootstrap';
 import PayNowBootstrap from './modules/ContextBootstrap/PayNowBootstrap';
 import Renderer from './modules/Renderer/Renderer';
 import ErrorHandler from './modules/ErrorHandler';
-import HostedFieldsRenderer from './modules/Renderer/HostedFieldsRenderer';
-import CardFieldsRenderer from './modules/Renderer/CardFieldsRenderer';
-import CardFieldsFreeTrialRenderer from './modules/Renderer/CardFieldsFreeTrialRenderer';
 import MessageRenderer from './modules/Renderer/MessageRenderer';
 import Spinner from './modules/Helper/Spinner';
 import {
@@ -35,7 +32,6 @@ initCartFragmentSync();
 const buttonsSpinner = new Spinner(
 	document.querySelector( '.ppc-button-wrapper' )
 );
-const cardsSpinner = new Spinner( '#ppcp-hosted-fields' );
 
 const bootstrap = () => {
 	const checkoutFormSelector = 'form.woocommerce-checkout';
@@ -60,11 +56,7 @@ const bootstrap = () => {
 	jQuery( 'form.woocommerce-checkout input' ).on( 'keydown', ( e ) => {
 		if (
 			e.key === 'Enter' &&
-			[
-				PaymentMethods.PAYPAL,
-				PaymentMethods.CARDS,
-				PaymentMethods.CARD_BUTTON,
-			].includes( getCurrentPaymentMethod() )
+			PaymentMethods.PAYPAL === getCurrentPaymentMethod()
 		) {
 			e.preventDefault();
 		}
@@ -150,10 +142,6 @@ const bootstrap = () => {
 		return true;
 	};
 
-	const onCardFieldsBeforeSubmit = () => {
-		return doBasicCheckoutValidation();
-	};
-
 	const onSmartButtonClick = async ( data, actions ) => {
 		window.ppcpFundingSource = data.fundingSource;
 		const requiredFields = jQuery(
@@ -190,30 +178,7 @@ const bootstrap = () => {
 		buttonsSpinner.unblock();
 	};
 
-	let creditCardRenderer = new HostedFieldsRenderer(
-		PayPalCommerceGateway,
-		errorHandler,
-		spinner
-	);
-	if ( typeof paypal.CardFields !== 'undefined' ) {
-		if ( PayPalCommerceGateway.is_free_trial_cart ) {
-			creditCardRenderer = new CardFieldsFreeTrialRenderer(
-				PayPalCommerceGateway,
-				errorHandler,
-				spinner
-			);
-		} else {
-			creditCardRenderer = new CardFieldsRenderer(
-				PayPalCommerceGateway,
-				errorHandler,
-				spinner,
-				onCardFieldsBeforeSubmit
-			);
-		}
-	}
-
 	const renderer = new Renderer(
-		creditCardRenderer,
 		PayPalCommerceGateway,
 		onSmartButtonClick,
 		onSmartButtonsInit
@@ -343,11 +308,10 @@ document.addEventListener( 'DOMContentLoaded', () => {
 		const currentPaymentMethod = getCurrentPaymentMethod();
 		const isPaypalButton =
 			paypalButtonGatewayIds.includes( currentPaymentMethod );
-		const isCards = currentPaymentMethod === PaymentMethods.CARDS;
 
 		setVisibleByClass(
 			ORDER_BUTTON_SELECTOR,
-			! isPaypalButton && ! isCards,
+			! isPaypalButton,
 			'ppcp-hidden'
 		);
 
@@ -357,17 +321,7 @@ document.addEventListener( 'DOMContentLoaded', () => {
 		} else {
 			buttonsSpinner.unblock();
 		}
-
-		if ( isCards ) {
-			cardsSpinner.block();
-		} else {
-			cardsSpinner.unblock();
-		}
 	};
-
-	jQuery( document ).on( 'hosted_fields_loaded', () => {
-		cardsSpinner.unblock();
-	} );
 
 	let bootstrapped = false;
 	let failed = false;
@@ -397,7 +351,6 @@ document.addEventListener( 'DOMContentLoaded', () => {
 
 			setVisibleByClass( ORDER_BUTTON_SELECTOR, true, 'ppcp-hidden' );
 			buttonsSpinner.unblock();
-			cardsSpinner.unblock();
 		}
 	);
 } );

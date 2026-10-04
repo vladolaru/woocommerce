@@ -4,7 +4,6 @@ jest.mock( '@ppcp-button/Helper/CheckoutMethodState', () => ( {
 	ORDER_BUTTON_SELECTOR: '#place_order',
 	PaymentMethods: {
 		PAYPAL: 'ppcp-gateway',
-		CARDS: 'ppcp-credit-card-gateway',
 	},
 } ) );
 
@@ -29,11 +28,6 @@ const mockCreateSavePayPalSession = jest.fn();
 jest.mock( '../sessions/createSaveSession', () => ( {
 	createSavePayPalSession: ( ...args ) =>
 		mockCreateSavePayPalSession( ...args ),
-} ) );
-
-const mockInitCardSaveFields = jest.fn();
-jest.mock( '../cardFields/saveRenderer', () => ( {
-	initCardSaveFields: ( ...args ) => mockInitCardSaveFields( ...args ),
 } ) );
 
 const mockPostJson = jest.fn();
@@ -62,7 +56,6 @@ const WRAPPER_SELECTOR = '#ppcp-add-payment-method-paypal-button';
 const baseConfig = ( overrides = {} ) => ( {
 	labels: {},
 	button: { wrapper: WRAPPER_SELECTOR, color_class: '' },
-	card_fields: { enabled: true },
 	currency: 'USD',
 	ajax: {
 		create_setup_token: { endpoint: '/cst', nonce: 'n-cst' },
@@ -99,7 +92,7 @@ function boot( config ) {
 beforeEach( () => {
 	jest.clearAllMocks();
 	mockLoadSdkV6.mockResolvedValue( {} );
-	mockCheckVaultEligibility.mockResolvedValue( { paypal: true, card: true } );
+	mockCheckVaultEligibility.mockResolvedValue( { paypal: true } );
 	mockCreateSavePayPalSession.mockReturnValue( {} );
 } );
 
@@ -130,9 +123,9 @@ describe( 'boot-add-payment-method', () => {
 		);
 	} );
 
-	test( 'the card method selected keeps the native submit visible and hides the wrapper', async () => {
+	test( 'another method selected keeps the native submit visible and hides the wrapper', async () => {
 		buildDom();
-		mockGetCurrentPaymentMethod.mockReturnValue( 'ppcp-credit-card-gateway' );
+		mockGetCurrentPaymentMethod.mockReturnValue( 'ppcp-other-gateway' );
 
 		boot( baseConfig() );
 		await flushPromises();
@@ -151,10 +144,7 @@ describe( 'boot-add-payment-method', () => {
 	test( 'PayPal ineligible renders no button and leaves the native submit visible even with PayPal selected', async () => {
 		buildDom();
 		mockGetCurrentPaymentMethod.mockReturnValue( 'ppcp-gateway' );
-		mockCheckVaultEligibility.mockResolvedValue( {
-			paypal: false,
-			card: true,
-		} );
+		mockCheckVaultEligibility.mockResolvedValue( { paypal: false } );
 
 		boot( baseConfig() );
 		await flushPromises();
@@ -170,24 +160,6 @@ describe( 'boot-add-payment-method', () => {
 		expect( mockSetVisible ).toHaveBeenCalledWith(
 			WRAPPER_SELECTOR,
 			false
-		);
-	} );
-
-	test( 'card saving initializes even when the PayPal wrapper is missing from the page', async () => {
-		buildDom( { hasWrapper: false } );
-		mockGetCurrentPaymentMethod.mockReturnValue(
-			'ppcp-credit-card-gateway'
-		);
-		mockCheckVaultEligibility.mockResolvedValue( {
-			paypal: true,
-			card: true,
-		} );
-
-		boot( baseConfig( { card_fields: { enabled: true } } ) );
-		await flushPromises();
-
-		expect( mockInitCardSaveFields ).toHaveBeenCalledWith(
-			expect.objectContaining( { card_fields: { enabled: true } } )
 		);
 	} );
 

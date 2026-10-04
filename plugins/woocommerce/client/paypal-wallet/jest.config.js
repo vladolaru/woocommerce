@@ -12,8 +12,6 @@ module.exports = {
 		'^@ppcp-settings/(.*)$':
 			'<rootDir>/modules/ppcp-settings/resources/js/$1',
 		'^@ppcp-blocks/(.*)$': '<rootDir>/modules/ppcp-blocks/resources/js/$1',
-		'^@ppcp-card-fields/(.*)$':
-			'<rootDir>/modules/ppcp-card-fields/resources/js/$1',
 		'^@ppcp-paylater-block/(.*)$':
 			'<rootDir>/modules/ppcp-paylater-block/resources/js/$1',
 		'^@ppcp-sdk-v6/(.*)$': '<rootDir>/modules/ppcp-sdk-v6/resources/js/$1',

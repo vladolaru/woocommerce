@@ -8,7 +8,7 @@ import PayNowExperience from './Blocks/PayNowExperience';
 import StayUpdated from './Blocks/StayUpdated';
 import { useRegisteredSettings, SLOTS } from '@ppcp-settings/extensions';
 
-const CommonSettings = ( { ownBrandOnly } ) => {
+const CommonSettings = () => {
 	// Get registered settings for common settings
 	const footerSettings = useRegisteredSettings( SLOTS.COMMON_SETTINGS_END );
 
@@ -24,7 +24,7 @@ const CommonSettings = ( { ownBrandOnly } ) => {
 		>
 			<InvoicePrefix />
 			<OrderIntent />
-			<SavePaymentMethods ownBradOnly={ ownBrandOnly } />
+			<SavePaymentMethods />
 			<PayNowExperience />
 			<StayUpdated />
 

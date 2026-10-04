@@ -50,7 +50,7 @@ class FeaturesDefinition {
 	public const FEATURE_GOOGLE_PAY = 'google_pay';
 
 	/**
-	 * Advanced card processing eligibility. Required for credit- and debit-card processing.
+	 * Advanced card processing capability of the seller. Read as a gate for Pay Later, Apple Pay and Google Pay; it has no feature card of its own.
 	 */
 	public const FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS = 'advanced_credit_and_debit_cards';
 
@@ -229,41 +229,6 @@ class FeaturesDefinition {
 						'type'  => 'tertiary',
 						'text'  => __( 'Learn more', 'woocommerce' ),
 						'url'   => 'https://www.paypal.com/us/enterprise/payment-processing/accept-venmo',
-						'class' => 'small-button',
-					),
-				),
-			),
-			self::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS => array(
-				'title'       => __( 'Advanced Credit and Debit Cards', 'woocommerce' ),
-				'description' => __( 'Process major credit and debit cards including Visa, Mastercard, American Express and Discover.', 'woocommerce' ),
-				'enabled'     => $this->merchant_capabilities[ self::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS ],
-				'buttons'     => array(
-					array(
-						'type'     => 'secondary',
-						'text'     => __( 'Configure', 'woocommerce' ),
-						'action'   => array(
-							'type'    => 'tab',
-							'tab'     => 'payment_methods',
-							'section' => 'ppcp-credit-card-gateway',
-							'modal'   => 'ppcp-credit-card-gateway',
-						),
-						'showWhen' => 'enabled',
-						'class'    => 'small-button',
-					),
-					array(
-						'type'     => 'secondary',
-						'text'     => __( 'Sign up', 'woocommerce' ),
-						'urls'     => array(
-							'sandbox' => 'https://www.sandbox.paypal.com/bizsignup/entry?product=ppcp',
-							'live'    => 'https://www.paypal.com/bizsignup/entry?product=ppcp',
-						),
-						'showWhen' => 'disabled',
-						'class'    => 'small-button',
-					),
-					array(
-						'type'  => 'tertiary',
-						'text'  => __( 'Learn more', 'woocommerce' ),
-						'url'   => 'https://developer.paypal.com/studio/checkout/advanced',
 						'class' => 'small-button',
 					),
 				),

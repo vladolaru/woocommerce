@@ -5,8 +5,7 @@ import {
 } from '@ppcp-button/Helper/CheckoutMethodState';
 import { loadPayPalScript } from '@ppcp-button/Helper/PayPalScriptLoading';
 import ErrorHandler from '@ppcp-button/ErrorHandler';
-import { buttonConfiguration, cardFieldsConfiguration } from './configuration';
-import { renderFields } from '@ppcp-card-fields/Render';
+import { buttonConfiguration } from './configuration';
 import {
 	setVisible,
 	setVisibleByClass,
@@ -84,21 +83,11 @@ export function setupPaymentMethodListeners( addPaymentMethodConfig ) {
 }
 
 /**
- * Main initialization function for PayPal and card fields.
+ * Main initialization function for the PayPal button.
  *
  * @param {Object} addPaymentMethodConfig - Configuration object
  */
 export async function initializeScript( addPaymentMethodConfig ) {
-	if ( addPaymentMethodConfig.is_subscription_change_payment_page ) {
-		const saveToAccount = document.querySelector(
-			'#wc-ppcp-credit-card-gateway-new-payment-method'
-		);
-		if ( saveToAccount ) {
-			saveToAccount.checked = true;
-			saveToAccount.disabled = true;
-		}
-	}
-
 	const errorHandler = new ErrorHandler(
 		addPaymentMethodConfig.labels.error.generic,
 		document.querySelector( '.woocommerce-notices-wrapper' )
@@ -110,7 +99,7 @@ export async function initializeScript( addPaymentMethodConfig ) {
 			url_params: {
 				'client-id': addPaymentMethodConfig.client_id,
 				'merchant-id': addPaymentMethodConfig.merchant_id,
-				components: 'buttons,card-fields',
+				components: 'buttons',
 			},
 			script_attributes: addPaymentMethodConfig.script_attributes || {},
 			save_payment_methods: {
@@ -139,34 +128,6 @@ export async function initializeScript( addPaymentMethodConfig ) {
 					`#ppc-button-${ PaymentMethods.PAYPAL }-save-payment-method`
 				);
 		}
-
-		const cardFields = paypal.CardFields(
-			cardFieldsConfiguration( addPaymentMethodConfig, errorHandler )
-		);
-
-		if ( cardFields.isEligible() ) {
-			renderFields( cardFields );
-		}
-
-		const placeOrderButton = document.querySelector( '#place_order' );
-		placeOrderButton?.addEventListener( 'click', ( event ) => {
-			const cardPaymentToken = document.querySelector(
-				'input[name="wc-ppcp-credit-card-gateway-payment-token"]:checked'
-			)?.value;
-			if (
-				getCurrentPaymentMethod() !== 'ppcp-credit-card-gateway' ||
-				( cardPaymentToken && cardPaymentToken !== 'new' )
-			) {
-				return;
-			}
-			placeOrderButton.disabled = true;
-			event.preventDefault();
-			cardFields.submit().catch( ( error ) => {
-				console.error( error );
-				errorHandler.message( addPaymentMethodConfig.error_message );
-				placeOrderButton.disabled = false;
-			} );
-		} );
 	} catch ( error ) {
 		console.error( 'Failed to load PayPal script:', error );
 		errorHandler.message(

@@ -8,7 +8,6 @@ use WC_Order;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Applepay\ApplePayGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetter;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Googlepay\GooglePayGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CreditCardGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 
 /**
@@ -24,7 +23,6 @@ class PaymentMethodTitleEnricher {
 	 */
 	private const SUPPORTED_GATEWAYS = array(
 		PayPalGateway::ID,
-		CreditCardGateway::ID,
 		ApplePayGateway::ID,
 		GooglePayGateway::ID,
 	);

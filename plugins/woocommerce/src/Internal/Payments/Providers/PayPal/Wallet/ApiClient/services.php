@@ -33,7 +33,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\F
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\AmountFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\AuthorizationFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\CaptureFactory;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\CardAuthenticationResultFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\ContactPreferenceFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\ExchangeRateFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\PartnersEndpointFactory;
@@ -546,13 +545,9 @@ return array(
 	'api.factory.payment-preferences'                => static function ( ContainerInterface $container ): PaymentPreferencesFactory {
 		return new PaymentPreferencesFactory( $container->get( 'api.shop.currency.getter' ) );
 	},
-	'api.factory.card-authentication-result-factory' => static function ( ContainerInterface $container ): CardAuthenticationResultFactory {
-		return new CardAuthenticationResultFactory();
-	},
 	'api.helpers.dccapplies'                         => static function ( ContainerInterface $container ): DccApplies {
 		return new DccApplies(
 			$container->get( 'api.dcc-supported-country-currency-matrix' ),
-			$container->get( 'api.dcc-supported-country-card-matrix' ),
 			$container->get( 'api.shop.currency.getter' ),
 			$container->get( 'api.merchant.country' )
 		);
@@ -569,60 +564,6 @@ return array(
 		return in_array(
 			$container->get( 'api.shop.currency.getter' )->get(),
 			$container->get( 'api.supported-currencies' ),
-			true
-		);
-	},
-
-
-	'api.shop.is-latin-america'                      => static function ( ContainerInterface $container ): bool {
-		return in_array(
-			$container->get( 'api.shop.country' ),
-			array(
-				'AI',
-				'AG',
-				'AR',
-				'AW',
-				'BS',
-				'BB',
-				'BZ',
-				'BM',
-				'BO',
-				'BR',
-				'VG',
-				'KY',
-				'CL',
-				'CO',
-				'CR',
-				'DM',
-				'DO',
-				'EC',
-				'SV',
-				'FK',
-				'GF',
-				'GD',
-				'GP',
-				'GT',
-				'GY',
-				'HN',
-				'JM',
-				'MQ',
-				'MX',
-				'MS',
-				'AN',
-				'NI',
-				'PA',
-				'PY',
-				'PE',
-				'KN',
-				'LC',
-				'PM',
-				'VC',
-				'SR',
-				'TT',
-				'TC',
-				'UY',
-				'VE',
-			),
 			true
 		);
 	},
@@ -745,94 +686,6 @@ return array(
 				'GP' => $default_currencies,
 				'GF' => $default_currencies,
 				'MQ' => $default_currencies,
-			)
-		);
-	},
-
-	/**
-	 * Which countries support which credit cards. Empty credit card arrays mean no restriction on currency.
-	 */
-	'api.dcc-supported-country-card-matrix'          => static function ( ContainerInterface $container ): array {
-		$mastercard_visa_amex = array(
-			'mastercard' => array(),
-			'visa'       => array(),
-			'amex'       => array(),
-		);
-
-		/**
-		 * Returns which countries support which credit cards. Empty credit card arrays mean no restriction on currency.
-		 */
-		return apply_filters(
-			'woocommerce_paypal_payments_supported_country_card_matrix',
-			array(
-				'AU' => array(
-					'mastercard' => array(),
-					'visa'       => array(),
-					'amex'       => array( 'AUD' ),
-				),
-				'AT' => $mastercard_visa_amex,
-				'BE' => $mastercard_visa_amex,
-				'BG' => $mastercard_visa_amex,
-				'CN' => array(
-					'mastercard' => array(),
-					'visa'       => array(),
-				),
-				'C2' => array(
-					'mastercard' => array(),
-					'visa'       => array(),
-				),
-				'CY' => $mastercard_visa_amex,
-				'CZ' => $mastercard_visa_amex,
-				'DE' => $mastercard_visa_amex,
-				'DK' => $mastercard_visa_amex,
-				'EE' => $mastercard_visa_amex,
-				'ES' => $mastercard_visa_amex,
-				'FI' => $mastercard_visa_amex,
-				'FR' => $mastercard_visa_amex,
-				'GB' => $mastercard_visa_amex,
-				'GR' => $mastercard_visa_amex,
-				'HK' => $mastercard_visa_amex,
-				'HU' => $mastercard_visa_amex,
-				'IE' => $mastercard_visa_amex,
-				'IT' => $mastercard_visa_amex,
-				'US' => array(
-					'mastercard' => array(),
-					'visa'       => array(),
-					'amex'       => array( 'USD' ),
-					'discover'   => array( 'USD' ),
-				),
-				'CA' => array(
-					'mastercard' => array(),
-					'visa'       => array(),
-					'amex'       => array( 'CAD', 'USD' ),
-					'jcb'        => array( 'CAD' ),
-				),
-				'LI' => $mastercard_visa_amex,
-				'LT' => $mastercard_visa_amex,
-				'LU' => $mastercard_visa_amex,
-				'LV' => $mastercard_visa_amex,
-				'MT' => $mastercard_visa_amex,
-				'MX' => $mastercard_visa_amex,
-				'NL' => $mastercard_visa_amex,
-				'NO' => $mastercard_visa_amex,
-				'PL' => $mastercard_visa_amex,
-				'PT' => $mastercard_visa_amex,
-				'RO' => $mastercard_visa_amex,
-				'SE' => $mastercard_visa_amex,
-				'SI' => $mastercard_visa_amex,
-				'SK' => $mastercard_visa_amex,
-				'SG' => $mastercard_visa_amex,
-				'JP' => array(
-					'mastercard' => array(),
-					'visa'       => array(),
-					'amex'       => array( 'JPY' ),
-					'jcb'        => array( 'JPY' ),
-				),
-				'YT' => $mastercard_visa_amex, // Mayotte.
-				'RE' => $mastercard_visa_amex, // Reunion.
-				'GP' => $mastercard_visa_amex, // Guadelope.
-				'GF' => $mastercard_visa_amex, // French Guiana.
-				'MQ' => $mastercard_visa_amex, // Martinique.
 			)
 		);
 	},

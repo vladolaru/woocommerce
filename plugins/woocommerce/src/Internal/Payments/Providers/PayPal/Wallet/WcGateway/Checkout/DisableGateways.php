@@ -12,10 +12,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGat
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Helper\Context;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Helper\SubscriptionHelper;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CardButtonGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CreditCardGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\CardPaymentsConfiguration;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\SettingsStatus;
 
 /**
@@ -26,23 +23,17 @@ class DisableGateways {
 	private SettingsProvider $settings_provider;
 	protected SettingsStatus $settings_status;
 	private SubscriptionHelper $subscription_helper;
-	private CardPaymentsConfiguration $card_configuration;
-	private string $store_country;
 
 	public function __construct(
 		SettingsProvider $settings_provider,
 		SettingsStatus $settings_status,
 		SubscriptionHelper $subscription_helper,
-		Context $context,
-		CardPaymentsConfiguration $card_configuration,
-		string $store_country
+		Context $context
 	) {
 		$this->settings_provider   = $settings_provider;
 		$this->settings_status     = $settings_status;
 		$this->subscription_helper = $subscription_helper;
 		$this->context             = $context;
-		$this->card_configuration  = $card_configuration;
-		$this->store_country       = $store_country;
 	}
 
 	/**
@@ -53,23 +44,15 @@ class DisableGateways {
 	 * @return array
 	 */
 	public function handler( array $methods ): array {
-		if ( ! isset( $methods[ PayPalGateway::ID ] ) && ! isset( $methods[ CreditCardGateway::ID ] ) ) {
+		if ( ! isset( $methods[ PayPalGateway::ID ] ) ) {
 			return $methods;
 		}
 		if ( $this->disable_all_gateways() ) {
 			unset( $methods[ PayPalGateway::ID ] );
-			unset( $methods[ CreditCardGateway::ID ] );
-			unset( $methods[ CardButtonGateway::ID ] );
 			return $methods;
 		}
 
-		$client_id = $this->settings_provider->merchant_data()->client_id;
-		if ( empty( $client_id ) ) {
-			unset( $methods[ CreditCardGateway::ID ] );
-		}
-
 		if ( ! $this->settings_status->is_smart_button_enabled_for_location( 'checkout' ) ) {
-			unset( $methods[ CardButtonGateway::ID ] );
 			if ( $this->subscription_helper->cart_contains_subscription() ) {
 				unset( $methods[ PayPalGateway::ID ] );
 			}
@@ -83,22 +66,6 @@ class DisableGateways {
 			&& ! $this->subscription_helper->subscription_cart_processable( $this->settings_provider )
 		) {
 			unset( $methods[ PayPalGateway::ID ] );
-		}
-
-		if ( $this->card_configuration->use_acdc() && $this->store_country !== 'MX' ) {
-			unset( $methods[ CardButtonGateway::ID ] );
-		}
-
-		$payment_gateways = WC()->payment_gateways;
-		if (
-			isset( $methods[ CreditCardGateway::ID ] )
-			&& $this->subscription_helper->cart_contains_paypal_subscription_product()
-			&& ! is_null( $payment_gateways )
-		) {
-			$cc_gateway = $payment_gateways->payment_gateways()[ CreditCardGateway::ID ] ?? null;
-			if ( $cc_gateway && ! in_array( 'subscriptions', $cc_gateway->supports, true ) ) {
-				unset( $methods[ CreditCardGateway::ID ] );
-			}
 		}
 
 		if ( ! $this->needs_to_disable_gateways() ) {

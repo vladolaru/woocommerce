@@ -95,14 +95,6 @@ async function createInstance( config, context ) {
 	}
 
 	const components = [ 'paypal-payments', 'venmo-payments' ];
-	if ( config.card_fields?.enabled ) {
-		components.push( 'card-fields' );
-	}
-	// Its own component, not part of paypal-payments, and only the classic row
-	// uses the SDK at all.
-	if ( config.card_button?.row ) {
-		components.push( 'paypal-guest-payments' );
-	}
 	if ( config.fastlane?.enabled ) {
 		components.push( 'fastlane' );
 	}

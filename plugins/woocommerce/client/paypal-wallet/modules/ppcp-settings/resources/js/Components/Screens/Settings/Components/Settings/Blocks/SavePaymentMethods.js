@@ -5,13 +5,9 @@ import { ControlToggleButton } from '@ppcp-settings/Components/ReusableComponent
 import { SettingsHooks } from '@ppcp-settings/data';
 import { useMerchantInfo } from '@ppcp-settings/data/common/hooks';
 
-const SavePaymentMethods = ( { ownBrandOnly } ) => {
-	const {
-		savePaypalAndVenmo,
-		setSavePaypalAndVenmo,
-		saveCardDetails,
-		setSaveCardDetails,
-	} = SettingsHooks.useSettings();
+const SavePaymentMethods = () => {
+	const { savePaypalAndVenmo, setSavePaypalAndVenmo } =
+		SettingsHooks.useSettings();
 
 	const { features } = useMerchantInfo();
 
@@ -48,23 +44,6 @@ const SavePaymentMethods = ( { ownBrandOnly } ) => {
 				}
 				onChange={ setSavePaypalAndVenmo }
 				disabled={ ! features.save_paypal_and_venmo.enabled }
-			/>
-
-			<ControlToggleButton
-				id="ppcp-save-card-details"
-				label={ __(
-					'Save Credit and Debit Cards',
-					'woocommerce'
-				) }
-				description={ __(
-					"Securely store your customer's credit card.",
-					'woocommerce'
-				) }
-				disabled={
-					ownBrandOnly || ! features.save_paypal_and_venmo.enabled
-				}
-				onChange={ setSaveCardDetails }
-				value={ saveCardDetails }
 			/>
 		</SettingsBlock>
 	);

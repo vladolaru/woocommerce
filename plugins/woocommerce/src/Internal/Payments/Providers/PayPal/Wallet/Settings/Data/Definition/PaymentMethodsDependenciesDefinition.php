@@ -9,8 +9,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\E
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Applepay\ApplePayGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Axo\Gateway\AxoGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Googlepay\GooglePayGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CardButtonGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CreditCardGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\BancontactGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\BlikGateway;
@@ -38,9 +36,7 @@ class PaymentMethodsDependenciesDefinition {
 	 */
 	public function get_payment_method_dependencies(): array {
 		$dependencies = array(
-			CardButtonGateway::ID     => array( PayPalGateway::ID ),
-			CreditCardGateway::ID     => array( PayPalGateway::ID ),
-			AxoGateway::ID            => array( PayPalGateway::ID, CreditCardGateway::ID ),
+			AxoGateway::ID            => array( PayPalGateway::ID ),
 			ApplePayGateway::ID       => array( PayPalGateway::ID ),
 			GooglePayGateway::ID      => array( PayPalGateway::ID ),
 			BancontactGateway::ID     => array( PayPalGateway::ID ),
@@ -85,18 +81,9 @@ class PaymentMethodsDependenciesDefinition {
 	 * @return array Value dependencies for the method or empty array if none exist
 	 */
 	public function get_payment_method_value_dependencies(): array {
-		$dependencies = array(
-			CardButtonGateway::ID => array(
-				CreditCardGateway::ID => false,
-			),
-			CreditCardGateway::ID => array(
-				CardButtonGateway::ID => false,
-			),
-		);
-
 		return apply_filters(
 			'woocommerce_paypal_payments_method_value_dependencies',
-			$dependencies
+			array()
 		);
 	}
 

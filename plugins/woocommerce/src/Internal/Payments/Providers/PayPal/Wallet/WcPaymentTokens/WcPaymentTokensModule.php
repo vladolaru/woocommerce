@@ -18,9 +18,8 @@ use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ModuleClassNameIdTra
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ServiceModule;
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Exception\NotFoundException;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CreditCardGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\GatewayIds;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Helper\SubscriptionHelper;
 
 /**
  * Class WcPaymentTokensModule
@@ -104,30 +103,6 @@ class WcPaymentTokensModule implements ServiceModule, ExecutableModule {
 					foreach ( $tokens as $index => $token ) {
 						if ( $token instanceof PaymentTokenApplePay ) {
 							unset( $tokens[ $index ] );
-						}
-					}
-				}
-
-				// Exclude CC tokens when cart has a PayPal subscription product the CC gateway cannot support.
-				$payment_gateways = WC()->payment_gateways;
-				if (
-					( is_checkout() || is_cart() || is_product() )
-					&& ! $is_post
-					&& $container->has( 'wc-subscriptions.helper' )
-					&& ! is_null( $payment_gateways )
-				) {
-					$subscription_helper = $container->get( 'wc-subscriptions.helper' );
-					if (
-						$subscription_helper instanceof SubscriptionHelper
-						&& $subscription_helper->cart_contains_paypal_subscription_product()
-					) {
-						$cc_gateway = $payment_gateways->payment_gateways()[ CreditCardGateway::ID ] ?? null;
-						if ( $cc_gateway && ! in_array( 'subscriptions', $cc_gateway->supports, true ) ) {
-							foreach ( $tokens as $index => $token ) {
-								if ( $token->get_gateway_id() === CreditCardGateway::ID ) {
-									unset( $tokens[ $index ] );
-								}
-							}
 						}
 					}
 				}
@@ -231,7 +206,7 @@ class WcPaymentTokensModule implements ServiceModule, ExecutableModule {
 
 				if (
 					is_null( $token )
-					|| ( $token->get_gateway_id() !== PayPalGateway::ID && $token->get_gateway_id() !== CreditCardGateway::ID )
+					|| ( $token->get_gateway_id() !== PayPalGateway::ID && $token->get_gateway_id() !== GatewayIds::CREDIT_CARD )
 				) {
 					return;
 				}

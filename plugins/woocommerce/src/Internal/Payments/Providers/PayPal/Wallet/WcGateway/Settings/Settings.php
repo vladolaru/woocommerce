@@ -48,19 +48,10 @@ class Settings implements ContainerInterface {
 	protected array $default_pay_later_messaging_locations;
 
 	/**
-	 * The default ACDC gateway title.
-	 *
-	 * @var string
-	 */
-	protected string $default_dcc_gateway_title;
-
-	/**
 	 * Settings constructor.
 	 *
 	 * @param string[] $default_button_locations              The list of selected default
 	 *                                                                 button locations.
-	 * @param string   $default_dcc_gateway_title             The default ACDC gateway
-	 *                                                                 title.
 	 * @param string[] $default_pay_later_button_locations    The list of selected default
 	 *                                                                 pay later button locations.
 	 * @param string[] $default_pay_later_messaging_locations The list of selected default
@@ -69,12 +60,10 @@ class Settings implements ContainerInterface {
 	 */
 	public function __construct(
 		array $default_button_locations,
-		string $default_dcc_gateway_title,
 		array $default_pay_later_button_locations,
 		array $default_pay_later_messaging_locations
 	) {
 		$this->default_button_locations              = $default_button_locations;
-		$this->default_dcc_gateway_title             = $default_dcc_gateway_title;
 		$this->default_pay_later_button_locations    = $default_pay_later_button_locations;
 		$this->default_pay_later_messaging_locations = $default_pay_later_messaging_locations;
 	}
@@ -167,8 +156,6 @@ class Settings implements ContainerInterface {
 			'pay_later_button_locations',
 			'pay_later_messaging_locations',
 			'brand_name',
-			'dcc_gateway_title',
-			'dcc_gateway_description',
 		);
 	}
 
@@ -188,8 +175,6 @@ class Settings implements ContainerInterface {
 			'pay_later_button_locations'               => $this->default_pay_later_button_locations,
 			'pay_later_messaging_locations'            => $this->default_pay_later_messaging_locations,
 			'brand_name'                               => get_bloginfo( 'name' ),
-			'dcc_gateway_title'                        => $this->default_dcc_gateway_title,
-			'dcc_gateway_description'                  => __( 'Pay with your credit card.', 'woocommerce' ),
 		);
 	}
 }

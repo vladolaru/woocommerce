@@ -14,7 +14,6 @@ use Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodTyp
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetter;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Assets\SdkV6Manager;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\VaultComponent\VaultComponentData;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CreditCardGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 
 /**
@@ -30,7 +29,6 @@ class V6PaymentMethod extends AbstractPaymentMethodType {
 	private AssetGetter $asset_getter;
 	private string $version;
 	private PayPalGateway $gateway;
-	private CreditCardGateway $card_gateway;
 
 	/**
 	 * The saved-PayPal vault-component data provider, or null when the
@@ -61,7 +59,6 @@ class V6PaymentMethod extends AbstractPaymentMethodType {
 		AssetGetter $asset_getter,
 		string $version,
 		PayPalGateway $gateway,
-		CreditCardGateway $card_gateway,
 		?VaultComponentData $vault_data,
 		?callable $vault_eligibility,
 		string $vault_client_id,
@@ -71,7 +68,6 @@ class V6PaymentMethod extends AbstractPaymentMethodType {
 		$this->asset_getter        = $asset_getter;
 		$this->version             = $version;
 		$this->gateway             = $gateway;
-		$this->card_gateway        = $card_gateway;
 		$this->vault_data          = $vault_data;
 		$this->vault_eligibility   = $vault_eligibility;
 		$this->vault_client_id     = $vault_client_id;
@@ -168,12 +164,6 @@ class V6PaymentMethod extends AbstractPaymentMethodType {
 		// The non-express row: a "Place order" button that redirects to PayPal.
 		if ( $this->place_order_enabled ) {
 			$data['place_order_enabled'] = (bool) ( $this->place_order_enabled )();
-		}
-
-		// The card method registers under the credit-card gateway, so it must
-		// advertise that gateway's own supports (independently vaulting-gated).
-		if ( isset( $data['card_fields'] ) && is_array( $data['card_fields'] ) ) {
-			$data['card_fields']['supported_features'] = array_values( (array) $this->card_gateway->supports );
 		}
 
 		// Saved-PayPal selector for returning buyers: the v5 smart-button stack

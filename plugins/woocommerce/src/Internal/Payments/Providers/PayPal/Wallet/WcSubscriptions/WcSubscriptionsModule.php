@@ -19,8 +19,6 @@ use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ExecutableModule;
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ModuleClassNameIdTrait;
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ServiceModule;
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CardButtonGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CreditCardGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Processor\TransactionIdHandlingTrait;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
@@ -69,20 +67,6 @@ class WcSubscriptionsModule implements ServiceModule, ExecutableModule {
 
 		add_action(
 			'woocommerce_scheduled_subscription_payment_' . PayPalGateway::ID,
-			/**
-			 * Param types removed to avoid third-party issues.
-			 *
-			 * @psalm-suppress MissingClosureParamType
-			 */
-			function ( $amount, $order ) use ( $c ) {
-				$this->renew( $order, $c );
-			},
-			10,
-			2
-		);
-
-		add_action(
-			'woocommerce_scheduled_subscription_payment_' . CreditCardGateway::ID,
 			/**
 			 * Param types removed to avoid third-party issues.
 			 *
@@ -185,7 +169,7 @@ class WcSubscriptionsModule implements ServiceModule, ExecutableModule {
 			 * @psalm-suppress MissingClosureParamType
 			 */
 			function ( $subscription ) {
-				if ( ! in_array( $subscription->get_payment_method(), array( PayPalGateway::ID, CreditCardGateway::ID, CardButtonGateway::ID ), true ) ) {
+				if ( PayPalGateway::ID !== $subscription->get_payment_method() ) {
 					return;
 				}
 
@@ -238,49 +222,6 @@ class WcSubscriptionsModule implements ServiceModule, ExecutableModule {
 	private function add_gateways_support( ContainerInterface $c ): void {
 		add_filter(
 			'woocommerce_paypal_payments_paypal_gateway_supports',
-			function ( array $supports ) use ( $c ): array {
-				$settings_provider = $c->get( 'settings.settings-provider' );
-				assert( $settings_provider instanceof SettingsProvider );
-
-				$subscription_helper = $c->get( 'wc-subscriptions.helper' );
-				assert( $subscription_helper instanceof SubscriptionHelper );
-
-				$subscriptions_mode = $this->get_subscriptions_mode( $settings_provider, $subscription_helper );
-				if ( 'disable_paypal_subscriptions' === $subscriptions_mode ) {
-					return $supports;
-				}
-				return array_merge(
-					$supports,
-					self::VAULT_SUPPORTS_SUBSCRIPTIONS
-				);
-			}
-		);
-
-		add_filter(
-			'woocommerce_paypal_payments_credit_card_gateway_supports',
-			function ( array $supports ) use ( $c ): array {
-				$settings_provider = $c->get( 'settings.settings-provider' );
-				assert( $settings_provider instanceof SettingsProvider );
-
-				$subscription_helper = $c->get( 'wc-subscriptions.helper' );
-				assert( $subscription_helper instanceof SubscriptionHelper );
-
-				$subscriptions_mode = $this->get_subscriptions_mode( $settings_provider, $subscription_helper );
-				if ( 'disable_paypal_subscriptions' === $subscriptions_mode ) {
-					return $supports;
-				}
-				if ( ! $settings_provider->save_card_details() ) {
-					return $supports;
-				}
-				return array_merge(
-					$supports,
-					self::VAULT_SUPPORTS_SUBSCRIPTIONS
-				);
-			}
-		);
-
-		add_filter(
-			'woocommerce_paypal_payments_card_button_gateway_supports',
 			function ( array $supports ) use ( $c ): array {
 				$settings_provider = $c->get( 'settings.settings-provider' );
 				assert( $settings_provider instanceof SettingsProvider );

@@ -21,7 +21,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Endpo
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Endpoint\CartQuoteEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\ApplePayConfig;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\ButtonStyleMapper;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\CardFieldStyles;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\FastlaneConfig;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\GooglePayConfig;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\MessagesEligibility;
@@ -75,7 +74,6 @@ return array(
 		$availability = $container->get( 'ppcp.module-availability' );
 		assert( $availability instanceof ModuleAvailability );
 		return new FastlaneConfig(
-			$container->get( 'wcgateway.configuration.card-configuration' ),
 			$container->get( 'wc-subscriptions.helper' ),
 			$availability->availability_check( 'axo' )
 		);
@@ -99,10 +97,6 @@ return array(
 
 			return $manager->should_load_on_current_page();
 		};
-	},
-
-	'sdk-v6.card-field-styles'          => static function (): CardFieldStyles {
-		return new CardFieldStyles();
 	},
 
 	'sdk-v6.message-style-mapper'       => static function ( ContainerInterface $container ): MessageStyleMapper {
@@ -137,31 +131,17 @@ return array(
 			// so this module does not depend on the ppcp-blocks module it replaces.
 			! $settings_provider->enable_pay_now(),
 			$settings_provider->save_paypal_and_venmo(),
-			$container->get( 'wcgateway.configuration.card-configuration' ),
-			// Card "save during purchase" eligibility, mirroring the v5 block
-			// card method (AdvancedCardPaymentMethod): reference-transaction
-			// eligible AND the "save card details" setting on. Guarded with
-			// has() because ppcp-save-payment-methods has its own feature flag
-			// independent of the v6 flag (see ppcp-settings/services.php).
-			$container->has( 'save-payment-methods.eligible' )
-				&& $container->get( 'save-payment-methods.eligible' )
-				&& $settings_provider->save_card_details(),
 			$container->get( 'wc-subscriptions.helper' ),
 			$container->get( 'wc-subscriptions.free-trial-subscription-helper' ),
 			// Same mode callable the v5 SmartButton uses; drives deferring native
 			// PayPal Subscriptions (subscriptions_api mode) back to the v5 stack.
 			$container->get( 'button.subscriptions-mode' ),
-			// Raw 3DS enum; the manager applies the contingency filter at enqueue
-			// time so late-registered overrides still take effect.
-			$settings_provider->three_d_secure_enum(),
-			$container->get( 'wcgateway.credit-card-icons' ),
 			$container->get( 'sdk-v6.message-style-mapper' ),
 			$container->get( 'sdk-v6.messages-eligibility' ),
 			$settings_provider->merchant_country(),
 			$container->get( 'sdk-v6.google-pay-config' ),
 			$container->get( 'sdk-v6.apple-pay-config' ),
-			$container->get( 'sdk-v6.fastlane-config' ),
-			$container->get( 'sdk-v6.card-field-styles' )
+			$container->get( 'sdk-v6.fastlane-config' )
 		);
 	},
 
@@ -174,14 +154,7 @@ return array(
 			$container->get( 'ppcp.asset-version' ),
 			$container->get( 'settings.environment' ),
 			$container->get( 'button.helper.context' ),
-			$settings_provider->save_paypal_and_venmo(),
-			// Guarded with has(): ppcp-save-payment-methods can be disabled
-			// independently of the v6 flag (see ppcp-settings/services.php).
-			$container->has( 'save-payment-methods.eligible' )
-				&& $container->get( 'save-payment-methods.eligible' )
-				&& $settings_provider->save_card_details(),
-			$settings_provider,
-			$container->get( 'sdk-v6.card-field-styles' )
+			$settings_provider->save_paypal_and_venmo()
 		);
 	},
 
@@ -268,7 +241,6 @@ return array(
 			$container->get( 'sdk-v6.asset-getter' ),
 			$container->get( 'ppcp.asset-version' ),
 			$container->get( 'wcgateway.paypal-gateway' ),
-			$container->get( 'wcgateway.credit-card-gateway' ),
 			$has_vault ? $container->get( 'vault-component.data' ) : null,
 			$has_vault ? $container->get( 'vault-component.eligibility.check' ) : null,
 			$container->get( 'button.client_id' ),

@@ -1,6 +1,6 @@
 <?php
 /**
- * Registers and configures the necessary Javascript for the button, credit messaging and DCC fields.
+ * Registers and configures the necessary Javascript for the button and credit messaging.
  *
  * @package Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Assets
  */
@@ -12,7 +12,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Butto
 use Exception;
 use WC_Cart;
 use WC_Order;
-use WC_Payment_Tokens;
 use WC_Product;
 use WC_Product_Variable;
 use WC_Product_Variation;
@@ -20,7 +19,6 @@ use WC_Session_Handler;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\Money;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\PayerFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\CurrencyGetter;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\DccApplies;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\PartnerAttribution;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetter;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint\UpdateShippingEndpoint;
@@ -45,10 +43,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SavePayment
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SavePaymentMethods\Endpoint\CreatePaymentTokenForGuest;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SavePaymentMethods\Endpoint\CreateSetupToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Session\SessionHandler;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CardButtonGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CreditCardGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\CardPaymentsConfiguration;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\CartCheckoutDetector;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\Environment;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\SettingsStatus;
@@ -109,13 +104,6 @@ class SmartButton implements SmartButtonInterface {
 	 * @var RequestData
 	 */
 	private $request_data;
-
-	/**
-	 * The DCC Applies helper.
-	 *
-	 * @var DccApplies
-	 */
-	private $dcc_applies;
 
 	/**
 	 * The Subscription Helper.
@@ -198,13 +186,6 @@ class SmartButton implements SmartButtonInterface {
 	private $disabled_funding_sources;
 
 	/**
-	 * Provides details about the DCC configuration.
-	 *
-	 * @var CardPaymentsConfiguration
-	 */
-	private CardPaymentsConfiguration $dcc_configuration;
-
-	/**
 	 * The PayPal Partner Attribution Helper.
 	 *
 	 * @var PartnerAttribution
@@ -234,7 +215,6 @@ class SmartButton implements SmartButtonInterface {
 		PayerFactory $payer_factory,
 		string $client_id,
 		RequestData $request_data,
-		DccApplies $dcc_applies,
 		SubscriptionHelper $subscription_helper,
 		callable $get_subscriptions_mode,
 		MessagesApply $messages_apply,
@@ -249,7 +229,6 @@ class SmartButton implements SmartButtonInterface {
 		bool $server_side_shipping_callback_enabled,
 		bool $appswitch_enabled,
 		DisabledFundingSources $disabled_funding_sources,
-		CardPaymentsConfiguration $dcc_configuration,
 		PartnerAttribution $partner_attribution,
 		bool $final_review_enabled,
 		Context $context
@@ -261,7 +240,6 @@ class SmartButton implements SmartButtonInterface {
 		$this->payer_factory                         = $payer_factory;
 		$this->client_id                             = $client_id;
 		$this->request_data                          = $request_data;
-		$this->dcc_applies                           = $dcc_applies;
 		$this->subscription_helper                   = $subscription_helper;
 		$this->get_subscriptions_mode                = $get_subscriptions_mode;
 		$this->messages_apply                        = $messages_apply;
@@ -276,7 +254,6 @@ class SmartButton implements SmartButtonInterface {
 		$this->server_side_shipping_callback_enabled = $server_side_shipping_callback_enabled;
 		$this->appswitch_enabled                     = $appswitch_enabled;
 		$this->disabled_funding_sources              = $disabled_funding_sources;
-		$this->dcc_configuration                     = $dcc_configuration;
 		$this->partner_attribution                   = $partner_attribution;
 		$this->final_review_enabled                  = $final_review_enabled;
 		$this->context                               = $context;
@@ -295,60 +272,11 @@ class SmartButton implements SmartButtonInterface {
 			$this->render_message_wrapper_registrar();
 		}
 
-		if ( $this->dcc_configuration->is_enabled() ) {
-			$this->render_dcc_wrapper();
-		}
-
 		do_action( 'woocommerce_paypal_payments_smart_button_render_wrapper' );
 
 		$this->sanitize_woocommerce_filters();
 
 		return true;
-	}
-
-	/**
-	 * Registers hooks and callbacks that are only relevant for DCC (ACDC) payments.
-	 *
-	 * @return void
-	 */
-	private function render_dcc_wrapper(): void {
-		add_action(
-			$this->checkout_dcc_button_renderer_hook(),
-			array( $this, 'dcc_renderer' ),
-			11
-		);
-
-		add_action(
-			$this->pay_order_renderer_hook(),
-			array( $this, 'dcc_renderer' ),
-			11
-		);
-
-		$subscription_helper = $this->subscription_helper;
-		add_filter(
-			'woocommerce_credit_card_form_fields',
-			function ( array $default_fields, $id ) use ( $subscription_helper ): array {
-				if (
-					CreditCardGateway::ID === $id
-					&& is_user_logged_in()
-					&& $this->settings_provider->save_card_details()
-					&& apply_filters( 'woocommerce_paypal_payments_should_render_card_custom_fields', true )
-				) {
-
-					$default_fields['card-vault'] = sprintf(
-						'<p class="form-row form-row-wide"><label for="ppcp-credit-card-vault"><input class="ppcp-credit-card-vault" type="checkbox" id="ppcp-credit-card-vault" name="vault">%s</label></p>',
-						esc_html__( 'Save your Credit Card', 'woocommerce' )
-					);
-					if ( $subscription_helper->cart_contains_subscription() || $subscription_helper->order_pay_contains_subscription() ) {
-						$default_fields['card-vault'] = '';
-					}
-				}
-
-				return $default_fields;
-			},
-			10,
-			2
-		);
 	}
 
 	/**
@@ -521,7 +449,6 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 				$this->pay_order_renderer_hook(),
 				function (): void {
 					$this->button_renderer( PayPalGateway::ID, 'woocommerce_paypal_payments_payorder_button_render' );
-					$this->button_renderer( CardButtonGateway::ID );
 				},
 				20
 			);
@@ -529,7 +456,6 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 				$this->checkout_button_renderer_hook(),
 				function (): void {
 					$this->button_renderer( PayPalGateway::ID, 'woocommerce_paypal_payments_checkout_button_render' );
-					$this->button_renderer( CardButtonGateway::ID );
 				}
 			);
 
@@ -551,14 +477,14 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 	}
 
 	/**
-	 * Whether any of our scripts (for DCC or product, mini-cart, non-block cart/checkout) should be loaded.
+	 * Whether any of our scripts (for product, mini-cart, non-block cart/checkout) should be loaded.
 	 */
 	public function should_load_ppcp_script(): bool {
 		if ( ! $this->settings_provider->gateway_enabled( PayPalGateway::ID ) ) {
 			return false;
 		}
 
-		return $this->should_load_buttons() || $this->should_load_messages() || $this->can_render_dcc();
+		return $this->should_load_buttons() || $this->should_load_messages();
 	}
 
 	/**
@@ -628,30 +554,9 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 	}
 
 	/**
-	 * Whether DCC fields can be rendered.
-	 */
-	public function can_render_dcc(): bool {
-		return $this->dcc_configuration->is_acdc_enabled()
-			&& in_array(
-				$this->context->context(),
-				apply_filters( 'woocommerce_paypal_payments_can_render_dcc_contexts', array( 'checkout', 'pay-now', 'add-payment-method' ) ),
-				true
-			);
-	}
-
-	/**
-	 * Enqueues our scripts/styles (for DCC and product, mini-cart and non-block cart/checkout)
+	 * Enqueues our scripts/styles (for product, mini-cart and non-block cart/checkout)
 	 */
 	public function enqueue(): void {
-		if ( $this->can_render_dcc() ) {
-			wp_enqueue_style(
-				'ppcp-hosted-fields',
-				$this->asset_getter->get_asset_url( 'hosted-fields.css' ),
-				array(),
-				$this->version
-			);
-		}
-
 		wp_enqueue_style(
 			'gateway',
 			$this->asset_getter->get_asset_url( 'gateway.css' ),
@@ -879,32 +784,6 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 	}
 
 	/**
-	 * Renders the HTML for the DCC fields.
-	 */
-	public function dcc_renderer() {
-
-		if ( ! $this->can_render_dcc() ) {
-			return;
-		}
-
-		/**
-		 * The WC filter returning the WC order button text.
-		 * phpcs:disable WordPress.WP.I18n.TextDomainMismatch
-		 */
-		$label = 'checkout' === $this->context->context() ? apply_filters( 'woocommerce_order_button_text', __( 'Place order', 'woocommerce' ) ) : __( 'Pay for order', 'woocommerce' );
-		// phpcs:enable WordPress.WP.I18n.TextDomainMismatch
-
-		printf(
-			'<div id="ppcp-hosted-fields" style="display:none;">
-						<button id="place_order" type="submit" class="button alt ppcp-dcc-order-button wp-element-button" style="display: none;">%1$s</button>
-					</div>
-                    <div id="payments-sdk__contingency-lightbox"></div>
-                    <style id="ppcp-hide-dcc">.payment_method_ppcp-credit-card-gateway {display:none;}</style>',
-			esc_html( $label )
-		);
-	}
-
-	/**
 	 * Whether we can store vault tokens or not.
 	 *
 	 * @return bool
@@ -960,27 +839,6 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 	}
 
 	/**
-	 * Retrieves the 3D Secure contingency settings.
-	 *
-	 * @return string
-	 */
-	private function get_3ds_contingency(): string {
-		return $this->return_3ds_contingency(
-			$this->settings_provider->three_d_secure_enum()
-		);
-	}
-
-	/**
-	 * Processes and returns the 3D Secure contingency.
-	 *
-	 * @param string $contingency The ThreeD secure contingency.
-	 * @return string
-	 */
-	private function return_3ds_contingency( string $contingency ): string {
-		return apply_filters( 'woocommerce_paypal_payments_three_d_secure_contingency', $contingency );
-	}
-
-	/**
 	 * Whether the current cart contains a product that requires physical shipping.
 	 *
 	 * @return bool True, if any cart item requires shipping.
@@ -1023,7 +881,6 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 
 	public function script_data(): array {
 		$is_free_trial_cart = $this->is_free_trial_cart();
-		$is_acdc_enabled    = $this->dcc_configuration->is_acdc_enabled();
 
 		$url_params      = $this->url_params();
 		$current_context = $this->context->context();
@@ -1036,7 +893,7 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 			'client_id'                               => $this->client_id,
 			'currency'                                => $this->currency->get(),
 			'data_client_id'                          => array(
-				'set_attribute'                => ( is_checkout() && $is_acdc_enabled ) || $this->can_save_vault_token(),
+				'set_attribute'                => $this->can_save_vault_token(),
 				'endpoint'                     => \WC_AJAX::get_endpoint( DataClientIdEndpoint::ENDPOINT ),
 				'nonce'                        => wp_create_nonce( DataClientIdEndpoint::nonce() ),
 				'user'                         => get_current_user_id(),
@@ -1156,42 +1013,7 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 					)
 				),
 			),
-			'separate_buttons'                        => array(
-				'card' => array(
-					'id'      => CardButtonGateway::ID,
-					'wrapper' => '#ppc-button-' . CardButtonGateway::ID,
-					'style'   => $this->normalize_style(
-						array(
-							'shape'  => $this->style_for_apm( 'shape', 'card' ),
-							'color'  => $this->style_for_apm( 'color', 'card', 'black' ),
-							'layout' => $this->style_for_apm( 'poweredby_tagline', 'card', false ) === $this->normalize_style_value( true ) ? 'vertical' : 'horizontal',
-						)
-					),
-				),
-			),
-			'hosted_fields'                           => array(
-				'wrapper'     => '#ppcp-hosted-fields',
-				'labels'      => array(
-					'credit_card_number'       => '',
-					'cvv'                      => '',
-					'mm_yy'                    => __( 'MM/YY', 'woocommerce' ),
-					'fields_empty'             => __(
-						'Card payment details are missing. Please fill in all required fields.',
-						'woocommerce'
-					),
-					'fields_not_valid'         => __(
-						'Unfortunately, your credit card details are not valid.',
-						'woocommerce'
-					),
-					'card_not_supported'       => __(
-						'Unfortunately, we do not support your credit card.',
-						'woocommerce'
-					),
-					'cardholder_name_required' => __( 'Cardholder\'s first and last name are required, please fill the checkout form required fields.', 'woocommerce' ),
-				),
-				'valid_cards' => $this->dcc_applies->valid_cards(),
-				'contingency' => $this->get_3ds_contingency(),
-			),
+			'separate_buttons'                        => array(),
 			'messages'                                => $this->message_values(),
 			'labels'                                  => array(
 				'error'          => array(
@@ -1232,8 +1054,7 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 			'early_checkout_validation_enabled'       => $this->early_validation_enabled,
 			'funding_sources_without_redirect'        => $this->funding_sources_without_redirect,
 			'user'                                    => array(
-				'is_logged'                  => is_user_logged_in(),
-				'has_wc_card_payment_tokens' => $this->user_has_wc_card_payment_tokens( get_current_user_id() ),
+				'is_logged' => is_user_logged_in(),
 			),
 			'should_handle_shipping_in_paypal'        => $this->should_handle_shipping_in_paypal && ! $this->context->is_checkout(),
 			'server_side_shipping_callback'           => array(
@@ -1503,11 +1324,6 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 			$components[] = 'messages';
 		}
 
-		// Card payments are only available on a checkout page.
-		if ( is_checkout() && $this->dcc_configuration->is_bcdc_enabled() ) {
-			$components[] = 'hosted-fields';
-		}
-
 		/**
 		 * Filter to add further components from the extensions.
 		 *
@@ -1555,21 +1371,6 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 			?? $this->get_style_value( "button_{$style}" )
 			?? ( $default ? $this->normalize_style_value( $default ) : null )
 			?? $this->normalize_style_value( $defaults[ $style ] ?? '' );
-	}
-
-	/**
-	 * Determines the style for a given property in a given APM.
-	 *
-	 * @param string $style The name of the style property.
-	 * @param string $apm The APM name, such as 'card'.
-	 * @param ?mixed $default The default value.
-	 *
-	 * @return string|int
-	 */
-	private function style_for_apm( string $style, string $apm, $default = null ) {
-		return $this->get_style_value( "{$apm}_button_{$style}" )
-			?? ( $default ? $this->normalize_style_value( $default ) : null )
-			?? $this->style_for_context( $style, 'checkout' );
 	}
 
 	/**
@@ -1718,18 +1519,6 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 		 * The filter returning the action name that PayPal button will use for rendering on the checkout page.
 		 */
 		return (string) apply_filters( 'woocommerce_paypal_payments_checkout_button_renderer_hook', 'woocommerce_review_order_after_payment' );
-	}
-
-	/**
-	 * Returns the action name that PayPal DCC button will use for rendering on the checkout page.
-	 *
-	 * @return string
-	 */
-	private function checkout_dcc_button_renderer_hook(): string {
-		/**
-		 * The filter returning the action name that PayPal DCC button will use for rendering on the checkout page.
-		 */
-		return (string) apply_filters( 'woocommerce_paypal_payments_checkout_dcc_renderer_hook', 'woocommerce_review_order_after_submit' );
 	}
 
 	/**
@@ -2102,20 +1891,5 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 			default:
 				return $location;
 		}
-	}
-
-	/**
-	 * Whether the given user has WC card payment tokens.
-	 *
-	 * @param int $user_id The user ID.
-	 * @return bool
-	 */
-	private function user_has_wc_card_payment_tokens( int $user_id ): bool {
-		$tokens = WC_Payment_Tokens::get_customer_tokens( $user_id, CreditCardGateway::ID );
-		if ( $tokens ) {
-			return true;
-		}
-
-		return false;
 	}
 }

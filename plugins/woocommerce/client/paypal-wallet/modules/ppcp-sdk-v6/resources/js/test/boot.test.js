@@ -54,11 +54,6 @@ jest.mock( '../endpointsAdapter', () => ( {
 	fetchCartTotal: ( ...args ) => mockFetchCartTotal( ...args ),
 } ) );
 
-const mockInitCardFields = jest.fn();
-jest.mock( '../cardFields/renderer', () => ( {
-	initCardFields: ( ...args ) => mockInitCardFields( ...args ),
-} ) );
-
 const mockInitMessages = jest.fn();
 const mockRenderMessages = jest.fn();
 const mockUpdateMessagesAmount = jest.fn();
@@ -169,7 +164,6 @@ beforeEach( () => {
 	} );
 	mockCreateSession.mockReturnValue( {} );
 	mockRenderWallets.mockResolvedValue();
-	mockInitCardFields.mockResolvedValue();
 	mockInitMessages.mockResolvedValue( 0 );
 	mockRenderMessages.mockResolvedValue( 0 );
 	mockFetchCartTotal.mockResolvedValue( '120.00' );

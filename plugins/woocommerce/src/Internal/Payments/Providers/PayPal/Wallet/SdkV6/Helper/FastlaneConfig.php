@@ -15,7 +15,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\CardPaymentsConfiguration;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Helper\SubscriptionHelper;
 
 class FastlaneConfig {
@@ -25,8 +24,6 @@ class FastlaneConfig {
 	 * excludes the order-pay and order-received endpoints (AxoApplies).
 	 */
 	private const SUPPORTED_CONTEXTS = array( 'checkout', 'checkout-block' );
-
-	private CardPaymentsConfiguration $card_payments_configuration;
 
 	private SubscriptionHelper $subscription_helper;
 
@@ -40,13 +37,11 @@ class FastlaneConfig {
 	private $is_eligible;
 
 	public function __construct(
-		CardPaymentsConfiguration $card_payments_configuration,
 		SubscriptionHelper $subscription_helper,
 		callable $is_eligible
 	) {
-		$this->card_payments_configuration = $card_payments_configuration;
-		$this->subscription_helper         = $subscription_helper;
-		$this->is_eligible                 = $is_eligible;
+		$this->subscription_helper = $subscription_helper;
+		$this->is_eligible         = $is_eligible;
 	}
 
 	/**
@@ -82,11 +77,6 @@ class FastlaneConfig {
 		// Fastlane recognises returning guests; a logged-in customer already
 		// has their details on file.
 		if ( is_user_logged_in() ) {
-			return false;
-		}
-
-		// use_fastlane() is ACDC enabled AND the Fastlane method enabled.
-		if ( ! $this->card_payments_configuration->use_fastlane() ) {
 			return false;
 		}
 

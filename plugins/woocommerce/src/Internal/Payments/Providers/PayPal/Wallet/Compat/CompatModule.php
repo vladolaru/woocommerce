@@ -112,8 +112,6 @@ class CompatModule implements ServiceModule, ExecutableModule {
 			}
 		);
 
-		$this->legacy_ui_card_payment_mapping( $c );
-
 		/**
 		 * Automatically enable Pay Later messaging for Canadian stores during plugin update.
 		 *
@@ -641,36 +639,6 @@ class CompatModule implements ServiceModule, ExecutableModule {
 
 		$blueprint_bootstrap = $container->get( 'compat.blueprint.bootstrap' );
 		$blueprint_bootstrap->init();
-	}
-
-	/**
-	 * Responsible to keep the credit card payment configuration backwards
-	 * compatible with the legacy UI.
-	 *
-	 * This method can be removed with the #legacy-ui code.
-	 *
-	 * @param ContainerInterface $container DI container instance.
-	 * @return void
-	 */
-	protected function legacy_ui_card_payment_mapping( ContainerInterface $container ): void {
-		$new_ui = $container->get( 'wcgateway.settings.admin-settings-enabled' );
-		if ( $new_ui ) {
-			return;
-		}
-
-		add_filter(
-			'woocommerce_paypal_payments_is_acdc_active',
-			static function ( bool $is_acdc ) use ( $container ): bool {
-				$settings = $container->get( 'wcgateway.settings' );
-				assert( $settings instanceof Settings );
-
-				try {
-					return (bool) $settings->get( 'dcc_enabled' );
-				} catch ( NotFoundException $exception ) {
-					return $is_acdc;
-				}
-			}
-		);
 	}
 
 	/**

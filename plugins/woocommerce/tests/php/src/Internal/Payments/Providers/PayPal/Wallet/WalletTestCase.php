@@ -9,8 +9,10 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet;
 
+use ArrayObject;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Authentication\Bearer;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\Token;
+use Error;
 use Mockery;
 use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
 use Mockery\MockInterface;
@@ -126,6 +128,72 @@ abstract class WalletTestCase extends WC_Unit_Test_Case {
 			'cookies'  => array(),
 			'filename' => null,
 		);
+	}
+
+	/**
+	 * Register a filter that records every call and returns the given value, or its first argument when none is given.
+	 *
+	 * @param string $hook         The hook.
+	 * @param mixed  ...$overrides The value to return (at most one).
+	 * @return ArrayObject One entry per call, holding the arguments the callback received.
+	 */
+	protected function spy_filter( string $hook, ...$overrides ): ArrayObject {
+		$calls = new ArrayObject();
+
+		add_filter(
+			$hook,
+			static function () use ( $calls, $overrides ) {
+				$args    = func_get_args();
+				$calls[] = $args;
+
+				return array() === $overrides ? $args[0] : $overrides[0];
+			},
+			10,
+			5
+		);
+
+		return $calls;
+	}
+
+	/**
+	 * Run an AJAX handler the way the AJAX call does and return the JSON it sent.
+	 *
+	 * wp_send_json_*() ends in wp_die(), so the die handler throws an Error to stop there. It is an Error and not an
+	 * Exception because endpoints catch Exception around their wp_send_json_*() calls, and a real wp_die() exits. The
+	 * handler must end that way: a handler that returns without sending a response fails the test.
+	 *
+	 * @param callable $handler The handler, for example array( $endpoint, 'handle_request' ).
+	 * @return array The decoded response ("success" and "data").
+	 */
+	protected function run_ajax_handler( callable $handler ): array {
+		add_filter(
+			'wp_die_ajax_handler',
+			static function () {
+				return static function ( $message ) {
+					throw new Error( 'wp_die:' . esc_html( (string) $message ) );
+				};
+			}
+		);
+		add_filter( 'wp_doing_ajax', '__return_true' );
+
+		$finished = true;
+		ob_start();
+		try {
+			$handler();
+			$finished = false;
+		} catch ( Error $e ) {
+			if ( 0 !== strpos( $e->getMessage(), 'wp_die:' ) ) {
+				throw $e;
+			}
+		} finally {
+			$body = (string) ob_get_clean();
+		}
+
+		$this->assertTrue( $finished, 'The handler should end the request with a JSON response' );
+		$response = json_decode( $body, true );
+		$this->assertIsArray( $response, 'The handler should send JSON, got: ' . $body );
+
+		return $response;
 	}
 
 	/**

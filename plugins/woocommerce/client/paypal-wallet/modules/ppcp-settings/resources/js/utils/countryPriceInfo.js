@@ -25,7 +25,6 @@ export const countryPriceInfo = {
 			percentage: 2.89,
 			fixedFee: 0.29,
 		},
-		standardCardFields: 2.99,
 	},
 	GB: {
 		fixedFee: {
@@ -41,7 +40,6 @@ export const countryPriceInfo = {
 		dw: 1.2,
 		axo: 1.2,
 		apm: 1.2,
-		standardCardFields: 1.2,
 	},
 	CA: {
 		fixedFee: {
@@ -56,7 +54,6 @@ export const countryPriceInfo = {
 		dw: 2.7,
 		axo: 2.7,
 		apm: 2.9,
-		standardCardFields: 2.9,
 	},
 	AU: {
 		fixedFee: {
@@ -72,7 +69,6 @@ export const countryPriceInfo = {
 		dw: 1.75,
 		axo: 1.75,
 		apm: 2.6,
-		standardCardFields: 2.6,
 	},
 	FR: {
 		fixedFee: {
@@ -88,7 +84,6 @@ export const countryPriceInfo = {
 		dw: 1.2,
 		axo: 1.2,
 		apm: 1.2,
-		standardCardFields: 1.2,
 	},
 	IT: {
 		fixedFee: {
@@ -104,7 +99,6 @@ export const countryPriceInfo = {
 		dw: 1.2,
 		axo: 1.2,
 		apm: 1.2,
-		standardCardFields: 1.2,
 	},
 	DE: {
 		fixedFee: {
@@ -120,7 +114,6 @@ export const countryPriceInfo = {
 		dw: 2.99,
 		axo: 2.99,
 		apm: 2.99,
-		standardCardFields: 2.99,
 	},
 	ES: {
 		fixedFee: {
@@ -136,6 +129,5 @@ export const countryPriceInfo = {
 		dw: 1.2,
 		axo: 1.2,
 		apm: 1.2,
-		standardCardFields: 1.2,
 	},
 };

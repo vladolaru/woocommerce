@@ -23,8 +23,6 @@ const defaultPersistent = Object.freeze( {
 	'ppcp-gateway': {},
 	venmo: {},
 	'pay-later': {},
-	'ppcp-card-button-gateway': {},
-	'ppcp-credit-card-gateway': {},
 	'ppcp-axo-gateway': {},
 	'ppcp-applepay': {},
 	'ppcp-googlepay': {},
@@ -42,9 +40,6 @@ const defaultPersistent = Object.freeze( {
 
 	// Custom payment method properties.
 	paypalShowLogo: false,
-	threeDSecure: 'no-3d-secure',
-	cardholderName: false,
-	showCardLogos: false,
 	fastlaneDisplayWatermark: false,
 	puiBrandName: '',
 	puiLogoUrl: '',

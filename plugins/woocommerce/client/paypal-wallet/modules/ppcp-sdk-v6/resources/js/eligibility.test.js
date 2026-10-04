@@ -110,22 +110,6 @@ describe( 'checkEligibility', () => {
 
 		expect( result.applepay ).toBe( false );
 	} );
-
-	test( 'reports card eligibility', async () => {
-		const sdk = sdkWith( { eligible: [ 'card' ] } );
-
-		const result = await checkEligibility( sdk, { currencyCode: 'USD' } );
-
-		expect( result.card ).toBe( true );
-	} );
-
-	test( 'resolves with card false, instead of rejecting, when isEligible throws for card', async () => {
-		const sdk = sdkWith( { isEligibleThrowsFor: [ 'card' ] } );
-
-		const result = await checkEligibility( sdk, { currencyCode: 'USD' } );
-
-		expect( result.card ).toBe( false );
-	} );
 } );
 
 describe( 'checkVaultEligibility', () => {
@@ -140,14 +124,14 @@ describe( 'checkVaultEligibility', () => {
 		} );
 	} );
 
-	test( 'maps paypal and advanced_cards eligibility onto paypal and card', async () => {
-		const sdk = sdkWith( { eligible: [ 'paypal', 'advanced_cards' ] } );
+	test( 'maps paypal eligibility onto paypal', async () => {
+		const sdk = sdkWith( { eligible: [ 'paypal' ] } );
 
 		const result = await checkVaultEligibility( sdk, {
 			currencyCode: 'EUR',
 		} );
 
-		expect( result ).toEqual( { paypal: true, card: true } );
+		expect( result ).toEqual( { paypal: true } );
 	} );
 
 	test( 'reports methods as ineligible when the SDK excludes them', async () => {
@@ -157,6 +141,6 @@ describe( 'checkVaultEligibility', () => {
 			currencyCode: 'EUR',
 		} );
 
-		expect( result ).toEqual( { paypal: false, card: false } );
+		expect( result ).toEqual( { paypal: false } );
 	} );
 } );

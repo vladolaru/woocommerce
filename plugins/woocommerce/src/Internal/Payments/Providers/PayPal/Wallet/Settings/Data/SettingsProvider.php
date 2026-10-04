@@ -15,7 +15,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Setti
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\DTO\LocationStylingDTO;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\DTO\MerchantConnectionDTO;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CreditCardGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Googlepay\GooglePayGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Applepay\ApplePayGateway;
@@ -196,15 +195,6 @@ class SettingsProvider {
 	}
 
 	/**
-	 * Whether the merchant wants to accept card payments via the PayPal plugin.
-	 *
-	 * @return bool
-	 */
-	public function accept_card_payments(): bool {
-		return $this->onboarding_profile->get_accept_card_payments();
-	}
-
-	/**
 	 * Gets the active product types for this store.
 	 *
 	 * @return string[] Any of ['virtual'|'physical'|'subscriptions'].
@@ -256,15 +246,6 @@ class SettingsProvider {
 	 */
 	public function show_paypal_logo(): bool {
 		return $this->payment_settings->get_paypal_show_logo();
-	}
-
-	/**
-	 * If it should show CardHolder name.
-	 *
-	 * @return bool
-	 */
-	public function show_cardholder_name(): bool {
-		return $this->payment_settings->get_cardholder_name();
 	}
 
 	/**
@@ -366,30 +347,12 @@ class SettingsProvider {
 		return $this->settings_model->get_button_language();
 	}
 
-	/**
-	 * Gets the 3D Secure setting.
-	 *
-	 * @return string The 3D Secure setting.
-	 */
-	public function three_d_secure(): string {
-		return $this->settings_model->get_three_d_secure();
-	}
-
 	public function is_payment_level_processing_enabled(): bool {
 		return $this->settings_model->get_payment_level_processing();
 	}
 
 	public function ships_from_postal_code(): string {
 		return $this->settings_model->get_ships_from_postal_code();
-	}
-
-	/**
-	 * Gets the 3D Secure setting as API enum value.
-	 *
-	 * @return string The 3D Secure API enum ('NO_3D_SECURE', 'SCA_WHEN_REQUIRED', 'SCA_ALWAYS').
-	 */
-	public function three_d_secure_enum(): string {
-		return $this->settings_model->get_three_d_secure_enum();
 	}
 
 	/**
@@ -448,15 +411,6 @@ class SettingsProvider {
 	}
 
 	/**
-	 * Gets the save card details setting.
-	 *
-	 * @return bool True if saving card details is enabled, false otherwise.
-	 */
-	public function save_card_details(): bool {
-		return $this->settings_model->get_save_card_details();
-	}
-
-	/**
 	 * Whether the "Pay Now" setting is enabled.
 	 */
 	public function enable_pay_now(): bool {
@@ -468,22 +422,6 @@ class SettingsProvider {
 	 */
 	public function enable_logging(): bool {
 		return $this->settings_model->get_enable_logging();
-	}
-
-	/**
-	 * Returns a string-list of disabled card providers.
-	 */
-	public function disabled_cards(): array {
-		return $this->settings_model->get_disabled_cards();
-	}
-
-	/**
-	 * Gets the card icons.
-	 *
-	 * @return array The array of card icons.
-	 */
-	public function card_icons(): array {
-		return $this->settings_model->get_card_icons();
 	}
 
 	/**
@@ -688,20 +626,6 @@ class SettingsProvider {
 		);
 	}
 
-	public function acdc_gateway_title(): string {
-		return $this->payment_settings->get_method_title(
-			CreditCardGateway::ID,
-			__( 'Debit & Credit Cards', 'woocommerce' )
-		);
-	}
-
-	public function acdc_gateway_description(): string {
-		return $this->payment_settings->get_method_description(
-			CreditCardGateway::ID,
-			__( 'Pay with your credit card.', 'woocommerce' )
-		);
-	}
-
 	public function smart_button_locations(): array {
 		return $this->styling_settings->get_smart_button_locations();
 	}
@@ -716,16 +640,6 @@ class SettingsProvider {
 
 	public function pay_later_messaging_enabled(): bool {
 		return $this->paylater_messaging_settings->get_messaging_enabled();
-	}
-
-	/**
-	 * Whether to show the cardholder name field in the ACDC (Advanced Card Processing) payment
-	 * form.
-	 *
-	 * @return string 'yes' to show the field, 'no' to hide it.
-	 */
-	public function acdc_show_name_on_card(): string {
-		return $this->payment_settings->get_cardholder_name() ? 'yes' : 'no';
 	}
 
 	public function capture_on_status_change(): bool {

@@ -26,7 +26,6 @@ import { checkEligibility } from './eligibility';
 import { V6ExpressComponent } from './blocks/V6ExpressComponent';
 import { V6WalletComponent } from './blocks/V6WalletComponent';
 import { V6ContinuationComponent } from './blocks/V6ContinuationComponent';
-import { V6CardFieldsComponent } from './blocks/V6CardFieldsComponent';
 import { V6EditorPreview } from './blocks/V6EditorPreview';
 // Reused as-is from the blocks module: renders the saved-PayPal vault approval
 // into the selected saved-token row (its own namespaced SDK, no v6 clash).
@@ -344,101 +343,6 @@ if ( config && config.page_context && config.continuation ) {
 			features: settings.supported_features,
 		} );
 	}
-}
-
-// BCDC, redirecting rather than using the SDK: its card form only renders
-// inline, which needs an express placement that WooCommerce then disables.
-// CardButtonGateway returns PayPal's hosted checkout URL when the session holds
-// no approved order. Skipped in continuation mode, like the card fields.
-if ( config?.card_button?.block_method && ! config.continuation ) {
-	const cardButtonId = config.card_button.payment_method;
-
-	registerPaymentMethod( {
-		name: cardButtonId,
-		label: createElement( 'div', null, config.card_button.title ),
-		ariaLabel: config.card_button.title,
-		content: createElement( PayPalPlaceOrderContent, {
-			description: config.card_button.description,
-			placeOrderButtonDescription: config.placeOrderButtonDescription,
-		} ),
-		edit: createElement( PayPalPlaceOrderContent, {
-			description: config.card_button.description,
-		} ),
-		// Same belt-and-braces pair as the PayPal row: the registration property
-		// and the Checkout Actions filter both have to carry an override.
-		...( config.placeOrderButtonLabel
-			? { placeOrderButtonLabel: config.placeOrderButtonLabel }
-			: {} ),
-		canMakePayment: () => true,
-		supports: {
-			features: gatewayFeatures( config.card_button.supported_features ),
-			// PayPal's hosted card page cannot vault into WooCommerce.
-			showSaveOption: false,
-		},
-	} );
-
-	registerPlaceOrderLabel( cardButtonId, config.placeOrderButtonLabel );
-}
-
-/**
- * The card method label: the gateway title plus the supported-card logos.
- *
- * PaymentMethodIcons comes off the `components` prop WooCommerce Blocks injects
- * into a label, not an import. card_icons is empty when "Show logos of supported
- * cards" is off.
- *
- * @param {Object} props            - Label props from the Blocks registry.
- * @param {Object} props.components - Blocks-provided label components.
- * @return {Object} The label element.
- */
-const CardFieldsLabel = ( { components } ) => {
-	const { PaymentMethodIcons } = components || {};
-	const icons = config.card_fields.card_icons || [];
-
-	return createElement(
-		'span',
-		{
-			style: {
-				display: 'flex',
-				alignItems: 'center',
-				justifyContent: 'space-between',
-				width: '100%',
-			},
-		},
-		createElement( 'span', null, config.card_fields.title ),
-		PaymentMethodIcons &&
-			icons.length > 0 &&
-			createElement( PaymentMethodIcons, { icons, align: 'right' } )
-	);
-};
-
-// Skipped in continuation mode, where the buyer has already approved a PayPal
-// order and only the review shows.
-if ( config?.card_fields?.enabled && ! config.continuation ) {
-	registerPaymentMethod( {
-		name: config.card_fields.payment_method,
-		label: createElement( CardFieldsLabel ),
-		ariaLabel: config.card_fields.title,
-		content: createElement( V6CardFieldsComponent, { config } ),
-		// A static placeholder, not the live fields: the SDK does not boot in
-		// the block editor.
-		edit: createElement(
-			'div',
-			{ className: 'ppcp-sdk-v6-editor-preview' },
-			config.card_fields.title
-		),
-		canMakePayment: () => true,
-		supports: {
-			features: gatewayFeatures( config.card_fields.supported_features ),
-			// Blocks' native save checkbox, whose choice arrives as the
-			// shouldSavePayment prop. Suppressed on a subscription cart: the
-			// native checkbox cannot be locked, so the card component renders
-			// its own checked-and-disabled one instead.
-			showSaveOption:
-				Boolean( config.card_fields.is_vaulting_enabled ) &&
-				! config.has_subscriptions,
-		},
-	} );
 }
 
 // The regular (non-express) ppcp-gateway method. One registration serving two

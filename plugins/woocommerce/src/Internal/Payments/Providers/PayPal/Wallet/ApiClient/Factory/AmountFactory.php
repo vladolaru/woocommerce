@@ -18,8 +18,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\H
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\StoreApi\Entity\CartTotals;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\StoreApi\Entity\Money as StoreApiMoney;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\FreeTrialHandlerTrait;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CardButtonGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CreditCardGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 
 /**
@@ -218,10 +216,9 @@ class AmountFactory {
 		// (typically ±1 cent from inclusive-tax rounding) so that PayPal's
 		// invariant — amount.value === sum(breakdown) — always holds while the
 		// total still matches what WooCommerce stored on the order.
-		if ( (
-				in_array( $order->get_payment_method(), array( CreditCardGateway::ID, CardButtonGateway::ID ), true )
-				|| ( PayPalGateway::ID === $order->get_payment_method() && 'card' === $order->get_meta( PayPalGateway::ORDER_PAYMENT_SOURCE_META_KEY ) )
-			)
+		if (
+			PayPalGateway::ID === $order->get_payment_method()
+			&& 'card' === $order->get_meta( PayPalGateway::ORDER_PAYMENT_SOURCE_META_KEY )
 			&& $this->is_free_trial_order( $order )
 		) {
 			$taxes = new Money( $taxes_val, $currency );

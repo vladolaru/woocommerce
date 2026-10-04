@@ -2,20 +2,15 @@ import { __ } from '@wordpress/i18n';
 import { useCallback } from '@wordpress/element';
 
 import { CommonHooks, PaymentHooks } from '@ppcp-settings/data';
-import {
-	useActiveModal,
-	useWooSettings,
-} from '@ppcp-settings/data/common/hooks';
+import { useActiveModal } from '@ppcp-settings/data/common/hooks';
 import Modal from '../Components/Payment/Modal';
 import PaymentMethodCard from '../Components/Payment/PaymentMethodCard';
-import { useFeatures } from '@ppcp-settings/data/features/hooks';
 
 const TabPaymentMethods = () => {
 	const methods = PaymentHooks.usePaymentMethods();
 	const store = PaymentHooks.useStore();
 	const { setPersistent, changePaymentSettings } = store;
 	const { activeModal, setActiveModal } = useActiveModal();
-	const { features } = useFeatures();
 
 	// Get all methods as a map for dependency checking
 	const methodsMap = {};
@@ -39,9 +34,6 @@ const TabPaymentMethods = () => {
 
 			const persistentSettings = [
 				'paypalShowLogo',
-				'threeDSecure',
-				'cardholderName',
-				'showCardLogos',
 				'fastlaneDisplayWatermark',
 				'puiBrandName',
 				'puiLogoUrl',
@@ -61,22 +53,6 @@ const TabPaymentMethods = () => {
 	);
 
 	const merchant = CommonHooks.useMerchant();
-	const { storeCountry } = useWooSettings();
-
-	const showCardPayments =
-		methods.cardPayment.length > 0 && merchant.isBusinessSeller;
-
-	// Hide BCDC for all countries except Mexico when ACDC is turned on.
-	const filteredPayPalMethods = methods.paypal.filter(
-		( method ) =>
-			method.id !== 'ppcp-card-button-gateway' ||
-			storeCountry === 'MX' ||
-			! features.some(
-				( feature ) =>
-					feature.id === 'advanced_credit_and_debit_cards' &&
-					feature.enabled === true
-			)
-	);
 
 	const showApms = methods.apm.length > 0 && merchant.isBusinessSeller;
 
@@ -90,28 +66,10 @@ const TabPaymentMethods = () => {
 					'woocommerce'
 				) }
 				icon="icon-checkout-standard.svg"
-				methods={ filteredPayPalMethods }
+				methods={ methods.paypal }
 				onTriggerModal={ setActiveModal }
 				methodsMap={ methodsMap }
 			/>
-
-			{ showCardPayments && (
-				<PaymentMethodCard
-					id="ppcp-card-payments-card"
-					title={ __(
-						'Online Card Payments',
-						'woocommerce'
-					) }
-					description={ __(
-						'Select your preferred card payment options for efficient payment processing.',
-						'woocommerce'
-					) }
-					icon="icon-checkout-online-methods.svg"
-					methods={ methods.cardPayment }
-					onTriggerModal={ setActiveModal }
-					methodsMap={ methodsMap }
-				/>
-			) }
 
 			{ showApms && (
 				<PaymentMethodCard

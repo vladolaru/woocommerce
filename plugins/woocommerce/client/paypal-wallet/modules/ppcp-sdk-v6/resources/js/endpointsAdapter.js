@@ -231,8 +231,8 @@ export async function createOrder(
 /**
  * Reports an approved PayPal order and takes the buyer wherever it leads.
  *
- * should_create_wc_order is requested except on classic checkout, for the card
- * button and for Venmo with vaulting, and the server decides: with the Pay Now
+ * should_create_wc_order is requested except on classic checkout and for Venmo
+ * with vaulting, and the server decides: with the Pay Now
  * experience it creates the WC order and responds with order_received_url,
  * otherwise it only stores the approved order in the session and the gateway
  * processes it on Place Order. On classic checkout the WC checkout form is
@@ -269,13 +269,9 @@ export async function approveOrder(
 
 	// Never on classic checkout: its form submit must create the order, and an
 	// order created here would consume the reCAPTCHA result that submit re-checks.
-	// Never for the card button: ApproveOrderEndpoint would run
-	// PayPalGateway::process_payment() and pin chosen_payment_method to the
-	// PayPal gateway, so CardButtonGateway::process_payment() is never reached.
 	// False routes us through the classic form submit below instead.
 	const canCreateOrder =
 		context !== 'checkout' &&
-		fundingSource !== FundingSources.CARD &&
 		( ! config.vaulting_enabled || fundingSource !== FundingSources.VENMO );
 
 	const body = {
@@ -386,83 +382,6 @@ export async function approveOrderInSession( config, fundingSource, orderId ) {
 		order_id: orderId,
 		funding_source: fundingSource,
 		should_create_wc_order: false,
-	} );
-}
-
-/**
- * Creates a PayPal order for the Advanced Card Fields (ACDC) checkout flow.
- *
- * Unlike createOrder(), this never sets save_order_in_session: at
- * create-order time the order has no card attached yet, no 3D Secure
- * decision exists, and the disabled-card-brand check hasn't run — storing
- * it in the session this early would let the native checkout capture an
- * unconfirmed, cardless order. approveCardOrder() is what stores the
- * order in session, once those checks pass.
- *
- * @param {Object} config   - The wc_ppcp_sdk_v6 config object.
- * @param {string} context  - The page context (checkout or checkout-block).
- * @param {boolean} savePaymentMethod - Whether to vault the card during purchase.
- * @return {Promise<{orderId: string}>} The created PayPal order id.
- */
-export async function createCardOrder(
-	config,
-	context = 'checkout',
-    savePaymentMethod = false
-) {
-	const body = {
-		context,
-		purchase_units: [],
-		payment_method: config.card_fields.payment_method,
-		funding_source: config.card_fields.funding_source,
-        save_payment_method: savePaymentMethod,
-	};
-
-	// Pay-for-order: the server builds the order from the existing WC order.
-	if ( context === 'pay-now' && config.pay_now ) {
-		body.order_id = config.pay_now.order_id;
-		body.order_key = config.pay_now.order_key;
-	}
-
-	// Only the classic checkout has a WC form to serialize, letting the server
-	// run its early validation before creating the order; other contexts submit
-	// their data separately.
-	if ( context === 'checkout' ) {
-		const form = document.querySelector( 'form.checkout' );
-		if ( form ) {
-			body.form_encoded = new URLSearchParams(
-				new FormData( form )
-			).toString();
-			body.createaccount =
-				!! form.querySelector( '#createaccount' )?.checked;
-		}
-	}
-
-	const payer = payerFor( context );
-	if ( payer ) {
-		body.payer = payer;
-	}
-
-	const data = await postJson( config.ajax.create_order, body );
-
-	return { orderId: data.id };
-}
-
-/**
- * Approves a card-fields order after the card session has confirmed it.
- *
- * The endpoint runs the disabled-card-brand and 3D Secure checks, then stores
- * the confirmed
- * order in the WC session so the native checkout submission (triggered
- * right after this resolves) can capture it via the existing
- * CreditCardGateway::process_payment() flow.
- *
- * @param {Object} config  - The wc_ppcp_sdk_v6 config object.
- * @param {string} orderId - The PayPal order ID.
- */
-export async function approveCardOrder( config, orderId ) {
-	await postJson( config.ajax.approve_order, {
-		order_id: orderId,
-		funding_source: config.card_fields.funding_source,
 	} );
 }
 

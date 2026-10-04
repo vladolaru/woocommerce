@@ -23,7 +23,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoi
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Helper\EarlyOrderHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Session\SessionHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\CardBillingMode;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
 use Automattic\WooCommerce\Vendor\Psr\Log\NullLogger;
 use Mockery;
@@ -76,7 +75,6 @@ class CreateOrderEndpointTest extends WalletTestCase {
 			$this->mock( CartDataFactory::class ),
 			$this->mock( CartDataTransientStorage::class ),
 			false,
-			CardBillingMode::MINIMAL_INPUT,
 			false,
 			array( 'checkout' ),
 			false,

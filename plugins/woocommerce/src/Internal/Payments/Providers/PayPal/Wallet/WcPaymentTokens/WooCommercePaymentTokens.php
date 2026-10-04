@@ -11,13 +11,10 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcPay
 
 use Exception;
 use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
-use stdClass;
 use WC_Payment_Token;
-use WC_Payment_Token_CC;
 use WC_Payment_Tokens;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\PaymentTokensEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\RuntimeException;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CreditCardGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 
 /**
@@ -202,50 +199,6 @@ class WooCommercePaymentTokens {
 	}
 
 	/**
-	 * Creates a WC Payment Token for Credit Card payment.
-	 *
-	 * @param int      $customer_id The WC customer ID.
-	 * @param stdClass $payment_token The Credit Card payment token.
-	 *
-	 * @return int
-	 */
-	public function create_payment_token_card( int $customer_id, stdClass $payment_token ): int {
-		if ( $customer_id === 0 ) {
-			return 0;
-		}
-
-		$wc_tokens = WC_Payment_Tokens::get_customer_tokens( $customer_id, CreditCardGateway::ID );
-		if ( $this->token_exist( $wc_tokens, $payment_token->id ) ) {
-			return 0;
-		}
-
-		$token = new WC_Payment_Token_CC();
-		$token->set_token( $payment_token->id );
-		$token->set_user_id( $customer_id );
-		$token->set_gateway_id( CreditCardGateway::ID );
-
-		$token->set_last4( $payment_token->payment_source->card->last_digits ?? '' );
-		$expiry = explode( '-', $payment_token->payment_source->card->expiry ?? '' );
-		$token->set_expiry_year( $expiry[0] ?? '' );
-		$token->set_expiry_month( $expiry[1] ?? '' );
-
-		$brand = $payment_token->payment_source->card->brand ?? __( 'N/A', 'woocommerce' );
-		if ( $brand ) {
-			$token->set_card_type( $brand );
-		}
-
-		try {
-			$token->save();
-		} catch ( Exception $exception ) {
-			$this->logger->error(
-				"Could not create WC payment token card for customer {$customer_id}. " . $exception->getMessage()
-			);
-		}
-
-		return $token->get_id();
-	}
-
-	/**
 	 * Returns PayPal payment tokens for the given WP user id.
 	 *
 	 * @param int $user_id WP user id.
@@ -301,23 +254,6 @@ class WooCommercePaymentTokens {
 					$user_id,
 					$customer_token['id'],
 					$customer_token['payment_source']->properties()->email_address ?? ''
-				);
-			}
-
-			if ( $customer_token['payment_source']->name() === 'card' ) {
-				/**
-				 * Suppress ArgumentTypeCoercion
-				 *
-				 * @psalm-suppress ArgumentTypeCoercion
-				 */
-				$this->create_payment_token_card(
-					$user_id,
-					(object) array(
-						'id'             => $customer_token['id'],
-						'payment_source' => (object) array(
-							$customer_token['payment_source']->name() => $customer_token['payment_source']->properties(),
-						),
-					)
 				);
 			}
 		}

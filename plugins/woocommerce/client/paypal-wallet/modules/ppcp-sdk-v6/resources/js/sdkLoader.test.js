@@ -46,11 +46,6 @@ describe( 'loadSdkV6', () => {
 			[ 'paypal-payments', 'venmo-payments' ],
 		],
 		[
-			'card fields enabled',
-			{ card_fields: { enabled: true } },
-			[ 'paypal-payments', 'venmo-payments', 'card-fields' ],
-		],
-		[
 			'google pay enabled',
 			{ google_pay: { enabled: true } },
 			[ 'paypal-payments', 'venmo-payments', 'googlepay-payments' ],
@@ -61,19 +56,14 @@ describe( 'loadSdkV6', () => {
 			[ 'paypal-payments', 'venmo-payments', 'applepay-payments' ],
 		],
 		[
-			'card fields and google pay both enabled',
-			{ card_fields: { enabled: true }, google_pay: { enabled: true } },
+			'google pay and apple pay both enabled',
+			{ google_pay: { enabled: true }, apple_pay: { enabled: true } },
 			[
 				'paypal-payments',
 				'venmo-payments',
-				'card-fields',
 				'googlepay-payments',
+				'applepay-payments',
 			],
-		],
-		[
-			'the card button rendering its classic row',
-			{ card_button: { row: true } },
-			[ 'paypal-payments', 'venmo-payments', 'paypal-guest-payments' ],
 		],
 		[
 			'fastlane enabled',
@@ -88,11 +78,10 @@ describe( 'loadSdkV6', () => {
 		);
 	} );
 
-	test( 'requests fastlane, card fields and apple pay all enabled', async () => {
+	test( 'requests fastlane and apple pay when both are enabled', async () => {
 		await loadSdkV6(
 			baseConfig( {
 				fastlane: { enabled: true },
-				card_fields: { enabled: true },
 				apple_pay: { enabled: true },
 			} ),
 			'checkout'
@@ -106,33 +95,18 @@ describe( 'loadSdkV6', () => {
 			[
 				'paypal-payments',
 				'venmo-payments',
-				'card-fields',
 				'applepay-payments',
 				'fastlane',
 			].sort()
 		);
 	} );
 
-	test( 'does not request card-fields, googlepay-payments or fastlane when all are explicitly disabled', async () => {
+	test( 'does not request googlepay-payments or fastlane when both are explicitly disabled', async () => {
 		await loadSdkV6(
 			baseConfig( {
-				card_fields: { enabled: false },
 				google_pay: { enabled: false },
 				fastlane: { enabled: false },
 			} ),
-			'checkout'
-		);
-
-		expect( window.paypal.createInstance ).toHaveBeenCalledWith(
-			expect.objectContaining( {
-				components: [ 'paypal-payments', 'venmo-payments' ],
-			} )
-		);
-	} );
-
-	test( 'does not request paypal-guest-payments when the card button has no classic row', async () => {
-		await loadSdkV6(
-			baseConfig( { card_button: { row: false } } ),
 			'checkout'
 		);
 
@@ -165,25 +139,6 @@ describe( 'loadSdkV6', () => {
 		expect( window.paypal.createInstance ).toHaveBeenCalledWith(
 			expect.objectContaining( {
 				components: expect.not.arrayContaining( [ 'paypal-messages' ] ),
-			} )
-		);
-	} );
-
-	test( 'requests card-fields regardless of the messages setting', async () => {
-		await loadSdkV6(
-			baseConfig( {
-				card_fields: { enabled: true },
-				messages: { enabled: true },
-			} ),
-			'checkout'
-		);
-
-		expect( window.paypal.createInstance ).toHaveBeenCalledWith(
-			expect.objectContaining( {
-				components: expect.arrayContaining( [
-					'card-fields',
-					'paypal-messages',
-				] ),
 			} )
 		);
 	} );

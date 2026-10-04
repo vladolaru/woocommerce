@@ -112,7 +112,7 @@ const PaypalSettings = ( { hasContactModule } ) => {
 			<SettingsBlock
 				title={ __( 'Soft Descriptor', 'woocommerce' ) }
 				description={ __(
-					"The dynamic text used to construct the statement descriptor that appears on a payer's card statement. Applies to PayPal and Credit Card transactions. Max value of 22 characters.",
+					"The dynamic text used to construct the statement descriptor that appears on a payer's card statement. Applies to PayPal, Venmo, and Pay Later transactions. Max value of 22 characters.",
 					'woocommerce'
 				) }
 			>

@@ -60,7 +60,6 @@ return array(
 			$container->get( 'button.session.factory.card-data' ),
 			$container->get( 'button.session.storage.card-data.transient' ),
 			$registration_needed,
-			$container->get( 'wcgateway.settings.card_billing_data_mode' ),
 			$container->get( 'order-endpoints.early-wc-checkout-validation-enabled' ),
 			$container->get( 'order-endpoints.pay-now-contexts' ),
 			$container->get( 'order-endpoints.handle-shipping-in-paypal' ),
@@ -73,10 +72,8 @@ return array(
 		$request_data         = $container->get( 'order-endpoints.request-data' );
 		$order_endpoint       = $container->get( 'api.endpoint.order' );
 		$session_handler      = $container->get( 'session.handler' );
-		$three_d_secure       = $container->get( 'button.helper.three-d-secure' );
 		$settings_provider    = $container->get( 'settings.settings-provider' );
 		$settings_model       = $container->get( 'settings.data.settings' );
-		$dcc_applies          = $container->get( 'api.helpers.dccapplies' );
 		$order_helper         = $container->get( 'api.order-helper' );
 		$final_review_enabled = $container->get( 'blocks.settings.final_review_enabled' );
 		$wc_order_creator     = $container->get( 'order-endpoints.helper.wc-order-creator' );
@@ -88,10 +85,8 @@ return array(
 			$request_data,
 			$order_endpoint,
 			$session_handler,
-			$three_d_secure,
 			$settings_provider,
 			$settings_model,
-			$dcc_applies,
 			$order_helper,
 			$final_review_enabled,
 			$gateway,

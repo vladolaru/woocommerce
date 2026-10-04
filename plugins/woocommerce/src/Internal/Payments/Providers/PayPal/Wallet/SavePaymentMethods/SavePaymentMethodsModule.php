@@ -31,7 +31,6 @@ use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ServiceModule;
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsModel;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CreditCardGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Endpoint\SubscriptionChangePaymentMethod;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Helper\SubscriptionHelper;
@@ -78,7 +77,7 @@ class SavePaymentMethodsModule implements ServiceModule, ExecutableModule {
 			function () use ( $c ) {
 				$settings_provider = $c->get( 'settings.settings-provider' );
 				assert( $settings_provider instanceof SettingsProvider );
-				if ( ! $settings_provider->save_paypal_and_venmo() && ! $settings_provider->save_card_details() ) {
+				if ( ! $settings_provider->save_paypal_and_venmo() ) {
 					return true;
 				}
 
@@ -126,16 +125,7 @@ class SavePaymentMethodsModule implements ServiceModule, ExecutableModule {
 
 						$funding_source = (string) ( $request_data['funding_source'] ?? '' );
 
-						if ( $payment_method === CreditCardGateway::ID ) {
-							if ( ! $settings_provider->save_card_details() ) {
-								return $data;
-							}
-
-							$save_payment_method = $request_data['save_payment_method'] ?? false;
-							if ( ! $save_payment_method ) {
-								return $data;
-							}
-						} elseif ( $payment_method === PayPalGateway::ID && $funding_source === 'apple_pay' ) {
+						if ( $payment_method === PayPalGateway::ID && $funding_source === 'apple_pay' ) {
 							if ( ! $settings_provider->save_paypal_and_venmo() ) {
 								return $data;
 							}
@@ -213,18 +203,6 @@ class SavePaymentMethodsModule implements ServiceModule, ExecutableModule {
 							assert( $wc_payment_tokens instanceof WooCommercePaymentTokens );
 
 							try {
-								if ( $wc_order->get_payment_method() === CreditCardGateway::ID ) {
-									$wc_payment_tokens->create_payment_token_card(
-										$wc_order->get_customer_id(),
-										(object) array(
-											'id' => $token_id,
-											'payment_source' => (object) array(
-												'card' => $payment_source->properties(),
-											),
-										)
-									);
-								}
-
 								if ( $wc_order->get_payment_method() === PayPalGateway::ID ) {
 									switch ( $payment_source->name() ) {
 										case 'venmo':
@@ -241,15 +219,7 @@ class SavePaymentMethodsModule implements ServiceModule, ExecutableModule {
 											);
 											break;
 										case 'card':
-											$wc_payment_tokens->create_payment_token_card(
-												$wc_order->get_customer_id(),
-												(object) array(
-													'id' => $token_id,
-													'payment_source' => (object) array(
-														'card' => $payment_source->properties(),
-													),
-												)
-											);
+											// Card vaulting is not part of the wallet; only a third party using `ppcp_create_order_request_body_data` could request it.
 											break;
 										case 'paypal':
 										default:
@@ -282,7 +252,6 @@ class SavePaymentMethodsModule implements ServiceModule, ExecutableModule {
 				);
 
 				add_filter( 'woocommerce_paypal_payments_disable_add_payment_method', '__return_false' );
-				add_filter( 'woocommerce_paypal_payments_should_render_card_custom_fields', '__return_false' );
 
 				add_action(
 					'wp_enqueue_scripts',
@@ -327,14 +296,6 @@ class SavePaymentMethodsModule implements ServiceModule, ExecutableModule {
 
 							$id_token = $api->id_token( $target_customer_id );
 
-							$settings_provider = $c->get( 'settings.settings-provider' );
-							assert( $settings_provider instanceof SettingsProvider );
-
-							$verification_method = apply_filters(
-								'woocommerce_paypal_payments_three_d_secure_contingency',
-								$settings_provider->three_d_secure_enum()
-							);
-
 							// phpcs:ignore WordPress.Security.NonceVerification
 							$change_payment_method                      = wc_clean( wp_unslash( $_GET['change_payment_method'] ?? '' ) );
 							$is_subscription_change_payment_method_page = $context->is_subscription_change_payment_method_page();
@@ -348,7 +309,6 @@ class SavePaymentMethodsModule implements ServiceModule, ExecutableModule {
 								'is_subscription_change_payment_page' => $is_subscription_change_payment_method_page,
 								'subscription_id_to_change_payment' => $is_subscription_change_payment_method_page ? (int) $change_payment_method : 0,
 								'error_message'           => __( 'Could not save payment method.', 'woocommerce' ),
-								'verification_method'     => $verification_method,
 								'script_attributes'       => (object) array(),
 								'user'                    => array(
 									'is_logged' => is_user_logged_in(),
@@ -501,25 +461,6 @@ class SavePaymentMethodsModule implements ServiceModule, ExecutableModule {
 
 							$logger->error( $error );
 						}
-					}
-				);
-
-				add_filter(
-					'woocommerce_paypal_payments_credit_card_gateway_supports',
-					function ( array $supports ) use ( $c ): array {
-						if ( ! $c->get( 'save-payment-methods.eligible' ) ) {
-							return $supports;
-						}
-
-						$settings_provider = $c->get( 'settings.settings-provider' );
-						assert( $settings_provider instanceof SettingsProvider );
-
-						if ( $settings_provider->save_card_details() ) {
-							$supports[] = 'tokenization';
-							$supports[] = 'add_payment_method';
-						}
-
-						return $supports;
 					}
 				);
 

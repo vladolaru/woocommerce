@@ -39,8 +39,6 @@ jest.mock( './utils/api', () => ( {
 import {
 	createOrder,
 	approveOrder,
-	createCardOrder,
-	approveCardOrder,
 	fetchCart,
 	fetchCartTotal,
 	simulateCart,
@@ -68,10 +66,6 @@ const config = {
 		wallet_shipping: { endpoint: '/ws', nonce: 'n-ws' },
 	},
 	urls: { checkout: '/checkout/' },
-	card_fields: {
-		payment_method: 'ppcp-credit-card-gateway',
-		funding_source: 'card',
-	},
 };
 
 afterEach( () => {
@@ -390,25 +384,6 @@ describe( 'approveOrder', () => {
 		expect( navigation.assign.mock.calls[ 0 ][ 0 ] ).toContain(
 			'ppcp-continuation-redirect='
 		);
-	} );
-
-	test( 'never requests a WC order for the card button, regardless of vaulting', async () => {
-		postJson.mockResolvedValueOnce( {} );
-
-		await approveOrder(
-			{ ...config, vaulting_enabled: true },
-			'product',
-			'card',
-			'ORDER1',
-			{},
-			'ppcp-card-button-gateway'
-		);
-
-		expect( postJson ).toHaveBeenCalledWith( config.ajax.approve_order, {
-			order_id: 'ORDER1',
-			funding_source: 'card',
-			should_create_wc_order: false,
-		} );
 	} );
 
 	test( 'does not request a WC order for Venmo when vaulting is enabled', async () => {
@@ -774,13 +749,13 @@ describe( 'approveOrder', () => {
 			delete global.jQuery;
 		} );
 
-		test( "ticks the card button gateway's own radio, not the default PayPal gateway selector", async () => {
+		test( "ticks the named gateway's own radio, not the default PayPal gateway selector", async () => {
 			postJson.mockResolvedValueOnce( {} );
 			// No #payment_method_ppcp-gateway element exists, so a fallback to
 			// the default selector would leave the radio unticked.
 			document.body.innerHTML =
 				'<form id="order_review">' +
-				'<input type="radio" id="payment_method_ppcp-card-button-gateway" /></form>';
+				'<input type="radio" id="payment_method_ppcp-googlepay" /></form>';
 			const trigger = jest.fn();
 			global.jQuery = jest.fn( ( selector ) =>
 				typeof selector === 'string'
@@ -791,16 +766,15 @@ describe( 'approveOrder', () => {
 			await approveOrder(
 				config,
 				'pay-now',
-				'card',
+				'googlepay',
 				'ORDER3',
 				{},
-				'ppcp-card-button-gateway'
+				'ppcp-googlepay'
 			);
 
 			expect(
-				document.querySelector(
-					'#payment_method_ppcp-card-button-gateway'
-				).checked
+				document.querySelector( '#payment_method_ppcp-googlepay' )
+					.checked
 			).toBe( true );
 			expect( trigger ).toHaveBeenCalledWith( 'submit' );
 
@@ -818,183 +792,6 @@ describe( 'approveOrder', () => {
 
 			delete global.jQuery;
 		} );
-	} );
-} );
-
-describe( 'createCardOrder', () => {
-	test( 'sends the card payment method/funding source and never sets save_order_in_session', async () => {
-		document.body.innerHTML =
-			'<form class="checkout">' +
-			'<input name="billing_email" value="a@b.com" /></form>';
-		mockPayerData.mockReturnValueOnce( null );
-		postJson.mockResolvedValueOnce( { id: 'CARDORDER1' } );
-
-		const result = await createCardOrder( config );
-
-		expect( result ).toEqual( { orderId: 'CARDORDER1' } );
-		expect( postJson ).toHaveBeenCalledWith( config.ajax.create_order, {
-			context: 'checkout',
-			purchase_units: [],
-			payment_method: 'ppcp-credit-card-gateway',
-			funding_source: 'card',
-			save_payment_method: false,
-			form_encoded: 'billing_email=a%40b.com',
-			createaccount: false,
-		} );
-	} );
-
-	test( 'sends save_payment_method true when the buyer opts to vault the card', async () => {
-		document.body.innerHTML = '<form class="checkout"></form>';
-		mockPayerData.mockReturnValueOnce( null );
-		postJson.mockResolvedValueOnce( { id: 'CARDORDER5' } );
-
-		await createCardOrder( config, 'checkout', true );
-
-		expect( postJson ).toHaveBeenCalledWith(
-			config.ajax.create_order,
-			expect.objectContaining( { save_payment_method: true } )
-		);
-	} );
-
-	test( 'forwards the payer when available', async () => {
-		document.body.innerHTML = '<form class="checkout"></form>';
-		mockPayerData.mockReturnValueOnce( { email_address: 'a@b.com' } );
-		postJson.mockResolvedValueOnce( { id: 'CARDORDER2' } );
-
-		await createCardOrder( config );
-
-		expect( postJson ).toHaveBeenCalledWith(
-			config.ajax.create_order,
-			expect.objectContaining( { payer: { email_address: 'a@b.com' } } )
-		);
-	} );
-
-	test( 'defaults to the checkout context when none is passed', async () => {
-		document.body.innerHTML = '<form class="checkout"></form>';
-		mockPayerData.mockReturnValueOnce( null );
-		postJson.mockResolvedValueOnce( { id: 'CARDORDER3' } );
-
-		await createCardOrder( config );
-
-		expect( postJson ).toHaveBeenCalledWith(
-			config.ajax.create_order,
-			expect.objectContaining( { context: 'checkout' } )
-		);
-	} );
-
-	test( 'never sends card_name', async () => {
-		document.body.innerHTML = '<form class="checkout"></form>';
-		mockPayerData.mockReturnValueOnce( null );
-		postJson.mockResolvedValueOnce( { id: 'CARDORDER6' } );
-
-		await createCardOrder( config );
-
-		expect( postJson ).toHaveBeenCalledWith(
-			config.ajax.create_order,
-			expect.not.objectContaining( { card_name: expect.anything() } )
-		);
-	} );
-
-	test( 'pay-now context identifies the existing WC order to build from', async () => {
-		postJson.mockResolvedValueOnce( { id: 'CARDORDER7' } );
-
-		await createCardOrder(
-			{ ...config, pay_now: { order_id: 456, order_key: 'wc_def' } },
-			'pay-now'
-		);
-
-		expect( postJson ).toHaveBeenCalledWith( config.ajax.create_order, {
-			context: 'pay-now',
-			purchase_units: [],
-			payment_method: 'ppcp-credit-card-gateway',
-			funding_source: 'card',
-			save_payment_method: false,
-			order_id: 456,
-			order_key: 'wc_def',
-		} );
-	} );
-
-	test( 'the checkout-block context sends no classic-form data even with a checkout form present', async () => {
-		document.body.innerHTML =
-			'<form class="checkout">' +
-			'<input name="billing_email" value="a@b.com" />' +
-			'<input type="checkbox" id="createaccount" name="createaccount" checked /></form>';
-		mockPayerData.mockReturnValueOnce( { email_address: 'a@b.com' } );
-		postJson.mockResolvedValueOnce( { id: 'CARDORDER4' } );
-
-		const result = await createCardOrder( config, 'checkout-block' );
-
-		expect( result ).toEqual( { orderId: 'CARDORDER4' } );
-		expect( postJson ).toHaveBeenCalledWith( config.ajax.create_order, {
-			context: 'checkout-block',
-			purchase_units: [],
-			payment_method: 'ppcp-credit-card-gateway',
-			funding_source: 'card',
-			save_payment_method: false,
-		} );
-	} );
-
-	test( 'the checkout-block context sends the payer from the cart store', async () => {
-		mockCartPayerData.mockReturnValueOnce( {
-			email_address: 'a@b.com',
-		} );
-		postJson.mockResolvedValueOnce( { id: 'CARDORDER8' } );
-
-		await createCardOrder( config, 'checkout-block' );
-
-		expect( postJson ).toHaveBeenCalledWith(
-			config.ajax.create_order,
-			expect.objectContaining( { payer: { email_address: 'a@b.com' } } )
-		);
-	} );
-
-	test( 'the checkout-block context sends no payer when the cart store has no email', async () => {
-		mockCartPayerData.mockReturnValueOnce( null );
-		postJson.mockResolvedValueOnce( { id: 'CARDORDER9' } );
-
-		await createCardOrder( config, 'checkout-block' );
-
-		expect( postJson ).toHaveBeenCalledWith(
-			config.ajax.create_order,
-			expect.not.objectContaining( { payer: expect.anything() } )
-		);
-	} );
-
-	test( 'a context with no billing form sends no payer', async () => {
-		postJson.mockResolvedValueOnce( { id: 'CARDORDER10' } );
-
-		await createCardOrder(
-			{ ...config, pay_now: { order_id: 456, order_key: 'wc_def' } },
-			'pay-now'
-		);
-
-		expect( postJson ).toHaveBeenCalledWith(
-			config.ajax.create_order,
-			expect.not.objectContaining( { payer: expect.anything() } )
-		);
-	} );
-} );
-
-describe( 'approveCardOrder', () => {
-	test( 'posts the order id and card funding source', async () => {
-		postJson.mockResolvedValueOnce( {} );
-
-		await approveCardOrder( config, 'CARDORDER1' );
-
-		expect( postJson ).toHaveBeenCalledWith( config.ajax.approve_order, {
-			order_id: 'CARDORDER1',
-			funding_source: 'card',
-		} );
-	} );
-
-	test( 'propagates a rejected (declined/disabled-card/3DS) approval', async () => {
-		postJson.mockRejectedValueOnce(
-			new Error( 'Unfortunately, we do not accept this card.' )
-		);
-
-		await expect(
-			approveCardOrder( config, 'CARDORDER1' )
-		).rejects.toThrow( 'Unfortunately, we do not accept this card.' );
 	} );
 } );
 

@@ -16,12 +16,10 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\E
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\Order;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\PayPalApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\DccApplies;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\OrderHelper;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Exception\NonceValidationException;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Exception\RuntimeException;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Helper\Context;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Helper\ThreeDSecure;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Helper\WooCommerceOrderCreator;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Session\SessionHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
@@ -65,23 +63,9 @@ class ApproveOrderEndpoint implements EndpointInterface {
 	 */
 	private $api_endpoint;
 
-	/**
-	 * The 3d secure helper object.
-	 *
-	 * @var ThreeDSecure
-	 */
-	private $threed_secure;
-
 	private SettingsProvider $settings_provider;
 
 	private SettingsModel $settings_model;
-
-	/**
-	 * The DCC applies object.
-	 *
-	 * @var DccApplies
-	 */
-	private $dcc_applies;
 
 	/**
 	 * The order helper.
@@ -124,10 +108,8 @@ class ApproveOrderEndpoint implements EndpointInterface {
 	 * @param RequestData             $request_data         The request data helper.
 	 * @param OrderEndpoint           $order_endpoint       The order endpoint.
 	 * @param SessionHandler          $session_handler      The session handler.
-	 * @param ThreeDSecure            $three_d_secure       The 3d secure helper object.
 	 * @param SettingsProvider        $settings_provider    The settings provider.
 	 * @param SettingsModel           $settings_model       The settings model.
-	 * @param DccApplies              $dcc_applies          The DCC applies object.
 	 * @param OrderHelper             $order_helper         The order helper.
 	 * @param bool                    $final_review_enabled Whether the final review is enabled.
 	 * @param PayPalGateway           $gateway              The WC gateway.
@@ -138,10 +120,8 @@ class ApproveOrderEndpoint implements EndpointInterface {
 		RequestData $request_data,
 		OrderEndpoint $order_endpoint,
 		SessionHandler $session_handler,
-		ThreeDSecure $three_d_secure,
 		SettingsProvider $settings_provider,
 		SettingsModel $settings_model,
-		DccApplies $dcc_applies,
 		OrderHelper $order_helper,
 		bool $final_review_enabled,
 		PayPalGateway $gateway,
@@ -153,10 +133,8 @@ class ApproveOrderEndpoint implements EndpointInterface {
 		$this->request_data         = $request_data;
 		$this->api_endpoint         = $order_endpoint;
 		$this->session_handler      = $session_handler;
-		$this->threed_secure        = $three_d_secure;
 		$this->settings_provider    = $settings_provider;
 		$this->settings_model       = $settings_model;
-		$this->dcc_applies          = $dcc_applies;
 		$this->order_helper         = $order_helper;
 		$this->final_review_enabled = $final_review_enabled;
 		$this->gateway              = $gateway;
@@ -207,39 +185,6 @@ class ApproveOrderEndpoint implements EndpointInterface {
 					}
 				}
 			}
-
-			$payment_source = $order->payment_source();
-
-			if ( $payment_source && $payment_source->name() === 'card' ) {
-				$disabled_cards = $this->settings_provider->disabled_cards();
-				if ( ! empty( $disabled_cards ) ) {
-					$card = strtolower( $payment_source->properties()->brand ?? '' );
-					if ( 'master_card' === $card ) {
-						$card = 'mastercard';
-					}
-
-					if ( ! $this->dcc_applies->can_process_card( $card ) || in_array( $card, $disabled_cards, true ) ) {
-						throw new RuntimeException(
-							__(
-								'Unfortunately, we do not accept this card.',
-								'woocommerce'
-							),
-							100
-						);
-					}
-				}
-
-				// This check will either pass, or throw an exception.
-				$this->verify_three_d_secure( $order );
-
-				$this->session_handler->replace_order( $order );
-
-				// Exit the request early.
-				wp_send_json_success();
-			}
-
-			// Verify 3DS details. Throws an error when security check fails.
-			$this->verify_three_d_secure( $order );
 
 			$is_ready = $order->status()->is( OrderStatus::APPROVED )
 				|| $order->status()->is( OrderStatus::CREATED );
@@ -305,74 +250,5 @@ class ApproveOrderEndpoint implements EndpointInterface {
 		$enable_pay_now = $this->settings_provider->enable_pay_now();
 		$this->settings_model->set_enable_pay_now( ! $enable_pay_now );
 		$this->settings_model->save();
-	}
-
-	/**
-	 * Performs a 3DS check to verify the payment is not rejected from PayPal side.
-	 *
-	 * This method only checks, if the payment was rejected:
-	 *
-	 * - No 3DS details are present: The payment can proceed.
-	 * - 3DS details present but no rejected: Payment can proceed.
-	 * - 3DS details with a clear rejected: Payment fails.
-	 *
-	 * @param Order $order The PayPal order to inspect.
-	 * @throws RuntimeException When the 3DS check was rejected.
-	 */
-	protected function verify_three_d_secure( Order $order ): void {
-		$payment_source = $order->payment_source();
-
-		if ( ! $payment_source ) {
-			// Missing 3DS details.
-			return;
-		}
-
-		$proceed      = ThreeDSecure::NO_DECISION;
-		$order_status = $order->status();
-		$source_name  = $payment_source->name();
-
-		/**
-		 * For GooglePay (and possibly other payment sources) we check the order
-		 * status, as it will clearly indicate if verification is needed.
-		 *
-		 * Note: PayPal is currently investigating this case.
-		 * Maybe the order status is wrong and should be ACCEPTED, in that case,
-		 * we could drop the condition and always run proceed_with_order().
-		 */
-		if ( $order_status->is( OrderStatus::PAYER_ACTION_REQUIRED ) ) {
-			$proceed = $this->threed_secure->proceed_with_order( $order );
-		} elseif ( 'card' === $source_name ) {
-			// For credit cards, we also check the 3DS response.
-			$proceed = $this->threed_secure->proceed_with_order( $order );
-		}
-
-		// Handle the verification result based on the proceed value.
-		switch ( $proceed ) {
-			case ThreeDSecure::PROCEED:
-				// Check was successful.
-				return;
-
-			case ThreeDSecure::NO_DECISION:
-				// No rejection. Let's proceed with the payment.
-				return;
-
-			case ThreeDSecure::RETRY:
-				// Rejection case 1, verification can be retried.
-				throw new RuntimeException(
-					__(
-						'Something went wrong. Please try again.',
-						'woocommerce'
-					)
-				);
-
-			case ThreeDSecure::REJECT:
-				// Rejection case 2, payment was rejected.
-				throw new RuntimeException(
-					__(
-						'Unfortunately, we can\'t accept your card. Please choose a different payment method.',
-						'woocommerce'
-					)
-				);
-		}
 	}
 }

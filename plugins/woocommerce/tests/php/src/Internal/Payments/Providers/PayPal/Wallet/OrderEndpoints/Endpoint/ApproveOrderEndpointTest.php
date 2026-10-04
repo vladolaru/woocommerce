@@ -13,10 +13,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\E
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\Order;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\PurchaseUnit;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\DccApplies;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\OrderHelper;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Helper\Context;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Helper\ThreeDSecure;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint\ApproveOrderEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint\RequestData;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Helper\WooCommerceOrderCreator;
@@ -112,10 +110,8 @@ class ApproveOrderEndpointTest extends WalletTestCase {
 			$this->request_data,
 			$this->api_endpoint,
 			$this->session_handler,
-			$this->mock( ThreeDSecure::class ),
 			$this->mock( SettingsProvider::class ),
 			$this->mock( SettingsModel::class ),
-			$this->mock( DccApplies::class ),
 			$this->mock( OrderHelper::class ),
 			false,
 			$this->gateway,

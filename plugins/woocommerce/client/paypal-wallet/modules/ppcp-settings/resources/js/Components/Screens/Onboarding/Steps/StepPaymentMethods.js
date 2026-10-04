@@ -43,7 +43,7 @@ const StepPaymentMethods = () => {
 							'woocommerce'
 					  )
 					: __(
-							'No thanks, I prefer to use a different provider for processing credit cards, digital wallets, and local payment methods',
+							'No thanks, I prefer to use a different provider for processing digital wallets and local payment methods',
 							'woocommerce'
 					  ),
 			value: false,

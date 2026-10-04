@@ -8,10 +8,8 @@
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\PartnerAttribution;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\PaymentLevelEligibility;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetter;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CreditCardGateway;
 
 /**
  * This class is responsible for localizing the scripts and styles for the settings page.
@@ -25,8 +23,6 @@ class ScriptDataHandler {
 	protected array $button_language_choices;
 	protected PartnerAttribution $partner_attribution;
 	protected SettingsProvider $settings_provider;
-	protected PaymentLevelEligibility $payment_level_eligibility;
-	private bool $is_bcdc_override_flag_enabled;
 
 	/**
 	 * Whether the SDK v6 module is loaded. Defaulted for existing callers.
@@ -41,8 +37,6 @@ class ScriptDataHandler {
 		array $button_language_choices,
 		PartnerAttribution $partner_attribution,
 		SettingsProvider $settings_provider,
-		PaymentLevelEligibility $payment_level_eligibility,
-		bool $is_bcdc_override_flag_enabled,
 		bool $is_sdk_v6_active = false
 	) {
 		$this->asset_getter                    = $asset_getter;
@@ -52,8 +46,6 @@ class ScriptDataHandler {
 		$this->button_language_choices         = $button_language_choices;
 		$this->partner_attribution             = $partner_attribution;
 		$this->settings_provider               = $settings_provider;
-		$this->payment_level_eligibility       = $payment_level_eligibility;
-		$this->is_bcdc_override_flag_enabled   = $is_bcdc_override_flag_enabled;
 		$this->is_sdk_v6_active                = $is_sdk_v6_active;
 	}
 
@@ -109,63 +101,6 @@ class ScriptDataHandler {
 		wp_enqueue_style( 'ppcp-admin-settings-font', 'https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap', array(), $style_asset_file['version'] );
 
 		$is_pay_later_configurator_available = $this->paylater_is_available;
-		$disabled_cards_choices              = array(
-			array(
-				'value' => 'visa',
-				'label' => _x( 'Visa', 'Name of credit card', 'woocommerce' ),
-			),
-			array(
-				'value' => 'mastercard',
-				'label' => _x( 'Mastercard', 'Name of credit card', 'woocommerce' ),
-			),
-			array(
-				'value' => 'amex',
-				'label' => _x( 'American Express', 'Name of credit card', 'woocommerce' ),
-			),
-			array(
-				'value' => 'discover',
-				'label' => _x( 'Discover', 'Name of credit card', 'woocommerce' ),
-			),
-			array(
-				'value' => 'jcb',
-				'label' => _x( 'JCB', 'Name of credit card', 'woocommerce' ),
-			),
-			array(
-				'value' => 'elo',
-				'label' => _x( 'Elo', 'Name of credit card', 'woocommerce' ),
-			),
-			array(
-				'value' => 'hiper',
-				'label' => _x( 'Hiper', 'Name of credit card', 'woocommerce' ),
-			),
-		);
-
-		$three_d_secure_options = array(
-			array(
-				'value'       => 'no-3d-secure',
-				'label'       => __( 'No 3D Secure', 'woocommerce' ),
-				'description' => __(
-					'Do not use 3D Secure authentication for any transactions.',
-					'woocommerce'
-				),
-			),
-			array(
-				'value'       => 'only-required-3d-secure',
-				'label'       => __( 'Only when required', 'woocommerce' ),
-				'description' => __(
-					'Use 3D Secure when required by the card issuer or payment processor.',
-					'woocommerce'
-				),
-			),
-			array(
-				'value'       => 'always-3d-secure',
-				'label'       => __( 'Always require 3D Secure', 'woocommerce' ),
-				'description' => __(
-					'Always authenticate transactions with 3D Secure when available.',
-					'woocommerce'
-				),
-			),
-		);
 
 		$transformed_button_choices = array_map(
 			function ( $key, $value ) {
@@ -189,10 +124,6 @@ class ScriptDataHandler {
 			'storeCountry'                        => $this->store_country,
 			'storePostcode'                       => get_option( 'woocommerce_store_postcode', '' ),
 			'buttonLanguageChoices'               => $transformed_button_choices,
-			'disabledCardsChoices'                => $disabled_cards_choices,
-			'threeDSecureOptions'                 => $three_d_secure_options,
-			'isEligibleForPaymentLevelProcessing' => $this->payment_level_eligibility->is_eligible( CreditCardGateway::ID ),
-			'isBcdcOverrideFlagEnabled'           => $this->is_bcdc_override_flag_enabled,
 			'blueprint'                           => array(
 				'isActive'  => 'yes' === get_option( 'woocommerce_feature_blueprint_enabled', 'no' ),
 				'importUrl' => admin_url( 'admin.php?page=wc-settings&tab=advanced&section=blueprint' ),

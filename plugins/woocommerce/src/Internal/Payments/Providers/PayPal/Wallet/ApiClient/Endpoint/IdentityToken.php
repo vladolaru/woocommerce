@@ -114,10 +114,9 @@ class IdentityToken {
 		);
 
 		$vault_enabled               = $this->settings->save_paypal_and_venmo();
-		$vault_enabled_dcc           = $this->settings->save_card_details();
 		$subscriptions_mode_vaulting = $this->subscription_mode === SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_VAULTING;
 
-		if ( $vault_enabled || $vault_enabled_dcc || $subscriptions_mode_vaulting ) {
+		if ( $vault_enabled || $subscriptions_mode_vaulting ) {
 			$customer_id = $this->customer_repository->customer_id_for_user( ( $user_id ) );
 			update_user_meta( $user_id, 'ppcp_customer_id', $customer_id );
 			$args['body'] = wp_json_encode(

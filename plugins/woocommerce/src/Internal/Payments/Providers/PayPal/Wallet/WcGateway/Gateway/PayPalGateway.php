@@ -60,8 +60,6 @@ class PayPalGateway extends \WC_Payment_Gateway {
 	public const FEES_META_KEY                 = '_ppcp_paypal_fees';
 	public const REFUND_FEES_META_KEY          = '_ppcp_paypal_refund_fees';
 	public const REFUNDS_META_KEY              = '_ppcp_refunds';
-	public const THREE_D_AUTH_RESULT_META_KEY  = '_ppcp_paypal_3DS_auth_result';
-	public const FRAUD_RESULT_META_KEY         = '_ppcp_paypal_fraud_result';
 
 	// Used to enrich the payment method title.
 	public const ORDER_CARD_BRAND_META_KEY       = '_ppcp_paypal_card_brand';
@@ -373,7 +371,7 @@ class PayPalGateway extends \WC_Payment_Gateway {
 				'title'       => __( 'Enable/Disable', 'woocommerce' ),
 				'type'        => 'checkbox',
 				'desc_tip'    => true,
-				'description' => __( 'In order to use PayPal or Advanced Card Processing, you need to enable the Gateway.', 'woocommerce' ),
+				'description' => __( 'In order to use PayPal, you need to enable the Gateway.', 'woocommerce' ),
 				'label'       => __( 'Enable the PayPal gateway and more features for your store.', 'woocommerce' ),
 				'default'     => 'no',
 			),
@@ -444,7 +442,7 @@ class PayPalGateway extends \WC_Payment_Gateway {
 		 * WC Subscriptions zeroes the order total during a change-payment request, so
 		 * attempting a real capture here would send a $0 create-order request to PayPal
 		 * (rejected with CANNOT_BE_ZERO_OR_NEGATIVE). Just attach the saved token instead,
-		 * mirroring CreditCardGateway's saved-token change-payment handling.
+		 * mirroring the card gateway's former saved-token change-payment handling.
 		 */
 		if (
 			$paypal_payment_token_id
@@ -461,8 +459,7 @@ class PayPalGateway extends \WC_Payment_Gateway {
 				if ( $token->get_id() === (int) $paypal_payment_token_id ) {
 					// Free trial orders have a $0.00 total; sending a $0 capture order to
 					// PayPal fails with CANNOT_BE_ZERO_OR_NEGATIVE. Skip the API call and
-					// just associate the vaulted token for future renewals, mirroring the
-					// CreditCardGateway saved-token free trial handling.
+					// just associate the vaulted token for future renewals.
 					if ( $this->is_free_trial_order( $wc_order ) ) {
 						$wc_order->add_payment_token( $token );
 						$wc_order->payment_complete();

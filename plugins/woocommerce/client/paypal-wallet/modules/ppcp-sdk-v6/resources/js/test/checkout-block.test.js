@@ -32,9 +32,6 @@ jest.mock( '../blocks/V6WalletComponent', () => ( {
 jest.mock( '../blocks/V6ContinuationComponent', () => ( {
 	V6ContinuationComponent: () => null,
 } ) );
-jest.mock( '../blocks/V6CardFieldsComponent', () => ( {
-	V6CardFieldsComponent: () => null,
-} ) );
 jest.mock( '../blocks/V6EditorPreview', () => ( {
 	V6EditorPreview: () => null,
 } ) );
@@ -131,20 +128,6 @@ function regularCallsFor( name ) {
  */
 function regularCallFor( name ) {
 	return regularCallsFor( name )[ 0 ];
-}
-
-/**
- * The checkout filters object registered for one gateway id.
- *
- * @param {string} gatewayId - The gateway id passed to registerCheckoutFilters.
- * @return {Object|undefined} The filters object, or undefined when no such
- *                             call was made.
- */
-function checkoutFiltersFor( gatewayId ) {
-	const call = mockRegisterCheckoutFilters.mock.calls.find(
-		( [ id ] ) => id === gatewayId
-	);
-	return call ? call[ 1 ] : undefined;
 }
 
 beforeEach( () => {
@@ -524,172 +507,6 @@ describe( 'checkout-block', () => {
 				'placeOrderButtonLabel'
 			);
 			expect( filtersFor( 'ppcp-gateway' ) ).toBeUndefined();
-		} );
-	} );
-
-	describe( 'BCDC registration', () => {
-		const cardButtonConfig = ( overrides = {} ) => ( {
-			block_method: true,
-			payment_method: 'ppcp-card-button-gateway',
-			title: 'Debit & Credit Cards',
-			supported_features: [ 'products' ],
-			...overrides,
-		} );
-
-		test( 'registers BCDC as a regular method, not an express one, when card_button.block_method is true', () => {
-			loadCheckoutBlock(
-				baseConfig( { card_button: cardButtonConfig() } )
-			);
-
-			expect(
-				regularCallFor( 'ppcp-card-button-gateway' )
-			).toBeDefined();
-			expect( mockRegisterExpressPaymentMethod ).not.toHaveBeenCalledWith(
-				expect.objectContaining( { name: 'ppcp-card-button-gateway' } )
-			);
-		} );
-
-		test( 'does not register BCDC when card_button.block_method is false', () => {
-			loadCheckoutBlock(
-				baseConfig( {
-					card_button: cardButtonConfig( { block_method: false } ),
-				} )
-			);
-
-			expect(
-				regularCallFor( 'ppcp-card-button-gateway' )
-			).toBeUndefined();
-		} );
-
-		test( 'does not register BCDC in continuation mode', () => {
-			loadCheckoutBlock(
-				baseConfig( {
-					card_button: cardButtonConfig(),
-					continuation: { funding_source: 'paypal' },
-				} )
-			);
-
-			expect(
-				regularCallFor( 'ppcp-card-button-gateway' )
-			).toBeUndefined();
-		} );
-
-		test( 'takes its label and ariaLabel from card_button.title', () => {
-			loadCheckoutBlock(
-				baseConfig( {
-					card_button: cardButtonConfig( {
-						title: 'Pay with Card',
-					} ),
-				} )
-			);
-
-			const { ariaLabel } = regularCallFor( 'ppcp-card-button-gateway' );
-
-			expect( ariaLabel ).toBe( 'Pay with Card' );
-		} );
-
-		test( 'declares card_button.supported_features with no ppcp_continuation appended', () => {
-			loadCheckoutBlock(
-				baseConfig( {
-					card_button: cardButtonConfig( {
-						supported_features: [ 'products', 'refunds' ],
-					} ),
-				} )
-			);
-
-			const { supports } = regularCallFor( 'ppcp-card-button-gateway' );
-
-			expect( supports.features ).toEqual( [ 'products', 'refunds' ] );
-		} );
-
-		test( 'falls back to the "products" feature when card_button declares none of its own', () => {
-			loadCheckoutBlock(
-				baseConfig( {
-					card_button: cardButtonConfig( {
-						supported_features: undefined,
-					} ),
-				} )
-			);
-
-			const { supports } = regularCallFor( 'ppcp-card-button-gateway' );
-
-			expect( supports.features ).toEqual( [ 'products' ] );
-		} );
-
-		test( 'registers with no checkout filter and no placeOrderButtonLabel when no override is filtered in', () => {
-			loadCheckoutBlock(
-				baseConfig( { card_button: cardButtonConfig() } )
-			);
-
-			expect(
-				regularCallFor( 'ppcp-card-button-gateway' )
-			).not.toHaveProperty( 'placeOrderButtonLabel' );
-			expect(
-				checkoutFiltersFor( 'ppcp-card-button-gateway' )
-			).toBeUndefined();
-		} );
-
-		test( 'applies a filtered override to both the registration and the checkout filter for the card gateway id', () => {
-			loadCheckoutBlock(
-				baseConfig( {
-					card_button: cardButtonConfig(),
-					placeOrderButtonLabel: 'Proceed to PayPal',
-				} )
-			);
-
-			expect(
-				regularCallFor( 'ppcp-card-button-gateway' )
-					.placeOrderButtonLabel
-			).toBe( 'Proceed to PayPal' );
-			expect(
-				checkoutFiltersFor( 'ppcp-card-button-gateway' )
-			).toBeDefined();
-		} );
-
-		describe( 'the registered placeOrderButtonLabel filter', () => {
-			beforeEach( () => {
-				loadCheckoutBlock(
-					baseConfig( {
-						card_button: cardButtonConfig(),
-						placeOrderButtonLabel: 'Proceed to PayPal',
-					} )
-				);
-			} );
-
-			test( 'returns the configured label while the card gateway is the active payment method', () => {
-				window.wp = {
-					data: {
-						select: () => ( {
-							getActivePaymentMethod: () =>
-								'ppcp-card-button-gateway',
-						} ),
-					},
-				};
-				const { placeOrderButtonLabel } = checkoutFiltersFor(
-					'ppcp-card-button-gateway'
-				);
-
-				expect( placeOrderButtonLabel( 'Place order' ) ).toBe(
-					'Proceed to PayPal'
-				);
-			} );
-
-			test( 'returns the passed-in default label while a different method is active', () => {
-				window.wp = {
-					data: {
-						select: () => ( {
-							getActivePaymentMethod: () => 'ppcp-gateway',
-						} ),
-					},
-				};
-				const { placeOrderButtonLabel } = checkoutFiltersFor(
-					'ppcp-card-button-gateway'
-				);
-
-				expect( placeOrderButtonLabel( 'Place order' ) ).toBe(
-					'Place order'
-				);
-			} );
 		} );
 	} );
 

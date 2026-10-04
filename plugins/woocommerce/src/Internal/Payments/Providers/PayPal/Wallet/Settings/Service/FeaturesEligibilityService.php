@@ -3,8 +3,8 @@
  * PayPal Commerce eligibility service for WooCommerce.
  *
  * This file contains the FeaturesEligibilityService class which manages eligibility checks
- * for various PayPal Commerce features including saving PayPal and Venmo, advanced credit and
- * debit cards, alternative payment methods, Google Pay, Apple Pay, and Pay Later.
+ * for various PayPal Commerce features including saving PayPal and Venmo, alternative payment
+ * methods, Google Pay, Apple Pay, and Pay Later.
  *
  * @package Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service
  */
@@ -25,13 +25,6 @@ class FeaturesEligibilityService {
 	 * @var bool
 	 */
 	private bool $is_save_paypal_eligible;
-
-	/**
-	 * Whether advanced credit and debit cards are eligible.
-	 *
-	 * @var callable
-	 */
-	private $check_acdc_eligible;
 
 	/**
 	 * Whether alternative payment methods are eligible.
@@ -86,7 +79,6 @@ class FeaturesEligibilityService {
 	 * Constructor.
 	 *
 	 * @param bool     $is_save_paypal_eligible If saving PayPal and Venmo is eligible.
-	 * @param callable $check_acdc_eligible If advanced credit and debit cards are eligible.
 	 * @param bool     $is_apm_eligible If alternative payment methods are eligible.
 	 * @param callable $check_google_pay_eligible If Google Pay is eligible.
 	 * @param callable $check_apple_pay_eligible If Apple Pay is eligible.
@@ -97,7 +89,6 @@ class FeaturesEligibilityService {
 	 */
 	public function __construct(
 		bool $is_save_paypal_eligible,
-		callable $check_acdc_eligible,
 		bool $is_apm_eligible,
 		callable $check_google_pay_eligible,
 		callable $check_apple_pay_eligible,
@@ -107,7 +98,6 @@ class FeaturesEligibilityService {
 		bool $is_pui_eligible
 	) {
 		$this->is_save_paypal_eligible    = $is_save_paypal_eligible;
-		$this->check_acdc_eligible        = $check_acdc_eligible;
 		$this->is_apm_eligible            = $is_apm_eligible;
 		$this->check_google_pay_eligible  = $check_google_pay_eligible;
 		$this->check_apple_pay_eligible   = $check_apple_pay_eligible;
@@ -125,7 +115,6 @@ class FeaturesEligibilityService {
 	public function get_eligibility_checks(): array {
 		return array(
 			FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO => fn() => $this->is_save_paypal_eligible,
-			FeaturesDefinition::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS => $this->check_acdc_eligible,
 			FeaturesDefinition::FEATURE_ALTERNATIVE_PAYMENT_METHODS => fn() => $this->is_apm_eligible,
 			FeaturesDefinition::FEATURE_GOOGLE_PAY       => $this->check_google_pay_eligible,
 			FeaturesDefinition::FEATURE_APPLE_PAY        => $this->check_apple_pay_eligible,

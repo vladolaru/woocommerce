@@ -1,0 +1,1758 @@
+<?php
+/**
+ * Tests for the v6 SDK manager (ported from the extension's SdkV6ManagerTest).
+ *
+ * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Assets
+ */
+
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Assets;
+
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetter;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Helper\Context;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SavePaymentMethods\Endpoint\CreatePaymentToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SavePaymentMethods\Endpoint\CreatePaymentTokenForGuest;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SavePaymentMethods\Endpoint\CreateSetupToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Assets\SdkV6Manager;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\ApplePayConfig;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\ButtonStyleMapper;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\FastlaneConfig;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\GooglePayConfig;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\MessagesEligibility;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\MessageStyleMapper;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Session\Cancellation\CancelView;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Session\SessionHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\Environment;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\SettingsStatus;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Helper\FreeTrialSubscriptionHelper;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Helper\SubscriptionHelper;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
+use Mockery;
+use Mockery\MockInterface;
+use WC_Cart;
+use WC_Helper_Product;
+use WC_Payment_Gateway;
+
+/**
+ * The SDK bootstrap data, the page-loading rules and the message hooks of the v6 manager, over real WordPress and
+ * WooCommerce: only the manager's collaborators and the cart, customer and countries objects are doubles.
+ *
+ * Case kinds: "wallet" cases are the PayPal, Venmo and Pay Later surface; "apple/google" and "fastlane" cases belong to
+ * tasks 5 and 8.
+ *
+ * The four free-trial product cases of the extension test that drove WooCommerce Subscriptions' static classes through
+ * Mockery aliases are not ported: core's suite loads neither the classes nor an alias-safe way to define them. The two
+ * render-places cases that need only the answer use SdkV6ManagerFreeTrialStub.
+ *
+ * @group paypal-wallet
+ */
+class SdkV6ManagerTest extends WalletTestCase {
+
+	/**
+	 * The asset getter mock.
+	 *
+	 * @var AssetGetter&MockInterface
+	 */
+	private $asset_getter;
+
+	/**
+	 * The environment mock.
+	 *
+	 * @var Environment&MockInterface
+	 */
+	private $environment;
+
+	/**
+	 * The button style mapper mock.
+	 *
+	 * @var ButtonStyleMapper&MockInterface
+	 */
+	private $style_mapper;
+
+	/**
+	 * The settings status mock.
+	 *
+	 * @var SettingsStatus&MockInterface
+	 */
+	private $settings_status;
+
+	/**
+	 * The button context mock.
+	 *
+	 * @var Context&MockInterface
+	 */
+	private $context;
+
+	/**
+	 * The PayPal session handler mock.
+	 *
+	 * @var SessionHandler&MockInterface
+	 */
+	private $session_handler;
+
+	/**
+	 * The cancellation view mock.
+	 *
+	 * @var CancelView&MockInterface
+	 */
+	private $cancel_view;
+
+	/**
+	 * The subscription helper mock.
+	 *
+	 * @var SubscriptionHelper&MockInterface
+	 */
+	private $subscription_helper;
+
+	/**
+	 * The free trial helper mock.
+	 *
+	 * @var FreeTrialSubscriptionHelper&MockInterface
+	 */
+	private $free_trial_helper;
+
+	/**
+	 * The message style mapper mock.
+	 *
+	 * @var MessageStyleMapper&MockInterface
+	 */
+	private $message_style_mapper;
+
+	/**
+	 * The messages eligibility mock.
+	 *
+	 * @var MessagesEligibility&MockInterface
+	 */
+	private $messages_eligibility;
+
+	/**
+	 * The Google Pay configuration mock.
+	 *
+	 * @var GooglePayConfig&MockInterface
+	 */
+	private $google_pay_config;
+
+	/**
+	 * The Apple Pay configuration mock.
+	 *
+	 * @var ApplePayConfig&MockInterface
+	 */
+	private $apple_pay_config;
+
+	/**
+	 * The Fastlane configuration mock.
+	 *
+	 * @var FastlaneConfig&MockInterface
+	 */
+	private $fastlane_config;
+
+	/**
+	 * The WooCommerce cart, customer and countries objects before the test.
+	 *
+	 * @var array
+	 */
+	private $original_wc = array();
+
+	/**
+	 * The WordPress query variables before the test.
+	 *
+	 * @var mixed
+	 */
+	private $original_query_vars;
+
+	/**
+	 * Build the collaborators with answers that keep every scenario neutral until it says otherwise.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+
+		$this->original_wc         = array(
+			'cart'      => WC()->cart,
+			'customer'  => WC()->customer,
+			'countries' => WC()->countries,
+		);
+		$this->original_query_vars = $GLOBALS['wp']->query_vars ?? null;
+
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		WC()->cart      = null;
+		WC()->customer  = null;
+		WC()->countries = null;
+
+		$this->asset_getter    = $this->mock( AssetGetter::class );
+		$this->environment     = $this->mock( Environment::class );
+		$this->style_mapper    = $this->mock( ButtonStyleMapper::class );
+		$this->settings_status = $this->mock( SettingsStatus::class );
+		// script_data() asks for this on every resolved page context.
+		$this->settings_status->shouldReceive( 'is_pay_later_button_enabled_for_location' )->andReturn( false )->byDefault();
+		$this->settings_status->shouldReceive( 'is_smart_button_enabled_for_location' )->andReturn( false )->byDefault();
+		$this->settings_status->shouldReceive( 'is_pay_later_messaging_enabled_for_location' )->andReturn( false )->byDefault();
+		$this->settings_status->shouldReceive( 'is_pay_later_messaging_enabled' )->andReturn( false )->byDefault();
+		$this->context         = $this->mock( Context::class );
+		$this->session_handler = $this->mock( SessionHandler::class );
+		$this->session_handler->shouldReceive( 'order' )->andReturn( null )->byDefault();
+		$this->cancel_view = $this->mock( CancelView::class );
+
+		$this->subscription_helper = $this->mock( SubscriptionHelper::class );
+		$this->subscription_helper->shouldReceive( 'cart_contains_subscription' )->andReturn( false )->byDefault();
+		$this->subscription_helper->shouldReceive( 'current_product_is_subscription' )->andReturn( false )->byDefault();
+		$this->subscription_helper->shouldReceive( 'order_pay_contains_subscription' )->andReturn( false )->byDefault();
+
+		$this->free_trial_helper = $this->mock( FreeTrialSubscriptionHelper::class );
+		$this->free_trial_helper->shouldReceive( 'is_free_trial_cart' )->andReturn( false )->byDefault();
+		$this->free_trial_helper->shouldReceive( 'cart_requires_vaulting' )->andReturn( false )->byDefault();
+
+		$this->message_style_mapper = $this->mock( MessageStyleMapper::class );
+		$this->message_style_mapper->shouldReceive( 'styles_for_location' )->andReturn(
+			array(
+				'logoType'     => 'WORDMARK',
+				'logoPosition' => 'LEFT',
+				'textColor'    => 'BLACK',
+				'fontSize'     => '',
+			)
+		)->byDefault();
+
+		$this->messages_eligibility = $this->mock( MessagesEligibility::class );
+		$this->messages_eligibility->shouldReceive( 'is_enabled_for_location' )->andReturn( false )->byDefault();
+		$this->messages_eligibility->shouldReceive( 'is_hidden' )->andReturn( false )->byDefault();
+
+		$this->context->shouldReceive( 'location' )->andReturn( '' )->byDefault();
+		$this->context->shouldReceive( 'context' )->andReturn( 'checkout' )->byDefault();
+		$this->context->shouldReceive( 'is_paypal_continuation' )->andReturn( false )->byDefault();
+		$this->environment->shouldReceive( 'is_sandbox' )->andReturn( false )->byDefault();
+		$this->style_mapper->shouldReceive( 'styles_for_context' )->andReturn(
+			array(
+				'colorClass'   => 'paypal-gold',
+				'borderRadius' => '24px',
+			)
+		)->byDefault();
+
+		$this->google_pay_config = $this->mock( GooglePayConfig::class );
+		$this->google_pay_config->shouldReceive( 'should_render' )->andReturn( false )->byDefault();
+
+		$this->apple_pay_config = $this->mock( ApplePayConfig::class );
+		$this->apple_pay_config->shouldReceive( 'should_render' )->andReturn( false )->byDefault();
+		$this->apple_pay_config->shouldReceive( 'display_name' )->andReturn( 'Test Store' )->byDefault();
+
+		$this->fastlane_config = $this->mock( FastlaneConfig::class );
+		$this->fastlane_config->shouldReceive( 'should_render' )->andReturn( false )->byDefault();
+	}
+
+	/**
+	 * Put WooCommerce, the query variables and the request back.
+	 */
+	public function tearDown(): void {
+		try {
+			WC()->cart      = $this->original_wc['cart'];
+			WC()->customer  = $this->original_wc['customer'];
+			WC()->countries = $this->original_wc['countries'];
+			if ( isset( $GLOBALS['wp'] ) ) {
+				$GLOBALS['wp']->query_vars = $this->original_query_vars;
+			}
+			unset( $GLOBALS['post'] );
+			wp_deregister_script( 'wc-ppcp-sdk-v6-boot' );
+			wp_dequeue_script( 'wc-ppcp-sdk-v6-boot' );
+			wp_deregister_style( 'wc-ppcp-sdk-v6-gateway' );
+			wp_dequeue_style( 'wc-ppcp-sdk-v6-gateway' );
+		} finally {
+			parent::tearDown();
+		}
+	}
+
+	/**
+	 * Build the manager.
+	 *
+	 * @param string        $merchant_country       The merchant country.
+	 * @param bool          $final_review_enabled   Whether the final review step is on.
+	 * @param callable|null $get_subscriptions_mode The subscriptions mode callable.
+	 * @param string        $class_name             The class to build.
+	 * @return SdkV6Manager
+	 */
+	private function create_sut(
+		string $merchant_country = 'US',
+		bool $final_review_enabled = false,
+		?callable $get_subscriptions_mode = null,
+		string $class_name = SdkV6Manager::class
+	): SdkV6Manager {
+		return new $class_name(
+			$this->asset_getter,
+			'1.0.0',
+			$this->environment,
+			$this->style_mapper,
+			$this->settings_status,
+			$this->context,
+			$this->session_handler,
+			$this->cancel_view,
+			$final_review_enabled,
+			false,
+			$this->subscription_helper,
+			$this->free_trial_helper,
+			$get_subscriptions_mode ?? static fn(): string => SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_VAULTING,
+			$this->message_style_mapper,
+			$this->messages_eligibility,
+			$merchant_country,
+			$this->google_pay_config,
+			$this->apple_pay_config,
+			$this->fastlane_config
+		);
+	}
+
+	/**
+	 * Resolve the page context and messaging location the way the real Context helper would.
+	 *
+	 * @param string $page_context The page context.
+	 * @param string $location     The messaging location.
+	 */
+	private function stub_page( string $page_context, string $location = '' ): void {
+		$this->context->shouldReceive( 'context' )->andReturn( $page_context );
+		$this->context->shouldReceive( 'location' )->andReturn( $location );
+	}
+
+	/**
+	 * Turn the smart buttons on or off for every location.
+	 *
+	 * @param bool $enabled Whether they are enabled.
+	 */
+	private function stub_buttons_everywhere( bool $enabled ): void {
+		$this->settings_status->shouldReceive( 'is_smart_button_enabled_for_location' )->andReturn( $enabled );
+	}
+
+	/**
+	 * Make WooCommerce offer exactly these gateways, through the filter WooCommerce applies last.
+	 *
+	 * @param array<string, WC_Payment_Gateway> $gateways Gateways by ID.
+	 */
+	private function stub_available_gateways( array $gateways ): void {
+		add_filter(
+			'woocommerce_available_payment_gateways',
+			static function () use ( $gateways ) {
+				return $gateways;
+			},
+			999
+		);
+	}
+
+	/**
+	 * A gateway object with the given ID and supports list.
+	 *
+	 * @param string   $id       The gateway ID.
+	 * @param string[] $supports What it supports.
+	 * @param string   $title    Its title.
+	 * @param string   $description Its description.
+	 * @return WC_Payment_Gateway
+	 */
+	private function make_gateway( string $id, array $supports = array( 'products' ), string $title = '', string $description = '' ): WC_Payment_Gateway {
+		$gateway              = new class() extends WC_Payment_Gateway {
+		};
+		$gateway->id          = $id;
+		$gateway->supports    = $supports;
+		$gateway->title       = $title;
+		$gateway->description = $description;
+
+		return $gateway;
+	}
+
+	/**
+	 * Replace the WooCommerce cart by a double.
+	 *
+	 * @param array<string, mixed> $answers Method name to return value.
+	 * @return MockInterface
+	 */
+	private function stub_cart( array $answers ): MockInterface {
+		$cart = Mockery::mock( WC_Cart::class );
+		foreach ( $answers as $method => $answer ) {
+			if ( 'get_total' === $method ) {
+				$cart->shouldReceive( 'get_total' )->with( 'edit' )->andReturn( $answer );
+				continue;
+			}
+			$cart->shouldReceive( $method )->andReturn( $answer );
+		}
+		WC()->cart = $cart;
+
+		return $cart;
+	}
+
+	/**
+	 * Point the request at a pay-for-order page for a new order.
+	 *
+	 * @param string $total The order total.
+	 * @return \WC_Order
+	 */
+	private function stub_pay_for_order_page( string $total ): \WC_Order {
+		$order = wc_create_order();
+		$order->set_total( $total );
+		$order->save();
+
+		$GLOBALS['wp']->query_vars['order-pay'] = $order->get_id();
+		$_GET['key']                            = $order->get_order_key();
+
+		return $order;
+	}
+
+	/**
+	 * Make a real simple product the current product.
+	 *
+	 * @param array $props Product properties.
+	 * @return \WC_Product
+	 */
+	private function stub_current_product( array $props = array() ): \WC_Product {
+		$product = WC_Helper_Product::create_simple_product( true, $props );
+		$this->go_to( get_permalink( $product->get_id() ) );
+
+		return $product;
+	}
+
+	/**
+	 * Read what enqueue()-less callers need: the SDK bootstrap data for the current stubs.
+	 *
+	 * @param SdkV6Manager|null $sut The manager, or a default one.
+	 * @return array
+	 */
+	private function script_data( ?SdkV6Manager $sut = null ): array {
+		return ( $sut ?? $this->create_sut() )->script_data();
+	}
+
+	/**
+	 * @testdox Should gate the render places by whether the cart needs payment: $scenario (wallet).
+	 * @dataProvider render_places_needs_payment_provider
+	 *
+	 * @param string    $scenario           The scenario name.
+	 * @param bool|null $cart_needs_payment Whether the cart needs payment, null for no cart.
+	 * @param array     $expected           The render places.
+	 */
+	public function test_determine_render_places_gated_by_cart_needs_payment( string $scenario, ?bool $cart_needs_payment, array $expected ): void {
+		unset( $scenario );
+		$this->context->shouldReceive( 'init_context' )->never();
+		$this->stub_buttons_everywhere( true );
+		if ( null !== $cart_needs_payment ) {
+			$this->stub_cart( array( 'needs_payment' => $cart_needs_payment ) );
+		}
+
+		$this->assertSame( $expected, $this->create_sut()->determine_render_places() );
+	}
+
+	/**
+	 * Scenarios of the cart's payment need.
+	 *
+	 * @return array
+	 */
+	public function render_places_needs_payment_provider(): array {
+		return array(
+			'cart needing payment enables cart, checkout and mini-cart' => array(
+				'needs payment',
+				true,
+				array(
+					'product'   => true,
+					'cart'      => true,
+					'checkout'  => true,
+					'pay-now'   => true,
+					'mini-cart' => true,
+				),
+			),
+			'zero-total cart suppresses cart, checkout and mini-cart'  => array(
+				'zero total',
+				false,
+				array(
+					'product'   => true,
+					'cart'      => false,
+					'checkout'  => false,
+					'pay-now'   => true,
+					'mini-cart' => false,
+				),
+			),
+			'no cart present is treated as needing payment'            => array(
+				'no cart',
+				null,
+				array(
+					'product'   => true,
+					'cart'      => true,
+					'checkout'  => true,
+					'pay-now'   => true,
+					'mini-cart' => true,
+				),
+			),
+		);
+	}
+
+	/**
+	 * @testdox Should keep the checkout on a free-trial cart that needs no payment only when it is a free trial: needs payment $needs_payment, free trial $is_free_trial_cart (wallet).
+	 * @dataProvider free_trial_checkout_provider
+	 *
+	 * @param bool $needs_payment      Whether the cart needs payment.
+	 * @param bool $is_free_trial_cart Whether the cart is a free trial.
+	 * @param bool $expected_checkout  Whether the checkout renders.
+	 */
+	public function test_determine_render_places_checkout_on_free_trial_cart( bool $needs_payment, bool $is_free_trial_cart, bool $expected_checkout ): void {
+		$this->stub_buttons_everywhere( true );
+		$this->free_trial_helper->shouldReceive( 'is_free_trial_cart' )->andReturn( $is_free_trial_cart );
+		$this->stub_cart( array( 'needs_payment' => $needs_payment ) );
+
+		$result = $this->create_sut()->determine_render_places();
+
+		$this->assertSame( $expected_checkout, $result['checkout'] );
+		$this->assertSame( $needs_payment, $result['cart'] );
+		$this->assertSame( $needs_payment, $result['mini-cart'] );
+	}
+
+	/**
+	 * Cart payment need, free trial flag and the checkout answer.
+	 *
+	 * @return array
+	 */
+	public function free_trial_checkout_provider(): array {
+		return array(
+			'free-trial cart needing no payment still enables checkout' => array( false, true, true ),
+			'zero-total non-free-trial cart keeps checkout suppressed'  => array( false, false, false ),
+			'ordinary cart needing payment enables checkout'            => array( true, false, true ),
+		);
+	}
+
+	/**
+	 * @testdox Should load the SDK sitewide when the mini-cart location is on, without the classic widget (wallet).
+	 */
+	public function test_should_load_sitewide_when_mini_cart_enabled_regardless_of_widget(): void {
+		$this->stub_page( '' );
+		$this->settings_status->shouldReceive( 'is_smart_button_enabled_for_location' )->with( 'mini-cart' )->andReturn( true );
+
+		$this->assertTrue( $this->create_sut()->should_load_on_current_page() );
+	}
+
+	/**
+	 * @testdox Should not load the SDK when the mini-cart is off and the page has no context (wallet).
+	 */
+	public function test_should_not_load_when_mini_cart_disabled_and_no_matching_page_context(): void {
+		$this->stub_page( '', '' );
+		$this->settings_status->shouldReceive( 'is_smart_button_enabled_for_location' )->with( 'mini-cart' )->andReturn( false );
+		$this->messages_eligibility->shouldReceive( 'is_enabled_for_location' )->with( '' )->andReturn( false );
+
+		$this->assertFalse( $this->create_sut()->should_load_on_current_page() );
+	}
+
+	/**
+	 * @testdox Should not load the SDK when native PayPal Subscriptions mode holds a subscription cart (wallet).
+	 */
+	public function test_should_not_load_when_native_paypal_subscription_in_cart(): void {
+		$this->stub_page( 'checkout' );
+		$this->stub_buttons_everywhere( true );
+		$this->subscription_helper->shouldReceive( 'cart_contains_subscription' )->andReturn( true );
+
+		$sut = $this->create_sut( 'US', false, static fn(): string => SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_SUBSCRIPTIONS );
+
+		$this->assertFalse( $sut->should_load_on_current_page() );
+	}
+
+	/**
+	 * @testdox Should load the SDK in native subscriptions mode when no subscription is present (wallet).
+	 */
+	public function test_should_load_when_subscriptions_mode_active_but_no_subscription_present(): void {
+		$this->stub_page( 'checkout' );
+		$this->stub_buttons_everywhere( true );
+
+		$sut = $this->create_sut( 'US', false, static fn(): string => SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_SUBSCRIPTIONS );
+
+		$this->assertTrue( $sut->should_load_on_current_page() );
+	}
+
+	/**
+	 * @testdox Should load the SDK in vaulting mode with a subscription in the cart (wallet).
+	 */
+	public function test_should_load_when_vaulting_mode_with_subscription_in_cart(): void {
+		$this->stub_page( 'checkout' );
+		$this->stub_buttons_everywhere( true );
+		$this->subscription_helper->shouldReceive( 'cart_contains_subscription' )->andReturn( true );
+
+		$sut = $this->create_sut( 'US', false, static fn(): string => SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_VAULTING );
+
+		$this->assertTrue( $sut->should_load_on_current_page() );
+	}
+
+	/**
+	 * @testdox Should render no v6 location when native PayPal Subscriptions mode holds a subscription product (wallet).
+	 */
+	public function test_determine_render_places_empty_when_native_paypal_subscription_product(): void {
+		$this->context->shouldReceive( 'init_context' )->never();
+		$this->subscription_helper->shouldReceive( 'current_product_is_subscription' )->andReturn( true );
+
+		$sut = $this->create_sut( 'US', false, static fn(): string => SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_SUBSCRIPTIONS );
+
+		$this->assertSame(
+			array(
+				'product'   => false,
+				'cart'      => false,
+				'checkout'  => false,
+				'pay-now'   => false,
+				'mini-cart' => false,
+			),
+			$sut->determine_render_places()
+		);
+	}
+
+	/**
+	 * @testdox Should forward the pay-now order ID and key and disable shipping on the pay-for-order page (wallet).
+	 */
+	public function test_script_data_includes_pay_now_identifiers(): void {
+		$order = $this->stub_pay_for_order_page( '49.99' );
+		$this->stub_page( 'pay-now' );
+
+		$data = $this->script_data();
+
+		$this->assertSame(
+			array(
+				'order_id'  => $order->get_id(),
+				'order_key' => $order->get_order_key(),
+			),
+			$data['pay_now']
+		);
+		$this->assertSame( '49.99', $data['amount'] );
+		$this->assertFalse( $data['shipping']['in_context']['pay-now'] );
+	}
+
+	/**
+	 * @testdox Should carry the merchant country apart from the buyer's billing country (wallet).
+	 */
+	public function test_script_data_includes_merchant_country_independent_of_buyer_country(): void {
+		$this->stub_page( 'checkout' );
+		WC()->customer = Mockery::mock( \WC_Customer::class );
+		WC()->customer->shouldReceive( 'get_billing_country' )->andReturn( 'DE' );
+
+		$data = $this->script_data( $this->create_sut( 'FR' ) );
+
+		$this->assertSame( 'FR', $data['merchant_country'] );
+		$this->assertSame( 'DE', $data['buyer_country'] );
+	}
+
+	/**
+	 * @testdox Should not consult Pay Later messaging when deciding whether a block page loads the SDK: $page_context (wallet).
+	 * @dataProvider block_context_provider
+	 *
+	 * @param string $page_context The block page context.
+	 */
+	public function test_should_load_on_current_page_in_block_contexts_never_consults_messaging_eligibility( string $page_context ): void {
+		$this->stub_page( $page_context, $page_context );
+
+		// A fresh mock: the default one answers every call, so it could not tell a consulted lookup from a skipped one.
+		$this->messages_eligibility = $this->mock( MessagesEligibility::class );
+		$this->messages_eligibility->shouldReceive( 'is_enabled_for_location' )->never();
+
+		$this->assertFalse( $this->create_sut()->should_load_on_current_page() );
+	}
+
+	/**
+	 * Block page contexts and their messaging locations.
+	 *
+	 * @return array
+	 */
+	public function block_context_provider(): array {
+		return array(
+			'cart block'     => array( 'cart-block', 'cart' ),
+			'checkout block' => array( 'checkout-block', 'checkout' ),
+		);
+	}
+
+	/**
+	 * @testdox Should follow Fastlane's own configuration for the current page: should render $should_render (fastlane).
+	 * @dataProvider fastlane_enablement_provider
+	 *
+	 * @param bool $should_render What the configuration answers.
+	 * @param bool $expected      What the manager reports.
+	 */
+	public function test_is_fastlane_enabled_delegates_to_fastlane_config( bool $should_render, bool $expected ): void {
+		$this->stub_page( 'checkout' );
+		$this->fastlane_config->shouldReceive( 'should_render' )->with( 'checkout' )->andReturn( $should_render );
+
+		$this->assertSame( $expected, $this->create_sut()->is_fastlane_enabled() );
+	}
+
+	/**
+	 * What Fastlane's configuration says and what the manager reports.
+	 *
+	 * @return array
+	 */
+	public function fastlane_enablement_provider(): array {
+		return array(
+			'FastlaneConfig allowing render enables Fastlane'  => array( true, true ),
+			'FastlaneConfig refusing render disables Fastlane' => array( false, false ),
+		);
+	}
+
+	/**
+	 * @testdox Should load the SDK when the button location is enabled (wallet).
+	 */
+	public function test_should_load_on_current_page_true_when_button_location_enabled(): void {
+		$this->stub_page( 'checkout' );
+		$this->settings_status->shouldReceive( 'is_smart_button_enabled_for_location' )->with( 'checkout' )->andReturn( true );
+
+		$this->assertTrue( $this->create_sut()->should_load_on_current_page() );
+	}
+
+	/**
+	 * @testdox Should load the SDK on a classic page only to render a Pay Later message (wallet).
+	 */
+	public function test_should_load_on_current_page_true_when_only_messaging_is_enabled_on_a_classic_page(): void {
+		$this->stub_page( 'checkout', 'checkout' );
+		$this->messages_eligibility->shouldReceive( 'is_enabled_for_location' )->with( 'checkout' )->andReturn( true );
+
+		$this->assertTrue( $this->create_sut()->should_load_on_current_page() );
+	}
+
+	/**
+	 * @testdox Should not load the SDK through messaging on a block page, even when messaging is eligible: $page_context (wallet).
+	 * @dataProvider block_context_provider
+	 *
+	 * @param string $page_context        The block page context.
+	 * @param string $normalized_location The messaging location it normalizes to.
+	 */
+	public function test_should_load_on_current_page_false_in_block_contexts_even_when_messaging_enabled( string $page_context, string $normalized_location ): void {
+		$this->stub_page( $page_context, $page_context );
+		$this->messages_eligibility->shouldReceive( 'is_enabled_for_location' )->with( $normalized_location )->andReturn( true );
+
+		$this->assertFalse( $this->create_sut()->should_load_on_current_page() );
+	}
+
+	/**
+	 * @testdox Should not load the SDK on "$location" because this module places no message there (wallet).
+	 * @dataProvider unsupported_message_location_provider
+	 *
+	 * @param string $location The messaging location.
+	 */
+	public function test_should_load_on_current_page_false_when_messages_render_hook_is_null( string $location ): void {
+		$this->stub_page( '', $location );
+		$this->settings_status->shouldReceive( 'is_pay_later_messaging_enabled_for_location' )->andReturn( false );
+		$this->messages_eligibility->shouldReceive( 'is_enabled_for_location' )->andReturn( true );
+
+		$this->assertFalse( $this->create_sut()->should_load_on_current_page() );
+	}
+
+	/**
+	 * Locations the module places no message on.
+	 *
+	 * @return array
+	 */
+	public function unsupported_message_location_provider(): array {
+		return array(
+			'shop page'   => array( 'shop' ),
+			'home page'   => array( 'home' ),
+			'no location' => array( '' ),
+		);
+	}
+
+	/**
+	 * @testdox Should load the SDK on "$location" when a Pay Later block sits on that page (wallet).
+	 * @dataProvider unsupported_message_location_provider
+	 *
+	 * @param string $location The messaging location.
+	 */
+	public function test_should_load_on_current_page_true_when_pay_later_block_sits_on_an_unsupported_message_location( string $location ): void {
+		$this->stub_page( '', $location );
+		$this->settings_status->shouldReceive( 'is_pay_later_messaging_enabled_for_location' )->with( 'custom_placement' )->andReturn( true );
+		$this->messages_eligibility->shouldReceive( 'is_enabled_for_location' )->with( 'custom_placement' )->andReturn( true );
+
+		$this->go_to( get_permalink( self::factory()->post->create( array( 'post_content' => '<!-- wp:woocommerce-paypal-payments/paylater-messages /-->' ) ) ) );
+
+		$this->assertTrue( $this->create_sut()->should_load_on_current_page() );
+	}
+
+	/**
+	 * @testdox Should not load the SDK on "$location" when no Pay Later block sits on the page (wallet).
+	 * @dataProvider unsupported_message_location_provider
+	 *
+	 * @param string $location The messaging location.
+	 */
+	public function test_should_load_on_current_page_false_when_no_pay_later_block_sits_on_an_unsupported_message_location( string $location ): void {
+		$this->stub_page( '', $location );
+		$this->settings_status->shouldReceive( 'is_pay_later_messaging_enabled_for_location' )->with( 'custom_placement' )->andReturn( true );
+		$this->settings_status->shouldReceive( 'is_pay_later_messaging_enabled_for_location' )->with( $location )->andReturn( false );
+		$this->messages_eligibility->shouldReceive( 'is_enabled_for_location' )->with( '' )->andReturn( true );
+
+		$this->go_to( get_permalink( self::factory()->post->create( array( 'post_content' => 'No block here.' ) ) ) );
+
+		$this->assertFalse( $this->create_sut()->should_load_on_current_page() );
+	}
+
+	/**
+	 * @testdox Should claim "$location" when v5 would render a message there and leave it alone otherwise: messaging $messaging_enabled (wallet).
+	 * @dataProvider home_shop_messaging_claim_provider
+	 *
+	 * @param string $location          The messaging location.
+	 * @param bool   $messaging_enabled Whether v5 messaging is enabled there.
+	 * @param bool   $expected          Whether the SDK loads.
+	 */
+	public function test_should_load_on_current_page_claims_home_and_shop_where_v5_would_otherwise_render_a_message( string $location, bool $messaging_enabled, bool $expected ): void {
+		$this->stub_page( '', $location );
+		$this->settings_status->shouldReceive( 'is_pay_later_messaging_enabled_for_location' )->andReturn( false )->byDefault();
+		$this->settings_status->shouldReceive( 'is_pay_later_messaging_enabled_for_location' )->with( $location )->andReturn( $messaging_enabled );
+
+		$this->assertSame( $expected, $this->create_sut()->should_load_on_current_page() );
+	}
+
+	/**
+	 * Locations, messaging flag and the expectation.
+	 *
+	 * @return array
+	 */
+	public function home_shop_messaging_claim_provider(): array {
+		return array(
+			'home page is claimed when v5 has a message there' => array( 'home', true, true ),
+			'shop page is claimed when v5 has a message there' => array( 'shop', true, true ),
+			'home page is left alone when v5 has no message'   => array( 'home', false, false ),
+			'shop page is left alone when v5 has no message'   => array( 'shop', false, false ),
+		);
+	}
+
+	/**
+	 * @testdox Should not load the SDK in wp-admin even when messaging is eligible (wallet).
+	 */
+	public function test_should_load_on_current_page_false_under_is_admin(): void {
+		$original_screen = $GLOBALS['current_screen'] ?? null;
+		set_current_screen( 'dashboard' );
+		$this->stub_page( 'checkout', 'checkout' );
+		$this->messages_eligibility->shouldReceive( 'is_enabled_for_location' )->with( 'checkout' )->andReturn( true );
+
+		try {
+			$this->assertFalse( $this->create_sut()->should_load_on_current_page() );
+		} finally {
+			$GLOBALS['current_screen'] = $original_screen; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restoring test state.
+		}
+	}
+
+	/**
+	 * @testdox Should look messaging up under the normalized location $expected_location for $raw_location (wallet).
+	 * @dataProvider block_location_normalization_provider
+	 *
+	 * @param string $raw_location      The page's location.
+	 * @param string $expected_location The messaging settings location.
+	 */
+	public function test_messages_enabled_normalizes_block_locations_for_eligibility_lookup( string $raw_location, string $expected_location ): void {
+		$this->context->shouldReceive( 'location' )->andReturn( $raw_location );
+		$this->messages_eligibility->shouldReceive( 'is_enabled_for_location' )->once()->with( $expected_location )->andReturn( true );
+
+		$this->assertTrue( $this->create_sut()->messages_enabled() );
+	}
+
+	/**
+	 * Raw and normalized locations.
+	 *
+	 * @return array
+	 */
+	public function block_location_normalization_provider(): array {
+		return array(
+			'checkout-block normalizes to checkout, not checkout-block-express' => array( 'checkout-block', 'checkout' ),
+			'cart-block normalizes to cart'  => array( 'cart-block', 'cart' ),
+			'pay-now normalizes to checkout' => array( 'pay-now', 'checkout' ),
+		);
+	}
+
+	/**
+	 * @testdox Should keep all seven message keys in the data even when messaging is disabled (wallet).
+	 */
+	public function test_script_data_messages_shape_includes_all_keys_even_when_disabled(): void {
+		$this->stub_page( 'checkout', 'checkout' );
+
+		$data = $this->script_data();
+
+		$this->assertSame(
+			array( 'enabled', 'wrapper', 'is_hidden', 'amount', 'page_type', 'style', 'use_cart_simulation' ),
+			array_keys( $data['messages'] )
+		);
+		$this->assertFalse( $data['messages']['enabled'] );
+	}
+
+	/**
+	 * @testdox Should default the message cart simulation flag to false (wallet).
+	 */
+	public function test_script_data_messages_use_cart_simulation_defaults_to_false(): void {
+		$this->stub_page( 'checkout', 'checkout' );
+		$this->message_style_mapper->shouldReceive( 'styles_for_location' )->with( 'checkout' )->andReturn( array() );
+
+		$data = $this->script_data();
+
+		$this->assertFalse( $data['messages']['use_cart_simulation'] );
+	}
+
+	/**
+	 * @testdox Should report the message cart simulation flag as a real boolean when a filter turns it on (wallet).
+	 */
+	public function test_script_data_messages_use_cart_simulation_true_when_filter_enables_it(): void {
+		$this->stub_page( 'checkout', 'checkout' );
+		$this->message_style_mapper->shouldReceive( 'styles_for_location' )->with( 'checkout' )->andReturn( array() );
+		add_filter( 'woocommerce_paypal_payments_sdk_v6_messages_use_cart_simulation', static fn() => 'yes' );
+
+		$data = $this->script_data();
+
+		$this->assertTrue( $data['messages']['use_cart_simulation'] );
+	}
+
+	/**
+	 * @testdox Should price the Pay Later message from the product on a product page while the amount stays cart-first (wallet).
+	 */
+	public function test_messages_amount_is_product_first_on_product_page_even_with_non_empty_cart(): void {
+		$this->stub_page( 'product', 'product' );
+		$this->message_style_mapper->shouldReceive( 'styles_for_location' )->andReturn( array() );
+		$this->stub_current_product( array( 'regular_price' => '29.99' ) );
+		$this->stub_cart(
+			array(
+				'is_empty'       => false,
+				'get_total'      => '99.99',
+				'needs_shipping' => false,
+			)
+		);
+
+		$data = $this->script_data();
+
+		$this->assertSame( '29.99', $data['messages']['amount'] );
+		$this->assertSame( '99.99', $data['amount'] );
+	}
+
+	/**
+	 * @testdox Should price the Pay Later message from the validated order total on the pay-for-order page (wallet).
+	 */
+	public function test_messages_amount_uses_validated_order_total_on_pay_now_page(): void {
+		$this->stub_pay_for_order_page( '150.00' );
+		$this->stub_page( 'pay-now', 'pay-now' );
+		$this->message_style_mapper->shouldReceive( 'styles_for_location' )->andReturn( array() );
+
+		$data = $this->script_data();
+
+		$this->assertSame( '150.00', $data['messages']['amount'] );
+	}
+
+	/**
+	 * @testdox Should fall back to an empty message amount when no product, cart or order is available (wallet).
+	 */
+	public function test_messages_amount_falls_back_to_empty_string_when_nothing_is_available(): void {
+		$this->stub_page( 'checkout', 'checkout' );
+		$this->message_style_mapper->shouldReceive( 'styles_for_location' )->andReturn( array() );
+
+		$data = $this->script_data();
+
+		$this->assertSame( '', $data['messages']['amount'] );
+	}
+
+	/**
+	 * @testdox Should return the documented message render hook and priority for $location (wallet).
+	 * @dataProvider default_messages_render_hook_provider
+	 *
+	 * @param string $location          The location.
+	 * @param string $expected_name     The hook.
+	 * @param int    $expected_priority The priority.
+	 */
+	public function test_messages_render_hook_returns_documented_defaults( string $location, string $expected_name, int $expected_priority ): void {
+		$this->context->shouldReceive( 'location' )->andReturn( $location );
+
+		$this->assertSame(
+			array(
+				'name'     => $expected_name,
+				'priority' => $expected_priority,
+			),
+			$this->create_sut()->messages_render_hook()
+		);
+	}
+
+	/**
+	 * Locations and their default hooks.
+	 *
+	 * @return array
+	 */
+	public function default_messages_render_hook_provider(): array {
+		return array(
+			'checkout' => array( 'checkout', 'woocommerce_review_order_before_payment', 10 ),
+			'cart'     => array( 'cart', 'woocommerce_proceed_to_checkout', 19 ),
+			'product'  => array( 'product', 'woocommerce_single_product_summary', 30 ),
+			'pay-now'  => array( 'pay-now', 'woocommerce_pay_order_before_submit', 10 ),
+		);
+	}
+
+	/**
+	 * @testdox Should return no message render hook for "$location" so v5 keeps the page (wallet).
+	 * @dataProvider unsupported_message_location_provider
+	 *
+	 * @param string $location The location.
+	 */
+	public function test_messages_render_hook_returns_null_for_pages_this_module_does_not_serve( string $location ): void {
+		$this->context->shouldReceive( 'location' )->andReturn( $location );
+
+		$this->assertNull( $this->create_sut()->messages_render_hook() );
+	}
+
+	/**
+	 * @testdox Should return no message render hook on the block location $location (wallet).
+	 * @dataProvider block_context_provider
+	 *
+	 * @param string $location The block location.
+	 */
+	public function test_messages_render_hook_returns_null_for_block_locations( string $location ): void {
+		$this->context->shouldReceive( 'location' )->andReturn( $location );
+
+		$this->assertNull( $this->create_sut()->messages_render_hook() );
+	}
+
+	/**
+	 * @testdox Should let the per-location filters override the message hook and priority for $location (wallet).
+	 * @dataProvider render_hook_filter_provider
+	 *
+	 * @param string $location       The location.
+	 * @param string $filter_segment The filter name segment.
+	 */
+	public function test_messages_render_hook_is_overridden_by_per_location_filters( string $location, string $filter_segment ): void {
+		$this->context->shouldReceive( 'location' )->andReturn( $location );
+		add_filter( "woocommerce_paypal_payments_{$filter_segment}_messages_renderer_hook", static fn() => 'custom_hook' );
+		add_filter( "woocommerce_paypal_payments_{$filter_segment}_messages_renderer_priority", static fn() => 99 );
+
+		$this->assertSame(
+			array(
+				'name'     => 'custom_hook',
+				'priority' => 99,
+			),
+			$this->create_sut()->messages_render_hook()
+		);
+	}
+
+	/**
+	 * Locations and their filter segments.
+	 *
+	 * @return array
+	 */
+	public function render_hook_filter_provider(): array {
+		return array(
+			'checkout uses the checkout filter segment' => array( 'checkout', 'checkout' ),
+			'cart uses the cart filter segment'         => array( 'cart', 'cart' ),
+			'product uses the product filter segment'   => array( 'product', 'product' ),
+			'pay-now uses the pay_order filter segment, not pay-now' => array( 'pay-now', 'pay_order' ),
+		);
+	}
+
+	/**
+	 * @testdox Should default the message hook to the relocated button hook for $location (wallet).
+	 * @dataProvider relocated_button_hook_provider
+	 *
+	 * @param string $location          The location.
+	 * @param string $relocation_filter The button relocation filter.
+	 * @param string $relocated_hook    The relocated hook.
+	 */
+	public function test_messages_render_hook_default_uses_relocated_button_hook_first( string $location, string $relocation_filter, string $relocated_hook ): void {
+		$this->context->shouldReceive( 'location' )->andReturn( $location );
+		add_filter(
+			$relocation_filter,
+			static function () use ( $relocated_hook ) {
+				return $relocated_hook;
+			}
+		);
+
+		$hook = $this->create_sut()->messages_render_hook();
+
+		$this->assertSame( $relocated_hook, $hook['name'] );
+	}
+
+	/**
+	 * Locations and their relocation filters.
+	 *
+	 * @return array
+	 */
+	public function relocated_button_hook_provider(): array {
+		return array(
+			'cart passes through the proceed-to-checkout button relocation filter first' => array(
+				'cart',
+				'woocommerce_paypal_payments_proceed_to_checkout_button_renderer_hook',
+				'my_custom_proceed_hook',
+			),
+			'product passes through the single-product button relocation filter first'   => array(
+				'product',
+				'woocommerce_paypal_payments_single_product_renderer_hook',
+				'my_custom_product_hook',
+			),
+		);
+	}
+
+	/**
+	 * @testdox Should echo the message wrapper between the before and after actions for $location (wallet).
+	 * @dataProvider render_message_wrapper_provider
+	 *
+	 * @param string $location       The location.
+	 * @param string $action_segment The action name segment.
+	 */
+	public function test_render_message_wrapper_echoes_wrapper_between_before_and_after_actions( string $location, string $action_segment ): void {
+		$this->context->shouldReceive( 'location' )->andReturn( $location );
+		$order = array();
+		add_action(
+			"ppcp_before_{$action_segment}_message_wrapper",
+			static function () use ( &$order ) {
+				$order[] = 'before';
+			}
+		);
+		add_action(
+			"ppcp_after_{$action_segment}_message_wrapper",
+			static function () use ( &$order ) {
+				$order[] = 'after';
+			}
+		);
+
+		ob_start();
+		$this->create_sut()->render_message_wrapper();
+		$output = ob_get_clean();
+
+		$this->assertSame( '<div class="ppcp-messages"></div>', $output );
+		$this->assertSame( array( 'before', 'after' ), $order );
+	}
+
+	/**
+	 * Locations and their action segments.
+	 *
+	 * @return array
+	 */
+	public function render_message_wrapper_provider(): array {
+		return array(
+			'checkout'                       => array( 'checkout', 'checkout' ),
+			'cart'                           => array( 'cart', 'cart' ),
+			'product'                        => array( 'product', 'product' ),
+			'pay-now uses pay_order segment' => array( 'pay-now', 'pay_order' ),
+		);
+	}
+
+	/**
+	 * @testdox Should register the bootstrap script and stylesheet with the asset data dependencies and versions (wallet).
+	 */
+	public function test_enqueue_registers_script_with_asset_data_dependencies_and_version(): void {
+		$this->stub_page( 'checkout', 'checkout' );
+		$this->settings_status->shouldReceive( 'is_smart_button_enabled_for_location' )->with( 'checkout' )->andReturn( true );
+		$this->settings_status->shouldReceive( 'is_smart_button_enabled_for_location' )->with( 'mini-cart' )->andReturn( false );
+		$this->asset_getter->shouldReceive( 'get_asset_url' )->with( 'boot.js' )->andReturn( 'https://example.com/assets/boot.js' );
+		$this->asset_getter->shouldReceive( 'get_asset_data' )->with( 'boot.js', '1.0.0' )->andReturn(
+			array(
+				'dependencies' => array( 'wp-data' ),
+				'version'      => 'deadbeef',
+			)
+		);
+		$this->asset_getter->shouldReceive( 'get_asset_url' )->with( 'gateway.css' )->andReturn( 'https://example.com/assets/gateway.css' );
+		$this->asset_getter->shouldReceive( 'get_asset_data' )->with( 'gateway.css', '1.0.0' )->andReturn(
+			array(
+				'dependencies' => array(),
+				'version'      => 'cafebabe',
+			)
+		);
+
+		$this->create_sut()->enqueue();
+
+		$script = wp_scripts()->registered['wc-ppcp-sdk-v6-boot'] ?? null;
+		$this->assertNotNull( $script, 'The bootstrap script must be registered' );
+		$this->assertSame( 'https://example.com/assets/boot.js', $script->src );
+		$this->assertSame( array( 'wp-data' ), $script->deps );
+		$this->assertSame( 'deadbeef', $script->ver );
+		$this->assertTrue( wp_script_is( 'wc-ppcp-sdk-v6-boot', 'enqueued' ) );
+		$this->assertStringContainsString( 'wc_ppcp_sdk_v6', (string) wp_scripts()->get_data( 'wc-ppcp-sdk-v6-boot', 'data' ) );
+
+		$style = wp_styles()->registered['wc-ppcp-sdk-v6-gateway'] ?? null;
+		$this->assertNotNull( $style, 'The gateway stylesheet must be registered' );
+		$this->assertSame( 'https://example.com/assets/gateway.css', $style->src );
+		$this->assertSame( 'cafebabe', $style->ver );
+	}
+
+	/**
+	 * @testdox Should register nothing when the SDK does not load on the page (wallet).
+	 */
+	public function test_enqueue_does_nothing_when_should_not_load_on_current_page(): void {
+		$this->stub_page( '', '' );
+		$this->messages_eligibility->shouldReceive( 'is_enabled_for_location' )->with( '' )->andReturn( false );
+
+		$this->create_sut()->enqueue();
+
+		$this->assertArrayNotHasKey( 'wc-ppcp-sdk-v6-boot', wp_scripts()->registered );
+	}
+
+	/**
+	 * @testdox Should report Fastlane as disabled without asking its configuration when the page has no context (fastlane).
+	 */
+	public function test_is_fastlane_enabled_guards_against_empty_page_context(): void {
+		$this->stub_page( '' );
+		$this->fastlane_config->shouldReceive( 'should_render' )->never();
+
+		$this->assertFalse( $this->create_sut()->is_fastlane_enabled() );
+	}
+
+	/**
+	 * @testdox Should carry a fastlane subtree with the enabled flag and the gateway ID: should render $should_render (fastlane).
+	 * @dataProvider fastlane_enablement_provider
+	 *
+	 * @param bool $should_render    What the configuration answers.
+	 * @param bool $expected_enabled The flag in the data.
+	 */
+	public function test_script_data_includes_fastlane_subtree( bool $should_render, bool $expected_enabled ): void {
+		$this->stub_page( 'checkout' );
+		$this->fastlane_config->shouldReceive( 'should_render' )->with( 'checkout' )->andReturn( $should_render );
+
+		$data = $this->script_data();
+
+		$this->assertSame(
+			array(
+				'enabled'        => $expected_enabled,
+				'payment_method' => 'ppcp-axo-gateway',
+			),
+			$data['fastlane']
+		);
+	}
+
+	/**
+	 * @testdox Should mirror the free-trial helper in the data: free trial cart $is_free_trial_cart (wallet).
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $is_free_trial_cart What the helper answers.
+	 */
+	public function test_script_data_reflects_free_trial_cart_state( bool $is_free_trial_cart ): void {
+		$this->free_trial_helper->shouldReceive( 'is_free_trial_cart' )->andReturn( $is_free_trial_cart );
+
+		$data = $this->script_data();
+
+		$this->assertSame( $is_free_trial_cart, $data['is_free_trial_cart'] );
+	}
+
+	/**
+	 * @testdox Should mirror cart_requires_vaulting apart from the free trial flag: requires vaulting $cart_requires_vaulting (wallet).
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $cart_requires_vaulting What the helper answers.
+	 */
+	public function test_script_data_reflects_cart_requires_vaulting_independently_of_total( bool $cart_requires_vaulting ): void {
+		$this->free_trial_helper->shouldReceive( 'cart_requires_vaulting' )->andReturn( $cart_requires_vaulting );
+		$this->free_trial_helper->shouldReceive( 'is_free_trial_cart' )->andReturn( false );
+
+		$data = $this->script_data();
+
+		$this->assertSame( $cart_requires_vaulting, $data['cart_needs_vaulting'] );
+	}
+
+	/**
+	 * @testdox Should mirror the buyer's login state in the data: logged in $is_logged_in (wallet).
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $is_logged_in Whether the buyer is logged in.
+	 */
+	public function test_script_data_reflects_buyer_login_state( bool $is_logged_in ): void {
+		if ( $is_logged_in ) {
+			wp_set_current_user( self::factory()->user->create() );
+		}
+
+		$data = $this->script_data();
+
+		$this->assertSame( $is_logged_in, $data['user']['is_logged'] );
+	}
+
+	/**
+	 * @testdox Should carry the free-trial vault endpoints and nonces in the ajax data (wallet).
+	 */
+	public function test_script_data_includes_free_trial_vault_ajax_endpoints(): void {
+		$data = $this->script_data();
+
+		$this->assertSame( \WC_AJAX::get_endpoint( CreateSetupToken::ENDPOINT ), $data['ajax']['create_setup_token']['endpoint'] );
+		$this->assertSame( wp_create_nonce( CreateSetupToken::nonce() ), $data['ajax']['create_setup_token']['nonce'] );
+		$this->assertSame( \WC_AJAX::get_endpoint( CreatePaymentToken::ENDPOINT ), $data['ajax']['create_payment_token']['endpoint'] );
+		$this->assertSame( wp_create_nonce( CreatePaymentToken::nonce() ), $data['ajax']['create_payment_token']['nonce'] );
+		$this->assertSame( \WC_AJAX::get_endpoint( CreatePaymentTokenForGuest::ENDPOINT ), $data['ajax']['create_payment_token_for_guest']['endpoint'] );
+		$this->assertSame( wp_create_nonce( CreatePaymentTokenForGuest::nonce() ), $data['ajax']['create_payment_token_for_guest']['nonce'] );
+	}
+
+	/**
+	 * @testdox Should give the mini-cart a shorter button than the page context (wallet).
+	 */
+	public function test_script_data_button_styles_mini_cart_height_differs_from_page_context(): void {
+		$this->settings_status->shouldReceive( 'is_smart_button_enabled_for_location' )->with( 'mini-cart' )->andReturn( true );
+
+		$data = $this->script_data();
+
+		$this->assertSame( SdkV6Manager::PAYMENT_BUTTON_HEIGHT, $data['button_styles']['checkout']['height'] );
+		$this->assertSame( SdkV6Manager::MINI_CART_BUTTON_HEIGHT, $data['button_styles']['mini-cart']['height'] );
+	}
+
+	/**
+	 * @testdox Should populate the wallet gateway subtrees on the pay-for-order page (apple/google).
+	 */
+	public function test_script_data_wallet_gateway_populated_on_pay_now(): void {
+		$this->stub_pay_for_order_page( '49.99' );
+		$this->stub_page( 'pay-now' );
+		$this->stub_available_gateways(
+			array(
+				'ppcp-googlepay' => $this->make_gateway( 'ppcp-googlepay' ),
+				'ppcp-applepay'  => $this->make_gateway( 'ppcp-applepay' ),
+			)
+		);
+
+		$data = $this->script_data();
+
+		$this->assertSame(
+			array(
+				'id'      => 'ppcp-googlepay',
+				'wrapper' => '#' . SdkV6Manager::GOOGLE_PAY_WRAPPER_ID,
+			),
+			$data['google_pay']['gateway']
+		);
+		$this->assertSame(
+			array(
+				'id'      => 'ppcp-applepay',
+				'wrapper' => '#' . SdkV6Manager::APPLE_PAY_WRAPPER_ID,
+			),
+			$data['apple_pay']['gateway']
+		);
+	}
+
+	/**
+	 * @testdox Should carry the $wallet_key gateway's own supports list when it is available (apple/google).
+	 * @dataProvider wallet_supported_features_present_provider
+	 *
+	 * @param string   $wallet_key       The wallet key in the data.
+	 * @param string   $gateway_id       The wallet's gateway ID.
+	 * @param string[] $gateway_supports What the gateway supports.
+	 */
+	public function test_script_data_wallet_supported_features_reflect_own_gateway_when_available( string $wallet_key, string $gateway_id, array $gateway_supports ): void {
+		$this->stub_page( 'checkout', 'checkout' );
+		$this->stub_available_gateways( array( $gateway_id => $this->make_gateway( $gateway_id, $gateway_supports ) ) );
+
+		$data = $this->script_data();
+
+		$this->assertSame( $gateway_supports, $data[ $wallet_key ]['supported_features'] );
+	}
+
+	/**
+	 * Wallet, gateway and supports.
+	 *
+	 * @return array
+	 */
+	public function wallet_supported_features_present_provider(): array {
+		return array(
+			'Apple Pay carries its own gateway supports'  => array( 'apple_pay', 'ppcp-applepay', array( 'products' ) ),
+			'Google Pay carries its own gateway supports' => array( 'google_pay', 'ppcp-googlepay', array( 'products', 'subscriptions' ) ),
+		);
+	}
+
+	/**
+	 * @testdox Should fall back to products-only supports for $wallet_key when its gateway is unavailable (apple/google).
+	 * @testWith ["apple_pay"]
+	 *           ["google_pay"]
+	 *
+	 * @param string $wallet_key The wallet key in the data.
+	 */
+	public function test_script_data_wallet_supported_features_fall_back_when_gateway_absent( string $wallet_key ): void {
+		$this->stub_page( 'checkout', 'checkout' );
+		$this->stub_available_gateways( array() );
+
+		$data = $this->script_data();
+
+		$this->assertSame( array( 'products' ), $data[ $wallet_key ]['supported_features'] );
+	}
+
+	/**
+	 * @testdox Should resolve each wallet's supports on its own (apple/google).
+	 */
+	public function test_script_data_wallet_supported_features_resolved_independently_per_wallet(): void {
+		$this->stub_page( 'checkout', 'checkout' );
+		$this->stub_available_gateways( array( 'ppcp-applepay' => $this->make_gateway( 'ppcp-applepay', array( 'products', 'subscriptions' ) ) ) );
+
+		$data = $this->script_data();
+
+		$this->assertSame( array( 'products', 'subscriptions' ), $data['apple_pay']['supported_features'] );
+		$this->assertSame( array( 'products' ), $data['google_pay']['supported_features'] );
+	}
+
+	/**
+	 * @testdox Should report shipping per context: final review $final_review_enabled, $page_context, cart needs shipping $cart_needs_shipping, product $product_state (wallet).
+	 * @dataProvider shipping_in_context_provider
+	 *
+	 * @param bool   $final_review_enabled Whether the final review step is on.
+	 * @param string $page_context         The page context.
+	 * @param bool   $cart_needs_shipping  Whether the cart needs shipping.
+	 * @param string $product_state        The viewed product: none, virtual, downloadable or physical.
+	 * @param array  $expected_in_context  The shipping.in_context entry.
+	 */
+	public function test_script_data_shipping_in_context_per_context(
+		bool $final_review_enabled,
+		string $page_context,
+		bool $cart_needs_shipping,
+		string $product_state,
+		array $expected_in_context
+	): void {
+		$this->stub_page( $page_context );
+		$this->stub_cart(
+			array(
+				'needs_shipping' => $cart_needs_shipping,
+				'is_empty'       => true,
+				// Incidental: script_data() prices the Pay Later message too and falls back to the cart total.
+				'get_total'      => '10.00',
+			)
+		);
+		if ( 'virtual' === $product_state ) {
+			$this->stub_current_product( array( 'virtual' => true ) );
+		} elseif ( 'downloadable' === $product_state ) {
+			$product = $this->stub_current_product();
+			$product->set_downloadable( true );
+			$product->save();
+		} elseif ( 'physical' === $product_state ) {
+			$this->stub_current_product();
+		}
+
+		$data = $this->script_data( $this->create_sut( 'US', $final_review_enabled ) );
+
+		$this->assertSame( $expected_in_context, $data['shipping']['in_context'] );
+	}
+
+	/**
+	 * Scenarios of the shipping rule.
+	 *
+	 * @return array
+	 */
+	public function shipping_in_context_provider(): array {
+		return array(
+			'a final review page disables shipping everywhere'                      => array(
+				true,
+				'cart',
+				true,
+				'none',
+				array(
+					'cart'      => false,
+					'mini-cart' => false,
+				),
+			),
+			'classic checkout never collects shipping even when the cart needs it'  => array(
+				false,
+				'checkout',
+				true,
+				'none',
+				array(
+					'checkout'  => false,
+					'mini-cart' => true,
+				),
+			),
+			'classic checkout stays disabled when the cart needs no shipping'       => array(
+				false,
+				'checkout',
+				false,
+				'none',
+				array(
+					'checkout'  => false,
+					'mini-cart' => false,
+				),
+			),
+			'the pay-for-order page never collects shipping'                        => array(
+				false,
+				'pay-now',
+				true,
+				'none',
+				array(
+					'pay-now'   => false,
+					'mini-cart' => true,
+				),
+			),
+			'the pay-for-order page stays disabled when the cart needs none'        => array(
+				false,
+				'pay-now',
+				false,
+				'none',
+				array(
+					'pay-now'   => false,
+					'mini-cart' => false,
+				),
+			),
+			'cart page with a cart needing shipping enables shipping'               => array(
+				false,
+				'cart',
+				true,
+				'none',
+				array(
+					'cart'      => true,
+					'mini-cart' => true,
+				),
+			),
+			'cart page with a cart that needs no shipping disables shipping'        => array(
+				false,
+				'cart',
+				false,
+				'none',
+				array(
+					'cart'      => false,
+					'mini-cart' => false,
+				),
+			),
+			'product page with a physical product enables shipping, empty cart'     => array(
+				false,
+				'product',
+				false,
+				'physical',
+				array(
+					'product'   => true,
+					'mini-cart' => false,
+				),
+			),
+			'product page with a physical product and a cart needing shipping'      => array(
+				false,
+				'product',
+				true,
+				'physical',
+				array(
+					'product'   => true,
+					'mini-cart' => true,
+				),
+			),
+			'product page with a virtual product disables shipping for the product' => array(
+				false,
+				'product',
+				true,
+				'virtual',
+				array(
+					'product'   => false,
+					'mini-cart' => true,
+				),
+			),
+			'product page with a downloadable product disables it for the product'  => array(
+				false,
+				'product',
+				true,
+				'downloadable',
+				array(
+					'product'   => false,
+					'mini-cart' => true,
+				),
+			),
+			'product page with no resolvable product disables it for the product'   => array(
+				false,
+				'product',
+				true,
+				'none',
+				array(
+					'product'   => false,
+					'mini-cart' => true,
+				),
+			),
+			'cart-block context enables shipping without consulting the cart'       => array(
+				false,
+				'cart-block',
+				false,
+				'none',
+				array(
+					'cart-block' => true,
+					'mini-cart'  => false,
+				),
+			),
+			'checkout-block context enables shipping without consulting the cart'   => array(
+				false,
+				'checkout-block',
+				false,
+				'none',
+				array(
+					'checkout-block' => true,
+					'mini-cart'      => false,
+				),
+			),
+			'a final review page disables the block contexts too'                   => array(
+				true,
+				'checkout-block',
+				true,
+				'none',
+				array(
+					'checkout-block' => false,
+					'mini-cart'      => false,
+				),
+			),
+		);
+	}
+
+	/**
+	 * @testdox Should hand the store's shipping countries over only when a context needs shipping: final review $final_review_enabled, countries $shipping_countries (wallet).
+	 * @dataProvider shipping_countries_provider
+	 *
+	 * @param bool       $final_review_enabled Whether the final review step is on.
+	 * @param bool       $cart_needs_shipping  Whether the cart needs shipping.
+	 * @param array|null $shipping_countries   The store's shipping countries, null for no countries service.
+	 * @param array      $expected_countries   The countries in the data.
+	 */
+	public function test_script_data_shipping_countries( bool $final_review_enabled, bool $cart_needs_shipping, ?array $shipping_countries, array $expected_countries ): void {
+		$this->stub_page( 'cart' );
+		$this->stub_cart(
+			array(
+				'needs_shipping' => $cart_needs_shipping,
+				'is_empty'       => true,
+				'get_total'      => '10.00',
+			)
+		);
+		if ( null !== $shipping_countries ) {
+			WC()->countries = Mockery::mock( \WC_Countries::class );
+			WC()->countries->shouldReceive( 'get_shipping_countries' )->andReturn( $shipping_countries );
+		}
+
+		$data = $this->script_data( $this->create_sut( 'US', $final_review_enabled ) );
+
+		$this->assertSame( $expected_countries, $data['shipping']['countries'] );
+	}
+
+	/**
+	 * Scenarios of the countries list.
+	 *
+	 * @return array
+	 */
+	public function shipping_countries_provider(): array {
+		return array(
+			'no context needing shipping yields an empty country list' => array( true, true, array( 'US' => 'United States' ), array() ),
+			'a context needing shipping returns the full country list' => array(
+				false,
+				true,
+				array(
+					'US' => 'United States',
+					'CA' => 'Canada',
+				),
+				array( 'US', 'CA' ),
+			),
+			'no countries service yields an empty list' => array( false, true, null, array() ),
+		);
+	}
+
+	/**
+	 * @testdox Should carry the documented label keys, each a non-empty string (wallet).
+	 */
+	public function test_script_data_includes_shipping_and_itemization_labels(): void {
+		$this->stub_page( 'checkout-block' );
+
+		$data = $this->script_data();
+
+		$this->assertSame(
+			array( 'generic_error', 'shipping_unserviceable', 'subtotal', 'shipping', 'tax', 'discount' ),
+			array_keys( $data['labels'] )
+		);
+		foreach ( $data['labels'] as $label ) {
+			$this->assertIsString( $label );
+			$this->assertNotSame( '', $label );
+		}
+	}
+
+	/**
+	 * @testdox Should suppress the product location only for a genuine free-trial product: free trial $free_trial_product (wallet).
+	 * @testWith [true, false]
+	 *           [false, true]
+	 *
+	 * @param bool $free_trial_product Whether the viewed product is a free-trial subscription.
+	 * @param bool $expected_product   Whether the product location renders.
+	 */
+	public function test_determine_render_places_product_gated_by_free_trial_product( bool $free_trial_product, bool $expected_product ): void {
+		$this->context->shouldReceive( 'init_context' )->never();
+		$this->stub_buttons_everywhere( true );
+		$this->stub_cart( array( 'needs_payment' => true ) );
+
+		$sut                     = $this->create_sut( 'US', false, null, SdkV6ManagerFreeTrialStub::class );
+		$sut->free_trial_product = $free_trial_product;
+
+		$this->assertSame( $expected_product, $sut->determine_render_places()['product'] );
+	}
+
+	/**
+	 * @testdox Should keep the product location off when its own setting is off, whatever the free-trial answer (wallet).
+	 */
+	public function test_determine_render_places_product_false_when_location_disabled_regardless_of_free_trial_product(): void {
+		$this->context->shouldReceive( 'init_context' )->never();
+		$this->settings_status->shouldReceive( 'is_smart_button_enabled_for_location' )->with( 'product' )->andReturn( false );
+		$this->settings_status->shouldReceive( 'is_smart_button_enabled_for_location' )->andReturn( true );
+		$this->stub_cart( array( 'needs_payment' => true ) );
+
+		$sut                     = $this->create_sut( 'US', false, null, SdkV6ManagerFreeTrialStub::class );
+		$sut->free_trial_product = false;
+
+		$this->assertFalse( $sut->determine_render_places()['product'] );
+	}
+
+	/**
+	 * @testdox Should confine the free-trial product guard to the product location (wallet).
+	 */
+	public function test_determine_render_places_free_trial_product_does_not_affect_other_locations(): void {
+		$this->context->shouldReceive( 'init_context' )->never();
+		$this->stub_buttons_everywhere( true );
+		$this->stub_cart( array( 'needs_payment' => true ) );
+
+		$sut                     = $this->create_sut( 'US', false, null, SdkV6ManagerFreeTrialStub::class );
+		$sut->free_trial_product = true;
+		$result                  = $sut->determine_render_places();
+
+		$this->assertFalse( $result['product'] );
+		$this->assertTrue( $result['checkout'] );
+	}
+
+	/**
+	 * @testdox Should add the tax-inclusive message amount as a two-decimal string to a variation (wallet).
+	 */
+	public function test_add_variation_message_amount_adds_tax_inclusive_amount_as_string(): void {
+		$variation = WC_Helper_Product::create_simple_product( true, array( 'regular_price' => '200' ) );
+
+		$result = $this->create_sut()->add_variation_message_amount(
+			array(
+				'display_price' => 180.0,
+				'sku'           => 'VAR-1',
+			),
+			null,
+			$variation
+		);
+
+		$this->assertSame( '200.00', $result['ppcp_message_amount'] );
+		$this->assertSame( 180.0, $result['display_price'] );
+		$this->assertSame( 'VAR-1', $result['sku'] );
+	}
+
+	/**
+	 * @testdox Should leave the variation data untouched when the variation is not a WC_Product: $scenario (wallet).
+	 * @dataProvider non_product_variation_provider
+	 *
+	 * @param string $scenario  The scenario name.
+	 * @param mixed  $variation The stand-in.
+	 */
+	public function test_add_variation_message_amount_leaves_data_untouched_without_a_wc_product_variation( string $scenario, $variation ): void {
+		unset( $scenario );
+		$data = array( 'display_price' => 180.0 );
+
+		$this->assertSame( $data, $this->create_sut()->add_variation_message_amount( $data, null, $variation ) );
+	}
+
+	/**
+	 * Values that are not products.
+	 *
+	 * @return array
+	 */
+	public function non_product_variation_provider(): array {
+		return array(
+			'null variation' => array( 'null variation', null ),
+			'a plain stdClass standing in for the variation' => array( 'stdClass', new \stdClass() ),
+		);
+	}
+
+	/**
+	 * @testdox Should leave the variation data untouched when an earlier callback returned a non-array: $scenario (wallet).
+	 * @dataProvider non_array_data_provider
+	 *
+	 * @param string $scenario The scenario name.
+	 * @param mixed  $data     What the earlier callback returned.
+	 */
+	public function test_add_variation_message_amount_leaves_non_array_data_untouched( string $scenario, $data ): void {
+		unset( $scenario );
+		$variation = WC_Helper_Product::create_simple_product();
+
+		$this->assertSame( $data, $this->create_sut()->add_variation_message_amount( $data, null, $variation ) );
+	}
+
+	/**
+	 * Non-array values.
+	 *
+	 * @return array
+	 */
+	public function non_array_data_provider(): array {
+		return array(
+			'a string returned by an earlier callback' => array( 'a string', 'not-an-array' ),
+			'null returned by an earlier callback'     => array( 'null', null ),
+		);
+	}
+
+	/**
+	 * @testdox Should leave the variation data untouched when messaging prices through cart simulation (wallet).
+	 */
+	public function test_add_variation_message_amount_leaves_data_untouched_under_cart_simulation(): void {
+		$calls = $this->spy_filter( 'woocommerce_paypal_payments_sdk_v6_messages_use_cart_simulation', true );
+		$data  = array( 'display_price' => 180.0 );
+
+		$result = $this->create_sut()->add_variation_message_amount( $data, null, WC_Helper_Product::create_simple_product() );
+
+		$this->assertSame( $data, $result );
+		$this->assertCount( 1, $calls );
+	}
+}

@@ -10,14 +10,8 @@ import {
 import { PaymentContext } from '../Helper/CheckoutMethodState';
 
 class Renderer {
-	constructor(
-		creditCardRenderer,
-		defaultSettings,
-		onSmartButtonClick,
-		onSmartButtonsInit
-	) {
+	constructor( defaultSettings, onSmartButtonClick, onSmartButtonsInit ) {
 		this.defaultSettings = defaultSettings;
-		this.creditCardRenderer = creditCardRenderer;
 		this.onSmartButtonClick = onSmartButtonClick;
 		this.onSmartButtonsInit = onSmartButtonsInit;
 
@@ -45,11 +39,7 @@ class Renderer {
 		return components.split( ',' ).includes( 'buttons' );
 	}
 
-	render(
-		contextConfig,
-		settingsOverride = {},
-		contextConfigOverride = () => {}
-	) {
+	render( contextConfig, settingsOverride = {} ) {
 		const settings = merge( this.defaultSettings, settingsOverride );
 
 		const enabledSeparateGateways = Object.fromEntries(
@@ -87,13 +77,6 @@ class Renderer {
 					fundingSource
 				);
 			}
-		}
-
-		if ( this.creditCardRenderer ) {
-			this.creditCardRenderer.render(
-				settings.hosted_fields.wrapper,
-				contextConfigOverride
-			);
 		}
 
 		for ( const [ fundingSource, data ] of Object.entries(
@@ -283,14 +266,6 @@ class Renderer {
 		if ( element ) {
 			element.innerHTML = '';
 		}
-	}
-
-	disableCreditCardFields() {
-		this.creditCardRenderer.disableFields();
-	}
-
-	enableCreditCardFields() {
-		this.creditCardRenderer.enableFields();
 	}
 
 	onButtonsInit( wrapper, handler, reset ) {

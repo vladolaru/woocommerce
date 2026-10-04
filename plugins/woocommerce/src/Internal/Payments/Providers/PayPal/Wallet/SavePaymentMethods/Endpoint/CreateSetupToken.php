@@ -15,7 +15,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\E
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Endpoint\EndpointInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint\RequestData;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Exception\NonceValidationException;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\CreditCardGateway;
 
 /**
  * Class CreateSetupToken
@@ -80,28 +79,6 @@ class CreateSetupToken implements EndpointInterface {
 					),
 				)
 			);
-
-			$payment_method = $data['payment_method'] ?? '';
-			if ( $payment_method === CreditCardGateway::ID ) {
-				$properties = (object) array();
-
-				$verification_method = $data['verification_method'] ?? '';
-				if ( $verification_method === 'SCA_WHEN_REQUIRED' || $verification_method === 'SCA_ALWAYS' ) {
-					$properties = (object) array(
-						'verification_method' => $verification_method,
-						'usage_type'          => 'MERCHANT',
-						'experience_context'  => (object) array(
-							'return_url' => esc_url( wc_get_account_endpoint_url( 'payment-methods' ) ),
-							'cancel_url' => esc_url( wc_get_account_endpoint_url( 'add-payment-method' ) ),
-						),
-					);
-				}
-
-				$payment_source = new PaymentSource(
-					'card',
-					$properties
-				);
-			}
 
 			$customer_id = get_user_meta( get_current_user_id(), '_ppcp_target_customer_id', true );
 

@@ -32,7 +32,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Help
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Helper\EarlyOrderHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Helper\IsolatedCartSimulator;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Helper\MessagesApply;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Helper\ThreeDSecure;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Helper\WooCommerceOrderCreator;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Session\CartDataFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Session\CartDataTransientStorage;
@@ -40,7 +39,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Vali
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\CardPaymentsConfiguration;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\Environment;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\SettingsStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Helper\SubscriptionHelper;
@@ -98,12 +96,9 @@ return array(
 				return new DisabledSmartButton();
 			}
 
-			$no_smart_buttons  = ! $settings_status->is_smart_button_enabled_for_location( $context );
-			$dcc_configuration = $container->get( 'wcgateway.configuration.card-configuration' );
-			assert( $dcc_configuration instanceof CardPaymentsConfiguration );
+			$no_smart_buttons = ! $settings_status->is_smart_button_enabled_for_location( $context );
 
-			if ( $no_smart_buttons && ! $dcc_configuration->is_enabled() ) {
-				// Smart buttons disabled, and also not using advanced card payments.
+			if ( $no_smart_buttons ) {
 				return new DisabledSmartButton();
 			}
 		}
@@ -122,7 +117,6 @@ return array(
 		$payer_factory    = $container->get( 'api.factory.payer' );
 		$request_data     = $container->get( 'button.request-data' );
 		$client_id           = $container->get( 'button.client_id' );
-		$dcc_applies         = $container->get( 'api.helpers.dccapplies' );
 		$subscription_helper = $container->get( 'wc-subscriptions.helper' );
 		$messages_apply      = $container->get( 'button.helper.messages-apply' );
 		$environment         = $container->get( 'settings.environment' );
@@ -134,7 +128,6 @@ return array(
 			$payer_factory,
 			$client_id,
 			$request_data,
-			$dcc_applies,
 			$subscription_helper,
 			$container->get( 'button.subscriptions-mode' ),
 			$messages_apply,
@@ -149,7 +142,6 @@ return array(
 			$container->get( 'wcgateway.server-side-shipping-callback-enabled' ),
 			$container->get( 'wcgateway.appswitch-enabled' ),
 			$container->get( 'button.helper.disabled-funding-sources' ),
-			$container->get( 'wcgateway.configuration.card-configuration' ),
 			$container->get( 'api.helper.partner-attribution' ),
 			$container->get( 'blocks.settings.final_review_enabled' ),
 			$container->get( 'button.helper.context' ),
@@ -266,12 +258,6 @@ return array(
 			$container->get( 'woocommerce.logger.woocommerce' )
 		);
 	},
-	'button.helper.three-d-secure'                => static function ( ContainerInterface $container ): ThreeDSecure {
-		return new ThreeDSecure(
-			$container->get( 'api.factory.card-authentication-result-factory' ),
-			$container->get( 'woocommerce.logger.woocommerce' )
-		);
-	},
 	'button.helper.messages-apply'                => static function ( ContainerInterface $container ): MessagesApply {
 		return new MessagesApply(
 			$container->get( 'api.paylater-countries' ),
@@ -281,9 +267,7 @@ return array(
 	'button.helper.disabled-funding-sources'      => static function ( ContainerInterface $container ): DisabledFundingSources {
 		return new DisabledFundingSources(
 			$container->get( 'settings.settings-provider' ),
-			$container->get( 'wcgateway.all-funding-sources' ),
-			$container->get( 'wcgateway.configuration.card-configuration' ),
-			$container->get( 'api.shop.country' )
+			$container->get( 'wcgateway.all-funding-sources' )
 		);
 	},
 	'button.is-logged-in'                         => static function ( ContainerInterface $container ): bool {

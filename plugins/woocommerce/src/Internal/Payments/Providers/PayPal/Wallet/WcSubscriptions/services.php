@@ -12,16 +12,12 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSub
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Endpoint\SubscriptionChangePaymentMethod;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Helper\FreeTrialSubscriptionHelper;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Helper\RealTimeAccountUpdaterHelper;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Helper\SubscriptionHelper;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Service\ChangePaymentMethod;
 
 return array(
 	'wc-subscriptions.helper'                            => static function ( ContainerInterface $container ): SubscriptionHelper {
 		return new SubscriptionHelper();
-	},
-	'wc-subscriptions.helpers.real-time-account-updater' => static function ( ContainerInterface $container ): RealTimeAccountUpdaterHelper {
-		return new RealTimeAccountUpdaterHelper();
 	},
 	'wc-subscriptions.renewal-handler'                   => static function ( ContainerInterface $container ): RenewalHandler {
 		$logger                = $container->get( 'woocommerce.logger.woocommerce' );
@@ -42,10 +38,7 @@ return array(
 			$settings_provider,
 			$authorized_payments_processor,
 			$funding_source_renderer,
-			$container->get( 'wc-subscriptions.helpers.real-time-account-updater' ),
-			$container->get( 'wc-subscriptions.helper' ),
-			$container->get( 'wc-payment-tokens.wc-payment-tokens' ),
-			$container->get( 'wcgateway.builder.experience-context' )
+			$container->get( 'wc-payment-tokens.wc-payment-tokens' )
 		);
 	},
 	'wc-subscriptions.endpoint.subscription-change-payment-method' => static function ( ContainerInterface $container ): SubscriptionChangePaymentMethod {

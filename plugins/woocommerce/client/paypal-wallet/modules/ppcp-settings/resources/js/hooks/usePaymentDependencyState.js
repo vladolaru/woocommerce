@@ -59,9 +59,6 @@ const checkValueDependencies = ( method, methodsMap ) => {
 			continue;
 		}
 
-		// Example: card-button-gateway depends on credit-card-gateway being FALSE.
-		// So if credit-card-gateway is TRUE (enabled), card-button-gateway should be disabled.
-
 		// If the dependency requires a method to be false but it's enabled (or vice versa).
 		if (
 			typeof requiredValue === 'boolean' &&
