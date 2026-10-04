@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Orders;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\RestApi\UnitTests\Helpers\OrderHelper;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use WC_Unit_Test_Case;
 
 /**
@@ -141,5 +142,73 @@ class PaymentInfoTest extends WC_Unit_Test_Case {
 
 		$this->assertIsArray( $cached );
 		$this->assertSame( 'pm_123', $cached['requested_id'] );
+	}
+
+	/**
+	 * @testdox A PHP error fetching the WooPayments payment method leaves the order totals without card info and is logged.
+	 *
+	 * Trunk catches every throwable around the fetch, logs it under `payment-info` and returns no card info, so the
+	 * order-received page, My Account and order emails still render their totals. The details service lets a PHP error
+	 * through, so this caller keeps that catch.
+	 */
+	public function test_get_card_info_wcpay_php_error_fetching_details_returns_no_card_info(): void {
+		$order = OrderHelper::create_order();
+		$order->set_payment_method( 'woocommerce_payments' );
+		$order->set_payment_method_title( 'Credit card / debit card' );
+		$order->add_meta_data( '_payment_method_id', 'pm_fetch_error', true );
+		$order->save();
+
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => function ( $class_name, $autoload = true ) {
+					if ( 'WC_Payments' === ltrim( (string) $class_name, '\\' ) ) {
+						return true;
+					}
+					return class_exists( $class_name, $autoload );
+				},
+				'get_option'   => function ( $option, $default_value = false ) {
+					if ( 'active_plugins' === $option ) {
+						return array( NativePaymentsRuntimeArbiter::PLUGIN_FILE );
+					}
+
+					return get_option( $option, $default_value );
+				},
+			)
+		);
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		$this->register_legacy_proxy_static_mocks(
+			array(
+				'WC_Payments' => array(
+					'get_payments_api_client' => function () {
+						return new class() {
+							// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
+							/**
+							 * Fail as a client whose response body was null.
+							 *
+							 * @param string $payment_method_id Payment method ID.
+							 * @return array<string,mixed>
+							 * @throws \TypeError Always.
+							 */
+							public function get_payment_method( string $payment_method_id ): array {
+								unset( $payment_method_id );
+								throw new \TypeError( 'Return value must be of type array, null returned' );
+							}
+							// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+						};
+					},
+				),
+			)
+		);
+		$logger = RecordingWcLogger::install();
+
+		$totals    = $order->get_order_item_totals();
+		$card_info = $order->get_payment_card_info();
+
+		$this->assertSame( 'Credit card / debit card', $totals['payment_method']['value'] ?? null, 'The totals render the payment method without card details.' );
+		$this->assertSame( '', $card_info['brand'] );
+		$this->assertSame( '', $card_info['last4'] );
+		$this->assertSame( '', wc_get_order( $order->get_id() )->get_meta( '_wcpay_raw_payment_method_details', true ), 'Nothing is cached after a failed fetch.' );
+		$expected = sprintf( 'PaymentInfo - retrieving info for payment method pm_fetch_error for order %d: Return value must be of type array, null returned', $order->get_id() );
+		$this->assertContains( array( 'error', $expected, 'payment-info' ), $logger->lines );
 	}
 }
