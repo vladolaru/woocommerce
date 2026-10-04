@@ -118,8 +118,7 @@
 }
 
 .woocommerce-woopayments-dispute-evidence__notice:focus {
-	// stylelint-disable-next-line color-no-hex -- client 11.1.0 evidence notice focus outline colour; pending accent improvement (details-accent-swaps.patch).
-	outline: 2px solid #2271b1;
+	outline: var(--wp-admin-border-width-focus) solid var(--wp-admin-theme-color);
 	outline-offset: 2px;
 }
 

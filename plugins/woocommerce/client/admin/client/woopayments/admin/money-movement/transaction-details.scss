@@ -519,8 +519,7 @@
 
 	summary {
 		align-items: center;
-		// stylelint-disable-next-line color-no-hex -- pending accent improvement (details-accent-swaps.patch): var(--wp-admin-theme-color).
-		color: #3858e9;
+		color: var(--wp-admin-theme-color);
 		cursor: pointer;
 		display: inline-flex;
 		font-size: $font-size-medium;
