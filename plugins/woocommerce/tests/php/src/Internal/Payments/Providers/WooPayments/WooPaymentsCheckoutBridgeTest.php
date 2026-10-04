@@ -1799,18 +1799,21 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Gateways rendered in one $_dataName payment list build the gateway-independent config once, each with its own keys, filter pass and config attribute.
+	 * @testdox On the $_dataName the classic payment list builds the gateway-independent config once per request, and again when $changed changes.
 	 *
-	 * Client 11.1.0 builds the classic config once per request (`includes/class-wc-payments-checkout.php:408-423`). Core's
-	 * checkout template fires the review-order payment hooks only outside AJAX (`templates/checkout/payment.php:20-22, 61-63`),
-	 * so update_order_review brackets the list with its own action and fragments filter (`WC_AJAX::update_order_review()`).
+	 * Client 11.1.0 builds the classic config once per request: payment_fields() builds it only while the checkout script
+	 * is not yet enqueued (`includes/class-wc-payments-checkout.php:409-424`). Native shares one base between the
+	 * gateways in the same way, with no hook window, and builds it again only when an input of the base changes.
 	 *
-	 * @dataProvider payment_list_brackets
+	 * @testWith ["checkout page", "the cart total"]
+	 *           ["order-pay page", "the order"]
+	 *           ["update_order_review refresh", "the shopper"]
+	 *           ["checkout page", "the card gateway supports"]
 	 *
-	 * @param callable $open  Fires what core fires before the payment list.
-	 * @param callable $close Fires what core fires after the payment list.
+	 * @param string $surface Where the payment list renders.
+	 * @param string $changed Which input of the config base changes before the last render.
 	 */
-	public function test_classic_payment_list_builds_the_shared_config_once( callable $open, callable $close ): void {
+	public function test_classic_payment_list_builds_the_shared_config_once( string $surface, string $changed ): void {
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
 		$account_service = $this->create_account_service_for_bridge( true );
@@ -1829,60 +1832,82 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			++$filtered;
 			return $config;
 		};
+		$render   = function ( array $supports, string $payment_method_id = 'card' ) use ( $bridge, $registry ): array {
+			ob_start();
+			$bridge->render_payment_fields( $supports, $registry->get( $payment_method_id ) );
+			$this->assertSame( 1, preg_match( '/data-wcpay-config="([^"]*)"/', (string) ob_get_clean(), $matches ) );
+
+			return json_decode( html_entity_decode( $matches[1], ENT_QUOTES ), true );
+		};
 		add_filter( 'wc_payments_account_id_for_intent_confirmation', $count );
 		add_filter( 'wcpay_payment_fields_js_config', $filter );
 
 		$gateways = array();
 		try {
-			$bridge->register();
-			ob_start();
-			$open();
-			foreach ( array( 'card', 'klarna', 'affirm' ) as $payment_method_id ) {
-				ob_start();
-				$bridge->render_payment_fields( self::CARD_SUPPORTS, $registry->get( $payment_method_id ) );
-				$this->assertSame( 1, preg_match( '/data-wcpay-config="([^"]*)"/', (string) ob_get_clean(), $matches ) );
-				$gateways[] = json_decode( html_entity_decode( $matches[1], ENT_QUOTES ), true )['gatewayId'] ?? '';
+			$customer_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+			wp_set_current_user( $customer_id );
+			if ( 'order-pay page' === $surface ) {
+				$order = wc_create_order( array( 'customer_id' => $customer_id ) );
+				$order->set_total( '12.34' );
+				$order->save();
+				set_query_var( 'order-pay', $order->get_id() );
+			} else {
+				if ( 'update_order_review refresh' === $surface ) {
+					add_filter( 'wp_doing_ajax', '__return_true' );
+				}
+				WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 1 );
+				WC()->cart->calculate_totals();
 			}
-			$close();
-			$builds_in_list = $builds;
+			$bridge->register();
 
-			$bridge->render_payment_fields( self::CARD_SUPPORTS );
-			ob_end_clean();
+			foreach ( array( 'card', 'klarna', 'affirm' ) as $payment_method_id ) {
+				$gateways[] = $render( self::CARD_SUPPORTS, $payment_method_id )['gatewayId'] ?? '';
+			}
+			$builds_in_list   = $builds;
+			$before           = $render( self::CARD_SUPPORTS );
+			$builds_unchanged = $builds;
+
+			$supports = self::CARD_SUPPORTS;
+			switch ( $changed ) {
+				case 'the cart total':
+					WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 1 );
+					WC()->cart->calculate_totals();
+					$field = 'cartTotal';
+					break;
+				case 'the order':
+					$other_order = wc_create_order( array( 'customer_id' => $customer_id ) );
+					$other_order->set_total( '56.78' );
+					$other_order->save();
+					set_query_var( 'order-pay', $other_order->get_id() );
+					$field = 'orderId';
+					break;
+				case 'the shopper':
+					wp_set_current_user( self::factory()->user->create( array( 'role' => 'customer' ) ) );
+					$field = 'createSetupIntentNonce';
+					break;
+				default:
+					$supports = array_merge( self::CARD_SUPPORTS, array( 'tokenization' ) );
+					$field    = 'features';
+			}
+			$after = $render( $supports );
 		} finally {
 			remove_filter( 'wc_payments_account_id_for_intent_confirmation', $count );
 			remove_filter( 'wcpay_payment_fields_js_config', $filter );
 			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+			remove_filter( 'wp_doing_ajax', '__return_true' );
+			set_query_var( 'order-pay', '' );
+			WC()->cart->empty_cart();
 		}
 
 		$this->assertSame( 1, $builds_in_list, 'The payment list builds the shared config once.' );
-		$this->assertSame( 2, $builds, 'A render after the payment list builds fresh config.' );
-		$this->assertSame( 4, $filtered, 'Each gateway config still passes the wcpay_payment_fields_js_config filter.' );
+		$this->assertSame( 1, $builds_unchanged, 'A later render in the same request with the same inputs reuses it.' );
+		$this->assertSame( 2, $builds, 'A render after ' . $changed . ' changed builds fresh config.' );
+		$this->assertNotSame( $before[ $field ] ?? null, $after[ $field ] ?? null, 'The fresh config carries the changed input.' );
+		$this->assertSame( 5, $filtered, 'Each gateway config still passes the wcpay_payment_fields_js_config filter.' );
 		$this->assertSame( array( 'woocommerce_payments', 'woocommerce_payments_klarna', 'woocommerce_payments_affirm' ), $gateways );
 		$localized = (string) wp_scripts()->get_data( 'wc-woopayments-checkout', 'data' );
 		$this->assertStringContainsString( 'var wcpay_core_checkout_config = ', $localized, 'The card gateway config is localized under the base object.' );
 		$this->assertStringNotContainsString( 'var wcpay_core_checkout_config_woocommerce_payments =', $localized, 'The checkout script reads the card config from the base object only.' );
-	}
-
-	/**
-	 * What core fires around each classic payment list: the checkout page, the order-pay page and update_order_review.
-	 *
-	 * @return array<string,array{0:callable,1:callable}>
-	 */
-	public function payment_list_brackets(): array {
-		return array(
-			'checkout page'       => array(
-				static fn() => do_action( 'woocommerce_review_order_before_payment' ),
-				static fn() => do_action( 'woocommerce_review_order_after_payment' ),
-			),
-			'order-pay page'      => array(
-				static fn() => do_action( 'woocommerce_pay_order_before_payment' ),
-				static fn() => do_action( 'woocommerce_pay_order_after_submit' ),
-			),
-			'update_order_review' => array(
-				static fn() => do_action( 'woocommerce_checkout_update_order_review', '' ),
-				static fn() => apply_filters( 'woocommerce_update_order_review_fragments', array() ),
-			),
-		);
 	}
 
 	/**

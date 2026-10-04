@@ -298,13 +298,16 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	private bool $base_classic_config_localized = false;
 
 	/**
-	 * Config bases shared by the gateways of the payment list being rendered, keyed by card gateway supports; null outside that render.
+	 * The classic payment-list config base built last in this request, with the key of the inputs it was built from.
 	 *
-	 * Client 11.1.0 builds the classic config once per request (includes/class-wc-payments-checkout.php:408-423).
+	 * Client 11.1.0 builds its classic config once per request: payment_fields() builds it only while the checkout
+	 * script is not yet enqueued, then enqueues the script, so every later gateway reuses the first build
+	 * (includes/class-wc-payments-checkout.php:409-424). Native renders one config per gateway, so it shares the base
+	 * the same way and builds again only when an input of the base changes (get_payment_list_config_base_key()).
 	 *
-	 * @var array<string,array{config:array<string,mixed>,saved_cards_enabled:bool,currency:string}>|null
+	 * @var array{key:string,base:array{config:array<string,mixed>,saved_cards_enabled:bool,currency:string}}|null
 	 */
-	private ?array $payment_list_config_bases = null;
+	private ?array $payment_list_config_base = null;
 
 	/**
 	 * Initialize the class instance.
@@ -370,21 +373,6 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		}
 		if ( false === has_action( 'woocommerce_store_api_checkout_order_processed', array( $this, 'record_checkout_order_placed' ) ) ) {
 			add_action( 'woocommerce_store_api_checkout_order_processed', array( $this, 'record_checkout_order_placed' ), 10, 2 );
-		}
-		// The checkout template fires the review-order payment hooks only outside AJAX, so update_order_review opens the
-		// window when it starts and closes it in its fragments filter, which runs after the payment list rendered.
-		foreach ( array( 'woocommerce_review_order_before_payment', 'woocommerce_pay_order_before_payment', 'woocommerce_checkout_update_order_review' ) as $hook ) {
-			if ( false === has_action( $hook, array( $this, 'start_payment_list_render' ) ) ) {
-				add_action( $hook, array( $this, 'start_payment_list_render' ), 10, 0 );
-			}
-		}
-		foreach ( array( 'woocommerce_review_order_after_payment', 'woocommerce_pay_order_after_submit' ) as $hook ) {
-			if ( false === has_action( $hook, array( $this, 'end_payment_list_render' ) ) ) {
-				add_action( $hook, array( $this, 'end_payment_list_render' ), 10, 0 );
-			}
-		}
-		if ( false === has_filter( 'woocommerce_update_order_review_fragments', array( $this, 'end_payment_list_render_in_fragments' ) ) ) {
-			add_filter( 'woocommerce_update_order_review_fragments', array( $this, 'end_payment_list_render_in_fragments' ) );
 		}
 		foreach ( array( 'woocommerce_after_cart', 'woocommerce_blocks_enqueue_cart_block_scripts_after', 'woocommerce_after_single_product', 'before_woocommerce_pay_form', 'woocommerce_payments_save_user_in_woopay' ) as $hook ) {
 			if ( false === has_action( $hook, array( $this, 'record_shopper_funnel_event' ) ) ) {
@@ -519,38 +507,6 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Share one config base between the gateways of the classic checkout or order-pay payment list about to render.
-	 *
-	 * @internal
-	 */
-	public function start_payment_list_render(): void {
-		$this->payment_list_config_bases = array();
-	}
-
-	/**
-	 * Stop sharing the config base once the payment list has rendered, so later renders see fresh state.
-	 *
-	 * @internal
-	 */
-	public function end_payment_list_render(): void {
-		$this->payment_list_config_bases = null;
-	}
-
-	/**
-	 * Stop sharing the config base once update_order_review has rendered the payment list.
-	 *
-	 * @internal
-	 *
-	 * @param mixed $fragments Checkout fragments.
-	 * @return mixed The fragments, unchanged.
-	 */
-	public function end_payment_list_render_in_fragments( $fragments ) {
-		$this->end_payment_list_render();
-
-		return $fragments;
-	}
-
-	/**
 	 * Get the classic checkout JS config.
 	 *
 	 * @param string[]                                $supports                  Card gateway support features, sent as `features`.
@@ -564,13 +520,14 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	/**
 	 * Build the gateway-independent part of the payment fields config.
 	 *
-	 * @param string[] $supports Card gateway support features.
+	 * @param string[]                                                                  $supports        Card gateway support features.
+	 * @param array{currency:string,total:int,order_id:int,billing_country:string}|null $payment_context Payment context, when the caller already read it.
 	 * @return array{config:array<string,mixed>,saved_cards_enabled:bool,currency:string}
 	 */
-	private function get_payment_fields_js_config_base( array $supports ): array {
+	private function get_payment_fields_js_config_base( array $supports, ?array $payment_context = null ): array {
 		$force_network_saved_cards = $this->should_force_network_saved_cards();
 		$saved_cards_enabled       = $this->is_saved_cards_enabled();
-		$payment_context           = $this->get_payment_context();
+		$payment_context           = $payment_context ?? $this->get_payment_context();
 		$customer_data             = $this->get_customer_service()->get_prepared_customer_data();
 		if ( '' !== $payment_context['billing_country'] ) {
 			$customer_data['billing_country'] = $payment_context['billing_country'];
@@ -750,22 +707,44 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the config base, built once for all gateways while a payment list renders.
+	 * Get the config base for a classic payment-list gateway, built once per request for the same inputs.
 	 *
 	 * @param string[] $supports Card gateway support features.
 	 * @return array{config:array<string,mixed>,saved_cards_enabled:bool,currency:string}
 	 */
 	private function get_payment_list_config_base( array $supports ): array {
-		if ( null === $this->payment_list_config_bases ) {
-			return $this->get_payment_fields_js_config_base( $supports );
+		$payment_context = $this->get_payment_context();
+		$key             = $this->get_payment_list_config_base_key( $supports, $payment_context );
+		if ( null === $this->payment_list_config_base || $key !== $this->payment_list_config_base['key'] ) {
+			$this->payment_list_config_base = array(
+				'key'  => $key,
+				'base' => $this->get_payment_fields_js_config_base( $supports, $payment_context ),
+			);
 		}
 
-		$key = implode( ',', $supports );
-		if ( ! isset( $this->payment_list_config_bases[ $key ] ) ) {
-			$this->payment_list_config_bases[ $key ] = $this->get_payment_fields_js_config_base( $supports );
-		}
+		return $this->payment_list_config_base['base'];
+	}
 
-		return $this->payment_list_config_bases[ $key ];
+	/**
+	 * Get the key of the config base inputs that can change within one request.
+	 *
+	 * The card gateway supports, the order or cart total and currency, the order and its billing country, whether the
+	 * cart holds a subscription, and the shopper (the nonces and the saved-card data are per user). The rest of the
+	 * base (account, gateway settings, page type, locale) is fixed for the request, as the client's single build assumes.
+	 *
+	 * @param string[]                                                             $supports        Card gateway support features.
+	 * @param array{currency:string,total:int,order_id:int,billing_country:string} $payment_context Payment context.
+	 * @return string
+	 */
+	private function get_payment_list_config_base_key( array $supports, array $payment_context ): string {
+		return (string) wp_json_encode(
+			array(
+				array_values( $supports ),
+				$payment_context,
+				$this->cart_contains_subscription(),
+				get_current_user_id(),
+			)
+		);
 	}
 
 	/**
