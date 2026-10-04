@@ -484,15 +484,15 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 
 	/** @return array<string,array{string,string,array<int,string>,array<int,string>}> */
 	public static function page_request_cron_root_gaps(): array {
-		$matrix   = self::core_root_matrix();
-		$history  = array( self::CORE_ROOTS[4], self::CORE_ROOTS[23] );
-		$from_cli = array_merge( array( 'ProviderRoot' ), $matrix['historical cron'][3] );
+		$matrix          = self::core_root_matrix();
+		$history         = array( self::CORE_ROOTS[4], self::CORE_ROOTS[23] );
+		$historical_cron = array_merge( array( 'ProviderRoot' ), $matrix['historical cron'][3] );
 
 		return array(
 			'configured front' => array( 'configured', 'front', array_merge( array( 'ProviderRoot' ), $matrix['configured front'][3] ), $history ),
-			'historical front' => array( 'historical', 'front', array(), $from_cli ),
-			'historical ajax'  => array( 'historical', 'ajax', array(), $from_cli ),
-			'historical cli'   => array( 'historical', 'cli', array(), $from_cli ),
+			'historical front' => array( 'historical', 'front', array(), $historical_cron ),
+			'historical ajax'  => array( 'historical', 'ajax', array(), $historical_cron ),
+			'historical cli'   => array( 'historical', 'cli', array(), $historical_cron ),
 			'empty front'      => array( 'empty', 'front', array(), array() ),
 		);
 	}

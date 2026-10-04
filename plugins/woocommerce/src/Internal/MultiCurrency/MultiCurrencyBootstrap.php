@@ -184,8 +184,9 @@ final class MultiCurrencyBootstrap {
 	/**
 	 * Register the cron roots this request lacks once Action Scheduler runs an action in it.
 	 *
-	 * ALTERNATE_WP_CRON and the Tools > Scheduled Actions "Run" link run actions, such as the Analytics import and the tracker, inside a front or admin request.
-	 * The client registers Analytics and Tracking on every request (client 11.1.0 `includes/multi-currency/MultiCurrency.php:340,343`).
+	 * ALTERNATE_WP_CRON, the Action Scheduler async runner and WP-CLI run actions, such as the Analytics import and the tracker, inside a front, ajax or CLI request.
+	 * Admin and REST requests already register every cron root, so the Tools > Scheduled Actions "Run" link never needs this listener.
+	 * The client registers Analytics and Tracking on every request (client 11.1.0 `includes/multi-currency/MultiCurrency.php:340,344`).
 	 *
 	 * @param Container|RuntimeContainer $container  Runtime dependency container.
 	 * @param string                     $request    Request class.
