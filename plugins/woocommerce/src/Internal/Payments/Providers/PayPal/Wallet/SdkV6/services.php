@@ -18,16 +18,10 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Asset
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Blocks\V6PaymentMethod;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Endpoint\ClientTokenEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Endpoint\SimulateCartEndpoint;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Endpoint\CartQuoteEndpoint;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\ApplePayConfig;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\ButtonStyleMapper;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\FastlaneConfig;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\GooglePayConfig;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\MessagesEligibility;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\MessageStyleMapper;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\RecordedQuote;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\RecordedShippingRate;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\RecordedTaxBasis;
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Helper\SubscriptionHelper;
 
@@ -43,26 +37,6 @@ return array(
 	'sdk-v6.button-style-mapper'        => static function ( ContainerInterface $container ): ButtonStyleMapper {
 		return new ButtonStyleMapper(
 			$container->get( 'settings.settings-provider' )
-		);
-	},
-
-	'sdk-v6.google-pay-config'          => static function ( ContainerInterface $container ): GooglePayConfig {
-		$availability = $container->get( 'ppcp.module-availability' );
-		assert( $availability instanceof ModuleAvailability );
-		return new GooglePayConfig(
-			$container->get( 'settings.settings-provider' ),
-			$container->get( 'wc-subscriptions.helper' ),
-			$availability->availability_check( 'googlepay' )
-		);
-	},
-
-	'sdk-v6.apple-pay-config'           => static function ( ContainerInterface $container ): ApplePayConfig {
-		$availability = $container->get( 'ppcp.module-availability' );
-		assert( $availability instanceof ModuleAvailability );
-		return new ApplePayConfig(
-			$container->get( 'settings.settings-provider' ),
-			$container->get( 'wc-subscriptions.helper' ),
-			$availability->availability_check( 'applepay' )
 		);
 	},
 
@@ -138,9 +112,6 @@ return array(
 			$container->get( 'button.subscriptions-mode' ),
 			$container->get( 'sdk-v6.message-style-mapper' ),
 			$container->get( 'sdk-v6.messages-eligibility' ),
-			$settings_provider->merchant_country(),
-			$container->get( 'sdk-v6.google-pay-config' ),
-			$container->get( 'sdk-v6.apple-pay-config' ),
 			$container->get( 'sdk-v6.fastlane-config' )
 		);
 	},
@@ -171,29 +142,6 @@ return array(
 			$container->get( 'order-endpoints.request-data' ),
 			$container->get( 'order-endpoints.helper.cart-products' ),
 			$container->get( 'button.helper.isolated-cart-simulator' ),
-			$container->get( 'woocommerce.logger.woocommerce' )
-		);
-	},
-
-	'sdk-v6.recorded-shipping-rate'     => static function (): RecordedShippingRate {
-		return new RecordedShippingRate();
-	},
-
-	'sdk-v6.recorded-tax-basis'         => static function (): RecordedTaxBasis {
-		return new RecordedTaxBasis();
-	},
-
-	'sdk-v6.recorded-quote'             => static function (): RecordedQuote {
-		return new RecordedQuote();
-	},
-
-	'sdk-v6.endpoint.wallet-shipping'   => static function ( ContainerInterface $container ): CartQuoteEndpoint {
-		return new CartQuoteEndpoint(
-			$container->get( 'order-endpoints.request-data' ),
-			$container->get( 'api.factory.amount' ),
-			$container->get( 'sdk-v6.recorded-shipping-rate' ),
-			$container->get( 'sdk-v6.recorded-tax-basis' ),
-			$container->get( 'sdk-v6.recorded-quote' ),
 			$container->get( 'woocommerce.logger.woocommerce' )
 		);
 	},

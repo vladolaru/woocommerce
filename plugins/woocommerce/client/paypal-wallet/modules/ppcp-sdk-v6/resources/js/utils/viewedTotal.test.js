@@ -66,10 +66,11 @@ describe( 'watchViewedTotal()', () => {
 		test( "resolves the 'product' context via simulateCart, never touching fetchCartTotal", async () => {
 			mockSimulateCart.mockResolvedValueOnce( { total: '15.00' } );
 
-			const watcher = watchViewedTotal( config(), 'product' );
+			const notify = jest.fn();
+			watchViewedTotal( config(), 'product' ).subscribe( notify );
 			await flushPromises();
 
-			expect( watcher.get() ).toBe( '15.00' );
+			expect( notify ).toHaveBeenCalledWith( '15.00' );
 			expect( mockFetchCartTotal ).not.toHaveBeenCalled();
 		} );
 
@@ -78,33 +79,14 @@ describe( 'watchViewedTotal()', () => {
 			async ( context ) => {
 				mockFetchCartTotal.mockResolvedValueOnce( '20.00' );
 
-				const watcher = watchViewedTotal( config(), context );
+				const notify = jest.fn();
+				watchViewedTotal( config(), context ).subscribe( notify );
 				await flushPromises();
 
-				expect( watcher.get() ).toBe( '20.00' );
+				expect( notify ).toHaveBeenCalledWith( '20.00' );
 				expect( mockSimulateCart ).not.toHaveBeenCalled();
 			}
 		);
-	} );
-
-	test( 'get() returns the config.amount seed before the first resolve settles, then the resolved total once it does', async () => {
-		let resolveSimulate;
-		mockSimulateCart.mockReturnValueOnce(
-			new Promise( ( resolve ) => {
-				resolveSimulate = resolve;
-			} )
-		);
-
-		const watcher = watchViewedTotal(
-			config( { amount: '5.00' } ),
-			'product'
-		);
-		expect( watcher.get() ).toBe( '5.00' );
-
-		resolveSimulate( { total: '15.00' } );
-		await flushPromises();
-
-		expect( watcher.get() ).toBe( '15.00' );
 	} );
 
 	describe( 'subscribe()', () => {
@@ -173,33 +155,41 @@ describe( 'watchViewedTotal()', () => {
 	} );
 
 	describe( 'per-context isolation', () => {
-		test( "two different contexts resolve independently, and each watcher's get() reports its own total", async () => {
+		test( 'two different contexts resolve independently, and each subscriber hears its own total', async () => {
 			mockSimulateCart.mockResolvedValueOnce( { total: '15.00' } );
 			mockFetchCartTotal.mockResolvedValueOnce( '99.00' );
 
-			const productWatcher = watchViewedTotal( config(), 'product' );
-			const miniCartWatcher = watchViewedTotal( config(), 'mini-cart' );
+			const productNotify = jest.fn();
+			const miniCartNotify = jest.fn();
+			watchViewedTotal( config(), 'product' ).subscribe( productNotify );
+			watchViewedTotal( config(), 'mini-cart' ).subscribe(
+				miniCartNotify
+			);
 			await flushPromises();
 
-			expect( productWatcher.get() ).toBe( '15.00' );
-			expect( miniCartWatcher.get() ).toBe( '99.00' );
+			expect( productNotify ).toHaveBeenCalledTimes( 1 );
+			expect( productNotify ).toHaveBeenCalledWith( '15.00' );
+			expect( miniCartNotify ).toHaveBeenCalledTimes( 1 );
+			expect( miniCartNotify ).toHaveBeenCalledWith( '99.00' );
 		} );
 
-		// This is the behaviour change item 1 in the task exists to cover: two
-		// surfaces (Apple Pay, Pay Later messaging) watching the same context
-		// must not report different totals for the same page.
+		// Two watchers on the same context must not report different totals for
+		// the same page: they share one state and one subscriber set.
 		test( 'two watchers on the same context share the total after a refresh', async () => {
 			mockSimulateCart
 				.mockResolvedValueOnce( { total: '10.00' } )
 				.mockResolvedValueOnce( { total: '20.00' } );
 
-			const firstWatcher = watchViewedTotal( config(), 'product' );
+			const firstNotify = jest.fn();
+			const secondNotify = jest.fn();
+			watchViewedTotal( config(), 'product' ).subscribe( firstNotify );
 			await flushPromises();
-			const secondWatcher = watchViewedTotal( config(), 'product' );
+			watchViewedTotal( config(), 'product' ).subscribe( secondNotify );
 			await flushPromises();
 
-			expect( firstWatcher.get() ).toBe( '20.00' );
-			expect( secondWatcher.get() ).toBe( '20.00' );
+			expect( firstNotify ).toHaveBeenLastCalledWith( '20.00' );
+			expect( secondNotify ).toHaveBeenCalledTimes( 1 );
+			expect( secondNotify ).toHaveBeenCalledWith( '20.00' );
 		} );
 	} );
 
@@ -210,9 +200,10 @@ describe( 'watchViewedTotal()', () => {
 				.mockResolvedValueOnce( { total: '10.00' } )
 				.mockResolvedValueOnce( { total: '25.00' } );
 
-			const watcher = watchViewedTotal( config(), 'product' );
+			const notify = jest.fn();
+			watchViewedTotal( config(), 'product' ).subscribe( notify );
 			await flushPromises();
-			expect( watcher.get() ).toBe( '10.00' );
+			expect( notify ).toHaveBeenLastCalledWith( '10.00' );
 
 			form.dispatchEvent( new Event( 'change' ) );
 			await jest.advanceTimersByTimeAsync( 100 );
@@ -225,7 +216,8 @@ describe( 'watchViewedTotal()', () => {
 			await flushPromises();
 
 			expect( mockSimulateCart ).toHaveBeenCalledTimes( 2 );
-			expect( watcher.get() ).toBe( '25.00' );
+			expect( notify ).toHaveBeenCalledTimes( 2 );
+			expect( notify ).toHaveBeenLastCalledWith( '25.00' );
 		} );
 	} );
 
@@ -246,9 +238,10 @@ describe( 'watchViewedTotal()', () => {
 				.mockReturnValueOnce( first )
 				.mockReturnValueOnce( second );
 
-			const watcher = watchViewedTotal( config(), 'product' );
+			const notify = jest.fn();
+			watchViewedTotal( config(), 'product' ).subscribe( notify );
 			await flushPromises();
-			expect( watcher.get() ).toBe( '10.00' );
+			expect( notify ).toHaveBeenLastCalledWith( '10.00' );
 
 			form.dispatchEvent( new Event( 'change' ) );
 			await jest.advanceTimersByTimeAsync( DEBOUNCE_MS );
@@ -257,11 +250,12 @@ describe( 'watchViewedTotal()', () => {
 
 			resolveSecond( { total: '30.00' } );
 			await flushPromises();
-			expect( watcher.get() ).toBe( '30.00' );
+			expect( notify ).toHaveBeenLastCalledWith( '30.00' );
 
 			resolveFirst( { total: '20.00' } );
 			await flushPromises();
-			expect( watcher.get() ).toBe( '30.00' );
+			expect( notify ).toHaveBeenCalledTimes( 2 );
+			expect( notify ).toHaveBeenLastCalledWith( '30.00' );
 		} );
 	} );
 
@@ -272,14 +266,16 @@ describe( 'watchViewedTotal()', () => {
 				.mockResolvedValueOnce( { total: '15.00' } )
 				.mockRejectedValueOnce( new Error( 'network down' ) );
 
-			const watcher = watchViewedTotal( config(), 'product' );
+			const notify = jest.fn();
+			watchViewedTotal( config(), 'product' ).subscribe( notify );
 			await flushPromises();
 
 			form.dispatchEvent( new Event( 'change' ) );
 			await jest.advanceTimersByTimeAsync( DEBOUNCE_MS );
 			await flushPromises();
 
-			expect( watcher.get() ).toBe( '15.00' );
+			expect( notify ).toHaveBeenCalledTimes( 1 );
+			expect( notify ).toHaveBeenCalledWith( '15.00' );
 		} );
 
 		test( 'a refresh that resolves an empty total leaves the previous total intact', async () => {
@@ -288,14 +284,16 @@ describe( 'watchViewedTotal()', () => {
 				.mockResolvedValueOnce( { total: '15.00' } )
 				.mockResolvedValueOnce( { total: '' } );
 
-			const watcher = watchViewedTotal( config(), 'product' );
+			const notify = jest.fn();
+			watchViewedTotal( config(), 'product' ).subscribe( notify );
 			await flushPromises();
 
 			form.dispatchEvent( new Event( 'change' ) );
 			await jest.advanceTimersByTimeAsync( DEBOUNCE_MS );
 			await flushPromises();
 
-			expect( watcher.get() ).toBe( '15.00' );
+			expect( notify ).toHaveBeenCalledTimes( 1 );
+			expect( notify ).toHaveBeenCalledWith( '15.00' );
 		} );
 	} );
 

@@ -53,7 +53,7 @@ export const wooSettings = ( state ) => {
 	 * The "own-brand-only" experience is determined on server-side, based on the installation path.
 	 *
 	 * When true, the plugin must only display "PayPal's own brand" payment options
-	 * i.e. no card payments or Apple Pay/Google Pay.
+	 * i.e. no card payments.
 	 *
 	 * @type {boolean}
 	 */

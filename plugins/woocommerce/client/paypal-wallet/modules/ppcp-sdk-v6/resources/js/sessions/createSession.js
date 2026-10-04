@@ -12,14 +12,11 @@ import {
 import { refreshCartUi } from '../utils/cartUi';
 import { handleError } from '../utils/errorHandler';
 import { FundingSources } from '../utils/fundingSources';
-import { MERCHANT_PRESENTED_METHODS } from '../methods/methodRegistry';
 
 const SESSION_FACTORIES = {
 	[ FundingSources.PAYPAL ]: 'createPayPalOneTimePaymentSession',
 	[ FundingSources.VENMO ]: 'createVenmoOneTimePaymentSession',
 	[ FundingSources.PAYLATER ]: 'createPayLaterOneTimePaymentSession',
-	[ FundingSources.GOOGLEPAY ]: 'createGooglePayOneTimePaymentSession',
-	[ FundingSources.APPLEPAY ]: 'createApplePayOneTimePaymentSession',
 };
 
 /**
@@ -32,8 +29,7 @@ const SESSION_FACTORIES = {
  */
 export const SUPPORTED_METHODS = Object.keys( SESSION_FACTORIES );
 
-// Wallet sessions are merchant-presented, so the SDK shows no popup and these
-// callbacks never fire; wallets collect shipping in their own sheet instead.
+// Only PayPal opens a popup that can ask for a shipping change.
 const SHIPPING_POPUP_METHODS = [ FundingSources.PAYPAL ];
 
 // Contexts where the buyer enters shipping on the page: checkout has the form,
@@ -68,6 +64,16 @@ export function createSession(
 	handlers = {}
 ) {
 	const sessionConfig = {
+		onApprove:
+			handlers.onApprove ||
+			async function ( data ) {
+				try {
+					await approveOrder( config, context, method, data.orderId );
+				} catch ( error ) {
+					handleError( error );
+				}
+			},
+
 		onCancel: handlers.onCancel || ( () => refreshCartUi( context ) ),
 
 		onError:
@@ -77,20 +83,6 @@ export function createSession(
 				handleError( error );
 			} ),
 	};
-
-	// Wallet sheets close before the order exists, so wallet sessions have no
-	// onApprove: the wallet bridge drives create, confirm and approve itself.
-	if ( ! MERCHANT_PRESENTED_METHODS.includes( method ) ) {
-		sessionConfig.onApprove =
-			handlers.onApprove ||
-			async function ( data ) {
-				try {
-					await approveOrder( config, context, method, data.orderId );
-				} catch ( error ) {
-					handleError( error );
-				}
-			};
-	}
 
 	const collectsShipping =
 		SHIPPING_POPUP_METHODS.includes( method ) &&

@@ -28,7 +28,6 @@ use WC_Order;
  * The extension's last case ("the gate passes via card saving, but wallet saving is off") rests on a premise the cards
  * cut removed: the gate no longer reads card saving. It is replaced by a gate case in which wallet saving is the only
  * setting that can be read.
- * The Apple Pay vaulting cases stay while the Apple Pay code does.
  *
  * @group paypal-wallet
  */
@@ -87,7 +86,7 @@ class SavePaymentMethodsModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * A create-order request body for an Apple Pay payment source.
+	 * A create-order request body for an Apple Pay payment source, which a third party could still send.
 	 *
 	 * @return array
 	 */
@@ -113,74 +112,25 @@ class SavePaymentMethodsModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Apple Pay purchase of a subscription requests vaulting, so a token is stored for later renewals
+	 * The Apple Pay cut removed the request attributes that vaulted an Apple Pay subscription purchase.
+	 *
+	 * @testdox Should leave an Apple Pay request body untouched, even for a subscription purchase (wallet).
 	 */
-	public function test_adds_vault_attributes_for_apple_pay_subscription(): void {
+	public function test_apple_pay_request_body_is_left_untouched(): void {
 		$this->settings->shouldReceive( 'save_paypal_and_venmo' )->andReturn( true );
 		$this->subscription_purchase( true );
 
 		$this->run_module();
 
+		$data   = $this->apple_pay_order_data();
 		$result = apply_filters(
 			'ppcp_create_order_request_body_data',
-			$this->apple_pay_order_data(),
+			$data,
 			PayPalGateway::ID,
 			array( 'funding_source' => 'apple_pay' )
 		);
 
-		$this->assertSame(
-			'ON_SUCCESS',
-			$result['payment_source']['apple_pay']['attributes']['vault']['store_in_vault']
-		);
-		// The experience context must be preserved.
-		$this->assertArrayHasKey( 'experience_context', $result['payment_source']['apple_pay'] );
-		// The PayPal wallet attributes must not be added for Apple Pay.
-		$this->assertArrayNotHasKey( 'usage_type', $result['payment_source']['apple_pay']['attributes']['vault'] );
-	}
-
-	/**
-	 * @testdox The saved PayPal customer ID is attached, so the token is vaulted against the right customer
-	 */
-	public function test_adds_customer_id_when_available(): void {
-		$user_id = self::factory()->user->create();
-		wp_set_current_user( $user_id );
-		update_user_meta( $user_id, '_ppcp_target_customer_id', 'CUST-123' );
-
-		$this->settings->shouldReceive( 'save_paypal_and_venmo' )->andReturn( true );
-		$this->subscription_purchase( true );
-
-		$this->run_module();
-
-		$result = apply_filters(
-			'ppcp_create_order_request_body_data',
-			$this->apple_pay_order_data(),
-			PayPalGateway::ID,
-			array( 'funding_source' => 'apple_pay' )
-		);
-
-		$this->assertSame(
-			'CUST-123',
-			$result['payment_source']['apple_pay']['attributes']['customer']['id']
-		);
-	}
-
-	/**
-	 * @testdox A one-off Apple Pay purchase is not vaulted
-	 */
-	public function test_does_not_vault_apple_pay_without_subscription(): void {
-		$this->settings->shouldReceive( 'save_paypal_and_venmo' )->andReturn( true );
-		$this->subscription_purchase( false );
-
-		$this->run_module();
-
-		$result = apply_filters(
-			'ppcp_create_order_request_body_data',
-			$this->apple_pay_order_data(),
-			PayPalGateway::ID,
-			array( 'funding_source' => 'apple_pay' )
-		);
-
-		$this->assertArrayNotHasKey( 'attributes', $result['payment_source']['apple_pay'] );
+		$this->assertSame( $data, $result );
 	}
 
 	/**
@@ -259,9 +209,25 @@ class SavePaymentMethodsModuleTest extends WalletTestCase {
 		$tokens  = $this->mock( WooCommercePaymentTokens::class );
 		$tokens->shouldNotReceive( 'create_payment_token_paypal' );
 		$tokens->shouldNotReceive( 'create_payment_token_venmo' );
-		$tokens->shouldNotReceive( 'create_payment_token_applepay' );
 
 		$this->process_vaulted_order( 'card', $user_id, $tokens );
+
+		$this->assertSame( 'PP-CUSTOMER-1', get_user_meta( $user_id, '_ppcp_target_customer_id', true ) );
+	}
+
+	/**
+	 * The Apple Pay cut removed the token creator: a vault result from a third party that asks for it must not be stored
+	 * as a PayPal token either.
+	 *
+	 * @testdox Should create no WooCommerce token for an apple_pay vault result, and still remember the PayPal customer (wallet).
+	 */
+	public function test_apple_pay_vault_result_creates_no_token_after_order_processing(): void {
+		$user_id = self::factory()->user->create();
+		$tokens  = $this->mock( WooCommercePaymentTokens::class );
+		$tokens->shouldNotReceive( 'create_payment_token_paypal' );
+		$tokens->shouldNotReceive( 'create_payment_token_venmo' );
+
+		$this->process_vaulted_order( 'apple_pay', $user_id, $tokens );
 
 		$this->assertSame( 'PP-CUSTOMER-1', get_user_meta( $user_id, '_ppcp_target_customer_id', true ) );
 	}

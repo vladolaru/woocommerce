@@ -10,21 +10,13 @@ declare(strict_types=1);
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6;
 
 use Automattic\WooCommerce\Blocks\Payments\PaymentMethodRegistry;
-use WC_Order;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\Order;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Helper\Context;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint\ApproveOrderEndpoint;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint\ChangeCartEndpoint;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint\CreateOrderEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Assets\AddPaymentMethodManager;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Assets\SdkV6Manager;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Endpoint\ClientTokenEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Endpoint\SimulateCartEndpoint;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Endpoint\CartQuoteEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\MerchantCountrySupport;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\RecordedShippingRate;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\RecordedQuote;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\RecordedTaxBasis;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Session\SessionHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ExecutableModule;
@@ -67,18 +59,6 @@ class SdkV6Module implements ServiceModule, ExtendingModule, ExecutableModule {
 				$endpoint->handle_request();
 			}
 		);
-
-		add_action(
-			'wc_ajax_' . CartQuoteEndpoint::ENDPOINT,
-			static function () use ( $c ) {
-				$endpoint = $c->get( 'sdk-v6.endpoint.wallet-shipping' );
-				assert( $endpoint instanceof CartQuoteEndpoint );
-
-				$endpoint->handle_request();
-			}
-		);
-
-		$this->register_session_records( $c );
 
 		add_action(
 			'wp_enqueue_scripts',
@@ -172,9 +152,7 @@ class SdkV6Module implements ServiceModule, ExtendingModule, ExecutableModule {
 		// ppcp-gateway type and processing); on v6-owned block pages its
 		// script_data is empty so it registers no express buttons.
 		//
-		// The other v5 PayPal block methods misbehave against that empty config:
-		// the Google Pay and Apple Pay boots throw during React render, tearing
-		// down the whole checkout block.
+		// The other v5 PayPal block methods are dropped where v6 owns the page.
 		//
 		// This action fires on init, before is_checkout()/is_cart() resolve, so
 		// the suppression is deferred to two later hooks that run once the page
@@ -193,10 +171,7 @@ class SdkV6Module implements ServiceModule, ExtendingModule, ExecutableModule {
 						return;
 					}
 
-					$v5_methods = array(
-						'ppcp-googlepay',
-						'ppcp-applepay',
-					);
+					$v5_methods = array();
 
 					// v6 does not re-implement Fastlane, so the v5 method is
 					// dropped only where v6 cannot supply the SDK object it
@@ -239,109 +214,6 @@ class SdkV6Module implements ServiceModule, ExtendingModule, ExecutableModule {
 		);
 
 		return true;
-	}
-
-	/**
-	 * Wires the records that carry a wallet sheet's decisions through to its order.
-	 *
-	 * @param ContainerInterface $c The plugin container.
-	 */
-	private function register_session_records( ContainerInterface $c ): void {
-		// Only where a payment is being priced. Elsewhere these would act on a record
-		// an abandoned sheet left behind, overriding a rate the shopper clicks or
-		// taxing them against the wallet's address.
-		if ( $this->prices_a_merchant_presented_payment() ) {
-			add_filter(
-				'woocommerce_shipping_chosen_method',
-				static function ( $default, $rates = array() ) use ( $c ) {
-					$recorded_rate = $c->get( 'sdk-v6.recorded-shipping-rate' );
-					assert( $recorded_rate instanceof RecordedShippingRate );
-
-					return $recorded_rate->filter_chosen_method( $default, $rates );
-				},
-				20,
-				2
-			);
-
-			add_filter(
-				'woocommerce_customer_taxable_address',
-				static function ( $address ) use ( $c ) {
-					$recorded_tax_basis = $c->get( 'sdk-v6.recorded-tax-basis' );
-					assert( $recorded_tax_basis instanceof RecordedTaxBasis );
-
-					return $recorded_tax_basis->filter_taxable_address( $address );
-				},
-				20
-			);
-		}
-
-		$conclude_payment = static function ( $wc_order ) use ( $c ) {
-			$recorded_rate = $c->get( 'sdk-v6.recorded-shipping-rate' );
-			assert( $recorded_rate instanceof RecordedShippingRate );
-
-			$recorded_tax_basis = $c->get( 'sdk-v6.recorded-tax-basis' );
-			assert( $recorded_tax_basis instanceof RecordedTaxBasis );
-
-			$recorded_quote = $c->get( 'sdk-v6.recorded-quote' );
-			assert( $recorded_quote instanceof RecordedQuote );
-
-			$recorded_rate->forget();
-			$recorded_tax_basis->forget();
-
-			if ( $wc_order instanceof WC_Order ) {
-				$recorded_quote->apply_to_order( $wc_order );
-			} else {
-				$recorded_quote->forget();
-			}
-		};
-
-		// Both names, because which one fires depends on how the order was built:
-		// express payments go through WooCommerceOrderCreator, which announces itself
-		// as _from_cart, while the classic gateway and the pay-for-order page fire the
-		// plain name.
-		add_action( 'woocommerce_paypal_payments_woocommerce_order_created', $conclude_payment );
-		add_action( 'woocommerce_paypal_payments_woocommerce_order_created_from_cart', $conclude_payment );
-
-		// The order-received page's own success paragraph, so the message carries no
-		// markup and inherits that styling.
-		add_filter(
-			'woocommerce_thankyou_order_received_text',
-			static function ( $text, $wc_order ) use ( $c ) {
-				if ( ! is_string( $text ) || ! $wc_order instanceof WC_Order ) {
-					return $text;
-				}
-
-				$recorded_quote = $c->get( 'sdk-v6.recorded-quote' );
-				assert( $recorded_quote instanceof RecordedQuote );
-
-				return $recorded_quote->thank_you_message( $text, $wc_order );
-			},
-			10,
-			2
-		);
-	}
-
-	/**
-	 * Whether this request is one that prices a wallet payment already in flight.
-	 *
-	 * Those four are every request whose cart calculation decides what the shopper is
-	 * shown or charged. Anything else, an ordinary page view included, must be left
-	 * to price the cart the shopper sees.
-	 */
-	private function prices_a_merchant_presented_payment(): bool {
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended,WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- Reading which endpoint is being served, not acting on input; sanitize_key() drops any slashes along with everything outside [a-z0-9_-].
-		$action = is_string( $_GET['wc-ajax'] ?? null ) ? sanitize_key( $_GET['wc-ajax'] ) : '';
-
-		return in_array(
-			$action,
-			array(
-				CartQuoteEndpoint::ENDPOINT,
-				ChangeCartEndpoint::ENDPOINT,
-				CreateOrderEndpoint::ENDPOINT,
-				ApproveOrderEndpoint::ENDPOINT,
-			),
-			true
-		);
 	}
 
 	/**
@@ -463,11 +335,6 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 				$hook,
 				static function () use ( $manager ): void {
 					$manager->render_wrapper();
-
-					// Their own containers, next to the express wrapper rather
-					// than inside it: as payment-method rows these wallets are
-					// shown and hidden by the buyer's gateway selection.
-					$manager->render_gateway_wrappers();
 				}
 			);
 		}
@@ -485,7 +352,6 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 				$hook,
 				static function () use ( $manager ): void {
 					$manager->render_wrapper();
-					$manager->render_gateway_wrappers();
 				},
 				20
 			);

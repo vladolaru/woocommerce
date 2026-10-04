@@ -23,7 +23,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\F
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\PurchaseUnitFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\ShippingPreferenceFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\Environment;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcPaymentTokens\PaymentTokenApplePay;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcPaymentTokens\PaymentTokenPayPal;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcPaymentTokens\PaymentTokenVenmo;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcPaymentTokens\WooCommercePaymentTokens;
@@ -244,15 +243,6 @@ class RenewalHandler {
 
 				if ( $token instanceof PaymentTokenVenmo ) {
 					$name = 'venmo';
-				}
-
-				if ( $token instanceof PaymentTokenApplePay ) {
-					$name                            = 'apple_pay';
-					$properties['stored_credential'] = array(
-						'payment_initiator' => 'MERCHANT',
-						'payment_type'      => 'RECURRING',
-						'usage'             => 'SUBSEQUENT',
-					);
 				}
 
 				$payment_source = new PaymentSource(

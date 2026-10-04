@@ -19,8 +19,7 @@ use WC_Order;
  * What the enricher appends to a payment method title, over real orders and real filters.
  *
  * Case kinds: "wallet" cases use a PayPal gateway order (a `card` payment source there is card funding in the PayPal
- * button stack, which stays); "apple/google" cases belong to task 5. The gateway IDs are literals, as the standalone
- * card gateway classes are gone.
+ * button stack, which stays). The gateway IDs of the dropped gateways are literals, as their classes are gone.
  *
  * @group paypal-wallet
  */
@@ -114,24 +113,6 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 			'american_express' => array( 'AMERICAN_EXPRESS', 'American Express' ),
 			'unknown'          => array( 'FOO_BAR', 'Foo bar' ),
 		);
-	}
-
-	/**
-	 * @testdox Should append the card details of an Apple Pay order (apple/google).
-	 */
-	public function test_appends_card_details_for_apple_pay(): void {
-		$order = $this->make_order( self::APPLE_PAY_GATEWAY, $this->card_meta( 'MASTERCARD', '5678', 'apple_pay' ) );
-
-		$this->assertSame( 'Apple Pay (Mastercard ending in 5678)', $this->sut->enrich( 'Apple Pay', $order ) );
-	}
-
-	/**
-	 * @testdox Should append the card details of a Google Pay order (apple/google).
-	 */
-	public function test_appends_card_details_for_google_pay(): void {
-		$order = $this->make_order( self::GOOGLE_PAY_GATEWAY, $this->card_meta( 'VISA', '4242', 'google_pay' ) );
-
-		$this->assertSame( 'Google Pay (Visa ending in 4242)', $this->sut->enrich( 'Google Pay', $order ) );
 	}
 
 	/**
@@ -501,14 +482,6 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should resolve a wallet source to the icon of its underlying card brand (apple/google).
-	 */
-	public function test_get_icon_url_resolves_wallet_sources_to_underlying_card_brand(): void {
-		$this->assertSame( $this->icon_url( 'mastercard' ), $this->sut->get_icon_url( 'apple_pay', 'MASTERCARD' ) );
-		$this->assertSame( $this->icon_url( 'visa' ), $this->sut->get_icon_url( 'google_pay', 'VISA' ) );
-	}
-
-	/**
 	 * @testdox Should prefer the source's own icon over the card brand (wallet).
 	 */
 	public function test_get_icon_url_source_map_wins_over_card_brand(): void {
@@ -557,17 +530,6 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 		$this->assertSame( 'PayPal (Visa ending in 1234)', $this->sut->enrich( 'PayPal', $order ) );
 		$this->assertSame( array( '', $this->icon_url( 'visa' ), 'card', 'VISA' ), array_slice( $calls[0], 0, 4 ) );
 		$this->assertSame( $order, $calls[0][4] );
-	}
-
-	/**
-	 * @testdox Should pass the underlying brand's icon URL to the icon filter for an Apple Pay order (apple/google).
-	 */
-	public function test_icon_filter_receives_underlying_brand_url_for_apple_pay_order(): void {
-		$order = $this->make_order( self::APPLE_PAY_GATEWAY, $this->card_meta( 'MASTERCARD', '5678', 'apple_pay' ) );
-		$calls = $this->spy_filter( self::ICON_FILTER, '' );
-
-		$this->assertSame( 'Apple Pay (Mastercard ending in 5678)', $this->sut->enrich( 'Apple Pay', $order ) );
-		$this->assertSame( array( '', $this->icon_url( 'mastercard' ), 'apple_pay', 'MASTERCARD' ), array_slice( $calls[0], 0, 4 ) );
 	}
 
 	/**
@@ -692,6 +654,54 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
+	 * The Apple Pay and Google Pay cut dropped both wallets from the enricher: no gateway ID and no payment source.
+	 *
+	 * @testdox Should leave the title of a $gateway order unchanged and build no detail for it (wallet).
+	 * @dataProvider dropped_wallet_gateway_provider
+	 *
+	 * @param string $gateway The gateway ID.
+	 */
+	public function test_dropped_wallet_gateway_order_is_unchanged( string $gateway ): void {
+		$calls = $this->spy_filter( self::DETAIL_FILTER, 'Mastercard ending in 5678' );
+		$order = $this->make_order( $gateway, $this->card_meta( 'MASTERCARD', '5678', 'apple_pay' ) );
+
+		$this->assertSame( 'Wallet', $this->sut->enrich( 'Wallet', $order ) );
+		$this->assertCount( 0, $calls );
+	}
+
+	/**
+	 * @return array<string, array{0: string}>
+	 */
+	public function dropped_wallet_gateway_provider(): array {
+		return array(
+			'ppcp-applepay'  => array( self::APPLE_PAY_GATEWAY ),
+			'ppcp-googlepay' => array( self::GOOGLE_PAY_GATEWAY ),
+		);
+	}
+
+	/**
+	 * @testdox Should append no card details for a wallet payment source on a PayPal order: $source (wallet).
+	 * @dataProvider dropped_wallet_source_provider
+	 *
+	 * @param string $source The payment source name.
+	 */
+	public function test_wallet_payment_source_on_paypal_gateway_adds_no_card_details( string $source ): void {
+		$order = $this->make_order( PayPalGateway::ID, $this->card_meta( 'MASTERCARD', '5678', $source ) );
+
+		$this->assertSame( 'PayPal', $this->sut->enrich( 'PayPal', $order ) );
+	}
+
+	/**
+	 * @return array<string, array{0: string}>
+	 */
+	public function dropped_wallet_source_provider(): array {
+		return array(
+			'apple_pay'  => array( 'apple_pay' ),
+			'google_pay' => array( 'google_pay' ),
+		);
+	}
+
+	/**
 	 * Meta of a PayPal order with a payer email.
 	 *
 	 * @return array<string, string>
@@ -704,7 +714,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * Meta of an order paid with a card or a card-backed wallet.
+	 * Meta of an order paid with a card source.
 	 *
 	 * @param string $brand       The raw brand.
 	 * @param string $last_digits The last four digits.

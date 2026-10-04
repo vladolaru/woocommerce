@@ -441,8 +441,6 @@ document.addEventListener( 'DOMContentLoaded', () => {
 			 *
 			 * This block will find all marked input fields and trigger a re-render of the
 			 * preview button when one of those fields value changes.
-			 *
-			 * Example: See the ppcp-google-pay "extensions.php" file.
 			 */
 			document
 				.querySelectorAll( '[data-ppcp-preview-block]' )

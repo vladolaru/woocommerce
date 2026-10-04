@@ -5,7 +5,6 @@ import PaymentFlow from './PaymentFlow';
 
 const WelcomeDocs = ( {
 	useAcdc,
-	useDigitalWallets,
 	isFastlane,
 	storeCountry,
 	ownBrandOnly,
@@ -20,7 +19,6 @@ const WelcomeDocs = ( {
 			</h2>
 			<PaymentFlow
 				useAcdc={ useAcdc }
-				useDigitalWallets={ useDigitalWallets }
 				isFastlane={ isFastlane }
 				storeCountry={ storeCountry }
 				ownBrandOnly={ ownBrandOnly }

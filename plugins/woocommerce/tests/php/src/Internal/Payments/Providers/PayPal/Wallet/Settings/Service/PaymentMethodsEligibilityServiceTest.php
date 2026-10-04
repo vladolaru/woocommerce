@@ -9,9 +9,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Settings\Service;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Applepay\ApplePayGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Axo\Gateway\AxoGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Googlepay\GooglePayGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\BancontactGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\BlikGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\EPSGateway;
@@ -30,7 +28,7 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Walle
 /**
  * Which payment methods a merchant is eligible for, by country, capabilities and module availability.
  *
- * The Apple Pay, Google Pay, Fastlane and local payment method rows go with tasks 5, 6 and 8.
+ * The Fastlane and local payment method rows go with tasks 6 and 8.
  *
  * @group paypal-wallet
  */
@@ -86,7 +84,7 @@ class PaymentMethodsEligibilityServiceTest extends WalletTestCase {
 	 * @testdox Should offer Pay with Crypto with the capability (apm).
 	 */
 	public function test_pwc_enabled(): void {
-		$service = $this->create_service( 'US', true, true, true, true, array( FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO => true ) );
+		$service = $this->create_service( 'US', true, true, array( FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO => true ) );
 
 		$this->assertTrue( $service->get_eligibility_checks()[ PWCGateway::ID ]() );
 	}
@@ -117,26 +115,6 @@ class PaymentMethodsEligibilityServiceTest extends WalletTestCase {
 	 */
 	public function test_axo_inactive(): void {
 		$this->assertFalse( $this->create_service( 'US', true, false )->get_eligibility_checks()[ AxoGateway::ID ]() );
-	}
-
-	/**
-	 * @testdox Should offer Apple Pay and Google Pay when both are available (apple/google).
-	 */
-	public function test_apple_and_google_active(): void {
-		$checks = $this->create_service( 'US' )->get_eligibility_checks();
-
-		$this->assertTrue( $checks[ ApplePayGateway::ID ]() );
-		$this->assertTrue( $checks[ GooglePayGateway::ID ]() );
-	}
-
-	/**
-	 * @testdox Should not offer Apple Pay and Google Pay when neither is available (apple/google).
-	 */
-	public function test_apple_and_google_inactive(): void {
-		$checks = $this->create_service( 'US', true, true, false, false )->get_eligibility_checks();
-
-		$this->assertFalse( $checks[ ApplePayGateway::ID ]() );
-		$this->assertFalse( $checks[ GooglePayGateway::ID ]() );
 	}
 
 	/**
@@ -177,8 +155,6 @@ class PaymentMethodsEligibilityServiceTest extends WalletTestCase {
 	 * @param string $country_code          The merchant country.
 	 * @param bool   $apm_enabled           Whether the merchant is APM eligible.
 	 * @param bool   $axo_enabled           Whether the Fastlane module check passes.
-	 * @param bool   $apple_pay_enabled     Whether Apple Pay is available.
-	 * @param bool   $google_pay_enabled    Whether Google Pay is available.
 	 * @param array  $merchant_capabilities The merchant capabilities.
 	 * @return PaymentMethodsEligibilityService
 	 */
@@ -186,17 +162,13 @@ class PaymentMethodsEligibilityServiceTest extends WalletTestCase {
 		string $country_code = 'US',
 		bool $apm_enabled = true,
 		bool $axo_enabled = true,
-		bool $apple_pay_enabled = true,
-		bool $google_pay_enabled = true,
 		array $merchant_capabilities = array()
 	): PaymentMethodsEligibilityService {
 		return new PaymentMethodsEligibilityService(
 			$country_code,
 			$apm_enabled,
 			$merchant_capabilities,
-			fn() => $axo_enabled,
-			$apple_pay_enabled,
-			$google_pay_enabled
+			fn() => $axo_enabled
 		);
 	}
 }

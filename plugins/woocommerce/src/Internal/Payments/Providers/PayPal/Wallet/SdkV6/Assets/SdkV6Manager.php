@@ -7,11 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Assets;
 
-use WC_Payment_Gateway;
 use WC_Product;
 use WP_Post;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Applepay\ApplePayGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Applepay\Assets\PropertiesDictionary;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetter;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint\UpdateShippingEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint\ApproveOrderEndpoint;
@@ -20,18 +17,14 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoi
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint\FrontendLogEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Endpoint\GetOrderEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Helper\Context;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Googlepay\GooglePayGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PayLaterBlock\PayLaterBlockModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SavePaymentMethods\Endpoint\CreatePaymentToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SavePaymentMethods\Endpoint\CreatePaymentTokenForGuest;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SavePaymentMethods\Endpoint\CreateSetupToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Endpoint\ClientTokenEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Endpoint\SimulateCartEndpoint;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Endpoint\CartQuoteEndpoint;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\ApplePayConfig;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\ButtonStyleMapper;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\FastlaneConfig;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\GooglePayConfig;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\MessagesEligibility;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\MessageStyleMapper;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Session\Cancellation\CancelController;
@@ -46,10 +39,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscript
 class SdkV6Manager {
 	use FreeTrialHandlerTrait;
 
-	public const WRAPPER_ID            = 'ppc-button-ppcp-gateway-v6';
-	public const MINI_CART_WRAPPER_ID  = 'ppc-button-minicart-v6';
-	public const GOOGLE_PAY_WRAPPER_ID = 'ppc-button-ppcp-googlepay-v6';
-	public const APPLE_PAY_WRAPPER_ID  = 'ppc-button-ppcp-applepay-v6';
+	public const WRAPPER_ID           = 'ppc-button-ppcp-gateway-v6';
+	public const MINI_CART_WRAPPER_ID = 'ppc-button-minicart-v6';
 
 	/**
 	 * The height every payment button on the page renders at.
@@ -70,11 +61,6 @@ class SdkV6Manager {
 	// The pay-for-order page has no pre-payment hook, so the message renders
 	// after the submit button and is relocated by SdkV6Module.
 	public const PAY_ORDER_MESSAGE_HOOK = 'woocommerce_pay_order_before_submit';
-
-	/**
-	 * The contexts that print a payment-method radio list a method can own a row in.
-	 */
-	private const CONTEXTS_WITH_GATEWAY_ROWS = array( 'checkout', 'pay-now' );
 
 	private AssetGetter $asset_getter;
 	private string $version;
@@ -99,29 +85,7 @@ class SdkV6Manager {
 
 	private MessageStyleMapper $message_style_mapper;
 	private MessagesEligibility $messages_eligibility;
-	private string $merchant_country;
-
-	/**
-	 * The same object $placements holds, kept under its own type because
-	 * display_name() exists only on the Apple subclass.
-	 */
-	private ApplePayConfig $apple_pay_config;
-
 	private FastlaneConfig $fastlane_config;
-
-	/**
-	 * Every method this module places, in the order their rows are printed.
-	 *
-	 * @var MethodPlacement[]
-	 */
-	private array $placements;
-
-	/**
-	 * Memoizes available_gateways(), which every placement asks twice.
-	 *
-	 * @var array<string, WC_Payment_Gateway>|null
-	 */
-	private ?array $available_gateways = null;
 
 	/**
 	 * Memoizes should_load_on_current_page(), asked by every surface that
@@ -154,9 +118,6 @@ class SdkV6Manager {
 		callable $get_subscriptions_mode,
 		MessageStyleMapper $message_style_mapper,
 		MessagesEligibility $messages_eligibility,
-		string $merchant_country,
-		GooglePayConfig $google_pay_config,
-		ApplePayConfig $apple_pay_config,
 		FastlaneConfig $fastlane_config
 	) {
 		$this->asset_getter                = $asset_getter;
@@ -174,35 +135,7 @@ class SdkV6Manager {
 		$this->get_subscriptions_mode      = $get_subscriptions_mode;
 		$this->message_style_mapper        = $message_style_mapper;
 		$this->messages_eligibility        = $messages_eligibility;
-		$this->merchant_country            = $merchant_country;
-		$this->apple_pay_config            = $apple_pay_config;
 		$this->fastlane_config             = $fastlane_config;
-
-		$this->placements = array(
-			new MethodPlacement(
-				'google_pay',
-				GooglePayGateway::ID,
-				self::GOOGLE_PAY_WRAPPER_ID,
-				'https://pay.google.com/gp/p/js/pay.js',
-				$google_pay_config,
-				static function ( string $context ) use ( $google_pay_config ): array {
-					return $google_pay_config->styles( $context );
-				}
-			),
-			new MethodPlacement(
-				'apple_pay',
-				ApplePayGateway::ID,
-				self::APPLE_PAY_WRAPPER_ID,
-				// Loaded by the frontend rather than by the applepay-payments
-				// component, which only loads it for a session type this module does
-				// not use. It registers the <apple-pay-button> element.
-				'https://applepay.cdn-apple.com/jsapi/v1/apple-pay-sdk.js',
-				$apple_pay_config,
-				static function ( string $context ) use ( $apple_pay_config ): array {
-					return $apple_pay_config->styles( $context );
-				}
-			),
-		);
 	}
 
 	/**
@@ -322,169 +255,12 @@ class SdkV6Manager {
 	}
 
 	/**
-	 * Renders a payment method's own button container, hidden until eligible.
-	 *
-	 * On classic checkout these methods are payment-method rows rather than
-	 * express buttons, so each needs a container by the place-order area instead
-	 * of the shared express wrapper.
-	 *
-	 * The row starts hidden and gatewayPlacement.js reveals it once the browser
-	 * confirms the buyer can pay: eligibility is only knowable client-side, and a
-	 * row whose button never rendered would be a dead end.
-	 */
-	private function render_gateway_wrapper( string $gateway_id, string $wrapper_id ): void {
-		?>
-		<style data-hide-gateway='<?php echo esc_attr( $gateway_id ); ?>'>
-			.wc_payment_method.payment_method_<?php echo esc_attr( $gateway_id ); ?> {
-				display: none;
-			}
-		</style>
-		<div id="<?php echo esc_attr( $wrapper_id ); ?>"></div>
-		<?php
-	}
-
-	/**
-	 * Renders a gateway row for every method that has one on this page.
-	 */
-	public function render_gateway_wrappers(): void {
-		foreach ( $this->placements as $placement ) {
-			if ( $this->is_method_gateway( $placement ) ) {
-				$this->render_gateway_wrapper( $placement->gateway_id, $placement->wrapper_id );
-			}
-		}
-	}
-
-	/**
 	 * Renders the mini-cart button wrapper.
 	 */
 	public function render_mini_cart_wrapper(): void {
 		echo '<p class="woocommerce-mini-cart__buttons buttons">';
 		echo '<span id="' . esc_attr( self::MINI_CART_WRAPPER_ID ) . '"></span>';
 		echo '</p>';
-	}
-
-	/**
-	 * Whether a method renders as its own payment-method row.
-	 *
-	 * True only where there is a list to join and the gateway is available there.
-	 *
-	 * Only the gateway walk is memoized, never a refusal from the context check,
-	 * so a call made before the context resolves cannot poison the answer.
-	 */
-	private function is_method_gateway( MethodPlacement $placement ): bool {
-		if ( null !== $placement->is_gateway ) {
-			return $placement->is_gateway;
-		}
-
-		if ( ! in_array( $this->get_page_context(), self::CONTEXTS_WITH_GATEWAY_ROWS, true ) || $this->is_block_context() ) {
-			return false;
-		}
-
-		$placement->is_gateway = isset( $this->available_gateways()[ $placement->gateway_id ] );
-
-		return $placement->is_gateway;
-	}
-
-	/**
-	 * The gateways WooCommerce offers for the current cart, keyed by id.
-	 *
-	 * @return array<string, WC_Payment_Gateway>
-	 */
-	private function available_gateways(): array {
-		if ( null !== $this->available_gateways ) {
-			return $this->available_gateways;
-		}
-
-		if ( ! function_exists( 'WC' ) ) {
-			return array();
-		}
-
-		$gateways = WC()->payment_gateways();
-
-		// Not memoized, so an early caller cannot pin an empty list.
-		if ( ! $gateways ) {
-			return array();
-		}
-
-		$this->available_gateways = $gateways->get_available_payment_gateways();
-
-		return $this->available_gateways;
-	}
-
-	/**
-	 * The script data every placement has, before its own keys are added.
-	 *
-	 * @param MethodPlacement $placement       The placement to describe.
-	 * @param string          $page_context The current context, empty off a button page.
-	 * @return array<string, mixed>
-	 */
-	private function placement_script_data( MethodPlacement $placement, string $page_context ): array {
-		// Styled per context, so `enabled` follows from whether any context on
-		// this page wants the method at all.
-		$styles = array();
-		if ( $page_context && $placement->config->should_render( $page_context ) ) {
-			$styles[ $page_context ] = $placement->styles( $page_context );
-		}
-		if ( $placement->config->should_render( 'mini-cart' ) ) {
-			$styles['mini-cart'] = $placement->styles( 'mini-cart' );
-		}
-
-		// supported_features: this method's own gateway, never PayPal's. A
-		// borrowed vaulting list would offer the method on a subscription cart
-		// it cannot pay for.
-		return array(
-			'enabled'            => ! empty( $styles ),
-			'sdk_url'            => $placement->sdk_url,
-			'styles'             => $styles,
-			'supported_features' => $this->gateway_supports( $placement->gateway_id ),
-			'gateway'            => $this->gateway_row( $placement ),
-		);
-	}
-
-	/**
-	 * The payment-method row this method occupies, or null for an express button
-	 * rendered outside any payment-method list.
-	 *
-	 * @return array{id: string, wrapper: string}|null
-	 */
-	private function gateway_row( MethodPlacement $placement ): ?array {
-		if ( ! $this->is_method_gateway( $placement ) ) {
-			return null;
-		}
-
-		return array(
-			'id'      => $placement->gateway_id,
-			'wrapper' => '#' . $placement->wrapper_id,
-		);
-	}
-
-	/**
-	 * One available gateway, or null when WooCommerce does not offer it here.
-	 *
-	 * The shared lookup behind the gateway_* readers below, so the guard that
-	 * makes them null-safe lives in one place.
-	 */
-	private function gateway( string $gateway_id ): ?WC_Payment_Gateway {
-		$gateway = $this->available_gateways()[ $gateway_id ] ?? null;
-
-		return $gateway instanceof WC_Payment_Gateway ? $gateway : null;
-	}
-
-	/**
-	 * The gateway's own supports list, or `array( 'products' )` when the gateway
-	 * is unavailable. The narrowest list hides the method rather than offering
-	 * it on a cart it cannot pay for.
-	 *
-	 * @return string[]
-	 */
-	private function gateway_supports( string $gateway_id ): array {
-		$gateway = $this->gateway( $gateway_id );
-
-		if ( ! $gateway ) {
-			return array( 'products' );
-		}
-
-		return array_values( (array) $gateway->supports );
 	}
 
 	/**
@@ -535,10 +311,6 @@ class SdkV6Manager {
 			return true;
 		}
 
-		if ( $page_location && $this->any_placement_renders( $page_location ) ) {
-			return true;
-		}
-
 		if ( $this->is_fastlane_enabled( $page_location ) ) {
 			return true;
 		}
@@ -565,8 +337,7 @@ class SdkV6Manager {
 		// classic "Cart" widget or the block Mini-Cart, and is_active_widget()
 		// only detects the classic one. boot.js renders into the mini-cart
 		// wrapper only where that wrapper exists.
-		return $this->settings_status->is_smart_button_enabled_for_location( 'mini-cart' )
-			|| $this->any_placement_renders( 'mini-cart' );
+		return $this->settings_status->is_smart_button_enabled_for_location( 'mini-cart' );
 	}
 
 	/**
@@ -603,19 +374,6 @@ class SdkV6Manager {
 		}
 
 		return $this->fastlane_config->should_render( $location );
-	}
-
-	/**
-	 * Whether any method renders in the given context.
-	 */
-	private function any_placement_renders( string $context ): bool {
-		foreach ( $this->placements as $placement ) {
-			if ( $placement->config->should_render( $context ) ) {
-				return true;
-			}
-		}
-
-		return false;
 	}
 
 	/**
@@ -1044,7 +802,6 @@ class SdkV6Manager {
 			'currency'            => get_woocommerce_currency(),
 			'amount'              => $this->transaction_amount(),
 			'buyer_country'       => $buyer_country,
-			'merchant_country'    => $this->merchant_country,
 			'locale'              => str_replace( '_', '-', get_locale() ),
 			'vaulting_enabled'    => $this->vaulting_enabled,
 			'final_review'        => $this->final_review_enabled,
@@ -1066,10 +823,6 @@ class SdkV6Manager {
 				'simulate_cart'                  => array(
 					'endpoint' => \WC_AJAX::get_endpoint( SimulateCartEndpoint::ENDPOINT ),
 					'nonce'    => wp_create_nonce( SimulateCartEndpoint::nonce() ),
-				),
-				'wallet_shipping'                => array(
-					'endpoint' => \WC_AJAX::get_endpoint( CartQuoteEndpoint::ENDPOINT ),
-					'nonce'    => wp_create_nonce( CartQuoteEndpoint::nonce() ),
 				),
 				'create_order'                   => array(
 					'endpoint' => \WC_AJAX::get_endpoint( CreateOrderEndpoint::ENDPOINT ),
@@ -1121,23 +874,12 @@ class SdkV6Manager {
 					'Something went wrong. Please try again or choose another payment source.',
 					'woocommerce'
 				),
-				'shipping_unserviceable' => __(
-					'Cannot ship to the selected address.',
-					'woocommerce'
-				),
-				// The Apple Pay sheet itemises the total with these.
-				'subtotal'               => __( 'Subtotal', 'woocommerce' ),
-				'shipping'               => __( 'Shipping', 'woocommerce' ),
-				'tax'                    => __( 'Tax', 'woocommerce' ),
-				'discount'               => __( 'Discount', 'woocommerce' ),
 			),
 			'shipping'            => array(
 				'in_context' => $shipping_contexts,
-				'countries'  => $this->shipping_countries( $shipping_contexts ),
 			),
 			'button_styles'       => $button_styles,
 			'pay_later_button'    => $pay_later_button,
-			'button_height'       => self::PAYMENT_BUTTON_HEIGHT,
 			'wrapper'             => '#' . self::WRAPPER_ID,
 			'mini_cart_wrapper'   => '#' . self::MINI_CART_WRAPPER_ID,
 			// Enablement only. The ppcp-axo modules own every other Fastlane
@@ -1159,23 +901,6 @@ class SdkV6Manager {
 				'style'               => $this->message_style_mapper->styles_for_location( $messages_settings_location ),
 				'use_cart_simulation' => $this->messages_use_cart_simulation(),
 			),
-		);
-
-		foreach ( $this->placements as $placement ) {
-			$data[ $placement->config_key ] = $this->placement_script_data( $placement, $page_context );
-		}
-
-		// The keys only one wallet has; everything above is the shared shape.
-		$data['google_pay']['environment'] = $this->environment->is_sandbox() ? 'TEST' : 'PRODUCTION';
-		// Labels the sheet total and identifies the merchant during validation.
-		$data['apple_pay']['display_name'] = $this->apple_pay_config->display_name();
-		// Where the frontend reports merchant validation, keeping the admin
-		// "domain not validated" notice accurate. The Apple Pay module owns this
-		// action and dictates its nonce.
-		$data['apple_pay']['validation'] = array(
-			'endpoint' => admin_url( 'admin-ajax.php' ),
-			'action'   => PropertiesDictionary::VALIDATE,
-			'nonce'    => wp_create_nonce( PropertiesDictionary::NONCE_ACTION ),
 		);
 
 		// The pay-for-order page builds the PayPal order from an existing WC
@@ -1290,10 +1015,9 @@ class SdkV6Manager {
 	/**
 	 * Whether shipping details are collected, per context.
 	 *
-	 * One decision per context, shared by every surface that asks it: the PayPal
-	 * popup and the wallet payment sheets. A map rather than a single flag because
-	 * the mini-cart renders on any page, so two contexts can be live at once and
-	 * answer differently.
+	 * One decision per context, shared by every surface that asks it. A map rather
+	 * than a single flag because the mini-cart renders on any page, so two
+	 * contexts can be live at once and answer differently.
 	 *
 	 * @param string $page_context The context of the current page.
 	 * @return array<string, bool> Keyed by context.
@@ -1330,8 +1054,8 @@ class SdkV6Manager {
 		}
 
 		// Both pages already own the address and the total the order will use, so
-		// the wallet only authorizes what the page shows. This prevents conflicting
-		// addresses/details between checkout form and payment sheet.
+		// the PayPal popup only authorizes what the page shows. This prevents
+		// conflicting addresses/details between checkout form and popup.
 		if ( in_array( $context, array( 'checkout', 'pay-now' ), true ) ) {
 			return false;
 		}
@@ -1355,25 +1079,6 @@ class SdkV6Manager {
 		$cart = WC()->cart;
 
 		return $cart && $cart->needs_shipping();
-	}
-
-	/**
-	 * The countries a payment sheet may offer, for Google Pay's address allow-list.
-	 *
-	 * Sent whole whenever any context collects shipping, as the classic integration
-	 * did, so the buyer can never select an address the store would reject.
-	 *
-	 * @param array<string, bool> $shipping_contexts The per-context map.
-	 * @return array<int, string> ISO-2 country codes.
-	 */
-	private function shipping_countries( array $shipping_contexts ): array {
-		if ( ! in_array( true, $shipping_contexts, true ) ) {
-			return array();
-		}
-
-		$countries = WC()->countries;
-
-		return $countries ? array_keys( $countries->get_shipping_countries() ) : array();
 	}
 
 	/**

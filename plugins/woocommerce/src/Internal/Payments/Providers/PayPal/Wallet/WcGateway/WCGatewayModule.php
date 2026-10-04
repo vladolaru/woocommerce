@@ -801,7 +801,7 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 	 * Checks, if the provided argument is a WC_Order which was paid directly by PayPal.
 	 *
 	 * Only considers direct PayPal payments, and returns false for orders that were paid "via"
-	 * PayPal, like wallets (Google Pay, ...) or local APMs.
+	 * PayPal, like local APMs.
 	 *
 	 * @param WC_Order|mixed $order The order to verify.
 	 * @return bool True, if it's a valid order that was paid via PayPal.

@@ -14,27 +14,19 @@ import { usePaymentConfig } from '../hooks/usePaymentConfig';
 
 const StepWelcome = ( { onNext } ) => {
 	const { storeCountry, ownBrandOnly } = CommonHooks.useWooSettings();
-	const { canUseCardPayments, canUseDigitalWallets, canUseFastlane } =
-		OnboardingHooks.useFlags();
+	const { canUseCardPayments, canUseFastlane } = OnboardingHooks.useFlags();
 
 	const { icons } = usePaymentConfig(
 		storeCountry,
 		canUseCardPayments,
-		canUseDigitalWallets,
 		canUseFastlane,
 		ownBrandOnly
 	);
 
-	const onboardingHeaderDescription =
-		canUseDigitalWallets && ! ownBrandOnly
-			? __(
-					'Your all-in-one integration for PayPal checkout solutions that enable buyers to pay via PayPal, Pay Later, Apple Pay, Google Pay, and more.',
-					'woocommerce'
-			  )
-			: __(
-					'Your all-in-one integration for PayPal checkout solutions that enable buyers to pay via PayPal, Pay Later, and more.',
-					'woocommerce'
-			  );
+	const onboardingHeaderDescription = __(
+		'Your all-in-one integration for PayPal checkout solutions that enable buyers to pay via PayPal, Pay Later, and more.',
+		'woocommerce'
+	);
 
 	return (
 		<div className="ppcp-r-page-welcome">
@@ -70,7 +62,6 @@ const StepWelcome = ( { onNext } ) => {
 			<Separator className="ppcp-r-page-welcome-mode-separator" />
 			<WelcomeDocs
 				useAcdc={ canUseCardPayments }
-				useDigitalWallets={ canUseDigitalWallets }
 				isFastlane={ canUseFastlane }
 				storeCountry={ storeCountry }
 				ownBrandOnly={ ownBrandOnly }

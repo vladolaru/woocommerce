@@ -16,12 +16,9 @@ use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\RuntimeException;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\ReferenceTransactionStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\Cache;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Applepay\ApplePayGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetter;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetterFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Axo\Gateway\AxoGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Googlepay\GooglePayGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ModuleAvailability;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Helper\MessagesApply;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Helper\MessagesDisclaimers;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Session\CartDataTransientStorage;
@@ -436,13 +433,6 @@ return array(
 		);
 	},
 
-	'wcgateway.extra-funding-sources'                      => static function ( ContainerInterface $container ): array {
-		return array(
-			'googlepay' => _x( 'Google Pay', 'Name of payment method', 'woocommerce' ),
-			'applepay'  => _x( 'Apple Pay', 'Name of payment method', 'woocommerce' ),
-		);
-	},
-
 	/**
 	 * The sources that do not cause issues about redirecting (on mobile, ...) and sometimes not returning back.
 	 */
@@ -544,10 +534,7 @@ return array(
 	'wcgateway.funding-source.renderer'                    => function ( ContainerInterface $container ): FundingSourceRenderer {
 		return new FundingSourceRenderer(
 			$container->get( 'settings.settings-provider' ),
-			array_merge(
-				$container->get( 'wcgateway.all-funding-sources' ),
-				$container->get( 'wcgateway.extra-funding-sources' )
-			)
+			$container->get( 'wcgateway.all-funding-sources' )
 		);
 	},
 
@@ -869,8 +856,8 @@ return array(
 			GatewayIds::CARD_BUTTON,
 			OXXOGateway::ID,
 			AxoGateway::ID,
-			GooglePayGateway::ID,
-			ApplePayGateway::ID,
+			GatewayIds::GOOGLE_PAY,
+			GatewayIds::APPLE_PAY,
 		);
 	},
 	'wcgateway.gateway-repository'                         => static function ( ContainerInterface $container ): GatewayRepository {
@@ -1193,12 +1180,8 @@ return array(
 	 * should not be directly accessed.
 	 */
 	'wcgateway.feature-eligibility.list'                   => static function ( ContainerInterface $container ): array {
-		$availability = $container->get( 'ppcp.module-availability' );
-		assert( $availability instanceof ModuleAvailability );
 		return array(
 			FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO => $container->get( 'save-payment-methods.eligibility.check' ),
-			FeaturesDefinition::FEATURE_GOOGLE_PAY     => $availability->eligibility_check( 'googlepay' ),
-			FeaturesDefinition::FEATURE_APPLE_PAY      => $availability->eligibility_check( 'applepay' ),
 			FeaturesDefinition::FEATURE_CONTACT_MODULE => $container->get( 'wcgateway.contact-module.eligibility.check' ),
 		);
 	},

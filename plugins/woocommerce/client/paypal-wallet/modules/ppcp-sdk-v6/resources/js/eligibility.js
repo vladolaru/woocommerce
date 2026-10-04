@@ -5,26 +5,6 @@
  */
 
 import { FundingSources } from './utils/fundingSources';
-import { MERCHANT_PRESENTED_METHODS } from './methods/methodRegistry';
-
-/**
- * Checks one method without letting a failure sink the whole check.
- *
- * Used for methods whose SDK component is only loaded on some pages: an
- * eligibility lookup for an absent component must not reject and take every
- * button down with it.
- *
- * @param {Object} methods - The findEligibleMethods result.
- * @param {string} method  - The method to check.
- * @return {boolean} Whether the method is eligible.
- */
-function isEligibleSafely( methods, method ) {
-	try {
-		return methods.isEligible( method );
-	} catch {
-		return false;
-	}
-}
 
 /**
  * Checks which payment methods are eligible.
@@ -58,10 +38,6 @@ export async function checkEligibility(
 		),
 		payLaterDetails: null,
 	};
-
-	for ( const method of MERCHANT_PRESENTED_METHODS ) {
-		result[ method ] = isEligibleSafely( methods, method );
-	}
 
 	if ( result[ FundingSources.PAYLATER ] ) {
 		try {

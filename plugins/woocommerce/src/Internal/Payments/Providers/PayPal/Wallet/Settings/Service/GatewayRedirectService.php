@@ -10,8 +10,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Axo\Gateway\AxoGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Applepay\ApplePayGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Googlepay\GooglePayGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\BancontactGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\BlikGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\EPSGateway;
@@ -44,8 +42,8 @@ class GatewayRedirectService {
 	public function __construct() {
 		$this->gateways = array(
 			AxoGateway::ID,
-			GooglePayGateway::ID,
-			ApplePayGateway::ID,
+			GatewayIds::GOOGLE_PAY,
+			GatewayIds::APPLE_PAY,
 			GatewayIds::CREDIT_CARD,
 			GatewayIds::CARD_BUTTON,
 			BancontactGateway::ID,

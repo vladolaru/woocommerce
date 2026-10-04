@@ -13,10 +13,7 @@ use WC_Payment_Gateway;
 use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\PartnersEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\PartnerAttribution;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Applepay\ApplePayGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Axo\Gateway\AxoGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Googlepay\GooglePayGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ModuleAvailability;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\OnboardingProfile;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsModel;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\TodosModel;
@@ -318,20 +315,6 @@ class SettingsModule implements ServiceModule, ExecutableModule {
 				$is_onboarded = $container->get( 'api.merchant_id' ) !== '';
 				if ( ! is_array( $methods ) || ! $is_onboarded ) {
 					return $methods;
-				}
-
-				$availability = $container->get( 'ppcp.module-availability' );
-				assert( $availability instanceof ModuleAvailability );
-
-				if ( $availability->is_loaded( 'googlepay' ) ) {
-					$googlepay_gateway = $container->get( 'googlepay.wc-gateway' );
-					assert( $googlepay_gateway instanceof WC_Payment_Gateway );
-					$methods[] = $googlepay_gateway;
-				}
-				if ( $availability->is_loaded( 'applepay' ) ) {
-					$applepay_gateway = $container->get( 'applepay.wc-gateway' );
-					assert( $applepay_gateway instanceof WC_Payment_Gateway );
-					$methods[] = $applepay_gateway;
 				}
 
 				if ( $container->has( 'axo.eligible' ) && $container->get( 'axo.eligible' ) ) {
@@ -669,42 +652,6 @@ class SettingsModule implements ServiceModule, ExecutableModule {
 			}
 		);
 
-		/**
-		 * Disable Apple Pay/Google Pay gateways for merchants not eligible
-		 * after onboarding is completed.
-		 */
-		add_action(
-			'woocommerce_paypal_payments_toggle_payment_gateways',
-			function ( PaymentSettings $payment_methods, ConfigurationFlagsDTO $flags ) use ( $container ) {
-				if ( ! $flags->is_business_seller || ! $flags->use_digital_wallets ) {
-					return;
-				}
-
-				$availability = $container->get( 'ppcp.module-availability' );
-				assert( $availability instanceof ModuleAvailability );
-
-				if ( $availability->is_loaded( 'applepay' ) ) {
-					$applepay_product_status = $container->get( 'applepay.apple-product-status' );
-					$applepay_eligibility    = $container->get( 'applepay.eligibility.check' );
-					$apple_pay_available     = $applepay_product_status->is_active() && $applepay_eligibility();
-					if ( ! $apple_pay_available ) {
-						$payment_methods->toggle_method_state( ApplePayGateway::ID, false );
-					}
-				}
-
-				if ( $availability->is_loaded( 'googlepay' ) ) {
-					$googlepay_product_status = $container->get( 'googlepay.helpers.apm-product-status' );
-					$googlepay_eligibility    = $container->get( 'googlepay.eligibility.check' );
-					$google_pay_available     = $googlepay_product_status->is_active() && $googlepay_eligibility();
-					if ( ! $google_pay_available ) {
-						$payment_methods->toggle_method_state( GooglePayGateway::ID, false );
-					}
-				}
-			},
-			10,
-			2
-		);
-
 		return true;
 	}
 
@@ -762,45 +709,8 @@ class SettingsModule implements ServiceModule, ExecutableModule {
 		}
 
 		/**
-		 * Prevent white-label payment methods from being enabled during onboarding.
-		 *
-		 * During the onboarding flow, toggle_payment_gateways() enables Apple Pay
-		 * and Google Pay for business sellers. In branded-only mode, these white-label
-		 * methods should never be enabled.
-		 *
-		 * This hook runs during the 'woocommerce_paypal_payments_toggle_payment_gateways_apms'
-		 * action, immediately disabling these methods before payment settings are saved.
-		 * This prevents them from being enabled even temporarily during onboarding.
-		 *
-		 * Without this hook, white-label methods would be enabled during onboarding and
-		 * then disabled afterward, creating an inconsistent state during the upgrade process.
-		 */
-		add_action(
-			'woocommerce_paypal_payments_toggle_payment_gateways_apms',
-			static function ( PaymentSettings $payment_settings ): void {
-				$payment_settings->toggle_method_state( ApplePayGateway::ID, false );
-				$payment_settings->toggle_method_state( GooglePayGateway::ID, false );
-			}
-		);
-
-		$payment_settings = $container->get( 'settings.data.payment' );
-		assert( $payment_settings instanceof PaymentSettings );
-
-		if ( $payment_settings->is_method_enabled( ApplePayGateway::ID ) ) {
-			$payment_settings->toggle_method_state( ApplePayGateway::ID, false );
-			$payment_settings->save();
-		}
-
-		if ( $payment_settings->is_method_enabled( GooglePayGateway::ID ) ) {
-			$payment_settings->toggle_method_state( GooglePayGateway::ID, false );
-			$payment_settings->save();
-		}
-
-		/**
 		 * In branded-only mode, we completely disable all white label features.
 		 */
-		add_filter( 'woocommerce_paypal_payments_is_eligible_for_applepay', '__return_false' );
-		add_filter( 'woocommerce_paypal_payments_is_eligible_for_googlepay', '__return_false' );
 		add_filter( 'woocommerce_paypal_payments_is_eligible_for_axo', '__return_false' );
 		add_filter( 'woocommerce_paypal_payments_is_eligible_for_save_payment_methods', '__return_false' );
 		add_filter( 'woocommerce_paypal_payments_is_acdc_active', '__return_false' );

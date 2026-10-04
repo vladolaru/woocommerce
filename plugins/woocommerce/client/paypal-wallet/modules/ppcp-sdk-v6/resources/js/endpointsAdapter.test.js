@@ -43,8 +43,6 @@ import {
 	fetchCartTotal,
 	simulateCart,
 	updateCustomerAddress,
-	quoteCartShipping,
-	releaseCartShipping,
 	selectShippingRate,
 	navigation,
 } from './endpointsAdapter';
@@ -63,7 +61,6 @@ const config = {
 				'/wp-json/wc/store/v1/cart/select-shipping-rate',
 			nonce: 'store-nonce',
 		},
-		wallet_shipping: { endpoint: '/ws', nonce: 'n-ws' },
 	},
 	urls: { checkout: '/checkout/' },
 };
@@ -155,65 +152,6 @@ describe( 'createOrder', () => {
 			createOrder( config, 'product', 'paypal' )
 		).rejects.toThrow( 'Product form not found.' );
 		expect( postJson ).not.toHaveBeenCalled();
-	} );
-
-	test( 'product context with supplied purchase units skips change-cart', async () => {
-		const purchaseUnits = [ { reference_id: 'wallet' } ];
-		postJson.mockResolvedValueOnce( { id: 'PAYPAL4' } );
-
-		const result = await createOrder(
-			config,
-			'product',
-			'paypal',
-			purchaseUnits
-		);
-
-		expect( result ).toEqual( { orderId: 'PAYPAL4' } );
-		expect( postJson ).toHaveBeenCalledTimes( 1 );
-		expect( postJson ).toHaveBeenCalledWith( config.ajax.create_order, {
-			context: 'product',
-			purchase_units: purchaseUnits,
-			payment_method: 'ppcp-gateway',
-			funding_source: 'paypal',
-			save_order_in_session: 1,
-		} );
-	} );
-
-	test(
-		'sends a supplied paymentMethod as payment_method instead of ' +
-			'the express default',
-		async () => {
-			const purchaseUnits = [ { reference_id: 'wallet' } ];
-			postJson.mockResolvedValueOnce( { id: 'PAYPAL6' } );
-
-			await createOrder(
-				config,
-				'cart',
-				'googlepay',
-				purchaseUnits,
-				'ppcp-googlepay'
-			);
-
-			expect( postJson ).toHaveBeenCalledWith(
-				config.ajax.create_order,
-				expect.objectContaining( { payment_method: 'ppcp-googlepay' } )
-			);
-		}
-	);
-
-	test( 'product context with an explicit empty array of purchase units skips change-cart', async () => {
-		// The only test guarding this: a supplied [] must count as resolved
-		// rather than fall through to changeCart(), which a truthiness or
-		// .length check would get wrong. A non-empty array cannot catch it.
-		postJson.mockResolvedValueOnce( { id: 'PAYPAL5' } );
-
-		await createOrder( config, 'product', 'paypal', [] );
-
-		expect( postJson ).toHaveBeenCalledTimes( 1 );
-		expect( postJson ).toHaveBeenCalledWith(
-			config.ajax.create_order,
-			expect.objectContaining( { purchase_units: [] } )
-		);
 	} );
 
 	test( 'pay-now context identifies the existing WC order to build from', async () => {
@@ -439,7 +377,7 @@ describe( 'approveOrder', () => {
 			document.body.innerHTML =
 				'<form class="checkout">' +
 				'<input type="radio" id="payment_method_ppcp-gateway" />' +
-				'<input type="radio" id="payment_method_ppcp-googlepay" checked /></form>';
+				'<input type="radio" id="payment_method_bacs" checked /></form>';
 			const radioTrigger = jest.fn();
 			const formTrigger = jest.fn();
 			global.jQuery = jest.fn( ( selector ) =>
@@ -460,44 +398,8 @@ describe( 'approveOrder', () => {
 		}
 	);
 
-	test(
-		"checkout context leaves the buyer's own selection unchanged " +
-			'when the wallet is its own gateway row',
-		async () => {
-			postJson.mockResolvedValueOnce( {} );
-			document.body.innerHTML =
-				'<form class="checkout">' +
-				'<input type="radio" id="payment_method_ppcp-googlepay" checked /></form>';
-			const radioTrigger = jest.fn();
-			const formTrigger = jest.fn();
-			global.jQuery = jest.fn( ( selector ) =>
-				typeof selector === 'string'
-					? { length: 1, trigger: formTrigger }
-					: { trigger: radioTrigger }
-			);
-
-			await approveOrder(
-				config,
-				'checkout',
-				'googlepay',
-				'ORDER3',
-				{},
-				'ppcp-googlepay'
-			);
-
-			expect(
-				document.querySelector( '#payment_method_ppcp-googlepay' )
-					.checked
-			).toBe( true );
-			expect( radioTrigger ).not.toHaveBeenCalled();
-			expect( formTrigger ).toHaveBeenCalledWith( 'submit' );
-
-			delete global.jQuery;
-		}
-	);
-
 	describe( 'classic checkout never creates the WC order here', () => {
-		test( 'sends should_create_wc_order false and drops a supplied contact, then submits the form', async () => {
+		test( 'sends should_create_wc_order false, then submits the form', async () => {
 			postJson.mockResolvedValueOnce( {} );
 			document.body.innerHTML = '<form class="checkout"></form>';
 			const trigger = jest.fn();
@@ -511,11 +413,7 @@ describe( 'approveOrder', () => {
 				config,
 				'checkout',
 				'paypal',
-				'ORDER-CHECKOUT',
-				{
-					payer: { email_address: 'a@b.com' },
-					shippingAddress: { country_code: 'US' },
-				}
+				'ORDER-CHECKOUT'
 			);
 
 			expect( postJson ).toHaveBeenCalledTimes( 1 );
@@ -557,167 +455,6 @@ describe( 'approveOrder', () => {
 
 			delete global.jQuery;
 		} );
-
-		test( "a wallet's own gateway on classic checkout also sends should_create_wc_order false", async () => {
-			postJson.mockResolvedValueOnce( {} );
-			document.body.innerHTML =
-				'<form class="checkout">' +
-				'<input type="radio" id="payment_method_ppcp-googlepay" checked /></form>';
-			const trigger = jest.fn();
-			global.jQuery = jest.fn( ( selector ) =>
-				typeof selector === 'string'
-					? { length: 1, trigger }
-					: { trigger }
-			);
-
-			await approveOrder(
-				config,
-				'checkout',
-				'googlepay',
-				'ORDER-CHECKOUT-WALLET',
-				{},
-				'ppcp-googlepay'
-			);
-
-			expect( postJson ).toHaveBeenCalledWith(
-				config.ajax.approve_order,
-				{
-					order_id: 'ORDER-CHECKOUT-WALLET',
-					funding_source: 'googlepay',
-					should_create_wc_order: false,
-				}
-			);
-
-			delete global.jQuery;
-		} );
-	} );
-
-	describe( 'contact handling', () => {
-		const contact = {
-			payer: { email_address: 'a@b.com' },
-			shippingAddress: { country_code: 'US' },
-		};
-
-		test( 'sends payer and shipping_address from the supplied contact', async () => {
-			postJson.mockResolvedValueOnce( {} );
-
-			await approveOrder(
-				config,
-				'product',
-				'paypal',
-				'ORDER1',
-				contact
-			);
-
-			expect( postJson ).toHaveBeenCalledWith(
-				config.ajax.approve_order,
-				{
-					order_id: 'ORDER1',
-					funding_source: 'paypal',
-					should_create_wc_order: true,
-					payer: contact.payer,
-					shipping_address: contact.shippingAddress,
-				}
-			);
-		} );
-
-		test.each( [
-			[
-				'only payer',
-				{ payer: { email_address: 'a@b.com' } },
-				{
-					order_id: 'ORDER1',
-					funding_source: 'paypal',
-					should_create_wc_order: true,
-					payer: { email_address: 'a@b.com' },
-				},
-			],
-			[
-				'only shipping_address',
-				{ shippingAddress: { country_code: 'US' } },
-				{
-					order_id: 'ORDER1',
-					funding_source: 'paypal',
-					should_create_wc_order: true,
-					shipping_address: { country_code: 'US' },
-				},
-			],
-			[
-				'neither',
-				undefined,
-				{
-					order_id: 'ORDER1',
-					funding_source: 'paypal',
-					should_create_wc_order: true,
-				},
-			],
-		] )(
-			'sends %s from the supplied contact',
-			async ( label, partialContact, expectedBody ) => {
-				postJson.mockResolvedValueOnce( {} );
-
-				await approveOrder(
-					config,
-					'product',
-					'paypal',
-					'ORDER1',
-					partialContact
-				);
-
-				expect( postJson ).toHaveBeenCalledWith(
-					config.ajax.approve_order,
-					expectedBody
-				);
-			}
-		);
-
-		test( 'omits the contact from the fallback retry after WC order creation fails', async () => {
-			postJson
-				.mockRejectedValueOnce(
-					new Error( 'No shipping method has been selected.' )
-				)
-				.mockResolvedValueOnce( {} );
-
-			await approveOrder(
-				config,
-				'product',
-				'paypal',
-				'ORDER1',
-				contact
-			);
-
-			expect( postJson ).toHaveBeenCalledTimes( 2 );
-			expect( postJson ).toHaveBeenNthCalledWith(
-				2,
-				config.ajax.approve_order,
-				{
-					order_id: 'ORDER1',
-					funding_source: 'paypal',
-					should_create_wc_order: false,
-				}
-			);
-		} );
-
-		test( 'omits the contact for Venmo when vaulting is enabled', async () => {
-			postJson.mockResolvedValueOnce( {} );
-
-			await approveOrder(
-				{ ...config, vaulting_enabled: true },
-				'product',
-				'venmo',
-				'ORDER1',
-				contact
-			);
-
-			expect( postJson ).toHaveBeenCalledWith(
-				config.ajax.approve_order,
-				{
-					order_id: 'ORDER1',
-					funding_source: 'venmo',
-					should_create_wc_order: false,
-				}
-			);
-		} );
 	} );
 
 	describe( 'pay-now context', () => {
@@ -736,45 +473,16 @@ describe( 'approveOrder', () => {
 			await approveOrder( config, 'pay-now', 'paypal', 'ORDER3' );
 
 			expect( postJson ).toHaveBeenCalledTimes( 1 );
-			expect( postJson ).toHaveBeenCalledWith( config.ajax.approve_order, {
-				order_id: 'ORDER3',
-				funding_source: 'paypal',
-				should_create_wc_order: false,
-			} );
+			expect( postJson ).toHaveBeenCalledWith(
+				config.ajax.approve_order,
+				{
+					order_id: 'ORDER3',
+					funding_source: 'paypal',
+					should_create_wc_order: false,
+				}
+			);
 			expect(
 				document.querySelector( '#payment_method_ppcp-gateway' ).checked
-			).toBe( true );
-			expect( trigger ).toHaveBeenCalledWith( 'submit' );
-
-			delete global.jQuery;
-		} );
-
-		test( "ticks the named gateway's own radio, not the default PayPal gateway selector", async () => {
-			postJson.mockResolvedValueOnce( {} );
-			// No #payment_method_ppcp-gateway element exists, so a fallback to
-			// the default selector would leave the radio unticked.
-			document.body.innerHTML =
-				'<form id="order_review">' +
-				'<input type="radio" id="payment_method_ppcp-googlepay" /></form>';
-			const trigger = jest.fn();
-			global.jQuery = jest.fn( ( selector ) =>
-				typeof selector === 'string'
-					? { length: 1, trigger }
-					: { trigger }
-			);
-
-			await approveOrder(
-				config,
-				'pay-now',
-				'googlepay',
-				'ORDER3',
-				{},
-				'ppcp-googlepay'
-			);
-
-			expect(
-				document.querySelector( '#payment_method_ppcp-googlepay' )
-					.checked
 			).toBe( true );
 			expect( trigger ).toHaveBeenCalledWith( 'submit' );
 
@@ -829,9 +537,12 @@ describe( 'fetchCart', () => {
 		} );
 
 		await expect( fetchCart( config ) ).resolves.toEqual( cart );
-		expect( global.fetch ).toHaveBeenCalledWith( config.ajax.wc_store_api.cart, {
-			credentials: 'same-origin',
-		} );
+		expect( global.fetch ).toHaveBeenCalledWith(
+			config.ajax.wc_store_api.cart,
+			{
+				credentials: 'same-origin',
+			}
+		);
 	} );
 
 	test( 'returns null when the request fails', async () => {
@@ -865,111 +576,10 @@ describe( 'updateCustomerAddress', () => {
 		expect( postStoreApi ).toHaveBeenCalledWith(
 			config.ajax.wc_store_api,
 			config.ajax.wc_store_api.update_customer,
-			expect.not.objectContaining( { billing_address: expect.anything() } )
+			expect.not.objectContaining( {
+				billing_address: expect.anything(),
+			} )
 		);
-	} );
-} );
-
-describe( 'quoteCartShipping', () => {
-	test.each( [
-		[ 'a rate id is selected', 'flat_rate:1', 'flat_rate:1' ],
-		[ 'no rateId is passed', undefined, '' ],
-		[ 'rateId is explicitly null', null, '' ],
-	] )( 'posts the address and rate_id when %s', async ( label, rateId, expectedRateId ) => {
-		const quote = { total: '110.00' };
-		postJson.mockResolvedValueOnce( quote );
-		const address = { country: 'US', state: 'CA' };
-
-		const result = await quoteCartShipping( config, { address, rateId } );
-
-		expect( result ).toEqual( quote );
-		expect( postJson ).toHaveBeenCalledWith( config.ajax.wallet_shipping, {
-			address,
-			rate_id: expectedRateId,
-		} );
-	} );
-
-	test( 'includes billing_address in the posted body when one is given', async () => {
-		postJson.mockResolvedValueOnce( { total: '110.00' } );
-		const address = { country: 'US', state: 'CA' };
-		const billingAddress = { country: 'US', state: 'NY' };
-
-		await quoteCartShipping( config, { address, billingAddress } );
-
-		expect( postJson ).toHaveBeenCalledWith( config.ajax.wallet_shipping, {
-			address,
-			rate_id: '',
-			billing_address: billingAddress,
-		} );
-	} );
-
-	test.each( [
-		[ 'billingAddress is null', null ],
-		[ 'billingAddress is not passed', undefined ],
-	] )(
-		'omits billing_address entirely when %s, so the endpoint leaves the customer\'s own untouched',
-		async ( label, billingAddress ) => {
-			postJson.mockResolvedValueOnce( { total: '110.00' } );
-			const address = { country: 'US', state: 'CA' };
-
-			await quoteCartShipping( config, { address, billingAddress } );
-
-			expect( postJson ).toHaveBeenCalledWith(
-				config.ajax.wallet_shipping,
-				expect.not.objectContaining( {
-					billing_address: expect.anything(),
-				} )
-			);
-		}
-	);
-
-	test( 'includes expected_total in the posted body when one is given', async () => {
-		postJson.mockResolvedValueOnce( { total: '110.00' } );
-		const address = { country: 'US', state: 'CA' };
-
-		await quoteCartShipping( config, {
-			address,
-			expectedTotal: '110.00',
-		} );
-
-		expect( postJson ).toHaveBeenCalledWith( config.ajax.wallet_shipping, {
-			address,
-			rate_id: '',
-			expected_total: '110.00',
-		} );
-	} );
-
-	test.each( [
-		[ 'expectedTotal is null', null ],
-		[ 'expectedTotal is not passed', undefined ],
-	] )(
-		'omits expected_total entirely when %s, leaving the server to charge whatever it prices',
-		async ( label, expectedTotal ) => {
-			postJson.mockResolvedValueOnce( { total: '110.00' } );
-			const address = { country: 'US', state: 'CA' };
-
-			await quoteCartShipping( config, { address, expectedTotal } );
-
-			expect( postJson ).toHaveBeenCalledWith(
-				config.ajax.wallet_shipping,
-				expect.not.objectContaining( {
-					expected_total: expect.anything(),
-				} )
-			);
-		}
-	);
-} );
-
-describe( 'releaseCartShipping', () => {
-	test( 'posts a release flag to the wallet-shipping endpoint', async () => {
-		postJson.mockResolvedValueOnce( { released: true } );
-
-		const result = await releaseCartShipping( config );
-
-		expect( result ).toEqual( { released: true } );
-		expect( postJson ).toHaveBeenCalledWith( config.ajax.wallet_shipping, {
-			release: true,
-		} );
 	} );
 } );
 

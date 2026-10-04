@@ -6,7 +6,6 @@
 
 import { postJson } from './utils/api';
 import { loadScript } from './utils/scriptLoaders';
-import { methodSdkComponents } from './methods/methodRegistry';
 
 const INSTANCE_KEY = '__ppcpV6InstancePromise';
 const METADATA_ID_KEY = '__ppcpV6ClientMetadataId';
@@ -98,7 +97,6 @@ async function createInstance( config, context ) {
 	if ( config.fastlane?.enabled ) {
 		components.push( 'fastlane' );
 	}
-	components.push( ...methodSdkComponents( config ) );
 	if ( config.messages?.enabled ) {
 		components.push( 'paypal-messages' );
 	}

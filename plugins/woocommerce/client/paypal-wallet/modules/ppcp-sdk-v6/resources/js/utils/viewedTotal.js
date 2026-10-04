@@ -6,9 +6,7 @@
  * It prices through the simulate endpoint instead. Every other context asks
  * the cart.
  *
- * Shared, because two surfaces need the same answer in different shapes: Apple
- * Pay must read it synchronously inside the click handler, Pay Later messaging
- * needs to be told when it changes.
+ * Pay Later messaging subscribes to be told when it changes.
  *
  * @package
  */
@@ -19,10 +17,8 @@ import { hasJQuery } from './api';
 /**
  * How long to coalesce product-form changes before re-pricing.
  *
- * Short, because Apple Pay cannot re-read the total on click — a stale one is
- * what the shopper gets charged. Debounced rather than throttled, which would
- * price the burst's first event and so describe a variation already moved away
- * from.
+ * Debounced rather than throttled, which would price the burst's first event
+ * and so describe a variation already moved away from.
  */
 const REFRESH_DEBOUNCE_MS = 250;
 
@@ -30,7 +26,7 @@ const REFRESH_DEBOUNCE_MS = 250;
 // else through the cart, so the two cannot share one cached total.
 const states = new Map();
 
-// Attached once per page, however many surfaces are watching.
+// Attached once per page, however many watchers are created.
 let listening = false;
 
 /**
@@ -131,22 +127,15 @@ function listenToProductForm( config, form ) {
 /**
  * Starts tracking the total for one context.
  *
- * Repeated calls for the same context share its total, so every surface sees
- * the same number and the form listeners are not stacked.
+ * Repeated calls for the same context share its total and its subscribers, so
+ * the form listener is not stacked.
  *
  * @param {Object} config  - The wc_ppcp_sdk_v6 config object.
  * @param {string} context - The page context.
- * @return {{get: Function, subscribe: Function}} Reader and change subscription.
+ * @return {{subscribe: Function}} Change subscription.
  */
 export function watchViewedTotal( config, context ) {
 	const state = stateFor( context );
-
-	// Seeded so a synchronous reader that beats the first resolve still has a
-	// number. On a product page it is the cart total whenever the cart is not
-	// empty, so it is a placeholder rather than an answer.
-	if ( ! state.total ) {
-		state.total = config.amount || '';
-	}
 
 	refresh( config, context ).catch( () => {} );
 
@@ -159,7 +148,6 @@ export function watchViewedTotal( config, context ) {
 	}
 
 	return {
-		get: () => state.total,
 		subscribe: ( notify ) => {
 			state.subscribers.add( notify );
 

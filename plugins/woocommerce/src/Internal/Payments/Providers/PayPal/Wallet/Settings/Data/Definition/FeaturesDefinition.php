@@ -39,18 +39,7 @@ class FeaturesDefinition {
 	public const FEATURE_PAY_LATER_MESSAGING = 'pay_later_messaging';
 
 	/**
-	 * Whether Apple Pay can be used by the merchant. Apple Pay requires an Apple device (like
-	 * iPhone) to be used by customers.
-	 */
-	public const FEATURE_APPLE_PAY = 'apple_pay';
-
-	/**
-	 * Merchant eligibility to use Google Pay.
-	 */
-	public const FEATURE_GOOGLE_PAY = 'google_pay';
-
-	/**
-	 * Advanced card processing capability of the seller. Read as a gate for Pay Later, Apple Pay and Google Pay; it has no feature card of its own.
+	 * Advanced card processing capability of the seller. Read as a gate for Pay Later; it has no feature card of its own.
 	 */
 	public const FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS = 'advanced_credit_and_debit_cards';
 
@@ -261,86 +250,6 @@ class FeaturesDefinition {
 						'type'  => 'tertiary',
 						'text'  => __( 'Learn more', 'woocommerce' ),
 						'url'   => 'https://developer.paypal.com/docs/checkout/apm/',
-						'class' => 'small-button',
-					),
-				),
-			),
-			self::FEATURE_GOOGLE_PAY                      => array(
-				'title'       => __( 'Google Pay', 'woocommerce' ),
-				'description' => __( 'Let customers pay using their Google Pay wallet.', 'woocommerce' ),
-				'enabled'     => $this->merchant_capabilities[ self::FEATURE_GOOGLE_PAY ],
-				'buttons'     => array(
-					array(
-						'type'     => 'secondary',
-						'text'     => __( 'Configure', 'woocommerce' ),
-						'action'   => array(
-							'type'    => 'tab',
-							'tab'     => 'payment_methods',
-							'section' => 'ppcp-googlepay',
-							'modal'   => 'ppcp-googlepay',
-						),
-						'showWhen' => 'enabled',
-						'class'    => 'small-button',
-					),
-					array(
-						'type'     => 'secondary',
-						'text'     => __( 'Sign up', 'woocommerce' ),
-						'urls'     => array(
-							'sandbox' => 'https://www.sandbox.paypal.com/bizsignup/add-product?product=payment_methods&capabilities=GOOGLE_PAY',
-							'live'    => 'https://www.paypal.com/bizsignup/add-product?product=payment_methods&capabilities=GOOGLE_PAY',
-						),
-						'showWhen' => 'disabled',
-						'class'    => 'small-button',
-					),
-					array(
-						'type'  => 'tertiary',
-						'text'  => __( 'Learn more', 'woocommerce' ),
-						'url'   => 'https://developer.paypal.com/docs/checkout/apm/google-pay/',
-						'class' => 'small-button',
-					),
-				),
-			),
-			self::FEATURE_APPLE_PAY                       => array(
-				'title'       => __( 'Apple Pay', 'woocommerce' ),
-				'description' => __( 'Let customers pay using their Apple Pay wallet.', 'woocommerce' ),
-				'enabled'     => $this->merchant_capabilities[ self::FEATURE_APPLE_PAY ],
-				'buttons'     => array(
-					array(
-						'type'     => 'secondary',
-						'text'     => __( 'Configure', 'woocommerce' ),
-						'action'   => array(
-							'type'    => 'tab',
-							'tab'     => 'payment_methods',
-							'section' => 'ppcp-applepay',
-							'modal'   => 'ppcp-applepay',
-						),
-						'showWhen' => 'enabled',
-						'class'    => 'small-button',
-					),
-					array(
-						'type'     => 'secondary',
-						'text'     => __( 'Domain registration', 'woocommerce' ),
-						'urls'     => array(
-							'sandbox' => 'https://www.sandbox.paypal.com/uccservicing/apm/applepay',
-							'live'    => 'https://www.paypal.com/uccservicing/apm/applepay',
-						),
-						'showWhen' => 'enabled',
-						'class'    => 'small-button',
-					),
-					array(
-						'type'     => 'secondary',
-						'text'     => __( 'Sign up', 'woocommerce' ),
-						'urls'     => array(
-							'sandbox' => 'https://www.sandbox.paypal.com/bizsignup/add-product?product=payment_methods&capabilities=APPLE_PAY',
-							'live'    => 'https://www.paypal.com/bizsignup/add-product?product=payment_methods&capabilities=APPLE_PAY',
-						),
-						'showWhen' => 'disabled',
-						'class'    => 'small-button',
-					),
-					array(
-						'type'  => 'tertiary',
-						'text'  => __( 'Learn more', 'woocommerce' ),
-						'url'   => 'https://developer.paypal.com/docs/checkout/apm/apple-pay/',
 						'class' => 'small-button',
 					),
 				),

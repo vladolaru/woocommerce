@@ -25,7 +25,8 @@ use ReflectionMethod;
 /**
  * Which payment methods the onboarding defaults switch on, and what a reconnect leaves alone.
  *
- * The Pay Later and reconnect cases and the gateway toggle cases at the end pin what toggle_payment_gateways() does.
+ * The Pay Later and reconnect cases and the gateway toggle cases pin what toggle_payment_gateways() does. The default
+ * location styling case pins the methods each location starts with.
  *
  * @group paypal-wallet
  */
@@ -37,6 +38,13 @@ class SettingsDataManagerTest extends WalletTestCase {
 	 * @var PaymentSettings&MockInterface
 	 */
 	private $payment_methods;
+
+	/**
+	 * The styling settings mock.
+	 *
+	 * @var StylingSettings&MockInterface
+	 */
+	private $styling_settings;
 
 	/**
 	 * The onboarding profile mock.
@@ -86,13 +94,14 @@ class SettingsDataManagerTest extends WalletTestCase {
 		);
 
 		$this->onboarding_profile = $this->mock( OnboardingProfile::class );
+		$this->styling_settings   = $this->mock( StylingSettings::class );
 
 		$this->sut = new SettingsDataManager(
 			$methods_definition,
 			$this->onboarding_profile,
 			$this->mock( GeneralSettings::class ),
 			$this->mock( SettingsModel::class ),
-			$this->mock( StylingSettings::class ),
+			$this->styling_settings,
 			$this->payment_methods,
 			array()
 		);
@@ -230,5 +239,41 @@ class SettingsDataManagerTest extends WalletTestCase {
 
 		$this->assertArrayNotHasKey( 'ppcp-credit-card-gateway', $toggled_states->getArrayCopy() );
 		$this->assertArrayNotHasKey( 'ppcp-card-button-gateway', $toggled_states->getArrayCopy() );
+	}
+
+	/**
+	 * Drive the protected apply_location_styles() and return the styles it saved.
+	 *
+	 * @return array<string, object> The location styling DTOs by location.
+	 */
+	private function applied_location_styles(): array {
+		$saved = array();
+		$this->styling_settings->shouldReceive( 'from_array' )->once()->andReturnUsing(
+			static function ( array $styles ) use ( &$saved ): void {
+				$saved = $styles;
+			}
+		);
+		$this->styling_settings->shouldReceive( 'save' )->once();
+
+		$method = new ReflectionMethod( SettingsDataManager::class, 'apply_location_styles' );
+		$method->setAccessible( true );
+		$method->invoke( $this->sut, new ConfigurationFlagsDTO() );
+
+		return $saved;
+	}
+
+	/**
+	 * @testdox Should start every location with PayPal, Venmo and Pay Later among its methods (wallet).
+	 */
+	public function test_default_location_styles_list_the_paypal_venmo_and_pay_later_methods(): void {
+		$styles = $this->applied_location_styles();
+
+		$this->assertEqualsCanonicalizing( array( 'cart', 'classic_checkout', 'express_checkout', 'mini_cart', 'product' ), array_keys( $styles ) );
+		foreach ( $styles as $location => $style ) {
+			foreach ( array( PayPalGateway::ID, 'venmo', 'pay-later' ) as $method_id ) {
+				$this->assertContains( $method_id, $style->methods, "$location should list $method_id" );
+			}
+		}
+		$this->assertSame( array( PayPalGateway::ID, 'venmo', 'pay-later' ), $styles['product']->methods );
 	}
 }

@@ -66,8 +66,6 @@ export const usePaymentMethods = () => {
 
 	// Online card Payments.
 	const [ fastlane ] = usePersistent( 'ppcp-axo-gateway' );
-	const [ applePay ] = usePersistent( 'ppcp-applepay' );
-	const [ googlePay ] = usePersistent( 'ppcp-googlepay' );
 
 	// Alternative payment methods.
 	const [ pwc ] = usePersistent( 'ppcp-pwc' );
@@ -86,7 +84,7 @@ export const usePaymentMethods = () => {
 		list.filter( ( item ) => item && item.id?.length );
 
 	const payPalCheckout = removeEmpty( [ paypal, venmo, payLater ] );
-	const onlineCardPayments = removeEmpty( [ fastlane, applePay, googlePay ] );
+	const onlineCardPayments = removeEmpty( [ fastlane ] );
 	const alternative = removeEmpty( [
 		pwc,
 		bancontact,

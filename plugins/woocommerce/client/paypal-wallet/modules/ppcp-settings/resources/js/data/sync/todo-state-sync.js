@@ -1,8 +1,6 @@
 import { subscribe, select, dispatch } from '@wordpress/data';
 
 const TODO_TRIGGERS = {
-	'ppcp-applepay': 'enable_apple_pay',
-	'ppcp-googlepay': 'enable_google_pay',
 	'ppcp-axo-gateway': 'enable_fastlane',
 	'ppcp-pwc': 'enable_pwc',
 };

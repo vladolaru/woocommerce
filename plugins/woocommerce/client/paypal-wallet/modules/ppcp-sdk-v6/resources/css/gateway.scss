@@ -13,8 +13,7 @@
 	flex-direction: column;
 	gap: 14px;
 
-	// The wallets bring their own block-level container; only the PayPal-family
-	// elements need talking out of their intrinsic width.
+	// Only the PayPal-family elements need talking out of their intrinsic width.
 	paypal-button,
 	venmo-button,
 	paypal-pay-later-button {

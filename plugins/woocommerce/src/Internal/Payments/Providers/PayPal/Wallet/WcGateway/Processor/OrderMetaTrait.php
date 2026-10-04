@@ -154,9 +154,7 @@ trait OrderMetaTrait {
 			return;
 		}
 
-		$properties = $payment_source->properties();
-		// Wallets nest the card details under "card"; the direct card source exposes them at the top level.
-		$card = isset( $properties->card ) ? $properties->card : $properties;
+		$card = $payment_source->properties();
 
 		$brand       = isset( $card->brand ) ? (string) $card->brand : '';
 		$last_digits = isset( $card->last_digits ) ? (string) $card->last_digits : '';

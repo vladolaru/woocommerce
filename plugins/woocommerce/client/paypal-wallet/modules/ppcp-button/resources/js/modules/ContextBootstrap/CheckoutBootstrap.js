@@ -178,12 +178,7 @@ class CheckoutBootstrap {
 	updateUi() {
 		const currentPaymentMethod = getCurrentPaymentMethod();
 		const isPaypal = currentPaymentMethod === PaymentMethods.PAYPAL;
-		const isGooglePayMethod =
-			currentPaymentMethod === PaymentMethods.GOOGLEPAY;
-		const isApplePayMethod =
-			currentPaymentMethod === PaymentMethods.APPLEPAY;
-		const isNotOurGateway =
-			! isPaypal && ! isGooglePayMethod && ! isApplePayMethod;
+		const isNotOurGateway = ! isPaypal;
 		const isFreeTrial = PayPalCommerceGateway.is_free_trial_cart;
 		const hasVaultedPaypal =
 			!! PayPalCommerceGateway.vaulted_paypal_email;
@@ -247,14 +242,12 @@ class CheckoutBootstrap {
 		 * Custom JS event that is observed by the relevant payment gateway.
 		 *
 		 * Dynamic part of the event name is the payment method ID, for example
-		 * "ppcp-gateway" or "ppcp-googlepay"
+		 * "ppcp-gateway"
 		 */
 		dispatchButtonEvent( {
 			event: ButtonEvents.RENDER,
 			paymentMethod: currentPaymentMethod,
 		} );
-
-		setVisible( '#ppc-button-ppcp-applepay', isApplePayMethod );
 
 		document.body.dispatchEvent( new Event( 'ppcp_checkout_rendered' ) );
 	}

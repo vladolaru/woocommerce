@@ -15,10 +15,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SavePayment
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SavePaymentMethods\Endpoint\CreatePaymentTokenForGuest;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SavePaymentMethods\Endpoint\CreateSetupToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Assets\SdkV6Manager;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\ApplePayConfig;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\ButtonStyleMapper;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\FastlaneConfig;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\GooglePayConfig;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\MessagesEligibility;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\MessageStyleMapper;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Session\Cancellation\CancelView;
@@ -32,14 +30,12 @@ use Mockery;
 use Mockery\MockInterface;
 use WC_Cart;
 use WC_Helper_Product;
-use WC_Payment_Gateway;
 
 /**
  * The SDK bootstrap data, the page-loading rules and the message hooks of the v6 manager, over real WordPress and
  * WooCommerce: only the manager's collaborators and the cart, customer and countries objects are doubles.
  *
- * Case kinds: "wallet" cases are the PayPal, Venmo and Pay Later surface; "apple/google" and "fastlane" cases belong to
- * tasks 5 and 8.
+ * Case kinds: "wallet" cases are the PayPal, Venmo and Pay Later surface; "fastlane" cases belong to task 8.
  *
  * The four free-trial product cases of the extension test that drove WooCommerce Subscriptions' static classes through
  * Mockery aliases are not ported: core's suite loads neither the classes nor an alias-safe way to define them. The two
@@ -125,20 +121,6 @@ class SdkV6ManagerTest extends WalletTestCase {
 	 * @var MessagesEligibility&MockInterface
 	 */
 	private $messages_eligibility;
-
-	/**
-	 * The Google Pay configuration mock.
-	 *
-	 * @var GooglePayConfig&MockInterface
-	 */
-	private $google_pay_config;
-
-	/**
-	 * The Apple Pay configuration mock.
-	 *
-	 * @var ApplePayConfig&MockInterface
-	 */
-	private $apple_pay_config;
 
 	/**
 	 * The Fastlane configuration mock.
@@ -227,13 +209,6 @@ class SdkV6ManagerTest extends WalletTestCase {
 			)
 		)->byDefault();
 
-		$this->google_pay_config = $this->mock( GooglePayConfig::class );
-		$this->google_pay_config->shouldReceive( 'should_render' )->andReturn( false )->byDefault();
-
-		$this->apple_pay_config = $this->mock( ApplePayConfig::class );
-		$this->apple_pay_config->shouldReceive( 'should_render' )->andReturn( false )->byDefault();
-		$this->apple_pay_config->shouldReceive( 'display_name' )->andReturn( 'Test Store' )->byDefault();
-
 		$this->fastlane_config = $this->mock( FastlaneConfig::class );
 		$this->fastlane_config->shouldReceive( 'should_render' )->andReturn( false )->byDefault();
 	}
@@ -262,14 +237,12 @@ class SdkV6ManagerTest extends WalletTestCase {
 	/**
 	 * Build the manager.
 	 *
-	 * @param string        $merchant_country       The merchant country.
 	 * @param bool          $final_review_enabled   Whether the final review step is on.
 	 * @param callable|null $get_subscriptions_mode The subscriptions mode callable.
 	 * @param string        $class_name             The class to build.
 	 * @return SdkV6Manager
 	 */
 	private function create_sut(
-		string $merchant_country = 'US',
 		bool $final_review_enabled = false,
 		?callable $get_subscriptions_mode = null,
 		string $class_name = SdkV6Manager::class
@@ -290,9 +263,6 @@ class SdkV6ManagerTest extends WalletTestCase {
 			$get_subscriptions_mode ?? static fn(): string => SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_VAULTING,
 			$this->message_style_mapper,
 			$this->messages_eligibility,
-			$merchant_country,
-			$this->google_pay_config,
-			$this->apple_pay_config,
 			$this->fastlane_config
 		);
 	}
@@ -315,41 +285,6 @@ class SdkV6ManagerTest extends WalletTestCase {
 	 */
 	private function stub_buttons_everywhere( bool $enabled ): void {
 		$this->settings_status->shouldReceive( 'is_smart_button_enabled_for_location' )->andReturn( $enabled );
-	}
-
-	/**
-	 * Make WooCommerce offer exactly these gateways, through the filter WooCommerce applies last.
-	 *
-	 * @param array<string, WC_Payment_Gateway> $gateways Gateways by ID.
-	 */
-	private function stub_available_gateways( array $gateways ): void {
-		add_filter(
-			'woocommerce_available_payment_gateways',
-			static function () use ( $gateways ) {
-				return $gateways;
-			},
-			999
-		);
-	}
-
-	/**
-	 * A gateway object with the given ID and supports list.
-	 *
-	 * @param string   $id       The gateway ID.
-	 * @param string[] $supports What it supports.
-	 * @param string   $title    Its title.
-	 * @param string   $description Its description.
-	 * @return WC_Payment_Gateway
-	 */
-	private function make_gateway( string $id, array $supports = array( 'products' ), string $title = '', string $description = '' ): WC_Payment_Gateway {
-		$gateway              = new class() extends WC_Payment_Gateway {
-		};
-		$gateway->id          = $id;
-		$gateway->supports    = $supports;
-		$gateway->title       = $title;
-		$gateway->description = $description;
-
-		return $gateway;
 	}
 
 	/**
@@ -536,7 +471,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 		$this->stub_buttons_everywhere( true );
 		$this->subscription_helper->shouldReceive( 'cart_contains_subscription' )->andReturn( true );
 
-		$sut = $this->create_sut( 'US', false, static fn(): string => SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_SUBSCRIPTIONS );
+		$sut = $this->create_sut( false, static fn(): string => SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_SUBSCRIPTIONS );
 
 		$this->assertFalse( $sut->should_load_on_current_page() );
 	}
@@ -548,7 +483,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 		$this->stub_page( 'checkout' );
 		$this->stub_buttons_everywhere( true );
 
-		$sut = $this->create_sut( 'US', false, static fn(): string => SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_SUBSCRIPTIONS );
+		$sut = $this->create_sut( false, static fn(): string => SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_SUBSCRIPTIONS );
 
 		$this->assertTrue( $sut->should_load_on_current_page() );
 	}
@@ -561,7 +496,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 		$this->stub_buttons_everywhere( true );
 		$this->subscription_helper->shouldReceive( 'cart_contains_subscription' )->andReturn( true );
 
-		$sut = $this->create_sut( 'US', false, static fn(): string => SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_VAULTING );
+		$sut = $this->create_sut( false, static fn(): string => SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_VAULTING );
 
 		$this->assertTrue( $sut->should_load_on_current_page() );
 	}
@@ -573,7 +508,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 		$this->context->shouldReceive( 'init_context' )->never();
 		$this->subscription_helper->shouldReceive( 'current_product_is_subscription' )->andReturn( true );
 
-		$sut = $this->create_sut( 'US', false, static fn(): string => SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_SUBSCRIPTIONS );
+		$sut = $this->create_sut( false, static fn(): string => SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_SUBSCRIPTIONS );
 
 		$this->assertSame(
 			array(
@@ -605,20 +540,6 @@ class SdkV6ManagerTest extends WalletTestCase {
 		);
 		$this->assertSame( '49.99', $data['amount'] );
 		$this->assertFalse( $data['shipping']['in_context']['pay-now'] );
-	}
-
-	/**
-	 * @testdox Should carry the merchant country apart from the buyer's billing country (wallet).
-	 */
-	public function test_script_data_includes_merchant_country_independent_of_buyer_country(): void {
-		$this->stub_page( 'checkout' );
-		WC()->customer = Mockery::mock( \WC_Customer::class );
-		WC()->customer->shouldReceive( 'get_billing_country' )->andReturn( 'DE' );
-
-		$data = $this->script_data( $this->create_sut( 'FR' ) );
-
-		$this->assertSame( 'FR', $data['merchant_country'] );
-		$this->assertSame( 'DE', $data['buyer_country'] );
 	}
 
 	/**
@@ -1265,95 +1186,6 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should populate the wallet gateway subtrees on the pay-for-order page (apple/google).
-	 */
-	public function test_script_data_wallet_gateway_populated_on_pay_now(): void {
-		$this->stub_pay_for_order_page( '49.99' );
-		$this->stub_page( 'pay-now' );
-		$this->stub_available_gateways(
-			array(
-				'ppcp-googlepay' => $this->make_gateway( 'ppcp-googlepay' ),
-				'ppcp-applepay'  => $this->make_gateway( 'ppcp-applepay' ),
-			)
-		);
-
-		$data = $this->script_data();
-
-		$this->assertSame(
-			array(
-				'id'      => 'ppcp-googlepay',
-				'wrapper' => '#' . SdkV6Manager::GOOGLE_PAY_WRAPPER_ID,
-			),
-			$data['google_pay']['gateway']
-		);
-		$this->assertSame(
-			array(
-				'id'      => 'ppcp-applepay',
-				'wrapper' => '#' . SdkV6Manager::APPLE_PAY_WRAPPER_ID,
-			),
-			$data['apple_pay']['gateway']
-		);
-	}
-
-	/**
-	 * @testdox Should carry the $wallet_key gateway's own supports list when it is available (apple/google).
-	 * @dataProvider wallet_supported_features_present_provider
-	 *
-	 * @param string   $wallet_key       The wallet key in the data.
-	 * @param string   $gateway_id       The wallet's gateway ID.
-	 * @param string[] $gateway_supports What the gateway supports.
-	 */
-	public function test_script_data_wallet_supported_features_reflect_own_gateway_when_available( string $wallet_key, string $gateway_id, array $gateway_supports ): void {
-		$this->stub_page( 'checkout', 'checkout' );
-		$this->stub_available_gateways( array( $gateway_id => $this->make_gateway( $gateway_id, $gateway_supports ) ) );
-
-		$data = $this->script_data();
-
-		$this->assertSame( $gateway_supports, $data[ $wallet_key ]['supported_features'] );
-	}
-
-	/**
-	 * Wallet, gateway and supports.
-	 *
-	 * @return array
-	 */
-	public function wallet_supported_features_present_provider(): array {
-		return array(
-			'Apple Pay carries its own gateway supports'  => array( 'apple_pay', 'ppcp-applepay', array( 'products' ) ),
-			'Google Pay carries its own gateway supports' => array( 'google_pay', 'ppcp-googlepay', array( 'products', 'subscriptions' ) ),
-		);
-	}
-
-	/**
-	 * @testdox Should fall back to products-only supports for $wallet_key when its gateway is unavailable (apple/google).
-	 * @testWith ["apple_pay"]
-	 *           ["google_pay"]
-	 *
-	 * @param string $wallet_key The wallet key in the data.
-	 */
-	public function test_script_data_wallet_supported_features_fall_back_when_gateway_absent( string $wallet_key ): void {
-		$this->stub_page( 'checkout', 'checkout' );
-		$this->stub_available_gateways( array() );
-
-		$data = $this->script_data();
-
-		$this->assertSame( array( 'products' ), $data[ $wallet_key ]['supported_features'] );
-	}
-
-	/**
-	 * @testdox Should resolve each wallet's supports on its own (apple/google).
-	 */
-	public function test_script_data_wallet_supported_features_resolved_independently_per_wallet(): void {
-		$this->stub_page( 'checkout', 'checkout' );
-		$this->stub_available_gateways( array( 'ppcp-applepay' => $this->make_gateway( 'ppcp-applepay', array( 'products', 'subscriptions' ) ) ) );
-
-		$data = $this->script_data();
-
-		$this->assertSame( array( 'products', 'subscriptions' ), $data['apple_pay']['supported_features'] );
-		$this->assertSame( array( 'products' ), $data['google_pay']['supported_features'] );
-	}
-
-	/**
 	 * @testdox Should report shipping per context: final review $final_review_enabled, $page_context, cart needs shipping $cart_needs_shipping, product $product_state (wallet).
 	 * @dataProvider shipping_in_context_provider
 	 *
@@ -1389,7 +1221,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 			$this->stub_current_product();
 		}
 
-		$data = $this->script_data( $this->create_sut( 'US', $final_review_enabled ) );
+		$data = $this->script_data( $this->create_sut( $final_review_enabled ) );
 
 		$this->assertSame( $expected_in_context, $data['shipping']['in_context'] );
 	}
@@ -1555,70 +1387,33 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should hand the store's shipping countries over only when a context needs shipping: final review $final_review_enabled, countries $shipping_countries (wallet).
-	 * @dataProvider shipping_countries_provider
-	 *
-	 * @param bool       $final_review_enabled Whether the final review step is on.
-	 * @param bool       $cart_needs_shipping  Whether the cart needs shipping.
-	 * @param array|null $shipping_countries   The store's shipping countries, null for no countries service.
-	 * @param array      $expected_countries   The countries in the data.
+	 * @testdox Should carry the generic error label, and every label a non-empty string (wallet).
 	 */
-	public function test_script_data_shipping_countries( bool $final_review_enabled, bool $cart_needs_shipping, ?array $shipping_countries, array $expected_countries ): void {
-		$this->stub_page( 'cart' );
-		$this->stub_cart(
-			array(
-				'needs_shipping' => $cart_needs_shipping,
-				'is_empty'       => true,
-				'get_total'      => '10.00',
-			)
-		);
-		if ( null !== $shipping_countries ) {
-			WC()->countries = Mockery::mock( \WC_Countries::class );
-			WC()->countries->shouldReceive( 'get_shipping_countries' )->andReturn( $shipping_countries );
-		}
-
-		$data = $this->script_data( $this->create_sut( 'US', $final_review_enabled ) );
-
-		$this->assertSame( $expected_countries, $data['shipping']['countries'] );
-	}
-
-	/**
-	 * Scenarios of the countries list.
-	 *
-	 * @return array
-	 */
-	public function shipping_countries_provider(): array {
-		return array(
-			'no context needing shipping yields an empty country list' => array( true, true, array( 'US' => 'United States' ), array() ),
-			'a context needing shipping returns the full country list' => array(
-				false,
-				true,
-				array(
-					'US' => 'United States',
-					'CA' => 'Canada',
-				),
-				array( 'US', 'CA' ),
-			),
-			'no countries service yields an empty list' => array( false, true, null, array() ),
-		);
-	}
-
-	/**
-	 * @testdox Should carry the documented label keys, each a non-empty string (wallet).
-	 */
-	public function test_script_data_includes_shipping_and_itemization_labels(): void {
+	public function test_script_data_includes_the_generic_error_label(): void {
 		$this->stub_page( 'checkout-block' );
 
 		$data = $this->script_data();
 
-		$this->assertSame(
-			array( 'generic_error', 'shipping_unserviceable', 'subtotal', 'shipping', 'tax', 'discount' ),
-			array_keys( $data['labels'] )
-		);
+		$this->assertSame( array( 'generic_error' ), array_keys( $data['labels'] ) );
 		foreach ( $data['labels'] as $label ) {
 			$this->assertIsString( $label );
 			$this->assertNotSame( '', $label );
 		}
+	}
+
+	/**
+	 * @testdox Should carry none of the Apple Pay, Google Pay or wallet shipping script data keys (wallet).
+	 */
+	public function test_script_data_omits_the_dropped_wallet_keys(): void {
+		$this->stub_page( 'checkout-block' );
+
+		$data = $this->script_data();
+
+		foreach ( array( 'apple_pay', 'google_pay', 'merchant_country', 'button_height' ) as $key ) {
+			$this->assertArrayNotHasKey( $key, $data );
+		}
+		$this->assertArrayNotHasKey( 'countries', $data['shipping'] );
+		$this->assertArrayNotHasKey( 'wallet_shipping', $data['ajax'] );
 	}
 
 	/**
@@ -1634,7 +1429,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 		$this->stub_buttons_everywhere( true );
 		$this->stub_cart( array( 'needs_payment' => true ) );
 
-		$sut                     = $this->create_sut( 'US', false, null, SdkV6ManagerFreeTrialStub::class );
+		$sut                     = $this->create_sut( false, null, SdkV6ManagerFreeTrialStub::class );
 		$sut->free_trial_product = $free_trial_product;
 
 		$this->assertSame( $expected_product, $sut->determine_render_places()['product'] );
@@ -1649,7 +1444,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 		$this->settings_status->shouldReceive( 'is_smart_button_enabled_for_location' )->andReturn( true );
 		$this->stub_cart( array( 'needs_payment' => true ) );
 
-		$sut                     = $this->create_sut( 'US', false, null, SdkV6ManagerFreeTrialStub::class );
+		$sut                     = $this->create_sut( false, null, SdkV6ManagerFreeTrialStub::class );
 		$sut->free_trial_product = false;
 
 		$this->assertFalse( $sut->determine_render_places()['product'] );
@@ -1663,7 +1458,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 		$this->stub_buttons_everywhere( true );
 		$this->stub_cart( array( 'needs_payment' => true ) );
 
-		$sut                     = $this->create_sut( 'US', false, null, SdkV6ManagerFreeTrialStub::class );
+		$sut                     = $this->create_sut( false, null, SdkV6ManagerFreeTrialStub::class );
 		$sut->free_trial_product = true;
 		$result                  = $sut->determine_render_places();
 

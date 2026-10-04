@@ -24,7 +24,6 @@ import { __, sprintf } from '@wordpress/i18n';
 import { loadSdkV6 } from './sdkLoader';
 import { checkEligibility } from './eligibility';
 import { V6ExpressComponent } from './blocks/V6ExpressComponent';
-import { V6WalletComponent } from './blocks/V6WalletComponent';
 import { V6ContinuationComponent } from './blocks/V6ContinuationComponent';
 import { V6EditorPreview } from './blocks/V6EditorPreview';
 // Reused as-is from the blocks module: renders the saved-PayPal vault approval
@@ -39,12 +38,6 @@ import { fundingSourceLabel } from './utils/fundingSourceLabel';
 import { amountFromCartTotals } from './utils/amount';
 import { isFreeTrialCart } from './utils/freeTrial';
 import { setErrorLabels } from './utils/errorHandler';
-import {
-	methodConfig,
-	methodGatewayId,
-	MERCHANT_PRESENTED_METHODS,
-} from './methods/methodRegistry';
-import { isDeviceEligible } from './wallets/applePay';
 import { initMessages, updateMessagesAmount } from './messages/renderer';
 import { watchBlockCartTotal } from './messages/cartTotalWatcher';
 
@@ -56,7 +49,7 @@ import { watchBlockCartTotal } from './messages/cartTotalWatcher';
  */
 function expressDescription( label ) {
 	return sprintf(
-		// translators: %s is the payment method name, e.g. Venmo or Apple Pay.
+		// translators: %s is the payment method name, e.g. Venmo.
 		__(
 			'Eligible users will see the %s button.',
 			'woocommerce'
@@ -216,7 +209,7 @@ if ( config && config.page_context && config.continuation ) {
 	};
 
 	/**
-	 * Registers one express button, for a PayPal funding source or a wallet.
+	 * Registers one express button, for a PayPal funding source.
 	 *
 	 * @param {Object}   args                   - The registration inputs.
 	 * @param {string}   args.name              - The name the block registry
@@ -226,19 +219,15 @@ if ( config && config.page_context && config.continuation ) {
 	 * @param {string}   args.fundingSource     - The funding source rendered.
 	 * @param {Object}   args.content           - The element that renders the
 	 *                                          button.
-	 * @param {Function} [args.isDeviceCapable] - Synchronous capability check,
-	 *                                          asked before eligibility.
 	 * @param {string[]} args.features          - What the processing gateway
 	 *                                          supports. Deliberately without
-	 *                                          a default, so a wallet cannot
-	 *                                          inherit PayPal's list.
+	 *                                          a default.
 	 */
 	const registerExpress = ( {
 		name,
 		gatewayId,
 		fundingSource,
 		content,
-		isDeviceCapable,
 		features,
 	} ) => {
 		const label = fundingSourceLabel( fundingSource );
@@ -250,7 +239,7 @@ if ( config && config.page_context && config.continuation ) {
 			 *   "incompatible with block-based checkout" list.
 			 * gatewayId: Links to the gateway's settings.
 			 * supports.features: ppcp_continuation is declared up front,
-			 *   since approving in the wallet sheet raises that cart
+			 *   since approving in the PayPal popup raises that cart
 			 *   requirement after the method is chosen.
 			 * supports.style: Exposes the block's height/borderRadius controls.
 			 */
@@ -264,10 +253,6 @@ if ( config && config.page_context && config.continuation ) {
 			content,
 			edit: createElement( V6EditorPreview, { fundingSource } ),
 			canMakePayment: async ( { cartTotals } = {} ) => {
-				if ( isDeviceCapable && ! isDeviceCapable() ) {
-					return false;
-				}
-
 				const amount =
 					amountFromCartTotals( cartTotals ) || config.amount;
 
@@ -311,36 +296,6 @@ if ( config && config.page_context && config.continuation ) {
 				fundingSource,
 			} ),
 			features: config.supported_features,
-		} );
-	}
-
-	// No wallet can vault, and a free trial has to be, so the express gate keeps
-	// every wallet row off such a cart (it answers for anything but PayPal).
-	// Ordinary subscription carts are dropped by the features gate instead.
-	for ( const method of MERCHANT_PRESENTED_METHODS ) {
-		const settings = methodConfig( config, method );
-
-		// No styles for this context means PHP withheld the wallet here.
-		if ( ! settings?.styles?.[ config.page_context ] ) {
-			continue;
-		}
-
-		// Apple answers off a native global, before any row is offered. Google's
-		// probe needs a session, so its bridge drops the row from inside.
-		let isDeviceCapable;
-		if ( method === FundingSources.APPLEPAY ) {
-			isDeviceCapable = isDeviceEligible;
-		}
-
-		const gatewayId = methodGatewayId( method );
-
-		registerExpress( {
-			name: gatewayId,
-			gatewayId,
-			fundingSource: method,
-			content: createElement( V6WalletComponent, { config, method } ),
-			isDeviceCapable,
-			features: settings.supported_features,
 		} );
 	}
 }

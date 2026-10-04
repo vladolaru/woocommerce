@@ -46,26 +46,6 @@ describe( 'loadSdkV6', () => {
 			[ 'paypal-payments', 'venmo-payments' ],
 		],
 		[
-			'google pay enabled',
-			{ google_pay: { enabled: true } },
-			[ 'paypal-payments', 'venmo-payments', 'googlepay-payments' ],
-		],
-		[
-			'apple pay enabled',
-			{ apple_pay: { enabled: true } },
-			[ 'paypal-payments', 'venmo-payments', 'applepay-payments' ],
-		],
-		[
-			'google pay and apple pay both enabled',
-			{ google_pay: { enabled: true }, apple_pay: { enabled: true } },
-			[
-				'paypal-payments',
-				'venmo-payments',
-				'googlepay-payments',
-				'applepay-payments',
-			],
-		],
-		[
 			'fastlane enabled',
 			{ fastlane: { enabled: true } },
 			[ 'paypal-payments', 'venmo-payments', 'fastlane' ],
@@ -78,33 +58,9 @@ describe( 'loadSdkV6', () => {
 		);
 	} );
 
-	test( 'requests fastlane and apple pay when both are enabled', async () => {
+	test( 'does not request fastlane when it is explicitly disabled', async () => {
 		await loadSdkV6(
 			baseConfig( {
-				fastlane: { enabled: true },
-				apple_pay: { enabled: true },
-			} ),
-			'checkout'
-		);
-
-		// components is a set of names passed to createInstance; push order in
-		// the source carries no meaning, so compare contents, not order.
-		const { components } =
-			window.paypal.createInstance.mock.calls[ 0 ][ 0 ];
-		expect( [ ...components ].sort() ).toEqual(
-			[
-				'paypal-payments',
-				'venmo-payments',
-				'applepay-payments',
-				'fastlane',
-			].sort()
-		);
-	} );
-
-	test( 'does not request googlepay-payments or fastlane when both are explicitly disabled', async () => {
-		await loadSdkV6(
-			baseConfig( {
-				google_pay: { enabled: false },
 				fastlane: { enabled: false },
 			} ),
 			'checkout'

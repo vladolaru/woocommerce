@@ -9,9 +9,7 @@ declare( strict_types=1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Applepay\ApplePayGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Axo\Gateway\AxoGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Googlepay\GooglePayGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\BancontactGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\BlikGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\EPSGateway;
@@ -52,30 +50,16 @@ class PaymentMethodsEligibilityService {
 	 */
 	private $axo_eligible;
 
-	/**
-	 * Whether Apple Pay is available
-	 */
-	private bool $apple_pay_available;
-
-	/**
-	 * Whether Google Pay is available
-	 */
-	private bool $google_pay_available;
-
 	public function __construct(
 		string $merchant_country,
 		bool $is_apm_eligible,
 		array $merchant_capabilities,
-		callable $axo_eligible,
-		bool $apple_pay_available,
-		bool $google_pay_available
+		callable $axo_eligible
 	) {
 		$this->merchant_country      = $merchant_country;
 		$this->is_apm_eligible       = $is_apm_eligible;
 		$this->merchant_capabilities = $merchant_capabilities;
 		$this->axo_eligible          = $axo_eligible;
-		$this->apple_pay_available   = $apple_pay_available;
-		$this->google_pay_available  = $google_pay_available;
 	}
 
 	/**
@@ -96,8 +80,6 @@ class PaymentMethodsEligibilityService {
 			OXXOGateway::ID                  => fn() => $this->is_mexico_merchant() && $this->is_apm_eligible,
 			PWCGateway::ID            => fn() => $this->has_pwc_capability() && $this->is_apm_eligible,
 			PayUponInvoiceGateway::ID => fn() => $this->merchant_country === 'DE',
-			GooglePayGateway::ID      => fn() => $this->google_pay_available,
-			ApplePayGateway::ID       => fn() => $this->apple_pay_available,
 			AxoGateway::ID            => fn() => call_user_func( $this->axo_eligible ),
 			'venmo'                   => fn() => $this->merchant_country === 'US',
 		);

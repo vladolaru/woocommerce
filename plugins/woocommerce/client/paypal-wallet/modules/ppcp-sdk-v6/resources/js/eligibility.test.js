@@ -1,17 +1,9 @@
 import { checkEligibility, checkVaultEligibility } from './eligibility';
 
-function sdkWith( {
-	eligible = [],
-	details = null,
-	detailsThrows = false,
-	isEligibleThrowsFor = [],
-} ) {
+function sdkWith( { eligible = [], details = null, detailsThrows = false } ) {
 	return {
 		findEligibleMethods: jest.fn().mockResolvedValue( {
 			isEligible: ( method ) => {
-				if ( isEligibleThrowsFor.includes( method ) ) {
-					throw new Error( 'component not loaded' );
-				}
 				return eligible.includes( method );
 			},
 			getDetails: () => {
@@ -77,38 +69,6 @@ describe( 'checkEligibility', () => {
 
 		expect( result.paylater ).toBe( true );
 		expect( result.payLaterDetails ).toBeNull();
-	} );
-
-	test( 'reports googlepay eligibility', async () => {
-		const sdk = sdkWith( { eligible: [ 'googlepay' ] } );
-
-		const result = await checkEligibility( sdk, { currencyCode: 'USD' } );
-
-		expect( result.googlepay ).toBe( true );
-	} );
-
-	test( 'resolves with googlepay false, instead of rejecting, when isEligible throws for googlepay', async () => {
-		const sdk = sdkWith( { isEligibleThrowsFor: [ 'googlepay' ] } );
-
-		const result = await checkEligibility( sdk, { currencyCode: 'USD' } );
-
-		expect( result.googlepay ).toBe( false );
-	} );
-
-	test( 'reports applepay eligibility', async () => {
-		const sdk = sdkWith( { eligible: [ 'applepay' ] } );
-
-		const result = await checkEligibility( sdk, { currencyCode: 'USD' } );
-
-		expect( result.applepay ).toBe( true );
-	} );
-
-	test( 'resolves with applepay false, instead of rejecting, when isEligible throws for applepay', async () => {
-		const sdk = sdkWith( { isEligibleThrowsFor: [ 'applepay' ] } );
-
-		const result = await checkEligibility( sdk, { currencyCode: 'USD' } );
-
-		expect( result.applepay ).toBe( false );
 	} );
 } );
 

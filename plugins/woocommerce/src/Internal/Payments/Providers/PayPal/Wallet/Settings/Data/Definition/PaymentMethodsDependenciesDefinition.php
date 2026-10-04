@@ -6,9 +6,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Setti
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\PWCGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Exception\NotFoundException;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Applepay\ApplePayGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Axo\Gateway\AxoGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Googlepay\GooglePayGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\BancontactGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\BlikGateway;
@@ -37,8 +35,6 @@ class PaymentMethodsDependenciesDefinition {
 	public function get_payment_method_dependencies(): array {
 		$dependencies = array(
 			AxoGateway::ID            => array( PayPalGateway::ID ),
-			ApplePayGateway::ID       => array( PayPalGateway::ID ),
-			GooglePayGateway::ID      => array( PayPalGateway::ID ),
 			BancontactGateway::ID     => array( PayPalGateway::ID ),
 			BlikGateway::ID           => array( PayPalGateway::ID ),
 			EPSGateway::ID            => array( PayPalGateway::ID ),

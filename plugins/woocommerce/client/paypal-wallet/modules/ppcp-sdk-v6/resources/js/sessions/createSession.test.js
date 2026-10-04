@@ -36,12 +36,6 @@ function fakeSdk() {
 		createPayLaterOneTimePaymentSession: recordFactoryCall(
 			'createPayLaterOneTimePaymentSession'
 		),
-		createGooglePayOneTimePaymentSession: recordFactoryCall(
-			'createGooglePayOneTimePaymentSession'
-		),
-		createApplePayOneTimePaymentSession: recordFactoryCall(
-			'createApplePayOneTimePaymentSession'
-		),
 		createPayPalGuestOneTimePaymentSession: recordFactoryCall(
 			'createPayPalGuestOneTimePaymentSession'
 		),
@@ -60,14 +54,12 @@ describe( 'SUPPORTED_METHODS', () => {
 			'paypal',
 			'venmo',
 			'paylater',
-			'googlepay',
-			'applepay',
 		] );
 	} );
 } );
 
 describe( 'createSession', () => {
-	test( 'default onApprove routes to the classic approveOrder flow, with no contact data or gateway override', async () => {
+	test( 'default onApprove routes to the classic approveOrder flow', async () => {
 		const sdk = fakeSdk();
 		const config = { shipping: {} };
 
@@ -156,47 +148,4 @@ describe( 'createSession', () => {
 			).toBeUndefined();
 		}
 	);
-
-	describe.each( [
-		[ 'googlepay', 'createGooglePayOneTimePaymentSession' ],
-		[ 'applepay', 'createApplePayOneTimePaymentSession' ],
-	] )( '%s', ( method, factoryName ) => {
-		test( `is created through ${ factoryName }`, () => {
-			const sdk = fakeSdk();
-
-			createSession( sdk, method, { shipping: {} }, 'checkout' );
-
-			expect( sdk.capture.factory ).toBe( factoryName );
-		} );
-
-		test( 'the session config has no onApprove, but keeps onCancel and onError', () => {
-			const sdk = fakeSdk();
-
-			createSession( sdk, method, { shipping: {} }, 'checkout' );
-
-			expect( sdk.capture.config.onApprove ).toBeUndefined();
-			expect( sdk.capture.config.onCancel ).toEqual(
-				expect.any( Function )
-			);
-			expect( sdk.capture.config.onError ).toEqual(
-				expect.any( Function )
-			);
-		} );
-
-		test( 'gets neither in-sheet shipping handler even when the context collects shipping', () => {
-			const sdk = fakeSdk();
-			const config = {
-				shipping: { in_context: { product: true } },
-			};
-
-			createSession( sdk, method, config, 'product' );
-
-			expect(
-				sdk.capture.config.onShippingAddressChange
-			).toBeUndefined();
-			expect(
-				sdk.capture.config.onShippingOptionsChange
-			).toBeUndefined();
-		} );
-	} );
 } );

@@ -13,8 +13,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Da
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\OnboardingProfile;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\DTO\ConfigurationFlagsDTO;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\DTO\LocationStylingDTO;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Googlepay\GooglePayGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Applepay\ApplePayGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Enum\ProductChoicesEnum;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\StylingSettings;
@@ -204,11 +202,6 @@ class SettingsDataManager {
 		$this->payment_methods->toggle_method_state( 'venmo', true );
 
 		if ( $flags->is_business_seller ) {
-			if ( $flags->use_digital_wallets ) {
-				$this->payment_methods->toggle_method_state( ApplePayGateway::ID, true );
-				$this->payment_methods->toggle_method_state( GooglePayGateway::ID, true );
-			}
-
 			/**
 			 * Allow plugins to modify apm payment gateway states before saving.
 			 *
@@ -265,15 +258,7 @@ class SettingsDataManager {
 	 * @return void
 	 */
 	protected function apply_location_styles( ConfigurationFlagsDTO $flags ): void {
-		$methods_full = array(
-			PayPalGateway::ID,
-			'venmo',
-			'pay-later',
-			ApplePayGateway::ID,
-			GooglePayGateway::ID,
-		);
-
-		$methods_own = array(
+		$methods = array(
 			PayPalGateway::ID,
 			'venmo',
 			'pay-later',
@@ -282,18 +267,18 @@ class SettingsDataManager {
 		/**
 		 * Initialize the styling options using the defaults.
 		 *
-		 * - Cart: Enabled, display PayPal, Venmo, Pay Later, Google Pay, Apple Pay.
-		 * - Classic Checkout: Display PayPal, Venmo, Pay Later, Google Pay, Apple Pay.
-		 * - Express Checkout: Display PayPal, Venmo, Pay Later, Google Pay, Apple Pay.
-		 * - Mini Cart: Display PayPal, Venmo, Pay Later, Google Pay, Apple Pay.
+		 * - Cart: Enabled, display PayPal, Venmo, Pay Later.
+		 * - Classic Checkout: Display PayPal, Venmo, Pay Later.
+		 * - Express Checkout: Display PayPal, Venmo, Pay Later.
+		 * - Mini Cart: Display PayPal, Venmo, Pay Later.
 		 * - Product Page: Display PayPal, Venmo, Pay Later.
 		 */
 		$location_styles = array(
-			'cart'             => new LocationStylingDTO( 'cart', true, $methods_full ),
-			'classic_checkout' => new LocationStylingDTO( 'classic_checkout', true, $methods_full ),
-			'express_checkout' => new LocationStylingDTO( 'express_checkout', true, $methods_full ),
-			'mini_cart'        => new LocationStylingDTO( 'mini_cart', false, $methods_full ),
-			'product'          => new LocationStylingDTO( 'product', true, $methods_own ),
+			'cart'             => new LocationStylingDTO( 'cart', true, $methods ),
+			'classic_checkout' => new LocationStylingDTO( 'classic_checkout', true, $methods ),
+			'express_checkout' => new LocationStylingDTO( 'express_checkout', true, $methods ),
+			'mini_cart'        => new LocationStylingDTO( 'mini_cart', false, $methods ),
+			'product'          => new LocationStylingDTO( 'product', true, $methods ),
 		);
 
 		// Apply the settings and persist them to the DB. All merchants use the same options.

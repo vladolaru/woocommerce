@@ -24,8 +24,6 @@ const defaultPersistent = Object.freeze( {
 	venmo: {},
 	'pay-later': {},
 	'ppcp-axo-gateway': {},
-	'ppcp-applepay': {},
-	'ppcp-googlepay': {},
 	'ppcp-pwc': {},
 	'ppcp-bancontact': {},
 	'ppcp-blik': {},

@@ -65,9 +65,6 @@ class WcPaymentTokensModule implements ServiceModule, ExecutableModule {
 				if ( $type === 'WC_Payment_Token_Venmo' ) {
 					return PaymentTokenVenmo::class;
 				}
-				if ( $type === 'WC_Payment_Token_ApplePay' ) {
-					return PaymentTokenApplePay::class;
-				}
 
 				return $type;
 			}
@@ -93,19 +90,6 @@ class WcPaymentTokensModule implements ServiceModule, ExecutableModule {
 				}
 
 				$is_post = isset( $_SERVER['REQUEST_METHOD'] ) && $_SERVER['REQUEST_METHOD'] === 'POST';
-
-				// Exclude ApplePay tokens from payment pages, regardless of request method.
-				// Apple Pay tokens are only usable for merchant-initiated subscription renewals,
-				// never buyer-selectable at checkout. The classic checkout re-renders its payment
-				// fields via a POST `update_order_review` AJAX call, so a `! $is_post` guard would
-				// let the token leak back into the selectable saved-methods list.
-				if ( is_checkout() || is_cart() || is_product() ) {
-					foreach ( $tokens as $index => $token ) {
-						if ( $token instanceof PaymentTokenApplePay ) {
-							unset( $tokens[ $index ] );
-						}
-					}
-				}
 
 				$context = $container->get( 'button.helper.context' );
 				if ( is_checkout() && ! $is_post && $context->is_paypal_continuation() ) {
@@ -155,11 +139,6 @@ class WcPaymentTokensModule implements ServiceModule, ExecutableModule {
 					if ( $email ) {
 						$item['method']['last4'] = $email;
 					}
-					return $item;
-				}
-
-				if ( $payment_token instanceof PaymentTokenApplePay ) {
-					$item['method']['brand'] = 'ApplePay #' . ( (string) $payment_token->get_id() );
 					return $item;
 				}
 

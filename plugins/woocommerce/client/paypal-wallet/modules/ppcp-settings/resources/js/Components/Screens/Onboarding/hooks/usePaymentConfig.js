@@ -8,7 +8,6 @@ import {
 	Venmo,
 	Crypto,
 	PayInThree,
-	DigitalWallets,
 	AlternativePaymentMethods,
 	Fastlane,
 } from '../Components/PaymentOptions';
@@ -21,18 +20,6 @@ const PAYMENT_ICONS = [
 	{ name: 'mastercard', isOwnBrand: false, onlyAcdc: false },
 	{ name: 'amex', isOwnBrand: false, onlyAcdc: false },
 	{ name: 'discover', isOwnBrand: false, onlyAcdc: false },
-	{
-		name: 'apple-pay',
-		isOwnBrand: false,
-		onlyAcdc: false,
-		isDigitalWallet: true,
-	},
-	{
-		name: 'google-pay',
-		isOwnBrand: false,
-		onlyAcdc: false,
-		isDigitalWallet: true,
-	},
 	{ name: 'blik', isOwnBrand: true, onlyAcdc: true },
 	{ name: 'ideal', isOwnBrand: true, onlyAcdc: true },
 	{ name: 'bancontact', isOwnBrand: true, onlyAcdc: true },
@@ -46,13 +33,6 @@ const DEFAULT_CONFIG = {
 		{ name: 'PayLater', Component: PayLater },
 	],
 	extendedMethods: [
-		{
-			name: 'DigitalWallets',
-			Component: DigitalWallets,
-			isOwnBrand: false,
-			isAcdc: false,
-			isDigitalWallet: true,
-		},
 		{
 			name: 'APMs',
 			Component: AlternativePaymentMethods,
@@ -98,10 +78,7 @@ const COUNTRY_CONFIGS = {
 const getUIText = ( country, canUseCardPayments, onlyBranded ) => {
 	const TITLES = {
 		EXPANDED: __( 'Expanded Checkout', 'woocommerce' ),
-		OPTIONAL: __(
-			'Optional payment methods',
-			'woocommerce'
-		),
+		OPTIONAL: __( 'Optional payment methods', 'woocommerce' ),
 	};
 
 	const OPTIONAL_DESCRIPTIONS = {
@@ -109,12 +86,9 @@ const getUIText = ( country, canUseCardPayments, onlyBranded ) => {
 			'Accept local payment methods. Note: Additional application required for some methods',
 			'woocommerce'
 		),
-		WITH_APPLICATION: __(
-			'with additional application',
-			'woocommerce'
-		),
+		WITH_APPLICATION: __( 'with additional application', 'woocommerce' ),
 		US_EXPANDED: __(
-			'Accept PayPal, Apple Pay, Google Pay, and more. Note: Additional application required for some methods',
+			'Accept more ways to pay. Note: additional application required for some methods',
 			'woocommerce'
 		),
 	};
@@ -133,9 +107,7 @@ const getUIText = ( country, canUseCardPayments, onlyBranded ) => {
 	// Base text configuration for all countries.
 	const texts = {
 		paypalCheckoutDescription: CORE_DESCRIPTIONS.DEFAULT_CHECKOUT,
-		optionalTitle: canUseCardPayments
-			? TITLES.EXPANDED
-			: TITLES.OPTIONAL,
+		optionalTitle: canUseCardPayments ? TITLES.EXPANDED : TITLES.OPTIONAL,
 		optionalDescription: OPTIONAL_DESCRIPTIONS.WITH_APPLICATION,
 	};
 
@@ -157,38 +129,17 @@ const getUIText = ( country, canUseCardPayments, onlyBranded ) => {
 /**
  * Filters payment icons based on country and configuration.
  *
- * @param {string}  country               - The country code
- * @param {boolean} includeAcdc           - Whether to include advanced card payment methods
- * @param {boolean} includeDigitalWallets - Whether to include digital wallet icons
- * @param {boolean} onlyBranded           - Whether to show only branded payment methods
+ * @param {string}  country     - The country code
+ * @param {boolean} includeAcdc - Whether to include advanced card payment methods
+ * @param {boolean} onlyBranded - Whether to show only branded payment methods
  * @return {string[]} List of icon names
  */
-const getRelevantIcons = (
-	country,
-	includeAcdc,
-	includeDigitalWallets,
-	onlyBranded
-) =>
+const getRelevantIcons = ( country, includeAcdc, onlyBranded ) =>
 	PAYMENT_ICONS.filter(
-		( {
-			always,
-			isOwnBrand,
-			onlyAcdc,
-			isDigitalWallet,
-			countries = [],
-		} ) => {
+		( { always, isOwnBrand, onlyAcdc, countries = [] } ) => {
 			if ( always ) {
 				return true;
 			}
-
-			// Digital wallet icons are independent of ACDC.
-			if ( isDigitalWallet ) {
-				return (
-					includeDigitalWallets &&
-					( ! onlyBranded || isOwnBrand )
-				);
-			}
-
 
 			if ( onlyBranded && ! isOwnBrand ) {
 				return false;
@@ -218,17 +169,15 @@ const filterMethods = ( methods, conditions ) => {
 /**
  * Custom hook that generates payment configuration based on merchant settings.
  *
- * @param {string}  country              - Merchant country code
- * @param {boolean} canUseCardPayments   - Whether merchant can use card payments
- * @param {boolean} canUseDigitalWallets - Whether merchant can use digital wallets (Apple Pay/Google Pay)
- * @param {boolean} hasFastlane          - Whether merchant has Fastlane enabled
- * @param {boolean} ownBrandOnly         - Whether to show only branded payment methods
+ * @param {string}  country            - Merchant country code
+ * @param {boolean} canUseCardPayments - Whether merchant can use card payments
+ * @param {boolean} hasFastlane        - Whether merchant has Fastlane enabled
+ * @param {boolean} ownBrandOnly       - Whether to show only branded payment methods
  * @return {Object} Complete payment configuration
  */
 export const usePaymentConfig = (
 	country,
 	canUseCardPayments,
-	canUseDigitalWallets,
 	hasFastlane,
 	ownBrandOnly
 ) => {
@@ -250,13 +199,8 @@ export const usePaymentConfig = (
 		const availableOptionalMethods = filterMethods(
 			config.extendedMethods,
 			[
-				// Digital wallets are independent of ACDC.
-				( method ) =>
-					! method.isDigitalWallet || canUseDigitalWallets,
 				// Include ACDC methods when card payments available, non-ACDC otherwise.
-				( method ) =>
-					method.isDigitalWallet ||
-					method.isAcdc === canUseCardPayments,
+				( method ) => method.isAcdc === canUseCardPayments,
 				// Only include own-brand methods when ownBrandOnly is true.
 				( method ) => ! ownBrandOnly || method.isOwnBrand === true,
 				// Only include Fastlane when hasFastlane is true.
@@ -271,7 +215,6 @@ export const usePaymentConfig = (
 		const icons = getRelevantIcons(
 			country,
 			canUseCardPayments,
-			canUseDigitalWallets,
 			ownBrandOnly
 		);
 
@@ -291,11 +234,5 @@ export const usePaymentConfig = (
 			learnMoreConfig,
 			icons,
 		};
-	}, [
-		country,
-		canUseCardPayments,
-		canUseDigitalWallets,
-		hasFastlane,
-		ownBrandOnly,
-	] );
+	}, [ country, canUseCardPayments, hasFastlane, ownBrandOnly ] );
 };

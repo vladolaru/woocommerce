@@ -16,7 +16,7 @@ import { FundingSources } from './utils/fundingSources';
 import { amountFromCartTotals } from './utils/amount';
 import { continuationRedirectUrl } from './utils/continuation';
 
-// The gateway that processes an order unless a caller names another one.
+// The gateway that processes an order.
 const DEFAULT_PAYMENT_METHOD = 'ppcp-gateway';
 
 /**
@@ -57,10 +57,9 @@ export const navigation = {
  * approved order is captured by that gateway (not whichever method radio
  * happens to be checked) and WC issues the order-received redirect.
  *
- * @param {string} paymentMethod - The WC gateway that processes the order.
  * @throws {Error} When jQuery or the pay-order form is unavailable.
  */
-function submitPayOrderForm( paymentMethod = DEFAULT_PAYMENT_METHOD ) {
+function submitPayOrderForm() {
 	if ( typeof jQuery === 'undefined' ) {
 		// eslint-disable-next-line no-console
 		console.error(
@@ -79,7 +78,7 @@ function submitPayOrderForm( paymentMethod = DEFAULT_PAYMENT_METHOD ) {
 	}
 
 	const gatewayRadio = document.querySelector(
-		`#payment_method_${ paymentMethod }`
+		`#payment_method_${ DEFAULT_PAYMENT_METHOD }`
 	);
 	if ( gatewayRadio && ! gatewayRadio.checked ) {
 		gatewayRadio.checked = true;
@@ -92,7 +91,7 @@ function submitPayOrderForm( paymentMethod = DEFAULT_PAYMENT_METHOD ) {
 /**
  * The form describing the viewed product.
  *
- * Exported because the Apple Pay sheet total watches this same form for changes,
+ * Exported because the viewed-total watcher watches this same form for changes,
  * and the two must not disagree about which one it is.
  *
  * @return {?HTMLElement} The form, or null when the page has none.
@@ -149,8 +148,7 @@ export async function changeCart( config ) {
  * answer because it adds the product to the real cart.
  *
  * TODO (phase 3): product-page Pay Later eligibility still uses the localized
- * config.amount, which is the cart total whenever the cart is not empty, and
- * Google Pay still resolves its sheet total by mutating the cart on click. Both
+ * config.amount, which is the cart total whenever the cart is not empty. It
  * should read this instead.
  *
  * @param {Object} config - The wc_ppcp_sdk_v6 config object.
@@ -170,29 +168,18 @@ export async function simulateCart( config ) {
  * are passed to ppc-create-order, which derives the product-context
  * return URL from them.
  *
- * @param {Object}   config          - The wc_ppcp_sdk_v6 config object.
- * @param {string}   context         - The page context.
- * @param {string}   fundingSource   - The funding source (paypal, venmo, paylater).
- * @param {Object[]} [purchaseUnits] - Units the caller already resolved. Wallets
- *                                   pass theirs so the cart is not changed twice.
- * @param {string}   [paymentMethod] - The WC gateway that processes the order.
+ * @param {Object} config        - The wc_ppcp_sdk_v6 config object.
+ * @param {string} context       - The page context.
+ * @param {string} fundingSource - The funding source (paypal, venmo, paylater).
  * @return {Promise<{orderId: string}>} The created PayPal order id.
  */
-export async function createOrder(
-	config,
-	context,
-	fundingSource,
-	purchaseUnits,
-	paymentMethod = DEFAULT_PAYMENT_METHOD
-) {
-	const units =
-		purchaseUnits ??
-		( context === 'product' ? await changeCart( config ) : [] );
+export async function createOrder( config, context, fundingSource ) {
+	const units = context === 'product' ? await changeCart( config ) : [];
 
 	const body = {
 		context,
 		purchase_units: units,
-		payment_method: paymentMethod,
+		payment_method: DEFAULT_PAYMENT_METHOD,
 		funding_source: fundingSource || FundingSources.PAYPAL,
 		save_order_in_session: 1,
 	};
@@ -238,24 +225,12 @@ export async function createOrder(
  * processes it on Place Order. On classic checkout the WC checkout form is
  * submitted after approval instead.
  *
- * @param {Object} config                    - The wc_ppcp_sdk_v6 config object.
- * @param {string} context                   - The page context.
- * @param {string} fundingSource             - The funding source used for payment.
- * @param {string} orderId                   - The PayPal order ID.
- * @param {Object} [contact]                 - Buyer contact data from a wallet sheet.
- * @param {Object} [contact.payer]           - The PayPal payer (Orders v2 shape).
- * @param {Object} [contact.shippingAddress] - The PayPal shipping address.
- * @param {string} [paymentMethod]           - The WC gateway that processes
- *                                           the order.
+ * @param {Object} config        - The wc_ppcp_sdk_v6 config object.
+ * @param {string} context       - The page context.
+ * @param {string} fundingSource - The funding source used for payment.
+ * @param {string} orderId       - The PayPal order ID.
  */
-export async function approveOrder(
-	config,
-	context,
-	fundingSource,
-	orderId,
-	contact = {},
-	paymentMethod = DEFAULT_PAYMENT_METHOD
-) {
+export async function approveOrder( config, context, fundingSource, orderId ) {
 	// Pay-for-order: the WC order already exists. Approve it into the session
 	// (never request WC-order creation — that would create a duplicate, since
 	// is_checkout() is false during this AJAX call) and submit the pay-order
@@ -263,7 +238,7 @@ export async function approveOrder(
 	// the order-received page.
 	if ( context === 'pay-now' ) {
 		await approveOrderInSession( config, fundingSource, orderId );
-		submitPayOrderForm( paymentMethod );
+		submitPayOrderForm();
 		return;
 	}
 
@@ -279,17 +254,6 @@ export async function approveOrder(
 		funding_source: fundingSource,
 		should_create_wc_order: canCreateOrder,
 	};
-
-	// Only useful while this request creates the WC order: the retry below
-	// leaves that to the gateway, which reads the addresses off the WC session.
-	if ( canCreateOrder ) {
-		if ( contact.payer ) {
-			body.payer = contact.payer;
-		}
-		if ( contact.shippingAddress ) {
-			body.shipping_address = contact.shippingAddress;
-		}
-	}
 
 	let data;
 	try {
@@ -324,19 +288,15 @@ export async function approveOrder(
 		const checkoutForm = jQuery( 'form.checkout' );
 		if ( checkoutForm.length ) {
 			// The approved order must be processed by the gateway that created
-			// it, not whichever payment method radio happens to be checked. On
-			// the express path that means switching to PayPal; where the wallet
-			// is its own gateway the buyer already selected it, so this is a
-			// no-op.
+			// it, not whichever payment method radio happens to be checked, so
+			// the express path switches to PayPal.
 			const gatewayRadio = document.querySelector(
-				`#payment_method_${ paymentMethod }`
+				`#payment_method_${ DEFAULT_PAYMENT_METHOD }`
 			);
 			if ( gatewayRadio && ! gatewayRadio.checked ) {
 				gatewayRadio.checked = true;
 				jQuery( gatewayRadio ).trigger( 'change' );
 			}
-
-			selectShippingMethodInForm( contact.shippingRateId );
 
 			checkoutForm.trigger( 'submit' );
 			return;
@@ -446,85 +406,6 @@ export async function updateCustomerAddress( config, address ) {
 	return postStoreApi( storeApi, storeApi.update_customer, {
 		shipping_address: address,
 	} );
-}
-
-/**
- * Points the checkout form's shipping-method field at the sheet's rate.
- *
- * The form submits its own shipping_method, and that beats the session. Assigned
- * rather than clicked: a click fires update_checkout, which posts the form's own
- * address back over the one the sheet just set.
- *
- * @param {?string} rateId - The WC rate id, e.g. flat_rate:3.
- */
-function selectShippingMethodInForm( rateId ) {
-	if ( ! rateId ) {
-		return;
-	}
-
-	const input = document.querySelector(
-		`input[name^="shipping_method"][value="${ rateId.replace(
-			/"/g,
-			''
-		) }"]`
-	);
-
-	if ( input ) {
-		input.checked = true;
-	}
-}
-
-/**
- * Prices the cart for an address and rate chosen in a wallet payment sheet.
- *
- * One request, because WooCommerce re-picks the shipping method on every
- * recalculation, so setting the destination and the rate separately loses the
- * shopper's choice. Its total is the one ppc-create-order will charge.
- *
- * @param {Object}  config                  - The wc_ppcp_sdk_v6 config object.
- * @param {Object}  args                    - The selection.
- * @param {Object}  args.address            - WC shipping address fields, as
- *                                            complete as known.
- * @param {?string} [args.rateId]           - The rate the sheet selected.
- * @param {?Object} [args.billingAddress]   - The card's WC billing address, once
- *                                            authorization reveals it. Omitted
- *                                            leaves the customer's own untouched.
- * @param {?string} [args.expectedTotal]    - The total the sheet displayed. The
- *                                            server refuses a higher one rather
- *                                            than charge it.
- * @return {Promise<Object>} The quote.
- */
-export async function quoteCartShipping(
-	config,
-	{ address, rateId = null, billingAddress = null, expectedTotal = null }
-) {
-	const body = {
-		address,
-		rate_id: rateId ?? '',
-	};
-
-	if ( billingAddress ) {
-		body.billing_address = billingAddress;
-	}
-
-	if ( expectedTotal ) {
-		body.expected_total = expectedTotal;
-	}
-
-	return postJson( config.ajax.wallet_shipping, body );
-}
-
-/**
- * Drops the server-side hold on the sheet's chosen rate.
- *
- * Called when the sheet closes without paying, so the shopper's own rate choices
- * apply again on the page behind it.
- *
- * @param {Object} config - The wc_ppcp_sdk_v6 config object.
- * @return {Promise<?Object>} The endpoint's acknowledgement.
- */
-export async function releaseCartShipping( config ) {
-	return postJson( config.ajax.wallet_shipping, { release: true } );
 }
 
 /**

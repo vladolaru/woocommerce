@@ -16,8 +16,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Setti
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\DTO\LocationStylingDTO;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\DTO\MerchantConnectionDTO;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Googlepay\GooglePayGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Applepay\ApplePayGateway;
 
 class SettingsProvider {
 	private GeneralSettings $general_settings;
@@ -505,54 +503,6 @@ class SettingsProvider {
 	 */
 	public function is_method_enabled( string $method_id ): bool {
 		return $this->payment_settings->is_method_enabled( $method_id );
-	}
-
-	// ----- APPLE PAY -----
-
-	/**
-	 * Whether the plugin accepts payments via Apple Pay.
-	 */
-	public function applepay_enabled(): bool {
-		return $this->payment_settings->is_method_enabled( ApplePayGateway::ID );
-	}
-
-	/**
-	 * Whether the domain verification for ApplePay completed successfully.
-	 */
-	public function applepay_validated(): bool {
-		return $this->payment_settings->get_applepay_validated();
-	}
-
-	public function applepay_styles( string $location = 'checkout' ): LocationStylingDTO {
-		return apply_filters( 'woocommerce_paypal_payments_applepay_button_styles', $this->button_styling( $location ) );
-	}
-
-	public function applepay_button_language(): string {
-		return apply_filters( 'woocommerce_paypal_payments_applepay_button_language', $this->button_language() );
-	}
-
-	/**
-	 * Get Apple Pay checkout data mode.
-	 */
-	public function applepay_checkout_data_mode(): string {
-		return $this->payment_settings->get_applepay_checkout_data_mode();
-	}
-
-	// ----- GOOGLE PAY -----
-
-	/**
-	 * Whether the plugin accepts payments via Google Pay.
-	 */
-	public function googlepay_enabled(): bool {
-		return $this->payment_settings->is_method_enabled( GooglePayGateway::ID );
-	}
-
-	public function googlepay_styles( string $location = 'checkout' ): LocationStylingDTO {
-		return apply_filters( 'woocommerce_paypal_payments_googlepay_button_styles', $this->button_styling( $location ) );
-	}
-
-	public function googlepay_button_language(): string {
-		return apply_filters( 'woocommerce_paypal_payments_googlepay_button_language', $this->button_language() );
 	}
 
 	// ----- PAY LATER -----

@@ -19,8 +19,6 @@ import {
 	SUPPORTED_METHODS as METHODS,
 } from './sessions/createSession';
 import { renderButtons } from './components/buttonRenderer';
-import { renderMethods } from './methods/renderMethods';
-import { isMethodEnabled, MERCHANT_PRESENTED_METHODS } from './methods/methodRegistry';
 import { FundingSources } from './utils/fundingSources';
 import { createOrder, fetchCartTotal } from './endpointsAdapter';
 import {
@@ -171,16 +169,6 @@ const ELIGIBILITY_REFRESH_DEBOUNCE_MS = 300;
 				continue;
 			}
 
-			// A wallet's SDK component is only requested when the wallet is
-			// enabled, so without it the session factory does not exist and
-			// calling it would take every button on the page down.
-			if (
-				MERCHANT_PRESENTED_METHODS.includes( method ) &&
-				! isMethodEnabled( config, method )
-			) {
-				continue;
-			}
-
 			sessions.map[ method ] = createSession(
 				sdk,
 				method,
@@ -199,9 +187,6 @@ const ELIGIBILITY_REFRESH_DEBOUNCE_MS = 300;
 	 * pages without buttons never hit the token endpoint. Wrappers that
 	 * still contain buttons are left alone (WC AJAX updates that replace
 	 * the surrounding DOM deliver the wrapper empty again).
-	 *
-	 * Wallets render after renderButtons(), which empties the wrapper first,
-	 * and they append rather than replace.
 	 *
 	 * @param {Object} target - The render target.
 	 */
@@ -228,22 +213,14 @@ const ELIGIBILITY_REFRESH_DEBOUNCE_MS = 300;
 				config.pay_later_button?.[ target.context ]
 			),
 		} );
-
-		await renderMethods( {
-			wrapper,
-			config,
-			context: target.context,
-			sessions: map,
-		} );
 	}
 
 	/**
 	 * Queues a render for a target, so passes never overlap.
 	 *
 	 * The emptiness check in renderTarget() straddles an await, so two
-	 * overlapping passes would both pass it; the later one's renderButtons()
-	 * would then wipe the earlier one's wallet button while that render was
-	 * still in flight, leaving it to finish into a detached node.
+	 * overlapping passes would both pass it before either renders, and the
+	 * buttons would be drawn twice.
 	 *
 	 * Each call still gets its own pass rather than sharing the in-flight one,
 	 * because refreshEligibility() blanks the wrapper before re-rendering and
@@ -405,10 +382,9 @@ const ELIGIBILITY_REFRESH_DEBOUNCE_MS = 300;
 	 * message tracks the product form — quantity and variation — which it
 	 * reads from the page.
 	 *
-	 * Apple Pay prices the same product through the cart-simulation endpoint,
-	 * because a sheet total has to match what is charged. A message does not,
-	 * so it is not worth a request per quantity change; a store that wants the
-	 * simulated figure here can filter it back on.
+	 * Pricing it through the cart-simulation endpoint is not worth a request per
+	 * quantity change; a store that wants the simulated figure here can filter
+	 * it back on.
 	 */
 	function trackProductTotal() {
 		if ( 'product' !== config.page_context ) {

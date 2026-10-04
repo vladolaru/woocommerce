@@ -10,14 +10,10 @@ declare( strict_types=1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\Cache;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Applepay\ApplePayGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Applepay\Assets\AppleProductStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetter;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetterFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Axo\Gateway\AxoGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Helper\MessagesApply;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Googlepay\GooglePayGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Googlepay\Helper\GoogleProductStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\BancontactGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\BlikGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\EPSGateway;
@@ -109,7 +105,8 @@ return array(
 		$availability                = $container->get( 'ppcp.module-availability' );
 		assert( $availability instanceof ModuleAvailability );
 		$can_use_card_payments       = ( $availability->eligibility_check( 'card-fields' ) )();
-		$can_use_digital_wallets     = ( $availability->eligibility_check( 'applepay' ) )() || ( $availability->eligibility_check( 'googlepay' ) )();
+		// No Apple Pay or Google Pay module in core; the flag path stays (it feeds the onboarding data).
+		$can_use_digital_wallets     = false;
 		$can_use_subscriptions       = $container->has( 'wc-subscriptions.helper' ) && $container->get( 'wc-subscriptions.helper' )
 																								->plugin_is_active();
 		$should_skip_payment_methods = class_exists( '\WC_Payments' );
@@ -506,8 +503,6 @@ return array(
 		$settings         = $payment_endpoint->get_details()->get_data();
 
 		return array(
-			'apple_pay'   => $settings['data']['ppcp-applepay']['enabled'] ?? false,
-			'google_pay'  => $settings['data']['ppcp-googlepay']['enabled'] ?? false,
 			'axo'         => $settings['data']['ppcp-axo-gateway']['enabled'] ?? false,
 			'pwc'         => $settings['data']['ppcp-pwc']['enabled'] ?? false,
 		);
@@ -525,13 +520,7 @@ return array(
 			array()
 		);
 
-		// TODO: This condition included in the `*.eligibility.check` services; it can be removed when we switch to those services.
-		$general_settings = $container->get( 'settings.data.general' );
-		assert( $general_settings instanceof GeneralSettings );
-
 		return array(
-			FeaturesDefinition::FEATURE_APPLE_PAY        => ( $features[ FeaturesDefinition::FEATURE_APPLE_PAY ]['enabled'] ?? false ) && ! $general_settings->own_brand_only(),
-			FeaturesDefinition::FEATURE_GOOGLE_PAY       => ( $features[ FeaturesDefinition::FEATURE_GOOGLE_PAY ]['enabled'] ?? false ) && ! $general_settings->own_brand_only(),
 			FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO => $features[ FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO ]['enabled'] ?? false,
 			FeaturesDefinition::FEATURE_ALTERNATIVE_PAYMENT_METHODS => $features[ FeaturesDefinition::FEATURE_ALTERNATIVE_PAYMENT_METHODS ]['enabled'] ?? false,
 			FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING => $features[ FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING ]['enabled'] ?? false,
@@ -560,10 +549,7 @@ return array(
 
 		$availability = $container->get( 'ppcp.module-availability' );
 		assert( $availability instanceof ModuleAvailability );
-		$applepay_eligible  = $availability->is_eligible( 'applepay' );
-		$googlepay_eligible = $availability->is_eligible( 'googlepay' );
-		$applepay_validated = $availability->is_loaded( 'applepay' ) && $container->get( 'applepay.is_validated' );
-		$pwc_eligible       = ( $availability->eligibility_check( 'ppcp-local-apms.pwc' ) )();
+		$pwc_eligible = ( $availability->eligibility_check( 'ppcp-local-apms.pwc' ) )();
 
 		$is_working_capital_feature_flag_enabled = apply_filters(
 		// phpcs:ignore WordPress.NamingConventions.ValidHookName.UseUnderscores -- feature flags use this convention
@@ -594,12 +580,6 @@ return array(
 		 * @param bool $is_paypal_buttons_cart_eligible - Show if PayPal buttons are not enabled on cart page.
 		 * @param bool $is_paypal_buttons_block_checkout_eligible - Show if PayPal buttons are not enabled on blocks checkout.
 		 * @param bool $is_paypal_buttons_product_eligible - Show if PayPal buttons are not enabled on product page.
-		 * @param bool $is_apple_pay_domain_eligible - Show if merchant has Apple Pay capability on PayPal account.
-		 * @param bool $is_digital_wallet_eligible - Show if merchant is eligible (ACDC) but doesn't have both wallet types on PayPal.
-		 * @param bool $is_apple_pay_eligible - Show if merchant is eligible (ACDC) but doesn't have Apple Pay on PayPal.
-		 * @param bool $is_google_pay_eligible - Show if merchant is eligible (ACDC) but doesn't have Google Pay on PayPal.
-		 * @param bool $is_enable_apple_pay_eligible - Show if merchant has Apple Pay capability but hasn't enabled the gateway.
-		 * @param bool $is_enable_google_pay_eligible - Show if merchant has Google Pay capability but hasn't enabled the gateway.
 		 * @param bool $is_enable_installments_eligible - Show if merchant has installments capability and merchant country is MX.
 		 * @param bool $is_working_capital_eligible - Show if feature flag is enabled, merchant country is US and "Stay Updated" is turned On.
 		 * @param bool $is_pwc_eligible                  - Show if merchant has Pay with Crypto capability and store currency is USD.
@@ -618,12 +598,6 @@ return array(
 			! $button_locations['cart_enabled'],                                                          // Add PayPal buttons to cart.
 			! $button_locations['block_checkout_enabled'],                                                // Add PayPal buttons to block checkout.
 			! $button_locations['product_enabled'],                                                       // Add PayPal buttons to product.
-			$applepay_eligible && $capabilities[ FeaturesDefinition::FEATURE_APPLE_PAY ] && ! $applepay_validated,  // Register Domain for Apple Pay.
-			false,                                                                                        // Add digital wallets to your account. The card capability is dropped from merchant_capabilities; the todo goes in Task 5.
-			false,                                                                                        // Add Apple Pay to your account. The card capability is dropped from merchant_capabilities; the todo goes in Task 5.
-			false,                                                                                        // Add Google Pay to your account. The card capability is dropped from merchant_capabilities; the todo goes in Task 5.
-			$applepay_eligible && $capabilities[ FeaturesDefinition::FEATURE_APPLE_PAY ] && ! $gateways[ FeaturesDefinition::FEATURE_APPLE_PAY ],                                       // Enable Apple Pay.
-			$googlepay_eligible && $capabilities[ FeaturesDefinition::FEATURE_GOOGLE_PAY ] && ! $gateways[ FeaturesDefinition::FEATURE_GOOGLE_PAY ],
 			! $capabilities[ FeaturesDefinition::FEATURE_INSTALLMENTS ] && 'MX' === $container->get( 'settings.data.general' )->get_merchant_country(), // Enable Installments for Mexico.
 			$is_working_capital_feature_flag_enabled && $is_working_capital_eligible, // Enable Working Capital.
 			$capabilities[ FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO ] && ! $gateways[ FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO ] && $pwc_eligible, // Enable Pay with Crypto.
@@ -645,8 +619,6 @@ return array(
 
 		// Merchant capabilities serve to show active or inactive badge and buttons.
 		$capabilities = array(
-			FeaturesDefinition::FEATURE_APPLE_PAY        => $features[ FeaturesDefinition::FEATURE_APPLE_PAY ]['enabled'] ?? false,
-			FeaturesDefinition::FEATURE_GOOGLE_PAY       => $features[ FeaturesDefinition::FEATURE_GOOGLE_PAY ]['enabled'] ?? false,
 			FeaturesDefinition::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS => $features[ FeaturesDefinition::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS ]['enabled'] ?? false,
 			FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO => $features[ FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO ]['enabled'] ?? false,
 			FeaturesDefinition::FEATURE_ALTERNATIVE_PAYMENT_METHODS => $features[ FeaturesDefinition::FEATURE_ALTERNATIVE_PAYMENT_METHODS ]['enabled'] ?? false,
@@ -661,11 +633,7 @@ return array(
 			// Save PayPal and Venmo eligibility.
 			FeaturesDefinition::FEATURE_ALTERNATIVE_PAYMENT_METHODS => $capabilities[ FeaturesDefinition::FEATURE_ALTERNATIVE_PAYMENT_METHODS ],
 			// Alternative payment methods eligibility.
-			// The seller-status card capability still gates Google Pay, Apple Pay and Pay Later until Task 5 deletes the first two.
-			FeaturesDefinition::FEATURE_GOOGLE_PAY       => $capabilities[ FeaturesDefinition::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS ] && $capabilities[ FeaturesDefinition::FEATURE_GOOGLE_PAY ],
-			// Google Pay eligibility.
-			FeaturesDefinition::FEATURE_APPLE_PAY        => $capabilities[ FeaturesDefinition::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS ] && $capabilities[ FeaturesDefinition::FEATURE_APPLE_PAY ],
-			// Apple Pay eligibility.
+			// The seller-status card capability still gates Pay Later.
 			FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING => $capabilities[ FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING ] && $capabilities[ FeaturesDefinition::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS ],
 			// Pay Later eligibility.
 			FeaturesDefinition::FEATURE_INSTALLMENTS     => $capabilities[ FeaturesDefinition::FEATURE_INSTALLMENTS ],
@@ -692,8 +660,6 @@ return array(
 		return new FeaturesEligibilityService(
 			$container->get( 'save-payment-methods.eligible' ), // Save PayPal and Venmo eligibility.
 			( $availability->eligibility_check( 'ppcp-local-apms' ) )(), // Alternative payment methods eligibility.
-			$availability->eligibility_check( 'googlepay' ), // Google Pay eligibility.
-			$availability->eligibility_check( 'applepay' ), // Apple Pay eligibility.
 			$pay_later_eligible, // Pay Later eligibility.
 			'MX' === $container->get( 'api.merchant.country' ), // Installments eligibility.
 			( $availability->eligibility_check( 'ppcp-local-apms.pwc' ) )(), // Pay with Crypto eligibility.
@@ -704,27 +670,11 @@ return array(
 		$availability = $container->get( 'ppcp.module-availability' );
 		assert( $availability instanceof ModuleAvailability );
 
-		$apple_pay_available = false;
-		if ( $availability->is_loaded( 'applepay' ) ) {
-			$applepay_product_status = $container->get( 'applepay.apple-product-status' );
-			assert( $applepay_product_status instanceof AppleProductStatus );
-			$apple_pay_available = $applepay_product_status->is_active() && $availability->is_eligible( 'applepay' );
-		}
-
-		$google_pay_available = false;
-		if ( $availability->is_loaded( 'googlepay' ) ) {
-			$googlepay_product_status = $container->get( 'googlepay.helpers.apm-product-status' );
-			assert( $googlepay_product_status instanceof GoogleProductStatus );
-			$google_pay_available = $googlepay_product_status->is_active() && $availability->is_eligible( 'googlepay' );
-		}
-
 		return new PaymentMethodsEligibilityService(
 			$container->get( 'api.merchant.country' ),
 			( $availability->eligibility_check( 'ppcp-local-apms' ) )(),
 			$container->get( 'settings.service.merchant_capabilities' ),
 			$availability->eligibility_check( 'axo' ),
-			$apple_pay_available,
-			$google_pay_available,
 		);
 	},
 	'settings.service.todos_sorting'                      => static function ( ContainerInterface $container ): TodosSortingAndFilteringService {
@@ -749,8 +699,8 @@ return array(
 			GatewayIds::CARD_BUTTON,
 			GatewayIds::CREDIT_CARD,
 			AxoGateway::ID,
-			ApplePayGateway::ID,
-			GooglePayGateway::ID,
+			GatewayIds::APPLE_PAY,
+			GatewayIds::GOOGLE_PAY,
 			PWCGateway::ID,
 			BancontactGateway::ID,
 			BlikGateway::ID,

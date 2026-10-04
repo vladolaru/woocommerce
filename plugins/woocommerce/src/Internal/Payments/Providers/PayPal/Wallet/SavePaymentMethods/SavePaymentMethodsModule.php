@@ -2,7 +2,7 @@
 /**
  * The save payment methods module.
  *
- * @package Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Applepay
+ * @package Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SavePaymentMethods
  */
 
 declare(strict_types=1);
@@ -125,29 +125,7 @@ class SavePaymentMethodsModule implements ServiceModule, ExecutableModule {
 
 						$funding_source = (string) ( $request_data['funding_source'] ?? '' );
 
-						if ( $payment_method === PayPalGateway::ID && $funding_source === 'apple_pay' ) {
-							if ( ! $settings_provider->save_paypal_and_venmo() ) {
-								return $data;
-							}
-
-							// Only vault Apple Pay when a subscription is being purchased.
-							// Apple guidelines forbid reusing Apple Pay for general returning-buyer
-							// checkout, so vaulting only serves merchant-initiated renewals.
-							$subscription_helper = $c->get( 'wc-subscriptions.helper' );
-							assert( $subscription_helper instanceof SubscriptionHelper );
-							if (
-								! $subscription_helper->cart_contains_subscription()
-								&& ! $subscription_helper->current_product_is_subscription()
-								&& ! $subscription_helper->order_pay_contains_subscription()
-							) {
-								return $data;
-							}
-
-							// Fall through: the generic merge below attaches the vault + customer
-							// attributes to the existing `apple_pay` payment_source key. Do not set
-							// usage_type/permit_multiple_payment_tokens, which are PayPal-wallet
-							// specific and not part of the Apple Pay save-during-purchase spec.
-						} elseif ( $payment_method === PayPalGateway::ID ) {
+						if ( $payment_method === PayPalGateway::ID ) {
 							if ( ! $settings_provider->save_paypal_and_venmo() ) {
 								return $data;
 							}
@@ -213,13 +191,8 @@ class SavePaymentMethodsModule implements ServiceModule, ExecutableModule {
 											);
 											break;
 										case 'apple_pay':
-											$wc_payment_tokens->create_payment_token_applepay(
-												$wc_order->get_customer_id(),
-												$token_id
-											);
-											break;
 										case 'card':
-											// Card vaulting is not part of the wallet; only a third party using `ppcp_create_order_request_body_data` could request it.
+											// Apple Pay and card vaulting are not part of the wallet; only a third party using `ppcp_create_order_request_body_data` could request them.
 											break;
 										case 'paypal':
 										default:

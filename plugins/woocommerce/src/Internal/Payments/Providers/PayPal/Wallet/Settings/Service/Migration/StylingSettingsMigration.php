@@ -9,11 +9,10 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\Migration;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Applepay\ApplePayGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Googlepay\GooglePayGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\StylingSettings;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\DTO\LocationStylingDTO;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\GatewayIds;
 
 /**
  * Class StylingSettingsMigration
@@ -85,11 +84,11 @@ class StylingSettingsMigration implements SettingsMigrationInterface {
 		}
 
 		if ( ! empty( $this->settings['applepay_button_enabled'] ) ) {
-			$methods[] = ApplePayGateway::ID;
+			$methods[] = GatewayIds::APPLE_PAY;
 		}
 
 		if ( ! empty( $this->settings['googlepay_button_enabled'] ) ) {
-			$methods[] = GooglePayGateway::ID;
+			$methods[] = GatewayIds::GOOGLE_PAY;
 		}
 
 		return $methods;

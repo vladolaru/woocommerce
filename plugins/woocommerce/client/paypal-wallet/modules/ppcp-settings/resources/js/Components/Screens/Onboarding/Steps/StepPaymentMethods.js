@@ -12,13 +12,12 @@ const StepPaymentMethods = () => {
 		OnboardingHooks.useOptionalPaymentMethods();
 	const { ownBrandOnly } = CommonHooks.useWooSettings();
 	const { isCasualSeller } = OnboardingHooks.useBusiness();
-	const { canUseCardPayments, canUseDigitalWallets } =
-		OnboardingHooks.useFlags();
+	const { canUseCardPayments } = OnboardingHooks.useFlags();
 
-	const hasAdvancedMethods = canUseCardPayments || canUseDigitalWallets;
+	const hasAdvancedMethods = canUseCardPayments;
 
 	const optionalMethodTitle = useMemo( () => {
-		// The BCDC flow does not show a title. No ACDC and no digital wallets does not show a title.
+		// The BCDC flow does not show a title. No ACDC does not show a title.
 		if ( isCasualSeller || ! hasAdvancedMethods ) {
 			return null;
 		}
@@ -36,16 +35,10 @@ const StepPaymentMethods = () => {
 			description: <OptionalMethodDescription />,
 		},
 		{
-			title:
-				ownBrandOnly || ! hasAdvancedMethods
-					? __(
-							'No thanks, I prefer to use a different provider for local payment methods',
-							'woocommerce'
-					  )
-					: __(
-							'No thanks, I prefer to use a different provider for processing digital wallets and local payment methods',
-							'woocommerce'
-					  ),
+			title: __(
+				'No thanks, I prefer to use a different provider for local payment methods',
+				'woocommerce'
+			),
 			value: false,
 		},
 	];
@@ -92,16 +85,12 @@ const OptionalMethodDescription = () => {
 	const { isCasualSeller } = OnboardingHooks.useBusiness();
 	const { storeCountry, storeCurrency, ownBrandOnly } =
 		CommonHooks.useWooSettings();
-	const { canUseCardPayments, canUseDigitalWallets, canUseFastlane } =
-		OnboardingHooks.useFlags();
+	const { canUseCardPayments, canUseFastlane } = OnboardingHooks.useFlags();
 
 	return (
 		<PaymentFlow
 			onlyOptional={ true }
 			useAcdc={ ! isCasualSeller && canUseCardPayments }
-			useDigitalWallets={
-				! isCasualSeller && canUseDigitalWallets
-			}
 			isFastlane={ canUseFastlane }
 			isPayLater={ true }
 			ownBrandOnly={ ownBrandOnly }

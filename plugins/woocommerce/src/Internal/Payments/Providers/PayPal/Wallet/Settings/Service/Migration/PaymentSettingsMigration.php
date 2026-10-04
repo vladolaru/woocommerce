@@ -9,9 +9,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\Migration;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Applepay\ApplePayGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Axo\Gateway\AxoGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Googlepay\GooglePayGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\PaymentSettings;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\GatewayIds;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\OXXOGateway;
@@ -125,8 +123,8 @@ class PaymentSettingsMigration implements SettingsMigrationInterface {
 		return array(
 			'dcc_enabled'              => GatewayIds::CREDIT_CARD,
 			'axo_enabled'              => AxoGateway::ID,
-			'applepay_button_enabled'  => ApplePayGateway::ID,
-			'googlepay_button_enabled' => GooglePayGateway::ID,
+			'applepay_button_enabled'  => GatewayIds::APPLE_PAY,
+			'googlepay_button_enabled' => GatewayIds::GOOGLE_PAY,
 			'pay_later_button_enabled' => 'pay-later',
 		);
 	}

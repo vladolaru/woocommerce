@@ -4,7 +4,7 @@
  *
  * This file contains the TodosEligibilityService class which manages eligibility checks
  * for various features including Fastlane, card payments, Pay Later messaging,
- * subscriptions, Apple Pay, Google Pay, and other digital wallet features.
+ * and subscriptions.
  *
  * @package Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service
  */
@@ -81,48 +81,6 @@ class TodosEligibilityService {
 	private bool $is_paypal_buttons_product_eligible;
 
 	/**
-	 * Whether Apple Pay domain registration is eligible.
-	 *
-	 * @var bool
-	 */
-	private bool $is_apple_pay_domain_eligible;
-
-	/**
-	 * Whether digital wallet features are eligible.
-	 *
-	 * @var bool
-	 */
-	private bool $is_digital_wallet_eligible;
-
-	/**
-	 * Whether Apple Pay is eligible.
-	 *
-	 * @var bool
-	 */
-	private bool $is_apple_pay_eligible;
-
-	/**
-	 * Whether Google Pay is eligible.
-	 *
-	 * @var bool
-	 */
-	private bool $is_google_pay_eligible;
-
-	/**
-	 * Whether enabling Apple Pay is eligible.
-	 *
-	 * @var bool
-	 */
-	private bool $is_enable_apple_pay_eligible;
-
-	/**
-	 * Whether enabling Google Pay is eligible.
-	 *
-	 * @var bool
-	 */
-	private bool $is_enable_google_pay_eligible;
-
-	/**
 	 * Whether enabling Installments is eligible.
 	 *
 	 * @var bool
@@ -169,12 +127,6 @@ class TodosEligibilityService {
 	 * @param bool $is_paypal_buttons_cart_eligible     Whether PayPal buttons for cart are eligible.
 	 * @param bool $is_paypal_buttons_block_checkout_eligible Whether PayPal buttons for block checkout are eligible.
 	 * @param bool $is_paypal_buttons_product_eligible  Whether PayPal buttons for product page are eligible.
-	 * @param bool $is_apple_pay_domain_eligible        Whether Apple Pay domain registration is eligible.
-	 * @param bool $is_digital_wallet_eligible          Whether digital wallet features are eligible.
-	 * @param bool $is_apple_pay_eligible               Whether Apple Pay is eligible.
-	 * @param bool $is_google_pay_eligible              Whether Google Pay is eligible.
-	 * @param bool $is_enable_apple_pay_eligible        Whether enabling Apple Pay is eligible.
-	 * @param bool $is_enable_google_pay_eligible       Whether enabling Google Pay is eligible.
 	 * @param bool $is_enable_installments_eligible     Whether enabling Installments is eligible.
 	 * @param bool $is_working_capital_eligible         Whether applying for Working Capital is eligible.
 	 * @param bool $is_enable_pwc_eligible              Whether enabling Pay with Crypto is eligible.
@@ -191,12 +143,6 @@ class TodosEligibilityService {
 		bool $is_paypal_buttons_cart_eligible,
 		bool $is_paypal_buttons_block_checkout_eligible,
 		bool $is_paypal_buttons_product_eligible,
-		bool $is_apple_pay_domain_eligible,
-		bool $is_digital_wallet_eligible,
-		bool $is_apple_pay_eligible,
-		bool $is_google_pay_eligible,
-		bool $is_enable_apple_pay_eligible,
-		bool $is_enable_google_pay_eligible,
 		bool $is_enable_installments_eligible,
 		bool $is_working_capital_eligible,
 		bool $is_enable_pwc_eligible,
@@ -212,12 +158,6 @@ class TodosEligibilityService {
 		$this->is_paypal_buttons_cart_eligible           = $is_paypal_buttons_cart_eligible;
 		$this->is_paypal_buttons_block_checkout_eligible = $is_paypal_buttons_block_checkout_eligible;
 		$this->is_paypal_buttons_product_eligible        = $is_paypal_buttons_product_eligible;
-		$this->is_apple_pay_domain_eligible              = $is_apple_pay_domain_eligible;
-		$this->is_digital_wallet_eligible                = $is_digital_wallet_eligible;
-		$this->is_apple_pay_eligible                     = $is_apple_pay_eligible;
-		$this->is_google_pay_eligible                    = $is_google_pay_eligible;
-		$this->is_enable_apple_pay_eligible              = $is_enable_apple_pay_eligible;
-		$this->is_enable_google_pay_eligible             = $is_enable_google_pay_eligible;
 		$this->is_enable_installments_eligible           = $is_enable_installments_eligible;
 		$this->is_working_capital_eligible               = $is_working_capital_eligible;
 		$this->is_enable_pwc_eligible                    = $is_enable_pwc_eligible;
@@ -241,12 +181,6 @@ class TodosEligibilityService {
 			'add_paypal_buttons_cart'              => fn() => $this->is_paypal_buttons_cart_eligible,
 			'add_paypal_buttons_block_checkout'    => fn() => $this->is_paypal_buttons_block_checkout_eligible,
 			'add_paypal_buttons_product'           => fn() => $this->is_paypal_buttons_product_eligible,
-			'register_domain_apple_pay'            => fn() => $this->is_apple_pay_domain_eligible,
-			'add_digital_wallets'                  => fn() => $this->is_digital_wallet_eligible,
-			'add_apple_pay'                        => fn() => $this->is_apple_pay_eligible,
-			'add_google_pay'                       => fn() => $this->is_google_pay_eligible,
-			'enable_apple_pay'                     => fn() => $this->is_enable_apple_pay_eligible,
-			'enable_google_pay'                    => fn() => $this->is_enable_google_pay_eligible,
 			'enable_installments'                  => fn() => $this->is_enable_installments_eligible,
 			'apply_for_working_capital'            => fn() => $this->is_working_capital_eligible,
 			'enable_pwc'                           => fn() => $this->is_enable_pwc_eligible,

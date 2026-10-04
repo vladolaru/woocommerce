@@ -1,8 +1,6 @@
 export const PaymentMethods = {
 	PAYPAL: 'ppcp-gateway',
 	OXXO: 'ppcp-oxxo-gateway',
-	GOOGLEPAY: 'ppcp-googlepay',
-	APPLEPAY: 'ppcp-applepay',
 };
 
 /**

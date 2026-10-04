@@ -36,17 +36,6 @@ jest.mock( '../components/buttonRenderer', () => ( {
 	renderButtons: ( ...args ) => mockRenderButtons( ...args ),
 } ) );
 
-const mockRenderWallets = jest.fn();
-jest.mock( '../methods/renderMethods', () => ( {
-	renderMethods: ( ...args ) => mockRenderWallets( ...args ),
-} ) );
-
-const mockIsWalletEnabled = jest.fn();
-jest.mock( '../methods/methodRegistry', () => ( {
-	isMethodEnabled: ( ...args ) => mockIsWalletEnabled( ...args ),
-	MERCHANT_PRESENTED_METHODS: [],
-} ) );
-
 const mockCreateOrder = jest.fn();
 const mockFetchCartTotal = jest.fn();
 jest.mock( '../endpointsAdapter', () => ( {
@@ -163,12 +152,10 @@ beforeEach( () => {
 		payLaterDetails: null,
 	} );
 	mockCreateSession.mockReturnValue( {} );
-	mockRenderWallets.mockResolvedValue();
 	mockInitMessages.mockResolvedValue( 0 );
 	mockRenderMessages.mockResolvedValue( 0 );
 	mockFetchCartTotal.mockResolvedValue( '120.00' );
 	mockWatchViewedTotal.mockReturnValue( {
-		get: () => '',
 		subscribe: () => () => {},
 	} );
 } );
@@ -324,7 +311,6 @@ describe( 'boot', () => {
 		test( 'subscribes to the shared watcher on a product page opted into cart simulation, forwarding its pushes to the message amount', async () => {
 			let notify;
 			mockWatchViewedTotal.mockReturnValue( {
-				get: () => '',
 				subscribe: ( callback ) => {
 					notify = callback;
 					return () => {};

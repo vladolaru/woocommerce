@@ -40,7 +40,7 @@ describe( 'logEvent()', () => {
 
 		await logEvent(
 			config(),
-			'apple-pay-shipping-abort',
+			'approve-order-retried',
 			'Rate not found'
 		);
 
@@ -49,7 +49,7 @@ describe( 'logEvent()', () => {
 		expect( JSON.parse( options.body ) ).toEqual( {
 			nonce: 'n1',
 			tag: 'SDK v6',
-			event: 'apple-pay-shipping-abort',
+			event: 'approve-order-retried',
 			message: 'Rate not found',
 			level: 'error',
 		} );

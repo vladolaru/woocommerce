@@ -26,9 +26,6 @@ jest.mock( '../utils/errorHandler', () => ( { setErrorLabels: jest.fn() } ) );
 jest.mock( '../blocks/V6ExpressComponent', () => ( {
 	V6ExpressComponent: () => null,
 } ) );
-jest.mock( '../blocks/V6WalletComponent', () => ( {
-	V6WalletComponent: () => null,
-} ) );
 jest.mock( '../blocks/V6ContinuationComponent', () => ( {
 	V6ContinuationComponent: () => null,
 } ) );
@@ -37,9 +34,6 @@ jest.mock( '../blocks/V6EditorPreview', () => ( {
 } ) );
 jest.mock( '@ppcp-blocks/Components/paypal-saved-token', () => ( {
 	PayPalSavedToken: () => null,
-} ) );
-jest.mock( '../wallets/applePay', () => ( {
-	isDeviceEligible: jest.fn( () => true ),
 } ) );
 jest.mock( '../messages/renderer', () => ( {
 	initMessages: jest.fn( () => Promise.resolve() ),
@@ -51,24 +45,13 @@ jest.mock( '../messages/cartTotalWatcher', () => ( {
 
 /**
  * The wc_ppcp_sdk_v6 config shape checkout-block.js reads for a normal
- * (non-continuation) checkout, with both wallets enabled and styled so the
- * express registration loop reaches every funding source.
+ * (non-continuation) checkout.
  */
 const baseConfig = ( overrides = {} ) => ( {
 	id: 'ppcp-gateway',
 	page_context: 'checkout',
 	supported_features: [ 'products', 'subscriptions' ],
 	pay_later_button: { checkout: true },
-	google_pay: {
-		enabled: true,
-		styles: { checkout: {} },
-		supported_features: [ 'products' ],
-	},
-	apple_pay: {
-		enabled: true,
-		styles: { checkout: {} },
-		supported_features: [ 'products' ],
-	},
 	...overrides,
 } );
 
@@ -145,8 +128,6 @@ describe( 'checkout-block', () => {
 			[ 'ppcp-gateway-paypal', [ 'products', 'subscriptions' ] ],
 			[ 'ppcp-gateway-venmo', [ 'products', 'subscriptions' ] ],
 			[ 'ppcp-gateway-paylater', [ 'products', 'subscriptions' ] ],
-			[ 'ppcp-googlepay', [ 'products' ] ],
-			[ 'ppcp-applepay', [ 'products' ] ],
 		] )(
 			'%s declares ppcp_continuation alongside its own supported features',
 			( name, ownFeatures ) => {
@@ -165,7 +146,7 @@ describe( 'checkout-block', () => {
 		 * Regression test: WooCommerce Blocks withdraws any payment method whose
 		 * supports.features misses a cart requirement. The plugin's Store API
 		 * requirement flips to ['ppcp_continuation'] the moment the buyer
-		 * approves in the express sheet, i.e. mid-flow for the very method that
+		 * approves in the express popup, i.e. mid-flow for the very method that
 		 * is submitting the checkout. Without the feature here that method is
 		 * withdrawn along with the rest, activePaymentMethod clears, and the
 		 * checkout POST goes out with no payment_method.
@@ -174,25 +155,6 @@ describe( 'checkout-block', () => {
 			loadCheckoutBlock( baseConfig( { supported_features: undefined } ) );
 
 			const { supports } = expressCallFor( 'ppcp-gateway-paypal' );
-
-			expect( supports.features ).toEqual( [
-				'products',
-				'ppcp_continuation',
-			] );
-		} );
-
-		test( 'a wallet with no supported_features of its own still gets ppcp_continuation', () => {
-			loadCheckoutBlock(
-				baseConfig( {
-					google_pay: {
-						enabled: true,
-						styles: { checkout: {} },
-						supported_features: undefined,
-					},
-				} )
-			);
-
-			const { supports } = expressCallFor( 'ppcp-googlepay' );
 
 			expect( supports.features ).toEqual( [
 				'products',
@@ -214,8 +176,6 @@ describe( 'checkout-block', () => {
 			paypal: true,
 			venmo: true,
 			paylater: true,
-			googlepay: true,
-			applepay: true,
 		};
 
 		beforeEach( () => {
@@ -237,14 +197,12 @@ describe( 'checkout-block', () => {
 					'ppcp-gateway-paypal',
 					'ppcp-gateway-venmo',
 					'ppcp-gateway-paylater',
-					'ppcp-googlepay',
-					'ppcp-applepay',
 				].map( ( name ) =>
 					expressCallFor( name ).canMakePayment( { cartTotals } )
 				)
 			);
 
-			expect( results ).toEqual( [ true, false, false, false, false ] );
+			expect( results ).toEqual( [ true, false, false ] );
 		} );
 
 		test( 'a cart that rose above $0 after page load is not a free trial even though the server said it was', async () => {
@@ -264,14 +222,12 @@ describe( 'checkout-block', () => {
 					'ppcp-gateway-paypal',
 					'ppcp-gateway-venmo',
 					'ppcp-gateway-paylater',
-					'ppcp-googlepay',
-					'ppcp-applepay',
 				].map( ( name ) =>
 					expressCallFor( name ).canMakePayment( { cartTotals } )
 				)
 			);
 
-			expect( results ).toEqual( [ true, true, true, true, true ] );
+			expect( results ).toEqual( [ true, true, true ] );
 		} );
 
 		test( 'a non-subscription cart at $0 is unaffected: eligibility alone decides', async () => {
@@ -288,14 +244,12 @@ describe( 'checkout-block', () => {
 					'ppcp-gateway-paypal',
 					'ppcp-gateway-venmo',
 					'ppcp-gateway-paylater',
-					'ppcp-googlepay',
-					'ppcp-applepay',
 				].map( ( name ) =>
 					expressCallFor( name ).canMakePayment( { cartTotals } )
 				)
 			);
 
-			expect( results ).toEqual( [ true, true, true, true, true ] );
+			expect( results ).toEqual( [ true, true, true ] );
 		} );
 	} );
 

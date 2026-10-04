@@ -26,4 +26,14 @@ final class GatewayIds {
 	 * The extension's standalone card button (BCDC) gateway.
 	 */
 	public const CARD_BUTTON = 'ppcp-card-button-gateway';
+
+	/**
+	 * The extension's Apple Pay gateway.
+	 */
+	public const APPLE_PAY = 'ppcp-applepay';
+
+	/**
+	 * The extension's Google Pay gateway.
+	 */
+	public const GOOGLE_PAY = 'ppcp-googlepay';
 }

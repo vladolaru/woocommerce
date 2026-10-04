@@ -39,7 +39,7 @@ const defaultTransient = Object.freeze( {
 		 * The "branded-only" experience is determined on server-side, based on the installation path.
 		 *
 		 * When true, the plugin must only display "PayPal's own brand" payment options
-		 * i.e. no card payments or Apple Pay/Google Pay.
+		 * i.e. no card payments.
 		 *
 		 * @type {boolean}
 		 */
@@ -48,12 +48,6 @@ const defaultTransient = Object.freeze( {
 
 	features: Object.freeze( {
 		save_paypal_and_venmo: {
-			enabled: false,
-		},
-		apple_pay: {
-			enabled: false,
-		},
-		google_pay: {
 			enabled: false,
 		},
 		alternative_payment_methods: {

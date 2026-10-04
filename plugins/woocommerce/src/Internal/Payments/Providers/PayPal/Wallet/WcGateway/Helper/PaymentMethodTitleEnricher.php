@@ -5,9 +5,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper;
 
 use WC_Order;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Applepay\ApplePayGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetter;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Googlepay\GooglePayGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 
 /**
@@ -23,8 +21,6 @@ class PaymentMethodTitleEnricher {
 	 */
 	private const SUPPORTED_GATEWAYS = array(
 		PayPalGateway::ID,
-		ApplePayGateway::ID,
-		GooglePayGateway::ID,
 	);
 
 	/**
@@ -32,7 +28,7 @@ class PaymentMethodTitleEnricher {
 	 *
 	 * @var string[]
 	 */
-	private const CARD_SOURCES = array( 'card', 'apple_pay', 'google_pay' );
+	private const CARD_SOURCES = array( 'card' );
 
 	/**
 	 * Maps PayPal card brand identifiers to display labels.

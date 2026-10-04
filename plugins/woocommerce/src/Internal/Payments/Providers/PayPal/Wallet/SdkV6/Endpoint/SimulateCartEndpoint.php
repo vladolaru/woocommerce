@@ -1,9 +1,7 @@
 <?php
 /**
- * Prices a product without touching the shopper's cart.
- *
- * Exists because Safari requires the Apple Pay sheet to be constructed
- * synchronously in the click handler, so its total cannot be resolved on demand.
+ * Prices a product without touching the shopper's cart, for the Pay Later
+ * messaging simulation.
  *
  * Button\Endpoint\SimulateCartEndpoint answers the same question but cannot serve
  * these pages: it requires button.smart-button to be a real SmartButton, which this

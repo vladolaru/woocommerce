@@ -76,7 +76,6 @@ class PayLaterWCBlocksModule implements ServiceModule, ExecutableModule {
 	 * Whether the SDK v6 stack is rendering the current page.
 	 *
 	 * Per page, not per site: where v6 stands down, v5 can still draw a banner.
-	 * Mirrors GooglepayModule::v6_owns_current_page().
 	 *
 	 * @param ContainerInterface $c The container.
 	 */

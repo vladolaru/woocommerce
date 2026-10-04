@@ -121,12 +121,4 @@ export const STYLING_PAYMENT_METHODS = {
 		label: __( 'Pay Later', 'woocommerce' ),
 		isFunding: true,
 	},
-	'ppcp-googlepay': {
-		value: 'ppcp-googlepay',
-		label: __( 'Google Pay', 'woocommerce' ),
-	},
-	'ppcp-applepay': {
-		value: 'ppcp-applepay',
-		label: __( 'Apple Pay', 'woocommerce' ),
-	},
 };

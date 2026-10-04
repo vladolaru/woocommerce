@@ -40,24 +40,6 @@ class OrderMetaTraitTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should store the brand and last digits of a wallet source that nests them under "card".
-	 */
-	public function test_stores_nested_wallet_card_details(): void {
-		$order = $this->order_with_payment_source(
-			new PaymentSource(
-				'apple_pay',
-				(object) array( 'card' => (object) array( 'brand' => 'MASTERCARD', 'last_digits' => '5678' ) ) // phpcs:ignore WordPress.Arrays.ArrayDeclarationSpacing.AssociativeArrayFound
-			)
-		);
-
-		$wc_order = $this->mock( WC_Order::class );
-		$wc_order->shouldReceive( 'update_meta_data' )->once()->with( PayPalGateway::ORDER_CARD_BRAND_META_KEY, 'MASTERCARD' );
-		$wc_order->shouldReceive( 'update_meta_data' )->once()->with( PayPalGateway::ORDER_CARD_LAST_DIGITS_META_KEY, '5678' );
-
-		$this->invoke( $wc_order, $order );
-	}
-
-	/**
 	 * @testdox Should store no card details for a PayPal account source.
 	 */
 	public function test_paypal_source_stores_no_card_details(): void {

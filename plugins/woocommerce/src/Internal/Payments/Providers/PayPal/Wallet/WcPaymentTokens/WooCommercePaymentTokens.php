@@ -154,51 +154,6 @@ class WooCommercePaymentTokens {
 	}
 
 	/**
-	 * Creates a WC Payment Token for ApplePay payment.
-	 *
-	 * @param int    $customer_id    The WC customer ID.
-	 * @param string $token          The ApplePay payment token.
-	 *
-	 * @return int
-	 */
-	public function create_payment_token_applepay(
-		int $customer_id,
-		string $token
-	): int {
-
-		if ( $customer_id === 0 ) {
-			return 0;
-		}
-
-		$wc_tokens = WC_Payment_Tokens::get_customer_tokens( $customer_id, PayPalGateway::ID );
-		if ( $this->token_exist( $wc_tokens, $token, PaymentTokenApplePay::class ) ) {
-			return 0;
-		}
-
-		// Try to update existing token of type before creating a new one.
-		$payment_token_applepay = $this->first_token_of_type( $wc_tokens, PaymentTokenApplePay::class );
-		if ( ! $payment_token_applepay ) {
-			$payment_token_applepay = $this->create_payment_token( 'apple_pay' );
-		}
-
-		assert( $payment_token_applepay instanceof PaymentTokenApplePay );
-
-		$payment_token_applepay->set_token( $token );
-		$payment_token_applepay->set_user_id( $customer_id );
-		$payment_token_applepay->set_gateway_id( PayPalGateway::ID );
-
-		try {
-			$payment_token_applepay->save();
-		} catch ( Exception $exception ) {
-			$this->logger->error(
-				"Could not create WC payment token ApplePay for customer {$customer_id}. " . $exception->getMessage()
-			);
-		}
-
-		return $payment_token_applepay->get_id();
-	}
-
-	/**
 	 * Returns PayPal payment tokens for the given WP user id.
 	 *
 	 * @param int $user_id WP user id.
@@ -306,7 +261,7 @@ class WooCommercePaymentTokens {
 	 *
 	 * @param string $type The type of WC payment token.
 	 *
-	 * @return void|PaymentTokenPayPal|PaymentTokenVenmo|PaymentTokenApplePay
+	 * @return void|PaymentTokenPayPal|PaymentTokenVenmo
 	 */
 	private function create_payment_token( string $type ) {
 		switch ( $type ) {
@@ -314,8 +269,6 @@ class WooCommercePaymentTokens {
 				return new PaymentTokenPayPal();
 			case 'venmo':
 				return new PaymentTokenVenmo();
-			case 'apple_pay':
-				return new PaymentTokenApplePay();
 		}
 	}
 }

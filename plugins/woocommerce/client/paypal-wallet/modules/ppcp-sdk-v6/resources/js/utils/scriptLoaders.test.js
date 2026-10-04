@@ -1,8 +1,7 @@
-import { loadScript, loadGoogleSdk } from './scriptLoaders';
+import { loadScript } from './scriptLoaders';
 
 afterEach( () => {
 	document.head.innerHTML = '';
-	delete window.google;
 } );
 
 describe( 'loadScript', () => {
@@ -104,30 +103,5 @@ describe( 'loadScript with a targetWindow', () => {
 		expect(
 			document.head.querySelectorAll( `script[src="${ url }"]` )
 		).toHaveLength( 1 );
-	} );
-} );
-
-describe( 'loadGoogleSdk', () => {
-	test( 'resolves once the script loads and the Google Pay global is present', async () => {
-		const url = 'https://example.test/pay.js';
-
-		const pending = loadGoogleSdk( url );
-		window.google = {
-			payments: { api: { PaymentsClient() {} } },
-		};
-		document.head.querySelector( `script[src="${ url }"]` ).onload();
-
-		await expect( pending ).resolves.toBeUndefined();
-	} );
-
-	test( 'rejects when the script loads but the Google Pay global is absent', async () => {
-		const url = 'https://example.test/pay-missing-global.js';
-
-		const pending = loadGoogleSdk( url );
-		document.head.querySelector( `script[src="${ url }"]` ).onload();
-
-		await expect( pending ).rejects.toThrow(
-			'Google Pay global not found after script load.'
-		);
 	} );
 } );
