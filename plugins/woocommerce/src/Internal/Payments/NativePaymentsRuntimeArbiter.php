@@ -120,14 +120,6 @@ class NativePaymentsRuntimeArbiter {
 	public const NATIVE_RUNTIME_KILL_SWITCH_OPTION = 'woocommerce_native_payments_killswitch';
 
 	/**
-	 * Legacy fail-closed default for the native WooPayments runtime rollout.
-	 *
-	 * @deprecated 11.2.0 Native runtime enablement now uses the stored option.
-	 * @var bool
-	 */
-	public const DEFAULT_NATIVE_RUNTIME_ENABLED = false;
-
-	/**
 	 * The legacy proxy, used for mockable calls to global functions.
 	 *
 	 * @var LegacyProxy

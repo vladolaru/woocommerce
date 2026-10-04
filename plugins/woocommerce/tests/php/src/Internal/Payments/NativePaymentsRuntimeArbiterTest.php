@@ -346,13 +346,6 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The legacy fail-closed default constant remains available.
-	 */
-	public function test_legacy_fail_closed_default_constant_remains_available(): void {
-		$this->assertFalse( NativePaymentsRuntimeArbiter::DEFAULT_NATIVE_RUNTIME_ENABLED, 'Extensions can continue to read the legacy fail-closed default constant.' );
-	}
-
-	/**
 	 * @testdox An enabled native runtime option enables native when the plugin is absent.
 	 */
 	public function test_enabled_native_runtime_option_enables_native_when_plugin_is_absent(): void {
