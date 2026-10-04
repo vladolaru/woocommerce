@@ -1198,6 +1198,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should return the locally stored tokens unchanged when the provider fetch fails.
 	 */
 	public function test_reconcile_fetch_failure_returns_local_tokens(): void {
+		$this->register_card_gateway_id();
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( $user_id );
 		$local_token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_local' );
@@ -1209,6 +1210,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
 		$tokens = apply_filters( 'woocommerce_get_customer_payment_tokens', array( $local_token->get_id() => $local_token ), $user_id, '' );
 
+		$this->assertSame( 1, $customer_service->failed_fetch_attempts, 'The provider fetch must have been attempted.' );
 		$this->assertArrayHasKey( $local_token->get_id(), $tokens, 'A provider outage must degrade to the locally stored list.' );
 		$this->assertNotNull( \WC_Payment_Tokens::get( $local_token->get_id() ), 'A provider outage must not delete local tokens.' );
 	}
@@ -1251,6 +1253,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Reconciliation should not run for logged-out requests.
 	 */
 	public function test_reconcile_skips_when_no_user_is_logged_in(): void {
+		$this->register_card_gateway_id();
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( 0 );
 		$local_token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_local' );
@@ -1283,6 +1286,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Reconciliation should not run once the unpaginated token page is full.
 	 */
 	public function test_reconcile_skips_at_the_token_page_limit(): void {
+		$this->register_card_gateway_id();
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( $user_id );
 		update_option( 'posts_per_page', 1 );
@@ -2070,6 +2074,13 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 			public bool $fail_fetches = false;
 
 			/**
+			 * Number of fetches that failed.
+			 *
+			 * @var int
+			 */
+			public int $failed_fetch_attempts = 0;
+
+			/**
 			 * Constructor.
 			 *
 			 * @param string                                       $customer_id             Customer ID to report.
@@ -2103,6 +2114,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 				unset( $customer_id );
 
 				if ( $this->fail_fetches ) {
+					++$this->failed_fetch_attempts;
 					throw new RuntimeException( 'Provider unavailable.' );
 				}
 
