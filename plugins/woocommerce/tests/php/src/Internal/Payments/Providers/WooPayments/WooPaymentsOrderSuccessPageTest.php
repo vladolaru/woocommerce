@@ -41,6 +41,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 			remove_action( 'woocommerce_order_details_before_order_table', array( $page, 'maybe_render_multibanco_payment_instructions' ) );
 			remove_action( 'wp_enqueue_scripts', array( $page, 'enqueue_assets' ) );
 			remove_filter( 'woocommerce_order_email_verification_required', array( $page, 'maybe_skip_email_verification_after_payment' ) );
+			remove_action( 'woocommerce_email_order_details', array( $page, 'add_multibanco_payment_instructions_to_order_on_hold_email' ) );
 		}
 		if ( WC() && WC()->session ) {
 			WC()->session->set( 'wcpay_paid_intent_id', null );
@@ -325,6 +326,56 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		$output = $this->render_multibanco_instructions( $page, $order );
 
 		$this->assertSame( '', $output );
+	}
+
+	/**
+	 * Client 11.1.0 class-wc-payments-order-success-page.php:40,593-690.
+	 *
+	 * @testdox The customer on-hold email ($format) carries the Multibanco entity, reference, amount and expiry.
+	 * @testWith ["html"]
+	 *           ["plain"]
+	 *
+	 * @param string $format Email format.
+	 */
+	public function test_on_hold_email_carries_multibanco_payment_instructions( string $format ): void {
+		$page = $this->create_page( true );
+		$page->register();
+		$this->registered_pages[] = $page;
+		$order                    = $this->create_multibanco_order();
+		$order->update_meta_data( '_wcpay_multibanco_expiry', '1798761600' );
+		$order->save();
+
+		$output = $this->render_customer_email( 'WC_Email_Customer_On_Hold_Order', $order, 'plain' === $format );
+
+		$this->assertStringContainsString( 'plain' === $format ? 'Multibanco Payment instructions' : 'Payment instructions', $output, 'Client :606 (plain) and :658 (HTML) headings.' );
+		$this->assertStringContainsString( '12345', $output, 'Client :615/:672 entity.' );
+		$this->assertStringContainsString( '123 456 789', $output, 'Client :616/:676 reference.' );
+		$this->assertStringContainsString( '123.45', $output, 'Client :617/:680 amount.' );
+		$this->assertStringContainsString( 'January 1, 2027 12:00 am', $output, 'Client :601 expiry in the store date and time format.' );
+	}
+
+	/**
+	 * Client 11.1.0 class-wc-payments-order-success-page.php:594 returns early for these.
+	 *
+	 * @testdox Emails add no Multibanco instructions for another payment method or another email.
+	 * @testWith ["WC_Email_Customer_On_Hold_Order", "woocommerce_payments"]
+	 *           ["WC_Email_Customer_Processing_Order", "woocommerce_payments_multibanco"]
+	 *
+	 * @param string $email_class    Email class.
+	 * @param string $payment_method Order payment method.
+	 */
+	public function test_emails_add_no_multibanco_instructions_outside_multibanco_on_hold_email( string $email_class, string $payment_method ): void {
+		$page = $this->create_page( true );
+		$page->register();
+		$this->registered_pages[] = $page;
+		$order                    = $this->create_multibanco_order();
+		$order->set_payment_method( $payment_method );
+		$order->save();
+
+		$output = $this->render_customer_email( $email_class, $order, false );
+
+		$this->assertStringNotContainsString( '123 456 789', $output );
+		$this->assertStringNotContainsString( 'Enter the entity number, reference number, and amount.', $output );
 	}
 
 	/**
@@ -832,6 +883,21 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		ob_start();
 		$page->maybe_render_multibanco_payment_instructions( $order->get_id() );
 		return (string) ob_get_clean();
+	}
+
+	/**
+	 * Render a customer email for an order as WooCommerce sends it.
+	 *
+	 * @param string   $email_class Email class name.
+	 * @param WC_Order $order       Order the email is about.
+	 * @param bool     $plain_text  Whether to render the plain-text version.
+	 * @return string
+	 */
+	private function render_customer_email( string $email_class, WC_Order $order, bool $plain_text ): string {
+		$email         = WC()->mailer()->get_emails()[ $email_class ];
+		$email->object = $order;
+
+		return $plain_text ? $email->get_content_plain() : $email->get_content_html();
 	}
 
 	/**

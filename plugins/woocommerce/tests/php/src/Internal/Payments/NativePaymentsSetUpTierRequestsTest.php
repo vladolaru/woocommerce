@@ -18,9 +18,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderTrackingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use WC_Order;
+use WC_Payment_Tokens;
 use WC_Unit_Test_Case;
 
 /**
@@ -192,6 +194,37 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox $label: a saved SEPA token loads as its WooPayments token class.
+	 * @dataProvider saved_token_requests
+	 *
+	 * @param string $label   Case label.
+	 * @param string $state   Stored native tier.
+	 * @param string $request Request class: 'cron', 'cli', 'admin' or 'front'.
+	 */
+	public function test_saved_sepa_token_loads_on_every_request_of_a_set_up_store( string $label, string $state, string $request ): void {
+		unset( $label );
+		$token = new WooPaymentsSepaToken();
+		$token->set_token( 'pm_test_sepa' );
+		$token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$token->set_user_id( 1 );
+		$token->set_last4( '3000' );
+		$token->save();
+		$this->arrange_native_owner( $state );
+		if ( 'cron' === $request ) {
+			add_filter( 'wp_doing_cron', '__return_true' );
+		} elseif ( 'cli' === $request ) {
+			Constants::set_constant( 'WP_CLI', true );
+		} elseif ( 'admin' === $request ) {
+			set_current_screen( 'edit-shop_subscription' );
+		}
+
+		$this->run_bootstrap( '__return_false' );
+
+		// The client loads its SEPA token class on every request (client 11.1.0 `includes/class-wc-payments.php:468`).
+		$this->assertInstanceOf( WooPaymentsSepaToken::class, WC_Payment_Tokens::get( $token->get_id() ), 'A renewal or subscription view must find the saved SEPA credential.' );
+	}
+
+	/**
 	 * @testdox An Action Scheduler run under WP-CLI on a $state store reaches the native order-tracking handler.
 	 * @dataProvider set_up_states
 	 *
@@ -356,6 +389,50 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 			'active, ALTERNATE_WP_CRON on a front page'    => array( 'active, ALTERNATE_WP_CRON', NativePaymentsState::ACTIVE, 'alternate_wp_cron' ),
 			'connected, Scheduled Actions Run link (admin)' => array( 'connected, Scheduled Actions Run', NativePaymentsState::CONNECTED, 'admin_run' ),
 			'active, Scheduled Actions Run link (admin)'   => array( 'active, Scheduled Actions Run', NativePaymentsState::ACTIVE, 'admin_run' ),
+		);
+	}
+
+	/**
+	 * @testdox An active store's on-hold email sent from a $request request carries the Multibanco instructions.
+	 * @testWith ["rest"]
+	 *           ["cron"]
+	 *           ["admin"]
+	 *
+	 * @param string $request Request class: 'rest' (Store API checkout), 'cron' (deferred email) or 'admin' (resend).
+	 */
+	public function test_on_hold_email_carries_multibanco_instructions_on_every_active_request( string $request ): void {
+		$order = new WC_Order();
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID_PREFIX . 'multibanco' );
+		$order->set_status( 'on-hold' );
+		$order->update_meta_data( '_wcpay_multibanco_reference', '123 456 789' );
+		$order->update_meta_data( '_wcpay_multibanco_entity', '12345' );
+		$order->update_meta_data( '_wcpay_multibanco_url', 'https://pay.stripe.com/multibanco/voucher' );
+		$order->update_meta_data( '_wcpay_multibanco_expiry', (string) ( time() + DAY_IN_SECONDS ) );
+		$order->save();
+		$this->arrange_native_owner( NativePaymentsState::ACTIVE );
+		if ( 'cron' === $request ) {
+			add_filter( 'wp_doing_cron', '__return_true' );
+		} elseif ( 'admin' === $request ) {
+			set_current_screen( 'woocommerce_page_wc-orders' );
+		}
+
+		$this->run_bootstrap( 'rest' === $request ? '__return_true' : '__return_false' );
+		$email         = WC()->mailer()->get_emails()['WC_Email_Customer_On_Hold_Order'];
+		$email->object = $order;
+
+		// Client 11.1.0 attaches the email callback on every request (includes/class-wc-payments-order-success-page.php:40).
+		$this->assertStringContainsString( '123 456 789', $email->get_content_html(), 'The on-hold email must carry the Multibanco reference.' );
+	}
+
+	/** @return array<string,array{string,string,string}> */
+	public static function saved_token_requests(): array {
+		return array(
+			'active cron'     => array( 'active cron', NativePaymentsState::ACTIVE, 'cron' ),
+			'active WP-CLI'   => array( 'active WP-CLI', NativePaymentsState::ACTIVE, 'cli' ),
+			'active admin'    => array( 'active admin', NativePaymentsState::ACTIVE, 'admin' ),
+			'connected cron'  => array( 'connected cron', NativePaymentsState::CONNECTED, 'cron' ),
+			'connected admin' => array( 'connected admin', NativePaymentsState::CONNECTED, 'admin' ),
+			'connected front' => array( 'connected front', NativePaymentsState::CONNECTED, 'front' ),
 		);
 	}
 

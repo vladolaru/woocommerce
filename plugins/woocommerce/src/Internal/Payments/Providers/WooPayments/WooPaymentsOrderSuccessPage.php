@@ -16,6 +16,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
+use WC_Email;
+use WC_Email_Customer_On_Hold_Order;
 use WC_Order;
 
 /**
@@ -177,6 +179,10 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 
 		if ( false === has_action( 'wp_footer', array( $this, 'output_footer_scripts' ) ) ) {
 			add_action( 'wp_footer', array( $this, 'output_footer_scripts' ) );
+		}
+
+		if ( false === has_action( 'woocommerce_email_order_details', array( $this, 'add_multibanco_payment_instructions_to_order_on_hold_email' ) ) ) {
+			add_action( 'woocommerce_email_order_details', array( $this, 'add_multibanco_payment_instructions_to_order_on_hold_email' ), 10, 4 );
 		}
 	}
 
@@ -601,6 +607,115 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 				<p class="woocommerce-woopayments-copy-status screen-reader-text" role="status" aria-live="polite"></p>
 			</div>
 		</div>
+		<?php
+	}
+
+	/**
+	 * Add the Multibanco payment instructions to the customer's order on-hold email.
+	 *
+	 * Port of client 11.1.0 `add_multibanco_payment_instructions_to_order_on_hold_email()` (class-wc-payments-order-success-page.php:40,593-690).
+	 *
+	 * @internal
+	 *
+	 * @param WC_Order|mixed  $order         The order object.
+	 * @param bool|mixed      $sent_to_admin Whether the email is being sent to the admin.
+	 * @param bool|mixed      $plain_text    Whether the email is plain text.
+	 * @param WC_Email|string $email         The email object.
+	 */
+	public function add_multibanco_payment_instructions_to_order_on_hold_email( $order, $sent_to_admin = false, $plain_text = false, $email = '' ): void {
+		unset( $sent_to_admin );
+		if ( ! $email instanceof WC_Email_Customer_On_Hold_Order || ! $order instanceof WC_Order || OrderPaymentStore::GATEWAY_ID_PREFIX . 'multibanco' !== $order->get_payment_method() ) {
+			return;
+		}
+
+		$multibanco_info       = $this->get_multibanco_info_from_order( $order );
+		$expiry_date           = date_i18n( wc_date_format() . ' ' . wc_time_format(), $multibanco_info['expiry'] );
+		$formatted_order_total = wp_strip_all_tags( $order->get_formatted_order_total() );
+
+		if ( $plain_text ) {
+			echo "----------------------------------------\n";
+			echo esc_html__( 'Multibanco Payment instructions', 'woocommerce' ) . "\n\n";
+			printf(
+				/* translators: %s: expiry date. */
+				esc_html__( 'Expires %s', 'woocommerce' ) . "\n\n",
+				esc_html( $expiry_date )
+			);
+			echo '1. ' . esc_html__( 'In your online bank account or from an ATM, choose "Payment and other services".', 'woocommerce' ) . "\n";
+			echo '2. ' . esc_html__( 'Click "Payments of services/shopping".', 'woocommerce' ) . "\n";
+			echo '3. ' . esc_html__( 'Enter the entity number, reference number, and amount.', 'woocommerce' ) . "\n\n";
+			echo esc_html__( 'Entity', 'woocommerce' ) . ': ' . esc_html( $multibanco_info['entity'] ) . "\n";
+			echo esc_html__( 'Reference', 'woocommerce' ) . ': ' . esc_html( $multibanco_info['reference'] ) . "\n";
+			echo esc_html__( 'Amount', 'woocommerce' ) . ': ' . esc_html( $formatted_order_total ) . "\n";
+			echo "----------------------------------------\n\n";
+			return;
+		}
+
+		$multibanco_icon_url = WC()->plugin_url() . '/assets/images/payment-methods/multibanco-instructions.svg';
+		?>
+		<table class="td" cellspacing="0" cellpadding="6" border="1" width="100%">
+			<tbody>
+			<tr>
+				<td class="td">
+					<table cellpadding="6">
+						<tr>
+							<td rowspan="2" style="padding: 0 5px 0 0;">
+								<div style="background-color: #f6f7f7; border: 1px solid rgba( 109, 109, 109, 0.16 ); border-radius: 4px; box-sizing: border-box; padding: 10px;">
+									<img style="margin: 0; height: 35px; width: 35px;" src="<?php echo esc_url( $multibanco_icon_url ); ?>" alt="<?php esc_attr_e( 'Multibanco', 'woocommerce' ); ?>">
+								</div>
+							</td>
+							<td style="font-size: 20px; padding: 0;">
+								<?php
+								/* translators: %s: order number. */
+								echo esc_html( sprintf( __( 'Order #%s', 'woocommerce' ), $order->get_order_number() ) );
+								?>
+							</td>
+						</tr>
+						<tr>
+							<td style="padding: 0;">
+								<?php
+								printf(
+									wp_kses(
+										/* translators: %s: expiry date. */
+										__( 'Expires <strong>%s</strong>', 'woocommerce' ),
+										array(
+											'strong' => array(),
+										)
+									),
+									esc_html( $expiry_date )
+								);
+								?>
+							</td>
+						</tr>
+					</table>
+					<p></p>
+					<p><strong><?php esc_html_e( 'Payment instructions', 'woocommerce' ); ?></strong></p>
+					<ol>
+						<li><?php esc_html_e( 'In your online bank account or from an ATM, choose "Payment and other services".', 'woocommerce' ); ?></li>
+						<li><?php esc_html_e( 'Click "Payments of services/shopping".', 'woocommerce' ); ?></li>
+						<li><?php esc_html_e( 'Enter the entity number, reference number, and amount.', 'woocommerce' ); ?></li>
+					</ol>
+
+					<table class="td" cellspacing="0" cellpadding="6" border="1" width="100%">
+						<tbody>
+						<tr>
+							<th class="td"><?php esc_html_e( 'Entity', 'woocommerce' ); ?></th>
+							<td class="td"><?php echo esc_html( $multibanco_info['entity'] ); ?></td>
+						</tr>
+						<tr>
+							<th class="td"><?php esc_html_e( 'Reference', 'woocommerce' ); ?></th>
+							<td class="td"><?php echo esc_html( $multibanco_info['reference'] ); ?></td>
+						</tr>
+						<tr>
+							<th class="td"><?php esc_html_e( 'Amount', 'woocommerce' ); ?></th>
+							<td class="td"><?php echo esc_html( $formatted_order_total ); ?></td>
+						</tr>
+						</tbody>
+					</table>
+				</td>
+			</tr>
+			</tbody>
+		</table>
+		<p></p>
 		<?php
 	}
 
