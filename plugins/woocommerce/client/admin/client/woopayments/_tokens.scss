@@ -35,3 +35,13 @@ $woopayments-warning-yellow: #f0b849;
 
 // Pages under the Payments settings tab (the settings page, Reports) stop at 1120px; no upstream page width token.
 $woopayments-wide-page-max-width: 1120px;
+
+// base-styles' $alert-red, which WooCommerce's shared variables redefine as #d94f4f; the client's error icons and urgent dates use this one.
+$woopayments-error-red: #cc1818;
+
+// Payment and payout details text is 14px like the client; base-styles' type scale goes 13px → 15px.
+$woopayments-font-size-detail: 14px;
+
+// The client's inline notices: a 22px icon, 5px before the text; no upstream notice icon size.
+$woopayments-notice-icon-size: 22px;
+$woopayments-notice-icon-gap: 5px;

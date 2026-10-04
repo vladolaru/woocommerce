@@ -1,9 +1,11 @@
+@import "../../_tokens.scss";
+
 // Client 11.1.0 `payment-details/summary/style.scss`, `components/horizontal-list/style.scss` and `components/card-notice/styles.scss`.
 .woocommerce-woopayments-payment-summary {
 	&__main {
 		display: flex;
 		flex: 1;
-		gap: 16px;
+		gap: $gap;
 
 		@media screen and (max-width: 782px) {
 			flex-direction: column;
@@ -18,31 +20,33 @@
 		align-items: center;
 		display: flex;
 		flex-wrap: wrap;
-		gap: 8px;
+		gap: $gap-smaller;
 	}
 
 	&__amount {
 		align-items: center;
 		display: flex;
-		font-size: 32px;
+		font-size: $font-size-2x-large;
 		font-weight: 300;
 		line-height: 48px;
 		margin: 0;
 	}
 
 	&__amount-currency {
-		color: #50575e;
+		color: $studio-gray-60;
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- base-styles' type scale has no 16px (15px → 20px).
 		font-size: 16px;
-		margin: 0 8px;
+		margin: 0 $gap-smaller;
 		text-transform: uppercase;
 	}
 
 	&__breakdown > div {
-		color: #757575;
+		color: $gray-700;
 		display: inline-flex;
-		font-size: 12px;
+		font-size: $font-size-small;
 		font-weight: 600;
-		margin: 4px 16px 0 0;
+		margin-block: $gap-smallest 0;
+		margin-inline: 0 $gap;
 		text-transform: uppercase;
 
 		&:last-child {
@@ -51,22 +55,22 @@
 	}
 
 	&__breakdown &__settlement-currency {
-		border-inline-end: 1px solid #e0e0e0;
-		padding-inline-end: 16px;
+		border-inline-end: 1px solid $gray-200;
+		padding-inline-end: $gap;
 	}
 
 	&__review-actions {
 		display: flex;
-		gap: 8px;
+		gap: $gap-smaller;
 		justify-content: flex-end;
-		margin-bottom: 8px;
+		margin-bottom: $gap-smaller;
 	}
 
 	&__id {
-		color: #787c82;
+		color: $studio-gray-40;
 		display: flex;
 		flex-direction: column;
-		margin-top: 8px;
+		margin-top: $gap-smaller;
 
 		@media screen and (min-width: 782px) {
 			align-items: flex-end;
@@ -98,13 +102,13 @@
 		}
 
 		> div {
-			border-bottom: 1px solid #f0f0f0;
-			padding: 12px 0;
+			border-bottom: 1px solid $gray-100;
+			padding: $gap-small 0;
 
 			@media screen and (min-width: 801px) {
 				border-bottom: 0;
-				border-inline-start: 1px solid #f0f0f0;
-				padding: 0 16px;
+				border-inline-start: 1px solid $gray-100;
+				padding: 0 $gap;
 
 				&:first-child {
 					border-inline-start: 0;
@@ -122,8 +126,8 @@
 		}
 
 		dt {
-			color: #757575;
-			font-size: 11px;
+			color: $gray-700;
+			font-size: $font-size-x-small;
 			font-weight: 600;
 			line-height: 18px;
 			text-transform: uppercase;
@@ -131,16 +135,18 @@
 
 		dd {
 			align-items: center;
-			color: #2c3338;
+			color: $studio-gray-80;
 			display: flex;
-			font-size: 14px;
-			line-height: 20px;
+			font-size: $woopayments-font-size-detail;
+			line-height: $font-line-height-small;
 			margin: 0;
 		}
 	}
 
 	&__notice.components-card__footer {
+		// stylelint-disable-next-line color-no-hex -- Client 11.1.0 card notice background; no upstream token.
 		background-color: #fff8ee;
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- Client 11.1.0 card notice gap; no token at 10px.
 		gap: 10px;
 
 		@media screen and (max-width: 660px) {
@@ -152,10 +158,11 @@
 
 // Client 11.1.0 `payment-details/payment-details/index.tsx`: `<Page maxWidth={ 1032 }>`, 24px between cards.
 .woocommerce-woopayments-money-movement--details {
+	// stylelint-disable-next-line declaration-property-value-disallowed-list -- Client 11.1.0 details page width (`<Page maxWidth={ 1032 }>`); no upstream token.
 	max-width: 1032px;
 
 	.woocommerce-woopayments-money-movement__detail-sections {
-		gap: 24px;
+		gap: $gap-large;
 	}
 }
 
@@ -175,14 +182,14 @@
 		> div {
 			align-items: flex-start;
 			display: flex;
-			font-size: 14px;
-			line-height: 20px;
+			font-size: $woopayments-font-size-detail;
+			line-height: $font-line-height-small;
 		}
 
 		dt {
-			color: #50575e;
+			color: $studio-gray-60;
 			flex: 0 0 36%;
-			padding: 4px 0;
+			padding: $gap-smallest 0;
 
 			@media screen and (max-width: 470px) {
 				flex-basis: 40%;
@@ -190,10 +197,10 @@
 		}
 
 		dd {
-			color: #2c3338;
+			color: $studio-gray-80;
 			margin: 0;
 			overflow-wrap: anywhere;
-			padding: 4px 0;
+			padding: $gap-smallest 0;
 		}
 	}
 }
@@ -201,26 +208,27 @@
 // Client 11.1.0 `payment-details/dispute-details/style.scss` and `summary/style.scss:127-135`.
 .woocommerce-woopayments-dispute-pane {
 	> .woocommerce-woopayments-money-movement__dispute-label {
-		margin: 12px 24px 0;
+		margin: $gap-small $gap-large 0;
 	}
 
 	&__details {
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- Client 11.1.0 pane bottom padding; no token at 5px.
 		padding: 0 24px 5px;
 
 		hr {
 			border: 0;
-			border-top: 1px solid #e0e0e0;
+			border-top: 1px solid $gray-200;
 			margin: 0;
 		}
 
 		// Beats the page's `.woocommerce-woopayments-money-movement h2 { margin: 0 }` for the pane's own heading only, not
 		// the "Steps you can take" accordion title below it.
 		.woocommerce-woopayments-money-movement & > h2 {
-			color: #1e1e1e;
-			font-size: 15px;
+			color: $gray-900;
+			font-size: $font-size-large;
 			font-weight: 500;
-			line-height: 20px;
-			margin: 24px 0;
+			line-height: $font-line-height-small;
+			margin: $gap-large 0;
 		}
 	}
 
@@ -230,36 +238,36 @@
 		.components-notice__content {
 			align-items: flex-start;
 			display: flex;
-			font-size: 14px;
-			gap: 5px;
+			font-size: $woopayments-font-size-detail;
+			gap: $woopayments-notice-icon-gap;
 			line-height: 1.5em;
-			margin: 16px;
+			margin: $gap;
 		}
 	}
 
 	&__notice-icon {
-		fill: #cc1818;
+		fill: $woopayments-error-red;
 		flex-shrink: 0;
-		height: 22px;
-		width: 22px;
+		height: $woopayments-notice-icon-size;
+		width: $woopayments-notice-icon-size;
 	}
 
 	&__summary {
-		margin-top: 40px;
+		margin-top: $gap-largest;
 
 		dd .components-dropdown {
-			margin-inline-start: 4px;
+			margin-inline-start: $gap-smallest;
 		}
 	}
 
 	&__due-urgent {
-		color: #cc1818;
-		font-size: 13px;
+		color: $woopayments-error-red;
+		font-size: $font-size-medium;
 		font-weight: 600;
 	}
 
 	&__help-link {
-		margin: 24px 0;
+		margin: $gap-large 0;
 	}
 
 	.woocommerce-woopayments-money-movement__dispute-response {
@@ -268,13 +276,14 @@
 
 	.woocommerce-woopayments-money-movement__dispute-actions {
 		display: flex;
-		gap: 8px;
-		margin: 24px 0 16px;
+		gap: $gap-smaller;
+		margin: $gap-large 0 $gap;
 	}
 
 	&__footer.components-card__footer {
+		// stylelint-disable-next-line color-no-hex -- Client 11.1.0 dispute footer background; no upstream token.
 		background-color: #f2f4f5;
-		color: #2f2f2f;
+		color: $gray-800;
 
 		p {
 			margin: 0;
@@ -282,6 +291,7 @@
 	}
 
 	&__footer--primary.components-card__footer {
+		// stylelint-disable-next-line color-no-hex -- Client 11.1.0 primary dispute footer background; no upstream token.
 		background-color: #f0f6fc;
 	}
 
@@ -310,24 +320,24 @@
 .woocommerce-woopayments-payment-summary__fee-breakdown {
 	display: flex;
 	flex-direction: column;
-	font-size: 14px;
-	gap: 8px;
+	font-size: $woopayments-font-size-detail;
+	gap: $gap-smaller;
 	margin: 0;
-	padding: 4px;
+	padding: $gap-smallest;
 
 	> div {
 		display: flex;
-		gap: 16px;
+		gap: $gap;
 		justify-content: space-between;
 	}
 
 	> div:last-child {
-		border-top: 1px solid #e0e0e0;
-		padding-top: 8px;
+		border-top: 1px solid $gray-200;
+		padding-top: $gap-smaller;
 	}
 
 	dt {
-		color: #757575;
+		color: $gray-700;
 	}
 
 	dd {
@@ -336,16 +346,17 @@
 }
 
 .woocommerce-woopayments-payment-summary__breakdown .components-dropdown {
+	// stylelint-disable-next-line declaration-property-value-disallowed-list -- no token at 2px (below $gap-smallest).
 	margin-inline-start: 2px;
 	text-transform: none;
 }
 
 // Client 11.1.0 `components/accordion/style.scss`: a bordered panel with a toggle row.
 .woocommerce-woopayments-accordion {
-	background: #fff;
-	border: 1px solid #e0e0e0;
-	border-radius: 8px;
-	padding: 8px;
+	background: $white;
+	border: 1px solid $gray-200;
+	border-radius: $radius-large;
+	padding: $gap-smaller;
 
 	&__title {
 		margin: 0;
@@ -353,11 +364,12 @@
 
 	&__toggle.components-button {
 		box-shadow: none;
-		color: #1e1e1e;
-		font-size: 15px;
+		color: $gray-900;
+		font-size: $font-size-large;
 		font-weight: 500;
 		height: auto;
-		padding: 16px 48px 16px 16px;
+		padding-block: $gap;
+		padding-inline: $gap $grid-unit-60;
 		position: relative;
 		text-align: start;
 		width: 100%;
@@ -366,83 +378,87 @@
 	&__title-content {
 		display: flex;
 		flex-direction: column;
-		gap: 4px;
+		gap: $gap-smallest;
 	}
 
 	&__subtitle {
-		color: #757575;
-		font-size: 13px;
+		color: $gray-700;
+		font-size: $font-size-medium;
 		font-weight: 400;
-		line-height: 20px;
+		line-height: $font-line-height-small;
 	}
 
 	&__arrow {
 		fill: currentColor;
-		inset-inline-end: 16px;
+		inset-inline-end: $gap;
 		position: absolute;
 		top: 50%;
 		transform: translateY(-50%);
 	}
 
 	&__content {
-		padding: 0 16px 16px;
+		padding: 0 $gap $gap;
 	}
 }
 
 // Client 11.1.0 `components/dispute-step-item/style.scss`.
 .woocommerce-woopayments-dispute-steps {
-	margin-top: 40px;
+	margin-top: $gap-largest;
 
 	&__notice.components-notice {
-		font-size: 14px;
+		font-size: $woopayments-font-size-detail;
 		margin: 0;
 
 		.components-notice__content {
 			align-items: flex-start;
 			display: flex;
-			gap: 5px;
+			gap: $woopayments-notice-icon-gap;
 		}
 	}
 
 	&__notice-icon {
+		// stylelint-disable-next-line color-no-hex -- Client 11.1.0 dispute steps info icon; no upstream token.
 		fill: #0a4b78;
 		flex-shrink: 0;
-		height: 22px;
-		width: 22px;
+		height: $woopayments-notice-icon-size;
+		width: $woopayments-notice-icon-size;
 	}
 }
 
 .woocommerce-woopayments-dispute-step {
 	align-items: center;
-	border-bottom: 1px solid #f0f0f0;
+	border-bottom: 1px solid $gray-100;
 	display: flex;
-	padding: 16px 0;
+	padding: $gap 0;
 
 	&:first-child {
-		padding: 12px 0 16px;
+		padding: $gap-small 0 $gap;
 	}
 
 	&:last-child {
 		border-bottom: 0;
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- Client 11.1.0 last step bottom padding; no token at 28px.
 		padding-bottom: 28px;
 	}
 
 	&__icon {
 		align-items: center;
-		border: 1px solid #e0e0e0;
-		border-radius: 2px;
+		border: 1px solid $gray-200;
+		border-radius: $radius-small;
 		display: flex;
 		flex-shrink: 0;
+		// stylelint-disable declaration-property-value-disallowed-list -- Client 11.1.0 step icon box: 44px with 10px padding; no upstream tokens at those sizes.
 		height: 44px;
 		justify-content: center;
-		margin-inline-end: 12px;
+		margin-inline-end: $gap-small;
 		padding: 10px;
 		width: 44px;
+		// stylelint-enable declaration-property-value-disallowed-list
 
 		svg {
-			fill: #757575;
-			height: 24px;
-			width: 24px;
+			fill: $gray-700;
+			height: $icon-size;
+			width: $icon-size;
 		}
 	}
 
@@ -452,28 +468,28 @@
 	}
 
 	&__name {
-		color: #1e1e1e;
-		font-size: 13px;
+		color: $gray-900;
+		font-size: $font-size-medium;
 		font-weight: 500;
-		line-height: 20px;
-		margin: 0 0 4px;
+		line-height: $font-line-height-small;
+		margin: 0 0 $gap-smallest;
 	}
 
 	&__description {
-		color: #757575;
-		font-size: 13px;
-		line-height: 20px;
+		color: $gray-700;
+		font-size: $font-size-medium;
+		line-height: $font-line-height-small;
 	}
 
 	&__action {
 		flex-shrink: 0;
-		margin-inline-start: 16px;
+		margin-inline-start: $gap;
 	}
 
 	@media screen and (max-width: 600px) {
 		align-items: flex-start;
 		flex-direction: column;
-		gap: 12px;
+		gap: $gap-small;
 
 		&__icon {
 			display: none;
@@ -493,21 +509,23 @@
 
 // Client 11.1.0 `components/accordion/style.scss:122-146`: the subtitle under the toggle, lined up with the title.
 .woocommerce-woopayments-accordion__subtitle--external {
-	padding: 0 48px 8px 16px;
+	padding-block: 0 $gap-smaller;
+	padding-inline: $gap $grid-unit-60;
 }
 
 // Client 11.1.0 `payment-details/dispute-recommendations/style.scss`.
 .woocommerce-woopayments-dispute-recommendations__show-more {
-	margin-top: 8px;
+	margin-top: $gap-smaller;
 
 	summary {
 		align-items: center;
+		// stylelint-disable-next-line color-no-hex -- pending accent improvement (details-accent-swaps.patch): var(--wp-admin-theme-color).
 		color: #3858e9;
 		cursor: pointer;
 		display: inline-flex;
-		font-size: 13px;
-		gap: 4px;
-		line-height: 20px;
+		font-size: $font-size-medium;
+		gap: $gap-smallest;
+		line-height: $font-line-height-small;
 		list-style: none;
 		user-select: none;
 
@@ -538,12 +556,12 @@
 	}
 
 	&.is-positive .woocommerce-woopayments-dispute-step__icon svg {
-		fill: #4ab866;
+		fill: $alert-green;
 	}
 
 	&.is-critical .woocommerce-woopayments-dispute-step__icon svg,
 	&.is-tip .woocommerce-woopayments-dispute-step__icon svg {
-		fill: #f0b849;
+		fill: $woopayments-warning-yellow;
 	}
 }
 
@@ -552,7 +570,7 @@
 	&__row {
 		align-items: flex-start;
 		display: flex;
-		gap: 16px;
+		gap: $gap;
 		justify-content: space-between;
 
 		&.is-start {
@@ -561,14 +579,15 @@
 	}
 
 	&__block {
+		// stylelint-disable declaration-property-value-disallowed-list -- Client 11.1.0 loadable placeholder shapes; sized to the content they stand in for.
 		@include placeholder();
-		border-radius: 2px;
+		border-radius: $radius-small;
 		display: block;
 		height: 18px;
 
 		&.is-amount {
-			height: 48px;
-			margin-bottom: 4px;
+			height: $grid-unit-60;
+			margin-bottom: $gap-smallest;
 			max-width: 100%;
 			width: 272px;
 		}
@@ -591,13 +610,14 @@
 		}
 
 		&.is-line {
-			height: 40px;
+			height: $grid-unit-50;
 		}
+		// stylelint-enable declaration-property-value-disallowed-list
 	}
 
 	&__lines {
 		display: grid;
-		gap: 12px;
+		gap: $gap-small;
 	}
 }
 

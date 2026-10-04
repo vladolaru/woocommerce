@@ -1,23 +1,27 @@
+@import "../../_tokens.scss";
+
+// stylelint-disable color-no-hex, declaration-property-value-disallowed-list -- §4 exception: the dispute evidence form (client 11.1.0 new-evidence) keeps its notice palette and form sizes; the 2px #2271b1 notice focus outline is a pending accent improvement (details-accent-swaps.patch).
 .woocommerce-woopayments-dispute-evidence {
 	display: grid;
-	gap: 24px;
+	gap: $gap-large;
 }
 
 // Client 11.1.0 `new-evidence/style.scss`: the summary panel, then the steps and their content in one card.
 .woocommerce-woopayments-dispute-evidence__summary {
-	background: #fff;
+	background: $white;
 
 	.components-panel__body-title {
-		font-size: 13px;
+		font-size: $font-size-medium;
 	}
 
 	// Client 11.1.0 `new-evidence/index.tsx:1554-1569` and `components/inline-notice/styles.scss:1-12`: the notice keeps
 	// the core Notice spacing and sits 24px above the summary, unlike the payment details pane.
 	.woocommerce-woopayments-dispute-pane__notice.components-notice {
-		margin: 0 0 24px;
+		margin: 0 0 $gap-large;
 
 		.components-notice__content {
-			margin: 4px 25px 4px 0;
+			margin-block: $gap-smallest;
+			margin-inline: 0 25px;
 		}
 	}
 
@@ -27,9 +31,9 @@
 }
 
 .woocommerce-woopayments-dispute-evidence__stepper {
-	border-bottom: 1px solid #e0e0e0;
-	margin: 0 24px;
-	padding: 16px 0;
+	border-bottom: 1px solid $gray-200;
+	margin: 0 $gap-large;
+	padding: $gap 0;
 
 	.woocommerce-stepper__steps {
 		margin-inline: auto;
@@ -37,39 +41,39 @@
 	}
 
 	.woocommerce-stepper__step-label {
-		font-size: 13px;
+		font-size: $font-size-medium;
 	}
 }
 
 .woocommerce-woopayments-dispute-evidence__stepper-content.components-card__body {
 	margin-inline: auto;
 	max-width: 548px;
-	padding-bottom: 64px;
+	padding-bottom: $grid-unit-80;
 	width: 100%;
 }
 
 .woocommerce-woopayments-dispute-evidence__outcome.components-notice {
-	font-size: 14px;
+	font-size: $woopayments-font-size-detail;
 	margin: 0;
 
 	.components-notice__content {
 		align-items: flex-start;
 		display: flex;
-		gap: 5px;
+		gap: $woopayments-notice-icon-gap;
 	}
 }
 
 .woocommerce-woopayments-dispute-evidence__outcome-icon {
 	fill: #0a4b78;
 	flex-shrink: 0;
-	height: 22px;
-	width: 22px;
+	height: $woopayments-notice-icon-size;
+	width: $woopayments-notice-icon-size;
 }
 
 // Client 11.1.0 `new-evidence/style.scss:36-39,381-392`: the manual-edits warning, then the letter and its preview button.
 .woocommerce-woopayments-dispute-evidence__cover-letter {
 	display: grid;
-	gap: 16px;
+	gap: $gap;
 
 	.components-button {
 		justify-self: start;
@@ -78,14 +82,14 @@
 
 .woocommerce-woopayments-dispute-evidence__cover-letter-warning.components-notice {
 	background-color: #fcf9e8;
-	border-inline-start: 4px solid #f0b849;
-	font-size: 14px;
+	border-inline-start: 4px solid $woopayments-warning-yellow;
+	font-size: $woopayments-font-size-detail;
 	margin: 0;
 
 	.components-notice__content {
 		align-items: flex-start;
 		display: flex;
-		gap: 5px;
+		gap: $woopayments-notice-icon-gap;
 	}
 
 	.woocommerce-woopayments-dispute-evidence__outcome-icon {
@@ -96,16 +100,16 @@
 .woocommerce-woopayments-dispute-evidence__actions-right {
 	align-items: center;
 	display: flex;
-	gap: 8px;
+	gap: $gap-smaller;
 }
 
 .woocommerce-woopayments-dispute-evidence__readonly,
 .woocommerce-woopayments-dispute-evidence__notice {
-	background: #fff;
-	border: 1px solid #dcdcde;
-	border-radius: 4px;
+	background: $white;
+	border: 1px solid $studio-gray-5;
+	border-radius: $radius-medium;
 	margin: 0;
-	padding: 12px 16px;
+	padding: $gap-small $gap;
 }
 
 .woocommerce-woopayments-dispute-evidence__notice:focus {
@@ -114,45 +118,45 @@
 }
 
 .woocommerce-woopayments-dispute-evidence__readonly {
-	border-left: 4px solid #72aee6;
+	border-inline-start: 4px solid #72aee6;
 }
 
 .woocommerce-woopayments-dispute-evidence__notice.is-success {
-	border-left: 4px solid #00a32a;
+	border-inline-start: 4px solid $studio-green-40;
 }
 
 .woocommerce-woopayments-dispute-evidence__notice.is-error {
-	border-left: 4px solid #d63638;
+	border-inline-start: 4px solid $studio-red-50;
 }
 
 .woocommerce-woopayments-dispute-evidence__form {
 	display: grid;
-	gap: 24px;
+	gap: $gap-large;
 }
 
 .woocommerce-woopayments-dispute-evidence__step {
 	display: grid;
-	gap: 12px;
+	gap: $gap-small;
 
 	h2 {
-		color: #1e1e1e;
-		font-size: 20px;
+		color: $gray-900;
+		font-size: $font-size-x-large;
 		font-weight: 400;
-		line-height: 28px;
+		line-height: $font-line-height-large;
 	}
 
 	p {
-		color: #757575;
-		font-size: 13px;
+		color: $gray-700;
+		font-size: $font-size-medium;
 	}
 }
 
 // Client 11.1.0 `new-evidence/style.scss:450-576`: the confirmation screen.
 .woocommerce-woopayments-dispute-evidence__confirmation {
-	background: #fff;
+	background: $white;
 	display: flex;
 	justify-content: center;
-	padding: 40px 24px;
+	padding: $gap-largest $gap-large;
 
 	&-content {
 		display: flex;
@@ -164,53 +168,53 @@
 	&-image {
 		align-self: center;
 		height: auto;
-		margin-bottom: 40px;
+		margin-bottom: $gap-largest;
 		max-width: 100%;
 		width: 180px;
 	}
 
 	h2,
 	h3 {
-		color: #1e1e1e;
-		font-size: 20px;
+		color: $gray-900;
+		font-size: $font-size-x-large;
 		font-weight: 500;
-		line-height: 24px;
-		margin: 0 0 12px;
+		line-height: $font-line-height-medium;
+		margin: 0 0 $gap-small;
 	}
 
 	&-subtitle {
-		color: #1e1e1e;
-		font-size: 13px;
-		line-height: 20px;
-		margin: 0 0 40px;
+		color: $gray-900;
+		font-size: $font-size-medium;
+		line-height: $font-line-height-small;
+		margin: 0 0 $gap-largest;
 	}
 
 	ul {
 		list-style: disc;
-		margin: 0 0 24px;
-		padding-inline-start: 20px;
+		margin: 0 0 $gap-large;
+		padding-inline-start: $woopayments-list-indent;
 	}
 
 	li {
-		color: #1e1e1e;
-		font-size: 13px;
-		line-height: 20px;
+		color: $gray-900;
+		font-size: $font-size-medium;
+		line-height: $font-line-height-small;
 		margin: 0;
 	}
 
 	.woocommerce-woopayments-dispute-evidence__outcome {
-		margin: 0 0 48px;
+		margin: 0 0 $grid-unit-60;
 	}
 
 	.woocommerce-woopayments-dispute-evidence__actions {
 		flex-wrap: wrap;
-		gap: 16px;
+		gap: $gap;
 		justify-content: space-between;
 		margin-top: 0;
 	}
 
 	@media screen and (max-width: 768px) {
-		padding: 24px 16px;
+		padding: $gap-large $gap;
 
 		h2 {
 			font-size: 24px;
@@ -218,7 +222,7 @@
 
 		.woocommerce-woopayments-dispute-evidence__actions {
 			flex-direction: column-reverse;
-			gap: 12px;
+			gap: $gap-small;
 
 			.components-button {
 				justify-content: center;
@@ -236,17 +240,17 @@
 .woocommerce-woopayments-dispute-evidence__section {
 	border: 0;
 	display: grid;
-	gap: 16px;
+	gap: $gap;
 	margin: 0;
 	min-inline-size: 0;
 	padding: 0;
 }
 
 .woocommerce-woopayments-dispute-evidence__section legend {
-	color: #1e1e1e;
-	font-size: 13px;
+	color: $gray-900;
+	font-size: $font-size-medium;
 	font-weight: 600;
-	margin-bottom: 8px;
+	margin-bottom: $gap-smaller;
 	padding: 0;
 }
 
@@ -258,14 +262,14 @@
 
 .woocommerce-woopayments-dispute-evidence__section-description,
 .woocommerce-woopayments-dispute-evidence__document-description {
-	color: #646970;
+	color: $studio-gray-50;
 }
 
 .woocommerce-woopayments-dispute-evidence__document {
-	border-top: 1px solid #f0f0f1;
+	border-top: 1px solid $wp-admin-background;
 	display: grid;
-	gap: 8px;
-	padding-top: 12px;
+	gap: $gap-smaller;
+	padding-top: $gap-small;
 }
 
 .woocommerce-woopayments-dispute-evidence__document:first-of-type {
@@ -277,34 +281,34 @@
 .woocommerce-woopayments-dispute-evidence-file {
 	align-items: flex-start;
 	display: flex;
-	gap: 16px;
+	gap: $gap;
 	justify-content: space-between;
 }
 
 .woocommerce-woopayments-dispute-evidence-file__main {
 	display: grid;
-	gap: 4px;
+	gap: $gap-smallest;
 	min-width: 0;
 }
 
 .woocommerce-woopayments-dispute-evidence-file__label {
-	color: #1e1e1e;
-	font-size: 13px;
+	color: $gray-900;
+	font-size: $font-size-medium;
 }
 
 .woocommerce-woopayments-dispute-evidence-file__chip {
 	align-items: center;
-	background: #f0f0f0;
-	border-radius: 2px;
+	background: $gray-100;
+	border-radius: $radius-small;
 	display: inline-flex;
-	gap: 4px;
+	gap: $gap-smallest;
 	justify-self: start;
 	max-width: 100%;
-	padding-inline-start: 8px;
+	padding-inline-start: $gap-smaller;
 }
 
 .woocommerce-woopayments-dispute-evidence-file__name {
-	color: #1e1e1e;
+	color: $gray-900;
 	overflow-wrap: anywhere;
 }
 
@@ -325,8 +329,8 @@
 .woocommerce-woopayments-dispute-evidence-file__input:focus-visible {
 	+ .woocommerce-woopayments-dispute-evidence-file__upload {
 		box-shadow:
-			0 0 0 1px #fff,
-			0 0 0 3px var(--wp-admin-theme-color, #3858e9);
+			0 0 0 1px $white,
+			0 0 0 3px var(--wp-admin-theme-color, #{$studio-wordpress-blue-50});
 	}
 }
 
@@ -340,9 +344,9 @@
 	align-items: center;
 	display: flex;
 	flex-wrap: wrap;
-	gap: 8px;
+	gap: $gap-smaller;
 	justify-content: space-between;
-	margin-top: 16px;
+	margin-top: $gap;
 }
 
 @media screen and (max-width: 660px) {
@@ -354,11 +358,11 @@
 // Client 11.1.0 `new-evidence/style.scss`: the read-only customer details.
 .woocommerce-woopayments-dispute-evidence-customer {
 	display: grid;
-	gap: 16px;
+	gap: $gap;
 
 	h3 {
-		color: #1e1e1e;
-		font-size: 13px;
+		color: $gray-900;
+		font-size: $font-size-medium;
 		font-weight: 600;
 		margin: 0;
 	}
@@ -367,47 +371,47 @@
 		align-items: flex-start;
 		display: flex;
 		flex-wrap: wrap;
-		gap: 24px 32px;
+		gap: $gap-large $grid-unit-40;
 
 		> div {
 			display: flex;
 			flex-direction: column;
-			gap: 8px;
+			gap: $gap-smaller;
 			min-width: 70px;
 		}
 	}
 
 	&__label {
-		color: #1e1e1e;
-		font-size: 11px;
+		color: $gray-900;
+		font-size: $font-size-x-small;
 		font-weight: 500;
-		line-height: 16px;
+		line-height: $font-line-height-x-small;
 	}
 
 	span,
 	a,
 	&__address {
-		color: #757575;
-		font-size: 12px;
-		line-height: 16px;
+		color: $gray-700;
+		font-size: $font-size-small;
+		line-height: $font-line-height-x-small;
 		word-break: break-all;
 	}
 
 	a {
-		color: var(--wp-admin-theme-color, #3858e9);
+		color: var(--wp-admin-theme-color, #{$studio-wordpress-blue-50});
 	}
 
 	// The billing address, a label over its value; the row above it stays a row.
 	> div:not(.woocommerce-woopayments-dispute-evidence-customer__row) {
 		display: flex;
 		flex-direction: column;
-		gap: 8px;
+		gap: $gap-smaller;
 	}
 
 	@media (max-width: 700px) {
 		&__row {
 			flex-direction: column;
-			gap: 8px;
+			gap: $gap-smaller;
 
 			> div {
 				min-width: 0;
@@ -418,5 +422,6 @@
 
 // Client 11.1.0 `disputes/new-evidence/index.tsx:780-806`: the loading spinner, centred.
 .woocommerce-woopayments-dispute-challenge__loading {
-	padding: 16px 0;
+	padding: $gap 0;
 }
+// stylelint-enable color-no-hex, declaration-property-value-disallowed-list

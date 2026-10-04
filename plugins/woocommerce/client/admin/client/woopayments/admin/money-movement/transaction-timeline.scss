@@ -4,7 +4,7 @@
 		.fee-breakdown-list,
 		.discount-split-list {
 			line-height: 1.5;
-			margin-inline-start: 16px;
+			margin-inline-start: $gap;
 		}
 
 		.fee-breakdown-list {
@@ -17,6 +17,6 @@
 	}
 
 	&__headline svg.is-fraud-outcome-review {
-		background: #d67709;
+		background: $studio-orange-40;
 	}
 }
