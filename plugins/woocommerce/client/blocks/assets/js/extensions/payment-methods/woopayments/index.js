@@ -967,14 +967,90 @@ const SavedTokenHandler = ( {
 	return null;
 };
 
+// Client 11.1.0 client/checkout/blocks/payment-processor.js:83-98: Stripe lays the
+// card fields out in one row from 660px, two rows from 415px and three rows below.
+const getCardLayoutForWidth = ( width ) => {
+	if ( width >= 660 ) {
+		return { rows: 1, minHeight: '70px' };
+	}
+	if ( width >= 415 ) {
+		return { rows: 2, minHeight: '145px' };
+	}
+	return { rows: 3, minHeight: '220px' };
+};
+
+// Client 11.1.0 client/checkout/blocks/components/card-skeleton.tsx.
+const CardSkeletonRows = ( { Skeleton, rowCount } ) => {
+	if ( rowCount === 1 ) {
+		return (
+			<div className="wcpay-core-skeleton-row">
+				<Skeleton width="50%" height="3rem" borderRadius="4px" />
+				<Skeleton width="25%" height="3rem" borderRadius="4px" />
+				<Skeleton width="25%" height="3rem" borderRadius="4px" />
+			</div>
+		);
+	}
+	if ( rowCount === 3 ) {
+		return [ 0, 1, 2 ].map( ( row ) => (
+			<Skeleton
+				key={ row }
+				className="wcpay-core-skeleton-row"
+				height="3.5rem"
+				borderRadius="4px"
+			/>
+		) );
+	}
+	return (
+		<>
+			<Skeleton height="3.5rem" borderRadius="4px" />
+			<div className="wcpay-core-skeleton-row">
+				<Skeleton height="3.5rem" borderRadius="4px" />
+				<Skeleton height="3.5rem" borderRadius="4px" />
+			</div>
+		</>
+	);
+};
+
+// Client 11.1.0 client/checkout/blocks/components/{card,apm}-skeleton.tsx: an overlay
+// over the Payment Element mount point that fades out once Stripe is ready.
+const PaymentElementSkeleton = ( {
+	Skeleton,
+	isCardMethod,
+	isHidden,
+	rowCount,
+	onTransitionEnd,
+} ) => (
+	<div
+		className={ `wcpay-core-blocks-payment-element-skeleton${
+			isHidden ? ' is-hidden' : ''
+		}` }
+		aria-hidden={ isHidden }
+		onTransitionEnd={ onTransitionEnd }
+	>
+		{ isCardMethod ? (
+			<CardSkeletonRows Skeleton={ Skeleton } rowCount={ rowCount } />
+		) : (
+			<Skeleton height="6rem" borderRadius="4px" />
+		) }
+	</div>
+);
+
 const WooPaymentsContent = ( {
 	eventRegistration,
 	emitResponse,
 	shouldSavePayment,
 	billing,
+	components,
 	paymentSettings = defaultSettings,
 } ) => {
 	const { onPaymentSetup, onCheckoutSuccess } = eventRegistration || {};
+	const wrapperRef = useRef( null );
+	const [ isStripeReady, setIsStripeReady ] = useState( false );
+	const [ showSkeleton, setShowSkeleton ] = useState( true );
+	const [ cardRowCount, setCardRowCount ] = useState( 2 );
+	const isCardMethod =
+		getStripePaymentMethodTypes( paymentSettings )[ 0 ] === 'card';
+	const Skeleton = components?.Skeleton;
 	const elementContainer = useRef( null );
 	const stripe = useRef( null );
 	const accountStripe = useRef( null );
@@ -1031,6 +1107,29 @@ const WooPaymentsContent = ( {
 		};
 	}, [] );
 
+	// Client 11.1.0 client/checkout/blocks/payment-processor.js:75-108: reserve the
+	// card fields' height for the wrapper's width before Stripe renders them.
+	useEffect( () => {
+		if ( ! isCardMethod || ! wrapperRef.current ) {
+			return undefined;
+		}
+
+		const wrapper = wrapperRef.current;
+		const observer = new window.ResizeObserver( ( entries ) => {
+			const { rows, minHeight } = getCardLayoutForWidth(
+				entries[ 0 ].contentRect.width
+			);
+			setCardRowCount( rows );
+			wrapper.style.minHeight = minHeight;
+		} );
+
+		observer.observe( wrapper );
+		return () => {
+			observer.disconnect();
+			wrapper.style.minHeight = '';
+		};
+	}, [ isCardMethod ] );
+
 	useEffect( () => {
 		if (
 			! elementContainer.current ||
@@ -1062,6 +1161,7 @@ const WooPaymentsContent = ( {
 			'payment',
 			paymentElementOptions
 		);
+		paymentElement.current.on( 'ready', () => setIsStripeReady( true ) );
 		paymentElement.current.mount( elementContainer.current );
 	}, [ paymentSettings, shouldSavePayment ] );
 
@@ -1209,11 +1309,27 @@ const WooPaymentsContent = ( {
 				/>
 			) : null }
 			<div
-				id="wcpay-core-blocks-payment-element"
-				className="wcpay-core-blocks-payment-element"
-				ref={ elementContainer }
-				aria-live="polite"
-			/>
+				ref={ wrapperRef }
+				className={ `wcpay-core-blocks-payment-element-wrapper${
+					isCardMethod ? '' : ' is-apm'
+				}` }
+			>
+				{ showSkeleton && Skeleton ? (
+					<PaymentElementSkeleton
+						Skeleton={ Skeleton }
+						isCardMethod={ isCardMethod }
+						isHidden={ isStripeReady }
+						rowCount={ cardRowCount }
+						onTransitionEnd={ () => setShowSkeleton( false ) }
+					/>
+				) : null }
+				<div
+					id="wcpay-core-blocks-payment-element"
+					className="wcpay-core-blocks-payment-element"
+					ref={ elementContainer }
+					aria-live="polite"
+				/>
+			</div>
 		</>
 	);
 };

@@ -169,6 +169,38 @@
 	margin-bottom: 0;
 }
 
+// Client 11.1.0 client/checkout/blocks/style.scss: the wrapper reserves the Payment
+// Element's height (the card's comes from a ResizeObserver) and the skeleton
+// overlays the mount point until Stripe is ready.
+.wcpay-core-blocks-payment-element-wrapper {
+	position: relative;
+
+	&.is-apm {
+		min-height: 100px;
+	}
+}
+
+.wcpay-core-blocks-payment-element-skeleton {
+	position: absolute;
+	inset-block-start: 0;
+	inset-inline: 0;
+	z-index: 1;
+	opacity: 1;
+	transition: opacity 300ms ease-out;
+	margin-block-end: 2rem;
+
+	&.is-hidden {
+		opacity: 0;
+		pointer-events: none;
+	}
+}
+
+.wcpay-core-skeleton-row {
+	display: flex;
+	gap: 12px;
+	margin-block-start: 12px;
+}
+
 .woopay-save-new-user-container {
 	.save-details-header {
 		display: flex;

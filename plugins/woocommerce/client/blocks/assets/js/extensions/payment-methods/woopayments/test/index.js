@@ -1,8 +1,15 @@
 /**
  * External dependencies
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+	act,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+} from '@testing-library/react';
 import { createElement } from '@wordpress/element';
+import { Skeleton } from '@woocommerce/base-components/skeleton';
 import { useSelect } from '@wordpress/data';
 import { registerExpressPaymentMethod } from '@woocommerce/blocks-registry';
 
@@ -136,6 +143,7 @@ jest.mock( '@wordpress/data', () => ( {
 } ) );
 
 const originalFetch = window.fetch;
+const OriginalResizeObserver = window.ResizeObserver;
 
 /**
  * Stripe createPaymentMethod result used by the new-card test harness.
@@ -179,6 +187,7 @@ describe( 'wc-payment-method-woopayments', () => {
 		const calls = [];
 		const elementsInstance = {
 			create: jest.fn( () => ( {
+				on: jest.fn(),
 				mount: jest.fn(),
 			} ) ),
 			submit: jest.fn( () => {
@@ -1221,6 +1230,7 @@ describe( 'wc-payment-method-woopayments', () => {
 
 	it( 'initializes Stripe Elements in setup mode for zero-total checkouts', async () => {
 		const create = jest.fn( () => ( {
+			on: jest.fn(),
 			mount: jest.fn(),
 		} ) );
 		const elements = jest.fn( () => ( {
@@ -1302,7 +1312,7 @@ describe( 'wc-payment-method-woopayments', () => {
 	// same job imperatively via `elements.create('payment').mount(...)`.
 	it( 'mounts the card PaymentElement into the core Blocks container', async () => {
 		const mount = jest.fn();
-		const create = jest.fn( () => ( { mount } ) );
+		const create = jest.fn( () => ( { on: jest.fn(), mount } ) );
 		const elements = jest.fn( () => ( { create } ) );
 		window.Stripe = jest.fn( () => ( {
 			elements,
@@ -1341,9 +1351,105 @@ describe( 'wc-payment-method-woopayments', () => {
 		expect( mount ).toHaveBeenCalledWith( paymentElementContainer );
 	} );
 
+	describe( 'reserved Payment Element space', () => {
+		const renderCardContent = () => {
+			const on = jest.fn();
+			window.Stripe = jest.fn( () => ( {
+				elements: jest.fn( () => ( {
+					create: jest.fn( () => ( { on, mount: jest.fn() } ) ),
+				} ) ),
+				createPaymentMethod: jest.fn().mockResolvedValue( {} ),
+			} ) );
+			const content = registerWooPayments().content;
+			const view = render(
+				createElement( content.type, {
+					...content.props,
+					components: { Skeleton },
+					eventRegistration: {
+						onPaymentSetup: jest.fn(),
+						onCheckoutSuccess: jest.fn(),
+					},
+					emitResponse: {
+						responseTypes: { SUCCESS: 'success', ERROR: 'error' },
+						noticeContexts: { PAYMENTS: 'payments' },
+					},
+				} )
+			);
+
+			return { ...view, on };
+		};
+
+		afterEach( () => {
+			window.ResizeObserver = OriginalResizeObserver;
+		} );
+
+		// Client 11.1.0 client/checkout/blocks/payment-processor.js:89-98.
+		it.each( [
+			[ 800, '70px' ],
+			[ 660, '70px' ],
+			[ 659, '145px' ],
+			[ 415, '145px' ],
+			[ 414, '220px' ],
+		] )(
+			'reserves the card fields height for a %ipx wide wrapper',
+			( width, minHeight ) => {
+				let resize;
+				window.ResizeObserver = jest.fn( ( callback ) => {
+					resize = callback;
+					return { observe: jest.fn(), disconnect: jest.fn() };
+				} );
+				const { container } = renderCardContent();
+				const wrapper = container.querySelector(
+					'.wcpay-core-blocks-payment-element-wrapper'
+				);
+
+				act( () => {
+					resize( [ { contentRect: { width } } ] );
+				} );
+
+				expect( wrapper ).toContainElement(
+					container.querySelector(
+						'#wcpay-core-blocks-payment-element'
+					)
+				);
+				expect( wrapper ).not.toHaveClass( 'is-apm' );
+				expect( wrapper.style.minHeight ).toBe( minHeight );
+			}
+		);
+
+		// Client 11.1.0 client/checkout/blocks/payment-processor.js:111-117, 276-299.
+		it( 'fades the skeleton out when Stripe is ready and removes it after the transition', async () => {
+			const { container, on } = renderCardContent();
+			const getSkeleton = () =>
+				container.querySelector(
+					'.wcpay-core-blocks-payment-element-skeleton'
+				);
+
+			await waitFor( () => {
+				expect( on ).toHaveBeenCalledWith(
+					'ready',
+					expect.any( Function )
+				);
+			} );
+			expect( getSkeleton() ).not.toHaveClass( 'is-hidden' );
+
+			act( () => {
+				on.mock.calls.find( ( [ event ] ) => event === 'ready' )[ 1 ]();
+			} );
+
+			expect( getSkeleton() ).toHaveClass( 'is-hidden' );
+			expect( getSkeleton() ).toHaveAttribute( 'aria-hidden', 'true' );
+
+			fireEvent.transitionEnd( getSkeleton() );
+
+			expect( getSkeleton() ).toBeNull();
+		} );
+	} );
+
 	it( 'initializes the card PaymentElement without a connected Stripe account when network saved cards are forced', async () => {
 		const elements = jest.fn( () => ( {
 			create: jest.fn( () => ( {
+				on: jest.fn(),
 				mount: jest.fn(),
 			} ) ),
 		} ) );
@@ -1396,6 +1502,7 @@ describe( 'wc-payment-method-woopayments', () => {
 			},
 		};
 		const create = jest.fn( () => ( {
+			on: jest.fn(),
 			mount: jest.fn(),
 		} ) );
 		const elements = jest.fn( () => ( {
@@ -1796,7 +1903,7 @@ describe( 'wc-payment-method-woopayments', () => {
 	it( 'updates reusable card terms when the Blocks save choice changes', async () => {
 		const mount = jest.fn();
 		const update = jest.fn();
-		const create = jest.fn( () => ( { mount, update } ) );
+		const create = jest.fn( () => ( { on: jest.fn(), mount, update } ) );
 		window.Stripe = jest.fn( () => ( {
 			elements: jest.fn( () => ( {
 				create,
@@ -1865,6 +1972,7 @@ describe( 'wc-payment-method-woopayments', () => {
 
 	it( 'keeps reusable card terms visible for a subscription cart', async () => {
 		const create = jest.fn( () => ( {
+			on: jest.fn(),
 			mount: jest.fn(),
 		} ) );
 		window.Stripe = jest.fn( () => ( {
@@ -1973,6 +2081,7 @@ describe( 'wc-payment-method-woopayments', () => {
 		window.Stripe = jest.fn( () => ( {
 			elements: jest.fn( () => ( {
 				create: jest.fn( () => ( {
+					on: jest.fn(),
 					mount: jest.fn(),
 				} ) ),
 			} ) ),
@@ -2029,6 +2138,7 @@ describe( 'wc-payment-method-woopayments', () => {
 		window.Stripe = jest.fn( () => ( {
 			elements: jest.fn( () => ( {
 				create: jest.fn( () => ( {
+					on: jest.fn(),
 					mount: jest.fn(),
 				} ) ),
 			} ) ),
@@ -2088,6 +2198,7 @@ describe( 'wc-payment-method-woopayments', () => {
 		window.Stripe = jest.fn( () => ( {
 			elements: jest.fn( () => ( {
 				create: jest.fn( () => ( {
+					on: jest.fn(),
 					mount: jest.fn(),
 				} ) ),
 			} ) ),
@@ -2197,6 +2308,7 @@ describe( 'wc-payment-method-woopayments', () => {
 		window.Stripe = jest.fn( () => ( {
 			elements: jest.fn( () => ( {
 				create: jest.fn( () => ( {
+					on: jest.fn(),
 					mount: jest.fn(),
 				} ) ),
 			} ) ),
@@ -2359,6 +2471,7 @@ describe( 'wc-payment-method-woopayments', () => {
 		window.Stripe = jest.fn( () => ( {
 			elements: jest.fn( () => ( {
 				create: jest.fn( () => ( {
+					on: jest.fn(),
 					mount: jest.fn(),
 				} ) ),
 			} ) ),
@@ -2442,6 +2555,7 @@ describe( 'wc-payment-method-woopayments', () => {
 		window.Stripe = jest.fn( () => ( {
 			elements: jest.fn( () => ( {
 				create: jest.fn( () => ( {
+					on: jest.fn(),
 					mount: jest.fn(),
 				} ) ),
 			} ) ),
