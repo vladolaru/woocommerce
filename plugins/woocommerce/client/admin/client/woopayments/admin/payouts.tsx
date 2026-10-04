@@ -385,6 +385,13 @@ export const WooPaymentsPayouts = () => {
 	};
 	// Client 11.1.0 `deposits/list/index.tsx:215-287`: the outcome is told by snackbars only.
 	const handleExport = async () => {
+		// Client 11.1.0 `deposits/list/index.tsx:216-220` records the click before asking, with its wc-admin path as source.
+		recordEvent( 'wcpay_csv_export_click', {
+			row_type: 'payouts',
+			source: '/payments/payouts',
+			exported_row_count: summary.count,
+		} );
+
 		if (
 			! confirmWooPaymentsExport(
 				'payouts',

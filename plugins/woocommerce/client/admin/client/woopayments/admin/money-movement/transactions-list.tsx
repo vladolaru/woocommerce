@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from '@wordpress/element';
 import { __, _n } from '@wordpress/i18n';
 import { getHistory } from '@woocommerce/navigation';
+import { recordEvent } from '@woocommerce/tracks';
 import { useLocation } from 'react-router-dom';
 
 /**
@@ -260,6 +261,15 @@ export const WooPaymentsTransactionsList = (
 
 	// Client 11.1.0 `transactions/list/index.tsx:595-701`: the outcome is told by snackbars only.
 	const handleExport = async () => {
+		// Client 11.1.0 `transactions/list/index.tsx:596-600` records the click before asking, with its wc-admin path as source.
+		recordEvent( 'wcpay_csv_export_click', {
+			row_type: 'transactions',
+			source: depositId
+				? '/payments/payouts/details'
+				: '/payments/transactions',
+			exported_row_count: summary.count,
+		} );
+
 		if (
 			! confirmWooPaymentsExport(
 				'transactions',

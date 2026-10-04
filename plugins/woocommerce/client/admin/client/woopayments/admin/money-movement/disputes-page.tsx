@@ -671,6 +671,13 @@ export const WooPaymentsDisputesPage = () => {
 	};
 	// Client 11.1.0 `disputes/index.tsx:349-422`: the outcome is told by snackbars only.
 	const handleExport = async () => {
+		// Client 11.1.0 `disputes/index.tsx:356-360` records the click before asking, with its wc-admin path as source.
+		recordEvent( 'wcpay_csv_export_click', {
+			row_type: 'disputes',
+			source: '/payments/disputes',
+			exported_row_count: summary.count,
+		} );
+
 		if (
 			! confirmWooPaymentsExport(
 				'disputes',

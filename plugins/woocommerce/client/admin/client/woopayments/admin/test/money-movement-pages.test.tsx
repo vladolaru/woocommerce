@@ -2071,6 +2071,48 @@ describe( 'WooPayments money movement pages', () => {
 		);
 	} );
 
+	it( "records the client's transactions export click before the large-export question, even when it is declined", async () => {
+		mockGetTransactions.mockResolvedValue( {
+			data: [ { transaction_id: 'txn_test', type: 'charge' } ],
+			total_count: 12000,
+		} as never );
+		mockGetTransactionsSummary.mockResolvedValue( {
+			count: 12000,
+			total: 0,
+			currency: 'usd',
+		} );
+		const confirm = jest
+			.spyOn( window, 'confirm' )
+			.mockReturnValue( false );
+
+		render(
+			<MemoryRouter initialEntries={ [ '/woopayments/transactions' ] }>
+				<WooPaymentsTransactionsPage />
+			</MemoryRouter>
+		);
+
+		const exportButton = await screen.findByRole( 'button', {
+			name: 'Export',
+		} );
+		await act( async () => {
+			await userEvent.click( exportButton );
+		} );
+
+		// Client 11.1.0 `transactions/list/index.tsx:596-600`.
+		expect( mockRecordEvent ).toHaveBeenCalledWith(
+			'wcpay_csv_export_click',
+			{
+				row_type: 'transactions',
+				source: '/payments/transactions',
+				exported_row_count: 12000,
+			}
+		);
+		expect( confirm ).toHaveBeenCalled();
+		expect( mockRequestTransactionsExport ).not.toHaveBeenCalled();
+
+		confirm.mockRestore();
+	} );
+
 	it( 'persists transaction DataViews preferences without changing the REST query', async () => {
 		mockGetTransactions.mockResolvedValue( {
 			data: [
@@ -3053,6 +3095,57 @@ describe( 'WooPayments money movement pages', () => {
 				),
 			{ timeout: 2000 }
 		);
+	} );
+
+	it( "records the client's disputes export click before the large-export question, even when it is declined", async () => {
+		mockGetDisputes.mockResolvedValue( {
+			data: [
+				{
+					id: 'dp_test',
+					charge_id: 'ch_test',
+					reason: 'fraudulent',
+					status: 'needs_response',
+					date: '2026-06-18',
+					amount: 5000,
+					currency: 'usd',
+				},
+			],
+			total_count: 1500,
+		} );
+		mockGetDisputesSummary.mockResolvedValue( {
+			count: 1500,
+			currency: 'usd',
+		} );
+		const confirm = jest
+			.spyOn( window, 'confirm' )
+			.mockReturnValue( false );
+
+		render(
+			<MemoryRouter initialEntries={ [ '/woopayments/disputes' ] }>
+				<WooPaymentsDisputesPage />
+			</MemoryRouter>
+		);
+
+		const exportButton = await screen.findByRole( 'button', {
+			name: 'Export',
+		} );
+		await act( async () => {
+			await userEvent.click( exportButton );
+		} );
+
+		// Client 11.1.0 `disputes/index.tsx:356-360`.
+		expect( mockRecordEvent ).toHaveBeenCalledWith(
+			'wcpay_csv_export_click',
+			{
+				row_type: 'disputes',
+				source: '/payments/disputes',
+				exported_row_count: 1500,
+			}
+		);
+		expect( confirm ).toHaveBeenCalled();
+		expect( mockRequestDisputesExport ).not.toHaveBeenCalled();
+
+		confirm.mockRestore();
 	} );
 
 	it( 'announces transaction detail loading from a stable status region', () => {

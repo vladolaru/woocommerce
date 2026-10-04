@@ -3,6 +3,7 @@
  */
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { speak } from '@wordpress/a11y';
+import { recordEvent } from '@woocommerce/tracks';
 import {
 	getSettings as getDateSettings,
 	setSettings as setDateSettings,
@@ -66,6 +67,10 @@ jest.mock( '../money-movement/data', () => ( {
 	getWooPaymentsTransactionsSummary: jest.fn(),
 	requestWooPaymentsTransactionsExport: jest.fn(),
 	getWooPaymentsTransactionsExportUrl: jest.fn(),
+} ) );
+
+jest.mock( '@woocommerce/tracks', () => ( {
+	recordEvent: jest.fn(),
 } ) );
 
 const mockHistoryPush = jest.fn();
@@ -224,6 +229,9 @@ const mockGetTransactionsExportUrl =
 		typeof getWooPaymentsTransactionsExportUrl
 	>;
 const mockSpeak = speak as jest.MockedFunction< typeof speak >;
+const mockRecordEvent = recordEvent as jest.MockedFunction<
+	typeof recordEvent
+>;
 
 describe( 'WooPayments payout details admin surface', () => {
 	let anchorClickSpy: jest.SpyInstance;
@@ -248,6 +256,7 @@ describe( 'WooPayments payout details admin surface', () => {
 		mockGetTransactionsSummary.mockReset();
 		mockDataViews.mockClear();
 		mockSpeak.mockReset();
+		mockRecordEvent.mockReset();
 		mockRequestTransactionsExport.mockReset();
 		mockGetTransactionsExportUrl.mockReset();
 		mockHistoryPush.mockReset();
@@ -415,6 +424,49 @@ describe( 'WooPayments payout details admin surface', () => {
 				),
 			{ timeout: 2000 }
 		);
+	} );
+
+	it( "records the client's export click before the large-export question, even when it is declined", async () => {
+		mockGetDeposits.mockResolvedValue( {
+			total_count: 1,
+			data: [ { id: 'po_test', type: 'deposit', status: 'paid' } ],
+		} as never );
+		mockGetDepositsSummary.mockResolvedValue( {
+			count: 1500,
+			total: 0,
+			currency: 'usd',
+		} );
+		const confirm = jest
+			.spyOn( window, 'confirm' )
+			.mockReturnValue( false );
+
+		render(
+			<MemoryRouter initialEntries={ [ '/woopayments/payouts' ] }>
+				<WooPaymentsPayouts />
+			</MemoryRouter>
+		);
+
+		await screen.findByRole( 'status' );
+		const exportButton = await screen.findByRole( 'button', {
+			name: 'Export',
+		} );
+		await act( async () => {
+			await userEvent.click( exportButton );
+		} );
+
+		// Client 11.1.0 `deposits/list/index.tsx:216-220`.
+		expect( mockRecordEvent ).toHaveBeenCalledWith(
+			'wcpay_csv_export_click',
+			{
+				row_type: 'payouts',
+				source: '/payments/payouts',
+				exported_row_count: 1500,
+			}
+		);
+		expect( confirm ).toHaveBeenCalled();
+		expect( mockRequestDepositsExport ).not.toHaveBeenCalled();
+
+		confirm.mockRestore();
 	} );
 
 	it( 'loads and renders payout detail data', async () => {
@@ -614,6 +666,15 @@ describe( 'WooPayments payout details admin surface', () => {
 		} );
 		expect( mockRequestTransactionsExport ).toHaveBeenCalledWith(
 			expect.objectContaining( { deposit_id: 'po_test' } )
+		);
+		// Client 11.1.0 `transactions/list/index.tsx:596-600` on its payout details route.
+		expect( mockRecordEvent ).toHaveBeenCalledWith(
+			'wcpay_csv_export_click',
+			{
+				row_type: 'transactions',
+				source: '/payments/payouts/details',
+				exported_row_count: 3,
+			}
 		);
 		await waitFor(
 			() =>
