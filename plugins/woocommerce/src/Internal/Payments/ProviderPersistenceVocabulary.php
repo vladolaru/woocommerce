@@ -66,4 +66,13 @@ interface ProviderPersistenceVocabulary {
 	 * @since 11.0.0
 	 */
 	public function get_preserved_payment_meta_keys(): array;
+
+	/**
+	 * Get the order meta key holding the provider payment the order is bound to.
+	 *
+	 * @return string
+	 *
+	 * @since 11.2.0
+	 */
+	public function get_payment_reference_meta_key(): string;
 }

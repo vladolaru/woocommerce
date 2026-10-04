@@ -86,10 +86,12 @@ class OrderPaymentLifecycleService {
 	 * cleared first, so the guards see the database on both order storages, without
 	 * clearing changes that the caller has not yet saved.
 	 *
+	 * @since 11.2.0
+	 *
 	 * @param WC_Order $order Order object.
 	 * @return WC_Order Freshly read order.
 	 */
-	private function get_fresh_order_from_data_store( WC_Order $order ): WC_Order {
+	public function get_fresh_order_from_data_store( WC_Order $order ): WC_Order {
 		$order_id = $order->get_id();
 		clean_post_cache( $order_id );
 

@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Throwable;
 use WC_Logger_Interface;
 use WC_Order;
@@ -125,19 +126,15 @@ class PaymentProcessingService {
 
 		// WooPayments locks checkout too, so this refusal is not logged as a native-only one.
 		if ( ! $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $profile, $idempotency_key, 'checkout' ) ) {
-			return new PaymentOutcome(
-				PaymentOutcome::STATUS_FAILED,
-				'',
-				'',
-				'',
-				'',
-				array(
-					PaymentOutcome::DATA_ERROR_MESSAGE => __( 'A payment operation is already in progress for this order.', 'woocommerce' ),
-				)
-			);
+			return $this->get_checkout_in_progress_outcome();
 		}
 
 		try {
+			$changed_order_outcome = $this->get_outcome_for_order_changed_before_claim( $order, $profile );
+			if ( null !== $changed_order_outcome ) {
+				return $changed_order_outcome;
+			}
+
 			$provider_outcome = 0.0 >= $amount && ! $this->should_call_provider_for_zero_total_checkout( $context, $provider )
 				? new PaymentOutcome( PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT )
 				: $this->charge_provider( $context, $provider, $idempotency_key );
@@ -163,6 +160,106 @@ class PaymentProcessingService {
 			return $outcome;
 		} finally {
 			$this->order_payment_store->release_order_payment_lock( $order, $profile, $idempotency_key );
+		}
+	}
+
+	/**
+	 * Get the failed outcome for a checkout refused because another payment operation is in progress.
+	 *
+	 * @return PaymentOutcome
+	 */
+	private function get_checkout_in_progress_outcome(): PaymentOutcome {
+		return new PaymentOutcome(
+			PaymentOutcome::STATUS_FAILED,
+			'',
+			'',
+			'',
+			'',
+			array(
+				PaymentOutcome::DATA_ERROR_MESSAGE => __( 'A payment operation is already in progress for this order.', 'woocommerce' ),
+			)
+		);
+	}
+
+	/**
+	 * Stop a checkout charge when another request paid or bound the order before this one claimed the lock.
+	 *
+	 * The gateway's duplicate-payment checks run before the lock, so two submissions of one order can both pass them.
+	 * Under the lock the order is read again and compared with the order this request loaded: a new paid status, a new
+	 * payment reference, or a new hold with a payment on record means another request got there first. Client 11.1.0
+	 * takes no lock in process_payment() (class-wc-payment-gateway-wcpay.php:1251-1268) and would charge again.
+	 *
+	 * @param WC_Order                      $order   Order as this request loaded it, before the claim.
+	 * @param ProviderPersistenceVocabulary $profile Provider persistence vocabulary.
+	 * @return PaymentOutcome|null The outcome to return instead of charging, or null to charge.
+	 */
+	private function get_outcome_for_order_changed_before_claim( WC_Order $order, ProviderPersistenceVocabulary $profile ): ?PaymentOutcome {
+		$fresh_order       = $this->lifecycle_service->get_fresh_order_from_data_store( $order );
+		$paid_statuses     = wc_get_is_paid_statuses();
+		$loaded_references = $this->get_recorded_payment_references( $order, $profile );
+		$fresh_references  = $this->get_recorded_payment_references( $fresh_order, $profile );
+
+		if ( $fresh_order->has_status( $paid_statuses ) && ! $order->has_status( $paid_statuses ) ) {
+			$this->log_checkout_refused_after_claim( $order, 'order_paid' );
+
+			return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, '', '', '', '', array( PaymentOutcome::DATA_ORDER_PAID_BY_ANOTHER_REQUEST => true ) );
+		}
+
+		if ( $fresh_references !== $loaded_references ) {
+			$this->log_checkout_refused_after_claim( $order, 'payment_reference_changed' );
+
+			return $this->get_checkout_in_progress_outcome();
+		}
+
+		// A manual-capture authorization puts the order on hold, which is not a paid status.
+		if ( $fresh_order->has_status( OrderStatus::ON_HOLD ) && ! $order->has_status( OrderStatus::ON_HOLD ) && array( '', '' ) !== $fresh_references ) {
+			$this->log_checkout_refused_after_claim( $order, 'order_on_hold' );
+
+			return $this->get_checkout_in_progress_outcome();
+		}
+
+		return null;
+	}
+
+	/**
+	 * Get the payment references recorded on an order: its transaction ID and the provider's payment meta.
+	 *
+	 * @param WC_Order                      $order   Order object.
+	 * @param ProviderPersistenceVocabulary $profile Provider persistence vocabulary.
+	 * @return array{0:string,1:string}
+	 */
+	private function get_recorded_payment_references( WC_Order $order, ProviderPersistenceVocabulary $profile ): array {
+		return array(
+			(string) $order->get_transaction_id(),
+			(string) $order->get_meta( $profile->get_payment_reference_meta_key(), true ),
+		);
+	}
+
+	/**
+	 * Log a warning when a checkout is refused because the order changed before the lock was claimed.
+	 *
+	 * Logging is best-effort and never throws.
+	 *
+	 * @param WC_Order $order  Order being paid.
+	 * @param string   $reason Why the charge was refused.
+	 */
+	private function log_checkout_refused_after_claim( WC_Order $order, string $reason ): void {
+		try {
+			$logger = $this->logger ?? ( function_exists( 'wc_get_logger' ) ? wc_get_logger() : null );
+			if ( null === $logger ) {
+				return;
+			}
+
+			$logger->warning(
+				sprintf( 'Native checkout charged nothing: order %1$d changed before this request claimed its payment lock.', $order->get_id() ),
+				array(
+					'source'   => 'native-payments',
+					'order_id' => $order->get_id(),
+					'reason'   => $reason,
+				)
+			);
+		} catch ( Throwable $logging_exception ) {
+			return;
 		}
 	}
 

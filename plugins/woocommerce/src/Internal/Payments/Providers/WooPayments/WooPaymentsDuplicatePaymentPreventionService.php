@@ -390,6 +390,22 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 			return null;
 		}
 
+		return $this->prevent_payment_for_paid_order( $order, $gateway );
+	}
+
+	/**
+	 * Answer a checkout for an order that was already paid, without charging.
+	 *
+	 * Notes the prevented payment on the order and sends the shopper to the order-received page. The processing
+	 * service returns the same answer when another request paid the order while this one waited for its lock.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WC_Order           $order   Order that was already paid.
+	 * @param WC_Payment_Gateway $gateway Gateway used to build the return URL.
+	 * @return array<string,string>
+	 */
+	public function prevent_payment_for_paid_order( WC_Order $order, WC_Payment_Gateway $gateway ): array {
 		$order->add_order_note(
 			__( 'WooPayments: detected and prevented a second payment for this order, which had already been paid.', 'woocommerce' )
 		);

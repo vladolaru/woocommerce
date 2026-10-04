@@ -751,6 +751,15 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 						return array( '_offline_intent_id', '_offline_method_id', '_offline_customer_id', '_offline_status' );
 					}
 
+					/**
+					 * Get the order meta key holding the provider payment.
+					 *
+					 * @return string
+					 */
+					public function get_payment_reference_meta_key(): string {
+						return '_offline_intent_id';
+					}
+
 				};
 			}
 
@@ -1584,6 +1593,129 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'failure', $result['result'], 'WooCommerce recognizes failure, not fail; an unrecognized value costs the shopper the decline message.' );
 		$this->assertSame( 0, $provider->charge_calls );
 		$this->store->unlock_order_payment( $order, $this->persistence_profile );
+	}
+
+	/**
+	 * @testdox Should not charge a second submission of an order that a first submission paid after the second loaded it.
+	 */
+	public function test_process_checkout_does_not_charge_an_order_paid_after_it_was_loaded(): void {
+		$order       = $this->create_woopayments_order( '10.00' );
+		$second_view = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $second_view );
+
+		// The first submission completes after the second passed the gateway's checks but before it claims the lock.
+		$first = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_first' ) );
+		$this->sut->process_checkout_outcome( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_first' ), $first );
+
+		$second  = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_second' ) );
+		$context = PaymentContext::for_checkout( $second_view, OrderPaymentStore::GATEWAY_ID, 'pm_second' );
+		$outcome = $this->sut->process_checkout_outcome( $context, $second );
+		$result  = $this->sut->process_checkout( $context, $second );
+		$order   = wc_get_order( $order->get_id() );
+
+		$this->assertSame( 0, $second->charge_calls, 'An order paid while this request waited for the lock must not be charged again.' );
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertTrue( $outcome->get_data()[ PaymentOutcome::DATA_ORDER_PAID_BY_ANOTHER_REQUEST ] ?? false );
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertSame( $second_view->get_checkout_order_received_url(), $result['redirect'] );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'pi_first', $order->get_transaction_id() );
+		$this->assertFalse( get_transient( $this->persistence_profile->get_order_lock_key( $order ) ), 'The refusal must release the lock.' );
+	}
+
+	/**
+	 * @testdox Should not charge an order put on hold with a payment on record after this request loaded it.
+	 */
+	public function test_process_checkout_does_not_charge_an_order_put_on_hold_after_it_was_loaded(): void {
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->set_transaction_id( 'pi_held' );
+		$order->update_meta_data( '_intent_id', 'pi_held' );
+		$order->save();
+		$loaded = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $loaded );
+
+		// Another request records the manual-capture authorization of the same intent: the order goes on hold, unpaid.
+		$order->set_status( 'on-hold' );
+		$order->save();
+
+		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_second' ) );
+		$outcome  = $this->sut->process_checkout_outcome( PaymentContext::for_checkout( $loaded, OrderPaymentStore::GATEWAY_ID, 'pm_second' ), $provider );
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertSame( 0, $provider->charge_calls, 'An authorization held for capture must not be charged again.' );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'A payment operation is already in progress for this order.', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ] ?? null );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status(), 'The refusal must leave the held order as it is.' );
+		$this->assertFalse( get_transient( $this->persistence_profile->get_order_lock_key( $order ) ), 'The refusal must release the lock.' );
+	}
+
+	/**
+	 * @testdox Should not charge an order whose payment reference changed after this request loaded it: $_dataName.
+	 *
+	 * @dataProvider provide_payment_reference_changes
+	 *
+	 * @param string $transaction_id Transaction ID another request records.
+	 * @param string $intent_id      Payment intent another request records.
+	 */
+	public function test_process_checkout_does_not_charge_an_order_whose_payment_reference_changed( string $transaction_id, string $intent_id ): void {
+		// An earlier attempt left an intent waiting for the shopper; checkout keeps the first transaction ID.
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->set_transaction_id( 'pi_started' );
+		$order->update_meta_data( '_intent_id', 'pi_started' );
+		$order->save();
+		$loaded = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $loaded );
+
+		$order->set_transaction_id( $transaction_id );
+		$order->update_meta_data( '_intent_id', $intent_id );
+		$order->save();
+
+		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_second' ) );
+		$outcome  = $this->sut->process_checkout_outcome( PaymentContext::for_checkout( $loaded, OrderPaymentStore::GATEWAY_ID, 'pm_second' ), $provider );
+
+		$this->assertSame( 0, $provider->charge_calls, 'A payment another request started must not be paid again.' );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'A payment operation is already in progress for this order.', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ] ?? null );
+		$this->assertFalse( get_transient( $this->persistence_profile->get_order_lock_key( $order ) ), 'The refusal must release the lock.' );
+	}
+
+	/**
+	 * @testdox Should still charge an order that already had its status and payment when this request loaded it: $status.
+	 *
+	 * A subscription payment-method change re-runs checkout on a held or paid entity, and the gateway's own checks
+	 * decide those before the lock; only a change since the load means another request got there first.
+	 *
+	 * @testWith ["on-hold"]
+	 *           ["processing"]
+	 *
+	 * @param string $status Order status when this request loaded the order.
+	 */
+	public function test_process_checkout_charges_an_order_unchanged_since_it_was_loaded( string $status ): void {
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->set_transaction_id( 'pi_existing' );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->set_status( $status );
+		$order->save();
+		$loaded = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $loaded );
+
+		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_existing' ) );
+		$this->sut->process_checkout_outcome( PaymentContext::for_checkout( $loaded, OrderPaymentStore::GATEWAY_ID, 'pm_new' ), $provider );
+
+		$this->assertSame( 1, $provider->charge_calls, 'The re-check under the lock must only refuse changes made after the load.' );
+	}
+
+	/**
+	 * Payment references another request records between this request's load and its claim.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function provide_payment_reference_changes(): array {
+		return array(
+			'new transaction ID' => array( 'pi_other', 'pi_started' ),
+			'new payment intent' => array( 'pi_started', 'pi_other' ),
+		);
 	}
 
 	/**

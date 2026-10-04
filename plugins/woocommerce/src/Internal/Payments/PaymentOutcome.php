@@ -196,6 +196,16 @@ class PaymentOutcome {
 	public const DATA_PRESERVE_ORDER_STATUS = 'preserve_order_status';
 
 	/**
+	 * Data key flagging that another request paid the order while this one waited for the payment lock.
+	 *
+	 * Nothing was charged; the checkout sends the shopper to the order-received page.
+	 *
+	 * @since 11.2.0
+	 * @var string
+	 */
+	public const DATA_ORDER_PAID_BY_ANOTHER_REQUEST = 'order_paid_by_another_request';
+
+	/**
 	 * Outcome status.
 	 *
 	 * @var string

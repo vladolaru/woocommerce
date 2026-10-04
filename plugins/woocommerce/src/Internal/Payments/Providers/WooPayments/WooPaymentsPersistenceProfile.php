@@ -168,6 +168,17 @@ class WooPaymentsPersistenceProfile implements ProviderPersistenceVocabulary {
 	}
 
 	/**
+	 * Get the order meta key holding the payment intent the order is bound to.
+	 *
+	 * @return string
+	 *
+	 * @since 11.2.0
+	 */
+	public function get_payment_reference_meta_key(): string {
+		return '_intent_id';
+	}
+
+	/**
 	 * Map a neutral outcome to WooPayments order meta.
 	 *
 	 * @param PaymentOutcome $outcome Provider outcome.

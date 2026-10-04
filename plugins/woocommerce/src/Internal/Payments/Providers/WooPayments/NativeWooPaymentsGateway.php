@@ -1850,6 +1850,11 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		);
 		$this->checkout_payment_started = true;
 		$outcome                        = $this->get_processing_service()->process_checkout_outcome( $context, $this->get_provider() );
+		if ( true === ( $outcome->get_data()[ PaymentOutcome::DATA_ORDER_PAID_BY_ANOTHER_REQUEST ] ?? false ) ) {
+			// Another submission paid the order after this one passed the already-paid check above.
+			return $this->get_duplicate_payment_prevention_service()->prevent_payment_for_paid_order( $order, $this );
+		}
+
 		$this->maybe_bump_failed_transaction_rate_limiter( $outcome );
 		self::maybe_add_failed_checkout_notice( $outcome );
 		$this->maybe_store_paid_intent_in_session( $outcome );

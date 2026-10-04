@@ -5823,6 +5823,29 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should answer as for an already-paid order when another submission paid it while this one waited for the lock.
+	 */
+	public function test_process_payment_answers_as_already_paid_when_the_order_was_paid_under_the_lock(): void {
+		$order = $this->create_order();
+		$order->set_payment_method( 'woocommerce_payments' );
+		$order->save();
+
+		$service                   = new RecordingPaymentProcessingService();
+		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, '', '', '', '', array( PaymentOutcome::DATA_ORDER_PAID_BY_ANOTHER_REQUEST => true ) );
+		$gateway                   = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$result = $gateway->process_payment( $order->get_id() );
+		$notes  = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+
+		$this->assertSame( 1, $service->checkout_attempt_count );
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertStringContainsString( 'wcpay_previous_successful_intent=yes', $result['redirect'], 'The answer must match the already-paid check before the lock.' );
+		$this->assertSame( 'WooPayments: detected and prevented a second payment for this order, which had already been paid.', $notes[0]->content ?? null );
+		$this->assertNull( WC()->session->get( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY ) );
+	}
+
+	/**
 	 * @testdox Should resolve native dependencies when WooCommerce instantiates the gateway directly.
 	 */
 	public function test_process_payment_resolves_dependencies_without_explicit_init(): void {
