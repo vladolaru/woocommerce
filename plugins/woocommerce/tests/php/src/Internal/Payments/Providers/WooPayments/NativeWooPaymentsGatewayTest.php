@@ -80,17 +80,32 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A login outside a checkout that created an account leaves the current request's login cookie alone.
+	 * @testdox $label leaves the current request's login cookie alone.
 	 *
 	 * Runs in its own process so no earlier test has defined WOOCOMMERCE_CHECKOUT.
 	 *
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
+	 *
+	 * @testWith ["A login outside checkout", false, false]
+	 *           ["An account created outside checkout, as My Account registration does", false, true]
+	 *           ["A login during a checkout that created no account", true, false]
+	 *
+	 * @param string $label           Case description.
+	 * @param bool   $in_checkout     Whether the request is a checkout.
+	 * @param bool   $account_created Whether the request created the customer's account.
 	 */
-	public function test_login_outside_checkout_account_creation_leaves_the_request_cookie_alone(): void {
+	public function test_login_outside_checkout_account_creation_leaves_the_request_cookie_alone( string $label, bool $in_checkout, bool $account_created ): void {
+		unset( $label );
 		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
 		new NativeWooPaymentsGateway();
 		unset( $_COOKIE[ LOGGED_IN_COOKIE ] );
+		if ( $in_checkout ) {
+			wc_maybe_define_constant( 'WOOCOMMERCE_CHECKOUT', true );
+		}
+		if ( $account_created ) {
+			do_action( 'woocommerce_created_customer', $user_id, array(), false ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- What wc_create_new_customer() fires.
+		}
 
 		$this->set_auth_cookie_as_checkout_does( $user_id );
 
