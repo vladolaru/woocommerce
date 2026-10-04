@@ -16,7 +16,7 @@ The neutral layer (everything in `src/Internal/Payments/` outside `Providers/Woo
 - `OrderPaymentStore.php`
 - `PaymentProcessingService.php`
 
-Adding a fifth reference erodes the provider abstraction. Route new provider needs through the provider contracts instead of reaching into `Providers\WooPayments` directly. `tests/php/src/Internal/Payments/NeutralLayerPlacementTest.php` enforces this list: it fails on any new referencing file and on any listed file that no longer needs the exception. It also names one pending exception, `Shadow/NativePaymentsShadowMode.php`, kept until the owner decides that file's fate.
+Adding a fifth reference erodes the provider abstraction. Route new provider needs through the provider contracts instead of reaching into `Providers\WooPayments` directly. `tests/php/src/Internal/Payments/NeutralLayerPlacementTest.php` enforces this list: it fails on any new referencing file and on any listed file that no longer needs the exception.
 
 ## `WooPaymentsClientVersion` bump policy
 

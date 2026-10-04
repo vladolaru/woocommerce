@@ -5,7 +5,7 @@
 
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Internal\Payments\Shadow;
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
@@ -33,7 +33,7 @@ use WC_Order;
  * mutation APIs.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal Canary only; removed before the PR merges.
  */
 class NativePaymentsShadowMode implements RegisterHooksInterface {
 

@@ -27,14 +27,6 @@ class NeutralLayerPlacementTest extends WC_Unit_Test_Case {
 	);
 
 	/**
-	 * Named exceptions outside the allow-list, each pending an owner decision.
-	 */
-	private const PENDING_EXCEPTIONS = array(
-		// Transitional read-only shadow mode; the monitor recommends deleting it. Kept here until the owner decides its fate.
-		'Shadow/NativePaymentsShadowMode.php',
-	);
-
-	/**
 	 * @testdox The scanner finds provider references in code and strings and ignores them in comments.
 	 *
 	 * @dataProvider provider_reference_sources
@@ -75,19 +67,19 @@ class NeutralLayerPlacementTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Outside the provider folder, only the allow-listed files and named exceptions reference the WooPayments provider.
+	 * @testdox Outside the provider folder, only the allow-listed files reference the WooPayments provider.
 	 */
 	public function test_only_allowed_files_reference_the_provider(): void {
-		$violations = array_values( array_diff( $this->referencing_files(), self::ALLOWED_FILES, self::PENDING_EXCEPTIONS ) );
+		$violations = array_values( array_diff( $this->referencing_files(), self::ALLOWED_FILES ) );
 
 		$this->assertSame( array(), $violations, 'Only the files listed in the woocommerce-native-payments skill may reference Providers\WooPayments from the neutral layer. Route new provider needs through the provider contracts.' );
 	}
 
 	/**
-	 * @testdox Every allow-listed file and named exception still references the provider, so the list only shrinks deliberately.
+	 * @testdox Every allow-listed file still references the provider, so the list only shrinks deliberately.
 	 */
 	public function test_allowed_files_still_need_the_exception(): void {
-		$stale = array_values( array_diff( array_merge( self::ALLOWED_FILES, self::PENDING_EXCEPTIONS ), $this->referencing_files() ) );
+		$stale = array_values( array_diff( self::ALLOWED_FILES, $this->referencing_files() ) );
 
 		$this->assertSame( array(), $stale, 'These files no longer reference Providers\WooPayments: remove them from the allow-list here and in the woocommerce-native-payments skill.' );
 	}

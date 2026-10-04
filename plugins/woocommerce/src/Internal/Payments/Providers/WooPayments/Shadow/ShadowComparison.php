@@ -5,13 +5,13 @@
 
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Internal\Payments\Shadow;
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow;
 
 /**
  * Immutable same-store shadow comparison record.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal Canary only; removed before the PR merges.
  */
 class ShadowComparison {
 

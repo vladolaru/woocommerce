@@ -1,9 +1,9 @@
 <?php
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Tests\Internal\Payments\Shadow;
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Shadow;
 
-use Automattic\WooCommerce\Internal\Payments\Shadow\PaymentSurfaceDiffer;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow\PaymentSurfaceDiffer;
 use WC_Unit_Test_Case;
 
 /**

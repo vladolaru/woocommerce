@@ -26,7 +26,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPayPreflightGuard;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookReliabilityService;
-use Automattic\WooCommerce\Internal\Payments\Shadow\NativePaymentsShadowMode;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow\NativePaymentsShadowMode;
 use ReflectionMethod;
 use WC_Unit_Test_Case;
 
@@ -690,7 +690,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	/** @testdox Plugin-owned sites retain the available effective state without default shadow cost. */
 	public function test_plugin_owner_uses_the_available_effective_state_without_default_shadow(): void {
 		$container = $this->make_container( NativePaymentsState::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
-		$sut       = $this->make_bootstrap();
+		$sut       = $this->make_bootstrap( array( WooPaymentsProvider::class, 'register_plugin_owner_hooks' ) );
 
 		$sut->register( $container, '__return_false' );
 
@@ -702,7 +702,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	public function test_plugin_owner_registers_opt_in_shadow_only(): void {
 		add_filter( NativePaymentsShadowMode::FILTER_SHADOW_ENABLED, '__return_true' );
 		$container = $this->make_container( NativePaymentsState::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
-		$sut       = $this->make_bootstrap();
+		$sut       = $this->make_bootstrap( array( WooPaymentsProvider::class, 'register_plugin_owner_hooks' ) );
 
 		$sut->register( $container, '__return_false' );
 
@@ -713,7 +713,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	public function test_owner_none_uses_a_disabled_effective_state(): void {
 		add_filter( NativePaymentsShadowMode::FILTER_SHADOW_ENABLED, '__return_true' );
 		$container = $this->make_container( NativePaymentsState::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_NONE );
-		$sut       = $this->make_bootstrap();
+		$sut       = $this->make_bootstrap( array( WooPaymentsProvider::class, 'register_plugin_owner_hooks' ) );
 
 		$sut->register( $container, '__return_false' );
 
@@ -750,12 +750,14 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	/**
 	 * Build the neutral facade with the WooPayments-owned root matrix.
 	 *
+	 * @param callable|null $plugin_owner_registrar Provider-owned hooks for plugin-owned sites.
 	 * @return NativePaymentsBootstrap
 	 */
-	private function make_bootstrap(): NativePaymentsBootstrap {
+	private function make_bootstrap( ?callable $plugin_owner_registrar = null ): NativePaymentsBootstrap {
 		return new NativePaymentsBootstrap(
 			array( WooPaymentsProvider::class, 'get_bootstrap_root_matrix' ),
-			array( WooPaymentsProvider::class, 'get_multi_currency_provider_roots' )
+			array( WooPaymentsProvider::class, 'get_multi_currency_provider_roots' ),
+			$plugin_owner_registrar
 		);
 	}
 

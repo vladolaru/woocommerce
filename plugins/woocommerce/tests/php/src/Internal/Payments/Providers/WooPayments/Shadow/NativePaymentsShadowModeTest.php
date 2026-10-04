@@ -1,7 +1,7 @@
 <?php
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Tests\Internal\Payments\Shadow;
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Shadow;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
@@ -11,9 +11,9 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
-use Automattic\WooCommerce\Internal\Payments\Shadow\NativePaymentsShadowMode;
-use Automattic\WooCommerce\Internal\Payments\Shadow\PaymentSurfaceDiffer;
-use Automattic\WooCommerce\Internal\Payments\Shadow\ShadowComparison;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow\NativePaymentsShadowMode;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow\PaymentSurfaceDiffer;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow\ShadowComparison;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Order;
 use WC_Unit_Test_Case;

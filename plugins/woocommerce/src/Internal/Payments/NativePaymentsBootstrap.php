@@ -11,7 +11,6 @@ use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Container;
 use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyBootstrap;
-use Automattic\WooCommerce\Internal\Payments\Shadow\NativePaymentsShadowMode;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -99,17 +98,6 @@ final class NativePaymentsBootstrap {
 
 		if ( NativePaymentsRuntimeArbiter::OWNER_PLUGIN === $owner && null !== $this->plugin_owner_registrar ) {
 			( $this->plugin_owner_registrar )( $container );
-		}
-
-		/**
-		 * Filters whether read-only native payments shadow mode is enabled.
-		 *
-		 * @since 11.0.0
-		 *
-		 * @param bool $enabled Whether shadow mode is enabled. Default false.
-		 */
-		if ( NativePaymentsRuntimeArbiter::OWNER_PLUGIN === $owner && apply_filters( NativePaymentsShadowMode::FILTER_SHADOW_ENABLED, false ) ) {
-			$this->register_root( $container, NativePaymentsShadowMode::class );
 		}
 	}
 
