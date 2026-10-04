@@ -306,8 +306,13 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			}
 
 			// As the retrieval: a gateway-scoped read returns its own types whatever their setting, except Link, which
-			// rides the card gateway (client 11.1.0 `class-wc-payments-token-service.php:199-250`, `:360-377`).
-			if ( '' !== $gateway_id && self::PAYMENT_METHOD_TYPE_LINK !== $payment_method_type ) {
+			// rides the card gateway (client 11.1.0 `class-wc-payments-token-service.php:199-250`, `:360-377`). A token of
+			// another gateway's type stored under this one is shown only while its type is enabled.
+			if (
+				'' !== $gateway_id
+				&& self::PAYMENT_METHOD_TYPE_LINK !== $payment_method_type
+				&& ( self::GATEWAY_IDS_BY_PAYMENT_METHOD_TYPE[ $payment_method_type ] ?? '' ) === $gateway_id
+			) {
 				continue;
 			}
 

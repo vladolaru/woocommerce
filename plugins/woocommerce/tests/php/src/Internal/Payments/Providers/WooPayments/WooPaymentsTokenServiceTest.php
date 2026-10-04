@@ -1606,6 +1606,38 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A card-gateway read leaves out a SEPA token stored under the card gateway while SEPA is disabled.
+	 *
+	 * Client 11.1.0 fetches only the card gateway's own types for a card-gateway read (`class-wc-payments-token-service.php:360-377`)
+	 * and drops every stored token it did not fetch (`:199-250`), so a SEPA token filed under the card gateway never reaches
+	 * the card checkout. Native keeps the row and leaves it out while SEPA is disabled (review 37 F3).
+	 */
+	public function test_card_gateway_read_leaves_out_a_sepa_token_filed_under_the_card_gateway_while_sepa_is_disabled(): void {
+		$user_id    = $this->factory()->user->create();
+		$card_token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_card' );
+		$sepa_token = new WooPaymentsSepaToken();
+		$sepa_token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$sepa_token->set_user_id( $user_id );
+		$sepa_token->set_token( 'pm_sepa_under_card' );
+		$sepa_token->set_last4( '6789' );
+		$sepa_token->save();
+		$this->create_service( array(), null, null, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered customer-token filter.
+		$result = apply_filters(
+			'woocommerce_get_customer_payment_tokens',
+			array(
+				$card_token->get_id() => $card_token,
+				$sepa_token->get_id() => $sepa_token,
+			),
+			$user_id,
+			OrderPaymentStore::GATEWAY_ID
+		);
+
+		$this->assertSame( array( $card_token->get_id() ), array_keys( $result ) );
+	}
+
+	/**
 	 * @testdox Should resolve reusable non-card WooPayments tokens attached to renewal orders.
 	 */
 	public function test_resolves_payment_method_id_from_order_attached_reusable_non_card_token(): void {
