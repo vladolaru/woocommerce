@@ -21,9 +21,10 @@ import {
 /**
  * The 11.1.0 plugin's own Payment Element container
  * (`class-wc-payment-gateway-wcpay.php:611`, `.wcpay-upe-element`), used for
- * the plugin-era decline below. This differs from native's
- * `#wcpay-core-payment-element` container that `fillCardDetails` (used for
- * the native-era payment further down) targets.
+ * the plugin-era decline below. Native's `#wcpay-core-payment-element`, which
+ * `fillCardDetails` targets for the native-era payment further down, carries
+ * the same class too, so this selector does not tell the runtimes apart;
+ * plugin ownership is asserted separately before the plugin-era write.
  */
 async function fillPluginOwnedCardDetails(
 	page: Page,

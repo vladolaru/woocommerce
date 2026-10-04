@@ -17,10 +17,11 @@ import {
 /**
  * The 11.1.0 plugin's own Payment Element container
  * (`class-wc-payment-gateway-wcpay.php:611`, `.wcpay-upe-element`), used for
- * every plugin-owned card entry below. This differs from native's
- * `#wcpay-core-payment-element` container that `utils/woopayments.ts`'s
- * `fillCardDetails` targets, so the plugin-era entry here is spec-local
- * rather than routed through the shared helper. It re-fills and reads back
+ * every plugin-owned card entry below. Native's `#wcpay-core-payment-element`
+ * carries the same class too, so this selector does not tell the runtimes
+ * apart; the spec asserts plugin ownership separately before every
+ * plugin-era write. The entry stays spec-local rather than routed through
+ * `utils/woopayments.ts`'s `fillCardDetails`. It re-fills and reads back
  * the number/expiry/CVC (the same defect `fillCardDetails` guards: the
  * element clears its fields when a deferred `elements/sessions` response
  * lands after typing already finished), then fills the optional
