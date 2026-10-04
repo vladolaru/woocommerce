@@ -690,7 +690,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	/** @testdox Plugin-owned sites retain the available effective state without default shadow cost. */
 	public function test_plugin_owner_uses_the_available_effective_state_without_default_shadow(): void {
 		$container = $this->make_container( NativePaymentsState::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
-		$sut       = $this->make_bootstrap( array( WooPaymentsProvider::class, 'register_plugin_owner_hooks' ) );
+		$sut       = $this->make_bootstrap( array( NativePaymentsShadowMode::class, 'register_when_enabled' ) );
 
 		$sut->register( $container, '__return_false' );
 
@@ -702,7 +702,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	public function test_plugin_owner_registers_opt_in_shadow_only(): void {
 		add_filter( NativePaymentsShadowMode::FILTER_SHADOW_ENABLED, '__return_true' );
 		$container = $this->make_container( NativePaymentsState::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
-		$sut       = $this->make_bootstrap( array( WooPaymentsProvider::class, 'register_plugin_owner_hooks' ) );
+		$sut       = $this->make_bootstrap( array( NativePaymentsShadowMode::class, 'register_when_enabled' ) );
 
 		$sut->register( $container, '__return_false' );
 
@@ -713,7 +713,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	public function test_owner_none_uses_a_disabled_effective_state(): void {
 		add_filter( NativePaymentsShadowMode::FILTER_SHADOW_ENABLED, '__return_true' );
 		$container = $this->make_container( NativePaymentsState::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_NONE );
-		$sut       = $this->make_bootstrap( array( WooPaymentsProvider::class, 'register_plugin_owner_hooks' ) );
+		$sut       = $this->make_bootstrap( array( NativePaymentsShadowMode::class, 'register_when_enabled' ) );
 
 		$sut->register( $container, '__return_false' );
 

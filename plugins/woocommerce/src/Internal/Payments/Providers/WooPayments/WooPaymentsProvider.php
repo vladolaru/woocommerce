@@ -31,9 +31,6 @@ use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow\NativePaymentsShadowMode;
-use Automattic\WooCommerce\Container;
-use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
 
 /**
  * First-party WooPayments provider skeleton for the native payments runtime.
@@ -324,34 +321,6 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 	 */
 	public static function get_multi_currency_provider_roots(): array {
 		return array( WooPaymentsMultiCurrencyProviderBootstrap::class, WooPaymentsMultiCurrencyPaymentMethodsMap::class );
-	}
-
-	/**
-	 * Add the hooks needed only while the WooPayments plugin owns the payments runtime.
-	 *
-	 * @since 11.2.0
-	 *
-	 * @param Container|RuntimeContainer $container Runtime dependency container.
-	 */
-	public static function register_plugin_owner_hooks( $container ): void {
-		// The plugin's account cache write is where eligibility changes; resolve nothing until it happens.
-		$synchronize = static function ( $first, $value ) use ( $container ): void {
-			unset( $first );
-			$container->get( WooPaymentsAccountService::class )->synchronize_after_plugin_account_cache_write( $value );
-		};
-		add_action( 'add_option_wcpay_account_data', $synchronize, 10, 2 );
-		add_action( 'update_option_wcpay_account_data', $synchronize, 10, 2 );
-
-		/**
-		 * Filters whether read-only native payments shadow mode is enabled.
-		 *
-		 * @since 11.0.0
-		 *
-		 * @param bool $enabled Whether shadow mode is enabled. Default false.
-		 */
-		if ( apply_filters( NativePaymentsShadowMode::FILTER_SHADOW_ENABLED, false ) ) {
-			$container->get( NativePaymentsShadowMode::class )->register();
-		}
 	}
 
 	/**

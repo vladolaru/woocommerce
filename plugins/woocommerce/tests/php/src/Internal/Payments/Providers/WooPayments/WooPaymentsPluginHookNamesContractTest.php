@@ -159,12 +159,10 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	 * `woocommerce_woopayments_is_recurring_payment` fires from two sites at the same arity
 	 * (`WooPaymentsCheckoutAjaxController` and `WooPaymentsIntentRequestBuilder`). So does
 	 * `woocommerce_native_payments_shadow_mode_enabled`: `NativePaymentsShadowMode::is_shadow_mode_enabled()`
-	 * fires it via `self::FILTER_SHADOW_ENABLED` (which the retired gate's `self::`-only regex
-	 * counted), and `WooPaymentsProvider::register_plugin_owner_hooks()` fires it a second time via the
-	 * cross-class reference `NativePaymentsShadowMode::FILTER_SHADOW_ENABLED` (which the retired gate's regex
-	 * does not match, so its `expected.total() == 25` undercounts by this one site). This scanner
-	 * resolves `ClassName::CONST` references too, so the real total below is 26 fire sites for 24
-	 * names.
+	 * and `NativePaymentsShadowMode::register_when_enabled()` both fire it via `self::FILTER_SHADOW_ENABLED`.
+	 * The retired gate's `expected.total() == 25` predates the second site (it then fired through a
+	 * cross-class reference its `self::`-only regex did not match), so the real total below is 26 fire
+	 * sites for 24 names.
 	 *
 	 * @var array<string,int>
 	 */

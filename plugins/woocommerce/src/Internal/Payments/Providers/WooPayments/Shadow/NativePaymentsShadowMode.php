@@ -7,6 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow;
 
+use Automattic\WooCommerce\Container;
+use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
@@ -169,6 +171,26 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 
 		$this->add_shadow_action_once( 'woocommerce_payment_complete', array( $this, 'handle_woocommerce_payment_complete' ), 100, 1 );
 		$this->add_shadow_action_once( 'woocommerce_order_refunded', array( $this, 'handle_woocommerce_order_refunded' ), 100, 2 );
+	}
+
+	/**
+	 * Register shadow mode for a plugin-owned site when its filter enables it; resolve nothing otherwise.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param Container|RuntimeContainer $container Runtime dependency container.
+	 */
+	public static function register_when_enabled( $container ): void {
+		/**
+		 * Filters whether read-only native payments shadow mode is enabled.
+		 *
+		 * @since 11.0.0
+		 *
+		 * @param bool $enabled Whether shadow mode is enabled. Default false.
+		 */
+		if ( apply_filters( self::FILTER_SHADOW_ENABLED, false ) ) {
+			$container->get( self::class )->register();
+		}
 	}
 
 	/**
