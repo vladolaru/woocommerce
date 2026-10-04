@@ -39,11 +39,14 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\StoreApi\Exceptions\RouteException;
 use Automattic\WooCommerce\StoreApi\Legacy as StoreApiLegacy;
 use Automattic\WooCommerce\StoreApi\Payments\PaymentContext as StoreApiPaymentContext;
 use Automattic\WooCommerce\StoreApi\Payments\PaymentResult as StoreApiPaymentResult;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPublicFraudServices;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\LegacyRuntimeProxy;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Order;
@@ -6779,6 +6782,96 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( $status, wc_get_order( $renewal->get_id() )->get_status() );
 		$repair_lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => str_starts_with( $line[1], 'Error repairing subscription renewal payment token' ) ) );
 		$this->assertCount( $propagates ? 1 : 0, $repair_lines, 'Only a PHP Error is logged with debug logging off.' );
+	}
+
+	/**
+	 * @testdox A PHP error fetching the payment method during token repair fails the scheduled action and leaves the renewal pending.
+	 *
+	 * Client 11.1.0 fetches the payment method without a catch (`class-wc-payments-token-service.php:136`) and the repair
+	 * catches only Exception (trait:538), so the PHP error reaches Action Scheduler instead of failing the renewal with
+	 * "No saved payment method found" (review 34 F1, monitor ruling 2026-10-04 (3)).
+	 */
+	public function test_scheduled_subscription_payment_token_repair_payment_method_fetch_php_error(): void {
+		$this->ensure_wcs_renewal_subscriptions_double();
+		$customer_id = self::factory()->user->create();
+
+		$parent = wc_create_order();
+		$parent->set_customer_id( $customer_id );
+		$parent->update_meta_data( '_payment_method_id', 'pm_repair_fetch' );
+		$parent->save();
+
+		$subscription = wc_create_order();
+		$subscription->set_parent_id( $parent->get_id() );
+		$subscription->set_customer_id( $customer_id );
+		$subscription->save();
+
+		$renewal = wc_create_order();
+		$renewal->set_customer_id( $customer_id );
+		$renewal->set_payment_method( 'woocommerce_payments' );
+		$renewal->save();
+
+		$error          = new \TypeError( 'Return value must be of type array, null returned' );
+		$legacy_runtime = new WooPaymentsLegacyRuntime();
+		$legacy_runtime->init( new LegacyRuntimeProxy( false ) );
+		$details_service = new WooPaymentsPaymentMethodDetailsService();
+		$details_service->init(
+			$legacy_runtime,
+			new class( $error ) extends WooPaymentsApiClient {
+				/**
+				 * Error to throw.
+				 *
+				 * @var \TypeError
+				 */
+				private \TypeError $error;
+
+				/**
+				 * Constructor.
+				 *
+				 * @param \TypeError $error Error to throw.
+				 */
+				public function __construct( \TypeError $error ) {
+					$this->error = $error;
+				}
+
+				// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
+				/**
+				 * Throw the PHP error.
+				 *
+				 * @param string $payment_method_id Payment method ID.
+				 * @return array<string,mixed>
+				 * @throws \TypeError Always.
+				 */
+				public function get_payment_method( string $payment_method_id ): array {
+					unset( $payment_method_id );
+					throw $this->error;
+				}
+				// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+			}
+		);
+		$token_service = new WooPaymentsTokenService();
+		$token_service->init( $details_service, new StaticNativeRuntimeArbiter( true ) );
+		wc_get_container()->replace( WooPaymentsTokenService::class, $token_service );
+
+		$GLOBALS['wcpay_test_renewal_subscription_ids'] = array( $renewal->get_id() => array( $subscription->get_id() ) );
+
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$caught = null;
+		try {
+			$gateway->scheduled_subscription_payment( 10.00, $renewal );
+		} catch ( \Throwable $throwable ) {
+			$caught = $throwable;
+		} finally {
+			unset( $GLOBALS['wcpay_test_renewal_subscription_ids'] );
+		}
+
+		$this->assertSame( $error, $caught );
+		$this->assertNull( $service->last_checkout_context );
+		$this->assertSame( 'pending', wc_get_order( $renewal->get_id() )->get_status() );
+		$notes = array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $renewal->get_id() ) ) );
+		$this->assertNotContains( 'Subscription renewal failed: No saved payment method found.', $notes );
 	}
 
 	/**

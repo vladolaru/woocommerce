@@ -1982,6 +1982,71 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A PHP error fetching a payment method stops a new token and leaves display reads empty, logged whatever the setting.
+	 *
+	 * Client 11.1.0 add_payment_method_to_user() does not catch the fetch (`class-wc-payments-token-service.php:136`), so a
+	 * PHP error stops the token, and every client caller catches only Exception (review 34 F1). Native keeps a display read
+	 * going without the details, as it does for an Exception, and logs the error with its class.
+	 */
+	public function test_php_error_fetching_payment_method_stops_new_token_only(): void {
+		$user_id = self::factory()->user->create();
+		$error   = new \TypeError( 'Return value must be of type array, null returned' );
+		$sut     = new WooPaymentsTokenService();
+		$sut->init(
+			new class( $error ) extends WooPaymentsPaymentMethodDetailsService {
+				/**
+				 * Error to throw.
+				 *
+				 * @var \TypeError
+				 */
+				private \TypeError $error;
+
+				/**
+				 * Constructor.
+				 *
+				 * @param \TypeError $error Error to throw.
+				 */
+				public function __construct( \TypeError $error ) {
+					$this->error = $error;
+				}
+
+				// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
+				/**
+				 * Throw the PHP error.
+				 *
+				 * @param string $payment_method_id Payment method ID.
+				 * @return array<string,mixed>
+				 * @throws \TypeError Always.
+				 */
+				public function get_payment_method_details( string $payment_method_id ): array {
+					unset( $payment_method_id );
+					throw $this->error;
+				}
+				// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+			},
+			new StaticNativeRuntimeArbiter( true )
+		);
+		$this->created_services[] = $sut;
+		$logger                   = RecordingWcLogger::install();
+
+		$this->assertSame( array(), $sut->get_payment_method_details_for_display( 'pm_display' ) );
+		$thrown = null;
+		try {
+			$sut->get_or_create_token_for_user( 'pm_new_token', $user_id );
+		} catch ( \Throwable $throwable ) {
+			$thrown = $throwable;
+		}
+
+		$this->assertSame( $error, $thrown );
+		$this->assertSame( array(), WC_Payment_Tokens::get_customer_tokens( $user_id ) );
+		$lines = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'woopayments' === $line[2] && str_starts_with( $line[1], 'Error retrieving WooPayments payment method details for ' ) ) );
+		$this->assertCount( 2, $lines, 'Both PHP errors are logged with debug logging off.' );
+		$this->assertSame( 'error', $lines[0][0] );
+		$this->assertStringContainsString( 'pm_display', $lines[0][1] );
+		$this->assertSame( 'TypeError', $logger->contexts[ array_search( $lines[0], $logger->lines, true ) ]['exception'] ?? '' );
+	}
+
+	/**
 	 * Create the system under test.
 	 *
 	 * @param array<string,array<string,mixed>> $payment_method_details Payment method details keyed by ID.

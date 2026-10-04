@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Exception;
 use Throwable;
 
 /**
@@ -50,8 +51,12 @@ class WooPaymentsPaymentMethodDetailsService {
 	 *
 	 * @since 11.0.0
 	 *
+	 * A failed fetch is logged and returns no details. A PHP Error is not caught: the client's callers catch only
+	 * Exception (`class-wc-payments-token-service.php:136` does not catch at all), so the caller decides.
+	 *
 	 * @param string $payment_method_id Payment method ID.
 	 * @return array<string,mixed>
+	 * @throws Throwable A PHP Error raised while fetching the payment method.
 	 */
 	public function get_payment_method_details( string $payment_method_id ): array {
 		if ( '' === $payment_method_id ) {
@@ -70,6 +75,7 @@ class WooPaymentsPaymentMethodDetailsService {
 	 *
 	 * @param string $payment_method_id Payment method ID.
 	 * @return array<string,mixed>
+	 * @throws Throwable A PHP Error raised while fetching the payment method.
 	 */
 	private function get_legacy_payment_method_details( string $payment_method_id ): array {
 		try {
@@ -81,7 +87,7 @@ class WooPaymentsPaymentMethodDetailsService {
 			$details = $api_client->get_payment_method( $payment_method_id );
 
 			return is_array( $details ) ? $details : array();
-		} catch ( Throwable $exception ) {
+		} catch ( Exception $exception ) {
 			$this->log_fetch_error( $payment_method_id, $exception );
 			return array();
 		}
@@ -92,11 +98,12 @@ class WooPaymentsPaymentMethodDetailsService {
 	 *
 	 * @param string $payment_method_id Payment method ID.
 	 * @return array<string,mixed>
+	 * @throws Throwable A PHP Error raised while fetching the payment method.
 	 */
 	private function get_native_payment_method_details( string $payment_method_id ): array {
 		try {
 			return $this->api_client->get_payment_method( $payment_method_id );
-		} catch ( Throwable $exception ) {
+		} catch ( Exception $exception ) {
 			$this->log_fetch_error( $payment_method_id, $exception );
 			return array();
 		}
@@ -106,9 +113,9 @@ class WooPaymentsPaymentMethodDetailsService {
 	 * Log a payment method details fetch error.
 	 *
 	 * @param string    $payment_method_id Payment method ID.
-	 * @param Throwable $exception         Exception.
+	 * @param Exception $exception         Exception.
 	 */
-	private function log_fetch_error( string $payment_method_id, Throwable $exception ): void {
+	private function log_fetch_error( string $payment_method_id, Exception $exception ): void {
 		$logger = $this->legacy_runtime->get_logger();
 		if ( ! is_object( $logger ) || ! is_callable( array( $logger, 'error' ) ) ) {
 			return;

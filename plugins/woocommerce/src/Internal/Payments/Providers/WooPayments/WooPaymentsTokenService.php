@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPay
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Exception;
 use RuntimeException;
 use Throwable;
 use WC_Order;
@@ -498,6 +499,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 * @param string $payment_method_id Provider payment method ID.
 	 * @param int    $user_id           User ID.
 	 * @return WC_Payment_Token|null Saved token, or null when details are unavailable.
+	 * @throws Throwable A PHP Error raised while fetching the payment method's details.
 	 */
 	public function get_or_create_token_for_user( string $payment_method_id, int $user_id ): ?WC_Payment_Token {
 		return $this->resolve_token_and_payment_method_details_for_user( $payment_method_id, $user_id )['token'];
@@ -512,6 +514,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 * @param int    $user_id                         User ID.
 	 * @param bool   $include_existing_token_details Whether to retrieve details for an existing token.
 	 * @return array{token:WC_Payment_Token|null,payment_method_details:array<string,mixed>}
+	 * @throws Throwable A PHP Error raised while fetching the details to create a token.
 	 */
 	public function resolve_token_and_payment_method_details_for_user( string $payment_method_id, int $user_id, bool $include_existing_token_details = false ): array {
 		if ( 0 >= $user_id || '' === trim( $payment_method_id ) ) {
@@ -529,7 +532,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			);
 		}
 
-		$payment_method = $this->get_bound_payment_method_details( $payment_method_id );
+		$payment_method = $this->get_bound_payment_method_details( $payment_method_id, true );
 		$method_type    = isset( $payment_method['type'] ) && is_scalar( $payment_method['type'] ) ? (string) $payment_method['type'] : '';
 		$gateway_id     = self::GATEWAY_IDS_BY_PAYMENT_METHOD_TYPE[ $method_type ] ?? '';
 		if ( '' === $gateway_id ) {
@@ -571,13 +574,31 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	/**
 	 * Get provider details only when their identity matches the requested payment method.
 	 *
+	 * The details service logs a failed fetch and returns no details. A PHP Error is logged here whatever the logging
+	 * setting; it stops a token from being created, as on the client (`class-wc-payments-token-service.php:136` does
+	 * not catch), so a renewal token repair fails its scheduled action instead of the renewal (review 34 F1).
+	 *
 	 * @param string $payment_method_id Provider payment method ID.
+	 * @param bool   $for_new_token     Whether the details are read to create a token.
 	 * @return array<string,mixed>
+	 * @throws Throwable A PHP Error from the fetch, when the details are read to create a token.
 	 */
-	private function get_bound_payment_method_details( string $payment_method_id ): array {
+	private function get_bound_payment_method_details( string $payment_method_id, bool $for_new_token = false ): array {
 		try {
 			$payment_method = $this->payment_method_details_service->get_payment_method_details( $payment_method_id );
 		} catch ( Throwable $exception ) {
+			if ( ! $exception instanceof Exception ) {
+				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
+					'Error retrieving WooPayments payment method details for ' . $payment_method_id . ': ' . $exception->getMessage(),
+					$exception,
+					array( 'payment_method_id' => $payment_method_id )
+				);
+
+				if ( $for_new_token ) {
+					throw $exception;
+				}
+			}
+
 			return array();
 		}
 
