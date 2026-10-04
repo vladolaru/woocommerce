@@ -1712,6 +1712,10 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 				return $this->keep_succeeded_intent_order( $order, $failure->getMessage(), get_class( $failure ) );
 			}
 
+			if ( $exception instanceof PaymentOutcomeApplyException && ! $failure instanceof Exception && PaymentOutcome::STATUS_AUTHORIZED === $exception->get_outcome()->get_status() ) {
+				return $this->keep_authorized_order_after_php_error( $order, $exception );
+			}
+
 			return $this->fail_checkout_after_exception( $order, $failure );
 		}
 	}
@@ -2881,6 +2885,37 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		return array(
 			'result'   => 'success',
 			'redirect' => $this->get_return_url( $order ),
+		);
+	}
+
+	/**
+	 * Refuse checkout without failing an order whose payment is authorized, after a PHP Error applying the outcome.
+	 *
+	 * The client fatals there (`gw:1272` catches only Exception) and leaves the order as it was. Native leaves it too, so
+	 * the held authorization is reconciled later, and shows the generic notice (monitor ruling 2026-10-04 (4)).
+	 *
+	 * @param WC_Order                     $order     Order being paid.
+	 * @param PaymentOutcomeApplyException $exception Handed-back authorized outcome and the PHP Error that stopped it.
+	 * @return array<string,string>
+	 */
+	private function keep_authorized_order_after_php_error( WC_Order $order, PaymentOutcomeApplyException $exception ): array {
+		$failure = $exception->get_failure();
+		$this->get_logger()->log_throwable_always(
+			sprintf( 'Applying the authorized payment to order #%1$d raised %2$s: %3$s. The order was left for reconciliation.', $order->get_id(), get_class( $failure ), $failure->getMessage() ),
+			$failure,
+			array(
+				'order_id'                 => $order->get_id(),
+				'intent_id'                => $exception->get_outcome()->get_provider_payment_id(),
+				'reconciliation_persisted' => $exception->was_reconciliation_context_persisted(),
+			)
+		);
+
+		wc_add_notice( WooPaymentsErrorMessages::get_generic_message(), 'error', array( 'icon' => 'error' ) );
+
+		return array(
+			'result'         => 'failure',
+			'redirect'       => '',
+			'payment_method' => '',
 		);
 	}
 

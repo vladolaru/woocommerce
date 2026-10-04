@@ -3944,6 +3944,29 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An exception applying an authorized outcome still fails the order, as the plugin's catch does.
+	 *
+	 * Client 11.1.0 `gw:1272-1327` fails an order whose intent has not succeeded; only a PHP error leaves it (ruling 2026-10-04 (4)).
+	 */
+	public function test_process_payment_exception_applying_authorized_outcome_fails_order(): void {
+		$order    = $this->create_order();
+		$provider = $this->create_provider_failing_after_charge(
+			new PaymentOutcome( PaymentOutcome::STATUS_AUTHORIZED, 'pi_authorized', '', 'pm_card_visa' ),
+			'operation_effects',
+			new \RuntimeException( 'Provider effect write failed' )
+		);
+		$gateway  = new NativeWooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
+		$_POST['wcpay-payment-method'] = 'pm_card_visa';
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'failure', $result['result'] ?? '' );
+		$this->assertSame( 'failed', wc_get_order( $order->get_id() )->get_status() );
+		$this->assertSame( array( 'Provider effect write failed' ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+	}
+
+	/**
 	 * @testdox When the duplicate guard's intent lookup throws a $throwable_class, checkout charges: $charges.
 	 *
 	 * Client 11.1.0 `src/Internal/Service/DuplicatePaymentPreventionService.php:100` catches only exceptions: an exception
@@ -4001,30 +4024,48 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should fail checkout with the generic notice when applying an unsucceeded outcome raises a PHP error.
+	 * @testdox A PHP error applying a $outcome_status outcome at $stage leaves the order $expected_status, with the generic notice.
 	 *
-	 * The plugin's catch takes only exceptions (`class-wc-payment-gateway-wcpay.php:1272`), so it has no rule for
-	 * a PHP error; native fails the order like the plugin does for an exception, but keeps the error's text out of
-	 * the shopper notice.
+	 * The plugin's catch takes only exceptions (`class-wc-payment-gateway-wcpay.php:1272`), so a PHP error fatals and
+	 * leaves the order as it was. Native keeps an order whose payment is authorized for reconciliation and logs the
+	 * error whatever the logging setting (monitor ruling 2026-10-04 (4)); any other unsucceeded outcome fails the order
+	 * as the plugin does for an exception. The error's text stays out of the shopper notice either way.
+	 *
+	 * @testWith ["authorized", "operation_effects", "pending"]
+	 *           ["authorized", "post_lifecycle_effects", "on-hold"]
+	 *           ["requires_customer_action", "operation_effects", "failed"]
+	 *
+	 * @param string $outcome_status  Provider outcome status.
+	 * @param string $stage           Where applying the outcome throws.
+	 * @param string $expected_status Order status afterwards.
 	 */
-	public function test_process_payment_php_error_without_succeeded_intent_shows_generic_notice(): void {
+	public function test_process_payment_php_error_without_succeeded_intent_shows_generic_notice( string $outcome_status, string $stage, string $expected_status ): void {
 		$order    = $this->create_order();
 		$provider = $this->create_provider_failing_after_charge(
-			new PaymentOutcome( PaymentOutcome::STATUS_AUTHORIZED, 'pi_authorized', '', 'pm_card_visa' ),
-			'post_lifecycle_effects',
+			new PaymentOutcome( $outcome_status, 'pi_authorized', '', 'pm_card_visa' ),
+			$stage,
 			new \TypeError( 'Argument #1 must be of type array, null given, called in /var/www/html/wp-content/plugins/example/example.php on line 12' )
 		);
 		$gateway  = new NativeWooPaymentsGateway();
 		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
 		$_POST['wcpay-payment-method'] = 'pm_card_visa';
+		$logger                        = RecordingWcLogger::install();
 
 		$result = $gateway->process_payment( $order->get_id() );
 
 		$this->assertSame( 'failure', $result['result'] ?? '' );
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertSame( $expected_status, $order->get_status() );
 		$this->assertSame( array( WooPaymentsErrorMessages::get_generic_message() ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+		$type_error_lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'woopayments' === $line[2] && str_contains( $line[1], 'Argument #1 must be of type array' ) ) );
+		$this->assertNotSame( array(), $type_error_lines, 'The PHP error is logged whatever the logging setting.' );
+		$this->assertSame( 'TypeError', $logger->contexts[ $type_error_lines[0] ]['exception'] ?? '' );
+		if ( 'failed' !== $expected_status ) {
+			$this->assertStringContainsString( 'raised TypeError', $logger->lines[ $type_error_lines[0] ][1] );
+			$notes = array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+			$this->assertSame( array(), array_filter( $notes, static fn( string $note ): bool => str_contains( $note, 'failed' ) ), 'No failure note is added to an order left for reconciliation.' );
+		}
 	}
 
 	/**
