@@ -8,8 +8,11 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 use WC_Order;
@@ -21,6 +24,13 @@ use WC_Order;
  * @internal Transitional internal component for the native payments runtime.
  */
 class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
+
+	/**
+	 * Checkout query flag the client adds when the fetched intent belongs to another order (client 11.1.0 gw:118).
+	 *
+	 * @var string
+	 */
+	const ORDER_MISMATCH_QUERY_FLAG = 'upe_process_redirect_order_id_mismatched';
 
 	/**
 	 * Runtime owner arbiter.
@@ -58,6 +68,20 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	private WooPaymentsCustomerService $customer_service;
 
 	/**
+	 * Payment lifecycle service.
+	 *
+	 * @var OrderPaymentLifecycleService
+	 */
+	private OrderPaymentLifecycleService $lifecycle_service;
+
+	/**
+	 * Native WooPayments order note service.
+	 *
+	 * @var WooPaymentsOrderNoteService
+	 */
+	private WooPaymentsOrderNoteService $note_service;
+
+	/**
 	 * Initialize the controller.
 	 *
 	 * @internal
@@ -67,13 +91,17 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * @param WooPaymentsApiClient              $api_client         Native WooPayments API client.
 	 * @param WooPaymentsTokenService           $token_service      Native WooPayments token service.
 	 * @param WooPaymentsCustomerService        $customer_service   Native WooPayments customer service.
+	 * @param OrderPaymentLifecycleService      $lifecycle_service  Payment lifecycle service.
+	 * @param WooPaymentsOrderNoteService       $note_service       Native WooPayments order note service.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsCheckoutAjaxController $confirmation_owner, WooPaymentsApiClient $api_client, WooPaymentsTokenService $token_service, WooPaymentsCustomerService $customer_service ): void {
+	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsCheckoutAjaxController $confirmation_owner, WooPaymentsApiClient $api_client, WooPaymentsTokenService $token_service, WooPaymentsCustomerService $customer_service, OrderPaymentLifecycleService $lifecycle_service, WooPaymentsOrderNoteService $note_service ): void {
 		$this->arbiter            = $arbiter;
 		$this->confirmation_owner = $confirmation_owner;
 		$this->api_client         = $api_client;
 		$this->token_service      = $token_service;
 		$this->customer_service   = $customer_service;
+		$this->lifecycle_service  = $lifecycle_service;
+		$this->note_service       = $note_service;
 	}
 
 	/**
@@ -155,37 +183,47 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 			$intent = $is_payment_intent
 				? $this->api_client->get_payment_intention( $intent_id )
 				: $this->api_client->get_setup_intention( $intent_id );
+		} catch ( Throwable $exception ) {
+			$this->log_return_error( $order, $exception );
+			$this->fail_order( $order, $intent_id, $exception->getMessage() );
+			$this->redirect_to_checkout( $this->get_shopper_message_for_fetch_error( $exception ) );
+			return;
+		}
 
-			if ( ! $this->fetched_intent_matches_request( $intent, $intent_id ) ) {
-				$this->log_error( sprintf( 'Native WooPayments redirect fetched an unexpected intent for requested intent %s.', $intent_id ) );
-				return;
-			}
+		if ( ! $this->fetched_intent_matches_request( $intent, $intent_id ) ) {
+			$this->log_error( sprintf( 'Native WooPayments redirect fetched an unexpected intent for requested intent %s.', $intent_id ) );
+			$this->redirect_to_checkout_after_order_mismatch();
+			return;
+		}
 
-			$fresh_order = $this->reread_order_authoritatively( $order );
+		$fresh_order = $this->reread_order_authoritatively( $order );
 
-			if ( ! $this->is_native_woopayments_order( $fresh_order ) ) {
-				return;
-			}
+		if ( ! $this->is_native_woopayments_order( $fresh_order ) ) {
+			return;
+		}
 
-			if ( ! $this->order_matches_intent( $fresh_order, $intent_id ) ) {
-				$this->log_intent_mismatch( $intent_id, $fresh_order );
-				return;
-			}
+		if ( ! $this->order_matches_intent( $fresh_order, $intent_id ) ) {
+			$this->log_intent_mismatch( $intent_id, $fresh_order );
+			return;
+		}
 
-			if ( $fresh_order->has_status( array( 'processing', 'completed', 'on-hold' ) ) ) {
-				return;
-			}
+		if ( $fresh_order->has_status( array( 'processing', 'completed', 'on-hold' ) ) ) {
+			return;
+		}
 
-			if ( $is_payment_intent && ! $this->intent_matches_order( $intent, $fresh_order ) ) {
-				$this->log_intent_mismatch( $intent_id, $fresh_order );
-				return;
-			}
+		if ( $is_payment_intent && ! $this->intent_matches_order( $intent, $fresh_order ) ) {
+			$this->log_intent_mismatch( $intent_id, $fresh_order );
+			$this->redirect_to_checkout_after_order_mismatch();
+			return;
+		}
 
-			if ( ! $is_payment_intent && ! $this->setup_intent_customer_matches_order( $intent, $fresh_order ) ) {
-				$this->log_intent_mismatch( $intent_id, $fresh_order );
-				return;
-			}
+		if ( ! $is_payment_intent && ! $this->setup_intent_customer_matches_order( $intent, $fresh_order ) ) {
+			$this->log_intent_mismatch( $intent_id, $fresh_order );
+			$this->redirect_to_checkout_after_order_mismatch();
+			return;
+		}
 
+		try {
 			$this->confirmation_owner->confirm_fetched_intent_for_order(
 				$fresh_order,
 				$intent,
@@ -197,14 +235,128 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 				WC()->cart->empty_cart();
 			}
 		} catch ( Throwable $exception ) {
-			$this->log_error(
-				sprintf(
-					'Error completing native WooPayments redirect return for order %1$d: %2$s',
-					$order->get_id(),
-					$exception->getMessage()
-				)
-			);
+			$this->log_return_error( $order, $exception );
+
+			// Client gw:2376-2382: of these outcomes only an intent error throws, and its catch fails the order with a note.
+			if ( $this->intent_has_error( $intent, $is_payment_intent ) ) {
+				if ( $is_payment_intent ) {
+					// The confirmation already failed the order; a SetupIntent's confirmation also writes this note.
+					$this->fail_order( $fresh_order, $intent_id, null, $this->get_charge_id( $intent ) );
+				}
+				$this->redirect_to_checkout( __( "We're not able to process this payment. Please try again later.", 'woocommerce' ) );
+			}
 		}
+	}
+
+	/**
+	 * Tell whether a fetched intent carries the error the client's redirect return fails on (gw:2351, 2373).
+	 *
+	 * @param array<string,mixed> $intent            Fetched intent.
+	 * @param bool                $is_payment_intent Whether the intent is a PaymentIntent.
+	 * @return bool
+	 */
+	private function intent_has_error( array $intent, bool $is_payment_intent ): bool {
+		return ! empty( $intent[ $is_payment_intent ? 'last_payment_error' : 'last_setup_error' ] );
+	}
+
+	/**
+	 * Fail the order with the "UPE payment failed" note, as the client's catch does (gw:2435-2442, os:463-478, 2106-2127).
+	 *
+	 * @param WC_Order    $order             Order object.
+	 * @param string      $intent_id         Requested intent ID.
+	 * @param string|null $exception_message Message of the exception that ended the return, or null for an intent error.
+	 * @param string      $charge_id         Charge ID read from the intent, if any.
+	 */
+	private function fail_order( WC_Order $order, string $intent_id, ?string $exception_message, string $charge_id = '' ): void {
+		$note_candidates = $this->note_service->format_redirect_payment_failed_note_candidates( $order, $intent_id, $exception_message, $charge_id );
+
+		try {
+			$this->lifecycle_service->apply(
+				$order,
+				new PaymentLifecycleEvent(
+					PaymentLifecycleEvent::STATUS_FAILED,
+					$intent_id,
+					array(),
+					array(),
+					$note_candidates[0],
+					PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED,
+					$note_candidates
+				),
+				new WooPaymentsPersistenceProfile()
+			);
+		} catch ( Throwable $failure ) {
+			$this->log_return_error( $order, $failure );
+		}
+	}
+
+	/**
+	 * Get the ID of a PaymentIntent's charge.
+	 *
+	 * @param array<string,mixed> $intent PaymentIntent response.
+	 * @return string
+	 */
+	private function get_charge_id( array $intent ): string {
+		$charge_id = $intent['charges']['data'][0]['id'] ?? $intent['charge']['id'] ?? '';
+
+		return is_string( $charge_id ) ? $charge_id : '';
+	}
+
+	/**
+	 * Get the shopper notice for a failed intent fetch (client get_filtered_error_message(), utils:769-830).
+	 *
+	 * @param Throwable $exception Fetch failure.
+	 * @return string
+	 */
+	private function get_shopper_message_for_fetch_error( Throwable $exception ): string {
+		if ( $exception instanceof WooPaymentsApiException ) {
+			return WooPaymentsErrorMessages::get_shopper_message( $exception->get_error_type(), $exception->get_error_code(), $exception->get_decline_code(), $exception->getMessage() );
+		}
+
+		return __( "We're not able to process this payment. Please try again later.", 'woocommerce' );
+	}
+
+	/**
+	 * Return the shopper to checkout for an intent that belongs to another order, leaving the order as it is (client gw:2430-2455).
+	 */
+	private function redirect_to_checkout_after_order_mismatch(): void {
+		$this->redirect_to_checkout(
+			__( "We're not able to process this payment due to the order ID mismatch. Please try again later.", 'woocommerce' ),
+			true
+		);
+	}
+
+	/**
+	 * Add an error notice and redirect to checkout before core's template_redirect cart clearing (client gw:2448-2455).
+	 *
+	 * @param string $notice         Shopper error notice.
+	 * @param bool   $order_mismatch Whether to add the order-mismatch query flag.
+	 */
+	private function redirect_to_checkout( string $notice, bool $order_mismatch = false ): void {
+		wc_add_notice( $notice, 'error' );
+
+		$redirect_url = wc_get_checkout_url();
+		if ( $order_mismatch ) {
+			$redirect_url = add_query_arg( self::ORDER_MISMATCH_QUERY_FLAG, 'yes', $redirect_url );
+		}
+
+		wp_safe_redirect( $redirect_url );
+		exit;
+	}
+
+	/**
+	 * Log an error that ended a redirect return.
+	 *
+	 * @param WC_Order  $order     Order object.
+	 * @param Throwable $exception Error.
+	 */
+	private function log_return_error( WC_Order $order, Throwable $exception ): void {
+		$this->log_error(
+			sprintf(
+				'Error completing native WooPayments redirect return for order %1$d: %2$s',
+				$order->get_id(),
+				$exception->getMessage()
+			)
+		);
 	}
 
 	/**

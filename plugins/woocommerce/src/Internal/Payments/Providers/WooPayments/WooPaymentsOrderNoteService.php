@@ -417,27 +417,30 @@ class WooPaymentsOrderNoteService {
 	/**
 	 * Build exact Core- and plugin-catalog renderings of a redirect-return payment-failure note.
 	 *
-	 * Client 11.1.0 gw:2376-2382, 2440-2441: "UPE payment failed: We're not able to process this payment. Please try again later."
+	 * Client 11.1.0 gw:2376-2382, 2440-2441: "UPE payment failed: We're not able to process this payment. Please try again later.",
+	 * or "UPE payment failed: <message>" when another exception, such as a failed intent fetch, ended the return.
 	 *
-	 * @param WC_Order $order     Order object.
-	 * @param string   $intent_id Intent ID.
+	 * @param WC_Order    $order             Order object.
+	 * @param string      $intent_id         Intent ID.
+	 * @param string|null $exception_message Message of the exception that ended the return, or null for the intent-error message.
+	 * @param string      $charge_id         Charge ID read from the intent, if any.
 	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
 	 *
 	 * @since 11.2.0
 	 */
-	public function format_redirect_payment_failed_note_candidates( WC_Order $order, string $intent_id ): array {
+	public function format_redirect_payment_failed_note_candidates( WC_Order $order, string $intent_id, ?string $exception_message = null, string $charge_id = '' ): array {
 		return $this->format_amount_note_candidates(
 			$order,
-			function ( string $text_domain, string $formatted_amount ) use ( $order, $intent_id ): string {
+			function ( string $text_domain, string $formatted_amount ) use ( $order, $intent_id, $exception_message, $charge_id ): string {
 				if ( 'woocommerce-payments' === $text_domain ) {
 					/* translators: %s: localized exception message. */
-					$message = sprintf( __( 'UPE payment failed: %s', 'woocommerce-payments' ), __( "We're not able to process this payment. Please try again later.", 'woocommerce-payments' ) ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+					$message = sprintf( __( 'UPE payment failed: %s', 'woocommerce-payments' ), $exception_message ?? __( "We're not able to process this payment. Please try again later.", 'woocommerce-payments' ) ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
 				} else {
 					/* translators: %s: localized exception message. */
-					$message = sprintf( __( 'UPE payment failed: %s', 'woocommerce' ), __( "We're not able to process this payment. Please try again later.", 'woocommerce' ) );
+					$message = sprintf( __( 'UPE payment failed: %s', 'woocommerce' ), $exception_message ?? __( "We're not able to process this payment. Please try again later.", 'woocommerce' ) );
 				}
 
-				return $this->format_payment_failed_note_for_domain( $order, $intent_id, '', array(), $text_domain, $formatted_amount, $message );
+				return $this->format_payment_failed_note_for_domain( $order, $intent_id, $charge_id, array(), $text_domain, $formatted_amount, $message );
 			}
 		);
 	}

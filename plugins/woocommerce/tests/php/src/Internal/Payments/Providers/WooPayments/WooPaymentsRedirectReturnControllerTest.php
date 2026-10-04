@@ -99,6 +99,33 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$GLOBALS['_SERVER']['REQUEST_METHOD']  = 'GET';
 		WC()->cart->empty_cart();
 		wc_clear_notices();
+		// A redirect return that redirects would exit; stop it at wp_redirect instead.
+		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
+	}
+
+	/**
+	 * Stop a redirect before the controller exits.
+	 *
+	 * @param string $location Redirect location.
+	 * @throws RedirectReturnRedirectIntercepted Always.
+	 */
+	public function intercept_redirect( $location ) {
+		throw new RedirectReturnRedirectIntercepted( (string) $location ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Test double carries the raw location for assertions; never output.
+	}
+
+	/**
+	 * Run the controller and return the location it redirected to.
+	 *
+	 * @return string
+	 */
+	private function handle_wp_expecting_redirect(): string {
+		try {
+			$this->sut->handle_wp();
+		} catch ( RedirectReturnRedirectIntercepted $redirect ) {
+			return $redirect->location;
+		}
+
+		$this->fail( 'The redirect return should redirect the shopper.' );
 	}
 
 	/**
@@ -472,10 +499,16 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox PaymentIntent metadata for another order is logged and rejected before mutation.
+	 * @testdox PaymentIntent metadata for another order is logged, leaves the order unfailed and returns the shopper to checkout with the mismatch flag and the cart kept.
+	 *
+	 * Client 11.1.0: validate_order_id_received_vs_intent_meta_order_id() logs and throws the mismatch exception
+	 * (gw:674-692, 2357-2359); the catch skips mark_payment_failed() for it, adds the notice and redirects to the
+	 * checkout URL with `upe_process_redirect_order_id_mismatched=yes` (gw:2428-2456, constant gw:118).
 	 */
 	public function test_handle_wp_rejects_mismatched_payment_intent_metadata(): void {
-		$order                      = $this->create_order();
+		$order   = $this->create_order();
+		$product = \WC_Helper_Product::create_simple_product();
+		WC()->cart->add_to_cart( $product->get_id() );
 		$api_client                 = new RedirectReturnApiClientStub();
 		$api_client->payment_intent = $this->successful_payment_intent( $order, 'pi_mismatch', 'pm_mismatch' );
 		$api_client->payment_intent['metadata']['order_id'] = $order->get_id() + 1;
@@ -487,9 +520,12 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->sut = $this->create_controller( true, $confirmation_owner, $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_mismatch' );
 
-		$this->sut->handle_wp();
+		$location = $this->handle_wp_expecting_redirect();
 		$reloaded = wc_get_order( $order->get_id() );
 
+		$this->assertSame( add_query_arg( 'upe_process_redirect_order_id_mismatched', 'yes', wc_get_checkout_url() ), $location );
+		$this->assert_single_error_notice( "We're not able to process this payment due to the order ID mismatch. Please try again later." );
+		$this->assertSame( 1, WC()->cart->get_cart_contents_count(), 'The cart must survive a rejected redirect return.' );
 		$this->assertInstanceOf( WC_Order::class, $reloaded );
 		$this->assertSame( 'pending', $reloaded->get_status() );
 		$this->assertSame( 'pi_mismatch', $reloaded->get_meta( '_intent_id', true ) );
@@ -518,9 +554,11 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->sut = $this->create_controller( true, $confirmation_owner, $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_malformed_order_id' );
 
-		$this->sut->handle_wp();
+		$location = $this->handle_wp_expecting_redirect();
 		$reloaded = wc_get_order( $order->get_id() );
 
+		// Client gw:675-676 reads a non-numeric order ID as 0, a mismatch.
+		$this->assertSame( add_query_arg( 'upe_process_redirect_order_id_mismatched', 'yes', wc_get_checkout_url() ), $location );
 		$this->assertInstanceOf( WC_Order::class, $reloaded );
 		$this->assertSame( 'pending', $reloaded->get_status() );
 		$this->assertCount( 1, $logger->error_calls );
@@ -584,8 +622,11 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->sut = $this->create_controller( true, $confirmation_owner, $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_expected' );
 
-		$this->sut->handle_wp();
+		$location = $this->handle_wp_expecting_redirect();
 		$reloaded = wc_get_order( $order->get_id() );
+
+		// The fetched intent belongs to another payment, so it gets the client's order-mismatch outcome (gw:2428-2456).
+		$this->assertSame( add_query_arg( 'upe_process_redirect_order_id_mismatched', 'yes', wc_get_checkout_url() ), $location );
 
 		$this->assertInstanceOf( WC_Order::class, $reloaded );
 		$this->assertSame( 1, $api_client->payment_intent_reads );
@@ -757,12 +798,19 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox API failures are logged once and leave the order unchanged.
+	 * @testdox An API failure fetching the intent fails the order, adds the filtered notice and redirects to checkout with the cart kept.
+	 *
+	 * Client 11.1.0 process_redirect_payment(): Get_Intention::send() throws inside the try (gw:2341-2345). The catch
+	 * (gw:2428-2456) calls mark_payment_failed() with a null status and charge and "UPE payment failed: <message>"
+	 * (os:463-478, 2106-2127), adds get_filtered_error_message() as an error notice (utils:769-776 for the connection
+	 * error) and redirects to wc_get_checkout_url() and exits, before core's template_redirect cart clearing.
 	 */
-	public function test_handle_wp_logs_api_failure_and_leaves_order_unchanged(): void {
-		$order                 = $this->create_order();
+	public function test_handle_wp_fails_order_and_redirects_to_checkout_on_api_failure(): void {
+		$order   = $this->create_order();
+		$product = \WC_Helper_Product::create_simple_product();
+		WC()->cart->add_to_cart( $product->get_id() );
 		$api_client            = new RedirectReturnApiClientStub();
-		$api_client->exception = new WooPaymentsApiException( 'Transport unavailable.', 'transport_unavailable', 503 );
+		$api_client->exception = new WooPaymentsApiException( 'Transport unavailable.', 'wcpay_http_request_failed', 503 );
 		$confirmation_owner    = $this->createMock( WooPaymentsCheckoutAjaxController::class );
 		$confirmation_owner->expects( $this->never() )->method( 'confirm_fetched_intent_for_order' );
 		$logger = new RedirectReturnRecordingLogger();
@@ -770,13 +818,110 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->sut = $this->create_controller( true, $confirmation_owner, $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_api_error' );
 
-		$this->sut->handle_wp();
+		$location = $this->handle_wp_expecting_redirect();
 		$reloaded = wc_get_order( $order->get_id() );
 
+		$this->assertSame( wc_get_checkout_url(), $location );
+		$this->assert_single_error_notice( 'There was an error while processing this request. If you continue to see this notice, please contact the admin.' );
+		$this->assertSame( 1, WC()->cart->get_cart_contents_count(), 'The cart must survive a failed redirect return.' );
 		$this->assertInstanceOf( WC_Order::class, $reloaded );
-		$this->assertSame( 'pending', $reloaded->get_status() );
+		$this->assertSame( 'failed', $reloaded->get_status() );
+		$this->assert_failed_note_with_message( $reloaded, 'pi_api_error', 'UPE payment failed: Transport unavailable.' );
 		$this->assertCount( 1, $logger->error_calls );
 		$this->assertStringContainsString( 'Transport unavailable.', $logger->error_calls[0]['message'] );
+	}
+
+	/**
+	 * @testdox A positive-total return whose PaymentIntent carries a payment error fails the order, adds the client notice and redirects to checkout with the cart kept.
+	 *
+	 * Client 11.1.0 process_redirect_payment(): a non-empty last_payment_error (gw:2351, 2376-2382) throws "We're not
+	 * able to process this payment. Please try again later."; the catch (gw:2428-2456) calls mark_payment_failed() with
+	 * the "UPE payment failed: ..." message (os:463-478, 2106-2127), adds the message as an error notice and redirects to
+	 * wc_get_checkout_url() and exits, before core's template_redirect cart clearing.
+	 */
+	public function test_handle_wp_redirects_failed_payment_intent_return_to_checkout(): void {
+		$order   = $this->create_order();
+		$product = \WC_Helper_Product::create_simple_product();
+		WC()->cart->add_to_cart( $product->get_id() );
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = array(
+			'id'                 => 'pi_return_failed',
+			'status'             => 'requires_payment_method',
+			'currency'           => 'usd',
+			'amount'             => 5000,
+			'customer'           => 'cus_return',
+			'payment_method'     => null,
+			'metadata'           => array( 'order_id' => $order->get_id() ),
+			'last_payment_error' => array(
+				'type'         => 'card_error',
+				'code'         => 'card_declined',
+				'decline_code' => 'generic_decline',
+				'message'      => 'Your card was declined.',
+			),
+		);
+		$this->sut                  = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_return_failed' );
+
+		$location = $this->handle_wp_expecting_redirect();
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertSame( wc_get_checkout_url(), $location );
+		$this->assert_single_error_notice( "We're not able to process this payment. Please try again later." );
+		$this->assertSame( 1, WC()->cart->get_cart_contents_count(), 'The cart must survive a failed redirect return.' );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'failed', $reloaded->get_status() );
+		$this->assert_failed_note_with_message( $reloaded, 'pi_return_failed', "UPE payment failed: We're not able to process this payment. Please try again later." );
+	}
+
+	/**
+	 * @testdox A canceled SetupIntent without an error lands on order-received without a checkout redirect or notice.
+	 *
+	 * Client 11.1.0: with no setup error nothing throws (gw:2376), update_order_status_from_intent() cancels the order
+	 * (os:400-402) and process_redirect_payment() returns without redirecting (gw:2406-2427).
+	 */
+	public function test_handle_wp_does_not_redirect_canceled_setup_intent_without_error(): void {
+		$order                    = $this->create_order( '0.00' );
+		$api_client               = new RedirectReturnApiClientStub();
+		$api_client->setup_intent = array(
+			'id'             => 'seti_canceled_no_redirect',
+			'status'         => 'canceled',
+			'customer'       => 'cus_setup',
+			'payment_method' => 'pm_setup',
+		);
+		$this->sut                = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client );
+		$this->set_setup_intent_return_request( $order, 'seti_canceled_no_redirect' );
+
+		$this->sut->handle_wp();
+
+		$this->assertSame( array(), wc_get_notices( 'error' ) );
+		$this->assertSame( 'cancelled', wc_get_order( $order->get_id() )->get_status() );
+	}
+
+	/**
+	 * Assert the request queued exactly one error notice with the given text.
+	 *
+	 * @param string $expected Expected notice text.
+	 */
+	private function assert_single_error_notice( string $expected ): void {
+		$this->assertSame( array( $expected ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+	}
+
+	/**
+	 * Assert the order carries the client's payment-failure note ending with the given message (os:2106-2127).
+	 *
+	 * @param WC_Order $order     Order object.
+	 * @param string   $intent_id Intent ID shown in the note.
+	 * @param string   $message   Message appended to the note.
+	 */
+	private function assert_failed_note_with_message( WC_Order $order, string $intent_id, string $message ): void {
+		$notes   = array_map( static fn( $note ) => $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$matches = array_filter(
+			$notes,
+			static fn( string $note ): bool => 0 === strpos( $note, 'A payment of ' . wc_price( $order->get_total(), array( 'currency' => $order->get_currency() ) ) . ' <strong>failed</strong> using WooPayments (' )
+				&& false !== strpos( $note, $intent_id . '</' )
+				&& str_ends_with( $note, '). ' . $message )
+		);
+		$this->assertCount( 1, $matches, 'Expected one failure note ending with "' . $message . '"; notes: ' . implode( ' | ', $notes ) );
 	}
 
 	/**
@@ -947,9 +1092,12 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client, null, $this->create_customer_service( $user_id, $user_customer ) );
 		$this->set_setup_intent_return_request( $order, 'seti_bound' );
 
-		$this->sut->handle_wp();
+		$location = $this->handle_wp_expecting_redirect();
 		$reloaded = wc_get_order( $order->get_id() );
 
+		// The SetupIntent belongs to another customer, so it gets the client's order-mismatch outcome (gw:2428-2456).
+		$this->assertSame( add_query_arg( 'upe_process_redirect_order_id_mismatched', 'yes', wc_get_checkout_url() ), $location );
+		$this->assert_single_error_notice( "We're not able to process this payment due to the order ID mismatch. Please try again later." );
 		$this->assertInstanceOf( WC_Order::class, $reloaded );
 		$this->assertSame( 1, $api_client->setup_intent_reads );
 		$this->assertSame( 'pending', $reloaded->get_status() );
@@ -1054,9 +1202,11 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->sut                = $this->create_controller( true, $confirmation_owner, $api_client );
 		$this->set_setup_intent_return_request( $order, 'seti_return_error' );
 
-		$this->sut->handle_wp();
+		$location = $this->handle_wp_expecting_redirect();
 		$reloaded = wc_get_order( $order->get_id() );
 
+		$this->assertSame( wc_get_checkout_url(), $location );
+		$this->assert_single_error_notice( "We're not able to process this payment. Please try again later." );
 		$this->assertInstanceOf( WC_Order::class, $reloaded );
 		$this->assertSame( 'failed', $reloaded->get_status() );
 		$this->assertSame( 1, $api_client->setup_intent_reads );
@@ -1397,7 +1547,9 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			$confirmation_owner ?? $this->createMock( WooPaymentsCheckoutAjaxController::class ),
 			$api_client ?? new RedirectReturnApiClientStub(),
 			$token_service ?? $this->createMock( WooPaymentsTokenService::class ),
-			$customer_service ?? $this->createMock( WooPaymentsCustomerService::class )
+			$customer_service ?? $this->createMock( WooPaymentsCustomerService::class ),
+			wc_get_container()->get( OrderPaymentLifecycleService::class ),
+			new WooPaymentsOrderNoteService()
 		);
 
 		return $controller;
@@ -1803,6 +1955,22 @@ class RedirectReturnApiClientStub extends WooPaymentsApiClient {
 		}
 
 		return $this->setup_intent;
+	}
+}
+
+/**
+ * Thrown by the test's wp_redirect filter so a redirect does not exit.
+ */
+class RedirectReturnRedirectIntercepted extends \RuntimeException {
+	/** @var string */
+	public string $location;
+
+	/**
+	 * @param string $location Redirect location.
+	 */
+	public function __construct( string $location ) {
+		parent::__construct( 'Redirect intercepted: ' . $location );
+		$this->location = $location;
 	}
 }
 
