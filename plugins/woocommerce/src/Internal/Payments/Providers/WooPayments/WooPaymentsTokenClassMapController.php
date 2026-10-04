@@ -88,10 +88,6 @@ class WooPaymentsTokenClassMapController implements RegisterHooksInterface {
 			return $class_name;
 		}
 
-		if ( isset( self::TYPE_CLASS_MAP[ $type ] ) ) {
-			return self::TYPE_CLASS_MAP[ $type ];
-		}
-
 		$class_map = array_merge( self::DERIVED_CLASS_MAP, self::LEGACY_CLASS_MAP );
 
 		return $class_map[ $class_name ] ?? $class_name;

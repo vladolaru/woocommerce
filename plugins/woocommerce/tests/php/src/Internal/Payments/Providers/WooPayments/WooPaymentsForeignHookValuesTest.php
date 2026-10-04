@@ -55,6 +55,21 @@ class WooPaymentsForeignHookValuesTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The token class callback passes on the class name when the token type an earlier caller passed is not a string.
+	 *
+	 * Reading the type map with an array or object key throws (review 36 F4), so the type is only looked up as a string.
+	 */
+	public function test_token_class_callback_passes_on_the_class_for_a_non_string_type(): void {
+		remove_all_filters( 'woocommerce_payment_token_class' );
+		$this->register_native_callback( 'woocommerce_payment_token_class' );
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Runs the shared filter as its caller does.
+		$filtered = apply_filters( 'woocommerce_payment_token_class', 'WC_Payment_Token_CC', array( 'CC' ) );
+
+		$this->assertSame( 'WC_Payment_Token_CC', $filtered );
+	}
+
+	/**
 	 * Shared filters with a native callback, each fed a null and a scalar where core documents another type.
 	 *
 	 * @return array<string,array{string,array<int,mixed>,mixed}>
