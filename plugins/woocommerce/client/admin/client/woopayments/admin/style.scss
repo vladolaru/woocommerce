@@ -503,18 +503,12 @@
 }
 
 .woocommerce-woopayments-money-movement__status,
-.woocommerce-woopayments-money-movement__empty,
-.woocommerce-woopayments-money-movement__notice {
+.woocommerce-woopayments-money-movement__empty {
 	background: $white;
 	border: 1px solid $studio-gray-5;
 	border-radius: $radius-medium;
 	margin: 0;
 	padding: $gap;
-}
-
-.woocommerce-woopayments-money-movement__notice {
-	// stylelint-disable-next-line color-no-hex -- WP admin's warning notice border colour; no token in scope.
-	border-inline-start: 4px solid #dba617;
 }
 
 .woocommerce-woopayments-money-movement__table {

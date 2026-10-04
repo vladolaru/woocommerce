@@ -936,15 +936,19 @@ const RespondToDisputeActions = ( {
 				) }
 			</div>
 			{ isInquiryStatus && ! onIssueRefund && (
-				<p
-					id={ refundGuidanceId }
-					className="woocommerce-woopayments-money-movement__notice"
+				// Static guidance that describes the disabled refund button, so it is not spoken on mount.
+				<Notice
+					status="warning"
+					isDismissible={ false }
+					spokenMessage={ null }
 				>
-					{ __(
-						'A full refund is not available for this transaction.',
-						'woocommerce'
-					) }
-				</p>
+					<span id={ refundGuidanceId }>
+						{ __(
+							'A full refund is not available for this transaction.',
+							'woocommerce'
+						) }
+					</span>
+				</Notice>
 			) }
 		</>
 	);

@@ -107,31 +107,10 @@
 	gap: $gap-smaller;
 }
 
-.woocommerce-woopayments-dispute-evidence__readonly,
-.woocommerce-woopayments-dispute-evidence__notice {
-	background: $white;
-	border: 1px solid $studio-gray-5;
-	border-radius: $radius-medium;
-	margin: 0;
-	padding: $gap-small $gap;
-}
-
+// The save and upload notice wrapper takes focus after an update; the `Notice` inside draws the box.
 .woocommerce-woopayments-dispute-evidence__notice:focus {
 	outline: var(--wp-admin-border-width-focus) solid var(--wp-admin-theme-color);
 	outline-offset: 2px;
-}
-
-.woocommerce-woopayments-dispute-evidence__readonly {
-	// stylelint-disable-next-line color-no-hex -- client 11.1.0 read-only evidence notice rule colour; no upstream token.
-	border-inline-start: 4px solid #72aee6;
-}
-
-.woocommerce-woopayments-dispute-evidence__notice.is-success {
-	border-inline-start: 4px solid $studio-green-40;
-}
-
-.woocommerce-woopayments-dispute-evidence__notice.is-error {
-	border-inline-start: 4px solid $studio-red-50;
 }
 
 .woocommerce-woopayments-dispute-evidence__form {
