@@ -899,25 +899,57 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve and hide a disabled SEPA token from its gateway listing.
+	 * Client 11.1.0 retrieves SEPA for the SEPA gateway whether or not SEPA is enabled; only Link, which rides the card
+	 * gateway, needs its setting (includes/class-wc-payments-token-service.php:360-377).
+	 *
+	 * @testdox Should sync a disabled SEPA gateway's saved methods with the provider and keep them out of its listing.
 	 */
-	public function test_reconcile_preserves_and_hides_disabled_sepa_tokens_from_gateway_listings(): void {
+	public function test_reconcile_syncs_disabled_sepa_tokens_for_their_gateway_and_hides_them(): void {
 		$user_id    = $this->factory()->user->create();
-		$sepa_token = $this->create_sepa_token( $user_id, 'pm_disabled_sepa' );
+		$sepa_token = $this->create_sepa_token( $user_id, 'pm_kept_sepa' );
+		$gone_token = $this->create_sepa_token( $user_id, 'pm_detached_sepa' );
 
 		$this->register_token_class_map();
 		wp_set_current_user( $user_id );
-		$customer_service = $this->create_reconciling_customer_service( 'cus_1', array( 'sepa_debit' => array() ) );
-		$this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
+		$customer_service = $this->create_reconciling_customer_service(
+			'cus_1',
+			array(
+				'sepa_debit' => array(
+					array(
+						'id'         => 'pm_kept_sepa',
+						'type'       => 'sepa_debit',
+						'sepa_debit' => array( 'last4' => '6789' ),
+					),
+					array(
+						'id'         => 'pm_new_sepa',
+						'type'       => 'sepa_debit',
+						'sepa_debit' => array( 'last4' => '3000' ),
+					),
+				),
+			)
+		);
+		$sut              = $this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
 
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
-		$tokens       = apply_filters( 'woocommerce_get_customer_payment_tokens', array( $sepa_token->get_id() => $sepa_token ), $user_id, 'woocommerce_payments_sepa_debit' );
-		$stored_token = \WC_Payment_Tokens::get( $sepa_token->get_id() );
+		$tokens = apply_filters(
+			'woocommerce_get_customer_payment_tokens',
+			array(
+				$sepa_token->get_id() => $sepa_token,
+				$gone_token->get_id() => $gone_token,
+			),
+			$user_id,
+			'woocommerce_payments_sepa_debit'
+		);
+		remove_filter( 'woocommerce_get_customer_payment_tokens', array( $sut, 'handle_woocommerce_get_customer_payment_tokens' ), 10 );
+		$stored = array_map(
+			static fn( $token ) => $token->get_token(),
+			WC_Payment_Tokens::get_customer_tokens( $user_id, 'woocommerce_payments_sepa_debit' )
+		);
+		sort( $stored );
 
-		$this->assertArrayNotHasKey( $sepa_token->get_id(), $tokens, 'Disabled SEPA tokens must not be returned from their gateway-scoped checkout listing.' );
-		$this->assertInstanceOf( WooPaymentsSepaToken::class, $stored_token, 'Disabled gateway-scoped tokens must remain stored locally.' );
-		$this->assertSame( '', $stored_token->get_meta( '_wcpay_payment_method_disabled', true ), 'Gateway-scoped filtering must not add token metadata.' );
-		$this->assertSame( array(), $customer_service->fetch_counts, 'Disabled SEPA must not be fetched during a gateway-scoped reconciliation.' );
+		$this->assertSame( array( 'sepa_debit' => 1 ), $customer_service->fetch_counts, 'The SEPA gateway must fetch SEPA even while SEPA is disabled.' );
+		$this->assertSame( array( 'pm_kept_sepa', 'pm_new_sepa' ), $stored, 'Local SEPA tokens must match the provider: a new one added, a detached one removed.' );
+		$this->assertSame( array(), $tokens, 'Disabled SEPA tokens must not be returned from their gateway-scoped checkout listing.' );
 	}
 
 	/**

@@ -1024,9 +1024,9 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	/**
 	 * Get the payment method types to retrieve from the provider.
 	 *
-	 * With a gateway ID, only that gateway's types are retrieved (Link rides the card
-	 * gateway, so its enablement is checked separately); without one, card is always
-	 * retrieved plus every other reconcilable type that is enabled.
+	 * With a gateway ID, all of that gateway's types are retrieved, enabled or not, except Link, which rides the card
+	 * gateway and is checked separately; without one, card is always retrieved plus every other enabled type. Client
+	 * 11.1.0 `includes/class-wc-payments-token-service.php:323-377`.
 	 *
 	 * @param string $gateway_id Requested gateway ID, or '' for all.
 	 * @return string[]
@@ -1036,20 +1036,13 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 		$enabled_method_ids = $this->get_enabled_payment_method_ids();
 
 		foreach ( self::RECONCILABLE_PAYMENT_METHOD_TYPES as $type ) {
-			$type_gateway_id = self::GATEWAY_IDS_BY_PAYMENT_METHOD_TYPE[ $type ];
+			if ( '' !== $gateway_id && self::GATEWAY_IDS_BY_PAYMENT_METHOD_TYPE[ $type ] !== $gateway_id ) {
+				continue;
+			}
 
-			if ( '' === $gateway_id ) {
-				if ( ! $this->is_payment_method_type_enabled( $type, $enabled_method_ids ) ) {
-					continue;
-				}
-			} else {
-				if ( $type_gateway_id !== $gateway_id ) {
-					continue;
-				}
-
-				if ( ! $this->is_payment_method_type_enabled( $type, $enabled_method_ids ) ) {
-					continue;
-				}
+			$checks_setting = '' === $gateway_id || self::PAYMENT_METHOD_TYPE_LINK === $type;
+			if ( $checks_setting && ! $this->is_payment_method_type_enabled( $type, $enabled_method_ids ) ) {
+				continue;
 			}
 
 			$types[] = $type;
