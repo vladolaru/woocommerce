@@ -339,6 +339,7 @@
 			content: "!";
 			font-size: $font-size-x-large;
 			font-weight: 600;
+			// stylelint-disable-next-line property-disallowed-list -- centring: left 50% pairs with translate(-50%), so the side is not a reading direction.
 			left: 50%;
 			line-height: 1;
 			position: absolute;

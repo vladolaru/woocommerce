@@ -2,8 +2,8 @@
 const woopaymentsLiteralPx =
 	/(?:^|[^\w.$-])-?(?:[2-9]|[1-9]\d+|1\.\d+)(?:\.\d+)?px\b/;
 
-// Native WooPayments files the styling sweep has not converted yet; each leaves the list when it converts.
-const woopaymentsUnconvertedFiles = [];
+// A four-value margin or padding shorthand, which sets the physical left and right sides.
+const woopaymentsFourValues = /^\S+\s+\S+\s+\S+\s+\S+$/;
 
 module.exports = {
 	extends: '@wordpress/stylelint-config/scss',
@@ -44,36 +44,35 @@ module.exports = {
 			files: [ 'client/woopayments/**/*.scss' ],
 			rules: {
 				'color-no-hex': true,
-				// Logical properties, as the repo's AGENTS.md asks: no physical left/right margins, paddings, borders or alignment.
+				// Logical properties, as the repo's AGENTS.md asks: no physical left/right margins, paddings, borders,
+				// offsets, floats or alignment, and no four-value margin/padding shorthand (it sets left and right).
 				'property-disallowed-list': [
 					'/^(margin|padding|border)-(left|right)(-.+)?$/',
+					'/^(left|right)$/',
 				],
+				'declaration-property-value-allowed-list': {
+					'text-align': [
+						'/^(start|end|center|justify|inherit|initial|unset)$/',
+					],
+					float: [ '/^(none|inline-start|inline-end|inherit|initial|unset)$/' ],
+				},
 				'declaration-property-value-disallowed-list': [
 					{
 						'/^(margin|padding)(-.+)?$/': [ woopaymentsLiteralPx ],
+						'/^(margin|padding)$/': [ woopaymentsFourValues ],
 						'/^(row-|column-)?gap$/': [ woopaymentsLiteralPx ],
 						'font-size': [ woopaymentsLiteralPx ],
 						'/^border(-.+)?-radius$/': [ woopaymentsLiteralPx ],
 						'/^(min-|max-)?(width|height|inline-size|block-size)$/':
 							[ woopaymentsLiteralPx ],
-						'text-align': [ '/^(left|right)$/' ],
 					},
 					{
-						message: ( property ) =>
-							property === 'text-align'
-								? 'Use text-align: start or end (logical) instead of left or right.'
+						message: ( property, value ) =>
+							woopaymentsFourValues.test( value )
+								? `Use ${ property }-block and ${ property }-inline (logical) instead of a four-value shorthand.`
 								: `Use an upstream token or client/woopayments/_tokens.scss for "${ property }" instead of a literal px value above 1px.`,
 					},
 				],
-			},
-		},
-		{
-			// Files not yet converted by the native styling sweep. Remove each file as it converts.
-			files: woopaymentsUnconvertedFiles,
-			rules: {
-				'color-no-hex': null,
-				'property-disallowed-list': null,
-				'declaration-property-value-disallowed-list': null,
 			},
 		},
 	],
