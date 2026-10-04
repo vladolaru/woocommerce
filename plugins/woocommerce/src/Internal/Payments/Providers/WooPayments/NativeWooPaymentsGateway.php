@@ -840,7 +840,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 				$this->get_provider()
 			);
 		} catch ( PaymentOutcomeApplyException $exception ) {
-			// The processing service already kept the renewal reconcilable and logged the failure.
+			// The processing service logged the failure and tried to save the payment reference on the renewal; see was_reconciliation_context_persisted().
 			$outcome = $exception->get_outcome();
 		}
 
