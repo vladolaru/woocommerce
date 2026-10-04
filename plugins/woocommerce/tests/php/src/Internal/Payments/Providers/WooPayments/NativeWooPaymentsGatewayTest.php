@@ -56,6 +56,70 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A 3DS confirmation nonce created after classic checkout creates the shopper's account is valid on the shopper's next request.
+	 *
+	 * Runs in its own process: the checkout defines WOOCOMMERCE_CHECKOUT for the rest of the run.
+	 * Client 11.1.0 keeps the new login cookie for the rest of the request (class-wc-payment-gateway-wcpay.php:573,762-766).
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_confirmation_nonce_created_after_checkout_account_creation_verifies_on_the_next_request(): void {
+		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		new NativeWooPaymentsGateway();
+		// What WC_Checkout::process_checkout() and wc_create_new_customer() do before the payment runs.
+		wc_maybe_define_constant( 'WOOCOMMERCE_CHECKOUT', true );
+		do_action( 'woocommerce_created_customer', $user_id, array(), false );
+		$next_request_cookie = $this->set_auth_cookie_as_checkout_does( $user_id );
+
+		$nonce = wp_create_nonce( 'wcpay_update_order_status_nonce' );
+		// The shopper's next request, the order-status AJAX call, sends the new login cookie.
+		$_COOKIE[ LOGGED_IN_COOKIE ] = $next_request_cookie;
+
+		$this->assertSame( 1, wp_verify_nonce( $nonce, 'wcpay_update_order_status_nonce' ), 'The order-status AJAX call must accept the nonce the checkout response carried.' );
+	}
+
+	/**
+	 * @testdox A login outside a checkout that created an account leaves the current request's login cookie alone.
+	 *
+	 * Runs in its own process so no earlier test has defined WOOCOMMERCE_CHECKOUT.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_login_outside_checkout_account_creation_leaves_the_request_cookie_alone(): void {
+		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		new NativeWooPaymentsGateway();
+		unset( $_COOKIE[ LOGGED_IN_COOKIE ] );
+
+		$this->set_auth_cookie_as_checkout_does( $user_id );
+
+		$this->assertArrayNotHasKey( LOGGED_IN_COOKIE, $_COOKIE, 'Only a checkout that created the account switches the request to the new cookie (client 11.1.0 class-wc-payment-gateway-wcpay.php:763).' );
+	}
+
+	/**
+	 * Log a user in as wc_set_customer_auth_cookie() does, without sending headers, and return the new login cookie.
+	 *
+	 * @param int $user_id User ID.
+	 * @return string The logged-in cookie the browser receives.
+	 */
+	private function set_auth_cookie_as_checkout_does( int $user_id ): string {
+		$cookie = '';
+		add_action(
+			'set_logged_in_cookie',
+			static function ( $logged_in_cookie ) use ( &$cookie ): void {
+				$cookie = (string) $logged_in_cookie;
+			},
+			0
+		);
+		add_filter( 'send_auth_cookies', '__return_false' );
+		wp_set_current_user( $user_id );
+		wp_set_auth_cookie( $user_id, true );
+
+		return $cookie;
+	}
+
+	/**
 	 * @testdox Should use the store base-location option when the account country is uncached.
 	 */
 	public function test_account_country_falls_back_to_base_location_option_when_uncached(): void {

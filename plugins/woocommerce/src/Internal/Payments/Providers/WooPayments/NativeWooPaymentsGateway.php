@@ -299,6 +299,27 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		$this->maybe_add_classic_checkout_fallback_hooks();
+
+		// Only the card gateway adds it, as the client's main gateway does (client 11.1.0 class-wc-payment-gateway-wcpay.php:559,572-573).
+		if ( OrderPaymentStore::GATEWAY_ID === $this->id && false === has_action( 'set_logged_in_cookie', array( self::class, 'handle_set_logged_in_cookie' ) ) ) {
+			add_action( 'set_logged_in_cookie', array( self::class, 'handle_set_logged_in_cookie' ) );
+		}
+	}
+
+	/**
+	 * Use the new login cookie for the rest of a checkout request that created the customer's account.
+	 *
+	 * Nonces created later in the request, such as the 3DS confirmation nonce, then match the session the shopper's
+	 * next request sends. Port of client 11.1.0 `set_cookie_on_current_request()` (class-wc-payment-gateway-wcpay.php:762-766).
+	 *
+	 * @internal
+	 *
+	 * @param string $cookie New logged-in cookie value.
+	 */
+	public static function handle_set_logged_in_cookie( $cookie ): void {
+		if ( defined( 'LOGGED_IN_COOKIE' ) && defined( 'WOOCOMMERCE_CHECKOUT' ) && WOOCOMMERCE_CHECKOUT && did_action( 'woocommerce_created_customer' ) > 0 ) {
+			$_COOKIE[ LOGGED_IN_COOKIE ] = $cookie;
+		}
 	}
 
 	/**
