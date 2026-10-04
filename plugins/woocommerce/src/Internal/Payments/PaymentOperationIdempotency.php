@@ -16,7 +16,7 @@ use WC_Order;
  * (`mint_attempt_key()`): WooCommerce cannot tell whether a resubmitted checkout or refund
  * retries a failed attempt or starts a genuinely new one, and a reused key would make the
  * provider replay the first attempt's cached failure. Duplicate-charge protection comes from
- * the application-level guards, not the key. A provider may keep a charge's key on the order
+ * the application-level guards, not only the key. A provider may keep a charge's key on the order
  * when the outcome is ambiguous (the request may have reached it) and send that key on the next
  * attempt instead, until a definitive outcome retires it. Captures and cancels derive a key
  * (`derive_key()`), but only as the order payment lock token and log correlation ID: their

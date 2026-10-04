@@ -2098,7 +2098,8 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * Client 11.1.0 add_payment_method_to_user() does not catch the fetch (`class-wc-payments-token-service.php:136`), so a
 	 * PHP error stops the token, and every client caller catches only Exception (review 34 F1). Native keeps a display read
-	 * going without the details, as it does for an Exception, and logs the error with its class.
+	 * going without the details, as it does for an Exception, and logs the error with its class. The token path rethrows
+	 * without logging, so its caller writes the only line (review 35 F8).
 	 */
 	public function test_php_error_fetching_payment_method_stops_new_token_only(): void {
 		$user_id = self::factory()->user->create();
@@ -2152,7 +2153,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( $error, $thrown );
 		$this->assertSame( array(), WC_Payment_Tokens::get_customer_tokens( $user_id ) );
 		$lines = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'woopayments' === $line[2] && str_starts_with( $line[1], 'Error retrieving WooPayments payment method details for ' ) ) );
-		$this->assertCount( 2, $lines, 'Both PHP errors are logged with debug logging off.' );
+		$this->assertCount( 1, $lines, 'The display read logs the PHP error with debug logging off; the token path leaves it to its caller.' );
 		$this->assertSame( 'error', $lines[0][0] );
 		$this->assertStringContainsString( 'pm_display', $lines[0][1] );
 		$this->assertSame( 'TypeError', $logger->contexts[ array_search( $lines[0], $logger->lines, true ) ]['exception'] ?? '' );

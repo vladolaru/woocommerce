@@ -617,9 +617,10 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	/**
 	 * Get provider details only when their identity matches the requested payment method.
 	 *
-	 * The details service logs a failed fetch and returns no details. A PHP Error is logged here whatever the logging
-	 * setting; it stops a token from being created, as on the client (`class-wc-payments-token-service.php:136` does
-	 * not catch), so a renewal token repair fails its scheduled action instead of the renewal (review 34 F1).
+	 * The details service logs a failed fetch and returns no details. A PHP Error stops a token from being created, as on
+	 * the client (`class-wc-payments-token-service.php:136` does not catch), so a renewal token repair fails its scheduled
+	 * action instead of the renewal (review 34 F1); the caller logs it. A display read logs it here whatever the logging
+	 * setting and goes on without details.
 	 *
 	 * @param string $payment_method_id Provider payment method ID.
 	 * @param bool   $for_new_token     Whether the details are read to create a token.
@@ -631,15 +632,15 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			$payment_method = $this->payment_method_details_service->get_payment_method_details( $payment_method_id );
 		} catch ( Throwable $exception ) {
 			if ( ! $exception instanceof Exception ) {
+				if ( $for_new_token ) {
+					throw $exception;
+				}
+
 				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
 					'Error retrieving WooPayments payment method details for ' . $payment_method_id . ': ' . $exception->getMessage(),
 					$exception,
 					array( 'payment_method_id' => $payment_method_id )
 				);
-
-				if ( $for_new_token ) {
-					throw $exception;
-				}
 			}
 
 			return array();

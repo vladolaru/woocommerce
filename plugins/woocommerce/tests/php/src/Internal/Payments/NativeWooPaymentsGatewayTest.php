@@ -6965,7 +6965,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 *
 	 * Client 11.1.0 fetches the payment method without a catch (`class-wc-payments-token-service.php:136`) and the repair
 	 * catches only Exception (trait:538), so the PHP error reaches Action Scheduler instead of failing the renewal with
-	 * "No saved payment method found" (review 34 F1, monitor ruling 2026-10-04 (3)).
+	 * "No saved payment method found" (review 34 F1, monitor ruling 2026-10-04 (3)). The error is logged once, by the
+	 * repair (review 35 F8).
 	 */
 	public function test_scheduled_subscription_payment_token_repair_payment_method_fetch_php_error(): void {
 		$this->ensure_wcs_renewal_subscriptions_double();
@@ -7033,6 +7034,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$service = new RecordingPaymentProcessingService();
 		$gateway = new NativeWooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
+		$logger = RecordingWcLogger::install();
 
 		$caught = null;
 		try {
@@ -7048,6 +7050,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pending', wc_get_order( $renewal->get_id() )->get_status() );
 		$notes = array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $renewal->get_id() ) ) );
 		$this->assertNotContains( 'Subscription renewal failed: No saved payment method found.', $notes );
+		$error_lines = array_values( array_filter( $logger->lines, static fn( array $line ): bool => str_contains( $line[1], 'Return value must be of type array, null returned' ) ) );
+		$this->assertCount( 1, $error_lines, 'The PHP error is logged once.' );
+		$this->assertStringStartsWith( 'Error repairing subscription renewal payment token', $error_lines[0][1] );
 	}
 
 	/**
