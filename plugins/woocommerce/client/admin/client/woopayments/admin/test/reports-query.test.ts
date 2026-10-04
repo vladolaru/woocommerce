@@ -60,8 +60,8 @@ describe( 'WooPayments Reports query helpers', () => {
 					},
 					{
 						field: 'type',
-						operator: 'isAny',
-						value: [ 'charge', 'refund' ],
+						operator: 'is',
+						value: 'refund',
 					},
 				],
 			} )
@@ -75,7 +75,7 @@ describe( 'WooPayments Reports query helpers', () => {
 				'2026-06-19T23:59:59.999Z',
 			],
 			payment_method_type: 'card',
-			type: [ 'charge', 'refund' ],
+			type: [ 'refund' ],
 			search: [ 'txn_123' ],
 			user_timezone: expect.stringMatching( timezonePattern ),
 		} );
@@ -239,28 +239,6 @@ describe( 'WooPayments Reports query helpers', () => {
 				'orderby=fees&order=asc&paged=2&per_page=50&search%5B%5D=txn_1&date_between%5B%5D=2026-04-02&date_between%5B%5D=2026-04-02&payment_method_type=card&type=refund'
 			);
 			expect( parseReportsFeesViewFromSearch( search ) ).toEqual( view );
-		} );
-
-		it( 'keeps the native "is any of" type filter across a reload', () => {
-			const view = {
-				page: 1,
-				perPage: 25,
-				sort: { field: 'date', direction: 'desc' as const },
-				search: '',
-				filters: [
-					{
-						field: 'type',
-						operator: 'isAny',
-						value: [ 'charge', 'refund' ],
-					},
-				],
-			};
-
-			expect(
-				parseReportsFeesViewFromSearch(
-					serializeReportsFeesViewToSearch( view )
-				)
-			).toEqual( view );
 		} );
 	} );
 } );

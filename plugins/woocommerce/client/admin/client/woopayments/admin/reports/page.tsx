@@ -1536,7 +1536,8 @@ const FeesReport = ( { now }: { now: Date } ) => {
 					value: type,
 					label: getTypeLabel( type ),
 				} ) ),
-				filterBy: { operators: [ 'is', 'isAny' ] },
+				// Client 11.1.0 `reports/fees/fields.tsx:88`: one type at a time.
+				filterBy: { operators: [ 'is' ] },
 				getValue: ( { item }: { item: ReportsFee } ) => item.type || '',
 				render: ( { item }: { item: ReportsFee } ) => (
 					<span>{ getTypeLabel( item.type ) }</span>

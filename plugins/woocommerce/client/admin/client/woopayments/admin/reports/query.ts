@@ -343,14 +343,7 @@ export const parseReportsFeesViewFromSearch = (
 		} );
 	}
 
-	// The client keeps one type; native's "is any of" writes `type[]` and reads it back.
-	if ( params.getAll( 'type[]' ).length ) {
-		filters.push( {
-			field: 'type',
-			operator: 'isAny',
-			value: types,
-		} );
-	} else if ( getSingleUrlValue( types[ 0 ] ) ) {
+	if ( getSingleUrlValue( types[ 0 ] ) ) {
 		filters.push( {
 			field: 'type',
 			operator: 'is',
@@ -438,13 +431,7 @@ export const serializeReportsFeesViewToSearch = (
 		}
 
 		if ( filter.field === 'type' ) {
-			addParam(
-				params,
-				'type',
-				Array.isArray( filter.value )
-					? normalizeStringArray( filter.value )
-					: getSingleUrlValue( filter.value )
-			);
+			addParam( params, 'type', getSingleUrlValue( filter.value ) );
 		}
 	} );
 
