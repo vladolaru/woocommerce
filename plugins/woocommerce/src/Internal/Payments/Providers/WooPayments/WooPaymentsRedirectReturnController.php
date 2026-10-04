@@ -295,20 +295,25 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * here (review 33 F1). The lifecycle's own late-failure check stays on paid statuses only: a Multibanco voucher expiry
 	 * must still move an on-hold order to failed.
 	 *
+	 * When another holder has the lock, most likely a webhook writing this payment's status, the order is left to it and
+	 * the shopper stays on order-received: no notice, no failure, and an always-on warning naming the holder's operation,
+	 * lock value and age (review 35 F4). The client fails nothing there but sends the shopper to checkout (gw:2428-2456),
+	 * where a resubmit creates a new order and can authorize the card again.
+	 *
 	 * @param WC_Order $order             Order object.
 	 * @param string   $intent_id         Requested intent ID.
 	 * @param string   $exception_message Message of the fetch failure.
-	 * @return bool Whether the shopper goes back to checkout; false when the order is settled or bound to another intent.
+	 * @return bool Whether the shopper goes back to checkout; false when the order is settled, bound to another intent or
+	 *              locked by another holder.
 	 */
 	private function fail_order_unless_settled( WC_Order $order, string $intent_id, string $exception_message ): bool {
 		$persistence_profile = new WooPaymentsPersistenceProfile();
 		$order_payment_store = wc_get_container()->get( OrderPaymentStore::class );
 		if ( ! $order_payment_store->claim_order_payment_lock_for_operation( $order, $persistence_profile, $intent_id, 'payment status update' ) ) {
-			// As before: the lifecycle skips a failure it cannot lock and the shopper still goes back to checkout.
 			$order_payment_store->log_order_payment_lock_refusal(
 				$order,
 				$persistence_profile,
-				'payment status update',
+				'redirect return failure',
 				'native-payments-webhook',
 				array(
 					'payment_reference' => $intent_id,
@@ -316,7 +321,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 					'reason'            => 'order_locked',
 				)
 			);
-			return true;
+			return false;
 		}
 
 		try {

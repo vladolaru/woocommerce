@@ -21,6 +21,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRedirectReturnController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
@@ -988,6 +989,50 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			static fn( $note ): bool => false !== strpos( $note->content, '<strong>failed</strong>' )
 		);
 		$this->assertSame( array(), $failure_notes );
+	}
+
+	/**
+	 * @testdox A failed intent fetch while a webhook holds the order payment lock leaves the order to it and stays on order-received.
+	 *
+	 * Better than the client (review 35 F4): client 11.1.0 skips the failure on a locked order but still sends the shopper
+	 * to checkout with the error notice (gw:2428-2456), where a resubmit creates a new order and can authorize the card
+	 * again while the webhook writes the first authorization. Native writes no failure and no notice, lets the redirect
+	 * return end on order-received, and logs the refusal with the holder's operation and lock value whatever the setting.
+	 */
+	public function test_handle_wp_leaves_a_locked_order_to_the_lock_holder_after_a_failed_fetch(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$order                 = $this->create_order();
+		$api_client            = new RedirectReturnApiClientStub();
+		$api_client->exception = new WooPaymentsApiException( 'Request timed out.', 'wcpay_http_request_failed', 504 );
+		$store                 = wc_get_container()->get( OrderPaymentStore::class );
+		$profile               = new WooPaymentsPersistenceProfile();
+		// The webhook for this payment holds the lock, as OrderPaymentLifecycleService::apply() claims it.
+		$this->assertTrue( $store->claim_order_payment_lock_for_operation( $order, $profile, 'pi_locked_return', 'payment status update' ) );
+		$logger = new RedirectReturnRecordingLogger();
+		add_filter( 'woocommerce_logging_class', static fn() => $logger );
+		$this->sut = $this->create_controller( true, null, $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_locked_return' );
+
+		try {
+			$this->sut->handle_wp();
+		} finally {
+			$store->release_order_payment_lock( $order, $profile, 'pi_locked_return' );
+		}
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'pending', $reloaded->get_status() );
+		$this->assertSame( array(), wc_get_notices( 'error' ) );
+		$failure_notes = array_filter(
+			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+			static fn( $note ): bool => false !== strpos( $note->content, '<strong>failed</strong>' )
+		);
+		$this->assertSame( array(), $failure_notes );
+		$this->assertCount( 1, $logger->warning_calls );
+		$this->assertMatchesRegularExpression( '/^order payment lock refused: order ' . $order->get_id() . ', refused redirect return failure, held by payment status update for \d+s$/', $logger->warning_calls[0]['message'] );
+		$this->assertSame( 'payment status update', $logger->warning_calls[0]['context']['holder_operation'] ?? null );
+		$this->assertSame( 'pi_locked_return', $logger->warning_calls[0]['context']['lock_value'] ?? null );
 	}
 
 	/**
@@ -2200,6 +2245,9 @@ class RedirectReturnRecordingLogger implements \WC_Logger_Interface {
 	/** @var array<int,array{message:mixed,context:array<string,mixed>}> */
 	public array $info_calls = array();
 
+	/** @var array<int,array{message:mixed,context:array<string,mixed>}> */
+	public array $warning_calls = array();
+
 	public function add( $handle, $message, $level = \WC_Log_Levels::NOTICE ) {
 		unset( $handle, $message, $level );
 		return true;
@@ -2210,6 +2258,8 @@ class RedirectReturnRecordingLogger implements \WC_Logger_Interface {
 			$this->error( $message, $context );
 		} elseif ( \WC_Log_Levels::INFO === $level ) {
 			$this->info( $message, $context );
+		} elseif ( \WC_Log_Levels::WARNING === $level ) {
+			$this->warning( $message, $context );
 		}
 	}
 
@@ -2241,7 +2291,10 @@ class RedirectReturnRecordingLogger implements \WC_Logger_Interface {
 	}
 
 	public function warning( $message, $context = array() ) {
-		unset( $message, $context );
+		$this->warning_calls[] = array(
+			'message' => $message,
+			'context' => $context,
+		);
 	}
 
 	public function error( $message, $context = array() ) {
