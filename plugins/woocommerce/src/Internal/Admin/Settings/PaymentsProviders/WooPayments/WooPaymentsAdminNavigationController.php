@@ -283,7 +283,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	/**
 	 * Name the browser tab after the native WooPayments page on first paint, in WooCommerce admin's header format.
 	 *
-	 * Detail pages take their list's title, as the client's server-side title does; `admin/routes.tsx` then refines it.
+	 * A detail page's title is followed by its list's title, the same title `admin/routes.tsx` sets after load.
 	 * Settings pages keep the WooCommerce settings title.
 	 *
 	 * @since 11.2.0
@@ -299,18 +299,24 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 			return $admin_title;
 		}
 
-		foreach ( $this->get_page_titles() as $page_path => $page_title ) {
-			if ( $current_path === $page_path || str_starts_with( $current_path, $page_path . '/' ) ) {
-				return sprintf(
-					/* translators: 1: The page title. 2: The name of the website. */
-					esc_html__( '%1$s &lsaquo; %2$s &#8212; WooCommerce', 'woocommerce' ),
-					esc_html( $page_title ) . ' &lsaquo; ' . esc_html__( 'Payments', 'woocommerce' ),
-					esc_html( get_bloginfo( 'name' ) )
-				);
+		$page_titles = $this->get_page_titles();
+		$sections    = array();
+		for ( $path = $current_path; '' !== $path; $path = substr( $path, 0, (int) strrpos( $path, '/' ) ) ) {
+			if ( isset( $page_titles[ $path ] ) ) {
+				$sections[] = esc_html( $page_titles[ $path ] );
 			}
 		}
+		if ( empty( $sections ) ) {
+			return $admin_title;
+		}
 
-		return $admin_title;
+		$sections[] = esc_html__( 'Payments', 'woocommerce' );
+		return sprintf(
+			/* translators: 1: The page title. 2: The name of the website. */
+			esc_html__( '%1$s &lsaquo; %2$s &#8212; WooCommerce', 'woocommerce' ),
+			implode( ' &lsaquo; ', $sections ),
+			esc_html( get_bloginfo( 'name' ) )
+		);
 	}
 
 	/**
@@ -1104,22 +1110,27 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the Payments submenu titles of the native WooPayments list pages, keyed by route path.
+	 * Get the titles of the native WooPayments pages, keyed by route path.
 	 *
-	 * The submenu and the first-paint browser tab title both read them.
+	 * The submenu reads the list pages' titles. The first-paint browser tab title reads them all, matching the
+	 * detail page titles the client registers (client 11.1.0 `includes/admin/class-wc-payments-admin.php:567-593`).
 	 *
 	 * @return array<string,string>
 	 */
 	private function get_page_titles(): array {
 		return array(
-			self::PATH_OVERVIEW     => __( 'Overview', 'woocommerce' ),
-			self::PATH_PAYOUTS      => __( 'Payouts', 'woocommerce' ),
-			self::PATH_TRANSACTIONS => __( 'Transactions', 'woocommerce' ),
-			self::PATH_DISPUTES     => __( 'Disputes', 'woocommerce' ),
-			self::PATH_REPORTS      => __( 'Reports', 'woocommerce' ),
-			self::PATH_CARD_READERS => __( 'Card Readers', 'woocommerce' ),
-			self::PATH_LOANS        => __( 'Capital Loans', 'woocommerce' ),
-			self::PATH_DOCUMENTS    => __( 'Documents', 'woocommerce' ),
+			self::PATH_OVERVIEW            => __( 'Overview', 'woocommerce' ),
+			self::PATH_PAYOUTS             => __( 'Payouts', 'woocommerce' ),
+			self::PATH_PAYOUT_DETAILS      => __( 'Payout details', 'woocommerce' ),
+			self::PATH_TRANSACTIONS        => __( 'Transactions', 'woocommerce' ),
+			self::PATH_TRANSACTION_DETAILS => __( 'Payment details', 'woocommerce' ),
+			self::PATH_DISPUTES            => __( 'Disputes', 'woocommerce' ),
+			self::PATH_DISPUTE_DETAILS     => __( 'Dispute details', 'woocommerce' ),
+			self::PATH_DISPUTE_CHALLENGE   => __( 'Challenge dispute', 'woocommerce' ),
+			self::PATH_REPORTS             => __( 'Reports', 'woocommerce' ),
+			self::PATH_CARD_READERS        => __( 'Card Readers', 'woocommerce' ),
+			self::PATH_LOANS               => __( 'Capital Loans', 'woocommerce' ),
+			self::PATH_DOCUMENTS           => __( 'Documents', 'woocommerce' ),
 		);
 	}
 

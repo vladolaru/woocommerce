@@ -2034,8 +2034,8 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Client 11.1.0 names its pages through WooCommerce admin's header (`%1$s &lsaquo; %2$s &#8212; WooCommerce`);
-	 * detail pages take their list's title on first paint.
+	 * Client 11.1.0 names its pages through WooCommerce admin's header (`%1$s &lsaquo; %2$s &#8212; WooCommerce`) and registers
+	 * each detail page with its own title (`includes/admin/class-wc-payments-admin.php:567-593`).
 	 *
 	 * @testdox Should title $path as "$expected_page" in the browser tab on first paint.
 	 * @dataProvider provider_native_page_titles
@@ -2060,10 +2060,12 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function provider_native_page_titles(): array {
 		return array(
-			'overview'          => array( '/woopayments/overview', 'Overview' ),
-			'payout details'    => array( '/woopayments/payouts/details', 'Payouts' ),
-			'dispute challenge' => array( '/woopayments/disputes/challenge', 'Disputes' ),
-			'card readers'      => array( '/woopayments/card-readers', 'Card Readers' ),
+			'overview'            => array( '/woopayments/overview', 'Overview' ),
+			'payout details'      => array( '/woopayments/payouts/details', 'Payout details &lsaquo; Payouts' ),
+			'transaction details' => array( '/woopayments/transactions/details', 'Payment details &lsaquo; Transactions' ),
+			'dispute details'     => array( '/woopayments/disputes/details', 'Dispute details &lsaquo; Disputes' ),
+			'dispute challenge'   => array( '/woopayments/disputes/challenge', 'Challenge dispute &lsaquo; Disputes' ),
+			'card readers'        => array( '/woopayments/card-readers', 'Card Readers' ),
 		);
 	}
 
