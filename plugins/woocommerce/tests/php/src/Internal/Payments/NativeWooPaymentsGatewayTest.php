@@ -4255,9 +4255,12 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * order on hold; a retry then creates a new order and authorizes the card again. Native answers as it does for an
 	 * authorized payment once a fresh read shows the order on hold for the outcome's intent, and keeps the refusal when the
 	 * order is bound to another intent (monitor ruling 2026-10-04 on review 34 F2). The error is logged whatever the setting.
+	 * When the fresh read itself throws, the original error is still logged and checkout keeps the refusal instead of
+	 * letting the read failure escape (review 35 F3).
 	 *
 	 * @testWith ["its intent", "success"]
 	 *           ["another intent", "failure"]
+	 *           ["its intent, on an order that cannot be read again", "failure"]
 	 *
 	 * @param string $intent Which intent the order is bound to when the error strikes.
 	 * @param string $result Expected checkout result.
@@ -4272,6 +4275,18 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 					$concurrent_order->set_transaction_id( 'pi_other' );
 					$concurrent_order->update_meta_data( '_intent_id', 'pi_other' );
 					$concurrent_order->save();
+				}
+			);
+		}
+		if ( 'its intent, on an order that cannot be read again' === $intent ) {
+			$order_id = $order->get_id();
+			add_action(
+				'clean_post_cache',
+				static function ( $post_id ) use ( $order_id ): void {
+					// Only the fresh read after the error fails, as the data store does for a missing order.
+					if ( $order_id === (int) $post_id && in_array( 'reread_order_authoritatively', array_column( debug_backtrace( DEBUG_BACKTRACE_IGNORE_ARGS ), 'function' ), true ) ) { // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_debug_backtrace -- Test fault injection.
+						throw new \Exception( 'Invalid order.' );
+					}
 				}
 			);
 		}

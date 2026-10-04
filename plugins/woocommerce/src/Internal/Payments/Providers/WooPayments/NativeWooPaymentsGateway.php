@@ -2916,23 +2916,34 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return array<string,string>
 	 */
 	private function keep_authorized_order_after_php_error( WC_Order $order, PaymentOutcomeApplyException $exception ): array {
-		$failure             = $exception->get_failure();
-		$outcome             = $exception->get_outcome();
-		$shows_authorization = $this->order_shows_authorization( $order, $outcome );
+		$failure = $exception->get_failure();
+		$outcome = $exception->get_outcome();
+		$context = array(
+			'order_id'                 => $order->get_id(),
+			'intent_id'                => $outcome->get_provider_payment_id(),
+			'reconciliation_persisted' => $exception->was_reconciliation_context_persisted(),
+		);
+		// Logged before the order is read again, so a failing read cannot lose the original error (review 35 F3).
 		$this->get_logger()->log_throwable_always(
 			sprintf(
-				'Applying the authorized payment to order #%1$d raised %2$s: %3$s. %4$s',
+				'Applying the authorized payment to order #%1$d raised %2$s: %3$s.',
 				$order->get_id(),
 				get_class( $failure ),
-				$failure->getMessage(),
-				$shows_authorization ? 'The order already shows the authorization, so checkout continues.' : 'The order was left for reconciliation.'
+				$failure->getMessage()
 			),
 			$failure,
-			array(
-				'order_id'                 => $order->get_id(),
-				'intent_id'                => $outcome->get_provider_payment_id(),
-				'reconciliation_persisted' => $exception->was_reconciliation_context_persisted(),
-			)
+			$context
+		);
+
+		$shows_authorization = $this->order_shows_authorization( $order, $outcome );
+		$this->get_logger()->log_always(
+			sprintf(
+				'Order #%d %s',
+				$order->get_id(),
+				$shows_authorization ? 'already shows the authorization, so checkout continues.' : 'was left for reconciliation.'
+			),
+			'warning',
+			$context
 		);
 
 		if ( $shows_authorization ) {
@@ -2970,7 +2981,17 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return false;
 		}
 
-		$fresh_order = $this->reread_order_authoritatively( $order );
+		try {
+			$fresh_order = $this->reread_order_authoritatively( $order );
+		} catch ( Throwable $read_failure ) {
+			// The order cannot be read, so it is not shown as authorized and checkout keeps the refusal.
+			$this->get_logger()->log_throwable_always(
+				sprintf( 'Reading order #%1$d again after the PHP error raised %2$s: %3$s.', $order->get_id(), get_class( $read_failure ), $read_failure->getMessage() ),
+				$read_failure,
+				array( 'order_id' => $order->get_id() )
+			);
+			return false;
+		}
 
 		return $intent_id === (string) $fresh_order->get_meta( '_intent_id', true )
 			&& $fresh_order->has_status( array_merge( array( OrderStatus::ON_HOLD ), wc_get_is_paid_statuses() ) );
