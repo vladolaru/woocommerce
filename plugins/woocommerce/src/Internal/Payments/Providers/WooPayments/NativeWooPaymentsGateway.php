@@ -2892,26 +2892,44 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Refuse checkout without failing an order whose payment is authorized, after a PHP Error applying the outcome.
+	 * Settle checkout without failing an order whose payment is authorized, after a PHP Error applying the outcome.
 	 *
-	 * The client fatals there (`gw:1272` catches only Exception) and leaves the order as it was. Native leaves it too, so
-	 * the held authorization is reconciled later, and shows the generic notice (monitor ruling 2026-10-04 (4)).
+	 * The client fatals there (`gw:1272` catches only Exception) and leaves the order as it was. Native leaves it too (monitor
+	 * ruling 2026-10-04 (4)). When the order already shows the authorization, checkout answers as it does for an authorized
+	 * payment, so a retry cannot authorize the card again on a new order; otherwise it shows the generic notice (ruling F2).
 	 *
 	 * @param WC_Order                     $order     Order being paid.
 	 * @param PaymentOutcomeApplyException $exception Handed-back authorized outcome and the PHP Error that stopped it.
 	 * @return array<string,string>
 	 */
 	private function keep_authorized_order_after_php_error( WC_Order $order, PaymentOutcomeApplyException $exception ): array {
-		$failure = $exception->get_failure();
+		$failure             = $exception->get_failure();
+		$outcome             = $exception->get_outcome();
+		$shows_authorization = $this->order_shows_authorization( $order, $outcome );
 		$this->get_logger()->log_throwable_always(
-			sprintf( 'Applying the authorized payment to order #%1$d raised %2$s: %3$s. The order was left for reconciliation.', $order->get_id(), get_class( $failure ), $failure->getMessage() ),
+			sprintf(
+				'Applying the authorized payment to order #%1$d raised %2$s: %3$s. %4$s',
+				$order->get_id(),
+				get_class( $failure ),
+				$failure->getMessage(),
+				$shows_authorization ? 'The order already shows the authorization, so checkout continues.' : 'The order was left for reconciliation.'
+			),
 			$failure,
 			array(
 				'order_id'                 => $order->get_id(),
-				'intent_id'                => $exception->get_outcome()->get_provider_payment_id(),
+				'intent_id'                => $outcome->get_provider_payment_id(),
 				'reconciliation_persisted' => $exception->was_reconciliation_context_persisted(),
 			)
 		);
+
+		if ( $shows_authorization ) {
+			// The same answer process_order_payment() gives an authorized outcome (format_checkout_result()).
+			return array(
+				'result'         => 'success',
+				'redirect'       => $order->get_checkout_order_received_url(),
+				'payment_method' => $outcome->get_payment_method_id(),
+			);
+		}
 
 		wc_add_notice( WooPaymentsErrorMessages::get_generic_message(), 'error', array( 'icon' => 'error' ) );
 
@@ -2920,6 +2938,62 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			'redirect'       => '',
 			'payment_method' => '',
 		);
+	}
+
+	/**
+	 * Tell whether the stored order already shows the authorization of the outcome's intent.
+	 *
+	 * Only a held card (`requires_capture`) or a `processing` intent counts, not a Multibanco voucher. Both put the order
+	 * on hold (client 11.1.0 `class-wc-payments-order-service.php:410-417`); a webhook may since have moved it to a paid status.
+	 *
+	 * @param WC_Order       $order   Order being paid.
+	 * @param PaymentOutcome $outcome Handed-back authorized outcome.
+	 * @return bool
+	 */
+	private function order_shows_authorization( WC_Order $order, PaymentOutcome $outcome ): bool {
+		$intent_id     = $outcome->get_provider_payment_id();
+		$intent_status = $this->get_provider()->get_outcome_meta( $outcome )['_intention_status'] ?? '';
+		if ( '' === $intent_id || ! in_array( $intent_status, array( 'requires_capture', 'processing' ), true ) ) {
+			return false;
+		}
+
+		$fresh_order = $this->reread_order_authoritatively( $order );
+
+		return $intent_id === (string) $fresh_order->get_meta( '_intent_id', true )
+			&& $fresh_order->has_status( array_merge( array( OrderStatus::ON_HOLD ), wc_get_is_paid_statuses() ) );
+	}
+
+	/**
+	 * Read an order again from its data store, past the post, meta and order caches.
+	 *
+	 * @param WC_Order $order Order object.
+	 * @return WC_Order
+	 */
+	private function reread_order_authoritatively( WC_Order $order ): WC_Order {
+		$order_id = $order->get_id();
+		clean_post_cache( $order_id );
+		wp_cache_delete( WC_Order::generate_meta_cache_key( $order_id, 'orders' ), 'orders' );
+
+		/**
+		 * Active order data store.
+		 *
+		 * @var \WC_Object_Data_Store_Interface $data_store
+		 */
+		$data_store = $order->get_data_store();
+		if ( is_callable( array( $data_store, 'clear_cached_data' ) ) ) {
+			call_user_func( array( $data_store, 'clear_cached_data' ), array( $order_id ) );
+		}
+
+		$fresh_order = clone $order;
+		$data_store->read( $fresh_order );
+		/**
+		 * Freshly read order.
+		 *
+		 * @var WC_Order $fresh_order
+		 */
+		$fresh_order->read_meta_data( true );
+
+		return $fresh_order;
 	}
 
 	/**

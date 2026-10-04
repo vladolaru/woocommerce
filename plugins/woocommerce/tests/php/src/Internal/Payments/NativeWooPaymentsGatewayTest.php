@@ -4033,10 +4033,10 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * The plugin's catch takes only exceptions (`class-wc-payment-gateway-wcpay.php:1272`), so a PHP error fatals and
 	 * leaves the order as it was. Native keeps an order whose payment is authorized for reconciliation and logs the
 	 * error whatever the logging setting (monitor ruling 2026-10-04 (4)); any other unsucceeded outcome fails the order
-	 * as the plugin does for an exception. The error's text stays out of the shopper notice either way.
+	 * as the plugin does for an exception. The error's text stays out of the shopper notice either way. An order that already
+	 * shows the authorization is covered by test_process_payment_php_error_after_order_shows_authorization().
 	 *
 	 * @testWith ["authorized", "operation_effects", "pending"]
-	 *           ["authorized", "post_lifecycle_effects", "on-hold"]
 	 *           ["requires_customer_action", "operation_effects", "failed"]
 	 *
 	 * @param string $outcome_status  Provider outcome status.
@@ -4070,6 +4070,60 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$notes = array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 			$this->assertSame( array(), array_filter( $notes, static fn( string $note ): bool => str_contains( $note, 'failed' ) ), 'No failure note is added to an order left for reconciliation.' );
 		}
+	}
+
+	/**
+	 * @testdox A PHP error after the order went on hold for $intent ends checkout with $result.
+	 *
+	 * The plugin's catch takes only exceptions (`class-wc-payment-gateway-wcpay.php:1272`), so a PHP error fatals with the
+	 * order on hold; a retry then creates a new order and authorizes the card again. Native answers as it does for an
+	 * authorized payment once a fresh read shows the order on hold for the outcome's intent, and keeps the refusal when the
+	 * order is bound to another intent (monitor ruling 2026-10-04 on review 34 F2). The error is logged whatever the setting.
+	 *
+	 * @testWith ["its intent", "success"]
+	 *           ["another intent", "failure"]
+	 *
+	 * @param string $intent Which intent the order is bound to when the error strikes.
+	 * @param string $result Expected checkout result.
+	 */
+	public function test_process_payment_php_error_after_order_shows_authorization( string $intent, string $result ): void {
+		$order = $this->create_order();
+		if ( 'another intent' === $intent ) {
+			add_action(
+				'woocommerce_order_status_on-hold',
+				static function ( $order_id ): void {
+					$concurrent_order = wc_get_order( $order_id );
+					$concurrent_order->set_transaction_id( 'pi_other' );
+					$concurrent_order->update_meta_data( '_intent_id', 'pi_other' );
+					$concurrent_order->save();
+				}
+			);
+		}
+		$provider = $this->create_provider_failing_after_charge(
+			new PaymentOutcome( PaymentOutcome::STATUS_AUTHORIZED, 'pi_authorized', '', 'pm_card_visa' ),
+			'post_lifecycle_effects',
+			new \TypeError( 'Argument #1 must be of type array, null given' )
+		);
+		$gateway  = new NativeWooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
+		$_POST['wcpay-payment-method'] = 'pm_card_visa';
+		$logger                        = RecordingWcLogger::install();
+
+		$checkout = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( $result, $checkout['result'] ?? '' );
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'on-hold', $reloaded->get_status() );
+		$error_lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'woopayments' === $line[2] && str_contains( $line[1], 'raised TypeError' ) ) );
+		$this->assertCount( 1, $error_lines, 'The PHP error is logged whatever the logging setting.' );
+		if ( 'failure' === $result ) {
+			$this->assertSame( array( WooPaymentsErrorMessages::get_generic_message() ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+			return;
+		}
+		$this->assertSame( $reloaded->get_checkout_order_received_url(), $checkout['redirect'] ?? '' );
+		$this->assertSame( 'pm_card_visa', $checkout['payment_method'] ?? '' );
+		$this->assertSame( 0, wc_notice_count( 'error' ), 'The shopper must not be asked to pay again.' );
 	}
 
 	/**
