@@ -158,6 +158,11 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 			add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 		}
 
+		// Priority 11, as the client registers it (class-wc-payments-order-success-page.php:30).
+		if ( false === has_filter( 'woocommerce_order_received_verify_known_shoppers', array( $this, 'determine_woopay_order_received_verify_known_shoppers' ) ) ) {
+			add_filter( 'woocommerce_order_received_verify_known_shoppers', array( $this, 'determine_woopay_order_received_verify_known_shoppers' ), 11 );
+		}
+
 		if ( false === has_filter( 'woocommerce_order_email_verification_required', array( $this, 'maybe_skip_email_verification_after_payment' ) ) ) {
 			add_filter( 'woocommerce_order_email_verification_required', array( $this, 'maybe_skip_email_verification_after_payment' ), 10, 3 );
 		}
@@ -184,6 +189,34 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 		if ( false === has_action( 'woocommerce_email_order_details', array( $this, 'add_multibanco_payment_instructions_to_order_on_hold_email' ) ) ) {
 			add_action( 'woocommerce_email_order_details', array( $this, 'add_multibanco_payment_instructions_to_order_on_hold_email' ), 10, 4 );
 		}
+	}
+
+	/**
+	 * Show the thank-you page for a WooPay order attached to a customer account the visitor is not logged in to.
+	 *
+	 * A WooPay checkout can attach the order to a store account, even a new one, while the browser is not logged in.
+	 * Within core's grace period after order creation, the order's key alone is enough, as for guest orders.
+	 * Client 11.1.0: class-wc-payments-order-success-page.php:524-549.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $value Whether known shoppers must log in to see the order.
+	 * @return mixed
+	 */
+	public function determine_woopay_order_received_verify_known_shoppers( $value ) {
+		$order = $this->get_order_received_order();
+		if ( null === $order || ! $order->get_meta( 'is_woopay' ) ) {
+			return $value;
+		}
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- WooCommerce core hook, applied as core's order-received checks do.
+		$verification_grace_period = (int) apply_filters( 'woocommerce_order_email_verification_grace_period', 10 * MINUTE_IN_SECONDS, $order );
+		$date_created              = $order->get_date_created();
+
+		$is_within_grace_period = $date_created instanceof \WC_DateTime
+			&& time() - $date_created->getTimestamp() <= $verification_grace_period;
+
+		return ! $is_within_grace_period;
 	}
 
 	/**

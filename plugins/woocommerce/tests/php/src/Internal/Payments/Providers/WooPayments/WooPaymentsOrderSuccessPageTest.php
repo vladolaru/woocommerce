@@ -41,6 +41,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 			remove_action( 'woocommerce_order_details_before_order_table', array( $page, 'maybe_render_multibanco_payment_instructions' ) );
 			remove_action( 'wp_enqueue_scripts', array( $page, 'enqueue_assets' ) );
 			remove_filter( 'woocommerce_order_email_verification_required', array( $page, 'maybe_skip_email_verification_after_payment' ) );
+			remove_filter( 'woocommerce_order_received_verify_known_shoppers', array( $page, 'determine_woopay_order_received_verify_known_shoppers' ), 11 );
 			remove_action( 'woocommerce_email_order_details', array( $page, 'add_multibanco_payment_instructions_to_order_on_hold_email' ) );
 		}
 		if ( WC() && WC()->session ) {
@@ -765,6 +766,96 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		$this->create_thankyou_order( 'pending', OrderPaymentStore::GATEWAY_ID_PREFIX . 'wechat_pay', 'pi_wechat' );
 
 		$this->assertSame( 'Thank you.', $page->replace_order_received_text_for_failed_orders( 'Thank you.' ) );
+	}
+
+	/**
+	 * @testdox A logged-out visitor sees a WooPay order attached to a customer account on the classic thank-you page within the grace period.
+	 *
+	 * Client 11.1.0 registers determine_woopay_order_received_verify_known_shoppers() on
+	 * `woocommerce_order_received_verify_known_shoppers` at priority 11 (class-wc-payments-order-success-page.php:30, 524-549),
+	 * so core's "Please log in" wall (class-wc-shortcode-checkout.php:319-329) does not hide the order.
+	 */
+	public function test_woopay_order_of_a_customer_skips_the_log_in_wall_on_the_thank_you_page(): void {
+		$page = $this->create_page( true );
+		$page->register();
+		$this->registered_pages[] = $page;
+		$order                    = $this->create_woopay_customer_order();
+		wp_set_current_user( 0 );
+
+		ob_start();
+		\WC_Shortcode_Checkout::output( array() );
+		$html = (string) ob_get_clean();
+
+		$this->assertStringNotContainsString( 'Please log in to your account to view this order.', $html );
+		$this->assertStringContainsString( (string) $order->get_order_number(), $html );
+		$this->assertSame( 11, has_filter( 'woocommerce_order_received_verify_known_shoppers', array( $page, 'determine_woopay_order_received_verify_known_shoppers' ) ) );
+	}
+
+	/**
+	 * @testdox Known-shopper verification stays on outside a fresh WooPay order with a matching key: $_dataName.
+	 *
+	 * Client 11.1.0 class-wc-payments-order-success-page.php:532-548: the filter value is kept without an order, the
+	 * `is_woopay` meta or a matching key, and verification returns once the core grace period has passed.
+	 *
+	 * @dataProvider woopay_known_shopper_verification_kept_provider
+	 *
+	 * @param bool $is_woopay    Whether the order carries the is_woopay meta.
+	 * @param bool $key_matches  Whether the request key matches the order.
+	 * @param int  $age_seconds  Seconds since the order was created.
+	 */
+	public function test_keeps_known_shopper_verification_outside_fresh_woopay_orders( bool $is_woopay, bool $key_matches, int $age_seconds ): void {
+		$page = $this->create_page( true );
+		$page->register();
+		$this->registered_pages[] = $page;
+		$order                    = $this->create_woopay_customer_order( $is_woopay );
+		$order->set_date_created( time() - $age_seconds );
+		$order->save();
+		if ( ! $key_matches ) {
+			$_GET['key'] = 'wc_order_other';
+		}
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Core hook applied as the thank-you page does.
+		$this->assertTrue( apply_filters( 'woocommerce_order_received_verify_known_shoppers', true ) );
+	}
+
+	/**
+	 * Cases where the client keeps known-shopper verification.
+	 *
+	 * @return array<string,array{0:bool,1:bool,2:int}>
+	 */
+	public function woopay_known_shopper_verification_kept_provider(): array {
+		return array(
+			'not a WooPay order'      => array( false, true, 0 ),
+			'order key mismatch'      => array( true, false, 0 ),
+			'grace period has passed' => array( true, true, 11 * MINUTE_IN_SECONDS ),
+		);
+	}
+
+	/**
+	 * @testdox The WooPay known-shopper exception is not registered when native does not own the runtime.
+	 */
+	public function test_does_not_register_woopay_known_shopper_exception_without_native_runtime(): void {
+		$page = $this->create_page( false );
+		$page->register();
+
+		$this->assertFalse( has_filter( 'woocommerce_order_received_verify_known_shoppers', array( $page, 'determine_woopay_order_received_verify_known_shoppers' ) ) );
+	}
+
+	/**
+	 * Create a WooPay order attached to a customer account and point the order-received request at it.
+	 *
+	 * @param bool $is_woopay Whether to mark the order as a WooPay order.
+	 * @return WC_Order
+	 */
+	private function create_woopay_customer_order( bool $is_woopay = true ): WC_Order {
+		$order = $this->create_thankyou_order( 'processing', OrderPaymentStore::GATEWAY_ID );
+		$order->set_customer_id( self::factory()->user->create( array( 'role' => 'customer' ) ) );
+		if ( $is_woopay ) {
+			$order->add_meta_data( 'is_woopay', '1', true );
+		}
+		$order->save();
+
+		return $order;
 	}
 
 	/**
