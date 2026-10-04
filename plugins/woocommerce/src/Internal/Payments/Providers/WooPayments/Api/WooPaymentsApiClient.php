@@ -756,6 +756,24 @@ class WooPaymentsApiClient {
 	}
 
 	/**
+	 * Link a browsing session to a WooPayments customer for fraud tracking (client 11.1.0 api-client:1926-1935).
+	 *
+	 * @param string|null $session_id  Sift session ID of the browsing session.
+	 * @param string      $customer_id WooPayments customer ID.
+	 * @return array<string,mixed>
+	 */
+	public function link_session_to_customer( ?string $session_id, string $customer_id ): array {
+		return $this->request(
+			array(
+				'session'  => $session_id,
+				'customer' => $customer_id,
+			),
+			self::TRACKING_API . '/link-session',
+			'POST'
+		);
+	}
+
+	/**
 	 * Retrieve the site's platform tracking info, such as its hosting provider.
 	 *
 	 * @return array<string,mixed>

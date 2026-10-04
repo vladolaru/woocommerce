@@ -54,7 +54,7 @@ class WooPaymentsSessionService {
 	 *
 	 * @return bool
 	 */
-	private function user_just_logged_in(): bool {
+	public function user_just_logged_in(): bool {
 		if ( ! get_current_user_id() ) {
 			return false;
 		}

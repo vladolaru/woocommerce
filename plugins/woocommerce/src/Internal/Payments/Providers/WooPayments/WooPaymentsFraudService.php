@@ -8,6 +8,8 @@ declare( strict_types=1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -25,7 +27,7 @@ defined( 'ABSPATH' ) || exit;
  *
  * @internal
  */
-class WooPaymentsFraudService {
+class WooPaymentsFraudService implements RegisterHooksInterface {
 
 	/**
 	 * Filter applied to the whole prepared fraud-services config before it is served to clients.
@@ -98,6 +100,56 @@ class WooPaymentsFraudService {
 		$this->customer_service = $customer_service;
 		$this->session_service  = $session_service;
 		$this->api_client       = $api_client;
+	}
+
+	/**
+	 * Register the login session-link callback.
+	 */
+	public function register() {
+		if ( false === has_action( 'init', array( $this, 'link_session_if_user_just_logged_in' ) ) ) {
+			add_action( 'init', array( $this, 'link_session_if_user_just_logged_in' ) );
+		}
+	}
+
+	/**
+	 * Link the pre-login browsing session to the shopper's WooPayments customer right after they log in.
+	 *
+	 * Sift then sees the session before and after login as one shopper. Same checks and order as client 11.1.0
+	 * (class-wc-payments-fraud-service.php:82, 150-197): no AJAX, WP-CLI or REST request, a connected store, a login during
+	 * this request, Sift enabled and a stored customer; the cheap checks come first, so only those requests reach the platform.
+	 *
+	 * @internal
+	 */
+	public function link_session_if_user_just_logged_in(): void {
+		if ( wp_doing_ajax() || ( defined( 'WP_CLI' ) && WP_CLI ) ) {
+			return;
+		}
+
+		// REST_REQUEST is not defined yet on init, so match the REST prefix in the request URI as the client does.
+		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? (string) wp_unslash( $_SERVER['REQUEST_URI'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Only used for prefix matching.
+		if ( '' !== $request_uri && false !== strpos( $request_uri, trailingslashit( rest_get_url_prefix() ) ) ) {
+			return;
+		}
+
+		if ( ! $this->api_client->is_available() || ! $this->session_service->user_just_logged_in() ) {
+			return;
+		}
+
+		$fraud_config = $this->get_fraud_services_config();
+		if ( ! isset( $fraud_config['sift'] ) ) {
+			return;
+		}
+
+		$customer_id = $this->customer_service->get_customer_id_by_user_id( get_current_user_id() );
+		if ( null === $customer_id ) {
+			return;
+		}
+
+		try {
+			$this->api_client->link_session_to_customer( $this->session_service->get_sift_session_id(), $customer_id );
+		} catch ( WooPaymentsApiException $exception ) {
+			wc_get_logger()->info( '[Tracking] Error when linking session with user: ' . $exception->getMessage(), array( 'source' => 'woocommerce-payments' ) );
+		}
 	}
 
 	/**
