@@ -85,7 +85,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		$profile = $this->sut->get_persistence_profile();
 
 		$this->assertInstanceOf( ProviderPersistenceVocabulary::class, $profile );
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $profile->get_gateway_id() );
+		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $this->sut->get_id() );
 	}
 
 	/**

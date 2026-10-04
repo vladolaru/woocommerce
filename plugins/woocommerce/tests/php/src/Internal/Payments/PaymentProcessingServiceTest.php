@@ -78,7 +78,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->sut                 = wc_get_container()->get( PaymentProcessingService::class );
 		$this->store               = wc_get_container()->get( OrderPaymentStore::class );
 		$this->idempotency         = wc_get_container()->get( PaymentOperationIdempotency::class );
-		$this->persistence_profile = new RecordingProviderPersistenceProfile( OrderPaymentStore::GATEWAY_ID );
+		$this->persistence_profile = new WooPaymentsPersistenceProfile();
 	}
 
 	/**
@@ -701,15 +701,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			 */
 			public function get_persistence_profile(): ProviderPersistenceVocabulary {
 				return new class() implements ProviderPersistenceVocabulary {
-
-					/**
-					 * Get the provider gateway ID.
-					 *
-					 * @return string
-					 */
-					public function get_gateway_id(): string {
-						return 'offline_redirect_provider';
-					}
 
 					/**
 					 * Get the order payment lock key.
@@ -2467,7 +2458,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			 * @return ProviderPersistenceVocabulary
 			 */
 			public function get_persistence_profile(): ProviderPersistenceVocabulary {
-				return new class( $this->get_id() ) extends RecordingProviderPersistenceProfile {
+				return new class() extends WooPaymentsPersistenceProfile {
 					/**
 					 * Get the processed refund link meta key.
 					 *

@@ -329,7 +329,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 	 * @return string
 	 */
 	public function get_id(): string {
-		return $this->get_persistence_profile()->get_gateway_id();
+		return WooPaymentsPersistenceProfile::GATEWAY_ID;
 	}
 
 	/**

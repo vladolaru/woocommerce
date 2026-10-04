@@ -112,17 +112,6 @@ class WooPaymentsPersistenceProfile implements ProviderPersistenceVocabulary {
 	);
 
 	/**
-	 * Get the provider gateway ID.
-	 *
-	 * @return string
-	 *
-	 * @since 11.0.0
-	 */
-	public function get_gateway_id(): string {
-		return self::GATEWAY_ID;
-	}
-
-	/**
 	 * Get the order payment lock key.
 	 *
 	 * @param WC_Order $order Order object.

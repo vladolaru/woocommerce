@@ -33,7 +33,7 @@ class WooPaymentsPersistenceProfileTest extends WC_Unit_Test_Case {
 	public function test_preserves_woopayments_persistence_vocabulary(): void {
 		$order = wc_create_order();
 
-		$this->assertSame( 'woocommerce_payments', $this->sut->get_gateway_id() );
+		$this->assertSame( 'woocommerce_payments', WooPaymentsPersistenceProfile::GATEWAY_ID );
 		$this->assertSame( 'woocommerce_payments_', WooPaymentsPersistenceProfile::GATEWAY_ID_PREFIX );
 		$this->assertSame( 'wcpay_processing_intent_' . $order->get_id(), $this->sut->get_order_lock_key( $order ) );
 		$this->assertSame( '-1', $this->sut->get_lock_sentinel() );

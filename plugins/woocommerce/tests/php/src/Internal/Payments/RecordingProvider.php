@@ -101,7 +101,7 @@ class RecordingProvider implements ProviderContract, ProviderOutcomeMetadataMapp
 	 * @return ProviderPersistenceVocabulary
 	 */
 	public function get_persistence_profile(): ProviderPersistenceVocabulary {
-		return new RecordingProviderPersistenceProfile( $this->get_id() );
+		return new WooPaymentsPersistenceProfile();
 	}
 
 	/**
