@@ -437,7 +437,6 @@ const CLIENT_TRANSACTION_SOURCE_ICONS: Record< string, string > = {
 	jcb: 'jcb-color.svg',
 	mastercard: 'mastercard-card-color.svg',
 	multibanco: 'multibanco-icon-color.svg',
-	sepa_debit: 'sepa-card-color.svg',
 	visa: 'visa-card-color.svg',
 };
 
