@@ -757,6 +757,98 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox After $failure the order keeps its charge key, and the shopper's resubmit sends that key again.
+	 *
+	 * The platform proxies the intention request to Stripe and passes Stripe's status and error body through unchanged
+	 * (wpcom `wcpay/class-base-controller.php:476-490`). A connection reset makes the transport retry the same key while
+	 * the first request is still running, and Stripe answers 409 `idempotency_key_in_use`; a 5xx with a readable body can
+	 * also follow a processed request. Neither is a definitive failure, so the key is kept and the resubmit replays the
+	 * first request instead of charging under a fresh key. Client 11.1.0 has the same transport retry under one key
+	 * (`class-wc-payments-api-client.php:2690`, `:2711-2769`) and keeps no key, so its resubmit can charge twice.
+	 *
+	 * @testWith ["a connection reset and an in-flight key conflict on the retry"]
+	 *           ["a server error with a readable body"]
+	 *
+	 * @param string $failure How the first attempt fails.
+	 */
+	public function test_native_charge_keeps_its_key_when_the_failure_may_have_charged( string $failure ): void {
+		$order                  = $this->create_woopayments_order();
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$json                   = array( 'content-type' => 'application/json; charset=UTF-8' );
+		$first                  = 'a server error with a readable body' === $failure
+			? array(
+				array(
+					'response' => array( 'code' => 500 ),
+					'headers'  => $json,
+					'body'     => wp_json_encode(
+						array(
+							'error' => array(
+								'type'    => 'api_error',
+								'message' => 'An unknown error occurred',
+							),
+						)
+					),
+				),
+			)
+			: array(
+				new WP_Error( 'http_request_failed', 'cURL error 56: Recv failure: Connection reset by peer' ),
+				array(
+					'response' => array( 'code' => 409 ),
+					'headers'  => $json,
+					'body'     => wp_json_encode(
+						array(
+							'error' => array(
+								'code'    => 'idempotency_key_in_use',
+								'type'    => 'invalid_request_error',
+								'message' => 'There is currently another in-progress request using this Idempotent Key (that probably means you submitted twice, and the other request is still going through): key_first. Please try again later.',
+							),
+						)
+					),
+				),
+			);
+		$http_client->responses = array_merge(
+			$first,
+			array(
+				array(
+					'response' => array( 'code' => 200 ),
+					'headers'  => $json,
+					'body'     => wp_json_encode(
+						array(
+							'id'     => 'pi_replayed',
+							'status' => 'succeeded',
+						)
+					),
+				),
+			)
+		);
+		$account_service        = $this->create_account_service( false );
+		$api_client             = new class() extends WooPaymentsApiClient {
+			/**
+			 * Skip the backoff between transport retries.
+			 *
+			 * @param int $backoff_microseconds Backoff.
+			 */
+			protected function sleep_before_retry( int $backoff_microseconds ): void {
+				unset( $backoff_microseconds );
+			}
+		};
+		$api_client->init( $http_client, $account_service );
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_kept_key' );
+		$sut = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, null, $account_service );
+
+		$failed = $sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_kept_key' ), 'key_first' );
+		$sut->finalize_charge_idempotency_key( $order, $failed );
+		$attempts = $http_client->request_count;
+		$sut->charge( PaymentContext::for_checkout( wc_get_order( $order->get_id() ), OrderPaymentStore::GATEWAY_ID, 'pm_kept_key' ), 'key_resubmit' );
+
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $failed->get_status() );
+		$this->assertArrayNotHasKey( '_wcpay_definitive_charge_failure', $failed->get_data() );
+		$this->assertSame( count( $first ), $attempts );
+		$this->assertSame( array( 'key_first' ), array_values( array_unique( array_map( static fn( array $request ): string => $request['headers']['Idempotency-Key'] ?? '', $http_client->requests ) ) ), 'Every request, the resubmit included, must carry the kept key.' );
+	}
+
+	/**
 	 * @testdox Native charge should use the caller key for a different order.
 	 */
 	public function test_native_charge_uses_a_different_order_key(): void {

@@ -50,11 +50,16 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$exception = new WooPaymentsApiException( 'Request failed.', $error_code, $http_code, $error_type );
 		$sut       = new WooPaymentsApiClient();
 
-		$this->assertSame( $expected, $sut->is_ambiguous_request_failure( $exception ), 'Only unstructured transport failures should retain a charge idempotency key.' );
+		$this->assertSame( $expected, $sut->is_ambiguous_request_failure( $exception ), 'Only a failure that may have charged should retain a charge idempotency key.' );
 	}
 
 	/**
 	 * Provide ambiguous and definitive charge failures.
+	 *
+	 * The platform passes Stripe's status and error body through unchanged (wpcom `wcpay/class-base-controller.php:476-490`
+	 * `stripe_proxy_request()`), and its Stripe client classes every 5xx as retryable (`wcpay/stripe/class-stripe-client.php:365-369`),
+	 * so a 5xx with a readable body is as ambiguous as one without. Stripe's `idempotency_key_in_use` (409) means a request
+	 * under the same key is still running, for example after a connection reset and the same-key transport retry.
 	 *
 	 * @return array<string,array{string,int,string,bool}>
 	 */
@@ -65,7 +70,10 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			'unparseable server response'   => array( 'wcpay_unparseable_or_null_body', 500, '', true ),
 			'unstructured server response'  => array( 'wcpay_client_error_code_missing', 503, '', true ),
 			'unparseable conflict response' => array( 'wcpay_unparseable_or_null_body', 409, '', false ),
-			'structured server response'    => array( 'api_connection_error', 502, '', false ),
+			'structured server response'    => array( 'api_connection_error', 502, '', true ),
+			'server error with a body'      => array( 'api_error', 500, 'api_error', true ),
+			'in-flight idempotency key'     => array( 'idempotency_key_in_use', 409, 'invalid_request_error', true ),
+			'idempotency body mismatch'     => array( 'idempotency_error', 400, 'idempotency_error', false ),
 			'card decline'                  => array( 'card_declined', 402, 'card_error', false ),
 			'local readiness failure'       => array( 'wcpay_wpcom_not_connected', 409, '', false ),
 		);
