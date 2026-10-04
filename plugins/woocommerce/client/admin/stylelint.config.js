@@ -49,6 +49,10 @@ module.exports = {
 			files: [ 'client/woopayments/**/*.scss' ],
 			rules: {
 				'color-no-hex': true,
+				// Logical properties, as the repo's AGENTS.md asks: no physical left/right margins, paddings, borders or alignment.
+				'property-disallowed-list': [
+					'/^(margin|padding|border)-(left|right)(-.+)?$/',
+				],
 				'declaration-property-value-disallowed-list': [
 					{
 						'/^(margin|padding)(-.+)?$/': [ woopaymentsLiteralPx ],
@@ -57,10 +61,13 @@ module.exports = {
 						'/^border(-.+)?-radius$/': [ woopaymentsLiteralPx ],
 						'/^(min-|max-)?(width|height|inline-size|block-size)$/':
 							[ woopaymentsLiteralPx ],
+						'text-align': [ '/^(left|right)$/' ],
 					},
 					{
 						message: ( property ) =>
-							`Use an upstream token or client/woopayments/_tokens.scss for "${ property }" instead of a literal px value above 1px.`,
+							property === 'text-align'
+								? 'Use text-align: start or end (logical) instead of left or right.'
+								: `Use an upstream token or client/woopayments/_tokens.scss for "${ property }" instead of a literal px value above 1px.`,
 					},
 				],
 			},
@@ -70,6 +77,7 @@ module.exports = {
 			files: woopaymentsUnconvertedFiles,
 			rules: {
 				'color-no-hex': null,
+				'property-disallowed-list': null,
 				'declaration-property-value-disallowed-list': null,
 			},
 		},

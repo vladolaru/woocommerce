@@ -53,7 +53,8 @@
 }
 
 .woopayments-fraud-protection-levels__copy {
-	margin: $gap-smallest 0 0 $gap-large;
+	margin-block: $gap-smallest 0;
+	margin-inline: $gap-large 0;
 	color: $gray-700;
 }
 

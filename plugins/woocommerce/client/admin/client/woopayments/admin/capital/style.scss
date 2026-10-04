@@ -48,13 +48,13 @@
 	&__table td {
 		border-bottom: 1px solid $studio-gray-5;
 		padding: $gap-small;
-		text-align: left;
+		text-align: start;
 		vertical-align: top;
 	}
 
 	&__table th:nth-child(n + 3),
 	&__table td:nth-child(n + 3) {
-		text-align: right;
+		text-align: end;
 	}
 
 	&__loan-action {

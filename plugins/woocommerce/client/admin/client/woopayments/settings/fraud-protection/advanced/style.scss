@@ -64,7 +64,8 @@
 }
 
 .woopayments-fraud-protection-rule__threshold-details {
-	margin: 0 0 $gap-smaller $gap-large;
+	margin-block: 0 $gap-smaller;
+	margin-inline: $gap-large 0;
 
 	h4 {
 		margin: 0 0 $gap-small;

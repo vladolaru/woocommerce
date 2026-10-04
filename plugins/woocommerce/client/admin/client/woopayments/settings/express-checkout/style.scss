@@ -40,7 +40,8 @@
 		display: flex;
 		flex-direction: column;
 		gap: $gap-smaller;
-		margin: $gap-smaller 0 0 $gap-large;
+		margin-block: $gap-smaller 0;
+		margin-inline: $gap-large 0;
 		padding: 0;
 		list-style: none;
 	}

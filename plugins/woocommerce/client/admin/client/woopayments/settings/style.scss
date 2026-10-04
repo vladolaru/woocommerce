@@ -146,7 +146,7 @@
 
 	&__main {
 		display: grid;
-		grid-template-columns: 32px 64px minmax(0, 1fr) auto;
+		grid-template-columns: 32px $woopayments-payment-method-logo-width minmax(0, 1fr) auto;
 		gap: $gap;
 		align-items: center;
 	}
@@ -606,7 +606,7 @@
 }
 
 .woopayments-woopay-disable-feedback {
-	@media (min-width: 960px) {
+	@media (min-width: $break-large) {
 		// stylelint-disable-next-line declaration-property-value-disallowed-list -- modal inset for the hosted feedback form; no upstream token.
 		max-height: calc(100% - 120px);
 	}
