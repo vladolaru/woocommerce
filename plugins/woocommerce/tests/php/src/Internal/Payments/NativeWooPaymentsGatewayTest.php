@@ -2643,6 +2643,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$_POST['wcpay-payment-method-error-message'] = 'Your card number is invalid.';
 		$_POST['wcpay-payment-method-error-code']    = 'incomplete_number';
 
+		$logger = $this->capture_logs();
+
 		$result = $gateway->process_payment( $order->get_id() );
 
 		$this->assertSame( 'failure', $result['result'] );
@@ -2651,10 +2653,44 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order = wc_get_order( $order->get_id() );
 		$this->assertSame( 'failed', $order->get_status() );
 
-		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
-		$this->assertNotEmpty( $notes );
-		$note_contents = implode( ' | ', wp_list_pluck( $notes, 'content' ) );
-		$this->assertStringContainsString( 'Your card number is invalid.', $note_contents );
+		// Client 11.1.0 throws the error (gw:1664-1666); its catch writes this note (gw:1354-1401) and logs (gw:1274).
+		$notes = array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertContains(
+			'A payment of ' . wc_price( 12.00, array( 'currency' => $order->get_currency() ) ) . ' <strong>failed</strong> to complete with the following message: <code>Your card number is invalid</code>.',
+			$notes
+		);
+		$this->assertCount( 1, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'Your card number is invalid' ) ), 'The status change must not carry the raw message as a second note.' );
+		$this->assertSame( array( 'Your card number is invalid.' ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+		$error_messages = array_column( array_filter( $logger->entries, static fn( array $entry ): bool => 'error' === $entry['level'] ), 'message' );
+		$this->assertContains( 'Error occurred during the payment process. Exception: Your card number is invalid.', $error_messages );
+	}
+
+	/**
+	 * @testdox Should keep an order whose intent already succeeded when the client reports a payment method creation error.
+	 *
+	 * Oracle: WooPayments 11.1.0 throws the client error inside process_payment()'s try (`gw:1664-1666`), so the catch's
+	 * succeeded-intent check (`gw:1283-1304`) runs before the failed status (`gw:1326-1327`) and the failure note.
+	 * The order is still pending here: the earlier duplicate checks found no paid status and no attached PaymentIntent.
+	 */
+	public function test_process_payment_client_payment_method_error_on_succeeded_intent_keeps_order(): void {
+		$order = $this->create_order();
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->save();
+		$note_count = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$logger     = $this->capture_logs();
+		$return_url = $this->filter_return_url( $order );
+
+		$_POST['wcpay-payment-method']               = 'woocommerce_payments_payment_method_error';
+		$_POST['wcpay-payment-method-error-message'] = 'Your card number is invalid.';
+
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertNull( $service->last_checkout_context, 'A refused checkout must not reach the provider.' );
+		$this->assert_succeeded_intent_defense( $order->get_id(), $result, $return_url, $note_count, 'Your card number is invalid.', 'payment_method_error', $logger, 'pending' );
 	}
 
 	/**

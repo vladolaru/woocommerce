@@ -1702,7 +1702,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * Run the checkout payment for a loaded order.
 	 *
 	 * The plugin throws its refusals inside process_payment()'s try (client 11.1.0 `gw:1206-1233`);
-	 * native returns them, so each refusal checks for a succeeded intent itself.
+	 * native returns them, so each refusal goes through refuse_checkout().
 	 *
 	 * @param WC_Order $order Order being paid.
 	 * @return array<string,string>
@@ -1712,50 +1712,22 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		// The plugin refuses these first, before any other check (Invalid_Phone_Number_Exception).
 		if ( 20 < strlen( $order->get_billing_phone() ) ) {
-			if ( $this->has_succeeded_intent( $order ) ) {
-				return $this->keep_succeeded_intent_order( $order, __( 'Invalid phone number.', 'woocommerce' ), 'invalid_phone_number' );
-			}
-
-			$order->update_status( OrderStatus::FAILED );
-			wc_add_notice( __( 'Invalid phone number.', 'woocommerce' ), 'error', array( 'icon' => 'error' ) );
-
-			return array(
-				'result'         => 'failure',
-				'redirect'       => '',
-				'payment_method' => '',
-			);
+			return $this->refuse_checkout( $order, __( 'Invalid phone number.', 'woocommerce' ), 'invalid_phone_number' );
 		}
 
 		$fraud_prevention_error = $this->get_fraud_prevention_error_message( true );
 		if ( '' !== $fraud_prevention_error ) {
-			if ( $this->has_succeeded_intent( $order ) ) {
-				return $this->keep_succeeded_intent_order( $order, $fraud_prevention_error, 'fraud_prevention_enabled' );
-			}
-
-			$order->update_status( OrderStatus::FAILED );
-			wc_add_notice( $fraud_prevention_error, 'error', array( 'icon' => 'error' ) );
-
-			return array(
-				'result'         => 'failure',
-				'redirect'       => '',
-				'payment_method' => '',
-			);
+			return $this->refuse_checkout( $order, $fraud_prevention_error, 'fraud_prevention_enabled' );
 		}
 
 		$failed_transaction_rate_limiter_error = $this->get_failed_transaction_rate_limiter_error_message();
 		if ( '' !== $failed_transaction_rate_limiter_error ) {
-			if ( $this->has_succeeded_intent( $order ) ) {
-				return $this->keep_succeeded_intent_order( $order, $failed_transaction_rate_limiter_error, 'rate_limiter_enabled' );
-			}
-
-			$order->update_status( OrderStatus::FAILED );
-			$order->add_order_note( wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_rate_limited_payment_note( $order ) );
-			wc_add_notice( $failed_transaction_rate_limiter_error, 'error', array( 'icon' => 'error' ) );
-
-			return array(
-				'result'         => 'failure',
-				'redirect'       => '',
-				'payment_method' => '',
+			return $this->refuse_checkout(
+				$order,
+				$failed_transaction_rate_limiter_error,
+				'rate_limiter_enabled',
+				true,
+				wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_rate_limited_payment_note( $order )
 			);
 		}
 
@@ -1777,21 +1749,16 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		$existing_intent_result = $this->get_duplicate_payment_prevention_service()->check_payment_intent_attached_to_order_succeeded( $order, $this );
 		if ( is_wp_error( $existing_intent_result ) ) {
-			if ( $this->has_succeeded_intent( $order ) ) {
-				return $this->keep_succeeded_intent_order( $order, $existing_intent_result->get_error_message(), (string) $existing_intent_result->get_error_code() );
-			}
-
 			// The plugin fails the order with the mismatch as the note (client 11.1.0 `gw:1324-1325`).
-			if ( 'duplicate_payment_amount_mismatch' === $existing_intent_result->get_error_code() ) {
-				$order->update_status( OrderStatus::FAILED, $existing_intent_result->get_error_message() );
-			}
+			$is_amount_mismatch = 'duplicate_payment_amount_mismatch' === $existing_intent_result->get_error_code();
 
-			wc_add_notice( $existing_intent_result->get_error_message(), 'error', array( 'icon' => 'error' ) );
-
-			return array(
-				'result'         => 'failure',
-				'redirect'       => '',
-				'payment_method' => '',
+			return $this->refuse_checkout(
+				$order,
+				$existing_intent_result->get_error_message(),
+				(string) $existing_intent_result->get_error_code(),
+				$is_amount_mismatch,
+				'',
+				$is_amount_mismatch ? $existing_intent_result->get_error_message() : ''
 			);
 		}
 
@@ -3015,11 +2982,52 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			$message = __( "We're not able to process this payment. Please try again later.", 'woocommerce' );
 		}
 
-		// On a subscription payment-method change $order is the subscription
-		// itself: 'failed' is not a valid subscription transition, and the
-		// existing method stays in place, so only the notice is surfaced.
-		if ( ! $is_subscription_change ) {
-			$order->update_status( 'failed', $message );
+		// The plugin reaches its catch with payment information built, so the merchant gets the payment-failed note
+		// (client 11.1.0 `gw:1354-1401`). On a subscription payment-method change $order is the subscription itself:
+		// 'failed' is not a valid subscription transition, and the existing method stays in place (`gw:1326`).
+		return $this->refuse_checkout(
+			$order,
+			$message,
+			'payment_method_error',
+			! $is_subscription_change,
+			wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_checkout_payment_failed_note_candidates( $order, $message, '', '', '' )[0]
+		);
+	}
+
+	/**
+	 * Refuse checkout before any charge the way the plugin's process_payment() catch does.
+	 *
+	 * Client 11.1.0 `gw:1272-1439`: an order whose intent already succeeded is kept (`gw:1283-1304`); otherwise the
+	 * refusal is logged (`gw:1274`), the order fails (`gw:1323-1328`), gets the refusal's note and the shopper the notice (`gw:1425`).
+	 *
+	 * @param WC_Order $order       Order being paid.
+	 * @param string   $message     Shopper-facing refusal message.
+	 * @param string   $code        Refusal code, named in the logs.
+	 * @param bool     $fail_order  Whether the order moves to failed.
+	 * @param string   $note        The refusal's order note, or '' for none.
+	 * @param string   $status_note Note attached to the failed status transition.
+	 * @return array<string,string>
+	 */
+	private function refuse_checkout( WC_Order $order, string $message, string $code, bool $fail_order = true, string $note = '', string $status_note = '' ): array {
+		if ( $this->has_succeeded_intent( $order ) ) {
+			return $this->keep_succeeded_intent_order( $order, $message, $code );
+		}
+
+		wc_get_logger()->error(
+			'Error occurred during the payment process. Exception: ' . $message,
+			array(
+				'source'    => 'woopayments',
+				'order_id'  => $order->get_id(),
+				'exception' => $code,
+			)
+		);
+
+		if ( $fail_order ) {
+			$order->update_status( OrderStatus::FAILED, $status_note );
+		}
+
+		if ( '' !== $note ) {
+			$order->add_order_note( $note );
 		}
 
 		wc_add_notice( $message, 'error', array( 'icon' => 'error' ) );
