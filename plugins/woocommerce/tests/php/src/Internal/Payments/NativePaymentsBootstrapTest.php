@@ -557,6 +557,83 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertSame( $this->expected_events( array() ), $container->events );
 	}
 
+	/**
+	 * @testdox A $request request on a $state store registers the cron roots it lacks once, when Action Scheduler first runs an action in it.
+	 * @dataProvider page_request_cron_root_gaps
+	 *
+	 * @param string            $state         Native state.
+	 * @param string            $request       Request type.
+	 * @param array<int,string> $request_roots Roots the request registers when WooCommerce loads.
+	 * @param array<int,string> $missing_roots Cron roots the request lacks, in cron order.
+	 */
+	public function test_page_request_registers_its_missing_cron_roots_once_when_an_action_runs( string $state, string $request, array $request_roots, array $missing_roots ): void {
+		$container = $this->make_container( $state, NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		$sut       = $this->make_bootstrap();
+		if ( 'admin' === $request ) {
+			set_current_screen( 'woocommerce_page_wc-status' );
+		}
+
+		$sut->register( $container, '__return_false' );
+		set_current_screen( 'front' );
+
+		$this->assertSame( $this->expected_events( $request_roots ), $container->events, 'Loading must register only the request roots.' );
+		do_action( 'action_scheduler_before_execute', 1, 'WP Cron' );
+		do_action( 'action_scheduler_before_execute', 2, 'WP Cron' );
+		$this->assertSame( $this->expected_events( $request_roots, $missing_roots ), $container->events, 'The first action must register the missing cron roots, once.' );
+	}
+
+	/** @return array<string,array{string,string,array<int,string>,array<int,string>}> */
+	public static function page_request_cron_root_gaps(): array {
+		return array(
+			'available front' => array( NativePaymentsState::AVAILABLE, 'front', array(), array( WooPaymentsCutoverReconciliationJob::class ) ),
+			'active front'    => array(
+				NativePaymentsState::ACTIVE,
+				'front',
+				self::ACTIVE_FRONT,
+				array(
+					self::WCPAY . 'WooPaymentsCutoverNormalizationRunner',
+					WooPaymentsCutoverReconciliationJob::class,
+					self::WCPAY . 'WooPaymentsCanceledAuthorizationFeeRemediationService',
+					self::WCPAY . 'WooPaymentsLoanApprovedNote',
+					self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
+				),
+			),
+			'active admin'    => array(
+				NativePaymentsState::ACTIVE,
+				'admin',
+				self::ACTIVE_ADMIN,
+				array(
+					self::WCPAY . 'WooPaymentsCanceledAuthorizationFeeRemediationService',
+					self::WCPAY . 'WooPaymentsDuplicatePaymentPreventionService',
+				),
+			),
+		);
+	}
+
+	/** @testdox Adds no Action Scheduler listener on a disabled store, on cron and WP-CLI requests, or when the request already has every cron root. */
+	public function test_adds_no_action_scheduler_listener_when_no_cron_root_is_missing(): void {
+		$cases = array(
+			'disabled front'  => array( NativePaymentsState::DISABLED, '__return_false', false ),
+			'available admin' => array( NativePaymentsState::AVAILABLE, '__return_false', true ),
+			'active cron'     => array( NativePaymentsState::ACTIVE, '__return_false', false ),
+		);
+		foreach ( $cases as $label => list( $state, $is_rest, $admin ) ) {
+			if ( 'active cron' === $label ) {
+				add_filter( 'wp_doing_cron', '__return_true' );
+			}
+			if ( $admin ) {
+				set_current_screen( 'woocommerce_page_wc-status' );
+			}
+			$sut = $this->make_bootstrap();
+
+			$sut->register( $this->make_container( $state, NativePaymentsRuntimeArbiter::OWNER_NATIVE ), $is_rest );
+			remove_filter( 'wp_doing_cron', '__return_true' );
+			set_current_screen( 'front' );
+
+			$this->assertFalse( has_action( 'action_scheduler_before_execute', array( $sut, 'handle_action_scheduler_before_execute' ) ), $label );
+		}
+	}
+
 	/** @return array<string,array{string,string,array<int,string>}> */
 	public static function unique_matrix_compositions(): array {
 		return array(
@@ -737,16 +814,18 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	/**
 	 * Build expected facade events from a literal root list.
 	 *
-	 * @param array<int,string> $roots Explicit roots.
+	 * @param array<int,string> $roots           Explicit roots.
+	 * @param array<int,string> $on_demand_roots Roots registered later, when Action Scheduler runs an action.
 	 * @return array<int,string>
 	 */
-	private function expected_events( array $roots ): array {
+	private function expected_events( array $roots, array $on_demand_roots = array() ): array {
 		$events = array(
 			'get:' . MultiCurrencyRuntimeArbiter::class,
 			'get:' . NativePaymentsState::class,
 			'get:' . NativePaymentsRuntimeArbiter::class,
 		);
 
+		$roots = array_merge( $roots, $on_demand_roots );
 		$count = count( $roots );
 		for ( $index = 0; $index < $count; ++$index ) {
 			$root     = $roots[ $index ];

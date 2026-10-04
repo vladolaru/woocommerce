@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderTrackingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
@@ -76,6 +77,7 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 		wc_get_container()->reset_all_resolved();
 		$GLOBALS['wp_rest_server'] = null;
 		Constants::clear_single_constant( 'WP_CLI' );
+		set_current_screen( 'front' );
 
 		$renewal_hooks = new \ReflectionProperty( WooPaymentsSubscriptionRenewalHooks::class, 'attached' );
 		$renewal_hooks->setAccessible( true );
@@ -215,6 +217,43 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox $label: a scheduled action that runs inside a page request reaches its native handler.
+	 * @dataProvider page_request_action_runs
+	 *
+	 * @param string $label   Case label.
+	 * @param string $state   Stored native tier.
+	 * @param string $request How the action runs: 'alternate_wp_cron' on a front page, or 'admin_run' from Tools > Scheduled Actions.
+	 */
+	public function test_scheduled_action_run_inside_a_page_request_reaches_the_native_handler( string $label, string $state, string $request ): void {
+		unset( $label );
+		$hook = WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_AFFECTED_ORDERS_HOOK;
+		delete_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY );
+		$this->arrange_native_owner( $state );
+		if ( 'admin_run' === $request ) {
+			set_current_screen( 'woocommerce_page_wc-status' );
+		}
+
+		$this->run_bootstrap( '__return_false' );
+		if ( 'alternate_wp_cron' === $request ) {
+			// ALTERNATE_WP_CRON includes wp-cron.php on wp_loaded, so DOING_CRON appears only after WooCommerce loaded.
+			add_filter( 'wp_doing_cron', '__return_true' );
+		}
+		$handler_attached = null;
+		add_action(
+			'action_scheduler_begin_execute',
+			static function () use ( &$handler_attached, $hook ): void {
+				$handler_attached = false !== has_action( $hook );
+			}
+		);
+		$action_id = as_enqueue_async_action( $hook, array(), WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_SCHEDULER_GROUP_ID );
+		ActionScheduler::runner()->process_action( $action_id, 'alternate_wp_cron' === $request ? 'WP Cron' : 'Admin List Table' );
+
+		$this->assertTrue( $handler_attached, 'The native handler must be attached before Action Scheduler runs the action.' );
+		$this->assertSame( ActionScheduler_Store::STATUS_COMPLETE, ActionScheduler::store()->get_status( $action_id ) );
+		$this->assertSame( 'no_affected_orders', get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY ), 'The native handler must have run.' );
+	}
+
+	/**
 	 * @testdox The Settings > Payments toggle moves a connected store to active when it creates the settings, and back to connected when it updates them.
 	 */
 	public function test_classic_toggle_keeps_the_tier_in_step_with_the_gateway(): void {
@@ -307,6 +346,16 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 		return array(
 			'details not submitted, payments disabled' => array( 'not ready', false, false, false ),
 			'details submitted, payments enabled (control)' => array( 'ready', true, true, true ),
+		);
+	}
+
+	/** @return array<string,array{string,string,string}> */
+	public static function page_request_action_runs(): array {
+		return array(
+			'connected, ALTERNATE_WP_CRON on a front page' => array( 'connected, ALTERNATE_WP_CRON', NativePaymentsState::CONNECTED, 'alternate_wp_cron' ),
+			'active, ALTERNATE_WP_CRON on a front page'    => array( 'active, ALTERNATE_WP_CRON', NativePaymentsState::ACTIVE, 'alternate_wp_cron' ),
+			'connected, Scheduled Actions Run link (admin)' => array( 'connected, Scheduled Actions Run', NativePaymentsState::CONNECTED, 'admin_run' ),
+			'active, Scheduled Actions Run link (admin)'   => array( 'active, Scheduled Actions Run', NativePaymentsState::ACTIVE, 'admin_run' ),
 		);
 	}
 

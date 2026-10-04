@@ -48,6 +48,27 @@ final class NativePaymentsBootstrap {
 	private $plugin_owner_registrar;
 
 	/**
+	 * Container for the cron roots this request registers when Action Scheduler first runs an action.
+	 *
+	 * @var Container|RuntimeContainer|null
+	 */
+	private $on_demand_container = null;
+
+	/**
+	 * Cron roots this request lacks, registered when Action Scheduler first runs an action.
+	 *
+	 * @var array<int,class-string>
+	 */
+	private array $on_demand_cron_roots = array();
+
+	/**
+	 * Provider root matrix, resolved once per request.
+	 *
+	 * @var array<string,array<string,array<int,class-string>>>|null
+	 */
+	private ?array $root_matrix = null;
+
+	/**
 	 * Create a neutral bootstrap for provider-owned root matrices.
 	 *
 	 * @param callable      $root_matrix_resolver                  Provider-owned native payments root matrix resolver.
@@ -92,8 +113,10 @@ final class NativePaymentsBootstrap {
 		$owner       = $arbiter->get_runtime_owner();
 		$state       = $state_store->get_state();
 		$request     = MultiCurrencyBootstrap::classify_request( $is_rest_api_request );
+		$roots       = $this->roots_for( $state, $request );
 
-		$this->register_roots( $container, $this->roots_for( $state, $request ) );
+		$this->register_roots( $container, $roots );
+		$this->register_cron_roots_on_demand( $container, $state, $request, $roots );
 
 		if ( NativePaymentsRuntimeArbiter::OWNER_PLUGIN === $owner && null !== $this->plugin_owner_registrar ) {
 			( $this->plugin_owner_registrar )( $container );
@@ -112,9 +135,81 @@ final class NativePaymentsBootstrap {
 			return array();
 		}
 
-		$matrix = ( $this->root_matrix_resolver )();
+		if ( null === $this->root_matrix ) {
+			$this->root_matrix = ( $this->root_matrix_resolver )();
+		}
 
-		return $matrix[ $state ][ $request ] ?? array();
+		return $this->root_matrix[ $state ][ $request ] ?? array();
+	}
+
+	/**
+	 * Register the tier's cron roots that this request lacks once Action Scheduler runs an action in it.
+	 *
+	 * ALTERNATE_WP_CRON and the Tools > Scheduled Actions "Run" link run actions inside a front or admin request.
+	 * The client attaches its scheduled-action handlers on every request (client 11.1.0 `includes/class-wc-payments.php:603,657`).
+	 *
+	 * @param Container|RuntimeContainer $container  Runtime dependency container.
+	 * @param string                     $state      Effective tier.
+	 * @param string                     $request    Request class.
+	 * @param array<int,class-string>    $registered Roots already registered for this request.
+	 */
+	private function register_cron_roots_on_demand( $container, string $state, string $request, array $registered ): void {
+		if ( 'cron' === $request || 'cli' === $request ) {
+			return;
+		}
+
+		$missing = self::roots_missing_from( $this->roots_for( $state, 'cron' ), $registered );
+		if ( empty( $missing ) ) {
+			return;
+		}
+
+		$this->on_demand_container  = $container;
+		$this->on_demand_cron_roots = $missing;
+		// Action Scheduler fires this before it checks the action has callbacks and runs it (`ActionScheduler_Abstract_QueueRunner::process_action()`).
+		add_action( 'action_scheduler_before_execute', array( $this, 'handle_action_scheduler_before_execute' ), 0 );
+	}
+
+	/**
+	 * Register the missing cron roots before Action Scheduler runs the first action of this request.
+	 *
+	 * @internal
+	 */
+	public function handle_action_scheduler_before_execute(): void {
+		remove_action( 'action_scheduler_before_execute', array( $this, 'handle_action_scheduler_before_execute' ), 0 );
+		$roots                      = $this->on_demand_cron_roots;
+		$this->on_demand_cron_roots = array();
+		if ( empty( $roots ) || null === $this->on_demand_container ) {
+			return;
+		}
+
+		$this->register_roots( $this->on_demand_container, $roots );
+	}
+
+	/**
+	 * Get the roots not yet registered, keeping each gateway registry with the provider root that follows it.
+	 *
+	 * @param array<int,class-string> $roots      Root class names in registration order.
+	 * @param array<int,class-string> $registered Roots already registered.
+	 * @return array<int,class-string> Missing roots in registration order.
+	 */
+	private static function roots_missing_from( array $roots, array $registered ): array {
+		$missing = array();
+		$count   = count( $roots );
+		for ( $index = 0; $index < $count; ++$index ) {
+			$root        = $roots[ $index ];
+			$is_registry = NativePaymentsGatewayRegistry::class === $root;
+			if ( ! in_array( $root, $registered, true ) ) {
+				$missing[] = $root;
+				if ( $is_registry ) {
+					$missing[] = $roots[ $index + 1 ];
+				}
+			}
+			if ( $is_registry ) {
+				++$index;
+			}
+		}
+
+		return $missing;
 	}
 
 	/**
