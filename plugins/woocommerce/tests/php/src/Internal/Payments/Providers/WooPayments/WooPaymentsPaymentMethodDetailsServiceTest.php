@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
 use RuntimeException;
 use WC_Unit_Test_Case;
 
@@ -64,7 +65,7 @@ class WooPaymentsPaymentMethodDetailsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Missing plugin runtime falls back to the native API client.
+	 * @testdox Missing plugin runtime falls back to the native API client when native owns the runtime.
 	 */
 	public function test_falls_back_to_native_api_client_when_plugin_runtime_is_absent(): void {
 		$details = array(
@@ -110,7 +111,8 @@ class WooPaymentsPaymentMethodDetailsServiceTest extends WC_Unit_Test_Case {
 				public function get_payment_method( string $payment_method_id ): array {
 					return $this->details + array( 'requested_id' => $payment_method_id );
 				}
-			}
+			},
+			new StaticNativeRuntimeArbiter( true )
 		);
 
 		$this->assertSame( $details + array( 'requested_id' => 'pm_123' ), $sut->get_payment_method_details( 'pm_123' ) );

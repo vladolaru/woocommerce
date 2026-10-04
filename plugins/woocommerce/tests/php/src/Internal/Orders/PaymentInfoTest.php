@@ -4,6 +4,9 @@ declare( strict_types=1 );
 namespace Automattic\WooCommerce\Tests\Internal\Orders;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\RestApi\UnitTests\Helpers\OrderHelper;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use WC_Unit_Test_Case;
@@ -233,6 +236,80 @@ class PaymentInfoTest extends WC_Unit_Test_Case {
 		$this->assertSame( '', wc_get_order( $order->get_id() )->get_meta( '_wcpay_raw_payment_method_details', true ), 'Nothing is cached after a failed fetch.' );
 		$expected = sprintf( 'PaymentInfo - retrieving info for payment method pm_fetch_error for order %d: %s', $order->get_id(), $message );
 		$this->assertContains( array( 'error', $expected, 'payment-info' ), $logger->lines );
+	}
+
+	/**
+	 * @testdox A WooPayments order on a store running neither the WooPayments plugin nor native fetches nothing, logs nothing and has no card info.
+	 *
+	 * Trunk returned early when the plugin was not loaded; a store that deactivated WooPayments and never enabled native
+	 * must not call the platform or write a `payment-info` error on every render of an old order (review 39 F1). The
+	 * transport double fails the way the native client does on a store without a WordPress.com connection.
+	 */
+	public function test_get_card_info_wcpay_without_any_runtime_fetches_and_logs_nothing(): void {
+		$order = OrderHelper::create_order();
+		$order->set_payment_method( 'woocommerce_payments' );
+		$order->set_payment_method_title( 'Credit card / debit card' );
+		$order->add_meta_data( '_payment_method_id', 'pm_no_runtime', true );
+		$order->save();
+
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => function ( $class_name, $autoload = true ) {
+					if ( 'WC_Payments' === ltrim( (string) $class_name, '\\' ) ) {
+						return false;
+					}
+					return class_exists( $class_name, $autoload );
+				},
+			)
+		);
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_false' );
+		$container = wc_get_container();
+		$arbiter   = $container->get( NativePaymentsRuntimeArbiter::class );
+		$arbiter->invalidate();
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $arbiter->get_runtime_owner() );
+
+		$api_client      = new class() extends WooPaymentsApiClient {
+			/**
+			 * Payment method IDs the transport was asked for.
+			 *
+			 * @var string[]
+			 */
+			public array $requested = array();
+
+			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
+			/**
+			 * Record the fetch and fail as an unconnected site does.
+			 *
+			 * @param string $payment_method_id Payment method ID.
+			 * @return array<string,mixed>
+			 * @throws \Exception Always.
+			 */
+			public function get_payment_method( string $payment_method_id ): array {
+				$this->requested[] = $payment_method_id;
+				throw new \Exception( 'Site is not connected to WordPress.com.' );
+			}
+			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+		};
+		$details_service = new WooPaymentsPaymentMethodDetailsService();
+		$details_service->init( $container->get( WooPaymentsLegacyRuntime::class ), $api_client, $arbiter );
+		$container->replace( WooPaymentsPaymentMethodDetailsService::class, $details_service );
+		$logger = RecordingWcLogger::install();
+
+		try {
+			$totals    = $order->get_order_item_totals();
+			$card_info = $order->get_payment_card_info();
+		} finally {
+			$container->reset_all_replacements();
+			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_false' );
+			$arbiter->invalidate();
+		}
+
+		$this->assertSame( 'Credit card / debit card', $totals['payment_method']['value'] ?? null );
+		$this->assertSame( '', $card_info['brand'] );
+		$this->assertSame( '', $card_info['last4'] );
+		$this->assertSame( array(), $api_client->requested, 'The platform is not asked.' );
+		$this->assertSame( array(), $logger->lines, 'Nothing is logged.' );
+		$this->assertSame( '', wc_get_order( $order->get_id() )->get_meta( '_wcpay_raw_payment_method_details', true ) );
 	}
 
 	/**

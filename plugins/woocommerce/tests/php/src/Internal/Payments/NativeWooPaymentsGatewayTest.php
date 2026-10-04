@@ -7058,7 +7058,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 					throw $this->error;
 				}
 				// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
-			}
+			},
+			new StaticNativeRuntimeArbiter( true )
 		);
 		$token_service = new WooPaymentsTokenService();
 		$token_service->init( $details_service, new StaticNativeRuntimeArbiter( true ) );

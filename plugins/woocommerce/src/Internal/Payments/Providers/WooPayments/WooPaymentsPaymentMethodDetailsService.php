@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Exception;
 use Throwable;
@@ -34,16 +35,25 @@ class WooPaymentsPaymentMethodDetailsService {
 	private WooPaymentsApiClient $api_client;
 
 	/**
+	 * Runtime owner arbiter.
+	 *
+	 * @var NativePaymentsRuntimeArbiter
+	 */
+	private NativePaymentsRuntimeArbiter $arbiter;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsLegacyRuntime $legacy_runtime WooPayments legacy runtime.
-	 * @param WooPaymentsApiClient     $api_client     Native WooPayments API client.
+	 * @param WooPaymentsLegacyRuntime     $legacy_runtime WooPayments legacy runtime.
+	 * @param WooPaymentsApiClient         $api_client     Native WooPayments API client.
+	 * @param NativePaymentsRuntimeArbiter $arbiter        Runtime owner arbiter.
 	 */
-	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client ): void {
+	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, NativePaymentsRuntimeArbiter $arbiter ): void {
 		$this->legacy_runtime = $legacy_runtime;
 		$this->api_client     = $api_client;
+		$this->arbiter        = $arbiter;
 	}
 
 	/**
@@ -71,7 +81,8 @@ class WooPaymentsPaymentMethodDetailsService {
 	 * Get payment method details, letting every failure through to the caller.
 	 *
 	 * For core's PaymentInfo, which logs a failed fetch under `payment-info` whatever the WooPayments logging setting,
-	 * as trunk does (review 37 F4).
+	 * as trunk does (review 37 F4). With neither the plugin nor native running there is nothing to ask, so it returns no
+	 * details without a request, as trunk's PaymentInfo did without the plugin.
 	 *
 	 * @since 11.2.0
 	 *
@@ -84,7 +95,12 @@ class WooPaymentsPaymentMethodDetailsService {
 			return array();
 		}
 
-		if ( ! $this->legacy_runtime->is_loaded() ) {
+		$plugin_runtime_loaded = $this->legacy_runtime->is_loaded();
+		if ( ! $plugin_runtime_loaded && ! $this->arbiter->should_native_register() ) {
+			return array();
+		}
+
+		if ( ! $plugin_runtime_loaded ) {
 			return $this->api_client->get_payment_method( $payment_method_id );
 		}
 
