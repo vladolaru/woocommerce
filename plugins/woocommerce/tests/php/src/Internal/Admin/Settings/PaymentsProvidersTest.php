@@ -1803,6 +1803,83 @@ class PaymentsProvidersTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Test that the PayPal wallet suggestion goes away when core provides the wallet, and stays when it does not.
+	 *
+	 * @testdox Should drop the PayPal wallet suggestion only when core owns the wallet, and keep the PayPal full-stack suggestion either way.
+	 *
+	 * @testWith ["__return_true", false]
+	 *           ["__return_false", true]
+	 *
+	 * @param string $native_filter   The callback pinning native ownership on or off.
+	 * @param bool   $expect_wallet   Whether the wallet suggestion is expected.
+	 */
+	public function test_get_extension_suggestions_drops_the_paypal_wallet_when_core_owns_it( string $native_filter, bool $expect_wallet ) {
+		// Arrange.
+		$this->enable_core_paypal_pg();
+		add_filter( PayPalWalletRuntimeArbiter::FILTER_ENABLED, $native_filter );
+		wc_get_container()->get( PayPalWalletRuntimeArbiter::class )->invalidate();
+
+		$suggestion_base = array(
+			'description'       => 'Description',
+			'image'             => 'http://example.com/image.png',
+			'icon'              => 'http://example.com/icon.png',
+			'short_description' => null,
+			'links'             => array(
+				array(
+					'_type' => PaymentsProviders::LINK_TYPE_ABOUT,
+					'url'   => 'url',
+				),
+			),
+		);
+		$this->mock_extension_suggestions->expects( $this->once() )
+			->method( 'get_country_extensions' )
+			->with( 'US' )
+			->willReturn(
+				array(
+					array_merge(
+						$suggestion_base,
+						array(
+							'id'        => ExtensionSuggestions::PAYPAL_WALLET,
+							'_priority' => 1,
+							'_type'     => ExtensionSuggestions::TYPE_EXPRESS_CHECKOUT,
+							'title'     => 'PayPal Wallet',
+							'plugin'    => array(
+								'_type' => ExtensionSuggestions::PLUGIN_TYPE_WPORG,
+								'slug'  => 'woocommerce-paypal-payments',
+							),
+							'tags'      => array( ExtensionSuggestions::TAG_PREFERRED ),
+						)
+					),
+					array_merge(
+						$suggestion_base,
+						array(
+							'id'        => ExtensionSuggestions::PAYPAL_FULL_STACK,
+							'_priority' => 2,
+							'_type'     => ExtensionSuggestions::TYPE_PSP,
+							'title'     => 'PayPal Full Stack',
+							'plugin'    => array(
+								'_type' => ExtensionSuggestions::PLUGIN_TYPE_WPORG,
+								'slug'  => 'woocommerce-gateway-paypal-full-stack',
+							),
+							'tags'      => array(),
+						)
+					),
+				)
+			);
+
+		// Act.
+		$suggestions = $this->sut->get_extension_suggestions( 'US' );
+
+		// Assert.
+		$ids = array_column( array_merge( $suggestions['preferred'], $suggestions['other'] ), 'id' );
+		$this->assertSame( $expect_wallet, in_array( ExtensionSuggestions::PAYPAL_WALLET, $ids, true ), 'The wallet suggestion must follow the owner' );
+		$this->assertContains( ExtensionSuggestions::PAYPAL_FULL_STACK, $ids, 'The full-stack suggestion must stay either way' );
+
+		// Clean up.
+		$this->unload_core_paypal_pg();
+	}
+
+	/**
 	 * Test getting the payment extension suggestions preferred options respect priority ASC.
 	 */
 	public function test_get_extension_suggestions_ordered_by_priority() {

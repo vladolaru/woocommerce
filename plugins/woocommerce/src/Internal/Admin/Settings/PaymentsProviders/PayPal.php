@@ -4,7 +4,9 @@ declare( strict_types=1 );
 namespace Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 
 use Automattic\WooCommerce\Internal\Logging\SafeGlobalFunctionProxy;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\DormantPayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\GeneralSettings;
 use WC_Payment_Gateway;
 
 defined( 'ABSPATH' ) || exit;
@@ -49,6 +51,52 @@ class PayPal extends PaymentGateway {
 		}
 
 		return $plugin_details;
+	}
+
+	/**
+	 * Get the onboarding URL, pointing the dormant placeholder at the wallet's settings, where the merchant connects.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @param WC_Payment_Gateway $payment_gateway The payment gateway object.
+	 * @param string             $return_url      Optional. The URL to return to after onboarding.
+	 *
+	 * @return string
+	 */
+	public function get_onboarding_url( WC_Payment_Gateway $payment_gateway, string $return_url = '' ): string {
+		if ( $payment_gateway instanceof DormantPayPalGateway ) {
+			return $this->get_wallet_settings_url();
+		}
+
+		return parent::get_onboarding_url( $payment_gateway, $return_url );
+	}
+
+	/**
+	 * Get the settings URL, pointing the dormant placeholder at the wallet's settings.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @param WC_Payment_Gateway $payment_gateway The payment gateway object.
+	 *
+	 * @return string
+	 */
+	public function get_settings_url( WC_Payment_Gateway $payment_gateway ): string {
+		if ( $payment_gateway instanceof DormantPayPalGateway ) {
+			return $this->get_wallet_settings_url();
+		}
+
+		return parent::get_settings_url( $payment_gateway );
+	}
+
+	/**
+	 * The wallet's settings section, where a merchant connects their PayPal account.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @return string
+	 */
+	private function get_wallet_settings_url(): string {
+		return admin_url( 'admin.php?page=wc-settings&tab=checkout&section=ppcp-gateway' );
 	}
 
 	/**
@@ -208,6 +256,11 @@ class PayPal extends PaymentGateway {
 			}
 		}
 
+		// The wallet did not boot, which is how a dormant wallet looks; read the shared settings option instead.
+		if ( $this->is_core_provided( $payment_gateway ) ) {
+			return $this->get_connection_from_option()['sandbox'];
+		}
+
 		// Let the caller know that we couldn't determine the environment.
 		return null;
 	}
@@ -250,7 +303,23 @@ class PayPal extends PaymentGateway {
 			}
 		}
 
+		// The wallet did not boot, which is how a dormant wallet looks; read the shared settings option instead.
+		if ( $this->is_core_provided( $payment_gateway ) ) {
+			return $this->get_connection_from_option()['connected'];
+		}
+
 		// Let the caller know that we couldn't determine the onboarding status.
 		return null;
+	}
+
+	/**
+	 * Connection facts from the stored settings options (shared, then legacy), for requests where the dormant wallet did not boot.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @return array{connected: bool, sandbox: bool}
+	 */
+	private function get_connection_from_option(): array {
+		return GeneralSettings::read_connection_from_options();
 	}
 }

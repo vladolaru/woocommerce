@@ -14,6 +14,7 @@ use RuntimeException;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\DTO\MerchantConnectionDTO;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Enum\SellerTypeEnum;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Enum\InstallationPathEnum;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\Migration\MigrationManager;
 
 /**
  * Class GeneralSettings
@@ -218,10 +219,64 @@ class GeneralSettings extends AbstractDataModel {
 	 * @return bool
 	 */
 	public function is_merchant_connected(): bool {
-		return $this->data['merchant_email']
-			&& $this->data['merchant_id']
-			&& $this->data['client_id']
-			&& $this->data['client_secret'];
+		return self::is_connected_in( $this->data );
+	}
+
+	/**
+	 * Whether stored settings data describes a connected merchant, without building the model.
+	 *
+	 * The merchant counts as connected when the email, merchant ID, client ID and client secret are all set. The
+	 * stored `merchant_connected` flag is not consulted.
+	 *
+	 * @param array $data The stored settings data, as saved in the option.
+	 *
+	 * @return bool
+	 */
+	public static function is_connected_in( array $data ): bool {
+		return ! empty( $data['merchant_email'] )
+			&& ! empty( $data['merchant_id'] )
+			&& ! empty( $data['client_id'] )
+			&& ! empty( $data['client_secret'] );
+	}
+
+	/**
+	 * Read the merchant connection from the stored options, without building the model.
+	 *
+	 * The shared settings option answers first. Only when it does not describe a connected merchant is the legacy
+	 * (pre 4.0) settings option read, using the same keys the legacy migration requires: client ID, client secret and
+	 * merchant ID. Such a merchant is connected but has not been migrated yet, so the legacy option is ignored once
+	 * the migration is done. Reads only; nothing is written.
+	 *
+	 * A store that never connected pays up to three option lookups per request for the missing options, where it
+	 * paid for a full wallet boot before.
+	 *
+	 * @return array{connected: bool, sandbox: bool}
+	 */
+	public static function read_connection_from_options(): array {
+		$data = get_option( self::OPTION_KEY, array() );
+		$data = is_array( $data ) ? $data : array();
+		if ( self::is_connected_in( $data ) ) {
+			return array(
+				'connected' => true,
+				'sandbox'   => ! empty( $data['sandbox_merchant'] ),
+			);
+		}
+
+		// Once the migration has run, the shared settings option is the only source. Same check as SettingsModule.
+		// The legacy option name and keys are literals: referencing the legacy Settings class would load wallet classes on every request.
+		$legacy = '1' === get_option( MigrationManager::OPTION_NAME_MIGRATION_IS_DONE ) ? array() : get_option( 'woocommerce-ppcp-settings', array() );
+		$legacy = is_array( $legacy ) ? $legacy : array();
+		if ( ! empty( $legacy['client_id'] ) && ! empty( $legacy['client_secret'] ) && ! empty( $legacy['merchant_id'] ) ) {
+			return array(
+				'connected' => true,
+				'sandbox'   => ! empty( $legacy['sandbox_on'] ),
+			);
+		}
+
+		return array(
+			'connected' => false,
+			'sandbox'   => ! empty( $data['sandbox_merchant'] ),
+		);
 	}
 
 	/**

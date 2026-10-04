@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Admin\Settings\PaymentsProviders
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PayPal;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\DormantPayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PPCP;
@@ -39,6 +40,7 @@ class PayPalTest extends WC_Unit_Test_Case {
 	 * Tear down test.
 	 */
 	public function tearDown(): void {
+		unset( $GLOBALS['wp']->query_vars['rest_route'] );
 		remove_all_filters( PayPalWalletRuntimeArbiter::FILTER_ENABLED );
 		wc_get_container()->get( PayPalWalletRuntimeArbiter::class )->invalidate();
 
@@ -270,32 +272,163 @@ class PayPalTest extends WC_Unit_Test_Case {
 
 		// The base provider answers true for a connected account whatever the options say, so a disconnected store tells the two sources apart.
 		update_option( 'woocommerce-ppcp-data-common', array() );
-		$bootstrap = new PayPalWalletBootstrap();
+		// A not-connected wallet only builds on its own surfaces, so a wallet REST route stands in for the onboarding request.
+		$GLOBALS['wp']->query_vars['rest_route'] = '/wc/v3/wc_paypal/onboarding';
+		$bootstrap                               = new PayPalWalletBootstrap();
 		$bootstrap->init( $arbiter );
 		$bootstrap->maybe_boot();
+		unset( $GLOBALS['wp']->query_vars['rest_route'] );
 		$this->assertFalse( $this->sut->is_account_connected( $gateway ), 'A store without a stored connection must read as not connected' );
 		$this->assertFalse( $this->sut->is_in_test_mode( $gateway ) );
 	}
 
 	/**
-	 * @testdox Should not throw and should fall back to the base provider answers when core owns the site but the wallet did not boot.
+	 * @testdox Should not throw and should read the connection from the shared settings option when core owns the site but the wallet did not boot.
 	 */
-	public function test_falls_back_without_throwing_when_core_owns_but_the_wallet_did_not_boot(): void {
+	public function test_reads_the_connection_from_the_option_when_core_owns_but_the_wallet_did_not_boot(): void {
 		$this->pin_native_ownership();
 		$gateway  = $this->fake_ppcp_gateway();
 		$previous = $this->swap_wallet_container( null );
 
 		try {
-			$container = $this->get_paypal_container( $gateway );
-			$connected = $this->sut->is_account_connected( $gateway );
-			$test_mode = $this->sut->is_in_test_mode( $gateway );
+			delete_option( 'woocommerce-ppcp-data-common' );
+			$container       = $this->get_paypal_container( $gateway );
+			$connected_empty = $this->sut->is_account_connected( $gateway );
+			$onboarded_empty = $this->sut->is_onboarding_completed( $gateway );
+			$test_mode_empty = $this->sut->is_in_test_mode( $gateway );
+			update_option( 'woocommerce-ppcp-data-common', $this->connected_option( true ) );
+			$connected_stored  = $this->sut->is_account_connected( $gateway );
+			$onboarded_stored  = $this->sut->is_onboarding_completed( $gateway );
+			$test_mode_stored  = $this->sut->is_in_test_mode( $gateway );
+			$test_mode_onboard = $this->sut->is_in_test_mode_onboarding( $gateway );
+			update_option( 'woocommerce-ppcp-data-common', $this->connected_option( false ) );
+			$test_mode_live = $this->sut->is_in_test_mode( $gateway );
+			$connected_live = $this->sut->is_account_connected( $gateway );
 		} finally {
 			$this->swap_wallet_container( $previous );
 		}
 
 		$this->assertNull( $container, 'No container is obtainable, so the lookup must report that' );
-		$this->assertTrue( $connected, 'The base provider assumes connected when the gateway does not say' );
-		$this->assertFalse( $test_mode, 'The base provider reads no test mode from this gateway' );
+		$this->assertFalse( $connected_empty, 'No stored connection reads as not connected' );
+		$this->assertFalse( $onboarded_empty, 'No stored connection reads as not onboarded' );
+		$this->assertFalse( $test_mode_empty );
+		$this->assertTrue( $connected_stored, 'A stored connection reads as connected' );
+		$this->assertTrue( $onboarded_stored );
+		$this->assertTrue( $test_mode_stored, 'A stored sandbox merchant reads as test mode' );
+		$this->assertTrue( $test_mode_onboard );
+		$this->assertFalse( $test_mode_live, 'A stored live merchant is not test mode' );
+		$this->assertTrue( $connected_live );
+	}
+
+	/**
+	 * The shared settings option as a connected merchant, in the shape the wallet's GeneralSettings model saves it.
+	 *
+	 * @param bool $sandbox Whether the merchant is a sandbox account.
+	 *
+	 * @return array
+	 */
+	private function connected_option( bool $sandbox ): array {
+		return array(
+			'merchant_connected' => true,
+			'sandbox_merchant'   => $sandbox,
+			'merchant_id'        => 'TESTMERCHANTID',
+			'merchant_email'     => 'merchant@example.com',
+			'client_id'          => 'test-client-id',
+			'client_secret'      => 'test-client-secret',
+		);
+	}
+
+	/**
+	 * @testdox Should read an incomplete stored connection as not connected, whatever the stored merchant_connected flag says.
+	 */
+	public function test_an_incomplete_stored_connection_is_not_connected(): void {
+		$this->pin_native_ownership();
+		$gateway  = $this->fake_ppcp_gateway();
+		$previous = $this->swap_wallet_container( null );
+		$data     = $this->connected_option( false );
+		unset( $data['client_secret'] );
+		update_option( 'woocommerce-ppcp-data-common', $data );
+
+		try {
+			$connected = $this->sut->is_account_connected( $gateway );
+		} finally {
+			$this->swap_wallet_container( $previous );
+		}
+
+		$this->assertFalse( $connected );
+	}
+
+	/**
+	 * @testdox Should read a legacy-only connection as onboarded, and its sandbox flag, when core owns the site but the wallet did not boot.
+	 */
+	public function test_reads_a_legacy_only_connection_when_the_wallet_did_not_boot(): void {
+		$this->pin_native_ownership();
+		$gateway  = $this->fake_ppcp_gateway();
+		$previous = $this->swap_wallet_container( null );
+		delete_option( 'woocommerce-ppcp-data-common' );
+		update_option(
+			'woocommerce-ppcp-settings',
+			array(
+				'client_id'     => 'legacy-client-id',
+				'client_secret' => 'legacy-client-secret',
+				'merchant_id'   => 'LEGACYMERCHANT',
+				'sandbox_on'    => true,
+			)
+		);
+
+		try {
+			$onboarded = $this->sut->is_onboarding_completed( $gateway );
+			$test_mode = $this->sut->is_in_test_mode( $gateway );
+		} finally {
+			$this->swap_wallet_container( $previous );
+		}
+
+		$this->assertTrue( $onboarded, 'A store that boots for its legacy connection must not read as not onboarded' );
+		$this->assertTrue( $test_mode );
+	}
+
+	/**
+	 * @testdox Should treat the dormant placeholder as a row that needs setup, with both URLs on the wallet's legacy settings section.
+	 */
+	public function test_the_dormant_placeholder_row_needs_setup(): void {
+		$this->pin_native_ownership();
+		delete_option( 'woocommerce-ppcp-data-common' );
+		$gateway  = new DormantPayPalGateway();
+		$previous = $this->swap_wallet_container( null );
+		$url      = admin_url( 'admin.php?page=wc-settings&tab=checkout&section=ppcp-gateway' );
+
+		try {
+			$needs_setup = $this->sut->needs_setup( $gateway );
+			$connected   = $this->sut->is_account_connected( $gateway );
+			$onboarded   = $this->sut->is_onboarding_completed( $gateway );
+			$onboarding  = $this->sut->get_onboarding_url( $gateway );
+			$settings    = $this->sut->get_settings_url( $gateway );
+			$title       = $this->sut->get_title( $gateway );
+			$details     = $this->sut->get_plugin_details( $gateway );
+		} finally {
+			$this->swap_wallet_container( $previous );
+		}
+
+		$this->assertTrue( $needs_setup, 'The list must offer Finish setup' );
+		$this->assertFalse( $connected );
+		$this->assertFalse( $onboarded );
+		$this->assertSame( $url, $onboarding );
+		$this->assertSame( $url, $settings );
+		$this->assertSame( 'PayPal Wallet', $title );
+		$this->assertSame( '', $details['file'], 'The placeholder row has no plugin to deactivate' );
+	}
+
+	/**
+	 * @testdox Should leave the settings and onboarding URLs of the extension's gateway untouched.
+	 */
+	public function test_non_placeholder_urls_are_unchanged(): void {
+		$this->pin_native_ownership();
+		$gateway = $this->fake_ppcp_gateway();
+
+		$base = new PaymentGateway( wc_get_container()->get( LegacyProxy::class ) );
+
+		$this->assertSame( $base->get_settings_url( $gateway ), $this->sut->get_settings_url( $gateway ) );
+		$this->assertSame( $base->get_onboarding_url( $gateway ), $this->sut->get_onboarding_url( $gateway ) );
 	}
 
 	/**

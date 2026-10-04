@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PPCP;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\GeneralSettings;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WalletProperties;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\Module;
@@ -20,6 +21,9 @@ use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Package;
  * package, PPCP::init, built-container action, version/migration hook), gated by the arbiter. The wallet code
  * is core's own copy under Wallet/, loaded by core's autoloader; the module list in Wallet/modules.php holds only
  * the wallet modules. When the extension owns the site nothing is booted, so the two copies never run together.
+ *
+ * When core owns the wallet, the wallet stays dormant until a merchant connects: it is not built at all, except on its
+ * own admin and REST surfaces. While dormant, a placeholder gateway keeps the Payments settings row.
  *
  * @since 11.3.0
  * @internal POC component for the PayPal Wallet in core proof of concept.
@@ -113,6 +117,13 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 		if ( ! $this->arbiter->should_native_register() ) {
 			return;
 		}
+		if ( $this->is_dormant() ) {
+			// Only the admin screens and the wc-admin REST routes that build the Payments settings list show the placeholder row.
+			if ( is_admin() || $this->is_wc_admin_rest_request() ) {
+				add_filter( 'woocommerce_payment_gateways', array( $this, 'register_dormant_gateway' ) );
+			}
+			return;
+		}
 
 		$this->define_constants();
 		// The DTOs the wallet stores as PHP objects keep the extension's class names; see the loader for why.
@@ -145,6 +156,127 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 		do_action( 'woocommerce_paypal_payments_built_container', $container ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingSinceComment
 
 		add_action( 'init', array( $this, 'maybe_run_migrations' ), -1 );
+	}
+
+	/**
+	 * Whether the wallet has nothing to do in this request: no merchant is connected and this is not a wallet admin request.
+	 *
+	 * A connected store boots on every request (its gateway, webhooks and REST must work). A store with no connected
+	 * merchant can render nothing on the storefront and has no settings to serve outside its own admin surfaces, so the
+	 * modules are not built at all: no hooks, no script handles, no container.
+	 *
+	 * A merchant connected through the legacy (pre 4.0) settings counts as connected, so that store boots on its first
+	 * request, which runs the migration into the shared settings option. The install and update migrations run on
+	 * `init` only after a boot.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @return bool
+	 */
+	public function is_dormant(): bool {
+		if ( $this->is_merchant_connected() ) {
+			return false;
+		}
+
+		return ! $this->is_wallet_admin_request();
+	}
+
+	/**
+	 * Add the placeholder gateway to the gateways list, unless a gateway with the wallet's ID is already there.
+	 *
+	 * Hooked to `woocommerce_payment_gateways` while the wallet is dormant, so the Payments settings list shows a
+	 * "PayPal Wallet" row to finish setting up.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @param mixed $gateways The registered gateways: class names and gateway objects.
+	 *
+	 * @return array
+	 */
+	public function register_dormant_gateway( $gateways ) {
+		$gateways = is_array( $gateways ) ? $gateways : array();
+		foreach ( $gateways as $gateway ) {
+			if ( DormantPayPalGateway::class === $gateway || ( is_object( $gateway ) && 'ppcp-gateway' === ( $gateway->id ?? '' ) ) ) {
+				return $gateways;
+			}
+		}
+		$gateways[] = DormantPayPalGateway::class;
+
+		return $gateways;
+	}
+
+	/**
+	 * Whether a merchant is connected, in the shared settings option or, for a merchant not migrated yet, the legacy one.
+	 * Reads the options without building the wallet.
+	 *
+	 * @return bool
+	 */
+	private function is_merchant_connected(): bool {
+		return GeneralSettings::read_connection_from_options()['connected'];
+	}
+
+	/**
+	 * Whether this request addresses the wallet's own admin surfaces: its settings page (the Payments settings route or
+	 * the legacy section) or its REST namespaces.
+	 *
+	 * @return bool
+	 */
+	private function is_wallet_admin_request(): bool {
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only routing decision.
+		if ( is_admin() && isset( $_GET['page'] ) && 'wc-settings' === $_GET['page'] ) {
+			$path    = isset( $_GET['path'] ) && is_string( $_GET['path'] ) ? sanitize_text_field( wp_unslash( $_GET['path'] ) ) : '';
+			$section = isset( $_GET['section'] ) && is_string( $_GET['section'] ) ? sanitize_text_field( wp_unslash( $_GET['section'] ) ) : '';
+			if ( 0 === strpos( $path, '/paypal-wallet' ) || 'ppcp-gateway' === $section ) {
+				return true;
+			}
+		}
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+
+		$rest_route = $this->get_rest_route();
+
+		return 0 === strpos( $rest_route, '/wc/v3/wc_paypal' ) || 0 === strpos( $rest_route, '/paypal/v1' );
+	}
+
+	/**
+	 * Whether this request is a wc-admin REST request, such as the one that loads the Payments settings list.
+	 *
+	 * @return bool
+	 */
+	private function is_wc_admin_rest_request(): bool {
+		$rest_route = $this->get_rest_route();
+
+		return 0 === strpos( $rest_route, '/wc-admin/' ) || 0 === strpos( $rest_route, '/wc-analytics/' );
+	}
+
+	/**
+	 * The REST route this request addresses, or an empty string when it is not a REST request.
+	 *
+	 * This runs on plugins_loaded, before WordPress parses the request, so the route is read from the parsed query
+	 * variables when they are there, then from the plain-permalink query argument, then from the request path, where
+	 * the route is whatever follows the REST prefix segment.
+	 *
+	 * @return string
+	 */
+	private function get_rest_route(): string {
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only routing decision.
+		if ( ! empty( $GLOBALS['wp']->query_vars['rest_route'] ) ) {
+			return (string) $GLOBALS['wp']->query_vars['rest_route'];
+		}
+		if ( isset( $_GET['rest_route'] ) && is_string( $_GET['rest_route'] ) ) {
+			return '/' . ltrim( sanitize_text_field( wp_unslash( $_GET['rest_route'] ) ), '/' );
+		}
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+		if ( ! isset( $_SERVER['REQUEST_URI'] ) || ! is_string( $_SERVER['REQUEST_URI'] ) ) {
+			return '';
+		}
+
+		// Find the REST prefix segment anywhere in the path, as WooCommerce's is_rest_api_request() does: index permalinks
+		// (/index.php/wp-json/...) and subdirectory installs (/sub/index.php/wp-json/...) put it after other segments.
+		$path        = (string) wp_parse_url( sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ), PHP_URL_PATH );
+		$rest_prefix = '/' . rest_get_url_prefix() . '/';
+		$position    = strpos( $path, $rest_prefix );
+
+		return false === $position ? '' : '/' . substr( $path, $position + strlen( $rest_prefix ) );
 	}
 
 	/**

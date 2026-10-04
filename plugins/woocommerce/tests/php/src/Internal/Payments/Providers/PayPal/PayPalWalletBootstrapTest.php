@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\DormantPayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletRuntimeArbiter;
 use WC_Unit_Test_Case;
@@ -36,6 +37,10 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 			'get'     => $_GET, // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Saving test state.
 			'request' => $_REQUEST, // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Saving test state.
 			'pagenow' => $GLOBALS['pagenow'] ?? null,
+			'server'  => $_SERVER,
+			'screen'  => $GLOBALS['current_screen'] ?? null,
+			'scripts' => $GLOBALS['wp_scripts'] ?? null,
+			'route'   => $GLOBALS['wp']->query_vars['rest_route'] ?? null,
 		);
 	}
 
@@ -50,6 +55,22 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 			unset( $GLOBALS['pagenow'] );
 		} else {
 			$GLOBALS['pagenow'] = $this->saved_request['pagenow']; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Simulating the admin page.
+		}
+		$_SERVER = $this->saved_request['server'];
+		if ( null === $this->saved_request['screen'] ) {
+			unset( $GLOBALS['current_screen'] );
+		} else {
+			$GLOBALS['current_screen'] = $this->saved_request['screen']; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restoring the screen.
+		}
+		if ( null === $this->saved_request['scripts'] ) {
+			unset( $GLOBALS['wp_scripts'] );
+		} else {
+			$GLOBALS['wp_scripts'] = $this->saved_request['scripts']; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restoring the script registry.
+		}
+		if ( null === $this->saved_request['route'] ) {
+			unset( $GLOBALS['wp']->query_vars['rest_route'] );
+		} else {
+			$GLOBALS['wp']->query_vars['rest_route'] = $this->saved_request['route'];
 		}
 		parent::tearDown();
 	}
@@ -84,6 +105,38 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 
 		$this->sut = new PayPalWalletBootstrap();
 		$this->sut->init( $arbiter );
+	}
+
+	/**
+	 * Store the shared settings option as a connected merchant, in the shape the wallet's GeneralSettings model saves it.
+	 *
+	 * The wallet derives "connected" from the merchant email, merchant ID, client ID and client secret all being set.
+	 */
+	private function set_connected_merchant_option(): void {
+		update_option(
+			'woocommerce-ppcp-data-common',
+			array(
+				'merchant_connected' => true,
+				'sandbox_merchant'   => true,
+				'merchant_id'        => 'TESTMERCHANTID',
+				'merchant_email'     => 'merchant@example.com',
+				'client_id'          => 'test-client-id',
+				'client_secret'      => 'test-client-secret',
+			)
+		);
+	}
+
+	/**
+	 * Count the callbacks attached to every hook, to prove a request attached nothing.
+	 *
+	 * @return array<string, int>
+	 */
+	private function count_hook_callbacks(): array {
+		$counts = array();
+		foreach ( $GLOBALS['wp_filter'] as $hook => $hook_object ) {
+			$counts[ $hook ] = array_sum( array_map( 'count', $hook_object->callbacks ) );
+		}
+		return $counts;
 	}
 
 	/**
@@ -243,6 +296,7 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 	 * @testdox Should boot the forked wallet once when native owns the site, registering the PayPal gateway and only wallet modules.
 	 */
 	public function test_boots_the_forked_wallet_when_native_owns(): void {
+		$this->set_connected_merchant_option();
 		$this->build_sut( true );
 
 		$this->sut->maybe_boot();
@@ -312,6 +366,7 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 	 * @testdox Should read a Pay Later messaging option the extension stored, and write it back under the extension's class name.
 	 */
 	public function test_reads_and_writes_the_extensions_stored_objects(): void {
+		$this->set_connected_merchant_option();
 		$this->build_sut( true );
 		$this->sut->maybe_boot();
 
@@ -346,6 +401,7 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 				return $modules;
 			}
 		);
+		$this->set_connected_merchant_option();
 		$this->build_sut( true );
 
 		$this->sut->maybe_boot();
@@ -380,6 +436,7 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 				return $modules;
 			}
 		);
+		$this->set_connected_merchant_option();
 		$this->build_sut( true );
 
 		try {
@@ -390,6 +447,396 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $this->sut->is_booted(), 'A foreign filtered element must not stop the boot' );
 		$this->assertTrue( \Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PPCP::container()->has( 'wcgateway.paypal-gateway' ), 'The wallet modules must still be registered' );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should not build the wallet package when the merchant is not connected and the request is not a wallet admin request.
+	 */
+	public function test_stays_dormant_when_not_connected(): void {
+		delete_option( 'woocommerce-ppcp-data-common' );
+		$GLOBALS['wp_scripts'] = new \WP_Scripts(); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- A registry no earlier test has filled; tearDown restores the original.
+		$this->build_sut( true );
+		$hooks_before = $this->count_hook_callbacks();
+
+		$this->sut->maybe_boot();
+
+		$this->assertTrue( $this->sut->is_dormant() );
+		$this->assertFalse( $this->sut->is_booted() );
+		$this->assertSame( $hooks_before, $this->count_hook_callbacks(), 'A dormant front-end request must attach no hook at all' );
+		foreach ( array_keys( wp_scripts()->registered ) as $handle ) {
+			$this->assertStringStartsNotWith( 'ppcp-', $handle, "No wallet handle may be registered when dormant ($handle)" );
+			$this->assertStringStartsNotWith( 'wc-ppcp-', $handle, "No wallet handle may be registered when dormant ($handle)" );
+		}
+		$offered_ids = array_map(
+			static function ( $gateway ): string {
+				return is_object( $gateway ) ? (string) ( $gateway->id ?? '' ) : (string) $gateway;
+			},
+			apply_filters( 'woocommerce_payment_gateways', array() ) // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		);
+		$this->assertNotContains( 'ppcp-gateway', $offered_ids, 'A dormant wallet registers no gateway on a front-end request' );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should register the placeholder gateway on an admin request while dormant.
+	 */
+	public function test_registers_the_placeholder_gateway_in_admin_when_dormant(): void {
+		delete_option( 'woocommerce-ppcp-data-common' );
+		set_current_screen( 'woocommerce_page_wc-settings' ); // is_admin() is true on a WP_Screen of the admin.
+		$this->build_sut( true );
+
+		$this->sut->maybe_boot();
+
+		$this->assertFalse( $this->sut->is_booted() );
+		$gateways = apply_filters( 'woocommerce_payment_gateways', array() ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		$this->assertContains( DormantPayPalGateway::class, $gateways );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should register the placeholder gateway on a wc-admin REST request while dormant, and on no other REST request.
+	 *
+	 * @testWith ["/wc-admin/settings/payments/providers", true]
+	 *           ["/wc-analytics/reports/orders", true]
+	 *           ["/wc/v3/orders", false]
+	 *           ["/wc/store/v1/cart", false]
+	 *
+	 * @param string $route    The REST route of the request.
+	 * @param bool   $expected Whether the placeholder is registered.
+	 */
+	public function test_registers_the_placeholder_gateway_for_wc_admin_rest_requests_only( string $route, bool $expected ): void {
+		delete_option( 'woocommerce-ppcp-data-common' );
+		$GLOBALS['wp']->query_vars['rest_route'] = $route;
+		$this->build_sut( true );
+
+		$this->sut->maybe_boot();
+
+		$this->assertFalse( $this->sut->is_booted() );
+		$gateways = apply_filters( 'woocommerce_payment_gateways', array() ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		$this->assertSame( $expected, in_array( DormantPayPalGateway::class, $gateways, true ) );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should read a wc-admin REST route from the request URI when the route is not parsed yet, as at plugins_loaded.
+	 */
+	public function test_registers_the_placeholder_gateway_for_a_wc_admin_rest_uri(): void {
+		delete_option( 'woocommerce-ppcp-data-common' );
+		$_SERVER['REQUEST_URI'] = '/' . rest_get_url_prefix() . '/wc-admin/settings/payments/providers';
+		$this->build_sut( true );
+
+		$this->sut->maybe_boot();
+
+		$gateways = apply_filters( 'woocommerce_payment_gateways', array() ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		$this->assertContains( DormantPayPalGateway::class, $gateways );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should classify a request by the REST prefix segment wherever it sits in the path, as index permalinks and subdirectory installs put it.
+	 *
+	 * @testWith ["/index.php/wp-json/wc/v3/wc_paypal/onboarding", false, false]
+	 *           ["/index.php/wp-json/paypal/v1/incoming", false, false]
+	 *           ["/sub/index.php/wp-json/wc/v3/wc_paypal/onboarding?x=1", false, false]
+	 *           ["/index.php/wp-json/wc-admin/settings/payments/providers", true, true]
+	 *           ["/index.php/wp-json/wc/v3/orders", true, false]
+	 *           ["/index.php/shop/", true, false]
+	 *
+	 * @param string $uri                 The request URI.
+	 * @param bool   $expected_dormant    Whether the request is dormant.
+	 * @param bool   $expected_placeholder Whether the placeholder gateway is registered.
+	 */
+	public function test_classifies_rest_requests_under_an_index_permalink_path( string $uri, bool $expected_dormant, bool $expected_placeholder ): void {
+		delete_option( 'woocommerce-ppcp-data-common' );
+		$_SERVER['REQUEST_URI'] = $uri;
+		$this->build_sut( true );
+
+		$this->assertSame( $expected_dormant, $this->sut->is_dormant() );
+		$this->sut->maybe_boot();
+
+		$gateways = apply_filters( 'woocommerce_payment_gateways', array() ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		$this->assertSame( $expected_placeholder, in_array( DormantPayPalGateway::class, $gateways, true ) );
+		$this->assertSame( ! $expected_dormant, $this->sut->is_booted() );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should boot for a merchant connected only through the legacy settings, on a front-end request.
+	 */
+	public function test_boots_for_a_merchant_connected_only_in_the_legacy_settings(): void {
+		delete_option( 'woocommerce-ppcp-data-common' );
+		update_option(
+			'woocommerce-ppcp-settings',
+			array(
+				'client_id'     => 'legacy-client-id',
+				'client_secret' => 'legacy-client-secret',
+				'merchant_id'   => 'LEGACYMERCHANT',
+			)
+		);
+		$this->build_sut( true );
+
+		$this->assertFalse( $this->sut->is_dormant(), 'The legacy connection must boot the wallet so it can migrate' );
+		$this->sut->maybe_boot();
+		$this->assertTrue( $this->sut->is_booted() );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should stay dormant when the migration is done, even with full legacy credentials and a shared option that says not connected.
+	 */
+	public function test_ignores_the_legacy_settings_once_the_migration_is_done(): void {
+		delete_option( 'woocommerce-ppcp-data-common' );
+		update_option(
+			'woocommerce-ppcp-settings',
+			array(
+				'client_id'     => 'legacy-client-id',
+				'client_secret' => 'legacy-client-secret',
+				'merchant_id'   => 'LEGACYMERCHANT',
+			)
+		);
+		update_option( 'woocommerce_ppcp-settings-migration-is-done', '1' ); // The migration stores true; the next request reads it back as the string '1', which is what the wallet compares.
+		$this->build_sut( true );
+
+		$this->assertTrue( $this->sut->is_dormant(), 'After the migration only the shared option says whether the merchant is connected' );
+		$this->sut->maybe_boot();
+		$this->assertFalse( $this->sut->is_booted() );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should stay dormant when the legacy settings lack a credential the migration needs.
+	 *
+	 * @testWith ["client_id"]
+	 *           ["client_secret"]
+	 *           ["merchant_id"]
+	 *
+	 * @param string $missing The legacy key that is left out.
+	 */
+	public function test_legacy_connection_needs_every_migration_credential( string $missing ): void {
+		delete_option( 'woocommerce-ppcp-data-common' );
+		$legacy = array(
+			'client_id'     => 'legacy-client-id',
+			'client_secret' => 'legacy-client-secret',
+			'merchant_id'   => 'LEGACYMERCHANT',
+		);
+		unset( $legacy[ $missing ] );
+		update_option( 'woocommerce-ppcp-settings', $legacy );
+		$this->build_sut( true );
+
+		$this->assertTrue( $this->sut->is_dormant() );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should not read the legacy settings once the shared settings say connected.
+	 */
+	public function test_does_not_read_the_legacy_settings_when_the_shared_settings_say_connected(): void {
+		$this->set_connected_merchant_option();
+		$legacy_reads = 0;
+		add_filter(
+			'pre_option_woocommerce-ppcp-settings',
+			static function () use ( &$legacy_reads ) {
+				++$legacy_reads;
+				return array();
+			}
+		);
+		$this->build_sut( true );
+
+		$this->assertFalse( $this->sut->is_dormant() );
+		$this->assertSame( 0, $legacy_reads, 'The legacy option is only a second source for a store the shared option calls not connected' );
+
+		delete_option( 'woocommerce-ppcp-data-common' );
+		$this->assertTrue( $this->sut->is_dormant(), 'Precondition for the spy: it answers not connected when it is consulted' );
+		$this->assertSame( 1, $legacy_reads, 'The legacy option is consulted when the shared one says not connected' );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should add the placeholder gateway once and never beside a gateway that already has the wallet's ID.
+	 */
+	public function test_placeholder_gateway_is_never_added_twice(): void {
+		$this->build_sut( true );
+
+		$once        = $this->sut->register_dormant_gateway( array() );
+		$twice       = $this->sut->register_dormant_gateway( $once );
+		$real        = new class() extends \WC_Payment_Gateway {
+			/**
+			 * Stand in for the wallet's real gateway.
+			 */
+			public function __construct() {
+				$this->id = 'ppcp-gateway';
+			}
+		};
+		$beside_real = $this->sut->register_dormant_gateway( array( $real ) );
+
+		$this->assertSame( array( DormantPayPalGateway::class ), $once );
+		$this->assertSame( array( DormantPayPalGateway::class ), $twice );
+		$this->assertSame( array( $real ), $beside_real );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should boot a not-connected wallet on its own settings page.
+	 */
+	public function test_boots_dormant_wallet_on_its_settings_page(): void {
+		delete_option( 'woocommerce-ppcp-data-common' );
+		set_current_screen( 'woocommerce_page_wc-settings' );
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		$_GET['path'] = '/paypal-wallet';
+		$this->build_sut( true );
+
+		$this->sut->maybe_boot();
+
+		$this->assertFalse( $this->sut->is_dormant() );
+		$this->assertTrue( $this->sut->is_booted() );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should boot a not-connected wallet on the legacy gateway settings section.
+	 */
+	public function test_boots_dormant_wallet_on_its_legacy_settings_section(): void {
+		delete_option( 'woocommerce-ppcp-data-common' );
+		set_current_screen( 'woocommerce_page_wc-settings' );
+		$_GET['page']    = 'wc-settings';
+		$_GET['tab']     = 'checkout';
+		$_GET['section'] = 'ppcp-gateway';
+		$this->build_sut( true );
+
+		$this->sut->maybe_boot();
+
+		$this->assertTrue( $this->sut->is_booted() );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should stay dormant on the Payments settings list and on another gateway's settings section.
+	 */
+	public function test_stays_dormant_on_other_settings_screens(): void {
+		delete_option( 'woocommerce-ppcp-data-common' );
+		set_current_screen( 'woocommerce_page_wc-settings' );
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		$this->build_sut( true );
+		$this->assertTrue( $this->sut->is_dormant(), 'The Payments settings list is not a wallet surface' );
+
+		$_GET['path'] = '/woopayments/onboarding';
+		$this->assertTrue( $this->sut->is_dormant(), 'Another provider\'s route is not a wallet surface' );
+
+		unset( $_GET['path'] );
+		$_GET['section'] = 'bacs';
+		$this->assertTrue( $this->sut->is_dormant(), 'Another gateway\'s section is not a wallet surface' );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should boot a not-connected wallet for its REST namespaces.
+	 *
+	 * @testWith ["/wc/v3/wc_paypal/onboarding"]
+	 *           ["/paypal/v1/incoming"]
+	 *
+	 * @param string $route The REST route of the request.
+	 */
+	public function test_boots_dormant_wallet_for_its_rest_namespace( string $route ): void {
+		delete_option( 'woocommerce-ppcp-data-common' );
+		$GLOBALS['wp']->query_vars['rest_route'] = $route;
+		$this->build_sut( true );
+
+		$this->sut->maybe_boot();
+
+		$this->assertTrue( $this->sut->is_booted() );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should boot a not-connected wallet for its REST route when only the plain-permalink rest_route query argument carries it.
+	 */
+	public function test_boots_dormant_wallet_for_a_plain_permalink_rest_route(): void {
+		delete_option( 'woocommerce-ppcp-data-common' );
+		$_GET['rest_route'] = '/wc/v3/wc_paypal/onboarding';
+		$this->build_sut( true );
+
+		$this->sut->maybe_boot();
+
+		$this->assertFalse( $this->sut->is_dormant() );
+		$this->assertTrue( $this->sut->is_booted() );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should ignore a path, section or REST route sent as an array and stay dormant instead of raising notices.
+	 *
+	 * @testWith ["path"]
+	 *           ["section"]
+	 *           ["rest_route"]
+	 *
+	 * @param string $key The query argument sent as an array.
+	 */
+	public function test_ignores_request_arguments_sent_as_arrays( string $key ): void {
+		delete_option( 'woocommerce-ppcp-data-common' );
+		set_current_screen( 'woocommerce_page_wc-settings' );
+		$_GET['page'] = 'wc-settings';
+		$_GET[ $key ] = array( '/paypal-wallet', 'ppcp-gateway', '/wc/v3/wc_paypal/onboarding' );
+		$this->build_sut( true );
+
+		$this->assertTrue( $this->sut->is_dormant() );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should boot a connected wallet on any request.
+	 */
+	public function test_boots_connected_wallet_everywhere(): void {
+		$this->set_connected_merchant_option();
+		$this->build_sut( true );
+
+		$this->sut->maybe_boot();
+
+		$this->assertFalse( $this->sut->is_dormant() );
+		$this->assertTrue( $this->sut->is_booted() );
+		$gateways = apply_filters( 'woocommerce_payment_gateways', array() ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		$this->assertNotContains( DormantPayPalGateway::class, $gateways, 'The real gateway replaces the placeholder once connected' );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should read an incomplete stored connection as not connected, whatever the stored merchant_connected flag says.
+	 *
+	 * @testWith ["merchant_email"]
+	 *           ["merchant_id"]
+	 *           ["client_id"]
+	 *           ["client_secret"]
+	 *
+	 * @param string $missing The connection key that is left out.
+	 */
+	public function test_connection_needs_every_credential( string $missing ): void {
+		$this->set_connected_merchant_option();
+		$data = get_option( 'woocommerce-ppcp-data-common' );
+		unset( $data[ $missing ] );
+		update_option( 'woocommerce-ppcp-data-common', $data );
+		$this->build_sut( true );
+
+		$this->assertTrue( $this->sut->is_dormant(), 'The wallet derives connected from all four keys, not from the stored flag' );
 	}
 
 	/**
