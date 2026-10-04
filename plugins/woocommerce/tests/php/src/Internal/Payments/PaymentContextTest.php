@@ -108,16 +108,5 @@ class PaymentContextTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'include_level3' => true ), $capture->get_provider_data() );
 		$this->assertNull( $cancel->get_amount() );
 		$this->assertSame( array( 'source' => 'order_action' ), $cancel->get_provider_data() );
-
-		$legacy_capture = PaymentContext::for_capture(
-			$order,
-			OrderPaymentStore::GATEWAY_ID,
-			array(
-				'include_level3' => true,
-			)
-		);
-
-		$this->assertNull( $legacy_capture->get_amount() );
-		$this->assertSame( array( 'include_level3' => true ), $legacy_capture->get_provider_data() );
 	}
 }

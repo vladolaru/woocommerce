@@ -119,19 +119,14 @@ class PaymentContext {
 	/**
 	 * Create a capture payment context.
 	 *
-	 * @param WC_Order                           $order         Order being captured.
-	 * @param string                             $gateway_id    Gateway ID.
-	 * @param float|int|array<string,mixed>|null $amount        Capture amount, legacy provider data, or null.
-	 * @param array<string,mixed>                $provider_data Provider-scoped data.
+	 * @param WC_Order            $order         Order being captured.
+	 * @param string              $gateway_id    Gateway ID.
+	 * @param float|null          $amount        Capture amount, or null for the order total.
+	 * @param array<string,mixed> $provider_data Provider-scoped data.
 	 * @return self
 	 */
-	public static function for_capture( WC_Order $order, string $gateway_id, $amount = null, array $provider_data = array() ): self {
-		if ( is_array( $amount ) ) {
-			$provider_data = $amount;
-			$amount        = null;
-		}
-
-		return new self( $order, $gateway_id, '', array(), $provider_data, null === $amount ? null : (float) $amount );
+	public static function for_capture( WC_Order $order, string $gateway_id, ?float $amount = null, array $provider_data = array() ): self {
+		return new self( $order, $gateway_id, '', array(), $provider_data, $amount );
 	}
 
 	/**
