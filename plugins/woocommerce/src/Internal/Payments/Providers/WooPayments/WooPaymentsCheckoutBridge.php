@@ -708,7 +708,9 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 
 		// The client's classes (`wcpay-upe-form`, `wc-payment-form`, `wcpay-upe-element`) stay beside native's: core's
 		// tokenization-form.js hides `.wc-payment-form` while a saved method is selected, and the woocommerce.com theme
-		// styles `.payment_box .wc-payment-form .wcpay-upe-element`.
+		// styles `.payment_box .wc-payment-form .wcpay-upe-element`. The wrapper is the client's own fieldset, inline
+		// padding included (client includes/class-wc-payments-checkout.php), so themes and the appearance probe for
+		// `.payment_box fieldset` see the same markup.
 		echo '<div id="wcpay-core-checkout-form" class="wcpay-core-checkout-form wcpay-upe-form" data-payment-method-type="' . esc_attr( $payment_method_type ) . '" data-wcpay-config="' . esc_attr( $json_config ) . '">';
 
 		if ( ! empty( $config['testMode'] ) ) {
@@ -720,9 +722,9 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			}
 		}
 
-		echo '<div class="wc-payment-form">';
+		echo '<fieldset style="padding: 7px" class="wc-payment-form">';
 		echo '<div id="wcpay-core-payment-element" class="wcpay-core-payment-element wcpay-upe-element" data-payment-method-type="' . esc_attr( $payment_method_type ) . '"></div>';
-		echo '</div>';
+		echo '</fieldset>';
 		echo '<div class="woocommerce-error wcpay-core-payment-errors" role="alert" hidden></div>';
 
 		if ( ! $this->should_expose_checkout_surface() ) {

@@ -1516,7 +1516,8 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 
 		$this->assertStringContainsString( 'wcpay-core-checkout-form', $output );
 		// Core's tokenization-form.js hides `.wc-payment-form` while a saved method is selected, so it must wrap the card element.
-		$this->assertStringContainsString( '<div class="wc-payment-form"><div id="wcpay-core-payment-element" class="wcpay-core-payment-element wcpay-upe-element" data-payment-method-type="card"></div></div>', $output );
+		// The wrapper is the client's fieldset (client includes/class-wc-payments-checkout.php), inline padding included.
+		$this->assertStringContainsString( '<fieldset style="padding: 7px" class="wc-payment-form"><div id="wcpay-core-payment-element" class="wcpay-core-payment-element wcpay-upe-element" data-payment-method-type="card"></div></fieldset>', $output );
 		$this->assertStringContainsString( 'wcpay-core-test-mode-instructions', $output );
 		$this->assertStringContainsString( '4000 0064 2000 0001', $output );
 		$this->assertStringContainsString( 'js-woopayments-copy-test-number', $output );
