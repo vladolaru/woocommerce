@@ -53,6 +53,12 @@ const QUERY_PARAM_ORDER = [
 	...MONEY_MOVEMENT_FILTER_PARAMS,
 ] as const;
 
+// Client 11.1.0 TableCard lists keep the sort in `orderby`/`order`; the API takes `sort`/`direction`.
+const SORT_URL_PARAMS = {
+	sort: 'orderby',
+	direction: 'order',
+} as const;
+
 const AUTHORIZATION_QUERY_PARAM_ORDER = [
 	'page',
 	'pagesize',
@@ -498,9 +504,9 @@ export const parseMoneyMovementQuery = (
 		)
 	);
 	const direction =
-		( isSortDirection( params.get( 'direction' ) )
+		( isSortDirection( params.get( SORT_URL_PARAMS.direction ) )
 			? ( params.get(
-					'direction'
+					SORT_URL_PARAMS.direction
 			  ) as WooPaymentsMoneyMovementSortDirection )
 			: undefined ) ||
 		( isSortDirection( defaults.direction )
@@ -510,7 +516,7 @@ export const parseMoneyMovementQuery = (
 		page,
 		pagesize,
 	};
-	const sort = params.get( 'sort' ) || defaults.sort;
+	const sort = params.get( SORT_URL_PARAMS.sort ) || defaults.sort;
 	const search = getQueryValue( params, 'search' ) || defaults.search;
 
 	if ( sort ) {
@@ -542,7 +548,13 @@ export const serializeMoneyMovementQuery = (
 	const params = new URLSearchParams();
 
 	QUERY_PARAM_ORDER.forEach( ( key ) => {
-		addParam( params, key, query[ key ] );
+		addParam(
+			params,
+			key === 'sort' || key === 'direction'
+				? SORT_URL_PARAMS[ key ]
+				: key,
+			query[ key ]
+		);
 	} );
 
 	return params.toString();

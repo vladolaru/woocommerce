@@ -69,8 +69,6 @@ type SearchValue = { key: string; label: string };
 // Client 11.1.0 TableCard query names for the native list params.
 const CLIENT_QUERY_KEYS: Record< string, string > = {
 	pagesize: 'per_page',
-	sort: 'orderby',
-	direction: 'order',
 };
 const NOT_FOUND = 'wcpay_fraud_outcome_not_found';
 

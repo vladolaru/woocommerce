@@ -397,8 +397,8 @@ describe( 'WooPayments Blocked transactions tab', () => {
 
 		for ( const path of [
 			'/woopayments/transactions?view=blocked&paged=2',
-			'/woopayments/transactions?view=blocked&paged=2&sort=amount&direction=asc',
-			'/woopayments/transactions?view=blocked&paged=2&sort=amount&direction=asc&pagesize=50',
+			'/woopayments/transactions?view=blocked&paged=2&orderby=amount&order=asc',
+			'/woopayments/transactions?view=blocked&paged=2&orderby=amount&order=asc&pagesize=50',
 		] ) {
 			act( () => navigateTo( path ) );
 			await screen.findByRole( 'link', { name: 'Ada Lovelace' } );
@@ -416,7 +416,7 @@ describe( 'WooPayments Blocked transactions tab', () => {
 
 		act( () =>
 			navigateTo(
-				'/woopayments/transactions?view=blocked&paged=2&sort=amount&direction=asc&pagesize=50&search=Ada%20Lovelace'
+				'/woopayments/transactions?view=blocked&paged=2&orderby=amount&order=asc&pagesize=50&search=Ada%20Lovelace'
 			)
 		);
 		await screen.findByRole( 'link', { name: 'Ada Lovelace' } );
@@ -681,13 +681,13 @@ describe( 'WooPayments Blocked transactions tab', () => {
 			tab: 'checkout',
 			path: '/woopayments/transactions',
 			pagesize: '50',
-			sort: 'amount',
-			direction: 'asc',
+			orderby: 'amount',
+			order: 'asc',
 			view: 'blocked',
 		} );
 
 		renderAt(
-			'/woopayments/transactions?view=blocked&search=Ada%20Lovelace&search=Order%20%231521&sort=amount&direction=asc'
+			'/woopayments/transactions?view=blocked&search=Ada%20Lovelace&search=Order%20%231521&orderby=amount&order=asc'
 		);
 
 		await userEvent.click(

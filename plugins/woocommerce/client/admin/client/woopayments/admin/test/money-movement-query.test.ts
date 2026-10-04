@@ -15,7 +15,7 @@ describe( 'WooPayments money movement query helpers', () => {
 		const query = parseMoneyMovementQuery(
 			{
 				pathname: '/woopayments/transactions',
-				search: '?page=2&pagesize=50&sort=amount&direction=asc&search=Ada&loan_id_is=loan_123&deposit_id=po_123&currency_is=ignored&store_currency_is=eur&type_is=charge&status_is=paid&status_is=refunded&status_is_not=failed&date_after=2026-06-01&date_before=2026-06-19&created_after=ignored&wc-admin-page=ignored',
+				search: '?page=2&pagesize=50&orderby=amount&order=asc&search=Ada&loan_id_is=loan_123&deposit_id=po_123&currency_is=ignored&store_currency_is=eur&type_is=charge&status_is=paid&status_is=refunded&status_is_not=failed&date_after=2026-06-01&date_before=2026-06-19&created_after=ignored&wc-admin-page=ignored',
 			},
 			{
 				pagesize: 25,
@@ -73,7 +73,7 @@ describe( 'WooPayments money movement query helpers', () => {
 
 	it( 'prefers settings-shell paged state when reloading provider routes', () => {
 		const query = parseMoneyMovementQuery(
-			'?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions&paged=2&pagesize=25&sort=date&direction=desc&search=Ada',
+			'?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions&paged=2&pagesize=25&orderby=date&order=desc&search=Ada',
 			{
 				page: 1,
 				pagesize: 10,
@@ -106,8 +106,11 @@ describe( 'WooPayments money movement query helpers', () => {
 
 		expect( params.get( 'page' ) ).toBe( '1' );
 		expect( params.get( 'pagesize' ) ).toBe( '25' );
-		expect( params.get( 'sort' ) ).toBe( 'date' );
-		expect( params.get( 'direction' ) ).toBe( 'desc' );
+		// Client 11.1.0 TableCard URLs name the sort `orderby` and `order`.
+		expect( params.get( 'orderby' ) ).toBe( 'date' );
+		expect( params.get( 'order' ) ).toBe( 'desc' );
+		expect( params.has( 'sort' ) ).toBe( false );
+		expect( params.has( 'direction' ) ).toBe( false );
 		expect( params.get( 'search' ) ).toBe( 'Ada' );
 		expect( params.get( 'deposit_id' ) ).toBe( 'po_123' );
 		expect( params.getAll( 'status_is' ) ).toEqual( [

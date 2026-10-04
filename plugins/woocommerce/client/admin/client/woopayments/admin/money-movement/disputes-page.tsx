@@ -153,13 +153,34 @@ export const getDisputesApiQuery = (
 	return apiQuery;
 };
 
+// Client 11.1.0 `disputes/index.tsx:52-59`: the URL's `orderby` names the due date `dueBy`.
+const parseDisputesQuery = ( search: string ) => {
+	const query = parseMoneyMovementQuery( search, {
+		page: 1,
+		pagesize: 25,
+		sort: 'created',
+		direction: 'desc',
+	} );
+
+	if ( query.sort === DISPUTE_COLUMN_KEYS.due_by ) {
+		query.sort = 'due_by';
+	}
+
+	return query;
+};
+
 const buildDisputesRoute = (
 	query: WooPaymentsMoneyMovementQuery,
 	showFilter: WooPaymentsListShowFilter,
 	match: WooPaymentsListMatch = 'all'
 ) =>
 	withListShowFilter(
-		buildMoneyMovementRoutePath( '/woopayments/disputes', query ),
+		buildMoneyMovementRoutePath(
+			'/woopayments/disputes',
+			query.sort === 'due_by'
+				? { ...query, sort: DISPUTE_COLUMN_KEYS.due_by }
+				: query
+		),
 		showFilter,
 		match
 	);
@@ -296,13 +317,7 @@ export const WooPaymentsDisputesPage = () => {
 	);
 	const location = useLocation();
 	const query = useMemo(
-		() =>
-			parseMoneyMovementQuery( location.search, {
-				page: 1,
-				pagesize: 25,
-				sort: 'created',
-				direction: 'desc',
-			} ),
+		() => parseDisputesQuery( location.search ),
 		[ location.search ]
 	);
 	const showFilter = getListShowFilter(

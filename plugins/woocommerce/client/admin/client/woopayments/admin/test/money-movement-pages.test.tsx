@@ -1893,7 +1893,7 @@ describe( 'WooPayments money movement pages', () => {
 		render(
 			<MemoryRouter
 				initialEntries={ [
-					'/woopayments/transactions?page=2&pagesize=50&sort=amount&direction=asc&loan_id_is=loan_test',
+					'/woopayments/transactions?page=2&pagesize=50&orderby=amount&order=asc&loan_id_is=loan_test',
 				] }
 			>
 				<WooPaymentsTransactionsPage />

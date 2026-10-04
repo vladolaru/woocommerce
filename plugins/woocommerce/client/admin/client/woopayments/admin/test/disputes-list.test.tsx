@@ -4,6 +4,7 @@
 import fs from 'fs';
 import path from 'path';
 import {
+	act,
 	fireEvent,
 	render,
 	screen,
@@ -92,6 +93,9 @@ jest.mock( '../money-movement/data', () => ( {
 } ) );
 
 let mockFields: MockField[] = [];
+let mockView: Record< string, unknown > = {};
+let mockOnChangeView: ( view: Record< string, unknown > ) => void = () =>
+	undefined;
 
 // Renders each cell under its field id, so a test reads a cell by column.
 jest.mock( '@wordpress/dataviews/wp', () => ( {
@@ -101,14 +105,18 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 		header,
 		search,
 		view = {},
+		onChangeView,
 	}: {
 		data?: Array< Record< string, unknown > >;
 		fields?: MockField[];
 		header?: ReactNode;
 		search?: boolean;
 		view?: { fields?: string[] };
+		onChangeView: ( view: Record< string, unknown > ) => void;
 	} ) => {
 		mockFields = fields;
+		mockView = view;
+		mockOnChangeView = onChangeView;
 		const visible = fields.filter( ( field ) =>
 			( view.fields || [] ).includes( field.id )
 		);
@@ -519,6 +527,29 @@ describe( 'WooPayments disputes Show and currency filters', () => {
 			getDisputesApiQuery( { date_before: '2026-09-30' }, 'advanced' )
 				.date_before
 		).toMatch( /^2026-(09-30|10-01) \d{2}:59:59$/ );
+	} );
+
+	// Client 11.1.0 `disputes/index.tsx:52-59` and `data/disputes/resolvers.js:83`: the URL's
+	// `orderby=dueBy` / `order` sort the platform's `due_by`.
+	it( "reads and writes the client's orderby=dueBy and order URL params", async () => {
+		renderPage( '/woopayments/disputes?orderby=dueBy&order=asc' );
+		await screen.findByText( 'Disputes loaded.' );
+
+		expect( lastQuery( mockGetDisputes ) ).toMatchObject( {
+			sort: 'due_by',
+			direction: 'asc',
+		} );
+
+		act( () =>
+			mockOnChangeView( {
+				...mockView,
+				sort: { field: 'due_by', direction: 'desc' },
+			} )
+		);
+
+		expect( shellHistory.push ).toHaveBeenLastCalledWith(
+			expect.stringMatching( /&orderby=dueBy&order=desc(&|$)/ )
+		);
 	} );
 
 	it( 'requests only the disputes awaiting a response when the badge link opens the list', async () => {

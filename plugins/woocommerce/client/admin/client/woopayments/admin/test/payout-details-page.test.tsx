@@ -330,7 +330,7 @@ describe( 'WooPayments payout details admin surface', () => {
 		render(
 			<MemoryRouter
 				initialEntries={ [
-					'/woopayments/payouts?page=4&pagesize=50&sort=amount&direction=asc&status_is=paid&store_currency_is=usd&filter=advanced&match=any',
+					'/woopayments/payouts?page=4&pagesize=50&orderby=amount&order=asc&status_is=paid&store_currency_is=usd&filter=advanced&match=any',
 				] }
 			>
 				<WooPaymentsPayouts />
@@ -643,7 +643,7 @@ describe( 'WooPayments payout details admin surface', () => {
 		expect(
 			screen.getByTestId( 'payout-details-route' )
 		).toHaveTextContent(
-			'/woopayments/payouts/details?paged=2&pagesize=10&sort=amount&direction=asc&search=Ada&id=po_test'
+			'/woopayments/payouts/details?paged=2&pagesize=10&orderby=amount&order=asc&search=Ada&id=po_test'
 		);
 		// The client's payout details reuse the transactions list and its key.
 		expect( mockUpdateUserPreferences ).toHaveBeenCalledWith( {
