@@ -694,9 +694,10 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * @testdox An idempotency conflict on a charge with $key_source warns whatever the logging setting: $warns.
 	 *
 	 * After an ambiguous failure the order keeps the charge key, and a retry with a new card sends a different body under
-	 * it, which Stripe refuses with an idempotency_error. The refusal is a money-path anomaly (the first request may have
-	 * charged), so it is written as an always-on warning naming the order and the key; nothing else changes (area 2a #7,
-	 * ruling (a)). A conflict on a fresh key is not a replay and gets no warning. The response is what the platform sends:
+	 * it, which Stripe refuses with an idempotency_error. The refusal is definitive, so the key is retired and the next
+	 * attempt charges under a fresh key, as every client attempt does (`class-wc-payments-api-client.php:2690`). The first
+	 * request may have charged, so an always-on warning names the order and the key and says the key is retired (area 2a
+	 * #7, ruling (a); unit 2a-9a). A conflict on a fresh key is not a replay and gets no warning. The response is what the platform sends:
 	 * it proxies the intention request and returns Stripe's status and error body unchanged (wpcom
 	 * `wcpay/class-base-controller.php:476-490`), and Stripe answers a body mismatch with a 400 whose error type is
 	 * `idempotency_error` and no code.
@@ -746,8 +747,12 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		}
 		$this->assertCount( 1, $warnings );
 		$this->assertSame( 'woopayments', $logger->lines[ $warnings[0] ][2] );
-		$this->assertStringContainsString( 'key_kept', $logger->lines[ $warnings[0] ][1] );
-		$this->assertStringContainsString( '#' . $order->get_id(), $logger->lines[ $warnings[0] ][1] );
+		$this->assertSame(
+			'The charge idempotency key key_kept kept on order #' . $order->get_id() . ' after an ambiguous failure was refused because the new payment request differs from the earlier one. The key is retired: the next payment attempt for this order charges under a fresh key, with no protection against a charge the earlier request may have made.',
+			$logger->lines[ $warnings[0] ][1]
+		);
+		// The line says the key is retired, so the code must have retired it.
+		$this->assertSame( '', wc_get_order( $order->get_id() )->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
 		$this->assertSame( $order->get_id(), $logger->contexts[ $warnings[0] ]['order_id'] ?? null );
 		$this->assertSame( 'key_kept', $logger->contexts[ $warnings[0] ]['idempotency_key'] ?? null );
 	}

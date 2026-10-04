@@ -467,9 +467,10 @@ class WooPaymentsProviderGatewayAdapter {
 	/**
 	 * Warn that a charge key kept after an ambiguous failure could not replay the earlier request.
 	 *
-	 * The new attempt sent a different body (a new card, for example), so it failed instead of replaying; the earlier
-	 * request may still have charged. Written whatever the logging setting, since support needs it to reconcile the
-	 * order (area 2a #7, ruling (a)).
+	 * The new attempt sent a different body (a new card, for example), so it failed instead of replaying. The refusal is a
+	 * definitive failure, so failed_charge_outcome() retires the key and the next attempt charges under a fresh one, as every
+	 * client attempt does (`class-wc-payments-api-client.php:2690`). Written whatever the logging setting, since support needs
+	 * it to reconcile the order if the earlier request charged (area 2a #7, ruling (a)).
 	 *
 	 * @param WC_Order $order           Order being charged.
 	 * @param string   $idempotency_key Kept charge key that was refused.
@@ -477,7 +478,7 @@ class WooPaymentsProviderGatewayAdapter {
 	private function log_kept_charge_key_refused( WC_Order $order, string $idempotency_key ): void {
 		wc_get_container()->get( WooPaymentsLogger::class )->log_always(
 			sprintf(
-				'The charge idempotency key %1$s kept on order #%2$d after an ambiguous failure was refused because the new payment request differs from the earlier one. The earlier request may have charged; check the order\'s payments before retrying.',
+				'The charge idempotency key %1$s kept on order #%2$d after an ambiguous failure was refused because the new payment request differs from the earlier one. The key is retired: the next payment attempt for this order charges under a fresh key, with no protection against a charge the earlier request may have made.',
 				$idempotency_key,
 				$order->get_id()
 			),
