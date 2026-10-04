@@ -379,14 +379,15 @@
 	span,
 	a,
 	&__address {
-		color: $gray-700;
 		font-size: $font-size-small;
 		line-height: $font-line-height-x-small;
 		word-break: break-all;
 	}
 
-	a {
-		color: var(--wp-admin-theme-color, #{$studio-wordpress-blue-50});
+	// The name and email links keep WP's link colour.
+	span,
+	&__address {
+		color: $gray-700;
 	}
 
 	// The billing address, a label over its value; the row above it stays a row.
