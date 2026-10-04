@@ -951,11 +951,13 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Client 11.1.0 retrieves SEPA for the SEPA gateway whether or not SEPA is enabled; only Link, which rides the card
-	 * gateway, needs its setting (includes/class-wc-payments-token-service.php:360-377).
+	 * gateway, needs its setting (includes/class-wc-payments-token-service.php:360-377). The gateway-scoped read then
+	 * returns the stored tokens the provider still has plus the new ones (`:199-250`), so the SEPA gateway's own token
+	 * selector, such as Edit Subscription's, lists them (review 36 F2).
 	 *
-	 * @testdox Should sync a disabled SEPA gateway's saved methods with the provider and keep them out of its listing.
+	 * @testdox Should sync a disabled SEPA gateway's saved methods with the provider and return them to that gateway.
 	 */
-	public function test_reconcile_syncs_disabled_sepa_tokens_for_their_gateway_and_hides_them(): void {
+	public function test_reconcile_syncs_disabled_sepa_tokens_for_their_gateway_and_returns_them(): void {
 		$user_id    = $this->factory()->user->create();
 		$sepa_token = $this->create_sepa_token( $user_id, 'pm_kept_sepa' );
 		$gone_token = $this->create_sepa_token( $user_id, 'pm_detached_sepa' );
@@ -1000,7 +1002,9 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array( 'sepa_debit' => 1 ), $customer_service->fetch_counts, 'The SEPA gateway must fetch SEPA even while SEPA is disabled.' );
 		$this->assertSame( array( 'pm_kept_sepa', 'pm_new_sepa' ), $stored, 'Local SEPA tokens must match the provider: a new one added, a detached one removed.' );
-		$this->assertSame( array(), $tokens, 'Disabled SEPA tokens must not be returned from their gateway-scoped checkout listing.' );
+		$returned = array_map( static fn( $token ) => $token->get_token(), array_values( $tokens ) );
+		sort( $returned );
+		$this->assertSame( array( 'pm_kept_sepa', 'pm_new_sepa' ), $returned, 'The SEPA gateway gets its synced tokens back while SEPA is disabled, as on the client.' );
 	}
 
 	/**
@@ -1567,6 +1571,38 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->assertArrayHasKey( $link_token->get_id(), $result, 'Native WooPayments Link tokens should remain available under the base gateway.' );
 		$this->assertArrayNotHasKey( $bank_token->get_id(), $result, 'Native WooPayments should not expose unsupported non-card tokens.' );
 		$this->assertArrayHasKey( $sepa_token->get_id(), $sepa_result, 'Native WooPayments SEPA tokens should remain available under the SEPA gateway.' );
+	}
+
+	/**
+	 * @testdox A card-gateway read leaves out a saved Link token while Link is disabled.
+	 *
+	 * Link rides the card gateway, so client 11.1.0 retrieves it for that gateway only while Link is enabled
+	 * (`class-wc-payments-token-service.php:366-369`) and drops the stored Link token from the read (`:199-250`). Native
+	 * keeps the token stored and leaves it out of the read, so the card gateway's checkout and selectors match the client.
+	 */
+	public function test_card_gateway_read_leaves_out_link_tokens_while_link_is_disabled(): void {
+		$user_id    = $this->factory()->user->create();
+		$card_token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_card' );
+		$link_token = new WooPaymentsLinkToken();
+		$link_token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$link_token->set_user_id( $user_id );
+		$link_token->set_token( 'pm_link' );
+		$link_token->set_email( 'buyer@example.com' );
+		$link_token->save();
+		$this->create_service( array(), null, null, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered customer-token filter.
+		$result = apply_filters(
+			'woocommerce_get_customer_payment_tokens',
+			array(
+				$card_token->get_id() => $card_token,
+				$link_token->get_id() => $link_token,
+			),
+			$user_id,
+			OrderPaymentStore::GATEWAY_ID
+		);
+
+		$this->assertSame( array( $card_token->get_id() ), array_keys( $result ) );
 	}
 
 	/**
