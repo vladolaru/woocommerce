@@ -95,13 +95,6 @@ class PaymentLifecycleEvent {
 	const NOTE_TYPE_PAYMENT_STARTED = 'payment_started';
 
 	/**
-	 * Note type: fee details.
-	 *
-	 * @var string
-	 */
-	const NOTE_TYPE_FEE_DETAILS = 'fee_details';
-
-	/**
 	 * Note type: capture success.
 	 *
 	 * @var string
