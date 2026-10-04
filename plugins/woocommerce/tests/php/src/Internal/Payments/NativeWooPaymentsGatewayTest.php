@@ -5508,18 +5508,15 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_process_payment_resolves_dependencies_without_explicit_init(): void {
 		$order   = $this->create_order();
+		$service = new RecordingPaymentProcessingService();
+		wc_get_container()->replace( PaymentProcessingService::class, $service );
 		$gateway = new NativeWooPaymentsGateway();
 
 		$result = $gateway->process_payment( $order->get_id() );
 
-		$this->assertSame(
-			array(
-				'result'         => 'failure',
-				'redirect'       => '',
-				'payment_method' => '',
-			),
-			$result
-		);
+		$this->assertSame( 'success', $result['result'], 'Only a resolved processing service and provider produce a successful checkout.' );
+		$this->assertSame( 1, $service->checkout_attempt_count, 'The container-resolved processing service must run the checkout.' );
+		$this->assertSame( $order->get_id(), $service->last_checkout_context->get_order_id() );
 	}
 
 	/**
