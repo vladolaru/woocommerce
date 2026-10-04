@@ -80,17 +80,20 @@ class OrderPaymentLifecycleService {
 	/**
 	 * Get an order refreshed directly from its data store while its payment lock is held.
 	 *
-	 * A provider webhook can resolve its order before a concurrent event persists a
-	 * dispute hold. Reading the store after the lock is acquired ensures the
-	 * completed-event guard evaluates the state that won serialization without
-	 * clearing changes that its caller has not yet saved.
+	 * A provider webhook can resolve its order before a concurrent request persists a
+	 * dispute hold or a paid status. The order's post, meta and HPOS data caches are
+	 * cleared first, so the guards see the database on both order storages, without
+	 * clearing changes that the caller has not yet saved.
 	 *
 	 * @param WC_Order $order Order object.
 	 * @return WC_Order Freshly read order.
 	 */
 	private function get_fresh_order_from_data_store( WC_Order $order ): WC_Order {
-		wp_cache_delete( $order->get_id(), 'posts' );
+		$order_id = $order->get_id();
+		clean_post_cache( $order_id );
+
 		$fresh_order = clone $order;
+		$fresh_order->delete_meta_cache();
 
 		/**
 		 * Order data store.
@@ -98,6 +101,10 @@ class OrderPaymentLifecycleService {
 		 * @var \WC_Object_Data_Store_Interface $data_store
 		 */
 		$data_store = $fresh_order->get_data_store();
+		if ( is_callable( array( $data_store, 'clear_cached_data' ) ) ) {
+			// Only the HPOS data store keeps its own order data cache.
+			call_user_func( array( $data_store, 'clear_cached_data' ), array( $order_id ) );
+		}
 		$data_store->read( $fresh_order );
 		/**
 		 * Freshly read order.
@@ -284,21 +291,7 @@ class OrderPaymentLifecycleService {
 			return false;
 		}
 
-		wp_cache_delete( $order->get_id(), 'posts' );
-
-		$fresh_order = clone $order;
-		/**
-		 * Fresh order data store.
-		 *
-		 * @var \WC_Object_Data_Store_Interface $data_store
-		 */
-		$data_store = $fresh_order->get_data_store();
-		$data_store->read( $fresh_order );
-		/**
-		 * Freshly read order.
-		 *
-		 * @var WC_Order $fresh_order
-		 */
+		$fresh_order = $this->get_fresh_order_from_data_store( $order );
 
 		if ( function_exists( 'wc_get_is_paid_statuses' ) ) {
 			return $order->has_status( wc_get_is_paid_statuses() )

@@ -3,6 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
+use Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController;
+use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
@@ -10,6 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
 use Automattic\WooCommerce\RestApi\UnitTests\LoggerSpyTrait;
+use Automattic\WooCommerce\Utilities\OrderUtil;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -248,6 +251,55 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'dp_persisted_winner' ), $order->get_meta( '_wcpay_open_dispute_ids', true ), 'A stale caller must not erase persisted open disputes.' );
 		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ), 'A skipped success event must not update lifecycle metadata.' );
 		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ), 'A skipped success event must not add a completion note.' );
+	}
+
+	/**
+	 * @testdox A completed event sees a dispute hold that another request persisted after this request cached the order.
+	 */
+	public function test_success_sees_a_dispute_persisted_by_another_request_after_the_order_was_cached(): void {
+		$this->enable_hpos_data_caching_when_hpos_is_active();
+		$stale_order = $this->read_order_into_request_caches( $this->create_woopayments_order() );
+
+		$this->persist_order_state_as_another_request( $stale_order->get_id(), 'on-hold', array( '_wcpay_open_dispute_ids' => array( 'dp_other_request' ) ) );
+
+		$this->sut->apply( $stale_order, $this->completed_event( 'pi_other_request' ), $this->persistence_profile );
+
+		$this->assertSame( 'wc-on-hold', $this->get_persisted_order_status( $stale_order->get_id() ), 'A success event must not move an order out of a dispute hold persisted by another request.' );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $stale_order, 'Payment complete.' ), 'A skipped success event must not add a completion note.' );
+		$this->assertLogged(
+			'debug',
+			'open WooPayments dispute',
+			array(
+				'order_id' => $stale_order->get_id(),
+				'reason'   => 'open_dispute',
+			)
+		);
+	}
+
+	/**
+	 * @testdox A late failure event sees a paid status that another request persisted after this request cached the order.
+	 */
+	public function test_late_failure_sees_a_paid_status_persisted_by_another_request_after_the_order_was_cached(): void {
+		$this->enable_hpos_data_caching_when_hpos_is_active();
+		$stale_order = $this->read_order_into_request_caches( $this->create_woopayments_order() );
+
+		$this->persist_order_state_as_another_request( $stale_order->get_id(), 'processing', array() );
+
+		$this->sut->apply(
+			$stale_order,
+			new PaymentLifecycleEvent(
+				PaymentLifecycleEvent::STATUS_FAILED,
+				'pi_failed_after_paid',
+				array( '_intention_status' => 'requires_payment_method' ),
+				array(),
+				'Late payment failure.',
+				'late_payment_failure'
+			),
+			$this->persistence_profile
+		);
+
+		$this->assertSame( 'wc-processing', $this->get_persisted_order_status( $stale_order->get_id() ), 'A late failure event must not downgrade an order another request already marked paid.' );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $stale_order, 'Late payment failure.' ), 'A skipped late failure event must not add a note.' );
 	}
 
 	/**
@@ -1144,6 +1196,97 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$order->save();
 
 		return $order;
+	}
+
+	/**
+	 * Turn on the HPOS order data cache when orders live in the HPOS tables, so stale reads can come from it.
+	 */
+	private function enable_hpos_data_caching_when_hpos_is_active(): void {
+		if ( OrderUtil::custom_orders_table_usage_is_enabled() ) {
+			update_option( CustomOrdersTableController::HPOS_DATASTORE_CACHING_ENABLED_OPTION, 'yes' );
+		}
+	}
+
+	/**
+	 * Read an order through its data store, so this request caches its row and meta.
+	 *
+	 * @param WC_Order $order Order object.
+	 * @return WC_Order The order instance a caller of this request holds.
+	 */
+	private function read_order_into_request_caches( WC_Order $order ): WC_Order {
+		$cached_order = clone $order;
+		/**
+		 * Order data store.
+		 *
+		 * @var \WC_Object_Data_Store_Interface $data_store
+		 */
+		$data_store = $cached_order->get_data_store();
+		$data_store->read( $cached_order );
+		/**
+		 * Order read through its data store.
+		 *
+		 * @var WC_Order $cached_order
+		 */
+
+		return $cached_order;
+	}
+
+	/**
+	 * Write order status and meta straight to the database, as another request would, leaving this request's caches untouched.
+	 *
+	 * @param int                 $order_id Order ID.
+	 * @param string              $status   Order status without the wc- prefix.
+	 * @param array<string,mixed> $meta     Meta values to add.
+	 */
+	private function persist_order_state_as_another_request( int $order_id, string $status, array $meta ): void {
+		global $wpdb;
+
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.SlowDBQuery.slow_db_query_meta_key,WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- Raw writes emulate another request without cache invalidation.
+		if ( OrderUtil::custom_orders_table_usage_is_enabled() ) {
+			$wpdb->update( OrdersTableDataStore::get_orders_table_name(), array( 'status' => 'wc-' . $status ), array( 'id' => $order_id ) );
+			foreach ( $meta as $key => $value ) {
+				$wpdb->insert(
+					OrdersTableDataStore::get_meta_table_name(),
+					array(
+						'order_id'   => $order_id,
+						'meta_key'   => $key,
+						'meta_value' => maybe_serialize( $value ),
+					)
+				);
+			}
+		} else {
+			$wpdb->update( $wpdb->posts, array( 'post_status' => 'wc-' . $status ), array( 'ID' => $order_id ) );
+			foreach ( $meta as $key => $value ) {
+				$wpdb->insert(
+					$wpdb->postmeta,
+					array(
+						'post_id'    => $order_id,
+						'meta_key'   => $key,
+						'meta_value' => maybe_serialize( $value ),
+					)
+				);
+			}
+		}
+		// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.SlowDBQuery.slow_db_query_meta_key,WordPress.DB.SlowDBQuery.slow_db_query_meta_value
+	}
+
+	/**
+	 * Read an order status straight from the database, bypassing every cache.
+	 *
+	 * @param int $order_id Order ID.
+	 * @return string Stored status, with its wc- prefix.
+	 */
+	private function get_persisted_order_status( int $order_id ): string {
+		global $wpdb;
+
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- The assertion must see the database, not a cache.
+		if ( OrderUtil::custom_orders_table_usage_is_enabled() ) {
+			$orders_table = OrdersTableDataStore::get_orders_table_name();
+			return (string) $wpdb->get_var( $wpdb->prepare( "SELECT status FROM {$orders_table} WHERE id = %d", $order_id ) );
+		}
+
+		return (string) $wpdb->get_var( $wpdb->prepare( "SELECT post_status FROM {$wpdb->posts} WHERE ID = %d", $order_id ) );
+		// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 	}
 
 	/**
