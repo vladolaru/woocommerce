@@ -1259,8 +1259,8 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * Better than the client (monitor ruling 2026-10-05): client 11.1.0 fails the order for any Exception in the try
 	 * (gw:2428-2455) and fatals on a PHP Error, so a succeeded, requires_capture or processing intent can end on a failed
-	 * order with the money taken. Native leaves the order for the webhook or the next intent sync, as at checkout (review
-	 * 34 F2, checkout ruling 4).
+	 * order with the money taken. Native leaves the order for the webhook or, when the platform could not deliver it, the
+	 * failed-event fetch, as at checkout (review 34 F2, checkout ruling 4).
 	 *
 	 * @param string    $intent_status Fetched intent status.
 	 * @param string    $failure_label What the order payment lifecycle throws, for the test name.

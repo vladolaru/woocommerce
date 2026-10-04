@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerDataEraser;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use WC_Unit_Test_Case;
@@ -14,42 +13,14 @@ use WC_Unit_Test_Case;
 class WooPaymentsCustomerDataEraserTest extends WC_Unit_Test_Case {
 
 	/**
-	 * Native payments tier stored before the test.
-	 *
-	 * @var mixed
-	 */
-	private $original_state;
-
-	/**
-	 * Set up test fixtures.
-	 */
-	public function setUp(): void {
-		parent::setUp();
-		$this->original_state = get_option( NativePaymentsState::OPTION_NAME, null );
-	}
-
-	/**
-	 * Tear down test fixtures.
-	 */
-	public function tearDown(): void {
-		if ( null === $this->original_state ) {
-			delete_option( NativePaymentsState::OPTION_NAME );
-		} else {
-			update_option( NativePaymentsState::OPTION_NAME, $this->original_state );
-		}
-		parent::tearDown();
-	}
-
-	/**
-	 * @testdox An erasure request on an available store removes the WooPayments customer IDs and the cached payment methods.
+	 * @testdox An erasure request through the eraser WooCommerce lists on every request removes the WooPayments customer IDs and the cached payment methods.
 	 *
 	 * Owner decision N-316: the eraser runs on every tier where the data can exist. An available store (disconnected, or
 	 * run by the WooPayments plugin) keeps the customer-ID user options and the `_wcpay_payment_methods` user meta
-	 * (client 11.1.0 `class-wc-payments-token-service.php:27`). WooCommerce adds the eraser on every request, so the
-	 * eraser WordPress lists is the one that runs.
+	 * (client 11.1.0 `class-wc-payments-token-service.php:27`). WooCommerce adds the eraser whatever the native payments
+	 * tier, with no tier check left to switch, so the eraser the test boot registered is the one an available store gets.
 	 */
-	public function test_erasure_on_an_available_store_removes_customer_ids_and_cached_payment_methods(): void {
-		update_option( NativePaymentsState::OPTION_NAME, NativePaymentsState::AVAILABLE );
+	public function test_erasure_through_the_listed_eraser_removes_customer_ids_and_cached_payment_methods(): void {
 		$user_id = $this->factory->user->create( array( 'user_email' => 'erase-available@example.com' ) );
 		update_user_option( $user_id, WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, 'cus_deprecated' );
 		update_user_option( $user_id, WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, 'cus_live' );

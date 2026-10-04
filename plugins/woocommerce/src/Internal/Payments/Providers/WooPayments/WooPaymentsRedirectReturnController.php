@@ -273,7 +273,8 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * Better than the client (monitor ruling 2026-10-05): its catch (gw:2428-2455) fails the order for any Exception and
 	 * fatals on a PHP Error, so a succeeded, requires_capture or processing intent can end on a failed order with the money
 	 * taken. Native never fails such an order, whatever the throwable: the shopper stays on order-received with no notice,
-	 * and the webhook or the next intent sync settles the order, as at checkout (review 34 F2, checkout ruling 4).
+	 * and the webhook (or, when the platform could not deliver it, the failed-event fetch) settles the order, as at
+	 * checkout (review 34 F2, checkout ruling 4).
 	 *
 	 * @param WC_Order  $order         Order object.
 	 * @param string    $intent_id     Requested intent ID.
@@ -283,7 +284,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	private function log_failure_kept_for_settlement( WC_Order $order, string $intent_id, string $intent_status, Throwable $exception ): void {
 		wc_get_container()->get( WooPaymentsLogger::class )->log_throwable_always(
 			sprintf(
-				'Confirming the %1$s intent of order #%2$d on its redirect return raised %3$s: %4$s. The order is left for the webhook or the next intent sync.',
+				'Confirming the %1$s intent of order #%2$d on its redirect return raised %3$s: %4$s. The order is left for the webhook or, when the platform could not deliver it, the failed-event fetch.',
 				$intent_status,
 				$order->get_id(),
 				get_class( $exception ),

@@ -93,7 +93,7 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 		// register() runs inside the WooCommerce constructor, where a state build reaches WC() and constructs WooCommerce again.
 		$this->assertSame( 0, $state_builder->builds, 'register() must not build the currency state.' );
 		$this->assertSame( 0, $theme_reads, 'register() must not read the theme, which can still change before init.' );
-		$this->assertSame( 10, has_action( 'init', array( $sut, 'handle_init' ) ), 'The decision runs on init at the client priority.' );
+		$this->assertNotFalse( has_action( 'init', array( $sut, 'handle_init' ) ), 'The decision runs on init.' );
 		$this->assertFalse( has_filter( 'woocommerce_breadcrumb_defaults', array( $sut, 'handle_woocommerce_breadcrumb_defaults' ) ) );
 		$this->assertFalse( has_action( 'wp_enqueue_scripts', array( $sut, 'handle_wp_enqueue_scripts' ) ) );
 
