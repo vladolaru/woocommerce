@@ -18,6 +18,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAjaxController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
@@ -380,7 +381,10 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'processing', $reloaded->get_status() );
 		$this->assertCount( 0, $reloaded->get_payment_tokens() );
 		$this->assertSame( array(), wc_get_notices( 'error' ) );
-		$this->assertSame( array( 'Error when saving payment method: Token storage unavailable.' ), array_column( $logger->info_calls, 'message' ) );
+		// Only the WooPayments lines: core's order emails log under their own source, and whether they send depends on the
+		// mailer's first load, which an earlier test in the process may already have done with its hooks since restored.
+		$woopayments_info = array_filter( $logger->info_calls, static fn( array $call ): bool => WooPaymentsLogger::SOURCE === ( $call['context']['source'] ?? '' ) );
+		$this->assertSame( array( 'Error when saving payment method: Token storage unavailable.' ), array_column( $woopayments_info, 'message' ) );
 	}
 
 	/**
