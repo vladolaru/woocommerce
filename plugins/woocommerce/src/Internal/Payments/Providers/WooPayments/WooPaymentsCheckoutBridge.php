@@ -681,7 +681,10 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		 *
 		 * @param array $config The JS config for the payment fields.
 		 */
-		return apply_filters( 'wcpay_payment_fields_js_config', $config );
+		$filtered_config = apply_filters( 'wcpay_payment_fields_js_config', $config );
+
+		// A callback that returns something other than an array must not break the payment fields.
+		return is_array( $filtered_config ) ? $filtered_config : $config;
 	}
 
 	/**

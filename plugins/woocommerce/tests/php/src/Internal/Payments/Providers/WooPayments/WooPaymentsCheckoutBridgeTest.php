@@ -766,6 +766,22 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should keep the unfiltered checkout config when a wcpay_payment_fields_js_config callback returns no array.
+	 */
+	public function test_get_payment_fields_js_config_ignores_a_non_array_filter_result(): void {
+		$legacy_runtime = $this->create_legacy_runtime_for_bridge();
+		$legacy_runtime->method( 'can_handle_checkout_bridge_callbacks' )->willReturn( true );
+
+		$bridge = new WooPaymentsCheckoutBridge();
+		$bridge->init( $legacy_runtime, $this->create_account_service_for_bridge( true ), $this->create_woopay_session_service_for_bridge( true ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		add_filter( 'wcpay_payment_fields_js_config', '__return_null' );
+
+		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+
+		$this->assertSame( 'woocommerce_payments', $config['gatewayId'], 'The payment fields must still get their config.' );
+	}
+
+	/**
 	 * @testdox Should preserve the card checkout config shape and filter it through wcpay_payment_fields_js_config.
 	 */
 	public function test_get_payment_fields_js_config_preserves_card_checkout_shape(): void {

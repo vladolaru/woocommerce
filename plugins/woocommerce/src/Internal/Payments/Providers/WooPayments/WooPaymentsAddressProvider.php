@@ -100,10 +100,14 @@ class WooPaymentsAddressProvider extends AbstractAutomatticAddressProvider imple
 	/**
 	 * Add the WooPayments address autocomplete provider when the account is eligible.
 	 *
-	 * @param array<int,mixed> $providers Existing address providers.
-	 * @return array<int,mixed>
+	 * @param mixed $providers Existing address providers.
+	 * @return mixed
 	 */
-	public function add_address_provider( array $providers ): array {
+	public function add_address_provider( $providers ) {
+		if ( ! is_array( $providers ) ) {
+			return $providers;
+		}
+
 		if (
 			! $this->account_service->is_gateway_enabled() ||
 			$this->account_service->is_account_rejected() ||

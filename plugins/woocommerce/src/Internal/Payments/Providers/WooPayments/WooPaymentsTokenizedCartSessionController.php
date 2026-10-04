@@ -405,11 +405,11 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	/**
 	 * Swap the WooCommerce session handler for tokenized product-page Store API requests.
 	 *
-	 * @param string $session_handler Session handler class name.
-	 * @return string
+	 * @param mixed $session_handler Session handler class name.
+	 * @return mixed
 	 */
-	public function handle_woocommerce_session_handler( string $session_handler ): string {
-		if ( ! $this->is_store_api_request() || ! $this->has_valid_session_nonce() ) {
+	public function handle_woocommerce_session_handler( $session_handler ) {
+		if ( ! is_string( $session_handler ) || ! $this->is_store_api_request() || ! $this->has_valid_session_nonce() ) {
 			return $session_handler;
 		}
 
@@ -447,23 +447,30 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	/**
 	 * Add the custom-session marker to Store API order return URLs.
 	 *
-	 * @param string $return_url Return URL.
-	 * @return string
+	 * @param mixed $return_url Return URL.
+	 * @return mixed
 	 */
-	public function add_tokenized_cart_return_url_marker( string $return_url ): string {
+	public function add_tokenized_cart_return_url_marker( $return_url ) {
+		if ( ! is_string( $return_url ) ) {
+			return $return_url;
+		}
+
 		return add_query_arg( self::RETURN_URL_MARKER, '1', $return_url );
 	}
 
 	/**
 	 * Maybe reject Store API requests that carry an invalid tokenized product cart session.
 	 *
-	 * @param mixed           $result  Response to replace the requested endpoint response with.
-	 * @param mixed           $server  REST server.
-	 * @param WP_REST_Request $request REST request.
-	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @param mixed $result  Response to replace the requested endpoint response with.
+	 * @param mixed $server  REST server.
+	 * @param mixed $request REST request.
 	 * @return mixed
 	 */
-	public function maybe_reject_invalid_tokenized_cart_session( $result, $server, WP_REST_Request $request ) {
+	public function maybe_reject_invalid_tokenized_cart_session( $result, $server, $request ) {
+		if ( ! $request instanceof WP_REST_Request ) {
+			return $result;
+		}
+
 		if ( null !== $result || ! $this->is_store_api_request() ) {
 			return $result;
 		}
@@ -511,13 +518,12 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	 *
 	 * @internal
 	 *
-	 * @param mixed                $response REST response.
-	 * @param mixed                $server   REST server.
-	 * @param WP_REST_Request|null $request  REST request.
-	 * @phpstan-param WP_REST_Request<array<string,mixed>>|null $request
+	 * @param mixed $response REST response.
+	 * @param mixed $server   REST server.
+	 * @param mixed $request  REST request.
 	 * @return mixed
 	 */
-	public function clear_tokenized_postcode_validation( $response, $server = null, ?WP_REST_Request $request = null ) {
+	public function clear_tokenized_postcode_validation( $response, $server = null, $request = null ) {
 		remove_filter( 'woocommerce_validate_postcode', array( $this, 'maybe_skip_postcode_validation' ), 10 );
 		remove_filter( 'rest_post_dispatch', array( $this, 'clear_tokenized_postcode_validation' ), 10 );
 		$this->tokenized_postcode_validation_allowlist = array();
@@ -545,13 +551,12 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	/**
 	 * Add the next tokenized session header and clean ephemeral sessions after Store API dispatch.
 	 *
-	 * @param mixed                $response REST response.
-	 * @param mixed                $server   REST server.
-	 * @param WP_REST_Request|null $request  REST request.
-	 * @phpstan-param WP_REST_Request<array<string,mixed>>|null $request
+	 * @param mixed $response REST response.
+	 * @param mixed $server   REST server.
+	 * @param mixed $request  REST request.
 	 * @return mixed
 	 */
-	public function handle_store_api_response( $response, $server = null, ?WP_REST_Request $request = null ) {
+	public function handle_store_api_response( $response, $server = null, $request = null ) {
 		if ( ! $response instanceof WP_REST_Response || ! function_exists( 'WC' ) || ! WC() || ! WC()->session || ! is_callable( array( WC()->session, 'get_customer_id' ) ) ) {
 			return $response;
 		}

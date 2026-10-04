@@ -191,15 +191,19 @@ class WooPaymentsFailedRenewalAuthenticationEmail extends WC_Email {
 	/**
 	 * Prevent customer retry notifications after the authentication email is sent.
 	 *
-	 * @param array<string,mixed> $rule_array   Retry rule.
-	 * @param int                 $retry_number Retry number.
-	 * @param int                 $order_id     Order ID.
-	 * @return array<string,mixed>
+	 * @param mixed $rule_array   Retry rule.
+	 * @param mixed $retry_number Retry number.
+	 * @param mixed $order_id     Order ID.
+	 * @return mixed
 	 */
-	public function prevent_retry_notification_email( array $rule_array, int $retry_number, int $order_id ): array {
+	public function prevent_retry_notification_email( $rule_array, $retry_number, $order_id ) {
+		if ( ! is_array( $rule_array ) ) {
+			return $rule_array;
+		}
+
 		unset( $retry_number );
 
-		if ( $this->is_current_order_id( $order_id ) ) {
+		if ( $this->is_current_order_id( absint( $order_id ) ) ) {
 			$rule_array['email_template_customer'] = '';
 		}
 
@@ -209,15 +213,19 @@ class WooPaymentsFailedRenewalAuthenticationEmail extends WC_Email {
 	/**
 	 * Send the WooPayments authentication retry email to the store owner.
 	 *
-	 * @param array<string,mixed> $rule_array   Retry rule.
-	 * @param int                 $retry_number Retry number.
-	 * @param int                 $order_id     Order ID.
-	 * @return array<string,mixed>
+	 * @param mixed $rule_array   Retry rule.
+	 * @param mixed $retry_number Retry number.
+	 * @param mixed $order_id     Order ID.
+	 * @return mixed
 	 */
-	public function set_store_owner_custom_email( array $rule_array, int $retry_number, int $order_id ): array {
+	public function set_store_owner_custom_email( $rule_array, $retry_number, $order_id ) {
+		if ( ! is_array( $rule_array ) ) {
+			return $rule_array;
+		}
+
 		unset( $retry_number );
 
-		if ( $this->is_current_order_id( $order_id ) && '' !== (string) ( $rule_array['email_template_admin'] ?? '' ) ) {
+		if ( $this->is_current_order_id( absint( $order_id ) ) && '' !== (string) ( $rule_array['email_template_admin'] ?? '' ) ) {
 			// Subscriptions instantiates this class by its global name; make it resolvable.
 			WooPaymentsFailedAuthenticationRetryEmail::register_legacy_alias();
 			$rule_array['email_template_admin'] = 'WC_Payments_Email_Failed_Authentication_Retry';

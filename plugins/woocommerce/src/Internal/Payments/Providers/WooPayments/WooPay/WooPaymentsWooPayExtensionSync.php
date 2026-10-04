@@ -211,9 +211,13 @@ class WooPaymentsWooPayExtensionSync implements RegisterHooksInterface {
 	/**
 	 * Show the WooPay incompatibility warning when an incompatible plugin is enabled.
 	 *
-	 * @param string $plugin Plugin basename being activated.
+	 * @param mixed $plugin Plugin basename being activated.
 	 */
-	public function show_warning_when_incompatible_extension_is_enabled( string $plugin ): void {
+	public function show_warning_when_incompatible_extension_is_enabled( $plugin ): void {
+		if ( ! is_string( $plugin ) ) {
+			return;
+		}
+
 		$incompatible_extensions = get_option( self::INCOMPATIBLE_EXTENSIONS_LIST_OPTION_NAME, array() );
 		$adapted_extensions      = get_option( self::ADAPTED_EXTENSIONS_LIST_OPTION_NAME, array() );
 		$active_plugins          = get_option( 'active_plugins', array() );
@@ -232,9 +236,13 @@ class WooPaymentsWooPayExtensionSync implements RegisterHooksInterface {
 	/**
 	 * Hide the WooPay incompatibility warning when the last incompatible plugin is disabled.
 	 *
-	 * @param string $plugin_being_deactivated Plugin basename being deactivated.
+	 * @param mixed $plugin_being_deactivated Plugin basename being deactivated.
 	 */
-	public function hide_warning_when_incompatible_extension_is_disabled( string $plugin_being_deactivated ): void {
+	public function hide_warning_when_incompatible_extension_is_disabled( $plugin_being_deactivated ): void {
+		if ( ! is_string( $plugin_being_deactivated ) ) {
+			return;
+		}
+
 		$incompatible_extensions = get_option( self::INCOMPATIBLE_EXTENSIONS_LIST_OPTION_NAME, array() );
 		$adapted_extensions      = get_option( self::ADAPTED_EXTENSIONS_LIST_OPTION_NAME, array() );
 		$active_plugins          = get_option( 'active_plugins', array() );

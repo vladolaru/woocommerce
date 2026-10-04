@@ -90,10 +90,14 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param array<string,string> $actions Existing order actions.
-	 * @return array<string,string>
+	 * @param mixed $actions Existing order actions.
+	 * @return mixed
 	 */
-	public function handle_woocommerce_order_actions( array $actions ): array {
+	public function handle_woocommerce_order_actions( $actions ) {
+		if ( ! is_array( $actions ) ) {
+			return $actions;
+		}
+
 		global $theorder;
 
 		if ( ! $theorder instanceof WC_Order || ! $this->is_authorized_woopayments_order( $theorder, true ) ) {
@@ -114,10 +118,10 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WC_Order $order Order being captured.
+	 * @param mixed $order Order being captured.
 	 */
-	public function handle_woocommerce_order_action_capture_charge( WC_Order $order ): void {
-		if ( $this->is_authorized_woopayments_order( $order, true ) ) {
+	public function handle_woocommerce_order_action_capture_charge( $order ): void {
+		if ( $order instanceof WC_Order && $this->is_authorized_woopayments_order( $order, true ) ) {
 			$this->run_operation( $order, 'capture' );
 		}
 	}
@@ -127,10 +131,10 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WC_Order $order Order whose authorization is being cancelled.
+	 * @param mixed $order Order whose authorization is being cancelled.
 	 */
-	public function handle_woocommerce_order_action_cancel_authorization( WC_Order $order ): void {
-		if ( $this->is_authorized_woopayments_order( $order, true ) ) {
+	public function handle_woocommerce_order_action_cancel_authorization( $order ): void {
+		if ( $order instanceof WC_Order && $this->is_authorized_woopayments_order( $order, true ) ) {
 			$this->run_operation( $order, 'cancel' );
 		}
 	}
@@ -140,13 +144,13 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param int           $order_id         Order ID.
-	 * @param WC_Order|null $order            Order object supplied by core.
-	 * @param array<mixed>  $status_transition Status transition details.
+	 * @param mixed $order_id          Order ID.
+	 * @param mixed $order             Order object supplied by core.
+	 * @param mixed $status_transition Status transition details.
 	 */
-	public function handle_woocommerce_order_status_completed( int $order_id, ?WC_Order $order = null, array $status_transition = array() ): void {
+	public function handle_woocommerce_order_status_completed( $order_id, $order = null, $status_transition = array() ): void {
 		unset( $status_transition );
-		$order = $this->resolve_status_order( $order_id, $order );
+		$order = $this->resolve_status_order( absint( $order_id ), $order instanceof WC_Order ? $order : null );
 
 		if ( $order instanceof WC_Order && $this->is_authorized_woopayments_order( $order, false ) ) {
 			$this->run_operation( $order, 'capture', true );
@@ -158,13 +162,13 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param int           $order_id         Order ID.
-	 * @param WC_Order|null $order            Order object supplied by core.
-	 * @param array<mixed>  $status_transition Status transition details.
+	 * @param mixed $order_id          Order ID.
+	 * @param mixed $order             Order object supplied by core.
+	 * @param mixed $status_transition Status transition details.
 	 */
-	public function handle_woocommerce_order_status_cancelled( int $order_id, ?WC_Order $order = null, array $status_transition = array() ): void {
+	public function handle_woocommerce_order_status_cancelled( $order_id, $order = null, $status_transition = array() ): void {
 		unset( $status_transition );
-		$order = $this->resolve_status_order( $order_id, $order );
+		$order = $this->resolve_status_order( absint( $order_id ), $order instanceof WC_Order ? $order : null );
 
 		if ( $order instanceof WC_Order && $this->is_authorized_woopayments_order( $order, false ) ) {
 			$this->run_operation( $order, 'cancel' );

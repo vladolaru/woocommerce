@@ -94,11 +94,11 @@ class WooPaymentsIppReceiptEmail extends WC_Email {
 	/**
 	 * Get preview address data.
 	 *
-	 * @param array<string,mixed> $address Address data.
-	 * @return array<string,mixed>
+	 * @param mixed $address Address data.
+	 * @return mixed
 	 */
-	public function get_preview_address( array $address ): array {
-		if ( ! empty( $address ) ) {
+	public function get_preview_address( $address ) {
+		if ( ! is_array( $address ) || ! empty( $address ) ) {
 			return $address;
 		}
 
@@ -115,10 +115,14 @@ class WooPaymentsIppReceiptEmail extends WC_Email {
 	/**
 	 * Get preview placeholders.
 	 *
-	 * @param array<string,mixed> $placeholders Placeholder values.
-	 * @return array<string,mixed>
+	 * @param mixed $placeholders Placeholder values.
+	 * @return mixed
 	 */
-	public function get_preview_placeholders( array $placeholders ): array {
+	public function get_preview_placeholders( $placeholders ) {
+		if ( ! is_array( $placeholders ) ) {
+			return $placeholders;
+		}
+
 		$placeholders['{order_date}']   = wc_format_datetime( new WC_DateTime() );
 		$placeholders['{order_number}'] = '42';
 

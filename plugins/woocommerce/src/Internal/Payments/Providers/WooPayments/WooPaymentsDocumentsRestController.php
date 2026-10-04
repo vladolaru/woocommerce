@@ -252,12 +252,12 @@ class WooPaymentsDocumentsRestController implements RegisterHooksInterface {
 	/**
 	 * Serve raw document bytes without REST JSON serialization.
 	 *
-	 * @param bool             $served   Whether the response was already served.
-	 * @param WP_HTTP_Response $response REST response.
-	 * @return bool
+	 * @param mixed $served   Whether the response was already served.
+	 * @param mixed $response REST response.
+	 * @return mixed
 	 */
-	public function serve_raw_document_response( bool $served, WP_HTTP_Response $response ): bool {
-		if ( $response !== $this->raw_document_response ) {
+	public function serve_raw_document_response( $served, $response ) {
+		if ( ! $response instanceof WP_HTTP_Response || $response !== $this->raw_document_response ) {
 			return $served;
 		}
 

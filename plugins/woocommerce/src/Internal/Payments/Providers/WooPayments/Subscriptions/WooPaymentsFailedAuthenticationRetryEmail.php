@@ -127,10 +127,14 @@ class WooPaymentsFailedAuthenticationRetryEmail extends WC_Email_Failed_Order {
 	/**
 	 * Add preview placeholders.
 	 *
-	 * @param array<string,string> $placeholders Preview placeholders.
-	 * @return array<string,string>
+	 * @param mixed $placeholders Preview placeholders.
+	 * @return mixed
 	 */
-	public function get_preview_placeholders( array $placeholders ): array {
+	public function get_preview_placeholders( $placeholders ) {
+		if ( ! is_array( $placeholders ) ) {
+			return $placeholders;
+		}
+
 		$retry                        = $this->get_preview_retry( false );
 		$placeholders['{retry_time}'] = $this->get_retry_time_label( $retry );
 

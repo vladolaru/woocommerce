@@ -75,11 +75,19 @@ class WooPaymentsTokenClassMapController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param string $class_name Token class name WooCommerce would load.
-	 * @param string $type       Persisted token type.
-	 * @return string
+	 * @param mixed $class_name Token class name WooCommerce would load.
+	 * @param mixed $type       Persisted token type.
+	 * @return mixed
 	 */
-	public function handle_woocommerce_payment_token_class( string $class_name, string $type ): string {
+	public function handle_woocommerce_payment_token_class( $class_name, $type ) {
+		if ( is_string( $type ) && isset( self::TYPE_CLASS_MAP[ $type ] ) ) {
+			return self::TYPE_CLASS_MAP[ $type ];
+		}
+
+		if ( ! is_string( $class_name ) ) {
+			return $class_name;
+		}
+
 		if ( isset( self::TYPE_CLASS_MAP[ $type ] ) ) {
 			return self::TYPE_CLASS_MAP[ $type ];
 		}

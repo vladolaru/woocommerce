@@ -738,10 +738,14 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param array<string,mixed> $email_classes WooCommerce email classes.
-	 * @return array<string,mixed>
+	 * @param mixed $email_classes WooCommerce email classes.
+	 * @return mixed
 	 */
-	public function add_post_kyc_activation_email( array $email_classes ): array {
+	public function add_post_kyc_activation_email( $email_classes ) {
+		if ( ! is_array( $email_classes ) ) {
+			return $email_classes;
+		}
+
 		$email_classes[ self::POST_KYC_ACTIVATION_EMAIL_CLASS_KEY ] = new WooPaymentsPostKycActivationEmail();
 
 		return $email_classes;
@@ -752,10 +756,14 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param array<string,mixed> $email_classes WooCommerce email classes.
-	 * @return array<string,mixed>
+	 * @param mixed $email_classes WooCommerce email classes.
+	 * @return mixed
 	 */
-	public function add_ipp_receipt_email( array $email_classes ): array {
+	public function add_ipp_receipt_email( $email_classes ) {
+		if ( ! is_array( $email_classes ) ) {
+			return $email_classes;
+		}
+
 		$email = new WooPaymentsIppReceiptEmail();
 		$email->init_hooks();
 

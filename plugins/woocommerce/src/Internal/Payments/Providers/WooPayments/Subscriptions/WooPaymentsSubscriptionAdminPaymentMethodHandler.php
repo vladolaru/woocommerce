@@ -97,12 +97,12 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	 *
 	 * @internal
 	 *
-	 * @param array<string,mixed> $payment_meta Payment metadata.
-	 * @param mixed               $subscription Subscription object.
-	 * @return array<string,mixed>
+	 * @param mixed $payment_meta Payment metadata.
+	 * @param mixed $subscription Subscription object.
+	 * @return mixed
 	 */
-	public function add_subscription_payment_meta( array $payment_meta, $subscription ): array {
-		if ( ! $subscription instanceof WC_Order ) {
+	public function add_subscription_payment_meta( $payment_meta, $subscription ) {
+		if ( ! is_array( $payment_meta ) || ! $subscription instanceof WC_Order ) {
 			return $payment_meta;
 		}
 
@@ -129,14 +129,14 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	 *
 	 * @internal
 	 *
-	 * @param string              $payment_gateway_id Payment gateway ID.
-	 * @param array<string,mixed> $payment_meta       Payment metadata.
-	 * @param mixed               $subscription       Subscription object.
+	 * @param mixed $payment_gateway_id Payment gateway ID.
+	 * @param mixed $payment_meta       Payment metadata.
+	 * @param mixed $subscription       Subscription object.
 	 * @return void
 	 * @throws \InvalidArgumentException When the subscription or the selected saved payment method is invalid.
 	 */
-	public function validate_subscription_payment_meta( string $payment_gateway_id, array $payment_meta, $subscription ): void {
-		if ( ! WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $payment_gateway_id ) ) {
+	public function validate_subscription_payment_meta( $payment_gateway_id, $payment_meta, $subscription ): void {
+		if ( ! is_string( $payment_gateway_id ) || ! WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $payment_gateway_id ) ) {
 			return;
 		}
 
@@ -144,7 +144,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 			throw new \InvalidArgumentException( esc_html__( 'A valid WooPayments subscription was not provided.', 'woocommerce' ) );
 		}
 
-		$token_id = $this->get_submitted_token_id_from_payment_meta( $payment_meta );
+		$token_id = $this->get_submitted_token_id_from_payment_meta( is_array( $payment_meta ) ? $payment_meta : array() );
 		if ( '' === $token_id ) {
 			throw new \InvalidArgumentException( esc_html__( 'A valid WooPayments saved payment method must be selected for this subscription.', 'woocommerce' ) );
 		}
@@ -160,13 +160,13 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	 *
 	 * @internal
 	 *
-	 * @param mixed  $subscription Subscription object.
-	 * @param string $table        Metadata table.
-	 * @param string $meta_key     Metadata key.
-	 * @param string $meta_value   Metadata value.
+	 * @param mixed $subscription Subscription object.
+	 * @param mixed $table        Metadata table.
+	 * @param mixed $meta_key     Metadata key.
+	 * @param mixed $meta_value   Metadata value.
 	 * @return void
 	 */
-	public function save_meta_in_order_tokens( $subscription, string $table, string $meta_key, string $meta_value ): void {
+	public function save_meta_in_order_tokens( $subscription, $table, $meta_key, $meta_value ): void {
 		if ( self::PAYMENT_METHOD_META_TABLE !== $table || self::PAYMENT_METHOD_META_KEY !== $meta_key || ! $subscription instanceof WC_Order ) {
 			return;
 		}
@@ -212,11 +212,11 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	 *
 	 * @internal
 	 *
-	 * @param string $payment_method_to_display Default payment method display.
-	 * @param mixed  $subscription              Subscription object.
-	 * @return string
+	 * @param mixed $payment_method_to_display Default payment method display.
+	 * @param mixed $subscription              Subscription object.
+	 * @return mixed
 	 */
-	public function maybe_render_subscription_payment_method( string $payment_method_to_display, $subscription ): string {
+	public function maybe_render_subscription_payment_method( $payment_method_to_display, $subscription ) {
 		if ( ! $this->should_handle_subscription( $subscription ) ) {
 			return $payment_method_to_display;
 		}
@@ -231,11 +231,15 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	 *
 	 * @internal
 	 *
-	 * @param array<string,mixed> $actions      Subscription actions.
-	 * @param mixed               $subscription Subscription object.
-	 * @return array<string,mixed>
+	 * @param mixed $actions      Subscription actions.
+	 * @param mixed $subscription Subscription object.
+	 * @return mixed
 	 */
-	public function maybe_hide_change_payment_for_manual_subscriptions( array $actions, $subscription ): array {
+	public function maybe_hide_change_payment_for_manual_subscriptions( $actions, $subscription ) {
+		if ( ! is_array( $actions ) ) {
+			return $actions;
+		}
+
 		if ( $this->has_manual_non_reusable_original_method( $subscription ) ) {
 			unset( $actions['change_payment_method'] );
 		}
@@ -248,12 +252,16 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	 *
 	 * @internal
 	 *
-	 * @param array<string,bool> $allcaps All capabilities.
-	 * @param array<int,string>  $caps    Checked primitive capabilities.
-	 * @param array<int,mixed>   $args    Capability arguments.
-	 * @return array<string,bool>
+	 * @param mixed $allcaps All capabilities.
+	 * @param mixed $caps    Checked primitive capabilities.
+	 * @param mixed $args    Capability arguments.
+	 * @return mixed
 	 */
-	public function maybe_hide_auto_renew_toggle_for_manual_subscriptions( array $allcaps, array $caps, array $args ): array {
+	public function maybe_hide_auto_renew_toggle_for_manual_subscriptions( $allcaps, $caps, $args ) {
+		if ( ! is_array( $allcaps ) || ! is_array( $caps ) || ! is_array( $args ) ) {
+			return $allcaps;
+		}
+
 		if ( ! isset( $caps[0] ) || 'toggle_shop_subscription_auto_renewal' !== $caps[0] || ! isset( $args[2] ) ) {
 			return $allcaps;
 		}
@@ -298,12 +306,16 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	 *
 	 * @internal
 	 *
-	 * @param bool             $updated      Whether WCS already updated the token.
-	 * @param mixed            $subscription Subscription object.
-	 * @param WC_Payment_Token $new_token    New token.
-	 * @return bool
+	 * @param mixed $updated      Whether WCS already updated the token.
+	 * @param mixed $subscription Subscription object.
+	 * @param mixed $new_token    New token.
+	 * @return mixed
 	 */
-	public function update_subscription_token( bool $updated, $subscription, WC_Payment_Token $new_token ): bool {
+	public function update_subscription_token( $updated, $subscription, $new_token ) {
+		if ( ! $new_token instanceof WC_Payment_Token ) {
+			return $updated;
+		}
+
 		$token_gateway_id = $new_token->get_gateway_id();
 		if ( ! WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $token_gateway_id ) || ! $subscription instanceof WC_Order ) {
 			return $updated;
@@ -320,12 +332,12 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	 *
 	 * @internal
 	 *
-	 * @param bool   $update_payment_method Whether WCS should update payment method.
-	 * @param string $new_payment_method    New payment method ID.
-	 * @param mixed  $subscription          Subscription object.
-	 * @return bool
+	 * @param mixed $update_payment_method Whether WCS should update payment method.
+	 * @param mixed $new_payment_method    New payment method ID.
+	 * @param mixed $subscription          Subscription object.
+	 * @return mixed
 	 */
-	public function update_payment_method_for_subscriptions( bool $update_payment_method, string $new_payment_method, $subscription ): bool {
+	public function update_payment_method_for_subscriptions( $update_payment_method, $new_payment_method, $subscription ) {
 		if ( OrderPaymentStore::GATEWAY_ID !== $new_payment_method || ! $subscription instanceof WC_Order ) {
 			return $update_payment_method;
 		}
@@ -347,13 +359,13 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	 *
 	 * @internal
 	 *
-	 * @param string $old_payment_method_title Old payment-method title.
-	 * @param string $old_payment_method       Old payment-method ID.
-	 * @param mixed  $subscription             Subscription object.
-	 * @return string
+	 * @param mixed $old_payment_method_title Old payment-method title.
+	 * @param mixed $old_payment_method       Old payment-method ID.
+	 * @param mixed $subscription             Subscription object.
+	 * @return mixed
 	 */
-	public function get_specific_old_payment_method_title( string $old_payment_method_title, string $old_payment_method, $subscription ): string {
-		if ( ! WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $old_payment_method ) || ! $subscription instanceof WC_Order ) {
+	public function get_specific_old_payment_method_title( $old_payment_method_title, $old_payment_method, $subscription ) {
+		if ( ! is_string( $old_payment_method_title ) || ! is_string( $old_payment_method ) || ! WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $old_payment_method ) || ! $subscription instanceof WC_Order ) {
 			return $old_payment_method_title;
 		}
 
@@ -372,13 +384,13 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	 *
 	 * @internal
 	 *
-	 * @param string $new_payment_method_title New payment-method title.
-	 * @param string $new_payment_method       New payment-method ID.
-	 * @param mixed  $subscription             Subscription object.
-	 * @return string
+	 * @param mixed $new_payment_method_title New payment-method title.
+	 * @param mixed $new_payment_method       New payment-method ID.
+	 * @param mixed $subscription             Subscription object.
+	 * @return mixed
 	 */
-	public function get_specific_new_payment_method_title( string $new_payment_method_title, string $new_payment_method, $subscription ): string {
-		if ( ! WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $new_payment_method ) || ! $subscription instanceof WC_Order ) {
+	public function get_specific_new_payment_method_title( $new_payment_method_title, $new_payment_method, $subscription ) {
+		if ( ! is_string( $new_payment_method_title ) || ! is_string( $new_payment_method ) || ! WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $new_payment_method ) || ! $subscription instanceof WC_Order ) {
 			return $new_payment_method_title;
 		}
 

@@ -130,10 +130,10 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	/**
 	 * Verify the Apple Pay domain after native gateway settings are first stored.
 	 *
-	 * @param string              $_option  Option name.
-	 * @param array<string,mixed> $settings New settings.
+	 * @param mixed $_option  Option name.
+	 * @param mixed $settings New settings.
 	 */
-	public function verify_domain_on_new_gateway_settings( string $_option, $settings ): void {
+	public function verify_domain_on_new_gateway_settings( $_option, $settings ): void {
 		if ( is_array( $settings ) ) {
 			$this->verify_domain_if_configured( $settings );
 		}
@@ -142,10 +142,10 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	/**
 	 * Verify the Apple Pay domain after split Apple Pay settings are first stored.
 	 *
-	 * @param string              $_option  Option name.
-	 * @param array<string,mixed> $settings New Apple Pay settings.
+	 * @param mixed $_option  Option name.
+	 * @param mixed $settings New Apple Pay settings.
 	 */
-	public function verify_domain_on_new_apple_pay_settings( string $_option, $settings ): void {
+	public function verify_domain_on_new_apple_pay_settings( $_option, $settings ): void {
 		$this->verify_domain_on_updated_apple_pay_settings( array(), $settings );
 	}
 

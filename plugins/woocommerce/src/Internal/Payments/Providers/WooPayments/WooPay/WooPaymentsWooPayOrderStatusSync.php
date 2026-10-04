@@ -216,10 +216,14 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	 * The resource is a default WooCommerce resource, but the extension also
 	 * registered it. Keeping the filter preserves the old extension surface.
 	 *
-	 * @param array $resources List of available resources.
-	 * @return array
+	 * @param mixed $resources List of available resources.
+	 * @return mixed
 	 */
-	public function add_resource( array $resources ): array {
+	public function add_resource( $resources ) {
+		if ( ! is_array( $resources ) ) {
+			return $resources;
+		}
+
 		if ( ! in_array( 'order', $resources, true ) ) {
 			$resources[] = 'order';
 		}
@@ -230,10 +234,14 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	/**
 	 * Add the WooPay order status changed webhook event.
 	 *
-	 * @param array $events List of available events.
-	 * @return array
+	 * @param mixed $events List of available events.
+	 * @return mixed
 	 */
-	public function add_event( array $events ): array {
+	public function add_event( $events ) {
+		if ( ! is_array( $events ) ) {
+			return $events;
+		}
+
 		if ( ! in_array( 'status_changed', $events, true ) ) {
 			$events[] = 'status_changed';
 		}
@@ -244,11 +252,15 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	/**
 	 * Add the WooPay order-status topic hook mapping.
 	 *
-	 * @param array           $topic_hooks List of WooCommerce webhook topics and hooks.
-	 * @param WC_Webhook|null $webhook     Webhook context.
-	 * @return array
+	 * @param mixed $topic_hooks List of WooCommerce webhook topics and hooks.
+	 * @param mixed $webhook     Webhook context.
+	 * @return mixed
 	 */
-	public function add_topics( array $topic_hooks, ?WC_Webhook $webhook = null ): array {
+	public function add_topics( $topic_hooks, $webhook = null ) {
+		if ( ! is_array( $topic_hooks ) ) {
+			return $topic_hooks;
+		}
+
 		unset( $webhook );
 
 		$hooks = $topic_hooks[ self::WEBHOOK_TOPIC ] ?? array();
@@ -264,13 +276,17 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	/**
 	 * Rewrite WooPay merchant-notification webhook payloads.
 	 *
-	 * @param array  $payload       Data to be sent out by the webhook.
-	 * @param string $resource_name Type/name of the resource.
-	 * @param int    $resource_id   ID of the resource.
-	 * @param int    $webhook_id    ID of the webhook.
-	 * @return array
+	 * @param mixed $payload       Data to be sent out by the webhook.
+	 * @param mixed $resource_name Type/name of the resource.
+	 * @param mixed $resource_id   ID of the resource.
+	 * @param mixed $webhook_id    ID of the webhook.
+	 * @return mixed
 	 */
-	public function create_payload( array $payload, string $resource_name, int $resource_id, int $webhook_id ): array {
+	public function create_payload( $payload, $resource_name, $resource_id, $webhook_id ) {
+		if ( ! is_array( $payload ) ) {
+			return $payload;
+		}
+
 		unset( $resource_name );
 
 		$webhook = wc_get_webhook( $webhook_id );
@@ -293,11 +309,11 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	/**
 	 * Trigger WooPay order-status webhook delivery for WooPay orders.
 	 *
-	 * @param int    $order_id        Order ID.
-	 * @param string $previous_status Previous order status.
-	 * @param string $next_status     New order status.
+	 * @param mixed $order_id        Order ID.
+	 * @param mixed $previous_status Previous order status.
+	 * @param mixed $next_status     New order status.
 	 */
-	public function send_webhook( int $order_id, string $previous_status, string $next_status ): void {
+	public function send_webhook( $order_id, $previous_status, $next_status ): void {
 		unset( $previous_status );
 
 		$order = wc_get_order( $order_id );

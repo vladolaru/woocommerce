@@ -62,14 +62,16 @@ class WooPaymentsExpressCheckoutCurrencyGuard implements RegisterHooksInterface 
 	 * Compare the boot currency carried on the request to the order's
 	 * resolved currency. Fail-open when no header was sent (non-ECE caller).
 	 *
-	 * @param \WC_Order        $order   The order being created.
-	 * @param \WP_REST_Request $request The Store API request.
-	 *
-	 * @phpstan-param \WP_REST_Request<array<string,mixed>> $request
+	 * @param mixed $order   The order being created.
+	 * @param mixed $request The Store API request.
 	 *
 	 * @throws RouteException When the currencies disagree.
 	 */
-	public function assert_currency_matches_element( \WC_Order $order, \WP_REST_Request $request ): void {
+	public function assert_currency_matches_element( $order, $request ): void {
+		if ( ! $order instanceof \WC_Order || ! $request instanceof \WP_REST_Request ) {
+			return;
+		}
+
 		if ( ! $this->is_express_checkout_request( $request ) ) {
 			return;
 		}

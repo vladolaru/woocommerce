@@ -204,10 +204,14 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param array<string, array{eraser_friendly_name: string, callback: callable}> $erasers Existing erasers.
-	 * @return array<string, array{eraser_friendly_name: string, callback: callable}>
+	 * @param mixed $erasers Existing erasers.
+	 * @return mixed
 	 */
-	public function register_personal_data_eraser( array $erasers ): array {
+	public function register_personal_data_eraser( $erasers ) {
+		if ( ! is_array( $erasers ) ) {
+			return $erasers;
+		}
+
 		$erasers[ self::ERASER_ID ] = array(
 			'eraser_friendly_name' => __( 'WooPayments Customer Data', 'woocommerce' ),
 			'callback'             => array( $this, 'erase_customer_data' ),

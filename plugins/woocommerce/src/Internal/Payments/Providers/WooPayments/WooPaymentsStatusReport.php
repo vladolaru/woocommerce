@@ -140,10 +140,14 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	/**
 	 * Add the native WooPayments cutover check to Site Health.
 	 *
-	 * @param array<string,array<string,array<string,mixed>>> $tests Site Health tests.
-	 * @return array<string,array<string,array<string,mixed>>>
+	 * @param mixed $tests Site Health tests.
+	 * @return mixed
 	 */
-	public function add_site_status_tests( array $tests ): array {
+	public function add_site_status_tests( $tests ) {
+		if ( ! is_array( $tests ) ) {
+			return $tests;
+		}
+
 		$tests['async'] = $tests['async'] ?? array();
 
 		$tests['async'][ self::SITE_HEALTH_TEST_ID ] = array(
@@ -364,10 +368,14 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	/**
 	 * Add native WooPayments Site Health debug information.
 	 *
-	 * @param array<string,mixed> $info Debug information.
-	 * @return array<string,mixed>
+	 * @param mixed $info Debug information.
+	 * @return mixed
 	 */
-	public function add_site_health_debug_info( array $info ): array {
+	public function add_site_health_debug_info( $info ) {
+		if ( ! is_array( $info ) ) {
+			return $info;
+		}
+
 		$fields = array();
 		foreach ( $this->get_status_fields() as $field_id => $field ) {
 			$fields[ $field_id ] = array(
@@ -387,10 +395,14 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	/**
 	 * Add native WooPayments debug tools.
 	 *
-	 * @param array<string,array<string,mixed>> $tools Debug tools.
-	 * @return array<string,array<string,mixed>>
+	 * @param mixed $tools Debug tools.
+	 * @return mixed
 	 */
-	public function add_debug_tools( array $tools ): array {
+	public function add_debug_tools( $tools ) {
+		if ( ! is_array( $tools ) ) {
+			return $tools;
+		}
+
 		$native_tools = array(
 			'clear_wcpay_account_cache'            => array(
 				'name'     => __( 'Clear WooPayments account cache', 'woocommerce' ),

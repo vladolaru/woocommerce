@@ -264,12 +264,16 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param array<int|string,mixed> $tokens     Customer payment tokens.
-	 * @param int|string              $user_id    WooCommerce user ID.
-	 * @param string                  $gateway_id Requested gateway ID.
-	 * @return array<int|string,mixed>
+	 * @param mixed      $tokens     Customer payment tokens.
+	 * @param int|string $user_id    WooCommerce user ID.
+	 * @param mixed      $gateway_id Requested gateway ID.
+	 * @return mixed
 	 */
-	public function handle_woocommerce_get_customer_payment_tokens( array $tokens, $user_id, string $gateway_id ): array {
+	public function handle_woocommerce_get_customer_payment_tokens( $tokens, $user_id, $gateway_id ) {
+		if ( ! is_array( $tokens ) || ! is_string( $gateway_id ) ) {
+			return $tokens;
+		}
+
 		if ( 0 >= absint( $user_id ) || ( '' !== $gateway_id && ! $this->is_native_woopayments_gateway_id( $gateway_id ) ) ) {
 			return $tokens;
 		}
@@ -317,11 +321,15 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param array<string,mixed> $item          Saved payment method list item.
-	 * @param mixed               $payment_token Payment token associated with the list item.
-	 * @return array<string,mixed>
+	 * @param mixed $item          Saved payment method list item.
+	 * @param mixed $payment_token Payment token associated with the list item.
+	 * @return mixed
 	 */
-	public function handle_woocommerce_payment_methods_list_item( array $item, $payment_token ): array {
+	public function handle_woocommerce_payment_methods_list_item( $item, $payment_token ) {
+		if ( ! is_array( $item ) ) {
+			return $item;
+		}
+
 		if ( $this->is_supported_native_woopayments_token( $payment_token ) ) {
 			if ( $payment_token instanceof WooPaymentsSepaToken ) {
 				$item['method']['last4'] = $payment_token->get_last4();

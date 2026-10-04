@@ -175,10 +175,10 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 *
 	 * @internal
 	 *
-	 * @param int $order_id Completed order ID.
+	 * @param mixed $order_id Completed order ID.
 	 */
-	public function handle_woocommerce_payment_complete( int $order_id ): void {
-		$this->remove_session_processing_order( $order_id );
+	public function handle_woocommerce_payment_complete( $order_id ): void {
+		$this->remove_session_processing_order( absint( $order_id ) );
 	}
 
 	/**

@@ -238,10 +238,14 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	/**
 	 * Add preserved WooPayments external redirect hosts.
 	 *
-	 * @param array<int,string> $hosts Allowed redirect hosts.
-	 * @return array<int,string>
+	 * @param mixed $hosts Allowed redirect hosts.
+	 * @return mixed
 	 */
-	public function allowed_redirect_hosts( array $hosts ): array {
+	public function allowed_redirect_hosts( $hosts ) {
+		if ( ! is_array( $hosts ) ) {
+			return $hosts;
+		}
+
 		if ( ! in_array( 'connect.stripe.com', $hosts, true ) ) {
 			$hosts[] = 'connect.stripe.com';
 		}

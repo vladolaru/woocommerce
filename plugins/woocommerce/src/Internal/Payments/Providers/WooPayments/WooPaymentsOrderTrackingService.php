@@ -198,13 +198,16 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param array<string,mixed> $order_data Renewal order data.
-	 * @param mixed               $to_order   Renewal order.
-	 * @param mixed               $from_order Source order.
-	 * @return array<string,mixed>
+	 * @param mixed $order_data Renewal order data.
+	 * @param mixed $to_order   Renewal order.
+	 * @param mixed $from_order Source order.
+	 * @return mixed
 	 */
-	public function handle_wc_subscriptions_renewal_order_data( array $order_data, $to_order = null, $from_order = null ): array {
+	public function handle_wc_subscriptions_renewal_order_data( $order_data, $to_order = null, $from_order = null ) {
 		unset( $to_order, $from_order );
+		if ( ! is_array( $order_data ) ) {
+			return $order_data;
+		}
 
 		unset( $order_data[ self::NEW_ORDER_TRACKING_COMPLETE_META_KEY ] );
 
@@ -216,13 +219,16 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param string $order_meta_query Renewal order metadata SQL query.
-	 * @param mixed  $to_order         Renewal order.
-	 * @param mixed  $from_order       Source order.
-	 * @return string
+	 * @param mixed $order_meta_query Renewal order metadata SQL query.
+	 * @param mixed $to_order         Renewal order.
+	 * @param mixed $from_order       Source order.
+	 * @return mixed
 	 */
-	public function handle_wcs_renewal_order_meta_query( string $order_meta_query, $to_order = null, $from_order = null ): string {
+	public function handle_wcs_renewal_order_meta_query( $order_meta_query, $to_order = null, $from_order = null ) {
 		unset( $to_order, $from_order );
+		if ( ! is_string( $order_meta_query ) ) {
+			return $order_meta_query;
+		}
 
 		$order_meta_query .= sprintf( " AND `meta_key` NOT IN ('%s')", self::NEW_ORDER_TRACKING_COMPLETE_META_KEY );
 

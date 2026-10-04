@@ -220,11 +220,15 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	/**
 	 * Add Tracks properties for Apple Pay and Google Pay button events.
 	 *
-	 * @param array<string,mixed> $properties Event properties.
-	 * @param string              $event_name Event name.
-	 * @return array<string,mixed>
+	 * @param mixed $properties Event properties.
+	 * @param mixed $event_name Event name.
+	 * @return mixed
 	 */
-	public function add_tracking_event_properties( array $properties, string $event_name ): array {
+	public function add_tracking_event_properties( $properties, $event_name ) {
+		if ( ! is_array( $properties ) ) {
+			return $properties;
+		}
+
 		if (
 			in_array(
 				$event_name,

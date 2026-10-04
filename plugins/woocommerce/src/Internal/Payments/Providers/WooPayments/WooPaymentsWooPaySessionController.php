@@ -612,11 +612,15 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	/**
 	 * Add WooPay save-user session data to order metadata.
 	 *
-	 * @param array<string,mixed> $metadata Metadata.
-	 * @param \WC_Order           $order    Order object.
-	 * @return array<string,mixed>
+	 * @param mixed $metadata Metadata.
+	 * @param mixed $order    Order object.
+	 * @return mixed
 	 */
-	public function maybe_add_woopay_user_metadata( array $metadata, \WC_Order $order ): array {
+	public function maybe_add_woopay_user_metadata( $metadata, $order ) {
+		if ( ! is_array( $metadata ) || ! $order instanceof \WC_Order ) {
+			return $metadata;
+		}
+
 		return $this->session_service->maybe_add_woopay_user_metadata( $metadata, $order );
 	}
 
