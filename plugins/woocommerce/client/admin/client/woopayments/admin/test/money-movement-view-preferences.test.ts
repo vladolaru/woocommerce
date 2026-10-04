@@ -145,20 +145,22 @@ describe( 'WooPayments list hidden columns', () => {
 
 		expect( result.current.visibleFields ).toEqual( [ 'date', 'amount' ] );
 
+		// Core may re-read the current user at any time; only a write stores a preference.
+		const writes = () =>
+			mockFetch.mock.calls.filter(
+				( [ , request ] ) => request?.method === 'POST'
+			);
+
 		// A view change that keeps the defaults writes nothing.
 		await act( async () => {
 			result.current.saveFields( [ 'date', 'amount' ] );
 		} );
-		expect( mockFetch ).not.toHaveBeenCalled();
+		expect( writes() ).toHaveLength( 0 );
 
 		// Showing a default-hidden column stores the rest of the defaults, including columns this view lacks.
 		await act( async () => {
 			result.current.saveFields( [ 'date', 'risk_level', 'amount' ] );
 		} );
-		const writes = () =>
-			mockFetch.mock.calls.filter(
-				( [ , request ] ) => request?.method === 'POST'
-			);
 		await waitFor( () => expect( writes() ).toHaveLength( 1 ) );
 		expect( JSON.parse( writes()[ 0 ][ 1 ].body ) ).toEqual( {
 			id: 7,
@@ -186,6 +188,11 @@ describe( 'WooPayments list hidden columns', () => {
 			] );
 		} );
 
-		expect( mockFetch ).not.toHaveBeenCalled();
+		// Core may re-read the current user at any time; only a write stores a preference.
+		expect(
+			mockFetch.mock.calls.filter(
+				( [ , request ] ) => request?.method === 'POST'
+			)
+		).toHaveLength( 0 );
 	} );
 } );
