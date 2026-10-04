@@ -992,14 +992,19 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A failed intent fetch while a webhook holds the order payment lock leaves the order to it and stays on order-received.
+	 * @testdox A failed intent fetch while $holder holds the order payment lock leaves the order to it and stays on order-received.
 	 *
-	 * Better than the client (review 35 F4): client 11.1.0 skips the failure on a locked order but still sends the shopper
-	 * to checkout with the error notice (gw:2428-2456), where a resubmit creates a new order and can authorize the card
-	 * again while the webhook writes the first authorization. Native writes no failure and no notice, lets the redirect
-	 * return end on order-received, and logs the refusal with the holder's operation and lock value whatever the setting.
+	 * Better than the client (review 35 F4): client 11.1.0 skips the failure on a locked order (os:2747-2758) but still
+	 * sends the shopper to checkout with the error notice (gw:2447-2454), where a resubmit can pay again while the holder
+	 * is still at work. Native writes no failure and no notice, lets the redirect return end on order-received, and logs
+	 * the refusal under the WooPayments source with the holder's operation from the lock record, whatever the setting.
+	 *
+	 * @testWith ["payment status update"]
+	 *           ["checkout"]
+	 *
+	 * @param string $holder Operation recorded by the lock's holder.
 	 */
-	public function test_handle_wp_leaves_a_locked_order_to_the_lock_holder_after_a_failed_fetch(): void {
+	public function test_handle_wp_leaves_a_locked_order_to_the_lock_holder_after_a_failed_fetch( string $holder ): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
 		add_filter( 'wcpay_dev_mode', '__return_false' );
 		$order                 = $this->create_order();
@@ -1007,8 +1012,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$api_client->exception = new WooPaymentsApiException( 'Request timed out.', 'wcpay_http_request_failed', 504 );
 		$store                 = wc_get_container()->get( OrderPaymentStore::class );
 		$profile               = new WooPaymentsPersistenceProfile();
-		// The webhook for this payment holds the lock, as OrderPaymentLifecycleService::apply() claims it.
-		$lock_token = $store->claim_order_payment_lock_for_operation( $order, $profile, 'pi_locked_return', 'payment status update' );
+		$lock_token            = $store->claim_order_payment_lock_for_operation( $order, $profile, 'pi_locked_return', $holder );
 		$this->assertNotNull( $lock_token );
 		$logger = new RedirectReturnRecordingLogger();
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
@@ -1031,9 +1035,10 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		);
 		$this->assertSame( array(), $failure_notes );
 		$this->assertCount( 1, $logger->warning_calls );
-		$this->assertMatchesRegularExpression( '/^order payment lock refused: order ' . $order->get_id() . ', refused redirect return failure, held by payment status update for \d+s$/', $logger->warning_calls[0]['message'] );
-		$this->assertSame( 'payment status update', $logger->warning_calls[0]['context']['holder_operation'] ?? null );
+		$this->assertMatchesRegularExpression( '/^order payment lock refused: order ' . $order->get_id() . ', refused redirect return failure, held by ' . $holder . ' for \d+s$/', $logger->warning_calls[0]['message'] );
+		$this->assertSame( $holder, $logger->warning_calls[0]['context']['holder_operation'] ?? null );
 		$this->assertSame( 'pi_locked_return', $logger->warning_calls[0]['context']['lock_value'] ?? null );
+		$this->assertSame( 'woopayments', $logger->warning_calls[0]['context']['source'] ?? null );
 	}
 
 	/**

@@ -311,10 +311,11 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * here (review 33 F1). The lifecycle's own late-failure check stays on paid statuses only: a Multibanco voucher expiry
 	 * must still move an on-hold order to failed.
 	 *
-	 * When another holder has the lock, most likely a webhook writing this payment's status, the order is left to it and
-	 * the shopper stays on order-received: no notice, no failure, and an always-on warning naming the holder's operation,
-	 * lock value and age (review 35 F4). The client fails nothing there but sends the shopper to checkout (gw:2428-2456),
-	 * where a resubmit creates a new order and can authorize the card again.
+	 * When another claim holds the lock, the order is left to it: a webhook, another return or the order-status callback
+	 * writing this payment's status, a checkout of the same order in another tab, a refund or a capture. Nothing is
+	 * written, and an always-on warning names the holder's operation, lock value and age from the lock record (review 35
+	 * F4). The client also skips the write (os:2747-2758) but sends the shopper to checkout (gw:2447-2454), where a
+	 * resubmit can pay again while the holder is still at work; fail_and_return_to_checkout() decides where the shopper goes.
 	 *
 	 * @param WC_Order    $order             Order object.
 	 * @param string      $intent_id         Requested intent ID.
@@ -332,7 +333,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 				$order,
 				$persistence_profile,
 				'redirect return failure',
-				'native-payments-webhook',
+				WooPaymentsLogger::SOURCE,
 				array(
 					'payment_reference' => $intent_id,
 					'event_type'        => PaymentLifecycleEvent::STATUS_FAILED,
