@@ -95,12 +95,10 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	/**
 	 * Register the GDPR personal-data eraser for stored WooPayments customer IDs.
 	 *
-	 * The eraser is registered unconditionally rather than behind the native
-	 * runtime arbiter: the customer-ID user options can persist on a site
-	 * regardless of which payments runtime currently owns it (native or the
-	 * standalone plugin), and erasure coverage must not blink off when ownership
-	 * changes. The callback only deletes user options, so it is idempotent and
-	 * harmless when there is nothing to remove.
+	 * The eraser covers the connected and active tiers: the bootstrap registers this service only there, so a
+	 * disabled or available store has no eraser for these IDs. Within those tiers it is not behind the runtime arbiter,
+	 * since the customer-ID user options stay whichever runtime owns the site. The callback only deletes user options,
+	 * so it is harmless when there is nothing to remove.
 	 *
 	 * @internal
 	 */
