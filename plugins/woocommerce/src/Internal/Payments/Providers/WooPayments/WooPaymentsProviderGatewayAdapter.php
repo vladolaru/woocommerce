@@ -255,8 +255,9 @@ class WooPaymentsProviderGatewayAdapter {
 			$intent_id = $this->get_order_intent_id( $order );
 			if ( '' !== $intent_id ) {
 				$amount_to_capture = $this->order_data_service->prepare_amount( $context->get_amount() ?? (float) $order->get_total(), (string) $order->get_currency() );
-				// The order's line items describe the order total only; a partial capture goes without Level 3 data, as the
-				// client's captures do when they have none to match (client 11.1.0 `class-wc-rest-payments-orders-controller.php:228`).
+				// Client 11.1.0 always captures the order total (`class-wc-payment-gateway-wcpay.php:3966, 3981`) and sends the
+				// order's Level 3 data with it (:3984-3986), so it never meets a partial capture. The order's line items add up to
+				// the order total only, so a native partial capture goes without Level 3 data (native decision, audit L2, N-315).
 				$is_order_total = $this->order_data_service->prepare_amount( (float) $order->get_total(), (string) $order->get_currency() ) === $amount_to_capture;
 				try {
 					$result  = $this->api_client->capture_intention(

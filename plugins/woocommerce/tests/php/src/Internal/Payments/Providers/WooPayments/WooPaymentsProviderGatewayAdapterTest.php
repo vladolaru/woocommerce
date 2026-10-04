@@ -5864,9 +5864,9 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * The client captures the order total with Level 3 data from the order (class-wc-payment-gateway-wcpay.php:3964-3986)
-	 * and captures without Level 3 when it has none to match (class-wc-rest-payments-orders-controller.php:228). A partial
-	 * capture is native-only, and the order's line items do not describe the captured part.
+	 * The client always captures the order total (class-wc-payment-gateway-wcpay.php:3966, 3981) with Level 3 data from the
+	 * order (:3984-3986), so it never meets a partial capture. A partial capture is native-only, and the order's line items
+	 * do not describe the captured part, so it goes without Level 3 data (native decision, audit L2, N-315).
 	 *
 	 * @testdox A capture of $_dataName sends Level 3 data only when it captures the order total.
 	 * @dataProvider capture_level3_cases
