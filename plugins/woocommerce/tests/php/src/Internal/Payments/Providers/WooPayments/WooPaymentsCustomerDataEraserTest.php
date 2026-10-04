@@ -35,7 +35,7 @@ class WooPaymentsCustomerDataEraserTest extends WC_Unit_Test_Case {
 		$this->assertFalse( get_user_option( WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, $user_id ) );
 		$this->assertFalse( get_user_option( WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, $user_id ) );
 		$this->assertFalse( get_user_option( WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $user_id ) );
-		$this->assertSame( array(), get_user_meta( $user_id, '_wcpay_payment_methods' ) );
+		$this->assertFalse( metadata_exists( 'user', $user_id, '_wcpay_payment_methods' ) );
 		$this->assertSame(
 			array(
 				'items_removed'  => true,
@@ -57,7 +57,7 @@ class WooPaymentsCustomerDataEraserTest extends WC_Unit_Test_Case {
 		$result = WooPaymentsCustomerDataEraser::erase( 'erase-cache@example.com' );
 
 		$this->assertTrue( $result['items_removed'] );
-		$this->assertSame( array(), get_user_meta( $user_id, '_wcpay_payment_methods' ) );
+		$this->assertFalse( metadata_exists( 'user', $user_id, '_wcpay_payment_methods' ) );
 	}
 
 	/**
