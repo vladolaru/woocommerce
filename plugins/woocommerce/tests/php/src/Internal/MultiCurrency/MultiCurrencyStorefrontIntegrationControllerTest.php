@@ -63,8 +63,45 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 
 		$sut->register();
 
+		$this->assertFalse( has_action( 'init', array( $sut, 'handle_init' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_breadcrumb_defaults', array( $sut, 'handle_woocommerce_breadcrumb_defaults' ) ) );
 		$this->assertFalse( has_action( 'wp_enqueue_scripts', array( $sut, 'handle_wp_enqueue_scripts' ) ) );
+	}
+
+	/**
+	 * @testdox Should leave the Storefront decision to init, reading neither the theme nor the currency state while WooCommerce loads.
+	 */
+	public function test_register_defers_the_storefront_decision_to_init(): void {
+		update_option( 'wcpay_multi_currency_enable_storefront_switcher', 'yes' );
+		$sut           = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$state_builder = $this->create_state_builder( 2 );
+		$theme_reads   = 0;
+		$sut->set_state_builder( $state_builder );
+		$sut->set_theme_resolver(
+			static function () use ( &$theme_reads ): array {
+				++$theme_reads;
+				return array(
+					'stylesheet' => 'storefront',
+					'template'   => 'storefront',
+				);
+			}
+		);
+
+		$sut->register();
+		$sut->register();
+
+		// register() runs inside the WooCommerce constructor, where a state build reaches WC() and constructs WooCommerce again.
+		$this->assertSame( 0, $state_builder->builds, 'register() must not build the currency state.' );
+		$this->assertSame( 0, $theme_reads, 'register() must not read the theme, which can still change before init.' );
+		$this->assertSame( 10, has_action( 'init', array( $sut, 'handle_init' ) ), 'The decision runs on init at the client priority.' );
+		$this->assertFalse( has_filter( 'woocommerce_breadcrumb_defaults', array( $sut, 'handle_woocommerce_breadcrumb_defaults' ) ) );
+		$this->assertFalse( has_action( 'wp_enqueue_scripts', array( $sut, 'handle_wp_enqueue_scripts' ) ) );
+
+		$sut->handle_init();
+
+		$this->assertSame( 1, $state_builder->builds );
+		$this->assertSame( 9999, has_filter( 'woocommerce_breadcrumb_defaults', array( $sut, 'handle_woocommerce_breadcrumb_defaults' ) ) );
+		$this->assertSame( 50, has_action( 'wp_enqueue_scripts', array( $sut, 'handle_wp_enqueue_scripts' ) ) );
 	}
 
 	/**
@@ -74,8 +111,8 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 		update_option( 'wcpay_multi_currency_enable_storefront_switcher', 'yes' );
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
 
-		$sut->register();
-		$sut->register();
+		$sut->handle_init();
+		$sut->handle_init();
 
 		$this->assertSame( 9999, has_filter( 'woocommerce_breadcrumb_defaults', array( $sut, 'handle_woocommerce_breadcrumb_defaults' ) ) );
 		$this->assertSame( 50, has_action( 'wp_enqueue_scripts', array( $sut, 'handle_wp_enqueue_scripts' ) ) );
@@ -88,7 +125,7 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 		update_option( 'wcpay_multi_currency_enable_storefront_switcher', 'yes' );
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, 2, 'twentytwentyfive', 'twentytwentyfive' );
 
-		$sut->register();
+		$sut->handle_init();
 
 		$this->assertFalse( has_filter( 'woocommerce_breadcrumb_defaults', array( $sut, 'handle_woocommerce_breadcrumb_defaults' ) ) );
 		$this->assertFalse( has_action( 'wp_enqueue_scripts', array( $sut, 'handle_wp_enqueue_scripts' ) ) );
@@ -101,7 +138,7 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 		update_option( 'wcpay_multi_currency_enable_storefront_switcher', 'yes' );
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, 1 );
 
-		$sut->register();
+		$sut->handle_init();
 
 		$this->assertFalse( has_filter( 'woocommerce_breadcrumb_defaults', array( $sut, 'handle_woocommerce_breadcrumb_defaults' ) ) );
 		$this->assertFalse( has_action( 'wp_enqueue_scripts', array( $sut, 'handle_wp_enqueue_scripts' ) ) );
@@ -115,7 +152,7 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 		$_GET['enable_storefront_switcher']  = 'true';
 		$sut                                 = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
 
-		$sut->register();
+		$sut->handle_init();
 
 		$this->assertSame( 9999, has_filter( 'woocommerce_breadcrumb_defaults', array( $sut, 'handle_woocommerce_breadcrumb_defaults' ) ) );
 		$this->assertSame( 50, has_action( 'wp_enqueue_scripts', array( $sut, 'handle_wp_enqueue_scripts' ) ) );
@@ -305,12 +342,19 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 	 * Create a state builder test double.
 	 *
 	 * @param int $enabled_currency_count Enabled currency count.
-	 * @return MultiCurrencyStateBuilder
+	 * @return MultiCurrencyStateBuilder&object{builds: int}
 	 */
 	private function create_state_builder( int $enabled_currency_count ): MultiCurrencyStateBuilder {
 		$state = $this->create_state( $enabled_currency_count );
 
 		return new class( $state ) extends MultiCurrencyStateBuilder {
+			/**
+			 * Number of build() calls.
+			 *
+			 * @var int
+			 */
+			public int $builds = 0;
+
 			/**
 			 * Multi-currency state.
 			 *
@@ -333,6 +377,8 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 			 * @return MultiCurrencyState
 			 */
 			public function build(): MultiCurrencyState {
+				++$this->builds;
+
 				return $this->state;
 			}
 		};

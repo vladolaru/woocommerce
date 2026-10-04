@@ -121,13 +121,24 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	}
 
 	/**
-	 * Register Storefront switcher hooks.
+	 * Defer the Storefront switcher decision to `init`, as the client does (client 11.1.0 `MultiCurrency.php:258,374-376`).
+	 *
+	 * This runs inside the WooCommerce constructor, where building currency state calls WC() and constructs WooCommerce again.
 	 */
 	public function register() {
 		if ( ! $this->arbiter->should_core_register() ) {
 			return;
 		}
 
+		$this->add_action_once( 'init', array( $this, 'handle_init' ) );
+	}
+
+	/**
+	 * Register Storefront switcher hooks when Storefront is active and more than one currency is enabled.
+	 *
+	 * @internal
+	 */
+	public function handle_init(): void {
 		$theme = $this->get_theme_data();
 		if ( ! MultiCurrencyStorefrontProjectionService::is_storefront_theme( $theme['stylesheet'], $theme['template'] ) ) {
 			return;
