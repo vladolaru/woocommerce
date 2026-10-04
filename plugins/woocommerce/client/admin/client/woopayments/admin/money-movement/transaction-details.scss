@@ -213,7 +213,7 @@
 
 	&__details {
 		// stylelint-disable-next-line declaration-property-value-disallowed-list -- Client 11.1.0 pane bottom padding; no token at 5px.
-		padding: 0 24px 5px;
+		padding: 0 $gap-large 5px;
 
 		hr {
 			border: 0;
@@ -417,8 +417,7 @@
 	}
 
 	&__notice-icon {
-		// stylelint-disable-next-line color-no-hex -- Client 11.1.0 dispute steps info icon; no upstream token.
-		fill: #0a4b78;
+		fill: $woopayments-notice-info-icon-color;
 		flex-shrink: 0;
 		height: $woopayments-notice-icon-size;
 		width: $woopayments-notice-icon-size;

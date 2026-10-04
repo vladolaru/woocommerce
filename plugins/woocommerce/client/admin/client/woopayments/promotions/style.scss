@@ -1,3 +1,5 @@
+@import "../_tokens.scss";
+
 // Client 11.1.0 `components/spotlight/style.scss`: a 300px card fixed at the bottom right that slides in from the side,
 // full width along the bottom at 782px and below.
 .woopayments-promotion-spotlight {
@@ -120,7 +122,7 @@
 	}
 
 	&.is-warning {
-		background: #fcf9e8;
+		background: $woopayments-badge-warning-background;
 		color: $studio-yellow-80;
 	}
 

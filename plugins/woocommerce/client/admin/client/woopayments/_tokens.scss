@@ -42,9 +42,10 @@ $woopayments-error-red: #cc1818;
 // Payment and payout details text is 14px like the client; base-styles' type scale goes 13px → 15px.
 $woopayments-font-size-detail: 14px;
 
-// The client's inline notices: a 22px icon, 5px before the text; no upstream notice icon size.
+// The client's inline notices: a 22px icon, 5px before the text, the info icon in WP's dark notice blue; no upstream notice icon tokens.
 $woopayments-notice-icon-size: 22px;
 $woopayments-notice-icon-gap: 5px;
+$woopayments-notice-info-icon-color: #0a4b78;
 
 // Small (12px) text sits on an 18px line in badges, chips and muted settings text; base-styles' line heights go 16px to 20px.
 $woopayments-line-height-small: 18px;

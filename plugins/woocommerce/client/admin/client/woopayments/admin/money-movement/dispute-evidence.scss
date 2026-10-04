@@ -66,8 +66,7 @@
 }
 
 .woocommerce-woopayments-dispute-evidence__outcome-icon {
-	// stylelint-disable-next-line color-no-hex -- client 11.1.0 evidence notice info icon colour; no upstream token.
-	fill: #0a4b78;
+	fill: $woopayments-notice-info-icon-color;
 	flex-shrink: 0;
 	height: $woopayments-notice-icon-size;
 	width: $woopayments-notice-icon-size;

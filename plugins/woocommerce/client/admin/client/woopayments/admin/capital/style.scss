@@ -77,7 +77,7 @@
 		padding: 2px $gap-smaller;
 
 		&.is-active {
-			background: #fcf9e8;
+			background: $woopayments-badge-warning-background;
 			border-color: #dba617;
 			color: $studio-yellow-80;
 		}
