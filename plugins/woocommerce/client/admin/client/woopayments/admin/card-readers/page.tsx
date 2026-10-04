@@ -1,6 +1,7 @@
 /**
  * External dependencies
  */
+import { Card, CardBody } from '@wordpress/components';
 import { useEffect, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 
@@ -86,71 +87,77 @@ export const WooPaymentsCardReadersPage = () => {
 
 	return (
 		<div className="woocommerce-woopayments-card-readers">
-			<section
+			{ /* Client 11.1.0 `card-readers/list/index.tsx:42`: the readers sit in a `Card`, as every other WooPayments page. */ }
+			<Card
+				as="section"
 				className="woocommerce-woopayments-card-readers__settings-card"
 				aria-busy={ isLoading }
 				aria-labelledby="woocommerce-woopayments-card-readers-heading"
 			>
-				<h2 id="woocommerce-woopayments-card-readers-heading">
-					{ __( 'Connected card readers', 'woocommerce' ) }
-				</h2>
-				<p>
-					{ sprintf(
-						/* translators: %s: WooCommerce */
-						__(
-							'Card readers are marked as active if they’ve processed one or more transactions during the current billing cycle. To connect or disconnect card readers, use the %s mobile application.',
-							'woocommerce'
-						),
-						'WooCommerce'
-					) }
-				</p>
-				<p
-					className={
-						hasLoadedReaders
-							? 'screen-reader-text'
-							: 'woocommerce-woopayments-card-readers__status'
-					}
-					role={ errorMessage ? 'alert' : 'status' }
-					aria-live={ errorMessage ? 'assertive' : 'polite' }
-				>
-					{ statusMessage }
-				</p>
-				{ hasLoadedReaders && (
-					<table className="woocommerce-woopayments-card-readers__table">
-						<thead>
-							<tr>
-								<th scope="col">
-									{ __( 'Reader ID', 'woocommerce' ) }
-								</th>
-								<th scope="col">
-									{ __( 'Model', 'woocommerce' ) }
-								</th>
-								<th scope="col">
-									{ __( 'Status', 'woocommerce' ) }
-								</th>
-							</tr>
-						</thead>
-						<tbody>
-							{ readers.map( ( reader ) => (
-								<tr key={ reader.id }>
-									<td>{ reader.id }</td>
-									<td>{ reader.device_type }</td>
-									<td>
-										<StatusChip
-											message={ getStatusLabel( reader ) }
-											type={
-												reader.is_active
-													? 'success'
-													: 'info'
-											}
-										/>
-									</td>
+				<CardBody>
+					<h2 id="woocommerce-woopayments-card-readers-heading">
+						{ __( 'Connected card readers', 'woocommerce' ) }
+					</h2>
+					<p>
+						{ sprintf(
+							/* translators: %s: WooCommerce */
+							__(
+								'Card readers are marked as active if they’ve processed one or more transactions during the current billing cycle. To connect or disconnect card readers, use the %s mobile application.',
+								'woocommerce'
+							),
+							'WooCommerce'
+						) }
+					</p>
+					<p
+						className={
+							hasLoadedReaders
+								? 'screen-reader-text'
+								: 'woocommerce-woopayments-card-readers__status'
+						}
+						role={ errorMessage ? 'alert' : 'status' }
+						aria-live={ errorMessage ? 'assertive' : 'polite' }
+					>
+						{ statusMessage }
+					</p>
+					{ hasLoadedReaders && (
+						<table className="woocommerce-woopayments-card-readers__table">
+							<thead>
+								<tr>
+									<th scope="col">
+										{ __( 'Reader ID', 'woocommerce' ) }
+									</th>
+									<th scope="col">
+										{ __( 'Model', 'woocommerce' ) }
+									</th>
+									<th scope="col">
+										{ __( 'Status', 'woocommerce' ) }
+									</th>
 								</tr>
-							) ) }
-						</tbody>
-					</table>
-				) }
-			</section>
+							</thead>
+							<tbody>
+								{ readers.map( ( reader ) => (
+									<tr key={ reader.id }>
+										<td>{ reader.id }</td>
+										<td>{ reader.device_type }</td>
+										<td>
+											<StatusChip
+												message={ getStatusLabel(
+													reader
+												) }
+												type={
+													reader.is_active
+														? 'success'
+														: 'info'
+												}
+											/>
+										</td>
+									</tr>
+								) ) }
+							</tbody>
+						</table>
+					) }
+				</CardBody>
+			</Card>
 		</div>
 	);
 };

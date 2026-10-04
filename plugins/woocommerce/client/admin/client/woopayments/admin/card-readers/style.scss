@@ -1,9 +1,10 @@
 .woocommerce-woopayments-card-readers {
 	&__settings-card {
-		background: $white;
-		border: 1px solid $studio-gray-5;
 		margin: $gap-large 0;
-		padding: $gap-large;
+
+		h2 {
+			margin-top: 0;
+		}
 	}
 
 	&__status {
