@@ -1,10 +1,9 @@
 /**
  * External dependencies
  */
-import { Button, Dropdown, ExternalLink, Notice } from '@wordpress/components';
+import { Button, ExternalLink, Notice } from '@wordpress/components';
 import { createInterpolateElement, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
-import { help } from '@wordpress/icons';
 import { recordEvent } from '@woocommerce/tracks';
 
 /**
@@ -13,6 +12,7 @@ import { recordEvent } from '@woocommerce/tracks';
 import { SetupLivePaymentsModal } from '~/woopayments/settings/account-mode-notice';
 import BannerNotice from '~/settings-payments/onboarding/providers/woopayments/components/banner-notice';
 import type { WooPaymentsOverviewAccount } from '../types';
+import { HelpPopover } from './help-popover';
 
 const TEST_ACCOUNTS_URL =
 	'https://woocommerce.com/document/woopayments/testing-and-troubleshooting/test-accounts/';
@@ -182,33 +182,22 @@ const SandboxModeNotice = ( {
 							),
 						} ) }
 					</span>
-					<Dropdown
-						renderToggle={ ( { isOpen, onToggle } ) => (
-							<Button
-								icon={ help }
-								size="small"
-								label={ helpLabel }
-								aria-expanded={ isOpen }
-								onClick={ onToggle }
-							/>
-						) }
-						renderContent={ () =>
-							createInterpolateElement( helpText, {
-								wpEnvLink: link(
-									'https://make.wordpress.org/core/2020/08/27/wordpress-environment-types/'
-								),
-								learnMoreLink: link( helpUrl, () =>
-									recordEvent(
-										'wcpay_overview_sandbox_mode_learn_more_clicked',
-										{
-											account_type: accountType,
-											is_dev_mode: isDevMode,
-										}
-									)
-								),
-							} )
-						}
-					/>
+					<HelpPopover label={ helpLabel }>
+						{ createInterpolateElement( helpText, {
+							wpEnvLink: link(
+								'https://make.wordpress.org/core/2020/08/27/wordpress-environment-types/'
+							),
+							learnMoreLink: link( helpUrl, () =>
+								recordEvent(
+									'wcpay_overview_sandbox_mode_learn_more_clicked',
+									{
+										account_type: accountType,
+										is_dev_mode: isDevMode,
+									}
+								)
+							),
+						} ) }
+					</HelpPopover>
 				</>
 			</BannerNotice>
 			{ isModalVisible && (
