@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -4146,6 +4147,46 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			)
 		);
 		$this->assertCount( 1, $failed_notes, "Exactly one failed-payment note should record the $pair decline." );
+	}
+
+	/**
+	 * @testdox An Afterpay checkout with no usable shipping or billing address fails the order with the client's notice and note, and sends nothing.
+	 *
+	 * Client 11.1.0 throws Invalid_Address_Exception before any request (class-wc-payment-gateway-wcpay.php:5333-5340); the
+	 * process_payment() catch fails the order, writes "A payment of %1$s <strong>failed</strong> to complete with the
+	 * following message: <code>%2$s</code>." with the message's final period trimmed (:1352-1394), and shows the message
+	 * itself to the shopper through get_filtered_error_message() (:1418; class-wc-payments-utils.php:769-770) (review 36 F5).
+	 */
+	public function test_afterpay_checkout_without_a_usable_address_fails_with_the_client_notice_and_note(): void {
+		$order = $this->create_woopayments_order( '80.00' );
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID_PREFIX . 'afterpay_clearpay' );
+		$order->set_currency( 'USD' );
+		$order->save();
+		$http_client      = new FakeWooPaymentsHttpClient();
+		$account_service  = $this->create_account_service( false );
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_afterpay' );
+		$provider   = $this->create_provider_over_fake_transport( $http_client, $account_service, $customer_service );
+		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'afterpay_clearpay' );
+		$this->assertNotNull( $definition );
+		$gateway = new NativeWooPaymentsGateway( $definition );
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
+		$_POST['wcpay-payment-method'] = 'pm_afterpay';
+
+		try {
+			$result = $gateway->process_payment( $order->get_id() );
+		} finally {
+			unset( $_POST['wcpay-payment-method'] );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'failure', $result['result'] ?? '' );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertSame( 0, $http_client->request_count, 'The payment is refused before any request.' );
+		$this->assertSame( array( 'A valid shipping address is required for Afterpay payments.' ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+		$notes = array_map( static fn( $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertContains( 'A payment of ' . wc_price( 80.00, array( 'currency' => 'USD' ) ) . ' <strong>failed</strong> to complete with the following message: <code>A valid shipping address is required for Afterpay payments</code>.', $notes );
 	}
 
 	/**
