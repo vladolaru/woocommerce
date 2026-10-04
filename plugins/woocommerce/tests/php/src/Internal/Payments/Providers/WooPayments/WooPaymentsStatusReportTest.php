@@ -207,6 +207,21 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A kill switch stored as a non-empty array registers the supportability hooks without an error.
+	 */
+	public function test_registers_supportability_hooks_while_the_kill_switch_is_stored_as_an_array(): void {
+		$this->fake_plugin( false );
+		update_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION, array( 'on' ), true );
+		$this->set_native_state( NativePaymentsState::AVAILABLE );
+		$sut = $this->get_sut();
+		$this->remove_status_hooks( $sut );
+
+		$sut->register();
+
+		$this->assertSame( 1, has_action( 'woocommerce_system_status_report', array( $sut, 'render_status_report_section' ) ) );
+	}
+
+	/**
 	 * @testdox A store with a cutover record registers the supportability hooks even when its state is not connected.
 	 */
 	public function test_registers_supportability_hooks_when_a_cutover_record_exists(): void {

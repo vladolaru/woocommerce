@@ -133,7 +133,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	private function has_support_diagnostics(): bool {
 		return in_array( $this->native_payments_state->get_stored_state(), array( NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ), true )
 			|| $this->arbiter->is_plugin_runtime_active()
-			|| wc_string_to_bool( get_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION, false ) )
+			|| $this->arbiter->is_kill_switch_active()
 			|| null !== $this->get_cutover_state_store()->get_record();
 	}
 

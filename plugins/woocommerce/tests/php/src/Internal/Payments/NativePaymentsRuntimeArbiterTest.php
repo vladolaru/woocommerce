@@ -450,4 +450,20 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 
 		$this->assertFalse( $this->sut->is_native_runtime_enabled(), "A kill switch stored as '{$stored}' must disable native." );
 	}
+
+	/**
+	 * @testdox A kill switch stored as an array reads as on when non-empty and off when empty, without an error.
+	 */
+	public function test_kill_switch_reads_a_stored_array_as_bool(): void {
+		$this->fake_plugin();
+		update_option( 'woocommerce_native_payments_enabled', 'yes' );
+
+		update_option( 'woocommerce_native_payments_killswitch', array( 'on' ) );
+		$this->assertTrue( $this->sut->is_kill_switch_active(), 'A non-empty array must read as on.' );
+		$this->assertFalse( $this->sut->is_native_runtime_enabled(), 'A non-empty array must disable native.' );
+
+		update_option( 'woocommerce_native_payments_killswitch', array() );
+		$this->assertFalse( $this->sut->is_kill_switch_active(), 'An empty array must read as off.' );
+		$this->assertTrue( $this->sut->is_native_runtime_enabled(), 'An empty array must leave native enabled.' );
+	}
 }

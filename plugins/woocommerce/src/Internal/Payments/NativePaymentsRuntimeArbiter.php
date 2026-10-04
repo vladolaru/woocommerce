@@ -215,9 +215,8 @@ class NativePaymentsRuntimeArbiter {
 	 * @return bool True when the native runtime is enabled.
 	 */
 	public function is_native_runtime_enabled(): bool {
-		$option_enabled     = 'yes' === get_option( self::FILTER_NATIVE_ENABLED, 'no' );
-		$kill_switch_active = wc_string_to_bool( get_option( self::NATIVE_RUNTIME_KILL_SWITCH_OPTION, false ) );
-		$filter_default     = $kill_switch_active ? false : $option_enabled;
+		$option_enabled = 'yes' === get_option( self::FILTER_NATIVE_ENABLED, 'no' );
+		$filter_default = $this->is_kill_switch_active() ? false : $option_enabled;
 
 		/**
 		 * Filters whether the core-native payments runtime is enabled for this site.
@@ -231,6 +230,25 @@ class NativePaymentsRuntimeArbiter {
 		 * @param bool $enabled Whether the native runtime is enabled.
 		 */
 		return (bool) apply_filters( self::FILTER_NATIVE_ENABLED, $filter_default );
+	}
+
+	/**
+	 * Tell whether the stored kill switch is on.
+	 *
+	 * Scalar values follow wc_string_to_bool(); any other stored value (such as an array) is cast to bool.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return bool True when the kill switch option is on.
+	 */
+	public function is_kill_switch_active(): bool {
+		$stored = get_option( self::NATIVE_RUNTIME_KILL_SWITCH_OPTION, false );
+
+		if ( ! is_scalar( $stored ) && null !== $stored ) {
+			return (bool) $stored;
+		}
+
+		return wc_string_to_bool( is_bool( $stored ) ? $stored : (string) $stored );
 	}
 
 	/**
