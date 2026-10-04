@@ -26,7 +26,8 @@ use WC_Payment_Tokens;
 /**
  * Persists WooPayments reusable payment methods (card, SEPA, Link and Amazon Pay) as WooCommerce payment tokens.
  *
- * It also reconciles saved tokens with the provider and filters the My Account payment-method list.
+ * It also reconciles saved tokens with the provider and filters every customer token read
+ * (`woocommerce_get_customer_payment_tokens`): checkout, Blocks, the admin select and My Account.
  *
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.

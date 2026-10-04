@@ -21,8 +21,10 @@ defined( 'ABSPATH' ) || exit;
  * commercial-card transactions qualify for Level 2/3 interchange rates.
  * Non-US accounts send nothing — the networks only price it domestically.
  *
- * Builds from the order object, the account country and the store postcode option. Loading
- * the order's line items and fees can query when the order has not loaded them yet.
+ * Builds from the order object, the account country and the store postcode option, then passes
+ * the result through the `wcpay_payment_request_level3_data` filter. Loading the order's line
+ * items and fees can query when the order has not loaded them yet, and reading the account
+ * country can fetch the account from the platform when its cache is stale.
  *
  * @internal
  */
