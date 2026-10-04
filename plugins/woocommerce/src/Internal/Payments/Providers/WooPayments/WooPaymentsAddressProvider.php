@@ -151,10 +151,8 @@ class WooPaymentsAddressProvider extends AbstractAutomatticAddressProvider imple
 			$response = $this->api_client->get_address_autocomplete_token();
 			$token    = $response['token'] ?? null;
 		} catch ( Throwable $e ) {
-			wc_get_logger()->error(
-				'Unexpected error getting address service JWT: ' . $e->getMessage(),
-				array( 'source' => 'woocommerce-woopayments' )
-			);
+			// Client 11.1.0 address-provider:102 logs this through its gated Logger.
+			wc_get_container()->get( WooPaymentsLogger::class )->error( 'Unexpected error getting address service JWT: ' . $e->getMessage() );
 
 			$token = null;
 		}

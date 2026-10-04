@@ -2643,6 +2643,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$_POST['wcpay-payment-method-error-message'] = 'Your card number is invalid.';
 		$_POST['wcpay-payment-method-error-code']    = 'incomplete_number';
 
+		$this->enable_debug_logging();
 		$logger = $this->capture_logs();
 
 		$result = $gateway->process_payment( $order->get_id() );
@@ -3746,6 +3747,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order = $this->create_order();
 		$order->update_meta_data( '_intention_status', 'requires_payment_method' );
 		$order->save();
+		$this->enable_debug_logging();
 		$logger = $this->capture_logs();
 
 		$service                     = new RecordingPaymentProcessingService();
@@ -5961,6 +5963,14 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		);
 
 		return $return_url;
+	}
+
+	/**
+	 * Turn on WooPayments debug logging, which the client's Logger requires for checkout errors (`src/Internal/Logger.php:64-91`).
+	 */
+	private function enable_debug_logging(): void {
+		$settings = get_option( 'woocommerce_woocommerce_payments_settings', array() );
+		update_option( 'woocommerce_woocommerce_payments_settings', array_merge( is_array( $settings ) ? $settings : array(), array( 'enable_logging' => 'yes' ) ) );
 	}
 
 	/**

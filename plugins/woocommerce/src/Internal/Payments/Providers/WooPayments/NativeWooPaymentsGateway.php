@@ -777,20 +777,14 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 				'redirect' => apply_filters( 'wcpay_get_add_payment_method_redirect_url', wc_get_endpoint_url( 'payment-methods' ) ),
 			);
 		} catch ( WooPaymentsApiException $exception ) {
-			wc_get_logger()->error(
-				'Error when adding native WooPayments payment method: ' . $exception->getMessage(),
-				array( 'source' => 'wcpay-add-payment-method' )
-			);
+			$this->get_logger()->error( 'Error when adding native WooPayments payment method: ' . $exception->getMessage() );
 
 			// Client 11.1.0 gw:4467-4468 filters API errors through get_filtered_error_message().
 			return $this->add_payment_method_error(
 				WooPaymentsErrorMessages::get_shopper_message( $exception->get_error_type(), $exception->get_error_code(), $exception->get_decline_code(), $exception->getMessage() )
 			);
 		} catch ( Throwable $exception ) {
-			wc_get_logger()->error(
-				'Error when adding native WooPayments payment method: ' . $exception->getMessage(),
-				array( 'source' => 'wcpay-add-payment-method' )
-			);
+			$this->get_logger()->error( 'Error when adding native WooPayments payment method: ' . $exception->getMessage() );
 
 			return $this->add_payment_method_error( __( "We're not able to add this payment method. Please try again later", 'woocommerce' ) );
 		}
@@ -916,9 +910,12 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 				$renewal_order->get_currency()
 			);
 		} catch ( Throwable $exception ) {
-			wc_get_logger()->error(
+			$this->get_logger()->error(
 				'Failed to run WooPayments subscription renewal authentication hooks: ' . $exception->getMessage(),
-				array( 'source' => 'woopayments-subscriptions' )
+				array(
+					'order_id'  => $renewal_order->get_id(),
+					'intent_id' => $outcome->get_provider_payment_id(),
+				)
 			);
 		}
 
@@ -1099,9 +1096,9 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 			return $token;
 		} catch ( Throwable $exception ) {
-			wc_get_logger()->error(
+			$this->get_logger()->error(
 				'Error repairing subscription renewal payment token for order #' . $renewal_order->get_id() . ': ' . $exception->getMessage(),
-				array( 'source' => 'woopayments-subscriptions' )
+				array( 'order_id' => $renewal_order->get_id() )
 			);
 
 			return null;
@@ -2256,6 +2253,15 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
+	 * Get the WooPayments logger, which writes only when debug logging is on (client 11.1.0 `src/Internal/Logger.php:64-91`).
+	 *
+	 * @return WooPaymentsLogger
+	 */
+	private function get_logger(): WooPaymentsLogger {
+		return wc_get_container()->get( WooPaymentsLogger::class );
+	}
+
+	/**
 	 * Get the native WooPayments token service.
 	 *
 	 * @return WooPaymentsTokenService
@@ -2881,10 +2887,9 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return array<string,string>
 	 */
 	private function fail_checkout_after_exception( WC_Order $order, Throwable $failure ): array {
-		wc_get_logger()->error(
+		$this->get_logger()->error(
 			'Error occurred during the payment process. Exception: ' . $failure->getMessage(),
 			array(
-				'source'    => 'woopayments',
 				'order_id'  => $order->get_id(),
 				'exception' => get_class( $failure ),
 			)
@@ -3013,10 +3018,9 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return $this->keep_succeeded_intent_order( $order, $message, $code );
 		}
 
-		wc_get_logger()->error(
+		$this->get_logger()->error(
 			'Error occurred during the payment process. Exception: ' . $message,
 			array(
-				'source'    => 'woopayments',
 				'order_id'  => $order->get_id(),
 				'exception' => $code,
 			)

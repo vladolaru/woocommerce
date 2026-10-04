@@ -148,7 +148,8 @@ class WooPaymentsFraudService implements RegisterHooksInterface {
 		try {
 			$this->api_client->link_session_to_customer( $this->session_service->get_sift_session_id(), $customer_id );
 		} catch ( WooPaymentsApiException $exception ) {
-			wc_get_logger()->info( '[Tracking] Error when linking session with user: ' . $exception->getMessage(), array( 'source' => 'woocommerce-payments' ) );
+			// Client 11.1.0 fraud-service:195 logs this at info level through its gated Logger.
+			wc_get_container()->get( WooPaymentsLogger::class )->log( '[Tracking] Error when linking session with user: ' . $exception->getMessage() );
 		}
 	}
 

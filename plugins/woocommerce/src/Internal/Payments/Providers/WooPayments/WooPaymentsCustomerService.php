@@ -606,10 +606,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 			// current, which is routine here (every order update re-persists); only a
 			// write that leaves a different value behind is a real failure.
 			if ( ! $updated && get_user_option( $this->get_customer_id_option(), $user_id ) !== $customer_id ) {
-				wc_get_logger()->error(
-					'Failed to update the WooPayments customer ID for user ' . $user_id . '.',
-					array( 'source' => 'woopayments' )
-				);
+				wc_get_container()->get( WooPaymentsLogger::class )->error( 'Failed to update the WooPayments customer ID for user ' . $user_id . '.' );
 			}
 		}
 
@@ -654,10 +651,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 		if ( update_user_option( $user_id, $target_option, $customer_id ) ) {
 			delete_user_option( $user_id, self::DEPRECATED_CUSTOMER_ID_OPTION );
 		} else {
-			wc_get_logger()->error(
-				'Failed to store the migrated WooPayments customer ID for user ' . $user_id . '; the legacy customer option was kept.',
-				array( 'source' => 'woopayments' )
-			);
+			wc_get_container()->get( WooPaymentsLogger::class )->error( 'Failed to store the migrated WooPayments customer ID for user ' . $user_id . '; the legacy customer option was kept.' );
 		}
 	}
 

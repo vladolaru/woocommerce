@@ -184,14 +184,20 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 				? $this->api_client->get_payment_intention( $intent_id )
 				: $this->api_client->get_setup_intention( $intent_id );
 		} catch ( Throwable $exception ) {
-			$this->log_return_error( $order, $exception );
+			$this->log_fetch_error( $order, $intent_id, $exception );
 			$this->fail_order( $order, $intent_id, $exception->getMessage() );
 			$this->redirect_to_checkout( $this->get_shopper_message_for_fetch_error( $exception ) );
 			return;
 		}
 
 		if ( ! $this->fetched_intent_matches_request( $intent, $intent_id ) ) {
-			$this->log_error( sprintf( 'Native WooPayments redirect fetched an unexpected intent for requested intent %s.', $intent_id ) );
+			$this->log_error(
+				sprintf( 'Native WooPayments redirect fetched an unexpected intent for requested intent %s.', $intent_id ),
+				array(
+					'order_id'  => $order->get_id(),
+					'intent_id' => $intent_id,
+				)
+			);
 			$this->redirect_to_checkout_after_order_mismatch();
 			return;
 		}
@@ -355,6 +361,38 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 				'Error completing native WooPayments redirect return for order %1$d: %2$s',
 				$order->get_id(),
 				$exception->getMessage()
+			),
+			array( 'order_id' => $order->get_id() )
+		);
+	}
+
+	/**
+	 * Log a failed intent fetch.
+	 *
+	 * A platform error follows the client's logging setting (gw:2429). Any other throwable is a code or
+	 * environment fault, so it is always logged with its class (decided divergence, monitor ruling 2026-10-04).
+	 *
+	 * @param WC_Order  $order     Order object.
+	 * @param string    $intent_id Requested intent ID.
+	 * @param Throwable $exception Fetch failure.
+	 */
+	private function log_fetch_error( WC_Order $order, string $intent_id, Throwable $exception ): void {
+		if ( $exception instanceof WooPaymentsApiException ) {
+			$this->log_return_error( $order, $exception );
+			return;
+		}
+
+		wc_get_logger()->error(
+			sprintf(
+				'Error fetching the intent for native WooPayments redirect return for order %1$d: %2$s: %3$s',
+				$order->get_id(),
+				get_class( $exception ),
+				$exception->getMessage()
+			),
+			array(
+				'source'    => WooPaymentsLogger::SOURCE,
+				'order_id'  => $order->get_id(),
+				'intent_id' => $intent_id,
 			)
 		);
 	}
@@ -505,6 +543,10 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 				'Native WooPayments redirect intent %1$s did not match order %2$d.',
 				$intent_id,
 				$order->get_id()
+			),
+			array(
+				'order_id'  => $order->get_id(),
+				'intent_id' => $intent_id,
 			)
 		);
 	}
@@ -528,11 +570,12 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Log a redirect-return failure.
+	 * Log a redirect-return failure when debug logging is on, as the client's catch does (gw:2429).
 	 *
-	 * @param string $message Log message.
+	 * @param string              $message Log message.
+	 * @param array<string,mixed> $context Log context.
 	 */
-	private function log_error( string $message ): void {
-		wc_get_logger()->error( $message, array( 'source' => 'payment-info' ) );
+	private function log_error( string $message, array $context = array() ): void {
+		wc_get_container()->get( WooPaymentsLogger::class )->error( $message, $context );
 	}
 }

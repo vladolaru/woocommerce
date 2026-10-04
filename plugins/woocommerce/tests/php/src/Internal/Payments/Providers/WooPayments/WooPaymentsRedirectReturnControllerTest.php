@@ -99,6 +99,8 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$GLOBALS['_SERVER']['REQUEST_METHOD']  = 'GET';
 		WC()->cart->empty_cart();
 		wc_clear_notices();
+		// The client writes redirect-return errors only with debug logging on (gw:2429, src/Internal/Logger.php:64-91).
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
 		// A redirect return that redirects would exit; stop it at wp_redirect instead.
 		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
 	}
@@ -530,7 +532,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pending', $reloaded->get_status() );
 		$this->assertSame( 'pi_mismatch', $reloaded->get_meta( '_intent_id', true ) );
 		$this->assertCount( 1, $logger->error_calls );
-		$this->assertSame( 'payment-info', $logger->error_calls[0]['context']['source'] );
+		$this->assertSame( 'woopayments', $logger->error_calls[0]['context']['source'] );
 	}
 
 	/**
@@ -2002,7 +2004,9 @@ class RedirectReturnRecordingLogger implements \WC_Logger_Interface {
 	}
 
 	public function log( $level, $message, $context = array() ) {
-		unset( $level, $message, $context );
+		if ( \WC_Log_Levels::ERROR === $level ) {
+			$this->error( $message, $context );
+		}
 	}
 
 	public function emergency( $message, $context = array() ) {

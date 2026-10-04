@@ -443,10 +443,26 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A platform error while linking the session is logged and does not break the request.
+	 * @testdox A platform error while linking the session does not break the request and is logged only with debug logging on: $logging.
+	 *
+	 * Client 11.1.0 fraud-service:195 writes it through `Logger::log()`: info level, source `woopayments`, and only
+	 * in dev mode or with the `enable_logging` setting on (`src/Internal/Logger.php:22,64-91`).
+	 *
+	 * @dataProvider debug_logging_states
+	 *
+	 * @param string $logging  Gateway `enable_logging` setting.
+	 * @param bool   $expected Whether the line is written.
 	 */
-	public function test_logs_session_link_api_error(): void {
-		$http_client           = $this->arrange_just_logged_in_shopper( array( 'sift' => array( 'beacon_key' => 'prod_beacon' ) ) );
+	public function test_logs_session_link_api_error_only_with_debug_logging( string $logging, bool $expected ): void {
+		$http_client = $this->arrange_just_logged_in_shopper( array( 'sift' => array( 'beacon_key' => 'prod_beacon' ) ) );
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'test_mode'      => 'yes',
+				'enable_logging' => $logging,
+			)
+		);
+		add_filter( 'wcpay_dev_mode', '__return_false' );
 		$http_client->response = array(
 			'response' => array( 'code' => 500 ),
 			'headers'  => array( 'content-type' => 'application/json' ),
@@ -463,7 +479,21 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 		$this->make_link_sut( $http_client )->link_session_if_user_just_logged_in();
 
 		$this->assertGreaterThanOrEqual( 1, $http_client->request_count );
-		$this->assertStringContainsString( '[Tracking] Error when linking session with user:', implode( ' | ', array_column( $logger->lines, 1 ) ) );
+		$lines = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], '[Tracking] Error when linking session with user:' ) ) );
+		if ( ! $expected ) {
+			$this->assertSame( array(), $lines );
+			return;
+		}
+		$this->assertCount( 1, $lines );
+		$this->assertSame( array( 'info', 'woopayments' ), array( $lines[0][0], $lines[0][2] ) );
+	}
+
+	/** @return array<string,array{string,bool}> */
+	public static function debug_logging_states(): array {
+		return array(
+			'off' => array( 'no', false ),
+			'on'  => array( 'yes', true ),
+		);
 	}
 
 	/**

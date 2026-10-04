@@ -236,9 +236,12 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		} catch ( WooPaymentsIntentConfirmationException $exception ) {
 			return $this->error_response( $exception->getMessage(), $exception->getCode() );
 		} catch ( Throwable $exception ) {
-			wc_get_logger()->error(
+			wc_get_container()->get( WooPaymentsLogger::class )->error(
 				'Error completing native WooPayments authenticated payment: ' . $exception->getMessage(),
-				array( 'source' => 'payment-info' )
+				array(
+					'order_id'  => $order->get_id(),
+					'intent_id' => $intent_id,
+				)
 			);
 
 			return $this->error_response( __( "We're not able to process this payment. Please try again later.", 'woocommerce' ), 500 );
@@ -717,7 +720,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 				);
 			}
 		} catch ( Throwable $exception ) {
-			$this->log_token_save_error( $payment_method_id, $exception );
+			$this->log_token_save_error( $order, $payment_method_id, $exception );
 
 			return array(
 				'error'                  => $is_recurring ? $this->recurring_token_save_error_response() : null,
@@ -814,23 +817,20 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Log a token-save error.
+	 * Log a token-save error (client 11.1.0 gw:4312 logs it through its gated Logger).
 	 *
+	 * @param WC_Order  $order             Order being updated.
 	 * @param string    $payment_method_id Provider payment method ID.
 	 * @param Throwable $exception         Exception thrown while saving the token.
 	 */
-	private function log_token_save_error( string $payment_method_id, Throwable $exception ): void {
-		if ( ! function_exists( 'wc_get_logger' ) ) {
-			return;
-		}
-
-		wc_get_logger()->error(
+	private function log_token_save_error( WC_Order $order, string $payment_method_id, Throwable $exception ): void {
+		wc_get_container()->get( WooPaymentsLogger::class )->error(
 			sprintf(
 				'Failed to save native WooPayments payment method %1$s: %2$s',
 				$payment_method_id,
 				$exception->getMessage()
 			),
-			array( 'source' => 'payment-info' )
+			array( 'order_id' => $order->get_id() )
 		);
 	}
 
