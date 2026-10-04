@@ -150,7 +150,9 @@ class WooPaymentsProviderGatewayAdapter {
 	 * Charge an order through the active WooPayments transport.
 	 *
 	 * @param PaymentContext $context         Payment context.
-	 * @param string         $idempotency_key Key minted fresh for this payment attempt.
+	 * @param string         $idempotency_key Key minted fresh for this payment attempt. A positive-amount charge keeps its
+	 *                                        key on the order and sends the kept key on later attempts until a definitive
+	 *                                        outcome retires it, so a retry after an ambiguous failure replays the request.
 	 * @return PaymentOutcome
 	 */
 	public function charge( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
@@ -458,6 +460,8 @@ class WooPaymentsProviderGatewayAdapter {
 	/**
 	 * Retire a native charge idempotency key after a definitive lifecycle outcome.
 	 *
+	 * Covers a PaymentIntent response; a definitive dispatch failure was already retired by failed_charge_outcome().
+	 *
 	 * @param WC_Order       $order   Order that was charged.
 	 * @param PaymentOutcome $outcome Provider outcome applied by the lifecycle.
 	 * @return void
@@ -471,6 +475,15 @@ class WooPaymentsProviderGatewayAdapter {
 			return;
 		}
 
+		$this->retire_charge_idempotency_key( $order );
+	}
+
+	/**
+	 * Delete the order's charge idempotency key, so the next attempt sends a fresh one.
+	 *
+	 * @param WC_Order $order Order that was charged.
+	 */
+	private function retire_charge_idempotency_key( WC_Order $order ): void {
 		$order->delete_meta_data( self::CHARGE_IDEMPOTENCY_KEY_META );
 		$order->save_meta_data();
 	}
@@ -525,6 +538,9 @@ class WooPaymentsProviderGatewayAdapter {
 		$data    = $outcome->get_data();
 		if ( $is_payment_intent_dispatch && ! $this->api_client->is_ambiguous_request_failure( $exception ) ) {
 			$data[ self::DEFINITIVE_CHARGE_FAILURE_DATA_KEY ] = true;
+			// Retired now rather than only after the lifecycle: a local failure applying this outcome must not leave the
+			// key for the next attempt, which would get the stored failure back.
+			$this->retire_charge_idempotency_key( $order );
 		}
 
 		if ( $this->is_blocked_by_fraud_rules( $exception ) ) {

@@ -12,11 +12,13 @@ use WC_Order;
 /**
  * Builds idempotency keys for native payment operations.
  *
- * Two policies live here. Charges and refunds use a fresh key per call
+ * Two policies live here. Charges and refunds get a fresh key per attempt
  * (`mint_attempt_key()`): WooCommerce cannot tell whether a resubmitted checkout or refund
  * retries a failed attempt or starts a genuinely new one, and a reused key would make the
  * provider replay the first attempt's cached failure. Duplicate-charge protection comes from
- * the application-level guards, not the key. Captures and cancels derive a key
+ * the application-level guards, not the key. A provider may keep a charge's key on the order
+ * when the outcome is ambiguous (the request may have reached it) and send that key on the next
+ * attempt instead, until a definitive outcome retires it. Captures and cancels derive a key
  * (`derive_key()`), but only as the order payment lock token and log correlation ID: their
  * provider requests carry a fresh key per call, so a retry after a failed capture reaches the
  * provider instead of replaying the stored failure.
@@ -32,7 +34,7 @@ class PaymentOperationIdempotency {
 	 * Minted once per attempt and carried through every transport-level retry within it, so
 	 * one attempt can never double-charge while a new attempt is never poisoned by a previous
 	 * one's cached response. Matches the platform-proven client, which sends a UUID v4 per
-	 * request family.
+	 * request family. A provider keeping an ambiguous attempt's key sends that key instead.
 	 *
 	 * @since 11.0.0
 	 *

@@ -637,6 +637,58 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Native charge should retire its key on a definitive failure even when applying the outcome later fails.
+	 *
+	 * The post-lifecycle retirement never runs when applying the outcome throws (PaymentProcessingService rethrows before
+	 * it), so a decline must retire the key as it is classified; otherwise the next attempt sends the old key and gets the
+	 * stored decline back (area 2a #18). No finalize_charge_idempotency_key() call here models the failed apply.
+	 */
+	public function test_native_charge_retires_key_on_definitive_failure_without_lifecycle(): void {
+		$order            = $this->create_woopayments_order();
+		$api_client       = new class() extends WooPaymentsApiClient {
+			/** @var string[] */
+			public array $keys = array();
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+			/**
+			 * Create and confirm a payment intention.
+			 *
+			 * @param array<string,mixed> $request_data Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				$this->keys[] = $idempotency_key;
+				if ( 1 === count( $this->keys ) ) {
+					throw new WooPaymentsApiException( 'Declined.', 'card_declined', 402, 'card_error' );
+				}
+				return array(
+					'id'     => 'pi_after_decline',
+					'status' => 'succeeded',
+				);
+			}
+		};
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_after_decline' );
+		$sut = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, null, $this->create_account_service( true ) );
+
+		$sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_after_decline' ), 'key_declined' );
+		$fresh_order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $fresh_order );
+		$this->assertSame( '', $fresh_order->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+
+		$sut->charge( PaymentContext::for_checkout( $fresh_order, OrderPaymentStore::GATEWAY_ID, 'pm_after_decline' ), 'key_next' );
+
+		$this->assertSame( array( 'key_declined', 'key_next' ), $api_client->keys );
+	}
+
+	/**
 	 * @testdox Native charge should use the caller key for a different order.
 	 */
 	public function test_native_charge_uses_a_different_order_key(): void {
