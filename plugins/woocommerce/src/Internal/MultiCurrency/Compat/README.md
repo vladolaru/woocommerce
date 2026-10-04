@@ -31,5 +31,6 @@ This facade is scheduled for removal in WooCommerce 12.0.0 after supported exten
 - The `LegacyMultiCurrencyFacadeLoader` import and request-provenance check in `MultiCurrencyDepositsCompatibilityController`.
 - The matching `tests/php/src/Internal/MultiCurrency/Compat/` test and fixture.
 - This boundary's expected symbol, loader and README entries in `LegacyWooPaymentsCompatibilityPlacementTest`.
+- The plugin asset handle aliases registered outside this folder: `wcpay-multi-currency-async-renderer` (script and style, `MultiCurrencyAsyncPriceRendererController` and `MultiCurrencyAsyncPriceProjectionService`) and the switcher block's legacy editor script handle (`MultiCurrencySwitcherBlockController::LEGACY_EDITOR_SCRIPT_HANDLE`).
 
 Keep the native projection and state services; they are not compatibility code.
