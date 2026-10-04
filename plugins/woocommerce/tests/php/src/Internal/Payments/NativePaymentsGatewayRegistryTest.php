@@ -167,6 +167,35 @@ class NativePaymentsGatewayRegistryTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should not add a second gateway with an already registered gateway ID.
+	 */
+	public function test_register_gateway_does_not_add_a_gateway_with_a_registered_id(): void {
+		$registered_gateway = $this->create_gateway( 'woocommerce_payments' );
+		$provider_gateway   = $this->create_gateway( 'woocommerce_payments' );
+		$sut                = new NativePaymentsGatewayRegistry();
+		$sut->init( new StaticNativeRuntimeArbiter( true ) );
+		$sut->register_provider( new StaticProvider( true, array( $provider_gateway ) ) );
+
+		$gateways = $sut->register_gateway( array( $registered_gateway ) );
+
+		$this->assertSame( array( $registered_gateway ), $gateways, 'A gateway instance with the same ID must keep the registered one and skip the provider copy.' );
+	}
+
+	/**
+	 * @testdox Should not add a gateway whose class is already registered by name.
+	 */
+	public function test_register_gateway_does_not_add_a_gateway_registered_by_class_name(): void {
+		$provider_gateway = $this->create_gateway( 'woocommerce_payments' );
+		$sut              = new NativePaymentsGatewayRegistry();
+		$sut->init( new StaticNativeRuntimeArbiter( true ) );
+		$sut->register_provider( new StaticProvider( true, array( $provider_gateway ) ) );
+
+		$gateways = $sut->register_gateway( array( 'WC_Gateway_BACS', get_class( $provider_gateway ) ) );
+
+		$this->assertSame( array( 'WC_Gateway_BACS', get_class( $provider_gateway ) ), $gateways, 'WooCommerce instantiates a class-name entry itself, so the provider instance must not be added too.' );
+	}
+
+	/**
 	 * @testdox Should collect gateways from every registered provider.
 	 */
 	public function test_register_gateway_collects_gateways_from_every_provider(): void {
