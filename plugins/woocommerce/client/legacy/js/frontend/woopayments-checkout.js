@@ -1987,6 +1987,17 @@
 		paymentElementLoadError = null;
 	}
 
+	/**
+	 * Start core's tokenization-form.js, which hides the card form while a
+	 * saved method is selected. It starts only on `updated_checkout` or
+	 * `wc-credit-card-form-init`, and order-pay fires neither, so fire the
+	 * second on every mount, as client 11.1.0's mountStripePaymentElement()
+	 * does.
+	 */
+	function initTokenizationForm() {
+		document.body.dispatchEvent( new Event( 'wc-credit-card-form-init' ) );
+	}
+
 	function initializeStripeElement() {
 		setCurrentGatewayConfig();
 		var container = getGatewayPaymentContainer( gatewayId );
@@ -2013,6 +2024,7 @@
 				if ( paymentElement.unmount ) {
 					paymentElement.unmount();
 				}
+				initTokenizationForm();
 				paymentElement.mount( container );
 				paymentElementContainer = container;
 			}
@@ -2037,6 +2049,7 @@
 					: config.genericErrorMessage || '';
 			setError( paymentElementLoadError );
 		} );
+		initTokenizationForm();
 		paymentElement.mount( container );
 		paymentElementContainer = container;
 		paymentElementGatewayId = gatewayId;

@@ -1029,6 +1029,37 @@ describe( 'WooPayments checkout', () => {
 		expect( mountPaymentElement ).not.toHaveBeenCalledWith( cardContainer );
 	} );
 
+	test( 'starts core tokenization-form.js every time it mounts the Payment Element', () => {
+		const formInit = jest.fn();
+		document.body.addEventListener( 'wc-credit-card-form-init', formInit );
+
+		try {
+			require( '../woopayments-checkout' );
+
+			expect( mountPaymentElement ).toHaveBeenCalledTimes( 1 );
+			expect( formInit ).toHaveBeenCalledTimes( 1 );
+
+			// Nothing is mounted while the element still sits in its container.
+			bodyEventHandlers.payment_method_selected();
+			expect( mountPaymentElement ).toHaveBeenCalledTimes( 1 );
+			expect( formInit ).toHaveBeenCalledTimes( 1 );
+
+			// A fragment refresh replaces the container, so the element is mounted again.
+			const container = document.getElementById(
+				'wcpay-core-payment-element'
+			);
+			container.replaceWith( container.cloneNode() );
+			bodyEventHandlers.updated_checkout();
+			expect( mountPaymentElement ).toHaveBeenCalledTimes( 2 );
+			expect( formInit ).toHaveBeenCalledTimes( 2 );
+		} finally {
+			document.body.removeEventListener(
+				'wc-credit-card-form-init',
+				formInit
+			);
+		}
+	} );
+
 	test( 'initializes classic Stripe Elements with cached appearance and font rules', () => {
 		const appearance = {
 			theme: 'stripe',
