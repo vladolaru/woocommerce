@@ -91,24 +91,48 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	 * @param string $session_cart_hash Session order cart hash.
 	 * @param string $session_status    Session order status.
 	 * @param string $current_cart_hash Current order cart hash.
+	 * @param string $current_status    Current order status.
+	 * @param bool   $same_customer     Whether both orders belong to the same customer.
 	 */
-	public function test_check_against_session_processing_order_returns_null_for_mismatches( string $session_cart_hash, string $session_status, string $current_cart_hash ): void {
+	public function test_check_against_session_processing_order_returns_null_for_mismatches( string $session_cart_hash, string $session_status, string $current_cart_hash, string $current_status = 'pending', bool $same_customer = true ): void {
 		$session       = $this->create_session();
 		$sut           = $this->create_service( $session );
 		$customer_id   = self::factory()->user->create();
 		$session_order = $this->create_order( $session_cart_hash, $session_status, $customer_id );
-		$current_order = $this->create_order( $current_cart_hash, 'pending', $customer_id );
+		$current_order = $this->create_order( $current_cart_hash, $current_status, $same_customer ? $customer_id : self::factory()->user->create() );
 		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $session_order->get_id() );
 
 		$result = $sut->check_against_session_processing_order( $current_order, $this->create_gateway() );
 
 		$this->assertNull( $result );
+		$this->assertSame( $current_status, wc_get_order( $current_order->get_id() )->get_status(), 'The current order must not be deleted.' );
+	}
+
+	/**
+	 * @testdox Should continue processing when the session order is the current order, paid since the checkout loaded it.
+	 *
+	 * Client 11.1.0 includes/class-duplicate-payment-prevention-service.php:183-185.
+	 */
+	public function test_check_against_session_processing_order_returns_null_for_the_current_order(): void {
+		$session       = $this->create_session();
+		$sut           = $this->create_service( $session );
+		$customer_id   = self::factory()->user->create();
+		$current_order = $this->create_order( 'same-hash', 'pending', $customer_id );
+		$paid_copy     = wc_get_order( $current_order->get_id() );
+		$paid_copy->set_status( 'processing' );
+		$paid_copy->save();
+		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $current_order->get_id() );
+
+		$result = $sut->check_against_session_processing_order( $current_order, $this->create_gateway() );
+
+		$this->assertNull( $result );
+		$this->assertSame( 'processing', wc_get_order( $current_order->get_id() )->get_status(), 'The current order must not be deleted.' );
 	}
 
 	/**
 	 * Data provider for session-order mismatch cases.
 	 *
-	 * @return array<string,array{0:string,1:string,2:string}>
+	 * @return array<string,array<int,string|bool>>
 	 */
 	public function session_processing_order_mismatch_data(): array {
 		return array(
@@ -120,6 +144,9 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 			// a failed session order is not a paid status, so a same-cart retry must not
 			// be redirected to it; the retry proceeds to charge normally.
 			'same cart hash with failed session order'    => array( 'same-hash', 'failed', 'same-hash' ),
+			// Client 11.1.0 includes/class-duplicate-payment-prevention-service.php:179-181 and :187-189.
+			'same cart hash with paid session order and a current order that is not pending' => array( 'same-hash', 'completed', 'same-hash', 'failed' ),
+			'same cart hash with paid session order of another customer' => array( 'same-hash', 'completed', 'same-hash', 'pending', false ),
 		);
 	}
 
