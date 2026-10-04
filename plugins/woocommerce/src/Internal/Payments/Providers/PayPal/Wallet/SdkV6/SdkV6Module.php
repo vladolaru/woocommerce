@@ -173,13 +173,6 @@ class SdkV6Module implements ServiceModule, ExtendingModule, ExecutableModule {
 
 					$v5_methods = array();
 
-					// v6 does not re-implement Fastlane, so the v5 method is
-					// dropped only where v6 cannot supply the SDK object it
-					// runs on.
-					if ( ! $manager->is_fastlane_enabled() ) {
-						$v5_methods[] = 'ppcp-axo-gateway';
-					}
-
 					// registerPaymentMethod silently takes the last registration,
 					// so leaving both would make the review depend on script
 					// order. Outside continuation v5's method loads no JS SDK.

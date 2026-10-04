@@ -40,6 +40,7 @@ class PaymentSettings extends AbstractDataModel {
 			'paypal_show_logo'                  => false,
 			'cardholder_name'                   => false,
 			'show_card_logos'                   => false,
+			// Kept in the defaults so a value the extension stored survives load() and save().
 			'fastlane_display_watermark'        => false,
 			'venmo_enabled'                     => false,
 			'paylater_enabled'                  => false,
@@ -222,13 +223,6 @@ class PaymentSettings extends AbstractDataModel {
 	}
 
 	/**
-	 * Get Fastlane display watermark.
-	 */
-	public function get_fastlane_display_watermark(): bool {
-		return (bool) $this->data['fastlane_display_watermark'];
-	}
-
-	/**
 	 * Get Venmo enabled.
 	 */
 	public function get_venmo_enabled(): bool {
@@ -264,7 +258,10 @@ class PaymentSettings extends AbstractDataModel {
 	}
 
 	/**
-	 * Set Fastlane display watermark.
+	 * Set the Fastlane display watermark.
+	 *
+	 * The key belongs to the PayPal Payments extension's Fastlane setting. Onboarding still switches it on, and
+	 * nothing in core reads it back.
 	 */
 	public function set_fastlane_display_watermark( bool $value ): void {
 		$this->data['fastlane_display_watermark'] = $value;

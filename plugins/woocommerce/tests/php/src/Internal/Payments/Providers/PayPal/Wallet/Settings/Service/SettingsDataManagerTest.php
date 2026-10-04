@@ -28,6 +28,10 @@ use ReflectionMethod;
  * The Pay Later and reconnect cases and the gateway toggle cases pin what toggle_payment_gateways() does. The default
  * location styling case pins the methods each location starts with.
  *
+ * The Fastlane watermark case pins that onboarding still switches on the extension's `fastlane_display_watermark`
+ * (shared stored value, ruling R82): the model keeps `set_fastlane_display_watermark()` as the one writer, and the stub
+ * with its recorder in setUp records what it receives.
+ *
  * @group paypal-wallet
  */
 class SettingsDataManagerTest extends WalletTestCase {
@@ -68,6 +72,13 @@ class SettingsDataManagerTest extends WalletTestCase {
 	private bool $payment_methods_saved = false;
 
 	/**
+	 * Every value passed to set_fastlane_display_watermark().
+	 *
+	 * @var bool[]
+	 */
+	private array $watermark_values = array();
+
+	/**
 	 * Build the manager over mocked models.
 	 */
 	public function setUp(): void {
@@ -86,7 +97,11 @@ class SettingsDataManagerTest extends WalletTestCase {
 		$methods_definition->shouldReceive( 'group_apms' )->andReturn( array() );
 
 		$this->payment_methods = $this->mock( PaymentSettings::class );
-		$this->payment_methods->shouldReceive( 'set_fastlane_display_watermark' )->andReturnNull();
+		$this->payment_methods->shouldReceive( 'set_fastlane_display_watermark' )->andReturnUsing(
+			function ( bool $value ): void {
+				$this->watermark_values[] = $value;
+			}
+		);
 		$this->payment_methods->shouldReceive( 'save' )->andReturnUsing(
 			function (): void {
 				$this->payment_methods_saved = true;
@@ -206,6 +221,17 @@ class SettingsDataManagerTest extends WalletTestCase {
 		$this->sut->set_defaults_for_new_merchant( new ConfigurationFlagsDTO() );
 
 		$this->addToAssertionCount( 1 );
+	}
+
+	/**
+	 * @testdox Should switch the Fastlane watermark on by default when syncing gateways (wallet, the extension's stored value).
+	 */
+	public function test_gateway_sync_switches_the_fastlane_watermark_on(): void {
+		$this->record_toggles();
+
+		$this->toggle_payment_gateways( new ConfigurationFlagsDTO() );
+
+		$this->assertSame( array( true ), $this->watermark_values );
 	}
 
 	/**

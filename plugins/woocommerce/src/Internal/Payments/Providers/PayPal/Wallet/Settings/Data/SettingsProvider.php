@@ -247,15 +247,6 @@ class SettingsProvider {
 	}
 
 	/**
-	 * Get if Fastlane should display watermark.
-	 *
-	 * @return bool
-	 */
-	public function show_fastlane_watermark(): bool {
-		return $this->payment_settings->get_fastlane_display_watermark();
-	}
-
-	/**
 	 * Get if Venmo is enabled.
 	 *
 	 * @return bool

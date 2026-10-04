@@ -25,14 +25,3 @@ export function sdkV6Config() {
 
 	return paymentMethodData[ 'ppcp-sdk-v6' ] || null;
 }
-
-/**
- * Whether Fastlane runs off the v6 SDK on this page.
- *
- * @return {?Object} The config when it does, null when the v5 path applies.
- */
-export function fastlaneSdkV6Config() {
-	const config = sdkV6Config();
-
-	return config?.fastlane?.enabled ? config : null;
-}

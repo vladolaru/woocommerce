@@ -13,7 +13,6 @@ use WC_Payment_Gateway;
 use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\PartnersEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\PartnerAttribution;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Axo\Gateway\AxoGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\OnboardingProfile;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsModel;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\TodosModel;
@@ -40,7 +39,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\En
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Enum\SellerTypeEnum;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\GeneralSettings;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\PaymentSettings;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Axo\Helper\CompatibilityChecker;
 use Throwable;
 
 /**
@@ -315,12 +313,6 @@ class SettingsModule implements ServiceModule, ExecutableModule {
 					return $methods;
 				}
 
-				if ( $container->has( 'axo.eligible' ) && $container->get( 'axo.eligible' ) ) {
-					$axo_gateway = $container->get( 'axo.gateway' );
-					assert( $axo_gateway instanceof WC_Payment_Gateway );
-					$methods[] = $axo_gateway;
-				}
-
 				// Remove gateways where the merchant is not eligible.
 				$eligibility_service = $container->get( 'settings.service.payment_methods_eligibilities' );
 				$eligibility_checks  = $eligibility_service->get_eligibility_checks();
@@ -368,32 +360,6 @@ class SettingsModule implements ServiceModule, ExecutableModule {
 			5
 		);
 
-		// Remove the Fastlane gateway if the customer is logged in, ensuring that we don't interfere with the Fastlane gateway status in the settings UI.
-		add_filter(
-			'woocommerce_available_payment_gateways',
-			/**
-			 * Param types removed to avoid third-party issues.
-			 *
-			 * @psalm-suppress MissingClosureParamType
-			 */
-			static function ( $methods ) {
-				if ( ! is_array( $methods ) ) {
-					return $methods;
-				}
-
-				if ( is_user_logged_in() && ! is_admin() ) {
-					foreach ( $methods as $key => $method ) {
-						if ( $method instanceof WC_Payment_Gateway && $method->id === 'ppcp-axo-gateway' ) {
-							unset( $methods[ $key ] );
-							break;
-						}
-					}
-				}
-
-				return $methods;
-			}
-		);
-
 		add_filter(
 			'woocommerce_paypal_payments_gateway_title',
 			function ( string $title, WC_Payment_Gateway $gateway ) {
@@ -420,49 +386,6 @@ class SettingsModule implements ServiceModule, ExecutableModule {
 				// If "Show logo" is disabled, return an empty string to hide the icon.
 				return $payment_settings->get_paypal_show_logo() ? $icon_url : '';
 			}
-		);
-
-		if ( is_admin() ) {
-			add_filter( 'woocommerce_paypal_payments_axo_gateway_should_update_enabled', '__return_false' );
-			add_filter(
-				'woocommerce_paypal_payments_axo_gateway_title',
-				function ( string $title, WC_Payment_Gateway $gateway ) {
-					return $gateway->get_option( 'title', $title );
-				},
-				10,
-				2
-			);
-			add_filter(
-				'woocommerce_paypal_payments_axo_gateway_description',
-				function ( string $description, WC_Payment_Gateway $gateway ) {
-					return $gateway->get_option( 'description', $description );
-				},
-				10,
-				2
-			);
-		}
-
-		// Enable Fastlane after onboarding if the store is compatible.
-		add_action(
-			'woocommerce_paypal_payments_toggle_payment_gateways',
-			function ( PaymentSettings $payment_methods, ConfigurationFlagsDTO $flags ) use ( $container ) {
-				if ( $flags->is_business_seller && $flags->use_card_payments && $container->get( 'ppcp.module-availability' )->is_loaded( 'axo' ) ) {
-					$compatibility_checker = $container->get( 'axo.helpers.compatibility-checker' );
-					assert( $compatibility_checker instanceof CompatibilityChecker );
-
-					if ( $compatibility_checker->is_fastlane_compatible() ) {
-						$payment_methods->toggle_method_state( AxoGateway::ID, true );
-					}
-				}
-
-				$general_settings = $container->get( 'settings.data.general' );
-				assert( $general_settings instanceof GeneralSettings );
-
-				$merchant_data    = $general_settings->get_merchant_data();
-				$merchant_country = $merchant_data->merchant_country;
-			},
-			10,
-			2
 		);
 
 		// Toggle payment gateways after onboarding based on flags.
@@ -618,7 +541,6 @@ class SettingsModule implements ServiceModule, ExecutableModule {
 		/**
 		 * In branded-only mode, we completely disable all white label features.
 		 */
-		add_filter( 'woocommerce_paypal_payments_is_eligible_for_axo', '__return_false' );
 		add_filter( 'woocommerce_paypal_payments_is_eligible_for_save_payment_methods', '__return_false' );
 		add_filter( 'woocommerce_paypal_payments_is_acdc_active', '__return_false' );
 	}

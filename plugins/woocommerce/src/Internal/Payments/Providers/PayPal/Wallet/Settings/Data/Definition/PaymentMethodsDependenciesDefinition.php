@@ -5,7 +5,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\Definition;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Exception\NotFoundException;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Axo\Gateway\AxoGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 
 /**
@@ -23,9 +22,8 @@ class PaymentMethodsDependenciesDefinition {
 	 */
 	public function get_payment_method_dependencies(): array {
 		$dependencies = array(
-			AxoGateway::ID => array( PayPalGateway::ID ),
-			'venmo'        => array( PayPalGateway::ID ),
-			'pay-later'    => array( PayPalGateway::ID ),
+			'venmo'     => array( PayPalGateway::ID ),
+			'pay-later' => array( PayPalGateway::ID ),
 		);
 
 		return apply_filters(

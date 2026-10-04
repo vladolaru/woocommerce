@@ -185,7 +185,7 @@ class SettingsDataManager {
 		$methods_apm    = $this->methods_definition->group_apms();
 		$all_methods    = array_merge( $methods_paypal, $methods_cards, $methods_apm );
 
-		// Enable the Fastlane watermark by default.
+		// Keep the extension's Fastlane watermark switched on for a new connection.
 		$this->payment_methods->set_fastlane_display_watermark( true );
 
 		foreach ( $all_methods as $method ) {

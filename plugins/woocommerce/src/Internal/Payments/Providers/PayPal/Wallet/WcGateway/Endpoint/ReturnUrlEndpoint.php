@@ -181,7 +181,7 @@ class ReturnUrlEndpoint {
 			return $this->gateway;
 		}
 
-		// For other payment methods (like AXO), get from WooCommerce.
+		// For other payment methods, get the gateway from WooCommerce.
 		$available_gateways = WC()->payment_gateways->get_available_payment_gateways();
 
 		if ( isset( $available_gateways[ $payment_method ] ) ) {

@@ -9,8 +9,6 @@ declare( strict_types=1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Axo\Gateway\AxoGateway;
-
 /**
  * Manages eligibility checks for various PayPal Commerce features.
  */
@@ -21,19 +19,10 @@ class PaymentMethodsEligibilityService {
 	 */
 	private string $merchant_country;
 
-	/**
-	 * Whether Axo is eligible.
-	 *
-	 * @var callable
-	 */
-	private $axo_eligible;
-
 	public function __construct(
-		string $merchant_country,
-		callable $axo_eligible
+		string $merchant_country
 	) {
 		$this->merchant_country = $merchant_country;
-		$this->axo_eligible     = $axo_eligible;
 	}
 
 	/**
@@ -43,8 +32,7 @@ class PaymentMethodsEligibilityService {
 	 */
 	public function get_eligibility_checks(): array {
 		return array(
-			AxoGateway::ID => fn() => call_user_func( $this->axo_eligible ),
-			'venmo'        => fn() => $this->merchant_country === 'US',
+			'venmo' => fn() => $this->merchant_country === 'US',
 		);
 	}
 }

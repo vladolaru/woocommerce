@@ -40,38 +40,23 @@ afterEach( () => {
 
 describe( 'loadSdkV6', () => {
 	test.each( [
+		[ 'no optional components enabled', {} ],
 		[
-			'no optional components enabled',
-			{},
-			[ 'paypal-payments', 'venmo-payments' ],
-		],
-		[
-			'fastlane enabled',
+			'a leftover fastlane flag in the config',
 			{ fastlane: { enabled: true } },
-			[ 'paypal-payments', 'venmo-payments', 'fastlane' ],
 		],
-	] )( 'requests %s', async ( label, overrides, expectedComponents ) => {
-		await loadSdkV6( baseConfig( overrides ), 'checkout' );
+	] )(
+		'requests only the PayPal and Venmo components with %s',
+		async ( label, overrides ) => {
+			await loadSdkV6( baseConfig( overrides ), 'checkout' );
 
-		expect( window.paypal.createInstance ).toHaveBeenCalledWith(
-			expect.objectContaining( { components: expectedComponents } )
-		);
-	} );
-
-	test( 'does not request fastlane when it is explicitly disabled', async () => {
-		await loadSdkV6(
-			baseConfig( {
-				fastlane: { enabled: false },
-			} ),
-			'checkout'
-		);
-
-		expect( window.paypal.createInstance ).toHaveBeenCalledWith(
-			expect.objectContaining( {
-				components: [ 'paypal-payments', 'venmo-payments' ],
-			} )
-		);
-	} );
+			expect( window.paypal.createInstance ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					components: [ 'paypal-payments', 'venmo-payments' ],
+				} )
+			);
+		}
+	);
 
 	test( 'requests paypal-messages only when config.messages.enabled is true', async () => {
 		await loadSdkV6(

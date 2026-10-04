@@ -12,7 +12,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Setti
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\Cache;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetter;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetterFactory;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Axo\Gateway\AxoGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Helper\MessagesApply;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ModuleAvailability;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\Definition\FeaturesDefinition;
@@ -99,11 +98,9 @@ return array(
 		$can_use_subscriptions       = $container->has( 'wc-subscriptions.helper' ) && $container->get( 'wc-subscriptions.helper' )
 																								->plugin_is_active();
 		$should_skip_payment_methods = class_exists( '\WC_Payments' );
-		$can_use_fastlane            = $availability->eligibility_check( 'axo' );
 		$can_use_pay_later           = $container->get( 'button.helper.messages-apply' );
 
 		return new OnboardingProfile(
-			$can_use_fastlane,
 			$can_use_casual_selling,
 			$can_use_vaulting,
 			$can_use_card_payments,
@@ -447,9 +444,7 @@ return array(
 	'settings.data.definition.methods'                    => static function ( ContainerInterface $container ): PaymentMethodsDefinition {
 		return new PaymentMethodsDefinition(
 			$container->get( 'settings.data.payment' ),
-			$container->get( 'settings.data.general' ),
-			$container->get( 'ppcp.module-availability' )->is_loaded( 'axo' ) ? $container->get( 'axo.checkout-config-notice.raw' ) : '',
-			$container->get( 'ppcp.module-availability' )->is_loaded( 'axo' ) ? $container->get( 'axo.incompatible-plugins-notice.raw' ) : ''
+			$container->get( 'settings.data.general' )
 		);
 	},
 	'settings.data.definition.method_dependencies'        => static function ( ContainerInterface $container ): PaymentMethodsDependenciesDefinition {
@@ -491,8 +486,7 @@ return array(
 		$settings         = $payment_endpoint->get_details()->get_data();
 
 		return array(
-			'axo'         => $settings['data']['ppcp-axo-gateway']['enabled'] ?? false,
-			'pwc'         => $settings['data']['ppcp-pwc']['enabled'] ?? false,
+			'pwc' => $settings['data']['ppcp-pwc']['enabled'] ?? false,
 		);
 	},
 	'settings.service.merchant_capabilities'              => static function ( ContainerInterface $container ): array {
@@ -557,7 +551,6 @@ return array(
 		 * 2. $capabilities - Whether the merchant is eligible for specific features on their PayPal account.
 		 * 3. $gateways, $pay_later_statuses, $button_locations - Plugin settings (enabled/disabled status).
 		 *
-		 * @param bool $is_fastlane_eligible - Show if merchant is eligible (ACDC) but hasn't enabled Fastlane gateway.
 		 * @param bool $is_pay_later_messaging_eligible - Show if Pay Later messaging is enabled for at least one location.
 		 * @param bool $is_pay_later_messaging_product_eligible - Show if Pay Later is not enabled anywhere and specifically not on product page.
 		 * @param bool $is_pay_later_messaging_cart_eligible - Show if Pay Later is not enabled anywhere and specifically not on cart.
@@ -571,7 +564,6 @@ return array(
 		 * @param bool $is_recaptcha_protection_eligible - Show if reCAPTCHA is not already enabled.
 		 */
 		return new TodosEligibilityService(
-			false,                                                                                        // Enable Fastlane. The card capability is dropped from merchant_capabilities; the todo goes in Task 8.
 			$is_pay_later_messaging_enabled_for_any_location,                                             // Enable Pay Later messaging.
 			! $is_pay_later_messaging_enabled_for_any_location && ! $pay_later_statuses['product'],       // Add Pay Later messaging (Product page).
 			! $is_pay_later_messaging_enabled_for_any_location && ! $pay_later_statuses['cart'],          // Add Pay Later messaging (Cart).
@@ -641,12 +633,8 @@ return array(
 		);
 	},
 	'settings.service.payment_methods_eligibilities'      => static function ( ContainerInterface $container ): PaymentMethodsEligibilityService {
-		$availability = $container->get( 'ppcp.module-availability' );
-		assert( $availability instanceof ModuleAvailability );
-
 		return new PaymentMethodsEligibilityService(
-			$container->get( 'api.merchant.country' ),
-			$availability->eligibility_check( 'axo' ),
+			$container->get( 'api.merchant.country' )
 		);
 	},
 	'settings.service.todos_sorting'                      => static function ( ContainerInterface $container ): TodosSortingAndFilteringService {
@@ -670,7 +658,7 @@ return array(
 			PayPalGateway::ID,
 			GatewayIds::CARD_BUTTON,
 			GatewayIds::CREDIT_CARD,
-			AxoGateway::ID,
+			GatewayIds::AXO,
 			GatewayIds::APPLE_PAY,
 			GatewayIds::GOOGLE_PAY,
 			GatewayIds::PWC,

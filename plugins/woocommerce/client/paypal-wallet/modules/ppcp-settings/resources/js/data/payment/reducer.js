@@ -23,12 +23,10 @@ const defaultPersistent = Object.freeze( {
 	'ppcp-gateway': {},
 	venmo: {},
 	'pay-later': {},
-	'ppcp-axo-gateway': {},
 	'ppcp-pwc': {},
 
 	// Custom payment method properties.
 	paypalShowLogo: false,
-	fastlaneDisplayWatermark: false,
 	__meta: false,
 } );
 

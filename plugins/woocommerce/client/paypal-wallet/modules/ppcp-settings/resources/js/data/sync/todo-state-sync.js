@@ -1,7 +1,6 @@
 import { subscribe, select, dispatch } from '@wordpress/data';
 
 const TODO_TRIGGERS = {
-	'ppcp-axo-gateway': 'enable_fastlane',
 	'ppcp-pwc': 'enable_pwc',
 };
 

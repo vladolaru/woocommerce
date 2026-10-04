@@ -12,7 +12,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet;
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
 
 /**
- * Optional modules (Fastlane, card fields,
+ * Optional modules (card fields,
  * order tracking) load behind feature flags or may be
  * left out by a host. Code in other modules asks this service instead of
  * reading those modules' container IDs directly, so an absent module reads as
@@ -45,7 +45,7 @@ class ModuleAvailability {
 	/**
 	 * Whether the module registered its services.
 	 *
-	 * @param string $prefix The module's service prefix, for example 'axo'.
+	 * @param string $prefix The module's service prefix, for example 'order-tracking'.
 	 * @return bool
 	 */
 	public function is_loaded( string $prefix ): bool {
@@ -57,7 +57,7 @@ class ModuleAvailability {
 	 *
 	 * A bool service is wrapped so callers can treat every check the same way.
 	 *
-	 * @param string $prefix The service prefix, for example 'axo'.
+	 * @param string $prefix The service prefix, for example 'order-tracking'.
 	 * @return callable(): bool
 	 */
 	public function eligibility_check( string $prefix ): callable {

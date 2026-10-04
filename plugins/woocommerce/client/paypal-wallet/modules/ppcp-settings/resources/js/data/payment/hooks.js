@@ -64,16 +64,12 @@ export const usePaymentMethods = () => {
 	const [ venmo ] = usePersistent( 'venmo' );
 	const [ payLater ] = usePersistent( 'pay-later' );
 
-	// Online card Payments.
-	const [ fastlane ] = usePersistent( 'ppcp-axo-gateway' );
-
 	const removeEmpty = ( list ) =>
 		list.filter( ( item ) => item && item.id?.length );
 
 	const payPalCheckout = removeEmpty( [ paypal, venmo, payLater ] );
-	const onlineCardPayments = removeEmpty( [ fastlane ] );
 
-	const paymentMethods = [ ...payPalCheckout, ...onlineCardPayments ];
+	const paymentMethods = [ ...payPalCheckout ];
 
 	return {
 		all: paymentMethods,
@@ -85,12 +81,8 @@ export const usePaymentMethodsModal = () => {
 	const { usePersistent } = useStoreData();
 
 	const [ paypalShowLogo ] = usePersistent( 'paypalShowLogo' );
-	const [ fastlaneDisplayWatermark ] = usePersistent(
-		'fastlaneDisplayWatermark'
-	);
 
 	return {
 		paypalShowLogo,
-		fastlaneDisplayWatermark,
 	};
 };

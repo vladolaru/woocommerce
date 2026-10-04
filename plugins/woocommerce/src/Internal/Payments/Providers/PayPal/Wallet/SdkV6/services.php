@@ -11,7 +11,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetter;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetterFactory;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ModuleAvailability;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Assets\AddPaymentMethodManager;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Assets\SdkV6Manager;
@@ -19,7 +18,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Block
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Endpoint\ClientTokenEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Endpoint\SimulateCartEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\ButtonStyleMapper;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\FastlaneConfig;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\MessagesEligibility;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\MessageStyleMapper;
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
@@ -37,19 +35,6 @@ return array(
 	'sdk-v6.button-style-mapper'        => static function ( ContainerInterface $container ): ButtonStyleMapper {
 		return new ButtonStyleMapper(
 			$container->get( 'settings.settings-provider' )
-		);
-	},
-
-	/**
-	 * Fastlane keeps its UI in the ppcp-axo modules; this only decides whether
-	 * the SDK requests the fastlane component on the current page.
-	 */
-	'sdk-v6.fastlane-config'            => static function ( ContainerInterface $container ): FastlaneConfig {
-		$availability = $container->get( 'ppcp.module-availability' );
-		assert( $availability instanceof ModuleAvailability );
-		return new FastlaneConfig(
-			$container->get( 'wc-subscriptions.helper' ),
-			$availability->availability_check( 'axo' )
 		);
 	},
 
@@ -108,8 +93,7 @@ return array(
 			$container->get( 'wc-subscriptions.helper' ),
 			$container->get( 'wc-subscriptions.free-trial-subscription-helper' ),
 			$container->get( 'sdk-v6.message-style-mapper' ),
-			$container->get( 'sdk-v6.messages-eligibility' ),
-			$container->get( 'sdk-v6.fastlane-config' )
+			$container->get( 'sdk-v6.messages-eligibility' )
 		);
 	},
 

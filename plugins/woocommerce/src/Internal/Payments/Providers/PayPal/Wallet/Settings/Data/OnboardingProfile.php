@@ -39,7 +39,6 @@ class OnboardingProfile extends AbstractDataModel {
 	/**
 	 * Constructor.
 	 *
-	 * @param callable $can_use_fastlane  Callable to check whether it can use Fastlane or not.
 	 * @param bool     $can_use_casual_selling Whether casual selling is enabled in the store's country.
 	 * @param bool     $can_use_vaulting       Whether vaulting is enabled in the store's country.
 	 * @param bool     $can_use_card_payments  Whether credit card payments are possible.
@@ -51,7 +50,6 @@ class OnboardingProfile extends AbstractDataModel {
 	 * @throws RuntimeException If the OPTION_KEY is not defined in the child class.
 	 */
 	public function __construct(
-		callable $can_use_fastlane,
 		bool $can_use_casual_selling = false,
 		bool $can_use_vaulting = false,
 		bool $can_use_card_payments = false,
@@ -68,7 +66,6 @@ class OnboardingProfile extends AbstractDataModel {
 		$this->flags['can_use_digital_wallets']     = $can_use_digital_wallets;
 		$this->flags['can_use_subscriptions']       = $can_use_subscriptions;
 		$this->flags['should_skip_payment_methods'] = $should_skip_payment_methods;
-		$this->flags['can_use_fastlane']            = $can_use_fastlane;
 		$this->flags['can_use_pay_later']           = $can_use_pay_later;
 	}
 

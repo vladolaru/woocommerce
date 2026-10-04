@@ -14,12 +14,11 @@ import { usePaymentConfig } from '../hooks/usePaymentConfig';
 
 const StepWelcome = ( { onNext } ) => {
 	const { storeCountry, ownBrandOnly } = CommonHooks.useWooSettings();
-	const { canUseCardPayments, canUseFastlane } = OnboardingHooks.useFlags();
+	const { canUseCardPayments } = OnboardingHooks.useFlags();
 
 	const { icons } = usePaymentConfig(
 		storeCountry,
 		canUseCardPayments,
-		canUseFastlane,
 		ownBrandOnly
 	);
 
@@ -62,7 +61,6 @@ const StepWelcome = ( { onNext } ) => {
 			<Separator className="ppcp-r-page-welcome-mode-separator" />
 			<WelcomeDocs
 				useAcdc={ canUseCardPayments }
-				isFastlane={ canUseFastlane }
 				storeCountry={ storeCountry }
 				ownBrandOnly={ ownBrandOnly }
 			/>

@@ -9,7 +9,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Settings\Service;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Axo\Gateway\AxoGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\PaymentMethodsEligibilityService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
 
@@ -21,20 +20,6 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Walle
  * @group paypal-wallet
  */
 class PaymentMethodsEligibilityServiceTest extends WalletTestCase {
-
-	/**
-	 * @testdox Should offer Fastlane when its module check passes (fastlane).
-	 */
-	public function test_axo_active(): void {
-		$this->assertTrue( $this->create_service()->get_eligibility_checks()[ AxoGateway::ID ]() );
-	}
-
-	/**
-	 * @testdox Should not offer Fastlane when its module check fails (fastlane).
-	 */
-	public function test_axo_inactive(): void {
-		$this->assertFalse( $this->create_service( 'US', false )->get_eligibility_checks()[ AxoGateway::ID ]() );
-	}
 
 	/**
 	 * @testdox Should offer Venmo to US merchants (wallet).
@@ -54,16 +39,9 @@ class PaymentMethodsEligibilityServiceTest extends WalletTestCase {
 	 * Build the service.
 	 *
 	 * @param string $country_code The merchant country.
-	 * @param bool   $axo_enabled  Whether the Fastlane module check passes.
 	 * @return PaymentMethodsEligibilityService
 	 */
-	private function create_service(
-		string $country_code = 'US',
-		bool $axo_enabled = true
-	): PaymentMethodsEligibilityService {
-		return new PaymentMethodsEligibilityService(
-			$country_code,
-			fn() => $axo_enabled
-		);
+	private function create_service( string $country_code = 'US' ): PaymentMethodsEligibilityService {
+		return new PaymentMethodsEligibilityService( $country_code );
 	}
 }

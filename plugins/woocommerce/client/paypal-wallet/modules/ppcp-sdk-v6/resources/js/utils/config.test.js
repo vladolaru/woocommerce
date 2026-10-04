@@ -1,4 +1,4 @@
-import { sdkV6Config, fastlaneSdkV6Config } from './config';
+import { sdkV6Config } from './config';
 
 afterEach( () => {
 	delete window.wc_ppcp_sdk_v6;
@@ -7,14 +7,14 @@ afterEach( () => {
 
 describe( 'sdkV6Config', () => {
 	test( 'returns the classic-page global when present', () => {
-		const config = { fastlane: { enabled: true } };
+		const config = { other: true };
 		window.wc_ppcp_sdk_v6 = config;
 
 		expect( sdkV6Config() ).toBe( config );
 	} );
 
 	test( 'falls back to the block-page payment method data when the classic global is absent', () => {
-		const config = { fastlane: { enabled: false } };
+		const config = { other: false };
 		window.wc = {
 			wcSettings: {
 				getSetting: ( key ) =>
@@ -39,26 +39,5 @@ describe( 'sdkV6Config', () => {
 		};
 
 		expect( sdkV6Config() ).toBeNull();
-	} );
-} );
-
-describe( 'fastlaneSdkV6Config', () => {
-	test( 'returns the config when fastlane is enabled', () => {
-		const config = { fastlane: { enabled: true } };
-		window.wc_ppcp_sdk_v6 = config;
-
-		expect( fastlaneSdkV6Config() ).toBe( config );
-	} );
-
-	test.each( [
-		[ 'the v6 config does not exist at all', undefined ],
-		[ 'fastlane is explicitly disabled', { fastlane: { enabled: false } } ],
-		[ 'the fastlane key is absent', {} ],
-	] )( 'returns null when %s', ( label, config ) => {
-		if ( config !== undefined ) {
-			window.wc_ppcp_sdk_v6 = config;
-		}
-
-		expect( fastlaneSdkV6Config() ).toBeNull();
 	} );
 } );

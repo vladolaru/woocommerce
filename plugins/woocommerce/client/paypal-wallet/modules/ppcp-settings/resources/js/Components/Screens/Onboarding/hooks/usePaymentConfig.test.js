@@ -7,10 +7,10 @@ jest.mock( '@ppcp-settings/data/index', () => ( {
 } ) );
 
 const EXPECTED_PAYMENT_METHODS = [
-	[ 'US', [ 'PayWithPayPal', 'PayLater', 'Venmo', 'Crypto' ], [ 'Fastlane' ] ],
-	[ 'GB', [ 'PayWithPayPal', 'PayInThree' ], [ 'Fastlane' ] ],
-	[ 'AU', [ 'PayWithPayPal', 'PayLater' ], [ 'Fastlane' ] ],
-	[ 'MX', [ 'PayWithPayPal', 'PayLater' ], [ 'Fastlane' ] ],
+	[ 'US', [ 'PayWithPayPal', 'PayLater', 'Venmo', 'Crypto' ], [] ],
+	[ 'GB', [ 'PayWithPayPal', 'PayInThree' ], [] ],
+	[ 'AU', [ 'PayWithPayPal', 'PayLater' ], [] ],
+	[ 'MX', [ 'PayWithPayPal', 'PayLater' ], [] ],
 ];
 
 describe( 'usePaymentConfig hook', () => {
@@ -19,7 +19,7 @@ describe( 'usePaymentConfig hook', () => {
 			'Country %s should have valid methods',
 			( country, includedMethods, optionalMethods ) => {
 				const { result } = renderHook( () =>
-					usePaymentConfig( country, true, true, false )
+					usePaymentConfig( country, true, false )
 				);
 
 				expect( result.current.includedMethods ).toHaveLength(
@@ -39,36 +39,10 @@ describe( 'usePaymentConfig hook', () => {
 			}
 		);
 		test.each( [ 'US', 'GB', 'AU' ] )(
-			'Country %s should contain Fastlane method if hasFastlane is true',
+			'Country %s should offer no optional methods when card payments are unavailable',
 			( country ) => {
 				const { result } = renderHook( () =>
-					usePaymentConfig( country, true, true, false )
-				);
-				const methodNames = result.current.optionalMethods.map(
-					( method ) => method.name
-				);
-				expect( methodNames ).toContain( 'Fastlane' );
-			}
-		);
-
-		test.each( [ 'US', 'GB', 'AU' ] )(
-			'Country %s should NOT contain Fastlane method if hasFastlane is false',
-			( country ) => {
-				const { result } = renderHook( () =>
-					usePaymentConfig( country, true, false, false )
-				);
-				const methodNames = result.current.optionalMethods.map(
-					( method ) => method.name
-				);
-				expect( methodNames ).not.toContain( 'Fastlane' );
-			}
-		);
-
-		test.each( [ 'US', 'GB', 'AU' ] )(
-			'Country %s should offer no optional methods when card payments and Fastlane are unavailable',
-			( country ) => {
-				const { result } = renderHook( () =>
-					usePaymentConfig( country, false, false, false )
+					usePaymentConfig( country, false, false )
 				);
 
 				expect( result.current.optionalMethods ).toEqual( [] );
@@ -79,7 +53,7 @@ describe( 'usePaymentConfig hook', () => {
 			'Country %s should contain only OwnBrand methods when ownBrandOnly is true',
 			( country ) => {
 				const { result } = renderHook( () =>
-					usePaymentConfig( country, true, true, true )
+					usePaymentConfig( country, true, true )
 				);
 
 				expect( result.current.optionalMethods ).toEqual( [] );
@@ -92,7 +66,7 @@ describe( 'usePaymentConfig hook', () => {
 			'Country %s should offer no local payment method tile or icon',
 			( country ) => {
 				const { result } = renderHook( () =>
-					usePaymentConfig( country, true, true, false )
+					usePaymentConfig( country, true, false )
 				);
 				const methodNames = result.current.optionalMethods.map(
 					( method ) => method.name
@@ -111,7 +85,7 @@ describe( 'usePaymentConfig hook', () => {
 			'Country %s should offer no digital wallet method or icon',
 			( country ) => {
 				const { result } = renderHook( () =>
-					usePaymentConfig( country, true, true, false )
+					usePaymentConfig( country, true, false )
 				);
 				const methodNames = result.current.optionalMethods.map(
 					( method ) => method.name

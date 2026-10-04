@@ -230,7 +230,6 @@ class OptionalModulesServicesTest extends WalletTestCase {
 
 		$this->assertSame(
 			array(
-				'enable_fastlane'                      => false,
 				'enable_pay_later_messaging'           => false,
 				'add_pay_later_messaging_product_page' => false,
 				'add_pay_later_messaging_cart'         => true,
@@ -271,7 +270,6 @@ class OptionalModulesServicesTest extends WalletTestCase {
 
 		$this->assertEqualsCanonicalizing(
 			array(
-				'enable_fastlane',
 				'enable_pay_later_messaging',
 				'add_pay_later_messaging_product_page',
 				'add_pay_later_messaging_cart',

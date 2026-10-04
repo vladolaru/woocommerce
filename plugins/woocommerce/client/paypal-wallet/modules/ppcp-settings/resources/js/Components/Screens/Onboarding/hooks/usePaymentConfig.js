@@ -8,7 +8,6 @@ import {
 	Venmo,
 	Crypto,
 	PayInThree,
-	Fastlane,
 } from '../Components/PaymentOptions';
 
 // List of all payment icons and which requirements they have.
@@ -27,15 +26,7 @@ const DEFAULT_CONFIG = {
 		{ name: 'PayWithPayPal', Component: PayWithPayPal },
 		{ name: 'PayLater', Component: PayLater },
 	],
-	extendedMethods: [
-		{
-			name: 'Fastlane',
-			Component: Fastlane,
-			isOwnBrand: false,
-			isAcdc: true,
-			isFastlane: true,
-		},
-	],
+	extendedMethods: [],
 };
 
 // Country-specific configurations.
@@ -156,14 +147,12 @@ const filterMethods = ( methods, conditions ) => {
  *
  * @param {string}  country            - Merchant country code
  * @param {boolean} canUseCardPayments - Whether merchant can use card payments
- * @param {boolean} hasFastlane        - Whether merchant has Fastlane enabled
  * @param {boolean} ownBrandOnly       - Whether to show only branded payment methods
  * @return {Object} Complete payment configuration
  */
 export const usePaymentConfig = (
 	country,
 	canUseCardPayments,
-	hasFastlane,
 	ownBrandOnly
 ) => {
 	return useMemo( () => {
@@ -182,8 +171,6 @@ export const usePaymentConfig = (
 				( method ) => method.isAcdc === canUseCardPayments,
 				// Only include own-brand methods when ownBrandOnly is true.
 				( method ) => ! ownBrandOnly || method.isOwnBrand === true,
-				// Only include Fastlane when hasFastlane is true.
-				( method ) => method.name !== 'Fastlane' || hasFastlane,
 			]
 		);
 
@@ -213,5 +200,5 @@ export const usePaymentConfig = (
 			learnMoreConfig,
 			icons,
 		};
-	}, [ country, canUseCardPayments, hasFastlane, ownBrandOnly ] );
+	}, [ country, canUseCardPayments, ownBrandOnly ] );
 };

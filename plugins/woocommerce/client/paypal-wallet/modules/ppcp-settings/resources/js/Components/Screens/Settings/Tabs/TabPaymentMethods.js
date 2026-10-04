@@ -32,10 +32,7 @@ const TabPaymentMethods = () => {
 				description: settings.checkoutPageDescription,
 			} );
 
-			const persistentSettings = [
-				'paypalShowLogo',
-				'fastlaneDisplayWatermark',
-			];
+			const persistentSettings = [ 'paypalShowLogo' ];
 
 			persistentSettings.forEach( ( setting ) => {
 				if ( setting in settings ) {

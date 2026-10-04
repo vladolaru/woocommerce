@@ -23,8 +23,8 @@ return array(
 	 * the Add Payment Method page) every v5 surface consuming this service's
 	 * script_data() goes dark, including the regular block method: that is
 	 * accepted migration-state breakage until their own stories migrate them.
-	 * Ownership is decided per page, not per stack: the blocks and axo
-	 * modules would break under a blanket disable.
+	 * Ownership is decided per page, not per stack: the blocks module
+	 * would break under a blanket disable.
 	 *
 	 * The Add Payment Method page is v6-owned by the vaulting story: v6 renders
 	 * the save button there, so the v5 add-payment-method script is suppressed

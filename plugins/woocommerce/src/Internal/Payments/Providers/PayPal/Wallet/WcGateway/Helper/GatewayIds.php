@@ -38,6 +38,11 @@ final class GatewayIds {
 	public const GOOGLE_PAY = 'ppcp-googlepay';
 
 	/**
+	 * The extension's Fastlane gateway.
+	 */
+	public const AXO = 'ppcp-axo-gateway';
+
+	/**
 	 * The extension's Bancontact gateway.
 	 */
 	public const BANCONTACT = 'ppcp-bancontact';

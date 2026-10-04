@@ -16,7 +16,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SavePayment
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SavePaymentMethods\Endpoint\CreateSetupToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Assets\SdkV6Manager;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\ButtonStyleMapper;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\FastlaneConfig;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\MessagesEligibility;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\MessageStyleMapper;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Session\Cancellation\CancelView;
@@ -35,7 +34,7 @@ use WC_Helper_Product;
  * The SDK bootstrap data, the page-loading rules and the message hooks of the v6 manager, over real WordPress and
  * WooCommerce: only the manager's collaborators and the cart, customer and countries objects are doubles.
  *
- * Case kinds: "wallet" cases are the PayPal, Venmo and Pay Later surface; "fastlane" cases belong to task 8.
+ * Case kinds: every case is a "wallet" case, the PayPal, Venmo and Pay Later surface.
  *
  * The four free-trial product cases of the extension test that drove WooCommerce Subscriptions' static classes through
  * Mockery aliases are not ported: core's suite loads neither the classes nor an alias-safe way to define them. The two
@@ -123,13 +122,6 @@ class SdkV6ManagerTest extends WalletTestCase {
 	private $messages_eligibility;
 
 	/**
-	 * The Fastlane configuration mock.
-	 *
-	 * @var FastlaneConfig&MockInterface
-	 */
-	private $fastlane_config;
-
-	/**
 	 * The WooCommerce cart, customer and countries objects before the test.
 	 *
 	 * @var array
@@ -209,9 +201,6 @@ class SdkV6ManagerTest extends WalletTestCase {
 				'borderRadius' => '24px',
 			)
 		)->byDefault();
-
-		$this->fastlane_config = $this->mock( FastlaneConfig::class );
-		$this->fastlane_config->shouldReceive( 'should_render' )->andReturn( false )->byDefault();
 	}
 
 	/**
@@ -262,8 +251,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 			$this->subscription_helper,
 			$this->free_trial_helper,
 			$this->message_style_mapper,
-			$this->messages_eligibility,
-			$this->fastlane_config
+			$this->messages_eligibility
 		);
 	}
 
@@ -590,32 +578,6 @@ class SdkV6ManagerTest extends WalletTestCase {
 		return array(
 			'cart block'     => array( 'cart-block', 'cart' ),
 			'checkout block' => array( 'checkout-block', 'checkout' ),
-		);
-	}
-
-	/**
-	 * @testdox Should follow Fastlane's own configuration for the current page: should render $should_render (fastlane).
-	 * @dataProvider fastlane_enablement_provider
-	 *
-	 * @param bool $should_render What the configuration answers.
-	 * @param bool $expected      What the manager reports.
-	 */
-	public function test_is_fastlane_enabled_delegates_to_fastlane_config( bool $should_render, bool $expected ): void {
-		$this->stub_page( 'checkout' );
-		$this->fastlane_config->shouldReceive( 'should_render' )->with( 'checkout' )->andReturn( $should_render );
-
-		$this->assertSame( $expected, $this->create_sut()->is_fastlane_enabled() );
-	}
-
-	/**
-	 * What Fastlane's configuration says and what the manager reports.
-	 *
-	 * @return array
-	 */
-	public function fastlane_enablement_provider(): array {
-		return array(
-			'FastlaneConfig allowing render enables Fastlane'  => array( true, true ),
-			'FastlaneConfig refusing render disables Fastlane' => array( false, false ),
 		);
 	}
 
@@ -1103,35 +1065,24 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should report Fastlane as disabled without asking its configuration when the page has no context (fastlane).
+	 * @testdox Should not load the SDK on a checkout page where no button, no message and no mini-cart asks for it (wallet).
 	 */
-	public function test_is_fastlane_enabled_guards_against_empty_page_context(): void {
-		$this->stub_page( '' );
-		$this->fastlane_config->shouldReceive( 'should_render' )->never();
+	public function test_should_not_load_on_checkout_when_nothing_asks_for_the_sdk(): void {
+		$this->stub_page( 'checkout', 'checkout' );
+		$this->stub_buttons_everywhere( false );
 
-		$this->assertFalse( $this->create_sut()->is_fastlane_enabled() );
+		$this->assertFalse( $this->create_sut()->should_load_on_current_page() );
 	}
 
 	/**
-	 * @testdox Should carry a fastlane subtree with the enabled flag and the gateway ID: should render $should_render (fastlane).
-	 * @dataProvider fastlane_enablement_provider
-	 *
-	 * @param bool $should_render    What the configuration answers.
-	 * @param bool $expected_enabled The flag in the data.
+	 * @testdox Should not carry a fastlane subtree in the data: the SDK loader no longer asks for that component (wallet).
 	 */
-	public function test_script_data_includes_fastlane_subtree( bool $should_render, bool $expected_enabled ): void {
+	public function test_script_data_has_no_fastlane_subtree(): void {
 		$this->stub_page( 'checkout' );
-		$this->fastlane_config->shouldReceive( 'should_render' )->with( 'checkout' )->andReturn( $should_render );
 
 		$data = $this->script_data();
 
-		$this->assertSame(
-			array(
-				'enabled'        => $expected_enabled,
-				'payment_method' => 'ppcp-axo-gateway',
-			),
-			$data['fastlane']
-		);
+		$this->assertArrayNotHasKey( 'fastlane', $data );
 	}
 
 	/**

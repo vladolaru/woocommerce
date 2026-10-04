@@ -24,7 +24,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SavePayment
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Endpoint\ClientTokenEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Endpoint\SimulateCartEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\ButtonStyleMapper;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\FastlaneConfig;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\MessagesEligibility;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper\MessageStyleMapper;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Session\Cancellation\CancelController;
@@ -77,7 +76,6 @@ class SdkV6Manager {
 
 	private MessageStyleMapper $message_style_mapper;
 	private MessagesEligibility $messages_eligibility;
-	private FastlaneConfig $fastlane_config;
 
 	/**
 	 * Memoizes should_load_on_current_page(), asked by every surface that
@@ -108,8 +106,7 @@ class SdkV6Manager {
 		SubscriptionHelper $subscription_helper,
 		FreeTrialSubscriptionHelper $free_trial_helper,
 		MessageStyleMapper $message_style_mapper,
-		MessagesEligibility $messages_eligibility,
-		FastlaneConfig $fastlane_config
+		MessagesEligibility $messages_eligibility
 	) {
 		$this->asset_getter                = $asset_getter;
 		$this->version                     = $version;
@@ -125,7 +122,6 @@ class SdkV6Manager {
 		$this->free_trial_helper           = $free_trial_helper;
 		$this->message_style_mapper        = $message_style_mapper;
 		$this->messages_eligibility        = $messages_eligibility;
-		$this->fastlane_config             = $fastlane_config;
 	}
 
 	/**
@@ -300,10 +296,6 @@ class SdkV6Manager {
 			return true;
 		}
 
-		if ( $this->is_fastlane_enabled( $page_location ) ) {
-			return true;
-		}
-
 		// Home and shop, where v5 places a Pay Later message and v6 has no
 		// message hook of its own yet. Whether v5 rendered there came down to the
 		// unrelated mini-cart setting: with the mini-cart on, the fallback below
@@ -347,26 +339,6 @@ class SdkV6Manager {
 			|| $this->subscription_helper->order_pay_contains_subscription();
 
 		return $has_subscription && ! apply_filters( 'woocommerce_paypal_payments_subscription_mode_disabled', false );
-	}
-
-	/**
-	 * Whether Fastlane runs on the given page under the v6 SDK.
-	 *
-	 * This module does not render Fastlane itself: the ppcp-axo modules keep
-	 * their UI and only take the SDK object from here, so this gates the
-	 * `fastlane` component request and the v5 Fastlane block method staying
-	 * registered.
-	 *
-	 * @param string|null $location Page context to test; defaults to the current page.
-	 */
-	public function is_fastlane_enabled( ?string $location = null ): bool {
-		$location = $location ?? $this->get_page_context();
-
-		if ( ! $location ) {
-			return false;
-		}
-
-		return $this->fastlane_config->should_render( $location );
 	}
 
 	/**
@@ -875,16 +847,6 @@ class SdkV6Manager {
 			'pay_later_button'    => $pay_later_button,
 			'wrapper'             => '#' . self::WRAPPER_ID,
 			'mini_cart_wrapper'   => '#' . self::MINI_CART_WRAPPER_ID,
-			// Enablement only. The ppcp-axo modules own every other Fastlane
-			// setting and localize it as wc_ppcp_axo; this flag tells sdkLoader
-			// to request the component their connection then reads off the
-			// shared SDK instance.
-			'fastlane'            => array(
-				'enabled'        => $this->is_fastlane_enabled( $page_context ),
-				// The id as a literal, not AxoGateway::ID: ppcp-axo is behind its
-				// own feature flag, and SdkV6Module names it the same way.
-				'payment_method' => 'ppcp-axo-gateway',
-			),
 			'messages'            => array(
 				'enabled'             => $this->messages_enabled(),
 				'wrapper'             => '.ppcp-messages',

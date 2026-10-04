@@ -25,6 +25,8 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Walle
  *
  * The delegation rows of the card methods the cards cut removed are gone with them (the models keep their accessors).
  *
+ * The `show_fastlane_watermark` row went with the Fastlane cut (the provider method and the model getter are gone).
+ *
  * @group paypal-wallet
  */
 class SettingsProviderTest extends WalletTestCase {
@@ -291,11 +293,6 @@ class SettingsProviderTest extends WalletTestCase {
 			array(
 				'provider_method' => 'show_paypal_logo',
 				'model_method'    => 'get_paypal_show_logo',
-				'expected_value'  => self::EXPECTED_VALUE_BOOL,
-			),
-			array(
-				'provider_method' => 'show_fastlane_watermark',
-				'model_method'    => 'get_fastlane_display_watermark',
 				'expected_value'  => self::EXPECTED_VALUE_BOOL,
 			),
 			array(

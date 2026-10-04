@@ -13,10 +13,6 @@ export const countryPriceInfo = {
 			percentage: 2.89,
 			fixedFee: 0.29,
 		},
-		axo: {
-			percentage: 2.89,
-			fixedFee: 0.29,
-		},
 	},
 	GB: {
 		fixedFee: {
@@ -29,7 +25,6 @@ export const countryPriceInfo = {
 		checkout: 2.9,
 		plater: 2.9,
 		ccf: 1.2,
-		axo: 1.2,
 	},
 	CA: {
 		fixedFee: {
@@ -41,7 +36,6 @@ export const countryPriceInfo = {
 		},
 		checkout: 2.9,
 		ccf: 2.7,
-		axo: 2.7,
 	},
 	AU: {
 		fixedFee: {
@@ -54,7 +48,6 @@ export const countryPriceInfo = {
 		checkout: 2.6,
 		plater: 2.6,
 		ccf: 1.75,
-		axo: 1.75,
 	},
 	FR: {
 		fixedFee: {
@@ -67,7 +60,6 @@ export const countryPriceInfo = {
 		checkout: 2.9,
 		plater: 2.9,
 		ccf: 1.2,
-		axo: 1.2,
 	},
 	IT: {
 		fixedFee: {
@@ -80,7 +72,6 @@ export const countryPriceInfo = {
 		checkout: 3.4,
 		plater: 3.4,
 		ccf: 1.2,
-		axo: 1.2,
 	},
 	DE: {
 		fixedFee: {
@@ -93,7 +84,6 @@ export const countryPriceInfo = {
 		checkout: 2.99,
 		plater: 2.99,
 		ccf: 2.99,
-		axo: 2.99,
 	},
 	ES: {
 		fixedFee: {
@@ -106,6 +96,5 @@ export const countryPriceInfo = {
 		checkout: 2.9,
 		plater: 2.9,
 		ccf: 1.2,
-		axo: 1.2,
 	},
 };

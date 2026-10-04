@@ -10,18 +10,12 @@ import { usePaymentConfig } from '../hooks/usePaymentConfig';
  *
  * @param {Object}  props
  * @param {boolean} props.useAcdc      Whether to include advanced card payments. When false, only BCDC items are included.
- * @param {boolean} props.isFastlane   Whether Fastlane should be included.
  * @param {string}  props.storeCountry The merchant's store country. 2-character ISO code.
  * @param {boolean} props.ownBrandOnly Whether to show only PayPal's own payment methods.
  * @return {JSX.Element} The payment options component.
  * @class
  */
-const PaymentFlow = ( {
-	useAcdc,
-	isFastlane,
-	storeCountry,
-	ownBrandOnly,
-} ) => {
+const PaymentFlow = ( { useAcdc, storeCountry, ownBrandOnly } ) => {
 	const {
 		includedMethods,
 		optionalMethods,
@@ -29,12 +23,7 @@ const PaymentFlow = ( {
 		optionalDescription,
 		learnMoreConfig,
 		paypalCheckoutDescription,
-	} = usePaymentConfig(
-		storeCountry,
-		useAcdc,
-		isFastlane,
-		ownBrandOnly
-	);
+	} = usePaymentConfig( storeCountry, useAcdc, ownBrandOnly );
 
 	const description = useAcdc ? optionalDescription : '';
 	return (

@@ -9,7 +9,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Axo\Gateway\AxoGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\GatewayIds;
 
 /**
@@ -30,7 +29,7 @@ class GatewayRedirectService {
 	 */
 	public function __construct() {
 		$this->gateways = array(
-			AxoGateway::ID,
+			GatewayIds::AXO,
 			GatewayIds::GOOGLE_PAY,
 			GatewayIds::APPLE_PAY,
 			GatewayIds::CREDIT_CARD,

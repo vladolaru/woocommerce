@@ -64,18 +64,6 @@ class TodosDefinition {
 		$eligibility_checks = $this->eligibilities->get_eligibility_checks();
 
 		$todo_items = array(
-			'enable_fastlane'                      => array(
-				'title'       => __( 'Enable Fastlane', 'woocommerce' ),
-				'description' => __( 'Accelerate your guest checkout with Fastlane by PayPal', 'woocommerce' ),
-				'isEligible'  => $eligibility_checks['enable_fastlane'],
-				'action'      => array(
-					'type'      => 'tab',
-					'tab'       => 'payment_methods',
-					'section'   => 'ppcp-axo-gateway',
-					'highlight' => 'ppcp-axo-gateway',
-				),
-				'priority'    => 1,
-			),
 			'enable_pay_later_messaging'           => array(
 				'title'       => __( 'Enable Pay Later messaging', 'woocommerce' ),
 				'description' => __( 'Show Pay Later messaging to boost conversion rate and increase cart size', 'woocommerce' ),

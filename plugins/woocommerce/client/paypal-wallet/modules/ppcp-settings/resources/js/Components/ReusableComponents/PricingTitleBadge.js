@@ -18,7 +18,7 @@ const getFixedAmount = ( currency, priceList, itemFixedAmount ) => {
 const PricingTitleBadge = ( { item } ) => {
 	const { storeCountry, storeCurrency } = CommonHooks.useWooSettings();
 	const infos = countryPriceInfo[ storeCountry ];
-	const itemKey = item.split( ' ' )[ 0 ]; // Extract the first word, fastlane has more than one
+	const itemKey = item.split( ' ' )[ 0 ]; // Extract the first word of the item key
 	if ( ! infos || ! infos[ itemKey ] ) {
 		return null;
 	}

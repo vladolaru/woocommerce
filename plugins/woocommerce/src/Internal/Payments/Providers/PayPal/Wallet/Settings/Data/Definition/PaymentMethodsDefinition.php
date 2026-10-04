@@ -35,20 +35,6 @@ class PaymentMethodsDefinition {
 	private GeneralSettings $general_settings;
 
 	/**
-	 * Axo checkout configuration conflict notice.
-	 *
-	 * @var string
-	 */
-	private string $axo_checkout_config_notice;
-
-	/**
-	 * Axo incompatible plugins conflict notice.
-	 *
-	 * @var string
-	 */
-	private string $axo_incompatible_plugins_notice;
-
-	/**
 	 * List of WooCommerce payment gateways.
 	 *
 	 * @var array|null
@@ -58,21 +44,15 @@ class PaymentMethodsDefinition {
 	/**
 	 * Constructor.
 	 *
-	 * @param PaymentSettings $settings                        Payment methods data model.
-	 * @param GeneralSettings $general_settings                General plugin settings model.
-	 * @param string          $axo_checkout_config_notice      Axo checkout config conflict notice.
-	 * @param string          $axo_incompatible_plugins_notice Axo incompatible plugins notice.
+	 * @param PaymentSettings $settings         Payment methods data model.
+	 * @param GeneralSettings $general_settings General plugin settings model.
 	 */
 	public function __construct(
 		PaymentSettings $settings,
-		GeneralSettings $general_settings,
-		string $axo_checkout_config_notice = '',
-		string $axo_incompatible_plugins_notice = ''
+		GeneralSettings $general_settings
 	) {
-		$this->settings                        = $settings;
-		$this->general_settings                = $general_settings;
-		$this->axo_checkout_config_notice      = $axo_checkout_config_notice;
-		$this->axo_incompatible_plugins_notice = $axo_incompatible_plugins_notice;
+		$this->settings         = $settings;
+		$this->general_settings = $general_settings;
 	}
 
 	/**
