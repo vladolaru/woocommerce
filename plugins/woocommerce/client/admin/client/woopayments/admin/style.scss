@@ -556,6 +556,9 @@
 }
 
 .woocommerce-woopayments-money-movement__card-brand {
+	// Client 11.1.0 `assets/css/admin.css:29-45`: a 1px ring at the badges' baked corner radius frames the logo.
+	border-radius: 4.6875% / 7.5%;
+	box-shadow: 0 0 0 1px $gray-100;
 	// stylelint-disable declaration-property-value-disallowed-list -- sized by the card brand asset.
 	height: 17px;
 	object-fit: contain;
