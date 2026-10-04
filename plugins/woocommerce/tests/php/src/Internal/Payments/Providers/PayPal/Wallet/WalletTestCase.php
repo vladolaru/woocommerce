@@ -16,6 +16,9 @@ use Error;
 use Mockery;
 use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
 use Mockery\MockInterface;
+use WC_Customer;
+use WC_Session_Handler;
+use WC_Tax;
 use WC_Unit_Test_Case;
 use WP_Error;
 use WpOrg\Requests\Utility\CaseInsensitiveDictionary;
@@ -23,6 +26,10 @@ use WpOrg\Requests\Utility\CaseInsensitiveDictionary;
 /**
  * Real WordPress and WooCommerce under the test (no Brain Monkey): options are written and cleaned, filters are real,
  * collaborators are Mockery mocks as in the extension's own tests.
+ *
+ * The shopper's shipping address is put back after each test, because WC()->customer lives on the WC() singleton that
+ * neither the database rollback nor WC_Unit_Test_Case resets. Tax rates added through insert_flat_tax_rate() are
+ * deleted again, and so is a session set through use_own_wc_session().
  *
  * Outgoing HTTP never reaches the network: every request is answered with a WP_Error (code "unstubbed_http") unless the
  * test calls stub_http(), so a forgotten stub or an unexpected extra request surfaces through the code's own error path
@@ -48,6 +55,34 @@ abstract class WalletTestCase extends WC_Unit_Test_Case {
 	private array $written_transients = array();
 
 	/**
+	 * Ids of the tax rates added through insert_flat_tax_rate(), deleted on tearDown.
+	 *
+	 * @var int[]
+	 */
+	private array $inserted_tax_rates = array();
+
+	/**
+	 * The shipping address of WC()->customer when the test started, or null when the shop had no customer yet.
+	 *
+	 * @var array<string, string>|null
+	 */
+	private ?array $original_customer_address = null;
+
+	/**
+	 * The session WC() had before use_own_wc_session() replaced it.
+	 *
+	 * @var mixed
+	 */
+	private $original_session = null;
+
+	/**
+	 * Whether use_own_wc_session() replaced the session.
+	 *
+	 * @var bool
+	 */
+	private bool $session_replaced = false;
+
+	/**
 	 * The screen and query arguments before simulate_admin_request() replaced them, or null when it was not called.
 	 *
 	 * @var array{screen: mixed, get: array}|null
@@ -55,10 +90,13 @@ abstract class WalletTestCase extends WC_Unit_Test_Case {
 	private ?array $request_before_simulation = null;
 
 	/**
-	 * Block the network: answer every request with a WP_Error until the test stubs HTTP.
+	 * Block the network: answer every request with a WP_Error until the test stubs HTTP, and remember the address of
+	 * the customer.
 	 */
 	public function setUp(): void {
 		parent::setUp();
+
+		$this->original_customer_address = WC()->customer instanceof WC_Customer ? $this->read_customer_address( WC()->customer ) : null;
 
 		$this->http_responder = static function ( $request, $url ) {
 			unset( $request );
@@ -67,10 +105,21 @@ abstract class WalletTestCase extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Delete the options and transients the test wrote and put back the request. Mockery is closed by MockeryPHPUnitIntegration.
+	 * Delete the options, the transients and the tax rates the test wrote, put back the request and the customer address
+	 * and the session. Mockery is closed by MockeryPHPUnitIntegration.
 	 */
 	public function tearDown(): void {
 		try {
+			foreach ( $this->inserted_tax_rates as $rate_id ) {
+				WC_Tax::_delete_tax_rate( $rate_id ); // phpcs:ignore WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+			}
+			$this->inserted_tax_rates = array();
+			$this->restore_customer_address();
+			if ( $this->session_replaced ) {
+				WC()->session           = $this->original_session;
+				$this->original_session = null;
+				$this->session_replaced = false;
+			}
 			foreach ( $this->written_options as $name ) {
 				delete_option( $name );
 			}
@@ -84,6 +133,87 @@ abstract class WalletTestCase extends WC_Unit_Test_Case {
 		} finally {
 			parent::tearDown();
 		}
+	}
+
+	/**
+	 * The shipping address of a customer, the way the customer was built.
+	 *
+	 * @param WC_Customer $customer The customer.
+	 * @return array<string, string>
+	 */
+	private function read_customer_address( WC_Customer $customer ): array {
+		return array(
+			'country'    => $customer->get_shipping_country( 'edit' ),
+			'state'      => $customer->get_shipping_state( 'edit' ),
+			'postcode'   => $customer->get_shipping_postcode( 'edit' ),
+			'city'       => $customer->get_shipping_city( 'edit' ),
+			'address_1'  => $customer->get_shipping_address_1( 'edit' ),
+			'first_name' => $customer->get_shipping_first_name( 'edit' ),
+			'last_name'  => $customer->get_shipping_last_name( 'edit' ),
+		);
+	}
+
+	/**
+	 * Put the shipping address of the customer back. A pristine customer holds the store's base location, not empty
+	 * strings, and tax rates only apply to a customer who has a country. Nothing is put back when the shop had no
+	 * customer before the test.
+	 */
+	private function restore_customer_address(): void {
+		$customer = WC()->customer;
+		$address  = $this->original_customer_address;
+		if ( null === $address || ! $customer instanceof WC_Customer ) {
+			return;
+		}
+
+		$customer->set_shipping_country( $address['country'] );
+		$customer->set_shipping_state( $address['state'] );
+		$customer->set_shipping_postcode( $address['postcode'] );
+		$customer->set_shipping_city( $address['city'] );
+		$customer->set_shipping_address_1( $address['address_1'] );
+		$customer->set_shipping_first_name( $address['first_name'] );
+		$customer->set_shipping_last_name( $address['last_name'] );
+		$this->original_customer_address = null;
+	}
+
+	/**
+	 * Add a tax rate that applies to every country, to the standard tax class and to shipping, and delete it again on
+	 * tearDown. Tax is only calculated when the woocommerce_calc_taxes option is "yes" and the customer has a country.
+	 *
+	 * @param string $rate The rate in percent.
+	 * @return int The ID of the rate.
+	 */
+	protected function insert_flat_tax_rate( string $rate = '10.0000' ): int {
+		$rate_id = WC_Tax::_insert_tax_rate( // phpcs:ignore WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+			array(
+				'tax_rate_country'  => '',
+				'tax_rate_state'    => '',
+				'tax_rate'          => $rate,
+				'tax_rate_name'     => 'Tax',
+				'tax_rate_priority' => '1',
+				'tax_rate_compound' => '0',
+				'tax_rate_shipping' => '1',
+				'tax_rate_order'    => '1',
+				'tax_rate_class'    => '',
+			)
+		);
+
+		$this->inserted_tax_rates[] = $rate_id;
+
+		return $rate_id;
+	}
+
+	/**
+	 * Give WooCommerce a session of its own for the rest of the test (the purchase unit's custom ID and the fees of
+	 * the cart come from it) and put the original back on tearDown.
+	 *
+	 * @param WC_Session_Handler|null $session The session, a new real handler when none is given.
+	 */
+	protected function use_own_wc_session( ?WC_Session_Handler $session = null ): void {
+		if ( ! $this->session_replaced ) {
+			$this->original_session = WC()->session;
+			$this->session_replaced = true;
+		}
+		WC()->session = $session ?? new WC_Session_Handler();
 	}
 
 	/**
