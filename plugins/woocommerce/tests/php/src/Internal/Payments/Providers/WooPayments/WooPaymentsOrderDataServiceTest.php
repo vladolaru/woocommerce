@@ -72,12 +72,45 @@ class WooPaymentsOrderDataServiceTest extends WC_Unit_Test_Case {
 					'state'       => 'TX',
 					'postal_code' => '78701',
 				),
-				'email'   => 'ada@example.com',
 				'phone'   => '+15555550123',
+				'email'   => 'ada@example.com',
 				'name'    => 'Ada Lovelace',
 			),
 			$this->sut->get_billing_data_from_order( $order )
 		);
+	}
+
+	/**
+	 * Client 11.1.0 sends every billing address field the country's checkout shows, empty ones included, and drops
+	 * only an empty country (class-wc-payments-order-service.php:1455-1488).
+	 *
+	 * @testdox Billing details keep the empty address fields the client sends and drop an empty country.
+	 */
+	public function test_get_billing_data_from_order_keeps_empty_address_fields(): void {
+		$order = wc_create_order();
+		$order->set_billing_email( 'ada@example.com' );
+		$order->set_billing_address_1( '1 Main St' );
+		$order->set_billing_city( 'Austin' );
+		$order->set_billing_postcode( '78701' );
+		$order->set_billing_country( 'US' );
+
+		$us_details = $this->sut->get_billing_data_from_order( $order );
+		$order->set_billing_country( '' );
+		$no_country_details = $this->sut->get_billing_data_from_order( $order );
+
+		$this->assertSame(
+			array(
+				'country'     => 'US',
+				'line1'       => '1 Main St',
+				'line2'       => '',
+				'city'        => 'Austin',
+				'state'       => '',
+				'postal_code' => '78701',
+			),
+			$us_details['address']
+		);
+		$this->assertSame( '', $us_details['name'], 'The client sends the name field even when it is empty.' );
+		$this->assertArrayNotHasKey( 'country', $no_country_details['address'], 'An empty country must not be sent.' );
 	}
 
 	/**

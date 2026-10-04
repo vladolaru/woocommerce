@@ -27,42 +27,48 @@ class WooPaymentsOrderDataService {
 	/**
 	 * Build the billing-details payload for payment method updates.
 	 *
+	 * Sends each billing field the checkout shows for the order's country, empty ones included, so a cleared field
+	 * also clears at the provider; only an empty country is dropped. Port of client 11.1.0
+	 * `WC_Payments_Order_Service::get_billing_data_from_order()` (class-wc-payments-order-service.php:1455-1488).
+	 *
 	 * @since 11.0.0
 	 *
 	 * @param WC_Order $order Order being charged.
 	 * @return array<string,mixed>
 	 */
 	public function get_billing_data_from_order( WC_Order $order ): array {
-		$billing_details = array();
-		$address         = array_filter(
-			array(
-				'country'     => $order->get_billing_country(),
-				'line1'       => $order->get_billing_address_1(),
-				'line2'       => $order->get_billing_address_2(),
-				'city'        => $order->get_billing_city(),
-				'state'       => $order->get_billing_state(),
-				'postal_code' => $order->get_billing_postcode(),
-			),
-			static fn( string $value ): bool => '' !== $value
+		$billing_fields       = array_keys( WC()->countries->get_address_fields( $order->get_billing_country() ) );
+		$address_field_to_key = array(
+			'billing_city'      => 'city',
+			'billing_country'   => 'country',
+			'billing_address_1' => 'line1',
+			'billing_address_2' => 'line2',
+			'billing_postcode'  => 'postal_code',
+			'billing_state'     => 'state',
 		);
-
-		if ( ! empty( $address ) ) {
-			$billing_details['address'] = $address;
+		$field_to_key         = array(
+			'billing_email' => 'email',
+			'billing_phone' => 'phone',
+		);
+		$address              = array();
+		$billing_details      = array();
+		foreach ( $billing_fields as $field ) {
+			if ( isset( $address_field_to_key[ $field ] ) ) {
+				$address[ $address_field_to_key[ $field ] ] = $order->{"get_{$field}"}();
+			} elseif ( isset( $field_to_key[ $field ] ) ) {
+				$billing_details[ $field_to_key[ $field ] ] = $order->{"get_{$field}"}();
+			}
 		}
 
-		if ( '' !== $order->get_billing_email() ) {
-			$billing_details['email'] = $order->get_billing_email();
-		}
-
-		if ( '' !== $order->get_billing_phone() ) {
-			$billing_details['phone'] = $order->get_billing_phone();
-		}
-
-		if ( '' !== trim( $order->get_formatted_billing_full_name() ) ) {
+		if ( in_array( 'billing_first_name', $billing_fields, true ) && in_array( 'billing_last_name', $billing_fields, true ) ) {
 			$billing_details['name'] = trim( $order->get_formatted_billing_full_name() );
 		}
 
-		return $billing_details;
+		if ( empty( $address['country'] ) ) {
+			unset( $address['country'] );
+		}
+
+		return array_merge( array( 'address' => $address ), $billing_details );
 	}
 
 	/**

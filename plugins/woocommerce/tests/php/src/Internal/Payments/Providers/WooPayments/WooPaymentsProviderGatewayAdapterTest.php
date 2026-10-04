@@ -2893,8 +2893,18 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			$expected_request['off_session']                = true;
 			$expected_request['payment_method_update_data'] = array(
 				'billing_details' => array(
-					'email' => 'subscription-buyer@example.com',
-					'name'  => 'Subscription Buyer',
+					// Client 11.1.0 sends every billing field the checkout shows, empty ones included, and drops an
+					// empty country (class-wc-payments-order-service.php:1455-1488).
+					'address' => array(
+						'line1'       => '',
+						'line2'       => '',
+						'city'        => '',
+						'state'       => '',
+						'postal_code' => '',
+					),
+					'phone'   => '',
+					'email'   => 'subscription-buyer@example.com',
+					'name'    => 'Subscription Buyer',
 				),
 			);
 		}
