@@ -41,6 +41,13 @@ abstract class WalletTestCase extends WC_Unit_Test_Case {
 	private array $written_options = array();
 
 	/**
+	 * Transients written through set_wallet_transient(), deleted on tearDown.
+	 *
+	 * @var string[]
+	 */
+	private array $written_transients = array();
+
+	/**
 	 * The screen and query arguments before simulate_admin_request() replaced them, or null when it was not called.
 	 *
 	 * @var array{screen: mixed, get: array}|null
@@ -60,7 +67,7 @@ abstract class WalletTestCase extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Delete the options the test wrote and put back the request. Mockery is closed by MockeryPHPUnitIntegration.
+	 * Delete the options and transients the test wrote and put back the request. Mockery is closed by MockeryPHPUnitIntegration.
 	 */
 	public function tearDown(): void {
 		try {
@@ -68,6 +75,10 @@ abstract class WalletTestCase extends WC_Unit_Test_Case {
 				delete_option( $name );
 			}
 			$this->written_options = array();
+			foreach ( $this->written_transients as $name ) {
+				delete_transient( $name );
+			}
+			$this->written_transients = array();
 			remove_all_filters( 'pre_http_request' );
 			$this->restore_request();
 		} finally {
@@ -119,6 +130,19 @@ abstract class WalletTestCase extends WC_Unit_Test_Case {
 	protected function set_wallet_option( string $name, $value ): void {
 		$this->written_options[] = $name;
 		update_option( $name, $value );
+	}
+
+	/**
+	 * Write a transient for the test and remember it for cleanup. Also use it to claim a transient the code under test
+	 * writes itself, so the test leaves none behind.
+	 *
+	 * @param string $name       Transient name.
+	 * @param mixed  $value      Transient value.
+	 * @param int    $expiration Time until expiration in seconds, 0 for none.
+	 */
+	protected function set_wallet_transient( string $name, $value, int $expiration = 0 ): void {
+		$this->written_transients[] = $name;
+		set_transient( $name, $value, $expiration );
 	}
 
 	/**
