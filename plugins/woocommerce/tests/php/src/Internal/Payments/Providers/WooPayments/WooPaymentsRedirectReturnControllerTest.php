@@ -341,6 +341,49 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A token-save error on the redirect return is logged and the order still completes, even for a recurring order.
+	 *
+	 * Client 11.1.0 process_redirect_payment() catches the token-save exception, logs "Error when saving payment method: ..."
+	 * through its gated Logger and goes on to update the order from the intent (gw:2389-2406). Only the order-status
+	 * callback stops a recurring order on that error (gw:4309-4321).
+	 */
+	public function test_handle_wp_completes_order_when_token_save_fails(): void {
+		add_filter( 'woocommerce_woopayments_is_recurring_payment', '__return_true' );
+		$user_id                    = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$order                      = $this->create_order( '50.00', $user_id, true );
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = $this->successful_payment_intent( $order, 'pi_token_fails', 'pm_token_fails' );
+		$token_service              = new class() extends WooPaymentsTokenService {
+			/**
+			 * Fail every token save.
+			 *
+			 * @param string $payment_method_id Payment method ID.
+			 * @param int    $user_id           User ID.
+			 * @throws \RuntimeException Always.
+			 */
+			public function get_or_create_token_for_user( string $payment_method_id, int $user_id ): ?\WC_Payment_Token {
+				unset( $payment_method_id, $user_id );
+				throw new \RuntimeException( 'Token storage unavailable.' );
+			}
+		};
+		$token_service->init( $this->createMock( WooPaymentsPaymentMethodDetailsService::class ), new StaticNativeRuntimeArbiter( true ) );
+		$logger = new RedirectReturnRecordingLogger();
+		add_filter( 'woocommerce_logging_class', static fn() => $logger );
+		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client, $token_service ), $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_token_fails', true );
+
+		$this->sut->handle_wp();
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'processing', $reloaded->get_status() );
+		$this->assertCount( 0, $reloaded->get_payment_tokens() );
+		$this->assertSame( array(), wc_get_notices( 'error' ) );
+		$messages = array_column( $logger->error_calls, 'message' );
+		$this->assertCount( 1, array_filter( $messages, static fn( $message ): bool => false !== strpos( (string) $message, 'Token storage unavailable.' ) ) );
+	}
+
+	/**
 	 * Valid redirect request methods.
 	 *
 	 * @return array<string,array{request_method:string}>
