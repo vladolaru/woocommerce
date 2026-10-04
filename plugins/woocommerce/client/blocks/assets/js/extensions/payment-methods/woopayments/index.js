@@ -969,15 +969,13 @@ const SavedTokenHandler = ( {
 
 // Client 11.1.0 client/checkout/blocks/payment-processor.js:83-98: Stripe lays the
 // card fields out in one row from 660px, two rows from 415px and three rows below.
-const getCardLayoutForWidth = ( width ) => {
+const getCardRowsForWidth = ( width ) => {
 	if ( width >= 660 ) {
-		return { rows: 1, minHeight: '70px' };
+		return 1;
 	}
-	if ( width >= 415 ) {
-		return { rows: 2, minHeight: '145px' };
-	}
-	return { rows: 3, minHeight: '220px' };
+	return width >= 415 ? 2 : 3;
 };
+const CARD_MIN_HEIGHT_BY_ROWS = { 1: '70px', 2: '145px', 3: '220px' };
 
 // Client 11.1.0 client/checkout/blocks/components/card-skeleton.tsx.
 const CardSkeletonRows = ( { Skeleton, rowCount } ) => {
@@ -1047,7 +1045,8 @@ const WooPaymentsContent = ( {
 	const wrapperRef = useRef( null );
 	const [ isStripeReady, setIsStripeReady ] = useState( false );
 	const [ showSkeleton, setShowSkeleton ] = useState( true );
-	const [ cardRowCount, setCardRowCount ] = useState( 2 );
+	// Unset until the first observation, so nothing is reserved before the width is known.
+	const [ cardRowCount, setCardRowCount ] = useState( null );
 	const isCardMethod =
 		getStripePaymentMethodTypes( paymentSettings )[ 0 ] === 'card';
 	const Skeleton = components?.Skeleton;
@@ -1108,26 +1107,22 @@ const WooPaymentsContent = ( {
 	}, [] );
 
 	// Client 11.1.0 client/checkout/blocks/payment-processor.js:75-108: reserve the
-	// card fields' height for the wrapper's width before Stripe renders them.
+	// card fields' height for the wrapper's width before Stripe renders them. The
+	// height is rendered from state rather than written in the callback, which would
+	// resize the observed element inside its own callback (a "ResizeObserver loop" error).
 	useEffect( () => {
 		if ( ! isCardMethod || ! wrapperRef.current ) {
 			return undefined;
 		}
 
-		const wrapper = wrapperRef.current;
 		const observer = new window.ResizeObserver( ( entries ) => {
-			const { rows, minHeight } = getCardLayoutForWidth(
-				entries[ 0 ].contentRect.width
+			setCardRowCount(
+				getCardRowsForWidth( entries[ 0 ].contentRect.width )
 			);
-			setCardRowCount( rows );
-			wrapper.style.minHeight = minHeight;
 		} );
 
-		observer.observe( wrapper );
-		return () => {
-			observer.disconnect();
-			wrapper.style.minHeight = '';
-		};
+		observer.observe( wrapperRef.current );
+		return () => observer.disconnect();
 	}, [ isCardMethod ] );
 
 	useEffect( () => {
@@ -1313,13 +1308,18 @@ const WooPaymentsContent = ( {
 				className={ `wcpay-core-blocks-payment-element-wrapper${
 					isCardMethod ? '' : ' is-apm'
 				}` }
+				style={
+					isCardMethod && cardRowCount
+						? { minHeight: CARD_MIN_HEIGHT_BY_ROWS[ cardRowCount ] }
+						: undefined
+				}
 			>
 				{ showSkeleton && Skeleton ? (
 					<PaymentElementSkeleton
 						Skeleton={ Skeleton }
 						isCardMethod={ isCardMethod }
 						isHidden={ isStripeReady }
-						rowCount={ cardRowCount }
+						rowCount={ cardRowCount ?? 2 }
 						onTransitionEnd={ () => setShowSkeleton( false ) }
 					/>
 				) : null }
