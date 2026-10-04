@@ -6,10 +6,6 @@
 		display: flex;
 		flex: 1;
 		gap: $gap;
-
-		@media screen and (max-width: 782px) {
-			flex-direction: column;
-		}
 	}
 
 	&__section {
