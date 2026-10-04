@@ -51,13 +51,13 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	 * real test process may have WC_Payments loaded or WCPAY_PLUGIN_FILE defined, which would
 	 * otherwise trip a fallback.
 	 *
-	 * @param bool $in_list          Whether the plugin is in the per-site active-plugins list.
-	 * @param bool $network          Whether the plugin is in the network active-sitewide-plugins list.
-	 * @param bool $class_loaded     Whether the WC_Payments bootstrap class is loaded.
-	 * @param bool $constant_defined Whether the WooPayments include-time constant is defined.
+	 * @param bool   $in_list          Whether the plugin is in the per-site active-plugins list.
+	 * @param bool   $network          Whether the plugin is in the network active-sitewide-plugins list.
+	 * @param bool   $class_loaded     Whether the WC_Payments bootstrap class is loaded.
+	 * @param bool   $constant_defined Whether the WooPayments include-time constant is defined.
+	 * @param string $entry            The plugin's active-plugins entry.
 	 */
-	private function fake_plugin( bool $in_list = false, bool $network = false, bool $class_loaded = false, bool $constant_defined = false ): void {
-		$entry = NativePaymentsRuntimeArbiter::PLUGIN_FILE;
+	private function fake_plugin( bool $in_list = false, bool $network = false, bool $class_loaded = false, bool $constant_defined = false, string $entry = NativePaymentsRuntimeArbiter::PLUGIN_FILE ): void {
 		$this->register_legacy_proxy_function_mocks(
 			array(
 				'get_option'      => function ( $name, $default_value = false ) use ( $in_list, $entry ) {
@@ -290,6 +290,36 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 			$this->sut->invalidate( $blog_id );
 			wpmu_delete_blog( $blog_id, true );
 		}
+	}
+
+	/**
+	 * @testdox The plugin in a renamed folder owns the runtime.
+	 */
+	public function test_plugin_in_renamed_folder_owns_the_runtime(): void {
+		$this->fake_plugin( true, false, false, false, 'woopayments/woocommerce-payments.php' );
+		$this->enable_native_runtime();
+
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_PLUGIN, $this->sut->get_runtime_owner(), 'A copy in a renamed folder loads after WooCommerce, so only its list entry can keep native from registering too.' );
+	}
+
+	/**
+	 * @testdox The plugin network-activated from a renamed folder owns the runtime.
+	 */
+	public function test_network_plugin_in_renamed_folder_owns_the_runtime(): void {
+		$this->fake_plugin( false, true, false, false, 'woopayments/woocommerce-payments.php' );
+		$this->enable_native_runtime();
+
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_PLUGIN, $this->sut->get_runtime_owner(), 'The network list is matched by main file name as well.' );
+	}
+
+	/**
+	 * @testdox An active plugin with another main file name is not WooPayments.
+	 */
+	public function test_other_plugin_main_file_is_not_woopayments(): void {
+		$this->fake_plugin( true, false, false, false, 'woocommerce-payments-dev-tools/woocommerce-payments-dev-tools.php' );
+		$this->enable_native_runtime();
+
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, $this->sut->get_runtime_owner(), 'Only the WooPayments main file name marks the plugin as active.' );
 	}
 
 	/**

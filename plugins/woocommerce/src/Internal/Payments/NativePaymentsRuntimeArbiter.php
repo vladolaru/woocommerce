@@ -31,10 +31,10 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
  * assets, checkout hooks, ActionScheduler/WP-Cron handlers, migrations, admin notices, eager service
  * construction) MUST consult {@see self::should_native_register()} before doing anything mutating.
  *
- * Plugin detection uses the active-plugins list (per-site + network), reliable in the early-boot
- * window and correct per-site under multisite; `WCPAY_PLUGIN_FILE` is the fallback for non-standard
- * installs. WooPayments defines this constant from its main file at include time, so early WooCommerce
- * registration can resolve plugin ownership before the plugin's bootstrap class is available.
+ * Plugin detection uses the active-plugins lists (per-site + network), reliable in the early-boot
+ * window and correct per-site under multisite. The plugin matches by its main file name in any folder,
+ * so a copy in a renamed folder that loads after WooCommerce is still detected. `WCPAY_PLUGIN_FILE` is
+ * the fallback for a plugin included before WooCommerce without an active-plugins entry.
  *
  * The arbiter is necessary but not sufficient for money-safety: the binding invariant — only one
  * runtime may submit a payment/refund/capture for a given site+order at a time — is additionally
@@ -81,6 +81,13 @@ class NativePaymentsRuntimeArbiter {
 	 * @var string
 	 */
 	const PLUGIN_FILE = 'woocommerce-payments/woocommerce-payments.php';
+
+	/**
+	 * The WooPayments main file name, matched in any plugin folder.
+	 *
+	 * @var string
+	 */
+	private const PLUGIN_MAIN_FILE_NAME = 'woocommerce-payments.php';
 
 	/**
 	 * Filter that reports whether the core-native payments runtime is enabled for this site.
@@ -228,7 +235,7 @@ class NativePaymentsRuntimeArbiter {
 	 *
 	 * Primary signal is the active-plugins list (per-site + network), which is reliable in the
 	 * early-boot window and correct per-site under multisite. The include-time WCPAY_PLUGIN_FILE
-	 * constant is the fallback for non-standard installs.
+	 * constant is the fallback for a plugin included before WooCommerce without a list entry.
 	 *
 	 * @return bool True when the WooPayments plugin is active.
 	 */
@@ -247,7 +254,7 @@ class NativePaymentsRuntimeArbiter {
 	 */
 	private function plugin_in_active_list(): bool {
 		$site_active = (array) $this->legacy_proxy->call_function( 'get_option', 'active_plugins', array() );
-		if ( in_array( self::PLUGIN_FILE, $site_active, true ) ) {
+		if ( $this->has_plugin_entry( $site_active ) ) {
 			return true;
 		}
 
@@ -257,6 +264,24 @@ class NativePaymentsRuntimeArbiter {
 		}
 
 		$network_active = (array) $this->legacy_proxy->call_function( 'get_site_option', 'active_sitewide_plugins', array() );
-		return isset( $network_active[ self::PLUGIN_FILE ] );
+		return $this->has_plugin_entry( array_keys( $network_active ) );
+	}
+
+	/**
+	 * Tell whether an active-plugins list holds the WooPayments main file, in any folder.
+	 *
+	 * WooPayments is the only wordpress.org plugin with this main file name.
+	 *
+	 * @param array<int|string,mixed> $plugins Plugin files relative to the plugins directory.
+	 * @return bool
+	 */
+	private function has_plugin_entry( array $plugins ): bool {
+		foreach ( $plugins as $plugin ) {
+			if ( is_string( $plugin ) && self::PLUGIN_MAIN_FILE_NAME === wp_basename( $plugin ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 }
