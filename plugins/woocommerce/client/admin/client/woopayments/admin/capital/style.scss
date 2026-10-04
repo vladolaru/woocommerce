@@ -65,28 +65,4 @@
 		outline: var(--wp-admin-border-width-focus) solid var(--wp-admin-theme-color);
 		outline-offset: 2px;
 	}
-
-
-	// stylelint-disable color-no-hex, declaration-property-value-disallowed-list -- loan status chip palette and 2px padding have no upstream token; the improvement pass moves these chips to core's status badges.
-	&__status-chip {
-		border: 1px solid $studio-gray-30;
-		border-radius: $radius-small;
-		display: inline-block;
-		font-weight: 600;
-		line-height: 1.5;
-		padding: 2px $gap-smaller;
-
-		&.is-active {
-			background: $woopayments-badge-warning-background;
-			border-color: #dba617;
-			color: $studio-yellow-80;
-		}
-
-		&.is-paid-off {
-			background: #f0f6fc;
-			border-color: #72aee6;
-			color: #0a4b78;
-		}
-	}
-	// stylelint-enable color-no-hex, declaration-property-value-disallowed-list
 }

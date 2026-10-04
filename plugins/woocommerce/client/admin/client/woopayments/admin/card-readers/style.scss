@@ -26,25 +26,4 @@
 			font-weight: 600;
 		}
 	}
-
-
-	// stylelint-disable color-no-hex, declaration-property-value-disallowed-list -- reader status chip palette, 2px padding and 16px pill radius have no upstream token; the improvement pass moves these chips to core's status badges.
-	&__status-badge {
-		background: $wp-admin-background;
-		border: 1px solid $studio-gray-10;
-		border-radius: 16px;
-		display: inline-block;
-		line-height: 1.5;
-		padding: 2px $gap-smaller;
-
-		&.is-active {
-			background: #edfaef;
-			border-color: #68de7c;
-		}
-
-		&.is-inactive {
-			background: $studio-gray-0;
-		}
-	}
-	// stylelint-enable color-no-hex, declaration-property-value-disallowed-list
 }

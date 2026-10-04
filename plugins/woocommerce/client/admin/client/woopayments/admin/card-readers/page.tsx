@@ -9,6 +9,7 @@ import { __, sprintf } from '@wordpress/i18n';
  */
 import { getWooPaymentsCardReaders } from './data';
 import type { WooPaymentsCardReader } from './types';
+import { StatusChip } from '../overview/components/status-chip';
 
 const getErrorMessage = ( error: unknown ) => {
 	if ( error instanceof Error && error.message ) {
@@ -135,15 +136,14 @@ export const WooPaymentsCardReadersPage = () => {
 									<td>{ reader.id }</td>
 									<td>{ reader.device_type }</td>
 									<td>
-										<span
-											className={
+										<StatusChip
+											message={ getStatusLabel( reader ) }
+											type={
 												reader.is_active
-													? 'woocommerce-woopayments-card-readers__status-badge is-active'
-													: 'woocommerce-woopayments-card-readers__status-badge is-inactive'
+													? 'success'
+													: 'info'
 											}
-										>
-											{ getStatusLabel( reader ) }
-										</span>
+										/>
 									</td>
 								</tr>
 							) ) }

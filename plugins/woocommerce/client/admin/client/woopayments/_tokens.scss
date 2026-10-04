@@ -13,13 +13,8 @@ $woopayments-font-size-subheading: 14px;
 $woopayments-payment-method-logo-width: 64px;
 $woopayments-payment-method-logo-height: 40px;
 
-// Settings badges, pills and chips share one height (an 18px line plus 1px borders); base-styles has no badge size.
+// The settings fee pill and the express checkout Beta badge share one height (an 18px line plus 1px borders); base-styles has no badge size.
 $woopayments-badge-min-height: 20px;
-
-// Badge state colours shared by the promotion badges, the discount badge and the chip; @wordpress/components has no badge palette.
-$woopayments-badge-success-background: #e8f7f0;
-$woopayments-badge-success-color: #005c3a;
-$woopayments-badge-warning-background: #fcf9e8;
 
 // Bulleted lists inside settings modals indent 20px; base-styles has no list indent.
 $woopayments-list-indent: 20px;
@@ -42,10 +37,10 @@ $woopayments-error-red: #cc1818;
 // Payment and payout details text is 14px like the client; base-styles' type scale goes 13px → 15px.
 $woopayments-font-size-detail: 14px;
 
-// The client's inline notices: a 22px icon, 5px before the text, the info icon in WP's dark notice blue; no upstream notice icon tokens.
+// The client's inline notices: a 22px icon, 5px before the text, and the client's info icon colour; no upstream notice icon tokens.
 $woopayments-notice-icon-size: 22px;
 $woopayments-notice-icon-gap: 5px;
 $woopayments-notice-info-icon-color: #0a4b78;
 
-// Small (12px) text sits on an 18px line in badges, chips and muted settings text; base-styles' line heights go 16px to 20px.
+// Small (12px) text sits on an 18px line in the fee pill, the Beta badge, the details popovers and muted settings text; base-styles' line heights go 16px to 20px.
 $woopayments-line-height-small: 18px;

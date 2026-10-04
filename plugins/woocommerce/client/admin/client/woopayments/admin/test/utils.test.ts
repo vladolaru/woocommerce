@@ -20,7 +20,6 @@ import {
 	getBalanceCurrencyOptions,
 	getInstantBalanceForCurrency,
 	getMonthlyAnchorLabel,
-	getPayoutStatusClassName,
 	getSelectedBalanceCurrency,
 } from '../overview/utils';
 import type { WooPaymentsDepositsOverview } from '../overview/types';
@@ -265,15 +264,6 @@ describe( 'overview financial summary helpers', () => {
 		expect( getMonthlyAnchorLabel( 15 ) ).toBe( '15th' );
 		expect( getMonthlyAnchorLabel( 21 ) ).toBe( '21st' );
 		expect( getMonthlyAnchorLabel( 31 ) ).toBe( 'last day of every month' );
-	} );
-
-	it( 'normalizes payout status class names', () => {
-		expect( getPayoutStatusClassName( 'in_transit' ) ).toBe(
-			'woocommerce-woopayments-overview__status-chip--in-transit'
-		);
-		expect( getPayoutStatusClassName( 'paid' ) ).toBe(
-			'woocommerce-woopayments-overview__status-chip--paid'
-		);
 	} );
 } );
 

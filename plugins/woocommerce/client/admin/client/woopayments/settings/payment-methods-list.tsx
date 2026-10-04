@@ -30,6 +30,11 @@ import {
 	WooPaymentsPaymentMethodDefinition,
 } from './payment-method-definitions';
 import type { PmPromotion } from '../promotions/types';
+import { getPromotionBadgeChipType } from '../promotions/badge';
+import {
+	getStatusChipClassName,
+	StatusChip,
+} from '../admin/overview/components/status-chip';
 import { getSettingsPaymentsProviderRouteUrl } from '../admin/utils';
 import { formatCurrency } from '../admin/currency-format';
 
@@ -775,12 +780,11 @@ const DiscountBadge = ( {
 
 	return (
 		<>
-			<span
-				className="woopayments-settings-payment-method-item__discount-badge"
+			<StatusChip
+				message={ badgeText }
+				type="success"
 				aria-describedby={ tooltipText ? descriptionId : undefined }
-			>
-				{ badgeText }
-			</span>
+			/>
 			{ tooltipText && (
 				<span id={ descriptionId } className="screen-reader-text">
 					{ tooltipText }
@@ -801,7 +805,7 @@ const PmPromotionBadge = ( {
 		return null;
 	}
 
-	const badgeType = promotion.badge_type || 'success';
+	const chipType = getPromotionBadgeChipType( promotion.badge_type );
 	const hasTooltip = Boolean( promotion.description || promotion.tc_url );
 	const label = sprintf(
 		/* translators: %s: Promotion title. */
@@ -810,13 +814,7 @@ const PmPromotionBadge = ( {
 	);
 
 	if ( ! hasTooltip ) {
-		return (
-			<span
-				className={ `woopayments-settings-payment-method-item__promotion-badge is-${ badgeType }` }
-			>
-				{ promotion.title }
-			</span>
-		);
+		return <StatusChip message={ promotion.title } type={ chipType } />;
 	}
 
 	return (
@@ -824,7 +822,9 @@ const PmPromotionBadge = ( {
 			id={ tooltipId }
 			label={ label }
 			wrapperClassName="woopayments-settings-payment-method-item__promotion-wrapper"
-			triggerClassName={ `woopayments-settings-payment-method-item__promotion-badge is-${ badgeType }` }
+			triggerClassName={ `${ getStatusChipClassName(
+				chipType
+			) } woopayments-settings-payment-method-item__promotion-badge` }
 			trigger={
 				<>
 					{ promotion.title }
@@ -1311,16 +1311,15 @@ const PaymentMethodRow = ( {
 							</span>
 						) }
 						{ availability.chip && (
-							<span
+							<StatusChip
 								id={ statusId }
-								className={ `woopayments-settings-payment-method-item__chip ${
+								message={ availability.chip }
+								type={
 									availability.chipType === 'error'
-										? 'is-error'
-										: ''
-								}` }
-							>
-								{ availability.chip }
-							</span>
+										? 'error'
+										: 'warning'
+								}
+							/>
 						) }
 						<DiscountBadge
 							feeStructure={ feeStructure }

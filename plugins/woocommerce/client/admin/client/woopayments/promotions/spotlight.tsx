@@ -31,10 +31,11 @@ import { recordEvent } from '@woocommerce/tracks';
 import { registerWooPaymentsPmPromotionsStore } from './data/register';
 import { usePmPromotionActions, usePmPromotions } from './data/hooks';
 import type { PmPromotion } from './types';
+import { getPromotionBadgeChipType } from './badge';
+import { StatusChip } from '../admin/overview/components/status-chip';
 import './style.scss';
 
-// Client 11.1.0 `components/spotlight/index.tsx:30-49`, `66` and `140`.
-const BADGE_TYPES = [ 'primary', 'success', 'light', 'warning', 'alert' ];
+// Client 11.1.0 `components/spotlight/index.tsx:66` and `140`.
 const SHOW_DELAY_MS = 4000;
 const CLOSE_ANIMATION_MS = 300;
 
@@ -246,17 +247,12 @@ export const SpotlightPromotion = () => {
 	}
 
 	const eventProperties = getEventProperties( spotlightPromotion );
-	const badgeType = BADGE_TYPES.includes(
-		spotlightPromotion.badge_type ?? ''
-	)
-		? spotlightPromotion.badge_type
-		: 'success';
 	const badge = spotlightPromotion.badge_text && (
-		<span
-			className={ `woopayments-promotion-spotlight__badge is-${ badgeType }` }
-		>
-			{ spotlightPromotion.badge_text }
-		</span>
+		<StatusChip
+			className="woopayments-promotion-spotlight__badge"
+			message={ spotlightPromotion.badge_text }
+			type={ getPromotionBadgeChipType( spotlightPromotion.badge_type ) }
+		/>
 	);
 	const heading = (
 		<h2

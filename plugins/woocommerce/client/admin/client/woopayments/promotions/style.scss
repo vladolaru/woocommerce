@@ -98,40 +98,10 @@
 	}
 }
 
-// Client 11.1.0 `components/chip/style.scss` colours for the badge types.
-// stylelint-disable color-no-hex -- the promotion badge palette (§4 exception), pending the StatusBadge rework.
 .woopayments-promotion-spotlight__badge {
-	background: #edfaef;
-	border-radius: $radius-small;
-	color: $studio-green-70;
-	display: inline-block;
-	font-size: $font-size-medium;
-	line-height: 1.5;
-	margin-bottom: $gap-small;
-	padding: $gap-smallest $gap-smaller;
+	margin-block-end: $gap-small;
 	white-space: nowrap;
-
-	&.is-primary {
-		background: #f0f6fc;
-		color: #0a4b78;
-	}
-
-	&.is-light {
-		background: $studio-gray-0;
-		color: $studio-gray-80;
-	}
-
-	&.is-warning {
-		background: $woopayments-badge-warning-background;
-		color: $studio-yellow-80;
-	}
-
-	&.is-alert {
-		background: #fcf0f1;
-		color: $studio-red-70;
-	}
 }
-// stylelint-enable color-no-hex
 
 .woopayments-promotion-spotlight__heading {
 	color: $gray-900;

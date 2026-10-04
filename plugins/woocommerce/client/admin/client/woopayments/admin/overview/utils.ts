@@ -206,8 +206,3 @@ export const formatPayoutStatus = ( status: string ) =>
 	status
 		.replace( /_/g, ' ' )
 		.replace( /^\w/, ( match ) => match.toUpperCase() );
-
-export const getPayoutStatusClassName = ( status: string ) =>
-	`woocommerce-woopayments-overview__status-chip--${ status
-		.toLowerCase()
-		.replace( /_/g, '-' ) }`;

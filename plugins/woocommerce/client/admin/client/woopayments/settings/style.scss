@@ -253,101 +253,38 @@
 		display: inline-flex;
 	}
 
-	&__fee-pill,
-	&__discount-badge,
-	&__promotion-badge {
+	&__fee-pill {
 		display: inline-flex;
 		align-items: center;
 		min-height: $woopayments-badge-min-height;
 		padding: 1px $gap-smaller;
-		border-radius: $radius-small;
-		font-size: $font-size-small;
-		line-height: $woopayments-line-height-small;
-	}
-
-	&__fee-pill,
-	&__promotion-badge {
 		border: 1px solid $gray-300;
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- a pill; $radius-full is 9999px, not 999px.
+		border-radius: 999px;
 		appearance: none;
 		background: $white;
 		color: $gray-900;
 		cursor: help;
 		font-family: inherit;
+		font-size: $font-size-small;
+		line-height: $woopayments-line-height-small;
+		white-space: nowrap;
 	}
 
+	// The promotion details trigger is a button with core's status badge classes, sized like core's Pill.
 	&__promotion-badge {
 		gap: $gap-smallest;
-		font-weight: 500;
-
-		&:not(button) {
-			cursor: default;
-		}
-
-		// stylelint-disable color-no-hex -- one-off badge state colours with no upstream token; see _tokens.scss for the shared ones.
-		&.is-success {
-			border-color: #b8e6cd;
-			background: $woopayments-badge-success-background;
-			color: $woopayments-badge-success-color;
-		}
-
-		&.is-primary {
-			border-color: #d0e4ff;
-			background: #edf6ff;
-			color: #0a4b78;
-		}
-
-		&.is-light {
-			border-color: $gray-200;
-			background: $gray-100;
-			color: $gray-900;
-		}
-
-		&.is-warning {
-			border-color: #f0d96a;
-			background: $woopayments-badge-warning-background;
-			color: $gray-900;
-		}
-
-		&.is-alert {
-			border-color: #f0b7bf;
-			background: $studio-red-0;
-			color: $alert-red;
-		}
-		// stylelint-enable color-no-hex
-	}
-
-	&__fee-pill {
-		// stylelint-disable-next-line declaration-property-value-disallowed-list -- a pill; $radius-full is 9999px, not 999px.
-		border-radius: 999px;
-		white-space: nowrap;
+		padding: $gap-smallest $gap-smaller;
+		appearance: none;
+		cursor: help;
+		font-family: inherit;
+		font-size: $font-size-small;
+		line-height: $font-line-height-x-small;
 	}
 
 	&__promotion-icon {
 		fill: currentColor;
 		flex: 0 0 auto;
-	}
-
-	&__discount-badge {
-		background: $woopayments-badge-success-background;
-		color: $woopayments-badge-success-color;
-		font-weight: 500;
-	}
-
-	&__chip {
-		display: inline-flex;
-		align-items: center;
-		min-height: $woopayments-badge-min-height;
-		padding: 1px $gap-smaller;
-		border-radius: $radius-small;
-		background: $woopayments-badge-warning-background;
-		color: $gray-900;
-		font-size: $font-size-small;
-		line-height: $woopayments-line-height-small;
-
-		&.is-error {
-			background: $studio-red-0;
-			color: $alert-red;
-		}
 	}
 
 	&__card-brands {

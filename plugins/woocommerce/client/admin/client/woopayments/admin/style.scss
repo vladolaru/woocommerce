@@ -413,40 +413,6 @@
 	}
 }
 
-// stylelint-disable color-no-hex, declaration-property-value-disallowed-list -- payout chip palette, 2px padding and 999px pill radius have no upstream token; the improvement pass moves these chips to core's status badges.
-.woocommerce-woopayments-overview__status-chip {
-	background: $wp-admin-background;
-	border: 1px solid $studio-gray-10;
-	border-radius: 999px;
-	color: $studio-gray-80;
-	display: inline-block;
-	font-size: $font-size-small;
-	font-weight: 600;
-	line-height: 1.4;
-	padding: 2px $gap-smaller;
-}
-
-.woocommerce-woopayments-overview__status-chip--paid {
-	background: #edfaef;
-	border-color: #68de7c;
-	color: $studio-green-70;
-}
-
-.woocommerce-woopayments-overview__status-chip--pending,
-.woocommerce-woopayments-overview__status-chip--in-transit {
-	background: #f0f6fc;
-	border-color: #72aee6;
-	color: #0a4b78;
-}
-
-.woocommerce-woopayments-overview__status-chip--failed,
-.woocommerce-woopayments-overview__status-chip--canceled {
-	background: #fcf0f1;
-	border-color: $studio-red-10;
-	color: $studio-red-70;
-}
-// stylelint-enable color-no-hex, declaration-property-value-disallowed-list
-
 .woocommerce-woopayments-overview__payouts-footer.components-card__footer {
 	flex-wrap: wrap;
 	justify-content: flex-start;

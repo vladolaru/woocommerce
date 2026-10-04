@@ -26,6 +26,7 @@ import {
 	getErrorMessage,
 } from '../money-movement/utils';
 import { WooPaymentsTestModeNotice } from '../test-mode-notice';
+import { StatusChip } from '../overview/components/status-chip';
 import { getWooPaymentsSettingsBootstrap } from '../../settings/bootstrap';
 
 // Client 11.1.0 `capital/index.tsx:82-84, 118, 157`: loan dates in the site date format.
@@ -37,11 +38,6 @@ const getLoanStatus = ( loan: WooPaymentsCapitalLoan ) =>
 				formatSiteDateTime( loan.fully_paid_at, false )
 		  )
 		: __( 'Active', 'woocommerce' );
-
-const getLoanStatusClassName = ( loan: WooPaymentsCapitalLoan ) =>
-	loan.fully_paid_at
-		? 'woocommerce-woopayments-capital__status-chip is-paid-off'
-		: 'woocommerce-woopayments-capital__status-chip is-active';
 
 const CapitalActiveLoanSummary = ( {
 	summary,
@@ -67,9 +63,10 @@ const CapitalActiveLoanSummary = ( {
 };
 
 const LoanStatusChip = ( { loan }: { loan: WooPaymentsCapitalLoan } ) => (
-	<span className={ getLoanStatusClassName( loan ) }>
-		{ getLoanStatus( loan ) }
-	</span>
+	<StatusChip
+		message={ getLoanStatus( loan ) }
+		type={ loan.fully_paid_at ? 'primary' : 'warning' }
+	/>
 );
 
 const getLoanTransactionsUrl = ( loan: WooPaymentsCapitalLoan ) =>
