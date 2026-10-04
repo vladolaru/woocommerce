@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use WC_Unit_Test_Case;
 
@@ -179,7 +180,7 @@ class WooPaymentsPersistenceProfileTest extends WC_Unit_Test_Case {
 				'_intent_id'        => 'pi_123',
 				'_intention_status' => 'requires_capture',
 			),
-			$this->sut->get_failed_capture_or_cancel_outcome_meta( $outcome )
+			( new WooPaymentsOutcomeMetadataMapper() )->get_failed_capture_or_cancel_outcome_meta( $outcome )
 		);
 	}
 
