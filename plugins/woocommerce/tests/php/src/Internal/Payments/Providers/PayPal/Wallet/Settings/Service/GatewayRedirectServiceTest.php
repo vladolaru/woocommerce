@@ -17,8 +17,6 @@ use RuntimeException;
  * The wallet's settings app is a route of the Payments settings app, so the old section URLs (the wallet's own section
  * and the extension's gateway sections, which merchants and the extension's links still use) send the browser there.
  *
- * Case kinds: all cases are "wallet" (they hold across the cut).
- *
  * @group paypal-wallet
  */
 class GatewayRedirectServiceTest extends WalletTestCase {

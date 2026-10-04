@@ -1,7 +1,6 @@
 <?php
 /**
- * Characterization tests for the PayPal request the wallet's create-order endpoint builds (written in core; the extension
- * has no equivalent).
+ * Characterization tests for the PayPal request the wallet's create-order endpoint builds.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint
  */

@@ -1,7 +1,6 @@
 <?php
 /**
- * Tests for the legacy payment settings migration of the wallet flags (core-only characterization: the extension has no
- * test for it).
+ * Tests for the legacy payment settings migration of the wallet flags.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\Migration
  */
@@ -18,10 +17,8 @@ use Mockery\MockInterface;
 
 /**
  * The legacy per-method enable flags become the payment method state, under the IDs of the extension's methods. Those IDs
- * are part of the stored state, so the Apple Pay and Google Pay cut must not change this mapping. The IDs are literals
- * here, so the test holds when the code reads them from GatewayIds.
- *
- * Case kinds: all cases are "wallet" (they hold across the cut).
+ * are part of the stored state, so the mapping must not change when Apple Pay or Google Pay code changes. The IDs are
+ * literals here, so the test holds when the code reads them from GatewayIds.
  *
  * @group paypal-wallet
  */
@@ -67,7 +64,7 @@ class PaymentSettingsMigrationWalletFlagsTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should switch on the Apple Pay and Google Pay method states for their legacy button flags (wallet).
+	 * @testdox Should switch on the Apple Pay and Google Pay method states for their legacy button flags.
 	 */
 	public function test_wallet_flags_enable_the_stored_method_ids(): void {
 		$this->migrate(
@@ -83,7 +80,7 @@ class PaymentSettingsMigrationWalletFlagsTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave the wallet method states alone when their legacy flags are off, and still enable Venmo and Pay Later when flagged (wallet).
+	 * @testdox Should leave the wallet method states alone when their legacy flags are off, and still enable Venmo and Pay Later when flagged.
 	 */
 	public function test_wallet_flags_off_toggle_nothing_for_the_wallets(): void {
 		$this->migrate( array( 'pay_later_button_enabled' => true ) );

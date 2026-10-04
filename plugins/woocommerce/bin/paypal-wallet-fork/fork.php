@@ -12,8 +12,9 @@
  */
 
 // This is a command-line maintenance script, not WordPress runtime code: it runs without WordPress loaded, so the
-// WordPress filesystem, JSON and output-escaping sniffs do not apply. Plain PHP functions are the only option.
-// phpcs:disable WordPress.WP.AlternativeFunctions, WordPress.PHP.DiscouragedPHPFunctions.system_calls_exec, WordPress.Security.EscapeOutput
+// WordPress filesystem and JSON sniffs do not apply. Plain PHP functions are the only option. The two other sniffs it
+// trips (exec and output escaping) are ignored on their own lines below.
+// phpcs:disable WordPress.WP.AlternativeFunctions
 
 declare( strict_types = 1 );
 
@@ -55,10 +56,9 @@ $counts   = array(
  * Apply the namespace and text-domain rewrites to a file's contents.
  *
  * @param string $contents File contents.
- * @param string $relative Extension-relative path of the file (kept for the call sites; not used by the rewrite).
  * @return string The rewritten contents.
  */
-function rewrite( string $contents, string $relative ): string { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- Signature is part of the record of the one-shot fork.
+function rewrite( string $contents ): string {
 	// Escaped forms first (class names inside single-quoted PHP strings use double backslashes).
 	$pairs    = array(
 		str_replace( '\\', '\\\\', NS_VENDOR_OLD )  => str_replace( '\\', '\\\\', NS_VENDOR_NEW ),
@@ -71,7 +71,7 @@ function rewrite( string $contents, string $relative ): string { // phpcs:ignore
 	);
 	$contents = strtr( $contents, $pairs );
 
-	// Unprefixed PSR-3 (R43): core prefixes psr/log 1.1.4 through Mozart. The lookbehind skips names already under a vendor prefix.
+	// Unprefixed PSR-3: core prefixes psr/log 1.1.4 through Mozart. The lookbehind skips names already under a vendor prefix.
 	$contents = preg_replace( '/(?<![A-Za-z0-9_\\\\])(\\\\?)Psr\\\\Log\\\\/', '$1' . str_replace( '\\', '\\\\', NS_PSR_LOG_NEW ), $contents );
 
 	// The root namespaces themselves (no trailing separator): the plugin root classes, the logging module class and `@package` tags.
@@ -109,7 +109,7 @@ function copy_file( string $from, string $to, string $relative_from, string $rel
 	$ext                        = pathinfo( $from, PATHINFO_EXTENSION );
 	$path_map[ $relative_from ] = $relative_to;
 	$text                       = in_array( $ext, array( 'php', 'js', 'jsx', 'ts', 'tsx', 'scss', 'css', 'json', 'md', 'txt' ), true );
-	$contents                   = $text ? rewrite( (string) file_get_contents( $from ), $relative_from ) : null;
+	$contents                   = $text ? rewrite( (string) file_get_contents( $from ) ) : null;
 	if ( 'php' === $ext ) {
 		++$counts['php'];
 		audit_php( $contents, $relative_to );
@@ -234,7 +234,7 @@ foreach ( $module_map as $dir => $segment ) {
 
 // 3. The vendored tree goes away.
 if ( ! $dry_run && is_dir( $vendored_dir ) ) {
-	exec( 'rm -rf ' . escapeshellarg( $vendored_dir ) );
+	exec( 'rm -rf ' . escapeshellarg( $vendored_dir ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.system_calls_exec -- Command-line script.
 }
 
 // 4. Outputs.
@@ -244,4 +244,4 @@ if ( ! $dry_run ) {
 	file_put_contents( __DIR__ . '/path-map.json', json_encode( $path_map, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) . "\n" );
 }
 file_put_contents( __DIR__ . '/audit.txt', implode( "\n", $audit ) . "\n" );
-printf( "%s: %d PHP, %d JS, %d other files; %d audit lines in audit.txt\n", $dry_run ? 'Dry run' : 'Forked', $counts['php'], $counts['js'], $counts['other'], count( $audit ) );
+printf( "%s: %d PHP, %d JS, %d other files; %d audit lines in audit.txt\n", $dry_run ? 'Dry run' : 'Forked', $counts['php'], $counts['js'], $counts['other'], count( $audit ) ); // phpcs:ignore WordPress.Security.EscapeOutput -- Command-line output.

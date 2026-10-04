@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the setup token endpoint (ported from the extension's CreateSetupTokenTest).
+ * Tests for the setup token endpoint.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\SavePaymentMethods\Endpoint
  */
@@ -75,8 +75,8 @@ class CreateSetupTokenTest extends WalletTestCase {
 	 */
 	public function payment_method_scenarios(): array {
 		return array(
-			'paypal payment method (wallet)' => array( array( 'payment_method' => 'ppcp-gateway' ) ),
-			'a request that still names the card gateway (wallet)' => array(
+			'paypal payment method' => array( array( 'payment_method' => 'ppcp-gateway' ) ),
+			'a request that still names the card gateway' => array(
 				array(
 					'payment_method'      => 'ppcp-credit-card-gateway',
 					'verification_method' => 'SCA_ALWAYS',
@@ -115,7 +115,7 @@ class CreateSetupTokenTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should pass the customer ID from the _ppcp_target_customer_id user meta to setup_tokens() (wallet).
+	 * @testdox Should pass the customer ID from the _ppcp_target_customer_id user meta to setup_tokens().
 	 */
 	public function test_customer_id_comes_from_user_meta(): void {
 		$this->request_data->shouldReceive( 'read_request' )->once()->andReturn( array( 'payment_method' => 'ppcp-gateway' ) );
@@ -139,7 +139,7 @@ class CreateSetupTokenTest extends WalletTestCase {
 	 * The extension also asserted HTTP 400, which a real wp_send_json_error() hides here: WordPress skips the status
 	 * header once the test runner has started output.
 	 *
-	 * @testdox Should answer with an error message and never call setup_tokens() when the nonce is invalid (wallet).
+	 * @testdox Should answer with an error message and never call setup_tokens() when the nonce is invalid.
 	 */
 	public function test_nonce_failure_answers_with_an_error_message_and_never_calls_setup_tokens(): void {
 		$this->request_data->shouldReceive( 'read_request' )->once()->andThrow( new NonceValidationException( 'Invalid nonce.' ) );

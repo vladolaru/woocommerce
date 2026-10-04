@@ -269,17 +269,13 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	/**
 	 * The REST route this request addresses, or an empty string when it is not a REST request.
 	 *
-	 * This runs on plugins_loaded, before WordPress parses the request, so the route is read from the parsed query
-	 * variables when they are there, then from the plain-permalink query argument, then from the request path, where
-	 * the route is whatever follows the REST prefix segment.
+	 * This runs on plugins_loaded, before WordPress parses the request, so the route is read from the plain-permalink
+	 * query argument first, then from the request path, where the route is whatever follows the REST prefix segment.
 	 *
 	 * @return string
 	 */
 	private function get_rest_route(): string {
 		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only routing decision.
-		if ( ! empty( $GLOBALS['wp']->query_vars['rest_route'] ) ) {
-			return (string) $GLOBALS['wp']->query_vars['rest_route'];
-		}
 		if ( isset( $_GET['rest_route'] ) && is_string( $_GET['rest_route'] ) ) {
 			return '/' . ltrim( sanitize_text_field( wp_unslash( $_GET['rest_route'] ) ), '/' );
 		}

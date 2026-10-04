@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the PayPal wallet approve-order endpoint (ported from the extension's ApproveOrderEndpointTest).
+ * Tests for the PayPal wallet approve-order endpoint.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint
  */

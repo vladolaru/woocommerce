@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the access token entity (ported from the extension's TokenTest, extended).
+ * Tests for the access token entity.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity
  */
@@ -15,10 +15,7 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Walle
 use stdClass;
 
 /**
- * The token PayPal hands back: its validity window, the JSON round trip and the scope checks.
- *
- * The extension's own cases (validity, safety margin, both JSON shapes, round trip, malformed data) are all wallet
- * cases. The extension has no test for the scope check: the vaulting case is new here.
+ * The token PayPal hands back: its validity window and the JSON round trip.
  *
  * @group paypal-wallet
  */
@@ -83,7 +80,7 @@ class TokenTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should hold a valid token with or without a creation time (wallet).
+	 * @testdox Should hold a valid token with or without a creation time.
 	 * @dataProvider data_valid_tokens
 	 *
 	 * @param stdClass $data The token data.
@@ -96,7 +93,7 @@ class TokenTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should report a token past its expiry as invalid (wallet).
+	 * @testdox Should report a token past its expiry as invalid.
 	 */
 	public function test_is_valid(): void {
 		$created = time() - 100;
@@ -113,7 +110,7 @@ class TokenTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should treat a token inside the safety margin of its expiry as already invalid (wallet).
+	 * @testdox Should treat a token inside the safety margin of its expiry as already invalid.
 	 */
 	public function test_is_valid_applies_the_safety_margin(): void {
 		$within_margin = new Token(
@@ -136,7 +133,7 @@ class TokenTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should build a token from the bearer JSON and from the identity JSON (wallet).
+	 * @testdox Should build a token from the bearer JSON and from the identity JSON.
 	 */
 	public function test_from_json_reads_both_response_shapes(): void {
 		$bearer   = Token::from_json(
@@ -163,7 +160,7 @@ class TokenTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should write the token back as JSON that holds the same token, creation time and lifetime (wallet).
+	 * @testdox Should write the token back as JSON that holds the same token, creation time and lifetime.
 	 */
 	public function test_as_json(): void {
 		$token = new Token(
@@ -182,7 +179,7 @@ class TokenTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should reject token data with a missing or mistyped field (wallet).
+	 * @testdox Should reject token data with a missing or mistyped field.
 	 * @dataProvider data_invalid_tokens
 	 *
 	 * @param stdClass $data The token data.
@@ -191,35 +188,5 @@ class TokenTest extends WalletTestCase {
 		$this->expectException( RuntimeException::class );
 
 		new Token( $data );
-	}
-
-	/**
-	 * @testdox Should report vaulting as available only when the scope names the vault permission (wallet).
-	 */
-	public function test_vaulting_available_reads_the_scope(): void {
-		$with_scope    = new Token(
-			(object) array(
-				'expires_in' => 100,
-				'token'      => 'abc',
-				'scope'      => 'openid https://uri.paypal.com/services/vault/payment-tokens/readwrite',
-			)
-		);
-		$without_scope = new Token(
-			(object) array(
-				'expires_in' => 100,
-				'token'      => 'abc',
-				'scope'      => 'openid https://uri.paypal.com/services/payments/realtimepayment',
-			)
-		);
-		$no_scope_key  = new Token(
-			(object) array(
-				'expires_in' => 100,
-				'token'      => 'abc',
-			)
-		);
-
-		$this->assertTrue( $with_scope->vaulting_available() );
-		$this->assertFalse( $without_scope->vaulting_available() );
-		$this->assertFalse( $no_scope_key->vaulting_available() );
 	}
 }

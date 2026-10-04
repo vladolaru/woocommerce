@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the PayPal wallet WooCommerce order creator (ported from the extension's WooCommerceOrderCreatorTest).
+ * Tests for the PayPal wallet WooCommerce order creator.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Helper
  */

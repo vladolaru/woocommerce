@@ -15,8 +15,6 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Walle
  * The wallet's settings app is served on a route of the Payments settings app, and the legacy section URL still counts
  * as its settings page until the redirect has run.
  *
- * Case kinds: all cases are "wallet" (they hold across the cut).
- *
  * @group paypal-wallet
  */
 class SettingsPageDetectionTest extends WalletTestCase {

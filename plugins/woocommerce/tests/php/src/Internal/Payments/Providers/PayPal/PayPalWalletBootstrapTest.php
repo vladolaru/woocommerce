@@ -6,6 +6,8 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\DormantPayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\Migration\MigrationManager;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\SettingsModule;
 use WC_Unit_Test_Case;
 
 /**
@@ -40,7 +42,6 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 			'server'  => $_SERVER,
 			'screen'  => $GLOBALS['current_screen'] ?? null,
 			'scripts' => $GLOBALS['wp_scripts'] ?? null,
-			'route'   => $GLOBALS['wp']->query_vars['rest_route'] ?? null,
 		);
 	}
 
@@ -66,11 +67,6 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 			unset( $GLOBALS['wp_scripts'] );
 		} else {
 			$GLOBALS['wp_scripts'] = $this->saved_request['scripts']; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restoring the script registry.
-		}
-		if ( null === $this->saved_request['route'] ) {
-			unset( $GLOBALS['wp']->query_vars['rest_route'] );
-		} else {
-			$GLOBALS['wp']->query_vars['rest_route'] = $this->saved_request['route'];
 		}
 		parent::tearDown();
 	}
@@ -137,6 +133,24 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 			$counts[ $hook ] = array_sum( array_map( 'count', $hook_object->callbacks ) );
 		}
 		return $counts;
+	}
+
+	/**
+	 * The class that owns a hook callback: the object or class of a method callable, the scope class of a closure, or the
+	 * function name of a plain function.
+	 *
+	 * @param mixed $function_callback The callback as stored in the hook.
+	 * @return string
+	 */
+	private function get_callback_owner( $function_callback ): string {
+		if ( $function_callback instanceof \Closure ) {
+			$scope = ( new \ReflectionFunction( $function_callback ) )->getClosureScopeClass();
+			return null === $scope ? 'closure without a scope class' : $scope->getName();
+		}
+		if ( is_array( $function_callback ) ) {
+			return is_object( $function_callback[0] ) ? get_class( $function_callback[0] ) : (string) $function_callback[0];
+		}
+		return is_string( $function_callback ) ? $function_callback : 'unknown callback';
 	}
 
 	/**
@@ -323,7 +337,7 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 		}
 		$removed_ids = array( 'api.endpoint.billing-plans', 'api.endpoint.catalog-products', 'api.factory.plan', 'api.factory.product', 'api.factory.billing-cycle', 'settings.data.fastlane', 'settings.service.data-migration.fastlane', 'settings.rest.migrate_to_acdc', 'settings.rest.agentic_beta_banner', 'settings.service.agentic-beta-eligibility', 'compat.assets', 'compat.asset_getter', 'ppcp.module-availability' );
 		foreach ( $removed_ids as $id ) {
-			$this->assertFalse( $container->has( $id ), "$id is a dropped feature (subscriptions, Fastlane, ACDC migration, the agentic banner or the order tracking layer) and is not registered" );
+			$this->assertFalse( $container->has( $id ), "$id belongs to a feature the wallet does not ship and must not be registered" );
 		}
 		$this->assertInstanceOf( \Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\FeaturesEligibilityService::class, $container->get( 'settings.service.features_eligibilities' ) );
 		$this->assertInstanceOf( \Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\PaymentMethodsEligibilityService::class, $container->get( 'settings.service.payment_methods_eligibilities' ) );
@@ -333,13 +347,14 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertFalse( has_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.vault_component_enabled' ), 'Wallet flags are not forced' );
 		$this->assertFalse( has_filter( 'woocommerce_paypal_payments_gateway_group_cards' ), 'The card group is empty by definition, with no filter attached' );
 		$this->assertFalse( has_filter( 'woocommerce_paypal_payments_gateway_group_apm' ), 'The APM group is empty by definition, with no filter attached' );
-		// The settings module filters this hook itself, so check that the shell attached nothing to it.
+		// The settings module filters this hook itself, so the shell must have attached nothing: the only owner is that module.
+		$owners = array();
 		foreach ( $GLOBALS['wp_filter']['woocommerce_paypal_payments_payment_methods']->callbacks ?? array() as $callbacks ) {
 			foreach ( $callbacks as $callback ) {
-				$function = $callback['function'];
-				$this->assertFalse( is_array( $function ) && $function[0] instanceof PayPalWalletBootstrap, 'The shell must not filter the payment methods data' );
+				$owners[] = $this->get_callback_owner( $callback['function'] );
 			}
 		}
+		$this->assertSame( array( SettingsModule::class ), array_values( array_unique( $owners ) ), 'Only the settings module filters the payment methods data, never the shell' );
 
 		$methods = $container->get( 'settings.data.definition.methods' );
 		$this->assertSame( array( 'ppcp-gateway', 'venmo', 'pay-later' ), array_column( $methods->group_paypal_methods(), 'id' ), 'The PayPal group lists the wallet methods and no card button' );
@@ -510,7 +525,7 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 	 */
 	public function test_registers_the_placeholder_gateway_for_wc_admin_rest_requests_only( string $route, bool $expected ): void {
 		delete_option( 'woocommerce-ppcp-data-common' );
-		$GLOBALS['wp']->query_vars['rest_route'] = $route;
+		$_SERVER['REQUEST_URI'] = '/' . rest_get_url_prefix() . $route;
 		$this->build_sut( true );
 
 		$this->sut->maybe_boot();
@@ -518,22 +533,6 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $this->sut->is_booted() );
 		$gateways = apply_filters( 'woocommerce_payment_gateways', array() ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 		$this->assertSame( $expected, in_array( DormantPayPalGateway::class, $gateways, true ) );
-	}
-
-	/**
-	 * @group paypal-wallet-boot
-	 *
-	 * @testdox Should read a wc-admin REST route from the request URI when the route is not parsed yet, as at plugins_loaded.
-	 */
-	public function test_registers_the_placeholder_gateway_for_a_wc_admin_rest_uri(): void {
-		delete_option( 'woocommerce-ppcp-data-common' );
-		$_SERVER['REQUEST_URI'] = '/' . rest_get_url_prefix() . '/wc-admin/settings/payments/providers';
-		$this->build_sut( true );
-
-		$this->sut->maybe_boot();
-
-		$gateways = apply_filters( 'woocommerce_payment_gateways', array() ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
-		$this->assertContains( DormantPayPalGateway::class, $gateways );
 	}
 
 	/**
@@ -602,7 +601,7 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 				'merchant_id'   => 'LEGACYMERCHANT',
 			)
 		);
-		update_option( 'woocommerce_ppcp-settings-migration-is-done', '1' ); // The migration stores true; the next request reads it back as the string '1', which is what the wallet compares.
+		update_option( MigrationManager::OPTION_NAME_MIGRATION_IS_DONE, '1' ); // The migration stores true; the next request reads it back as the string '1', which is what the wallet compares.
 		$this->build_sut( true );
 
 		$this->assertTrue( $this->sut->is_dormant(), 'After the migration only the shared option says whether the merchant is connected' );
@@ -781,7 +780,7 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 	 */
 	public function test_boots_dormant_wallet_for_its_rest_namespace( string $route ): void {
 		delete_option( 'woocommerce-ppcp-data-common' );
-		$GLOBALS['wp']->query_vars['rest_route'] = $route;
+		$_SERVER['REQUEST_URI'] = '/' . rest_get_url_prefix() . $route;
 		$this->build_sut( true );
 
 		$this->sut->maybe_boot();
@@ -806,24 +805,60 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Each value routes to the wallet when it is a string, so the dormant outcome for an array is the guard's doing and
+	 * not the request's. `sanitize_text_field()` also returns an empty string for an array, so this pins the outcome
+	 * (dormant, no notice), not the `is_string()` check on its own.
+	 *
 	 * @group paypal-wallet-boot
 	 *
 	 * @testdox Should ignore a path, section or REST route sent as an array and stay dormant instead of raising notices.
 	 *
-	 * @testWith ["path"]
-	 *           ["section"]
-	 *           ["rest_route"]
+	 * @testWith ["path", "/paypal-wallet"]
+	 *           ["section", "ppcp-gateway"]
+	 *           ["rest_route", "/wc/v3/wc_paypal/onboarding"]
 	 *
-	 * @param string $key The query argument sent as an array.
+	 * @param string $key   The query argument sent as an array.
+	 * @param string $value The string value that routes to the wallet.
 	 */
-	public function test_ignores_request_arguments_sent_as_arrays( string $key ): void {
+	public function test_ignores_request_arguments_sent_as_arrays( string $key, string $value ): void {
 		delete_option( 'woocommerce-ppcp-data-common' );
 		set_current_screen( 'woocommerce_page_wc-settings' );
 		$_GET['page'] = 'wc-settings';
-		$_GET[ $key ] = array( '/paypal-wallet', 'ppcp-gateway', '/wc/v3/wc_paypal/onboarding' );
 		$this->build_sut( true );
 
+		$_GET[ $key ] = $value;
+		$this->assertFalse( $this->sut->is_dormant(), 'Control: the same argument as a string routes to the wallet' );
+
+		$_GET[ $key ] = array( $value, '/paypal-wallet', 'ppcp-gateway', '/wc/v3/wc_paypal/onboarding' );
 		$this->assertTrue( $this->sut->is_dormant() );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should treat a request URI that is missing or not a string as no REST request.
+	 *
+	 * @testWith ["missing"]
+	 *           ["array"]
+	 *           ["integer"]
+	 *
+	 * @param string $shape How the request URI is malformed.
+	 */
+	public function test_ignores_a_request_uri_that_is_not_a_string( string $shape ): void {
+		delete_option( 'woocommerce-ppcp-data-common' );
+		unset( $_SERVER['REQUEST_URI'] );
+		if ( 'array' === $shape ) {
+			$_SERVER['REQUEST_URI'] = array( '/' . rest_get_url_prefix() . '/paypal/v1/incoming' );
+		} elseif ( 'integer' === $shape ) {
+			$_SERVER['REQUEST_URI'] = 5;
+		}
+		$this->build_sut( true );
+
+		$this->assertTrue( $this->sut->is_dormant(), 'A malformed request URI is no wallet route' );
+		$this->sut->maybe_boot();
+		$this->assertFalse( $this->sut->is_booted() );
+		$gateways = apply_filters( 'woocommerce_payment_gateways', array() ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		$this->assertNotContains( DormantPayPalGateway::class, $gateways, 'A malformed request URI is no wc-admin REST request' );
 	}
 
 	/**

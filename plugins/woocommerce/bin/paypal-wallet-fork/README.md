@@ -2,7 +2,7 @@
 
 Maintenance tooling for the PayPal wallet code forked from the PayPal Payments extension into `src/Internal/Payments/Providers/PayPal/Wallet/`. `src/Internal/Payments/Providers/PayPal/FORK.md` describes the fork and the procedure for tracking the extension. Every script finds its sibling files relative to its own location, so it runs from any working directory.
 
-The fork point is extension commit `0083204e7`. The session folder holds the audit outputs of the one-shot fork.
+The fork point is extension commit `0083204e7`. `fork.php` writes its audit of what a rename cannot prove safe to `audit.txt` in this directory (not tracked), next to `path-map.json`.
 
 | File | What it does |
 |------|--------------|
@@ -10,8 +10,8 @@ The fork point is extension commit `0083204e7`. The session folder holds the aud
 | `contract-list.sh` | Regenerates the shared-contract appendix (hooks, options, REST routes, handles, gateway IDs, meta keys) from the extension clone. |
 | `path-map.json` | Maps every forked extension path to its core path. `null` marks a file dropped in core. |
 | `module-map.json` | Maps each kept extension module to its segment under `Wallet/`. Read by `fork.php`. |
-| `fork.php` | The one-shot fork. Copies the kept modules, rewrites namespaces and the text domain, and writes `path-map.json`. Kept as the record; do not run it again on a forked tree. |
-| `supplement.py` | Adds classes of dropped modules that kept code still reaches, and records them in `path-map.json`. Its lists are empty since plan B, so it adds nothing. |
+| `fork.php` | The one-shot fork. Copies the kept modules, rewrites namespaces and the text domain, and writes `path-map.json`. Kept as the record; do not run it again on a forked tree: a re-run would overwrite `path-map.json` without the entries `supplement.py` added, and even `--dry-run` writes `audit.txt` into this directory. |
+| `supplement.py` | Adds classes of dropped modules that kept code still reaches, and records them in `path-map.json`. Its lists are empty, so it adds nothing; it stays as the record of how those files got in. |
 
 ## Usage
 

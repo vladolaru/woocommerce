@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the PayPal wallet incoming webhook endpoint (ported from the extension's IncomingWebhookEndpointTest).
+ * Tests for the PayPal wallet incoming webhook endpoint.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Webhooks
  */
@@ -183,8 +183,6 @@ class IncomingWebhookEndpointTest extends WalletTestCase {
 	}
 
 	/**
-	 * New case: the extension's test does not cover the route registration.
-	 *
 	 * @testdox Should register a POST route at paypal/v1/incoming that calls handle_request and checks the request with verify_request.
 	 */
 	public function test_register_adds_the_incoming_route(): void {

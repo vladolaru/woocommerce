@@ -1,7 +1,6 @@
 <?php
 /**
- * Tests for the settings and gateway wiring without the optional modules (ported from the extension's
- * OptionalModulesServicesTest).
+ * Tests for the settings and gateway wiring without the optional modules.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Settings
  */
@@ -27,13 +26,10 @@ use Mockery\MockInterface;
 use RuntimeException;
 
 /**
- * The settings and gateway wiring must resolve when the optional modules (Fastlane, local APMs,
- * order tracking) are not loaded: no service-not-found, and every optional feature reads as not
- * eligible.
+ * The settings and gateway wiring must resolve when the extension's optional modules are not loaded: no
+ * service-not-found, and every optional feature reads as not eligible.
  *
- * Only the four settings and gateway wiring cases are ported. The extension's fifth case (the webhook handler list)
- * lives in `WebhookHandlersServicesTest`, next to the webhooks module. The extension's card capability assertion is
- * gone with the cards cut.
+ * The webhook handler list is covered in `WebhookHandlersServicesTest`, next to the webhooks module.
  *
  * @group paypal-wallet
  */
@@ -99,7 +95,7 @@ class OptionalModulesServicesTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should resolve the features eligibility service without optional modules and offer only PayPal and Venmo vaulting (wallet).
+	 * @testdox Should resolve the features eligibility service without optional modules and offer only PayPal and Venmo vaulting.
 	 */
 	public function test_features_eligibility_resolves_without_optional_modules(): void {
 		$checks = $this->features_eligibility_service()->get_eligibility_checks();
@@ -109,7 +105,7 @@ class OptionalModulesServicesTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should resolve the payment methods eligibility service without optional modules (wallet).
+	 * @testdox Should resolve the payment methods eligibility service without optional modules.
 	 */
 	public function test_payment_methods_eligibility_resolves_without_optional_modules(): void {
 		$container = $this->wallet_only_container(
@@ -125,9 +121,9 @@ class OptionalModulesServicesTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should resolve the payment methods definition without Fastlane (wallet).
+	 * @testdox Should resolve the payment methods definition without optional modules.
 	 */
-	public function test_methods_definition_resolves_without_fastlane(): void {
+	public function test_methods_definition_resolves_without_optional_modules(): void {
 		$container = $this->wallet_only_container(
 			array(
 				'settings.data.payment' => $this->mock( PaymentSettings::class ),
@@ -157,7 +153,7 @@ class OptionalModulesServicesTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should build a feature eligibility list of callables without optional modules (wallet).
+	 * @testdox Should build a feature eligibility list of callables without optional modules.
 	 */
 	public function test_gateway_feature_eligibility_list_resolves_without_optional_modules(): void {
 		$list = $this->gateway_feature_eligibility_list();
@@ -170,34 +166,57 @@ class OptionalModulesServicesTest extends WalletTestCase {
 	}
 
 	/**
-	 * The todos eligibility service the Settings module builds, from inputs that give every positional boolean a
-	 * known value, so a shifted argument in the real services file changes the result.
+	 * The inputs that give every positional boolean of the todos eligibility service a known value, so a shifted argument
+	 * in the real services file changes the result. The defaults are the first scenario of `data_todo_wirings()`.
 	 *
-	 * @return TodosEligibilityService
+	 * @param array<string, mixed> $overrides Inputs to replace: `country`, `stay_updated`, `any_pay_later`, `pay_later`,
+	 *                                        `buttons` and `installments`.
+	 * @return array<string, mixed>
 	 */
-	private function todos_eligibility_service(): TodosEligibilityService {
-		$general = $this->mock( GeneralSettings::class );
-		$general->shouldReceive( 'get_merchant_country' )->andReturn( 'MX' );
-		$settings = $this->mock( SettingsModel::class );
-		$settings->shouldReceive( 'get_stay_updated' )->andReturn( true );
-
-		$container = $this->wallet_only_container(
+	private function todo_inputs( array $overrides = array() ): array {
+		return array_merge(
 			array(
-				'settings.service.pay_later_status'      => array(
-					'statuses'                    => array(
-						'product'  => true,
-						'cart'     => false,
-						'checkout' => true,
-					),
-					'is_enabled_for_any_location' => false,
+				'country'       => 'MX',
+				'stay_updated'  => true,
+				'any_pay_later' => false,
+				'pay_later'     => array(
+					'product'  => true,
+					'cart'     => false,
+					'checkout' => true,
 				),
-				'settings.service.button_locations'      => array(
+				'buttons'       => array(
 					'cart_enabled'           => true,
 					'block_checkout_enabled' => false,
 					'product_enabled'        => true,
 				),
+				'installments'  => false,
+			),
+			$overrides
+		);
+	}
+
+	/**
+	 * The todos eligibility service the Settings module builds, from the given inputs.
+	 *
+	 * @param array<string, mixed> $inputs The inputs, as returned by `todo_inputs()`.
+	 * @return TodosEligibilityService
+	 */
+	private function todos_eligibility_service( array $inputs = array() ): TodosEligibilityService {
+		$inputs  = $this->todo_inputs( $inputs );
+		$general = $this->mock( GeneralSettings::class );
+		$general->shouldReceive( 'get_merchant_country' )->andReturn( $inputs['country'] );
+		$settings = $this->mock( SettingsModel::class );
+		$settings->shouldReceive( 'get_stay_updated' )->andReturn( $inputs['stay_updated'] );
+
+		$container = $this->wallet_only_container(
+			array(
+				'settings.service.pay_later_status'      => array(
+					'statuses'                    => $inputs['pay_later'],
+					'is_enabled_for_any_location' => $inputs['any_pay_later'],
+				),
+				'settings.service.button_locations'      => $inputs['buttons'],
 				'settings.service.merchant_capabilities' => array(
-					FeaturesDefinition::FEATURE_INSTALLMENTS => false,
+					FeaturesDefinition::FEATURE_INSTALLMENTS => $inputs['installments'],
 				),
 				'settings.data.settings'                 => $settings,
 				'settings.data.general'                  => $general,
@@ -212,28 +231,86 @@ class OptionalModulesServicesTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should wire every todo eligibility to its own input and offer no Apple Pay or Google Pay todo (wallet).
+	 * Three scenarios, so that each of the nine positions is seen both true and false and no shifted argument can pass.
+	 *
+	 * @return array<string, array{array<string, mixed>, array<string, bool>}>
 	 */
-	public function test_todos_eligibility_wiring_has_no_digital_wallet_todo_and_no_shifted_argument(): void {
+	public function data_todo_wirings(): array {
+		return array(
+			'Mexico, partly enabled'                  => array(
+				array(),
+				array(
+					'enable_pay_later_messaging'           => false,
+					'add_pay_later_messaging_product_page' => false,
+					'add_pay_later_messaging_cart'         => true,
+					'add_pay_later_messaging_checkout'     => false,
+					'add_paypal_buttons_cart'              => false,
+					'add_paypal_buttons_block_checkout'    => true,
+					'add_paypal_buttons_product'           => false,
+					'enable_installments'                  => true,
+					'apply_for_working_capital'            => false,
+				),
+			),
+			'United States, the opposite locations'   => array(
+				$this->todo_inputs(
+					array(
+						'country'      => 'US',
+						'pay_later'    => array(
+							'product'  => false,
+							'cart'     => true,
+							'checkout' => false,
+						),
+						'buttons'      => array(
+							'cart_enabled'           => false,
+							'block_checkout_enabled' => true,
+							'product_enabled'        => false,
+						),
+						'installments' => true,
+					)
+				),
+				array(
+					'enable_pay_later_messaging'           => false,
+					'add_pay_later_messaging_product_page' => true,
+					'add_pay_later_messaging_cart'         => false,
+					'add_pay_later_messaging_checkout'     => true,
+					'add_paypal_buttons_cart'              => true,
+					'add_paypal_buttons_block_checkout'    => false,
+					'add_paypal_buttons_product'           => true,
+					'enable_installments'                  => false,
+					'apply_for_working_capital'            => true,
+				),
+			),
+			'Pay Later messaging on at one location'  => array(
+				$this->todo_inputs( array( 'any_pay_later' => true ) ),
+				array(
+					'enable_pay_later_messaging'           => true,
+					'add_pay_later_messaging_product_page' => false,
+					'add_pay_later_messaging_cart'         => false,
+					'add_pay_later_messaging_checkout'     => false,
+					'add_paypal_buttons_cart'              => false,
+					'add_paypal_buttons_block_checkout'    => true,
+					'add_paypal_buttons_product'           => false,
+					'enable_installments'                  => true,
+					'apply_for_working_capital'            => false,
+				),
+			),
+		);
+	}
+
+	/**
+	 * @testdox Should wire every todo eligibility to its own input and offer no Apple Pay or Google Pay todo.
+	 * @dataProvider data_todo_wirings
+	 *
+	 * @param array<string, mixed> $inputs   The inputs of the scenario.
+	 * @param array<string, bool>  $expected The eligibility of every todo.
+	 */
+	public function test_todos_eligibility_wiring_has_no_digital_wallet_todo_and_no_shifted_argument( array $inputs, array $expected ): void {
 		$checks = array_map(
 			static fn( callable $check ): bool => (bool) $check(),
-			$this->todos_eligibility_service()->get_eligibility_checks()
+			$this->todos_eligibility_service( $inputs )->get_eligibility_checks()
 		);
 
-		$this->assertSame(
-			array(
-				'enable_pay_later_messaging'           => false,
-				'add_pay_later_messaging_product_page' => false,
-				'add_pay_later_messaging_cart'         => true,
-				'add_pay_later_messaging_checkout'     => false,
-				'add_paypal_buttons_cart'              => false,
-				'add_paypal_buttons_block_checkout'    => true,
-				'add_paypal_buttons_product'           => false,
-				'enable_installments'                  => true,
-				'apply_for_working_capital'            => false,
-			),
-			$checks
-		);
+		$this->assertSame( $expected, $checks );
 
 		foreach ( array_keys( $checks ) as $todo_id ) {
 			$this->assertDoesNotMatchRegularExpression( '/apple|google|digital_wallets/', $todo_id );
@@ -241,7 +318,7 @@ class OptionalModulesServicesTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should resolve the todos definition with the kept todos and no Apple Pay or Google Pay todo (wallet).
+	 * @testdox Should resolve the todos definition with the kept todos and no Apple Pay or Google Pay todo.
 	 */
 	public function test_todos_definition_lists_only_the_kept_todos(): void {
 		$container = $this->wallet_only_container(

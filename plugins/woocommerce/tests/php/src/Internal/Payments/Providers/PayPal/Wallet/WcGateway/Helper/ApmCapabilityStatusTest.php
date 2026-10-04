@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the APM seller capability status that Pay Later messaging reads (ported from the extension's ApmCapabilityStatusTest).
+ * Tests for the APM seller capability status that Pay Later messaging reads.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper
  */
@@ -47,7 +47,7 @@ class ApmCapabilityStatusTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should be active when the alternative payment methods capability is active (wallet).
+	 * @testdox Should be active when the alternative payment methods capability is active.
 	 */
 	public function test_active_apm_capability_is_active(): void {
 		$this->assertTrue(
@@ -61,7 +61,7 @@ class ApmCapabilityStatusTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not be active when the alternative payment methods capability is denied (wallet).
+	 * @testdox Should not be active when the alternative payment methods capability is denied.
 	 */
 	public function test_inactive_apm_capability_is_not_active(): void {
 		$this->assertFalse(
@@ -70,23 +70,23 @@ class ApmCapabilityStatusTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not be active when only another capability is active (wallet).
+	 * @testdox Should not be active when only another capability is active.
 	 */
 	public function test_other_active_capability_is_not_active(): void {
 		$this->assertFalse(
-			$this->check( array( new SellerStatusCapability( 'CRYPTO_PYMTS', SellerStatusCapability::STATUS_ACTIVE ) ) )
+			$this->check( array( new SellerStatusCapability( 'SOME_OTHER_CAPABILITY', SellerStatusCapability::STATUS_ACTIVE ) ) )
 		);
 	}
 
 	/**
-	 * @testdox Should not be active when the seller has no capabilities (wallet).
+	 * @testdox Should not be active when the seller has no capabilities.
 	 */
 	public function test_no_capabilities_is_not_active(): void {
 		$this->assertFalse( $this->check( array() ) );
 	}
 
 	/**
-	 * @testdox Should keep the result cache key stable so answers already stored under it stay valid (wallet).
+	 * @testdox Should keep the result cache key stable so answers already stored under it stay valid.
 	 */
 	public function test_keeps_the_stored_result_cache_key_stable(): void {
 		$this->assertSame( 'products_local_apms_enabled', ApmCapabilityStatus::KEY );

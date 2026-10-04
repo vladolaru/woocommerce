@@ -1,6 +1,6 @@
 <?php
 /**
- * Base class for the ported PayPal wallet tests.
+ * Base class for the PayPal wallet tests.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet
  */
@@ -60,7 +60,7 @@ abstract class WalletTestCase extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Close Mockery and delete the options the test wrote.
+	 * Delete the options the test wrote and put back the request. Mockery is closed by MockeryPHPUnitIntegration.
 	 */
 	public function tearDown(): void {
 		try {
@@ -69,7 +69,6 @@ abstract class WalletTestCase extends WC_Unit_Test_Case {
 			}
 			$this->written_options = array();
 			remove_all_filters( 'pre_http_request' );
-			Mockery::close();
 			$this->restore_request();
 		} finally {
 			parent::tearDown();
@@ -140,7 +139,9 @@ abstract class WalletTestCase extends WC_Unit_Test_Case {
 	 *
 	 * @param array|WP_Error|callable $response A response from http_response(), a WP_Error, or a callable that receives
 	 *                                          the request arguments array and the URL and returns one of those, so a
-	 *                                          test can sequence responses or key them by URL.
+	 *                                          test can sequence responses or key them by URL. A callable must return an
+	 *                                          array or a WP_Error: any other value, such as false, lets the request
+	 *                                          through to the network.
 	 */
 	protected function stub_http( $response ): void {
 		if ( ! $response instanceof WP_Error && is_callable( $response ) ) {

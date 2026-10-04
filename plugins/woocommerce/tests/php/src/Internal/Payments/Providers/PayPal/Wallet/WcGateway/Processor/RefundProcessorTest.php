@@ -1,6 +1,6 @@
 <?php
 /**
- * Characterization tests for the PayPal wallet refund processor (written in core; the extension has no equivalent).
+ * Characterization tests for the PayPal wallet refund processor.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Processor
  */

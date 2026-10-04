@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the Pay Later messaging eligibility check (ported from the extension's MessagesEligibilityTest).
+ * Tests for the Pay Later messaging eligibility check.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Helper
  */
@@ -20,8 +20,7 @@ use Mockery\MockInterface;
 use WC_Helper_Product;
 
 /**
- * The chain of conditions behind Pay Later messaging and the two merchant filters that hide it. All wallet: the class has
- * no card branch, so the cards cut (task 4) leaves it as it is.
+ * The chain of conditions behind Pay Later messaging and the two merchant filters that hide it. The class has no card branch.
  *
  * @group paypal-wallet
  */

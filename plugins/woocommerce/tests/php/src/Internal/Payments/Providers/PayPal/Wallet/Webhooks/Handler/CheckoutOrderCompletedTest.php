@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the CHECKOUT.ORDER.COMPLETED webhook handler (new in core: the extension has no test for it).
+ * Tests for the CHECKOUT.ORDER.COMPLETED webhook handler.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Webhooks\Handler
  */
@@ -77,7 +77,7 @@ class CheckoutOrderCompletedTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should answer for CHECKOUT.ORDER.COMPLETED events only (wallet).
+	 * @testdox Should answer for CHECKOUT.ORDER.COMPLETED events only.
 	 */
 	public function test_is_responsible_for_the_completed_event_only(): void {
 		$this->assertTrue( $this->sut->responsible_for_request( $this->make_request( 1 ) ) );
@@ -88,7 +88,7 @@ class CheckoutOrderCompletedTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should mark the WooCommerce order of a PayPal payment as paid (wallet).
+	 * @testdox Should mark the WooCommerce order of a PayPal payment as paid.
 	 */
 	public function test_marks_a_paypal_order_paid(): void {
 		$order = $this->create_pending_order( 'ppcp-gateway' );
@@ -100,7 +100,7 @@ class CheckoutOrderCompletedTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should fail without touching any order when the event names no WooCommerce order (wallet).
+	 * @testdox Should fail without touching any order when the event names no WooCommerce order.
 	 */
 	public function test_fails_when_the_event_has_no_custom_id(): void {
 		$request = new WP_REST_Request( 'POST', '/paypal/v1/incoming' );
@@ -118,7 +118,7 @@ class CheckoutOrderCompletedTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should fail when no WooCommerce order exists for the custom ID (wallet).
+	 * @testdox Should fail when no WooCommerce order exists for the custom ID.
 	 */
 	public function test_fails_when_the_order_does_not_exist(): void {
 		$response = $this->sut->handle_request( $this->make_request( 999999999 ) );

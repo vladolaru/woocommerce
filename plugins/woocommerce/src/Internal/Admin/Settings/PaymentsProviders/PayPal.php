@@ -259,7 +259,7 @@ class PayPal extends PaymentGateway {
 
 		// The wallet did not boot, which is how a dormant wallet looks; read the shared settings option instead.
 		if ( $this->is_core_provided( $payment_gateway ) ) {
-			return $this->get_connection_from_option()['sandbox'];
+			return GeneralSettings::read_connection_from_options()['sandbox'];
 		}
 
 		// Let the caller know that we couldn't determine the environment.
@@ -306,21 +306,10 @@ class PayPal extends PaymentGateway {
 
 		// The wallet did not boot, which is how a dormant wallet looks; read the shared settings option instead.
 		if ( $this->is_core_provided( $payment_gateway ) ) {
-			return $this->get_connection_from_option()['connected'];
+			return GeneralSettings::read_connection_from_options()['connected'];
 		}
 
 		// Let the caller know that we couldn't determine the onboarding status.
 		return null;
-	}
-
-	/**
-	 * Connection facts from the stored settings options (shared, then legacy), for requests where the dormant wallet did not boot.
-	 *
-	 * @since 11.3.0
-	 *
-	 * @return array{connected: bool, sandbox: bool}
-	 */
-	private function get_connection_from_option(): array {
-		return GeneralSettings::read_connection_from_options();
 	}
 }

@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the WooCommerce Subscriptions helper (ported from the extension's SubscriptionHelperTest).
+ * Tests for the WooCommerce Subscriptions helper.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Helper
  */
@@ -85,14 +85,14 @@ class SubscriptionHelperTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should report no renewal in the cart when WooCommerce Subscriptions is not active (wallet).
+	 * @testdox Should report no renewal in the cart when WooCommerce Subscriptions is not active.
 	 */
 	public function test_cart_contains_renewal_returns_false_when_subscriptions_plugin_not_active(): void {
 		$this->assertFalse( ( new SubscriptionHelper() )->cart_contains_renewal() );
 	}
 
 	/**
-	 * @testdox Should list no subscription location when nothing on the page is a subscription (wallet).
+	 * @testdox Should list no subscription location when nothing on the page is a subscription.
 	 */
 	public function test_locations_with_subscription_product_when_nothing_is_present(): void {
 		$helper = $this->partial_helper(
@@ -115,7 +115,7 @@ class SubscriptionHelperTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should list the product location on a subscription product page (wallet).
+	 * @testdox Should list the product location on a subscription product page.
 	 */
 	public function test_locations_with_subscription_product_on_product_page(): void {
 		$product = WC_Helper_Product::create_simple_product();
@@ -141,7 +141,7 @@ class SubscriptionHelperTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should list the pay order location on the classic order-pay endpoint (wallet).
+	 * @testdox Should list the pay order location on the classic order-pay endpoint.
 	 */
 	public function test_locations_with_subscription_product_on_classic_order_pay_endpoint(): void {
 		$GLOBALS['wp']->query_vars['order-pay'] = 123;
@@ -169,7 +169,7 @@ class SubscriptionHelperTest extends WalletTestCase {
 	 * Regression for PCP-2649: WooCommerce Subscriptions can route a manual renewal through the cart or the Checkout
 	 * block instead of the classic order-pay endpoint, so a cart-based renewal is "payorder", not "cart".
 	 *
-	 * @testdox Should classify a renewal in the cart as pay order and not as cart (wallet).
+	 * @testdox Should classify a renewal in the cart as pay order and not as cart.
 	 */
 	public function test_locations_with_subscription_product_when_cart_contains_renewal(): void {
 		$helper = $this->partial_helper(
@@ -192,7 +192,7 @@ class SubscriptionHelperTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should classify a new subscription in the cart as cart (wallet).
+	 * @testdox Should classify a new subscription in the cart as cart.
 	 */
 	public function test_locations_with_subscription_product_when_cart_contains_new_subscription(): void {
 		$helper = $this->partial_helper(
@@ -215,7 +215,7 @@ class SubscriptionHelperTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should resolve no subscriptions mode when WooCommerce Subscriptions is not active (wallet).
+	 * @testdox Should resolve no subscriptions mode when WooCommerce Subscriptions is not active.
 	 */
 	public function test_resolve_subscription_mode_returns_empty_string_when_plugin_not_active(): void {
 		$helper = $this->partial_helper( array( 'plugin_is_active' => false ) );
@@ -224,7 +224,7 @@ class SubscriptionHelperTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should resolve the disabled mode when the mode-disabled filter forces it, whatever the vaulting setting (wallet).
+	 * @testdox Should resolve the disabled mode when the mode-disabled filter forces it, whatever the vaulting setting.
 	 */
 	public function test_resolve_subscription_mode_returns_disabled_when_forced_by_filter(): void {
 		$seen = $this->spy_filter( 'woocommerce_paypal_payments_subscription_mode_disabled', true );
@@ -240,7 +240,7 @@ class SubscriptionHelperTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should resolve the mode from the vaulting setting: $name (wallet).
+	 * @testdox Should resolve the mode from the vaulting setting: $name.
 	 *
 	 * @dataProvider wallet_subscription_mode_provider
 	 *
@@ -269,7 +269,7 @@ class SubscriptionHelperTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should treat a cart without a subscription as processable without checking the button (wallet).
+	 * @testdox Should treat a cart without a subscription as processable without checking the button.
 	 */
 	public function test_subscription_cart_processable_returns_true_when_cart_has_no_subscription(): void {
 		$helper = $this->partial_helper( array( 'cart_contains_subscription' => false ) );
@@ -281,7 +281,7 @@ class SubscriptionHelperTest extends WalletTestCase {
 	/**
 	 * A vault token can only be saved with both a connected merchant and "Save PayPal and Venmo".
 	 *
-	 * @testdox Should decide a subscription cart from the vault token signal: $name (wallet).
+	 * @testdox Should decide a subscription cart from the vault token signal: $name.
 	 *
 	 * @dataProvider wallet_wiring_provider
 	 *
@@ -320,7 +320,7 @@ class SubscriptionHelperTest extends WalletTestCase {
 	/**
 	 * End to end: the button eligibility is not stubbed.
 	 *
-	 * @testdox Should hide the gateway for a subscription cart when vaulting is disabled and there are no manual renewals (wallet).
+	 * @testdox Should hide the gateway for a subscription cart when vaulting is disabled and there are no manual renewals.
 	 */
 	public function test_subscription_cart_processable_end_to_end_hides_gateway_when_vaulting_disabled(): void {
 		$helper = $this->partial_helper(
@@ -336,7 +336,7 @@ class SubscriptionHelperTest extends WalletTestCase {
 	/**
 	 * The rule shared by the classic cart, block cart, mini-cart and the gateway filter.
 	 *
-	 * @testdox Should decide the button for a subscription cart from manual renewals and the vault token: $name (wallet).
+	 * @testdox Should decide the button for a subscription cart from manual renewals and the vault token: $name.
 	 *
 	 * @dataProvider button_allowed_provider
 	 *

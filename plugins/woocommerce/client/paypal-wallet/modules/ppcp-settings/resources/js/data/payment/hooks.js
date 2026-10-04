@@ -69,6 +69,8 @@ export const usePaymentMethods = () => {
 
 	const payPalCheckout = removeEmpty( [ paypal, venmo, payLater ] );
 
+	// PayPal checkout is the only group, so `all` and `paypal` are the same list. Callers read `all` for lookups and
+	// `paypal` for the checkout card.
 	return {
 		all: payPalCheckout,
 		paypal: payPalCheckout,

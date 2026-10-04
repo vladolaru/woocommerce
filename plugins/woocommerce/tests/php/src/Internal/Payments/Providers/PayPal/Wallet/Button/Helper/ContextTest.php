@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the button context helper (ported from the extension's ContextTest).
+ * Tests for the button context helper.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Button\Helper
  */
@@ -21,7 +21,8 @@ use Mockery\MockInterface;
  * The Site Editor check reads the real admin screen; the continuation check reads a mocked session handler (the PayPal
  * order the session holds).
  *
- * The four continuation cases are core-only additions that pin the rule the hosted-subscription cut left in place.
+ * The continuation cases pin when the session's PayPal order makes a page a continuation: an approved or completed
+ * order paid with a PayPal source does, a saved or card-paid one does not.
  *
  * @group paypal-wallet
  */
@@ -81,7 +82,7 @@ class ContextTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should report no Site Editor when there is no current admin screen (wallet).
+	 * @testdox Should report no Site Editor when there is no current admin screen.
 	 */
 	public function test_is_site_editor_false_when_no_current_screen(): void {
 		$GLOBALS['current_screen'] = null; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
@@ -90,7 +91,7 @@ class ContextTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should report no Site Editor on the $base admin screen (wallet).
+	 * @testdox Should report no Site Editor on the $base admin screen.
 	 *
 	 * @testWith ["post"]
 	 *           ["widgets"]
@@ -104,7 +105,7 @@ class ContextTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should report the Site Editor on the block-based Site Editor screen (wallet).
+	 * @testdox Should report the Site Editor on the block-based Site Editor screen.
 	 */
 	public function test_is_site_editor_true_when_screen_base_is_site_editor(): void {
 		set_current_screen( 'site-editor' );
@@ -113,7 +114,7 @@ class ContextTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not call a page a PayPal continuation when the session holds no PayPal order (wallet).
+	 * @testdox Should not call a page a PayPal continuation when the session holds no PayPal order.
 	 */
 	public function test_no_order_in_session_is_not_a_continuation(): void {
 		$sut = new Context( $this->session_handler( null ) );
@@ -122,7 +123,7 @@ class ContextTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should call a page a PayPal continuation when the session holds an $status PayPal order (wallet).
+	 * @testdox Should call a page a PayPal continuation when the session holds an $status PayPal order.
 	 *
 	 * @testWith ["APPROVED"]
 	 *           ["COMPLETED"]
@@ -136,7 +137,7 @@ class ContextTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not call a page a PayPal continuation when the order is only saved (wallet).
+	 * @testdox Should not call a page a PayPal continuation when the order is only saved.
 	 */
 	public function test_saved_order_is_not_a_continuation(): void {
 		$sut = new Context( $this->session_handler( OrderStatus::SAVED ) );
@@ -145,7 +146,7 @@ class ContextTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should ignore an approved order paid with a card payment source, or through the card funding source (wallet).
+	 * @testdox Should ignore an approved order paid with a card payment source, or through the card funding source.
 	 */
 	public function test_card_payment_is_not_a_continuation(): void {
 		$card_source = new Context( $this->session_handler( OrderStatus::APPROVED, 'card' ) );

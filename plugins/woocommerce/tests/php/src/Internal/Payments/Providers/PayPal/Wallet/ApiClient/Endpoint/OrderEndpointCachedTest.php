@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the cached PayPal wallet order endpoint (ported from the extension's OrderEndpointCachedTest).
+ * Tests for the cached PayPal wallet order endpoint.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint
  */

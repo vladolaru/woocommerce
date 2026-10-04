@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the disabled funding sources (ported from the extension's DisabledFundingSourcesTest).
+ * Tests for the disabled funding sources.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Button\Helper
  */
@@ -136,7 +136,7 @@ class DisabledFundingSourcesTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should disable Venmo when the Venmo setting is off (wallet).
+	 * @testdox Should disable Venmo when the Venmo setting is off.
 	 */
 	public function test_venmo_disabled_when_setting_is_false(): void {
 		$this->settings_provider = $this->mock( SettingsProvider::class );
@@ -148,7 +148,7 @@ class DisabledFundingSourcesTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should disable Venmo for a location whose styling does not list it (wallet).
+	 * @testdox Should disable Venmo for a location whose styling does not list it.
 	 */
 	public function test_venmo_disabled_for_location_when_not_in_styling_methods(): void {
 		$this->settings_provider->shouldReceive( 'button_styling' )->andReturn( new LocationStylingDTO( '', true, array() ) );
@@ -158,7 +158,7 @@ class DisabledFundingSourcesTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave Venmo enabled when the Venmo setting is on (wallet).
+	 * @testdox Should leave Venmo enabled when the Venmo setting is on.
 	 */
 	public function test_venmo_enabled_when_setting_is_true(): void {
 		$this->stub_is_checkout( true );

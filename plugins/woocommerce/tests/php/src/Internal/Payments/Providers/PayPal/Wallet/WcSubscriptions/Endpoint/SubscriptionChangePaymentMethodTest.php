@@ -1,7 +1,6 @@
 <?php
 /**
- * Tests for the change-payment-method endpoint of WooCommerce Subscriptions (ported from the extension's
- * SubscriptionChangePaymentMethodTest).
+ * Tests for the change-payment-method endpoint of WooCommerce Subscriptions.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Endpoint
  */
@@ -24,7 +23,7 @@ require_once __DIR__ . '/WcsGetSubscriptionStub.php';
  * the request reader and `wcs_get_subscription()` is answered from a list the test fills (the plugin is not loaded in
  * core's suite).
  *
- * Task 7 phase A: nothing in this endpoint is PayPal-hosted, so every case is `wallet` and holds across the cut.
+ * Nothing in this endpoint is PayPal-hosted, so every case applies to the wallet as it is.
  *
  * @group paypal-wallet
  */
@@ -144,7 +143,7 @@ class SubscriptionChangePaymentMethodTest extends WalletTestCase {
 	 * A customer owns a subscription but names another customer's subscription ID: the victim's subscription stays
 	 * untouched.
 	 *
-	 * @testdox Should answer 403 and leave the subscription alone when it belongs to another user (wallet).
+	 * @testdox Should answer 403 and leave the subscription alone when it belongs to another user.
 	 */
 	public function test_returns_403_when_subscription_belongs_to_different_user(): void {
 		$victim_subscription = $this->subscription_for( $this->other_id );
@@ -162,7 +161,7 @@ class SubscriptionChangePaymentMethodTest extends WalletTestCase {
 	/**
 	 * The user owns the subscription but supplies a token that belongs to another user: nothing changes.
 	 *
-	 * @testdox Should answer 403 and change nothing when the payment token belongs to another user (wallet).
+	 * @testdox Should answer 403 and change nothing when the payment token belongs to another user.
 	 */
 	public function test_returns_403_when_payment_token_belongs_to_different_user(): void {
 		$subscription = $this->subscription_for( $this->owner_id );
@@ -180,7 +179,7 @@ class SubscriptionChangePaymentMethodTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should set the payment method, attach the token and save when the user owns both (wallet).
+	 * @testdox Should set the payment method, attach the token and save when the user owns both.
 	 */
 	public function test_updates_payment_method_and_token_when_ownership_checks_pass(): void {
 		$subscription = $this->subscription_for( $this->owner_id );

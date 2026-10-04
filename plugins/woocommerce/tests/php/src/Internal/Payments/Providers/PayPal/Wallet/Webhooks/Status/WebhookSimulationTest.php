@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the PayPal wallet webhook simulation (ported from the extension's WebhookSimulationTest).
+ * Tests for the PayPal wallet webhook simulation.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Webhooks\Status
  */
@@ -83,7 +83,7 @@ class WebhookSimulationTest extends WalletTestCase {
 	}
 
 	/**
-	 * New case: pins the "disabled" state, so re-enabling the simulation is a deliberate change.
+	 * Pins the "disabled" state, so re-enabling the simulation is a deliberate change.
 	 *
 	 * @testdox Should do nothing when started: no request to PayPal and nothing saved.
 	 */
@@ -96,8 +96,7 @@ class WebhookSimulationTest extends WalletTestCase {
 	}
 
 	/**
-	 * New case, standing in for the extension's testSimulation (skipped upstream because start() is disabled): the
-	 * state handling after the saved simulation.
+	 * Covers the state handling after a simulation was saved, which start() cannot produce while it is disabled.
 	 *
 	 * @testdox Should mark the simulation received only when the matching event arrives.
 	 */

@@ -130,56 +130,56 @@ class FraudNetAssetsTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not load the script when no gateway of the extension is enabled (wallet).
+	 * @testdox Should not load the script when no gateway of the extension is enabled.
 	 */
 	public function test_no_enabled_gateway_loads_nothing(): void {
 		$this->assertFalse( $this->should_load( 'checkout', array(), array( 'checkout' ) ) );
 	}
 
 	/**
-	 * @testdox Should load the script on the checkout when only the PayPal gateway is enabled and the checkout shows the buttons (wallet).
+	 * @testdox Should load the script on the checkout when only the PayPal gateway is enabled and the checkout shows the buttons.
 	 */
 	public function test_checkout_with_buttons_loads_the_script(): void {
 		$this->assertTrue( $this->should_load( 'checkout', array( 'ppcp-gateway' ), array( 'checkout' ) ) );
 	}
 
 	/**
-	 * @testdox Should not load the script on the checkout when the checkout shows no buttons (wallet).
+	 * @testdox Should not load the script on the checkout when the checkout shows no buttons.
 	 */
 	public function test_checkout_without_buttons_loads_nothing(): void {
 		$this->assertFalse( $this->should_load( 'checkout', array( 'ppcp-gateway' ), array( 'cart' ) ) );
 	}
 
 	/**
-	 * @testdox Should load the script on the checkout without any button location when another gateway of the extension is enabled besides the PayPal one (wallet).
+	 * @testdox Should load the script on the checkout without any button location when another gateway of the extension is enabled besides the PayPal one.
 	 */
 	public function test_checkout_with_another_enabled_gateway_loads_the_script_without_buttons(): void {
-		$this->assertTrue( $this->should_load( 'checkout', array( 'ppcp-gateway', 'ppcp-axo-gateway' ), array() ) );
+		$this->assertTrue( $this->should_load( 'checkout', array( 'ppcp-gateway', 'ppcp-other-gateway' ), array() ) );
 	}
 
 	/**
-	 * @testdox Should not load the script on the checkout when another gateway of the extension is enabled but FraudNet is disabled (wallet).
+	 * @testdox Should not load the script on the checkout when another gateway of the extension is enabled but FraudNet is disabled.
 	 */
 	public function test_checkout_with_another_enabled_gateway_loads_nothing_when_fraudnet_is_disabled(): void {
-		$this->assertFalse( $this->should_load( 'checkout', array( 'ppcp-gateway', 'ppcp-axo-gateway' ), array(), false ) );
+		$this->assertFalse( $this->should_load( 'checkout', array( 'ppcp-gateway', 'ppcp-other-gateway' ), array(), false ) );
 	}
 
 	/**
-	 * @testdox Should load the script on a product page when the product page or the mini cart shows the buttons (wallet).
+	 * @testdox Should load the script on a product page when the product page or the mini cart shows the buttons.
 	 */
 	public function test_product_page_follows_the_product_and_mini_cart_locations(): void {
 		$this->assertTrue( $this->should_load( 'product', array( 'ppcp-gateway' ), array( 'mini-cart' ) ) );
 	}
 
 	/**
-	 * @testdox Should not load the script when FraudNet is disabled (wallet).
+	 * @testdox Should not load the script when FraudNet is disabled.
 	 */
 	public function test_disabled_fraudnet_loads_nothing(): void {
 		$this->assertFalse( $this->should_load( 'checkout', array( 'ppcp-gateway' ), array( 'checkout' ), false ) );
 	}
 
 	/**
-	 * @testdox Should enqueue the ppcp-fraudnet script with its configuration on wp_enqueue_scripts when the rules say so (wallet).
+	 * @testdox Should enqueue the ppcp-fraudnet script with its configuration on wp_enqueue_scripts when the rules say so.
 	 */
 	public function test_register_assets_enqueues_the_script_with_its_config(): void {
 		$session_data = new \ArrayObject();

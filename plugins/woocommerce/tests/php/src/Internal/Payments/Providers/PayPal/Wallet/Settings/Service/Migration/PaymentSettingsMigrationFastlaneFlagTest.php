@@ -1,7 +1,6 @@
 <?php
 /**
- * Tests for the legacy Fastlane flag of the payment settings migration (core-only characterization: the extension has no
- * test for it).
+ * Tests for the legacy Fastlane flag of the payment settings migration.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\Migration
  */
@@ -18,11 +17,8 @@ use Mockery\MockInterface;
 
 /**
  * The legacy `axo_enabled` setting becomes the stored state of the Fastlane gateway (the option
- * `woocommerce_ppcp-axo-gateway_settings`, which the extension reads). Core keeps writing it (ruling R81, which amends
- * the plan's "delete the remaining Fastlane references of the migration"), so a store that migrates through core keeps
- * its legacy Fastlane choice for the extension.
- *
- * Case kinds: all cases are "wallet" cases.
+ * `woocommerce_ppcp-axo-gateway_settings`, which the extension reads). Core keeps writing it, so a store that migrates
+ * through core keeps its legacy Fastlane choice for the extension.
  *
  * @group paypal-wallet
  */
@@ -68,7 +64,7 @@ class PaymentSettingsMigrationFastlaneFlagTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should switch the Fastlane method state on for the legacy axo_enabled flag (wallet, ruling R81).
+	 * @testdox Should switch the Fastlane method state on for the legacy axo_enabled flag.
 	 */
 	public function test_the_legacy_flag_enables_the_stored_method_id(): void {
 		$this->migrate( array( 'axo_enabled' => true ) );
@@ -77,7 +73,7 @@ class PaymentSettingsMigrationFastlaneFlagTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should toggle nothing for the Fastlane method when the legacy flag is off or missing (wallet, ruling R81).
+	 * @testdox Should toggle nothing for the Fastlane method when the legacy flag is off or missing.
 	 * @testWith [false]
 	 *           [null]
 	 *

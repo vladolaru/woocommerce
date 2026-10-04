@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the CHECKOUT.ORDER.APPROVED webhook handler (new in core: the extension has no test for it).
+ * Tests for the CHECKOUT.ORDER.APPROVED webhook handler.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Webhooks\Handler
  */
@@ -120,7 +120,7 @@ class CheckoutOrderApprovedTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should answer for CHECKOUT.ORDER.APPROVED events only (wallet).
+	 * @testdox Should answer for CHECKOUT.ORDER.APPROVED events only.
 	 */
 	public function test_is_responsible_for_the_approved_event_only(): void {
 		$this->assertTrue( $this->sut->responsible_for_request( $this->make_request( 1 ) ) );
@@ -131,7 +131,7 @@ class CheckoutOrderApprovedTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should process the WooCommerce order of a PayPal payment (wallet).
+	 * @testdox Should process the WooCommerce order of a PayPal payment.
 	 */
 	public function test_processes_a_paypal_order(): void {
 		$order = $this->create_pending_order( 'ppcp-gateway' );
@@ -143,7 +143,7 @@ class CheckoutOrderApprovedTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should skip processing when a filter on the before-process hook says no, and ask it with the order (wallet).
+	 * @testdox Should skip processing when a filter on the before-process hook says no, and ask it with the order.
 	 */
 	public function test_a_filter_can_skip_the_processing(): void {
 		$order = $this->create_pending_order( 'ppcp-gateway' );
@@ -159,7 +159,7 @@ class CheckoutOrderApprovedTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should answer with a failure that names the order when processing it throws (wallet).
+	 * @testdox Should answer with a failure that names the order when processing it throws.
 	 */
 	public function test_a_failed_processing_is_reported(): void {
 		$order = $this->create_pending_order( 'ppcp-gateway' );
@@ -174,7 +174,7 @@ class CheckoutOrderApprovedTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should fail when the event carries no PayPal order ID (wallet).
+	 * @testdox Should fail when the event carries no PayPal order ID.
 	 */
 	public function test_fails_without_a_paypal_order_id(): void {
 		$request = new WP_REST_Request( 'POST', '/paypal/v1/incoming' );

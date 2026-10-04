@@ -1,7 +1,6 @@
 <?php
 /**
- * Tests for the capture-on-status-change migration of the compatibility module (ported from the extension's
- * CompatModuleMigrationTest).
+ * Tests for the capture-on-status-change migration of the compatibility module.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Compat
  */
@@ -89,7 +88,7 @@ class CompatModuleMigrationTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should copy the legacy capture setting once, and write nothing when it is absent or already migrated (wallet).
+	 * @testdox Should copy the legacy capture setting once, and write nothing when it is absent or already migrated.
 	 * @dataProvider data_migration_cases
 	 *
 	 * @param array      $legacy_settings  The legacy settings option.

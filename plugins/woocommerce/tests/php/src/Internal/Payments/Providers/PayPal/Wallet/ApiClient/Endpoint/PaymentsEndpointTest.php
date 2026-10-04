@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the PayPal wallet payments endpoint (ported from the extension's PaymentsEndpointTest).
+ * Tests for the PayPal wallet payments endpoint.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint
  */
@@ -160,8 +160,6 @@ class PaymentsEndpointTest extends WalletTestCase {
 	}
 
 	/**
-	 * New case: the extension has no reauthorize test.
-	 *
 	 * @testdox Should throw a runtime exception, not fatal, when reauthorizing the authorization fails at the transport level.
 	 */
 	public function test_reauthorize_throws_when_request_is_a_wp_error(): void {

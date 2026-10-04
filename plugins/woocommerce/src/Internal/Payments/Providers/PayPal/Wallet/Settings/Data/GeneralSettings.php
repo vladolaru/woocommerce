@@ -14,7 +14,6 @@ use RuntimeException;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\DTO\MerchantConnectionDTO;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Enum\SellerTypeEnum;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Enum\InstallationPathEnum;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\Migration\MigrationManager;
 
 /**
  * Class GeneralSettings
@@ -263,8 +262,9 @@ class GeneralSettings extends AbstractDataModel {
 		}
 
 		// Once the migration has run, the shared settings option is the only source. Same check as SettingsModule.
-		// The legacy option name and keys are literals: referencing the legacy Settings class would load wallet classes on every request.
-		$legacy = '1' === get_option( MigrationManager::OPTION_NAME_MIGRATION_IS_DONE ) ? array() : get_option( 'woocommerce-ppcp-settings', array() );
+		// The legacy option names and keys are literals so this request-time read loads no other wallet class. The flag name is
+		// MigrationManager::OPTION_NAME_MIGRATION_IS_DONE; the bootstrap test sets it through the constant, so a drift fails there.
+		$legacy = '1' === get_option( 'woocommerce_ppcp-settings-migration-is-done' ) ? array() : get_option( 'woocommerce-ppcp-settings', array() );
 		$legacy = is_array( $legacy ) ? $legacy : array();
 		if ( ! empty( $legacy['client_id'] ) && ! empty( $legacy['client_secret'] ) && ! empty( $legacy['merchant_id'] ) ) {
 			return array(

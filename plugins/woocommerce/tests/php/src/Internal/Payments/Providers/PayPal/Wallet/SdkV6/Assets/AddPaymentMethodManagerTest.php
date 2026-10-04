@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the add-payment-method manager (ported from the extension's AddPaymentMethodManagerTest).
+ * Tests for the add-payment-method manager.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Assets
  */
@@ -122,15 +122,15 @@ class AddPaymentMethodManagerTest extends WalletTestCase {
 	 */
 	public function should_load_provider(): array {
 		return array(
-			'logged out never loads (wallet)'            => array( 'logged out', false, true, true, false ),
-			'logged in but no vaulting enabled does not load (wallet)' => array( 'no vaulting', true, false, true, false ),
-			'paypal vaulting but wrong page does not load (wallet)' => array( 'wrong page', true, true, false, false ),
-			'paypal vaulting on the page loads (wallet)' => array( 'paypal only', true, true, true, true ),
+			'logged out never loads'            => array( 'logged out', false, true, true, false ),
+			'logged in but no vaulting enabled does not load' => array( 'no vaulting', true, false, true, false ),
+			'paypal vaulting but wrong page does not load' => array( 'wrong page', true, true, false, false ),
+			'paypal vaulting on the page loads' => array( 'paypal only', true, true, true, true ),
 		);
 	}
 
 	/**
-	 * @testdox Should build the bootstrap data with the button, the endpoints and no card keys (wallet).
+	 * @testdox Should build the bootstrap data with the button, the endpoints and no card keys.
 	 */
 	public function test_script_data(): void {
 		$this->environment->shouldReceive( 'is_sandbox' )->andReturn( false );
@@ -165,7 +165,7 @@ class AddPaymentMethodManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should register the bootstrap script with the asset data dependencies and version (wallet).
+	 * @testdox Should register the bootstrap script with the asset data dependencies and version.
 	 */
 	public function test_enqueue_registers_script_with_asset_data_dependencies_and_version(): void {
 		wp_set_current_user( self::factory()->user->create() );
@@ -195,7 +195,7 @@ class AddPaymentMethodManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should register nothing when the surfaces do not load on the page (wallet).
+	 * @testdox Should register nothing when the surfaces do not load on the page.
 	 */
 	public function test_enqueue_does_nothing_when_should_not_load_on_current_page(): void {
 		$this->create_sut( true )->enqueue();

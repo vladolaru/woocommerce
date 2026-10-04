@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the payment token endpoint (ported from the extension's CreatePaymentTokenTest).
+ * Tests for the payment token endpoint.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\SavePaymentMethods\Endpoint
  */
@@ -105,7 +105,7 @@ class CreatePaymentTokenTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should create no WooCommerce token and still persist the customer ID for a card vault result (wallet).
+	 * @testdox Should create no WooCommerce token and still persist the customer ID for a card vault result.
 	 */
 	public function test_card_result_creates_no_token(): void {
 		$this->request_data->shouldReceive( 'read_request' )->once()->with( CreatePaymentToken::ENDPOINT )->andReturn( array( 'vault_setup_token' => 'setup-tok-001' ) );
@@ -120,7 +120,7 @@ class CreatePaymentTokenTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should create a PayPal token for a PayPal vault result (wallet).
+	 * @testdox Should create a PayPal token for a PayPal vault result.
 	 */
 	public function test_paypal_success_calls_create_paypal_token(): void {
 		$this->request_data->shouldReceive( 'read_request' )->once()->andReturn( array( 'vault_setup_token' => 'setup-tok-002' ) );
@@ -134,7 +134,7 @@ class CreatePaymentTokenTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should answer with an error message and persist no token when the nonce is invalid (wallet).
+	 * @testdox Should answer with an error message and persist no token when the nonce is invalid.
 	 */
 	public function test_nonce_failure_returns_error_and_no_token_persisted(): void {
 		$this->request_data->shouldReceive( 'read_request' )->once()->andThrow( new NonceValidationException( 'Invalid nonce.' ) );
@@ -148,7 +148,7 @@ class CreatePaymentTokenTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should answer with a bare error and persist no token when PayPal's API fails (wallet).
+	 * @testdox Should answer with a bare error and persist no token when PayPal's API fails.
 	 */
 	public function test_api_exception_sends_error_with_no_data(): void {
 		$this->request_data->shouldReceive( 'read_request' )->once()->andReturn( array( 'vault_setup_token' => 'setup-tok-003' ) );

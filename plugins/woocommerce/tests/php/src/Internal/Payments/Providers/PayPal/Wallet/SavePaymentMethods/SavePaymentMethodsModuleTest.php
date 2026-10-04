@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the save payment methods module (ported from the extension's SavePaymentMethodsModuleTest).
+ * Tests for the save payment methods module.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\SavePaymentMethods
  */
@@ -25,9 +25,8 @@ use WC_Order;
 /**
  * What the module asks PayPal to vault on the create-order request, and the settings gate that decides whether it does.
  *
- * The extension's last case ("the gate passes via card saving, but wallet saving is off") rests on a premise the cards
- * cut removed: the gate no longer reads card saving. It is replaced by a gate case in which wallet saving is the only
- * setting that can be read.
+ * The gate does not read card saving, so the case "the gate passes via card saving, but wallet saving is off" does not
+ * apply. A gate case in which wallet saving is the only setting that can be read covers it instead.
  *
  * @group paypal-wallet
  */
@@ -112,9 +111,9 @@ class SavePaymentMethodsModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * The Apple Pay cut removed the request attributes that vaulted an Apple Pay subscription purchase.
+	 * The module adds no vault attributes to an Apple Pay request, even for an Apple Pay subscription purchase.
 	 *
-	 * @testdox Should leave an Apple Pay request body untouched, even for a subscription purchase (wallet).
+	 * @testdox Should leave an Apple Pay request body untouched, even for a subscription purchase.
 	 */
 	public function test_apple_pay_request_body_is_left_untouched(): void {
 		$this->settings->shouldReceive( 'save_paypal_and_venmo' )->andReturn( true );
@@ -139,7 +138,7 @@ class SavePaymentMethodsModuleTest extends WalletTestCase {
 	 * The settings mock has exactly one expectation: save_paypal_and_venmo(), once. Mockery throws on any other settings
 	 * read, so widening the gate (for example back to also reading card saving) fails this test.
 	 *
-	 * @testdox Should set up no vaulting when wallet saving is off, reading no other setting (wallet).
+	 * @testdox Should set up no vaulting when wallet saving is off, reading no other setting.
 	 */
 	public function test_does_not_set_up_vaulting_when_wallet_saving_is_off(): void {
 		$this->settings->shouldReceive( 'save_paypal_and_venmo' )->once()->andReturn( false );
@@ -202,7 +201,7 @@ class SavePaymentMethodsModuleTest extends WalletTestCase {
 	/**
 	 * Covers the order-processing path; the AJAX endpoint's card case lives in CreatePaymentTokenTest.
 	 *
-	 * @testdox Should create no WooCommerce token for a card vault result, and still remember the PayPal customer (wallet).
+	 * @testdox Should create no WooCommerce token for a card vault result, and still remember the PayPal customer.
 	 */
 	public function test_card_vault_result_creates_no_token_after_order_processing(): void {
 		$user_id = self::factory()->user->create();
@@ -216,10 +215,10 @@ class SavePaymentMethodsModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * The Apple Pay cut removed the token creator: a vault result from a third party that asks for it must not be stored
+	 * The module has no Apple Pay token creator: a vault result from a third party that asks for it must not be stored
 	 * as a PayPal token either.
 	 *
-	 * @testdox Should create no WooCommerce token for an apple_pay vault result, and still remember the PayPal customer (wallet).
+	 * @testdox Should create no WooCommerce token for an apple_pay vault result, and still remember the PayPal customer.
 	 */
 	public function test_apple_pay_vault_result_creates_no_token_after_order_processing(): void {
 		$user_id = self::factory()->user->create();
@@ -235,7 +234,7 @@ class SavePaymentMethodsModuleTest extends WalletTestCase {
 	/**
 	 * The control for the card case: the same harness does create a token for a PayPal vault result.
 	 *
-	 * @testdox Should create a PayPal token with the buyer email for a paypal vault result (wallet).
+	 * @testdox Should create a PayPal token with the buyer email for a paypal vault result.
 	 */
 	public function test_paypal_vault_result_creates_token_after_order_processing(): void {
 		$user_id = self::factory()->user->create();

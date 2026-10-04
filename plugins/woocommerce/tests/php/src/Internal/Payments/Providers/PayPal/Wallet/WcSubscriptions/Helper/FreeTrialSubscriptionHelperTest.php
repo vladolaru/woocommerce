@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the free-trial subscription helper (ported from the extension's FreeTrialSubscriptionHelperTest).
+ * Tests for the free-trial subscription helper.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Helper
  */
@@ -99,7 +99,7 @@ class FreeTrialSubscriptionHelperTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not require vaulting when WooCommerce Subscriptions is not active (wallet).
+	 * @testdox Should not require vaulting when WooCommerce Subscriptions is not active.
 	 */
 	public function test_cart_requires_vaulting_false_when_wcs_plugin_not_active(): void {
 		$helper = new TestableFreeTrialSubscriptionHelper( false );
@@ -108,7 +108,7 @@ class FreeTrialSubscriptionHelperTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not require vaulting when there is no cart (wallet).
+	 * @testdox Should not require vaulting when there is no cart.
 	 */
 	public function test_cart_requires_vaulting_false_when_no_cart_present(): void {
 		WC()->cart = null;
@@ -119,7 +119,7 @@ class FreeTrialSubscriptionHelperTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not require vaulting when the cart is empty (wallet).
+	 * @testdox Should not require vaulting when the cart is empty.
 	 */
 	public function test_cart_requires_vaulting_false_when_cart_is_empty(): void {
 		WC()->cart = $this->cart_with_items( array(), true );
@@ -130,7 +130,7 @@ class FreeTrialSubscriptionHelperTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not require vaulting when the cart holds only a non-subscription product (wallet).
+	 * @testdox Should not require vaulting when the cart holds only a non-subscription product.
 	 */
 	public function test_cart_requires_vaulting_false_when_cart_has_no_subscription_item(): void {
 		WC()->cart = $this->cart_with_items( array( array( 'data' => $this->product( false ) ) ) );
@@ -154,7 +154,7 @@ class FreeTrialSubscriptionHelperTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should require vaulting when the subscription item has no PayPal plan meta, since renewals are paid from a vaulted payment method (wallet).
+	 * @testdox Should require vaulting when the subscription item has no PayPal plan meta, since renewals are paid from a vaulted payment method.
 	 */
 	public function test_cart_requires_vaulting_true_when_subscription_item_has_no_connected_plan(): void {
 		WC()->cart = $this->cart_with_items( array( array( 'data' => $this->product( true, false ) ) ) );
@@ -169,7 +169,7 @@ class FreeTrialSubscriptionHelperTest extends WalletTestCase {
 	 * total of its own, so this method must never read the cart total: a Mockery cart without a `get_total()`
 	 * expectation fails the test the moment the method is called.
 	 *
-	 * @testdox Should answer from the cart items without ever reading the cart total (wallet).
+	 * @testdox Should answer from the cart items without ever reading the cart total.
 	 */
 	public function test_cart_requires_vaulting_never_reads_the_cart_total(): void {
 		WC()->cart = $this->cart_with_items( array( array( 'data' => $this->product( true, false ) ) ) );
@@ -180,7 +180,7 @@ class FreeTrialSubscriptionHelperTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should call a cart a free trial only when it requires vaulting and the total is zero or below: $name (wallet).
+	 * @testdox Should call a cart a free trial only when it requires vaulting and the total is zero or below: $name.
 	 *
 	 * @dataProvider free_trial_cart_provider
 	 *
@@ -218,7 +218,7 @@ class FreeTrialSubscriptionHelperTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not call a cart a free trial when there is no cart, even if the shape would require vaulting (wallet).
+	 * @testdox Should not call a cart a free trial when there is no cart, even if the shape would require vaulting.
 	 */
 	public function test_is_free_trial_cart_false_when_cart_requires_vaulting_but_no_cart_present(): void {
 		$helper = Mockery::mock( FreeTrialSubscriptionHelper::class )->makePartial();

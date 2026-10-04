@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the settings provider (ported from the extension's SettingsProviderTest).
+ * Tests for the settings provider.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Settings\Data
  */
@@ -23,9 +23,7 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Walle
 /**
  * Every convenience method of the provider delegates to the right model, and the two rules the provider adds itself.
  *
- * The delegation rows of the card methods the cards cut removed are gone with them (the models keep their accessors).
- *
- * The `show_fastlane_watermark` row went with the Fastlane cut (the provider method and the model getter are gone).
+ * The provider has no convenience methods for card settings or the Fastlane watermark, so no rows cover them.
  *
  * @group paypal-wallet
  */

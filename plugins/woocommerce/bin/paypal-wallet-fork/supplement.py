@@ -2,9 +2,10 @@
 """Supplement to fork.php.
 
 fork.php copied only the kept modules. Kept code could reach a few classes of dropped modules (gateway ID constants,
-helpers, one trait, two JS files), so this script added them under the extension's own namespace layout. Plan B cut
-every one of those readers and deleted the files, so the lists below are empty. Re-running the script changes nothing;
-re-adding an entry would bring the file back, so add one only for a reader that is meant to stay.
+helpers, one trait, two JS files), so this script added them under the extension's own namespace layout. The wallet
+has since cut every one of those readers and deleted the files, so the lists below are empty. Re-running the script
+changes nothing; re-adding an entry would bring the file back, so add one only for a reader that is meant to stay.
+It stays as a documented no-op, the record of how those files got in.
 
 * STUBS: gateway classes that kept code touches only through `X::ID`; written as final classes carrying that constant.
 * COPIES: classes with behavior kept code executes; copied with fork.php's rewrite rules.
@@ -17,11 +18,17 @@ Usage: supplement.py <extension clone> <core clone>   (idempotent)
 import json, os, re, sys
 from pathlib import Path
 
-if len(sys.argv) < 3 or sys.argv[1] in ("-h", "--help"):
+if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help"):
     print(__doc__)
-    sys.exit(0 if len(sys.argv) > 1 else 1)
+    sys.exit(0)
+if len(sys.argv) != 3:
+    print(__doc__)
+    sys.exit(1)
 
 EXT, CORE = sys.argv[1].rstrip('/'), sys.argv[2].rstrip('/')
+PATH_MAP = str(Path(__file__).resolve().parent / 'path-map.json')
+if not os.path.isfile(PATH_MAP):
+    sys.exit('path-map.json is missing: %s' % PATH_MAP)
 WALLET = CORE + '/plugins/woocommerce/src/Internal/Payments/Providers/PayPal/Wallet'
 NS_NEW = 'Automattic\\WooCommerce\\Internal\\Payments\\Providers\\PayPal\\Wallet'
 MODULE_DIR = {}  # first segment of a STUBS/COPIES name -> the extension module directory
@@ -107,7 +114,7 @@ for rel in JS_COPIES:
 if not (STUBS or COPIES or JS_COPIES):
     print('nothing to supplement')
     sys.exit(0)
-pm_path = str(Path(__file__).resolve().parent / 'path-map.json')
+pm_path = PATH_MAP
 pm = json.load(open(pm_path))
 core_rel = lambda p: p[len(CORE) + 1:]
 for fqcn in STUBS + COPIES:

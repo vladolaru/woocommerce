@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the onboarding profile model (core-only characterization: the extension has no test for it).
+ * Tests for the onboarding profile model.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Settings\Data
  */
@@ -15,7 +15,7 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Walle
 /**
  * The read-only server flags and the stored wizard progress of the onboarding profile.
  *
- * Case kinds: every case is a "wallet" case. The profile has no Fastlane flag since the Fastlane cut.
+ * The profile has no Fastlane flag.
  *
  * @group paypal-wallet
  */
@@ -41,7 +41,7 @@ class OnboardingProfileTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should report the wallet flags the container passes in (wallet).
+	 * @testdox Should report the wallet flags the container passes in.
 	 */
 	public function test_flags_report_the_values_passed_in(): void {
 		$flags = $this->create_profile()->get_flags();
@@ -56,7 +56,7 @@ class OnboardingProfileTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should keep the wizard progress across a save and a reload, and never store the server flags (wallet).
+	 * @testdox Should keep the wizard progress across a save and a reload, and never store the server flags.
 	 */
 	public function test_progress_is_stored_and_flags_are_not(): void {
 		$this->set_wallet_option( self::OPTION, array() );
@@ -80,7 +80,7 @@ class OnboardingProfileTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave a stored key the model does not list out of the saved data (wallet).
+	 * @testdox Should leave a stored key the model does not list out of the saved data.
 	 */
 	public function test_unknown_stored_keys_are_not_written_back(): void {
 		$this->set_wallet_option(
@@ -100,7 +100,7 @@ class OnboardingProfileTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not report a Fastlane flag to the settings app (wallet).
+	 * @testdox Should not report a Fastlane flag to the settings app.
 	 */
 	public function test_flags_carry_no_fastlane_flag(): void {
 		$flags = $this->create_profile()->get_flags();

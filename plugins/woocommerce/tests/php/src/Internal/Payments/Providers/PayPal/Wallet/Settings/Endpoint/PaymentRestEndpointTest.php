@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the payment methods REST endpoint (core-only characterization: the extension has no test for it).
+ * Tests for the payment methods REST endpoint.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Settings\Endpoint
  */
@@ -20,10 +20,8 @@ use WP_REST_Request;
 /**
  * What the settings UI reads and writes through the payment methods endpoint, over the real settings models.
  *
- * The extension keeps `fastlane_display_watermark` in the same stored option. Since the Fastlane cut the endpoint no
- * longer exposes it as `fastlaneDisplayWatermark` or writes it; a stored value must stay as it is.
- *
- * Case kinds: every case is a "wallet" case.
+ * The extension keeps `fastlane_display_watermark` in the same stored option. The endpoint does not expose it as
+ * `fastlaneDisplayWatermark` or write it, and a stored value must stay as it is.
  *
  * @group paypal-wallet
  */
@@ -61,7 +59,7 @@ class PaymentRestEndpointTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should list PayPal, Venmo and Pay Later with the PayPal logo choice (wallet).
+	 * @testdox Should list PayPal, Venmo and Pay Later with the PayPal logo choice.
 	 */
 	public function test_details_list_the_paypal_methods_and_the_logo_choice(): void {
 		$this->set_wallet_option( self::OPTION, array( 'paypal_show_logo' => true ) );
@@ -76,7 +74,7 @@ class PaymentRestEndpointTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should store the PayPal logo choice and the Venmo state a request carries (wallet).
+	 * @testdox Should store the PayPal logo choice and the Venmo state a request carries.
 	 */
 	public function test_update_stores_the_logo_choice_and_the_venmo_state(): void {
 		$this->set_wallet_option( self::OPTION, array() );
@@ -96,7 +94,7 @@ class PaymentRestEndpointTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave a Fastlane watermark value the extension stored as it is when a request changes something else (wallet).
+	 * @testdox Should leave a Fastlane watermark value the extension stored as it is when a request changes something else.
 	 */
 	public function test_update_leaves_a_stored_fastlane_watermark_alone(): void {
 		$this->set_wallet_option( self::OPTION, array( 'fastlane_display_watermark' => true ) );
@@ -109,7 +107,7 @@ class PaymentRestEndpointTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not expose the stored Fastlane watermark in the details (wallet).
+	 * @testdox Should not expose the stored Fastlane watermark in the details.
 	 */
 	public function test_details_do_not_expose_the_fastlane_watermark(): void {
 		$this->set_wallet_option( self::OPTION, array( 'fastlane_display_watermark' => true ) );
@@ -120,7 +118,7 @@ class PaymentRestEndpointTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should ignore a Fastlane watermark a request carries and leave the stored value as it is (wallet).
+	 * @testdox Should ignore a Fastlane watermark a request carries and leave the stored value as it is.
 	 */
 	public function test_update_ignores_a_fastlane_watermark_in_the_request(): void {
 		$this->set_wallet_option( self::OPTION, array( 'fastlane_display_watermark' => false ) );

@@ -1,7 +1,6 @@
 <?php
 /**
- * Tests for the legacy PayPal Standard switch-off of the compatibility module (ported from the extension's
- * DisableLegacyPaypalStandardTest).
+ * Tests for the legacy PayPal Standard switch-off of the compatibility module.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Compat
  */
@@ -136,7 +135,7 @@ class DisableLegacyPaypalStandardTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should switch PayPal Standard off, and clear its load latch, when no active subscription depends on it (wallet).
+	 * @testdox Should switch PayPal Standard off, and clear its load latch, when no active subscription depends on it.
 	 * @dataProvider data_absent_or_empty_counts
 	 *
 	 * @param int|null $count The faked count.
@@ -164,7 +163,7 @@ class DisableLegacyPaypalStandardTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should keep the count for a notice and leave PayPal Standard on when active subscriptions exist (wallet).
+	 * @testdox Should keep the count for a notice and leave PayPal Standard on when active subscriptions exist.
 	 * @dataProvider data_active_subscription_counts
 	 *
 	 * @param int $count The faked count.
@@ -184,7 +183,7 @@ class DisableLegacyPaypalStandardTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should switch the restoration plugin's PayPal Standard off too when its settings exist (wallet).
+	 * @testdox Should switch the restoration plugin's PayPal Standard off too when its settings exist.
 	 */
 	public function test_also_disables_restoration_plugin_when_option_present(): void {
 		update_option(
@@ -203,14 +202,14 @@ class DisableLegacyPaypalStandardTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should print nothing when no notice is queued (wallet).
+	 * @testdox Should print nothing when no notice is queued.
 	 */
 	public function test_no_output_when_transient_absent(): void {
 		$this->assertSame( '', $this->sut->call_notice() );
 	}
 
 	/**
-	 * @testdox Should print a warning notice with the subscription count in the right singular or plural form (wallet).
+	 * @testdox Should print a warning notice with the subscription count in the right singular or plural form.
 	 * @dataProvider data_notice_cases
 	 *
 	 * @param int    $count             The queued count.

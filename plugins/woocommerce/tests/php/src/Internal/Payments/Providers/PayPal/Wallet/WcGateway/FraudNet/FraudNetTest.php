@@ -74,7 +74,7 @@ class FraudNetTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should return an empty session ID when there is no shopper session (wallet).
+	 * @testdox Should return an empty session ID when there is no shopper session.
 	 */
 	public function test_session_id_is_empty_without_a_session(): void {
 		WC()->session = null;
@@ -83,7 +83,7 @@ class FraudNetTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should create a 32 character hex session ID once, store it in the shopper session and return the same one afterwards (wallet).
+	 * @testdox Should create a 32 character hex session ID once, store it in the shopper session and return the same one afterwards.
 	 */
 	public function test_session_id_is_created_once_and_stored(): void {
 		$data = $this->use_array_session();
@@ -97,7 +97,7 @@ class FraudNetTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should return the session ID the shopper session already holds (wallet).
+	 * @testdox Should return the session ID the shopper session already holds.
 	 */
 	public function test_session_id_comes_from_the_session_when_stored(): void {
 		$data                             = $this->use_array_session();
@@ -107,14 +107,14 @@ class FraudNetTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should return the source website ID it was built with (wallet).
+	 * @testdox Should return the source website ID it was built with.
 	 */
 	public function test_source_website_id_is_the_constructor_value(): void {
 		$this->assertSame( 'merchant_checkout-page', ( new FraudNet( 'merchant_checkout-page' ) )->source_website_id() );
 	}
 
 	/**
-	 * @testdox Should build the source website ID from the merchant ID and the checkout page suffix (wallet).
+	 * @testdox Should build the source website ID from the merchant ID and the checkout page suffix.
 	 */
 	public function test_source_website_id_names_the_merchant(): void {
 		$this->assertSame( 'MERCHANT123_checkout-page', ( new FraudNetSourceWebsiteId( 'MERCHANT123' ) )() );

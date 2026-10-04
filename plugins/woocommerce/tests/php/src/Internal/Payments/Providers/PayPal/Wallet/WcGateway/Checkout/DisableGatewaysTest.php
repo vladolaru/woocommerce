@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the gateway disabler (ported from the extension's DisableGatewaysTest).
+ * Tests for the gateway disabler.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Checkout
  */
@@ -94,7 +94,7 @@ class DisableGatewaysTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should hide the PayPal gateway when the subscription cart cannot be processed (wallet).
+	 * @testdox Should hide the PayPal gateway when the subscription cart cannot be processed.
 	 */
 	public function test_handler_hides_paypal_gateway_when_subscription_cart_not_processable(): void {
 		$this->subscription_helper->allows( 'subscription_cart_processable' )
@@ -107,7 +107,7 @@ class DisableGatewaysTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should keep the PayPal gateway when the cart's subscription can be processed (wallet).
+	 * @testdox Should keep the PayPal gateway when the cart's subscription can be processed.
 	 */
 	public function test_handler_keeps_paypal_gateway_when_subscription_cart_is_processable(): void {
 		$this->subscription_helper->allows( 'subscription_cart_processable' )
@@ -120,7 +120,7 @@ class DisableGatewaysTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave an unrelated gateway list alone when PayPal is not offered (wallet).
+	 * @testdox Should leave an unrelated gateway list alone when PayPal is not offered.
 	 */
 	public function test_handler_returns_other_gateways_untouched_without_paypal(): void {
 		$methods = $this->create_handler()->handler( array( 'bacs' => 'bacs-gateway' ) );
@@ -129,7 +129,7 @@ class DisableGatewaysTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should hide the PayPal gateway for a subscription cart when the checkout button location is off (wallet).
+	 * @testdox Should hide the PayPal gateway for a subscription cart when the checkout button location is off.
 	 */
 	public function test_handler_hides_paypal_gateway_for_subscription_cart_without_checkout_buttons(): void {
 		$this->settings_status = $this->mock( SettingsStatus::class );
@@ -149,7 +149,7 @@ class DisableGatewaysTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should offer PayPal alone while the checkout continues a PayPal session (wallet).
+	 * @testdox Should offer PayPal alone while the checkout continues a PayPal session.
 	 */
 	public function test_handler_offers_only_paypal_during_continuation(): void {
 		$this->context = $this->mock( Context::class );

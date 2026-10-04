@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the PayPal wallet webhook registrar (ported from the extension's WebhookRegistrarTest).
+ * Tests for the PayPal wallet webhook registrar.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Webhooks
  */

@@ -72,7 +72,7 @@ class PaymentMethodsDefinitionTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should list PayPal, Venmo and Pay Later as the PayPal group, in that order (wallet).
+	 * @testdox Should list PayPal, Venmo and Pay Later as the PayPal group, in that order.
 	 */
 	public function test_paypal_group_lists_paypal_venmo_and_pay_later(): void {
 		$group = $this->sut->group_paypal_methods();
@@ -86,7 +86,7 @@ class PaymentMethodsDefinitionTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should define exactly PayPal, Venmo and Pay Later, disabled until switched on, when the card and APM groups are empty (wallet).
+	 * @testdox Should define exactly PayPal, Venmo and Pay Later, disabled until switched on, when the card and APM groups are empty.
 	 */
 	public function test_definitions_are_the_three_paypal_methods(): void {
 		$this->hide_the_apm_group();
@@ -105,7 +105,7 @@ class PaymentMethodsDefinitionTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should keep firing the card and APM group filters and honour what a listener adds to them (wallet).
+	 * @testdox Should keep firing the card and APM group filters and honour what a listener adds to them.
 	 */
 	public function test_group_filters_stay_fired_and_additions_are_honoured(): void {
 		$cards_calls = $this->spy_filter(
@@ -143,7 +143,7 @@ class PaymentMethodsDefinitionTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave the APM group empty when nothing is hooked to it, and define no local payment method (wallet).
+	 * @testdox Should leave the APM group empty when nothing is hooked to it, and define no local payment method.
 	 */
 	public function test_apm_group_is_empty_without_a_listener(): void {
 		remove_all_filters( 'woocommerce_paypal_payments_gateway_group_apm' );

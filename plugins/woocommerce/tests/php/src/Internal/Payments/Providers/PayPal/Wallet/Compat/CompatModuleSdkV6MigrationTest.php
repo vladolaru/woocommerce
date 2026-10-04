@@ -1,7 +1,6 @@
 <?php
 /**
- * Tests for the SDK v6 default migration of the compatibility module (ported from the extension's
- * CompatModuleSdkV6MigrationTest).
+ * Tests for the SDK v6 default migration of the compatibility module.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Compat
  */
@@ -97,7 +96,7 @@ class CompatModuleSdkV6MigrationTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should register no callback when the store already went through the handover (wallet).
+	 * @testdox Should register no callback when the store already went through the handover.
 	 */
 	public function test_marker_already_set_registers_no_callback(): void {
 		update_option( self::MARKER_OPTION, true );
@@ -110,7 +109,7 @@ class CompatModuleSdkV6MigrationTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave a store that is already eligible untouched, and still set the marker (wallet).
+	 * @testdox Should leave a store that is already eligible untouched, and still set the marker.
 	 */
 	public function test_already_eligible_store_is_untouched_and_marker_is_set(): void {
 		update_option( self::ELIGIBLE_OPTION, 'yes' );
@@ -125,7 +124,7 @@ class CompatModuleSdkV6MigrationTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should hand a held-back or unanswered store in a supported country over to v6 and set the marker (wallet).
+	 * @testdox Should hand a held-back or unanswered store in a supported country over to v6 and set the marker.
 	 * @dataProvider data_no_or_absent_answers
 	 *
 	 * @param string|null $eligible_value The stored answer, or null for none.
@@ -143,7 +142,7 @@ class CompatModuleSdkV6MigrationTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should write "no" when a filter withholds the merchant's country, whatever the stored answer was (wallet).
+	 * @testdox Should write "no" when a filter withholds the merchant's country, whatever the stored answer was.
 	 * @dataProvider data_no_or_absent_answers
 	 *
 	 * @param string|null $eligible_value The stored answer, or null for none.

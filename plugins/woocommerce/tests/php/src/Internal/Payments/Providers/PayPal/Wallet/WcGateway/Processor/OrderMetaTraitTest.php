@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the PayPal wallet order meta trait (ported from the extension's OrderMetaTraitTest).
+ * Tests for the PayPal wallet order meta trait.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Processor
  */

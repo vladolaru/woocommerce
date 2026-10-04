@@ -50,7 +50,7 @@ class WebhookModuleUpgradeKeepsWebhookTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should keep the stored webhook on a fresh install, even when Pay upon Invoice is enabled (wallet).
+	 * @testdox Should keep the stored webhook on a fresh install, even when Pay upon Invoice is enabled.
 	 */
 	public function test_fresh_install_keeps_the_webhook(): void {
 		$this->set_wallet_option( self::PUI_OPTION, array( 'enabled' => 'yes' ) );
@@ -61,7 +61,7 @@ class WebhookModuleUpgradeKeepsWebhookTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should keep the stored webhook on an upgrade when neither Pay upon Invoice nor OXXO is enabled (wallet).
+	 * @testdox Should keep the stored webhook on an upgrade when neither Pay upon Invoice nor OXXO is enabled.
 	 */
 	public function test_upgrade_without_the_two_methods_keeps_the_webhook(): void {
 		$this->set_wallet_option( self::PUI_OPTION, array( 'enabled' => 'no' ) );
@@ -72,7 +72,7 @@ class WebhookModuleUpgradeKeepsWebhookTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should keep the stored webhook on an upgrade even when Pay upon Invoice and OXXO are enabled, because the wallet does not re-register for them (wallet).
+	 * @testdox Should keep the stored webhook on an upgrade even when Pay upon Invoice and OXXO are enabled, because the wallet does not re-register for them.
 	 */
 	public function test_upgrade_with_the_two_methods_keeps_the_webhook(): void {
 		$this->set_wallet_option( self::PUI_OPTION, array( 'enabled' => 'yes' ) );

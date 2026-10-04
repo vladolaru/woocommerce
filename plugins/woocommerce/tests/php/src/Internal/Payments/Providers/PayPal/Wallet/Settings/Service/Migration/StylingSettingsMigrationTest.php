@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the legacy styling settings migration (core-only characterization: the extension has no test for it).
+ * Tests for the legacy styling settings migration.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\Migration
  */
@@ -17,10 +17,8 @@ use Mockery\MockInterface;
 
 /**
  * The legacy button settings become per-location styling, and the list of enabled payment methods of a location keeps the
- * IDs of the extension's methods: the stored styling format carries them, so the Apple Pay and Google Pay cut must not
- * change this mapping. The IDs are literals here, so the test holds when the code reads them from GatewayIds.
- *
- * Case kinds: all cases are "wallet" (they hold across the cut).
+ * IDs of the extension's methods: the stored styling format carries them, so the mapping must not change when
+ * Apple Pay or Google Pay code changes. The IDs are literals here, so the test holds when the code reads them from GatewayIds.
  *
  * @group paypal-wallet
  */
@@ -67,7 +65,7 @@ class StylingSettingsMigrationTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should list PayPal, and Venmo unless it is disabled, for every location (wallet).
+	 * @testdox Should list PayPal, and Venmo unless it is disabled, for every location.
 	 */
 	public function test_lists_paypal_and_venmo(): void {
 		$this->migrate( array( 'disable_funding' => array() ) );
@@ -77,7 +75,7 @@ class StylingSettingsMigrationTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave Venmo out when the legacy settings disable it (wallet).
+	 * @testdox Should leave Venmo out when the legacy settings disable it.
 	 */
 	public function test_leaves_venmo_out_when_disabled(): void {
 		$this->migrate( array( 'disable_funding' => array( 'venmo' ) ) );
@@ -86,7 +84,7 @@ class StylingSettingsMigrationTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should carry the Apple Pay and Google Pay IDs of the legacy button flags into the stored methods (wallet).
+	 * @testdox Should carry the Apple Pay and Google Pay IDs of the legacy button flags into the stored methods.
 	 */
 	public function test_carries_the_legacy_wallet_flags_as_stored_method_ids(): void {
 		$this->migrate(

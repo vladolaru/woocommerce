@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the PayPal wallet create-order endpoint (ported from the extension's CreateOrderEndpointTest).
+ * Tests for the PayPal wallet create-order endpoint.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint
  */

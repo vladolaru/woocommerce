@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the vaulting module's filters (ported from the extension's WcPaymentTokensModuleTest).
+ * Tests for the vaulting module's filters.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WcPaymentTokens
  */
@@ -99,7 +99,7 @@ class WcPaymentTokensModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should use the account email as last4 for a PayPal token with an email (wallet).
+	 * @testdox Should use the account email as last4 for a PayPal token with an email.
 	 */
 	public function test_paypal_token_with_email_uses_email_as_last4(): void {
 		$result = apply_filters( 'woocommerce_payment_methods_list_item', $this->base_item(), $this->paypal_token( 'shopper@example.com' ) );
@@ -109,7 +109,7 @@ class WcPaymentTokensModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave last4 untouched for a PayPal token without an email (wallet).
+	 * @testdox Should leave last4 untouched for a PayPal token without an email.
 	 */
 	public function test_paypal_token_without_email_does_not_set_last4(): void {
 		$item   = $this->base_item();
@@ -120,7 +120,7 @@ class WcPaymentTokensModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should use the account email as last4 for a Venmo token with an email (wallet).
+	 * @testdox Should use the account email as last4 for a Venmo token with an email.
 	 */
 	public function test_venmo_token_with_email_uses_email_as_last4(): void {
 		$result = apply_filters( 'woocommerce_payment_methods_list_item', $this->base_item(), $this->venmo_token( 'venmo-shopper@example.com' ) );
@@ -130,7 +130,7 @@ class WcPaymentTokensModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should return the list item unchanged for a token type the module does not label (wallet).
+	 * @testdox Should return the list item unchanged for a token type the module does not label.
 	 */
 	public function test_unrelated_token_type_is_returned_unchanged(): void {
 		$token = new class() extends WC_Payment_Token {};
@@ -141,7 +141,7 @@ class WcPaymentTokensModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should return the original item when the arguments do not match the documented shape: $scenario (wallet).
+	 * @testdox Should return the original item when the arguments do not match the documented shape: $scenario.
 	 * @dataProvider invalid_list_item_arguments_provider
 	 *
 	 * @param string $scenario      What is invalid.
@@ -184,7 +184,7 @@ class WcPaymentTokensModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should add a PayPal entry to the credit card type labels without disturbing the existing ones (wallet).
+	 * @testdox Should add a PayPal entry to the credit card type labels without disturbing the existing ones.
 	 */
 	public function test_adds_paypal_label_while_preserving_existing_labels(): void {
 		$result = apply_filters(
@@ -201,14 +201,14 @@ class WcPaymentTokensModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should return a non-array value of the credit card type labels unchanged (wallet).
+	 * @testdox Should return a non-array value of the credit card type labels unchanged.
 	 */
 	public function test_card_type_labels_filter_returns_non_array_unchanged(): void {
 		$this->assertSame( 'not-an-array', apply_filters( 'woocommerce_credit_card_type_labels', 'not-an-array' ) );
 	}
 
 	/**
-	 * @testdox Should map the PayPal and Venmo token types to their classes and leave other types alone (wallet).
+	 * @testdox Should map the PayPal and Venmo token types to their classes and leave other types alone.
 	 */
 	public function test_token_class_filter_maps_paypal_and_venmo(): void {
 		$this->assertSame( PaymentTokenPayPal::class, apply_filters( 'woocommerce_payment_token_class', 'WC_Payment_Token_PayPal', 'PayPal' ) );
@@ -217,7 +217,7 @@ class WcPaymentTokensModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should keep every saved token on the checkout outside PayPal continuation (wallet).
+	 * @testdox Should keep every saved token on the checkout outside PayPal continuation.
 	 */
 	public function test_saved_tokens_are_kept_on_the_checkout_outside_continuation(): void {
 		add_filter( 'woocommerce_is_checkout', '__return_true' );
@@ -227,7 +227,7 @@ class WcPaymentTokensModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should drop every saved token on the checkout during PayPal continuation (wallet).
+	 * @testdox Should drop every saved token on the checkout during PayPal continuation.
 	 */
 	public function test_saved_tokens_are_dropped_on_the_checkout_during_continuation(): void {
 		add_filter( 'woocommerce_is_checkout', '__return_true' );
@@ -239,7 +239,7 @@ class WcPaymentTokensModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should return a non-array token list unchanged (wallet).
+	 * @testdox Should return a non-array token list unchanged.
 	 */
 	public function test_non_array_token_list_is_returned_unchanged(): void {
 		$this->assertSame( 'not-an-array', apply_filters( 'woocommerce_get_customer_payment_tokens', 'not-an-array' ) );

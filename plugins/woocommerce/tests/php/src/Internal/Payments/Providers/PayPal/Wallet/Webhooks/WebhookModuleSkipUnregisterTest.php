@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the PayPal wallet webhook module's deactivation listener (ported from the extension's WebhookModuleSkipUnregisterTest).
+ * Tests for the PayPal wallet webhook module's deactivation listener.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Webhooks
  */

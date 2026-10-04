@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the WooCommerce payment token service (ported from the extension's WooCommercePaymentTokensTest).
+ * Tests for the WooCommerce payment token service.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WcPaymentTokens
  */
@@ -111,7 +111,7 @@ class WooCommercePaymentTokensTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should return an empty array without calling the endpoint when no customer ID is stored (wallet).
+	 * @testdox Should return an empty array without calling the endpoint when no customer ID is stored.
 	 */
 	public function test_returns_empty_array_without_calling_the_endpoint_when_no_customer_id_is_stored(): void {
 		$user_id = self::factory()->user->create();
@@ -122,7 +122,7 @@ class WooCommercePaymentTokensTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should use the current customer ID meta key when present (wallet).
+	 * @testdox Should use the current customer ID meta key when present.
 	 */
 	public function test_uses_the_current_customer_id_meta_key_when_present(): void {
 		$user_id = $this->user_with_customer_id( '_ppcp_target_customer_id', 'CUST-1' );
@@ -133,7 +133,7 @@ class WooCommercePaymentTokensTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should fall back to the legacy customer ID meta key (wallet).
+	 * @testdox Should fall back to the legacy customer ID meta key.
 	 */
 	public function test_falls_back_to_the_legacy_customer_id_meta_key(): void {
 		$user_id = $this->user_with_customer_id( 'ppcp_customer_id', 'CUST-LEGACY' );
@@ -144,7 +144,7 @@ class WooCommercePaymentTokensTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should return an empty array when the endpoint fails (wallet).
+	 * @testdox Should return an empty array when the endpoint fails.
 	 */
 	public function test_returns_empty_array_when_the_endpoint_fails(): void {
 		$user_id = $this->user_with_customer_id( '_ppcp_target_customer_id', 'CUST-1' );
@@ -154,7 +154,7 @@ class WooCommercePaymentTokensTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should report a PayPal or Venmo token only for those payment sources: $payment_source_name (wallet).
+	 * @testdox Should report a PayPal or Venmo token only for those payment sources: $payment_source_name.
 	 * @dataProvider payment_source_name_provider
 	 *
 	 * @param string $payment_source_name The payment source of the stored token.
@@ -183,7 +183,7 @@ class WooCommercePaymentTokensTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should report no PayPal or Venmo token without asking the endpoint when no customer ID is stored (wallet).
+	 * @testdox Should report no PayPal or Venmo token without asking the endpoint when no customer ID is stored.
 	 */
 	public function test_has_paypal_or_venmo_token_returns_false_without_a_customer_id(): void {
 		$user_id = self::factory()->user->create();
@@ -194,7 +194,7 @@ class WooCommercePaymentTokensTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should save a PayPal token with its account email under the PayPal gateway (wallet).
+	 * @testdox Should save a PayPal token with its account email under the PayPal gateway.
 	 */
 	public function test_create_payment_token_paypal_saves_a_token_with_the_email(): void {
 		$this->register_token_classes();
@@ -212,7 +212,7 @@ class WooCommercePaymentTokensTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should save no PayPal token twice for the same vault ID and none for a guest (wallet).
+	 * @testdox Should save no PayPal token twice for the same vault ID and none for a guest.
 	 */
 	public function test_create_payment_token_paypal_skips_duplicates_and_guests(): void {
 		$this->register_token_classes();
@@ -226,7 +226,7 @@ class WooCommercePaymentTokensTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should save a Venmo token with its account email under the PayPal gateway (wallet).
+	 * @testdox Should save a Venmo token with its account email under the PayPal gateway.
 	 */
 	public function test_create_payment_token_venmo_saves_a_token_with_the_email(): void {
 		$this->register_token_classes();
@@ -242,7 +242,7 @@ class WooCommercePaymentTokensTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should create WooCommerce tokens only for the PayPal vault tokens of a customer (wallet).
+	 * @testdox Should create WooCommerce tokens only for the PayPal vault tokens of a customer.
 	 */
 	public function test_create_wc_tokens_creates_tokens_for_paypal_sources_only(): void {
 		$this->register_token_classes();

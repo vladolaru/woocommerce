@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the PayPal wallet order endpoint (ported from the extension's OrderEndpointTest).
+ * Tests for the PayPal wallet order endpoint.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint
  */
@@ -360,8 +360,8 @@ class OrderEndpointTest extends WalletTestCase {
 	}
 
 	/**
-	 * Run a capture whose response order carries one capture with the given status and fraud response, and return
-	 * what capture() throws.
+	 * Run a capture whose response order carries one declined capture with the given fraud response. The capture throws,
+	 * so callers set the expected exception first.
 	 *
 	 * @param FraudProcessorResponse|null $fraud The fraud processor response of the declined capture.
 	 */

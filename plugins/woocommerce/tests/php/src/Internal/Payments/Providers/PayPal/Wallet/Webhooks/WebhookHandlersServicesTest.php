@@ -1,7 +1,7 @@
 <?php
 /**
- * Tests for the webhook handler list the Webhooks module builds (ported from the fifth case of the extension's
- * OptionalModulesServicesTest, plus a pin of the event types the handlers register at PayPal).
+ * Tests for the webhook handler list the Webhooks module builds, with a pin of the event types the handlers
+ * register at PayPal.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Webhooks
  */
@@ -94,7 +94,7 @@ class WebhookHandlersServicesTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should build a handler list without the PayPal Subscriptions sale handler (wallet).
+	 * @testdox Should build a handler list without the PayPal Subscriptions sale handler.
 	 */
 	public function test_webhook_handlers_omit_sale_completed(): void {
 		$handlers = $this->handlers();
@@ -109,7 +109,7 @@ class WebhookHandlersServicesTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should register the wallet event types at PayPal (wallet).
+	 * @testdox Should register the wallet event types at PayPal.
 	 */
 	public function test_handlers_register_the_wallet_event_types(): void {
 		$types = $this->event_types( $this->handlers() );
@@ -135,7 +135,7 @@ class WebhookHandlersServicesTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not register the four PayPal-hosted plan event types at PayPal (wallet).
+	 * @testdox Should not register the four PayPal-hosted plan event types at PayPal.
 	 */
 	public function test_handlers_do_not_register_the_hosted_plan_event_types(): void {
 		$types = $this->event_types( $this->handlers() );
@@ -156,7 +156,7 @@ class WebhookHandlersServicesTest extends WalletTestCase {
 	 * Together the two cases above and this one pin the full list, so an event type nobody meant to add or drop shows
 	 * up here.
 	 *
-	 * @testdox Should register no other event types than the twelve wallet ones (wallet).
+	 * @testdox Should register no other event types than the twelve wallet ones.
 	 */
 	public function test_handlers_register_no_other_event_types(): void {
 		$types = $this->event_types( $this->handlers() );

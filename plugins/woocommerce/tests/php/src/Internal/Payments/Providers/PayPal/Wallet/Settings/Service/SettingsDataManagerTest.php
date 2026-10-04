@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the settings defaults manager (ported from the extension's SettingsDataManagerTest).
+ * Tests for the settings defaults manager.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Settings\Service
  */
@@ -29,7 +29,7 @@ use ReflectionMethod;
  * location styling case pins the methods each location starts with.
  *
  * The Fastlane watermark case pins that onboarding still switches on the extension's `fastlane_display_watermark`
- * (shared stored value, ruling R82): the model keeps `set_fastlane_display_watermark()` as the one writer, and the stub
+ * (a shared stored value): the model keeps `set_fastlane_display_watermark()` as the one writer, and the stub
  * with its recorder in setUp records what it receives.
  *
  * @group paypal-wallet
@@ -161,7 +161,7 @@ class SettingsDataManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should never toggle Pay Later when syncing gateways: business seller $is_business_seller, cards $use_card_payments, subscriptions $use_subscriptions (wallet).
+	 * @testdox Should never toggle Pay Later when syncing gateways: business seller $is_business_seller, cards $use_card_payments, subscriptions $use_subscriptions.
 	 * @dataProvider gateway_sync_flag_provider
 	 *
 	 * @param bool $is_business_seller Whether the merchant is a business seller.
@@ -200,7 +200,7 @@ class SettingsDataManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should enable Pay Later and persist the payment methods when a new merchant completes onboarding (wallet).
+	 * @testdox Should enable Pay Later and persist the payment methods when a new merchant completes onboarding.
 	 */
 	public function test_apply_payment_methods_enables_pay_later(): void {
 		$toggled_states = $this->record_toggles();
@@ -212,7 +212,7 @@ class SettingsDataManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should touch no payment method state when a merchant who finished onboarding reconnects (wallet).
+	 * @testdox Should touch no payment method state when a merchant who finished onboarding reconnects.
 	 */
 	public function test_set_defaults_for_new_merchant_keeps_pay_later_choice_on_reconnect(): void {
 		$this->onboarding_profile->shouldReceive( 'is_setup_done' )->andReturn( true );
@@ -224,7 +224,7 @@ class SettingsDataManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should switch the Fastlane watermark on by default when syncing gateways (wallet, the extension's stored value).
+	 * @testdox Should switch the Fastlane watermark on by default when syncing gateways (the extension's stored value).
 	 */
 	public function test_gateway_sync_switches_the_fastlane_watermark_on(): void {
 		$this->record_toggles();
@@ -235,7 +235,7 @@ class SettingsDataManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should always switch PayPal and Venmo on when syncing gateways (wallet).
+	 * @testdox Should always switch PayPal and Venmo on when syncing gateways.
 	 */
 	public function test_paypal_and_venmo_are_always_enabled_by_gateway_sync(): void {
 		$toggled_states = $this->record_toggles();
@@ -247,7 +247,7 @@ class SettingsDataManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave the card gateways alone when syncing gateways for $seller who wants cards (wallet).
+	 * @testdox Should leave the card gateways alone when syncing gateways for $seller who wants cards.
 	 * @testWith ["a casual seller", false]
 	 *           ["a business seller", true]
 	 *
@@ -293,7 +293,7 @@ class SettingsDataManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should keep firing the local payment methods hook for a business seller, with the payment methods model, the method list and the flags (wallet).
+	 * @testdox Should keep firing the local payment methods hook for a business seller, with the payment methods model, the method list and the flags.
 	 */
 	public function test_apm_toggle_hook_is_fired_for_a_business_seller(): void {
 		$calls = $this->toggle_and_record_apm_hook( true );
@@ -305,7 +305,7 @@ class SettingsDataManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not fire the local payment methods hook for a casual seller (wallet).
+	 * @testdox Should not fire the local payment methods hook for a casual seller.
 	 */
 	public function test_apm_toggle_hook_is_not_fired_for_a_casual_seller(): void {
 		$this->assertCount( 0, $this->toggle_and_record_apm_hook( false ) );
@@ -333,7 +333,7 @@ class SettingsDataManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should start every location with PayPal, Venmo and Pay Later among its methods (wallet).
+	 * @testdox Should start every location with PayPal, Venmo and Pay Later among its methods.
 	 */
 	public function test_default_location_styles_list_the_paypal_venmo_and_pay_later_methods(): void {
 		$styles = $this->applied_location_styles();

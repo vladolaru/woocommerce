@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the PayPal wallet authorized payments processor (ported from the extension's AuthorizedPaymentsProcessorTest).
+ * Tests for the PayPal wallet authorized payments processor.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Processor
  */

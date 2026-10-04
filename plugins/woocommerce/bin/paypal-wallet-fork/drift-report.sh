@@ -4,23 +4,35 @@
 #   (for example: drift-report.sh ~/Work/a8c/woocommerce-paypal-payments 0083204e7 dev/develop)
 # --appendix defaults to src/Internal/Payments/Providers/PayPal/contract-appendix.md in this plugin.
 #
-# A commit is marked **contract** when its diff on the mapped path mentions a name from contract-appendix.md, or when it
-# touches one of the ALWAYS_CONTRACT paths: the three DTO files core keeps byte-identical to the extension's (the stored
-# class names are part of the data format, and the Jetpack manifest can serve core's copy while the extension runs), so any
-# upstream change to them must be mirrored into core's SerializedClasses shim in the same release.
+# A commit is marked **contract** when an added or removed line of its diff on the mapped path mentions a name from
+# contract-appendix.md, or when it touches one of the ALWAYS_CONTRACT paths: the three DTO files core keeps
+# byte-identical to the extension's (the stored class names are part of the data format, and the Jetpack manifest can
+# serve core's copy while the extension runs), so any upstream change to them must be mirrored into core's
+# SerializedClasses shim in the same release.
 #
 # path-map.json maps an extension path to the core file that holds its fork. A null value means the file was dropped in
-# core (a Tier 1 cut): its commits are listed at the end under "(dropped in core)" and need no port, only a decision
-# whether the cut still holds.
+# core (a dropped module): its commits are listed at the end under "(dropped in core)" and need no port, only a decision
+# whether the drop still holds.
 set -euo pipefail
 HERE="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 CONTRACT="$HERE/../../src/Internal/Payments/Providers/PayPal/contract-appendix.md"
-if [ "${1:-}" = "--appendix" ]; then
-  CONTRACT="${2:?--appendix needs a path}"; shift 2
-fi
-EXT="${1:?extension clone}"; SINCE="${2:?since ref}"; UNTIL="${3:-dev/develop}"
+USAGE="usage: drift-report.sh [--appendix <path>] <extension clone> <since-ref> [<until-ref>]"
+ARGS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help)
+      sed -n '2,/^set -euo/p' "${BASH_SOURCE[0]}" | sed -e '/^set -euo/d' -e 's/^# \{0,1\}//'; exit 0 ;;
+    --appendix)
+      [ $# -ge 2 ] || { echo "--appendix needs a path" >&2; echo "$USAGE" >&2; exit 1; }
+      CONTRACT="$2"; shift 2 ;;
+    -*) echo "unknown option: $1" >&2; echo "$USAGE" >&2; exit 1 ;;
+    *) ARGS+=("$1"); shift ;;
+  esac
+done
+[ "${#ARGS[@]}" -ge 2 ] && [ "${#ARGS[@]}" -le 3 ] || { echo "$USAGE" >&2; exit 1; }
+EXT="${ARGS[0]}"; SINCE="${ARGS[1]}"; UNTIL="${ARGS[2]:-dev/develop}"
 MAP="$HERE/path-map.json"
-test -f "$MAP" || { echo "path-map.json missing" >&2; exit 1; }
+test -f "$MAP" || { echo "path-map.json missing: $MAP" >&2; exit 1; }
 test -f "$CONTRACT" || { echo "contract appendix missing: $CONTRACT" >&2; exit 1; }
 ALWAYS_CONTRACT=(
   "modules/ppcp-settings/src/DTO/LocationStylingDTO.php"
@@ -39,8 +51,9 @@ emit_commits() {
   echo "(extension: \`$from\`)"
   echo
   while read -r hash subject; do
-    # git show goes to a file, not into grep -q: with pipefail, grep exiting early would SIGPIPE git show and read as "no match".
-    git -C "$EXT" show "$hash" -- "$from" > "$SHOWN"
+    # Only the added and removed lines count: no commit message, no context lines, no file headers. The result goes to a file,
+    # not into grep -q: with pipefail, grep exiting early would SIGPIPE the pipeline and read as "no match".
+    git -C "$EXT" show --format= -U0 "$hash" -- "$from" | { grep -E '^[+-]' || [ $? -eq 1 ]; } | { grep -vE '^(\+\+\+|---) ' || [ $? -eq 1 ]; } > "$SHOWN"
     if [ "$always" = 1 ] || grep -qFf "$NAMES" "$SHOWN"; then
       echo "- **contract** $hash $subject"
     else

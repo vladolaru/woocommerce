@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the features definition (core-only characterization: the extension has no test for it).
+ * Tests for the features definition.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\Definition
  */
@@ -67,7 +67,7 @@ class FeaturesDefinitionTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should offer the Save PayPal and Venmo, Pay Later and Installments cards to a store that is eligible for all of them (wallet).
+	 * @testdox Should offer the Save PayPal and Venmo, Pay Later and Installments cards to a store that is eligible for all of them.
 	 */
 	public function test_the_wallet_cards_are_offered_when_eligible(): void {
 		$features = $this->create_definition(
@@ -90,7 +90,7 @@ class FeaturesDefinitionTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should hide a card when the store is not eligible for it (wallet).
+	 * @testdox Should hide a card when the store is not eligible for it.
 	 */
 	public function test_a_card_without_eligibility_is_hidden(): void {
 		$features = $this->create_definition( array( 'pay_later' => true ) )->eligible_features();
@@ -101,7 +101,7 @@ class FeaturesDefinitionTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should report each wallet card as enabled from its own merchant capability (wallet).
+	 * @testdox Should report each wallet card as enabled from its own merchant capability.
 	 */
 	public function test_the_wallet_cards_report_their_own_capability(): void {
 		$features = $this->create_definition(
@@ -119,7 +119,7 @@ class FeaturesDefinitionTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should let a listener change the features list through woocommerce_paypal_payments_features_list (wallet).
+	 * @testdox Should let a listener change the features list through woocommerce_paypal_payments_features_list.
 	 */
 	public function test_the_features_list_filter_is_applied(): void {
 		add_filter(
@@ -136,14 +136,14 @@ class FeaturesDefinitionTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should answer false for a feature that has no eligibility check (wallet).
+	 * @testdox Should answer false for a feature that has no eligibility check.
 	 */
 	public function test_an_unknown_feature_is_not_eligible(): void {
 		$this->assertFalse( $this->create_definition()->is_feature_eligible( 'not_a_feature' ) );
 	}
 
 	/**
-	 * @testdox Should define no Pay with Crypto card, even when every eligibility check passes (wallet).
+	 * @testdox Should define no Pay with Crypto card, even when every eligibility check passes.
 	 */
 	public function test_there_is_no_pay_with_crypto_card(): void {
 		$features = $this->create_definition(

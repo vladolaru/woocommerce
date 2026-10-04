@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the WooCommerce Subscriptions module (ported from the extension's WcSubscriptionsModuleTest).
+ * Tests for the WooCommerce Subscriptions module.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions
  */
@@ -60,7 +60,7 @@ class WcSubscriptionsModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should return the $mode mode exactly as the helper resolves it, asking once with the same settings provider (wallet).
+	 * @testdox Should return the $mode mode exactly as the helper resolves it, asking once with the same settings provider.
 	 *
 	 * @testWith ["disable_paypal_subscriptions"]
 	 *           ["vaulting_api"]
@@ -99,7 +99,7 @@ class WcSubscriptionsModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should add the subscription features to the PayPal gateway when "Save PayPal and Venmo" is on (wallet).
+	 * @testdox Should add the subscription features to the PayPal gateway when "Save PayPal and Venmo" is on.
 	 */
 	public function test_gateway_supports_the_subscription_features_when_vaulting_is_on(): void {
 		$this->run_module( true );
@@ -113,7 +113,7 @@ class WcSubscriptionsModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave the PayPal gateway features alone when "Save PayPal and Venmo" is off (wallet).
+	 * @testdox Should leave the PayPal gateway features alone when "Save PayPal and Venmo" is off.
 	 */
 	public function test_gateway_supports_no_subscription_feature_when_vaulting_is_off(): void {
 		$this->run_module( false );
@@ -124,7 +124,7 @@ class WcSubscriptionsModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave the PayPal gateway features alone when the subscription mode filter disables PayPal for subscriptions (wallet).
+	 * @testdox Should leave the PayPal gateway features alone when the subscription mode filter disables PayPal for subscriptions.
 	 */
 	public function test_gateway_supports_no_subscription_feature_when_the_mode_filter_disables_it(): void {
 		$this->run_module( true );
@@ -154,7 +154,7 @@ class WcSubscriptionsModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave a subscription that carries a PayPal subscription ID alone when its payment completes (wallet).
+	 * @testdox Should leave a subscription that carries a PayPal subscription ID alone when its payment completes.
 	 */
 	public function test_payment_complete_listener_skips_a_subscription_billed_by_paypal(): void {
 		$this->run_module( true );
@@ -165,7 +165,7 @@ class WcSubscriptionsModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should look at the related orders of a subscription without a PayPal subscription ID when its payment completes (wallet).
+	 * @testdox Should look at the related orders of a subscription without a PayPal subscription ID when its payment completes.
 	 */
 	public function test_payment_complete_listener_handles_a_subscription_without_a_paypal_subscription_id(): void {
 		$this->run_module( true );

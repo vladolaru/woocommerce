@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the v6 block payment method (ported from the extension's V6PaymentMethodTest).
+ * Tests for the v6 block payment method.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Blocks
  */
@@ -97,7 +97,7 @@ class V6PaymentMethodTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should register the block script with the webpack dependencies and version and return its handle (wallet).
+	 * @testdox Should register the block script with the webpack dependencies and version and return its handle.
 	 */
 	public function test_get_payment_method_script_handles_passes_through_webpack_dependencies_and_version(): void {
 		$this->asset_getter->shouldReceive( 'get_asset_url' )->with( 'checkout-block.js' )->andReturn( 'https://example.com/assets/checkout-block.js' );
@@ -119,7 +119,7 @@ class V6PaymentMethodTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should return no handles and register nothing when there is no compiled bundle URL (wallet).
+	 * @testdox Should return no handles and register nothing when there is no compiled bundle URL.
 	 */
 	public function test_get_payment_method_script_handles_returns_empty_array_when_no_asset_url(): void {
 		$this->asset_getter->shouldReceive( 'get_asset_url' )->with( 'checkout-block.js' )->andReturn( '' );
@@ -131,7 +131,7 @@ class V6PaymentMethodTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should expose the gateway icon as a single entry shaped for the payment method icons (wallet).
+	 * @testdox Should expose the gateway icon as a single entry shaped for the payment method icons.
 	 */
 	public function test_get_payment_method_data_exposes_icon_shaped_for_payment_method_icons(): void {
 		$this->stub_gateway_for_payment_method_data();
@@ -151,7 +151,7 @@ class V6PaymentMethodTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave out place_order_enabled when no provider was supplied (wallet).
+	 * @testdox Should leave out place_order_enabled when no provider was supplied.
 	 */
 	public function test_get_payment_method_data_omits_place_order_enabled_when_no_provider_supplied(): void {
 		$this->stub_gateway_for_payment_method_data();
@@ -162,7 +162,7 @@ class V6PaymentMethodTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should reflect the provider's current answer on each call (wallet).
+	 * @testdox Should reflect the provider's current answer on each call.
 	 */
 	public function test_get_payment_method_data_reflects_current_place_order_enabled_state_on_each_call(): void {
 		$this->stub_gateway_for_payment_method_data();

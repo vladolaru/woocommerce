@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the PayPal wallet own-webhook resolver (ported from the extension's OwnWebhookResolverTest).
+ * Tests for the PayPal wallet own-webhook resolver.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Webhooks
  */

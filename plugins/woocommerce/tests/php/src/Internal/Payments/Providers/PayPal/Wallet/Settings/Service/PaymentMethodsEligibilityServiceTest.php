@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the payment methods eligibility rules (ported from the extension's PaymentMethodsEligibilityServiceTest).
+ * Tests for the payment methods eligibility rules.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Settings\Service
  */
@@ -15,21 +15,21 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Walle
 /**
  * Which payment methods a merchant is eligible for, by country, capabilities and module availability.
  *
- * The cases cover the wallet methods only (Venmo); the local payment methods and Pay with Crypto are not part of the wallet.
+ * The cases cover Venmo, the only payment method with an eligibility rule.
  *
  * @group paypal-wallet
  */
 class PaymentMethodsEligibilityServiceTest extends WalletTestCase {
 
 	/**
-	 * @testdox Should offer Venmo to US merchants (wallet).
+	 * @testdox Should offer Venmo to US merchants.
 	 */
 	public function test_venmo_us(): void {
 		$this->assertTrue( $this->create_service( 'US' )->get_eligibility_checks()['venmo']() );
 	}
 
 	/**
-	 * @testdox Should not offer Venmo outside the US (wallet).
+	 * @testdox Should not offer Venmo outside the US.
 	 */
 	public function test_venmo_not_us(): void {
 		$this->assertFalse( $this->create_service( 'CA' )->get_eligibility_checks()['venmo']() );

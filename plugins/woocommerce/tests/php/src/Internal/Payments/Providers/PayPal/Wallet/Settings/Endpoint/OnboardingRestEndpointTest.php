@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the onboarding REST endpoint (core-only characterization: the extension has no test for it).
+ * Tests for the onboarding REST endpoint.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Settings\Endpoint
  */
@@ -16,7 +16,7 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Walle
 /**
  * The flags the onboarding screens read, under the JavaScript names the settings app uses.
  *
- * Case kinds: every case is a "wallet" case. The `canUseFastlane` flag is gone since the Fastlane cut.
+ * The `canUseFastlane` flag is no longer part of the endpoint response.
  *
  * @group paypal-wallet
  */
@@ -42,7 +42,7 @@ class OnboardingRestEndpointTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should hand the wallet flags to the settings app under their JavaScript names (wallet).
+	 * @testdox Should hand the wallet flags to the settings app under their JavaScript names.
 	 */
 	public function test_details_carry_the_wallet_flags(): void {
 		$data = $this->create_endpoint()->get_details()->get_data();
@@ -58,7 +58,7 @@ class OnboardingRestEndpointTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not hand a canUseFastlane flag to the settings app (wallet).
+	 * @testdox Should not hand a canUseFastlane flag to the settings app.
 	 */
 	public function test_details_carry_no_fastlane_flag(): void {
 		$data = $this->create_endpoint()->get_details()->get_data();

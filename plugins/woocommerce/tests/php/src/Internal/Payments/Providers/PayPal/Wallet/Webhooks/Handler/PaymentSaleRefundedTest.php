@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the PayPal wallet PAYMENT.SALE.REFUNDED webhook handler (ported from the extension's PaymentSaleRefundedTest).
+ * Tests for the PayPal wallet PAYMENT.SALE.REFUNDED webhook handler.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Webhooks\Handler
  */

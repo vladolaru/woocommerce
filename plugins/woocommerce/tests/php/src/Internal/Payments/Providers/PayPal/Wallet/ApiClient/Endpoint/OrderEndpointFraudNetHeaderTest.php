@@ -66,7 +66,7 @@ class OrderEndpointFraudNetHeaderTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should send the FraudNet session ID as the PayPal client metadata ID when creating an order with FraudNet enabled (wallet).
+	 * @testdox Should send the FraudNet session ID as the PayPal client metadata ID when creating an order with FraudNet enabled.
 	 */
 	public function test_create_sends_the_client_metadata_id(): void {
 		$request = $this->create_order_and_get_request( true );
@@ -75,7 +75,7 @@ class OrderEndpointFraudNetHeaderTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should send no client metadata ID when creating an order with FraudNet disabled (wallet).
+	 * @testdox Should send no client metadata ID when creating an order with FraudNet disabled.
 	 */
 	public function test_create_sends_no_client_metadata_id_when_disabled(): void {
 		$request = $this->create_order_and_get_request( false );

@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the PayPal wallet transaction ID trait (ported from the extension's TransactionIdHandlingTraitTest).
+ * Tests for the PayPal wallet transaction ID trait.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Processor
  */

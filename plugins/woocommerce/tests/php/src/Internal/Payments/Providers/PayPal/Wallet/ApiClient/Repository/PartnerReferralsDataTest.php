@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the partner referral payload (ported from the extension's PartnerReferralsDataTest, extended).
+ * Tests for the partner referral payload.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Repository
  */
@@ -73,7 +73,7 @@ class PartnerReferralsDataTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should include the seller nonce it is given in the first-party details (wallet).
+	 * @testdox Should include the seller nonce it is given in the first-party details.
 	 */
 	public function test_data_includes_seller_nonce_from_argument(): void {
 		$seller_nonce = bin2hex( random_bytes( 32 ) );
@@ -86,7 +86,7 @@ class PartnerReferralsDataTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should ask for Express Checkout with the plain first-party features, no Payment Methods product and no capabilities outside an advanced card country (wallet).
+	 * @testdox Should ask for Express Checkout with the plain first-party features, no Payment Methods product and no capabilities outside an advanced card country.
 	 */
 	public function test_payload_outside_an_advanced_card_country(): void {
 		$this->dcc_applies->shouldReceive( 'for_country_currency' )->andReturn( false );
@@ -118,7 +118,7 @@ class PartnerReferralsDataTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave vaulting out of the first-party features when the merchant does not want card payments (wallet).
+	 * @testdox Should leave vaulting out of the first-party features when the merchant does not want card payments.
 	 */
 	public function test_payload_without_card_payments_has_no_vault_features(): void {
 		$this->dcc_applies->shouldReceive( 'for_country_currency' )->andReturn( false );
@@ -131,7 +131,7 @@ class PartnerReferralsDataTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should keep the products it is given outside an advanced card country (wallet).
+	 * @testdox Should keep the products it is given outside an advanced card country.
 	 */
 	public function test_payload_keeps_the_given_products(): void {
 		$this->dcc_applies->shouldReceive( 'for_country_currency' )->andReturn( false );
@@ -142,7 +142,7 @@ class PartnerReferralsDataTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should ask for PPCP with advanced vaulting and the advanced wallet vaulting capability in an advanced card country (wallet).
+	 * @testdox Should ask for PPCP with advanced vaulting and the advanced wallet vaulting capability in an advanced card country.
 	 */
 	public function test_payload_in_an_advanced_card_country(): void {
 		$this->dcc_applies->shouldReceive( 'for_country_currency' )->andReturn( true );
@@ -154,7 +154,7 @@ class PartnerReferralsDataTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should let a filter change the whole payload before the onboarding token is added to the return URL (wallet).
+	 * @testdox Should let a filter change the whole payload before the onboarding token is added to the return URL.
 	 */
 	public function test_payload_filter_runs_before_the_token_is_added(): void {
 		$this->dcc_applies->shouldReceive( 'for_country_currency' )->andReturn( false );

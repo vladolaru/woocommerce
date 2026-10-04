@@ -258,6 +258,8 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 			}
 		);
 
+		// Priority 20 runs after the listeners at the default priority have cleared the cached statuses, so the DCC status
+		// is read again to refill its cache. A store that is not connected never calls PayPal here.
 		add_action(
 			'woocommerce_paypal_payments_clear_apm_product_status',
 			static function () use ( $c ) {

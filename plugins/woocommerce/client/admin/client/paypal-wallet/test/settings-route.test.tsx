@@ -113,6 +113,8 @@ describe( 'PayPalWalletSettingsRoute', () => {
 		expect( reload ).not.toHaveBeenCalled();
 
 		window.dispatchEvent( new Event( 'load' ) );
+		// Without the marker only the one-shot listener can stop a second reload.
+		window.sessionStorage.clear();
 		window.dispatchEvent( new Event( 'load' ) );
 
 		expect( reload ).toHaveBeenCalledTimes( 1 );

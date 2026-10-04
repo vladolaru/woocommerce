@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the PayPal wallet session order reloader (ported from the extension's SessionOrderReloaderTest).
+ * Tests for the PayPal wallet session order reloader.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Session
  */

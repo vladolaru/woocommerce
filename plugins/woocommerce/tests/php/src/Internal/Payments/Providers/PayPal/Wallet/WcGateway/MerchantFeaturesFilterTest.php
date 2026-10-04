@@ -97,7 +97,7 @@ class MerchantFeaturesFilterTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave the features alone while the store is not connected to PayPal (wallet).
+	 * @testdox Should leave the features alone while the store is not connected to PayPal.
 	 */
 	public function test_a_store_that_is_not_connected_adds_no_features(): void {
 		$features = $this->features(
@@ -112,7 +112,7 @@ class MerchantFeaturesFilterTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should keep what other listeners already put in the features list (wallet).
+	 * @testdox Should keep what other listeners already put in the features list.
 	 */
 	public function test_features_added_earlier_in_the_chain_are_kept(): void {
 		$features = $this->features( array(), array( 'other' => array( 'enabled' => true ) ) );
@@ -121,7 +121,7 @@ class MerchantFeaturesFilterTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should turn Pay Later messaging on exactly when the alternative payment methods capability is active (wallet).
+	 * @testdox Should turn Pay Later messaging on exactly when the alternative payment methods capability is active.
 	 * @testWith [true]
 	 *           [false]
 	 *
@@ -134,7 +134,7 @@ class MerchantFeaturesFilterTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should turn Advanced Card Processing on only when the product is active and the store country and currency allow it (wallet).
+	 * @testdox Should turn Advanced Card Processing on only when the product is active and the store country and currency allow it.
 	 * @testWith [true, true, true]
 	 *           [true, false, false]
 	 *           [false, true, false]
@@ -155,7 +155,7 @@ class MerchantFeaturesFilterTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should turn Save PayPal and Venmo on only when reference transactions and the saving check both pass (wallet).
+	 * @testdox Should turn Save PayPal and Venmo on only when reference transactions and the saving check both pass.
 	 * @testWith [true, true, true]
 	 *           [true, false, false]
 	 *           [false, true, false]
@@ -176,7 +176,7 @@ class MerchantFeaturesFilterTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should report the Installments and Contact Module rows from their own checks (wallet).
+	 * @testdox Should report the Installments and Contact Module rows from their own checks.
 	 */
 	public function test_installments_and_contact_module_follow_their_checks(): void {
 		$features = $this->features(
@@ -191,7 +191,7 @@ class MerchantFeaturesFilterTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should report exactly the kept feature rows and no Pay with Crypto row (wallet).
+	 * @testdox Should report exactly the kept feature rows and no Pay with Crypto row.
 	 */
 	public function test_the_features_list_has_no_pay_with_crypto_row(): void {
 		$features = $this->features( array() );

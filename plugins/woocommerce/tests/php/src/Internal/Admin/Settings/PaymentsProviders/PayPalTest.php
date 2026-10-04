@@ -40,7 +40,6 @@ class PayPalTest extends WC_Unit_Test_Case {
 	 * Tear down test.
 	 */
 	public function tearDown(): void {
-		unset( $GLOBALS['wp']->query_vars['rest_route'] );
 		remove_all_filters( PayPalWalletRuntimeArbiter::FILTER_ENABLED );
 		wc_get_container()->get( PayPalWalletRuntimeArbiter::class )->invalidate();
 
@@ -273,11 +272,19 @@ class PayPalTest extends WC_Unit_Test_Case {
 		// The base provider answers true for a connected account whatever the options say, so a disconnected store tells the two sources apart.
 		update_option( 'woocommerce-ppcp-data-common', array() );
 		// A not-connected wallet only builds on its own surfaces, so a wallet REST route stands in for the onboarding request.
-		$GLOBALS['wp']->query_vars['rest_route'] = '/wc/v3/wc_paypal/onboarding';
-		$bootstrap                               = new PayPalWalletBootstrap();
-		$bootstrap->init( $arbiter );
-		$bootstrap->maybe_boot();
-		unset( $GLOBALS['wp']->query_vars['rest_route'] );
+		$request_uri            = $_SERVER['REQUEST_URI'] ?? null; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- Saving test state.
+		$_SERVER['REQUEST_URI'] = '/' . rest_get_url_prefix() . '/wc/v3/wc_paypal/onboarding';
+		try {
+			$bootstrap = new PayPalWalletBootstrap();
+			$bootstrap->init( $arbiter );
+			$bootstrap->maybe_boot();
+		} finally {
+			if ( null === $request_uri ) {
+				unset( $_SERVER['REQUEST_URI'] );
+			} else {
+				$_SERVER['REQUEST_URI'] = $request_uri;
+			}
+		}
 		$this->assertFalse( $this->sut->is_account_connected( $gateway ), 'A store without a stored connection must read as not connected' );
 		$this->assertFalse( $this->sut->is_in_test_mode( $gateway ) );
 	}

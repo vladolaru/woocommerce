@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the PayPal wallet gateway (ported from the extension's WcGatewayTest).
+ * Tests for the PayPal wallet gateway.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway
  */

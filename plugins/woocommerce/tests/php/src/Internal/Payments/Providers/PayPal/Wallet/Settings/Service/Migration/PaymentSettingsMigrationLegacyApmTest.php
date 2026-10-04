@@ -67,7 +67,7 @@ class PaymentSettingsMigrationLegacyApmTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should switch on the Pay upon Invoice and OXXO method states for their enabled legacy gateway options (wallet, stored format).
+	 * @testdox Should switch on the Pay upon Invoice and OXXO method states for their enabled legacy gateway options (stored format).
 	 */
 	public function test_enabled_legacy_gateways_enable_the_stored_method_ids(): void {
 		$this->set_wallet_option( self::PUI_OPTION, array( 'enabled' => 'yes' ) );
@@ -80,7 +80,7 @@ class PaymentSettingsMigrationLegacyApmTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave the Pay upon Invoice and OXXO method states alone when their legacy gateway options are disabled or missing (wallet, stored format).
+	 * @testdox Should leave the Pay upon Invoice and OXXO method states alone when their legacy gateway options are disabled or missing (stored format).
 	 */
 	public function test_disabled_or_missing_legacy_gateways_toggle_nothing(): void {
 		$this->set_wallet_option( self::PUI_OPTION, array( 'enabled' => 'no' ) );
@@ -92,7 +92,7 @@ class PaymentSettingsMigrationLegacyApmTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should copy the Pay upon Invoice brand name, logo URL and customer service instructions from the legacy gateway option (wallet, stored format).
+	 * @testdox Should copy the Pay upon Invoice brand name, logo URL and customer service instructions from the legacy gateway option (stored format).
 	 */
 	public function test_pay_upon_invoice_fields_are_copied(): void {
 		$this->set_wallet_option(
@@ -111,7 +111,7 @@ class PaymentSettingsMigrationLegacyApmTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not touch the Pay upon Invoice fields when the legacy gateway option has no values (wallet, stored format).
+	 * @testdox Should not touch the Pay upon Invoice fields when the legacy gateway option has no values (stored format).
 	 */
 	public function test_empty_pay_upon_invoice_fields_are_not_copied(): void {
 		$this->set_wallet_option( self::PUI_OPTION, array( 'brand_name' => '' ) );

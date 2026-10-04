@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the payment method title enricher (ported from the extension's PaymentMethodTitleEnricherTest).
+ * Tests for the payment method title enricher.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper
  */
@@ -18,8 +18,8 @@ use WC_Order;
 /**
  * What the enricher appends to a payment method title, over real orders and real filters.
  *
- * Case kinds: "wallet" cases use a PayPal gateway order (a `card` payment source there is card funding in the PayPal
- * button stack, which stays). The gateway IDs of the dropped gateways are literals, as their classes are gone.
+ * A `card` payment source on a PayPal gateway order is card funding in the PayPal button stack, which stays. The IDs of
+ * gateways that no longer exist are literals, as their classes are gone.
  *
  * @group paypal-wallet
  */
@@ -61,7 +61,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should append the payer email for a PayPal order (wallet).
+	 * @testdox Should append the payer email for a PayPal order.
 	 */
 	public function test_appends_payer_email_for_paypal(): void {
 		$order = $this->make_order( PayPalGateway::ID, $this->paypal_meta() );
@@ -70,7 +70,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave the title alone for a PayPal order without an email (wallet).
+	 * @testdox Should leave the title alone for a PayPal order without an email.
 	 */
 	public function test_paypal_without_email_is_unchanged(): void {
 		$order = $this->make_order( PayPalGateway::ID, array( PayPalGateway::ORDER_PAYMENT_SOURCE_META_KEY => 'paypal' ) );
@@ -79,7 +79,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should append the card brand and last digits for card funding on a PayPal order (wallet).
+	 * @testdox Should append the card brand and last digits for card funding on a PayPal order.
 	 */
 	public function test_appends_card_details_for_card_funding_on_paypal_gateway(): void {
 		$order = $this->make_order( PayPalGateway::ID, $this->card_meta( 'VISA', '1234' ) );
@@ -88,7 +88,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should normalize the card brand $raw_brand to $expected_label (wallet).
+	 * @testdox Should normalize the card brand $raw_brand to $expected_label.
 	 * @dataProvider brand_provider
 	 *
 	 * @param string $raw_brand      The brand as PayPal sends it.
@@ -116,7 +116,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave the title alone when only the card brand is known (wallet).
+	 * @testdox Should leave the title alone when only the card brand is known.
 	 */
 	public function test_partial_card_data_is_unchanged(): void {
 		$order = $this->make_order(
@@ -131,7 +131,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave the title alone when a card order has no card meta (wallet).
+	 * @testdox Should leave the title alone when a card order has no card meta.
 	 */
 	public function test_missing_card_meta_is_unchanged(): void {
 		$order = $this->make_order( PayPalGateway::ID, array( PayPalGateway::ORDER_PAYMENT_SOURCE_META_KEY => 'card' ) );
@@ -140,7 +140,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave the title alone for a gateway the enricher does not support (wallet).
+	 * @testdox Should leave the title alone for a gateway the enricher does not support.
 	 */
 	public function test_unsupported_gateway_is_unchanged(): void {
 		$order = $this->make_order( self::CARD_BUTTON_GATEWAY, $this->card_meta( 'VISA', '1234' ) );
@@ -149,7 +149,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * The cards cut dropped the card gateway from the enricher's supported gateways.
+	 * The card gateway is not one of the enricher's supported gateways.
 	 *
 	 * @testdox Should leave the title of a ppcp-credit-card-gateway order unchanged and build no detail for it (card).
 	 */
@@ -162,7 +162,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave the title alone when the opt-out filter disables enrichment (wallet).
+	 * @testdox Should leave the title alone when the opt-out filter disables enrichment.
 	 */
 	public function test_opt_out_filter_disables_enrichment(): void {
 		add_filter( self::OPT_OUT_FILTER, '__return_false' );
@@ -172,7 +172,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not append the detail twice (wallet).
+	 * @testdox Should not append the detail twice.
 	 */
 	public function test_does_not_append_detail_twice(): void {
 		$order            = $this->make_order( PayPalGateway::ID, $this->card_meta( 'VISA', '1234' ) );
@@ -182,7 +182,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should pass the built detail and the order to the detail filter and append what it returns (wallet).
+	 * @testdox Should pass the built detail and the order to the detail filter and append what it returns.
 	 */
 	public function test_detail_filter_receives_built_detail_and_appends_filtered_value(): void {
 		$order = $this->make_order( PayPalGateway::ID, $this->paypal_meta() );
@@ -195,7 +195,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave the title alone when the detail filter returns an empty string (wallet).
+	 * @testdox Should leave the title alone when the detail filter returns an empty string.
 	 */
 	public function test_empty_detail_filter_return_value_suppresses_append(): void {
 		$order = $this->make_order( PayPalGateway::ID, $this->paypal_meta() );
@@ -207,7 +207,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should let the detail filter supply a detail when the payment source has none (wallet).
+	 * @testdox Should let the detail filter supply a detail when the payment source has none.
 	 */
 	public function test_detail_filter_can_supply_detail_when_source_has_none(): void {
 		$order = $this->make_order( PayPalGateway::ID, array( PayPalGateway::ORDER_PAYMENT_SOURCE_META_KEY => 'venmo' ) );
@@ -219,7 +219,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should let the detail filter supply a detail for partial card data (wallet).
+	 * @testdox Should let the detail filter supply a detail for partial card data.
 	 */
 	public function test_detail_filter_can_supply_detail_for_partial_card_data(): void {
 		$order = $this->make_order(
@@ -236,7 +236,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not fire the detail filter for an unsupported gateway (wallet).
+	 * @testdox Should not fire the detail filter for an unsupported gateway.
 	 */
 	public function test_detail_filter_never_fires_for_unsupported_gateway(): void {
 		$order = $this->make_order( self::CARD_BUTTON_GATEWAY, $this->card_meta( 'VISA', '1234' ) );
@@ -247,7 +247,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not fire the detail filter when enrichment is opted out (wallet).
+	 * @testdox Should not fire the detail filter when enrichment is opted out.
 	 */
 	public function test_detail_filter_never_fires_when_opted_out(): void {
 		$order   = $this->make_order( PayPalGateway::ID, $this->paypal_meta() );
@@ -262,7 +262,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should compare the duplicate-append guard against the filtered detail (wallet).
+	 * @testdox Should compare the duplicate-append guard against the filtered detail.
 	 */
 	public function test_dedupe_guard_compares_against_filtered_detail(): void {
 		$order            = $this->make_order( PayPalGateway::ID, $this->card_meta( 'VISA', '1234' ) );
@@ -274,7 +274,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should append a filtered detail that differs from what the title already contains (wallet).
+	 * @testdox Should append a filtered detail that differs from what the title already contains.
 	 */
 	public function test_filtered_detail_is_appended_when_it_differs_from_title_content(): void {
 		$order = $this->make_order( PayPalGateway::ID, $this->paypal_meta() );
@@ -284,7 +284,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should cast the detail filter's return value to a string (wallet).
+	 * @testdox Should cast the detail filter's return value to a string.
 	 * @dataProvider detail_filter_cast_provider
 	 *
 	 * @param mixed  $filtered_detail What the filter returns.
@@ -311,7 +311,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should use the enriched-title filter's return value verbatim (wallet).
+	 * @testdox Should use the enriched-title filter's return value verbatim.
 	 */
 	public function test_enriched_title_filter_return_value_is_used_verbatim(): void {
 		$order = $this->make_order( PayPalGateway::ID, $this->paypal_meta() );
@@ -321,7 +321,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should pass the assembled title, original title, detail and order to the enriched-title filter (wallet).
+	 * @testdox Should pass the assembled title, original title, detail and order to the enriched-title filter.
 	 */
 	public function test_enriched_title_filter_receives_assembled_title_original_title_detail_and_order(): void {
 		$order = $this->make_order( PayPalGateway::ID, $this->paypal_meta() );
@@ -336,7 +336,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not fire the enriched-title filter when enrichment is opted out (wallet).
+	 * @testdox Should not fire the enriched-title filter when enrichment is opted out.
 	 */
 	public function test_enriched_title_filter_never_fires_when_opted_out(): void {
 		$order    = $this->make_order( PayPalGateway::ID, $this->paypal_meta() );
@@ -348,7 +348,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not fire the enriched-title filter when no detail is appended: $scenario (wallet).
+	 * @testdox Should not fire the enriched-title filter when no detail is appended: $scenario.
 	 * @dataProvider enriched_title_never_fires_provider
 	 *
 	 * @param string $scenario The scenario name.
@@ -394,7 +394,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should return an empty title when the enriched-title filter returns an empty string (wallet).
+	 * @testdox Should return an empty title when the enriched-title filter returns an empty string.
 	 */
 	public function test_enriched_title_filter_returning_empty_string_yields_empty_string(): void {
 		$order = $this->make_order( PayPalGateway::ID, $this->paypal_meta() );
@@ -404,7 +404,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should build the enriched title from the filtered detail (wallet).
+	 * @testdox Should build the enriched title from the filtered detail.
 	 */
 	public function test_enriched_title_filter_receives_title_built_from_filtered_detail(): void {
 		$order = $this->make_order( PayPalGateway::ID, $this->paypal_meta() );
@@ -416,7 +416,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should resolve the bundled icon for the card brand $brand (wallet).
+	 * @testdox Should resolve the bundled icon for the card brand $brand.
 	 * @dataProvider mapped_card_brand_provider
 	 *
 	 * @param string $brand         The brand.
@@ -446,7 +446,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should return an empty icon URL for the card brand "$brand" that has no bundled icon (wallet).
+	 * @testdox Should return an empty icon URL for the card brand "$brand" that has no bundled icon.
 	 * @dataProvider unmapped_card_brand_provider
 	 *
 	 * @param string $brand The brand.
@@ -473,7 +473,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should resolve a source with its own logo to that logo and an unsupported source to nothing (wallet).
+	 * @testdox Should resolve a source with its own logo to that logo and an unsupported source to nothing.
 	 */
 	public function test_get_icon_url_resolves_sources_with_their_own_logo(): void {
 		$this->assertSame( $this->icon_url( 'paypal' ), $this->sut->get_icon_url( 'paypal', '' ) );
@@ -482,14 +482,14 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should prefer the source's own icon over the card brand (wallet).
+	 * @testdox Should prefer the source's own icon over the card brand.
 	 */
 	public function test_get_icon_url_source_map_wins_over_card_brand(): void {
 		$this->assertSame( $this->icon_url( 'paypal' ), $this->sut->get_icon_url( 'paypal', 'VISA' ) );
 	}
 
 	/**
-	 * @testdox Should enrich exactly as before when no callback is registered on the icon filter (wallet).
+	 * @testdox Should enrich exactly as before when no callback is registered on the icon filter.
 	 */
 	public function test_enrich_is_unchanged_when_no_icon_filter_callback_is_registered(): void {
 		$order = $this->make_order( PayPalGateway::ID, $this->paypal_meta() );
@@ -498,7 +498,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should prepend the icon filter's markup to the detail with a single space (wallet).
+	 * @testdox Should prepend the icon filter's markup to the detail with a single space.
 	 */
 	public function test_icon_filter_markup_is_prepended_to_detail(): void {
 		$order = $this->make_order( PayPalGateway::ID, $this->paypal_meta() );
@@ -508,7 +508,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should pass the icon URL, source, empty brand and order to the icon filter for a PayPal order (wallet).
+	 * @testdox Should pass the icon URL, source, empty brand and order to the icon filter for a PayPal order.
 	 */
 	public function test_icon_filter_receives_all_arguments_for_paypal_order(): void {
 		$order = $this->make_order( PayPalGateway::ID, $this->paypal_meta() );
@@ -521,7 +521,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should pass the icon URL, card source, brand and order to the icon filter for card funding (wallet).
+	 * @testdox Should pass the icon URL, card source, brand and order to the icon filter for card funding.
 	 */
 	public function test_icon_filter_receives_all_arguments_for_card_funding_order(): void {
 		$order = $this->make_order( PayPalGateway::ID, $this->card_meta( 'VISA', '1234' ) );
@@ -533,7 +533,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should pass the raw brand and an empty icon URL to the icon filter when the brand has no icon (wallet).
+	 * @testdox Should pass the raw brand and an empty icon URL to the icon filter when the brand has no icon.
 	 */
 	public function test_icon_filter_receives_empty_url_for_unmapped_brand(): void {
 		$order = $this->make_order( PayPalGateway::ID, $this->card_meta( 'MAESTRO', '1234' ) );
@@ -544,7 +544,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave the detail unprefixed when the icon filter returns an empty string (wallet).
+	 * @testdox Should leave the detail unprefixed when the icon filter returns an empty string.
 	 */
 	public function test_icon_filter_returning_empty_string_leaves_detail_unprefixed(): void {
 		$order = $this->make_order( PayPalGateway::ID, $this->paypal_meta() );
@@ -554,7 +554,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not fire the icon filter when enrichment is opted out (wallet).
+	 * @testdox Should not fire the icon filter when enrichment is opted out.
 	 */
 	public function test_icon_filter_never_fires_when_opted_out(): void {
 		$order = $this->make_order( PayPalGateway::ID, $this->paypal_meta() );
@@ -566,7 +566,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not fire the icon filter for an unsupported gateway (wallet).
+	 * @testdox Should not fire the icon filter for an unsupported gateway.
 	 */
 	public function test_icon_filter_never_fires_for_unsupported_gateway(): void {
 		$order = $this->make_order( self::CARD_BUTTON_GATEWAY, $this->card_meta( 'VISA', '1234' ) );
@@ -577,7 +577,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not fire the icon filter when there is no detail to prefix (wallet).
+	 * @testdox Should not fire the icon filter when there is no detail to prefix.
 	 */
 	public function test_icon_filter_never_fires_when_detail_is_empty(): void {
 		$order = $this->make_order( PayPalGateway::ID, array( PayPalGateway::ORDER_PAYMENT_SOURCE_META_KEY => 'card' ) );
@@ -588,7 +588,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should short-circuit on a duplicate detail before the icon filter fires (wallet).
+	 * @testdox Should short-circuit on a duplicate detail before the icon filter fires.
 	 */
 	public function test_icon_filter_never_fires_on_dedupe_hit(): void {
 		$order            = $this->make_order( PayPalGateway::ID, $this->card_meta( 'VISA', '1234' ) );
@@ -600,7 +600,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not prepend the icon twice when a title is enriched again (wallet).
+	 * @testdox Should not prepend the icon twice when a title is enriched again.
 	 */
 	public function test_no_double_prepend_on_re_enrichment_with_icon(): void {
 		$order            = $this->make_order( PayPalGateway::ID, $this->card_meta( 'VISA', '1234' ) );
@@ -613,7 +613,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should hand the enriched-title filter the icon-prefixed detail (wallet).
+	 * @testdox Should hand the enriched-title filter the icon-prefixed detail.
 	 */
 	public function test_enriched_title_filter_receives_icon_prefixed_detail(): void {
 		$order = $this->make_order( PayPalGateway::ID, $this->paypal_meta() );
@@ -627,7 +627,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should cast the icon filter's return value to a string (wallet).
+	 * @testdox Should cast the icon filter's return value to a string.
 	 * @dataProvider icon_filter_cast_provider
 	 *
 	 * @param mixed  $filtered_icon  What the filter returns.
@@ -654,9 +654,9 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * The Apple Pay and Google Pay cut dropped both wallets from the enricher: no gateway ID and no payment source.
+	 * The enricher supports neither Apple Pay nor Google Pay: no gateway ID and no payment source.
 	 *
-	 * @testdox Should leave the title of a $gateway order unchanged and build no detail for it (wallet).
+	 * @testdox Should leave the title of a $gateway order unchanged and build no detail for it.
 	 * @dataProvider dropped_wallet_gateway_provider
 	 *
 	 * @param string $gateway The gateway ID.
@@ -680,7 +680,7 @@ class PaymentMethodTitleEnricherTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should append no card details for a wallet payment source on a PayPal order: $source (wallet).
+	 * @testdox Should append no card details for a wallet payment source on a PayPal order: $source.
 	 * @dataProvider dropped_wallet_source_provider
 	 *
 	 * @param string $source The payment source name.

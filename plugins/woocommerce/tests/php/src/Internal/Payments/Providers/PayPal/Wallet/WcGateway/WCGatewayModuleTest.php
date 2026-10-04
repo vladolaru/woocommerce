@@ -75,7 +75,8 @@ class WCGatewayModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * A product status over the shared result cache. The store is not connected, so the status never calls PayPal.
+	 * A product status over the shared result cache. The first constructor argument is the connected flag: the store is
+	 * not connected, so the status never calls PayPal, even when the DCC listener (priority 20) reads it after a clear.
 	 *
 	 * @param string $class_name The status class (a ProductStatus subclass).
 	 * @return ProductStatus
@@ -106,7 +107,7 @@ class WCGatewayModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should clear the cached APM capability together with the other product statuses (wallet).
+	 * @testdox Should clear the cached APM capability together with the other product statuses.
 	 */
 	public function test_clear_hook_clears_the_cached_apm_capability(): void {
 		$this->status_cache->set( ApmCapabilityStatus::KEY, 'yes' );
@@ -120,9 +121,10 @@ class WCGatewayModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave a Pay with Crypto answer in the shared cache alone, as core no longer manages it (wallet).
+	 * @testdox Should leave a Pay with Crypto answer in the shared cache alone, as core no longer manages it.
 	 */
 	public function test_clear_hook_leaves_a_pay_with_crypto_answer_in_the_cache(): void {
+		// The extension's cache key for Pay with Crypto: core has no class for it, so it stays a literal.
 		$this->status_cache->set( 'products_pwc_enabled', 'yes' );
 		$this->status_cache->set( DCCProductStatus::KEY, 'yes' );
 

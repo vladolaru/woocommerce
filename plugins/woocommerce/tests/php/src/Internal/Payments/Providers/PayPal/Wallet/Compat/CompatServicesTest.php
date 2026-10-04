@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the compatibility module's service definitions (core-only characterization, no extension counterpart).
+ * Tests for the compatibility module's service definitions.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Compat
  */
@@ -43,7 +43,7 @@ class CompatServicesTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should list the wallet's own script names and files for the cache plugin exclusions (wallet).
+	 * @testdox Should list the wallet's own script names and files for the cache plugin exclusions.
 	 */
 	public function test_script_exclusions_list_the_wallet_scripts(): void {
 		$names = $this->resolve( 'compat.plugin-script-names' );
@@ -58,7 +58,7 @@ class CompatServicesTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should define the Name Your Price and Bookings plugin checks, which the module reads (wallet).
+	 * @testdox Should define the Name Your Price and Bookings plugin checks, which the module reads.
 	 */
 	public function test_plugin_checks_the_module_reads(): void {
 		$this->assertIsBool( $this->resolve( 'compat.nyp.is_supported_plugin_version_active' ) );
@@ -94,7 +94,7 @@ class CompatServicesTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should keep the legacy PayPal Express and blueprint services the module wires (wallet).
+	 * @testdox Should keep the legacy PayPal Express and blueprint services the module wires.
 	 */
 	public function test_wallet_services_are_defined(): void {
 		$services = $this->services();

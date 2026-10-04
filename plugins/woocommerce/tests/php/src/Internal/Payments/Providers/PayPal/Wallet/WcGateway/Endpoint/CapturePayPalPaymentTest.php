@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the PayPal wallet vault payment capture endpoint (ported from the extension's CapturePayPalPaymentTest).
+ * Tests for the PayPal wallet vault payment capture endpoint.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Endpoint
  */
@@ -39,7 +39,7 @@ class CapturePayPalPaymentTest extends WalletTestCase {
 		}
 
 		$purchase_unit_factory = $this->mock( PurchaseUnitFactory::class );
-		$purchase_unit_factory->shouldReceive( 'from_wc_order' )->andReturn( $purchase_unit );
+		$purchase_unit_factory->shouldReceive( 'from_wc_order' )->once()->andReturn( $purchase_unit );
 		$purchase_unit_factory->shouldNotReceive( 'from_wc_cart' );
 
 		$order_factory = $this->mock( OrderFactory::class );

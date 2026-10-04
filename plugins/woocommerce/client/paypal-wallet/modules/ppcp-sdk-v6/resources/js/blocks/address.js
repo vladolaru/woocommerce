@@ -2,8 +2,8 @@
  * Converts a PayPal order (Orders v2 shape, as returned by ppc-get-order)
  * into WooCommerce billing/shipping address objects.
  *
- * Ported from the v5 blocks Helper/Address so this module does not
- * source-depend on the ppcp-blocks module it replaces.
+ * This module keeps its own copy of the v5 blocks Helper/Address so it does not
+ * depend on the ppcp-blocks module.
  *
  * @package
  */

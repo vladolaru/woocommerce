@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the v6 SDK manager (ported from the extension's SdkV6ManagerTest).
+ * Tests for the v6 SDK manager.
  *
  * @package Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Assets
  */
@@ -33,8 +33,6 @@ use WC_Helper_Product;
 /**
  * The SDK bootstrap data, the page-loading rules and the message hooks of the v6 manager, over real WordPress and
  * WooCommerce: only the manager's collaborators and the cart, customer and countries objects are doubles.
- *
- * Case kinds: every case is a "wallet" case, the PayPal, Venmo and Pay Later surface.
  *
  * The four free-trial product cases of the extension test that drove WooCommerce Subscriptions' static classes through
  * Mockery aliases are not ported: core's suite loads neither the classes nor an alias-safe way to define them. The two
@@ -336,7 +334,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should gate the render places by whether the cart needs payment: $scenario (wallet).
+	 * @testdox Should gate the render places by whether the cart needs payment: $scenario.
 	 * @dataProvider render_places_needs_payment_provider
 	 *
 	 * @param string    $scenario           The scenario name.
@@ -398,7 +396,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should keep the checkout on a free-trial cart that needs no payment only when it is a free trial: needs payment $needs_payment, free trial $is_free_trial_cart (wallet).
+	 * @testdox Should keep the checkout on a free-trial cart that needs no payment only when it is a free trial: needs payment $needs_payment, free trial $is_free_trial_cart.
 	 * @dataProvider free_trial_checkout_provider
 	 *
 	 * @param bool $needs_payment      Whether the cart needs payment.
@@ -431,7 +429,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should load the SDK sitewide when the mini-cart location is on, without the classic widget (wallet).
+	 * @testdox Should load the SDK sitewide when the mini-cart location is on, without the classic widget.
 	 */
 	public function test_should_load_sitewide_when_mini_cart_enabled_regardless_of_widget(): void {
 		$this->stub_page( '' );
@@ -441,7 +439,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not load the SDK when the mini-cart is off and the page has no context (wallet).
+	 * @testdox Should not load the SDK when the mini-cart is off and the page has no context.
 	 */
 	public function test_should_not_load_when_mini_cart_disabled_and_no_matching_page_context(): void {
 		$this->stub_page( '', '' );
@@ -452,7 +450,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not load the SDK when a subscription cart cannot be vaulted and manual renewals are off (wallet).
+	 * @testdox Should not load the SDK when a subscription cart cannot be vaulted and manual renewals are off.
 	 */
 	public function test_should_not_load_when_subscription_in_cart_without_vaulting(): void {
 		$this->stub_page( 'checkout' );
@@ -463,7 +461,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should load the SDK without vaulting when no subscription is present (wallet).
+	 * @testdox Should load the SDK without vaulting when no subscription is present.
 	 */
 	public function test_should_load_without_vaulting_when_no_subscription_present(): void {
 		$this->stub_page( 'checkout' );
@@ -473,7 +471,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should load the SDK with vaulting on and a subscription in the cart (wallet).
+	 * @testdox Should load the SDK with vaulting on and a subscription in the cart.
 	 */
 	public function test_should_load_when_vaulting_with_subscription_in_cart(): void {
 		$this->stub_page( 'checkout' );
@@ -484,7 +482,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should load the SDK with manual renewals on, vaulting off and a subscription in the cart (wallet).
+	 * @testdox Should load the SDK with manual renewals on, vaulting off and a subscription in the cart.
 	 */
 	public function test_should_load_when_manual_renewals_with_subscription_in_cart(): void {
 		$this->stub_page( 'checkout' );
@@ -496,7 +494,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should load the SDK on a subscription page without vaulting when the subscription mode filter opts out (wallet).
+	 * @testdox Should load the SDK on a subscription page without vaulting when the subscription mode filter opts out.
 	 */
 	public function test_should_load_when_subscription_mode_filter_opts_out(): void {
 		$this->stub_page( 'checkout' );
@@ -514,7 +512,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should render no v6 location when a subscription product cannot be vaulted and manual renewals are off (wallet).
+	 * @testdox Should render no v6 location when a subscription product cannot be vaulted and manual renewals are off.
 	 */
 	public function test_determine_render_places_empty_when_subscription_product_without_vaulting(): void {
 		$this->context->shouldReceive( 'init_context' )->never();
@@ -534,7 +532,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should forward the pay-now order ID and key and disable shipping on the pay-for-order page (wallet).
+	 * @testdox Should forward the pay-now order ID and key and disable shipping on the pay-for-order page.
 	 */
 	public function test_script_data_includes_pay_now_identifiers(): void {
 		$order = $this->stub_pay_for_order_page( '49.99' );
@@ -554,7 +552,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not consult Pay Later messaging when deciding whether a block page loads the SDK: $page_context (wallet).
+	 * @testdox Should not consult Pay Later messaging when deciding whether a block page loads the SDK: $page_context.
 	 * @dataProvider block_context_provider
 	 *
 	 * @param string $page_context The block page context.
@@ -582,7 +580,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should load the SDK when the button location is enabled (wallet).
+	 * @testdox Should load the SDK when the button location is enabled.
 	 */
 	public function test_should_load_on_current_page_true_when_button_location_enabled(): void {
 		$this->stub_page( 'checkout' );
@@ -592,7 +590,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should load the SDK on a classic page only to render a Pay Later message (wallet).
+	 * @testdox Should load the SDK on a classic page only to render a Pay Later message.
 	 */
 	public function test_should_load_on_current_page_true_when_only_messaging_is_enabled_on_a_classic_page(): void {
 		$this->stub_page( 'checkout', 'checkout' );
@@ -602,7 +600,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not load the SDK through messaging on a block page, even when messaging is eligible: $page_context (wallet).
+	 * @testdox Should not load the SDK through messaging on a block page, even when messaging is eligible: $page_context.
 	 * @dataProvider block_context_provider
 	 *
 	 * @param string $page_context        The block page context.
@@ -616,7 +614,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not load the SDK on "$location" because this module places no message there (wallet).
+	 * @testdox Should not load the SDK on "$location" because this module places no message there.
 	 * @dataProvider unsupported_message_location_provider
 	 *
 	 * @param string $location The messaging location.
@@ -643,7 +641,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should load the SDK on "$location" when a Pay Later block sits on that page (wallet).
+	 * @testdox Should load the SDK on "$location" when a Pay Later block sits on that page.
 	 * @dataProvider unsupported_message_location_provider
 	 *
 	 * @param string $location The messaging location.
@@ -659,7 +657,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not load the SDK on "$location" when no Pay Later block sits on the page (wallet).
+	 * @testdox Should not load the SDK on "$location" when no Pay Later block sits on the page.
 	 * @dataProvider unsupported_message_location_provider
 	 *
 	 * @param string $location The messaging location.
@@ -676,7 +674,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should claim "$location" when v5 would render a message there and leave it alone otherwise: messaging $messaging_enabled (wallet).
+	 * @testdox Should claim "$location" when v5 would render a message there and leave it alone otherwise: messaging $messaging_enabled.
 	 * @dataProvider home_shop_messaging_claim_provider
 	 *
 	 * @param string $location          The messaging location.
@@ -706,7 +704,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not load the SDK in wp-admin even when messaging is eligible (wallet).
+	 * @testdox Should not load the SDK in wp-admin even when messaging is eligible.
 	 */
 	public function test_should_load_on_current_page_false_under_is_admin(): void {
 		$original_screen = $GLOBALS['current_screen'] ?? null;
@@ -722,7 +720,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should look messaging up under the normalized location $expected_location for $raw_location (wallet).
+	 * @testdox Should look messaging up under the normalized location $expected_location for $raw_location.
 	 * @dataProvider block_location_normalization_provider
 	 *
 	 * @param string $raw_location      The page's location.
@@ -749,7 +747,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should keep all seven message keys in the data even when messaging is disabled (wallet).
+	 * @testdox Should keep all seven message keys in the data even when messaging is disabled.
 	 */
 	public function test_script_data_messages_shape_includes_all_keys_even_when_disabled(): void {
 		$this->stub_page( 'checkout', 'checkout' );
@@ -764,7 +762,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should default the message cart simulation flag to false (wallet).
+	 * @testdox Should default the message cart simulation flag to false.
 	 */
 	public function test_script_data_messages_use_cart_simulation_defaults_to_false(): void {
 		$this->stub_page( 'checkout', 'checkout' );
@@ -776,7 +774,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should report the message cart simulation flag as a real boolean when a filter turns it on (wallet).
+	 * @testdox Should report the message cart simulation flag as a real boolean when a filter turns it on.
 	 */
 	public function test_script_data_messages_use_cart_simulation_true_when_filter_enables_it(): void {
 		$this->stub_page( 'checkout', 'checkout' );
@@ -789,7 +787,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should price the Pay Later message from the product on a product page while the amount stays cart-first (wallet).
+	 * @testdox Should price the Pay Later message from the product on a product page while the amount stays cart-first.
 	 */
 	public function test_messages_amount_is_product_first_on_product_page_even_with_non_empty_cart(): void {
 		$this->stub_page( 'product', 'product' );
@@ -810,7 +808,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should price the Pay Later message from the validated order total on the pay-for-order page (wallet).
+	 * @testdox Should price the Pay Later message from the validated order total on the pay-for-order page.
 	 */
 	public function test_messages_amount_uses_validated_order_total_on_pay_now_page(): void {
 		$this->stub_pay_for_order_page( '150.00' );
@@ -823,7 +821,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should fall back to an empty message amount when no product, cart or order is available (wallet).
+	 * @testdox Should fall back to an empty message amount when no product, cart or order is available.
 	 */
 	public function test_messages_amount_falls_back_to_empty_string_when_nothing_is_available(): void {
 		$this->stub_page( 'checkout', 'checkout' );
@@ -835,7 +833,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should return the documented message render hook and priority for $location (wallet).
+	 * @testdox Should return the documented message render hook and priority for $location.
 	 * @dataProvider default_messages_render_hook_provider
 	 *
 	 * @param string $location          The location.
@@ -869,7 +867,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should return no message render hook for "$location" so v5 keeps the page (wallet).
+	 * @testdox Should return no message render hook for "$location" so v5 keeps the page.
 	 * @dataProvider unsupported_message_location_provider
 	 *
 	 * @param string $location The location.
@@ -881,7 +879,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should return no message render hook on the block location $location (wallet).
+	 * @testdox Should return no message render hook on the block location $location.
 	 * @dataProvider block_context_provider
 	 *
 	 * @param string $location The block location.
@@ -893,7 +891,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should let the per-location filters override the message hook and priority for $location (wallet).
+	 * @testdox Should let the per-location filters override the message hook and priority for $location.
 	 * @dataProvider render_hook_filter_provider
 	 *
 	 * @param string $location       The location.
@@ -928,7 +926,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should default the message hook to the relocated button hook for $location (wallet).
+	 * @testdox Should default the message hook to the relocated button hook for $location.
 	 * @dataProvider relocated_button_hook_provider
 	 *
 	 * @param string $location          The location.
@@ -970,7 +968,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should echo the message wrapper between the before and after actions for $location (wallet).
+	 * @testdox Should echo the message wrapper between the before and after actions for $location.
 	 * @dataProvider render_message_wrapper_provider
 	 *
 	 * @param string $location       The location.
@@ -1015,7 +1013,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should register the bootstrap script and stylesheet with the asset data dependencies and versions (wallet).
+	 * @testdox Should register the bootstrap script and stylesheet with the asset data dependencies and versions.
 	 */
 	public function test_enqueue_registers_script_with_asset_data_dependencies_and_version(): void {
 		$this->stub_page( 'checkout', 'checkout' );
@@ -1053,7 +1051,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should register nothing when the SDK does not load on the page (wallet).
+	 * @testdox Should register nothing when the SDK does not load on the page.
 	 */
 	public function test_enqueue_does_nothing_when_should_not_load_on_current_page(): void {
 		$this->stub_page( '', '' );
@@ -1065,7 +1063,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not load the SDK on a checkout page where no button, no message and no mini-cart asks for it (wallet).
+	 * @testdox Should not load the SDK on a checkout page where no button, no message and no mini-cart asks for it.
 	 */
 	public function test_should_not_load_on_checkout_when_nothing_asks_for_the_sdk(): void {
 		$this->stub_page( 'checkout', 'checkout' );
@@ -1075,7 +1073,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should not carry a fastlane subtree in the data: the SDK loader no longer asks for that component (wallet).
+	 * @testdox Should not carry a fastlane subtree in the data: the SDK loader no longer asks for that component.
 	 */
 	public function test_script_data_has_no_fastlane_subtree(): void {
 		$this->stub_page( 'checkout' );
@@ -1086,7 +1084,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should mirror the free-trial helper in the data: free trial cart $is_free_trial_cart (wallet).
+	 * @testdox Should mirror the free-trial helper in the data: free trial cart $is_free_trial_cart.
 	 * @testWith [true]
 	 *           [false]
 	 *
@@ -1101,7 +1099,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should mirror cart_requires_vaulting apart from the free trial flag: requires vaulting $cart_requires_vaulting (wallet).
+	 * @testdox Should mirror cart_requires_vaulting apart from the free trial flag: requires vaulting $cart_requires_vaulting.
 	 * @testWith [true]
 	 *           [false]
 	 *
@@ -1117,7 +1115,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should mirror the buyer's login state in the data: logged in $is_logged_in (wallet).
+	 * @testdox Should mirror the buyer's login state in the data: logged in $is_logged_in.
 	 * @testWith [true]
 	 *           [false]
 	 *
@@ -1134,7 +1132,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should carry the free-trial vault endpoints and nonces in the ajax data (wallet).
+	 * @testdox Should carry the free-trial vault endpoints and nonces in the ajax data.
 	 */
 	public function test_script_data_includes_free_trial_vault_ajax_endpoints(): void {
 		$data = $this->script_data();
@@ -1148,7 +1146,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should give the mini-cart a shorter button than the page context (wallet).
+	 * @testdox Should give the mini-cart a shorter button than the page context.
 	 */
 	public function test_script_data_button_styles_mini_cart_height_differs_from_page_context(): void {
 		$this->settings_status->shouldReceive( 'is_smart_button_enabled_for_location' )->with( 'mini-cart' )->andReturn( true );
@@ -1160,7 +1158,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should report shipping per context: final review $final_review_enabled, $page_context, cart needs shipping $cart_needs_shipping, product $product_state (wallet).
+	 * @testdox Should report shipping per context: final review $final_review_enabled, $page_context, cart needs shipping $cart_needs_shipping, product $product_state.
 	 * @dataProvider shipping_in_context_provider
 	 *
 	 * @param bool   $final_review_enabled Whether the final review step is on.
@@ -1361,7 +1359,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should carry the generic error label, and every label a non-empty string (wallet).
+	 * @testdox Should carry the generic error label, and every label a non-empty string.
 	 */
 	public function test_script_data_includes_the_generic_error_label(): void {
 		$this->stub_page( 'checkout-block' );
@@ -1376,7 +1374,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should carry none of the Apple Pay, Google Pay or wallet shipping script data keys (wallet).
+	 * @testdox Should carry none of the Apple Pay, Google Pay or wallet shipping script data keys.
 	 */
 	public function test_script_data_omits_the_dropped_wallet_keys(): void {
 		$this->stub_page( 'checkout-block' );
@@ -1391,7 +1389,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should suppress the product location only for a genuine free-trial product: free trial $free_trial_product (wallet).
+	 * @testdox Should suppress the product location only for a genuine free-trial product: free trial $free_trial_product.
 	 * @testWith [true, false]
 	 *           [false, true]
 	 *
@@ -1410,7 +1408,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should keep the product location off when its own setting is off, whatever the free-trial answer (wallet).
+	 * @testdox Should keep the product location off when its own setting is off, whatever the free-trial answer.
 	 */
 	public function test_determine_render_places_product_false_when_location_disabled_regardless_of_free_trial_product(): void {
 		$this->context->shouldReceive( 'init_context' )->never();
@@ -1425,7 +1423,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should confine the free-trial product guard to the product location (wallet).
+	 * @testdox Should confine the free-trial product guard to the product location.
 	 */
 	public function test_determine_render_places_free_trial_product_does_not_affect_other_locations(): void {
 		$this->context->shouldReceive( 'init_context' )->never();
@@ -1441,7 +1439,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should add the tax-inclusive message amount as a two-decimal string to a variation (wallet).
+	 * @testdox Should add the tax-inclusive message amount as a two-decimal string to a variation.
 	 */
 	public function test_add_variation_message_amount_adds_tax_inclusive_amount_as_string(): void {
 		$variation = WC_Helper_Product::create_simple_product( true, array( 'regular_price' => '200' ) );
@@ -1461,7 +1459,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave the variation data untouched when the variation is not a WC_Product: $scenario (wallet).
+	 * @testdox Should leave the variation data untouched when the variation is not a WC_Product: $scenario.
 	 * @dataProvider non_product_variation_provider
 	 *
 	 * @param string $scenario  The scenario name.
@@ -1487,7 +1485,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave the variation data untouched when an earlier callback returned a non-array: $scenario (wallet).
+	 * @testdox Should leave the variation data untouched when an earlier callback returned a non-array: $scenario.
 	 * @dataProvider non_array_data_provider
 	 *
 	 * @param string $scenario The scenario name.
@@ -1513,7 +1511,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave the variation data untouched when messaging prices through cart simulation (wallet).
+	 * @testdox Should leave the variation data untouched when messaging prices through cart simulation.
 	 */
 	public function test_add_variation_message_amount_leaves_data_untouched_under_cart_simulation(): void {
 		$calls = $this->spy_filter( 'woocommerce_paypal_payments_sdk_v6_messages_use_cart_simulation', true );

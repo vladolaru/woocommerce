@@ -10,11 +10,14 @@ HERE="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 OUT="$HERE/../../src/Internal/Payments/Providers/PayPal/contract-appendix.md"
 USAGE="usage: contract-list.sh [--out <path>|--out -] <extension clone>"
 EXT=""
+OUT_SET=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --out)
       [ $# -ge 2 ] || { echo "$USAGE" >&2; exit 1; }
-      OUT="$2"; shift 2 ;;
+      [ "$OUT_SET" = 0 ] || { echo "--out given twice" >&2; echo "$USAGE" >&2; exit 1; }
+      [ -n "$2" ] || { echo "--out needs a path or -" >&2; echo "$USAGE" >&2; exit 1; }
+      OUT="$2"; OUT_SET=1; shift 2 ;;
     -*) # "-" alone is not an option name either; anything starting with a dash is rejected here.
       echo "unknown option: $1" >&2; echo "$USAGE" >&2; exit 1 ;;
     *)
@@ -23,6 +26,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -n "$EXT" ] || { echo "$USAGE" >&2; exit 1; }
+[ ! -d "$OUT" ] || { echo "--out is a directory, give a file path: $OUT" >&2; exit 1; }
 SHORT="$(git -C "$EXT" rev-parse --short HEAD 2>/dev/null)" || { echo "not a git clone: $EXT" >&2; exit 1; }
 test -d "$EXT/modules" || { echo "not the PayPal Payments extension (no modules/ directory): $EXT" >&2; exit 1; }
 KEPT="woocommerce-logging ppcp-admin-notices ppcp-api-client ppcp-blocks ppcp-button ppcp-compat ppcp-order-endpoints ppcp-paylater-block ppcp-paylater-configurator ppcp-paylater-wc-blocks ppcp-save-payment-methods ppcp-sdk-v6 ppcp-session ppcp-settings ppcp-vault-component ppcp-wc-gateway ppcp-wc-payment-tokens ppcp-wc-subscriptions ppcp-webhooks"

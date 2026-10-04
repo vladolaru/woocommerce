@@ -336,10 +336,6 @@ class SettingsProvider {
 		return $this->settings_model->get_button_language();
 	}
 
-	public function ships_from_postal_code(): string {
-		return $this->settings_model->get_ships_from_postal_code();
-	}
-
 	/**
 	 * Gets the authorize only setting.
 	 *
