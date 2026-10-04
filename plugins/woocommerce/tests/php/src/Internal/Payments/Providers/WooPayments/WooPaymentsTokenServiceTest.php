@@ -582,6 +582,57 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A PHP error loading the account service, which the WooPayments logger also needs, is logged and the detach goes on.
+	 *
+	 * The lookup returns null as it did before the log line was added: the line is written straight to the WooCommerce
+	 * logger under woopayments when the WooPayments logger cannot be built (review 35 F5).
+	 */
+	public function test_php_error_loading_account_service_is_logged_without_the_woopayments_logger(): void {
+		$user_id      = $this->factory()->user->create();
+		$native_token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_delete' );
+		$api_client   = new class() extends WooPaymentsApiClient {
+			/**
+			 * Detached payment method IDs.
+			 *
+			 * @var string[]
+			 */
+			public array $detached_payment_method_ids = array();
+
+			/**
+			 * Detach a payment method.
+			 *
+			 * @param string $payment_method_id Payment method ID.
+			 * @return array<string,mixed>
+			 */
+			public function detach_payment_method( string $payment_method_id ): array {
+				$this->detached_payment_method_ids[] = $payment_method_id;
+
+				return array( 'id' => $payment_method_id );
+			}
+		};
+		$this->create_service( array(), $api_client );
+		// The typed property assignment of a wrong object raises a TypeError in the lookup, and building the logger
+		// passes the same object to WooPaymentsLogger::init().
+		wc_get_container()->replace( WooPaymentsAccountService::class, new \stdClass() );
+		wc_get_container()->reset_all_resolved();
+		$logger = RecordingWcLogger::install();
+
+		try {
+			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token deletion hook.
+			do_action( 'woocommerce_payment_token_deleted', $native_token->get_id(), $native_token );
+		} finally {
+			$this->reset_container_replacements();
+			wc_get_container()->reset_all_resolved();
+		}
+
+		$this->assertSame( array( 'pm_delete' ), $api_client->detached_payment_method_ids );
+		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => str_starts_with( $line[1], 'Error loading ' . WooPaymentsAccountService::class ) ) );
+		$this->assertCount( 1, $lines );
+		$this->assertSame( array( 'error', 'woopayments' ), array( $logger->lines[ $lines[0] ][0], $logger->lines[ $lines[0] ][2] ) );
+		$this->assertSame( 'TypeError', $logger->contexts[ $lines[0] ]['exception'] ?? '' );
+	}
+
+	/**
 	 * @testdox Should not detach live payment methods from admin screens on non-production environments.
 	 */
 	public function test_does_not_detach_live_payment_methods_from_non_production_admin_screens(): void {

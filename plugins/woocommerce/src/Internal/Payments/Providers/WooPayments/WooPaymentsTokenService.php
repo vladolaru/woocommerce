@@ -1240,7 +1240,8 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 * Log a failed service lookup when it is a PHP Error, whatever the logging setting; an Exception stays quiet.
 	 *
 	 * The caller then skips the detach, sync or fetch that needed the service. The client injects these services, so it
-	 * has no counterpart (review 34 F5).
+	 * has no counterpart (review 34 F5). The WooPayments logger needs the account service, so when the logger cannot be
+	 * built either the line is written straight to the WooCommerce logger and the lookup still returns null (review 35 F5).
 	 *
 	 * @param string    $service   Class name of the service.
 	 * @param Throwable $exception Lookup failure.
@@ -1250,10 +1251,18 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			return;
 		}
 
-		wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
-			'Error loading ' . $service . ' for WooPayments tokens: ' . $exception->getMessage(),
-			$exception
-		);
+		$message = 'Error loading ' . $service . ' for WooPayments tokens: ' . $exception->getMessage();
+		try {
+			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( $message, $exception );
+		} catch ( Throwable $logger_exception ) {
+			wc_get_logger()->error(
+				$message,
+				array(
+					'source'    => WooPaymentsLogger::SOURCE,
+					'exception' => get_class( $exception ),
+				)
+			);
+		}
 	}
 
 	/**
