@@ -114,7 +114,18 @@ class WooPaymentsLogger {
 	 * @param array<string,mixed> $context   Context, such as order_id or intent_id.
 	 */
 	public function log_throwable_always( string $message, Throwable $throwable, array $context = array() ): void {
-		wc_get_logger()->error( $message, array_merge( $context, self::get_throwable_context( $throwable ), array( 'source' => self::SOURCE ) ) );
+		$this->log_always( $message, 'error', array_merge( $context, self::get_throwable_context( $throwable ) ) );
+	}
+
+	/**
+	 * Write a line whatever the logging setting, for an anomaly on the money path that support needs to see.
+	 *
+	 * @param string              $message Message.
+	 * @param string              $level   Log level.
+	 * @param array<string,mixed> $context Context, such as order_id or intent_id.
+	 */
+	public function log_always( string $message, string $level, array $context = array() ): void {
+		wc_get_logger()->log( $level, $message, array_merge( $context, array( 'source' => self::SOURCE ) ) );
 	}
 
 	/**

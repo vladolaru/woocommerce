@@ -390,11 +390,16 @@ class WooPaymentsProviderGatewayAdapter {
 			$this->assert_woopay_intent_belongs_to_order( $result, $order, true );
 		} else {
 			$request_data    = $this->request_builder->charge_request_data( $context, $payment_credential, $customer_id, $is_recurring );
+			$attempt_key     = $idempotency_key;
 			$idempotency_key = $this->resolve_charge_idempotency_key( $order, $idempotency_key );
 
 			try {
 				$result = $this->api_client->create_and_confirm_payment_intention( $request_data, $idempotency_key );
 			} catch ( WooPaymentsApiException $exception ) {
+				if ( $attempt_key !== $idempotency_key && $this->is_idempotency_key_conflict( $exception ) ) {
+					$this->log_kept_charge_key_refused( $order, $idempotency_key );
+				}
+
 				if ( ! $this->is_missing_customer_exception( $exception ) ) {
 					return $this->failed_charge_outcome( $order, $exception, true );
 				}
@@ -443,6 +448,41 @@ class WooPaymentsProviderGatewayAdapter {
 		$order->save_meta_data();
 
 		return $candidate;
+	}
+
+	/**
+	 * Tell whether the provider refused an idempotency key because the request differs from the one first sent with it.
+	 *
+	 * @param WooPaymentsApiException $exception Provider request failure.
+	 * @return bool
+	 */
+	private function is_idempotency_key_conflict( WooPaymentsApiException $exception ): bool {
+		return 'idempotency_error' === $exception->get_error_type() || 'idempotency_error' === $exception->get_error_code();
+	}
+
+	/**
+	 * Warn that a charge key kept after an ambiguous failure could not replay the earlier request.
+	 *
+	 * The new attempt sent a different body (a new card, for example), so it failed instead of replaying; the earlier
+	 * request may still have charged. Written whatever the logging setting, since support needs it to reconcile the
+	 * order (area 2a #7, ruling (a)).
+	 *
+	 * @param WC_Order $order           Order being charged.
+	 * @param string   $idempotency_key Kept charge key that was refused.
+	 */
+	private function log_kept_charge_key_refused( WC_Order $order, string $idempotency_key ): void {
+		wc_get_container()->get( WooPaymentsLogger::class )->log_always(
+			sprintf(
+				'The charge idempotency key %1$s kept on order #%2$d after an ambiguous failure was refused because the new payment request differs from the earlier one. The earlier request may have charged; check the order\'s payments before retrying.',
+				$idempotency_key,
+				$order->get_id()
+			),
+			'warning',
+			array(
+				'order_id'        => $order->get_id(),
+				'idempotency_key' => $idempotency_key,
+			)
+		);
 	}
 
 	/**

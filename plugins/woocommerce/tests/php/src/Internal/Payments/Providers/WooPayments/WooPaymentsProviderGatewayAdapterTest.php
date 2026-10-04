@@ -689,6 +689,73 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An idempotency conflict on a charge with $key_source warns whatever the logging setting: $warns.
+	 *
+	 * After an ambiguous failure the order keeps the charge key, and a retry with a new card sends a different body under
+	 * it, which Stripe refuses with an idempotency_error. The refusal is a money-path anomaly (the first request may have
+	 * charged), so it is written as an always-on warning naming the order and the key; nothing else changes (area 2a #7,
+	 * ruling (a)). A conflict on a fresh key is not a replay and gets no warning.
+	 *
+	 * @testWith ["a kept key", true]
+	 *           ["a fresh key", false]
+	 *
+	 * @param string $key_source Whether the order kept a key from an earlier ambiguous attempt.
+	 * @param bool   $warns      Whether the warning is written.
+	 */
+	public function test_native_charge_warns_when_kept_key_replay_is_refused( string $key_source, bool $warns ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$order = $this->create_woopayments_order();
+		if ( 'a kept key' === $key_source ) {
+			$order->update_meta_data( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, 'key_kept' );
+			$order->save_meta_data();
+		}
+		$api_client       = new class() extends WooPaymentsApiClient {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
+			/**
+			 * Refuse the key as Stripe does for a different body.
+			 *
+			 * @param array<string,mixed> $request_data    Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 * @throws WooPaymentsApiException Always.
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				throw new WooPaymentsApiException( 'Error: Keys for idempotent requests can only be used with the same parameters they were first used with.', 'idempotency_error', 400, 'idempotency_error' );
+			}
+			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+		};
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_conflict' );
+		$sut    = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, null, $this->create_account_service( true ) );
+		$logger = RecordingWcLogger::install();
+
+		$outcome = $sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_new_card' ), 'key_fresh' );
+
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$warnings = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] && str_contains( $line[1], 'charge idempotency key' ) ) );
+		if ( ! $warns ) {
+			$this->assertSame( array(), $warnings );
+			return;
+		}
+		$this->assertCount( 1, $warnings );
+		$this->assertSame( 'woopayments', $logger->lines[ $warnings[0] ][2] );
+		$this->assertStringContainsString( 'key_kept', $logger->lines[ $warnings[0] ][1] );
+		$this->assertStringContainsString( '#' . $order->get_id(), $logger->lines[ $warnings[0] ][1] );
+		$this->assertSame( $order->get_id(), $logger->contexts[ $warnings[0] ]['order_id'] ?? null );
+		$this->assertSame( 'key_kept', $logger->contexts[ $warnings[0] ]['idempotency_key'] ?? null );
+	}
+
+	/**
 	 * @testdox Native charge should use the caller key for a different order.
 	 */
 	public function test_native_charge_uses_a_different_order_key(): void {
