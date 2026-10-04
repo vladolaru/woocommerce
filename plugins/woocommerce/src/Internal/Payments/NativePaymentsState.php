@@ -123,7 +123,10 @@ final class NativePaymentsState {
 		wp_set_option_autoload_values( array( self::OPTION_NAME => true ) );
 		wp_cache_delete( self::OPTION_NAME, 'options' );
 
-		if ( get_option( self::OPTION_NAME, null ) !== $state || ! array_key_exists( self::OPTION_NAME, wp_load_alloptions( true ) ) ) {
+		$stored_state = get_option( self::OPTION_NAME, null );
+		$autoloaded   = array_key_exists( self::OPTION_NAME, wp_load_alloptions( true ) );
+		if ( $stored_state !== $state || ! $autoloaded ) {
+			$this->log_write_failure( $state, $stored_state, $autoloaded );
 			return false;
 		}
 
@@ -140,6 +143,29 @@ final class NativePaymentsState {
 	 */
 	public function invalidate( ?int $blog_id = null ): void {
 		unset( $this->states[ $blog_id ?? get_current_blog_id() ] );
+	}
+
+	/**
+	 * Log a state write whose readback did not match, with the requested and stored values.
+	 *
+	 * @param string $requested_state State that was written.
+	 * @param mixed  $stored_state    Value read back from the option.
+	 * @param bool   $autoloaded      Whether the option is autoloaded.
+	 */
+	private function log_write_failure( string $requested_state, $stored_state, bool $autoloaded ): void {
+		if ( ! function_exists( 'wc_get_logger' ) ) {
+			return;
+		}
+
+		wc_get_logger()->error(
+			sprintf(
+				'Native payments state write failed: requested %1$s, stored %2$s, autoloaded %3$s.',
+				$requested_state,
+				(string) wp_json_encode( $stored_state ),
+				$autoloaded ? 'yes' : 'no'
+			),
+			array( 'source' => 'native-payments' )
+		);
 	}
 
 	/**

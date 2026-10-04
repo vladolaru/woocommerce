@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use ReflectionProperty;
 use WC_Unit_Test_Case;
 
@@ -90,6 +91,23 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_update_option_' . NativePaymentsState::OPTION_NAME, '__return_false' );
 		$this->assertFalse( $this->state->write_state( NativePaymentsState::ACTIVE ) );
 		$this->assertSame( NativePaymentsState::CONNECTED, $this->state->get_state() );
+	}
+
+	/**
+	 * @testdox A state write that does not read back logs one error with the requested and stored values.
+	 */
+	public function test_write_state_logs_a_failed_write(): void {
+		$logger = RecordingWcLogger::install();
+		$this->assertTrue( $this->state->write_state( NativePaymentsState::CONNECTED ) );
+
+		// The filter turns the written value into false, so false is what reads back.
+		add_filter( 'pre_update_option_' . NativePaymentsState::OPTION_NAME, '__return_false' );
+		$this->assertFalse( $this->state->write_state( NativePaymentsState::ACTIVE ) );
+
+		$this->assertSame(
+			array( array( 'error', 'Native payments state write failed: requested active, stored false, autoloaded yes.', 'native-payments' ) ),
+			$logger->lines
+		);
 	}
 
 	/**
