@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeB
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use WC_Order;
 use WP_Http;
@@ -61,9 +62,9 @@ class StripeBillingInvoiceService {
 	/**
 	 * Module logger.
 	 *
-	 * @var StripeBillingLogger
+	 * @var WooPaymentsLogger
 	 */
-	private StripeBillingLogger $logger;
+	private WooPaymentsLogger $logger;
 
 	/**
 	 * Initialize the class instance.
@@ -73,9 +74,9 @@ class StripeBillingInvoiceService {
 	 * @param StripeBillingApi               $api        Stripe Billing platform calls.
 	 * @param WooPaymentsApiClient           $api_client Platform API client.
 	 * @param WooPaymentsStripeBillingModule $module     Module root.
-	 * @param StripeBillingLogger            $logger     Module logger.
+	 * @param WooPaymentsLogger              $logger     Module logger.
 	 */
-	final public function init( StripeBillingApi $api, WooPaymentsApiClient $api_client, WooPaymentsStripeBillingModule $module, StripeBillingLogger $logger ): void {
+	final public function init( StripeBillingApi $api, WooPaymentsApiClient $api_client, WooPaymentsStripeBillingModule $module, WooPaymentsLogger $logger ): void {
 		$this->api        = $api;
 		$this->api_client = $api_client;
 		$this->module     = $module;

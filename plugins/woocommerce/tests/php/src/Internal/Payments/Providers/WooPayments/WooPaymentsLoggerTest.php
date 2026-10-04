@@ -60,6 +60,31 @@ class WooPaymentsLoggerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A line logged without a level is written at info level, as client 11.1.0 `Logger::log()` does.
+	 */
+	public function test_log_writes_info_by_default(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		$account_service = new WooPaymentsAccountService();
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ) );
+		$sut = new WooPaymentsLogger();
+		$sut->init( $account_service );
+
+		$written = array();
+		$filter  = function ( $message, $level, $context ) use ( &$written ) {
+			$written[] = array( $level, $message, $context['source'] ?? '' );
+			return $message;
+		};
+		add_filter( 'woocommerce_logger_log_message', $filter, 10, 3 );
+		try {
+			$sut->log( 'Stripe Billing product sync failed for product 7' );
+		} finally {
+			remove_filter( 'woocommerce_logger_log_message', $filter, 10 );
+		}
+
+		$this->assertContains( array( 'info', 'Stripe Billing product sync failed for product 7', 'woopayments' ), $written );
+	}
+
+	/**
 	 * @testdox With debug logging off, a caught $throwable_class is written: $expected.
 	 *
 	 * The client catches only exceptions at these sites, so a PHP Error would fatal there; native writes it always.

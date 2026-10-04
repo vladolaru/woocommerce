@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use InvalidArgumentException;
 use RuntimeException;
@@ -73,9 +74,9 @@ class StripeBillingEventHandler {
 	/**
 	 * Module logger.
 	 *
-	 * @var StripeBillingLogger
+	 * @var WooPaymentsLogger
 	 */
-	private StripeBillingLogger $logger;
+	private WooPaymentsLogger $logger;
 
 	/**
 	 * Initialize the class instance.
@@ -87,9 +88,9 @@ class StripeBillingEventHandler {
 	 * @param WooPaymentsApiClient             $api_client           Platform API client.
 	 * @param WooPaymentsEventIngestor         $event_ingestor       Event ingestor.
 	 * @param WooPaymentsAccountService        $account_service      Account service.
-	 * @param StripeBillingLogger              $logger               Module logger.
+	 * @param WooPaymentsLogger                $logger               Module logger.
 	 */
-	final public function init( StripeBillingInvoiceService $invoice_service, StripeBillingSubscriptionService $subscription_service, WooPaymentsApiClient $api_client, WooPaymentsEventIngestor $event_ingestor, WooPaymentsAccountService $account_service, StripeBillingLogger $logger ): void {
+	final public function init( StripeBillingInvoiceService $invoice_service, StripeBillingSubscriptionService $subscription_service, WooPaymentsApiClient $api_client, WooPaymentsEventIngestor $event_ingestor, WooPaymentsAccountService $account_service, WooPaymentsLogger $logger ): void {
 		$this->invoice_service      = $invoice_service;
 		$this->subscription_service = $subscription_service;
 		$this->api_client           = $api_client;

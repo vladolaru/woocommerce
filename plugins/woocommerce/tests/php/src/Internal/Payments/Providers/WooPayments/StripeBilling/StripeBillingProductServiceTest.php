@@ -5,9 +5,9 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\S
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingApi;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingProductService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionVariationProductDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\VariableSubscriptionProductDouble;
@@ -94,7 +94,7 @@ class StripeBillingProductServiceTest extends WC_Unit_Test_Case {
 		$api = new StripeBillingApi();
 		$api->init( $api_client );
 
-		$logger = new StripeBillingLogger();
+		$logger = new WooPaymentsLogger();
 		$logger->init( $account_service );
 
 		$this->sut = new StripeBillingProductService();

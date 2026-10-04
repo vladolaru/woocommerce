@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeB
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use WC_Product;
 
 defined( 'ABSPATH' ) || exit;
@@ -85,9 +86,9 @@ class StripeBillingProductService {
 	/**
 	 * Module logger.
 	 *
-	 * @var StripeBillingLogger
+	 * @var WooPaymentsLogger
 	 */
-	private StripeBillingLogger $logger;
+	private WooPaymentsLogger $logger;
 
 	/**
 	 * Initialize the class instance.
@@ -96,9 +97,9 @@ class StripeBillingProductService {
 	 *
 	 * @param StripeBillingApi          $api             Platform calls.
 	 * @param WooPaymentsAccountService $account_service Account service.
-	 * @param StripeBillingLogger       $logger          Module logger.
+	 * @param WooPaymentsLogger         $logger          Module logger.
 	 */
-	final public function init( StripeBillingApi $api, WooPaymentsAccountService $account_service, StripeBillingLogger $logger ): void {
+	final public function init( StripeBillingApi $api, WooPaymentsAccountService $account_service, WooPaymentsLogger $logger ): void {
 		$this->api             = $api;
 		$this->account_service = $account_service;
 		$this->logger          = $logger;

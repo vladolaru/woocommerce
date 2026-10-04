@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use WC_Coupon;
 use WC_Order;
@@ -99,9 +100,9 @@ class StripeBillingSubscriptionService {
 	/**
 	 * Module logger.
 	 *
-	 * @var StripeBillingLogger
+	 * @var WooPaymentsLogger
 	 */
-	private StripeBillingLogger $logger;
+	private WooPaymentsLogger $logger;
 
 	/**
 	 * Features temporarily allowed, by subscription ID.
@@ -140,9 +141,9 @@ class StripeBillingSubscriptionService {
 	 * @param WooPaymentsCustomerService  $customer_service Customer service.
 	 * @param StripeBillingProductService $product_service  Product service.
 	 * @param StripeBillingInvoiceService $invoice_service  Invoice service.
-	 * @param StripeBillingLogger         $logger           Module logger.
+	 * @param WooPaymentsLogger           $logger           Module logger.
 	 */
-	final public function init( StripeBillingApi $api, WooPaymentsCustomerService $customer_service, StripeBillingProductService $product_service, StripeBillingInvoiceService $invoice_service, StripeBillingLogger $logger ): void {
+	final public function init( StripeBillingApi $api, WooPaymentsCustomerService $customer_service, StripeBillingProductService $product_service, StripeBillingInvoiceService $invoice_service, WooPaymentsLogger $logger ): void {
 		$this->api              = $api;
 		$this->customer_service = $customer_service;
 		$this->product_service  = $product_service;
