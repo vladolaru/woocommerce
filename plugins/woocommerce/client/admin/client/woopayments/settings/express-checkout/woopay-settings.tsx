@@ -46,6 +46,7 @@ import {
 	useWooPayStoreLogo,
 } from '../data/hooks';
 import { WooPayPreview } from './woopay-preview';
+import { StatusChip } from '../../admin/overview/components/status-chip';
 
 const MAX_LOGO_FILE_SIZE = 510000;
 const WOOPAY_MERCHANT_DOCS_URL =
@@ -419,9 +420,10 @@ export const WooPaySettings = () => {
 							}
 							__nextHasNoMarginBottom
 						/>
-						<span className="woopayments-express-checkout-settings__badge">
-							{ __( 'Beta', 'woocommerce' ) }
-						</span>
+						<StatusChip
+							message={ __( 'Beta', 'woocommerce' ) }
+							type="info"
+						/>
 					</div>
 				) }
 				<TextareaControl

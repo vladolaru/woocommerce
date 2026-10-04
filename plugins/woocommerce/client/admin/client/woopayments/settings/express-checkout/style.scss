@@ -566,16 +566,4 @@
 		align-items: center;
 		gap: $gap-smallest;
 	}
-
-	&__badge {
-		display: inline-flex;
-		align-items: center;
-		min-height: $woopayments-badge-min-height;
-		padding: 0 $gap-smaller;
-		border-radius: $radius-small;
-		background: $gray-100;
-		color: $gray-900;
-		font-size: $font-size-small;
-		line-height: $woopayments-line-height-small;
-	}
 }
