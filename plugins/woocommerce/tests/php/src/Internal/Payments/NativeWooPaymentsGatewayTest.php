@@ -5926,6 +5926,57 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should load core's tokenization-form.js on the My Account add-payment-method form without saved methods or a save checkbox, as client 11.1.0 does.
+	 */
+	public function test_payment_fields_load_tokenization_form_on_add_payment_method_page(): void {
+		global $wp;
+
+		$my_account_page_id = self::factory()->post->create( array( 'post_type' => 'page' ) );
+		$original_page_id   = get_option( 'woocommerce_myaccount_page_id' );
+		update_option( 'woocommerce_myaccount_page_id', $my_account_page_id );
+		$this->go_to( get_permalink( $my_account_page_id ) );
+		$wp->query_vars['add-payment-method'] = '';
+		wp_dequeue_script( 'woocommerce-tokenization-form' );
+
+		$received_callback = 'not called';
+		$bridge            = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'render_payment_fields' ) )
+			->getMock();
+		$bridge->method( 'render_payment_fields' )->willReturnCallback(
+			static function ( array $supports, $payment_method_definition = null, ?callable $render_saved_payment_methods = null ) use ( &$received_callback ): void {
+				$received_callback = $render_saved_payment_methods;
+				echo '<div id="wcpay-bridge-marker"></div>';
+			}
+		);
+
+		$output = '';
+		try {
+			$this->with_gateway_settings(
+				array( 'saved_cards' => 'yes' ),
+				function () use ( $bridge, &$output ): void {
+					$gateway = new NativeWooPaymentsGateway();
+					$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), $bridge );
+
+					ob_start();
+					$gateway->payment_fields();
+					$output = (string) ob_get_clean();
+				}
+			);
+		} finally {
+			unset( $wp->query_vars['add-payment-method'] );
+			update_option( 'woocommerce_myaccount_page_id', $original_page_id );
+		}
+
+		// Client 11.1.0 includes/class-wc-payments-checkout.php:401,493-499: tokenization shows on this page, so core's
+		// script loads, but the saved methods list does not.
+		$this->assertTrue( wp_script_is( 'woocommerce-tokenization-form', 'enqueued' ) );
+		$this->assertNull( $received_callback );
+		$this->assertStringContainsString( 'wcpay-bridge-marker', $output );
+		$this->assertStringNotContainsString( 'woocommerce-SavedPaymentMethods', $output );
+	}
+
+	/**
 	 * @testdox Should render mandatory subscription change saving as a visually hidden checked checkbox.
 	 */
 	public function test_payment_fields_hide_checked_save_payment_method_for_subscription_change(): void {

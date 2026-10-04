@@ -722,6 +722,8 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		wp_deregister_style( 'wc-woopayments-checkout' );
 		wp_dequeue_script( 'wcpay-fraud-prevention-token' );
 		wp_deregister_script( 'wcpay-fraud-prevention-token' );
+		wp_dequeue_script( 'woocommerce-tokenization-form' );
+		wp_deregister_script( 'woocommerce-tokenization-form' );
 		wp_set_current_user( 0 );
 		$this->reset_classic_checkout_fallback_hooks_flag();
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
@@ -1572,6 +1574,51 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$this->assertLessThan( $instructions, $wrapper );
 		$this->assertLessThan( $saved, $instructions, 'The test-mode instructions print above the saved payment methods.' );
 		$this->assertLessThan( $fieldset, $saved, 'The saved payment methods print above the card element.' );
+	}
+
+	/**
+	 * @testdox Should make core's tokenization-form.js a dependency of the classic checkout script when the card gateway supports tokenization, as client 11.1.0 does.
+	 */
+	public function test_classic_script_depends_on_tokenization_form_when_tokenization_is_supported(): void {
+		wp_deregister_script( 'woocommerce-tokenization-form' );
+		$legacy_runtime = $this->create_legacy_runtime_for_bridge();
+		$legacy_runtime->method( 'get_gateway_prepared_customer_data' )->willReturn( array() );
+		$legacy_runtime->method( 'can_handle_checkout_bridge_callbacks' )->willReturn( true );
+
+		$bridge = new WooPaymentsCheckoutBridge();
+		$bridge->init( $legacy_runtime, $this->create_account_service_for_bridge( true ), $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+
+		ob_start();
+		$bridge->render_payment_fields( array( 'products', 'tokenization' ) );
+		ob_end_clean();
+
+		// Client 11.1.0 includes/class-wc-payments-checkout.php:130-131: WordPress then prints tokenization-form.js first,
+		// so its listener is bound before the checkout script mounts the card element.
+		$this->assertContains( 'woocommerce-tokenization-form', wp_scripts()->registered['wc-woopayments-checkout']->deps );
+		// A missing dependency would make WordPress drop the checkout script, so the handle is registered with core's params.
+		$this->assertTrue( wp_script_is( 'woocommerce-tokenization-form', 'registered' ) );
+		$this->assertStringContainsString( '/assets/js/frontend/tokenization-form', wp_scripts()->registered['woocommerce-tokenization-form']->src );
+		$this->assertStringContainsString( 'wc_tokenization_form_params', (string) wp_scripts()->get_data( 'woocommerce-tokenization-form', 'data' ) );
+	}
+
+	/**
+	 * @testdox Should not load core's tokenization-form.js with the classic checkout script when the card gateway does not support tokenization.
+	 */
+	public function test_classic_script_does_not_depend_on_tokenization_form_without_tokenization(): void {
+		wp_deregister_script( 'woocommerce-tokenization-form' );
+		$legacy_runtime = $this->create_legacy_runtime_for_bridge();
+		$legacy_runtime->method( 'get_gateway_prepared_customer_data' )->willReturn( array() );
+		$legacy_runtime->method( 'can_handle_checkout_bridge_callbacks' )->willReturn( true );
+
+		$bridge = new WooPaymentsCheckoutBridge();
+		$bridge->init( $legacy_runtime, $this->create_account_service_for_bridge( true ), $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+
+		ob_start();
+		$bridge->render_payment_fields( self::CARD_SUPPORTS );
+		ob_end_clean();
+
+		$this->assertNotContains( 'woocommerce-tokenization-form', wp_scripts()->registered['wc-woopayments-checkout']->deps );
+		$this->assertFalse( wp_script_is( 'woocommerce-tokenization-form', 'registered' ) );
 	}
 
 	/**

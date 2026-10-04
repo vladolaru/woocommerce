@@ -1060,6 +1060,26 @@ describe( 'WooPayments checkout', () => {
 		}
 	} );
 
+	test( 'starts a tokenization-form.js listener bound before this script runs, without waiting for a timer', () => {
+		jest.useFakeTimers();
+		const formInit = jest.fn();
+		// tokenization-form.js is a dependency of this script, so WordPress prints it first and its listener is already
+		// bound when the element mounts (client 11.1.0 includes/class-wc-payments-checkout.php:130-131).
+		document.body.addEventListener( 'wc-credit-card-form-init', formInit );
+
+		try {
+			require( '../woopayments-checkout' );
+
+			expect( mountPaymentElement ).toHaveBeenCalledTimes( 1 );
+			expect( formInit ).toHaveBeenCalledTimes( 1 );
+		} finally {
+			document.body.removeEventListener(
+				'wc-credit-card-form-init',
+				formInit
+			);
+		}
+	} );
+
 	test( 'initializes classic Stripe Elements with cached appearance and font rules', () => {
 		const appearance = {
 			theme: 'stripe',

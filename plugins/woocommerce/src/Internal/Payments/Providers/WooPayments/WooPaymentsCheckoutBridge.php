@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
@@ -57,6 +58,11 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 * Stripe.js script handle.
 	 */
 	private const STRIPE_SCRIPT_HANDLE = 'stripe';
+
+	/**
+	 * Core's tokenization-form.js handle, registered by WC_Payment_Gateway::tokenization_script().
+	 */
+	private const TOKENIZATION_FORM_SCRIPT_HANDLE = 'woocommerce-tokenization-form';
 
 	/**
 	 * Payment fields config keys left out of the Blocks payment method data.
@@ -432,7 +438,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			return;
 		}
 
-		$this->enqueue_classic_checkout_assets( $this->get_payment_fields_js_config( $supports ) );
+		$this->enqueue_classic_checkout_assets( $this->get_payment_fields_js_config( $supports ), $supports );
 	}
 
 	/**
@@ -703,7 +709,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			$json_config = '{}';
 		}
 
-		$this->enqueue_classic_checkout_assets( $config );
+		$this->enqueue_classic_checkout_assets( $config, $supports );
 
 		$payment_method_type = null === $payment_method_definition ? 'card' : $payment_method_definition->get_id();
 
@@ -965,10 +971,11 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	/**
 	 * Localize and enqueue the shared classic checkout assets.
 	 *
-	 * @param array<string,mixed> $config Checkout configuration.
+	 * @param array<string,mixed> $config   Checkout configuration.
+	 * @param string[]            $supports Card gateway support features.
 	 */
-	private function enqueue_classic_checkout_assets( array $config ): void {
-		$this->register_classic_assets();
+	private function enqueue_classic_checkout_assets( array $config, array $supports ): void {
+		$this->register_classic_assets( $supports );
 		// The checkout script reads the card gateway's config from the base object, so it is localized once.
 		if ( OrderPaymentStore::GATEWAY_ID === $config['gatewayId'] ) {
 			wp_localize_script( self::CLASSIC_SCRIPT_HANDLE, 'wcpay_core_checkout_config', $config );
@@ -1035,9 +1042,10 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	/**
 	 * Register the classic checkout assets.
 	 *
+	 * @param string[] $supports Card gateway support features.
 	 * @return void
 	 */
-	public function register_classic_assets(): void {
+	public function register_classic_assets( array $supports = array() ): void {
 		if ( ! wp_script_is( self::STRIPE_SCRIPT_HANDLE, 'registered' ) ) {
 			// phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion
 			wp_register_script( self::STRIPE_SCRIPT_HANDLE, 'https://js.stripe.com/v3/', array(), null, true );
@@ -1050,10 +1058,18 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		$this->register_fingerprint_script();
 
 		if ( ! wp_script_is( self::CLASSIC_SCRIPT_HANDLE, 'registered' ) ) {
+			$dependencies = array( 'jquery', 'wc-checkout', self::STRIPE_SCRIPT_HANDLE, self::FINGERPRINT_SCRIPT_HANDLE, WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE );
+			// tokenization-form.js must listen before this script mounts the card element and fires
+			// `wc-credit-card-form-init`, on any theme (client 11.1.0 includes/class-wc-payments-checkout.php:130-131).
+			if ( in_array( PaymentGatewayFeature::TOKENIZATION, $supports, true ) ) {
+				$this->register_tokenization_form_script();
+				$dependencies[] = self::TOKENIZATION_FORM_SCRIPT_HANDLE;
+			}
+
 			wp_register_script(
 				self::CLASSIC_SCRIPT_HANDLE,
 				WC()->plugin_url() . '/assets/js/frontend/woopayments-checkout' . $suffix . '.js',
-				array( 'jquery', 'wc-checkout', self::STRIPE_SCRIPT_HANDLE, self::FINGERPRINT_SCRIPT_HANDLE, WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE ),
+				$dependencies,
 				WC_VERSION,
 				true
 			);
@@ -1068,6 +1084,36 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			);
 			wp_style_add_data( self::CLASSIC_STYLE_HANDLE, 'rtl', 'replace' );
 		}
+	}
+
+	/**
+	 * Register core's tokenization-form.js as WC_Payment_Gateway::tokenization_script() does, when no gateway has yet.
+	 *
+	 * A gateway that renders saved payment methods enqueues it itself; this keeps the dependency resolvable on a page
+	 * where only the checkout script loads, so WordPress does not drop that script.
+	 *
+	 * @return void
+	 */
+	private function register_tokenization_form_script(): void {
+		if ( wp_script_is( self::TOKENIZATION_FORM_SCRIPT_HANDLE, 'registered' ) ) {
+			return;
+		}
+
+		wp_register_script(
+			self::TOKENIZATION_FORM_SCRIPT_HANDLE,
+			plugins_url( '/assets/js/frontend/tokenization-form' . ( Constants::is_true( 'SCRIPT_DEBUG' ) ? '' : '.min' ) . '.js', WC_PLUGIN_FILE ),
+			array( 'jquery' ),
+			WC()->version,
+			false
+		);
+		wp_localize_script(
+			self::TOKENIZATION_FORM_SCRIPT_HANDLE,
+			'wc_tokenization_form_params',
+			array(
+				'is_registration_required' => WC()->checkout()->is_registration_required(),
+				'is_logged_in'             => is_user_logged_in(),
+			)
+		);
 	}
 
 	/**

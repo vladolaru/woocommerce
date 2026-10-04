@@ -650,13 +650,16 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Output the payment fields, with the saved payment methods inside the WooPayments form so they print below the
-	 * test-mode instructions, as in client 11.1.0 (includes/class-wc-payments-checkout.php:462-502).
+	 * Output the payment fields, as client 11.1.0 does (includes/class-wc-payments-checkout.php:401,462-502).
+	 *
+	 * The saved payment methods print inside the WooPayments form, below the test-mode instructions, and core's
+	 * tokenization-form.js loads wherever tokenization shows, the My Account add-payment-method form included.
 	 *
 	 * @return void
 	 */
 	public function payment_fields() {
-		if ( ! ( $this->supports( PaymentGatewayFeature::TOKENIZATION ) && is_checkout() ) ) {
+		$is_add_payment_method_page = is_add_payment_method_page();
+		if ( ! ( $this->supports( PaymentGatewayFeature::TOKENIZATION ) && ( is_checkout() || $is_add_payment_method_page ) ) ) {
 			$this->form();
 			return;
 		}
@@ -665,9 +668,11 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$this->get_checkout_bridge()->render_payment_fields(
 			$this->get_card_gateway_supports(),
 			$this->payment_method_definition,
-			array( $this, 'saved_payment_methods' )
+			$is_add_payment_method_page ? null : array( $this, 'saved_payment_methods' )
 		);
-		$this->save_payment_method_checkbox();
+		if ( ! $is_add_payment_method_page ) {
+			$this->save_payment_method_checkbox();
+		}
 	}
 
 	/**
