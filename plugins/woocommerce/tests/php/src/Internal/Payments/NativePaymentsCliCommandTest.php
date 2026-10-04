@@ -10,7 +10,6 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsCliAdapter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStatusReport;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookReliabilityService;
 use WC_Unit_Test_Case;
 
 /**
@@ -37,6 +36,7 @@ class NativePaymentsCliCommandTest extends WC_Unit_Test_Case {
 		delete_option( self::EXPECTED_LAST_FETCH_OPTION );
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
 		$this->reset_legacy_proxy_mocks();
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
 
 		parent::tearDown();
 	}
@@ -45,8 +45,6 @@ class NativePaymentsCliCommandTest extends WC_Unit_Test_Case {
 	 * @testdox Status lines report owner, filter resolution, preflight failures, and account summary.
 	 */
 	public function test_status_lines_report_runtime_filter_preflight_and_account_summary(): void {
-		$this->assertTrue( class_exists( WooPaymentsStatusReport::class ), 'WooPaymentsStatusReport should exist before CLI status can format support data.' );
-		$this->assertTrue( class_exists( NativePaymentsCliCommand::class ), 'NativePaymentsCliCommand should exist.' );
 		$this->fake_plugin( false );
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		$this->seed_connected_store();
@@ -117,9 +115,6 @@ class NativePaymentsCliCommandTest extends WC_Unit_Test_Case {
 	 * Seed a connected WooPayments store.
 	 */
 	private function seed_connected_store(): void {
-		$this->assertTrue( defined( WooPaymentsWebhookReliabilityService::class . '::LAST_FETCH_OPTION_KEY' ), 'Webhook reliability should expose its last-fetch option key.' );
-		$this->assertSame( self::EXPECTED_LAST_FETCH_OPTION, constant( WooPaymentsWebhookReliabilityService::class . '::LAST_FETCH_OPTION_KEY' ) );
-
 		// A connected store: without a connection the account read returns no account, like the client.
 		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
 		$connected_api_client->method( 'is_available' )->willReturn( true );
@@ -148,7 +143,8 @@ class NativePaymentsCliCommandTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Control every WooPayments-plugin detection signal in a single mock registration.
+	 * Control every WooPayments-plugin detection signal in a single mock registration, so a test process that loaded
+	 * the plugin (WCPAY_PLUGIN_FILE defined) or activated it still gets the requested owner.
 	 *
 	 * @param bool $active Whether the WooPayments plugin should appear active.
 	 */
@@ -168,13 +164,14 @@ class NativePaymentsCliCommandTest extends WC_Unit_Test_Case {
 					}
 					return get_site_option( $name, $default_value );
 				},
-				'class_exists'    => function ( $class_name, $autoload = true ) use ( $active ) {
-					if ( 'WC_Payments' === ltrim( (string) $class_name, '\\' ) ) {
+				'defined'         => function ( $constant_name ) use ( $active ) {
+					if ( 'WCPAY_PLUGIN_FILE' === $constant_name ) {
 						return $active;
 					}
-					return class_exists( $class_name, $autoload );
+					return defined( $constant_name );
 				},
 			)
 		);
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
 	}
 }

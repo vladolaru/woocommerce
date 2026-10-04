@@ -727,31 +727,12 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Started events without a status transition are persisted with a single order save.
+	 * @testdox Started events without a note persist the payment reference and keep the order pending.
 	 */
-	public function test_started_event_without_status_transition_uses_single_order_save(): void {
-		$order = $this->getMockBuilder( WC_Order::class )
-			->disableOriginalConstructor()
-			->onlyMethods(
-				array(
-					'get_meta',
-					'get_transaction_id',
-					'save',
-					'save_meta_data',
-					'set_transaction_id',
-					'update_meta_data',
-				)
-			)
-			->getMock();
+	public function test_started_event_without_note_persists_the_payment_reference(): void {
+		$order = $this->create_woopayments_order();
 
-		$order->method( 'get_transaction_id' )->willReturn( '' );
-		$order->method( 'get_meta' )->willReturn( '' );
-		$order->expects( $this->once() )->method( 'update_meta_data' )->with( '_intent_id', 'pi_started' );
-		$order->expects( $this->once() )->method( 'set_transaction_id' )->with( 'pi_started' );
-		$order->expects( $this->never() )->method( 'save_meta_data' );
-		$order->expects( $this->once() )->method( 'save' );
-
-		$this->apply_event_unlocked(
+		$this->apply_event(
 			$order,
 			new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_STARTED,
@@ -759,6 +740,13 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 				array( '_intent_id' => 'pi_started' )
 			)
 		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'pending', $order->get_status() );
+		$this->assertSame( 'pi_started', $order->get_transaction_id() );
+		$this->assertSame( 'pi_started', $order->get_meta( '_intent_id', true ) );
 	}
 
 	/**

@@ -1019,13 +1019,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Providers can opt into a separate post-lifecycle effect contract without changing the existing effect interface.
-	 */
-	public function test_post_lifecycle_effect_contract_is_available(): void {
-		$this->assertTrue( interface_exists( ProviderPostLifecycleEffectApplier::class ) );
-	}
-
-	/**
 	 * @testdox Optional post-lifecycle provider effects run after payment completion hooks.
 	 */
 	public function test_process_checkout_outcome_applies_post_lifecycle_provider_effects_after_lifecycle(): void {

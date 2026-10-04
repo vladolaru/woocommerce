@@ -4,12 +4,32 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use Automattic\WooCommerce\Internal\Payments\CapabilityManifest;
+use ReflectionProperty;
 use WC_Unit_Test_Case;
 
 /**
  * Tests for the CapabilityManifest class.
  */
 class CapabilityManifestTest extends WC_Unit_Test_Case {
+
+	/**
+	 * Clear the once-per-request log memo, a private static no base class resets.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+		$this->reset_logged_unknown_capabilities();
+	}
+
+	/**
+	 * Clear the once-per-request log memo so later tests start from an empty one.
+	 */
+	public function tearDown(): void {
+		try {
+			$this->reset_logged_unknown_capabilities();
+		} finally {
+			parent::tearDown();
+		}
+	}
 
 	/**
 	 * @testdox Known capabilities include the WooPayments runtime surface categories.
@@ -88,24 +108,15 @@ class CapabilityManifestTest extends WC_Unit_Test_Case {
 			remove_filter( 'woocommerce_logging_class', $logger_filter );
 		}
 
-		$this->assertSame(
-			array(
-				array(
-					'Unknown native payments capability "vendor/logged-once" was registered.',
-					array(
-						'source'     => 'native-payments',
-						'capability' => 'vendor/logged-once',
-					),
-				),
-				array(
-					'Unknown native payments capability "vendor/also-logged" was registered.',
-					array(
-						'source'     => 'native-payments',
-						'capability' => 'vendor/also-logged',
-					),
-				),
-			),
-			$warnings
-		);
+		$this->assertSame( array( 'vendor/logged-once', 'vendor/also-logged' ), array_column( array_column( $warnings, 1 ), 'capability' ) );
+	}
+
+	/**
+	 * Reset the private static memo of logged unknown capabilities; the class has no reset method.
+	 */
+	private function reset_logged_unknown_capabilities(): void {
+		$property = new ReflectionProperty( CapabilityManifest::class, 'logged_unknown_capabilities' );
+		$property->setAccessible( true );
+		$property->setValue( null, array() );
 	}
 }

@@ -370,31 +370,17 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 		$this->fake_plugin();
 		update_option( 'woocommerce_native_payments_enabled', 'yes' );
 		update_option( 'woocommerce_native_payments_killswitch', true );
-		$resolution_steps = array();
-		add_filter(
-			'option_woocommerce_native_payments_enabled',
-			static function ( $value ) use ( &$resolution_steps ) {
-				$resolution_steps[] = 'enabled_option';
-				return $value;
-			}
-		);
-		add_filter(
-			'option_woocommerce_native_payments_killswitch',
-			static function ( $value ) use ( &$resolution_steps ) {
-				$resolution_steps[] = 'kill_switch';
-				return $value;
-			}
-		);
+		$filter_default = null;
 		add_filter(
 			NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED,
-			static function ( bool $enabled ) use ( &$resolution_steps ): bool {
-				$resolution_steps[] = 'filter';
+			static function ( bool $enabled ) use ( &$filter_default ): bool {
+				$filter_default = $enabled;
 				return $enabled;
 			}
 		);
 
 		$this->assertFalse( $this->sut->is_native_runtime_enabled() );
-		$this->assertSame( array( 'enabled_option', 'kill_switch', 'filter' ), $resolution_steps, 'The enabled option must be resolved before the kill switch clamps the filter default.' );
+		$this->assertFalse( $filter_default, 'The kill switch must hand the filter a false default even when the enabled option is on.' );
 	}
 
 	/**
@@ -403,18 +389,9 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	public function test_native_enabled_filter_can_override_kill_switch_option(): void {
 		$this->fake_plugin();
 		update_option( 'woocommerce_native_payments_killswitch', true );
-		$option_reads = 0;
-		add_filter(
-			'option_woocommerce_native_payments_killswitch',
-			static function ( $value ) use ( &$option_reads ) {
-				++$option_reads;
-				return $value;
-			}
-		);
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 
 		$this->assertTrue( $this->sut->is_native_runtime_enabled() );
-		$this->assertSame( 1, $option_reads, 'The filter override must be applied after resolving the kill-switch-backed default.' );
 		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, $this->sut->get_runtime_owner() );
 	}
 

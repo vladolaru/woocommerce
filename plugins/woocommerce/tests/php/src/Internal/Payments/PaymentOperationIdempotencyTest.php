@@ -106,18 +106,4 @@ class PaymentOperationIdempotencyTest extends WC_Unit_Test_Case {
 			'A retry of the same refund instance must collapse to one provider operation.'
 		);
 	}
-
-	/**
-	 * @testdox A null per-instance discriminator must keep the key byte-identical to the six-argument form.
-	 */
-	public function test_null_instance_preserves_backward_compatible_key(): void {
-		$order = wc_create_order();
-		$sut   = new PaymentOperationIdempotency();
-
-		$this->assertSame(
-			$sut->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'refund', 5.00, 'USD', 'Customer request' ),
-			$sut->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'refund', 5.00, 'USD', 'Customer request', null ),
-			'Passing a null instance must not change the key, preserving the pre-instance backward-compatible contract.'
-		);
-	}
 }

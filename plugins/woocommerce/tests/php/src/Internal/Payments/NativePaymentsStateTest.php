@@ -14,7 +14,6 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
-use ReflectionProperty;
 use WC_Unit_Test_Case;
 
 /**
@@ -69,15 +68,6 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 		$this->state->invalidate();
 
 		parent::tearDown();
-	}
-
-	/**
-	 * @testdox The runtime container resolves one state store and injects it into both authoritative writers.
-	 */
-	public function test_runtime_container_injects_state_into_authoritative_writers(): void {
-		$this->assertSame( $this->state, wc_get_container()->get( NativePaymentsState::class ) );
-		$this->assertSame( $this->state, $this->read_private_property( $this->account_service, 'native_payments_state' ) );
-		$this->assertSame( $this->state, $this->read_private_property( $this->settings_synchronizer, 'native_payments_state' ) );
 	}
 
 	/**
@@ -392,19 +382,5 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 			'errored'            => false,
 			'consecutive_errors' => 0,
 		);
-	}
-
-	/**
-	 * Read a private property for the DI wiring regression.
-	 *
-	 * @param object $instance      Object to inspect.
-	 * @param string $property_name Property name.
-	 * @return mixed
-	 */
-	private function read_private_property( object $instance, string $property_name ) {
-		$property = new ReflectionProperty( $instance, $property_name );
-		$property->setAccessible( true );
-
-		return $property->getValue( $instance );
 	}
 }

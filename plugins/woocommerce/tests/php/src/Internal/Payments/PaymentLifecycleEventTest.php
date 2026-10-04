@@ -53,10 +53,7 @@ class PaymentLifecycleEventTest extends WC_Unit_Test_Case {
 			'payment_complete'
 		);
 
-		$this->assertTrue( method_exists( $event, 'get_note_type' ), 'Lifecycle events should expose a stable note type for structural dedupe.' );
-		if ( method_exists( $event, 'get_note_type' ) ) {
-			$this->assertSame( 'payment_complete', $event->get_note_type() );
-		}
+		$this->assertSame( 'payment_complete', $event->get_note_type() );
 	}
 
 	/**
@@ -73,10 +70,7 @@ class PaymentLifecycleEventTest extends WC_Unit_Test_Case {
 			array( 'Plugin note.', '', 'Plugin note.', 123, null, array( 'invalid' ) )
 		);
 
-		$this->assertTrue( method_exists( $event, 'get_note_equivalents' ), 'Lifecycle events should expose normalized exact note equivalents.' );
-		if ( method_exists( $event, 'get_note_equivalents' ) ) {
-			$this->assertSame( array( 'Plugin note.' ), $event->get_note_equivalents() );
-		}
+		$this->assertSame( array( 'Plugin note.' ), $event->get_note_equivalents() );
 	}
 
 	/**
