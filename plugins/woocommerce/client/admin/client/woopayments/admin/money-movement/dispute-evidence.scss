@@ -1,6 +1,5 @@
 @import "../../_tokens.scss";
 
-// stylelint-disable color-no-hex, declaration-property-value-disallowed-list -- §4 exception: the dispute evidence form (client 11.1.0 new-evidence) keeps its notice palette and form sizes; the 2px #2271b1 notice focus outline is a pending accent improvement (details-accent-swaps.patch).
 .woocommerce-woopayments-dispute-evidence {
 	display: grid;
 	gap: $gap-large;
@@ -21,6 +20,7 @@
 
 		.components-notice__content {
 			margin-block: $gap-smallest;
+			// stylelint-disable-next-line declaration-property-value-disallowed-list -- client 11.1.0 evidence notice content end margin; no token at 25px.
 			margin-inline: 0 25px;
 		}
 	}
@@ -37,6 +37,7 @@
 
 	.woocommerce-stepper__steps {
 		margin-inline: auto;
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- client 11.1.0 evidence stepper width; no upstream token.
 		max-width: 600px;
 	}
 
@@ -47,6 +48,7 @@
 
 .woocommerce-woopayments-dispute-evidence__stepper-content.components-card__body {
 	margin-inline: auto;
+	// stylelint-disable-next-line declaration-property-value-disallowed-list -- client 11.1.0 evidence step content width; no upstream token.
 	max-width: 548px;
 	padding-bottom: $grid-unit-80;
 	width: 100%;
@@ -64,6 +66,7 @@
 }
 
 .woocommerce-woopayments-dispute-evidence__outcome-icon {
+	// stylelint-disable-next-line color-no-hex -- client 11.1.0 evidence notice info icon colour; no upstream token.
 	fill: #0a4b78;
 	flex-shrink: 0;
 	height: $woopayments-notice-icon-size;
@@ -81,6 +84,7 @@
 }
 
 .woocommerce-woopayments-dispute-evidence__cover-letter-warning.components-notice {
+	// stylelint-disable-next-line color-no-hex -- client 11.1.0 cover letter warning background; no upstream token.
 	background-color: #fcf9e8;
 	border-inline-start: 4px solid $woopayments-warning-yellow;
 	font-size: $woopayments-font-size-detail;
@@ -93,6 +97,7 @@
 	}
 
 	.woocommerce-woopayments-dispute-evidence__outcome-icon {
+		// stylelint-disable-next-line color-no-hex -- client 11.1.0 cover letter warning icon colour; no upstream token.
 		fill: #614200;
 	}
 }
@@ -113,11 +118,13 @@
 }
 
 .woocommerce-woopayments-dispute-evidence__notice:focus {
+	// stylelint-disable-next-line color-no-hex -- client 11.1.0 evidence notice focus outline colour; pending accent improvement (details-accent-swaps.patch).
 	outline: 2px solid #2271b1;
 	outline-offset: 2px;
 }
 
 .woocommerce-woopayments-dispute-evidence__readonly {
+	// stylelint-disable-next-line color-no-hex -- client 11.1.0 read-only evidence notice rule colour; no upstream token.
 	border-inline-start: 4px solid #72aee6;
 }
 
@@ -161,6 +168,7 @@
 	&-content {
 		display: flex;
 		flex-direction: column;
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- client 11.1.0 evidence confirmation content width; no upstream token.
 		max-width: 600px;
 		width: 100%;
 	}
@@ -170,6 +178,7 @@
 		height: auto;
 		margin-bottom: $gap-largest;
 		max-width: 100%;
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- client 11.1.0 evidence confirmation illustration width, sized by the asset.
 		width: 180px;
 	}
 
@@ -217,6 +226,7 @@
 		padding: $gap-large $gap;
 
 		h2 {
+			// stylelint-disable-next-line declaration-property-value-disallowed-list -- client 11.1.0 evidence confirmation mobile heading size; base-styles' type scale has no 24px.
 			font-size: 24px;
 		}
 
@@ -377,6 +387,7 @@
 			display: flex;
 			flex-direction: column;
 			gap: $gap-smaller;
+			// stylelint-disable-next-line declaration-property-value-disallowed-list -- client 11.1.0 customer detail column minimum width; no upstream token.
 			min-width: 70px;
 		}
 	}
@@ -424,4 +435,3 @@
 .woocommerce-woopayments-dispute-challenge__loading {
 	padding: $gap 0;
 }
-// stylelint-enable color-no-hex, declaration-property-value-disallowed-list
