@@ -37,6 +37,22 @@ jest.mock( '@woocommerce/tracks', () => ( {
 	recordEvent: jest.fn(),
 } ) );
 
+// The snackbar store wp-admin registers; a failed read raises its error notice.
+jest.mock( '@wordpress/data', () => {
+	const actual = jest.requireActual( '@wordpress/data' );
+
+	return {
+		...actual,
+		dispatch: ( storeName: string ) =>
+			storeName === 'core/notices'
+				? {
+						createErrorNotice: jest.fn(),
+						createSuccessNotice: jest.fn(),
+				  }
+				: actual.dispatch( storeName ),
+	};
+} );
+
 jest.mock( '../money-movement/data', () => ( {
 	getWooPaymentsAuthorization: jest.fn(),
 	getWooPaymentsDispute: jest.fn(),

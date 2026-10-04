@@ -3013,6 +3013,31 @@ describe( 'WooPayments money movement pages', () => {
 		).not.toBeInTheDocument();
 	} );
 
+	// Client 11.1.0 `data/payment-intents/resolvers.ts:18-31`: a failed read also raises its snackbar.
+	it( "raises the client's snackbar once when the payment read fails", async () => {
+		mockGetPaymentIntent.mockRejectedValue(
+			new Error( 'Internal Server Error' )
+		);
+
+		render(
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/transactions/details?id=pi_test',
+				] }
+			>
+				<WooPaymentsTransactionDetailsPage />
+			</MemoryRouter>
+		);
+
+		expect( await screen.findByRole( 'alert' ) ).toHaveTextContent(
+			'Payment details not loaded'
+		);
+		expect( mockCreateErrorNotice ).toHaveBeenCalledTimes( 1 );
+		expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+			'Error retrieving transaction.'
+		);
+	} );
+
 	it( 'renders card reader fee details from the reader charge summary route', async () => {
 		mockGetReaderChargeSummary.mockResolvedValue( {
 			data: [

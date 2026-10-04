@@ -751,6 +751,10 @@ export const WooPaymentsTransactionDetailsPage = () => {
 					setErrorMessage(
 						__( 'Payment details not loaded', 'woocommerce' )
 					);
+					// Client 11.1.0 `data/payment-intents/resolvers.ts:18-31` and `data/charges/resolvers.js:16-29`.
+					getNotices().createErrorNotice(
+						__( 'Error retrieving transaction.', 'woocommerce' )
+					);
 				}
 			} finally {
 				if ( shouldUpdate() && shouldSetLoading ) {
