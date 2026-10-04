@@ -276,7 +276,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Without the Stripe Billing module, an invoice event is answered with 400 and exactly one error line, from the route.
 	 *
 	 * Client 11.1.0: the refusing handler logs nothing; the webhook controller logs the exception once
-	 * (`class-wc-rest-payments-webhook-controller.php:81-83`).
+	 * (`class-wc-rest-payments-webhook-controller.php:81-83`). The line names the event, as Stripe Billing money invariant 3 asks.
 	 */
 	public function test_invoice_event_refused_without_the_stripe_billing_module_logs_one_line(): void {
 		$module = $this->getMockBuilder( WooPaymentsStripeBillingModule::class )
@@ -309,7 +309,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->assertSame( 400, $response->get_status() );
 		$this->assertSame( array( 'result' => 'bad_request' ), $response->get_data() );
-		$this->assertSame( array( array( 'error', 'Cannot find subscription for the incoming "invoice.paid" event.', 'native-payments-webhook' ) ), $logger->get_errors() );
+		$this->assertSame( array( array( 'error', 'Failed processing event evt_invoice_controller. Reason: Cannot find subscription for the incoming "invoice.paid" event.', 'native-payments-webhook' ) ), $logger->get_errors() );
 	}
 
 	/**

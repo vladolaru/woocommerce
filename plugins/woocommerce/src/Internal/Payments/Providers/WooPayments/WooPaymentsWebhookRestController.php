@@ -136,7 +136,9 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 			$this->event_ingestor->process( $payload );
 			return new WP_REST_Response( array( 'result' => 'success' ), 200 );
 		} catch ( InvalidArgumentException $exception ) {
-			$this->log_webhook_exception( $exception );
+			// The refusing code logs nothing, as on the client; this one line names the event so a refused event stays traceable.
+			$event_id = is_scalar( $payload['id'] ?? null ) ? (string) $payload['id'] : '';
+			$this->log_webhook_exception( $exception, $event_id );
 			return new WP_REST_Response( array( 'result' => 'bad_request' ), 400 );
 		} catch ( Throwable $exception ) {
 			$this->log_webhook_exception( $exception );
@@ -149,9 +151,12 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 	/**
 	 * Log a webhook processing exception.
 	 *
+	 * With an event ID the line reads like the pull path's ("Failed processing event {id}. Reason: {message}").
+	 *
 	 * @param Throwable $exception Webhook processing exception.
+	 * @param string    $event_id  Event ID, when known.
 	 */
-	private function log_webhook_exception( Throwable $exception ): void {
+	private function log_webhook_exception( Throwable $exception, string $event_id = '' ): void {
 		$logger = $this->legacy_runtime->get_logger();
 		if ( ! is_object( $logger ) || ! is_callable( array( $logger, 'error' ) ) ) {
 			return;
@@ -159,7 +164,9 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 
 		try {
 			$logger->error(
-				$exception->getMessage(),
+				'' === $event_id
+					? $exception->getMessage()
+					: sprintf( 'Failed processing event %1$s. Reason: %2$s', $event_id, $exception->getMessage() ),
 				array(
 					'source' => 'native-payments-webhook',
 				)
