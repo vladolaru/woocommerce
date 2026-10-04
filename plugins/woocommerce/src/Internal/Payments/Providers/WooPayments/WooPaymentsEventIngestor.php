@@ -71,8 +71,8 @@ class WooPaymentsEventIngestor {
 	/**
 	 * Stripe Billing invoice event types.
 	 *
-	 * The Stripe Billing module handles them when it is loaded. Otherwise one reaching native means the store should not have
-	 * switched, so the event is alarmed instead of falling through as an ordinary no-op.
+	 * The Stripe Billing module handles them when it is loaded. Otherwise they are refused, as client 11.1.0 refuses them
+	 * when WooCommerce Subscriptions is not active.
 	 *
 	 * @var string[]
 	 */
@@ -322,21 +322,17 @@ class WooPaymentsEventIngestor {
 			throw new InvalidArgumentException( 'WooPayments webhook event is missing a type.' );
 		}
 
-		$is_stripe_billing_invoice_event = $this->is_stripe_billing_invoice_event( $event_type );
-		if ( $is_stripe_billing_invoice_event && ! $this->get_stripe_billing_module()->is_loaded() ) {
-			$this->run_delivery_hook( 'woocommerce_payments_before_webhook_delivery', $event_type, $event );
-			$this->log_stripe_billing_invoice_event_without_module( $event_type, $event );
-			$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
-			return;
-		}
-
 		if ( $this->is_webhook_mode_mismatch( $event ) ) {
 			return;
 		}
 
 		$this->run_delivery_hook( 'woocommerce_payments_before_webhook_delivery', $event_type, $event );
 
-		if ( $is_stripe_billing_invoice_event ) {
+		if ( $this->is_stripe_billing_invoice_event( $event_type ) ) {
+			if ( ! $this->get_stripe_billing_module()->is_loaded() ) {
+				$this->refuse_stripe_billing_invoice_event_without_module( $event_type, $event );
+			}
+
 			$this->get_stripe_billing_module()->handle_invoice_event( $event );
 			$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
 			return;
@@ -1290,27 +1286,39 @@ class WooPaymentsEventIngestor {
 	}
 
 	/**
-	 * Log an alarm when a Stripe Billing invoice event reaches native WooPayments while the Stripe Billing module is not loaded.
+	 * Refuse a Stripe Billing invoice event that reaches native WooPayments while the Stripe Billing module is not loaded.
+	 *
+	 * Client 11.1.0 loads its event handler without WooCommerce Subscriptions too; its subscription lookup then finds nothing,
+	 * so it refuses the event with these reasons (`class-wc-payments-subscriptions-event-handler.php:79,138,233`), the
+	 * webhook answers 400 and nothing is recorded. The refusal is logged with the event ID, as the module logs its own.
 	 *
 	 * @param string              $event_type Event type.
 	 * @param array<string,mixed> $event      Event payload.
+	 * @throws InvalidArgumentException Always.
 	 */
-	private function log_stripe_billing_invoice_event_without_module( string $event_type, array $event ): void {
+	private function refuse_stripe_billing_invoice_event_without_module( string $event_type, array $event ): void {
+		$reasons = array(
+			'invoice.upcoming'       => __( 'Cannot find subscription to handle the "invoice.upcoming" event.', 'woocommerce' ),
+			'invoice.paid'           => __( 'Cannot find subscription for the incoming "invoice.paid" event.', 'woocommerce' ),
+			'invoice.payment_failed' => __( 'Cannot find subscription for the incoming "invoice.payment_failed" event.', 'woocommerce' ),
+		);
+		$reason  = $reasons[ $event_type ] ?? '';
+
 		$logger = $this->legacy_runtime->get_logger();
-		if ( ! is_object( $logger ) || ! is_callable( array( $logger, 'error' ) ) ) {
-			return;
+		if ( is_object( $logger ) && is_callable( array( $logger, 'error' ) ) ) {
+			$logger->error(
+				sprintf(
+					'WooPayments webhook event %1$s (%2$s) was refused: %3$s',
+					is_scalar( $event['id'] ?? null ) ? (string) $event['id'] : '',
+					$event_type,
+					$reason
+				),
+				array( 'source' => 'native-payments-webhook' )
+			);
 		}
 
-		$logger->error(
-			sprintf(
-				'Retired WooPayments Stripe Billing invoice event reached native webhook processing: %s',
-				$event_type
-			),
-			array(
-				'event_id' => is_scalar( $event['id'] ?? null ) ? (string) $event['id'] : '',
-				'source'   => 'native-payments-webhook',
-			)
-		);
+		// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+		throw new InvalidArgumentException( $reason );
 	}
 
 	/**

@@ -136,7 +136,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_woopayments_nox_profile' );
 		delete_option( 'woocommerce_woopayments_nox_onboarding_locked' );
 		delete_option( 'wcpay_account_deletion_pending_id' );
-		foreach ( array( 'evt_dedup', 'evt_retry', 'evt_dispute_lost_1', 'evt_dispute_lost_2', 'evt_row_38_update_first', 'evt_row_38_update_second', 'evt_row_38_update_replay', 'evt_row_38_cache_first', 'evt_row_38_cache_replay', 'evt_row_38_missing_id', 'evt_row_38_lost_first', 'evt_row_38_lost_second', 'evt_row_38_lost_replay', 'evt_row_39_missing_id', 'evt_row_39_null_id', 'evt_row_39_non_scalar_id', 'evt_claimed', 'evt_claim_release', 'evt_early_warning_created', 'evt_early_warning_updated', 'evt_early_warning_hooks', 'evt_early_warning_mode_mismatch', 'evt_early_warning_retry' ) as $event_id ) {
+		foreach ( array( 'evt_dedup', 'evt_retry', 'evt_dispute_lost_1', 'evt_dispute_lost_2', 'evt_row_38_update_first', 'evt_row_38_update_second', 'evt_row_38_update_replay', 'evt_row_38_cache_first', 'evt_row_38_cache_replay', 'evt_row_38_missing_id', 'evt_row_38_lost_first', 'evt_row_38_lost_second', 'evt_row_38_lost_replay', 'evt_row_39_missing_id', 'evt_row_39_null_id', 'evt_row_39_non_scalar_id', 'evt_claimed', 'evt_claim_release', 'evt_early_warning_created', 'evt_early_warning_updated', 'evt_early_warning_hooks', 'evt_early_warning_mode_mismatch', 'evt_early_warning_retry', 'evt_invoice_without_module', 'evt_invoice_without_module_live' ) as $event_id ) {
 			delete_transient( 'wcpay_processed_event_' . md5( $event_id ) );
 			wp_cache_delete( 'wcpay_claimed_event_' . md5( $event_id ), 'woopayments_events' );
 		}
@@ -2801,10 +2801,103 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Invoice events are alarmed while the Stripe Billing module is not loaded, instead of falling through silently.
+	 * @testdox Without the Stripe Billing module, $event_type is refused with the client's reason, after the before-delivery hook only, and is not marked processed.
+	 *
+	 * Client 11.1.0 without WooCommerce Subscriptions: the event handler's subscription lookup finds nothing and throws
+	 * `Invalid_Webhook_Data_Exception` (`class-wc-payments-subscriptions-event-handler.php:79,138,233`), so the
+	 * after-delivery hook never fires (`class-wc-payments-webhook-processing-service.php:175,241,254`) and the webhook
+	 * answers 400 (`class-wc-rest-payments-webhook-controller.php:81-83`).
+	 *
+	 * @dataProvider provider_invoice_events_refused_without_the_module
+	 *
+	 * @param string $event_type Invoice event type.
+	 * @param string $reason     The client's refusal reason.
 	 */
-	public function test_invoice_event_without_the_stripe_billing_module_logs_alarm(): void {
-		$logger = new class() {
+	public function test_invoice_event_without_the_stripe_billing_module_is_refused_like_the_client( string $event_type, string $reason ): void {
+		$logger = $this->create_error_logger();
+		$sut    = $this->create_ingestor_without_the_stripe_billing_module( $logger );
+		add_filter( WooPaymentsEventIngestor::FILTER_LIVE_MODE, '__return_false' );
+		$hook_calls = array();
+		foreach ( array( 'before', 'after' ) as $moment ) {
+			add_action(
+				"woocommerce_payments_{$moment}_webhook_delivery",
+				static function ( string $hook_event_type ) use ( &$hook_calls, $moment ): void {
+					$hook_calls[] = "$moment $hook_event_type";
+				}
+			);
+		}
+		$event = array(
+			'id'       => 'evt_invoice_without_module',
+			'type'     => $event_type,
+			'livemode' => false,
+			'data'     => array( 'object' => array( 'id' => 'in_123' ) ),
+		);
+
+		$refusals = array();
+		for ( $delivery = 0; $delivery < 2; $delivery++ ) {
+			try {
+				$sut->process( $event );
+			} catch ( \InvalidArgumentException $exception ) {
+				$refusals[] = $exception->getMessage();
+			}
+		}
+
+		$this->assertSame( array( $reason, $reason ), $refusals, 'Each delivery is refused: a refused event is not marked processed.' );
+		$this->assertSame( array( "before $event_type", "before $event_type" ), $hook_calls );
+		$this->assertCount( 2, $logger->entries );
+		$this->assertSame( "WooPayments webhook event evt_invoice_without_module ($event_type) was refused: $reason", $logger->entries[0][0] );
+		$this->assertSame( 'native-payments-webhook', $logger->entries[0][1]['source'] );
+	}
+
+	/**
+	 * Invoice event types and the client's refusal reasons when WooCommerce Subscriptions is not active.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function provider_invoice_events_refused_without_the_module(): array {
+		return array(
+			'invoice.paid'           => array( 'invoice.paid', 'Cannot find subscription for the incoming "invoice.paid" event.' ),
+			'invoice.payment_failed' => array( 'invoice.payment_failed', 'Cannot find subscription for the incoming "invoice.payment_failed" event.' ),
+			'invoice.upcoming'       => array( 'invoice.upcoming', 'Cannot find subscription to handle the "invoice.upcoming" event.' ),
+		);
+	}
+
+	/**
+	 * @testdox Without the Stripe Billing module, an invoice event in the other mode is dropped by the mode check first, as on the client.
+	 */
+	public function test_invoice_event_without_the_stripe_billing_module_is_dropped_on_mode_mismatch(): void {
+		$logger = $this->create_error_logger();
+		$sut    = $this->create_ingestor_without_the_stripe_billing_module( $logger );
+		add_filter( WooPaymentsEventIngestor::FILTER_LIVE_MODE, '__return_false' );
+		$hook_calls = 0;
+		add_action(
+			'woocommerce_payments_before_webhook_delivery',
+			static function () use ( &$hook_calls ): void {
+				++$hook_calls;
+			}
+		);
+
+		$sut->process(
+			array(
+				'id'       => 'evt_invoice_without_module_live',
+				'type'     => 'invoice.paid',
+				'livemode' => true,
+				'data'     => array( 'object' => array( 'id' => 'in_123' ) ),
+			)
+		);
+
+		// Client 11.1.0 `class-wc-payments-webhook-processing-service.php:162-164`: the mode check runs before any hook or handler.
+		$this->assertSame( 0, $hook_calls );
+		$this->assertSame( array(), $logger->entries );
+	}
+
+	/**
+	 * Create a logger that records error entries.
+	 *
+	 * @return object{entries:array<int,array{0:string,1:array<string,mixed>}>}
+	 */
+	private function create_error_logger(): object {
+		return new class() {
 			/**
 			 * Logged entries.
 			 *
@@ -2822,13 +2915,27 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 				$this->entries[] = array( $message, $context );
 			}
 		};
+	}
 
-		add_filter( WooPaymentsEventIngestor::FILTER_LIVE_MODE, '__return_false' );
+	/**
+	 * Create an ingestor whose logger is the given one, with the Stripe Billing module not loaded.
+	 *
+	 * @param object $logger Logger.
+	 * @return WooPaymentsEventIngestor
+	 */
+	private function create_ingestor_without_the_stripe_billing_module( object $logger ): WooPaymentsEventIngestor {
+		$module = $this->getMockBuilder( WooPaymentsStripeBillingModule::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_loaded', 'handle_invoice_event' ) )
+			->getMock();
+		$module->method( 'is_loaded' )->willReturn( false );
+		$module->expects( $this->never() )->method( 'handle_invoice_event' );
+		wc_get_container()->replace( WooPaymentsStripeBillingModule::class, $module );
 
 		$runtime = new WooPaymentsLegacyRuntime();
 		$runtime->init( new LegacyRuntimeProxy( true, null, null, null, $logger ) );
 
-		$sut = $this->create_ingestor(
+		return $this->create_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
 			wc_get_container()->get( LegacyProxy::class ),
 			$runtime,
@@ -2843,49 +2950,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 					return array();
 				}
 			}
-		);
-
-		$hook_calls = array();
-		add_action(
-			'woocommerce_payments_before_webhook_delivery',
-			function ( string $event_type, array $event_body ) use ( &$hook_calls ): void {
-				$hook_calls[] = array( 'before', $event_type, $event_body['id'] );
-			},
-			10,
-			2
-		);
-		add_action(
-			'woocommerce_payments_after_webhook_delivery',
-			function ( string $event_type, array $event_body ) use ( &$hook_calls ): void {
-				$hook_calls[] = array( 'after', $event_type, $event_body['id'] );
-			},
-			10,
-			2
-		);
-
-		$sut->process(
-			array(
-				'id'       => 'evt_invoice_123',
-				'type'     => 'invoice.paid',
-				'livemode' => true,
-				'data'     => array(
-					'object' => array(
-						'id' => 'in_123',
-					),
-				),
-			)
-		);
-
-		$this->assertCount( 1, $logger->entries );
-		$this->assertStringContainsString( 'Retired WooPayments Stripe Billing invoice event reached native webhook processing: invoice.paid', $logger->entries[0][0] );
-		$this->assertSame( 'evt_invoice_123', $logger->entries[0][1]['event_id'] );
-		$this->assertSame( 'native-payments-webhook', $logger->entries[0][1]['source'] );
-		$this->assertSame(
-			array(
-				array( 'before', 'invoice.paid', 'evt_invoice_123' ),
-				array( 'after', 'invoice.paid', 'evt_invoice_123' ),
-			),
-			$hook_calls
 		);
 	}
 
