@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -84,6 +85,7 @@ class WooPaymentsForeignHookValuesTest extends WC_Unit_Test_Case {
 			'woocommerce_order_actions'               => array(),
 			'wp_privacy_personal_data_erasers'        => array(),
 			'user_has_cap'                            => array( array( 'toggle_shop_subscription_auto_renewal' ), array( 'toggle_shop_subscription_auto_renewal', 1, 5 ) ),
+			'woocommerce_email_classes'               => array(),
 		);
 
 		$cases = array();
@@ -136,6 +138,10 @@ class WooPaymentsForeignHookValuesTest extends WC_Unit_Test_Case {
 				break;
 			case 'user_has_cap':
 				WooPaymentsSubscriptionAdminPaymentMethodHandler::instance()->register_hooks();
+				break;
+			case 'woocommerce_email_classes':
+				// WooPaymentsSubscriptionRenewalHooks attaches it at this priority when Subscriptions is active.
+				add_filter( 'woocommerce_email_classes', array( NativeWooPaymentsGateway::class, 'add_subscription_emails' ), 20 );
 				break;
 		}
 

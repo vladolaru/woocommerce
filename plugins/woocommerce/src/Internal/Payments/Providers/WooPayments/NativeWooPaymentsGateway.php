@@ -2818,10 +2818,14 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 *
 	 * @internal
 	 *
-	 * @param array<string,mixed> $email_classes WooCommerce email classes.
-	 * @return array<string,mixed>
+	 * @param mixed $email_classes WooCommerce email classes; another callback may have left a non-array.
+	 * @return mixed The email classes with the WooPayments ones added, or the input unchanged when it is not an array.
 	 */
-	public static function add_subscription_emails( array $email_classes ): array {
+	public static function add_subscription_emails( $email_classes ) {
+		if ( ! is_array( $email_classes ) ) {
+			return $email_classes;
+		}
+
 		if ( ! class_exists( 'WC_Email_Failed_Order' ) ) {
 			require_once WC_ABSPATH . 'includes/emails/class-wc-email-failed-order.php';
 		}
