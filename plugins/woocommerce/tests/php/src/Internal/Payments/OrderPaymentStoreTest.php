@@ -229,6 +229,156 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A claim should refuse a lock another request stored after this request cached the lock as missing.
+	 */
+	public function test_claim_refuses_lock_written_by_an_overlapping_request(): void {
+		$this->skip_when_transients_live_in_object_cache();
+		$order    = wc_create_order();
+		$lock_key = $this->persistence_profile->get_order_lock_key( $order );
+
+		// This request reads the lock as missing, which WordPress records in its notoptions cache.
+		$this->assertFalse( get_transient( $lock_key ) );
+		// A second request then stores its lock directly in the database.
+		$this->insert_lock_rows( $lock_key, 'other_request_key', time() + 300 );
+
+		$this->assertFalse( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'this_request_key' ), 'Only one of two overlapping requests may hold the order payment lock.' );
+		$this->assertSame( 'other_request_key', $this->read_lock_row( '_transient_' . $lock_key ), 'A refused claim must leave the holder unchanged.' );
+		$this->assertNotNull( $this->read_lock_row( '_transient_timeout_' . $lock_key ), 'A refused claim must keep the holder expiry.' );
+	}
+
+	/**
+	 * @testdox A claim should take over an expired lock and keep the new lock for the full TTL.
+	 */
+	public function test_claim_takes_over_an_expired_lock(): void {
+		$this->skip_when_transients_live_in_object_cache();
+		$order    = wc_create_order();
+		$lock_key = $this->persistence_profile->get_order_lock_key( $order );
+		$this->insert_lock_rows( $lock_key, 'stale_key', time() - 10 );
+
+		$this->assertTrue( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'fresh_key' ), 'An expired lock must not block a new claim.' );
+		$this->assertSame( 'fresh_key', $this->read_lock_row( '_transient_' . $lock_key ) );
+		$this->assertGreaterThanOrEqual( time() + 290, (int) $this->read_lock_row( '_transient_timeout_' . $lock_key ), 'The new lock must expire a full TTL from now.' );
+		$this->assertTrue( $this->sut->is_order_payment_locked( $order, $this->persistence_profile, 'fresh_key' ) );
+		$this->assertFalse( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'later_key' ), 'The taken-over lock must block the next claim.' );
+	}
+
+	/**
+	 * @testdox Only one of two overlapping takeovers of an expired lock should win.
+	 */
+	public function test_only_one_overlapping_takeover_of_an_expired_lock_wins(): void {
+		$this->skip_when_transients_live_in_object_cache();
+		$order    = wc_create_order();
+		$lock_key = $this->persistence_profile->get_order_lock_key( $order );
+		$this->insert_lock_rows( $lock_key, 'stale_key', time() - 10 );
+
+		// Let a rival request take the expired lock over right before this request writes its takeover.
+		$rival_took_over = false;
+		$rival           = function ( $query ) use ( &$rival, &$rival_took_over, $lock_key ) {
+			if ( ! $rival_took_over && 0 === strpos( ltrim( $query ), 'UPDATE' ) && false !== strpos( $query, '_transient_timeout_' . $lock_key ) ) {
+				$rival_took_over = true;
+				remove_filter( 'query', $rival );
+				$this->update_lock_row( '_transient_' . $lock_key, 'rival_key' );
+				$this->update_lock_row( '_transient_timeout_' . $lock_key, (string) ( time() + 300 ) );
+			}
+			return $query;
+		};
+		add_filter( 'query', $rival );
+
+		$claimed = $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'this_request_key' );
+		remove_filter( 'query', $rival );
+
+		$this->assertTrue( $rival_took_over, 'The rival takeover must have run.' );
+		$this->assertFalse( $claimed, 'A takeover must fail when another request took the expired lock first.' );
+		$this->assertSame( 'rival_key', $this->read_lock_row( '_transient_' . $lock_key ) );
+	}
+
+	/**
+	 * @testdox Releasing the lock should delete it only while the caller still holds it.
+	 */
+	public function test_release_deletes_the_lock_only_for_its_holder(): void {
+		$order    = wc_create_order();
+		$lock_key = $this->persistence_profile->get_order_lock_key( $order );
+
+		$this->assertTrue( $this->sut->claim_order_payment_lock_for_operation( $order, $this->persistence_profile, 'first_key', 'capture' ) );
+		// The first operation ran past the TTL and another operation took the lock over.
+		$this->sut->unlock_order_payment( $order, $this->persistence_profile );
+		$this->assertTrue( $this->sut->claim_order_payment_lock_for_operation( $order, $this->persistence_profile, 'second_key', 'refund' ) );
+
+		$this->sut->release_order_payment_lock( $order, $this->persistence_profile, 'first_key' );
+
+		$this->assertSame( 'second_key', get_transient( $lock_key ), 'A former holder must not release the current holder lock.' );
+		$this->assertSame( 'refund', get_transient( $lock_key . '_holder' )['operation'] ?? null, 'A former holder must not delete the current holder record.' );
+
+		$this->sut->release_order_payment_lock( $order, $this->persistence_profile, 'second_key' );
+
+		$this->assertFalse( get_transient( $lock_key ), 'The holder must be able to release its lock.' );
+		$this->assertFalse( get_transient( $lock_key . '_holder' ), 'Releasing the lock must delete its holder record.' );
+		$this->assertTrue( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile ), 'A released lock must be claimable again.' );
+		$this->sut->release_order_payment_lock( $order, $this->persistence_profile );
+		$this->assertFalse( get_transient( $lock_key ), 'A sentinel claim must be released by a null reference.' );
+	}
+
+	/**
+	 * Skip a test that drives the database lock path when transients live in a persistent object cache.
+	 */
+	private function skip_when_transients_live_in_object_cache(): void {
+		if ( wp_using_ext_object_cache() ) {
+			$this->markTestSkipped( 'The database lock path only runs without a persistent object cache.' );
+		}
+	}
+
+	/**
+	 * Store lock rows directly in the database, as a concurrent request would.
+	 *
+	 * @param string $lock_key   Lock transient key.
+	 * @param string $value      Lock value.
+	 * @param int    $expiration Lock expiry timestamp.
+	 */
+	private function insert_lock_rows( string $lock_key, string $value, int $expiration ): void {
+		global $wpdb;
+
+		$rows = array(
+			'_transient_timeout_' . $lock_key => (string) $expiration,
+			'_transient_' . $lock_key         => $value,
+		);
+
+		foreach ( $rows as $name => $row_value ) {
+			$wpdb->insert(
+				$wpdb->options,
+				array(
+					'option_name'  => $name,
+					'option_value' => $row_value,
+					'autoload'     => 'off',
+				)
+			);
+		}
+	}
+
+	/**
+	 * Overwrite a lock row directly in the database, as a concurrent request would.
+	 *
+	 * @param string $name  Option name.
+	 * @param string $value Option value.
+	 */
+	private function update_lock_row( string $name, string $value ): void {
+		global $wpdb;
+
+		$wpdb->update( $wpdb->options, array( 'option_value' => $value ), array( 'option_name' => $name ) );
+	}
+
+	/**
+	 * Read a lock row straight from the database.
+	 *
+	 * @param string $name Option name.
+	 * @return string|null Stored value, or null when the row does not exist.
+	 */
+	private function read_lock_row( string $name ): ?string {
+		global $wpdb;
+
+		return $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $name ) );
+	}
+
+	/**
 	 * Create a non-WooPayments persistence profile.
 	 *
 	 * @return ProviderPersistenceProfile

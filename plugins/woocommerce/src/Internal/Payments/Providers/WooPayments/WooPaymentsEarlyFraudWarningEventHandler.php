@@ -138,7 +138,7 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 				throw new RuntimeException( esc_html( sprintf( 'Could not persist early fraud warning note for ID: %s', $warning['id'] ) ) );
 			}
 		} finally {
-			$this->get_order_payment_store()->unlock_order_payment( $order, $this->get_persistence_profile() );
+			$this->get_order_payment_store()->release_order_payment_lock( $order, $this->get_persistence_profile(), $reference );
 		}
 	}
 

@@ -163,7 +163,7 @@ class PaymentProcessingService {
 
 			return $outcome;
 		} finally {
-			$this->order_payment_store->unlock_order_payment( $order, $profile );
+			$this->order_payment_store->release_order_payment_lock( $order, $profile, $idempotency_key );
 		}
 	}
 
@@ -312,7 +312,7 @@ class PaymentProcessingService {
 				$this->log_post_provider_apply_failure( $order, $provider_outcome, 'refund', $apply_exception, $reconciliation_persisted );
 			}
 		} finally {
-			$this->order_payment_store->unlock_order_payment( $order, $profile );
+			$this->order_payment_store->release_order_payment_lock( $order, $profile, $refund_scope_key );
 		}
 
 		if ( $outcome->is_successful() ) {
@@ -767,7 +767,7 @@ class PaymentProcessingService {
 
 			return $outcome;
 		} finally {
-			$this->order_payment_store->unlock_order_payment( $order, $profile );
+			$this->order_payment_store->release_order_payment_lock( $order, $profile, $idempotency_key );
 		}
 	}
 

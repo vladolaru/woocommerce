@@ -136,7 +136,7 @@ class WooPaymentsRefundEventHandler {
 			return;
 		}
 
-		$this->claim_refund_lock( $order, $refund_id );
+		$lock_reference = $this->claim_refund_lock( $order, $refund_id );
 		try {
 			$wc_refund = $existing_refund instanceof WC_Order_Refund
 				? $existing_refund
@@ -149,7 +149,7 @@ class WooPaymentsRefundEventHandler {
 
 			$this->add_note_and_metadata_for_created_refund( $order, $wc_refund, $refund_id, $balance_txn_id, $is_pending_refund );
 		} finally {
-			$this->order_payment_store->unlock_order_payment( $order, $this->persistence_profile );
+			$this->order_payment_store->release_order_payment_lock( $order, $this->persistence_profile, $lock_reference );
 		}
 	}
 
@@ -171,29 +171,29 @@ class WooPaymentsRefundEventHandler {
 
 		switch ( $status ) {
 			case 'failed':
-				$this->claim_refund_lock( $order, $refund_id );
+				$lock_reference = $this->claim_refund_lock( $order, $refund_id );
 				try {
 					$this->handle_failed_refund( $order, $refund_id, $amount, $currency, $wc_refund, false, $this->get_optional_string( $refund, 'failure_reason' ) );
 				} finally {
-					$this->order_payment_store->unlock_order_payment( $order, $this->persistence_profile );
+					$this->order_payment_store->release_order_payment_lock( $order, $this->persistence_profile, $lock_reference );
 				}
 				return;
 			case 'canceled':
 			case 'cancelled':
-				$this->claim_refund_lock( $order, $refund_id );
+				$lock_reference = $this->claim_refund_lock( $order, $refund_id );
 				try {
 					$this->handle_failed_refund( $order, $refund_id, $amount, $currency, $wc_refund, true );
 				} finally {
-					$this->order_payment_store->unlock_order_payment( $order, $this->persistence_profile );
+					$this->order_payment_store->release_order_payment_lock( $order, $this->persistence_profile, $lock_reference );
 				}
 				return;
 			case 'succeeded':
 				if ( $wc_refund instanceof WC_Order_Refund ) {
-					$this->claim_refund_lock( $order, $refund_id );
+					$lock_reference = $this->claim_refund_lock( $order, $refund_id );
 					try {
 						$this->add_note_and_metadata_for_created_refund( $order, $wc_refund, $refund_id, $balance_txn_id, false );
 					} finally {
-						$this->order_payment_store->unlock_order_payment( $order, $this->persistence_profile );
+						$this->order_payment_store->release_order_payment_lock( $order, $this->persistence_profile, $lock_reference );
 					}
 				}
 				return;
@@ -523,14 +523,17 @@ class WooPaymentsRefundEventHandler {
 	 *
 	 * @param WC_Order $order     Order object.
 	 * @param string   $refund_id Provider refund ID.
+	 * @return string Lock reference to release the lock with.
 	 * @throws RuntimeException When the order payment lock cannot be claimed.
 	 */
-	private function claim_refund_lock( WC_Order $order, string $refund_id ): void {
+	private function claim_refund_lock( WC_Order $order, string $refund_id ): string {
 		$reference = 'refund_webhook_' . $refund_id;
 		if ( ! $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $this->persistence_profile, $reference, 'refund webhook' ) ) {
 			$this->order_payment_store->log_order_payment_lock_refusal( $order, $this->persistence_profile, 'refund webhook' );
 			throw new RuntimeException( esc_html( sprintf( 'Could not claim WooPayments refund webhook lock for order %1$d and refund %2$s.', $order->get_id(), $refund_id ) ) );
 		}
+
+		return $reference;
 	}
 
 	/**

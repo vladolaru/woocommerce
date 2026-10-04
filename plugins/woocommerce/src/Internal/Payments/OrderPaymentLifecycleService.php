@@ -72,7 +72,7 @@ class OrderPaymentLifecycleService {
 			$this->apply_unlocked( $order, $event, $persistence_profile );
 		} finally {
 			if ( $locked_by_service ) {
-				$this->order_payment_store->unlock_order_payment( $order, $persistence_profile );
+				$this->order_payment_store->release_order_payment_lock( $order, $persistence_profile, $payment_reference );
 			}
 		}
 	}
