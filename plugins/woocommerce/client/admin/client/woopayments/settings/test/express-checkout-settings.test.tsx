@@ -16,6 +16,14 @@ jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 
 const mockCreateErrorNotice = jest.fn();
 
+// The real chip pulls in @woocommerce/components, whose import side effects this suite's
+// mocks do not support; the Beta label only needs its text here.
+jest.mock( '../../admin/overview/components/status-chip', () => ( {
+	StatusChip: ( { message }: { message: string } ) => (
+		<span>{ message }</span>
+	),
+} ) );
+
 jest.mock( '@wordpress/data', () => ( {
 	...jest.requireActual( '@wordpress/data' ),
 	dispatch: jest.fn( () => ( {
