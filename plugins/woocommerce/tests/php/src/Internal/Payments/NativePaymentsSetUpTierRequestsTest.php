@@ -430,14 +430,15 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An active store's on-hold email sent from a $request request carries the Multibanco instructions.
-	 * @testWith ["rest"]
-	 *           ["cron"]
-	 *           ["admin"]
+	 * @testdox $label: the on-hold email carries the Multibanco instructions.
+	 * @dataProvider on_hold_email_requests
 	 *
-	 * @param string $request Request class: 'rest' (Store API checkout), 'cron' (deferred email) or 'admin' (resend).
+	 * @param string $label   Case label.
+	 * @param string $state   Stored native tier.
+	 * @param string $request Request class the email is sent from.
 	 */
-	public function test_on_hold_email_carries_multibanco_instructions_on_every_active_request( string $request ): void {
+	public function test_on_hold_email_carries_multibanco_instructions( string $label, string $state, string $request ): void {
+		unset( $label );
 		$order = new WC_Order();
 		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID_PREFIX . 'multibanco' );
 		$order->set_status( 'on-hold' );
@@ -446,19 +447,31 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_wcpay_multibanco_url', 'https://pay.stripe.com/multibanco/voucher' );
 		$order->update_meta_data( '_wcpay_multibanco_expiry', (string) ( time() + DAY_IN_SECONDS ) );
 		$order->save();
-		$this->arrange_native_owner( NativePaymentsState::ACTIVE );
-		if ( 'cron' === $request ) {
-			add_filter( 'wp_doing_cron', '__return_true' );
-		} elseif ( 'admin' === $request ) {
-			set_current_screen( 'woocommerce_page_wc-orders' );
-		}
+		$this->arrange_native_owner( $state );
+		$this->arrange_request( $request );
 
 		$this->run_bootstrap( 'rest' === $request ? '__return_true' : '__return_false' );
 		$email         = WC()->mailer()->get_emails()['WC_Email_Customer_On_Hold_Order'];
 		$email->object = $order;
 
-		// Client 11.1.0 attaches the email callback on every request (includes/class-wc-payments-order-success-page.php:40).
+		// Client 11.1.0 attaches the email callback on every request, whether or not the gateway is enabled
+		// (includes/class-wc-payments.php:588, includes/class-wc-payments-order-success-page.php:40).
 		$this->assertStringContainsString( '123 456 789', $email->get_content_html(), 'The on-hold email must carry the Multibanco reference.' );
+	}
+
+	/** @return array<string,array{string,string,string}> */
+	public static function on_hold_email_requests(): array {
+		return array(
+			'active Store API checkout'    => array( 'active Store API checkout', NativePaymentsState::ACTIVE, 'rest' ),
+			'active deferred email (cron)' => array( 'active deferred email (cron)', NativePaymentsState::ACTIVE, 'cron' ),
+			'active admin resend'          => array( 'active admin resend', NativePaymentsState::ACTIVE, 'admin' ),
+			'connected admin resend'       => array( 'connected admin resend', NativePaymentsState::CONNECTED, 'admin' ),
+			'connected AJAX resend'        => array( 'connected AJAX resend', NativePaymentsState::CONNECTED, 'ajax' ),
+			'connected REST'               => array( 'connected REST', NativePaymentsState::CONNECTED, 'rest' ),
+			'connected cron'               => array( 'connected cron', NativePaymentsState::CONNECTED, 'cron' ),
+			'connected WP-CLI'             => array( 'connected WP-CLI', NativePaymentsState::CONNECTED, 'cli' ),
+			'connected front'              => array( 'connected front', NativePaymentsState::CONNECTED, 'front' ),
+		);
 	}
 
 	/** @return array<string,array{string,string,string}> */
@@ -576,6 +589,23 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 			unset( $_POST['gateway_id'], $_REQUEST['security'] );
 		}
 		$this->assertTrue( json_decode( $json, true )['success'] ?? false, 'The toggle must succeed: ' . $json );
+	}
+
+	/**
+	 * Make the next bootstrap classify the request as the given request class.
+	 *
+	 * @param string $request Request class: 'front', 'admin', 'ajax', 'rest', 'cron' or 'cli'.
+	 */
+	private function arrange_request( string $request ): void {
+		if ( 'cron' === $request ) {
+			add_filter( 'wp_doing_cron', '__return_true' );
+		} elseif ( 'cli' === $request ) {
+			Constants::set_constant( 'WP_CLI', true );
+		} elseif ( 'ajax' === $request ) {
+			add_filter( 'wp_doing_ajax', '__return_true' );
+		} elseif ( 'admin' === $request ) {
+			set_current_screen( 'woocommerce_page_wc-orders' );
+		}
 	}
 
 	/**

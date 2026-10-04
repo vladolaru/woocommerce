@@ -234,7 +234,6 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 						WooPaymentsWooPayOrderStatusSync::class,
 						WooPaymentsWooPayExtensionSync::class,
 						WooPaymentsExpressCheckoutController::class,
-						WooPaymentsOrderSuccessPage::class,
 						WooPaymentsPaymentMethodMessaging::class,
 						WooPaymentsApplePayDomainService::class,
 						WooPaymentsFrontendTrackingController::class,
@@ -243,9 +242,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 						WooPaymentsTestModeOrderEmailService::class,
 					)
 				),
-				// The on-hold email carries the Multibanco instructions wherever it is sent: Store API checkout, deferred
-				// emails in cron, admin resends (client 11.1.0 `includes/class-wc-payments-order-success-page.php:40`).
-				'admin' => array_merge( $active_maintenance_prefix, $connected_admin, array( WooPaymentsOrderSuccessPage::class ) ),
+				'admin' => array_merge( $active_maintenance_prefix, $connected_admin ),
 				'ajax'  => array_merge(
 					$gateway_prefix,
 					$connected_ajax,
@@ -259,7 +256,6 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 						WooPaymentsExpressCheckoutController::class,
 						WooPaymentsPaymentMethodMessaging::class,
 						WooPaymentsFrontendTrackingController::class,
-						WooPaymentsOrderSuccessPage::class,
 					)
 				),
 				'rest'  => array_merge(
@@ -275,7 +271,6 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 						WooPaymentsExpressCheckoutController::class,
 						WooPaymentsExpressCheckoutStoreApiExtension::class,
 						WooPaymentsExpressCheckoutCurrencyGuard::class,
-						WooPaymentsOrderSuccessPage::class,
 					)
 				),
 				'cron'  => array_merge(
@@ -284,7 +279,6 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 					array(
 						WooPaymentsOrderStatusChangeController::class,
 						WooPaymentsDuplicatePaymentPreventionService::class,
-						WooPaymentsOrderSuccessPage::class,
 					)
 				),
 			),
@@ -306,6 +300,11 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 				// Saved SEPA, Link and Amazon Pay tokens load on any of these requests (renewals, admin subscription views);
 				// the client loads their token classes on every request (client 11.1.0 `includes/class-wc-payments.php:468,540-541`).
 				$matrix[ $state ][ $request ][] = WooPaymentsTokenClassMapController::class;
+				// A Multibanco order keeps its voucher on revisits of its order pages and in its on-hold email, however that
+				// email is sent (Store API checkout, deferred cron send, admin resend) and after the gateway is switched off;
+				// the client hooks these on every request (client 11.1.0 `includes/class-wc-payments.php:588`,
+				// `includes/class-wc-payments-order-success-page.php:40`).
+				$matrix[ $state ][ $request ][] = WooPaymentsOrderSuccessPage::class;
 				// The gateway settings can be written directly (classic toggle, REST, WP-CLI); keep the tier in step.
 				if ( 'front' !== $request ) {
 					$matrix[ $state ][ $request ][] = WooPaymentsGatewaySettingsSynchronizer::class;
