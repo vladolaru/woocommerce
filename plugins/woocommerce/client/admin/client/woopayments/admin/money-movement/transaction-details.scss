@@ -281,8 +281,7 @@
 	}
 
 	&__footer.components-card__footer {
-		// stylelint-disable-next-line color-no-hex -- Client 11.1.0 dispute footer background; no upstream token.
-		background-color: #f2f4f5;
+		background-color: $gray-100;
 		color: $gray-800;
 
 		p {

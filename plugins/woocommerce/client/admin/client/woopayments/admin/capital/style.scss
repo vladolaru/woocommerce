@@ -8,8 +8,7 @@
 	&__section {
 		background: $white;
 		border: 1px solid $studio-gray-5;
-		// stylelint-disable-next-line declaration-property-value-disallowed-list -- no token at 20px (between $gap and $gap-large).
-		padding: 20px;
+		padding: $gap-large;
 	}
 
 	&__section h2,

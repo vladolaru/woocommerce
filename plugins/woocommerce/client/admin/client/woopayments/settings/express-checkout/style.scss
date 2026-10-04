@@ -103,8 +103,7 @@
 
 	// Like the client, the preview box darkens behind the light buttons so they stay visible.
 	&__preview[data-theme="light"] {
-		// stylelint-disable-next-line color-no-hex -- the client's dark preview backdrop; no upstream token.
-		background: #2b2b2b;
+		background: $gray-800;
 	}
 
 	&__preview[data-theme="light-outline"] {

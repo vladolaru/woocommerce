@@ -37,8 +37,7 @@
 	background: $white;
 	border: 1px solid $studio-gray-5;
 	border-radius: $radius-medium;
-	// stylelint-disable-next-line declaration-property-value-disallowed-list -- no token at 20px (between $gap and $gap-large).
-	padding: 20px;
+	padding: $gap-large;
 }
 
 .woocommerce-woopayments-overview-card h2,
@@ -368,8 +367,7 @@
 	display: flex;
 	gap: $gap-smaller;
 	justify-content: flex-end;
-	// stylelint-disable-next-line declaration-property-value-disallowed-list -- no token at 20px (between $gap and $gap-large).
-	margin-top: 20px;
+	margin-top: $gap-large;
 }
 
 .woocommerce-woopayments-overview__payouts-table {
@@ -464,8 +462,7 @@
 	display: flex;
 	gap: $gap-smaller;
 	justify-content: flex-end;
-	// stylelint-disable-next-line declaration-property-value-disallowed-list -- no token at 20px (between $gap and $gap-large).
-	margin-top: 20px;
+	margin-top: $gap-large;
 }
 
 .woocommerce-woopayments-connection-success-modal__content {
