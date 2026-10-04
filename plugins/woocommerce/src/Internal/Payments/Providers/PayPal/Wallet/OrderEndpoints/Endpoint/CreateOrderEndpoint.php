@@ -318,7 +318,7 @@ class CreateOrderEndpoint implements EndpointInterface {
 				$this->purchase_unit = $this->purchase_unit_factory->from_wc_cart( null, $this->should_handle_shipping_in_paypal( $funding_source ), $payment_method );
 
 				// Do not allow completion by webhooks when started via non-checkout buttons,
-				// it is needed only for some APMs in checkout.
+				// the webhook completion is for the checkout flow only.
 				if ( in_array( $data['context'], array( 'product', 'cart', 'cart-block' ), true ) ) {
 					$this->purchase_unit->set_custom_id( '' );
 				}

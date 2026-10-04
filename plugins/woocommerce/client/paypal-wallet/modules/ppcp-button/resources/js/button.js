@@ -19,7 +19,6 @@ import FormSaver from './modules/Helper/FormSaver';
 import { loadPaypalScript } from './modules/Helper/ScriptLoading';
 import buttonModuleWatcher from './modules/ButtonModuleWatcher';
 import MessagesBootstrap from './modules/ContextBootstrap/MessagesBootstrap';
-import { apmButtonsInit } from './modules/Helper/ApmButtons';
 import { initCartFragmentSync } from './modules/Helper/CartFragmentSync';
 
 // Keep the classic header mini-cart count in sync with the block cart. Runs at
@@ -265,8 +264,6 @@ const bootstrap = () => {
 	);
 	messagesBootstrap.init();
 
-	apmButtonsInit( PayPalCommerceGateway );
-
 	if ( ! renderer.useSmartButtons ) {
 		buttonsSpinner.unblock();
 	}
@@ -281,12 +278,7 @@ document.addEventListener( 'DOMContentLoaded', () => {
 		return;
 	}
 
-	const paypalButtonGatewayIds = [
-		PaymentMethods.PAYPAL,
-		...Object.entries( PayPalCommerceGateway.separate_buttons ).map(
-			( [ , data ] ) => data.id
-		),
-	];
+	const paypalButtonGatewayIds = [ PaymentMethods.PAYPAL ];
 
 	// Sometimes PayPal script takes long time to load,
 	// so we additionally hide the standard order button here to avoid failed orders.

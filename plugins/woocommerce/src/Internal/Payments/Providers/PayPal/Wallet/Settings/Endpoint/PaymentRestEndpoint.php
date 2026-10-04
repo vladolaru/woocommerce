@@ -65,18 +65,6 @@ class PaymentRestEndpoint extends RestEndpoint {
 			'js_name'  => 'fastlaneDisplayWatermark',
 			'sanitize' => 'to_boolean',
 		),
-		'pui_brand_name'                    => array(
-			'js_name'  => 'puiBrandName',
-			'sanitize' => 'sanitize_text_field',
-		),
-		'pui_logo_url'                      => array(
-			'js_name'  => 'puiLogoUrl',
-			'sanitize' => 'esc_url_raw',
-		),
-		'pui_customer_service_instructions' => array(
-			'js_name'  => 'puiCustomerServiceInstructions',
-			'sanitize' => 'sanitize_text_field',
-		),
 	);
 
 	/**
@@ -195,11 +183,8 @@ class PaymentRestEndpoint extends RestEndpoint {
 			}
 		}
 
-		$gateway_settings['paypalShowLogo']                 = $this->payment_settings->get_paypal_show_logo();
-		$gateway_settings['fastlaneDisplayWatermark']       = $this->payment_settings->get_fastlane_display_watermark();
-		$gateway_settings['puiBrandName']                   = $this->payment_settings->get_pui_brand_name();
-		$gateway_settings['puiLogoUrl']                     = $this->payment_settings->get_pui_logo_url();
-		$gateway_settings['puiCustomerServiceInstructions'] = $this->payment_settings->get_pui_customer_service_instructions();
+		$gateway_settings['paypalShowLogo']           = $this->payment_settings->get_paypal_show_logo();
+		$gateway_settings['fastlaneDisplayWatermark'] = $this->payment_settings->get_fastlane_display_watermark();
 
 		return $this->return_success( apply_filters( 'woocommerce_paypal_payments_payment_methods', $gateway_settings ) );
 	}
@@ -215,7 +200,7 @@ class PaymentRestEndpoint extends RestEndpoint {
 		$request_data = $request->get_params();
 		$all_methods  = $this->gateways();
 
-		// Process field_map values first so PUI fields are available for validation.
+		// Store the settings mapped through field_map first, then apply the per-method changes.
 		$wp_data = $this->sanitize_for_wordpress(
 			$request->get_params(),
 			$this->field_map

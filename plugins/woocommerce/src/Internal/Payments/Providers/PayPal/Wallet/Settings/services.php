@@ -14,15 +14,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\Asse
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetterFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Axo\Gateway\AxoGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Helper\MessagesApply;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\BancontactGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\BlikGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\EPSGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\IDealGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\MultibancoGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\MyBankGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\P24Gateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\PWCGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\TrustlyGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ModuleAvailability;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\Definition\FeaturesDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\Definition\PaymentMethodsDependenciesDefinition;
@@ -74,9 +65,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Se
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\Definition\PaymentMethodsDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PayLaterConfigurator\Factory\ConfigFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\GatewayIds;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\OXXOGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\PayUponInvoice\PayUponInvoiceGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PayLaterConfigurator\Endpoint\SaveConfig;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\Environment;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\ConnectionState;
@@ -423,7 +412,6 @@ return array(
 	'settings.service.data-migration.payment-settings'    => static fn( ContainerInterface $c ): PaymentSettingsMigration => new PaymentSettingsMigration(
 		(array) get_option( 'woocommerce-ppcp-settings', array() ),
 		$c->get( 'settings.data.payment' ),
-		$c->get( 'ppcp.module-availability' )->is_loaded( 'ppcp-local-apms' ) ? $c->get( 'ppcp-local-apms.payment-methods' ) : array(),
 	),
 	'settings.service.seller-type-resolver'               => static fn(): SellerTypeResolver => new SellerTypeResolver(),
 	'settings.service.merchant-data-resolver'             => static fn( ContainerInterface $container ): MerchantDataResolver => new MerchantDataResolver(
@@ -522,11 +510,9 @@ return array(
 
 		return array(
 			FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO => $features[ FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO ]['enabled'] ?? false,
-			FeaturesDefinition::FEATURE_ALTERNATIVE_PAYMENT_METHODS => $features[ FeaturesDefinition::FEATURE_ALTERNATIVE_PAYMENT_METHODS ]['enabled'] ?? false,
 			FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING => $features[ FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING ]['enabled'] ?? false,
 			FeaturesDefinition::FEATURE_INSTALLMENTS     => $features[ FeaturesDefinition::FEATURE_INSTALLMENTS ]['enabled'] ?? false,
 			FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO  => $features[ FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO ]['enabled'] ?? false,
-			FeaturesDefinition::FEATURE_PAY_UPON_INVOICE => $features[ FeaturesDefinition::FEATURE_PAY_UPON_INVOICE ]['enabled'] ?? false,
 		);
 	},
 
@@ -621,25 +607,20 @@ return array(
 		$capabilities = array(
 			FeaturesDefinition::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS => $features[ FeaturesDefinition::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS ]['enabled'] ?? false,
 			FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO => $features[ FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO ]['enabled'] ?? false,
-			FeaturesDefinition::FEATURE_ALTERNATIVE_PAYMENT_METHODS => $features[ FeaturesDefinition::FEATURE_ALTERNATIVE_PAYMENT_METHODS ]['enabled'] ?? false,
 			FeaturesDefinition::FEATURE_INSTALLMENTS     => $features[ FeaturesDefinition::FEATURE_INSTALLMENTS ]['enabled'] ?? false,
 			FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO  => $features[ FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO ]['enabled'] ?? false,
 			FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING => $features[ FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING ]['enabled'] ?? false,
-			FeaturesDefinition::FEATURE_PAY_UPON_INVOICE => $features[ FeaturesDefinition::FEATURE_PAY_UPON_INVOICE ]['enabled'] ?? false,
 		);
 
 		$merchant_capabilities = array(
 			FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO => $capabilities[ FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO ],
 			// Save PayPal and Venmo eligibility.
-			FeaturesDefinition::FEATURE_ALTERNATIVE_PAYMENT_METHODS => $capabilities[ FeaturesDefinition::FEATURE_ALTERNATIVE_PAYMENT_METHODS ],
-			// Alternative payment methods eligibility.
 			// The seller-status card capability still gates Pay Later.
 			FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING => $capabilities[ FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING ] && $capabilities[ FeaturesDefinition::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS ],
 			// Pay Later eligibility.
 			FeaturesDefinition::FEATURE_INSTALLMENTS     => $capabilities[ FeaturesDefinition::FEATURE_INSTALLMENTS ],
 			// Installments eligibility.
 			FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO  => $capabilities[ FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO ], // Pay with Crypto eligibility.
-			FeaturesDefinition::FEATURE_PAY_UPON_INVOICE => $capabilities[ FeaturesDefinition::FEATURE_PAY_UPON_INVOICE ], // Pay upon Invoice eligibility.
 		);
 
 		return new FeaturesDefinition(
@@ -659,11 +640,9 @@ return array(
 
 		return new FeaturesEligibilityService(
 			$container->get( 'save-payment-methods.eligible' ), // Save PayPal and Venmo eligibility.
-			( $availability->eligibility_check( 'ppcp-local-apms' ) )(), // Alternative payment methods eligibility.
 			$pay_later_eligible, // Pay Later eligibility.
 			'MX' === $container->get( 'api.merchant.country' ), // Installments eligibility.
-			( $availability->eligibility_check( 'ppcp-local-apms.pwc' ) )(), // Pay with Crypto eligibility.
-			( $availability->eligibility_check( 'ppcp-local-apms.pui' ) )() // Pay upon Invoice eligibility.
+			( $availability->eligibility_check( 'ppcp-local-apms.pwc' ) )() // Pay with Crypto eligibility.
 		);
 	},
 	'settings.service.payment_methods_eligibilities'      => static function ( ContainerInterface $container ): PaymentMethodsEligibilityService {
@@ -672,8 +651,6 @@ return array(
 
 		return new PaymentMethodsEligibilityService(
 			$container->get( 'api.merchant.country' ),
-			( $availability->eligibility_check( 'ppcp-local-apms' ) )(),
-			$container->get( 'settings.service.merchant_capabilities' ),
 			$availability->eligibility_check( 'axo' ),
 		);
 	},
@@ -701,17 +678,17 @@ return array(
 			AxoGateway::ID,
 			GatewayIds::APPLE_PAY,
 			GatewayIds::GOOGLE_PAY,
-			PWCGateway::ID,
-			BancontactGateway::ID,
-			BlikGateway::ID,
-			EPSGateway::ID,
-			IDealGateway::ID,
-			MyBankGateway::ID,
-			P24Gateway::ID,
-			TrustlyGateway::ID,
-			MultibancoGateway::ID,
-			PayUponInvoiceGateway::ID,
-			OXXOGateway::ID,
+			GatewayIds::PWC,
+			GatewayIds::BANCONTACT,
+			GatewayIds::BLIK,
+			GatewayIds::EPS,
+			GatewayIds::IDEAL,
+			GatewayIds::MYBANK,
+			GatewayIds::P24,
+			GatewayIds::TRUSTLY,
+			GatewayIds::MULTIBANCO,
+			GatewayIds::PAY_UPON_INVOICE,
+			GatewayIds::OXXO,
 		);
 	},
 	'settings.service.branded-experience.activation-detector' => static function (): ActivationDetector {

@@ -371,8 +371,7 @@ return array(
 	},
 	'api.repository.partner-referrals-data'          => static function ( ContainerInterface $container ): PartnerReferralsData {
 		return new PartnerReferralsData(
-			$container->get( 'api.helpers.dccapplies' ),
-			$container->get( 'settings.data.definition.features' )
+			$container->get( 'api.helpers.dccapplies' )
 		);
 	},
 	'api.repository.payee'                           => static function ( ContainerInterface $container ): PayeeRepository {

@@ -1,10 +1,8 @@
 import { __ } from '@wordpress/i18n';
 
-import { CommonHooks, OnboardingHooks } from '@ppcp-settings/data';
 import StepWelcome from './StepWelcome';
 import StepBusiness from './StepBusiness';
 import StepProducts from './StepProducts';
-import StepPaymentMethods from './StepPaymentMethods';
 import StepCompleteSetup from './StepCompleteSetup';
 
 /**
@@ -34,12 +32,6 @@ const ALL_STEPS = [
 		canProceed: ( { products } ) => products.products.length > 0,
 	},
 	{
-		id: 'methods',
-		title: __( 'Choose checkout options', 'woocommerce' ),
-		StepComponent: StepPaymentMethods,
-		canProceed: ( { methods } ) => methods.optionalMethods !== null,
-	},
-	{
 		id: 'complete',
 		title: __(
 			'Connect your PayPal account',
@@ -57,26 +49,9 @@ const filterSteps = ( steps, conditions ) => {
 };
 
 export const getSteps = ( flags ) => {
-	const { ownBrandOnly } = CommonHooks.useWooSettings();
-	const { isCasualSeller } = OnboardingHooks.useBusiness();
-
 	const steps = filterSteps( ALL_STEPS, [
 		// Casual selling: Unlock the "Personal Account" choice.
 		( step ) => flags.canUseCasualSelling || step.id !== 'business',
-		// Skip payment methods screen.
-		( step ) => {
-			if ( step.id !== 'methods' ) {
-				return true;
-			}
-
-			const isBrandedBCDC = ownBrandOnly && ! flags.canUseCardPayments;
-			const shouldSkip =
-				flags.shouldSkipPaymentMethods ||
-				isCasualSeller ||
-				isBrandedBCDC;
-
-			return ! shouldSkip;
-		},
 	] );
 
 	const totalStepsCount = steps.length;

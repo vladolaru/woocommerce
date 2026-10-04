@@ -66,8 +66,8 @@ class TransactionUrlProvider {
 	public function get_transaction_url_base( \WC_Order $order ): string {
 		$order_payment_mode = $order->get_meta( PayPalGateway::ORDER_PAYMENT_MODE_META_KEY, true );
 
-		// Some gateways (e.g. local APMs) do not store the payment mode on the order,
-		// so fall back to the current environment to avoid defaulting to the live URL.
+		// Gateways that do not store the payment mode on the order fall back to the
+		// current environment, to avoid defaulting to the live URL.
 		if ( ! $order_payment_mode ) {
 			$order_payment_mode = $this->environment->is_sandbox() ? 'sandbox' : 'live';
 		}

@@ -2,7 +2,7 @@
 /**
  * Fraudnet source website ID.
  *
- * @package Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayUponInvoice
+ * @package Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\FraudNet
  */
 
 declare(strict_types=1);

@@ -19,7 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\E
 
 /**
  * Re-fetches a pending session order on the checkout page, so that an approval
- * made outside the buttons (e.g. an APM that never redirects back) is picked up.
+ * made outside the buttons (e.g. a PayPal approval that did not redirect back) is picked up.
  * The session order is read on almost every request, so fetches are throttled
  * per order, and an order that PayPal no longer knows is removed from the session.
  */

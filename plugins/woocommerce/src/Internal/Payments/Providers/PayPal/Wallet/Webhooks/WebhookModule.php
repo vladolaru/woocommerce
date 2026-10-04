@@ -117,34 +117,6 @@ class WebhookModule implements ServiceModule, FactoryModule, ExecutableModule {
 			}
 		);
 
-		/**
-		 * Force webhook re-registration for PUI/OXXO merchants on plugin upgrade.
-		 *
-		 * Clears the stored webhook so the auto-recovery hook above re-registers it
-		 * with the full event list required by PUI/OXXO. Only runs on upgrades (not
-		 * fresh installs) when PUI or OXXO is enabled.
-		 */
-		add_action(
-			'woocommerce_paypal_payments_gateway_migrate',
-			static function ( $installed_plugin_version ) {
-				if ( ! $installed_plugin_version ) {
-					return;
-				}
-
-				$pui_settings = get_option( 'woocommerce_ppcp-pay-upon-invoice-gateway_settings', array() );
-				$pui_enabled  = is_array( $pui_settings ) && ( $pui_settings['enabled'] ?? 'no' ) === 'yes';
-
-				$oxxo_settings = get_option( 'woocommerce_ppcp-oxxo-gateway_settings', array() );
-				$oxxo_enabled  = is_array( $oxxo_settings ) && ( $oxxo_settings['enabled'] ?? 'no' ) === 'yes';
-
-				if ( ! $pui_enabled && ! $oxxo_enabled ) {
-					return;
-				}
-
-				delete_option( WebhookRegistrar::KEY );
-			}
-		);
-
 		add_action(
 			'wc_ajax_' . ResubscribeEndpoint::ENDPOINT,
 			static function () use ( $container ) {

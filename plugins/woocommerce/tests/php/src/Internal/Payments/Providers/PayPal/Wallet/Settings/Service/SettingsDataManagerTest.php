@@ -242,6 +242,50 @@ class SettingsDataManagerTest extends WalletTestCase {
 	}
 
 	/**
+	 * Run toggle_payment_gateways() for the given seller and return the calls the local payment methods hook received.
+	 *
+	 * @param bool $is_business_seller Whether the merchant is a business seller.
+	 * @return \ArrayObject One entry per call, holding the hook arguments.
+	 */
+	private function toggle_and_record_apm_hook( bool $is_business_seller ): \ArrayObject {
+		$this->record_toggles();
+		$calls = new \ArrayObject();
+		add_action(
+			'woocommerce_paypal_payments_toggle_payment_gateways_apms',
+			static function () use ( $calls ): void {
+				$calls[] = func_get_args();
+			},
+			10,
+			3
+		);
+
+		$flags                     = new ConfigurationFlagsDTO();
+		$flags->is_business_seller = $is_business_seller;
+		$this->toggle_payment_gateways( $flags );
+
+		return $calls;
+	}
+
+	/**
+	 * @testdox Should keep firing the local payment methods hook for a business seller, with the payment methods model, the method list and the flags (wallet).
+	 */
+	public function test_apm_toggle_hook_is_fired_for_a_business_seller(): void {
+		$calls = $this->toggle_and_record_apm_hook( true );
+
+		$this->assertCount( 1, $calls );
+		$this->assertSame( $this->payment_methods, $calls[0][0] );
+		$this->assertIsArray( $calls[0][1] );
+		$this->assertInstanceOf( ConfigurationFlagsDTO::class, $calls[0][2] );
+	}
+
+	/**
+	 * @testdox Should not fire the local payment methods hook for a casual seller (wallet).
+	 */
+	public function test_apm_toggle_hook_is_not_fired_for_a_casual_seller(): void {
+		$this->assertCount( 0, $this->toggle_and_record_apm_hook( false ) );
+	}
+
+	/**
 	 * Drive the protected apply_location_styles() and return the styles it saved.
 	 *
 	 * @return array<string, object> The location styling DTOs by location.

@@ -2,7 +2,6 @@ import merge from 'deepmerge';
 import { loadScript } from '@paypal/paypal-js';
 import { keysToCamelCase } from '../Helper/Utils';
 import widgetBuilder from './WidgetBuilder';
-import { normalizeStyleForFundingSource } from '../Helper/Style';
 import {
 	handleShippingOptionsChange,
 	handleShippingAddressChange,
@@ -42,51 +41,11 @@ class Renderer {
 	render( contextConfig, settingsOverride = {} ) {
 		const settings = merge( this.defaultSettings, settingsOverride );
 
-		const enabledSeparateGateways = Object.fromEntries(
-			Object.entries( settings.separate_buttons ).filter(
-				( [ , data ] ) => document.querySelector( data.wrapper )
-			)
-		);
-		const hasEnabledSeparateGateways =
-			Object.keys( enabledSeparateGateways ).length !== 0;
-
-		if ( ! hasEnabledSeparateGateways ) {
-			if ( this.useSmartButtons ) {
-				this.renderButtons(
-					settings.button.wrapper,
-					settings.button.style,
-					contextConfig
-				);
-			}
-		} else {
-			const allFundingSources = paypal.getFundingSources();
-			const separateFunding = allFundingSources.filter(
-				( s ) => ! ( s in enabledSeparateGateways )
-			);
-			// render each button separately
-			for ( const fundingSource of separateFunding ) {
-				const style = normalizeStyleForFundingSource(
-					settings.button.style,
-					fundingSource
-				);
-
-				this.renderButtons(
-					settings.button.wrapper,
-					style,
-					contextConfig,
-					fundingSource
-				);
-			}
-		}
-
-		for ( const [ fundingSource, data ] of Object.entries(
-			enabledSeparateGateways
-		) ) {
+		if ( this.useSmartButtons ) {
 			this.renderButtons(
-				data.wrapper,
-				data.style,
-				contextConfig,
-				fundingSource
+				settings.button.wrapper,
+				settings.button.style,
+				contextConfig
 			);
 		}
 	}

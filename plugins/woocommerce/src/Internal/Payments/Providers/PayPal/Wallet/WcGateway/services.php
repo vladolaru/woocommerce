@@ -47,10 +47,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\F
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\GatewayIds;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\GatewayRepository;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\PayUponInvoice\PayUponInvoiceGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\TransactionUrlProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\CartCheckoutDetector;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\CheckoutHelper;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\ConnectionState;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\DCCProductStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\Environment;
@@ -58,8 +56,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\H
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\InstallmentsProductStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\MerchantDetails;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\PaymentMethodTitleEnricher;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\PayUponInvoice\PayUponInvoiceHelper;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\PayUponInvoice\PayUponInvoiceProductStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\ApmCapabilityStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\PWCProductStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\RefundFeesUpdater;
@@ -89,7 +85,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\S
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\StoreApi\Factory\MoneyFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\StoreApi\Factory\ShippingRatesFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\WebhookEventStorage;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\OXXOGateway;
 
 return array(
 	'woocommerce.core'                                     => static function (): WooCommerce {
@@ -544,9 +539,6 @@ return array(
 		);
 	},
 
-	'wcgateway.checkout-helper'                            => static function ( ContainerInterface $container ): CheckoutHelper {
-		return new CheckoutHelper();
-	},
 	'wcgateway.fraudnet-source-website-id'                 => static function ( ContainerInterface $container ): FraudNetSourceWebsiteId {
 		return new FraudNetSourceWebsiteId( $container->get( 'api.merchant_id' ) );
 	},
@@ -555,21 +547,6 @@ return array(
 
 		return new FraudNet(
 			(string) $source_website_id()
-		);
-	},
-	'wcgateway.pay-upon-invoice-helper'                    => static function ( ContainerInterface $container ): PayUponInvoiceHelper {
-		return new PayUponInvoiceHelper(
-			$container->get( 'wcgateway.checkout-helper' ),
-			$container->get( 'api.shop.country' ),
-			$container->get( 'settings.data.payment' )
-		);
-	},
-	'wcgateway.pay-upon-invoice-product-status'            => static function ( ContainerInterface $container ): PayUponInvoiceProductStatus {
-		return new PayUponInvoiceProductStatus(
-			$container->get( 'settings.flag.is-connected' ),
-			$container->get( 'api.endpoint.partners' ),
-			$container->get( 'api.helper.failure-registry' ),
-			$container->get( 'api.helper.product-status-result-cache' )
 		);
 	},
 	'wcgateway.installments-product-status'                => static function ( ContainerInterface $container ): InstallmentsProductStatus {
@@ -670,41 +647,6 @@ return array(
 		return $vaulting_label;
 	},
 
-	'wcgateway.settings.should-disable-fraudnet-checkbox'  => static function ( ContainerInterface $container ): bool {
-		$pui_helper = $container->get( 'wcgateway.pay-upon-invoice-helper' );
-		assert( $pui_helper instanceof PayUponInvoiceHelper );
-
-		if ( $pui_helper->is_pui_gateway_enabled() ) {
-			return true;
-		}
-
-		return false;
-	},
-	'wcgateway.settings.fraudnet-label'                    => static function ( ContainerInterface $container ): string {
-		$label = sprintf(
-		// translators: %1$s and %2$s are the opening and closing of HTML <a> tag.
-			__( 'Manage online risk with %1$sFraudNet%2$s.', 'woocommerce' ),
-			'<a href="https://woocommerce.com/document/woocommerce-paypal-payments/#fraudnet" target="_blank">',
-			'</a>'
-		);
-
-		if ( 'DE' === $container->get( 'api.shop.country' ) ) {
-			$label .= '<br/>' . sprintf(
-				// translators: %1$s and %2$s are the opening and closing of HTML <a> tag.
-				__( 'Required when %1$sPay upon Invoice%2$s is used.', 'woocommerce' ),
-				'<a href="https://woocommerce.com/document/woocommerce-paypal-payments/#pay-upon-invoice-PUI" target="_blank">',
-				'</a>'
-			);
-		}
-
-		return $label;
-	},
-	'wcgateway.enable-pui-url-sandbox'                     => static function ( ContainerInterface $container ): string {
-		return 'https://www.sandbox.paypal.com/bizsignup/entry?country.x=DE&product=payment_methods&capabilities=PAY_UPON_INVOICE';
-	},
-	'wcgateway.enable-pui-url-live'                        => static function ( ContainerInterface $container ): string {
-		return 'https://www.paypal.com/bizsignup/entry?country.x=DE&product=payment_methods&capabilities=PAY_UPON_INVOICE';
-	},
 	'wcgateway.enable-reference-transactions-url-sandbox'  => static function ( ContainerInterface $container ): string {
 		return 'https://www.sandbox.paypal.com/bizsignup/entry?product=ADVANCED_VAULTING';
 	},
@@ -742,44 +684,6 @@ return array(
 			$enabled ? '_self' : '_blank',
 			esc_url( $button_url ),
 			esc_html( $button_text )
-		);
-	},
-	'wcgateway.settings.connection.pui-status-text'        => static function ( ContainerInterface $container ): string {
-		$is_connected = $container->get( 'settings.flag.is-connected' );
-		if ( ! $is_connected ) {
-			return '';
-		}
-
-		$pui_product_status = $container->get( 'wcgateway.pay-upon-invoice-product-status' );
-		assert( $pui_product_status instanceof PayUponInvoiceProductStatus );
-
-		$environment = $container->get( 'settings.environment' );
-		assert( $environment instanceof Environment );
-
-		$pui_enabled = $pui_product_status->is_active();
-
-		$enabled_status_text  = esc_html__( 'Status: Available', 'woocommerce' );
-		$disabled_status_text = esc_html__( 'Status: Not yet enabled', 'woocommerce' );
-
-		$enable_pui_url = $environment->is_production()
-			? $container->get( 'wcgateway.enable-pui-url-live' )
-			: $container->get( 'wcgateway.enable-pui-url-sandbox' );
-
-		$pui_button_url = $pui_enabled
-			? admin_url( 'admin.php?page=wc-settings&tab=checkout&section=ppcp-pay-upon-invoice-gateway' )
-			: $enable_pui_url;
-
-		$pui_button_text = $pui_enabled
-			? esc_html__( 'Settings', 'woocommerce' )
-			: esc_html__( 'Enable Pay upon Invoice', 'woocommerce' );
-
-		return sprintf(
-			'<p>%1$s %2$s</p><p><a target="%3$s" href="%4$s" class="button">%5$s</a></p>',
-			$pui_enabled ? $enabled_status_text : $disabled_status_text,
-			$pui_enabled ? '<span class="dashicons dashicons-yes"></span>' : '<span class="dashicons dashicons-no"></span>',
-			$pui_enabled ? '_self' : '_blank',
-			esc_url( $pui_button_url ),
-			esc_html( $pui_button_text )
 		);
 	},
 	'installments.status-cache'                            => static function ( ContainerInterface $container ): Cache {
@@ -852,9 +756,9 @@ return array(
 		return array(
 			PayPalGateway::ID,
 			GatewayIds::CREDIT_CARD,
-			PayUponInvoiceGateway::ID,
+			GatewayIds::PAY_UPON_INVOICE,
 			GatewayIds::CARD_BUTTON,
-			OXXOGateway::ID,
+			GatewayIds::OXXO,
 			AxoGateway::ID,
 			GatewayIds::GOOGLE_PAY,
 			GatewayIds::APPLE_PAY,

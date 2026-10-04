@@ -139,7 +139,6 @@ class FraudNetAssets {
 			return false;
 		}
 
-		$is_pui_gateway_enabled           = in_array( 'ppcp-pay-upon-invoice-gateway', $this->enabled_ppcp_gateways(), true );
 		$is_only_standard_gateway_enabled = $this->enabled_ppcp_gateways() === array( PayPalGateway::ID );
 
 		$is_checkout_context = in_array( $this->context->context(), array( 'checkout', 'checkout-block' ), true );
@@ -148,7 +147,7 @@ class FraudNetAssets {
 			return $this->is_fraudnet_enabled && $this->are_buttons_enabled_for_context();
 		}
 
-		return $is_pui_gateway_enabled ? true : $this->is_fraudnet_enabled;
+		return $this->is_fraudnet_enabled;
 	}
 
 	/**

@@ -1,5 +1,3 @@
-@use "mixins/apm-button" as apm-button;
-
 #place_order.ppcp-hidden {
 	display: none !important;
 }
@@ -44,8 +42,4 @@
 #ppc-button-minicart {
 	line-height: 0;
 	display: block;
-}
-
-.ppcp-button-apm {
-	@include apm-button.button;
 }

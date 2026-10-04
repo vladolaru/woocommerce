@@ -8,7 +8,6 @@ import {
 	Venmo,
 	Crypto,
 	PayInThree,
-	AlternativePaymentMethods,
 	Fastlane,
 } from '../Components/PaymentOptions';
 
@@ -20,10 +19,6 @@ const PAYMENT_ICONS = [
 	{ name: 'mastercard', isOwnBrand: false, onlyAcdc: false },
 	{ name: 'amex', isOwnBrand: false, onlyAcdc: false },
 	{ name: 'discover', isOwnBrand: false, onlyAcdc: false },
-	{ name: 'blik', isOwnBrand: true, onlyAcdc: true },
-	{ name: 'ideal', isOwnBrand: true, onlyAcdc: true },
-	{ name: 'bancontact', isOwnBrand: true, onlyAcdc: true },
-	{ name: 'oxxo', isOwnBrand: true, onlyAcdc: false, countries: [ 'MX' ] },
 ];
 
 // Default configuration, used for all countries, unless they override individual attributes below.
@@ -33,12 +28,6 @@ const DEFAULT_CONFIG = {
 		{ name: 'PayLater', Component: PayLater },
 	],
 	extendedMethods: [
-		{
-			name: 'APMs',
-			Component: AlternativePaymentMethods,
-			isOwnBrand: true,
-			isAcdc: true,
-		},
 		{
 			name: 'Fastlane',
 			Component: Fastlane,
@@ -82,10 +71,6 @@ const getUIText = ( country, canUseCardPayments, onlyBranded ) => {
 	};
 
 	const OPTIONAL_DESCRIPTIONS = {
-		LOCAL_METHODS: __(
-			'Accept local payment methods. Note: Additional application required for some methods',
-			'woocommerce'
-		),
 		WITH_APPLICATION: __( 'with additional application', 'woocommerce' ),
 		US_EXPANDED: __(
 			'Accept more ways to pay. Note: additional application required for some methods',
@@ -120,7 +105,7 @@ const getUIText = ( country, canUseCardPayments, onlyBranded ) => {
 	// Branded-only mode overrides.
 	if ( onlyBranded ) {
 		texts.optionalTitle = TITLES.EXPANDED;
-		texts.optionalDescription = OPTIONAL_DESCRIPTIONS.LOCAL_METHODS;
+		texts.optionalDescription = OPTIONAL_DESCRIPTIONS.US_EXPANDED;
 	}
 
 	return texts;
@@ -187,13 +172,7 @@ export const usePaymentConfig = (
 		const config = { ...DEFAULT_CONFIG, ...countryConfig };
 
 		// Get "learn more" links for the country
-		let learnMoreConfig = learnMoreLinks[ country ] || {};
-
-		// If ownBrandOnly is true, move the "OptionalMethods" link to the "APMs" component.
-		if ( ownBrandOnly && learnMoreConfig.OptionalMethods ) {
-			const { OptionalMethods, ...rest } = learnMoreConfig;
-			learnMoreConfig = { ...rest, APMs: OptionalMethods };
-		}
+		const learnMoreConfig = learnMoreLinks[ country ] || {};
 
 		// Filter out conditional methods.
 		const availableOptionalMethods = filterMethods(

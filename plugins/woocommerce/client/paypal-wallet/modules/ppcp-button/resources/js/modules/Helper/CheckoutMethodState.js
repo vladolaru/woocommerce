@@ -1,6 +1,5 @@
 export const PaymentMethods = {
 	PAYPAL: 'ppcp-gateway',
-	OXXO: 'ppcp-oxxo-gateway',
 };
 
 /**

@@ -2,10 +2,8 @@ import SettingsCard from '@ppcp-settings/Components/ReusableComponents/SettingsC
 import { PaymentMethodsBlock } from '@ppcp-settings/Components/ReusableComponents/SettingsBlocks';
 import usePaymentDependencyState from '@ppcp-settings/hooks/usePaymentDependencyState';
 import useSettingDependencyState from '@ppcp-settings/hooks/useSettingDependencyState';
-import usePaymentMethodsToggle from '@ppcp-settings/hooks/usePaymentMethodsToggle';
 import useDependencyMessages from '@ppcp-settings/hooks/useDependencyMessages';
 import useMethodWarnings from '@ppcp-settings/hooks/useMethodWarnings';
-import BulkPaymentToggle from './BulkPaymentToggle';
 import SpinnerOverlay from '@ppcp-settings/Components/ReusableComponents/SpinnerOverlay';
 import {
 	PaymentHooks,
@@ -26,8 +24,6 @@ import usePaymentGatewayRefresh from '@ppcp-settings/hooks/usePaymentGatewayRefr
  * @param {Object}   props.methodsMap     - Map of all payment methods by ID
  * @param {Function} props.onTriggerModal - Callback when a method is clicked
  * @param {boolean}  props.isDisabled     - Whether the entire card is disabled
- * @param {boolean}  props.showBulkToggle - Whether to show the bulk toggle option
- * @param {string}   props.groupName      - Name of the payment method group for the toggle label
  * @return {JSX.Element} The rendered component
  */
 const PaymentMethodCard = ( {
@@ -39,11 +35,8 @@ const PaymentMethodCard = ( {
 	methodsMap = {},
 	onTriggerModal,
 	isDisabled = false,
-	showBulkToggle = false,
-	groupName = '',
 } ) => {
-	const { isReady: isPaymentStoreReady, changePaymentSettings } =
-		PaymentHooks.useStore();
+	const { isReady: isPaymentStoreReady } = PaymentHooks.useStore();
 	const { isReady: isSettingsStoreReady } = SettingsHooks.useStore();
 	const { gatewaysRefreshed } = OnboardingHooks.useGatewayRefresh();
 
@@ -63,18 +56,6 @@ const PaymentMethodCard = ( {
 		settingDependencies,
 		isDisabled
 	);
-
-	// Initialize the bulk toggle functionality.
-	const { allEnabled, toggleAllMethods, methodCount } =
-		usePaymentMethodsToggle( {
-			methods,
-			methodsMap,
-			changePaymentSettings,
-			paymentDependencies,
-			settingDependencies,
-			additionalDeps: [ isDisabled, gatewaysRefreshed ],
-			groupName,
-		} );
 
 	// Evaluate reactive warning visibility conditions against store data.
 	const methodsWithWarnings = useMethodWarnings( methods );
@@ -101,26 +82,11 @@ const PaymentMethodCard = ( {
 		};
 	} );
 
-	const descriptionWithToggle = showBulkToggle ? (
-		<div>
-			<p>{ description }</p>
-			<BulkPaymentToggle
-				isEnabled={ allEnabled }
-				onToggle={ toggleAllMethods }
-				isDisabled={ isDisabled || methodCount === 0 }
-				groupName={ groupName }
-				methodCount={ methodCount }
-			/>
-		</div>
-	) : (
-		description
-	);
-
 	return (
 		<SettingsCard
 			id={ id }
 			title={ title }
-			description={ descriptionWithToggle }
+			description={ description }
 			icon={ icon }
 			contentContainer={ false }
 		>

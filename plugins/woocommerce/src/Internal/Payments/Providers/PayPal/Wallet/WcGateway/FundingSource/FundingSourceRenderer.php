@@ -56,7 +56,7 @@ class FundingSourceRenderer {
 				return $this->funding_sources[ $id ];
 			}
 			return sprintf(
-				/* translators: %s - BLIK, iDeal, Mercado Pago, etc. */
+				/* translators: %s - Venmo, Pay Later, etc. */
 				__( '%s (via PayPal)', 'woocommerce' ),
 				$this->funding_sources[ $id ]
 			);
@@ -75,7 +75,7 @@ class FundingSourceRenderer {
 
 		if ( array_key_exists( $id, $this->funding_sources ) ) {
 			return sprintf(
-				/* translators: %s - BLIK, iDeal, Mercado Pago, etc. */
+				/* translators: %s - Venmo, Pay Later, etc. */
 				__( 'Pay via %s.', 'woocommerce' ),
 				$this->funding_sources[ $id ]
 			);

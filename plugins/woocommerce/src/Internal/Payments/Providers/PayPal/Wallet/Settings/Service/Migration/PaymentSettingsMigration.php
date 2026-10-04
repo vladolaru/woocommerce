@@ -12,8 +12,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Setti
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Axo\Gateway\AxoGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\PaymentSettings;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\GatewayIds;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\OXXOGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\PayUponInvoice\PayUponInvoiceGateway;
 
 /**
  * Class PaymentSettingsMigration
@@ -28,30 +26,21 @@ class PaymentSettingsMigration implements SettingsMigrationInterface {
 	protected array $settings;
 	protected PaymentSettings $payment_settings;
 
-	/**
-	 * The list of local apm methods.
-	 *
-	 * @var array<string, array>
-	 */
-	protected array $local_apms;
-
 	protected bool $legacy_pui_enabled;
 
 	protected bool $legacy_oxxo_enabled;
 
 	public function __construct(
 		array $settings,
-		PaymentSettings $payment_settings,
-		array $local_apms
+		PaymentSettings $payment_settings
 	) {
 		$this->settings         = $settings;
 		$this->payment_settings = $payment_settings;
-		$this->local_apms       = $local_apms;
 
-		$pui_option               = get_option( 'woocommerce_' . PayUponInvoiceGateway::ID . '_settings', array() );
+		$pui_option               = get_option( 'woocommerce_' . GatewayIds::PAY_UPON_INVOICE . '_settings', array() );
 		$this->legacy_pui_enabled = is_array( $pui_option ) && ( $pui_option['enabled'] ?? 'no' ) === 'yes';
 
-		$oxxo_option               = get_option( 'woocommerce_' . OXXOGateway::ID . '_settings', array() );
+		$oxxo_option               = get_option( 'woocommerce_' . GatewayIds::OXXO . '_settings', array() );
 		$this->legacy_oxxo_enabled = is_array( $oxxo_option ) && ( $oxxo_option['enabled'] ?? 'no' ) === 'yes';
 	}
 
@@ -59,12 +48,6 @@ class PaymentSettingsMigration implements SettingsMigrationInterface {
 		$disable_funding = (array) ( $this->settings['disable_funding'] ?? array() );
 		if ( ! in_array( 'venmo', $disable_funding, true ) ) {
 			$this->payment_settings->toggle_method_state( 'venmo', true );
-		}
-
-		foreach ( $this->local_apms as $apm ) {
-			if ( ! in_array( $apm['id'], $disable_funding, true ) ) {
-				$this->payment_settings->toggle_method_state( $apm['id'], true );
-			}
 		}
 
 		foreach ( $this->map() as $old_key => $method_name ) {
@@ -87,11 +70,11 @@ class PaymentSettingsMigration implements SettingsMigrationInterface {
 		}
 
 		if ( $this->legacy_pui_enabled ) {
-			$this->payment_settings->toggle_method_state( PayUponInvoiceGateway::ID, true );
+			$this->payment_settings->toggle_method_state( GatewayIds::PAY_UPON_INVOICE, true );
 		}
 
 		if ( $this->legacy_oxxo_enabled ) {
-			$this->payment_settings->toggle_method_state( OXXOGateway::ID, true );
+			$this->payment_settings->toggle_method_state( GatewayIds::OXXO, true );
 		}
 
 		if ( isset( $this->settings['dcc_name_on_card'] ) ) {

@@ -23,12 +23,9 @@ export const EVENTS = {
 	welcome_view: 'ppcp_onboarding_welcome_view',
 	account_type_view: 'ppcp_onboarding_account_type_view',
 	products_view: 'ppcp_onboarding_products_view',
-	payment_options_view: 'ppcp_onboarding_payment_options_view',
 	complete_view: 'ppcp_onboarding_complete_view',
 	account_type_select: 'ppcp_onboarding_account_type_business_type_select',
 	products_select: 'ppcp_onboarding_products_products_select',
-	payment_options_select:
-		'ppcp_onboarding_payment_options_payment_method_select',
 	sandbox_mode_select: 'ppcp_onboarding_sandbox_mode_select',
 	manual_connection_select: 'ppcp_onboarding_manual_connection_select',
 	complete_connect_click: 'ppcp_onboarding_complete_connect_click',
@@ -39,8 +36,7 @@ export const STEP_INFO = {
 	0: { name: 'welcome', viewEvent: EVENTS.welcome_view },
 	1: { name: 'account_type', viewEvent: EVENTS.account_type_view },
 	2: { name: 'products', viewEvent: EVENTS.products_view },
-	3: { name: 'payment_options', viewEvent: EVENTS.payment_options_view },
-	4: { name: 'complete', viewEvent: EVENTS.complete_view },
+	3: { name: 'complete', viewEvent: EVENTS.complete_view },
 };
 
 // Translation functions specific to this funnel.
@@ -95,30 +91,6 @@ export const TRANSLATIONS = {
 		trackingService.sendToAdapters( EVENTS.products_select, eventData );
 	},
 
-	areOptionalPaymentMethodsEnabled: (
-		oldValue,
-		newValue,
-		metadata,
-		trackingService
-	) => {
-		if ( newValue === null ) {
-			return;
-		}
-
-		const paymentOption = newValue ? 'expanded' : 'no_cards';
-		const eventData = {
-			selected_value: paymentOption,
-			step_number: metadata.currentStep,
-			step_name: metadata.stepName,
-			...trackingService.getCommonProperties( metadata ),
-		};
-
-		trackingService.sendToAdapters(
-			EVENTS.payment_options_select,
-			eventData
-		);
-	},
-
 	completed: ( oldValue, newValue, metadata, trackingService ) => {
 		if ( newValue === true ) {
 			const eventData = {
@@ -132,10 +104,7 @@ export const TRANSLATIONS = {
 				final_products: Array.isArray( metadata?.products )
 					? metadata.products.join( ',' )
 					: '',
-				final_payment_options:
-					metadata?.areOptionalPaymentMethodsEnabled
-						? 'expanded'
-						: 'no_cards',
+				final_payment_options: 'no_cards',
 				final_sandbox_mode: metadata?.useSandbox
 					? 'enabled'
 					: 'disabled',
@@ -230,21 +199,6 @@ const createProductsTrackingConfig = () => {
 	} );
 };
 
-const createPaymentOptionsTrackingConfig = () => {
-	return createFieldTrackingConfig(
-		'areOptionalPaymentMethodsEnabled',
-		'persistent',
-		{
-			transform: ( value ) => ( {
-				selected_value: value === true ? 'expanded' : 'no_cards',
-			} ),
-			rules: {
-				allowedSources: [ 'user' ],
-			},
-		}
-	);
-};
-
 const createCompletedTrackingConfig = () => {
 	return createFieldTrackingConfig( 'completed', 'persistent', {
 		transform: ( value ) => ( {
@@ -298,7 +252,6 @@ export const config = FunnelConfigBuilder.createBasicFunnel( FUNNEL_ID, {
 		createStepTrackingConfig(),
 		createAccountTypeTrackingConfig(),
 		createProductsTrackingConfig(),
-		createPaymentOptionsTrackingConfig(),
 		createCompletedTrackingConfig(),
 		createConnectionButtonTrackingConfig(),
 	] )

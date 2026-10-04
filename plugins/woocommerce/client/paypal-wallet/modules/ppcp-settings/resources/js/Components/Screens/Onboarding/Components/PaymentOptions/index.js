@@ -1,4 +1,3 @@
-export { default as AlternativePaymentMethods } from './AlternativePaymentMethods';
 export { default as Crypto } from './Crypto';
 export { default as Fastlane } from './Fastlane';
 export { default as PayInThree } from './PayInThree';

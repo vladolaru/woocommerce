@@ -4,20 +4,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\Definition;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\PWCGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Exception\NotFoundException;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Axo\Gateway\AxoGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\BancontactGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\BlikGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\EPSGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\IDealGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\MultibancoGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\MyBankGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\P24Gateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\TrustlyGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\OXXOGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\PayUponInvoice\PayUponInvoiceGateway;
 
 /**
  * Defines dependency relationships between payment methods and settings.
@@ -34,20 +23,9 @@ class PaymentMethodsDependenciesDefinition {
 	 */
 	public function get_payment_method_dependencies(): array {
 		$dependencies = array(
-			AxoGateway::ID            => array( PayPalGateway::ID ),
-			BancontactGateway::ID     => array( PayPalGateway::ID ),
-			BlikGateway::ID           => array( PayPalGateway::ID ),
-			EPSGateway::ID            => array( PayPalGateway::ID ),
-			IDealGateway::ID          => array( PayPalGateway::ID ),
-			MultibancoGateway::ID     => array( PayPalGateway::ID ),
-			MyBankGateway::ID         => array( PayPalGateway::ID ),
-			P24Gateway::ID            => array( PayPalGateway::ID ),
-			TrustlyGateway::ID        => array( PayPalGateway::ID ),
-			PayUponInvoiceGateway::ID => array( PayPalGateway::ID ),
-			OXXOGateway::ID           => array( PayPalGateway::ID ),
-			PWCGateway::ID            => array( PayPalGateway::ID ),
-			'venmo'                   => array( PayPalGateway::ID ),
-			'pay-later'               => array( PayPalGateway::ID ),
+			AxoGateway::ID => array( PayPalGateway::ID ),
+			'venmo'        => array( PayPalGateway::ID ),
+			'pay-later'    => array( PayPalGateway::ID ),
 		);
 
 		return apply_filters(

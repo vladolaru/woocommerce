@@ -13,7 +13,6 @@ import { usePaymentConfig } from '../hooks/usePaymentConfig';
  * @param {boolean} props.isFastlane   Whether Fastlane should be included.
  * @param {string}  props.storeCountry The merchant's store country. 2-character ISO code.
  * @param {boolean} props.ownBrandOnly Whether to show only PayPal's own payment methods.
- * @param {boolean} props.onlyOptional Whether to only return the "right column", which includes the optional opt-in payment methods. When true, the "core" payment methods are not included.
  * @return {JSX.Element} The payment options component.
  * @class
  */
@@ -22,7 +21,6 @@ const PaymentFlow = ( {
 	isFastlane,
 	storeCountry,
 	ownBrandOnly,
-	onlyOptional = false,
 } ) => {
 	const {
 		includedMethods,
@@ -38,15 +36,6 @@ const PaymentFlow = ( {
 		ownBrandOnly
 	);
 
-	// When only opt-in methods are requested, without core-payment details, return early.
-	if ( onlyOptional ) {
-		return (
-			<OptionalMethodsSection
-				methods={ optionalMethods }
-				learnMoreConfig={ learnMoreConfig }
-			/>
-		);
-	}
 	const description = useAcdc ? optionalDescription : '';
 	return (
 		<div className="ppcp-r-welcome-docs__wrapper">

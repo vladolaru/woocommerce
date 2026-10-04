@@ -16,11 +16,9 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\E
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\OrderStatus;
 use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\RuntimeException;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\OXXOGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Session\MemoryWcSession;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Session\SessionHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\FundingSource\FundingSourceRenderer;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\PayUponInvoice\PayUponInvoiceGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Processor\OrderProcessor;
 
 /**
@@ -222,10 +220,6 @@ class CheckoutOrderApproved implements RequestHandler {
 		}
 
 		foreach ( $wc_orders as $wc_order ) {
-			if ( PayUponInvoiceGateway::ID === $wc_order->get_payment_method() || OXXOGateway::ID === $wc_order->get_payment_method() ) {
-				continue;
-			}
-
 			try {
 				/**
 				 * This filter controls if the method 'process()' from OrderProcessor will be called.

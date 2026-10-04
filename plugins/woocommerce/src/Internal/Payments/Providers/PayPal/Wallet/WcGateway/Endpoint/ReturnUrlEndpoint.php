@@ -125,12 +125,6 @@ class ReturnUrlEndpoint {
 			exit();
 		}
 
-		if ( $wc_order->get_payment_method() === 'ppcp-oxxo-gateway' ) {
-			$this->session_handler->destroy_session_data();
-			wp_safe_redirect( wc_get_checkout_url() );
-			exit();
-		}
-
 		$payment_gateway = $this->get_payment_gateway( $wc_order->get_payment_method() );
 		if ( ! $payment_gateway ) {
 			wc_add_notice( __( 'Payment gateway is unavailable. Please try again or contact support.', 'woocommerce' ), 'error' );

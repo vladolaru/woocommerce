@@ -108,8 +108,8 @@ class OptionalModulesServicesTest extends WalletTestCase {
 	public function test_features_eligibility_resolves_without_optional_modules(): void {
 		$checks = $this->features_eligibility_service()->get_eligibility_checks();
 
-		$this->assertFalse( $checks[ FeaturesDefinition::FEATURE_ALTERNATIVE_PAYMENT_METHODS ]() );
 		$this->assertTrue( $checks[ FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO ]() );
+		$this->assertTrue( $checks[ FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING ]() );
 	}
 
 	/**
@@ -118,8 +118,7 @@ class OptionalModulesServicesTest extends WalletTestCase {
 	public function test_payment_methods_eligibility_resolves_without_optional_modules(): void {
 		$container = $this->wallet_only_container(
 			array(
-				'api.merchant.country'                   => 'US',
-				'settings.service.merchant_capabilities' => array(),
+				'api.merchant.country' => 'US',
 			)
 		);
 

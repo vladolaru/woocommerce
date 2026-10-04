@@ -10,18 +10,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Axo\Gateway\AxoGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\BancontactGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\BlikGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\EPSGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\IDealGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\MultibancoGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\MyBankGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\P24Gateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\PWCGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\TrustlyGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\GatewayIds;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\OXXOGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\PayUponInvoice\PayUponInvoiceGateway;
 
 /**
  * GatewayRedirectService class. Handles redirects from individual gateway
@@ -46,17 +35,17 @@ class GatewayRedirectService {
 			GatewayIds::APPLE_PAY,
 			GatewayIds::CREDIT_CARD,
 			GatewayIds::CARD_BUTTON,
-			BancontactGateway::ID,
-			BlikGateway::ID,
-			EPSGateway::ID,
-			IDealGateway::ID,
-			MyBankGateway::ID,
-			P24Gateway::ID,
-			TrustlyGateway::ID,
-			MultibancoGateway::ID,
-			OXXOGateway::ID,
-			PayUponInvoiceGateway::ID,
-			PWCGateway::ID,
+			GatewayIds::BANCONTACT,
+			GatewayIds::BLIK,
+			GatewayIds::EPS,
+			GatewayIds::IDEAL,
+			GatewayIds::MYBANK,
+			GatewayIds::P24,
+			GatewayIds::TRUSTLY,
+			GatewayIds::MULTIBANCO,
+			GatewayIds::OXXO,
+			GatewayIds::PAY_UPON_INVOICE,
+			GatewayIds::PWC,
 		);
 	}
 

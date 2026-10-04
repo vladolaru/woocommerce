@@ -189,12 +189,6 @@ class CheckoutBootstrap {
 		const showVaultComponent =
 			!! this.vaultRenderer && isPaypal && ! isFreeTrial;
 
-		const paypalButtonWrappers = Object.entries(
-			PayPalCommerceGateway.separate_buttons
-		).reduce( ( result, [ , data ] ) => {
-			return { ...result, [ data.id ]: data.wrapper };
-		}, {} );
-
 		setVisibleByClass(
 			this.standardOrderButtonSelector,
 			( isPaypal && isFreeTrial && hasVaultedPaypal ) ||
@@ -232,12 +226,6 @@ class CheckoutBootstrap {
 			this.approvedVaultOrderId = null;
 			this.removeVaultOrderIdInput();
 		}
-		for ( const [ gatewayId, wrapper ] of Object.entries(
-			paypalButtonWrappers
-		) ) {
-			setVisible( wrapper, gatewayId === currentPaymentMethod );
-		}
-
 		/**
 		 * Custom JS event that is observed by the relevant payment gateway.
 		 *

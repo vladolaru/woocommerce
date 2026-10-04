@@ -18,8 +18,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\AdminNotice
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\AdminNotices\Repository\Repository;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\Capture;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\ReferenceTransactionStatus;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ModuleAvailability;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\LocalApmProductStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\Definition\FeaturesDefinition;
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ExecutableModule;
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ExtendingModule;
@@ -44,7 +42,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\G
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\ApmCapabilityStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\DCCProductStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\InstallmentsProductStatus;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\PayUponInvoice\PayUponInvoiceProductStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\PWCProductStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\ResumedOrderShippingRestorer;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\SettingsStatus;
@@ -269,11 +266,6 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 				assert( $dcc_status instanceof DCCProductStatus );
 				$dcc_status->clear();
 				$dcc_status->is_active();
-
-				$pui_status = $c->get( 'wcgateway.pay-upon-invoice-product-status' );
-				assert( $pui_status instanceof PayUponInvoiceProductStatus );
-				$pui_status->clear();
-				$pui_status->is_active();
 			},
 			20
 		);
@@ -356,12 +348,6 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 					$dcc_product_status->clear();
 				}
 
-				// Clear Pay Upon Invoice status.
-				$pui_product_status = $c->get( 'wcgateway.pay-upon-invoice-product-status' );
-				if ( $pui_product_status instanceof PayUponInvoiceProductStatus ) {
-					$pui_product_status->clear();
-				}
-
 				// Clear PWC status.
 				$pwc_product_status = $c->get( 'wcgateway.pwc-product-status' );
 				if ( $pwc_product_status instanceof PWCProductStatus ) {
@@ -420,15 +406,6 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 
 				$dcc_applies = $c->get( 'api.helpers.dccapplies' );
 
-				$availability = $c->get( 'ppcp.module-availability' );
-				assert( $availability instanceof ModuleAvailability );
-				$apms_enabled = false;
-				if ( $availability->is_loaded( 'ppcp-local-apms' ) ) {
-					$apms_product_status = $c->get( 'ppcp-local-apms.product-status' );
-					assert( $apms_product_status instanceof LocalApmProductStatus );
-					$apms_enabled = $apms_product_status->is_active();
-				}
-
 				$apm_capability_status = $c->get( 'wcgateway.apm-capability-status' );
 				assert( $apm_capability_status instanceof ApmCapabilityStatus );
 
@@ -441,9 +418,6 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 				$contact_module_check = $c->get( 'wcgateway.contact-module.eligibility.check' );
 				assert( is_callable( $contact_module_check ) );
 
-				$pui_product_status = $c->get( 'wcgateway.pay-upon-invoice-product-status' );
-				assert( $pui_product_status instanceof PayUponInvoiceProductStatus );
-
 				$save_payment_methods_check = $c->get( 'save-payment-methods.eligibility.check' );
 				assert( is_callable( $save_payment_methods_check ) );
 
@@ -455,12 +429,8 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 					'enabled' => $dcc_product_status->is_active() && $dcc_applies->for_country_currency(),
 				);
 
-				$features[ FeaturesDefinition::FEATURE_ALTERNATIVE_PAYMENT_METHODS ] = array(
-					'enabled' => $apms_enabled,
-				);
-
 				// Seller status has no Pay Later messaging capability, so the APM capability is the proxy.
-				// It is read here directly, so the result does not depend on the local APM module being loaded.
+				// It is read here directly through the capability status.
 				$features[ FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING ] = array(
 					'enabled' => $apm_capability_status->is_active(),
 				);
@@ -475,10 +445,6 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 
 				$features[ FeaturesDefinition::FEATURE_CONTACT_MODULE ] = array(
 					'enabled' => $contact_module_check(),
-				);
-
-				$features[ FeaturesDefinition::FEATURE_PAY_UPON_INVOICE ] = array(
-					'enabled' => $pui_product_status->is_active(),
 				);
 
 				return $features;
@@ -801,7 +767,7 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 	 * Checks, if the provided argument is a WC_Order which was paid directly by PayPal.
 	 *
 	 * Only considers direct PayPal payments, and returns false for orders that were paid "via"
-	 * PayPal, like local APMs.
+	 * PayPal by another gateway.
 	 *
 	 * @param WC_Order|mixed $order The order to verify.
 	 * @return bool True, if it's a valid order that was paid via PayPal.

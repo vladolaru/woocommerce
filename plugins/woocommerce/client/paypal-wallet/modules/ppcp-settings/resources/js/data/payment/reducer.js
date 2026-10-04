@@ -25,23 +25,10 @@ const defaultPersistent = Object.freeze( {
 	'pay-later': {},
 	'ppcp-axo-gateway': {},
 	'ppcp-pwc': {},
-	'ppcp-bancontact': {},
-	'ppcp-blik': {},
-	'ppcp-eps': {},
-	'ppcp-ideal': {},
-	'ppcp-mybank': {},
-	'ppcp-p24': {},
-	'ppcp-trustly': {},
-	'ppcp-multibanco': {},
-	'ppcp-pay-upon-invoice-gateway': {},
-	'ppcp-oxxo-gateway': {},
 
 	// Custom payment method properties.
 	paypalShowLogo: false,
 	fastlaneDisplayWatermark: false,
-	puiBrandName: '',
-	puiLogoUrl: '',
-	puiCustomerServiceInstructions: '',
 	__meta: false,
 } );
 

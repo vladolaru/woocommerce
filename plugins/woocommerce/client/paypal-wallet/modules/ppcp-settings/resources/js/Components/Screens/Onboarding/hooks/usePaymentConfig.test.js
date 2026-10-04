@@ -7,14 +7,10 @@ jest.mock( '@ppcp-settings/data/index', () => ( {
 } ) );
 
 const EXPECTED_PAYMENT_METHODS = [
-	[
-		'US',
-		[ 'PayWithPayPal', 'PayLater', 'Venmo', 'Crypto' ],
-		[ 'APMs', 'Fastlane' ],
-	],
-	[ 'GB', [ 'PayWithPayPal', 'PayInThree' ], [ 'APMs', 'Fastlane' ] ],
-	[ 'AU', [ 'PayWithPayPal', 'PayLater' ], [ 'APMs', 'Fastlane' ] ],
-	[ 'MX', [ 'PayWithPayPal', 'PayLater' ], [ 'APMs', 'Fastlane' ] ],
+	[ 'US', [ 'PayWithPayPal', 'PayLater', 'Venmo', 'Crypto' ], [ 'Fastlane' ] ],
+	[ 'GB', [ 'PayWithPayPal', 'PayInThree' ], [ 'Fastlane' ] ],
+	[ 'AU', [ 'PayWithPayPal', 'PayLater' ], [ 'Fastlane' ] ],
+	[ 'MX', [ 'PayWithPayPal', 'PayLater' ], [ 'Fastlane' ] ],
 ];
 
 describe( 'usePaymentConfig hook', () => {
@@ -86,23 +82,28 @@ describe( 'usePaymentConfig hook', () => {
 					usePaymentConfig( country, true, true, true )
 				);
 
-				expect(
-					result.current.optionalMethods.map(
-						( method ) => method.name
-					)
-				).toEqual( [ 'APMs' ] );
+				expect( result.current.optionalMethods ).toEqual( [] );
 			}
 		);
+	} );
 
-		test( 'Country MX should not contain APMs when canUseCardPayments is false', () => {
-			const { result } = renderHook( () =>
-				usePaymentConfig( 'MX', false, false, false )
-			);
-			const methodNames = result.current.optionalMethods.map(
-				( method ) => method.name
-			);
-			expect( methodNames ).not.toContain( 'APMs' );
-		} );
+	describe( 'Local payment methods', () => {
+		test.each( [ 'US', 'GB', 'AU', 'MX' ] )(
+			'Country %s should offer no local payment method tile or icon',
+			( country ) => {
+				const { result } = renderHook( () =>
+					usePaymentConfig( country, true, true, false )
+				);
+				const methodNames = result.current.optionalMethods.map(
+					( method ) => method.name
+				);
+
+				expect( methodNames ).not.toContain( 'APMs' );
+				[ 'blik', 'ideal', 'bancontact', 'oxxo' ].forEach( ( icon ) =>
+					expect( result.current.icons ).not.toContain( icon )
+				);
+			}
+		);
 	} );
 
 	describe( 'Digital wallets', () => {

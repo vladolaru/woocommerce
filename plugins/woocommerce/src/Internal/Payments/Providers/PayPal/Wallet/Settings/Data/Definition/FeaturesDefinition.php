@@ -44,11 +44,6 @@ class FeaturesDefinition {
 	public const FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS = 'advanced_credit_and_debit_cards';
 
 	/**
-	 * Whether alternative payment methods are supported.
-	 */
-	public const FEATURE_ALTERNATIVE_PAYMENT_METHODS = 'alternative_payment_methods';
-
-	/**
 	 * Contact module allows the merchant to unlock the "Custom Shipping Contact" toggle.
 	 */
 	public const FEATURE_CONTACT_MODULE = 'contact_module';
@@ -57,11 +52,6 @@ class FeaturesDefinition {
 	 * Whether Pay With Crypto Feature is supported.
 	 */
 	public const FEATURE_PAY_WITH_CRYPTO = 'pwc';
-
-	/**
-	 * Whether Pay upon Invoice (PUI) is supported. Available for merchants in Germany.
-	 */
-	public const FEATURE_PAY_UPON_INVOICE = 'pay_upon_invoice';
 
 	/**
 	 * Whether the Vault Component feature is enabled.
@@ -222,38 +212,6 @@ class FeaturesDefinition {
 					),
 				),
 			),
-			self::FEATURE_ALTERNATIVE_PAYMENT_METHODS     => array(
-				'title'       => __( 'Alternative Payment Methods', 'woocommerce' ),
-				'description' => __( 'Offer global, country-specific payment options for your customers.', 'woocommerce' ),
-				'enabled'     => $this->merchant_capabilities[ self::FEATURE_ALTERNATIVE_PAYMENT_METHODS ],
-				'buttons'     => array(
-					array(
-						'type'     => 'secondary',
-						'text'     => __( 'Configure', 'woocommerce' ),
-						'action'   => array(
-							'type'      => 'tab',
-							'tab'       => 'payment_methods',
-							'section'   => 'ppcp-alternative-payments-card',
-							'highlight' => false,
-						),
-						'showWhen' => 'enabled',
-						'class'    => 'small-button',
-					),
-					array(
-						'type'     => 'secondary',
-						'text'     => __( 'Sign up', 'woocommerce' ),
-						'url'      => 'https://developer.paypal.com/docs/checkout/apm/',
-						'showWhen' => 'disabled',
-						'class'    => 'small-button',
-					),
-					array(
-						'type'  => 'tertiary',
-						'text'  => __( 'Learn more', 'woocommerce' ),
-						'url'   => 'https://developer.paypal.com/docs/checkout/apm/',
-						'class' => 'small-button',
-					),
-				),
-			),
 			self::FEATURE_PAY_LATER_MESSAGING             => array(
 				'title'       => __( 'Pay Later Messaging', 'woocommerce' ),
 				'description' => __(
@@ -305,41 +263,6 @@ class FeaturesDefinition {
 						'url'      => 'https://www.paypal.com/businessmanage/preferences/installmentplan',
 						'showWhen' => 'disabled',
 						'class'    => 'small-button',
-					),
-				),
-			),
-			self::FEATURE_PAY_UPON_INVOICE                => array(
-				'title'       => __( 'Pay upon Invoice', 'woocommerce' ),
-				'description' => __( 'Offer Pay upon Invoice (Rechnungskauf) for customers in Germany. Buyers receive goods first and pay within 30 days — no PayPal account needed. Powered by Ratepay.', 'woocommerce' ),
-				'enabled'     => $this->merchant_capabilities[ self::FEATURE_PAY_UPON_INVOICE ],
-				'buttons'     => array(
-					array(
-						'type'     => 'secondary',
-						'text'     => __( 'Configure', 'woocommerce' ),
-						'action'   => array(
-							'type'    => 'tab',
-							'tab'     => 'payment_methods',
-							'section' => 'ppcp-pay-upon-invoice-gateway',
-							'modal'   => 'ppcp-pay-upon-invoice-gateway',
-						),
-						'showWhen' => 'enabled',
-						'class'    => 'small-button',
-					),
-					array(
-						'type'     => 'secondary',
-						'text'     => __( 'Sign up', 'woocommerce' ),
-						'urls'     => array(
-							'sandbox' => 'https://www.sandbox.paypal.com/bizsignup/entry?country.x=DE&product=payment_methods&capabilities=PAY_UPON_INVOICE',
-							'live'    => 'https://www.paypal.com/bizsignup/entry?country.x=DE&product=payment_methods&capabilities=PAY_UPON_INVOICE',
-						),
-						'showWhen' => 'disabled',
-						'class'    => 'small-button',
-					),
-					array(
-						'type'  => 'tertiary',
-						'text'  => __( 'Learn more', 'woocommerce' ),
-						'url'   => 'https://developer.paypal.com/docs/checkout/apm/pay-upon-invoice/',
-						'class' => 'small-button',
 					),
 				),
 			),

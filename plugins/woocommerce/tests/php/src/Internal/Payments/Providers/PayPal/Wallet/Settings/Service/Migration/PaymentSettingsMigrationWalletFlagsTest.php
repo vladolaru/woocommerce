@@ -63,7 +63,7 @@ class PaymentSettingsMigrationWalletFlagsTest extends WalletTestCase {
 	 * @param array $settings The legacy settings.
 	 */
 	private function migrate( array $settings ): void {
-		( new PaymentSettingsMigration( $settings, $this->payment_settings, array() ) )->migrate();
+		( new PaymentSettingsMigration( $settings, $this->payment_settings ) )->migrate();
 	}
 
 	/**

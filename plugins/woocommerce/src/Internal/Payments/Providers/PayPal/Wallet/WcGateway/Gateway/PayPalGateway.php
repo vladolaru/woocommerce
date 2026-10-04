@@ -398,7 +398,7 @@ class PayPalGateway extends \WC_Payment_Gateway {
 	private function define_method_description(): string {
 		if ( is_admin() ) {
 			return __(
-				'Accept PayPal, Pay Later and alternative payment types.',
+				'Accept PayPal, Venmo, and Pay Later.',
 				'woocommerce'
 			);
 		}

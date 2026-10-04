@@ -31,9 +31,7 @@ use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ExecutableModule;
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ModuleClassNameIdTrait;
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ServiceModule;
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\OXXOGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\PayUponInvoice\PayUponInvoiceGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\SettingsDataManager;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\MerchantDataResolver;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\DTO\ConfigurationFlagsDTO;
@@ -467,44 +465,6 @@ class SettingsModule implements ServiceModule, ExecutableModule {
 			2
 		);
 
-		// Enable APMs after onboarding if the country is compatible.
-		add_action(
-			'woocommerce_paypal_payments_toggle_payment_gateways_apms',
-			function ( PaymentSettings $payment_methods, array $methods_apm, ConfigurationFlagsDTO $flags ) use ( $container ) {
-
-				$general_settings = $container->get( 'settings.data.general' );
-				assert( $general_settings instanceof GeneralSettings );
-
-				$merchant_data    = $general_settings->get_merchant_data();
-				$merchant_country = $merchant_data->merchant_country;
-
-				// Enable all APM methods.
-				foreach ( $methods_apm as $method ) {
-					if ( $flags->use_card_payments === false ) {
-						$payment_methods->toggle_method_state( $method['id'], $flags->use_card_payments );
-						continue;
-					}
-
-					// Skip PayUponInvoice if merchant is not in Germany.
-					if ( PayUponInvoiceGateway::ID === $method['id'] && 'DE' !== $merchant_country ) {
-						continue;
-					}
-
-					// For OXXO: enable ONLY if merchant is in Mexico.
-					if ( OXXOGateway::ID === $method['id'] ) {
-						if ( 'MX' === $merchant_country ) {
-							$payment_methods->toggle_method_state( $method['id'], true );
-						}
-						continue;
-					}
-
-					$payment_methods->toggle_method_state( $method['id'], true );
-				}
-			},
-			10,
-			3
-		);
-
 		// Toggle payment gateways after onboarding based on flags.
 		add_action(
 			'woocommerce_paypal_payments_sync_gateways',
@@ -563,59 +523,6 @@ class SettingsModule implements ServiceModule, ExecutableModule {
 				assert( $country_resolver instanceof MerchantDataResolver );
 
 				$country_resolver->ensure_country_resolved();
-			}
-		);
-
-		add_action(
-			'woocommerce_paypal_payments_gateway_migrate',
-			/**
-			 * Retroactive fix for local APMs not enabled after migration when
-			 * allow_local_apm_gateways was false.
-			 *
-			 * In versions up to 3.4.1, the migration only enabled local APMs when
-			 * allow_local_apm_gateways was truthy. When it was false, APMs were shown
-			 * inside the PayPal button, not as separate gateways. The new UI always
-			 * treats APMs as separate gateways, so skipping them left them invisible.
-			 *
-			 * @param false|string $previous_version The previously installed plugin version,
-			 *                                       or false on first installation.
-			 */
-			static function ( $previous_version ) use ( $container ): void {
-				if ( $previous_version && version_compare( $previous_version, '3.4.1', 'gt' ) ) {
-					return;
-				}
-
-				if ( get_option( MigrationManager::OPTION_NAME_MIGRATION_IS_DONE ) !== '1' ) {
-					return;
-				}
-
-				$legacy_settings = (array) get_option( 'woocommerce-ppcp-settings', array() );
-
-				// Only fix merchants who had allow_local_apm_gateways falsy.
-				// Truthy merchants were migrated correctly.
-				if ( ! empty( $legacy_settings['allow_local_apm_gateways'] ) ) {
-					return;
-				}
-
-				$payment_settings = $container->get( 'settings.data.payment' );
-				assert( $payment_settings instanceof PaymentSettings );
-
-				$local_apms      = $container->get( 'ppcp.module-availability' )->is_loaded( 'ppcp-local-apms' ) ? $container->get( 'ppcp-local-apms.payment-methods' ) : array();
-				$disable_funding = (array) ( $legacy_settings['disable_funding'] ?? array() );
-				$changed         = false;
-
-				foreach ( $local_apms as $apm ) {
-					if ( ! in_array( $apm['id'], $disable_funding, true )
-						&& ! $payment_settings->is_method_enabled( $apm['id'] )
-					) {
-						$payment_settings->toggle_method_state( $apm['id'], true );
-						$changed = true;
-					}
-				}
-
-				if ( $changed ) {
-					$payment_settings->save();
-				}
 			}
 		);
 

@@ -1,9 +1,5 @@
 import { loadScript } from '@paypal/paypal-js';
 import { debounce } from './helper/debounce';
-import {
-	buttonRefreshTriggerFactory,
-	buttonSettingsGetterFactory,
-} from './helper/preview-button';
 import Renderer from '@ppcp-button/Renderer/Renderer';
 import MessageRenderer from '@ppcp-button/Renderer/MessageRenderer';
 import {
@@ -108,10 +104,7 @@ document.addEventListener( 'DOMContentLoaded', () => {
 				...settings,
 			};
 
-			const { button, separate_buttons } = previewSettings;
-			const wrapperSelector = (
-				Object.values( separate_buttons )[ 0 ] ?? button
-			)?.wrapper;
+			const wrapperSelector = previewSettings.button?.wrapper;
 			const wrapper = document.querySelector( wrapperSelector );
 
 			if ( ! wrapper ) {
@@ -221,7 +214,7 @@ document.addEventListener( 'DOMContentLoaded', () => {
 			);
 	}
 
-	function getButtonSettings( wrapperSelector, fields, apm = null ) {
+	function getButtonSettings( wrapperSelector, fields ) {
 		const layoutElement = jQuery( fields.layout );
 		const layout =
 			layoutElement.length && layoutElement.is( ':visible' )
@@ -244,21 +237,12 @@ document.addEventListener( 'DOMContentLoaded', () => {
 				? 'vertical'
 				: 'horizontal';
 		}
-		const settings = {
+		return {
 			button: {
 				wrapper: wrapperSelector,
 				style,
 			},
-			separate_buttons: {},
 		};
-		if ( apm ) {
-			settings.separate_buttons[ apm ] = {
-				wrapper: wrapperSelector,
-				style,
-			};
-			settings.button.wrapper = null;
-		}
-		return settings;
 	}
 
 	function createMessagesPreview( settingsCallback ) {
@@ -352,7 +336,6 @@ document.addEventListener( 'DOMContentLoaded', () => {
 				wrapper: wrapperSelector,
 				style,
 			},
-			separate_buttons: {},
 		};
 	}
 
@@ -426,32 +409,6 @@ document.addEventListener( 'DOMContentLoaded', () => {
 					)
 				);
 			} );
-
-			/**
-			 * Inspect DOM to find APM button previews; on tabs that show more than one payment method button.
-			 *
-			 * How it works:
-			 *
-			 * 1. Add a <div> to hold the preview button to the settings page:
-			 *    - `id="ppcp[NAME]ButtonPreview"`
-			 *    - `data-ppc-apm-preview="[NAME]"`
-			 * 2. Mark all fields that are relevant for the preview button:
-			 *    - custom_attribute: `data-ppcp-apm-name="[NAME]"`
-			 *    - custom_attribute: `data-ppcp-field-name="[FIELD]"`
-			 *
-			 * This block will find all marked input fields and trigger a re-render of the
-			 * preview button when one of those fields value changes.
-			 */
-			document
-				.querySelectorAll( '[data-ppcp-preview-block]' )
-				.forEach( ( item ) => {
-					const apmName = item.dataset.ppcpPreviewBlock;
-					const getSettings = buttonSettingsGetterFactory( apmName );
-					const renderButtonPreview =
-						buttonRefreshTriggerFactory( apmName );
-
-					renderPreview( getSettings, renderButtonPreview );
-				} );
 
 			payLaterMessagingLocations.forEach( ( location ) => {
 				const inputNamePrefix =

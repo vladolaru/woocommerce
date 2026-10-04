@@ -15,13 +15,12 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\E
 
 /**
  * Reads the APM seller capability for features that use it as a proxy (Pay Later
- * messaging), without depending on the local APM module.
+ * messaging).
  */
 class ApmCapabilityStatus extends ProductStatus {
 	/**
-	 * Shares the result-cache key of the local APM product status on purpose: both
-	 * classes read the same capability, so they reuse one cached answer, make no
-	 * extra seller-status request, and cannot disagree within a request.
+	 * The result-cache key. It is kept stable so answers already stored under it
+	 * stay valid.
 	 */
 	public const KEY             = 'products_local_apms_enabled';
 	public const CAPABILITY_NAME = 'PAYPAL_CHECKOUT_ALTERNATIVE_PAYMENT_METHODS';

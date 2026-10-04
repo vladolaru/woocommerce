@@ -10,7 +10,6 @@ declare(strict_types=1);
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\Handler;
 
 use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\LocalAlternativePaymentMethods\PayUponInvoice\PayUponInvoiceGateway;
 use WP_REST_Request;
 use WP_REST_Response;
 
@@ -78,10 +77,6 @@ class CheckoutOrderCompleted implements RequestHandler {
 		}
 
 		foreach ( $wc_orders as $wc_order ) {
-			if ( PayUponInvoiceGateway::ID === $wc_order->get_payment_method() ) {
-				continue;
-			}
-
 			$wc_order->payment_complete();
 
 			$this->logger->info(

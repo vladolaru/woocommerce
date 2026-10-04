@@ -34,9 +34,6 @@ const useHooks = () => {
 	const [ completed, setCompleted ] = usePersistent( 'completed' );
 	const [ isCasualSeller, setIsCasualSeller ] =
 		usePersistent( 'isCasualSeller' );
-	const [ optionalMethods, setOptionalMethods ] = usePersistent(
-		'areOptionalPaymentMethodsEnabled'
-	);
 	const [ products, setProducts ] = usePersistent( 'products' );
 	const [ gatewaysSynced, setGatewaysSynced ] =
 		usePersistent( 'gatewaysSynced' );
@@ -74,10 +71,6 @@ const useHooks = () => {
 		manualClientSecret,
 		setManualClientSecret: ( value ) => {
 			return savePersistent( setManualClientSecret, value );
-		},
-		optionalMethods,
-		setOptionalMethods: ( value, source ) => {
-			return savePersistent( setOptionalMethods, value, source );
 		},
 		products,
 		setProducts: ( activeProducts, source ) => {
@@ -135,15 +128,6 @@ export const useProducts = () => {
 	return { products, setProducts };
 };
 
-export const useOptionalPaymentMethods = () => {
-	const { optionalMethods, setOptionalMethods } = useHooks();
-
-	return {
-		optionalMethods,
-		setOptionalMethods,
-	};
-};
-
 export const useSteps = () => {
 	const { flags, isReady, step, setStep, completed, setCompleted } =
 		useHooks();
@@ -154,12 +138,10 @@ export const useSteps = () => {
 export const useNavigationState = () => {
 	const products = useProducts();
 	const business = useBusiness();
-	const methods = useOptionalPaymentMethods();
 
 	return {
 		products,
 		business,
-		methods,
 	};
 };
 
@@ -203,7 +185,6 @@ export const OnboardingHooks = {
 	useManualConnectionForm,
 	useBusiness,
 	useProducts,
-	useOptionalPaymentMethods,
 	useSteps,
 	useNavigationState,
 	useDetermineProducts,

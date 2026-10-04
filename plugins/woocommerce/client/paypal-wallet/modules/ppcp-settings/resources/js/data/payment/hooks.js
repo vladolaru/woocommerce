@@ -67,48 +67,17 @@ export const usePaymentMethods = () => {
 	// Online card Payments.
 	const [ fastlane ] = usePersistent( 'ppcp-axo-gateway' );
 
-	// Alternative payment methods.
-	const [ pwc ] = usePersistent( 'ppcp-pwc' );
-	const [ bancontact ] = usePersistent( 'ppcp-bancontact' );
-	const [ blik ] = usePersistent( 'ppcp-blik' );
-	const [ eps ] = usePersistent( 'ppcp-eps' );
-	const [ ideal ] = usePersistent( 'ppcp-ideal' );
-	const [ mybank ] = usePersistent( 'ppcp-mybank' );
-	const [ p24 ] = usePersistent( 'ppcp-p24' );
-	const [ trustly ] = usePersistent( 'ppcp-trustly' );
-	const [ multibanco ] = usePersistent( 'ppcp-multibanco' );
-	const [ pui ] = usePersistent( 'ppcp-pay-upon-invoice-gateway' );
-	const [ oxxo ] = usePersistent( 'ppcp-oxxo-gateway' );
-
 	const removeEmpty = ( list ) =>
 		list.filter( ( item ) => item && item.id?.length );
 
 	const payPalCheckout = removeEmpty( [ paypal, venmo, payLater ] );
 	const onlineCardPayments = removeEmpty( [ fastlane ] );
-	const alternative = removeEmpty( [
-		pwc,
-		bancontact,
-		blik,
-		eps,
-		ideal,
-		mybank,
-		p24,
-		trustly,
-		multibanco,
-		pui,
-		oxxo,
-	] );
 
-	const paymentMethods = [
-		...payPalCheckout,
-		...onlineCardPayments,
-		...alternative,
-	];
+	const paymentMethods = [ ...payPalCheckout, ...onlineCardPayments ];
 
 	return {
 		all: paymentMethods,
 		paypal: payPalCheckout,
-		apm: alternative,
 	};
 };
 
@@ -119,17 +88,9 @@ export const usePaymentMethodsModal = () => {
 	const [ fastlaneDisplayWatermark ] = usePersistent(
 		'fastlaneDisplayWatermark'
 	);
-	const [ puiBrandName ] = usePersistent( 'puiBrandName' );
-	const [ puiLogoUrl ] = usePersistent( 'puiLogoUrl' );
-	const [ puiCustomerServiceInstructions ] = usePersistent(
-		'puiCustomerServiceInstructions'
-	);
 
 	return {
 		paypalShowLogo,
 		fastlaneDisplayWatermark,
-		puiBrandName,
-		puiLogoUrl,
-		puiCustomerServiceInstructions,
 	};
 };

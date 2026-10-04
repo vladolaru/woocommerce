@@ -1013,7 +1013,6 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 					)
 				),
 			),
-			'separate_buttons'                        => array(),
 			'messages'                                => $this->message_values(),
 			'labels'                                  => array(
 				'error'          => array(
@@ -1327,7 +1326,7 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 		/**
 		 * Filter to add further components from the extensions.
 		 *
-		 * @internal Matches filter name in APM extension.
+		 * Lets third parties add SDK components.
 		 *
 		 * @param array  $components The array of components already registered.
 		 * @param string $context    The SmartButton context.

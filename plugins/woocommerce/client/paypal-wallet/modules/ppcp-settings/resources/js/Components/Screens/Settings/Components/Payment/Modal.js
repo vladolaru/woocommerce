@@ -17,7 +17,7 @@ const Modal = ( { method, setModalIsVisible, onSave } ) => {
 	const methodConfig = paymentMethods.find( ( i ) => i.id === method?.id );
 
 	// Build a unified value map from all sources.
-	// Persistent store values cover fields like paypalShowLogo, puiBrandName, etc.
+	// Persistent store values cover fields like paypalShowLogo.
 	// Method-level values cover checkout page title and description.
 	const currentValues = {
 		...persistentValues,
