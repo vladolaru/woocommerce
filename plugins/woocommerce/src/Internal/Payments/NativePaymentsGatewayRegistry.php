@@ -91,10 +91,16 @@ class NativePaymentsGatewayRegistry implements RegisterHooksInterface {
 	/**
 	 * Add native payment gateway instances.
 	 *
-	 * @param array<int|string,mixed> $gateways Registered gateway classes or instances.
+	 * A non-array from an earlier callback becomes an empty list, as WooCommerce's own loop loads nothing from null or a string.
+	 *
+	 * @param mixed $gateways Registered gateway classes or instances.
 	 * @return array<int|string,mixed>
 	 */
-	public function register_gateway( array $gateways ): array {
+	public function register_gateway( $gateways ): array {
+		if ( ! is_array( $gateways ) ) {
+			$gateways = array();
+		}
+
 		if ( ! $this->arbiter->should_native_register() ) {
 			return $gateways;
 		}

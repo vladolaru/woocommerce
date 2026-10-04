@@ -184,6 +184,32 @@ class NativePaymentsGatewayRegistryTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should treat a non-array gateway list from an earlier callback as empty.
+	 * @testWith [null]
+	 *           ["WC_Gateway_BACS"]
+	 *
+	 * @param mixed $gateways Value returned by an earlier callback.
+	 */
+	public function test_register_gateway_treats_a_non_array_gateway_list_as_empty( $gateways ): void {
+		$gateway = $this->create_gateway( 'woocommerce_payments' );
+		$sut     = new NativePaymentsGatewayRegistry();
+		$sut->init( new StaticNativeRuntimeArbiter( true ) );
+		$sut->register_provider( new StaticProvider( true, array( $gateway ) ) );
+
+		$this->assertSame( array( $gateway ), $sut->register_gateway( $gateways ) );
+	}
+
+	/**
+	 * @testdox Should return an empty list for a non-array gateway list when native does not own the site.
+	 */
+	public function test_register_gateway_returns_an_empty_list_for_a_non_array_when_native_does_not_own_the_site(): void {
+		$sut = new NativePaymentsGatewayRegistry();
+		$sut->init( new StaticNativeRuntimeArbiter( false ) );
+
+		$this->assertSame( array(), $sut->register_gateway( null ) );
+	}
+
+	/**
 	 * @testdox Should remain resolvable by the WooCommerce runtime container.
 	 */
 	public function test_runtime_container_can_resolve_registry(): void {
