@@ -46,6 +46,13 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	public const FLAG_PREVIOUS_SUCCESSFUL_INTENT = 'wcpay_previous_successful_intent';
 
 	/**
+	 * Payment methods paid offline after checkout, through a voucher.
+	 *
+	 * Mirrors the plugin's Payment_Method::OFFLINE_PAYMENT_METHODS (client 11.1.0 `includes/constants/class-payment-method.php:61-63`).
+	 */
+	private const OFFLINE_PAYMENT_METHODS = array( 'multibanco' );
+
+	/**
 	 * WooCommerce session.
 	 *
 	 * @var \WC_Session|null
@@ -154,18 +161,19 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	/**
 	 * Clear an order from duplicate-payment session tracking when its checkout ended with an offline voucher.
 	 *
-	 * The client clears it when the intent succeeded or is an offline method waiting for the shopper (gw:2147-2148);
-	 * a succeeded intent is cleared through `woocommerce_payment_complete`, and a Multibanco voucher is the only
-	 * `requires_action` intent native maps to an authorized outcome.
+	 * The client clears it when the intent succeeded, or is `requires_action` for an offline payment method (gw:2021,
+	 * 2147-2148, `Payment_Information::is_offline_payment_method()`). A succeeded intent is cleared through
+	 * `woocommerce_payment_complete`.
 	 *
-	 * @param int            $order_id Order ID.
-	 * @param PaymentOutcome $outcome  Checkout outcome.
+	 * @param int            $order_id          Order ID.
+	 * @param string         $payment_method_id Payment method of the gateway that took the payment, such as `multibanco`.
+	 * @param PaymentOutcome $outcome           Checkout outcome.
 	 */
-	public function maybe_remove_session_processing_order_for_offline_voucher( int $order_id, PaymentOutcome $outcome ): void {
+	public function maybe_remove_session_processing_order_for_offline_voucher( int $order_id, string $payment_method_id, PaymentOutcome $outcome ): void {
 		$data = $outcome->get_data();
 		$meta = isset( $data[ PaymentOutcome::DATA_META ] ) && is_array( $data[ PaymentOutcome::DATA_META ] ) ? $data[ PaymentOutcome::DATA_META ] : array();
 
-		if ( PaymentOutcome::STATUS_AUTHORIZED === $outcome->get_status() && 'requires_action' === ( $meta['_intention_status'] ?? '' ) ) {
+		if ( 'requires_action' === ( $meta['_intention_status'] ?? '' ) && in_array( $payment_method_id, self::OFFLINE_PAYMENT_METHODS, true ) ) {
 			$this->remove_session_processing_order( $order_id );
 		}
 	}

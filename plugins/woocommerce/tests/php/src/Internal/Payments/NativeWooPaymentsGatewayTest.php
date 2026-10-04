@@ -4721,19 +4721,24 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox A checkout that ends with $label $outcome the order from duplicate-payment session tracking.
 	 *
 	 * Client 11.1.0 process_payment_for_order() removes the session's processing order when the intent succeeded or is
-	 * an offline method waiting for the shopper, that is a Multibanco voucher (gw:2021, 2147-2148; Payment_Method::OFFLINE_PAYMENT_METHODS).
-	 * An authorized card or a card waiting on a 3DS challenge stays tracked until its order-received page.
+	 * `requires_action` for an offline method, that is Multibanco (gw:2021, 2147-2148; `class-payment-information.php:521-523`;
+	 * Payment_Method::OFFLINE_PAYMENT_METHODS). The method is the gateway's own (gw:1451, 2479-2482), not the intent's
+	 * next action. An authorized card or a card waiting on a 3DS challenge stays tracked until its order-received page.
 	 *
-	 * @testWith ["a Multibanco voucher", "requires_action", "multibanco_display_details", "removes"]
-	 *           ["an authorized card payment", "requires_capture", "", "keeps"]
-	 *           ["a 3DS card challenge", "requires_action", "use_stripe_sdk", "keeps"]
+	 * @testWith ["a Multibanco voucher", "multibanco", "requires_action", "multibanco_display_details", "removes"]
+	 *           ["a Multibanco intent waiting without voucher details", "multibanco", "requires_action", "", "removes"]
+	 *           ["a failed Multibanco intent", "multibanco", "requires_payment_method", "", "keeps"]
+	 *           ["an authorized card payment", "card", "requires_capture", "", "keeps"]
+	 *           ["a 3DS card challenge", "card", "requires_action", "use_stripe_sdk", "keeps"]
+	 *           ["a card intent whose next action shows voucher details", "card", "requires_action", "multibanco_display_details", "keeps"]
 	 *
-	 * @param string $label       Case label.
-	 * @param string $status      PaymentIntent status.
-	 * @param string $next_action PaymentIntent next action type, if any.
-	 * @param string $outcome     Whether the gateway removes or keeps the tracked order.
+	 * @param string $label          Case label.
+	 * @param string $payment_method Payment method of the gateway that takes the payment.
+	 * @param string $status         PaymentIntent status.
+	 * @param string $next_action    PaymentIntent next action type, if any.
+	 * @param string $outcome        Whether the gateway removes or keeps the tracked order.
 	 */
-	public function test_process_payment_clears_session_processing_order_for_offline_voucher( string $label, string $status, string $next_action, string $outcome ): void {
+	public function test_process_payment_clears_session_processing_order_for_offline_voucher( string $label, string $payment_method, string $status, string $next_action, string $outcome ): void {
 		unset( $label );
 		$order   = $this->create_order();
 		$session = $this->create_session();
@@ -4770,7 +4775,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false )
 		);
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new NativeWooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method ) );
 		$gateway->init(
 			$service,
 			new WooPaymentsProvider(),
