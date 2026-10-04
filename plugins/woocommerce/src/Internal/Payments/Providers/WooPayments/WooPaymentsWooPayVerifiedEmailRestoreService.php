@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 use WC_Order;
@@ -214,45 +215,11 @@ class WooPaymentsWooPayVerifiedEmailRestoreService implements RegisterHooksInter
 			$order->delete_meta_data( self::MERCHANT_CUSTOMER_ID_META );
 			$order->save();
 
-			$fresh_order = $this->reread_order_authoritatively( $order );
+			$fresh_order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
 			return ! $fresh_order->meta_exists( self::MERCHANT_CUSTOMER_ID_META );
 		} catch ( Throwable $throwable ) {
 			return false;
 		}
-	}
-
-	/**
-	 * Reload an order from its active data store without relying on object caches.
-	 *
-	 * @param WC_Order $order Order to reload.
-	 * @return WC_Order Fresh order state.
-	 */
-	private function reread_order_authoritatively( WC_Order $order ): WC_Order {
-		$order_id = $order->get_id();
-
-		clean_post_cache( $order_id );
-		wp_cache_delete( WC_Order::generate_meta_cache_key( $order_id, 'orders' ), 'orders' );
-
-		/**
-		 * Active order data store.
-		 *
-		 * @var \WC_Object_Data_Store_Interface $data_store
-		 */
-		$data_store = $order->get_data_store();
-		if ( is_callable( array( $data_store, 'clear_cached_data' ) ) ) {
-			call_user_func( array( $data_store, 'clear_cached_data' ), array( $order_id ) );
-		}
-
-		$fresh_order = clone $order;
-		$data_store->read( $fresh_order );
-		/**
-		 * Freshly read order.
-		 *
-		 * @var WC_Order $fresh_order
-		 */
-		$fresh_order->read_meta_data( true );
-
-		return $fresh_order;
 	}
 
 	/**

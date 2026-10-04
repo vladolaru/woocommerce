@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use RuntimeException;
@@ -201,7 +202,7 @@ class WooPaymentsDisputeEventHandler {
 		$lock_token = $this->claim_dispute_lock( $order, $dispute_id );
 
 		try {
-			$this->refresh_order_from_data_store( $order );
+			$order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
 
 			$this->add_dispute_order_note_once(
 				$order,
@@ -723,23 +724,6 @@ class WooPaymentsDisputeEventHandler {
 		}
 
 		return $lock_token;
-	}
-
-	/**
-	 * Refresh an order directly from its data store while its payment lock is held.
-	 *
-	 * @param WC_Order $order Order object.
-	 */
-	private function refresh_order_from_data_store( WC_Order $order ): void {
-		wp_cache_delete( $order->get_id(), 'posts' );
-
-		/**
-		 * Order data store.
-		 *
-		 * @var \WC_Object_Data_Store_Interface $data_store
-		 */
-		$data_store = $order->get_data_store();
-		$data_store->read( $order );
 	}
 
 	/**

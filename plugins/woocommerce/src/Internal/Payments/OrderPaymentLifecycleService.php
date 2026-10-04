@@ -78,12 +78,12 @@ class OrderPaymentLifecycleService {
 	}
 
 	/**
-	 * Get an order refreshed directly from its data store while its payment lock is held.
+	 * Get an order read again from its data store, past the post, meta and HPOS order caches.
 	 *
-	 * A provider webhook can resolve its order before a concurrent request persists a
-	 * dispute hold or a paid status. The order's post, meta and HPOS data caches are
-	 * cleared first, so the guards see the database on both order storages, without
-	 * clearing changes that the caller has not yet saved.
+	 * The one authoritative re-read for the payments code: another request (a webhook, a redirect return, a checkout of
+	 * the same order) may have written the order since this request loaded it. The read goes into a clone, so changes
+	 * the caller has not yet saved stay on the order it passed. A caller that writes on the strength of the result holds
+	 * the order payment lock.
 	 *
 	 * @since 11.2.0
 	 *

@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
@@ -210,6 +211,13 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @var WooPaymentsDuplicatePaymentPreventionService
 	 */
 	private WooPaymentsDuplicatePaymentPreventionService $duplicate_payment_prevention_service;
+
+	/**
+	 * Order payment lifecycle service, for the authoritative order re-read.
+	 *
+	 * @var OrderPaymentLifecycleService
+	 */
+	private OrderPaymentLifecycleService $lifecycle_service;
 
 	/**
 	 * WooPayments payment method definition backing this gateway instance.
@@ -453,6 +461,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @param WooPaymentsFraudPreventionService|null            $fraud_prevention_service  Optional fraud-prevention service.
 	 * @param WooPaymentsFailedTransactionRateLimiter|null      $failed_transaction_rate_limiter Optional failed-transaction rate limiter.
 	 * @param WooPaymentsDuplicatePaymentPreventionService|null $duplicate_payment_prevention_service Optional duplicate-payment prevention service.
+	 * @param OrderPaymentLifecycleService|null                 $lifecycle_service         Optional order payment lifecycle service.
 	 */
 	final public function init(
 		PaymentProcessingService $processing_service,
@@ -464,7 +473,8 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		?WooPaymentsCustomerService $customer_service = null,
 		?WooPaymentsFraudPreventionService $fraud_prevention_service = null,
 		?WooPaymentsFailedTransactionRateLimiter $failed_transaction_rate_limiter = null,
-		?WooPaymentsDuplicatePaymentPreventionService $duplicate_payment_prevention_service = null
+		?WooPaymentsDuplicatePaymentPreventionService $duplicate_payment_prevention_service = null,
+		?OrderPaymentLifecycleService $lifecycle_service = null
 	): void {
 		$this->processing_service = $processing_service;
 		$this->provider           = $provider;
@@ -499,6 +509,10 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		if ( null !== $duplicate_payment_prevention_service ) {
 			$this->duplicate_payment_prevention_service = $duplicate_payment_prevention_service;
+		}
+
+		if ( null !== $lifecycle_service ) {
+			$this->lifecycle_service = $lifecycle_service;
 		}
 	}
 
@@ -2402,6 +2416,19 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
+	 * Get the order payment lifecycle service.
+	 *
+	 * @return OrderPaymentLifecycleService
+	 */
+	private function get_lifecycle_service(): OrderPaymentLifecycleService {
+		if ( ! isset( $this->lifecycle_service ) ) {
+			$this->lifecycle_service = wc_get_container()->get( OrderPaymentLifecycleService::class );
+		}
+
+		return $this->lifecycle_service;
+	}
+
+	/**
 	 * Get a fraud-prevention error message for the current request.
 	 *
 	 * @param bool $is_checkout Whether the request is a checkout payment request.
@@ -3012,7 +3039,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		try {
-			$fresh_order = $this->reread_order_authoritatively( $order );
+			$fresh_order = $this->get_lifecycle_service()->get_fresh_order_from_data_store( $order );
 		} catch ( Throwable $read_failure ) {
 			// The order cannot be read, so it is not shown as authorized and checkout keeps the refusal.
 			$this->get_logger()->log_throwable_always(
@@ -3025,39 +3052,6 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		return $intent_id === (string) $fresh_order->get_meta( '_intent_id', true )
 			&& $fresh_order->has_status( array_merge( array( OrderStatus::ON_HOLD ), wc_get_is_paid_statuses() ) );
-	}
-
-	/**
-	 * Read an order again from its data store, past the post, meta and order caches.
-	 *
-	 * @param WC_Order $order Order object.
-	 * @return WC_Order
-	 */
-	private function reread_order_authoritatively( WC_Order $order ): WC_Order {
-		$order_id = $order->get_id();
-		clean_post_cache( $order_id );
-		wp_cache_delete( WC_Order::generate_meta_cache_key( $order_id, 'orders' ), 'orders' );
-
-		/**
-		 * Active order data store.
-		 *
-		 * @var \WC_Object_Data_Store_Interface $data_store
-		 */
-		$data_store = $order->get_data_store();
-		if ( is_callable( array( $data_store, 'clear_cached_data' ) ) ) {
-			call_user_func( array( $data_store, 'clear_cached_data' ), array( $order_id ) );
-		}
-
-		$fresh_order = clone $order;
-		$data_store->read( $fresh_order );
-		/**
-		 * Freshly read order.
-		 *
-		 * @var WC_Order $fresh_order
-		 */
-		$fresh_order->read_meta_data( true );
-
-		return $fresh_order;
 	}
 
 	/**

@@ -204,7 +204,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 			return;
 		}
 
-		$fresh_order = $this->reread_order_authoritatively( $order );
+		$fresh_order = $this->lifecycle_service->get_fresh_order_from_data_store( $order );
 
 		if ( ! $this->is_native_woopayments_order( $fresh_order ) ) {
 			return;
@@ -344,7 +344,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 		}
 
 		try {
-			$fresh_order = $this->reread_order_authoritatively( $order );
+			$fresh_order = $this->lifecycle_service->get_fresh_order_from_data_store( $order );
 			if ( $fresh_order->has_status( array( 'processing', 'completed', 'on-hold' ) ) || ! $this->order_matches_intent( $fresh_order, $intent_id ) ) {
 				return false;
 			}
@@ -482,39 +482,6 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 		return '' !== $this->get_query_string( 'setup_intent' )
 			&& '' !== $this->get_query_string( 'setup_intent_client_secret' )
 			&& 'succeeded' === $this->get_query_string( 'redirect_status' );
-	}
-
-	/**
-	 * Reread an order after invalidating only its relevant persistence caches.
-	 *
-	 * @param WC_Order $order Order object.
-	 * @return WC_Order
-	 */
-	private function reread_order_authoritatively( WC_Order $order ): WC_Order {
-		$order_id = $order->get_id();
-		clean_post_cache( $order_id );
-		wp_cache_delete( WC_Order::generate_meta_cache_key( $order_id, 'orders' ), 'orders' );
-
-		/**
-		 * Active order data store.
-		 *
-		 * @var \WC_Object_Data_Store_Interface $data_store
-		 */
-		$data_store = $order->get_data_store();
-		if ( is_callable( array( $data_store, 'clear_cached_data' ) ) ) {
-			call_user_func( array( $data_store, 'clear_cached_data' ), array( $order_id ) );
-		}
-
-		$fresh_order = clone $order;
-		$data_store->read( $fresh_order );
-		/**
-		 * Freshly read order.
-		 *
-		 * @var WC_Order $fresh_order
-		 */
-		$fresh_order->read_meta_data( true );
-
-		return $fresh_order;
 	}
 
 	/**

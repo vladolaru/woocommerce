@@ -4299,17 +4299,21 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				}
 			);
 		}
+		$gateway_lifecycle = null;
 		if ( 'its intent, on an order that cannot be read again' === $intent ) {
-			$order_id = $order->get_id();
-			add_action(
-				'clean_post_cache',
-				static function ( $post_id ) use ( $order_id ): void {
-					// Only the fresh read after the error fails, as the data store does for a missing order.
-					if ( $order_id === (int) $post_id && in_array( 'reread_order_authoritatively', array_column( debug_backtrace( DEBUG_BACKTRACE_IGNORE_ARGS ), 'function' ), true ) ) { // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_debug_backtrace -- Test fault injection.
-						throw new \Exception( 'Invalid order.' );
-					}
+			// The gateway's fresh read after the error fails, as the data store does for a missing order.
+			$gateway_lifecycle = new class() extends OrderPaymentLifecycleService {
+				/**
+				 * Fail the read as the data store does for a missing order.
+				 *
+				 * @param WC_Order $order Order object.
+				 * @throws \Exception Always.
+				 */
+				public function get_fresh_order_from_data_store( WC_Order $order ): WC_Order {
+					unset( $order );
+					throw new \Exception( 'Invalid order.' );
 				}
-			);
+			};
 		}
 		$outcome  = 'its intent, as a Multibanco voucher' === $intent
 			? new PaymentOutcome(
@@ -4327,7 +4331,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			new \TypeError( 'Argument #1 must be of type array, null given' )
 		);
 		$gateway  = new NativeWooPaymentsGateway();
-		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider, null, null, null, null, null, null, null, null, $gateway_lifecycle );
 		$_POST['wcpay-payment-method'] = 'pm_card_visa';
 		$logger                        = RecordingWcLogger::install();
 
