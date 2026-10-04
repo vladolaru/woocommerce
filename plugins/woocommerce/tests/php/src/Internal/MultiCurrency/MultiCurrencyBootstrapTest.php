@@ -7,16 +7,23 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
+use ActionScheduler;
+use ActionScheduler_Store;
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Internal\Admin\Schedulers\OrdersScheduler;
 use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyBootstrap;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyExplicitPriceController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
 use Automattic\WooCommerce\Internal\MultiCurrency\Shadow\MultiCurrencyShadowMode;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use WC_Helper_Order;
 use WC_Unit_Test_Case;
 
 /** Tests for MultiCurrencyBootstrap. */
@@ -52,9 +59,11 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyAdminNoteController',
 	);
 
-	/** Clear the WP_CLI override the CLI case sets. */
+	/** Clear the WP_CLI override the CLI case sets, and the services and screen a booted request leaves behind. */
 	public function tearDown(): void {
 		Constants::clear_single_constant( 'WP_CLI' );
+		set_current_screen( 'front' );
+		wc_get_container()->reset_all_resolved();
 		parent::tearDown();
 	}
 
@@ -428,7 +437,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertSame( $expected, $actual );
 	}
 
-	/** @testdox Should classify every request type and preserve CLI, cron, AJAX, REST, and admin precedence for both bootstraps. */
+	/** @testdox Should classify CLI, cron, AJAX, REST, admin and front signals in that precedence order. */
 	public function test_classifies_request_signals_with_required_precedence(): void {
 		$classifier = new \ReflectionMethod( MultiCurrencyBootstrap::class, 'classify_signals' );
 		$classifier->setAccessible( true );
@@ -447,6 +456,159 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 
 		foreach ( $cases as $label => list( $signals, $expected ) ) {
 			$this->assertSame( $expected, $classifier->invokeArgs( null, $signals ), $label );
+		}
+	}
+
+	/**
+	 * @testdox A $request request on a $tier store registers the cron roots it lacks once, when Action Scheduler first runs an action in it.
+	 * @dataProvider page_request_cron_root_gaps
+	 *
+	 * @param string            $tier            Persisted data tier: configured, historical or empty.
+	 * @param string            $request         Request class.
+	 * @param array<int,string> $load_roots      Roots the request registers when WooCommerce loads.
+	 * @param array<int,string> $on_demand_roots Roots the first action registers, in cron order.
+	 */
+	public function test_page_request_registers_its_missing_cron_roots_once_when_an_action_runs( string $tier, string $request, array $load_roots, array $on_demand_roots ): void {
+		$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_CORE, 'configured' === $tier, 'historical' === $tier );
+		$sut       = new MultiCurrencyBootstrap( static fn(): array => array( 'ProviderRoot' ) );
+
+		$this->register_as( $sut, $container, $request );
+
+		$this->assertSame( $load_roots, $container->registered, 'Loading must register only the request roots.' );
+		$this->assertSame( 0, $container->foreign_currency_order_checks, 'Loading must not query order history.' );
+		do_action( 'action_scheduler_before_execute', 1, 'WP Cron' );
+		do_action( 'action_scheduler_before_execute', 2, 'WP Cron' );
+		$this->assertSame( array_merge( $load_roots, $on_demand_roots ), $container->registered, 'The first action must register the missing cron roots, once.' );
+		$this->assertSame( 'configured' === $tier ? 0 : 1, $container->foreign_currency_order_checks, 'Only a store without currencies checks order history, and only once.' );
+	}
+
+	/** @return array<string,array{string,string,array<int,string>,array<int,string>}> */
+	public static function page_request_cron_root_gaps(): array {
+		$matrix   = self::core_root_matrix();
+		$history  = array( self::CORE_ROOTS[4], self::CORE_ROOTS[23] );
+		$from_cli = array_merge( array( 'ProviderRoot' ), $matrix['historical cron'][3] );
+
+		return array(
+			'configured front' => array( 'configured', 'front', array_merge( array( 'ProviderRoot' ), $matrix['configured front'][3] ), $history ),
+			'historical front' => array( 'historical', 'front', array(), $from_cli ),
+			'historical ajax'  => array( 'historical', 'ajax', array(), $from_cli ),
+			'historical cli'   => array( 'historical', 'cli', array(), $from_cli ),
+			'empty front'      => array( 'empty', 'front', array(), array() ),
+		);
+	}
+
+	/** @testdox Adds no Action Scheduler listener without core ownership, on cron requests, or when the request already has every cron root. */
+	public function test_adds_no_action_scheduler_listener_when_no_cron_root_is_missing(): void {
+		$cases = array(
+			'no owner, configured front' => array( MultiCurrencyRuntimeArbiter::OWNER_NONE, 'configured', 'front' ),
+			'plugin owner, front'        => array( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN, 'configured', 'front' ),
+			'configured cron'            => array( MultiCurrencyRuntimeArbiter::OWNER_CORE, 'configured', 'cron' ),
+			'configured cli'             => array( MultiCurrencyRuntimeArbiter::OWNER_CORE, 'configured', 'cli' ),
+			'configured ajax'            => array( MultiCurrencyRuntimeArbiter::OWNER_CORE, 'configured', 'ajax' ),
+			'configured rest'            => array( MultiCurrencyRuntimeArbiter::OWNER_CORE, 'configured', 'rest' ),
+			'configured admin'           => array( MultiCurrencyRuntimeArbiter::OWNER_CORE, 'configured', 'admin' ),
+			'historical cron'            => array( MultiCurrencyRuntimeArbiter::OWNER_CORE, 'historical', 'cron' ),
+			'historical rest'            => array( MultiCurrencyRuntimeArbiter::OWNER_CORE, 'historical', 'rest' ),
+			'historical admin'           => array( MultiCurrencyRuntimeArbiter::OWNER_CORE, 'historical', 'admin' ),
+			'empty rest'                 => array( MultiCurrencyRuntimeArbiter::OWNER_CORE, 'empty', 'rest' ),
+			'empty admin'                => array( MultiCurrencyRuntimeArbiter::OWNER_CORE, 'empty', 'admin' ),
+		);
+		foreach ( $cases as $label => list( $owner, $tier, $request ) ) {
+			$sut = new MultiCurrencyBootstrap( static fn(): array => array( 'ProviderRoot' ) );
+
+			$this->register_as( $sut, $this->make_container( $owner, 'configured' === $tier, 'historical' === $tier ), $request );
+
+			$this->assertFalse( has_action( 'action_scheduler_before_execute', array( $sut, 'handle_action_scheduler_before_execute' ) ), $label );
+		}
+	}
+
+	/**
+	 * @testdox $label: the Analytics import that Action Scheduler runs inside a page request converts a foreign-currency order to the store currency.
+	 * @dataProvider page_request_import_runs
+	 *
+	 * @param string $label      Case label.
+	 * @param bool   $configured Whether an additional currency is configured; otherwise the store only has order history.
+	 * @param string $request    How the action runs: 'alternate_wp_cron' on a front page, or 'admin_run' from Tools > Scheduled Actions.
+	 */
+	public function test_analytics_import_run_inside_a_page_request_converts_the_order( string $label, bool $configured, string $request ): void {
+		global $wpdb;
+		unset( $label );
+		add_filter( 'pre_http_request', static fn() => new \WP_Error( 'blocked', 'Outbound HTTP is blocked in this test.' ) );
+		update_option( 'woocommerce_currency', 'USD' );
+		$order = WC_Helper_Order::create_order();
+		$order->set_currency( 'EUR' );
+		$order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_EXCHANGE_RATE, '0.5' );
+		$order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
+		$order->save();
+		$order_id  = $order->get_id();
+		$net_total = static function () use ( $wpdb, $order_id ): float {
+			return (float) $wpdb->get_var( $wpdb->prepare( "SELECT net_total FROM {$wpdb->prefix}wc_order_stats WHERE order_id = %d", $order_id ) );
+		};
+		OrdersScheduler::import( $order_id );
+		$unconverted = $net_total();
+		$this->assertGreaterThan( 0.0, $unconverted, 'The order must have an Analytics row before the case.' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', $configured ? array( 'USD', 'EUR' ) : array() );
+		delete_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT );
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		update_option( 'active_plugins', array_values( array_diff( (array) get_option( 'active_plugins', array() ), array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) ) ) );
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		wc_get_container()->reset_all_resolved();
+		if ( 'admin_run' === $request ) {
+			set_current_screen( 'woocommerce_page_wc-status' );
+		}
+
+		( new MultiCurrencyBootstrap( static fn(): array => array() ) )->register( wc_get_container(), '__return_false' );
+		if ( 'alternate_wp_cron' === $request ) {
+			// ALTERNATE_WP_CRON runs wp-cron.php on wp_loaded, so DOING_CRON appears only after WooCommerce loaded.
+			add_filter( 'wp_doing_cron', '__return_true' );
+		}
+		$action_id = as_enqueue_async_action( OrdersScheduler::get_action( 'import' ), array( $order_id ), 'wc-admin-data' );
+		ActionScheduler::runner()->process_action( $action_id, 'alternate_wp_cron' === $request ? 'WP Cron' : 'Admin List Table' );
+
+		$this->assertSame( ActionScheduler_Store::STATUS_COMPLETE, ActionScheduler::store()->get_status( $action_id ) );
+		$this->assertEqualsWithDelta( $unconverted * 2, $net_total(), 0.001, 'The import must convert the EUR order at the stored 0.5 rate.' );
+	}
+
+	/** @return array<string,array{string,bool,string}> */
+	public static function page_request_import_runs(): array {
+		return array(
+			'configured, ALTERNATE_WP_CRON on a front page'  => array( 'configured, ALTERNATE_WP_CRON', true, 'alternate_wp_cron' ),
+			'historical, ALTERNATE_WP_CRON on a front page'  => array( 'historical, ALTERNATE_WP_CRON', false, 'alternate_wp_cron' ),
+			'configured, Scheduled Actions Run link (admin)' => array( 'configured, Scheduled Actions Run', true, 'admin_run' ),
+			'historical, Scheduled Actions Run link (admin)' => array( 'historical, Scheduled Actions Run', false, 'admin_run' ),
+		);
+	}
+
+	/**
+	 * Run the bootstrap as WooCommerce loads it in one request class.
+	 *
+	 * @param MultiCurrencyBootstrap $sut       Bootstrap under test.
+	 * @param RuntimeContainer       $container Recording container.
+	 * @param string                 $request   Request class: front, ajax, rest, admin, cron or cli.
+	 */
+	private function register_as( MultiCurrencyBootstrap $sut, RuntimeContainer $container, string $request ): void {
+		$filter = array(
+			'ajax' => 'wp_doing_ajax',
+			'cron' => 'wp_doing_cron',
+		)[ $request ] ?? null;
+		if ( null !== $filter ) {
+			add_filter( $filter, '__return_true' );
+		}
+		if ( 'cli' === $request ) {
+			Constants::set_constant( 'WP_CLI', true );
+		}
+		if ( 'admin' === $request ) {
+			set_current_screen( 'edit-page' );
+		}
+
+		try {
+			$sut->register( $container, 'rest' === $request ? '__return_true' : '__return_false' );
+		} finally {
+			if ( null !== $filter ) {
+				remove_filter( $filter, '__return_true' );
+			}
+			Constants::clear_single_constant( 'WP_CLI' );
+			set_current_screen( 'front' );
 		}
 	}
 

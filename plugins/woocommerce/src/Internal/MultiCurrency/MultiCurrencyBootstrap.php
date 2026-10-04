@@ -29,6 +29,34 @@ final class MultiCurrencyBootstrap {
 	 */
 	private $admin_rest_container = null;
 
+	/**
+	 * Container for the cron roots this request registers when Action Scheduler first runs an action.
+	 *
+	 * @var Container|RuntimeContainer|null
+	 */
+	private $on_demand_container = null;
+
+	/**
+	 * Roots this request registered when WooCommerce loaded.
+	 *
+	 * @var array<int,class-string>
+	 */
+	private array $registered_roots = array();
+
+	/**
+	 * Persisted data tier, or null when this request class does not check order history at load.
+	 *
+	 * @var string|null
+	 */
+	private ?string $data_tier = null;
+
+	/**
+	 * Provider roots, resolved once per request.
+	 *
+	 * @var array<int,class-string>|null
+	 */
+	private ?array $provider_roots = null;
+
 	/** Base lifecycle root. @var array<int,class-string> */
 	private const BASE = array(
 		MultiCurrencyStoreCurrencyLifecycleController::class,
@@ -129,28 +157,89 @@ final class MultiCurrencyBootstrap {
 				return;
 			}
 
-			$this->register_roots( $container, array_merge( ( $this->provider_roots_resolver )(), array( MultiCurrencyShadowMode::class ) ) );
+			$this->register_roots( $container, array_merge( $this->get_provider_roots(), array( MultiCurrencyShadowMode::class ) ) );
 			return;
 		}
 
 		$request = self::classify_request( $is_rest_api_request );
 		$roots   = $this->get_core_roots( $container, $request );
-		if ( empty( $roots ) ) {
+		if ( ! empty( $roots ) ) {
+			if ( 'admin' === $request ) {
+				$this->admin_rest_container = $container;
+				if ( false === has_action( 'rest_api_init', array( $this, 'register_admin_rest_controller' ) ) ) {
+					add_action( 'rest_api_init', array( $this, 'register_admin_rest_controller' ), 0 );
+				}
+			}
+
+			if ( array( MultiCurrencyExplicitPriceController::class ) !== $roots ) {
+				$roots = array_merge( $this->get_provider_roots(), $roots );
+			}
+
+			$this->register_roots( $container, $roots );
+		}
+
+		$this->register_cron_roots_on_demand( $container, $request, $roots );
+	}
+
+	/**
+	 * Register the cron roots this request lacks once Action Scheduler runs an action in it.
+	 *
+	 * ALTERNATE_WP_CRON and the Tools > Scheduled Actions "Run" link run actions, such as the Analytics import and the tracker, inside a front or admin request.
+	 * The client registers Analytics and Tracking on every request (client 11.1.0 `includes/multi-currency/MultiCurrency.php:340,343`).
+	 *
+	 * @param Container|RuntimeContainer $container  Runtime dependency container.
+	 * @param string                     $request    Request class.
+	 * @param array<int,class-string>    $registered Roots registered for this request.
+	 */
+	private function register_cron_roots_on_demand( $container, string $request, array $registered ): void {
+		if ( 'cron' === $request ) {
 			return;
 		}
 
-		if ( 'admin' === $request ) {
-			$this->admin_rest_container = $container;
-			if ( false === has_action( 'rest_api_init', array( $this, 'register_admin_rest_controller' ) ) ) {
-				add_action( 'rest_api_init', array( $this, 'register_admin_rest_controller' ), 0 );
-			}
+		// A request that did not check order history at load leaves that check to the listener.
+		if ( null !== $this->data_tier && empty( array_diff( $this->get_roots_for_tier( $this->data_tier, 'cron' ), $registered ) ) ) {
+			return;
 		}
 
-		if ( array( MultiCurrencyExplicitPriceController::class ) !== $roots ) {
-			$roots = array_merge( ( $this->provider_roots_resolver )(), $roots );
+		$this->on_demand_container = $container;
+		$this->registered_roots    = $registered;
+		// Action Scheduler fires this before it checks the action has callbacks and runs it (`ActionScheduler_Abstract_QueueRunner::process_action()`).
+		add_action( 'action_scheduler_before_execute', array( $this, 'handle_action_scheduler_before_execute' ), 0 );
+	}
+
+	/**
+	 * Register the missing cron roots before Action Scheduler runs the first action of this request.
+	 *
+	 * @internal
+	 */
+	public function handle_action_scheduler_before_execute(): void {
+		remove_action( 'action_scheduler_before_execute', array( $this, 'handle_action_scheduler_before_execute' ), 0 );
+		$container                 = $this->on_demand_container;
+		$this->on_demand_container = null;
+		if ( null === $container ) {
+			return;
 		}
 
-		$this->register_roots( $container, $roots );
+		$tier = $this->data_tier ?? $this->get_history_tier( $container->get( MultiCurrencyUsageDetector::class ) );
+		$cron = $this->get_roots_for_tier( $tier, 'cron' );
+		if ( empty( $cron ) ) {
+			return;
+		}
+
+		$this->register_roots( $container, array_values( array_diff( array_merge( $this->get_provider_roots(), $cron ), $this->registered_roots ) ) );
+	}
+
+	/**
+	 * Get the provider roots, resolving them once per request.
+	 *
+	 * @return array<int,class-string> Provider root class names.
+	 */
+	private function get_provider_roots(): array {
+		if ( null === $this->provider_roots ) {
+			$this->provider_roots = ( $this->provider_roots_resolver )();
+		}
+
+		return $this->provider_roots;
 	}
 
 	/**
@@ -183,6 +272,7 @@ final class MultiCurrencyBootstrap {
 		/** Resolve persisted Multi-Currency usage. @var MultiCurrencyUsageDetector $usage_detector */
 		$usage_detector = $container->get( MultiCurrencyUsageDetector::class );
 		if ( $usage_detector->has_additional_enabled_currencies() ) {
+			$this->data_tier = 'configured';
 			return $this->get_roots_for_tier( 'configured', $request );
 		}
 
@@ -191,16 +281,24 @@ final class MultiCurrencyBootstrap {
 			return $has_explicit_price_filter ? array( MultiCurrencyExplicitPriceController::class ) : array();
 		}
 
+		$this->data_tier = $this->get_history_tier( $usage_detector );
+		$roots           = $this->get_roots_for_tier( $this->data_tier, $request );
+		return $has_explicit_price_filter ? array_merge( $roots, array( MultiCurrencyExplicitPriceController::class ) ) : $roots;
+	}
+
+	/**
+	 * Get the data tier of a store without additional currencies from its order history.
+	 *
+	 * @param MultiCurrencyUsageDetector $usage_detector Persisted usage detector.
+	 * @return string Persisted data tier: historical or empty.
+	 */
+	private function get_history_tier( $usage_detector ): string {
 		try {
-			$has_foreign_currency_orders = $usage_detector->has_foreign_currency_orders();
+			return $usage_detector->has_foreign_currency_orders() ? 'historical' : 'empty';
 		} catch ( \RuntimeException $error ) {
 			// Preserve recovery services when order history cannot be determined.
-			$roots = $this->get_roots_for_tier( 'historical', $request );
-			return $has_explicit_price_filter ? array_merge( $roots, array( MultiCurrencyExplicitPriceController::class ) ) : $roots;
+			return 'historical';
 		}
-
-		$roots = $this->get_roots_for_tier( $has_foreign_currency_orders ? 'historical' : 'empty', $request );
-		return $has_explicit_price_filter ? array_merge( $roots, array( MultiCurrencyExplicitPriceController::class ) ) : $roots;
 	}
 
 	/**
