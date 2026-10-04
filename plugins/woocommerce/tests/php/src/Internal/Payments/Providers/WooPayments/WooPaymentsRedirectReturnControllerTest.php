@@ -834,6 +834,36 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A failed intent fetch leaves an order a webhook put on hold during the fetch untouched and stays on order-received.
+	 *
+	 * Decided divergence (money hazard): client 11.1.0 fails the order read at request start (gw:2428-2444), and its paid
+	 * check covers only processing and completed (os:2863-2880), so an authorized charge would end on a failed order.
+	 */
+	public function test_handle_wp_keeps_order_held_during_failed_fetch(): void {
+		$order                                    = $this->create_order();
+		$api_client                               = new RedirectReturnApiClientStub();
+		$api_client->exception                    = new WooPaymentsApiException( 'Request timed out.', 'wcpay_http_request_failed', 504 );
+		$api_client->before_payment_intent_return = static function () use ( $order ): void {
+			$webhook_order = wc_get_order( $order->get_id() );
+			$webhook_order->update_status( 'on-hold' );
+		};
+		$this->sut                                = $this->create_controller( true, null, $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_held_during_fetch' );
+
+		$this->sut->handle_wp();
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'on-hold', $reloaded->get_status() );
+		$this->assertSame( array(), wc_get_notices( 'error' ) );
+		$failure_notes = array_filter(
+			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+			static fn( $note ): bool => false !== strpos( $note->content, '<strong>failed</strong>' )
+		);
+		$this->assertSame( array(), $failure_notes );
+	}
+
+	/**
 	 * @testdox A positive-total return whose PaymentIntent carries a payment error fails the order, adds the client notice and redirects to checkout with the cart kept.
 	 *
 	 * Client 11.1.0 process_redirect_payment(): a non-empty last_payment_error (gw:2351, 2376-2382) throws "We're not
@@ -1935,11 +1965,11 @@ class RedirectReturnApiClientStub extends WooPaymentsApiClient {
 	public function get_payment_intention( string $intent_id ): array {
 		++$this->payment_intent_reads;
 		$this->last_payment_intent_id = $intent_id;
-		if ( $this->exception instanceof Throwable ) {
-			throw $this->exception;
-		}
 		if ( is_callable( $this->before_payment_intent_return ) ) {
 			call_user_func( $this->before_payment_intent_return, $intent_id );
+		}
+		if ( $this->exception instanceof Throwable ) {
+			throw $this->exception;
 		}
 
 		return $this->payment_intent;

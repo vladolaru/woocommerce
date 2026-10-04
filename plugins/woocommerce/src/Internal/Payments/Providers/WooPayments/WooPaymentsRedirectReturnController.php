@@ -185,7 +185,15 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 				: $this->api_client->get_setup_intention( $intent_id );
 		} catch ( Throwable $exception ) {
 			$this->log_fetch_error( $order, $intent_id, $exception );
-			$this->fail_order( $order, $intent_id, $exception->getMessage() );
+
+			// Decided divergence (money hazard): client gw:2428-2444 fails the order read at request start, and its paid check
+			// (os:2863) misses on-hold, so a webhook that authorized the payment during the fetch leaves a charge on a failed order.
+			$fresh_order = $this->reread_order_authoritatively( $order );
+			if ( $fresh_order->has_status( array( 'processing', 'completed', 'on-hold' ) ) || ! $this->order_matches_intent( $fresh_order, $intent_id ) ) {
+				return;
+			}
+
+			$this->fail_order( $fresh_order, $intent_id, $exception->getMessage() );
 			$this->redirect_to_checkout( $this->get_shopper_message_for_fetch_error( $exception ) );
 			return;
 		}
