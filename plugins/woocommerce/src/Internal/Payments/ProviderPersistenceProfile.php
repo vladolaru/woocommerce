@@ -35,7 +35,9 @@ interface ProviderPersistenceProfile extends ProviderPersistenceVocabulary {
 	public function get_outcome_meta( PaymentOutcome $outcome ): array;
 
 	/**
-	 * Map a failed capture outcome to provider order meta.
+	 * Map a failed capture or failed cancel outcome to provider order meta.
+	 *
+	 * Despite the name, the processing service also calls this when a cancel fails.
 	 *
 	 * @param PaymentOutcome $outcome Provider outcome.
 	 * @return array<string,string>

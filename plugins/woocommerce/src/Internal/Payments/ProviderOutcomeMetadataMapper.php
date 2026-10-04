@@ -33,6 +33,8 @@ interface ProviderOutcomeMetadataMapper {
 	/**
 	 * Map a failed authorization operation to provider-owned order metadata.
 	 *
+	 * Despite the name, the processing service calls this for both failed captures and failed cancels.
+	 *
 	 * @param PaymentOutcome $outcome Provider outcome.
 	 * @return array<string,string>
 	 *
