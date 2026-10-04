@@ -554,7 +554,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$payment_store   = wc_get_container()->get( OrderPaymentStore::class );
 		$profile         = new WooPaymentsPersistenceProfile();
 
-		$this->assertTrue( $payment_store->claim_order_payment_lock( $order, $profile, 'pi_lock_holder' ) );
+		$this->assertNotNull( $payment_store->claim_order_payment_lock( $order, $profile, 'pi_lock_holder' ) );
 
 		try {
 			try {

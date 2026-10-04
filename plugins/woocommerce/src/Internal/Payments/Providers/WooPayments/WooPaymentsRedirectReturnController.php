@@ -309,7 +309,8 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	private function fail_order_unless_settled( WC_Order $order, string $intent_id, string $exception_message ): bool {
 		$persistence_profile = new WooPaymentsPersistenceProfile();
 		$order_payment_store = wc_get_container()->get( OrderPaymentStore::class );
-		if ( ! $order_payment_store->claim_order_payment_lock_for_operation( $order, $persistence_profile, $intent_id, 'payment status update' ) ) {
+		$lock_token          = $order_payment_store->claim_order_payment_lock_for_operation( $order, $persistence_profile, $intent_id, 'payment status update' );
+		if ( null === $lock_token ) {
 			$order_payment_store->log_order_payment_lock_refusal(
 				$order,
 				$persistence_profile,
@@ -334,7 +335,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 		} catch ( Throwable $failure ) {
 			$this->log_return_error( $order, $failure );
 		} finally {
-			$order_payment_store->release_order_payment_lock( $order, $persistence_profile, $intent_id );
+			$order_payment_store->release_order_payment_lock( $order, $persistence_profile, $lock_token );
 		}
 
 		return true;

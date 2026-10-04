@@ -96,8 +96,8 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 			throw new RuntimeException( esc_html( sprintf( 'Could not find a WooPayments order for early fraud warning charge ID: %s', $warning['charge'] ) ) );
 		}
 
-		$reference = 'early_fraud_warning_' . $warning['id'];
-		if ( ! $this->get_order_payment_store()->claim_order_payment_lock_for_operation( $order, $this->get_persistence_profile(), $reference, 'early fraud warning webhook' ) ) {
+		$lock_token = $this->get_order_payment_store()->claim_order_payment_lock_for_operation( $order, $this->get_persistence_profile(), 'early_fraud_warning_' . $warning['id'], 'early fraud warning webhook' );
+		if ( null === $lock_token ) {
 			$this->get_order_payment_store()->log_order_payment_lock_refusal( $order, $this->get_persistence_profile(), 'early fraud warning webhook' );
 			throw new RuntimeException( esc_html( sprintf( 'Could not lock the WooPayments order for early fraud warning ID: %s', $warning['id'] ) ) );
 		}
@@ -138,7 +138,7 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 				throw new RuntimeException( esc_html( sprintf( 'Could not persist early fraud warning note for ID: %s', $warning['id'] ) ) );
 			}
 		} finally {
-			$this->get_order_payment_store()->release_order_payment_lock( $order, $this->get_persistence_profile(), $reference );
+			$this->get_order_payment_store()->release_order_payment_lock( $order, $this->get_persistence_profile(), $lock_token );
 		}
 	}
 

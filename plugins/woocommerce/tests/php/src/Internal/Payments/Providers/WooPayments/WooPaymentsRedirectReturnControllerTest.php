@@ -961,16 +961,17 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			}
 		};
 		if ( 'a webhook put on hold just before the lock' === $change ) {
-			// The lock records its holder right after the claim: the latest moment a webhook's write can precede it.
+			// The lock writes its holder record right after the claim: the latest moment a webhook's write can precede it.
 			$held = false;
-			add_action(
-				'set_transient',
-				static function ( $transient ) use ( $order, &$held ): void {
-					if ( $held || ! str_ends_with( (string) $transient, '_holder' ) ) {
-						return;
+			add_filter(
+				'query',
+				static function ( $query ) use ( $order, &$held ) {
+					if ( ! $held && 0 === strpos( ltrim( (string) $query ), 'INSERT' ) && false !== strpos( (string) $query, '_holder' ) ) {
+						$held = true;
+						wc_get_order( $order->get_id() )->update_status( 'on-hold' );
 					}
-					$held = true;
-					wc_get_order( $order->get_id() )->update_status( 'on-hold' );
+
+					return $query;
 				}
 			);
 		}
@@ -1007,7 +1008,8 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$store                 = wc_get_container()->get( OrderPaymentStore::class );
 		$profile               = new WooPaymentsPersistenceProfile();
 		// The webhook for this payment holds the lock, as OrderPaymentLifecycleService::apply() claims it.
-		$this->assertTrue( $store->claim_order_payment_lock_for_operation( $order, $profile, 'pi_locked_return', 'payment status update' ) );
+		$lock_token = $store->claim_order_payment_lock_for_operation( $order, $profile, 'pi_locked_return', 'payment status update' );
+		$this->assertNotNull( $lock_token );
 		$logger = new RedirectReturnRecordingLogger();
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
 		$this->sut = $this->create_controller( true, null, $api_client );
@@ -1016,7 +1018,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		try {
 			$this->sut->handle_wp();
 		} finally {
-			$store->release_order_payment_lock( $order, $profile, 'pi_locked_return' );
+			$store->release_order_payment_lock( $order, $profile, $lock_token );
 		}
 		$reloaded = wc_get_order( $order->get_id() );
 

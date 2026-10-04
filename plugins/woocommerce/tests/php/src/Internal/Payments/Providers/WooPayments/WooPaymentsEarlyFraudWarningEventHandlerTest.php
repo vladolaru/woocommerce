@@ -302,7 +302,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 		$order   = $this->create_woopayments_order();
 		$store   = new OrderPaymentStore();
 		$profile = new WooPaymentsPersistenceProfile();
-		$this->assertTrue( $store->claim_order_payment_lock( $order, $profile, 'other_operation' ) );
+		$this->assertNotNull( $store->claim_order_payment_lock( $order, $profile, 'other_operation' ) );
 		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
 		$handler->init( $store, $profile );
 
@@ -350,11 +350,12 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 			 * @param WC_Order                                                                $order     Order being locked.
 			 * @param \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $profile  Provider persistence vocabulary.
 			 * @param string|null                                                             $reference Payment reference being processed.
+			 * @param string                                                                  $operation Operation claiming the lock.
 			 */
-			public function claim_order_payment_lock( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $profile, ?string $reference = null ): bool {
+			public function claim_order_payment_lock_for_operation( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $profile, ?string $reference, string $operation ): ?string {
 				$this->order->update_meta_data( '_charge_id', 'ch_changed_after_lock' );
 				$this->order->save();
-				return true;
+				return 'test_lock_token';
 			}
 
 			/**
@@ -362,9 +363,9 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 			 *
 			 * @param WC_Order                                                                $order     Order being unlocked.
 			 * @param \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $profile   Provider persistence vocabulary.
-			 * @param string|null                                                             $reference Payment reference the lock was claimed with.
+			 * @param string                                                                  $lock_token Token the claim returned.
 			 */
-			public function release_order_payment_lock( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $profile, ?string $reference = null ): void {}
+			public function release_order_payment_lock( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $profile, string $lock_token ): void {}
 		};
 		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
 		$handler->init( $store, new WooPaymentsPersistenceProfile() );
@@ -409,10 +410,11 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 			 * @param WC_Order                                                                $order     Order being locked.
 			 * @param \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $profile  Provider persistence vocabulary.
 			 * @param string|null                                                             $reference Payment reference being processed.
+			 * @param string                                                                  $operation Operation claiming the lock.
 			 */
-			public function claim_order_payment_lock( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $profile, ?string $reference = null ): bool {
-				$claimed = parent::claim_order_payment_lock( $order, $profile, $reference );
-				if ( $claimed ) {
+			public function claim_order_payment_lock_for_operation( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $profile, ?string $reference, string $operation ): ?string {
+				$claimed = parent::claim_order_payment_lock_for_operation( $order, $profile, $reference, $operation );
+				if ( null !== $claimed ) {
 					$this->order->update_meta_data(
 						'_wcpay_early_fraud_warning',
 						array(
@@ -475,9 +477,10 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 			 * @param WC_Order                                                                $order     Order being locked.
 			 * @param \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $profile  Provider persistence vocabulary.
 			 * @param string|null                                                             $reference Payment reference being processed.
+			 * @param string                                                                  $operation Operation claiming the lock.
 			 */
-			public function claim_order_payment_lock( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $profile, ?string $reference = null ): bool {
-				return true;
+			public function claim_order_payment_lock_for_operation( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $profile, ?string $reference, string $operation ): ?string {
+				return 'test_lock_token';
 			}
 
 			/**
@@ -485,9 +488,9 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 			 *
 			 * @param WC_Order                                                                $order     Order being unlocked.
 			 * @param \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $profile   Provider persistence vocabulary.
-			 * @param string|null                                                             $reference Payment reference the lock was claimed with.
+			 * @param string                                                                  $lock_token Token the claim returned.
 			 */
-			public function release_order_payment_lock( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $profile, ?string $reference = null ): void {
+			public function release_order_payment_lock( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $profile, string $lock_token ): void {
 				$this->unlocked = true;
 			}
 		};
@@ -596,9 +599,10 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 			 * @param WC_Order                                                                $order     Order being locked.
 			 * @param \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $profile  Provider persistence vocabulary.
 			 * @param string|null                                                             $reference Payment reference being processed.
+			 * @param string                                                                  $operation Operation claiming the lock.
 			 */
-			public function claim_order_payment_lock( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $profile, ?string $reference = null ): bool {
-				return true;
+			public function claim_order_payment_lock_for_operation( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $profile, ?string $reference, string $operation ): ?string {
+				return 'test_lock_token';
 			}
 
 			/**
@@ -606,9 +610,9 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 			 *
 			 * @param WC_Order                                                                $order     Order being unlocked.
 			 * @param \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $profile   Provider persistence vocabulary.
-			 * @param string|null                                                             $reference Payment reference the lock was claimed with.
+			 * @param string                                                                  $lock_token Token the claim returned.
 			 */
-			public function release_order_payment_lock( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $profile, ?string $reference = null ): void {
+			public function release_order_payment_lock( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $profile, string $lock_token ): void {
 				$this->unlocked = true;
 			}
 		};
@@ -695,9 +699,10 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 				 * @param WC_Order                                                                $order     Order being locked.
 				 * @param \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $profile  Provider persistence vocabulary.
 				 * @param string|null                                                             $reference Payment reference being processed.
+				 * @param string                                                                  $operation Operation claiming the lock.
 				 */
-				public function claim_order_payment_lock( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $profile, ?string $reference = null ): bool {
-					return true;
+				public function claim_order_payment_lock_for_operation( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $profile, ?string $reference, string $operation ): ?string {
+					return 'test_lock_token';
 				}
 
 				/**
@@ -705,9 +710,9 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 				 *
 				 * @param WC_Order                                                                $order     Order being unlocked.
 				 * @param \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $profile   Provider persistence vocabulary.
-				 * @param string|null                                                             $reference Payment reference the lock was claimed with.
+				 * @param string                                                                  $lock_token Token the claim returned.
 				 */
-				public function release_order_payment_lock( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $profile, ?string $reference = null ): void {
+				public function release_order_payment_lock( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $profile, string $lock_token ): void {
 					throw new \RuntimeException( 'Lock cleanup failed.' );
 				}
 			};

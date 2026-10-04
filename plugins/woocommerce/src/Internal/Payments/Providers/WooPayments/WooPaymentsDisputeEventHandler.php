@@ -198,7 +198,7 @@ class WooPaymentsDisputeEventHandler {
 		$note       = $this->get_dispute_created_note( $charge_id, $amount, $reason, $due_by, $is_inquiry, $balance_transaction_id, $dispute_id );
 		$note_type  = $is_inquiry ? 'created_inquiry' : 'created_dispute';
 
-		$lock_reference = $this->claim_dispute_lock( $order, $dispute_id );
+		$lock_token = $this->claim_dispute_lock( $order, $dispute_id );
 
 		try {
 			$this->refresh_order_from_data_store( $order );
@@ -218,7 +218,7 @@ class WooPaymentsDisputeEventHandler {
 				array( $this->get_dispute_created_note( $charge_id, $amount, $reason, $due_by, $is_inquiry, $balance_transaction_id ) )
 			);
 		} finally {
-			$this->get_order_payment_store()->release_order_payment_lock( $order, $this->get_persistence_profile(), $lock_reference );
+			$this->get_order_payment_store()->release_order_payment_lock( $order, $this->get_persistence_profile(), $lock_token );
 		}
 	}
 
@@ -712,17 +712,17 @@ class WooPaymentsDisputeEventHandler {
 	 *
 	 * @param WC_Order $order      Order object.
 	 * @param string   $dispute_id Provider dispute ID.
-	 * @return string Lock reference to release the lock with.
+	 * @return string Claim token to release the lock with.
 	 * @throws RuntimeException When the order payment lock cannot be claimed.
 	 */
 	private function claim_dispute_lock( WC_Order $order, string $dispute_id ): string {
-		$reference = 'dispute_webhook_' . $dispute_id;
-		if ( ! $this->get_order_payment_store()->claim_order_payment_lock_for_operation( $order, $this->get_persistence_profile(), $reference, 'dispute webhook' ) ) {
+		$lock_token = $this->get_order_payment_store()->claim_order_payment_lock_for_operation( $order, $this->get_persistence_profile(), 'dispute_webhook_' . $dispute_id, 'dispute webhook' );
+		if ( null === $lock_token ) {
 			$this->get_order_payment_store()->log_order_payment_lock_refusal( $order, $this->get_persistence_profile(), 'dispute webhook' );
 			throw new RuntimeException( esc_html( sprintf( 'Could not claim WooPayments dispute webhook lock for order %1$d and dispute %2$s.', $order->get_id(), $dispute_id ) ) );
 		}
 
-		return $reference;
+		return $lock_token;
 	}
 
 	/**

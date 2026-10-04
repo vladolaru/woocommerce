@@ -927,8 +927,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( RuntimeException::class, $thrown, 'The application failure must reach the caller.' );
 		$this->assertFalse( get_transient( $this->persistence_profile->get_order_lock_key( $order ) ), 'A throwing outcome application must release the order payment lock.' );
-		$this->assertTrue( $this->store->claim_order_payment_lock( $order, $this->persistence_profile, 'next_operation' ), 'The next operation must be able to claim the lock.' );
-		$this->store->release_order_payment_lock( $order, $this->persistence_profile, 'next_operation' );
+		$lock_token = $this->store->claim_order_payment_lock( $order, $this->persistence_profile, 'next_operation' );
+		$this->assertNotNull( $lock_token, 'The next operation must be able to claim the lock.' );
+		$this->store->release_order_payment_lock( $order, $this->persistence_profile, $lock_token );
 	}
 
 	/**

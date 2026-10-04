@@ -125,7 +125,8 @@ class PaymentProcessingService {
 		$profile         = $provider->get_persistence_profile();
 
 		// WooPayments locks checkout too, so this refusal is not logged as a native-only one.
-		if ( ! $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $profile, $idempotency_key, 'checkout' ) ) {
+		$lock_token = $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $profile, $idempotency_key, 'checkout' );
+		if ( null === $lock_token ) {
 			return $this->get_checkout_in_progress_outcome();
 		}
 
@@ -159,7 +160,7 @@ class PaymentProcessingService {
 
 			return $outcome;
 		} finally {
-			$this->order_payment_store->release_order_payment_lock( $order, $profile, $idempotency_key );
+			$this->order_payment_store->release_order_payment_lock( $order, $profile, $lock_token );
 		}
 	}
 
@@ -379,10 +380,10 @@ class PaymentProcessingService {
 		}
 
 		// Like client 11.1.0, each refund call sends its own key, so a retry after a failed refund
-		// reaches the provider instead of replaying the stored failure. The key also serves as this
-		// call's order payment lock token.
+		// reaches the provider instead of replaying the stored failure. The key is also the lock value.
 		$idempotency_key = $this->idempotency->mint_attempt_key();
-		if ( ! $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $profile, $idempotency_key, 'refund' ) ) {
+		$lock_token      = $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $profile, $idempotency_key, 'refund' );
+		if ( null === $lock_token ) {
 			$this->order_payment_store->log_order_payment_lock_refusal( $order, $profile, 'refund' );
 			return new WP_Error( 'native_payment_refund_locked', __( 'A payment operation is already in progress for this order.', 'woocommerce' ) );
 		}
@@ -427,7 +428,7 @@ class PaymentProcessingService {
 				$this->log_post_provider_apply_failure( $order, $provider_outcome, 'refund', $apply_exception, $reconciliation_persisted );
 			}
 		} finally {
-			$this->order_payment_store->release_order_payment_lock( $order, $profile, $idempotency_key );
+			$this->order_payment_store->release_order_payment_lock( $order, $profile, $lock_token );
 		}
 
 		if ( $outcome->is_successful() ) {
@@ -728,7 +729,8 @@ class PaymentProcessingService {
 		$idempotency_key = $this->idempotency->derive_key( $order, $provider->get_id(), $operation, $amount, (string) $order->get_currency() );
 		$profile         = $provider->get_persistence_profile();
 
-		if ( ! $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $profile, $idempotency_key, $operation ) ) {
+		$lock_token = $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $profile, $idempotency_key, $operation );
+		if ( null === $lock_token ) {
 			$this->order_payment_store->log_order_payment_lock_refusal( $order, $profile, $operation );
 			return new PaymentOutcome(
 				PaymentOutcome::STATUS_FAILED,
@@ -767,7 +769,7 @@ class PaymentProcessingService {
 
 			return $outcome;
 		} finally {
-			$this->order_payment_store->release_order_payment_lock( $order, $profile, $idempotency_key );
+			$this->order_payment_store->release_order_payment_lock( $order, $profile, $lock_token );
 		}
 	}
 

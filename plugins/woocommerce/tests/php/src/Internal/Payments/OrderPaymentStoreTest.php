@@ -212,8 +212,8 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 	public function test_claim_order_payment_lock_blocks_any_active_lock(): void {
 		$order = wc_create_order();
 
-		$this->assertTrue( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'native_charge_key' ) );
-		$this->assertFalse( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'native_refund_key' ) );
+		$this->assertNotNull( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'native_charge_key' ) );
+		$this->assertNull( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'native_refund_key' ) );
 		$this->assertTrue( $this->sut->is_order_payment_locked( $order, $this->persistence_profile, 'native_charge_key' ) );
 		$this->assertFalse( $this->sut->is_order_payment_locked( $order, $this->persistence_profile, 'native_refund_key' ) );
 
@@ -221,10 +221,10 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 
 		$this->sut->lock_order_payment( $order, $this->persistence_profile, 'pi_legacy' );
 		$this->assertFalse( $this->sut->is_order_payment_locked( $order, $this->persistence_profile, 'native_charge_key' ) );
-		$this->assertFalse( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'native_charge_key' ) );
+		$this->assertNull( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'native_charge_key' ) );
 
 		$this->sut->unlock_order_payment( $order, $this->persistence_profile );
-		$this->assertTrue( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'native_charge_key' ) );
+		$this->assertNotNull( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'native_charge_key' ) );
 		$this->sut->unlock_order_payment( $order, $this->persistence_profile );
 	}
 
@@ -241,7 +241,7 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 		// A second request then stores its lock directly in the database.
 		$this->insert_lock_rows( $lock_key, 'other_request_key', time() + 300 );
 
-		$this->assertFalse( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'this_request_key' ), 'Only one of two overlapping requests may hold the order payment lock.' );
+		$this->assertNull( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'this_request_key' ), 'Only one of two overlapping requests may hold the order payment lock.' );
 		$this->assertSame( 'other_request_key', $this->read_lock_row( '_transient_' . $lock_key ), 'A refused claim must leave the holder unchanged.' );
 		$this->assertNotNull( $this->read_lock_row( '_transient_timeout_' . $lock_key ), 'A refused claim must keep the holder expiry.' );
 	}
@@ -255,11 +255,11 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 		$lock_key = $this->persistence_profile->get_order_lock_key( $order );
 		$this->insert_lock_rows( $lock_key, 'stale_key', time() - 10 );
 
-		$this->assertTrue( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'fresh_key' ), 'An expired lock must not block a new claim.' );
+		$this->assertNotNull( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'fresh_key' ), 'An expired lock must not block a new claim.' );
 		$this->assertSame( 'fresh_key', $this->read_lock_row( '_transient_' . $lock_key ) );
 		$this->assertGreaterThanOrEqual( time() + 290, (int) $this->read_lock_row( '_transient_timeout_' . $lock_key ), 'The new lock must expire a full TTL from now.' );
 		$this->assertTrue( $this->sut->is_order_payment_locked( $order, $this->persistence_profile, 'fresh_key' ) );
-		$this->assertFalse( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'later_key' ), 'The taken-over lock must block the next claim.' );
+		$this->assertNull( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'later_key' ), 'The taken-over lock must block the next claim.' );
 	}
 
 	/**
@@ -288,7 +288,7 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 		remove_filter( 'query', $rival );
 
 		$this->assertTrue( $rival_took_over, 'The rival takeover must have run.' );
-		$this->assertFalse( $claimed, 'A takeover must fail when another request took the expired lock first.' );
+		$this->assertNull( $claimed, 'A takeover must fail when another request took the expired lock first.' );
 		$this->assertSame( 'rival_key', $this->read_lock_row( '_transient_' . $lock_key ) );
 	}
 
@@ -299,23 +299,144 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 		$order    = wc_create_order();
 		$lock_key = $this->persistence_profile->get_order_lock_key( $order );
 
-		$this->assertTrue( $this->sut->claim_order_payment_lock_for_operation( $order, $this->persistence_profile, 'first_key', 'capture' ) );
-		// The first operation ran past the TTL and another operation took the lock over.
+		$first_token = $this->sut->claim_order_payment_lock_for_operation( $order, $this->persistence_profile, 'first_key', 'capture' );
+		$this->assertNotNull( $first_token );
+		// Something removed the first operation's lock, and another operation claimed the order.
 		$this->sut->unlock_order_payment( $order, $this->persistence_profile );
-		$this->assertTrue( $this->sut->claim_order_payment_lock_for_operation( $order, $this->persistence_profile, 'second_key', 'refund' ) );
+		$second_token = $this->sut->claim_order_payment_lock_for_operation( $order, $this->persistence_profile, 'second_key', 'refund' );
+		$this->assertNotNull( $second_token );
 
-		$this->sut->release_order_payment_lock( $order, $this->persistence_profile, 'first_key' );
+		$this->sut->release_order_payment_lock( $order, $this->persistence_profile, $first_token );
 
 		$this->assertSame( 'second_key', get_transient( $lock_key ), 'A former holder must not release the current holder lock.' );
 		$this->assertSame( 'refund', get_transient( $lock_key . '_holder' )['operation'] ?? null, 'A former holder must not delete the current holder record.' );
 
-		$this->sut->release_order_payment_lock( $order, $this->persistence_profile, 'second_key' );
+		$this->sut->release_order_payment_lock( $order, $this->persistence_profile, $second_token );
 
 		$this->assertFalse( get_transient( $lock_key ), 'The holder must be able to release its lock.' );
 		$this->assertFalse( get_transient( $lock_key . '_holder' ), 'Releasing the lock must delete its holder record.' );
-		$this->assertTrue( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile ), 'A released lock must be claimable again.' );
-		$this->sut->release_order_payment_lock( $order, $this->persistence_profile );
-		$this->assertFalse( get_transient( $lock_key ), 'A sentinel claim must be released by a null reference.' );
+		$sentinel_token = $this->sut->claim_order_payment_lock( $order, $this->persistence_profile );
+		$this->assertNotNull( $sentinel_token, 'A released lock must be claimable again.' );
+		$this->assertSame( '-1', get_transient( $lock_key ), 'A claim without a reference must store the WooPayments sentinel.' );
+		$this->sut->release_order_payment_lock( $order, $this->persistence_profile, $sentinel_token );
+		$this->assertFalse( get_transient( $lock_key ), 'A sentinel claim must be released with its token.' );
+	}
+
+	/**
+	 * @testdox A former holder should not release a lock that a later claim with the same reference took over after it expired.
+	 */
+	public function test_release_by_a_former_holder_keeps_a_same_reference_takeover(): void {
+		$this->skip_when_transients_live_in_object_cache();
+		$order    = wc_create_order();
+		$lock_key = $this->persistence_profile->get_order_lock_key( $order );
+
+		// A capture claims the lock with its derived key and then runs past the lock TTL.
+		$first_token = $this->sut->claim_order_payment_lock_for_operation( $order, $this->persistence_profile, 'capture_key', 'capture' );
+		$this->assertNotNull( $first_token );
+		$this->update_lock_row( '_transient_timeout_' . $lock_key, (string) ( time() - 1 ) );
+		// A second capture of the same amount derives the same key and takes the expired lock over.
+		$second_token = $this->sut->claim_order_payment_lock_for_operation( $order, $this->persistence_profile, 'capture_key', 'capture' );
+		$this->assertNotNull( $second_token, 'An expired lock must be taken over.' );
+
+		$this->sut->release_order_payment_lock( $order, $this->persistence_profile, $first_token );
+
+		$this->assertSame( 'capture_key', $this->read_lock_row( '_transient_' . $lock_key ), 'The lock must keep the WooPayments-compatible payment reference.' );
+		$this->assertNotNull( $this->read_lock_row( '_transient_timeout_' . $lock_key ), 'The taken-over lock must keep its expiry.' );
+		$this->assertNull( $this->sut->claim_order_payment_lock_for_operation( $order, $this->persistence_profile, 'refund_key', 'refund' ), 'A third operation must not start while the second holds the lock.' );
+
+		$this->sut->release_order_payment_lock( $order, $this->persistence_profile, $second_token );
+
+		$this->assertNull( $this->read_lock_row( '_transient_' . $lock_key ), 'The current holder must still release its lock.' );
+		$this->assertNull( $this->read_lock_row( '_transient_' . $lock_key . '_holder' ), 'Releasing the lock must delete its holder record.' );
+	}
+
+	/**
+	 * @testdox A former holder releasing between a takeover and the taker's holder record write should keep the takeover.
+	 */
+	public function test_release_by_a_former_holder_during_a_takeover_keeps_the_takeover(): void {
+		$this->skip_when_transients_live_in_object_cache();
+		$order    = wc_create_order();
+		$lock_key = $this->persistence_profile->get_order_lock_key( $order );
+
+		$first_token = $this->sut->claim_order_payment_lock_for_operation( $order, $this->persistence_profile, 'capture_key', 'capture' );
+		$this->assertNotNull( $first_token );
+		$this->update_lock_row( '_transient_timeout_' . $lock_key, (string) ( time() - 1 ) );
+
+		// The former holder finishes right after the takeover UPDATE, before the taker writes its holder record.
+		$released     = false;
+		$filter       = $this->run_before_query_after(
+			fn( string $query ): bool => 0 === strpos( ltrim( $query ), 'UPDATE' ) && false !== strpos( $query, "'_transient_timeout_{$lock_key}'" ),
+			function () use ( &$released, $order, $first_token ): void {
+				$released = true;
+				$this->sut->release_order_payment_lock( $order, $this->persistence_profile, $first_token );
+			}
+		);
+		$second_token = $this->sut->claim_order_payment_lock_for_operation( $order, $this->persistence_profile, 'capture_key', 'capture' );
+		remove_filter( 'query', $filter );
+
+		$this->assertTrue( $released, 'The former holder release must have run.' );
+		$this->assertNotNull( $second_token, 'The takeover must hold the lock.' );
+		$this->assertSame( 'capture_key', $this->read_lock_row( '_transient_' . $lock_key ), 'A former holder must not release a lock taken over from it.' );
+		$this->assertNull( $this->sut->claim_order_payment_lock_for_operation( $order, $this->persistence_profile, 'refund_key', 'refund' ), 'A third operation must not start while the taker holds the lock.' );
+	}
+
+	/**
+	 * @testdox A former holder whose lock is taken over between its holder check and its delete should keep the takeover.
+	 */
+	public function test_release_keeps_a_takeover_made_after_its_holder_check(): void {
+		$this->skip_when_transients_live_in_object_cache();
+		$order    = wc_create_order();
+		$lock_key = $this->persistence_profile->get_order_lock_key( $order );
+
+		$first_token = $this->sut->claim_order_payment_lock_for_operation( $order, $this->persistence_profile, 'capture_key', 'capture' );
+		$this->assertNotNull( $first_token );
+		$this->update_lock_row( '_transient_timeout_' . $lock_key, (string) ( time() - 1 ) );
+
+		// Right after the former holder reads its holder record, a second capture takes the expired lock over.
+		$second_token = null;
+		$filter       = $this->run_before_query_after(
+			fn( string $query ): bool => 0 === strpos( ltrim( $query ), 'SELECT' ) && false !== strpos( $query, "'_transient_{$lock_key}_holder'" ),
+			function () use ( &$second_token, $order ): void {
+				$second_token = $this->sut->claim_order_payment_lock_for_operation( $order, $this->persistence_profile, 'capture_key', 'capture' );
+			}
+		);
+		$this->sut->release_order_payment_lock( $order, $this->persistence_profile, $first_token );
+		remove_filter( 'query', $filter );
+
+		$this->assertNotNull( $second_token, 'The takeover must have run and won.' );
+		$this->assertSame( 'capture_key', $this->read_lock_row( '_transient_' . $lock_key ), 'A former holder must not release a lock taken over from it.' );
+		$this->assertNull( $this->sut->claim_order_payment_lock_for_operation( $order, $this->persistence_profile, 'refund_key', 'refund' ), 'A third operation must not start while the taker holds the lock.' );
+	}
+
+	/**
+	 * @testdox With transients in the object cache, a former holder should not release a lock a same-reference claim made after it expired.
+	 */
+	public function test_object_cache_release_by_a_former_holder_keeps_a_same_reference_claim(): void {
+		$order    = wc_create_order();
+		$lock_key = $this->persistence_profile->get_order_lock_key( $order );
+		$was_ext  = wp_using_ext_object_cache( true );
+
+		try {
+			$first_token = $this->sut->claim_order_payment_lock_for_operation( $order, $this->persistence_profile, 'capture_key', 'capture' );
+			$this->assertNotNull( $first_token );
+			// The cache drops the expired lock and a second capture with the same derived key claims it.
+			wp_cache_delete( $lock_key, 'transient' );
+			$second_token = $this->sut->claim_order_payment_lock_for_operation( $order, $this->persistence_profile, 'capture_key', 'capture' );
+			$this->assertNotNull( $second_token );
+
+			$this->sut->release_order_payment_lock( $order, $this->persistence_profile, $first_token );
+
+			$this->assertSame( 'capture_key', wp_cache_get( $lock_key, 'transient' ), 'A former holder must not release the current holder lock.' );
+			$this->assertNull( $this->sut->claim_order_payment_lock_for_operation( $order, $this->persistence_profile, 'refund_key', 'refund' ), 'A third operation must not start while the second holds the lock.' );
+
+			$this->sut->release_order_payment_lock( $order, $this->persistence_profile, $second_token );
+
+			$this->assertFalse( wp_cache_get( $lock_key, 'transient' ), 'The current holder must still release its lock.' );
+		} finally {
+			wp_cache_delete( $lock_key, 'transient' );
+			wp_cache_delete( $lock_key . '_holder', 'transient' );
+			wp_using_ext_object_cache( (bool) $was_ext );
+		}
 	}
 
 	/**
@@ -328,10 +449,10 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 		// A release that stopped between deleting the value row and the expiry row leaves the expiry alone.
 		$this->insert_lock_row( '_transient_timeout_' . $lock_key, (string) ( time() + 100 ) );
 
-		$this->assertTrue( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'this_request_key' ), 'A leftover expiry row without a value row must not block a claim.' );
+		$this->assertNotNull( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'this_request_key' ), 'A leftover expiry row without a value row must not block a claim.' );
 		$this->assertSame( 'this_request_key', $this->read_lock_row( '_transient_' . $lock_key ) );
 		$this->assertGreaterThanOrEqual( time() + 290, (int) $this->read_lock_row( '_transient_timeout_' . $lock_key ), 'The claim must replace the leftover expiry with a full TTL.' );
-		$this->assertFalse( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'later_key' ), 'The claimed lock must block the next claim.' );
+		$this->assertNull( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'later_key' ), 'The claimed lock must block the next claim.' );
 	}
 
 	/**
@@ -363,7 +484,7 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 		remove_filter( 'query', $rival );
 
 		$this->assertTrue( $took_over, 'The rival takeover must have run.' );
-		$this->assertFalse( $claimed, 'Only the rival may hold the lock after taking it over.' );
+		$this->assertNull( $claimed, 'Only the rival may hold the lock after taking it over.' );
 		$this->assertSame( 'rival_key', $this->read_lock_row( '_transient_' . $lock_key ) );
 	}
 
@@ -372,16 +493,17 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 	 */
 	public function test_claim_wins_when_the_holder_releases_between_its_expiry_read_and_value_insert(): void {
 		$this->skip_when_transients_live_in_object_cache();
-		$order    = wc_create_order();
-		$lock_key = $this->persistence_profile->get_order_lock_key( $order );
-		$this->insert_lock_rows( $lock_key, 'holder_key', time() + 100 );
+		$order        = wc_create_order();
+		$lock_key     = $this->persistence_profile->get_order_lock_key( $order );
+		$holder_token = $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'holder_key' );
+		$this->assertNotNull( $holder_token );
 
 		$released = false;
 		$filter   = $this->run_before_query_after(
 			fn( string $query ): bool => $this->is_expiry_read( $query, $lock_key ),
-			function () use ( &$released, $order ): void {
+			function () use ( &$released, $order, $holder_token ): void {
 				$released = true;
-				$this->sut->release_order_payment_lock( $order, $this->persistence_profile, 'holder_key' );
+				$this->sut->release_order_payment_lock( $order, $this->persistence_profile, $holder_token );
 			}
 		);
 
@@ -389,10 +511,10 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 		remove_filter( 'query', $filter );
 
 		$this->assertTrue( $released, 'The holder release must have run.' );
-		$this->assertTrue( $claimed, 'A claim must win a lock the holder released before the claim inserted its value.' );
+		$this->assertNotNull( $claimed, 'A claim must win a lock the holder released before the claim inserted its value.' );
 		$this->assertSame( 'this_request_key', $this->read_lock_row( '_transient_' . $lock_key ) );
 		$this->assertGreaterThanOrEqual( time() + 290, (int) $this->read_lock_row( '_transient_timeout_' . $lock_key ), 'The winning claim must leave an expiry row.' );
-		$this->assertFalse( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'later_key' ), 'The claimed lock must block the next claim.' );
+		$this->assertNull( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'later_key' ), 'The claimed lock must block the next claim.' );
 	}
 
 	/**
@@ -400,16 +522,17 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 	 */
 	public function test_claim_keeps_the_lock_when_a_refused_rival_fills_in_its_expiry(): void {
 		$this->skip_when_transients_live_in_object_cache();
-		$order    = wc_create_order();
-		$lock_key = $this->persistence_profile->get_order_lock_key( $order );
-		$this->insert_lock_rows( $lock_key, 'holder_key', time() + 100 );
+		$order        = wc_create_order();
+		$lock_key     = $this->persistence_profile->get_order_lock_key( $order );
+		$holder_token = $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'holder_key' );
+		$this->assertNotNull( $holder_token );
 
 		// The holder releases right after the claim reads the expiry; a rival claims right after the claim inserts its value.
 		$release_filter = $this->run_before_query_after(
 			fn( string $query ): bool => $this->is_expiry_read( $query, $lock_key ),
-			fn() => $this->sut->release_order_payment_lock( $order, $this->persistence_profile, 'holder_key' )
+			fn() => $this->sut->release_order_payment_lock( $order, $this->persistence_profile, $holder_token )
 		);
-		$rival_claimed  = null;
+		$rival_claimed  = 'not run';
 		$rival_filter   = $this->run_before_query_after(
 			fn( string $query ): bool => $this->is_value_insert( $query, $lock_key ),
 			function () use ( &$rival_claimed, $order ): void {
@@ -421,8 +544,8 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 		remove_filter( 'query', $release_filter );
 		remove_filter( 'query', $rival_filter );
 
-		$this->assertFalse( $rival_claimed, 'The rival claim must have run and been refused.' );
-		$this->assertTrue( $claimed, 'The claim that inserted the value row must keep the lock.' );
+		$this->assertNull( $rival_claimed, 'The rival claim must have run and been refused.' );
+		$this->assertNotNull( $claimed, 'The claim that inserted the value row must keep the lock.' );
 		$this->assertSame( 'this_request_key', $this->read_lock_row( '_transient_' . $lock_key ) );
 		$this->assertNotNull( $this->read_lock_row( '_transient_timeout_' . $lock_key ), 'The lock must keep an expiry row.' );
 	}
@@ -437,7 +560,7 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 		$expiration = (string) ( time() + $this->persistence_profile->get_lock_ttl_seconds() );
 		$this->insert_lock_row( '_transient_timeout_' . $lock_key, $expiration );
 
-		$this->assertTrue( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'this_request_key' ) );
+		$this->assertNotNull( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'this_request_key' ) );
 		$this->assertSame( 'this_request_key', $this->read_lock_row( '_transient_' . $lock_key ) );
 		$this->assertGreaterThanOrEqual( (int) $expiration, (int) $this->read_lock_row( '_transient_timeout_' . $lock_key ) );
 	}
@@ -447,19 +570,20 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 	 */
 	public function test_claim_writes_an_expiry_when_a_holder_with_the_same_expiry_releases(): void {
 		$this->skip_when_transients_live_in_object_cache();
-		$order    = wc_create_order();
-		$lock_key = $this->persistence_profile->get_order_lock_key( $order );
-		$this->insert_lock_rows( $lock_key, 'holder_key', time() + $this->persistence_profile->get_lock_ttl_seconds() );
+		$order        = wc_create_order();
+		$lock_key     = $this->persistence_profile->get_order_lock_key( $order );
+		$holder_token = $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'holder_key' );
+		$this->assertNotNull( $holder_token );
 
 		$filter = $this->run_before_query_after(
 			fn( string $query ): bool => $this->is_expiry_read( $query, $lock_key ),
-			fn() => $this->sut->release_order_payment_lock( $order, $this->persistence_profile, 'holder_key' )
+			fn() => $this->sut->release_order_payment_lock( $order, $this->persistence_profile, $holder_token )
 		);
 
 		$claimed = $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'this_request_key' );
 		remove_filter( 'query', $filter );
 
-		$this->assertTrue( $claimed );
+		$this->assertNotNull( $claimed );
 		$this->assertSame( 'this_request_key', $this->read_lock_row( '_transient_' . $lock_key ) );
 		$this->assertNotNull( $this->read_lock_row( '_transient_timeout_' . $lock_key ), 'A held lock must never be left without an expiry row.' );
 	}
@@ -488,7 +612,7 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 		remove_filter( 'query', $filter );
 
 		$this->assertTrue( $took_over, 'The rival takeover must have run.' );
-		$this->assertFalse( $claimed, 'Two requests for the same payment reference must not both hold the lock.' );
+		$this->assertNull( $claimed, 'Two requests for the same payment reference must not both hold the lock.' );
 		$this->assertSame( $rival_expiry, $this->read_lock_row( '_transient_timeout_' . $lock_key ), 'The refused claim must leave the taker expiry.' );
 	}
 
@@ -497,9 +621,10 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 	 */
 	public function test_release_retries_a_failed_delete_once(): void {
 		$this->skip_when_transients_live_in_object_cache();
-		$order    = wc_create_order();
-		$lock_key = $this->persistence_profile->get_order_lock_key( $order );
-		$this->assertTrue( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'this_request_key' ) );
+		$order      = wc_create_order();
+		$lock_key   = $this->persistence_profile->get_order_lock_key( $order );
+		$lock_token = $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'this_request_key' );
+		$this->assertNotNull( $lock_token );
 
 		// Fail the first delete, as a deadlock victim would.
 		$failed = false;
@@ -514,7 +639,7 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 		add_filter( 'query', $fail );
 		$suppressed = $GLOBALS['wpdb']->suppress_errors( true );
 
-		$this->sut->release_order_payment_lock( $order, $this->persistence_profile, 'this_request_key' );
+		$this->sut->release_order_payment_lock( $order, $this->persistence_profile, $lock_token );
 		$GLOBALS['wpdb']->suppress_errors( $suppressed );
 		remove_filter( 'query', $fail );
 
@@ -533,13 +658,13 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 		// A claim that stopped between writing its value row and its expiry row leaves the value alone.
 		$this->insert_lock_row( '_transient_' . $lock_key, 'orphan_key' );
 
-		$this->assertFalse( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'this_request_key' ), 'A value row without an expiry must be treated as held.' );
+		$this->assertNull( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'this_request_key' ), 'A value row without an expiry must be treated as held.' );
 		$this->assertSame( 'orphan_key', $this->read_lock_row( '_transient_' . $lock_key ) );
 		$this->assertGreaterThanOrEqual( time() + 290, (int) $this->read_lock_row( '_transient_timeout_' . $lock_key ), 'The refused claim must give the leftover value row an expiry.' );
 
 		// Once that expiry passes, the leftover lock can be taken over.
 		$this->update_lock_row( '_transient_timeout_' . $lock_key, (string) ( time() - 1 ) );
-		$this->assertTrue( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'this_request_key' ) );
+		$this->assertNotNull( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'this_request_key' ) );
 		$this->assertSame( 'this_request_key', $this->read_lock_row( '_transient_' . $lock_key ) );
 	}
 
@@ -574,7 +699,7 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $took_over, 'The concurrent takeover must have run.' );
 		$this->assertSame( 'taker_key', $this->read_lock_row( '_transient_' . $lock_key ), 'Reading an expired lock must not delete the new holder value.' );
 		$this->assertNotNull( $this->read_lock_row( '_transient_timeout_' . $lock_key ), 'Reading an expired lock must not delete the new holder expiry.' );
-		$this->assertFalse( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'third_key' ), 'A third claimant must not win while the taker holds the lock.' );
+		$this->assertNull( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'third_key' ), 'A third claimant must not win while the taker holds the lock.' );
 	}
 
 	/**

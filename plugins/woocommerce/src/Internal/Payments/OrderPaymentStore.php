@@ -144,31 +144,26 @@ class OrderPaymentStore {
 	 * claim: any active lock value blocks checkout, refund, capture, and cancel from starting.
 	 * WooPayments 11.1.0 locks only intent-driven status updates; this stricter lock is owner-ratified
 	 * money-path hardening (inbox N-270), and log_order_payment_lock_refusal() records each refusal
-	 * the plugin would have allowed. Release the lock with release_order_payment_lock().
+	 * the plugin would have allowed. Release the lock with release_order_payment_lock() and the returned token.
 	 *
 	 * @since 11.0.0
 	 *
 	 * @param WC_Order                      $order               Order being locked.
 	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
 	 * @param string|null                   $payment_reference   Payment reference being processed.
-	 * @return bool True when the lock was claimed.
+	 * @return string|null The claim token, or null when the lock is held.
 	 */
-	public function claim_order_payment_lock( WC_Order $order, ProviderPersistenceVocabulary $persistence_profile, ?string $payment_reference = null ): bool {
-		$lock_key = $persistence_profile->get_order_lock_key( $order );
-		$value    = $this->get_lock_value( $persistence_profile, $payment_reference );
-		$ttl      = $persistence_profile->get_lock_ttl_seconds();
-
-		if ( $this->lock_lives_in_object_cache() ) {
-			return wp_cache_add( $lock_key, $value, 'transient', $ttl );
-		}
-
-		return $this->claim_lock_rows( $lock_key, $value, $ttl );
+	public function claim_order_payment_lock( WC_Order $order, ProviderPersistenceVocabulary $persistence_profile, ?string $payment_reference = null ): ?string {
+		return $this->claim_order_payment_lock_for_operation( $order, $persistence_profile, $payment_reference, 'payment operation' );
 	}
 
 	/**
 	 * Claim the order payment lock and record which operation holds it.
 	 *
-	 * The record lets a later refusal name the holder and the lock's age in its warning.
+	 * The lock keeps the WooPayments-compatible value, the payment reference, so a plugin request still sees an
+	 * intent it is processing as locked. A holder record names the operation, for the refusal log, and carries a
+	 * token unique to this claim. Releasing needs that token, so an operation that ran past the lock TTL cannot
+	 * release a lock a later claim with the same reference took over.
 	 *
 	 * @since 11.2.0
 	 *
@@ -176,24 +171,32 @@ class OrderPaymentStore {
 	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
 	 * @param string|null                   $payment_reference   Payment reference being processed.
 	 * @param string                        $operation           Operation claiming the lock, such as 'refund' or 'capture'.
-	 * @return bool True when the lock was claimed.
+	 * @return string|null The claim token to release the lock with, or null when the lock is held.
 	 */
-	public function claim_order_payment_lock_for_operation( WC_Order $order, ProviderPersistenceVocabulary $persistence_profile, ?string $payment_reference, string $operation ): bool {
-		if ( ! $this->claim_order_payment_lock( $order, $persistence_profile, $payment_reference ) ) {
-			return false;
-		}
-
-		set_transient(
-			$this->get_lock_holder_key( $order, $persistence_profile ),
-			array(
-				'operation'  => $operation,
-				'lock_value' => $this->get_lock_value( $persistence_profile, $payment_reference ),
-				'claimed_at' => time(),
-			),
-			$persistence_profile->get_lock_ttl_seconds()
+	public function claim_order_payment_lock_for_operation( WC_Order $order, ProviderPersistenceVocabulary $persistence_profile, ?string $payment_reference, string $operation ): ?string {
+		$lock_key   = $persistence_profile->get_order_lock_key( $order );
+		$holder_key = $this->get_lock_holder_key( $order, $persistence_profile );
+		$value      = $this->get_lock_value( $persistence_profile, $payment_reference );
+		$ttl        = $persistence_profile->get_lock_ttl_seconds();
+		$token      = wp_generate_uuid4();
+		$holder     = array(
+			'operation'  => $operation,
+			'lock_value' => $value,
+			'token'      => $token,
+			'claimed_at' => time(),
 		);
 
-		return true;
+		if ( $this->lock_lives_in_object_cache() ) {
+			if ( ! wp_cache_add( $lock_key, $value, 'transient', $ttl ) ) {
+				return null;
+			}
+
+			wp_cache_set( $holder_key, $holder, 'transient', $ttl );
+
+			return $token;
+		}
+
+		return $this->claim_lock_rows( $lock_key, $value, $ttl, $holder_key, maybe_serialize( $holder ) ) ? $token : null;
 	}
 
 	/**
@@ -286,52 +289,86 @@ class OrderPaymentStore {
 	}
 
 	/**
-	 * Release the order payment lock, but only while the caller still holds it.
+	 * Release the order payment lock, but only while the caller's claim still holds it.
 	 *
-	 * The counterpart of claim_order_payment_lock(): an operation that ran past the lock TTL must not
-	 * release a lock another operation has since taken over, so the stored value is compared first.
+	 * The counterpart of claim_order_payment_lock_for_operation(): an operation that ran past the lock TTL must not
+	 * release a lock another claim has since taken over, even one with the same payment reference, so the holder
+	 * record must still carry this claim's token.
 	 *
 	 * @since 11.2.0
 	 *
 	 * @param WC_Order                      $order               Order being unlocked.
 	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
-	 * @param string|null                   $payment_reference   Payment reference the lock was claimed with.
+	 * @param string                        $lock_token          Token the claim returned.
 	 */
-	public function release_order_payment_lock( WC_Order $order, ProviderPersistenceVocabulary $persistence_profile, ?string $payment_reference = null ): void {
+	public function release_order_payment_lock( WC_Order $order, ProviderPersistenceVocabulary $persistence_profile, string $lock_token ): void {
 		global $wpdb;
 
-		$lock_key = $persistence_profile->get_order_lock_key( $order );
-		$value    = $this->get_lock_value( $persistence_profile, $payment_reference );
+		$lock_key   = $persistence_profile->get_order_lock_key( $order );
+		$holder_key = $this->get_lock_holder_key( $order, $persistence_profile );
 
 		if ( $this->lock_lives_in_object_cache() ) {
-			// The object cache API has no compare-and-delete, so this check and delete are not atomic.
-			$released = wp_cache_get( $lock_key, 'transient' ) === $value && wp_cache_delete( $lock_key, 'transient' );
-		} else {
-			$value_option   = '_transient_' . $lock_key;
-			$timeout_option = '_transient_timeout_' . $lock_key;
-
-			// One statement deletes the value and expiry rows together, and only when the value is ours.
-			$delete  = $wpdb->prepare(
-				"DELETE lock_value, lock_timeout FROM {$wpdb->options} AS lock_value
-				LEFT JOIN {$wpdb->options} AS lock_timeout ON lock_timeout.option_name = %s
-				WHERE lock_value.option_name = %s AND lock_value.option_value = %s",
-				$timeout_option,
-				$value_option,
-				maybe_serialize( $value )
-			);
-			$deleted = $wpdb->query( $delete ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Prepared above.
-			if ( false === $deleted ) {
-				// A failed delete, such as a deadlock victim, would otherwise leave the lock held for a full TTL.
-				$deleted = $wpdb->query( $delete ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Prepared above.
+			// The object cache API has no compare-and-delete, so these checks and deletes are not atomic.
+			$holder = wp_cache_get( $holder_key, 'transient' );
+			if ( ! $this->is_holder_of_claim( $holder, $lock_token ) || wp_cache_get( $lock_key, 'transient' ) !== $holder['lock_value'] ) {
+				return;
 			}
 
-			$released = 0 < (int) $deleted;
-			$this->forget_cached_options( array( $value_option, $timeout_option ) );
+			wp_cache_delete( $lock_key, 'transient' );
+			wp_cache_delete( $holder_key, 'transient' );
+
+			return;
 		}
 
-		if ( $released ) {
-			delete_transient( $this->get_lock_holder_key( $order, $persistence_profile ) );
+		$value_option          = '_transient_' . $lock_key;
+		$timeout_option        = '_transient_timeout_' . $lock_key;
+		$holder_option         = '_transient_' . $holder_key;
+		$holder_timeout_option = '_transient_timeout_' . $holder_key;
+		$stored_holder         = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $holder_option ) );
+		$holder                = null === $stored_holder ? null : maybe_unserialize( $stored_holder );
+
+		if ( ! $this->is_holder_of_claim( $holder, $lock_token ) ) {
+			return;
 		}
+
+		// One statement deletes the lock and its holder record, and only while both are still this claim's: a takeover
+		// rewrites the holder record in the same statement that takes the lock over.
+		$delete  = $wpdb->prepare(
+			"DELETE lock_value, lock_timeout, lock_holder, lock_holder_timeout FROM {$wpdb->options} AS lock_value
+			INNER JOIN {$wpdb->options} AS lock_holder ON lock_holder.option_name = %s AND lock_holder.option_value = %s
+			LEFT JOIN {$wpdb->options} AS lock_timeout ON lock_timeout.option_name = %s
+			LEFT JOIN {$wpdb->options} AS lock_holder_timeout ON lock_holder_timeout.option_name = %s
+			WHERE lock_value.option_name = %s AND lock_value.option_value = %s",
+			$holder_option,
+			$stored_holder,
+			$timeout_option,
+			$holder_timeout_option,
+			$value_option,
+			maybe_serialize( $holder['lock_value'] )
+		);
+		$deleted = $wpdb->query( $delete ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Prepared above.
+		if ( false === $deleted ) {
+			// A failed delete, such as a deadlock victim, would otherwise leave the lock held for a full TTL.
+			$wpdb->query( $delete ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Prepared above.
+		}
+
+		$this->forget_cached_options( array( $value_option, $timeout_option, $holder_option, $holder_timeout_option ) );
+	}
+
+	/**
+	 * Tell whether a holder record belongs to the claim that returned a token.
+	 *
+	 * @param mixed  $holder     Holder record as stored.
+	 * @param string $lock_token Token the claim returned.
+	 * @return bool
+	 * @phpstan-assert-if-true array{lock_value:string,token:string} $holder
+	 */
+	private function is_holder_of_claim( $holder, string $lock_token ): bool {
+		return is_array( $holder )
+			&& isset( $holder['token'], $holder['lock_value'] )
+			&& is_string( $holder['lock_value'] )
+			&& '' !== $lock_token
+			&& hash_equals( (string) $holder['token'], $lock_token );
 	}
 
 	/**
@@ -399,20 +436,27 @@ class OrderPaymentStore {
 	 * the claim uses INSERT IGNORE instead. Claimants compete for the value row alone; the one that inserts
 	 * it then writes the expiry row, replacing an expiry row a stopped release left behind. An expired lock
 	 * is taken over with one UPDATE that matches the exact value and expiry read, so only one of several
-	 * overlapping takeovers changes the rows.
+	 * overlapping takeovers changes the rows. The winner then writes its holder record; a takeover also replaces
+	 * the former holder's record in the same UPDATE, so the former holder can no longer release the lock. Only a lock
+	 * removed without its release, by the expired-transient cleanup or an unconditional unlock, can leave a former
+	 * holder's record in place until a new claim's holder write replaces it.
 	 *
-	 * @param string $lock_key Lock transient key.
-	 * @param string $value    Lock value.
-	 * @param int    $ttl      Lock time-to-live, in seconds.
+	 * @param string $lock_key      Lock transient key.
+	 * @param string $value         Lock value.
+	 * @param int    $ttl           Lock time-to-live, in seconds.
+	 * @param string $holder_key    Holder record transient key.
+	 * @param string $stored_holder Serialized holder record of this claim.
 	 * @return bool True when the lock was claimed.
 	 */
-	private function claim_lock_rows( string $lock_key, string $value, int $ttl ): bool {
+	private function claim_lock_rows( string $lock_key, string $value, int $ttl, string $holder_key, string $stored_holder ): bool {
 		global $wpdb;
 
-		$value_option   = '_transient_' . $lock_key;
-		$timeout_option = '_transient_timeout_' . $lock_key;
-		$stored_value   = maybe_serialize( $value );
-		$expiration     = (string) ( time() + $ttl );
+		$value_option          = '_transient_' . $lock_key;
+		$timeout_option        = '_transient_timeout_' . $lock_key;
+		$holder_option         = '_transient_' . $holder_key;
+		$holder_timeout_option = '_transient_timeout_' . $holder_key;
+		$stored_value          = maybe_serialize( $value );
+		$expiration            = (string) ( time() + $ttl );
 
 		// Read before competing for the value row: when this request wins it, an expiry row seen here was left by
 		// a stopped release or by a holder that released since, and the winner replaces it.
@@ -429,10 +473,23 @@ class OrderPaymentStore {
 		if ( 1 === $inserted ) {
 			$claimed = $this->write_claimed_lock_expiry( $value_option, $timeout_option, $stored_value, $leftover_timeout, $expiration );
 		} else {
-			$claimed = $this->take_over_expired_lock_rows( $value_option, $timeout_option, $stored_value, $expiration );
+			$claimed = $this->take_over_expired_lock_rows( $value_option, $timeout_option, $stored_value, $expiration, $holder_option, $stored_holder );
 		}
 
-		$this->forget_cached_options( array( $value_option, $timeout_option ) );
+		if ( $claimed ) {
+			$wpdb->query(
+				$wpdb->prepare(
+					"INSERT INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'off'), (%s, %s, 'off')
+					ON DUPLICATE KEY UPDATE option_value = VALUES(option_value)",
+					$holder_option,
+					$stored_holder,
+					$holder_timeout_option,
+					$expiration
+				)
+			);
+		}
+
+		$this->forget_cached_options( array( $value_option, $timeout_option, $holder_option, $holder_timeout_option ) );
 
 		return $claimed;
 	}
@@ -520,9 +577,11 @@ class OrderPaymentStore {
 	 * @param string $timeout_option Lock expiry option name.
 	 * @param string $stored_value   Serialized lock value to store.
 	 * @param string $expiration     New lock expiry timestamp.
+	 * @param string $holder_option  Holder record option name.
+	 * @param string $stored_holder  Serialized holder record of this claim.
 	 * @return bool True when this request took the lock over.
 	 */
-	private function take_over_expired_lock_rows( string $value_option, string $timeout_option, string $stored_value, string $expiration ): bool {
+	private function take_over_expired_lock_rows( string $value_option, string $timeout_option, string $stored_value, string $expiration, string $holder_option, string $stored_holder ): bool {
 		global $wpdb;
 
 		$rows = $this->select_lock_rows( $value_option, $timeout_option );
@@ -545,11 +604,14 @@ class OrderPaymentStore {
 			$wpdb->prepare(
 				"UPDATE {$wpdb->options} AS lock_value
 				INNER JOIN {$wpdb->options} AS lock_timeout ON lock_timeout.option_name = %s
-				SET lock_value.option_value = %s, lock_timeout.option_value = %s
+				LEFT JOIN {$wpdb->options} AS lock_holder ON lock_holder.option_name = %s
+				SET lock_value.option_value = %s, lock_timeout.option_value = %s, lock_holder.option_value = %s
 				WHERE lock_value.option_name = %s AND lock_value.option_value = %s AND lock_timeout.option_value = %s",
 				$timeout_option,
+				$holder_option,
 				$stored_value,
 				$expiration,
+				$stored_holder,
 				$value_option,
 				$rows[ $value_option ]->option_value,
 				$rows[ $timeout_option ]->option_value

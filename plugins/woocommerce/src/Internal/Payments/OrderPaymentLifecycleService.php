@@ -58,22 +58,21 @@ class OrderPaymentLifecycleService {
 	 */
 	public function apply( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabulary $persistence_profile ): void {
 		$payment_reference = $event->get_payment_reference();
-		$locked_by_service = false;
+		$lock_token        = null;
 
 		if ( null !== $payment_reference ) {
-			if ( ! $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $persistence_profile, $payment_reference, 'payment status update' ) ) {
+			$lock_token = $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $persistence_profile, $payment_reference, 'payment status update' );
+			if ( null === $lock_token ) {
 				$this->log_skipped_locked_event( $order, $event, $payment_reference, $persistence_profile );
 				return;
 			}
-
-			$locked_by_service = true;
 		}
 
 		try {
 			$this->apply_unlocked( $order, $event, $persistence_profile );
 		} finally {
-			if ( $locked_by_service ) {
-				$this->order_payment_store->release_order_payment_lock( $order, $persistence_profile, $payment_reference );
+			if ( null !== $lock_token ) {
+				$this->order_payment_store->release_order_payment_lock( $order, $persistence_profile, $lock_token );
 			}
 		}
 	}
