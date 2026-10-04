@@ -39,17 +39,30 @@ class WooPaymentsFailedTransactionRateLimiterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should limit checkout after five failed transactions inside the ten-minute window.
+	 * @testdox Should limit checkout with $label.
+	 *
+	 * Client 11.1.0 includes/class-session-rate-limiter.php:94-101: five or more failures limit checkout for ten minutes
+	 * from the last one.
+	 *
+	 * @testWith ["five failed transactions inside the ten-minute window", [30, 30, 30, 30, 30], true]
+	 *           ["four failed transactions inside the ten-minute window", [30, 30, 30, 30], false]
+	 *           ["an old first failed transaction and a recent last one", [660, 30, 30, 30, 30], true]
+	 *
+	 * @param string $label       Case description.
+	 * @param int[]  $seconds_ago How long ago each failed transaction happened, oldest first.
+	 * @param bool   $expected    Whether checkout is limited.
 	 */
-	public function test_is_limited_returns_true_after_threshold_inside_window(): void {
+	public function test_is_limited_counts_failures_from_the_last_attempt( string $label, array $seconds_ago, bool $expected ): void {
+		unset( $label );
+		$now     = time();
 		$session = $this->create_session();
 		$session->set(
 			WooPaymentsFailedTransactionRateLimiter::SESSION_KEY,
-			array_fill( 0, 5, time() - 30 )
+			array_map( static fn( int $offset ): int => $now - $offset, $seconds_ago )
 		);
 		$sut = new WooPaymentsFailedTransactionRateLimiter( $session );
 
-		$this->assertTrue( $sut->is_limited() );
+		$this->assertSame( $expected, $sut->is_limited() );
 	}
 
 	/**
