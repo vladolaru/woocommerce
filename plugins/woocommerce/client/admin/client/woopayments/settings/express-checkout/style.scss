@@ -361,7 +361,7 @@
 				display: flex;
 				align-items: center;
 				gap: 1px;
-				color: #674399;
+				color: $studio-woocommerce-purple-50;
 				font-size: 5px;
 				font-weight: 500;
 			}
@@ -454,7 +454,7 @@
 				display: flex;
 				align-items: center;
 				gap: 1px;
-				color: #674399;
+				color: $studio-woocommerce-purple-50;
 				font-size: 5px;
 				font-weight: 500;
 			}
@@ -484,7 +484,7 @@
 			}
 
 			&__shortcode-link {
-				color: var(--preview-link-color, #674399);
+				color: var(--preview-link-color, #{$studio-woocommerce-purple-60});
 			}
 
 			&__checkout-button {
@@ -493,7 +493,8 @@
 				justify-content: center;
 				height: 24px;
 				border-radius: 4px;
-				background-color: #674399;
+				// Client 11.1.0 `settings/express-checkout-settings/index.scss:514-515`.
+				background-color: $studio-woocommerce-purple-40;
 				color: #fff;
 				font-size: 8px;
 				font-weight: 600;
@@ -526,7 +527,7 @@
 			}
 
 			&__footer-guest-text {
-				color: #674399;
+				color: $studio-woocommerce-purple-40;
 				font-weight: 500;
 			}
 
