@@ -1612,11 +1612,18 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Gateways rendered in one classic payment list build the gateway-independent config once, each with its own keys, filter pass and config attribute.
+	 * @testdox Gateways rendered in one $_dataName payment list build the gateway-independent config once, each with its own keys, filter pass and config attribute.
 	 *
-	 * Client 11.1.0 builds the classic config once per request (`includes/class-wc-payments-checkout.php:408-423`).
+	 * Client 11.1.0 builds the classic config once per request (`includes/class-wc-payments-checkout.php:408-423`). Core's
+	 * checkout template fires the review-order payment hooks only outside AJAX (`templates/checkout/payment.php:20-22, 61-63`),
+	 * so update_order_review brackets the list with its own action and fragments filter (`WC_AJAX::update_order_review()`).
+	 *
+	 * @dataProvider payment_list_brackets
+	 *
+	 * @param callable $open  Fires what core fires before the payment list.
+	 * @param callable $close Fires what core fires after the payment list.
 	 */
-	public function test_classic_payment_list_builds_the_shared_config_once(): void {
+	public function test_classic_payment_list_builds_the_shared_config_once( callable $open, callable $close ): void {
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
 		$account_service = $this->create_account_service_for_bridge( true );
@@ -1642,14 +1649,14 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		try {
 			$bridge->register();
 			ob_start();
-			do_action( 'woocommerce_review_order_before_payment' );
+			$open();
 			foreach ( array( 'card', 'klarna', 'affirm' ) as $payment_method_id ) {
 				ob_start();
 				$bridge->render_payment_fields( self::CARD_SUPPORTS, $registry->get( $payment_method_id ) );
 				$this->assertSame( 1, preg_match( '/data-wcpay-config="([^"]*)"/', (string) ob_get_clean(), $matches ) );
 				$gateways[] = json_decode( html_entity_decode( $matches[1], ENT_QUOTES ), true )['gatewayId'] ?? '';
 			}
-			do_action( 'woocommerce_review_order_after_payment' );
+			$close();
 			$builds_in_list = $builds;
 
 			$bridge->render_payment_fields( self::CARD_SUPPORTS );
@@ -1664,6 +1671,24 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$this->assertSame( 2, $builds, 'A render after the payment list builds fresh config.' );
 		$this->assertSame( 4, $filtered, 'Each gateway config still passes the wcpay_payment_fields_js_config filter.' );
 		$this->assertSame( array( 'woocommerce_payments', 'woocommerce_payments_klarna', 'woocommerce_payments_affirm' ), $gateways );
+	}
+
+	/**
+	 * What core fires around each classic checkout payment list: the checkout page and update_order_review.
+	 *
+	 * @return array<string,array{0:callable,1:callable}>
+	 */
+	public function payment_list_brackets(): array {
+		return array(
+			'checkout page'       => array(
+				static fn() => do_action( 'woocommerce_review_order_before_payment' ),
+				static fn() => do_action( 'woocommerce_review_order_after_payment' ),
+			),
+			'update_order_review' => array(
+				static fn() => do_action( 'woocommerce_checkout_update_order_review', '' ),
+				static fn() => apply_filters( 'woocommerce_update_order_review_fragments', array() ),
+			),
+		);
 	}
 
 	/**

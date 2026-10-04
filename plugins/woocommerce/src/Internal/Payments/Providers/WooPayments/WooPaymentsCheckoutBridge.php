@@ -365,7 +365,9 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		if ( false === has_action( 'woocommerce_store_api_checkout_order_processed', array( $this, 'record_checkout_order_placed' ) ) ) {
 			add_action( 'woocommerce_store_api_checkout_order_processed', array( $this, 'record_checkout_order_placed' ), 10, 2 );
 		}
-		foreach ( array( 'woocommerce_review_order_before_payment', 'woocommerce_pay_order_before_payment' ) as $hook ) {
+		// The checkout template fires the review-order payment hooks only outside AJAX, so update_order_review opens the
+		// window when it starts and closes it in its fragments filter, which runs after the payment list rendered.
+		foreach ( array( 'woocommerce_review_order_before_payment', 'woocommerce_pay_order_before_payment', 'woocommerce_checkout_update_order_review' ) as $hook ) {
 			if ( false === has_action( $hook, array( $this, 'start_payment_list_render' ) ) ) {
 				add_action( $hook, array( $this, 'start_payment_list_render' ), 10, 0 );
 			}
@@ -374,6 +376,9 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			if ( false === has_action( $hook, array( $this, 'end_payment_list_render' ) ) ) {
 				add_action( $hook, array( $this, 'end_payment_list_render' ), 10, 0 );
 			}
+		}
+		if ( false === has_filter( 'woocommerce_update_order_review_fragments', array( $this, 'end_payment_list_render_in_fragments' ) ) ) {
+			add_filter( 'woocommerce_update_order_review_fragments', array( $this, 'end_payment_list_render_in_fragments' ) );
 		}
 		foreach ( array( 'woocommerce_after_cart', 'woocommerce_blocks_enqueue_cart_block_scripts_after', 'woocommerce_after_single_product', 'before_woocommerce_pay_form', 'woocommerce_payments_save_user_in_woopay' ) as $hook ) {
 			if ( false === has_action( $hook, array( $this, 'record_shopper_funnel_event' ) ) ) {
@@ -523,6 +528,20 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 */
 	public function end_payment_list_render(): void {
 		$this->payment_list_config_bases = null;
+	}
+
+	/**
+	 * Stop sharing the config base once update_order_review has rendered the payment list.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $fragments Checkout fragments.
+	 * @return mixed The fragments, unchanged.
+	 */
+	public function end_payment_list_render_in_fragments( $fragments ) {
+		$this->end_payment_list_render();
+
+		return $fragments;
 	}
 
 	/**
