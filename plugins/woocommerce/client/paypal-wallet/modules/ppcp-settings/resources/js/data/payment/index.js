@@ -6,7 +6,6 @@ import * as selectors from './selectors';
 import * as actions from './actions';
 import * as hooks from './hooks';
 import * as resolvers from './resolvers';
-import { initTodoSync } from '../sync/todo-state-sync';
 import { initPaymentDependencySync } from '../sync/payment-methods-sync';
 import { initSettingBasedPaymentMethodsSync } from '../sync/setting-based-payment-methods-sync';
 
@@ -25,9 +24,6 @@ export const initStore = () => {
 	} );
 
 	register( store );
-
-	// Initialize todo sync after store registration.
-	initTodoSync();
 
 	// Initialize payment method dependency sync.
 	initPaymentDependencySync();

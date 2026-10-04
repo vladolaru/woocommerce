@@ -7,7 +7,7 @@ jest.mock( '@ppcp-settings/data/index', () => ( {
 } ) );
 
 const EXPECTED_PAYMENT_METHODS = [
-	[ 'US', [ 'PayWithPayPal', 'PayLater', 'Venmo', 'Crypto' ], [] ],
+	[ 'US', [ 'PayWithPayPal', 'PayLater', 'Venmo' ], [] ],
 	[ 'GB', [ 'PayWithPayPal', 'PayInThree' ], [] ],
 	[ 'AU', [ 'PayWithPayPal', 'PayLater' ], [] ],
 	[ 'MX', [ 'PayWithPayPal', 'PayLater' ], [] ],

@@ -154,28 +154,6 @@ class TodosDefinition {
 				),
 				'priority'    => 14,
 			),
-			'enable_pwc'                           => array(
-				'title'       => __( 'Enable Pay with Crypto', 'woocommerce' ),
-				'description' => __( 'Enable customers to pay with cryptocurrency, and receive payments in USD in your PayPal balance.', 'woocommerce' ),
-				'isEligible'  => $eligibility_checks['enable_pwc'],
-				'action'      => array(
-					'type'      => 'tab',
-					'tab'       => 'payment_methods',
-					'section'   => 'ppcp-pwc',
-					'highlight' => 'ppcp-pwc',
-				),
-				'priority'    => 15,
-			),
-			'apply_for_pwc'                        => array(
-				'title'       => __( 'Start your Pay with Crypto application', 'woocommerce' ),
-				'description' => __( 'Enable customers to pay with cryptocurrency, and receive payments in USD in your PayPal balance.', 'woocommerce' ),
-				'isEligible'  => $eligibility_checks['apply_for_pwc'],
-				'action'      => array(
-					'type' => 'external',
-					'url'  => 'http://example.com/',
-				),
-				'priority'    => 16,
-			),
 			'enable_recaptcha_protection'          => array(
 				'title'       => __( 'Enable required fraud protection for PayPal Payments', 'woocommerce' ),
 				'description' => __( 'Help protect your store and maintain compliance. Enable reCAPTCHA →', 'woocommerce' ),

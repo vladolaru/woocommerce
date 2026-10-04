@@ -80,20 +80,6 @@ class TodosEligibilityService {
 	private bool $is_working_capital_eligible;
 
 	/**
-	 * Whether enabling Pay with Crypto is eligible.
-	 *
-	 * @var bool
-	 */
-	private bool $is_enable_pwc_eligible;
-
-	/**
-	 * Whether applying for Pay with Crypto is eligible.
-	 *
-	 * @var bool
-	 */
-	private bool $is_apply_for_pwc;
-
-	/**
 	 * Whether enabling reCAPTCHA protection is eligible.
 	 *
 	 * @var bool
@@ -112,8 +98,6 @@ class TodosEligibilityService {
 	 * @param bool $is_paypal_buttons_product_eligible  Whether PayPal buttons for product page are eligible.
 	 * @param bool $is_enable_installments_eligible     Whether enabling Installments is eligible.
 	 * @param bool $is_working_capital_eligible         Whether applying for Working Capital is eligible.
-	 * @param bool $is_enable_pwc_eligible              Whether enabling Pay with Crypto is eligible.
-	 * @param bool $is_apply_for_pwc                    Whether applying for Pay with Crypto is eligible.
 	 * @param bool $is_recaptcha_protection_eligible    Whether enabling reCAPTCHA protection is eligible.
 	 */
 	public function __construct(
@@ -126,8 +110,6 @@ class TodosEligibilityService {
 		bool $is_paypal_buttons_product_eligible,
 		bool $is_enable_installments_eligible,
 		bool $is_working_capital_eligible,
-		bool $is_enable_pwc_eligible,
-		bool $is_apply_for_pwc,
 		bool $is_recaptcha_protection_eligible
 	) {
 		$this->is_pay_later_messaging_eligible           = $is_pay_later_messaging_eligible;
@@ -139,8 +121,6 @@ class TodosEligibilityService {
 		$this->is_paypal_buttons_product_eligible        = $is_paypal_buttons_product_eligible;
 		$this->is_enable_installments_eligible           = $is_enable_installments_eligible;
 		$this->is_working_capital_eligible               = $is_working_capital_eligible;
-		$this->is_enable_pwc_eligible                    = $is_enable_pwc_eligible;
-		$this->is_apply_for_pwc                          = $is_apply_for_pwc;
 		$this->is_recaptcha_protection_eligible          = $is_recaptcha_protection_eligible;
 	}
 
@@ -160,8 +140,6 @@ class TodosEligibilityService {
 			'add_paypal_buttons_product'           => fn() => $this->is_paypal_buttons_product_eligible,
 			'enable_installments'                  => fn() => $this->is_enable_installments_eligible,
 			'apply_for_working_capital'            => fn() => $this->is_working_capital_eligible,
-			'enable_pwc'                           => fn() => $this->is_enable_pwc_eligible,
-			'apply_for_pwc'                        => fn() => $this->is_apply_for_pwc,
 			'enable_recaptcha_protection'          => fn() => $this->is_recaptcha_protection_eligible,
 		);
 	}

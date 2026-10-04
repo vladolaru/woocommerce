@@ -201,15 +201,12 @@ class OptionalModulesServicesTest extends WalletTestCase {
 					'block_checkout_enabled' => false,
 					'product_enabled'        => true,
 				),
-				'settings.service.gateways_status'       => array( FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO => false ),
 				'settings.service.merchant_capabilities' => array(
 					FeaturesDefinition::FEATURE_INSTALLMENTS => false,
-					FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO => true,
 				),
 				'settings.data.settings'                 => $settings,
 				'settings.data.general'                  => $general,
 				'button.helper.messages-apply'           => $this->mock( MessagesApply::class ),
-				'ppcp-local-apms.pwc.eligibility.check'  => static fn(): bool => true,
 			)
 		);
 
@@ -239,8 +236,6 @@ class OptionalModulesServicesTest extends WalletTestCase {
 				'add_paypal_buttons_product'           => false,
 				'enable_installments'                  => true,
 				'apply_for_working_capital'            => false,
-				'enable_pwc'                           => true,
-				'apply_for_pwc'                        => false,
 				'enable_recaptcha_protection'          => true,
 			),
 			$checks
@@ -279,8 +274,6 @@ class OptionalModulesServicesTest extends WalletTestCase {
 				'add_paypal_buttons_product',
 				'enable_installments',
 				'apply_for_working_capital',
-				'enable_pwc',
-				'apply_for_pwc',
 				'enable_recaptcha_protection',
 				'check_settings_after_migration',
 			),

@@ -49,11 +49,6 @@ class FeaturesDefinition {
 	public const FEATURE_CONTACT_MODULE = 'contact_module';
 
 	/**
-	 * Whether Pay With Crypto Feature is supported.
-	 */
-	public const FEATURE_PAY_WITH_CRYPTO = 'pwc';
-
-	/**
 	 * Whether the Vault Component feature is enabled.
 	 * Renders paypal.Vault() inline on checkout for returning customers.
 	 */
@@ -144,40 +139,6 @@ class FeaturesDefinition {
 		$paylater_docs_country_location = in_array( $store_country, $paylater_documentation_supported_countries, true ) ? strtolower( $store_country ) : 'us';
 
 		$feature_items = array(
-			self::FEATURE_PAY_WITH_CRYPTO                 => array(
-				'title'       => __( 'Pay with Crypto', 'woocommerce' ),
-				'description' => __( 'Enable customers to pay with cryptocurrency, and receive payments in USD in your PayPal balance.', 'woocommerce' ),
-				'enabled'     => $this->merchant_capabilities[ self::FEATURE_PAY_WITH_CRYPTO ],
-				'buttons'     => array(
-					array(
-						'type'     => 'secondary',
-						'text'     => __( 'Configure', 'woocommerce' ),
-						'action'   => array(
-							'type'    => 'tab',
-							'tab'     => 'payment_methods',
-							'section' => 'ppcp-pwc',
-						),
-						'showWhen' => 'enabled',
-						'class'    => 'small-button',
-					),
-					array(
-						'type'     => 'secondary',
-						'text'     => __( 'Sign up', 'woocommerce' ),
-						'urls'     => array(
-							'sandbox' => 'https://www.sandbox.paypal.com/bizsignup/add-product?product=CRYPTO_PYMTS',
-							'live'    => 'https://www.paypal.com/bizsignup/add-product?product=CRYPTO_PYMTS',
-						),
-						'showWhen' => 'disabled',
-						'class'    => 'small-button',
-					),
-					array(
-						'type'  => 'tertiary',
-						'text'  => __( 'Learn more', 'woocommerce' ),
-						'url'   => 'https://www.paypal.com/us/digital-wallet/manage-money/crypto',
-						'class' => 'small-button',
-					),
-				),
-			),
 			self::FEATURE_SAVE_PAYPAL_AND_VENMO           => array(
 				'title'       => __( 'Save PayPal and Venmo', 'woocommerce' ),
 				'description' => __( 'Securely save PayPal and Venmo payment methods for subscriptions or return buyers.', 'woocommerce' ),

@@ -142,4 +142,13 @@ class ForeignGatewayIdsTest extends WalletTestCase {
 		$this->assertContains( 'ppcp-axo-gateway', $ppcp_gateways );
 		$this->assertContains( 'ppcp-gateway', $ppcp_gateways );
 	}
+
+	/**
+	 * @testdox Should list the Pay with Crypto gateway among the gateway IDs the gateways list page recognises (wallet).
+	 */
+	public function test_the_gateways_list_page_recognises_the_pay_with_crypto_gateway(): void {
+		$all_ids = $this->module_services( 'Settings' )['settings.config.all-gateway-ids']();
+
+		$this->assertContains( 'ppcp-pwc', $all_ids );
+	}
 }

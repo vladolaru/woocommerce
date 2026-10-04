@@ -40,30 +40,20 @@ class FeaturesEligibilityService {
 	private bool $is_installments_eligible;
 
 	/**
-	 * Whether the Pay with Crypto eligibility has been checked.
-	 *
-	 * @var bool
-	 */
-	private bool $is_pwc_eligibility_checked;
-
-	/**
 	 * Constructor.
 	 *
 	 * @param bool     $is_save_paypal_eligible If saving PayPal and Venmo is eligible.
 	 * @param bool     $is_pay_later_eligible If Pay Later is eligible.
 	 * @param bool     $is_installments_eligible If Installments is eligible.
-	 * @param bool     $is_pwc_eligibility_checked If Pay With Crypto eligibility has been checked.
 	 */
 	public function __construct(
 		bool $is_save_paypal_eligible,
 		bool $is_pay_later_eligible,
-		bool $is_installments_eligible,
-		bool $is_pwc_eligibility_checked
+		bool $is_installments_eligible
 	) {
-		$this->is_save_paypal_eligible    = $is_save_paypal_eligible;
-		$this->is_pay_later_eligible      = $is_pay_later_eligible;
-		$this->is_installments_eligible   = $is_installments_eligible;
-		$this->is_pwc_eligibility_checked = $is_pwc_eligibility_checked;
+		$this->is_save_paypal_eligible  = $is_save_paypal_eligible;
+		$this->is_pay_later_eligible    = $is_pay_later_eligible;
+		$this->is_installments_eligible = $is_installments_eligible;
 	}
 
 	/**
@@ -76,7 +66,6 @@ class FeaturesEligibilityService {
 			FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO => fn() => $this->is_save_paypal_eligible,
 			FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING => fn() => $this->is_pay_later_eligible,
 			FeaturesDefinition::FEATURE_INSTALLMENTS     => fn() => $this->is_installments_eligible,
-			FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO  => fn() => $this->is_pwc_eligibility_checked,
 		);
 	}
 }

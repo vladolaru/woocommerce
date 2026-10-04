@@ -481,14 +481,6 @@ return array(
 			'product_enabled'        => $styling_data['product']->enabled ?? false,
 		);
 	},
-	'settings.service.gateways_status'                    => static function ( ContainerInterface $container ): array {
-		$payment_endpoint = $container->get( 'settings.rest.payment' );
-		$settings         = $payment_endpoint->get_details()->get_data();
-
-		return array(
-			'pwc' => $settings['data']['ppcp-pwc']['enabled'] ?? false,
-		);
-	},
 	'settings.service.merchant_capabilities'              => static function ( ContainerInterface $container ): array {
 		/**
 		 * Use the REST API filter to collect eligibility flags.
@@ -506,7 +498,6 @@ return array(
 			FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO => $features[ FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO ]['enabled'] ?? false,
 			FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING => $features[ FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING ]['enabled'] ?? false,
 			FeaturesDefinition::FEATURE_INSTALLMENTS     => $features[ FeaturesDefinition::FEATURE_INSTALLMENTS ]['enabled'] ?? false,
-			FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO  => $features[ FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO ]['enabled'] ?? false,
 		);
 	},
 
@@ -516,7 +507,6 @@ return array(
 		$is_pay_later_messaging_enabled_for_any_location = $pay_later_service['is_enabled_for_any_location'];
 
 		$button_locations = $container->get( 'settings.service.button_locations' );
-		$gateways         = $container->get( 'settings.service.gateways_status' );
 
 		// TODO: This "merchant_capabilities" service is only used here. Could it be merged to make the code cleaner and less segmented?
 		$capabilities = $container->get( 'settings.service.merchant_capabilities' );
@@ -526,10 +516,6 @@ return array(
 
 		$messages_apply = $container->get( 'button.helper.messages-apply' );
 		assert( $messages_apply instanceof MessagesApply );
-
-		$availability = $container->get( 'ppcp.module-availability' );
-		assert( $availability instanceof ModuleAvailability );
-		$pwc_eligible = ( $availability->eligibility_check( 'ppcp-local-apms.pwc' ) )();
 
 		$is_working_capital_feature_flag_enabled = apply_filters(
 		// phpcs:ignore WordPress.NamingConventions.ValidHookName.UseUnderscores -- feature flags use this convention
@@ -549,7 +535,7 @@ return array(
 		 * Logic relies on three main factors:
 		 * 1. $container->get( 'x.eligible' ) - Module based eligibility check, usually whether the WooCommerce store is using a supported country/currency matrix.
 		 * 2. $capabilities - Whether the merchant is eligible for specific features on their PayPal account.
-		 * 3. $gateways, $pay_later_statuses, $button_locations - Plugin settings (enabled/disabled status).
+		 * 3. $pay_later_statuses, $button_locations - Plugin settings (enabled/disabled status).
 		 *
 		 * @param bool $is_pay_later_messaging_eligible - Show if Pay Later messaging is enabled for at least one location.
 		 * @param bool $is_pay_later_messaging_product_eligible - Show if Pay Later is not enabled anywhere and specifically not on product page.
@@ -560,7 +546,6 @@ return array(
 		 * @param bool $is_paypal_buttons_product_eligible - Show if PayPal buttons are not enabled on product page.
 		 * @param bool $is_enable_installments_eligible - Show if merchant has installments capability and merchant country is MX.
 		 * @param bool $is_working_capital_eligible - Show if feature flag is enabled, merchant country is US and "Stay Updated" is turned On.
-		 * @param bool $is_pwc_eligible                  - Show if merchant has Pay with Crypto capability and store currency is USD.
 		 * @param bool $is_recaptcha_protection_eligible - Show if reCAPTCHA is not already enabled.
 		 */
 		return new TodosEligibilityService(
@@ -573,8 +558,6 @@ return array(
 			! $button_locations['product_enabled'],                                                       // Add PayPal buttons to product.
 			! $capabilities[ FeaturesDefinition::FEATURE_INSTALLMENTS ] && 'MX' === $container->get( 'settings.data.general' )->get_merchant_country(), // Enable Installments for Mexico.
 			$is_working_capital_feature_flag_enabled && $is_working_capital_eligible, // Enable Working Capital.
-			$capabilities[ FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO ] && ! $gateways[ FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO ] && $pwc_eligible, // Enable Pay with Crypto.
-			false,                                                                                        // Apply for Pay with Crypto. The card capability is dropped from merchant_capabilities; the todo goes in Task 9.
 			! $is_recaptcha_enabled,
 		);
 	},
@@ -595,7 +578,6 @@ return array(
 			FeaturesDefinition::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS => $features[ FeaturesDefinition::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS ]['enabled'] ?? false,
 			FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO => $features[ FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO ]['enabled'] ?? false,
 			FeaturesDefinition::FEATURE_INSTALLMENTS     => $features[ FeaturesDefinition::FEATURE_INSTALLMENTS ]['enabled'] ?? false,
-			FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO  => $features[ FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO ]['enabled'] ?? false,
 			FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING => $features[ FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING ]['enabled'] ?? false,
 		);
 
@@ -607,7 +589,6 @@ return array(
 			// Pay Later eligibility.
 			FeaturesDefinition::FEATURE_INSTALLMENTS     => $capabilities[ FeaturesDefinition::FEATURE_INSTALLMENTS ],
 			// Installments eligibility.
-			FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO  => $capabilities[ FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO ], // Pay with Crypto eligibility.
 		);
 
 		return new FeaturesDefinition(
@@ -622,14 +603,11 @@ return array(
 		$messages_apply = $container->get( 'button.helper.messages-apply' );
 		assert( $messages_apply instanceof MessagesApply );
 		$pay_later_eligible = $messages_apply->for_country();
-		$availability       = $container->get( 'ppcp.module-availability' );
-		assert( $availability instanceof ModuleAvailability );
 
 		return new FeaturesEligibilityService(
 			$container->get( 'save-payment-methods.eligible' ), // Save PayPal and Venmo eligibility.
 			$pay_later_eligible, // Pay Later eligibility.
-			'MX' === $container->get( 'api.merchant.country' ), // Installments eligibility.
-			( $availability->eligibility_check( 'ppcp-local-apms.pwc' ) )() // Pay with Crypto eligibility.
+			'MX' === $container->get( 'api.merchant.country' ) // Installments eligibility.
 		);
 	},
 	'settings.service.payment_methods_eligibilities'      => static function ( ContainerInterface $container ): PaymentMethodsEligibilityService {

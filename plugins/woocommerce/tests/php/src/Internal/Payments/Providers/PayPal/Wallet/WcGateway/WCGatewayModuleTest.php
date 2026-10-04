@@ -17,7 +17,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\H
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Admin\FeesRenderer;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\ApmCapabilityStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\DCCProductStatus;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\PWCProductStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\WCGatewayModule;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
@@ -51,7 +50,6 @@ class WCGatewayModuleTest extends WalletTestCase {
 
 		$services = array(
 			'wcgateway.helper.dcc-product-status' => $this->make_status( DCCProductStatus::class ),
-			'wcgateway.pwc-product-status'        => $this->make_status( PWCProductStatus::class ),
 			'wcgateway.apm-capability-status'     => $this->make_status( ApmCapabilityStatus::class ),
 			// run() reads the fees renderer eagerly, while registering the order totals hook.
 			'wcgateway.admin.fees-renderer'       => $this->mock( FeesRenderer::class ),
@@ -118,13 +116,24 @@ class WCGatewayModuleTest extends WalletTestCase {
 	public function test_clear_hook_clears_the_cached_apm_capability(): void {
 		$this->status_cache->set( ApmCapabilityStatus::KEY, 'yes' );
 		$this->status_cache->set( DCCProductStatus::KEY, 'yes' );
-		$this->status_cache->set( PWCProductStatus::KEY, 'yes' );
 		$this->assertSame( 'yes', $this->stored_answer( ApmCapabilityStatus::KEY ), 'The APM capability answer should be stored before the hook fires' );
 
 		do_action( 'woocommerce_paypal_payments_clear_apm_product_status' );
 
 		$this->assertSame( '', $this->stored_answer( ApmCapabilityStatus::KEY ), 'The APM capability answer should be gone' );
 		$this->assertSame( '', $this->stored_answer( DCCProductStatus::KEY ), 'The DCC status should be gone' );
-		$this->assertSame( '', $this->stored_answer( PWCProductStatus::KEY ), 'The PWC status should be gone' );
+	}
+
+	/**
+	 * @testdox Should leave a Pay with Crypto answer in the shared cache alone, as core no longer manages it (wallet).
+	 */
+	public function test_clear_hook_leaves_a_pay_with_crypto_answer_in_the_cache(): void {
+		$this->status_cache->set( 'products_pwc_enabled', 'yes' );
+		$this->status_cache->set( DCCProductStatus::KEY, 'yes' );
+
+		do_action( 'woocommerce_paypal_payments_clear_apm_product_status' );
+
+		$this->assertSame( '', $this->stored_answer( DCCProductStatus::KEY ), 'The DCC status should be gone' );
+		$this->assertSame( 'yes', $this->stored_answer( 'products_pwc_enabled' ), 'An entry core does not own should stay' );
 	}
 }
