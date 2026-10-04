@@ -170,11 +170,20 @@ class NativePaymentsGatewayRegistryTest extends WC_Unit_Test_Case {
 	 * @testdox Should not add a second gateway with an already registered gateway ID.
 	 */
 	public function test_register_gateway_does_not_add_a_gateway_with_a_registered_id(): void {
-		$registered_gateway = $this->create_gateway( 'woocommerce_payments' );
+		$registered_gateway = new class() extends WC_Payment_Gateway {
+			/**
+			 * Constructor.
+			 */
+			public function __construct() {
+				$this->id = 'woocommerce_payments';
+			}
+		};
 		$provider_gateway   = $this->create_gateway( 'woocommerce_payments' );
 		$sut                = new NativePaymentsGatewayRegistry();
 		$sut->init( new StaticNativeRuntimeArbiter( true ) );
 		$sut->register_provider( new StaticProvider( true, array( $provider_gateway ) ) );
+
+		$this->assertNotSame( get_class( $registered_gateway ), get_class( $provider_gateway ), 'The two gateways must differ in class so only the ID check can match them.' );
 
 		$gateways = $sut->register_gateway( array( $registered_gateway ) );
 
