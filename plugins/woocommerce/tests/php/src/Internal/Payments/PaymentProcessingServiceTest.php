@@ -555,6 +555,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				break;
 
 			case 'refund':
+				$this->create_local_refund( $order, 2.5, 'Adjustment' );
 				$result                   = $sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.5, 'Adjustment' ), $provider );
 				$expected_idempotency_key = $provider->last_idempotency_key;
 				$this->assertMatchesRegularExpression( '/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/', $expected_idempotency_key );
@@ -1821,23 +1822,26 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A successful provider refund with no refund row on the order returns a refund-not-found error and writes nothing.
+	 * @testdox A refund with no refund row on the order is refused before the provider call, writes nothing, and releases the lock.
 	 *
-	 * Client 11.1.0 sends the refund first, then returns `wcpay_edit_order_refund_not_found` when the
-	 * order has no refund row, before it adds the refund note or metadata
-	 * (class-wc-payment-gateway-wcpay.php:3003-3007). The WooPayments gateway maps the neutral code to the client's.
+	 * Client 11.1.0 sends the refund first and then returns `wcpay_edit_order_refund_not_found`
+	 * (class-wc-payment-gateway-wcpay.php:3003-3007). Native refuses first so no money moves; the
+	 * WooPayments gateway maps the neutral code to the client's.
 	 */
-	public function test_process_refund_without_a_refund_row_returns_the_refund_not_found_error(): void {
+	public function test_process_refund_without_a_refund_row_is_refused_before_the_provider_call(): void {
 		$order    = $this->create_woopayments_order( '10.00' );
 		$provider = new RecordingProvider( $this->successful_refund_outcome( 're_no_row' ) );
 
 		$result = $this->sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.50, 'Adjustment' ), $provider );
 
-		$this->assertSame( 1, $provider->refund_calls, 'Like the client, the refund reaches the provider before the row lookup fails.' );
+		$this->assertSame( 0, $provider->refund_calls, 'A refund with no row to link must never reach the provider.' );
 		$this->assertWPError( $result );
 		$this->assertSame( 'native_payment_refund_not_found', $result->get_error_code() );
 		$this->assertSame( 'A refund cannot be found for order: ' . $order->get_id(), $result->get_error_message() );
-		$this->assertSame( '', wc_get_order( $order->get_id() )->get_meta( '_wcpay_refund_status', true ), 'No refund metadata is written when the row is missing.' );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( '', $order->get_meta( '_wcpay_refund_status', true ), 'No refund metadata is written when the row is missing.' );
+		$this->assertCount( 0, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertFalse( get_transient( $this->persistence_profile->get_order_lock_key( $order ) ), 'The refusal must release the order payment lock.' );
 	}
 
 	/**
@@ -2308,6 +2312,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				)
 			)
 		);
+		$this->create_local_refund( $order, 2.50, 'Adjustment' );
 
 		$result = $this->sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.50, 'Adjustment' ), $provider );
 

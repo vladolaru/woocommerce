@@ -1895,11 +1895,10 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			$this->get_provider()
 		);
 
-		// The platform refund went through but the order has no refund row to link. Like client 11.1.0,
-		// track the success, return its error code, and record no failure
-		// (class-wc-payment-gateway-wcpay.php:2976, :3003-3007).
+		// The order has no refund row to link, so the service refused before the platform call.
+		// Return client 11.1.0's code and message (class-wc-payment-gateway-wcpay.php:3003-3007);
+		// no money moved, so record neither the success event nor a failure.
 		if ( is_wp_error( $result ) && 'native_payment_refund_not_found' === $result->get_error_code() ) {
-			wc_admin_record_tracks_event( 'wcpay_edit_order_refund_success' );
 			return new WP_Error( 'wcpay_edit_order_refund_not_found', $result->get_error_message() );
 		}
 

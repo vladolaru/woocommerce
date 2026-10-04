@@ -4927,6 +4927,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$gateway = new NativeWooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
+		$recorded = $this->record_tracks_events();
+
 		$result = $gateway->process_refund( $order->get_id(), 4.25, 'Adjustment' );
 
 		$this->assertTrue( $result );
@@ -4938,6 +4940,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			),
 			$service->last_refund_context->get_payment_data()
 		);
+		$this->assertArrayHasKey( 'wcadmin_wcpay_edit_order_refund_success', $recorded->events, 'A successful refund records the client\'s success event.' );
 	}
 
 	/**
@@ -5200,40 +5203,57 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return the client's refund-not-found error, and record no failure, when the order has no refund row.
+	 * @testdox Should refuse a refund with no refund row before the platform call, returning the client's refund-not-found error.
 	 *
-	 * Client 11.1.0 returns `wcpay_edit_order_refund_not_found` after a successful platform refund,
-	 * without a failure note or failed refund status (class-wc-payment-gateway-wcpay.php:3003-3007).
+	 * Client 11.1.0 refunds first and then returns `wcpay_edit_order_refund_not_found` after tracking the
+	 * success (class-wc-payment-gateway-wcpay.php:2979, :3003-3007). Native keeps the code and message but
+	 * refuses before any money moves, so it records neither the success event nor a failure.
 	 */
-	public function test_process_refund_not_found_returns_the_client_error_and_records_no_failure(): void {
+	public function test_process_refund_without_a_refund_row_is_refused_before_the_platform_call(): void {
 		$order = $this->create_order();
 		$order->update_meta_data( '_charge_id', 'ch_test' );
 		$order->save();
-
-		$service = new class() extends RecordingPaymentProcessingService {
+		$provider = new class() extends WooPaymentsProvider {
 			/**
-			 * Report a provider refund that found no refund row to link.
+			 * Number of platform refund calls.
 			 *
-			 * @param PaymentContext   $context  Payment context.
-			 * @param ProviderContract $provider Provider.
-			 * @return bool|\WP_Error
+			 * @var int
 			 */
-			public function process_refund( PaymentContext $context, ProviderContract $provider ) {
-				parent::process_refund( $context, $provider );
+			public int $refund_calls = 0;
 
-				return new \WP_Error( 'native_payment_refund_not_found', 'A refund cannot be found for order: ' . $context->get_order()->get_id() );
+			/**
+			 * Skip the parent constructor; this double only answers refund().
+			 */
+			public function __construct() {}
+
+			/**
+			 * Record the platform refund call and report it as successful.
+			 *
+			 * @param PaymentContext $context         Payment context.
+			 * @param string         $idempotency_key Idempotency key.
+			 * @return PaymentOutcome
+			 */
+			public function refund( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+				unset( $context, $idempotency_key );
+				++$this->refund_calls;
+
+				return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_no_row' );
 			}
 		};
-		$gateway = new NativeWooPaymentsGateway();
-		$gateway->init( $service, new WooPaymentsProvider() );
+		$gateway  = new NativeWooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
+		$recorded = $this->record_tracks_events();
 
 		$result = $gateway->process_refund( $order->get_id(), 4.25, 'Adjustment' );
 
+		$this->assertSame( 0, $provider->refund_calls, 'A refund with no row to link must never reach the platform.' );
 		$this->assertWPError( $result );
 		$this->assertSame( 'wcpay_edit_order_refund_not_found', $result->get_error_code() );
 		$this->assertSame( 'A refund cannot be found for order: ' . $order->get_id(), $result->get_error_message() );
+		$this->assertArrayNotHasKey( 'wcadmin_wcpay_edit_order_refund_success', $recorded->events, 'No refund happened, so no success event.' );
+		$this->assertArrayNotHasKey( 'wcadmin_wcpay_edit_order_refund_failure', $recorded->events );
 		$order = wc_get_order( $order->get_id() );
-		$this->assertSame( '', $order->get_meta( '_wcpay_refund_status', true ), 'The platform refund went through, so the refund must not be marked failed.' );
+		$this->assertSame( '', $order->get_meta( '_wcpay_refund_status', true ), 'A refusal before the platform call must not mark the refund failed.' );
 		$this->assertCount( 0, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 	}
 
@@ -6060,6 +6080,31 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order->save();
 
 		return $order;
+	}
+
+	/**
+	 * Record Tracks events by name.
+	 *
+	 * @return \stdClass Holder whose `events` property maps event names to properties.
+	 */
+	private function record_tracks_events(): \stdClass {
+		if ( ! function_exists( 'wc_admin_record_tracks_event' ) ) {
+			require_once WC_ABSPATH . 'includes/react-admin/core-functions.php';
+		}
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		$recorded         = new \stdClass();
+		$recorded->events = array();
+		add_filter(
+			'woocommerce_tracks_event_properties',
+			static function ( $properties, $event_name ) use ( $recorded ) {
+				$recorded->events[ $event_name ] = $properties;
+				return $properties;
+			},
+			10,
+			2
+		);
+
+		return $recorded;
 	}
 
 	/**
