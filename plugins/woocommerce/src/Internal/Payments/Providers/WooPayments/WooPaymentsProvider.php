@@ -12,7 +12,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNoticesPassthrough;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsMerchantRestController;
-use Automattic\WooCommerce\Internal\Payments\CapabilityManifest;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsGatewayRegistry;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
@@ -333,27 +332,18 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 	}
 
 	/**
-	 * Get the provider capability manifest.
+	 * Tell whether a zero-total checkout should reach charge().
 	 *
-	 * @return CapabilityManifest
+	 * Always true: like client 11.1.0, charge() creates a setup intent only when the payment saves a new
+	 * payment method and otherwise completes the order without an intent (class-wc-payment-gateway-wcpay.php:1688, 1983-2005).
+	 *
+	 * @param PaymentContext $context Checkout payment context.
+	 * @return bool
 	 */
-	public function get_capability_manifest(): CapabilityManifest {
-		return CapabilityManifest::from_array(
-			array(
-				CapabilityManifest::CAPABILITY_CARDS,
-				CapabilityManifest::CAPABILITY_SAVED_TOKENS,
-				CapabilityManifest::CAPABILITY_MANDATES,
-				CapabilityManifest::CAPABILITY_ASYNC_REDIRECT,
-				CapabilityManifest::CAPABILITY_REFUNDS,
-				CapabilityManifest::CAPABILITY_PARTIAL_REFUNDS,
-				CapabilityManifest::CAPABILITY_MANUAL_CAPTURE,
-				CapabilityManifest::CAPABILITY_EXPRESS_CHECKOUT,
-				CapabilityManifest::CAPABILITY_HOSTED_SESSION,
-				CapabilityManifest::CAPABILITY_SUBSCRIPTIONS,
-				CapabilityManifest::CAPABILITY_IN_PERSON,
-				CapabilityManifest::CAPABILITY_ZERO_AMOUNT_SETUP,
-			)
-		);
+	public function supports_zero_amount_setup( PaymentContext $context ): bool {
+		unset( $context );
+
+		return true;
 	}
 
 	/**

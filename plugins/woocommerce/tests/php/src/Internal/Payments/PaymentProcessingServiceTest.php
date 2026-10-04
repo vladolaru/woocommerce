@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
-use Automattic\WooCommerce\Internal\Payments\CapabilityManifest;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
@@ -2850,7 +2849,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 					),
 				)
 			),
-			array( CapabilityManifest::CAPABILITY_ZERO_AMOUNT_SETUP )
+			true
 		);
 
 		$result = $this->sut->process_checkout( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_zero' ), $provider );
@@ -2881,7 +2880,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 					),
 				)
 			),
-			array( CapabilityManifest::CAPABILITY_ZERO_AMOUNT_SETUP )
+			true
 		);
 
 		$result = $this->sut->process_checkout(

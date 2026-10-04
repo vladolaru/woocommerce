@@ -4,7 +4,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
-use Automattic\WooCommerce\Internal\Payments\CapabilityManifest;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
@@ -62,7 +61,6 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	 */
 	public function test_provider_identity_preserves_woopayments_gateway_id(): void {
 		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $this->sut->get_id() );
-		$this->assertInstanceOf( CapabilityManifest::class, $this->sut->get_capability_manifest() );
 	}
 
 	/** @testdox Provider exposes its Multi-Currency bootstrap root without core-owned composition knowledge. */
@@ -368,28 +366,15 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Provider capabilities should expose the WooPayments native processing surface.
+	 * @testdox A zero-total checkout with a credential reaches charge(), which decides between a setup intent and no intent.
+	 *
+	 * Client 11.1.0 creates a setup intent for a $0 order only when it saves a new payment method and otherwise
+	 * confirms the order without an intent (class-wc-payment-gateway-wcpay.php:1688, 1983-2005).
 	 */
-	public function test_provider_capabilities_expose_native_processing_surface(): void {
-		$manifest = $this->sut->get_capability_manifest();
+	public function test_zero_total_checkout_reaches_charge(): void {
+		$order = wc_create_order();
 
-		foreach (
-			array(
-				CapabilityManifest::CAPABILITY_CARDS,
-				CapabilityManifest::CAPABILITY_SAVED_TOKENS,
-				CapabilityManifest::CAPABILITY_MANDATES,
-				CapabilityManifest::CAPABILITY_ASYNC_REDIRECT,
-				CapabilityManifest::CAPABILITY_REFUNDS,
-				CapabilityManifest::CAPABILITY_PARTIAL_REFUNDS,
-				CapabilityManifest::CAPABILITY_MANUAL_CAPTURE,
-				CapabilityManifest::CAPABILITY_EXPRESS_CHECKOUT,
-				CapabilityManifest::CAPABILITY_HOSTED_SESSION,
-				CapabilityManifest::CAPABILITY_SUBSCRIPTIONS,
-				CapabilityManifest::CAPABILITY_IN_PERSON,
-			) as $capability
-		) {
-			$this->assertTrue( $manifest->supports( $capability ), "{$capability} should be declared for WooPayments native processing." );
-		}
+		$this->assertTrue( $this->sut->supports_zero_amount_setup( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_zero' ) ) );
 	}
 
 	/**

@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
-use Automattic\WooCommerce\Internal\Payments\CapabilityManifest;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
@@ -26,11 +25,11 @@ class RecordingProvider implements ProviderContract, ProviderOutcomeMetadataMapp
 	private PaymentOutcome $outcome;
 
 	/**
-	 * Supported capabilities.
+	 * Whether a zero-total checkout reaches charge().
 	 *
-	 * @var string[]
+	 * @var bool
 	 */
-	private array $capabilities;
+	private bool $supports_zero_amount_setup;
 
 	/**
 	 * Number of charge calls.
@@ -70,12 +69,12 @@ class RecordingProvider implements ProviderContract, ProviderOutcomeMetadataMapp
 	/**
 	 * Constructor.
 	 *
-	 * @param PaymentOutcome $outcome      Outcome returned by operations.
-	 * @param string[]       $capabilities Supported capabilities.
+	 * @param PaymentOutcome $outcome                    Outcome returned by operations.
+	 * @param bool           $supports_zero_amount_setup Whether a zero-total checkout reaches charge().
 	 */
-	public function __construct( PaymentOutcome $outcome, array $capabilities = array() ) {
-		$this->outcome      = $outcome;
-		$this->capabilities = $capabilities;
+	public function __construct( PaymentOutcome $outcome, bool $supports_zero_amount_setup = false ) {
+		$this->outcome                    = $outcome;
+		$this->supports_zero_amount_setup = $supports_zero_amount_setup;
 	}
 
 	/**
@@ -88,12 +87,15 @@ class RecordingProvider implements ProviderContract, ProviderOutcomeMetadataMapp
 	}
 
 	/**
-	 * Get the provider capability manifest.
+	 * Tell whether a zero-total checkout reaches charge().
 	 *
-	 * @return CapabilityManifest
+	 * @param PaymentContext $context Checkout payment context.
+	 * @return bool
 	 */
-	public function get_capability_manifest(): CapabilityManifest {
-		return CapabilityManifest::from_array( $this->capabilities );
+	public function supports_zero_amount_setup( PaymentContext $context ): bool {
+		unset( $context );
+
+		return $this->supports_zero_amount_setup;
 	}
 
 	/**

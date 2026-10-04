@@ -21,11 +21,15 @@ namespace Automattic\WooCommerce\Internal\Payments;
 interface ProviderContract extends PaymentGatewayProviderContract {
 
 	/**
-	 * Get the provider capability manifest.
+	 * Tell whether a zero-total checkout with a payment credential should reach the provider's charge().
 	 *
-	 * @return CapabilityManifest
+	 * A provider that returns true decides in charge() what a zero-amount payment needs (for example, a
+	 * setup intent to save the payment method). Returning false completes the order without a provider call.
+	 *
+	 * @param PaymentContext $context Checkout payment context.
+	 * @return bool
 	 */
-	public function get_capability_manifest(): CapabilityManifest;
+	public function supports_zero_amount_setup( PaymentContext $context ): bool;
 
 	/**
 	 * Get the provider persistence profile.

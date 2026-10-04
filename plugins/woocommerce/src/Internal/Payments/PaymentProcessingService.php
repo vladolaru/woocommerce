@@ -582,7 +582,7 @@ class PaymentProcessingService {
 	 * @return bool
 	 */
 	private function should_call_provider_for_zero_total_checkout( PaymentContext $context, ProviderContract $provider ): bool {
-		if ( ! $provider->get_capability_manifest()->supports( CapabilityManifest::CAPABILITY_ZERO_AMOUNT_SETUP ) ) {
+		if ( ! $provider->supports_zero_amount_setup( $context ) ) {
 			return false;
 		}
 
