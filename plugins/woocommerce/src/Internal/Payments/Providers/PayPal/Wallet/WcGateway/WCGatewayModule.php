@@ -353,6 +353,12 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 				if ( $pwc_product_status instanceof PWCProductStatus ) {
 					$pwc_product_status->clear();
 				}
+
+				// Clear the APM capability that Pay Later messaging reads.
+				$apm_capability_status = $c->get( 'wcgateway.apm-capability-status' );
+				if ( $apm_capability_status instanceof ApmCapabilityStatus ) {
+					$apm_capability_status->clear();
+				}
 			}
 		);
 
