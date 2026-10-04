@@ -44,6 +44,7 @@ use Automattic\WooCommerce\StoreApi\Legacy as StoreApiLegacy;
 use Automattic\WooCommerce\StoreApi\Payments\PaymentContext as StoreApiPaymentContext;
 use Automattic\WooCommerce\StoreApi\Payments\PaymentResult as StoreApiPaymentResult;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPublicFraudServices;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Order;
 use WC_Payment_Token_CC;
@@ -3926,6 +3927,63 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$notes = array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 		$this->assertNotEmpty( array_filter( $notes, static fn( string $note ): bool => str_starts_with( $note, $message ) ), 'The status note must carry the mismatch message.' );
 		$this->assertSame( array( $message ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+	}
+
+	/**
+	 * @testdox When the duplicate guard's intent lookup throws a $throwable_class, checkout charges: $charges.
+	 *
+	 * Client 11.1.0 `src/Internal/Service/DuplicatePaymentPreventionService.php:100` catches only exceptions: an exception
+	 * lets checkout go on, a PHP Error fatals and charges nothing. Native refuses instead of the fatal and leaves the order
+	 * pending (monitor ruling 2026-10-04 (1)).
+	 *
+	 * @testWith ["Error", false]
+	 *           ["RuntimeException", true]
+	 *
+	 * @param string $throwable_class Class thrown by the intent lookup.
+	 * @param bool   $charges         Whether checkout goes on to charge.
+	 */
+	public function test_process_payment_refuses_when_the_duplicate_guard_lookup_raises_a_php_error( string $throwable_class, bool $charges ): void {
+		$order = $this->create_order();
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->save();
+		$session    = $this->create_session();
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$api_client->method( 'get_payment_intention' )->willThrowException( new $throwable_class( 'Undefined index: status' ) );
+		$logger  = RecordingWcLogger::install();
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init(
+			$service,
+			new WooPaymentsProvider(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_fraud_prevention_service( false, $session ),
+			new WooPaymentsFailedTransactionRateLimiter( $session ),
+			$this->create_duplicate_payment_prevention_service( $session, $api_client )
+		);
+		$_POST['wcpay-payment-method'] = 'pm_card_visa';
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( $charges ? 1 : 0, $service->checkout_attempt_count );
+		$guard_lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => str_starts_with( $line[1], 'Failed to fetch attached' ) ) );
+		if ( $charges ) {
+			$this->assertSame( array(), $guard_lines, 'An exception follows the logging setting, which is off.' );
+			return;
+		}
+		$this->assertSame( 'failure', $result['result'] ?? '' );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'pending', $order->get_status() );
+		$this->assertSame( array( "We're not able to process this payment. Please try again later." ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+		$this->assertCount( 1, $guard_lines, 'A PHP Error is logged whatever the logging setting.' );
+		$this->assertSame( 'Error', $logger->contexts[ $guard_lines[0] ]['exception'] ?? '' );
 	}
 
 	/**

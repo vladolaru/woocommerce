@@ -19,6 +19,13 @@ class RecordingWcLogger implements WC_Logger_Interface {
 	public array $lines = array();
 
 	/**
+	 * Context of each recorded call, at the same index as its line.
+	 *
+	 * @var array<int,array<string,mixed>>
+	 */
+	public array $contexts = array();
+
+	/**
 	 * Make this logger the one `wc_get_logger()` returns until the test's hooks are restored.
 	 *
 	 * @return self
@@ -65,7 +72,8 @@ class RecordingWcLogger implements WC_Logger_Interface {
 	 * @param array<string,mixed> $context Context.
 	 */
 	public function log( $level, $message, $context = array() ) {
-		$this->lines[] = array( (string) $level, (string) $message, (string) ( $context['source'] ?? '' ) );
+		$this->lines[]    = array( (string) $level, (string) $message, (string) ( $context['source'] ?? '' ) );
+		$this->contexts[] = is_array( $context ) ? $context : array();
 	}
 
 	/**

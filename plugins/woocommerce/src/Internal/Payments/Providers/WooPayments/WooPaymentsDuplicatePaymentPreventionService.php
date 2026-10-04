@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Utilities\OrderUtil;
+use Exception;
 use Throwable;
 use WC_Order;
 use WC_Payment_Gateway;
@@ -262,6 +263,8 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	/**
 	 * Redirect when the current order already has an authorized PaymentIntent attached.
 	 *
+	 * A failed intent fetch lets checkout go on, as on the client, except for a PHP Error, which refuses checkout.
+	 *
 	 * @param WC_Order           $order   Current order.
 	 * @param WC_Payment_Gateway $gateway Gateway used to build the return URL.
 	 * @return array<string,string>|WP_Error|null
@@ -284,6 +287,13 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 					'intent_id' => $intent_id,
 				)
 			);
+
+			// Decided divergence (monitor ruling 2026-10-04 (1)): client dpps:100 catches only Exception, so a PHP Error
+			// fatals there and nothing is charged. Native keeps that outcome without the fatal instead of charging again.
+			if ( ! $exception instanceof Exception ) {
+				return new WP_Error( 'duplicate_payment_check_failed', __( "We're not able to process this payment. Please try again later.", 'woocommerce' ) );
+			}
+
 			return null;
 		}
 
