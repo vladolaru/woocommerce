@@ -48,19 +48,28 @@ module.exports = {
 			files: [ 'client/woopayments/**/*.scss' ],
 			rules: {
 				'color-no-hex': true,
-				// Logical properties, as the repo's AGENTS.md asks: no physical left/right margins, paddings, borders,
-				// offsets, floats or alignment, and no four-value margin/padding shorthand (it sets left and right).
+				// Logical properties, as the repo's AGENTS.md asks: no physical left/right margins, paddings, borders
+				// or offsets here; the allowed list below keeps alignment, floats and margin/padding shorthands logical.
 				'property-disallowed-list': [
 					'/^(margin|padding|border)-(left|right)(-.+)?$/',
 					'/^(left|right)$/',
 				],
-				'declaration-property-value-allowed-list': {
-					'text-align': [
-						'/^(start|end|center|justify|inherit|initial|unset)$/',
-					],
-					float: [ '/^(none|inline-start|inline-end|inherit|initial|unset)$/' ],
-					'/^(margin|padding)$/': [ woopaymentsUpToThreeValues ],
-				},
+				'declaration-property-value-allowed-list': [
+					{
+						'text-align': [
+							'/^(start|end|center|justify|inherit|initial|unset)$/',
+						],
+						float: [
+							'/^(none|inline-start|inline-end|inherit|initial|unset)$/',
+						],
+						'/^(margin|padding)$/': [ woopaymentsUpToThreeValues ],
+					},
+					{
+						// This rule passes no arguments to a message function, so one message covers both cases.
+						message:
+							'Use logical values: text-align start or end, float inline-start or inline-end, and margin-block/margin-inline (or padding-) instead of a four-value shorthand.',
+					},
+				],
 				'declaration-property-value-disallowed-list': [
 					{
 						'/^(margin|padding)(-.+)?$/': [ woopaymentsLiteralPx ],
