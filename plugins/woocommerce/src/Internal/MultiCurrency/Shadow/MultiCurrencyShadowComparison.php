@@ -11,7 +11,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Shadow;
  * Immutable multi-currency shadow comparison record.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal Canary only; removed before the PR merges.
  */
 class MultiCurrencyShadowComparison {
 

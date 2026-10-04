@@ -26,7 +26,7 @@ use WC_Order;
  * filters, initialize sessions, or refresh rate caches.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal Canary only; removed before the PR merges.
  */
 class MultiCurrencyShadowMode implements RegisterHooksInterface {
 
