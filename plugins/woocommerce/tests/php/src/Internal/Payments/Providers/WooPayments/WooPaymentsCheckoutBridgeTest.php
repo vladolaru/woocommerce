@@ -1359,6 +1359,83 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox WooPay applies to the checkout page only for an eligible account with WooPay on: $label.
+	 *
+	 * Client 11.1.0 should_use_stripe_platform_on_checkout_page() (gw:1173-1191) with WC_Payments_Features::is_woopay_eligible()
+	 * (class-wc-payments-features.php:193-209): the cached account must be platform_checkout_eligible and neither rejected nor
+	 * under review, platform_checkout must be 'yes', the page must be checkout and not order-pay, and the cart must need
+	 * payment. Ported from the client's test_should_use_stripe_platform_on_checkout_page_not_woopay_eligible and
+	 * test_should_use_stripe_platform_on_checkout_page_not_woopay (tests/unit/test-class-wc-payment-gateway-wcpay.php:4789-4799).
+	 *
+	 * @testWith ["eligible, WooPay on, checkout with a cart", {"platform_checkout_eligible": true}, "yes", true, false, true]
+	 *           ["not WooPay eligible", {"platform_checkout_eligible": false}, "yes", true, false, false]
+	 *           ["WooPay off", {"platform_checkout_eligible": true}, "no", true, false, false]
+	 *           ["rejected account", {"platform_checkout_eligible": true, "status": "rejected.fraud"}, "yes", true, false, false]
+	 *           ["account under review", {"platform_checkout_eligible": true, "status": "under_review"}, "yes", true, false, false]
+	 *           ["the order-pay page", {"platform_checkout_eligible": true}, "yes", true, true, false]
+	 *
+	 * @param string              $label             Case label.
+	 * @param array<string,mixed> $account_data      Cached account data.
+	 * @param string              $platform_checkout WooPay setting.
+	 * @param bool                $is_checkout       Whether the request is the checkout page.
+	 * @param bool                $is_order_pay      Whether the request is the order-pay endpoint.
+	 * @param bool                $expected          Whether WooPay applies.
+	 */
+	public function test_should_use_stripe_platform_on_checkout_page( string $label, array $account_data, string $platform_checkout, bool $is_checkout, bool $is_order_pay, bool $expected ): void {
+		global $wp;
+		unset( $label );
+		if ( $is_checkout ) {
+			add_filter( 'woocommerce_is_checkout', '__return_true' );
+		}
+		if ( $is_order_pay ) {
+			$wp->query_vars['order-pay'] = 1;
+		}
+		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 1 );
+		WC()->cart->calculate_totals();
+		$legacy_runtime = $this->create_legacy_runtime_for_bridge();
+		$bridge         = new WooPaymentsCheckoutBridge();
+		$bridge->init(
+			$legacy_runtime,
+			$this->create_account_service_for_bridge( true, $account_data, array( 'platform_checkout' => $platform_checkout ) ),
+			$this->create_woopay_session_service_for_bridge( false ),
+			$this->create_frontend_styles_service_for_bridge(),
+			$this->create_frontend_tracking_controller_for_bridge()
+		);
+
+		try {
+			$this->assertSame( $expected, $bridge->should_use_stripe_platform_on_checkout_page() );
+		} finally {
+			remove_filter( 'woocommerce_is_checkout', '__return_true' );
+			unset( $wp->query_vars['order-pay'] );
+			WC()->cart->empty_cart();
+		}
+	}
+
+	/**
+	 * @testdox WooPay does not apply off the checkout page, even for an eligible account with WooPay on.
+	 *
+	 * Client 11.1.0 gw:1181 requires is_checkout() || has_block( 'woocommerce/checkout' ). A separate process, because an
+	 * earlier test can define WOOCOMMERCE_CHECKOUT for the rest of the run.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_should_not_use_stripe_platform_off_the_checkout_page(): void {
+		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 1 );
+		WC()->cart->calculate_totals();
+		$bridge = new WooPaymentsCheckoutBridge();
+		$bridge->init(
+			$this->create_legacy_runtime_for_bridge(),
+			$this->create_account_service_for_bridge( true, array( 'platform_checkout_eligible' => true ), array( 'platform_checkout' => 'yes' ) ),
+			$this->create_woopay_session_service_for_bridge( false ),
+			$this->create_frontend_styles_service_for_bridge(),
+			$this->create_frontend_tracking_controller_for_bridge()
+		);
+
+		$this->assertFalse( $bridge->should_use_stripe_platform_on_checkout_page() );
+	}
+
+	/**
 	 * @testdox Should hide the card save-payment checkbox for logged-in WooPay shoppers.
 	 */
 	public function test_get_payment_fields_js_config_hides_card_save_option_for_logged_in_woopay_shoppers(): void {

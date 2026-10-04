@@ -6098,6 +6098,65 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The card save checkbox is $expected when WooPay applies to the checkout page ($platform), unchecked either way.
+	 *
+	 * Client 11.1.0 save_payment_method_checkbox() hides the checkbox when it is forced or when
+	 * should_use_stripe_platform_on_checkout_page() holds (gw:1146), and that predicate is false for every gateway but card
+	 * (gw:1174-1176). Ported from the client's test_save_payment_method_checkbox_displayed and
+	 * test_save_payment_method_checkbox_not_displayed_when_stripe_platform_account_used, and
+	 * test_should_not_use_stripe_platform_on_checkout_page_for_non_card (tests/unit/test-class-wc-payment-gateway-wcpay.php:1754-1758, 1893-1944).
+	 *
+	 * @testWith ["card", true, "hidden"]
+	 *           ["card", false, "visible"]
+	 *           ["sepa_debit", true, "visible"]
+	 *
+	 * @param string $payment_method Payment method of the gateway.
+	 * @param bool   $platform       Whether the checkout bridge reports WooPay on the checkout page.
+	 * @param string $expected       Whether the checkbox is hidden or visible.
+	 */
+	public function test_save_payment_method_checkbox_hides_for_woopay_on_the_card_checkout( string $payment_method, bool $platform, string $expected ): void {
+		WooCommerceSubscriptionsDoubles::load_cart();
+		$GLOBALS['wcpay_test_cart_contains_subscription'] = false;
+		$bridge = $this->createMock( WooPaymentsCheckoutBridge::class );
+		$bridge->method( 'should_use_stripe_platform_on_checkout_page' )->willReturn( $platform );
+		$gateway = new NativeWooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method ) );
+		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), $bridge );
+
+		ob_start();
+		$gateway->save_payment_method_checkbox();
+		$output = (string) ob_get_clean();
+
+		$this->assertSame( 1, substr_count( $output, 'id="wc-' . $gateway->id . '-new-payment-method"' ) );
+		$hidden = preg_match( '/<div style="display:none;">.*<input[^>]+id="wc-' . preg_quote( $gateway->id, '/' ) . '-new-payment-method".*<\/div>/s', $output );
+		$this->assertSame( 'hidden' === $expected ? 1 : 0, $hidden );
+		$this->assertDoesNotMatchRegularExpression( '/<input[^>]+checked[^>]*>/', $output );
+	}
+
+	/**
+	 * @testdox The save checkbox reads the client's label on a $cart cart.
+	 *
+	 * Client 11.1.0 labels the checkbox "Save payment information to my account for future purchases." (gw:1160), visible
+	 * or forced; core's "Save to account" never shows.
+	 *
+	 * @testWith ["regular"]
+	 *           ["subscription"]
+	 *
+	 * @param string $cart Cart kind.
+	 */
+	public function test_save_payment_method_checkbox_uses_the_client_label( string $cart ): void {
+		WooCommerceSubscriptionsDoubles::load_cart();
+		$GLOBALS['wcpay_test_cart_contains_subscription'] = 'subscription' === $cart;
+		$gateway = new NativeWooPaymentsGateway();
+
+		ob_start();
+		$gateway->save_payment_method_checkbox();
+		$output = (string) ob_get_clean();
+
+		$this->assertMatchesRegularExpression( '#<label for="wc-woocommerce_payments-new-payment-method" style="display:inline;">Save payment information to my account for future purchases\.</label>#', $output );
+		$this->assertStringNotContainsString( 'Save to account', $output );
+	}
+
+	/**
 	 * @testdox Should keep the visible unchecked save control on a renewal-only classic cart, like the extension.
 	 */
 	public function test_save_payment_method_checkbox_stays_visible_for_renewal_only_cart(): void {

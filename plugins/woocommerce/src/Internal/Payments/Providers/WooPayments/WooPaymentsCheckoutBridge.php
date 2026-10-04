@@ -1696,7 +1696,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function should_force_network_saved_cards(): bool {
-		return $this->get_account_service()->is_network_saved_cards_enabled() || $this->should_use_stripe_platform_for_card_checkout();
+		return $this->get_account_service()->is_network_saved_cards_enabled() || $this->should_use_stripe_platform_on_checkout_page();
 	}
 
 	/**
@@ -1737,13 +1737,25 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether card checkout should initialize Stripe through the platform account.
+	 * Tell whether card checkout initializes Stripe through the platform account because WooPay applies, as client
+	 * 11.1.0 `should_use_stripe_platform_on_checkout_page()` does (gw:1173-1191, eligibility from `WC_Payments_Features::is_woopay_eligible()`,
+	 * class-wc-payments-features.php:193-209). It forces network saved cards and hides the classic save checkbox.
 	 *
 	 * @return bool
 	 */
-	private function should_use_stripe_platform_for_card_checkout(): bool {
-		$account_data = $this->get_account_service()->get_cached_account_data();
-		if ( empty( $account_data['platform_checkout_eligible'] ) || 'yes' !== $this->get_string_gateway_setting( 'platform_checkout', 'no' ) ) {
+	public function should_use_stripe_platform_on_checkout_page(): bool {
+		if ( ! class_exists( 'Automattic\WooCommerce\StoreApi\Routes\V1\AbstractCartRoute' ) ) {
+			return false;
+		}
+
+		$account_service = $this->get_account_service();
+		$account_data    = $account_service->get_cached_account_data();
+		if (
+			empty( $account_data['platform_checkout_eligible'] )
+			|| $account_service->is_account_rejected()
+			|| $account_service->is_account_under_review()
+			|| 'yes' !== $this->get_string_gateway_setting( 'platform_checkout', 'no' )
+		) {
 			return false;
 		}
 

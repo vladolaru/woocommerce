@@ -700,29 +700,31 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Output the save-payment-method checkbox.
+	 * Output the save-payment-method checkbox, as client 11.1.0 does (gw:1144-1166).
 	 *
-	 * Subscription checkouts and payment-method changes must save a reusable credential, so the
-	 * checkbox remains checked in the form for the checkout bridge while being hidden from the shopper.
+	 * Subscription checkouts and payment-method changes must save a reusable credential, so the checkbox stays checked
+	 * and hidden. It is also hidden, unchecked, when WooPay applies to the card checkout (gw:1146, 1173-1191).
 	 *
 	 * @return void
 	 */
 	public function save_payment_method_checkbox() {
-		if ( ! $this->cart_contains_subscription() && ! $this->is_subscription_change_payment_form() ) {
-			parent::save_payment_method_checkbox();
-			return;
-		}
+		$force_checked = $this->cart_contains_subscription() || $this->is_subscription_change_payment_form();
+		$should_hide   = $force_checked || ( 'card' === $this->get_payment_method_id() && $this->get_checkout_bridge()->should_use_stripe_platform_on_checkout_page() );
 
 		$html = sprintf(
 			'<p class="form-row woocommerce-SavedPaymentMethods-saveNew">
-				<input id="wc-%1$s-new-payment-method" name="wc-%1$s-new-payment-method" type="checkbox" value="true" style="width:auto;" checked="checked" />
+				<input id="wc-%1$s-new-payment-method" name="wc-%1$s-new-payment-method" type="checkbox" value="true" style="width:auto;"%3$s />
 				<label for="wc-%1$s-new-payment-method" style="display:inline;">%2$s</label>
 			</p>',
 			esc_attr( $this->id ),
-			esc_html__( 'Save to account', 'woocommerce' )
+			// Client gw:1160; its wc_payments_save_to_account_text filter is not fired natively (decided, bc-surface-diff.md:93).
+			esc_html__( 'Save payment information to my account for future purchases.', 'woocommerce' ),
+			$force_checked ? ' checked="checked"' : ''
 		);
 
-		echo '<div style="display:none;">';
+		if ( $should_hide ) {
+			echo '<div style="display:none;">';
+		}
 		/**
 		 * Filters the saved payment method checkbox HTML.
 		 *
@@ -732,7 +734,9 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		 * @param \WC_Payment_Gateway $gateway Payment gateway instance.
 		 */
 		echo apply_filters( 'woocommerce_payment_gateway_save_new_payment_method_option_html', $html, $this ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
-		echo '</div>';
+		if ( $should_hide ) {
+			echo '</div>';
+		}
 	}
 
 	/**
