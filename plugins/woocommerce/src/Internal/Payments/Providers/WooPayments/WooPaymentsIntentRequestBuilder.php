@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use WC_Order;
 
@@ -125,6 +126,7 @@ class WooPaymentsIntentRequestBuilder {
 	 * @param string         $customer_id        Customer ID.
 	 * @param bool           $is_recurring       Whether recurring handling is required.
 	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When an Afterpay order has no usable shipping or billing address.
 	 */
 	public function charge_request_data( PaymentContext $context, string $payment_credential, string $customer_id, bool $is_recurring ): array {
 		$order                = $context->get_order();
@@ -196,6 +198,10 @@ class WooPaymentsIntentRequestBuilder {
 			$request_data['return_url'] = self::redirect_return_url( $order, $save_payment_method );
 		}
 
+		if ( 'afterpay_clearpay' === $this->payment_method_type_from_gateway_id( $context->get_gateway_id() ) ) {
+			$request_data['shipping'] = $this->get_afterpay_shipping_data( $order );
+		}
+
 		if ( self::is_using_saved_payment_token( $payment_data ) && ! preg_match( '/^(card_|src_)/', $payment_credential ) ) {
 			$billing_details = $this->order_data_service->get_billing_data_from_order( $order );
 			if ( ! empty( $billing_details ) ) {
@@ -213,6 +219,68 @@ class WooPaymentsIntentRequestBuilder {
 		}
 
 		return $request_data;
+	}
+
+	/**
+	 * Get the shipping address an Afterpay intent requires: the order's shipping address, or else its billing address.
+	 *
+	 * Port of client 11.1.0 `handle_afterpay_shipping_requirement()` and `retrieve_usable_shipping_data_from_order()`
+	 * (class-wc-payment-gateway-wcpay.php:1849, :5333-5402).
+	 *
+	 * @param WC_Order $order Order being charged.
+	 * @return array{name:string,address:array<string,mixed>}
+	 * @throws WooPaymentsApiException When neither address is usable for the country.
+	 */
+	private function get_afterpay_shipping_data( WC_Order $order ): array {
+		$shipping_data = $this->order_data_service->get_shipping_data_from_order( $order );
+		if ( self::is_usable_afterpay_address( $shipping_data['address'] ) ) {
+			return $shipping_data;
+		}
+
+		// Afterpay refuses extra parameters in the shipping address, so only the billing name and address are sent.
+		$billing_data    = $this->order_data_service->get_billing_data_from_order( $order );
+		$billing_address = isset( $billing_data['address'] ) && is_array( $billing_data['address'] ) ? $billing_data['address'] : array();
+		if ( self::is_usable_afterpay_address( $billing_address ) ) {
+			return array(
+				'name'    => isset( $billing_data['name'] ) ? (string) $billing_data['name'] : '',
+				'address' => $billing_address,
+			);
+		}
+
+		throw new WooPaymentsApiException( esc_html__( 'A valid shipping address is required for Afterpay payments.', 'woocommerce' ), 'wcpay_invalid_address' );
+	}
+
+	/**
+	 * Tell whether an address has every field the country requires, as the client checks it for Afterpay.
+	 *
+	 * @param array<string,mixed> $address Address in the provider's shape.
+	 * @return bool
+	 */
+	private static function is_usable_afterpay_address( array $address ): bool {
+		if ( ! isset( $address['country'] ) ) {
+			return false;
+		}
+
+		$country = (string) $address['country'];
+		$locales = WC()->countries->get_country_locale();
+		if ( '' !== $country && isset( $locales[ $country ] ) ) {
+			$fields_to_check = array(
+				'state'     => 'state',
+				'city'      => 'city',
+				'postcode'  => 'postal_code',
+				'address_1' => 'line1',
+			);
+			foreach ( $fields_to_check as $locale_field => $address_field ) {
+				$is_required = ! isset( $locales[ $country ][ $locale_field ]['required'] ) || $locales[ $country ][ $locale_field ]['required'];
+				if ( $is_required && empty( $address[ $address_field ] ) ) {
+					return false;
+				}
+			}
+
+			return true;
+		}
+
+		return '' !== $country && ! empty( $address['state'] ) && ! empty( $address['city'] ) && ! empty( $address['postal_code'] ) && ! empty( $address['line1'] );
 	}
 
 	/**

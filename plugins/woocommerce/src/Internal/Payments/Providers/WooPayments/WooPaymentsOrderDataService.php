@@ -66,6 +66,30 @@ class WooPaymentsOrderDataService {
 	}
 
 	/**
+	 * Build the shipping payload for a provider intent from the order's shipping address.
+	 *
+	 * Port of client 11.1.0 `WC_Payments_Order_Service::get_shipping_data_from_order()` (class-wc-payments-order-service.php:1426-1446).
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WC_Order $order Order being charged.
+	 * @return array{name:string,address:array<string,string>}
+	 */
+	public function get_shipping_data_from_order( WC_Order $order ): array {
+		return array(
+			'name'    => implode( ' ', array_filter( array( $order->get_shipping_first_name(), $order->get_shipping_last_name() ) ) ),
+			'address' => array(
+				'line1'       => $order->get_shipping_address_1(),
+				'line2'       => $order->get_shipping_address_2(),
+				'postal_code' => $order->get_shipping_postcode(),
+				'city'        => $order->get_shipping_city(),
+				'state'       => $order->get_shipping_state(),
+				'country'     => $order->get_shipping_country(),
+			),
+		);
+	}
+
+	/**
 	 * Get the fee breakdown order note from a captured timeline event.
 	 *
 	 * @since 11.0.0

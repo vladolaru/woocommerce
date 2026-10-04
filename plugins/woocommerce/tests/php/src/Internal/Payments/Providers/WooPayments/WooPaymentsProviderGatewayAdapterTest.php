@@ -2217,6 +2217,12 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	public function test_charge_sends_split_redirect_method_request( string $method, string $total, int $minor, string $currency ): void {
 		$order = $this->create_woopayments_order( $total );
 		$order->set_currency( $currency );
+		// Afterpay needs a usable shipping address (client 11.1.0 `class-wc-payment-gateway-wcpay.php:5333-5341`).
+		$order->set_shipping_address_1( '2 Navy Way' );
+		$order->set_shipping_city( 'Arlington' );
+		$order->set_shipping_state( 'VA' );
+		$order->set_shipping_postcode( '22202' );
+		$order->set_shipping_country( 'US' );
 		$order->save();
 
 		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );

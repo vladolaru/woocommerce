@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
@@ -216,6 +217,97 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'p24' ), $request['payment_method_types'] );
 		$this->assertArrayNotHasKey( 'mandate_data', $request );
 		$this->assertStringStartsWith( $order->get_checkout_order_received_url(), $request['return_url'] );
+	}
+
+	/**
+	 * Client 11.1.0 sends Afterpay intents a shipping address: the order's shipping address when it is usable for the
+	 * country, else the billing name and address, else it refuses the payment (class-wc-payment-gateway-wcpay.php:1849,
+	 * :5333-5402, :5446-5452; class-wc-payments-order-service.php:1426-1446).
+	 *
+	 * @testdox An Afterpay intent request carries $_dataName.
+	 * @dataProvider afterpay_shipping_cases
+	 *
+	 * @param array<string,string>     $shipping Order shipping fields.
+	 * @param array<string,mixed>|null $expected Expected shipping parameter, or null when the payment is refused.
+	 */
+	public function test_afterpay_intent_request_carries_a_usable_shipping_address( array $shipping, ?array $expected ): void {
+		$order = wc_create_order();
+		$order->set_currency( 'USD' );
+		$order->set_total( '80.00' );
+		$order->set_billing_first_name( 'Ada' );
+		$order->set_billing_last_name( 'Lovelace' );
+		$order->set_billing_address_1( '1 Main St' );
+		$order->set_billing_address_2( 'Suite 2' );
+		$order->set_billing_city( 'Austin' );
+		$order->set_billing_state( 'TX' );
+		$order->set_billing_postcode( '78701' );
+		$order->set_billing_country( null === $expected ? '' : 'US' );
+		foreach ( $shipping as $field => $value ) {
+			$order->{"set_shipping_$field"}( $value );
+		}
+		$order->save();
+		$request_builder = new WooPaymentsIntentRequestBuilder();
+		$request_builder->init( $this->createStub( WooPaymentsAccountService::class ), new WooPaymentsOrderDataService(), $this->createStub( WooPaymentsTokenService::class ), new WooPaymentsPaymentMethodRegistry() );
+		$context = PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID_PREFIX . 'afterpay_clearpay', 'pm_afterpay' );
+
+		if ( null === $expected ) {
+			$this->expectException( WooPaymentsApiException::class );
+			$this->expectExceptionMessage( 'A valid shipping address is required for Afterpay payments.' );
+		}
+
+		$request = $request_builder->charge_request_data( $context, 'pm_afterpay', 'cus_native', false );
+
+		$this->assertSame( $expected, $request['shipping'] ?? null );
+	}
+
+	/**
+	 * Order shipping fields and the shipping parameter client 11.1.0 sends for them.
+	 *
+	 * @return array<string,array{array<string,string>,array<string,mixed>|null}>
+	 */
+	public function afterpay_shipping_cases(): array {
+		$usable_shipping = array(
+			'first_name' => 'Grace',
+			'last_name'  => 'Hopper',
+			'address_1'  => '2 Navy Way',
+			'address_2'  => '',
+			'city'       => 'Arlington',
+			'state'      => 'VA',
+			'postcode'   => '22202',
+			'country'    => 'US',
+		);
+
+		return array(
+			'the shipping address'                     => array(
+				$usable_shipping,
+				array(
+					'name'    => 'Grace Hopper',
+					'address' => array(
+						'line1'       => '2 Navy Way',
+						'line2'       => '',
+						'postal_code' => '22202',
+						'city'        => 'Arlington',
+						'state'       => 'VA',
+						'country'     => 'US',
+					),
+				),
+			),
+			'the billing address without a usable one' => array(
+				array_merge( $usable_shipping, array( 'postcode' => '' ) ),
+				array(
+					'name'    => 'Ada Lovelace',
+					'address' => array(
+						'country'     => 'US',
+						'line1'       => '1 Main St',
+						'line2'       => 'Suite 2',
+						'city'        => 'Austin',
+						'state'       => 'TX',
+						'postal_code' => '78701',
+					),
+				),
+			),
+			'no address, so it is refused'             => array( array(), null ),
+		);
 	}
 
 	/**
