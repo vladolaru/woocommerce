@@ -977,6 +977,46 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A canceled PaymentIntent that carries a payment error fails the order without cancelling it first.
+	 *
+	 * Client 11.1.0 process_redirect_payment() throws on any last_payment_error before reading the status (gw:2376-2382),
+	 * so mark_payment_failed() moves the order from pending straight to failed (gw:2428-2446, os:463-478).
+	 */
+	public function test_handle_wp_fails_canceled_payment_intent_with_error_without_cancelling(): void {
+		$order                      = $this->create_order();
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = array(
+			'id'                 => 'pi_canceled_with_error',
+			'status'             => 'canceled',
+			'currency'           => 'usd',
+			'amount'             => 5000,
+			'customer'           => 'cus_return',
+			'payment_method'     => null,
+			'metadata'           => array( 'order_id' => $order->get_id() ),
+			'last_payment_error' => array(
+				'type'    => 'card_error',
+				'code'    => 'card_declined',
+				'message' => 'Your card was declined.',
+			),
+		);
+		$cancellations              = 0;
+		add_action(
+			'woocommerce_order_status_cancelled',
+			static function () use ( &$cancellations ): void {
+				++$cancellations;
+			}
+		);
+		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_canceled_with_error' );
+
+		$location = $this->handle_wp_expecting_redirect();
+
+		$this->assertSame( wc_get_checkout_url(), $location );
+		$this->assertSame( 'failed', wc_get_order( $order->get_id() )->get_status() );
+		$this->assertSame( 0, $cancellations, 'The order must not pass through cancelled.' );
+	}
+
+	/**
 	 * @testdox A canceled SetupIntent without an error lands on order-received without a checkout redirect or notice.
 	 *
 	 * Client 11.1.0: with no setup error nothing throws (gw:2376), update_order_status_from_intent() cancels the order

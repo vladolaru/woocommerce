@@ -541,8 +541,8 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 * The plugin's order service fails the order when either status has an error and marks the payment
 	 * started otherwise (`update_order_status_from_intent()`). It reads only `last_payment_error`, so on the
 	 * order-status callback a SetupIntent is always started; only the plugin's redirect return fails on
-	 * `last_setup_error`, and it does so before reading the status, so a canceled SetupIntent with that error fails
-	 * there too (`gw:2376-2382`). The caller keeps the provider's real status in `_intention_status`.
+	 * `last_setup_error`, and it does so before reading the status, so a canceled intent with an error fails
+	 * there too, without passing through cancelled (`gw:2376-2382`). The caller keeps the provider's real status in `_intention_status`.
 	 *
 	 * @param array<string,mixed> $intent                     Native intent response.
 	 * @param bool                $is_setup                   Whether the intent is a SetupIntent.
@@ -551,7 +551,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 */
 	private function get_intent_for_status_mapping( array $intent, bool $is_setup, bool $is_redirect_return ): array {
 		$status = isset( $intent['status'] ) ? (string) $intent['status'] : '';
-		if ( 'canceled' === $status && $is_setup && $is_redirect_return && ! empty( $intent['last_setup_error'] ) ) {
+		if ( 'canceled' === $status && $is_redirect_return && ! empty( $intent[ $is_setup ? 'last_setup_error' : 'last_payment_error' ] ) ) {
 			$intent['status'] = 'requires_payment_method';
 
 			return $intent;
