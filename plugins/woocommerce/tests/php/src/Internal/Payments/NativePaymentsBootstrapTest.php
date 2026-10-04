@@ -16,17 +16,16 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsGatewayRegistry;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
+use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderContract;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminRestRouteRegistrar;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverNormalizationRunner;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewayListController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPayPreflightGuard;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookReliabilityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow\NativePaymentsShadowMode;
+use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use ReflectionMethod;
 use WC_Unit_Test_Case;
 
@@ -35,347 +34,26 @@ use WC_Unit_Test_Case;
  */
 class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
-	private const ADMIN_NAVIGATION = 'Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController';
-
-	private const ADMIN_NOTICES_PASSTHROUGH = 'Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNoticesPassthrough';
-
 	private const WCPAY = 'Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\\';
 
-	/** Available admin roots. */
-	private const AVAILABLE_ADMIN = array(
-		self::WCPAY . 'WooPaymentsCutoverController',
-		WooPaymentsCutoverReconciliationJob::class,
-	);
-
-	/** Available cron and Action Scheduler roots. */
-	private const AVAILABLE_CRON = array(
-		WooPaymentsCutoverReconciliationJob::class,
-	);
-
-	/** Connected admin roots. */
-	private const CONNECTED_ADMIN = array(
-		NativePaymentsGatewayRegistry::class,
-		WooPaymentsProvider::class,
-		WooPaymentsGatewayListController::class,
-		self::WCPAY . 'WooPaymentsCutoverController',
-		WooPaymentsCutoverReconciliationJob::class,
-		self::ADMIN_NAVIGATION,
-		WooPaymentsAdminRestRouteRegistrar::class,
-		self::WCPAY . 'WooPaymentsAccountService',
-		self::WCPAY . 'WooPaymentsWebhookReliabilityService',
-		self::WCPAY . 'Compat\LegacyAdminLinkHandler',
-		self::WCPAY . 'WooPaymentsCustomerService',
-		self::WCPAY . 'WooPaymentsOrderFraudMetaBox',
-		self::WCPAY . 'WooPaymentsOrderAdminActionsController',
-		self::WCPAY . 'WooPaymentsOrderStatusChangeController',
-		self::WCPAY . 'WooPay\WooPaymentsWooPayOrderStatusSync',
-		self::WCPAY . 'WooPay\WooPaymentsWooPayExtensionSync',
-		self::WCPAY . 'WooPaymentsApplePayDomainService',
-		self::WCPAY . 'WooPaymentsCurrencyComplianceNotice',
-		self::ADMIN_NOTICES_PASSTHROUGH,
-		self::WCPAY . 'WooPaymentsOrderTrackingService',
-		self::WCPAY . 'WooPaymentsOperationalQueueService',
-		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
-		self::WCPAY . 'WooPaymentsUserPreferenceFields',
-		self::WCPAY . 'WooPaymentsHomeTasks',
-		self::WCPAY . 'WooPaymentsAdminNotesController',
-		self::WCPAY . 'WooPaymentsLoanApprovedNote',
-		WooPaymentsSubscriptionRenewalHooks::class,
-		self::WCPAY . 'StripeBilling\WooPaymentsStripeBillingModule',
-		WooPaymentsTokenService::class,
-		self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
-	);
-
-	/** Connected AJAX roots. */
-	private const CONNECTED_AJAX = array(
-		NativePaymentsGatewayRegistry::class,
-		WooPaymentsProvider::class,
-		WooPaymentsGatewayListController::class,
-		self::WCPAY . 'WooPaymentsAccountService',
-		self::WCPAY . 'WooPaymentsWebhookReliabilityService',
-		self::WCPAY . 'WooPaymentsCustomerService',
-		self::WCPAY . 'WooPaymentsOrderAdminActionsController',
-		self::WCPAY . 'WooPaymentsOrderStatusChangeController',
-		self::WCPAY . 'WooPay\WooPaymentsWooPayOrderStatusSync',
-		self::WCPAY . 'WooPay\WooPaymentsWooPayExtensionSync',
-		self::WCPAY . 'WooPaymentsApplePayDomainService',
-		self::WCPAY . 'WooPaymentsOrderTrackingService',
-		self::WCPAY . 'WooPaymentsOperationalQueueService',
-		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
-		self::WCPAY . 'WooPaymentsLoanApprovedNote',
-		WooPaymentsSubscriptionRenewalHooks::class,
-		self::WCPAY . 'StripeBilling\WooPaymentsStripeBillingModule',
-		WooPaymentsTokenService::class,
-		self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
-	);
-
-	/** Connected REST roots. */
-	private const CONNECTED_REST = array(
-		NativePaymentsGatewayRegistry::class,
-		WooPaymentsProvider::class,
-		WooPaymentsGatewayListController::class,
-		self::WCPAY . 'WooPaymentsAccountService',
-		self::WCPAY . 'WooPaymentsWebhookReliabilityService',
-		WooPaymentsMerchantRestController::class,
-		self::WCPAY . 'WooPaymentsCustomerService',
-		self::WCPAY . 'WooPaymentsOrderAdminActionsController',
-		self::WCPAY . 'WooPay\WooPaymentsWooPayOrderStatusSync',
-		self::WCPAY . 'WooPaymentsApplePayDomainService',
-		self::WCPAY . 'WooPaymentsWebhookRestController',
-		self::WCPAY . 'WooPaymentsMobileRestController',
-		self::WCPAY . 'WooPaymentsAccountSessionRestController',
-		self::WCPAY . 'WooPaymentsCustomersRestController',
-		self::WCPAY . 'WooPaymentsDepositsRestController',
-		self::WCPAY . 'WooPaymentsPaymentDetailsRestController',
-		self::WCPAY . 'WooPaymentsAuthorizationsRestController',
-		self::WCPAY . 'WooPaymentsTransactionsRestController',
-		self::WCPAY . 'WooPaymentsDisputesRestController',
-		self::WCPAY . 'WooPaymentsDisputeReadinessRestController',
-		self::WCPAY . 'WooPaymentsCapitalRestController',
-		self::WCPAY . 'WooPaymentsDocumentsRestController',
-		self::WCPAY . 'WooPaymentsReportsRestController',
-		self::WCPAY . 'WooPaymentsTosRestController',
-		self::WCPAY . 'WooPaymentsOrderTrackingService',
-		self::WCPAY . 'WooPaymentsOperationalQueueService',
-		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
-		self::WCPAY . 'WooPaymentsUserPreferenceFields',
-		self::WCPAY . 'WooPaymentsHomeTasks',
-		self::WCPAY . 'WooPaymentsLoanApprovedNote',
-		WooPaymentsSubscriptionRenewalHooks::class,
-		self::WCPAY . 'StripeBilling\WooPaymentsStripeBillingModule',
-		WooPaymentsTokenService::class,
-		self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
-	);
-
-	/** Connected cron and Action Scheduler roots. */
-	private const CONNECTED_CRON = array(
-		NativePaymentsGatewayRegistry::class,
-		WooPaymentsProvider::class,
-		WooPaymentsGatewayListController::class,
-		WooPaymentsCutoverReconciliationJob::class,
-		self::WCPAY . 'WooPaymentsAccountService',
-		self::WCPAY . 'WooPaymentsWebhookReliabilityService',
-		self::WCPAY . 'WooPaymentsOperationalQueueService',
-		self::WCPAY . 'WooPaymentsOrderTrackingService',
-		self::WCPAY . 'WooPay\WooPaymentsWooPayOrderStatusSync',
-		self::WCPAY . 'WooPay\WooPaymentsWooPayExtensionSync',
-		self::WCPAY . 'WooPaymentsApplePayDomainService',
-		self::WCPAY . 'WooPaymentsCanceledAuthorizationFeeRemediationService',
-		self::WCPAY . 'WooPaymentsOrderAdminActionsController',
-		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
-		self::WCPAY . 'WooPaymentsLoanApprovedNote',
-		WooPaymentsSubscriptionRenewalHooks::class,
-		self::WCPAY . 'StripeBilling\WooPaymentsStripeBillingModule',
-		WooPaymentsTokenService::class,
-		self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
-	);
-
-	/** Active shopper roots. */
-	private const ACTIVE_FRONT = array(
-		NativePaymentsGatewayRegistry::class,
-		WooPaymentsProvider::class,
-		WooPaymentsGatewayListController::class,
-		self::WCPAY . 'WooPaymentsAccountService',
-		self::WCPAY . 'WooPaymentsWebhookReliabilityService',
-		self::WCPAY . 'WooPaymentsFrontendStylesService',
-		self::WCPAY . 'WooPaymentsCheckoutBridge',
-		self::WCPAY . 'WooPaymentsAddressProvider',
-		self::WCPAY . 'WooPaymentsCustomerService',
-		self::WCPAY . 'WooPaymentsDuplicatePaymentPreventionService',
-		self::WCPAY . 'WooPaymentsRedirectReturnController',
-		self::WCPAY . 'WooPaymentsOrderAdminActionsController',
-		self::WCPAY . 'WooPaymentsOrderStatusChangeController',
-		self::WCPAY . 'WooPaymentsTokenizedCartSessionController',
-		self::WCPAY . 'WooPaymentsWooPaySessionController',
-		self::WCPAY . 'WooPay\WooPaymentsWooPayOrderStatusSync',
-		self::WCPAY . 'WooPay\WooPaymentsWooPayExtensionSync',
-		self::WCPAY . 'WooPaymentsExpressCheckoutController',
-		self::WCPAY . 'WooPaymentsOrderSuccessPage',
-		self::WCPAY . 'WooPaymentsPaymentMethodMessaging',
-		self::WCPAY . 'WooPaymentsTokenClassMapController',
-		self::WCPAY . 'WooPaymentsApplePayDomainService',
-		self::WCPAY . 'WooPaymentsFrontendTrackingController',
-		self::WCPAY . 'WooPaymentsOrderTrackingService',
-		self::WCPAY . 'WooPaymentsOperationalQueueService',
-		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
-		WooPaymentsSubscriptionRenewalHooks::class,
-		self::WCPAY . 'StripeBilling\WooPaymentsStripeBillingModule',
-		WooPaymentsTokenService::class,
-	);
-
-	/** Active admin roots. */
-	private const ACTIVE_ADMIN = array(
-		self::WCPAY . 'WooPaymentsCutoverNormalizationRunner',
-		NativePaymentsGatewayRegistry::class,
-		WooPaymentsProvider::class,
-		WooPaymentsGatewayListController::class,
-		self::WCPAY . 'WooPaymentsCutoverController',
-		WooPaymentsCutoverReconciliationJob::class,
-		self::ADMIN_NAVIGATION,
-		WooPaymentsAdminRestRouteRegistrar::class,
-		self::WCPAY . 'WooPaymentsAccountService',
-		self::WCPAY . 'WooPaymentsWebhookReliabilityService',
-		self::WCPAY . 'Compat\LegacyAdminLinkHandler',
-		self::WCPAY . 'WooPaymentsCustomerService',
-		self::WCPAY . 'WooPaymentsOrderFraudMetaBox',
-		self::WCPAY . 'WooPaymentsOrderAdminActionsController',
-		self::WCPAY . 'WooPaymentsOrderStatusChangeController',
-		self::WCPAY . 'WooPay\WooPaymentsWooPayOrderStatusSync',
-		self::WCPAY . 'WooPay\WooPaymentsWooPayExtensionSync',
-		self::WCPAY . 'WooPaymentsApplePayDomainService',
-		self::WCPAY . 'WooPaymentsCurrencyComplianceNotice',
-		self::ADMIN_NOTICES_PASSTHROUGH,
-		self::WCPAY . 'WooPaymentsOrderTrackingService',
-		self::WCPAY . 'WooPaymentsOperationalQueueService',
-		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
-		self::WCPAY . 'WooPaymentsUserPreferenceFields',
-		self::WCPAY . 'WooPaymentsHomeTasks',
-		self::WCPAY . 'WooPaymentsAdminNotesController',
-		self::WCPAY . 'WooPaymentsLoanApprovedNote',
-		WooPaymentsSubscriptionRenewalHooks::class,
-		self::WCPAY . 'StripeBilling\WooPaymentsStripeBillingModule',
-		WooPaymentsTokenService::class,
-		self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
-	);
-
-	/** Active AJAX roots. */
-	private const ACTIVE_AJAX = array(
-		NativePaymentsGatewayRegistry::class,
-		WooPaymentsProvider::class,
-		WooPaymentsGatewayListController::class,
-		self::WCPAY . 'WooPaymentsAccountService',
-		self::WCPAY . 'WooPaymentsWebhookReliabilityService',
-		self::WCPAY . 'WooPaymentsCustomerService',
-		self::WCPAY . 'WooPaymentsOrderAdminActionsController',
-		self::WCPAY . 'WooPaymentsOrderStatusChangeController',
-		self::WCPAY . 'WooPay\WooPaymentsWooPayOrderStatusSync',
-		self::WCPAY . 'WooPay\WooPaymentsWooPayExtensionSync',
-		self::WCPAY . 'WooPaymentsApplePayDomainService',
-		self::WCPAY . 'WooPaymentsOrderTrackingService',
-		self::WCPAY . 'WooPaymentsOperationalQueueService',
-		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
-		self::WCPAY . 'WooPaymentsLoanApprovedNote',
-		self::WCPAY . 'WooPaymentsCheckoutBridge',
-		self::WCPAY . 'WooPaymentsAddressProvider',
-		self::WCPAY . 'WooPaymentsDuplicatePaymentPreventionService',
-		self::WCPAY . 'WooPaymentsCheckoutAjaxController',
-		self::WCPAY . 'WooPaymentsTokenizedCartSessionController',
-		self::WCPAY . 'WooPaymentsWooPaySessionController',
-		self::WCPAY . 'WooPaymentsExpressCheckoutController',
-		self::WCPAY . 'WooPaymentsPaymentMethodMessaging',
-		self::WCPAY . 'WooPaymentsTokenClassMapController',
-		self::WCPAY . 'WooPaymentsFrontendTrackingController',
-		WooPaymentsSubscriptionRenewalHooks::class,
-		self::WCPAY . 'StripeBilling\WooPaymentsStripeBillingModule',
-		WooPaymentsTokenService::class,
-		self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
-	);
-
-	/** Active REST and Store API roots. */
-	private const ACTIVE_REST = array(
-		NativePaymentsGatewayRegistry::class,
-		WooPaymentsProvider::class,
-		WooPaymentsGatewayListController::class,
-		self::WCPAY . 'WooPaymentsAccountService',
-		self::WCPAY . 'WooPaymentsWebhookReliabilityService',
-		WooPaymentsMerchantRestController::class,
-		self::WCPAY . 'WooPaymentsCustomerService',
-		self::WCPAY . 'WooPaymentsOrderAdminActionsController',
-		self::WCPAY . 'WooPay\WooPaymentsWooPayOrderStatusSync',
-		self::WCPAY . 'WooPaymentsApplePayDomainService',
-		self::WCPAY . 'WooPaymentsWebhookRestController',
-		self::WCPAY . 'WooPaymentsMobileRestController',
-		self::WCPAY . 'WooPaymentsAccountSessionRestController',
-		self::WCPAY . 'WooPaymentsCustomersRestController',
-		self::WCPAY . 'WooPaymentsDepositsRestController',
-		self::WCPAY . 'WooPaymentsPaymentDetailsRestController',
-		self::WCPAY . 'WooPaymentsAuthorizationsRestController',
-		self::WCPAY . 'WooPaymentsTransactionsRestController',
-		self::WCPAY . 'WooPaymentsDisputesRestController',
-		self::WCPAY . 'WooPaymentsDisputeReadinessRestController',
-		self::WCPAY . 'WooPaymentsCapitalRestController',
-		self::WCPAY . 'WooPaymentsDocumentsRestController',
-		self::WCPAY . 'WooPaymentsReportsRestController',
-		self::WCPAY . 'WooPaymentsTosRestController',
-		self::WCPAY . 'WooPaymentsOrderTrackingService',
-		self::WCPAY . 'WooPaymentsOperationalQueueService',
-		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
-		self::WCPAY . 'WooPaymentsUserPreferenceFields',
-		self::WCPAY . 'WooPaymentsHomeTasks',
-		self::WCPAY . 'WooPaymentsLoanApprovedNote',
-		WooPaymentsWooPayPreflightGuard::class,
-		self::WCPAY . 'WooPaymentsCheckoutBridge',
-		self::WCPAY . 'WooPaymentsAddressProvider',
-		self::WCPAY . 'WooPaymentsDuplicatePaymentPreventionService',
-		self::WCPAY . 'WooPaymentsTokenizedCartSessionController',
-		self::WCPAY . 'WooPaymentsWooPaySessionController',
-		self::WCPAY . 'WooPaymentsExpressCheckoutController',
-		self::WCPAY . 'WooPaymentsExpressCheckoutStoreApiExtension',
-		self::WCPAY . 'WooPaymentsExpressCheckoutCurrencyGuard',
-		self::WCPAY . 'WooPaymentsTokenClassMapController',
-		WooPaymentsSubscriptionRenewalHooks::class,
-		self::WCPAY . 'StripeBilling\WooPaymentsStripeBillingModule',
-		WooPaymentsTokenService::class,
-		self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
-	);
-
-	/** Active cron and Action Scheduler roots. */
-	private const ACTIVE_CRON = array(
-		self::WCPAY . 'WooPaymentsCutoverNormalizationRunner',
-		NativePaymentsGatewayRegistry::class,
-		WooPaymentsProvider::class,
-		WooPaymentsGatewayListController::class,
-		WooPaymentsCutoverReconciliationJob::class,
-		self::WCPAY . 'WooPaymentsAccountService',
-		self::WCPAY . 'WooPaymentsWebhookReliabilityService',
-		self::WCPAY . 'WooPaymentsOperationalQueueService',
-		self::WCPAY . 'WooPaymentsOrderTrackingService',
-		self::WCPAY . 'WooPay\WooPaymentsWooPayOrderStatusSync',
-		self::WCPAY . 'WooPay\WooPaymentsWooPayExtensionSync',
-		self::WCPAY . 'WooPaymentsApplePayDomainService',
-		self::WCPAY . 'WooPaymentsCanceledAuthorizationFeeRemediationService',
-		self::WCPAY . 'WooPaymentsOrderAdminActionsController',
-		self::WCPAY . 'WooPaymentsTestModeOrderEmailService',
-		self::WCPAY . 'WooPaymentsLoanApprovedNote',
-		self::WCPAY . 'WooPaymentsOrderStatusChangeController',
-		self::WCPAY . 'WooPaymentsDuplicatePaymentPreventionService',
-		WooPaymentsSubscriptionRenewalHooks::class,
-		self::WCPAY . 'StripeBilling\WooPaymentsStripeBillingModule',
-		WooPaymentsTokenService::class,
-		self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
-	);
-
-	/** @testdox Production composition supplies the provider root matrix through a lazy closure. */
-	public function test_production_composition_uses_lazy_provider_matrix_resolver(): void {
+	/**
+	 * A source scan, kept because the laziness shows only in which classes autoload while WooCommerce boots, and this
+	 * test process has loaded them all already. An array callable or a first-class callable would autoload the provider.
+	 *
+	 * @testdox Production composition passes the provider's root lists through closures, so building the bootstrap autoloads no provider class.
+	 */
+	public function test_production_composition_resolves_provider_roots_lazily(): void {
 		$method       = new ReflectionMethod( \WooCommerce::class, 'init_hooks' );
 		$source_lines = file( $method->getFileName() );
 		$method_body  = implode( '', array_slice( $source_lines, $method->getStartLine() - 1, $method->getEndLine() - $method->getStartLine() + 1 ) );
 
-		$this->assertStringContainsString(
-			'static fn(): array => Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\WooPaymentsProvider::get_bootstrap_root_matrix()',
-			$method_body,
-			'The provider matrix resolver must remain lazy so Tier 0 does not autoload provider roots.'
-		);
-	}
-
-	/** @testdox Production composition supplies lazy WooPayments Multi-Currency provider roots. */
-	public function test_production_composition_uses_lazy_multi_currency_provider_root_resolver(): void {
-		$method       = new ReflectionMethod( \WooCommerce::class, 'init_hooks' );
-		$source_lines = file( $method->getFileName() );
-		$method_body  = implode( '', array_slice( $source_lines, $method->getStartLine() - 1, $method->getEndLine() - $method->getStartLine() + 1 ) );
-
-		$this->assertStringContainsString(
-			'static fn(): array => Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\WooPaymentsProvider::get_multi_currency_provider_roots()',
-			$method_body
-		);
-	}
-
-	/** @testdox Native Payments passes its provider roots and REST classifier into the Multi-Currency bootstrap. */
-	public function test_native_bootstrap_passes_multi_currency_composition_callables_through(): void {
-		$source = implode( '', file( ( new ReflectionMethod( NativePaymentsBootstrap::class, 'register' ) )->getFileName() ) );
-
-		$this->assertStringContainsString( 'new MultiCurrencyBootstrap( $this->multi_currency_provider_roots_resolver )', $source );
-		$this->assertStringContainsString( '->register( $container, $is_rest_api_request )', $source );
+		foreach ( array( 'get_bootstrap_root_matrix', 'get_multi_currency_provider_roots' ) as $resolver ) {
+			$this->assertMatchesRegularExpression(
+				'/\b(?:fn|function)\s*\([^)]*\)[^;]*?WooPaymentsProvider::' . $resolver . '\(\)/',
+				$method_body,
+				"WooPaymentsProvider::{$resolver}() must be called from inside a closure."
+			);
+		}
 	}
 
 	/** @testdox Native Payments passes provider roots and REST classification into Multi-Currency registration. */
@@ -441,22 +119,6 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should select the exact explicit roots for each unique tier and request composition.
-	 * @dataProvider unique_matrix_compositions
-	 *
-	 * @param string            $state          Native state.
-	 * @param string            $request_type   Request type.
-	 * @param array<int,string> $expected_roots Expected explicit roots.
-	 */
-	public function test_resolves_exact_matrix_roots_once_in_order( string $state, string $request_type, array $expected_roots ): void {
-		$sut       = $this->make_bootstrap();
-		$roots_for = new ReflectionMethod( NativePaymentsBootstrap::class, 'roots_for' );
-		$roots_for->setAccessible( true );
-
-		$this->assertSame( $expected_roots, $roots_for->invoke( $sut, $state, $request_type ), 'The matrix cell should select only its explicit roots in order.' );
-	}
-
-	/**
 	 * @testdox WP-CLI gets the cron roots in every set-up tier, so Action Scheduler runs under WP-CLI reach their handlers.
 	 */
 	public function test_wp_cli_gets_the_cron_roots_in_every_set_up_tier(): void {
@@ -515,27 +177,6 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		}
 	}
 
-	/** @testdox Reactivated plugin ownership maps connected tiers to one available cutover job on admin and cron requests. */
-	public function test_plugin_owned_connected_tiers_resolve_one_available_cutover_job_for_admin_and_cron(): void {
-		$bootstrap      = $this->make_bootstrap();
-		$roots_for      = new ReflectionMethod( NativePaymentsBootstrap::class, 'roots_for' );
-		$register_roots = new ReflectionMethod( NativePaymentsBootstrap::class, 'register_roots' );
-		$roots_for->setAccessible( true );
-		$register_roots->setAccessible( true );
-
-		foreach ( array( NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ) as $stored_state ) {
-			foreach ( array( 'admin', 'cron' ) as $request_type ) {
-				$container   = $this->make_container( $stored_state, NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
-				$state_store = $container->get( NativePaymentsState::class );
-				$this->assertSame( NativePaymentsState::AVAILABLE, $state_store->get_state() );
-				$roots = $roots_for->invoke( $bootstrap, $state_store->get_state(), $request_type );
-				$register_roots->invoke( $bootstrap, $container, $roots );
-
-				$this->assertSame( 1, count( array_keys( $container->resolved, WooPaymentsCutoverReconciliationJob::class, true ) ) );
-			}
-		}
-	}
-
 	/** @testdox Should resolve and register each explicit connected REST root once in order. */
 	public function test_register_resolves_connected_rest_roots_once_in_order(): void {
 		$container = $this->make_container( NativePaymentsState::CONNECTED, NativePaymentsRuntimeArbiter::OWNER_NATIVE );
@@ -543,7 +184,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 		$sut->register( $container, '__return_true' );
 
-		$this->assertSame( $this->expected_events( self::CONNECTED_REST ), $container->events );
+		$this->assertSame( $this->expected_events( WooPaymentsProvider::get_bootstrap_root_matrix()[ NativePaymentsState::CONNECTED ]['rest'] ), $container->events );
 		$this->assertSame( array_values( array_unique( $container->resolved ) ), $container->resolved, 'Each explicit root should be resolved once.' );
 	}
 
@@ -563,12 +204,12 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string            $state         Native state.
 	 * @param string            $request       Request type.
-	 * @param array<int,string> $request_roots Roots the request registers when WooCommerce loads.
 	 * @param array<int,string> $missing_roots Cron roots the request lacks, in cron order.
 	 */
-	public function test_page_request_registers_its_missing_cron_roots_once_when_an_action_runs( string $state, string $request, array $request_roots, array $missing_roots ): void {
-		$container = $this->make_container( $state, NativePaymentsRuntimeArbiter::OWNER_NATIVE );
-		$sut       = $this->make_bootstrap();
+	public function test_page_request_registers_its_missing_cron_roots_once_when_an_action_runs( string $state, string $request, array $missing_roots ): void {
+		$request_roots = WooPaymentsProvider::get_bootstrap_root_matrix()[ $state ][ $request ] ?? array();
+		$container     = $this->make_container( $state, NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		$sut           = $this->make_bootstrap();
 		if ( 'admin' === $request ) {
 			set_current_screen( 'woocommerce_page_wc-status' );
 		}
@@ -582,14 +223,13 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertSame( $this->expected_events( $request_roots, $missing_roots ), $container->events, 'The first action must register the missing cron roots, once.' );
 	}
 
-	/** @return array<string,array{string,string,array<int,string>,array<int,string>}> */
+	/** @return array<string,array{string,string,array<int,string>}> */
 	public static function page_request_cron_root_gaps(): array {
 		return array(
-			'available front' => array( NativePaymentsState::AVAILABLE, 'front', array(), array( WooPaymentsCutoverReconciliationJob::class ) ),
+			'available front' => array( NativePaymentsState::AVAILABLE, 'front', array( WooPaymentsCutoverReconciliationJob::class ) ),
 			'active front'    => array(
 				NativePaymentsState::ACTIVE,
 				'front',
-				self::ACTIVE_FRONT,
 				array(
 					self::WCPAY . 'WooPaymentsCutoverNormalizationRunner',
 					WooPaymentsCutoverReconciliationJob::class,
@@ -601,7 +241,6 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 			'active admin'    => array(
 				NativePaymentsState::ACTIVE,
 				'admin',
-				self::ACTIVE_ADMIN,
 				array(
 					self::WCPAY . 'WooPaymentsCanceledAuthorizationFeeRemediationService',
 					self::WCPAY . 'WooPaymentsDuplicatePaymentPreventionService',
@@ -654,42 +293,35 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		);
 	}
 
-	/** @return array<string,array{string,string,array<int,string>}> */
-	public static function unique_matrix_compositions(): array {
-		return array(
-			'disabled'        => array( NativePaymentsState::DISABLED, 'admin', array() ),
-			'available no-op' => array( NativePaymentsState::AVAILABLE, 'front', array() ),
-			'available admin' => array( NativePaymentsState::AVAILABLE, 'admin', self::AVAILABLE_ADMIN ),
-			'available cron'  => array( NativePaymentsState::AVAILABLE, 'cron', self::AVAILABLE_CRON ),
-			'available CLI'   => array( NativePaymentsState::AVAILABLE, 'cli', self::AVAILABLE_CRON ),
-			'connected front' => array( NativePaymentsState::CONNECTED, 'front', array( NativePaymentsGatewayRegistry::class, WooPaymentsProvider::class, WooPaymentsGatewayListController::class, WooPaymentsSubscriptionRenewalHooks::class, self::WCPAY . 'StripeBilling\WooPaymentsStripeBillingModule', WooPaymentsTokenService::class ) ),
-			'connected admin' => array( NativePaymentsState::CONNECTED, 'admin', self::CONNECTED_ADMIN ),
-			'connected AJAX'  => array( NativePaymentsState::CONNECTED, 'ajax', self::CONNECTED_AJAX ),
-			'connected REST'  => array( NativePaymentsState::CONNECTED, 'rest', self::CONNECTED_REST ),
-			'connected cron'  => array( NativePaymentsState::CONNECTED, 'cron', self::CONNECTED_CRON ),
-			'connected CLI'   => array( NativePaymentsState::CONNECTED, 'cli', self::CONNECTED_CRON ),
-			'active front'    => array( NativePaymentsState::ACTIVE, 'front', self::ACTIVE_FRONT ),
-			'active admin'    => array( NativePaymentsState::ACTIVE, 'admin', self::ACTIVE_ADMIN ),
-			'active AJAX'     => array( NativePaymentsState::ACTIVE, 'ajax', self::ACTIVE_AJAX ),
-			'active REST'     => array( NativePaymentsState::ACTIVE, 'rest', self::ACTIVE_REST ),
-			'active cron'     => array( NativePaymentsState::ACTIVE, 'cron', self::ACTIVE_CRON ),
-			'active CLI'      => array( NativePaymentsState::ACTIVE, 'cli', self::ACTIVE_CRON ),
-		);
+	/**
+	 * @testdox Every provider root resolves from the container and registers hooks, appears once per list, and every gateway registry is followed by a gateway provider.
+	 */
+	public function test_provider_matrix_roots_are_registrable_and_listed_once(): void {
+		$matrix = WooPaymentsProvider::get_bootstrap_root_matrix();
+
+		$this->assertEmpty( $matrix[ NativePaymentsState::DISABLED ] ?? array(), 'A disabled store registers no provider root.' );
+		foreach ( $matrix as $state => $request_groups ) {
+			foreach ( $request_groups as $request => $roots ) {
+				$cell = "$state $request";
+				$this->assertSame( array_values( array_unique( $roots ) ), $roots, "$cell lists a root twice." );
+				foreach ( $roots as $index => $root ) {
+					$service = wc_get_container()->get( $root );
+					if ( 0 < $index && NativePaymentsGatewayRegistry::class === $roots[ $index - 1 ] ) {
+						$this->assertInstanceOf( PaymentGatewayProviderContract::class, $service, "$cell: the root after the gateway registry must be its gateway provider." );
+						continue;
+					}
+					$this->assertInstanceOf( RegisterHooksInterface::class, $service, "$cell: $root must register hooks." );
+				}
+				$this->assertNotSame( NativePaymentsGatewayRegistry::class, end( $roots ), "$cell: the gateway registry needs a provider root after it." );
+			}
+		}
 	}
 
-	/** @testdox Provider roots are real classes and mutation requests retain their required observers. */
+	/** @testdox Mutation requests retain their required observers. */
 	public function test_provider_matrix_keeps_required_mutation_observers(): void {
 		$matrix         = WooPaymentsProvider::get_bootstrap_root_matrix();
 		$connected_rest = $matrix[ NativePaymentsState::CONNECTED ]['rest'];
 		$active_front   = $matrix[ NativePaymentsState::ACTIVE ]['front'];
-
-		foreach ( $matrix as $request_groups ) {
-			foreach ( $request_groups as $roots ) {
-				foreach ( $roots as $root ) {
-					$this->assertTrue( class_exists( $root ), $root . ' must be a real class reference.' );
-				}
-			}
-		}
 
 		foreach (
 			array(
@@ -757,8 +389,13 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		}
 	}
 
-	/** @testdox Plugin-owned sites retain the available effective state without default shadow cost. */
-	public function test_plugin_owner_uses_the_available_effective_state_without_default_shadow(): void {
+	/**
+	 * The recording container clamps the stored tier with its own copy of the rule; the real clamp is checked by
+	 * NativePaymentsStateTest::test_get_state_clamps_connected_tiers_while_plugin_is_active.
+	 *
+	 * @testdox A plugin-owned site with an available effective tier registers nothing, not even shadow mode, by default.
+	 */
+	public function test_plugin_owner_registers_no_shadow_mode_by_default(): void {
 		$container = $this->make_container( NativePaymentsState::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
 		$sut       = $this->make_bootstrap( array( NativePaymentsShadowMode::class, 'register_when_enabled' ) );
 
@@ -779,8 +416,13 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertSame( $this->expected_events( array( NativePaymentsShadowMode::class ) ), $container->events );
 	}
 
-	/** @testdox Owner-less sites receive a disabled effective state. */
-	public function test_owner_none_uses_a_disabled_effective_state(): void {
+	/**
+	 * The recording container returns disabled for owner-less sites with its own copy of the rule; the real rule is checked by
+	 * NativePaymentsStateTest::test_get_state_returns_disabled_without_overwriting_the_stored_state_when_no_runtime_owns_the_site.
+	 *
+	 * @testdox An owner-less site with a disabled effective tier registers nothing, even with shadow mode enabled.
+	 */
+	public function test_owner_none_registers_nothing_even_with_shadow_mode_enabled(): void {
 		add_filter( NativePaymentsShadowMode::FILTER_SHADOW_ENABLED, '__return_true' );
 		$container = $this->make_container( NativePaymentsState::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_NONE );
 		$sut       = $this->make_bootstrap( array( NativePaymentsShadowMode::class, 'register_when_enabled' ) );
