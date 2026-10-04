@@ -290,7 +290,12 @@ class PaymentProcessingService {
 			return new WP_Error( 'native_payment_refund_locked', __( 'A payment operation is already in progress for this order.', 'woocommerce' ) );
 		}
 
+		$refund_not_found = false;
 		try {
+			// Read the row under the lock and before the provider call, so a refund row created
+			// while the request is in flight (a manual refund, or one the lock refuses) is never linked.
+			$wc_refund_id = $this->get_newest_refund_id( $order );
+
 			try {
 				$provider_outcome = $provider->refund( $context, $idempotency_key );
 			} catch ( Throwable $exception ) {
@@ -299,12 +304,16 @@ class PaymentProcessingService {
 			}
 			$outcome = $provider_outcome;
 
-			$wc_refund_id = $this->get_newest_refund_id( $order );
+			// Like client 11.1.0, a provider refund with no local refund row to link returns an
+			// error and writes nothing to the order (class-wc-payment-gateway-wcpay.php:3003-3007).
+			$refund_not_found = null === $wc_refund_id && $provider_outcome->is_successful();
 
 			try {
-				$outcome = $this->apply_provider_operation_effects( $context, $outcome, $provider, 'refund' );
-				if ( $outcome->is_successful() ) {
-					$this->apply_refund_outcome( $order, $outcome, $wc_refund_id );
+				if ( ! $refund_not_found ) {
+					$outcome = $this->apply_provider_operation_effects( $context, $outcome, $provider, 'refund' );
+					if ( $outcome->is_successful() ) {
+						$this->apply_refund_outcome( $order, $outcome, $wc_refund_id );
+					}
 				}
 			} catch ( Throwable $apply_exception ) {
 				if ( ! $this->is_reconcilable_provider_outcome( $provider_outcome ) ) {
@@ -317,6 +326,14 @@ class PaymentProcessingService {
 			}
 		} finally {
 			$this->order_payment_store->release_order_payment_lock( $order, $profile, $idempotency_key );
+		}
+
+		if ( $refund_not_found ) {
+			return new WP_Error(
+				'native_payment_refund_not_found',
+				/* translators: %1$s: order ID. */
+				sprintf( __( 'A refund cannot be found for order: %1$s', 'woocommerce' ), $order->get_id() )
+			);
 		}
 
 		if ( $outcome->is_successful() ) {

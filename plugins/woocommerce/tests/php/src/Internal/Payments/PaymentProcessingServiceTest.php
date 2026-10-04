@@ -1618,7 +1618,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should return true when the provider refund succeeds.
 	 */
 	public function test_process_refund_returns_true_when_provider_succeeds(): void {
-		$order    = $this->create_woopayments_order( '10.00' );
+		$order = $this->create_woopayments_order( '10.00' );
+		$this->create_local_refund( $order, 2.50, 'Adjustment' );
 		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED ) );
 
 		$result = $this->sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.50, 'Adjustment' ), $provider );
@@ -1781,6 +1782,62 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $result );
 		$this->assertSame( 're_newest', wc_get_order( $refund->get_id() )->get_meta( '_wcpay_refund_id', true ), 'The refund created for this call must carry the provider refund ID.' );
 		$this->assertSame( '', wc_get_order( $manual_refund->get_id() )->get_meta( '_wcpay_refund_id', true ), 'An older manual refund must stay unlinked.' );
+	}
+
+	/**
+	 * @testdox A refund links the row that was newest when it took the order lock, not one created during the provider call.
+	 */
+	public function test_process_refund_links_the_row_that_existed_before_the_provider_call(): void {
+		$order  = $this->create_woopayments_order( '10.00' );
+		$refund = $this->create_local_refund( $order, 2.50, 'Adjustment' );
+
+		// phpcs:disable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
+		$provider = new class( $this->successful_refund_outcome( 're_this_call' ) ) extends RecordingProvider {
+			/** @var WC_Order_Refund|null */
+			public $concurrent_refund = null;
+
+			public function refund( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+				// A merchant's manual refund lands while the provider request is in flight.
+				$this->concurrent_refund = wc_create_refund(
+					array(
+						'order_id'       => $context->get_order()->get_id(),
+						'amount'         => 1.00,
+						'reason'         => 'Manual',
+						'refund_payment' => false,
+					)
+				);
+
+				return parent::refund( $context, $idempotency_key );
+			}
+		};
+		// phpcs:enable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
+
+		$result = $this->sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.50, 'Adjustment' ), $provider );
+
+		$this->assertTrue( $result );
+		$this->assertInstanceOf( WC_Order_Refund::class, $provider->concurrent_refund );
+		$this->assertSame( 're_this_call', wc_get_order( $refund->get_id() )->get_meta( '_wcpay_refund_id', true ), 'The row created for this call must carry the provider refund ID.' );
+		$this->assertSame( '', wc_get_order( $provider->concurrent_refund->get_id() )->get_meta( '_wcpay_refund_id', true ), 'A refund row created during the provider call must stay unlinked.' );
+	}
+
+	/**
+	 * @testdox A successful provider refund with no refund row on the order returns a refund-not-found error and writes nothing.
+	 *
+	 * Client 11.1.0 sends the refund first, then returns `wcpay_edit_order_refund_not_found` when the
+	 * order has no refund row, before it adds the refund note or metadata
+	 * (class-wc-payment-gateway-wcpay.php:3003-3007). The WooPayments gateway maps the neutral code to the client's.
+	 */
+	public function test_process_refund_without_a_refund_row_returns_the_refund_not_found_error(): void {
+		$order    = $this->create_woopayments_order( '10.00' );
+		$provider = new RecordingProvider( $this->successful_refund_outcome( 're_no_row' ) );
+
+		$result = $this->sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.50, 'Adjustment' ), $provider );
+
+		$this->assertSame( 1, $provider->refund_calls, 'Like the client, the refund reaches the provider before the row lookup fails.' );
+		$this->assertWPError( $result );
+		$this->assertSame( 'native_payment_refund_not_found', $result->get_error_code() );
+		$this->assertSame( 'A refund cannot be found for order: ' . $order->get_id(), $result->get_error_message() );
+		$this->assertSame( '', wc_get_order( $order->get_id() )->get_meta( '_wcpay_refund_status', true ), 'No refund metadata is written when the row is missing.' );
 	}
 
 	/**
@@ -2317,6 +2374,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			$refusal_entries = array_slice( $logger->entries, $logged_before );
 		};
 
+		$this->create_local_refund( $order, 2.50, 'Adjustment' );
 		$free_refund      = $this->sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.50, 'Adjustment' ), $provider );
 		$logged_when_free = $logger->entries;
 		$this->sut->capture( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID ), $provider );

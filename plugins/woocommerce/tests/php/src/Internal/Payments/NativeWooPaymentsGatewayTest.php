@@ -5200,6 +5200,44 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should return the client's refund-not-found error, and record no failure, when the order has no refund row.
+	 *
+	 * Client 11.1.0 returns `wcpay_edit_order_refund_not_found` after a successful platform refund,
+	 * without a failure note or failed refund status (class-wc-payment-gateway-wcpay.php:3003-3007).
+	 */
+	public function test_process_refund_not_found_returns_the_client_error_and_records_no_failure(): void {
+		$order = $this->create_order();
+		$order->update_meta_data( '_charge_id', 'ch_test' );
+		$order->save();
+
+		$service = new class() extends RecordingPaymentProcessingService {
+			/**
+			 * Report a provider refund that found no refund row to link.
+			 *
+			 * @param PaymentContext   $context  Payment context.
+			 * @param ProviderContract $provider Provider.
+			 * @return bool|\WP_Error
+			 */
+			public function process_refund( PaymentContext $context, ProviderContract $provider ) {
+				parent::process_refund( $context, $provider );
+
+				return new \WP_Error( 'native_payment_refund_not_found', 'A refund cannot be found for order: ' . $context->get_order()->get_id() );
+			}
+		};
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$result = $gateway->process_refund( $order->get_id(), 4.25, 'Adjustment' );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'wcpay_edit_order_refund_not_found', $result->get_error_code() );
+		$this->assertSame( 'A refund cannot be found for order: ' . $order->get_id(), $result->get_error_message() );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( '', $order->get_meta( '_wcpay_refund_status', true ), 'The platform refund went through, so the refund must not be marked failed.' );
+		$this->assertCount( 0, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+	}
+
+	/**
 	 * @testdox Should short-circuit process_payment when the order is already paid, before reaching the processing service.
 	 */
 	public function test_process_payment_short_circuits_when_order_already_paid(): void {
