@@ -29,8 +29,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPay
 use Automattic\WooCommerce\Internal\Payments\ProviderContract;
 use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapper;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplier;
-use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
 
 /**
  * First-party WooPayments provider skeleton for the native payments runtime.
@@ -359,11 +359,11 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 	/**
 	 * Get the provider persistence profile.
 	 *
-	 * @return ProviderPersistenceProfile
+	 * @return ProviderPersistenceVocabulary
 	 *
 	 * @since 11.0.0
 	 */
-	public function get_persistence_profile(): ProviderPersistenceProfile {
+	public function get_persistence_profile(): ProviderPersistenceVocabulary {
 		return new WooPaymentsPersistenceProfile();
 	}
 

@@ -8,12 +8,14 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\ProviderContract;
+use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
 
 /**
  * Test provider that records operation calls.
  */
-class RecordingProvider implements ProviderContract {
+class RecordingProvider implements ProviderContract, ProviderOutcomeMetadataMapper {
 
 	/**
 	 * Outcome returned by all operations.
@@ -100,6 +102,26 @@ class RecordingProvider implements ProviderContract {
 	 */
 	public function get_persistence_profile(): ProviderPersistenceVocabulary {
 		return new RecordingProviderPersistenceProfile( $this->get_id() );
+	}
+
+	/**
+	 * Map a neutral outcome to order metadata with the WooPayments vocabulary this double persists under.
+	 *
+	 * @param PaymentOutcome $outcome Provider outcome.
+	 * @return array<string,string>
+	 */
+	public function get_outcome_meta( PaymentOutcome $outcome ): array {
+		return ( new WooPaymentsOutcomeMetadataMapper() )->get_outcome_meta( $outcome );
+	}
+
+	/**
+	 * Map a failed capture or cancel outcome to order metadata with the WooPayments vocabulary.
+	 *
+	 * @param PaymentOutcome $outcome Provider outcome.
+	 * @return array<string,string>
+	 */
+	public function get_capture_failure_outcome_meta( PaymentOutcome $outcome ): array {
+		return ( new WooPaymentsOutcomeMetadataMapper() )->get_capture_failure_outcome_meta( $outcome );
 	}
 
 	/**

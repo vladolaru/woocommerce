@@ -170,7 +170,7 @@ class OrderPaymentLifecycleService {
 
 		$this->apply_meta_changes( $order, $event );
 
-		$should_add_note = null !== $note && '' !== $note && ! $this->should_skip_lifecycle_note( $order, $event, $note, $persistence_profile );
+		$should_add_note = null !== $note && '' !== $note && ! $this->should_skip_lifecycle_note( $order, $event );
 
 		if ( $this->should_save_meta_before_status_transition( $event ) ) {
 			$order->save_meta_data();
@@ -405,17 +405,11 @@ class OrderPaymentLifecycleService {
 	/**
 	 * Tell whether a lifecycle note should be skipped for an already-applied event.
 	 *
-	 * @param WC_Order                      $order               Order object.
-	 * @param PaymentLifecycleEvent         $event               Lifecycle event.
-	 * @param string                        $note                Note content.
-	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
+	 * @param WC_Order              $order Order object.
+	 * @param PaymentLifecycleEvent $event Lifecycle event.
 	 * @return bool
 	 */
-	private function should_skip_lifecycle_note( WC_Order $order, PaymentLifecycleEvent $event, string $note, ProviderPersistenceVocabulary $persistence_profile ): bool {
-		if ( $persistence_profile instanceof ProviderPersistenceProfile && $persistence_profile->should_skip_note( $order, $event, $note ) ) {
-			return true;
-		}
-
+	private function should_skip_lifecycle_note( WC_Order $order, PaymentLifecycleEvent $event ): bool {
 		$payment_reference = (string) $event->get_payment_reference();
 		$note_type         = $event->get_note_type();
 

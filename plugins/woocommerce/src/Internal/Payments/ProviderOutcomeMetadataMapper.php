@@ -10,10 +10,9 @@ namespace Automattic\WooCommerce\Internal\Payments;
 /**
  * Optional provider port for mapping outcomes to provider-owned order metadata.
  *
- * Keeping outcome interpretation on the provider prevents persistence key
- * vocabulary from accumulating operation-specific behavior. The processing
- * service retains a deprecated ProviderPersistenceProfile fallback for existing
- * implementations during the compatibility window.
+ * Each optional port is a capability a provider may not need, so it is its own interface rather than a
+ * ProviderContract method. A provider implements only the ports it uses; without this one, the processing
+ * service writes no provider metadata from outcomes.
  *
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.

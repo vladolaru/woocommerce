@@ -5,7 +5,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\S
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
-use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;

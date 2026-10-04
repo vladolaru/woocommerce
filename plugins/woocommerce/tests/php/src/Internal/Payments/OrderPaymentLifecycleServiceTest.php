@@ -10,7 +10,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
-use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
 use Automattic\WooCommerce\RestApi\UnitTests\LoggerSpyTrait;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 use WC_Order;
@@ -772,15 +772,15 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Provider persistence profiles control lock vocabulary and duplicate-note policy.
+	 * @testdox Lifecycle events lock the order with the supplied provider persistence vocabulary.
 	 */
-	public function test_apply_uses_provider_profile_for_locks_and_note_policy(): void {
+	public function test_apply_uses_provider_vocabulary_for_locks(): void {
 		$order   = $this->create_woopayments_order();
-		$profile = $this->createMock( ProviderPersistenceProfile::class );
+		$profile = $this->createMock( ProviderPersistenceVocabulary::class );
 		$profile->method( 'get_order_lock_key' )->willReturn( 'provider_lifecycle_lock_' . $order->get_id() );
 		$profile->method( 'get_lock_sentinel' )->willReturn( 'provider-lock' );
 		$profile->method( 'get_lock_ttl_seconds' )->willReturn( 60 );
-		$profile->method( 'should_skip_note' )->willReturn( true );
+		$this->assertTrue( $this->order_payment_store->claim_order_payment_lock( $order, $this->persistence_profile, 'woopayments_operation' ) );
 
 		$this->apply_event(
 			$order,
@@ -789,7 +789,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 				'provider_payment_123',
 				array(),
 				array(),
-				'Provider already wrote this note.'
+				'Provider payment started.'
 			),
 			$profile
 		);
@@ -797,8 +797,9 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$order = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Provider already wrote this note.' ) );
-		$this->assertFalse( get_transient( 'provider_lifecycle_lock_' . $order->get_id() ) );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Provider payment started.' ), 'A lock held under another provider key must not block the event.' );
+		$this->assertFalse( get_transient( 'provider_lifecycle_lock_' . $order->get_id() ), 'The provider lock must be released after the event.' );
+		$this->order_payment_store->release_order_payment_lock( $order, $this->persistence_profile, 'woopayments_operation' );
 	}
 
 	/**
@@ -1133,11 +1134,11 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Apply a lifecycle event with the WooPayments profile unless a test supplies another profile.
 	 *
-	 * @param WC_Order                        $order               Order object.
-	 * @param PaymentLifecycleEvent           $event               Lifecycle event.
-	 * @param ProviderPersistenceProfile|null $persistence_profile Optional provider profile.
+	 * @param WC_Order                           $order               Order object.
+	 * @param PaymentLifecycleEvent              $event               Lifecycle event.
+	 * @param ProviderPersistenceVocabulary|null $persistence_profile Optional provider vocabulary.
 	 */
-	private function apply_event( WC_Order $order, PaymentLifecycleEvent $event, ?ProviderPersistenceProfile $persistence_profile = null ): void {
+	private function apply_event( WC_Order $order, PaymentLifecycleEvent $event, ?ProviderPersistenceVocabulary $persistence_profile = null ): void {
 		$this->sut->apply( $order, $event, $persistence_profile ?? $this->persistence_profile );
 	}
 

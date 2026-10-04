@@ -12,7 +12,6 @@ use Automattic\WooCommerce\Internal\Payments\ProviderContract;
 use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplier;
-use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyPaymentMethodsMap;
@@ -85,7 +84,6 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	public function test_provider_identity_exposes_woopayments_persistence_profile(): void {
 		$profile = $this->sut->get_persistence_profile();
 
-		$this->assertInstanceOf( ProviderPersistenceProfile::class, $profile );
 		$this->assertInstanceOf( ProviderPersistenceVocabulary::class, $profile );
 		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $profile->get_gateway_id() );
 	}

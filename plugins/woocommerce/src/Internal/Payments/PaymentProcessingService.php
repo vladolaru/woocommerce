@@ -987,37 +987,25 @@ class PaymentProcessingService {
 	}
 
 	/**
-	 * Map provider outcome metadata through the provider port or legacy fallback.
+	 * Map provider outcome metadata through the optional provider port.
 	 *
 	 * @param PaymentOutcome   $outcome  Provider outcome.
 	 * @param ProviderContract $provider Provider.
 	 * @return array<string,string>
 	 */
 	private function get_provider_outcome_meta( PaymentOutcome $outcome, ProviderContract $provider ): array {
-		if ( $provider instanceof ProviderOutcomeMetadataMapper ) {
-			return $provider->get_outcome_meta( $outcome );
-		}
-
-		$profile = $provider->get_persistence_profile();
-
-		return $profile instanceof ProviderPersistenceProfile ? $profile->get_outcome_meta( $outcome ) : array();
+		return $provider instanceof ProviderOutcomeMetadataMapper ? $provider->get_outcome_meta( $outcome ) : array();
 	}
 
 	/**
-	 * Map failed authorization metadata through the provider port or legacy fallback.
+	 * Map failed authorization metadata through the optional provider port.
 	 *
 	 * @param PaymentOutcome   $outcome  Provider outcome.
 	 * @param ProviderContract $provider Provider.
 	 * @return array<string,string>
 	 */
 	private function get_capture_failure_outcome_meta( PaymentOutcome $outcome, ProviderContract $provider ): array {
-		if ( $provider instanceof ProviderOutcomeMetadataMapper ) {
-			return $provider->get_capture_failure_outcome_meta( $outcome );
-		}
-
-		$profile = $provider->get_persistence_profile();
-
-		return $profile instanceof ProviderPersistenceProfile ? $profile->get_capture_failure_outcome_meta( $outcome ) : array();
+		return $provider instanceof ProviderOutcomeMetadataMapper ? $provider->get_capture_failure_outcome_meta( $outcome ) : array();
 	}
 
 	/**

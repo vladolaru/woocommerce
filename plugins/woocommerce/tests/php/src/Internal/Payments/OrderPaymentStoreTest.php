@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
-use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
 use WC_Order_Refund;
 use WC_Order;
 use WC_Unit_Test_Case;
@@ -702,10 +702,10 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a non-WooPayments persistence profile.
 	 *
-	 * @return ProviderPersistenceProfile
+	 * @return ProviderPersistenceVocabulary
 	 */
-	private function create_provider_profile(): ProviderPersistenceProfile {
-		$profile = $this->createMock( ProviderPersistenceProfile::class );
+	private function create_provider_profile(): ProviderPersistenceVocabulary {
+		$profile = $this->createMock( ProviderPersistenceVocabulary::class );
 		$profile->method( 'get_order_lock_key' )->willReturnCallback(
 			static fn( WC_Order $order ): string => 'provider_payment_lock_' . $order->get_id()
 		);

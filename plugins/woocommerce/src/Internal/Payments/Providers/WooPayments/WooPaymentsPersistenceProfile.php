@@ -7,9 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
-use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
 use WC_Order;
 
 /**
@@ -18,7 +17,7 @@ use WC_Order;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsPersistenceProfile implements ProviderPersistenceProfile {
+class WooPaymentsPersistenceProfile implements ProviderPersistenceVocabulary {
 
 	/**
 	 * Preserved WooPayments gateway ID.
@@ -212,19 +211,5 @@ class WooPaymentsPersistenceProfile implements ProviderPersistenceProfile {
 	 */
 	public function get_capture_failure_outcome_meta( PaymentOutcome $outcome ): array {
 		return ( new WooPaymentsOutcomeMetadataMapper() )->get_capture_failure_outcome_meta( $outcome );
-	}
-
-	/**
-	 * Tell whether a provider-written duplicate order note should be skipped.
-	 *
-	 * @param WC_Order              $order Order object.
-	 * @param PaymentLifecycleEvent $event Lifecycle event.
-	 * @param string                $note  Note content.
-	 * @return bool
-	 *
-	 * @since 11.0.0
-	 */
-	public function should_skip_note( WC_Order $order, PaymentLifecycleEvent $event, string $note ): bool {
-		return false;
 	}
 }

@@ -17,7 +17,6 @@ use Automattic\WooCommerce\Internal\Payments\ProviderContract;
 use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplier;
-use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHtmlUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -67,9 +66,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Persistence profile used by the recording WooPayments provider.
 	 *
-	 * @var ProviderPersistenceProfile
+	 * @var ProviderPersistenceVocabulary
 	 */
-	private ProviderPersistenceProfile $persistence_profile;
+	private ProviderPersistenceVocabulary $persistence_profile;
 
 	/**
 	 * Set up test fixtures.
@@ -673,7 +672,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should persist checkout outcome metadata from the provider mapper without a legacy profile.
+	 * @testdox Should persist checkout outcome metadata from the provider mapper.
 	 */
 	public function test_process_checkout_outcome_uses_provider_outcome_metadata_mapper(): void {
 		$order    = $this->create_woopayments_order( '12.00' );
@@ -1420,12 +1419,12 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Recovery profile mapping failures cannot replace a referenced provider outcome.
+	 * @testdox Recovery metadata mapping failures cannot replace a referenced provider outcome.
 	 */
-	public function test_process_checkout_outcome_keeps_provider_result_when_recovery_profile_mapping_throws(): void {
+	public function test_process_checkout_outcome_keeps_provider_result_when_recovery_mapping_throws(): void {
 		$order    = $this->create_woopayments_order( '10.00' );
 		$outcome  = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_profile_recovery_failure', '', 'pm_profile_recovery_failure' );
-		$profile  = new class( OrderPaymentStore::GATEWAY_ID ) extends RecordingProviderPersistenceProfile {
+		$provider = new class( $outcome ) extends RecordingProvider implements ProviderOperationEffectApplier {
 			/**
 			 * Number of recovery mapping calls.
 			 *
@@ -1446,37 +1445,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				++$this->outcome_meta_calls;
 				throw new RuntimeException( 'Recovery metadata mapping failed.' );
 			}
-			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
-		};
-		$provider = new class( $outcome, $profile ) extends RecordingProvider implements ProviderOperationEffectApplier {
-			/**
-			 * Persistence profile.
-			 *
-			 * @var ProviderPersistenceProfile
-			 */
-			private ProviderPersistenceProfile $profile;
 
-			/**
-			 * Constructor.
-			 *
-			 * @param PaymentOutcome             $outcome Provider outcome.
-			 * @param ProviderPersistenceProfile $profile Persistence profile.
-			 */
-			public function __construct( PaymentOutcome $outcome, ProviderPersistenceProfile $profile ) {
-				parent::__construct( $outcome );
-				$this->profile = $profile;
-			}
-
-			/**
-			 * Get the provider persistence profile.
-			 *
-			 * @return ProviderPersistenceProfile
-			 */
-			public function get_persistence_profile(): ProviderPersistenceProfile {
-				return $this->profile;
-			}
-
-			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double always throws.
 			/**
 			 * Fail provider effect application after the remote payment succeeded.
 			 *
@@ -1499,7 +1468,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $outcome, $exception->get_outcome() );
 		$this->assertSame( 'Provider effect write failed.', $exception->get_failure()->getMessage(), 'The recovery failure must not replace the original failure.' );
-		$this->assertSame( 1, $profile->outcome_meta_calls );
+		$this->assertSame( 1, $provider->outcome_meta_calls );
 	}
 
 	/**
@@ -2504,9 +2473,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			/**
 			 * Get the provider persistence profile.
 			 *
-			 * @return ProviderPersistenceProfile
+			 * @return ProviderPersistenceVocabulary
 			 */
-			public function get_persistence_profile(): ProviderPersistenceProfile {
+			public function get_persistence_profile(): ProviderPersistenceVocabulary {
 				return new class( $this->get_id() ) extends RecordingProviderPersistenceProfile {
 					/**
 					 * Get the processed refund link meta key.
@@ -2667,7 +2636,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Failed captures prefer provider outcome mapping over the legacy profile fallback.
+	 * @testdox Failed captures persist the provider capture-failure metadata.
 	 */
 	public function test_capture_failure_uses_provider_outcome_metadata_mapper(): void {
 		$order = $this->create_woopayments_order( '10.00' );
@@ -3937,9 +3906,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			/**
 			 * Persistence profile used by the observed provider.
 			 *
-			 * @var ProviderPersistenceProfile
+			 * @var ProviderPersistenceVocabulary
 			 */
-			public ProviderPersistenceProfile $persistence_profile;
+			public ProviderPersistenceVocabulary $persistence_profile;
 
 			/**
 			 * Record whether the order payment lock is held when refund-instance resolution runs.
