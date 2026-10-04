@@ -930,18 +930,30 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A failed intent fetch leaves an order a webhook put on hold during the fetch untouched and stays on order-received.
+	 * @testdox A failed intent fetch leaves an order $change during the fetch untouched and stays on order-received.
 	 *
 	 * Decided divergence (money hazard): client 11.1.0 fails the order read at request start (gw:2428-2444), and its paid
 	 * check covers only processing and completed (os:2863-2880), so an authorized charge would end on a failed order.
+	 * An order now bound to another intent belongs to another attempt, as in the client's early return (gw:2305-2307).
+	 *
+	 * @testWith ["a webhook put on hold", "on-hold"]
+	 *           ["another payment attempt bound to its intent", "pending"]
+	 *
+	 * @param string $change          What happened to the order during the fetch.
+	 * @param string $expected_status Order status after the return.
 	 */
-	public function test_handle_wp_keeps_order_held_during_failed_fetch(): void {
+	public function test_handle_wp_keeps_order_held_during_failed_fetch( string $change, string $expected_status ): void {
 		$order                                    = $this->create_order();
 		$api_client                               = new RedirectReturnApiClientStub();
 		$api_client->exception                    = new WooPaymentsApiException( 'Request timed out.', 'wcpay_http_request_failed', 504 );
-		$api_client->before_payment_intent_return = static function () use ( $order ): void {
-			$webhook_order = wc_get_order( $order->get_id() );
-			$webhook_order->update_status( 'on-hold' );
+		$api_client->before_payment_intent_return = static function () use ( $order, $change ): void {
+			$concurrent_order = wc_get_order( $order->get_id() );
+			if ( 'a webhook put on hold' === $change ) {
+				$concurrent_order->update_status( 'on-hold' );
+				return;
+			}
+			$concurrent_order->update_meta_data( '_intent_id', 'pi_other' );
+			$concurrent_order->save();
 		};
 		$this->sut                                = $this->create_controller( true, null, $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_held_during_fetch' );
@@ -950,7 +962,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$reloaded = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $reloaded );
-		$this->assertSame( 'on-hold', $reloaded->get_status() );
+		$this->assertSame( $expected_status, $reloaded->get_status() );
 		$this->assertSame( array(), wc_get_notices( 'error' ) );
 		$failure_notes = array_filter(
 			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
@@ -1037,7 +1049,9 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$location = $this->handle_wp_expecting_redirect();
 
 		$this->assertSame( wc_get_checkout_url(), $location );
-		$this->assertSame( 'failed', wc_get_order( $order->get_id() )->get_status() );
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertSame( 'failed', $reloaded->get_status() );
+		$this->assert_failed_note_with_message( $reloaded, 'pi_canceled_with_error', "UPE payment failed: We're not able to process this payment. Please try again later." );
 		$this->assertSame( 0, $cancellations, 'The order must not pass through cancelled.' );
 	}
 

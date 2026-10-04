@@ -214,7 +214,7 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 		$this->run_bootstrap( 'rest' === $request ? '__return_true' : '__return_false' );
 
 		// The client hooks the link on init of every request and skips AJAX, REST and WP-CLI inside it (client 11.1.0
-		// `includes/class-wc-payments.php:605`, `includes/class-wc-payments-fraud-service.php:82,151-167`).
+		// `includes/class-wc-payments.php:605`, `includes/class-wc-payments-fraud-service.php:82,151-177`).
 		$this->assertSame( $expected ? 10 : null, $this->get_callback_priority( 'init', WooPaymentsFraudService::class, 'link_session_if_user_just_logged_in' ) );
 	}
 

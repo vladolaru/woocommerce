@@ -4446,16 +4446,18 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 *
 	 * Client 11.1.0 process_payment_for_order() removes the session's processing order when the intent succeeded or is
 	 * an offline method waiting for the shopper, that is a Multibanco voucher (gw:2021, 2147-2148; Payment_Method::OFFLINE_PAYMENT_METHODS).
-	 * An authorized card stays tracked until its order-received page.
+	 * An authorized card or a card waiting on a 3DS challenge stays tracked until its order-received page.
 	 *
-	 * @testWith ["a Multibanco voucher", "requires_action", "removes"]
-	 *           ["an authorized card payment", "requires_capture", "keeps"]
+	 * @testWith ["a Multibanco voucher", "requires_action", "multibanco_display_details", "removes"]
+	 *           ["an authorized card payment", "requires_capture", "", "keeps"]
+	 *           ["a 3DS card challenge", "requires_action", "use_stripe_sdk", "keeps"]
 	 *
-	 * @param string $label   Case label.
-	 * @param string $status  PaymentIntent status.
-	 * @param string $outcome Whether the gateway removes or keeps the tracked order.
+	 * @param string $label       Case label.
+	 * @param string $status      PaymentIntent status.
+	 * @param string $next_action PaymentIntent next action type, if any.
+	 * @param string $outcome     Whether the gateway removes or keeps the tracked order.
 	 */
-	public function test_process_payment_clears_session_processing_order_for_offline_voucher( string $label, string $status, string $outcome ): void {
+	public function test_process_payment_clears_session_processing_order_for_offline_voucher( string $label, string $status, string $next_action, string $outcome ): void {
 		unset( $label );
 		$order   = $this->create_order();
 		$session = $this->create_session();
@@ -4467,7 +4469,14 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			'currency' => 'eur',
 			'metadata' => array( 'order_id' => $order->get_id() ),
 		);
-		if ( 'requires_action' === $status ) {
+		if ( 'use_stripe_sdk' === $next_action ) {
+			$intent['payment_method_types'] = array( 'card' );
+			$intent['next_action']          = array(
+				'type'           => 'use_stripe_sdk',
+				'use_stripe_sdk' => array( 'type' => 'three_d_secure_redirect' ),
+			);
+		}
+		if ( 'multibanco_display_details' === $next_action ) {
 			$intent['next_action'] = array(
 				'type'                       => 'multibanco_display_details',
 				'multibanco_display_details' => array(
