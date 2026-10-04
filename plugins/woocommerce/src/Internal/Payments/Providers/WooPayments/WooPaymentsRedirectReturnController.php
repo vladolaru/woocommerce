@@ -51,6 +51,13 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	private WooPaymentsTokenService $token_service;
 
 	/**
+	 * Native WooPayments customer service.
+	 *
+	 * @var WooPaymentsCustomerService
+	 */
+	private WooPaymentsCustomerService $customer_service;
+
+	/**
 	 * Initialize the controller.
 	 *
 	 * @internal
@@ -59,12 +66,14 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * @param WooPaymentsCheckoutAjaxController $confirmation_owner Shared intent confirmation owner.
 	 * @param WooPaymentsApiClient              $api_client         Native WooPayments API client.
 	 * @param WooPaymentsTokenService           $token_service      Native WooPayments token service.
+	 * @param WooPaymentsCustomerService        $customer_service   Native WooPayments customer service.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsCheckoutAjaxController $confirmation_owner, WooPaymentsApiClient $api_client, WooPaymentsTokenService $token_service ): void {
+	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsCheckoutAjaxController $confirmation_owner, WooPaymentsApiClient $api_client, WooPaymentsTokenService $token_service, WooPaymentsCustomerService $customer_service ): void {
 		$this->arbiter            = $arbiter;
 		$this->confirmation_owner = $confirmation_owner;
 		$this->api_client         = $api_client;
 		$this->token_service      = $token_service;
+		$this->customer_service   = $customer_service;
 	}
 
 	/**
@@ -134,8 +143,10 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 			return;
 		}
 
+		// Authorized divergence: client 11.1.0 binds only positive totals (gw:2302-2306, pending woocommerce-payments#6575);
+		// native stores every SetupIntent in `_intent_id` before the shopper is redirected (decided divergence, ledger V649).
 		$is_payment_intent = 0.0 < (float) $order->get_total();
-		if ( $is_payment_intent && ! $this->order_matches_intent( $order, $intent_id ) ) {
+		if ( ! $this->order_matches_intent( $order, $intent_id ) ) {
 			$this->log_intent_mismatch( $intent_id, $order );
 			return;
 		}
@@ -156,7 +167,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 				return;
 			}
 
-			if ( $is_payment_intent && ! $this->order_matches_intent( $fresh_order, $intent_id ) ) {
+			if ( ! $this->order_matches_intent( $fresh_order, $intent_id ) ) {
 				$this->log_intent_mismatch( $intent_id, $fresh_order );
 				return;
 			}
@@ -166,6 +177,11 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 			}
 
 			if ( $is_payment_intent && ! $this->intent_matches_order( $intent, $fresh_order ) ) {
+				$this->log_intent_mismatch( $intent_id, $fresh_order );
+				return;
+			}
+
+			if ( ! $is_payment_intent && ! $this->setup_intent_customer_matches_order( $intent, $fresh_order ) ) {
 				$this->log_intent_mismatch( $intent_id, $fresh_order );
 				return;
 			}
@@ -248,7 +264,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the requested intent is still current for a positive-total order.
+	 * Tell whether the requested intent is the one the order stores.
 	 *
 	 * @param WC_Order $order     Order object.
 	 * @param string   $intent_id Requested intent ID.
@@ -303,6 +319,26 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 		$metadata_order_id = $metadata['order_id'] ?? null;
 
 		return is_numeric( $metadata_order_id ) && $order->get_id() === intval( $metadata_order_id );
+	}
+
+	/**
+	 * Tell whether a SetupIntent's customer can be the order's customer.
+	 *
+	 * The order's customer is its `_stripe_customer_id`, else its user's stored customer. Like add_payment_method(),
+	 * this rejects only a real mismatch between two known customer IDs.
+	 *
+	 * @param array<string,mixed> $intent SetupIntent response.
+	 * @param WC_Order            $order  Order object.
+	 * @return bool
+	 */
+	private function setup_intent_customer_matches_order( array $intent, WC_Order $order ): bool {
+		$intent_customer = WooPaymentsIntentCodec::result_customer_id( $intent, '' );
+		$order_customer  = (string) $order->get_meta( '_stripe_customer_id', true );
+		if ( '' === $order_customer && 0 < $order->get_user_id() ) {
+			$order_customer = (string) $this->customer_service->get_persisted_customer_id_by_user_id( $order->get_user_id() );
+		}
+
+		return '' === $intent_customer || '' === $order_customer || hash_equals( $order_customer, $intent_customer );
 	}
 
 	/**

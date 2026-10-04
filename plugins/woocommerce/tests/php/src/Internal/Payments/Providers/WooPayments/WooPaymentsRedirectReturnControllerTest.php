@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAjaxController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
@@ -828,6 +829,201 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A zero-total return naming a SetupIntent the order does not carry is rejected before fetch: $_dataName.
+	 *
+	 * Authorized divergence from client 11.1.0, which skips this binding for zero-total orders (`gw:2302-2306`,
+	 * pending woocommerce-payments#6575). Native writes the SetupIntent to `_intent_id` before the shopper leaves
+	 * checkout, so a leaked `seti_` id cannot be redeemed against another shopper's order.
+	 *
+	 * @dataProvider unbound_setup_intent_provider
+	 *
+	 * @param string $order_intent_id SetupIntent the order carries, or '' for none.
+	 */
+	public function test_handle_wp_rejects_zero_total_setup_intent_not_bound_to_order( string $order_intent_id ): void {
+		$order = $this->create_order( '0.00' );
+		if ( '' !== $order_intent_id ) {
+			$order->update_meta_data( '_intent_id', $order_intent_id );
+			$order->save();
+		}
+		$api_client               = new RedirectReturnApiClientStub();
+		$api_client->setup_intent = array(
+			'id'             => 'seti_foreign',
+			'status'         => 'succeeded',
+			'customer'       => 'cus_foreign',
+			'payment_method' => 'pm_foreign',
+		);
+		$logger                   = new RedirectReturnRecordingLogger();
+		add_filter( 'woocommerce_logging_class', static fn() => $logger );
+		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client );
+		$this->set_setup_intent_return_request( $order, 'seti_foreign', false );
+
+		$this->sut->handle_wp();
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 0, $api_client->setup_intent_reads, 'An unbound SetupIntent must not be fetched.' );
+		$this->assertSame( 'pending', $reloaded->get_status() );
+		$this->assertSame( $order_intent_id, $reloaded->get_meta( '_intent_id', true ) );
+		$this->assertSame( '', $reloaded->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( '', $reloaded->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( array(), $reloaded->get_payment_tokens() );
+		$this->assertSame(
+			array( sprintf( 'Native WooPayments redirect intent seti_foreign did not match order %d.', $order->get_id() ) ),
+			array_column( $logger->error_calls, 'message' )
+		);
+	}
+
+	/**
+	 * @testdox A zero-total return is rejected when a newer checkout attempt replaces the order's SetupIntent during the fetch.
+	 */
+	public function test_handle_wp_rejects_zero_total_setup_intent_replaced_during_fetch(): void {
+		$order                                  = $this->create_order( '0.00' );
+		$api_client                             = new RedirectReturnApiClientStub();
+		$api_client->setup_intent               = array(
+			'id'             => 'seti_old',
+			'status'         => 'succeeded',
+			'customer'       => 'cus_setup',
+			'payment_method' => 'pm_old',
+		);
+		$api_client->before_setup_intent_return = static function () use ( $order ): void {
+			$fresh_order = wc_get_order( $order->get_id() );
+			if ( $fresh_order instanceof WC_Order ) {
+				$fresh_order->update_meta_data( '_intent_id', 'seti_newer' );
+				$fresh_order->save();
+			}
+		};
+		$this->sut                              = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client );
+		$this->set_setup_intent_return_request( $order, 'seti_old' );
+
+		$this->sut->handle_wp();
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 1, $api_client->setup_intent_reads );
+		$this->assertSame( 'pending', $reloaded->get_status() );
+		$this->assertSame( 'seti_newer', $reloaded->get_meta( '_intent_id', true ) );
+		$this->assertSame( '', $reloaded->get_meta( '_payment_method_id', true ) );
+	}
+
+	/**
+	 * Zero-total orders whose stored intent is not the returned SetupIntent.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function unbound_setup_intent_provider(): array {
+		return array(
+			'order carries another SetupIntent' => array( 'seti_own' ),
+			'order carries no intent'           => array( '' ),
+		);
+	}
+
+	/**
+	 * @testdox A zero-total return is rejected when the SetupIntent belongs to another customer: $_dataName.
+	 *
+	 * Authorized divergence from client 11.1.0 (`gw:2302-2306`, `gw:2355-2357` fetch the SetupIntent without any
+	 * order binding). Same rule as add_payment_method(): reject only a real mismatch between two known customer IDs.
+	 *
+	 * @dataProvider foreign_setup_intent_customer_provider
+	 *
+	 * @param string $order_customer `_stripe_customer_id` on the order, or '' for none.
+	 * @param string $user_customer  Stored customer ID of the order's user, or '' for none.
+	 */
+	public function test_handle_wp_rejects_zero_total_setup_intent_of_another_customer( string $order_customer, string $user_customer ): void {
+		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$order   = $this->create_order( '0.00', $user_id );
+		if ( '' !== $order_customer ) {
+			$order->update_meta_data( '_stripe_customer_id', $order_customer );
+			$order->save();
+		}
+		$api_client               = new RedirectReturnApiClientStub();
+		$api_client->setup_intent = array(
+			'id'             => 'seti_bound',
+			'status'         => 'succeeded',
+			'customer'       => 'cus_foreign',
+			'payment_method' => 'pm_foreign',
+		);
+		$logger                   = new RedirectReturnRecordingLogger();
+		add_filter( 'woocommerce_logging_class', static fn() => $logger );
+		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client, null, $this->create_customer_service( $user_id, $user_customer ) );
+		$this->set_setup_intent_return_request( $order, 'seti_bound' );
+
+		$this->sut->handle_wp();
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 1, $api_client->setup_intent_reads );
+		$this->assertSame( 'pending', $reloaded->get_status() );
+		$this->assertSame( '', $reloaded->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( $order_customer, $reloaded->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( array(), $reloaded->get_payment_tokens() );
+		$this->assertSame(
+			array( sprintf( 'Native WooPayments redirect intent seti_bound did not match order %d.', $order->get_id() ) ),
+			array_column( $logger->error_calls, 'message' )
+		);
+	}
+
+	/**
+	 * Known order customers that differ from the SetupIntent's customer.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function foreign_setup_intent_customer_provider(): array {
+		return array(
+			'order customer differs'                    => array( 'cus_order', '' ),
+			'order user customer differs'               => array( '', 'cus_user' ),
+			'order customer differs, user one does not' => array( 'cus_order', 'cus_foreign' ),
+		);
+	}
+
+	/**
+	 * @testdox A zero-total return is confirmed when the SetupIntent customer is the order's or is not known: $_dataName.
+	 *
+	 * @dataProvider own_setup_intent_customer_provider
+	 *
+	 * @param string $order_customer `_stripe_customer_id` on the order, or '' for none.
+	 * @param string $user_customer  Stored customer ID of the order's user, or '' for none.
+	 */
+	public function test_handle_wp_confirms_zero_total_setup_intent_of_the_order_customer( string $order_customer, string $user_customer ): void {
+		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$order   = $this->create_order( '0.00', $user_id );
+		if ( '' !== $order_customer ) {
+			$order->update_meta_data( '_stripe_customer_id', $order_customer );
+			$order->save();
+		}
+		$api_client               = new RedirectReturnApiClientStub();
+		$api_client->setup_intent = array(
+			'id'             => 'seti_own',
+			'status'         => 'succeeded',
+			'customer'       => 'cus_own',
+			'payment_method' => 'pm_own',
+		);
+		$this->sut                = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client, null, $this->create_customer_service( $user_id, $user_customer ) );
+		$this->set_setup_intent_return_request( $order, 'seti_own' );
+
+		$this->sut->handle_wp();
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'completed', $reloaded->get_status() );
+		$this->assertSame( 'pm_own', $reloaded->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 'cus_own', $reloaded->get_meta( '_stripe_customer_id', true ) );
+	}
+
+	/**
+	 * Order customers the SetupIntent's customer may be confirmed against.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function own_setup_intent_customer_provider(): array {
+		return array(
+			'order customer matches'                   => array( 'cus_own', '' ),
+			'order customer matches, user one differs' => array( 'cus_own', 'cus_user' ),
+			'order user customer matches'              => array( '', 'cus_own' ),
+			'no customer known'                        => array( '', '' ),
+		);
+	}
+
+	/**
 	 * @testdox Zero-total setup-intent returns fail the order when the SetupIntent carries a setup error ($status).
 	 *
 	 * Source: client 11.1.0 `process_redirect_payment()`. For a zero-total order it reads `get_last_setup_error()`
@@ -1188,9 +1384,10 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsCheckoutAjaxController|null $confirmation_owner Shared confirmation owner.
 	 * @param WooPaymentsApiClient|null              $api_client         API client.
 	 * @param WooPaymentsTokenService|null           $token_service      Token service.
+	 * @param WooPaymentsCustomerService|null        $customer_service   Customer service.
 	 * @return WooPaymentsRedirectReturnController
 	 */
-	private function create_controller( bool $native_owner, ?WooPaymentsCheckoutAjaxController $confirmation_owner = null, ?WooPaymentsApiClient $api_client = null, ?WooPaymentsTokenService $token_service = null ): WooPaymentsRedirectReturnController {
+	private function create_controller( bool $native_owner, ?WooPaymentsCheckoutAjaxController $confirmation_owner = null, ?WooPaymentsApiClient $api_client = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsCustomerService $customer_service = null ): WooPaymentsRedirectReturnController {
 		$arbiter = $this->createMock( NativePaymentsRuntimeArbiter::class );
 		$arbiter->method( 'should_native_register' )->willReturn( $native_owner );
 
@@ -1199,10 +1396,26 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			$arbiter,
 			$confirmation_owner ?? $this->createMock( WooPaymentsCheckoutAjaxController::class ),
 			$api_client ?? new RedirectReturnApiClientStub(),
-			$token_service ?? $this->createMock( WooPaymentsTokenService::class )
+			$token_service ?? $this->createMock( WooPaymentsTokenService::class ),
+			$customer_service ?? $this->createMock( WooPaymentsCustomerService::class )
 		);
 
 		return $controller;
+	}
+
+	/**
+	 * Create a customer service that knows one user's stored customer ID.
+	 *
+	 * @param int    $user_id     User ID.
+	 * @param string $customer_id Stored customer ID, or '' for none.
+	 * @return WooPaymentsCustomerService
+	 */
+	private function create_customer_service( int $user_id, string $customer_id ): WooPaymentsCustomerService {
+		$customer_service = $this->createMock( WooPaymentsCustomerService::class );
+		$customer_service->method( 'get_persisted_customer_id_by_user_id' )
+			->willReturnCallback( static fn( ?int $requested_user_id ): ?string => $user_id === $requested_user_id && '' !== $customer_id ? $customer_id : null );
+
+		return $customer_service;
 	}
 
 	/**
@@ -1257,7 +1470,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$controller->init(
 			$arbiter,
 			$api_client,
-			$this->createMock( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService::class ),
+			$this->createMock( WooPaymentsCustomerService::class ),
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
 			$token_service,
 			$account_service,
@@ -1437,10 +1650,18 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Set a SetupIntent redirect-return request.
 	 *
-	 * @param WC_Order $order     Order object.
-	 * @param string   $intent_id Intent ID.
+	 * Checkout writes the SetupIntent to `_intent_id` before the shopper is redirected, so the request binds it by default.
+	 *
+	 * @param WC_Order $order       Order object.
+	 * @param string   $intent_id   Intent ID.
+	 * @param bool     $bind_intent Whether to store the intent on an order that carries none.
 	 */
-	private function set_setup_intent_return_request( WC_Order $order, string $intent_id ): void {
+	private function set_setup_intent_return_request( WC_Order $order, string $intent_id, bool $bind_intent = true ): void {
+		if ( $bind_intent && '' === (string) $order->get_meta( '_intent_id', true ) ) {
+			$order->update_meta_data( '_intent_id', $intent_id );
+			$order->save();
+		}
+
 		$this->set_order_received_context( $order );
 		$_GET = array(
 			'wc_payment_method'          => OrderPaymentStore::GATEWAY_ID,
@@ -1550,6 +1771,9 @@ class RedirectReturnApiClientStub extends WooPaymentsApiClient {
 	/** @var callable|null */
 	public $before_payment_intent_return = null;
 
+	/** @var callable|null */
+	public $before_setup_intent_return = null;
+
 	/**
 	 * @param string $intent_id Intent ID.
 	 * @return array<string,mixed>
@@ -1574,6 +1798,9 @@ class RedirectReturnApiClientStub extends WooPaymentsApiClient {
 	public function get_setup_intention( string $setup_intent_id ): array {
 		++$this->setup_intent_reads;
 		$this->last_setup_intent_id = $setup_intent_id;
+		if ( is_callable( $this->before_setup_intent_return ) ) {
+			call_user_func( $this->before_setup_intent_return, $setup_intent_id );
+		}
 
 		return $this->setup_intent;
 	}

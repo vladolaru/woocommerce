@@ -515,7 +515,7 @@ class WooPaymentsIntentCodec {
 	 * @param string              $fallback  Fallback customer ID.
 	 * @return string
 	 */
-	private static function result_customer_id( array $intention, string $fallback ): string {
+	public static function result_customer_id( array $intention, string $fallback ): string {
 		if ( isset( $intention['customer'] ) && is_scalar( $intention['customer'] ) ) {
 			return (string) $intention['customer'];
 		}
