@@ -162,30 +162,20 @@ class WooPaymentsPaymentMethodDetailsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Client exceptions are logged and return no details.
+	 * @testdox A client exception returns no details and is logged under woopayments only with debug logging $logging.
+	 *
+	 * The client's callers log a failed fetch through the gated Logger at error level (gw:5088); review 34 F3.
+	 *
+	 * @testWith ["yes", true]
+	 *           ["no", false]
+	 *
+	 * @param string $logging  Gateway `enable_logging` setting.
+	 * @param bool   $expected Whether the line is written.
 	 */
-	public function test_logs_and_returns_empty_when_client_throws(): void {
-		$logger = new class() {
-			/**
-			 * Error log entries.
-			 *
-			 * @var array<int,array{message:string,context:array<string,mixed>}>
-			 */
-			public array $entries = array();
-
-			/**
-			 * Record an error.
-			 *
-			 * @param string              $message Message.
-			 * @param array<string,mixed> $context Context.
-			 */
-			public function error( string $message, array $context = array() ): void {
-				$this->entries[] = array(
-					'message' => $message,
-					'context' => $context,
-				);
-			}
-		};
+	public function test_logs_and_returns_empty_when_client_throws( string $logging, bool $expected ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => $logging ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$logger = RecordingWcLogger::install();
 
 		$this->mock_woopayments_api_client(
 			new class() {
@@ -198,36 +188,35 @@ class WooPaymentsPaymentMethodDetailsServiceTest extends WC_Unit_Test_Case {
 				public function get_payment_method( string $payment_method_id ) {
 					throw new RuntimeException( 'API failed' );
 				}
-			},
-			$logger
+			}
 		);
 
 		$this->assertSame( array(), $this->sut->get_payment_method_details( 'pm_123' ) );
-		$this->assertCount( 1, $logger->entries );
-		$this->assertSame( 'payment-info', $logger->entries[0]['context']['source'] );
-		$this->assertStringContainsString( 'pm_123', $logger->entries[0]['message'] );
-		$this->assertStringContainsString( 'API failed', $logger->entries[0]['message'] );
+		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => str_contains( $line[1], 'API failed' ) ) );
+		if ( ! $expected ) {
+			$this->assertSame( array(), $lines );
+			return;
+		}
+		$this->assertCount( 1, $lines );
+		$this->assertSame( array( 'error', 'Error retrieving WooPayments payment method details for pm_123: API failed', 'woopayments' ), $logger->lines[ $lines[0] ] );
+		$this->assertSame( 'RuntimeException', $logger->contexts[ $lines[0] ]['exception'] ?? '' );
 	}
 
 	/**
 	 * Mock WooPayments API client access.
 	 *
-	 * @param object      $api_client API client.
-	 * @param object|null $logger     Optional logger.
+	 * @param object $api_client API client.
 	 */
-	private function mock_woopayments_api_client( object $api_client, ?object $logger = null ): void {
+	private function mock_woopayments_api_client( object $api_client ): void {
 		$this->register_legacy_proxy_function_mocks(
 			array(
-				'class_exists'  => function ( $class_name, $autoload = true ) {
+				'class_exists' => function ( $class_name, $autoload = true ) {
 					if ( 'WC_Payments' === ltrim( (string) $class_name, '\\' ) ) {
 						return true;
 					}
 					return class_exists( $class_name, $autoload );
 				},
-				'wc_get_logger' => function () use ( $logger ) {
-					return $logger ? $logger : wc_get_logger();
-				},
-				'get_option'    => function ( $option, $default_value = false ) {
+				'get_option'   => function ( $option, $default_value = false ) {
 					if ( 'active_plugins' === $option ) {
 						return array( NativePaymentsRuntimeArbiter::PLUGIN_FILE );
 					}

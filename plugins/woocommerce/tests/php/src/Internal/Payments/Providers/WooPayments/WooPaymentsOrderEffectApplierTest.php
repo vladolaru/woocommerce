@@ -795,6 +795,58 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A $throwable_class saving the checkout token with debug logging $logging is logged at $level.
+	 *
+	 * Client 11.1.0 logs "Error when saving payment method: " through its gated Logger::log() at info level (gw:2066);
+	 * a PHP Error, which fatals there, is written at error level whatever the setting (review 34 F3).
+	 *
+	 * @testWith ["RuntimeException", "yes", "info"]
+	 *           ["RuntimeException", "no", ""]
+	 *           ["TypeError", "no", "error"]
+	 *
+	 * @param string $throwable_class Class thrown by the token save.
+	 * @param string $logging         Gateway `enable_logging` setting.
+	 * @param string $level           Expected level, or '' for no line.
+	 */
+	public function test_checkout_token_save_failure_log_line( string $throwable_class, string $logging, string $level ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => $logging ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$user_id = $this->factory()->user->create();
+		$order   = $this->create_woopayments_order();
+		$order->set_customer_id( $user_id );
+		$order->save();
+		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_token_for_user' ) )
+			->getMock();
+		$token_service->method( 'get_or_create_token_for_user' )->willThrowException( new $throwable_class( 'Token storage failed.' ) );
+		$logger = RecordingWcLogger::install();
+
+		$this->create_applier( $token_service )->apply(
+			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_submitted' ),
+			new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_paid', '', 'pm_paid', 'cus_paid' ),
+			WooPaymentsOrderEffectPlan::for_payment_intent(
+				array(
+					'id'             => 'pi_paid',
+					'status'         => 'succeeded',
+					'payment_method' => 'pm_paid',
+				),
+				true
+			)
+		);
+
+		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => str_contains( $line[1], 'Token storage failed.' ) ) );
+		if ( '' === $level ) {
+			$this->assertSame( array(), $lines );
+			return;
+		}
+		$this->assertCount( 1, $lines );
+		$this->assertSame( array( $level, 'Error when saving payment method: Token storage failed.', 'woopayments' ), $logger->lines[ $lines[0] ] );
+		$this->assertSame( $order->get_id(), $logger->contexts[ $lines[0] ]['order_id'] ?? null );
+		$this->assertSame( $throwable_class, $logger->contexts[ $lines[0] ]['exception'] ?? '' );
+	}
+
+	/**
 	 * @testdox Critical recurring token effects complete before fallible note rendering runs.
 	 */
 	public function test_recurring_token_effects_run_before_note_rendering(): void {

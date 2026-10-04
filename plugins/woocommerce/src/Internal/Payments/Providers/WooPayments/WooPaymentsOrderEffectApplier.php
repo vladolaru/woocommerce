@@ -47,13 +47,6 @@ class WooPaymentsOrderEffectApplier {
 	private WooPaymentsAccountService $account_service;
 
 	/**
-	 * WooPayments legacy runtime.
-	 *
-	 * @var WooPaymentsLegacyRuntime
-	 */
-	private WooPaymentsLegacyRuntime $legacy_runtime;
-
-	/**
 	 * WooPayments order note service.
 	 *
 	 * @var WooPaymentsOrderNoteService
@@ -75,7 +68,7 @@ class WooPaymentsOrderEffectApplier {
 	 * @param WooPaymentsTokenService          $token_service      WooPayments token service.
 	 * @param WooPaymentsOrderDataService      $order_data_service WooPayments order data service.
 	 * @param WooPaymentsAccountService        $account_service    WooPayments account service.
-	 * @param WooPaymentsLegacyRuntime         $legacy_runtime     WooPayments legacy runtime.
+	 * @param WooPaymentsLegacyRuntime         $legacy_runtime     Unused since log lines go through WooPaymentsLogger; kept so callers need no change.
 	 * @param WooPaymentsOrderNoteService      $note_service       WooPayments order note service.
 	 * @param WooPaymentsPaymentMethodRegistry $payment_method_registry Payment method registry.
 	 */
@@ -90,9 +83,10 @@ class WooPaymentsOrderEffectApplier {
 		$this->token_service           = $token_service;
 		$this->order_data_service      = $order_data_service;
 		$this->account_service         = $account_service;
-		$this->legacy_runtime          = $legacy_runtime;
 		$this->note_service            = $note_service;
 		$this->payment_method_registry = $payment_method_registry;
+
+		unset( $legacy_runtime );
 	}
 
 	/**
@@ -957,7 +951,7 @@ class WooPaymentsOrderEffectApplier {
 				);
 			}
 		} catch ( Throwable $exception ) {
-			$this->log_token_save_error( $payment_method_id, $exception );
+			$this->log_token_save_error( $order, $payment_method_id, $exception );
 		}
 
 		return array(
@@ -1087,19 +1081,22 @@ class WooPaymentsOrderEffectApplier {
 	/**
 	 * Log a token-save failure without losing the provider outcome.
 	 *
+	 * Client 11.1.0 logs it through its gated Logger::log() at info level (gw:2066); a PHP Error is always written.
+	 *
+	 * @param WC_Order  $order             Order being paid.
 	 * @param string    $payment_method_id Provider payment method ID.
 	 * @param Throwable $exception         Token-save exception.
 	 */
-	private function log_token_save_error( string $payment_method_id, Throwable $exception ): void {
+	private function log_token_save_error( WC_Order $order, string $payment_method_id, Throwable $exception ): void {
 		try {
-			$logger = $this->legacy_runtime->get_logger();
-			if ( ! is_object( $logger ) || ! is_callable( array( $logger, 'error' ) ) ) {
-				return;
-			}
-
-			$logger->error(
-				sprintf( 'Error saving WooPayments payment method %s: %s', $payment_method_id, $exception->getMessage() ),
-				array( 'source' => 'payment-info' )
+			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
+				'Error when saving payment method: ' . $exception->getMessage(),
+				$exception,
+				array(
+					'order_id'          => $order->get_id(),
+					'payment_method_id' => $payment_method_id,
+				),
+				'info'
 			);
 		} catch ( Throwable $logging_exception ) {
 			return;
