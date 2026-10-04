@@ -447,8 +447,9 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 * Defense-in-depth for the guest-accessible (`nopriv`) order-status callback: the nonce is the
 	 * primary guard, but an authenticated caller must never be able to complete an order that belongs
 	 * to a different customer. This uses core's `pay_for_order` meta-capability, which passes only when
-	 * the caller owns the order or the order has no owner (guest checkout); shop managers and
-	 * administrators are refused for other customers' orders.
+	 * the caller owns the order or the order has no owner (guest checkout). Other users, shop managers
+	 * and single-site administrators included, are refused for other customers' orders; multisite
+	 * super admins pass every capability check, so they pass this one too.
 	 *
 	 * @param WC_Order $order Order being updated.
 	 * @return bool
