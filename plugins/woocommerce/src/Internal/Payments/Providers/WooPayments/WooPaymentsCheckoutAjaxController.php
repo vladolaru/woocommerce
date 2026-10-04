@@ -275,9 +275,11 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 * @param WC_Order            $order                      Order being confirmed.
 	 * @param array<string,mixed> $intent                     PaymentIntent or SetupIntent response.
 	 * @param bool                $save_payment_method        Whether to persist the payment method.
-	 * @param bool                $is_redirect_return         Whether this is the redirect return: a SetupIntent's `last_setup_error` fails the order and a token-save error does not stop it (client gw:2374-2396).
+	 * @param bool                $is_redirect_return         Whether this is the redirect return. It checks the intent's error before calling this (client gw:2377-2382),
+	 *                                                        and here a token-save error does not stop it (gw:2389-2396) and a status that is not
+	 *                                                        authorized does not throw (os:399-432 maps it without an exception).
 	 * @param bool                $zero_amount_plain_note     Whether a $0 SetupIntent completes with the order-status callback's plain note (not on a payment method change).
-	 * @throws WooPaymentsIntentConfirmationException When the intent cannot be authorized or a required token cannot be saved.
+	 * @throws WooPaymentsIntentConfirmationException When the order-status callback's intent cannot be authorized or a required token cannot be saved.
 	 * @throws Throwable When confirmation is rejected or lifecycle, token, or payment-method effects fail.
 	 *
 	 * @since 11.0.0
@@ -323,13 +325,13 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 			}
 		}
 
-		$event = $this->build_lifecycle_event_from_intent( $intent, $order, $is_redirect_return, $zero_amount_plain_note );
+		$event = $this->build_lifecycle_event_from_intent( $intent, $order, $zero_amount_plain_note );
 		$this->lifecycle_service->apply( $order, $event, new WooPaymentsPersistenceProfile() );
 		if ( $this->is_authorized_intent_status( $status ) && ! $should_apply_display_details_before_lifecycle ) {
 			$this->apply_payment_method_display_details( $order, $intent );
 		}
 
-		if ( ! $this->is_authorized_intent_status( $status ) ) {
+		if ( ! $is_redirect_return && ! $this->is_authorized_intent_status( $status ) ) {
 			throw new WooPaymentsIntentConfirmationException( esc_html__( "We're not able to process this payment. Please try again later.", 'woocommerce' ), 409 );
 		}
 	}
@@ -463,16 +465,15 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 *
 	 * @param array<string,mixed> $intent                     Native intent response.
 	 * @param WC_Order            $order                      Order being updated.
-	 * @param bool                $is_redirect_return         Whether this is the redirect return, where a SetupIntent's `last_setup_error` fails the order.
 	 * @param bool                $zero_amount_plain_note     Whether a completed $0 SetupIntent gets the order-status callback's plain note.
 	 * @return PaymentLifecycleEvent
 	 */
-	private function build_lifecycle_event_from_intent( array $intent, WC_Order $order, bool $is_redirect_return, bool $zero_amount_plain_note = false ): PaymentLifecycleEvent {
+	private function build_lifecycle_event_from_intent( array $intent, WC_Order $order, bool $zero_amount_plain_note = false ): PaymentLifecycleEvent {
 		$intent_id             = isset( $intent['id'] ) ? (string) $intent['id'] : '';
 		$is_setup              = 0.0 >= (float) $order->get_total() || 0 === strpos( $intent_id, 'seti_' );
 		$provider_redirect_url = esc_url_raw( WooPaymentsIntentCodec::raw_next_action_redirect_url( $intent ) );
 		$provider_status       = isset( $intent['status'] ) ? (string) $intent['status'] : '';
-		$intent                = $this->get_intent_for_status_mapping( $intent, $is_setup, $is_redirect_return );
+		$intent                = $this->get_intent_for_status_mapping( $intent, $is_setup );
 		$outcome               = WooPaymentsIntentCodec::outcome_from_intention(
 			$intent,
 			WooPaymentsIntentMappingContext::for_native(
@@ -541,33 +542,21 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 * Map `requires_action` and `requires_payment_method` by whether the intent carries an error.
 	 *
 	 * The plugin's order service fails the order when either status has an error and marks the payment
-	 * started otherwise (`update_order_status_from_intent()`). It reads only `last_payment_error`, so on the
-	 * order-status callback a SetupIntent is always started; only the plugin's redirect return fails on
-	 * `last_setup_error`, and it does so before reading the status, so a canceled intent with an error fails
-	 * there too, without passing through cancelled (`gw:2376-2382`). The caller keeps the provider's real status in `_intention_status`.
+	 * started otherwise (`update_order_status_from_intent()`). It reads only `last_payment_error`, so a
+	 * SetupIntent is always started here. The redirect return checks both errors itself before confirming
+	 * (`gw:2377-2382`). The caller keeps the provider's real status in `_intention_status`.
 	 *
-	 * @param array<string,mixed> $intent                     Native intent response.
-	 * @param bool                $is_setup                   Whether the intent is a SetupIntent.
-	 * @param bool                $is_redirect_return         Whether this is the redirect return, where a SetupIntent's `last_setup_error` counts as an error.
+	 * @param array<string,mixed> $intent   Native intent response.
+	 * @param bool                $is_setup Whether the intent is a SetupIntent.
 	 * @return array<string,mixed>
 	 */
-	private function get_intent_for_status_mapping( array $intent, bool $is_setup, bool $is_redirect_return ): array {
+	private function get_intent_for_status_mapping( array $intent, bool $is_setup ): array {
 		$status = isset( $intent['status'] ) ? (string) $intent['status'] : '';
-		if ( 'canceled' === $status && $is_redirect_return && ! empty( $intent[ $is_setup ? 'last_setup_error' : 'last_payment_error' ] ) ) {
-			$intent['status'] = 'requires_payment_method';
-
-			return $intent;
-		}
-
 		if ( ! in_array( $status, array( 'requires_action', 'requires_payment_method' ), true ) ) {
 			return $intent;
 		}
 
-		if ( $is_setup ) {
-			$error = $is_redirect_return ? ( $intent['last_setup_error'] ?? null ) : null;
-		} else {
-			$error = $intent['last_payment_error'] ?? null;
-		}
+		$error            = $is_setup ? null : ( $intent['last_payment_error'] ?? null );
 		$intent['status'] = empty( $error ) ? 'requires_action' : 'requires_payment_method';
 
 		return $intent;

@@ -1145,6 +1145,226 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A failure while confirming the return fails the order with the client note, adds the notice and returns to checkout with the cart kept.
+	 * @dataProvider confirmation_failure_provider
+	 *
+	 * Client 11.1.0 process_redirect_payment(): any Exception inside the try (gw:2321-2427) reaches the catch (gw:2428-2455),
+	 * which calls mark_payment_failed() with "UPE payment failed: <message>" and the fetched status (os:463-478, 2889-2895),
+	 * adds the filtered notice and redirects to wc_get_checkout_url(). A PHP Error fatals on the client (catch Exception);
+	 * native takes the same path and logs it whatever the logging setting. The notice for a non-API throwable is the
+	 * generic message (decided divergence, monitor ruling 2026-10-04).
+	 *
+	 * @param Throwable $failure          What the order payment lifecycle throws.
+	 * @param bool      $logged_always    Whether the failure is logged with debug logging off.
+	 */
+	public function test_handle_wp_fails_order_and_returns_to_checkout_when_confirmation_throws( Throwable $failure, bool $logged_always ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$order   = $this->create_order();
+		$product = \WC_Helper_Product::create_simple_product();
+		WC()->cart->add_to_cart( $product->get_id() );
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = $this->successful_payment_intent( $order, 'pi_confirm_throws', 'pm_confirm_throws' );
+		$lifecycle                  = $this->createMock( OrderPaymentLifecycleService::class );
+		$lifecycle->method( 'apply' )->willThrowException( $failure );
+		$logger = new RedirectReturnRecordingLogger();
+		add_filter( 'woocommerce_logging_class', static fn() => $logger );
+		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client, null, $lifecycle ), $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_confirm_throws' );
+
+		$location = $this->handle_wp_expecting_redirect();
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertSame( wc_get_checkout_url(), $location );
+		$this->assert_single_error_notice( "We're not able to process this payment. Please try again later." );
+		$this->assertSame( 1, WC()->cart->get_cart_contents_count(), 'The cart must survive a failed redirect return.' );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'failed', $reloaded->get_status() );
+		$this->assert_failed_note_with_message( $reloaded, 'pi_confirm_throws', 'UPE payment failed: ' . $failure->getMessage() );
+		$this->assertSame( 'succeeded', $reloaded->get_meta( '_intention_status', true ) );
+		$logged_classes = array_map( static fn( array $call ) => $call['context']['exception'] ?? '', $logger->error_calls );
+		$this->assertSame( $logged_always ? array( get_class( $failure ) ) : array(), $logged_classes );
+	}
+
+	/**
+	 * Failures the order payment lifecycle can raise while the return is confirmed.
+	 *
+	 * @return array<string,array{0:Throwable,1:bool}>
+	 */
+	public function confirmation_failure_provider(): array {
+		return array(
+			'lifecycle failure' => array( new \RuntimeException( 'Order payment lifecycle write failed.' ), false ),
+			'PHP error'         => array( new \TypeError( 'Return value must be of type array, null returned' ), true ),
+		);
+	}
+
+	/**
+	 * @testdox A PHP error after the order already shows the payment keeps the shopper on order-received without failing the order.
+	 *
+	 * Decided (review 34 F2, checkout ruling 4): native does not fail an order a fresh locked read shows as paid or held.
+	 * The client would fatal on the Error (catch Exception, gw:2428) and leave the order as it was.
+	 */
+	public function test_handle_wp_keeps_an_order_that_already_shows_the_payment_after_a_php_error(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$order                      = $this->create_order( '50.00', 0, true );
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = $this->successful_payment_intent( $order, 'pi_paid_then_error', 'pm_paid_then_error' );
+		$throw_once                 = static function (): void {
+			throw new \TypeError( 'Third-party processing callback failed' );
+		};
+		add_action( 'woocommerce_order_status_processing', $throw_once );
+		$logger = new RedirectReturnRecordingLogger();
+		add_filter( 'woocommerce_logging_class', static fn() => $logger );
+		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_paid_then_error' );
+
+		try {
+			$this->sut->handle_wp();
+		} finally {
+			remove_action( 'woocommerce_order_status_processing', $throw_once );
+		}
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertSame( 'processing', $reloaded->get_status() );
+		$this->assertSame( array(), wc_get_notices( 'error' ) );
+		$failure_notes = array_filter(
+			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+			static fn( $note ): bool => false !== strpos( $note->content, '<strong>failed</strong>' )
+		);
+		$this->assertSame( array(), $failure_notes );
+		$this->assertSame( array( \TypeError::class ), array_map( static fn( array $call ) => $call['context']['exception'] ?? '', $logger->error_calls ) );
+	}
+
+	/**
+	 * @testdox A PaymentIntent error fails the order once, with only the client note and none of the intent's details.
+	 *
+	 * Client 11.1.0 throws on the intent error before any order write (gw:2377-2382), so mark_payment_failed() is the
+	 * only write: failed status, the note and `_intention_status` (gw:2444, os:463-478, 2889-2895).
+	 */
+	public function test_handle_wp_fails_payment_intent_error_once(): void {
+		$order                      = $this->create_order();
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = array(
+			'id'                 => 'pi_failed_once',
+			'status'             => 'requires_payment_method',
+			'currency'           => 'usd',
+			'amount'             => 5000,
+			'customer'           => 'cus_return',
+			'payment_method'     => null,
+			'metadata'           => array( 'order_id' => $order->get_id() ),
+			'last_payment_error' => array(
+				'type'    => 'card_error',
+				'code'    => 'card_declined',
+				'message' => 'Your card was declined.',
+			),
+		);
+		$failed_transitions         = 0;
+		$count_failed               = static function () use ( &$failed_transitions ): void {
+			++$failed_transitions;
+		};
+		add_action( 'woocommerce_order_status_failed', $count_failed );
+		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_failed_once' );
+
+		try {
+			$this->assertSame( wc_get_checkout_url(), $this->handle_wp_expecting_redirect() );
+		} finally {
+			remove_action( 'woocommerce_order_status_failed', $count_failed );
+		}
+		$reloaded      = wc_get_order( $order->get_id() );
+		$failure_notes = array_values(
+			array_filter(
+				array_map( static fn( $note ) => $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) ),
+				static fn( string $note ): bool => false !== strpos( $note, '<strong>failed</strong>' )
+			)
+		);
+
+		$this->assertSame( 1, $failed_transitions );
+		$this->assertCount( 1, $failure_notes, implode( ' | ', $failure_notes ) );
+		$this->assert_failed_note_with_message( $reloaded, 'pi_failed_once', "UPE payment failed: We're not able to process this payment. Please try again later." );
+		$this->assertSame( 'requires_payment_method', $reloaded->get_meta( '_intention_status', true ) );
+		// The client throws before attach_intent_info_to_order() (gw:2399), so nothing from the intent but its status is written.
+		$this->assertSame( array( '_intent_id', '_intention_status' ), array_values( array_filter( array_column( array_map( static fn( $meta ) => $meta->get_data(), $reloaded->get_meta_data() ), 'key' ), static fn( string $key ): bool => '_' === $key[0] && ! str_ends_with( $key, '_address_index' ) ) ) );
+	}
+
+	/**
+	 * @testdox A PaymentIntent error while another request holds the order payment lock leaves the order alone but still returns to checkout.
+	 *
+	 * Client 11.1.0: mark_payment_failed() skips a locked order (os:463-466, 2747-2758), and the catch still adds the notice
+	 * and redirects to checkout (gw:2447-2454). The intent error proves this payment failed, so a resubmit cannot pay twice.
+	 */
+	public function test_handle_wp_returns_payment_intent_error_to_checkout_while_the_order_is_locked(): void {
+		$order                      = $this->create_order();
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = array(
+			'id'                 => 'pi_error_locked',
+			'status'             => 'requires_payment_method',
+			'currency'           => 'usd',
+			'amount'             => 5000,
+			'customer'           => 'cus_return',
+			'payment_method'     => null,
+			'metadata'           => array( 'order_id' => $order->get_id() ),
+			'last_payment_error' => array(
+				'type'    => 'card_error',
+				'code'    => 'card_declined',
+				'message' => 'Your card was declined.',
+			),
+		);
+		$store                      = wc_get_container()->get( OrderPaymentStore::class );
+		$profile                    = new WooPaymentsPersistenceProfile();
+		$lock_token                 = $store->claim_order_payment_lock_for_operation( $order, $profile, 'pi_error_locked', 'payment status update' );
+		$this->assertNotNull( $lock_token );
+		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_error_locked' );
+
+		try {
+			$location = $this->handle_wp_expecting_redirect();
+		} finally {
+			$store->release_order_payment_lock( $order, $profile, $lock_token );
+		}
+
+		$this->assertSame( wc_get_checkout_url(), $location );
+		$this->assert_single_error_notice( "We're not able to process this payment. Please try again later." );
+		$this->assertSame( 'pending', wc_get_order( $order->get_id() )->get_status() );
+	}
+
+	/**
+	 * @testdox A requires_action return without an error stays on order-received with the order pending, not failed.
+	 *
+	 * Client 11.1.0 marks the payment started (os:418-427) and does not fail it (gw:2406-2427). Its next-action redirect
+	 * cannot complete on order-received, so native keeps the shopper there until the webhook settles the order (decided,
+	 * monitor ruling on area 2a f18). Confirmation must not report the status as a failure to the redirect return.
+	 */
+	public function test_handle_wp_keeps_requires_action_return_pending_on_order_received(): void {
+		$order                      = $this->create_order();
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = array(
+			'id'             => 'pi_requires_action',
+			'status'         => 'requires_action',
+			'client_secret'  => 'pi_requires_action_secret_example',
+			'currency'       => 'usd',
+			'amount'         => 5000,
+			'customer'       => 'cus_return',
+			'payment_method' => 'pm_requires_action',
+			'metadata'       => array( 'order_id' => $order->get_id() ),
+			'next_action'    => array( 'type' => 'use_stripe_sdk' ),
+		);
+		$this->sut                  = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_requires_action' );
+
+		$this->sut->handle_wp();
+
+		$this->assertSame( 'pending', wc_get_order( $order->get_id() )->get_status() );
+		$this->assertSame( array(), wc_get_notices( 'error' ) );
+		$failure_notes = array_filter(
+			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+			static fn( $note ): bool => false !== strpos( $note->content, '<strong>failed</strong>' )
+		);
+		$this->assertSame( array(), $failure_notes );
+	}
+
+	/**
 	 * Assert the request queued exactly one error notice with the given text.
 	 *
 	 * @param string $expected Expected notice text.
@@ -1839,11 +2059,12 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the shared confirmation owner.
 	 *
-	 * @param WooPaymentsApiClient         $api_client    API client.
-	 * @param WooPaymentsTokenService|null $token_service Token service.
+	 * @param WooPaymentsApiClient              $api_client        API client.
+	 * @param WooPaymentsTokenService|null      $token_service     Token service.
+	 * @param OrderPaymentLifecycleService|null $lifecycle_service Lifecycle service the confirmation applies events with.
 	 * @return WooPaymentsCheckoutAjaxController
 	 */
-	private function create_confirmation_owner( WooPaymentsApiClient $api_client, ?WooPaymentsTokenService $token_service = null ): WooPaymentsCheckoutAjaxController {
+	private function create_confirmation_owner( WooPaymentsApiClient $api_client, ?WooPaymentsTokenService $token_service = null, ?OrderPaymentLifecycleService $lifecycle_service = null ): WooPaymentsCheckoutAjaxController {
 		$arbiter = $this->createMock( NativePaymentsRuntimeArbiter::class );
 		$arbiter->method( 'should_native_register' )->willReturn( true );
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
@@ -1869,7 +2090,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			$arbiter,
 			$api_client,
 			$this->createMock( WooPaymentsCustomerService::class ),
-			wc_get_container()->get( OrderPaymentLifecycleService::class ),
+			$lifecycle_service ?? wc_get_container()->get( OrderPaymentLifecycleService::class ),
 			$token_service,
 			$account_service,
 			$registry,

@@ -188,11 +188,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 
 			// Decided divergence (money hazard): client gw:2428-2444 fails the order read at request start, and its paid check
 			// (os:2863) misses on-hold, so a webhook that authorized the payment during the fetch leaves a charge on a failed order.
-			if ( ! $this->fail_order_unless_settled( $order, $intent_id, $exception->getMessage() ) ) {
-				return;
-			}
-
-			$this->redirect_to_checkout( $this->get_shopper_message_for_fetch_error( $exception ) );
+			$this->fail_and_return_to_checkout( $order, $intent_id, '', $exception->getMessage(), $this->get_shopper_message_for_error( $exception ), false );
 			return;
 		}
 
@@ -235,61 +231,81 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 			return;
 		}
 
+		$intent_status = isset( $intent['status'] ) && is_scalar( $intent['status'] ) ? (string) $intent['status'] : '';
+
+		// Client gw:2377-2382: an intent error ends the return before any order write; the catch fails the order once with its note.
+		$intent_error = $intent[ $is_payment_intent ? 'last_payment_error' : 'last_setup_error' ] ?? null;
+		if ( ! empty( $intent_error ) ) {
+			$logger  = wc_get_container()->get( WooPaymentsLogger::class );
+			$message = __( "We're not able to process this payment. Please try again later.", 'woocommerce' );
+			$logger->log( 'Error when processing payment: ' . ( is_array( $intent_error ) && is_scalar( $intent_error['message'] ?? null ) ? (string) $intent_error['message'] : '' ) );
+			$logger->error( 'Error occurred during the redirect payment process. Exception: ' . $message, array( 'order_id' => $order->get_id() ) );
+			$this->fail_and_return_to_checkout( $fresh_order, $intent_id, $intent_status, null, $message, true );
+			return;
+		}
+
 		try {
 			$this->confirmation_owner->confirm_fetched_intent_for_order(
 				$fresh_order,
 				$intent,
 				'yes' === $this->get_query_string( 'save_payment_method' ),
-				true // The redirect return: it fails on `last_setup_error` and completes the order despite a token-save error.
+				true // The redirect return: it completes the order despite a token-save error and does not throw for an unauthorized status.
 			);
-
-			if ( null !== WC()->cart ) {
-				WC()->cart->empty_cart();
-			}
 		} catch ( Throwable $exception ) {
-			$this->log_return_error( $order, $exception );
+			$this->end_return_with_failure( $fresh_order, $intent_id, $intent_status, $exception );
+			return;
+		}
 
-			// Client gw:2376-2382: of these outcomes only an intent error throws, and its catch fails the order with a note.
-			if ( $this->intent_has_error( $intent, $is_payment_intent ) ) {
-				if ( $is_payment_intent ) {
-					// The PaymentIntent confirmation failed the order without a note; a SetupIntent's confirmation writes this note itself.
-					$this->fail_order( $fresh_order, $intent_id, null );
-				}
-				$this->redirect_to_checkout( __( "We're not able to process this payment. Please try again later.", 'woocommerce' ) );
-			}
+		// A requires_action intent stays on order-received until the webhook settles it: the client's next-action redirect
+		// (gw:2409-2426) cannot complete there (decided, monitor ruling on area 2a f18).
+		if ( WooPaymentsIntentCodec::is_authorized_native_intent_status( $intent_status ) && null !== WC()->cart ) {
+			WC()->cart->empty_cart();
 		}
 	}
 
 	/**
-	 * Tell whether a fetched intent carries the error the client's redirect return fails on (gw:2354, 2374).
+	 * End the return as the client's catch does (gw:2428-2455): fail the order with the "UPE payment failed" note, add
+	 * the shopper notice and send the shopper back to checkout with the cart kept.
 	 *
-	 * @param array<string,mixed> $intent            Fetched intent.
-	 * @param bool                $is_payment_intent Whether the intent is a PaymentIntent.
-	 * @return bool
+	 * The client catches only Exception, so a PHP Error fatals there; native takes the same path and logs it always-on.
+	 * Decided exceptions, through fail_order_unless_settled(): an order a fresh locked read shows as processing, completed
+	 * or on-hold keeps its order-received page (like the checkout ruling of review 34 F2), and an order locked by another
+	 * claim is left to that holder.
+	 *
+	 * @param WC_Order  $order         Order object.
+	 * @param string    $intent_id     Requested intent ID.
+	 * @param string    $intent_status Fetched intent status, written to `_intention_status` as mark_payment_failed() does (os:477).
+	 * @param Throwable $exception     What ended the return.
 	 */
-	private function intent_has_error( array $intent, bool $is_payment_intent ): bool {
-		return ! empty( $intent[ $is_payment_intent ? 'last_payment_error' : 'last_setup_error' ] );
+	private function end_return_with_failure( WC_Order $order, string $intent_id, string $intent_status, Throwable $exception ): void {
+		$this->log_return_error( $order, $exception );
+		$this->fail_and_return_to_checkout( $order, $intent_id, $intent_status, $exception->getMessage(), $this->get_shopper_message_for_error( $exception ), false );
 	}
 
 	/**
-	 * Fail the order with the "UPE payment failed" note, as the client's catch does (gw:2435-2442, os:463-478, 2106-2127).
+	 * Fail the order unless it is settled or locked, then send the shopper back to checkout with the notice.
 	 *
-	 * @param WC_Order    $order             Order object.
-	 * @param string      $intent_id         Requested intent ID.
-	 * @param string|null $exception_message Message of the exception that ended the return, or null for an intent error.
+	 * The shopper stays on order-received when the failure was not written and the payment may have gone through, so a
+	 * resubmit cannot pay a second time. An intent error proves this payment failed, so that return always goes back to
+	 * checkout, as the client's catch does (gw:2447-2454) even when its own write was skipped.
+	 *
+	 * @param WC_Order    $order          Order object.
+	 * @param string      $intent_id      Requested intent ID.
+	 * @param string      $intent_status  Fetched intent status, or '' when the fetch failed.
+	 * @param string|null $note_message   Message for the "UPE payment failed" note, or null for the client's intent-error message.
+	 * @param string      $shopper_notice Shopper error notice.
+	 * @param bool        $payment_failed Whether the intent itself reported the failure.
 	 */
-	private function fail_order( WC_Order $order, string $intent_id, ?string $exception_message ): void {
-		$event = $this->build_failure_event( $order, $intent_id, $exception_message );
-
-		try {
-			$this->lifecycle_service->apply( $order, $event, new WooPaymentsPersistenceProfile() );
-		} catch ( Throwable $failure ) {
-			$this->log_return_error( $order, $failure );
+	private function fail_and_return_to_checkout( WC_Order $order, string $intent_id, string $intent_status, ?string $note_message, string $shopper_notice, bool $payment_failed ): void {
+		if ( ! $this->fail_order_unless_settled( $order, $intent_id, $note_message, $intent_status ) && ! $payment_failed ) {
+			return;
 		}
+
+		$this->redirect_to_checkout( $shopper_notice );
 	}
 
 	/**
-	 * Fail the order after a failed intent fetch, unless a fresh read under the order payment lock shows it is settled.
+	 * Fail the order after a failed return, unless a fresh read under the order payment lock shows it is settled.
 	 *
 	 * Webhooks write the order status under the same lock, so an on-hold written just before this claims the lock is seen
 	 * here (review 33 F1). The lifecycle's own late-failure check stays on paid statuses only: a Multibanco voucher expiry
@@ -300,13 +316,14 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * lock value and age (review 35 F4). The client fails nothing there but sends the shopper to checkout (gw:2428-2456),
 	 * where a resubmit creates a new order and can authorize the card again.
 	 *
-	 * @param WC_Order $order             Order object.
-	 * @param string   $intent_id         Requested intent ID.
-	 * @param string   $exception_message Message of the fetch failure.
+	 * @param WC_Order    $order             Order object.
+	 * @param string      $intent_id         Requested intent ID.
+	 * @param string|null $exception_message Message of the failure, or null for the client's intent-error message.
+	 * @param string      $intent_status     Fetched intent status, or '' when the fetch failed.
 	 * @return bool Whether the shopper goes back to checkout; false when the order is settled, bound to another intent or
 	 *              locked by another holder.
 	 */
-	private function fail_order_unless_settled( WC_Order $order, string $intent_id, string $exception_message ): bool {
+	private function fail_order_unless_settled( WC_Order $order, string $intent_id, ?string $exception_message, string $intent_status ): bool {
 		$persistence_profile = new WooPaymentsPersistenceProfile();
 		$order_payment_store = wc_get_container()->get( OrderPaymentStore::class );
 		$lock_token          = $order_payment_store->claim_order_payment_lock_for_operation( $order, $persistence_profile, $intent_id, 'payment status update' );
@@ -331,7 +348,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 				return false;
 			}
 
-			$this->lifecycle_service->apply_unlocked( $fresh_order, $this->build_failure_event( $fresh_order, $intent_id, $exception_message ), $persistence_profile );
+			$this->lifecycle_service->apply_unlocked( $fresh_order, $this->build_failure_event( $fresh_order, $intent_id, $exception_message, $intent_status ), $persistence_profile );
 		} catch ( Throwable $failure ) {
 			$this->log_return_error( $order, $failure );
 		} finally {
@@ -347,15 +364,16 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * @param WC_Order    $order             Order object.
 	 * @param string      $intent_id         Requested intent ID.
 	 * @param string|null $exception_message Message of the exception that ended the return, or null for an intent error.
+	 * @param string      $intent_status     Fetched intent status, or '' when the fetch failed.
 	 * @return PaymentLifecycleEvent
 	 */
-	private function build_failure_event( WC_Order $order, string $intent_id, ?string $exception_message ): PaymentLifecycleEvent {
+	private function build_failure_event( WC_Order $order, string $intent_id, ?string $exception_message, string $intent_status ): PaymentLifecycleEvent {
 		$note_candidates = $this->note_service->format_redirect_payment_failed_note_candidates( $order, $intent_id, $exception_message );
 
 		return new PaymentLifecycleEvent(
 			PaymentLifecycleEvent::STATUS_FAILED,
 			$intent_id,
-			array(),
+			'' === $intent_status ? array() : array( '_intention_status' => $intent_status ),
 			array(),
 			$note_candidates[0],
 			PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED,
@@ -364,12 +382,16 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the shopper notice for a failed intent fetch (client get_filtered_error_message(), utils:769-830).
+	 * Get the shopper notice for what ended the return (client get_filtered_error_message(), utils:769-830).
 	 *
-	 * @param Throwable $exception Fetch failure.
+	 * A platform error gets the client's mapped message. Any other throwable shows the generic message instead of its
+	 * own text, which the client shows (decided divergence for the fetch, monitor ruling 2026-10-04; unit 2a-9a extends it
+	 * to the confirmation, whose lifecycle and PHP errors carry internal text).
+	 *
+	 * @param Throwable $exception What ended the return.
 	 * @return string
 	 */
-	private function get_shopper_message_for_fetch_error( Throwable $exception ): string {
+	private function get_shopper_message_for_error( Throwable $exception ): string {
 		if ( $exception instanceof WooPaymentsApiException ) {
 			return WooPaymentsErrorMessages::get_shopper_message( $exception->get_error_type(), $exception->get_error_code(), $exception->get_decline_code(), $exception->getMessage() );
 		}
