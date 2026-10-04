@@ -1797,7 +1797,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		// Runs after the intent check so that a reachable intent still produces the richer
 		// response, including the amount-mismatch message. This catches the same-order
 		// resubmission when that check returns empty-handed.
-		$already_paid_result = $this->get_duplicate_payment_prevention_service()->check_order_already_paid( $order, $this, $is_subscription_change );
+		$already_paid_result = $this->get_duplicate_payment_prevention_service()->check_order_already_paid( $order, $this, $is_subscription_payment_method_change );
 		if ( is_array( $already_paid_result ) ) {
 			return $already_paid_result;
 		}

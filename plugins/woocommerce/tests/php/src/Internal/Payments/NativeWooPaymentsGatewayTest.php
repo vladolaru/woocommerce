@@ -5135,6 +5135,40 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A change to a saved token is not refused as already paid when the store counts the subscription's status as paid.
+	 *
+	 * Client 11.1.0 skips the already-paid check for any payment-method change, new method or saved token
+	 * (`includes/class-duplicate-payment-prevention-service.php:226`, keyed on `change_payment_method` through
+	 * `includes/compat/subscriptions/trait-wc-payments-subscriptions-utilities.php:38-43`). `wc_get_is_paid_statuses()` is
+	 * filterable, so the check could otherwise refuse the change.
+	 */
+	public function test_process_payment_saved_token_subscription_change_skips_the_already_paid_check(): void {
+		$this->ensure_wcs_change_payment_gateway_double();
+		$this->ensure_wcs_subscription_detector_double();
+		$order = $this->create_order();
+		$order->set_status( 'on-hold' );
+		$order->save();
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+		$paid_statuses = static fn( $statuses ) => array_merge( (array) $statuses, array( 'on-hold' ) );
+		add_filter( 'woocommerce_order_is_paid_statuses', $paid_statuses );
+
+		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
+		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
+		$_POST['woocommerce_change_payment']    = (string) $order->get_id();
+		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = '123';
+
+		try {
+			$gateway->process_payment( $order->get_id() );
+		} finally {
+			remove_filter( 'woocommerce_order_is_paid_statuses', $paid_statuses );
+		}
+
+		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context, 'The saved-token change must reach payment processing.' );
+	}
+
+	/**
 	 * Invalid subscription change request cases.
 	 *
 	 * @return array<string,array{string,bool}>

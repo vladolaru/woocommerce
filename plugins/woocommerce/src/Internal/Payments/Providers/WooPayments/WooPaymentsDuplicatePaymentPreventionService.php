@@ -333,12 +333,14 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 * shoppers resubmit. This reads the stored order status instead, so it holds when the
 	 * platform does not respond.
 	 *
-	 * The gateway passes true only for a change to a new payment method; a change to a saved token still runs
-	 * the status check, which passes because subscription statuses are not paid statuses.
+	 * The gateway passes true for every validated payment-method change, to a new method or a saved token, as the client
+	 * skips the check for any change (client 11.1.0 `includes/class-duplicate-payment-prevention-service.php:226`,
+	 * `includes/compat/subscriptions/trait-wc-payments-subscriptions-utilities.php:38-43`): a store can filter a
+	 * subscription status into the paid statuses.
 	 *
 	 * @param WC_Order           $order                  Current order in process_payment.
 	 * @param WC_Payment_Gateway $gateway                Gateway used to build the return URL.
-	 * @param bool               $is_subscription_change Whether this request changes a subscription's payment method to a new one.
+	 * @param bool               $is_subscription_change Whether this request changes a subscription's payment method.
 	 * @return array<string,string>|null A successful response when the order was already paid, null if not.
 	 */
 	public function check_order_already_paid( WC_Order $order, WC_Payment_Gateway $gateway, bool $is_subscription_change = false ): ?array {
