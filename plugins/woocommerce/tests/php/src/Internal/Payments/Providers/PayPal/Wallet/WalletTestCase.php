@@ -12,6 +12,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet
 use ArrayObject;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Authentication\Bearer;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\Token;
+use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
 use Error;
 use Mockery;
 use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
@@ -20,6 +21,7 @@ use WC_Customer;
 use WC_Session_Handler;
 use WC_Tax;
 use WC_Unit_Test_Case;
+use WP_Block_Type;
 use WP_Error;
 use WpOrg\Requests\Utility\CaseInsensitiveDictionary;
 
@@ -29,7 +31,9 @@ use WpOrg\Requests\Utility\CaseInsensitiveDictionary;
  *
  * The shopper's shipping address is put back after each test, because WC()->customer lives on the WC() singleton that
  * neither the database rollback nor WC_Unit_Test_Case resets. Tax rates added through insert_flat_tax_rate() are
- * deleted again, and so is a session set through use_own_wc_session().
+ * deleted again, and so is a session set through use_own_wc_session(). A theme switched through use_theme() is switched
+ * back. A block type registered through register_block_for_test() is unregistered again, and only such a block: never
+ * one that WordPress or a plugin registered.
  *
  * Outgoing HTTP never reaches the network: every request is answered with a WP_Error (code "unstubbed_http") unless the
  * test calls stub_http(), so a forgotten stub or an unexpected extra request surfaces through the code's own error path
@@ -83,6 +87,20 @@ abstract class WalletTestCase extends WC_Unit_Test_Case {
 	private bool $session_replaced = false;
 
 	/**
+	 * Names of the block types registered through register_block_for_test(), unregistered on tearDown.
+	 *
+	 * @var string[]
+	 */
+	private array $registered_blocks = array();
+
+	/**
+	 * The stylesheet of the theme before use_theme() switched it, or null when it was not called.
+	 *
+	 * @var string|null
+	 */
+	private ?string $original_theme = null;
+
+	/**
 	 * The screen and query arguments before simulate_admin_request() replaced them, or null when it was not called.
 	 *
 	 * @var array{screen: mixed, get: array}|null
@@ -110,6 +128,12 @@ abstract class WalletTestCase extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		try {
+			// The theme and the block types first: a failure further down must not leave a registered block behind.
+			try {
+				$this->restore_theme();
+			} finally {
+				$this->unregister_registered_blocks();
+			}
 			foreach ( $this->inserted_tax_rates as $rate_id ) {
 				WC_Tax::_delete_tax_rate( $rate_id ); // phpcs:ignore WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 			}
@@ -132,6 +156,30 @@ abstract class WalletTestCase extends WC_Unit_Test_Case {
 			$this->restore_request();
 		} finally {
 			parent::tearDown();
+		}
+	}
+
+	/**
+	 * Switch back to the theme the shop had before use_theme(). Nothing happens when use_theme() was not called.
+	 */
+	protected function restore_theme(): void {
+		if ( null === $this->original_theme ) {
+			return;
+		}
+
+		$original_theme       = $this->original_theme;
+		$this->original_theme = null;
+		switch_theme( $original_theme );
+	}
+
+	/**
+	 * Unregister the block types registered through register_block_for_test(), and only those.
+	 */
+	private function unregister_registered_blocks(): void {
+		$block_names             = $this->registered_blocks;
+		$this->registered_blocks = array();
+		foreach ( $block_names as $block_name ) {
+			unregister_block_type( $block_name );
 		}
 	}
 
@@ -249,6 +297,85 @@ abstract class WalletTestCase extends WC_Unit_Test_Case {
 		}
 		$_GET                            = $this->request_before_simulation['get']; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		$this->request_before_simulation = null;
+	}
+
+	/**
+	 * Switch to an installed theme for the rest of the test and switch back on tearDown, for code that asks whether the
+	 * active theme is a block theme: "twentytwentyfour" is one, "storefront" is not. The first is one of the themes
+	 * WordPress core bundles, the second comes from the test environment's configuration, so a test that uses either
+	 * depends on the environment having it.
+	 *
+	 * @param string $stylesheet The directory name of the theme.
+	 */
+	protected function use_theme( string $stylesheet ): void {
+		$this->assertTrue( wp_get_theme( $stylesheet )->exists(), "The theme $stylesheet must be installed in the test environment" );
+
+		if ( null === $this->original_theme ) {
+			$this->original_theme = get_stylesheet();
+		}
+		switch_theme( $stylesheet );
+	}
+
+	/**
+	 * Register a real block type for the test and unregister it on tearDown. The name must not belong to a block that
+	 * is already registered: the test fails instead of replacing it, so no block of WordPress or a plugin is removed.
+	 *
+	 * @param string $block_name The block name, with its namespace.
+	 * @param array  $args       The block type arguments.
+	 */
+	protected function register_block_for_test( string $block_name, array $args ): void {
+		$block_type = register_block_type( $block_name, $args );
+
+		$this->assertInstanceOf( WP_Block_Type::class, $block_type, "The block $block_name must not be registered yet" );
+		$this->registered_blocks[] = $block_name;
+	}
+
+	/**
+	 * Render a block of the given type the way WordPress renders it in a post, so the wrapper attributes of its
+	 * supports apply.
+	 *
+	 * @param string $block_name The name of a registered block.
+	 * @param array  $attributes The attributes of the block.
+	 * @return string The HTML of the block.
+	 */
+	protected function render_block_for_test( string $block_name, array $attributes = array() ): string {
+		return render_block(
+			array(
+				'blockName'    => $block_name,
+				'attrs'        => $attributes,
+				'innerBlocks'  => array(),
+				'innerHTML'    => '',
+				'innerContent' => array(),
+			)
+		);
+	}
+
+	/**
+	 * A container mock for the renderers and services that ask whether the SDK v6 stack owns the current page, and serve
+	 * a few other services of their own.
+	 *
+	 * @param bool|null            $owns_current_page True or false when the 'sdk-v6.owns-current-page' service is registered
+	 *                                                and answers accordingly, null when the service is absent altogether.
+	 * @param array<string, mixed> $services          The other services, by ID.
+	 * @return ContainerInterface&MockInterface
+	 */
+	protected function container_with_v6_ownership( ?bool $owns_current_page, array $services = array() ) {
+		$container = Mockery::mock( ContainerInterface::class );
+		$container->shouldReceive( 'has' )->with( 'sdk-v6.owns-current-page' )->andReturn( null !== $owns_current_page );
+
+		if ( null !== $owns_current_page ) {
+			$container->shouldReceive( 'get' )->with( 'sdk-v6.owns-current-page' )->andReturn(
+				static function () use ( $owns_current_page ): bool {
+					return $owns_current_page;
+				}
+			);
+		}
+
+		foreach ( $services as $id => $service ) {
+			$container->shouldReceive( 'get' )->with( $id )->andReturn( $service );
+		}
+
+		return $container;
 	}
 
 	/**

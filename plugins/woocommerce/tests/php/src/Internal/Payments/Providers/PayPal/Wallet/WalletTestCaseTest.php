@@ -12,6 +12,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet
 use WC_Customer;
 use WC_Tax;
 use WC_Session_Handler;
+use WP_Block_Type_Registry;
 use WP_Error;
 
 /**
@@ -213,5 +214,85 @@ class WalletTestCaseTest extends WalletTestCase {
 	 */
 	public function test_wc_session_is_restored_on_tear_down(): void {
 		$this->assertSame( self::$remembered['session_before'], WC()->session );
+	}
+
+	/**
+	 * @testdox Should register a block type for the test and render it with the attributes it is given.
+	 */
+	public function test_register_block_for_test_registers_a_renderable_block(): void {
+		$this->register_block_for_test(
+			'wallet-test/greeting',
+			array(
+				'render_callback' => static function ( array $attributes ): string {
+					return 'Hello ' . ( $attributes['name'] ?? 'nobody' );
+				},
+			)
+		);
+
+		$this->assertTrue( WP_Block_Type_Registry::get_instance()->is_registered( 'wallet-test/greeting' ) );
+		$this->assertSame( 'Hello Sam', $this->render_block_for_test( 'wallet-test/greeting', array( 'name' => 'Sam' ) ) );
+		$this->assertSame( 'Hello nobody', $this->render_block_for_test( 'wallet-test/greeting' ) );
+	}
+
+	/**
+	 * Runs after the test above, so its tearDown has run.
+	 *
+	 * @testdox Should unregister the block type on tearDown and leave the blocks of core alone.
+	 * @depends test_register_block_for_test_registers_a_renderable_block
+	 */
+	public function test_block_type_is_unregistered_on_tear_down(): void {
+		$registry = WP_Block_Type_Registry::get_instance();
+
+		$this->assertFalse( $registry->is_registered( 'wallet-test/greeting' ) );
+		$this->assertTrue( $registry->is_registered( 'core/paragraph' ), 'A block of core stays registered' );
+	}
+
+	/**
+	 * @testdox Should switch to the theme it is given for the test.
+	 */
+	public function test_use_theme_switches_the_theme(): void {
+		$this->use_theme( 'twentytwentyfour' );
+		$this->assertTrue( wp_is_block_theme(), 'The block theme is active' );
+
+		$this->use_theme( 'storefront' );
+		$this->assertFalse( wp_is_block_theme(), 'The classic theme is active' );
+	}
+
+	/**
+	 * @testdox Should switch back to the theme the shop had when the theme is restored, and do nothing when no theme was switched.
+	 */
+	public function test_restore_theme_switches_back(): void {
+		$before    = get_stylesheet();
+		$was_block = wp_is_block_theme();
+		$this->restore_theme();
+		$this->assertSame( $before, get_stylesheet(), 'Nothing was switched, so nothing changes' );
+
+		$this->use_theme( 'twentytwentyfour' );
+		$this->assertSame( 'twentytwentyfour', get_stylesheet() );
+
+		$this->restore_theme();
+
+		$this->assertSame( $before, get_stylesheet(), 'The theme of the shop is back right away' );
+		$this->assertSame( $was_block, wp_is_block_theme(), 'The kind of theme is back too' );
+	}
+
+	/**
+	 * @testdox Should serve the v6 ownership service and the given services from a container, and none when the service is absent.
+	 */
+	public function test_container_with_v6_ownership_serves_the_ownership_and_the_given_services(): void {
+		$service = new \stdClass();
+
+		$owning = $this->container_with_v6_ownership( true, array( 'some.service' => $service ) );
+		$this->assertTrue( $owning->has( 'sdk-v6.owns-current-page' ) );
+		$this->assertTrue( $owning->get( 'sdk-v6.owns-current-page' )() );
+		$this->assertSame( $service, $owning->get( 'some.service' ) );
+
+		$not_owning = $this->container_with_v6_ownership( false );
+		$this->assertTrue( $not_owning->has( 'sdk-v6.owns-current-page' ) );
+		$this->assertFalse( $not_owning->get( 'sdk-v6.owns-current-page' )() );
+
+		$absent = $this->container_with_v6_ownership( null, array( 'some.service' => $service ) );
+		$this->assertFalse( $absent->has( 'sdk-v6.owns-current-page' ) );
+		$this->assertSame( $service, $absent->get( 'some.service' ) );
 	}
 }
