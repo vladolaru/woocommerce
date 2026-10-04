@@ -9,11 +9,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAddressProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerDataEraser;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderAdminActionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenizedCartSessionController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
@@ -132,9 +132,8 @@ class WooPaymentsForeignHookValuesTest extends WC_Unit_Test_Case {
 				$controller->register();
 				break;
 			case 'wp_privacy_personal_data_erasers':
-				$service = new WooPaymentsCustomerService();
-				$service->init( $container->get( WooPaymentsApiClient::class ), $container->get( WooPaymentsAccountService::class ), $container->get( WooPaymentsSessionService::class ), $arbiter );
-				$service->register();
+				// WooCommerce adds it on every request (includes/class-woocommerce.php), whatever the native payments tier.
+				add_filter( 'wp_privacy_personal_data_erasers', array( WooPaymentsCustomerDataEraser::class, 'add_eraser' ) );
 				break;
 			case 'user_has_cap':
 				WooPaymentsSubscriptionAdminPaymentMethodHandler::instance()->register_hooks();

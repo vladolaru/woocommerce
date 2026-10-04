@@ -424,20 +424,6 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Erasing personal data should also delete network-scoped customer IDs.
-	 */
-	public function test_erase_customer_data_deletes_network_scoped_customer_ids(): void {
-		$user_id = $this->factory->user->create( array( 'user_email' => 'erase-network@example.com' ) );
-		update_user_option( $user_id, WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, 'cus_network', true );
-
-		$sut    = $this->create_sut( false, $this->create_customer_api_client( array() ) );
-		$result = $sut->erase_customer_data( 'erase-network@example.com' );
-
-		$this->assertTrue( $result['items_removed'] );
-		$this->assertSame( '', get_user_meta( $user_id, WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, true ), 'Erasure must remove the network-wide copy as well.' );
-	}
-
-	/**
 	 * @testdox Guest shoppers should use session storage for WooPayments customer IDs.
 	 */
 	public function test_get_or_create_customer_id_uses_session_storage_for_guests(): void {
@@ -799,74 +785,6 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		$this->expectExceptionMessage( 'Forbidden.' );
 
 		$sut->get_payment_methods_for_customer( 'cus_test', 'card' );
-	}
-
-	/**
-	 * @testdox Registering hooks should add the WooPayments customer-data eraser to the GDPR registry.
-	 */
-	public function test_register_adds_personal_data_eraser(): void {
-		$sut = $this->create_sut( false, $this->create_customer_api_client( array() ) );
-
-		$sut->register();
-
-		$this->assertNotFalse( has_filter( 'wp_privacy_personal_data_erasers', array( $sut, 'register_personal_data_eraser' ) ) );
-
-		$erasers = $sut->register_personal_data_eraser( array() );
-		$this->assertArrayHasKey( 'woocommerce-payments-customer', $erasers );
-		$this->assertSame( array( $sut, 'erase_customer_data' ), $erasers['woocommerce-payments-customer']['callback'] );
-	}
-
-	/**
-	 * @testdox Erasing personal data should delete all stored WooPayments customer IDs for the user.
-	 */
-	public function test_erase_customer_data_deletes_stored_customer_ids(): void {
-		$user_id = $this->factory->user->create( array( 'user_email' => 'erase-me@example.com' ) );
-
-		update_user_option( $user_id, '_wcpay_customer_id', 'cus_deprecated' );
-		update_user_option( $user_id, '_wcpay_customer_id_live', 'cus_live' );
-		update_user_option( $user_id, '_wcpay_customer_id_test', 'cus_test' );
-
-		$sut = $this->create_sut( false, $this->create_customer_api_client( array() ) );
-
-		$result = $sut->erase_customer_data( 'erase-me@example.com' );
-
-		$this->assertFalse( get_user_option( '_wcpay_customer_id', $user_id ) );
-		$this->assertFalse( get_user_option( '_wcpay_customer_id_live', $user_id ) );
-		$this->assertFalse( get_user_option( '_wcpay_customer_id_test', $user_id ) );
-
-		$this->assertTrue( $result['items_removed'] );
-		$this->assertFalse( $result['items_retained'] );
-		$this->assertSame( array(), $result['messages'] );
-		$this->assertTrue( $result['done'] );
-	}
-
-	/**
-	 * @testdox Erasing personal data for an unknown email should return the done shape without errors.
-	 */
-	public function test_erase_customer_data_for_unknown_email_reports_nothing_removed(): void {
-		$sut = $this->create_sut( false, $this->create_customer_api_client( array() ) );
-
-		$result = $sut->erase_customer_data( 'nobody@example.com' );
-
-		$this->assertFalse( $result['items_removed'] );
-		$this->assertFalse( $result['items_retained'] );
-		$this->assertSame( array(), $result['messages'] );
-		$this->assertTrue( $result['done'] );
-	}
-
-	/**
-	 * @testdox Erasing personal data for a user without any stored IDs should report nothing removed.
-	 */
-	public function test_erase_customer_data_without_stored_ids_reports_nothing_removed(): void {
-		$user_id = $this->factory->user->create( array( 'user_email' => 'clean@example.com' ) );
-		unset( $user_id );
-
-		$sut = $this->create_sut( false, $this->create_customer_api_client( array() ) );
-
-		$result = $sut->erase_customer_data( 'clean@example.com' );
-
-		$this->assertFalse( $result['items_removed'] );
-		$this->assertTrue( $result['done'] );
 	}
 
 	/**

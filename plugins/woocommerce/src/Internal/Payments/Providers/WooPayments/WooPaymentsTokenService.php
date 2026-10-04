@@ -39,7 +39,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 *
 	 * @var string
 	 */
-	private const CACHED_PAYMENT_METHODS_META_KEY = '_wcpay_payment_methods';
+	public const CACHED_PAYMENT_METHODS_META_KEY = '_wcpay_payment_methods';
 
 	private const CACHE_CLEAR_BATCH_SIZE = 500;
 
