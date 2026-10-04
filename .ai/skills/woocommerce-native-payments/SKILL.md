@@ -9,14 +9,13 @@ description: Invoke when changing code under `plugins/woocommerce/src/Internal/P
 
 ## Neutral-layer boundary
 
-The neutral layer (everything in `src/Internal/Payments/` outside `Providers/WooPayments/`) must not reference the WooPayments provider. Only these four files may `use` or name `Providers\WooPayments` classes:
+The neutral layer (everything in `src/Internal/Payments/` outside `Providers/WooPayments/`) must not reference the WooPayments provider. Only these three files may `use` or name `Providers\WooPayments` classes:
 
 - `NativePaymentsCliCommand.php`
 - `OrderPaymentLifecycleService.php`
 - `OrderPaymentStore.php`
-- `PaymentProcessingService.php`
 
-Adding a fifth reference erodes the provider abstraction. Route new provider needs through the provider contracts instead of reaching into `Providers\WooPayments` directly. `tests/php/src/Internal/Payments/NeutralLayerPlacementTest.php` enforces this list: it fails on any new referencing file and on any listed file that no longer needs the exception.
+Adding a fourth reference erodes the provider abstraction. Route new provider needs through the provider contracts instead of reaching into `Providers\WooPayments` directly. `tests/php/src/Internal/Payments/NeutralLayerPlacementTest.php` enforces this list: it fails on any new referencing file and on any listed file that no longer needs the exception.
 
 ## `WooPaymentsClientVersion` bump policy
 

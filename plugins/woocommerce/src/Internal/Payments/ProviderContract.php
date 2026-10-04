@@ -72,7 +72,7 @@ interface ProviderContract extends PaymentGatewayProviderContract {
 	 * Refund a payment through the provider.
 	 *
 	 * @param PaymentContext $context         Payment context.
-	 * @param string         $idempotency_key Deterministic idempotency key.
+	 * @param string         $idempotency_key Key minted fresh for this refund call; send it as the provider request key.
 	 * @return PaymentOutcome
 	 */
 	public function refund( PaymentContext $context, string $idempotency_key ): PaymentOutcome;

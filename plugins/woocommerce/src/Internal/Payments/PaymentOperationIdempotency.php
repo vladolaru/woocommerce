@@ -12,15 +12,14 @@ use WC_Order;
 /**
  * Builds idempotency keys for native payment operations.
  *
- * Two policies live here. Charges use a fresh key per payment attempt
- * (`mint_attempt_key()`): WooCommerce cannot tell whether a resubmitted checkout retries a
- * failed attempt or starts a genuinely new one, and a reused key would make the provider
- * replay the first attempt's cached failure instead of charging. Duplicate-charge protection
- * comes from the application-level guards, not the key. Refunds use deterministic derived
- * keys (`derive_key()`) sent to the provider, where replay on retry is exactly the protection
- * wanted. Captures and cancels also derive a key, but only as the order payment lock token and
- * log correlation ID: their provider requests carry a fresh key per call, so a retry after a
- * failed capture reaches the provider instead of replaying the stored failure.
+ * Two policies live here. Charges and refunds use a fresh key per call
+ * (`mint_attempt_key()`): WooCommerce cannot tell whether a resubmitted checkout or refund
+ * retries a failed attempt or starts a genuinely new one, and a reused key would make the
+ * provider replay the first attempt's cached failure. Duplicate-charge protection comes from
+ * the application-level guards, not the key. Captures and cancels derive a key
+ * (`derive_key()`), but only as the order payment lock token and log correlation ID: their
+ * provider requests carry a fresh key per call, so a retry after a failed capture reaches the
+ * provider instead of replaying the stored failure.
  *
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
@@ -44,28 +43,20 @@ class PaymentOperationIdempotency {
 	}
 
 	/**
-	 * Derive a deterministic idempotency key for an order-scoped provider operation.
+	 * Derive a deterministic key for an order-scoped capture or cancel.
 	 *
-	 * The optional `$instance` distinguishes otherwise-identical operations on the same
-	 * order (e.g. two partial refunds of the same amount and reason). Without it, the
-	 * provider would treat the second operation as a retry of the first and replay the
-	 * cached response, silently dropping a real money movement. It is only folded into
-	 * the key when provided, so keys for operations that do not need a per-instance
-	 * dimension (such as captures and cancels) remain unchanged. Charges never use a
-	 * derived key; they use mint_attempt_key().
+	 * Charges and refunds never use a derived key; they use mint_attempt_key().
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param WC_Order    $order       Order being acted on.
-	 * @param string      $provider_id Provider/gateway ID.
-	 * @param string      $operation   Operation name.
-	 * @param float|null  $amount      Operation amount.
-	 * @param string      $currency    Operation currency.
-	 * @param string      $reason      Operation reason.
-	 * @param string|null $instance    Per-operation-instance discriminator (e.g. the refund ID).
+	 * @param WC_Order   $order       Order being acted on.
+	 * @param string     $provider_id Provider/gateway ID.
+	 * @param string     $operation   Operation name.
+	 * @param float|null $amount      Operation amount.
+	 * @param string     $currency    Operation currency.
 	 * @return string
 	 */
-	public function derive_key( WC_Order $order, string $provider_id, string $operation, ?float $amount = null, string $currency = '', string $reason = '', ?string $instance = null ): string {
+	public function derive_key( WC_Order $order, string $provider_id, string $operation, ?float $amount = null, string $currency = '' ): string {
 		$site_id = function_exists( 'get_current_blog_id' ) ? (int) get_current_blog_id() : 0;
 		$parts   = array(
 			'site'      => (string) $site_id,
@@ -74,12 +65,7 @@ class PaymentOperationIdempotency {
 			'operation' => $operation,
 			'amount'    => null === $amount ? '' : wc_format_decimal( $amount, wc_get_price_decimals() ),
 			'currency'  => strtoupper( '' === $currency ? (string) $order->get_currency() : $currency ),
-			'reason'    => $reason,
 		);
-
-		if ( null !== $instance ) {
-			$parts['instance'] = $instance;
-		}
 
 		$encoded = wp_json_encode( $parts );
 

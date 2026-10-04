@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use Throwable;
 use WC_Logger_Interface;
 use WC_Order;
@@ -276,29 +275,22 @@ class PaymentProcessingService {
 		$order        = $context->get_order();
 		$payment_data = $context->get_payment_data();
 		$amount       = isset( $payment_data['amount'] ) ? (float) $payment_data['amount'] : 0.0;
-		$reason       = isset( $payment_data['reason'] ) ? (string) $payment_data['reason'] : '';
 		$profile      = $provider->get_persistence_profile();
 
 		if ( '0.00' === sprintf( '%0.2f', $amount ) ) {
 			return true;
 		}
 
-		// Claim the order lock before resolving the refund instance, keyed on a stable refund-scope
-		// token rather than the per-instance idempotency key. Two concurrent equal-amount, equal-reason
-		// refunds would otherwise resolve the same fresh refund row, derive the same idempotency key,
-		// and the provider would replay the first refund and drop the second. Serializing resolution
-		// under the lock lets each refund link its row before the next one resolves, so distinct
-		// refunds resolve to distinct instances.
-		$refund_scope_key = $this->idempotency->derive_key( $order, $provider->get_id(), 'refund-scope', $amount, (string) $order->get_currency(), $reason );
-		if ( ! $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $profile, $refund_scope_key, 'refund' ) ) {
+		// Like client 11.1.0, each refund call sends its own key, so a retry after a failed refund
+		// reaches the provider instead of replaying the stored failure. The key also serves as this
+		// call's order payment lock token.
+		$idempotency_key = $this->idempotency->mint_attempt_key();
+		if ( ! $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $profile, $idempotency_key, 'refund' ) ) {
 			$this->order_payment_store->log_order_payment_lock_refusal( $order, $profile, 'refund' );
 			return new WP_Error( 'native_payment_refund_locked', __( 'A payment operation is already in progress for this order.', 'woocommerce' ) );
 		}
 
 		try {
-			$refund_instance = $this->resolve_provider_refund_instance_id( $order, $amount, $reason, $provider );
-			$idempotency_key = $this->idempotency->derive_key( $order, $provider->get_id(), 'refund', $amount, (string) $order->get_currency(), $reason, $refund_instance );
-
 			try {
 				$provider_outcome = $provider->refund( $context, $idempotency_key );
 			} catch ( Throwable $exception ) {
@@ -307,10 +299,12 @@ class PaymentProcessingService {
 			}
 			$outcome = $provider_outcome;
 
+			$wc_refund_id = $this->get_newest_refund_id( $order );
+
 			try {
 				$outcome = $this->apply_provider_operation_effects( $context, $outcome, $provider, 'refund' );
 				if ( $outcome->is_successful() ) {
-					$this->apply_refund_outcome( $order, $outcome, $refund_instance );
+					$this->apply_refund_outcome( $order, $outcome, $wc_refund_id );
 				}
 			} catch ( Throwable $apply_exception ) {
 				if ( ! $this->is_reconcilable_provider_outcome( $provider_outcome ) ) {
@@ -318,11 +312,11 @@ class PaymentProcessingService {
 				}
 
 				$outcome                  = $provider_outcome;
-				$reconciliation_persisted = $this->persist_refund_reconciliation_context( $order, $refund_instance, $provider_outcome, $profile );
+				$reconciliation_persisted = $this->persist_refund_reconciliation_context( $order, $wc_refund_id, $provider_outcome, $profile );
 				$this->log_post_provider_apply_failure( $order, $provider_outcome, 'refund', $apply_exception, $reconciliation_persisted );
 			}
 		} finally {
-			$this->order_payment_store->release_order_payment_lock( $order, $profile, $refund_scope_key );
+			$this->order_payment_store->release_order_payment_lock( $order, $profile, $idempotency_key );
 		}
 
 		if ( $outcome->is_successful() ) {
@@ -341,22 +335,22 @@ class PaymentProcessingService {
 	}
 
 	/**
-	 * Retain the provider refund identity on the exact local refund after local effects fail.
+	 * Retain the provider refund identity on the local refund after local effects fail.
 	 *
-	 * @param WC_Order                      $order           Parent order.
-	 * @param string|null                   $refund_instance Local refund instance ID.
-	 * @param PaymentOutcome                $outcome         Provider refund outcome.
-	 * @param ProviderPersistenceVocabulary $profile         Provider persistence vocabulary.
+	 * @param WC_Order                      $order        Parent order.
+	 * @param int|null                      $wc_refund_id Local refund this call links.
+	 * @param PaymentOutcome                $outcome      Provider refund outcome.
+	 * @param ProviderPersistenceVocabulary $profile      Provider persistence vocabulary.
 	 * @return bool Whether the refund identity was persisted.
 	 */
-	private function persist_refund_reconciliation_context( WC_Order $order, ?string $refund_instance, PaymentOutcome $outcome, ProviderPersistenceVocabulary $profile ): bool {
+	private function persist_refund_reconciliation_context( WC_Order $order, ?int $wc_refund_id, PaymentOutcome $outcome, ProviderPersistenceVocabulary $profile ): bool {
 		$refund_reference = $outcome->get_provider_payment_id();
-		if ( '' === $refund_reference || null === $refund_instance || '' === $refund_instance ) {
+		if ( '' === $refund_reference || null === $wc_refund_id ) {
 			return false;
 		}
 
 		try {
-			$refund = wc_get_order( (int) $refund_instance );
+			$refund = wc_get_order( $wc_refund_id );
 			if ( ! $refund instanceof WC_Order_Refund || $order->get_id() !== $refund->get_parent_id() ) {
 				return false;
 			}
@@ -380,92 +374,42 @@ class PaymentProcessingService {
 	}
 
 	/**
-	 * Provider refund-link meta key written onto a `WC_Order_Refund` once it has been processed.
+	 * Get the ID of the order's newest refund: the one WooCommerce created for this refund call.
 	 *
-	 * Both the synchronous refund path ({@see WooPaymentsProviderGatewayAdapter}, via the
-	 * `refund_meta` returned to apply_refund_outcome()) and the asynchronous webhook path
-	 * ({@see WooPaymentsRefundEventHandler}) stamp this key on the refund. Its presence is the
-	 * stable signal that a refund has already reached the provider, so refund-instance resolution
-	 * uses it to exclude already-processed refunds and lock onto the fresh, unprocessed one.
+	 * WooCommerce saves the refund row before it calls the gateway, so the newest row is the one
+	 * this call refunds. Client 11.1.0 links the provider refund the same way
+	 * (`WC_Payments_Utils::get_last_refund_from_order_id()`).
 	 *
-	 * @var string
+	 * @param WC_Order $order Parent order.
+	 * @return int|null
 	 */
-	private const PROCESSED_REFUND_LINK_META_KEY = WooPaymentsPersistenceProfile::PROCESSED_REFUND_LINK_META_KEY;
-
-	/**
-	 * Resolve the ID of the specific WooCommerce refund this operation is processing.
-	 *
-	 * The local `WC_Order_Refund` row is created and saved before the gateway refund call, so it is
-	 * already present here. Its ID is used as a per-instance discriminator in the idempotency key so
-	 * two distinct refunds of the same amount and reason never share a key, which would otherwise let
-	 * the provider replay the first refund and silently drop the second.
-	 *
-	 * Resolution must identify the *fresh, unprocessed* refund rather than rely only on row ordering. An
-	 * equal-amount, equal-reason refund that has already been processed carries
-	 * {@see self::PROCESSED_REFUND_LINK_META_KEY}; passing that key as the exclusion set makes
-	 * find_matching_refund() skip such refunds. Without this exclusion, resolution could latch onto
-	 * an already-processed refund — reusing its key and reintroducing the exact collision this guard
-	 * prevents.
-	 *
-	 * Returns null only when no matching refund can be located. In the normal synchronous WooCommerce
-	 * refund flow this cannot happen: core creates and saves the `WC_Order_Refund` row before invoking
-	 * the gateway, so the row is always present at this point. The null fallback therefore omits the
-	 * instance from the key, which is the deterministic pre-instance behavior — safe because the only
-	 * way to reach it is the absence of a concurrent equal refund to collide with. The fallback stays
-	 * deterministic on purpose: a random or microtime discriminator would break idempotency on
-	 * legitimate retries of the same refund.
-	 *
-	 * @param WC_Order $order  Parent order.
-	 * @param float    $amount Refund amount.
-	 * @param string   $reason Refund reason.
-	 * @return string|null
-	 */
-	protected function resolve_refund_instance_id( WC_Order $order, float $amount, string $reason ): ?string {
-		return $this->resolve_refund_instance_id_with_meta_key( $order, $amount, $reason, self::PROCESSED_REFUND_LINK_META_KEY );
-	}
-
-	/**
-	 * Resolve the refund instance for a provider operation.
-	 *
-	 * @param WC_Order         $order    Parent order.
-	 * @param float            $amount   Refund amount.
-	 * @param string           $reason   Refund reason.
-	 * @param ProviderContract $provider Provider.
-	 * @return string|null
-	 */
-	private function resolve_provider_refund_instance_id( WC_Order $order, float $amount, string $reason, ProviderContract $provider ): ?string {
-		$processed_refund_link_meta_key = $provider->get_persistence_profile()->get_processed_refund_link_meta_key();
-		if ( self::PROCESSED_REFUND_LINK_META_KEY === $processed_refund_link_meta_key ) {
-			return $this->resolve_refund_instance_id( $order, $amount, $reason );
+	private function get_newest_refund_id( WC_Order $order ): ?int {
+		try {
+			$refunds = wc_get_orders(
+				array(
+					'type'    => 'shop_order_refund',
+					'parent'  => $order->get_id(),
+					'limit'   => 1,
+					'orderby' => 'ID',
+					'order'   => 'DESC',
+				)
+			);
+		} catch ( Throwable $exception ) {
+			return null;
 		}
 
-		return $this->resolve_refund_instance_id_with_meta_key( $order, $amount, $reason, $processed_refund_link_meta_key );
+		return is_array( $refunds ) && isset( $refunds[0] ) ? (int) $refunds[0]->get_id() : null;
 	}
 
 	/**
-	 * Resolve the refund instance using the supplied processed-refund link meta key.
+	 * Apply provider refund metadata to the WooCommerce refund this call links.
 	 *
-	 * @param WC_Order $order                          Parent order.
-	 * @param float    $amount                         Refund amount.
-	 * @param string   $reason                         Refund reason.
-	 * @param string   $processed_refund_link_meta_key Provider refund link meta key.
-	 * @return string|null
+	 * @param WC_Order       $order        Parent order.
+	 * @param PaymentOutcome $outcome      Provider refund outcome.
+	 * @param int|null       $wc_refund_id Local refund this call links.
+	 * @throws \RuntimeException When the refund or parent order cannot be reloaded.
 	 */
-	private function resolve_refund_instance_id_with_meta_key( WC_Order $order, float $amount, string $reason, string $processed_refund_link_meta_key ): ?string {
-		$matched_refund = $this->find_matching_refund( $order, $amount, $reason, array( $processed_refund_link_meta_key ) );
-
-		return $matched_refund instanceof WC_Order_Refund ? (string) $matched_refund->get_id() : null;
-	}
-
-	/**
-	 * Apply provider refund metadata to the matching WooCommerce refund.
-	 *
-	 * @param WC_Order       $order           Parent order.
-	 * @param PaymentOutcome $outcome         Provider refund outcome.
-	 * @param string|null    $refund_instance Exact local refund instance resolved before provider transport.
-	 * @throws \RuntimeException When the exact refund or parent order cannot be reloaded.
-	 */
-	private function apply_refund_outcome( WC_Order $order, PaymentOutcome $outcome, ?string $refund_instance ): void {
+	private function apply_refund_outcome( WC_Order $order, PaymentOutcome $outcome, ?int $wc_refund_id ): void {
 		$data                          = $outcome->get_data();
 		$refund_meta                   = isset( $data[ PaymentOutcome::DATA_REFUND_META ] ) && is_array( $data[ PaymentOutcome::DATA_REFUND_META ] )
 			? $data[ PaymentOutcome::DATA_REFUND_META ]
@@ -491,12 +435,10 @@ class PaymentProcessingService {
 			return;
 		}
 
-		$matched_refund = null !== $refund_instance && '' !== $refund_instance
-			? wc_get_order( (int) $refund_instance )
-			: false;
+		$matched_refund = null !== $wc_refund_id ? wc_get_order( $wc_refund_id ) : false;
 		$reloaded_order = wc_get_order( $order->get_id() );
 		if ( ! $matched_refund instanceof WC_Order_Refund || $order->get_id() !== $matched_refund->get_parent_id() ) {
-			throw new \RuntimeException( 'The exact local refund target could not be loaded after the provider refund succeeded.' );
+			throw new \RuntimeException( 'The local refund could not be loaded after the provider refund succeeded.' );
 		}
 		if ( ! $reloaded_order instanceof WC_Order ) {
 			throw new \RuntimeException( 'The parent order could not be loaded after the provider refund succeeded.' );
@@ -515,69 +457,6 @@ class PaymentProcessingService {
 			$this->maybe_add_refund_note( $reloaded_order, $refund_note, $refund_note_identity, $refund_note_equivalents, $refund_note_identity_meta_key );
 		}
 		$reloaded_order->save_meta_data();
-	}
-
-	/**
-	 * Find the local refund row created before the gateway refund call.
-	 *
-	 * @param WC_Order $order  Parent order.
-	 * @param float    $amount Refund amount.
-	 * @param string   $reason Refund reason.
-	 * @param string[] $provider_refund_meta_keys Provider refund meta keys that mark a refund as linked.
-	 * @return WC_Order_Refund|null
-	 */
-	private function find_matching_refund( WC_Order $order, float $amount, string $reason, array $provider_refund_meta_keys ): ?WC_Order_Refund {
-		$reloaded_order = wc_get_order( $order->get_id() );
-		if ( ! $reloaded_order instanceof WC_Order ) {
-			return null;
-		}
-
-		$expected_amount = wc_format_decimal( $amount, false, true );
-		$refunds         = array_reverse( $reloaded_order->get_refunds() );
-
-		foreach ( $refunds as $refund ) {
-			if ( ! $refund instanceof WC_Order_Refund ) {
-				continue;
-			}
-
-			if ( $this->refund_has_any_meta_value( $refund, $provider_refund_meta_keys ) ) {
-				continue;
-			}
-
-			if ( wc_format_decimal( $refund->get_amount(), false, true ) !== $expected_amount ) {
-				continue;
-			}
-
-			if ( '' !== $reason && $reason !== (string) $refund->get_reason() ) {
-				continue;
-			}
-
-			return $refund;
-		}
-
-		return null;
-	}
-
-	/**
-	 * Tell whether a refund already has any provider supplied link meta.
-	 *
-	 * @param WC_Order_Refund $refund    Refund object.
-	 * @param string[]        $meta_keys Provider refund meta keys.
-	 * @return bool
-	 */
-	private function refund_has_any_meta_value( WC_Order_Refund $refund, array $meta_keys ): bool {
-		foreach ( $meta_keys as $meta_key ) {
-			if ( '' === $meta_key ) {
-				continue;
-			}
-
-			$meta_value = $refund->get_meta( $meta_key, true );
-			if ( null !== $meta_value && '' !== $meta_value && array() !== $meta_value ) {
-				return true;
-			}
-		}
-
-		return false;
 	}
 
 	/**

@@ -23,7 +23,6 @@ class NeutralLayerPlacementTest extends WC_Unit_Test_Case {
 		'NativePaymentsCliCommand.php',
 		'OrderPaymentLifecycleService.php',
 		'OrderPaymentStore.php',
-		'PaymentProcessingService.php',
 	);
 
 	/**

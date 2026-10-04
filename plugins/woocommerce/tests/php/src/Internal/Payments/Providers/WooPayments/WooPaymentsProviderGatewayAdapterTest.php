@@ -4743,6 +4743,109 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Each refund call sends its own Idempotency-Key, and a transport retry inside one call reuses it.
+	 *
+	 * Client 11.1.0 `process_refund()` sets no caller key on the refund request
+	 * (class-wc-payment-gateway-wcpay.php:2970-2976), so `request()` mints a UUID for each call
+	 * (class-wc-payments-api-client.php:2690) and its retry loop resends the same headers
+	 * (class-wc-payments-api-client.php:2711-2771). The older manual refund of the same amount is the
+	 * row the derived key used to bind to, which made the retry replay the first failure.
+	 */
+	public function test_native_refund_calls_send_distinct_idempotency_keys_over_fake_transport(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_currency( 'USD' );
+		$order->update_meta_data( '_charge_id', 'ch_refund_keys' );
+		$order->save();
+		$manual_refund = $this->create_local_refund_row( $order );
+		$manual_refund->set_date_created( time() - DAY_IN_SECONDS );
+		$manual_refund->save();
+
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			$this->refund_transport_response(
+				array(
+					'id'             => 're_refund_keys_failed',
+					'status'         => 'failed',
+					'failure_reason' => 'lost_or_stolen_card',
+				)
+			),
+			new WP_Error( 'http_request_failed', 'Could not connect to WPCOM.' ),
+			$this->refund_transport_response(
+				array(
+					'id'                  => 're_refund_keys',
+					'status'              => 'succeeded',
+					'balance_transaction' => 'txn_refund_keys',
+				)
+			),
+		);
+		$provider               = $this->create_provider_over_fake_transport( $http_client, $this->create_account_service( true ) );
+		$processing_service     = wc_get_container()->get( PaymentProcessingService::class );
+		$context                = PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.50, 'Adjustment' );
+
+		$failed_refund = $this->create_local_refund_row( $order );
+		$first_result  = $processing_service->process_refund( $context, $provider );
+		// WooCommerce deletes the refund row when the gateway refund fails (wc-order-functions.php:675-680).
+		$failed_refund->delete( true );
+
+		$refund        = $this->create_local_refund_row( $order );
+		$second_result = $processing_service->process_refund( $context, $provider );
+
+		$this->assertWPError( $first_result );
+		$this->assertTrue( $second_result );
+		$this->assertSame( 3, $http_client->request_count, 'The failed call sends one request; the second call sends one request and one transport retry.' );
+		$first_key = $http_client->requests[0]['headers']['Idempotency-Key'] ?? '';
+		$this->assertNotSame( '', $first_key );
+		$this->assertNotSame( $first_key, $http_client->requests[1]['headers']['Idempotency-Key'] ?? '', 'Each refund call must send its own key, as the client does.' );
+		$this->assertSame( $http_client->requests[1]['headers']['Idempotency-Key'] ?? '', $http_client->requests[2]['headers']['Idempotency-Key'] ?? '', 'A transport retry inside one call must resend the same key, as the client retry loop does.' );
+		$this->assertSame( 're_refund_keys', wc_get_order( $refund->get_id() )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( '', wc_get_order( $manual_refund->get_id() )->get_meta( '_wcpay_refund_id', true ) );
+	}
+
+	/**
+	 * Create a local refund row of 2.50 without refunding through a gateway.
+	 *
+	 * @param WC_Order $order Parent order.
+	 * @return WC_Order_Refund
+	 */
+	private function create_local_refund_row( WC_Order $order ): WC_Order_Refund {
+		$refund = wc_create_refund(
+			array(
+				'order_id'       => $order->get_id(),
+				'amount'         => 2.50,
+				'reason'         => 'Adjustment',
+				'refund_payment' => false,
+			)
+		);
+		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+
+		return $refund;
+	}
+
+	/**
+	 * Build a fake-transport refund response.
+	 *
+	 * @param array<string,mixed> $refund Refund fields that vary per case.
+	 * @return array<string,mixed>
+	 */
+	private function refund_transport_response( array $refund ): array {
+		return array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode(
+				array_merge(
+					array(
+						'object'   => 'refund',
+						'amount'   => 250,
+						'currency' => 'usd',
+						'charge'   => 'ch_refund_keys',
+					),
+					$refund
+				)
+			),
+		);
+	}
+
+	/**
 	 * REC-5a R-a recorded refund envelopes, one row per currency (USD, EUR).
 	 *
 	 * @return array<string,array{string,string,string,int,string,string,string,string|null}>

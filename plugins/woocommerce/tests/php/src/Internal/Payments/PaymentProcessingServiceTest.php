@@ -515,13 +515,14 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			public function charge( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
 				unset( $context );
 				// Recorded so the test can prove the log correlates to the exact key the
-				// provider received — charge keys are minted per attempt, not derivable.
+				// provider received — charge and refund keys are minted per call, not derivable.
 				$this->last_idempotency_key = $idempotency_key;
 				throw $this->exception;
 			}
 
 			public function refund( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
-				unset( $context, $idempotency_key );
+				unset( $context );
+				$this->last_idempotency_key = $idempotency_key;
 				throw $this->exception;
 			}
 
@@ -556,7 +557,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 			case 'refund':
 				$result                   = $sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.5, 'Adjustment' ), $provider );
-				$expected_idempotency_key = $this->idempotency->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'refund', 2.5, 'USD', 'Adjustment' );
+				$expected_idempotency_key = $provider->last_idempotency_key;
+				$this->assertMatchesRegularExpression( '/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/', $expected_idempotency_key );
 				$this->assertWPError( $result );
 				break;
 
@@ -1624,10 +1626,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $result );
 		$this->assertSame( 1, $provider->refund_calls );
-		$this->assertSame(
-			$this->idempotency->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'refund', 2.50, 'USD', 'Adjustment' ),
-			$provider->last_idempotency_key
-		);
+		// Client 11.1.0 sends a UUID v4 per refund request (class-wc-payments-api-client.php:2690, 3114-3119).
+		$this->assertMatchesRegularExpression( '/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/', $provider->last_idempotency_key );
 	}
 
 	/**
@@ -1732,126 +1732,56 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Refund-instance resolution must run while the order payment lock is held.
+	 * @testdox A retried refund sends a new idempotency key even when an older manual refund of the same amount exists.
+	 *
+	 * Client 11.1.0 `process_refund()` never sets a caller key on the refund request
+	 * (class-wc-payment-gateway-wcpay.php:2970-2976), so every refund call sends its own
+	 * `Idempotency-Key` UUID (class-wc-payments-api-client.php:2690).
 	 */
-	public function test_refund_instance_resolution_runs_under_the_order_lock(): void {
+	public function test_retried_refund_sends_a_new_idempotency_key(): void {
 		$order = $this->create_woopayments_order( '10.00' );
+		$this->backdate_refund( $this->create_local_refund( $order, 2.50, 'Adjustment' ) );
 
-		$refund = wc_create_refund(
-			array(
-				'order_id'       => $order->get_id(),
-				'amount'         => 2.50,
-				'reason'         => 'Adjustment',
-				'refund_payment' => false,
-			)
-		);
-		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+		$failed_refund    = $this->create_local_refund( $order, 2.50, 'Adjustment' );
+		$failing_provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_FAILED, '', '', '', '', array( PaymentOutcome::DATA_ERROR_CODE => 'temporary_error' ) ) );
+		$first_result     = $this->sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.50, 'Adjustment' ), $failing_provider );
+		// WooCommerce deletes the refund row when the gateway refund fails (wc-order-functions.php:675-680).
+		$failed_refund->delete( true );
 
-		$sut = $this->build_lock_observing_sut();
-
-		$provider = new RecordingProvider( $this->successful_refund_outcome( 're_locked' ) );
-		$result   = $sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.50, 'Adjustment' ), $provider );
-
-		$this->assertTrue( $result );
-		$this->assertTrue(
-			$sut->lock_held_during_resolution,
-			'Refund-instance resolution must happen under the order payment lock so concurrent equal refunds serialize and each resolves a distinct instance.'
-		);
-	}
-
-	/**
-	 * @testdox Refund resolution must skip an already-processed equal refund even when it sorts after the fresh one.
-	 */
-	public function test_refund_resolution_prefers_unprocessed_refund_over_linked_one(): void {
-		$order = $this->create_woopayments_order( '10.00' );
-
-		// The fresh, unprocessed refund this operation is meant to push to the provider.
-		$fresh_refund = wc_create_refund(
-			array(
-				'order_id'       => $order->get_id(),
-				'amount'         => 2.50,
-				'reason'         => 'Adjustment',
-				'refund_payment' => false,
-			)
-		);
-		$this->assertInstanceOf( WC_Order_Refund::class, $fresh_refund );
-
-		// An equal-amount, equal-reason refund created later that the provider has ALREADY processed
-		// (it carries `_wcpay_refund_id`). Because it sorts after the fresh refund, ordering-based
-		// resolution would wrongly latch onto it and reuse its key. Meta-based exclusion must skip it.
-		$already_processed = wc_create_refund(
-			array(
-				'order_id'       => $order->get_id(),
-				'amount'         => 2.50,
-				'reason'         => 'Adjustment',
-				'refund_payment' => false,
-			)
-		);
-		$this->assertInstanceOf( WC_Order_Refund::class, $already_processed );
-		$already_processed->update_meta_data( '_wcpay_refund_id', 're_already_done' );
-		$already_processed->save_meta_data();
-
-		$ref    = new \ReflectionClass( $this->sut );
-		$method = $ref->getMethod( 'resolve_refund_instance_id' );
-		$method->setAccessible( true );
-
-		$resolved = $method->invoke( $this->sut, wc_get_order( $order->get_id() ), 2.50, 'Adjustment' );
-
-		$this->assertSame(
-			(string) $fresh_refund->get_id(),
-			$resolved,
-			'Resolution must return the fresh unprocessed refund, not the already-processed one whose key would replay.'
-		);
-	}
-
-	/**
-	 * @testdox Reprocessing the same refund instance must collapse to one idempotency key.
-	 */
-	public function test_reprocessing_same_refund_instance_reuses_idempotency_key(): void {
-		$order = $this->create_woopayments_order( '10.00' );
-
-		$refund = wc_create_refund(
-			array(
-				'order_id'       => $order->get_id(),
-				'amount'         => 2.50,
-				'reason'         => 'Adjustment',
-				'refund_payment' => false,
-			)
-		);
-		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
-
-		// A refund whose provider call failed leaves the row unlinked (no `_wcpay_refund_id`), so a
-		// legitimate retry of that same instance must resolve to the same row and derive the same key.
-		$failing_provider = new RecordingProvider(
-			new PaymentOutcome(
-				PaymentOutcome::STATUS_FAILED,
-				'',
-				'',
-				'',
-				'',
-				array(
-					'error_code'    => 'temporary_error',
-					'error_message' => 'Temporary provider error.',
-				)
-			)
-		);
-
-		$first_result = $this->sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.50, 'Adjustment' ), $failing_provider );
-		$first_key    = $failing_provider->last_idempotency_key;
-
+		$this->create_local_refund( $order, 2.50, 'Adjustment' );
 		$retry_provider = new RecordingProvider( $this->successful_refund_outcome( 're_retry' ) );
 		$retry_result   = $this->sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.50, 'Adjustment' ), $retry_provider );
-		$retry_key      = $retry_provider->last_idempotency_key;
 
 		$this->assertWPError( $first_result );
 		$this->assertTrue( $retry_result );
-		$this->assertSame( 1, $failing_provider->refund_calls );
-		$this->assertSame( 1, $retry_provider->refund_calls );
-		$this->assertSame(
-			$first_key,
-			$retry_key,
-			'A retry of the same refund instance must reuse the idempotency key so the provider can recognize and dedupe the retry.'
+		$this->assertNotSame( '', $failing_provider->last_idempotency_key );
+		$this->assertNotSame(
+			$failing_provider->last_idempotency_key,
+			$retry_provider->last_idempotency_key,
+			'Like the client, each refund call sends its own key, so a retry is never answered with the earlier failure.'
 		);
+	}
+
+	/**
+	 * @testdox A refund links the newest refund row, never an older manual refund of the same amount and reason.
+	 *
+	 * Client 11.1.0 links the provider refund to the order's newest refund
+	 * (class-wc-payment-gateway-wcpay.php:3003, class-wc-payments-utils.php:1080-1096 orders by ID descending)
+	 * and writes `_wcpay_refund_id` on that row only (class-wc-payments-order-service.php:1943).
+	 */
+	public function test_process_refund_links_the_newest_refund_row(): void {
+		$order         = $this->create_woopayments_order( '10.00' );
+		$manual_refund = $this->backdate_refund( $this->create_local_refund( $order, 2.50, 'Adjustment' ) );
+		$refund        = $this->create_local_refund( $order, 2.50, 'Adjustment' );
+
+		$result = $this->sut->process_refund(
+			PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.50, 'Adjustment' ),
+			new RecordingProvider( $this->successful_refund_outcome( 're_newest' ) )
+		);
+
+		$this->assertTrue( $result );
+		$this->assertSame( 're_newest', wc_get_order( $refund->get_id() )->get_meta( '_wcpay_refund_id', true ), 'The refund created for this call must carry the provider refund ID.' );
+		$this->assertSame( '', wc_get_order( $manual_refund->get_id() )->get_meta( '_wcpay_refund_id', true ), 'An older manual refund must stay unlinked.' );
 	}
 
 	/**
@@ -2190,113 +2120,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An AJAX-formatted refund amount must resolve to the exact local refund despite decimal scale differences.
-	 */
-	public function test_process_refund_matches_ajax_formatted_refund_amount(): void {
-		$order  = $this->create_woopayments_order( '10.00' );
-		$refund = wc_create_refund(
-			array(
-				'order_id'       => $order->get_id(),
-				'amount'         => '2.50',
-				'reason'         => 'Adjustment',
-				'refund_payment' => false,
-			)
-		);
-		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
-
-		$provider = new RecordingProvider(
-			new PaymentOutcome(
-				PaymentOutcome::STATUS_COMPLETED,
-				're_ajax_amount',
-				'',
-				'',
-				'',
-				array(
-					'order_meta'  => array( '_wcpay_refund_status' => 'successful' ),
-					'refund_meta' => array(
-						'_wcpay_refund_id'             => 're_ajax_amount',
-						'_wcpay_refund_transaction_id' => 'txn_ajax_amount',
-					),
-					'refund_note' => 'A refund of $2.50 was successfully processed using WooPayments. Reason: Adjustment. (<code>re_ajax_amount</code>)',
-				)
-			)
-		);
-
-		$result = $this->sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.50, 'Adjustment' ), $provider );
-		$order  = wc_get_order( $order->get_id() );
-		$refund = wc_get_order( $refund->get_id() );
-
-		$this->assertTrue( $result );
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
-		$this->assertSame(
-			$this->idempotency->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'refund', 2.50, 'USD', 'Adjustment', (string) $refund->get_id() ),
-			$provider->last_idempotency_key,
-			'The provider key must bind to the exact AJAX-created local refund regardless of decimal string scale.'
-		);
-		$this->assertSame( 'successful', $order->get_meta( '_wcpay_refund_status', true ) );
-		$this->assertSame( 're_ajax_amount', $refund->get_meta( '_wcpay_refund_id', true ) );
-		$this->assertSame( 'txn_ajax_amount', $refund->get_meta( '_wcpay_refund_transaction_id', true ) );
-		$this->assertOrderHasNoteContaining( $order, 're_ajax_amount' );
-	}
-
-	/**
-	 * @testdox Refund matching must not round distinct extra-precision amounts into the same candidate.
-	 */
-	public function test_process_refund_does_not_collapse_distinct_extra_precision_amounts(): void {
-		$order        = $this->create_woopayments_order( '10.00' );
-		$close_refund = wc_create_refund(
-			array(
-				'order_id'       => $order->get_id(),
-				'amount'         => '2.501',
-				'reason'         => 'Adjustment',
-				'refund_payment' => false,
-			)
-		);
-		$exact_refund = wc_create_refund(
-			array(
-				'order_id'       => $order->get_id(),
-				'amount'         => '2.504',
-				'reason'         => 'Adjustment',
-				'refund_payment' => false,
-			)
-		);
-
-		$this->assertInstanceOf( WC_Order_Refund::class, $close_refund );
-		$this->assertInstanceOf( WC_Order_Refund::class, $exact_refund );
-
-		$provider = new RecordingProvider(
-			new PaymentOutcome(
-				PaymentOutcome::STATUS_COMPLETED,
-				're_extra_precision',
-				'',
-				'',
-				'',
-				array(
-					'refund_meta' => array(
-						'_wcpay_refund_id' => 're_extra_precision',
-					),
-				)
-			)
-		);
-
-		$result       = $this->sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.504, 'Adjustment' ), $provider );
-		$close_refund = wc_get_order( $close_refund->get_id() );
-		$exact_refund = wc_get_order( $exact_refund->get_id() );
-
-		$this->assertTrue( $result );
-		$this->assertInstanceOf( WC_Order_Refund::class, $close_refund );
-		$this->assertInstanceOf( WC_Order_Refund::class, $exact_refund );
-		$this->assertSame(
-			$this->idempotency->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'refund', 2.504, 'USD', 'Adjustment', (string) $exact_refund->get_id() ),
-			$provider->last_idempotency_key,
-			'The provider key must bind to the exact extra-precision refund rather than a rounded neighbor.'
-		);
-		$this->assertSame( '', $close_refund->get_meta( '_wcpay_refund_id', true ) );
-		$this->assertSame( 're_extra_precision', $exact_refund->get_meta( '_wcpay_refund_id', true ) );
-	}
-
-	/**
 	 * @testdox An invalid exact refund target after provider success must enter reconciliation instead of failing silently.
 	 */
 	public function test_process_refund_logs_reconciliation_when_resolved_refund_disappears_after_provider_success(): void {
@@ -2409,82 +2232,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			),
 			$mismatch_logs[0]['context']
 		);
-	}
-
-	/**
-	 * @testdox Should match the first unlinked refund using provider supplied meta keys.
-	 */
-	public function test_process_refund_skips_refunds_linked_by_provider_meta_keys(): void {
-		$order           = $this->create_woopayments_order( '10.00' );
-		$unlinked_refund = wc_create_refund(
-			array(
-				'order_id'       => $order->get_id(),
-				'amount'         => 2.50,
-				'reason'         => 'Adjustment',
-				'refund_payment' => false,
-			)
-		);
-		$linked_refund   = wc_create_refund(
-			array(
-				'order_id'       => $order->get_id(),
-				'amount'         => 2.50,
-				'reason'         => 'Adjustment',
-				'refund_payment' => false,
-			)
-		);
-
-		$this->assertInstanceOf( WC_Order_Refund::class, $unlinked_refund );
-		$this->assertInstanceOf( WC_Order_Refund::class, $linked_refund );
-
-		$linked_refund->update_meta_data( '_provider_refund_id', 're_existing' );
-		$linked_refund->save_meta_data();
-
-		$provider = new class(
-			new PaymentOutcome(
-				PaymentOutcome::STATUS_COMPLETED,
-				're_native',
-				'',
-				'',
-				'',
-				array(
-					'refund_meta' => array(
-						'_provider_refund_id' => 're_native',
-					),
-				)
-			)
-		) extends RecordingProvider {
-			/**
-			 * Get the provider persistence profile.
-			 *
-			 * @return ProviderPersistenceVocabulary
-			 */
-			public function get_persistence_profile(): ProviderPersistenceVocabulary {
-				return new class() extends WooPaymentsPersistenceProfile {
-					/**
-					 * Get the processed refund link meta key.
-					 *
-					 * @return string
-					 */
-					public function get_processed_refund_link_meta_key(): string {
-						return '_provider_refund_id';
-					}
-				};
-			}
-		};
-
-		$result          = $this->sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.50, 'Adjustment' ), $provider );
-		$unlinked_refund = wc_get_order( $unlinked_refund->get_id() );
-		$linked_refund   = wc_get_order( $linked_refund->get_id() );
-
-		$this->assertTrue( $result );
-		$this->assertInstanceOf( WC_Order_Refund::class, $unlinked_refund );
-		$this->assertInstanceOf( WC_Order_Refund::class, $linked_refund );
-		$this->assertSame(
-			$this->idempotency->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'refund', 2.50, 'USD', 'Adjustment', (string) $unlinked_refund->get_id() ),
-			$provider->last_idempotency_key
-		);
-		$this->assertSame( 're_native', $unlinked_refund->get_meta( '_provider_refund_id', true ) );
-		$this->assertSame( 're_existing', $linked_refund->get_meta( '_provider_refund_id', true ) );
 	}
 
 	/**
@@ -3378,8 +3125,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 * Build a successful provider refund outcome that links the WC refund via `_wcpay_refund_id`.
 	 *
 	 * This mirrors the live WooPayments synchronous and webhook paths, both of which stamp the
-	 * processed `WC_Order_Refund` with `_wcpay_refund_id`. Tests rely on that link so refund
-	 * instance resolution can tell a processed refund apart from a fresh, unprocessed one.
+	 * processed `WC_Order_Refund` with `_wcpay_refund_id`.
 	 *
 	 * @param string $provider_refund_id Provider refund ID to link.
 	 * @return PaymentOutcome
@@ -3778,6 +3524,41 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Create a local refund row without refunding through a gateway.
+	 *
+	 * @param WC_Order $order  Parent order.
+	 * @param float    $amount Refund amount.
+	 * @param string   $reason Refund reason.
+	 * @return WC_Order_Refund
+	 */
+	private function create_local_refund( WC_Order $order, float $amount, string $reason ): WC_Order_Refund {
+		$refund = wc_create_refund(
+			array(
+				'order_id'       => $order->get_id(),
+				'amount'         => $amount,
+				'reason'         => $reason,
+				'refund_payment' => false,
+			)
+		);
+		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+
+		return $refund;
+	}
+
+	/**
+	 * Date a refund one day back, as a merchant's earlier manual refund would be.
+	 *
+	 * @param WC_Order_Refund $refund Refund row.
+	 * @return WC_Order_Refund
+	 */
+	private function backdate_refund( WC_Order_Refund $refund ): WC_Order_Refund {
+		$refund->set_date_created( time() - DAY_IN_SECONDS );
+		$refund->save();
+
+		return $refund;
+	}
+
+	/**
 	 * Assert that an order has a note containing the expected text.
 	 *
 	 * @param WC_Order $order    Order object.
@@ -3862,69 +3643,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$lifecycle->init( $this->store );
 
 		return $lifecycle;
-	}
-
-	/**
-	 * Build a PaymentProcessingService that records whether the order payment lock is held during refund resolution.
-	 *
-	 * @return PaymentProcessingService
-	 */
-	private function build_lock_observing_sut(): PaymentProcessingService {
-		$store                    = $this->store;
-		$sut                      = new class() extends PaymentProcessingService {
-			/**
-			 * Whether the order payment lock was held when refund-instance resolution ran.
-			 *
-			 * @var bool
-			 */
-			public bool $lock_held_during_resolution = false;
-
-			/**
-			 * Order payment store used to observe the lock.
-			 *
-			 * @var OrderPaymentStore
-			 */
-			public OrderPaymentStore $observed_store;
-
-			/**
-			 * Persistence profile used by the observed provider.
-			 *
-			 * @var ProviderPersistenceVocabulary
-			 */
-			public ProviderPersistenceVocabulary $persistence_profile;
-
-			/**
-			 * Record whether the order payment lock is held when refund-instance resolution runs.
-			 *
-			 * @param WC_Order $order  Parent order.
-			 * @param float    $amount Refund amount.
-			 * @param string   $reason Refund reason.
-			 * @return string|null
-			 */
-			protected function resolve_refund_instance_id( WC_Order $order, float $amount, string $reason ): ?string {
-				// A held order lock rejects a fresh claim from any other operation, so a failed probe
-				// claim proves resolution is running under the lock regardless of the value it was
-				// claimed with. Release the probe again if it unexpectedly succeeds so the spy never
-				// perturbs the order lock state the real refund relies on.
-				$probe_claimed                     = $this->observed_store->claim_order_payment_lock( $order, $this->persistence_profile, 'probe' );
-				$this->lock_held_during_resolution = ! $probe_claimed;
-				if ( $probe_claimed ) {
-					$this->observed_store->unlock_order_payment( $order, $this->persistence_profile );
-				}
-
-				return parent::resolve_refund_instance_id( $order, $amount, $reason );
-			}
-		};
-		$sut->observed_store      = $store;
-		$sut->persistence_profile = $this->persistence_profile;
-		$sut->init(
-			$store,
-			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			$this->idempotency,
-			wc_get_container()->get( PaymentExceptionPolicy::class )
-		);
-
-		return $sut;
 	}
 
 	/**

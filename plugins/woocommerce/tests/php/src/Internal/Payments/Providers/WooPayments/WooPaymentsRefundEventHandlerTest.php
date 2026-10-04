@@ -440,6 +440,86 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A failed refund webhook deletes only the refund row the synchronous refund linked, never an older manual refund.
+	 *
+	 * Client 11.1.0 links the provider refund to the order's newest refund (class-wc-payment-gateway-wcpay.php:3003,
+	 * class-wc-payments-utils.php:1080-1096), finds the row for a refund update by `_wcpay_refund_id`
+	 * (class-wc-payments-webhook-processing-service.php:327-342) and deletes only that row when the refund fails
+	 * (class-wc-payments-webhook-processing-service.php:346-350, class-wc-payments-order-service.php:1964-1967).
+	 */
+	public function test_failed_refund_webhook_deletes_only_the_linked_refund_row(): void {
+		$order         = $this->create_refundable_order();
+		$manual_refund = $this->create_local_refund( $order );
+		$manual_refund->set_date_created( time() - DAY_IN_SECONDS );
+		$manual_refund->save();
+
+		$refund         = $this->create_local_refund( $order );
+		$effect_applier = wc_get_container()->get( WooPaymentsOrderEffectApplier::class );
+		$provider       = new class( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_123' ), $effect_applier ) extends RecordingProvider implements ProviderOperationEffectApplier {
+			/**
+			 * WooPayments effect applier.
+			 *
+			 * @var WooPaymentsOrderEffectApplier
+			 */
+			private WooPaymentsOrderEffectApplier $effect_applier;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param PaymentOutcome                $outcome        Provider outcome.
+			 * @param WooPaymentsOrderEffectApplier $effect_applier WooPayments effect applier.
+			 */
+			public function __construct( PaymentOutcome $outcome, WooPaymentsOrderEffectApplier $effect_applier ) {
+				parent::__construct( $outcome );
+				$this->effect_applier = $effect_applier;
+			}
+
+			/**
+			 * Apply the real WooPayments refund effects.
+			 *
+			 * @param PaymentContext $context   Payment context.
+			 * @param PaymentOutcome $outcome   Provider outcome.
+			 * @param string         $operation Operation name.
+			 * @return PaymentOutcome
+			 */
+			public function apply_operation_effects( PaymentContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
+				unset( $operation );
+
+				return $this->effect_applier->apply(
+					$context,
+					$outcome,
+					WooPaymentsOrderEffectPlan::for_refund(
+						array(
+							'id'                  => 're_123',
+							'status'              => 'succeeded',
+							'balance_transaction' => 'txn_123',
+						)
+					)
+				);
+			}
+		};
+
+		$this->assertTrue( wc_get_container()->get( PaymentProcessingService::class )->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 4.00, 'Requested by customer' ), $provider ) );
+
+		$this->sut->process(
+			'charge.refund.updated',
+			array(
+				'id'             => 're_123',
+				'charge'         => 'ch_123',
+				'amount'         => 400,
+				'currency'       => 'usd',
+				'status'         => 'failed',
+				'failure_reason' => 'lost_or_stolen_card',
+			)
+		);
+
+		$this->assertFalse( wc_get_order( $refund->get_id() ), 'The refund row linked to the failed provider refund must be deleted.' );
+		$manual_refund = wc_get_order( $manual_refund->get_id() );
+		$this->assertInstanceOf( WC_Order_Refund::class, $manual_refund, 'An older manual refund of the same amount must survive the failed refund.' );
+		$this->assertSame( '', $manual_refund->get_meta( '_wcpay_refund_id', true ) );
+	}
+
+	/**
 	 * Load a REC-5a R-c recorded `charge.refund.updated` event object by pair key.
 	 *
 	 * @param string $pair REC-5a R-c fixture pair key.
