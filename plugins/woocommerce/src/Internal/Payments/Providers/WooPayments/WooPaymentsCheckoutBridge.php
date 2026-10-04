@@ -1766,7 +1766,9 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the current cart contains a subscription.
+	 * Tell whether the current cart contains a subscription or a subscription renewal.
+	 *
+	 * Renewal-inclusive, unlike NativeWooPaymentsGateway::cart_contains_subscription(), which ignores renewals.
 	 *
 	 * @return bool
 	 */

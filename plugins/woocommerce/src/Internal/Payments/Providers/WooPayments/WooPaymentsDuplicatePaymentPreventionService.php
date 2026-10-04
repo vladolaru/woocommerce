@@ -184,9 +184,12 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	/**
 	 * Redirect to a paid session order when the current order duplicates the same cart content.
 	 *
+	 * On a match it deletes the current pending order, adds a note about it to the paid session order,
+	 * clears the session marker and returns a success redirect to the paid order.
+	 *
 	 * @param WC_Order           $current_order Current order.
 	 * @param WC_Payment_Gateway $gateway       Gateway used to build the return URL.
-	 * @return array<string,string>|null
+	 * @return array<string,string>|null Success redirect on a match, null otherwise.
 	 */
 	public function check_against_session_processing_order( WC_Order $current_order, WC_Payment_Gateway $gateway ): ?array {
 		$session_order_id = $this->get_session_processing_order();
@@ -330,9 +333,12 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 * shoppers resubmit. This reads the stored order status instead, so it holds when the
 	 * platform does not respond.
 	 *
+	 * The gateway passes true only for a change to a new payment method; a change to a saved token still runs
+	 * the status check, which passes because subscription statuses are not paid statuses.
+	 *
 	 * @param WC_Order           $order                  Current order in process_payment.
 	 * @param WC_Payment_Gateway $gateway                Gateway used to build the return URL.
-	 * @param bool               $is_subscription_change Whether this request changes a subscription's payment method.
+	 * @param bool               $is_subscription_change Whether this request changes a subscription's payment method to a new one.
 	 * @return array<string,string>|null A successful response when the order was already paid, null if not.
 	 */
 	public function check_order_already_paid( WC_Order $order, WC_Payment_Gateway $gateway, bool $is_subscription_change = false ): ?array {

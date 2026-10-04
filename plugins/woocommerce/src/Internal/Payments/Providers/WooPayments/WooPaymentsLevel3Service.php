@@ -21,7 +21,8 @@ defined( 'ABSPATH' ) || exit;
  * commercial-card transactions qualify for Level 2/3 interchange rates.
  * Non-US accounts send nothing — the networks only price it domestically.
  *
- * Builds exclusively from the already-loaded order object: no queries.
+ * Builds from the order object, the account country and the store postcode option. Loading
+ * the order's line items and fees can query when the order has not loaded them yet.
  *
  * @internal
  */

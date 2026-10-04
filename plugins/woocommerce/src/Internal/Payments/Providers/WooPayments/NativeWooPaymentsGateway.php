@@ -43,12 +43,11 @@ use WP_Error;
  * Hook-name parity: a handful of the filters/actions this gateway fires intentionally keep the
  * standalone WooPayments **plugin's** hook names (e.g. the `wcpay_` prefix or the plugin's
  * double-prefixed `woocommerce_woocommerce_payments_*` action names) instead of the
- * `woocommerce_native_*` convention used elsewhere in the native runtime. This is deliberate, not
+ * `woocommerce_woopayments_*` prefix of native-only WooPayments hooks. This is deliberate, not
  * an oversight: extensions in the ecosystem hook those plugin-named hooks, and reusing the exact
  * names preserves their behavior once a site switches from the plugin to the native runtime.
  * Do NOT "normalize" these names to the native prefix — renaming them silently breaks extension
- * compatibility. Each such hook is annotated at its call site; native-only hooks use the
- * `woocommerce_native_*` prefix.
+ * compatibility. Each such hook says so in its docblock at the call site.
  *
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
@@ -770,7 +769,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 				 * Filters the redirect URL after adding a WooPayments payment method.
 				 *
 				 * This intentionally uses the standalone WooPayments plugin's `wcpay_` hook name
-				 * (not the native `woocommerce_native_*` prefix) for parity: extensions that hooked
+				 * (not the native `woocommerce_woopayments_*` prefix) for parity: extensions that hooked
 				 * the plugin's filter keep working once a site switches to the native runtime.
 				 * Do not rename it — see the class doc block for the hook-name parity rationale.
 				 *
@@ -908,7 +907,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			 * Fires when a native WooPayments payment requires customer authentication.
 			 *
 			 * This intentionally keeps the standalone WooPayments plugin's action name
-			 * (`woocommerce_woocommerce_payments_*`) rather than the native `woocommerce_native_*`
+			 * (`woocommerce_woocommerce_payments_*`) rather than the native `woocommerce_woopayments_*`
 			 * prefix, for parity: extensions hooked to the plugin's action keep working on the
 			 * native runtime. Do not rename it — see the class doc block for the rationale.
 			 *
@@ -2135,7 +2134,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		// resolving the account country can fire an account API request when the
 		// cache is stale - the reference client keeps that out of construction too
 		// (its country branding happens on init / at title-render time).
-		// handle_init() re-sets the title with the country-branded form.
+		// get_method_title() swaps in the country-branded form on first read.
 		return sprintf( 'WooPayments (%s)', $this->payment_method_definition->get_title() );
 	}
 
@@ -2392,7 +2391,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			 * Identifies WooPay Store API requests handled by the standalone WooPayments integration.
 			 *
 			 * This intentionally uses the standalone WooPayments plugin's `wcpay_` hook name
-			 * (not the native `woocommerce_native_*` prefix) for parity: WooPay Store API flows
+			 * (not the native `woocommerce_woopayments_*` prefix) for parity: WooPay Store API flows
 			 * already provide their own fraud-prevention checks in the extension runtime.
 			 *
 			 * @since 11.0.0
@@ -2577,6 +2576,9 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		/**
 		 * Fires after a customer changed the payment method of a subscription to a saved one.
 		 *
+		 * This intentionally keeps the standalone WooPayments plugin's action name for parity.
+		 * Do not rename it; see the class doc block for the rationale.
+		 *
 		 * @since 11.2.0
 		 *
 		 * @param WC_Order         $order The subscription.
@@ -2683,7 +2685,9 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Tell whether the current cart contains a subscription.
+	 * Tell whether the current cart contains a subscription, ignoring subscription renewals.
+	 *
+	 * Renewal-blind, unlike WooPaymentsCheckoutBridge::cart_contains_subscription(), which counts renewals.
 	 *
 	 * @return bool
 	 */
@@ -3179,10 +3183,12 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Refuse checkout before any charge the way the plugin's process_payment() catch does.
+	 * Refuse checkout before any charge, following the plugin's process_payment() catch.
 	 *
 	 * Client 11.1.0 `gw:1272-1439`: an order whose intent already succeeded is kept (`gw:1283-1304`); otherwise the
 	 * refusal is logged (`gw:1274`), the order fails (`gw:1323-1328`), gets the refusal's note and the shopper the notice (`gw:1425`).
+	 * Unlike the catch, it does not fire `woocommerce_payments_order_failed` (`gw:1317`) or `wcpay_update_payment_result_on_error`
+	 * (`gw:1434`); both are recorded in the silent-hooks ledger (BC surface diff §1(a)).
 	 *
 	 * @param WC_Order $order       Order being paid.
 	 * @param string   $message     Shopper-facing refusal message.
@@ -3268,6 +3274,9 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		if ( $save_user_in_woopay ) {
 			/**
 			 * Fires when the customer opts to save their account with WooPay.
+			 *
+			 * This intentionally keeps the standalone WooPayments plugin's action name for parity.
+			 * Do not rename it; see the class doc block for the rationale.
 			 *
 			 * @since 11.0.0
 			 */

@@ -553,6 +553,10 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	/**
 	 * Get the persisted customer ID for a user or guest checkout.
 	 *
+	 * Not a pure read: when the mode-aware option is missing, it migrates the deprecated
+	 * `_wcpay_customer_id` user option to the live or test option and deletes the deprecated one.
+	 * Use get_persisted_customer_id_by_user_id() for a read without side effects.
+	 *
 	 * @param int|null $user_id WordPress user ID or null for guests.
 	 * @return string|null
 	 */

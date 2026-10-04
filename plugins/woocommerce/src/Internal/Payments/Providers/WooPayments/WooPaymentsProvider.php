@@ -512,6 +512,9 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 	/**
 	 * Apply WooPayments display details after the generic payment lifecycle.
 	 *
+	 * After a charge it also retires the order's charge idempotency key once the outcome is definitive,
+	 * through WooPaymentsProviderGatewayAdapter::finalize_charge_idempotency_key().
+	 *
 	 * @param PaymentContext $context   Payment context.
 	 * @param PaymentOutcome $outcome   Applied provider outcome.
 	 * @param string         $operation Operation name.

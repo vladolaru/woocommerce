@@ -24,7 +24,9 @@ use WC_Payment_Token_CC;
 use WC_Payment_Tokens;
 
 /**
- * Persists WooPayments card payment methods as WooCommerce payment tokens.
+ * Persists WooPayments reusable payment methods (card, SEPA, Link and Amazon Pay) as WooCommerce payment tokens.
+ *
+ * It also reconciles saved tokens with the provider and filters the My Account payment-method list.
  *
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
@@ -528,11 +530,13 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	/**
 	 * Get or create a saved card token for a user.
 	 *
+	 * A non-card payment method is still saved as its own token type, and the method then returns null.
+	 *
 	 * @since 11.0.0
 	 *
 	 * @param string $payment_method_id Provider payment method ID.
 	 * @param int    $user_id           User ID.
-	 * @return WC_Payment_Token_CC|null Saved card token, or null when details are unavailable.
+	 * @return WC_Payment_Token_CC|null Saved card token, or null when details are unavailable or the method is not a card.
 	 */
 	public function get_or_create_card_token_for_user( string $payment_method_id, int $user_id ): ?WC_Payment_Token_CC {
 		$token = $this->get_or_create_token_for_user( $payment_method_id, $user_id );
