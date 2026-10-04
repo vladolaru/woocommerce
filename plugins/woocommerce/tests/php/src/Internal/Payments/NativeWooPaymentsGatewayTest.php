@@ -6568,6 +6568,69 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox When the token repair throws a $throwable_class, the renewal ends $status and the throwable propagates: $propagates.
+	 *
+	 * Client 11.1.0 trait:538 catches only exceptions: an exception fails the renewal for a missing token (trait:413-418),
+	 * a PHP Error reaches the scheduled action and leaves the renewal pending (monitor ruling 2026-10-04 (3)).
+	 *
+	 * @testWith ["RuntimeException", "failed", false]
+	 *           ["TypeError", "pending", true]
+	 *
+	 * @param string $throwable_class Class the repair throws.
+	 * @param string $status          Renewal status afterwards.
+	 * @param bool   $propagates      Whether the throwable leaves scheduled_subscription_payment().
+	 */
+	public function test_scheduled_subscription_payment_token_repair_failure( string $throwable_class, string $status, bool $propagates ): void {
+		$this->ensure_wcs_renewal_subscriptions_double();
+		$customer_id = self::factory()->user->create();
+
+		$parent = wc_create_order();
+		$parent->set_customer_id( $customer_id );
+		$parent->update_meta_data( '_payment_method_id', 'pm_repair_123' );
+		$parent->save();
+
+		$subscription = wc_create_order();
+		$subscription->set_parent_id( $parent->get_id() );
+		$subscription->set_customer_id( $customer_id );
+		$subscription->save();
+
+		$renewal = wc_create_order();
+		$renewal->set_customer_id( $customer_id );
+		$renewal->set_payment_method( 'woocommerce_payments' );
+		$renewal->save();
+
+		$thrown        = new $throwable_class( 'Call to a member function get_id() on null' );
+		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_token_for_user' ) )
+			->getMock();
+		$token_service->method( 'get_or_create_token_for_user' )->willThrowException( $thrown );
+		wc_get_container()->replace( WooPaymentsTokenService::class, $token_service );
+		$logger = RecordingWcLogger::install();
+
+		$GLOBALS['wcpay_test_renewal_subscription_ids'] = array( $renewal->get_id() => array( $subscription->get_id() ) );
+
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$caught = null;
+		try {
+			$gateway->scheduled_subscription_payment( 10.00, $renewal );
+		} catch ( \Throwable $throwable ) {
+			$caught = $throwable;
+		} finally {
+			unset( $GLOBALS['wcpay_test_renewal_subscription_ids'] );
+		}
+
+		$this->assertSame( $propagates ? $thrown : null, $caught );
+		$this->assertNull( $service->last_checkout_context );
+		$this->assertSame( $status, wc_get_order( $renewal->get_id() )->get_status() );
+		$repair_lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => str_starts_with( $line[1], 'Error repairing subscription renewal payment token' ) ) );
+		$this->assertCount( $propagates ? 1 : 0, $repair_lines, 'Only a PHP Error is logged with debug logging off.' );
+	}
+
+	/**
 	 * @testdox Should not attempt token repair when network-wide saved cards are forced.
 	 */
 	public function test_scheduled_subscription_payment_skips_repair_for_network_saved_cards(): void {

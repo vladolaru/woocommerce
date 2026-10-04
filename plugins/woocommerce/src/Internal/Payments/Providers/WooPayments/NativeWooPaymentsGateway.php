@@ -796,7 +796,8 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @param float    $amount        Renewal amount.
 	 * @param WC_Order $renewal_order Renewal order.
 	 * @return void
-	 * @throws Throwable When a requires-action hook callback throws, so the scheduled action fails as on the client.
+	 * @throws Throwable When a requires-action hook callback throws or the token repair raises a PHP Error, so the
+	 *                   scheduled action fails as on the client.
 	 */
 	public function scheduled_subscription_payment( $amount, $renewal_order ): void {
 		unset( $amount );
@@ -1063,6 +1064,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 *
 	 * @param WC_Order $renewal_order Renewal order missing its token.
 	 * @return WC_Payment_Token|null The restored token, or null when repair is impossible.
+	 * @throws Throwable When the repair raises a PHP Error.
 	 */
 	private function maybe_repair_renewal_order_payment_token( WC_Order $renewal_order ): ?WC_Payment_Token {
 		$subscription = $this->get_subscription_for_renewal_order( $renewal_order );
@@ -1113,6 +1115,12 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 				$exception,
 				array( 'order_id' => $renewal_order->get_id() )
 			);
+
+			// Client trait:538 catches only Exception, so a PHP Error fails the scheduled action and leaves the
+			// renewal pending (monitor ruling 2026-10-04 (3)).
+			if ( ! $exception instanceof Exception ) {
+				throw $exception;
+			}
 
 			return null;
 		}
