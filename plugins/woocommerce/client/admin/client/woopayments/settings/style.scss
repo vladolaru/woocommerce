@@ -245,7 +245,7 @@
 	&__required {
 		color: $gray-700;
 		font-size: $font-size-small;
-		line-height: 18px;
+		line-height: $woopayments-line-height-small;
 	}
 
 	&__fee-wrapper,
@@ -262,7 +262,7 @@
 		padding: 1px $gap-smaller;
 		border-radius: $radius-small;
 		font-size: $font-size-small;
-		line-height: 18px;
+		line-height: $woopayments-line-height-small;
 	}
 
 	&__fee-pill,
@@ -342,7 +342,7 @@
 		background: $woopayments-badge-warning-background;
 		color: $gray-900;
 		font-size: $font-size-small;
-		line-height: 18px;
+		line-height: $woopayments-line-height-small;
 
 		&.is-error {
 			background: $studio-red-0;
@@ -667,7 +667,7 @@
 	margin: $gap-smaller 0 0;
 	color: $gray-700;
 	font-size: $font-size-small;
-	line-height: 18px;
+	line-height: $woopayments-line-height-small;
 }
 
 .woopayments-settings-field-group > .woopayments-settings-muted {
@@ -731,7 +731,7 @@
 	gap: $gap-smaller;
 	padding: $gap-small;
 	font-size: $font-size-small;
-	line-height: 18px;
+	line-height: $woopayments-line-height-small;
 
 	> span {
 		display: flex;

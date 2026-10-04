@@ -45,3 +45,6 @@ $woopayments-font-size-detail: 14px;
 // The client's inline notices: a 22px icon, 5px before the text; no upstream notice icon size.
 $woopayments-notice-icon-size: 22px;
 $woopayments-notice-icon-gap: 5px;
+
+// Small (12px) text sits on an 18px line in badges, chips and muted settings text; base-styles' line heights go 16px to 20px.
+$woopayments-line-height-small: 18px;
