@@ -695,7 +695,10 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * After an ambiguous failure the order keeps the charge key, and a retry with a new card sends a different body under
 	 * it, which Stripe refuses with an idempotency_error. The refusal is a money-path anomaly (the first request may have
 	 * charged), so it is written as an always-on warning naming the order and the key; nothing else changes (area 2a #7,
-	 * ruling (a)). A conflict on a fresh key is not a replay and gets no warning.
+	 * ruling (a)). A conflict on a fresh key is not a replay and gets no warning. The response is what the platform sends:
+	 * it proxies the intention request and returns Stripe's status and error body unchanged (wpcom
+	 * `wcpay/class-base-controller.php:476-490`), and Stripe answers a body mismatch with a 400 whose error type is
+	 * `idempotency_error` and no code.
 	 *
 	 * @testWith ["a kept key", true]
 	 *           ["a fresh key", false]
@@ -711,33 +714,25 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			$order->update_meta_data( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, 'key_kept' );
 			$order->save_meta_data();
 		}
-		$api_client       = new class() extends WooPaymentsApiClient {
-			/**
-			 * Tell whether the transport is available.
-			 *
-			 * @return bool
-			 */
-			public function is_available(): bool {
-				return true;
-			}
-
-			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
-			/**
-			 * Refuse the key as Stripe does for a different body.
-			 *
-			 * @param array<string,mixed> $request_data    Request data.
-			 * @param string              $idempotency_key Idempotency key.
-			 * @return array<string,mixed>
-			 * @throws WooPaymentsApiException Always.
-			 */
-			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
-				throw new WooPaymentsApiException( 'Error: Keys for idempotent requests can only be used with the same parameters they were first used with.', 'idempotency_error', 400, 'idempotency_error' );
-			}
-			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
-		};
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 400 ),
+			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
+			'body'     => wp_json_encode(
+				array(
+					'error' => array(
+						'type'    => 'idempotency_error',
+						'message' => "Keys for idempotent requests can only be used with the same parameters they were first used with. Try using a key other than 'key_kept' if you meant to execute a different request.",
+					),
+				)
+			),
+		);
+		$account_service       = $this->create_account_service( false );
+		$api_client            = new WooPaymentsApiClient();
+		$api_client->init( $http_client, $account_service );
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_conflict' );
-		$sut    = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, null, $this->create_account_service( true ) );
+		$sut    = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, null, $account_service );
 		$logger = RecordingWcLogger::install();
 
 		$outcome = $sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_new_card' ), 'key_fresh' );
