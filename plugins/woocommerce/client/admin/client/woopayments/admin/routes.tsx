@@ -2,8 +2,9 @@
  * External dependencies
  */
 import { Card, CardBody } from '@wordpress/components';
-import { lazy, Suspense } from '@wordpress/element';
-import { __ } from '@wordpress/i18n';
+import { lazy, Suspense, useEffect } from '@wordpress/element';
+import { decodeEntities } from '@wordpress/html-entities';
+import { __, sprintf } from '@wordpress/i18n';
 
 /**
  * Internal dependencies
@@ -121,6 +122,7 @@ const WooPaymentsDocumentsChunk = lazy(
 
 type WooPaymentsRouteWindow = typeof globalThis & {
 	wcSettings?: {
+		siteTitle?: string;
 		admin?: {
 			woopaymentsSettings?: {
 				featureFlags?: {
@@ -218,18 +220,90 @@ const WooPaymentsReportsUnavailable = () => (
 	</Card>
 );
 
+// Client 11.1.0 `client/index.js:184-350` page breadcrumbs, the page first.
+const getRouteTitleSections = ( routePath: string ): string[] =>
+	( {
+		'/woopayments/overview': [ __( 'Overview', 'woocommerce' ) ],
+		'/woopayments/payouts': [ __( 'Payouts', 'woocommerce' ) ],
+		'/woopayments/payouts/details': [
+			__( 'Payout details', 'woocommerce' ),
+			__( 'Payouts', 'woocommerce' ),
+		],
+		'/woopayments/transactions': [ __( 'Transactions', 'woocommerce' ) ],
+		'/woopayments/transactions/details': [
+			__( 'Payment details', 'woocommerce' ),
+			__( 'Transactions', 'woocommerce' ),
+		],
+		'/woopayments/reports': [ __( 'Reports', 'woocommerce' ) ],
+		'/woopayments/disputes': [ __( 'Disputes', 'woocommerce' ) ],
+		'/woopayments/disputes/details': [
+			__( 'Dispute details', 'woocommerce' ),
+			__( 'Disputes', 'woocommerce' ),
+		],
+		'/woopayments/disputes/challenge': [
+			__( 'Challenge dispute', 'woocommerce' ),
+			__( 'Disputes', 'woocommerce' ),
+		],
+		'/woopayments/card-readers': [ __( 'Card readers', 'woocommerce' ) ],
+		'/woopayments/loans': [ __( 'Capital Loans', 'woocommerce' ) ],
+		'/woopayments/documents': [ __( 'Documents', 'woocommerce' ) ],
+	} )[ routePath ] ?? [];
+
+const getRouteTitle = ( routePath: string ) =>
+	[
+		...getRouteTitleSections( routePath ),
+		__( 'Payments', 'woocommerce' ),
+	].join( ' &lsaquo; ' );
+
+/**
+ * Names the browser tab after the page, as client 11.1.0 `client/index.js` breadcrumbs do through WooCommerce admin's header.
+ * The tab gets its previous title back when the page unmounts.
+ *
+ * @param props      The component props.
+ * @param props.path The route path, such as `/woopayments/transactions/details`.
+ */
+const WooPaymentsDocumentTitle = ( { path: routePath }: { path: string } ) => {
+	const title = getRouteTitle( routePath );
+
+	useEffect( () => {
+		const previousTitle = document.title;
+		const siteTitle =
+			( globalThis as WooPaymentsRouteWindow ).wcSettings?.siteTitle ??
+			'';
+
+		document.title = decodeEntities(
+			sprintf(
+				/* translators: 1: The page title. 2: The name of the website. */
+				__( '%1$s &lsaquo; %2$s &#8212; WordPress', 'woocommerce' ),
+				title,
+				siteTitle
+			)
+		);
+
+		return () => {
+			document.title = previousTitle;
+		};
+	}, [ title ] );
+
+	return null;
+};
+
 const WooPaymentsProtectedRoute = ( {
 	children,
 	path: routePath,
 }: {
 	children: JSX.Element;
 	path: string;
-} ) =>
-	isRouteAvailable( routePath ) ? (
-		<Suspense fallback={ <LoadingFallback /> }>{ children }</Suspense>
-	) : (
-		<WooPaymentsAdminAreaUnavailable />
-	);
+} ) => (
+	<>
+		<WooPaymentsDocumentTitle path={ routePath } />
+		{ isRouteAvailable( routePath ) ? (
+			<Suspense fallback={ <LoadingFallback /> }>{ children }</Suspense>
+		) : (
+			<WooPaymentsAdminAreaUnavailable />
+		) }
+	</>
+);
 
 const WooPaymentsReportsRoute = () => {
 	if ( ! isRouteAvailable( '/woopayments/reports' ) ) {
@@ -339,7 +413,12 @@ registerSettingsPaymentsProviderRoute( {
 	id: 'woopayments-reports',
 	path: '/woopayments/reports',
 	order: 122,
-	element: <WooPaymentsReportsRoute />,
+	element: (
+		<>
+			<WooPaymentsDocumentTitle path="/woopayments/reports" />
+			<WooPaymentsReportsRoute />
+		</>
+	),
 } );
 
 registerSettingsPaymentsProviderRoute( {
