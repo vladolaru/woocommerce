@@ -556,6 +556,31 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A PHP error loading the API client skips the detach and is logged whatever the logging setting.
+	 *
+	 * The client injects its API client, so there is no counterpart; a PHP error is logged with its class, code and trace
+	 * instead of vanishing (review 34 F5), and the token deletion goes on without the detach.
+	 */
+	public function test_php_error_loading_api_client_is_logged_and_skips_detach(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$user_id      = $this->factory()->user->create();
+		$native_token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_delete' );
+		$this->create_service( array(), null, null, $this->create_account_service( true ) );
+		// The typed property assignment of a wrong object raises a TypeError inside the lookup.
+		wc_get_container()->replace( WooPaymentsApiClient::class, new \stdClass() );
+		$logger = RecordingWcLogger::install();
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token deletion hook.
+		do_action( 'woocommerce_payment_token_deleted', $native_token->get_id(), $native_token );
+
+		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => str_starts_with( $line[1], 'Error loading ' . WooPaymentsApiClient::class ) ) );
+		$this->assertCount( 1, $lines );
+		$this->assertSame( array( 'error', 'woopayments' ), array( $logger->lines[ $lines[0] ][0], $logger->lines[ $lines[0] ][2] ) );
+		$this->assertSame( 'TypeError', $logger->contexts[ $lines[0] ]['exception'] ?? '' );
+	}
+
+	/**
 	 * @testdox Should not detach live payment methods from admin screens on non-production environments.
 	 */
 	public function test_does_not_detach_live_payment_methods_from_non_production_admin_screens(): void {

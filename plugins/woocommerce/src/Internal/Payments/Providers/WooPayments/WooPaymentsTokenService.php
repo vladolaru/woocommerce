@@ -1153,7 +1153,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 		try {
 			$this->api_client = wc_get_container()->get( WooPaymentsApiClient::class );
 		} catch ( Throwable $exception ) {
-			unset( $exception );
+			$this->log_service_lookup_error( WooPaymentsApiClient::class, $exception );
 			return null;
 		}
 
@@ -1173,7 +1173,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 		try {
 			$this->customer_service = wc_get_container()->get( WooPaymentsCustomerService::class );
 		} catch ( Throwable $exception ) {
-			unset( $exception );
+			$this->log_service_lookup_error( WooPaymentsCustomerService::class, $exception );
 			return null;
 		}
 
@@ -1193,11 +1193,31 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 		try {
 			$this->account_service = wc_get_container()->get( WooPaymentsAccountService::class );
 		} catch ( Throwable $exception ) {
-			unset( $exception );
+			$this->log_service_lookup_error( WooPaymentsAccountService::class, $exception );
 			return null;
 		}
 
 		return $this->account_service;
+	}
+
+	/**
+	 * Log a failed service lookup when it is a PHP Error, whatever the logging setting; an Exception stays quiet.
+	 *
+	 * The caller then skips the detach, sync or fetch that needed the service. The client injects these services, so it
+	 * has no counterpart (review 34 F5).
+	 *
+	 * @param string    $service   Class name of the service.
+	 * @param Throwable $exception Lookup failure.
+	 */
+	private function log_service_lookup_error( string $service, Throwable $exception ): void {
+		if ( $exception instanceof Exception ) {
+			return;
+		}
+
+		wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
+			'Error loading ' . $service . ' for WooPayments tokens: ' . $exception->getMessage(),
+			$exception
+		);
 	}
 
 	/**
