@@ -247,7 +247,7 @@ class GeneralSettings extends AbstractDataModel {
 	 * the migration is done. Reads only; nothing is written.
 	 *
 	 * A store that never connected pays up to three option lookups per request for the missing options, where it
-	 * paid for a full wallet boot before.
+	 * paid for a full wallet boot before. Calling this reader autoloads `GeneralSettings` and its parent `AbstractDataModel`, and no other wallet class.
 	 *
 	 * @return array{connected: bool, sandbox: bool}
 	 */
@@ -262,7 +262,7 @@ class GeneralSettings extends AbstractDataModel {
 		}
 
 		// Once the migration has run, the shared settings option is the only source. Same check as SettingsModule.
-		// The legacy option names and keys are literals so this request-time read loads no other wallet class. The flag name is
+		// The legacy option names and keys are literals so this request-time read does not load the migration classes. The flag name is
 		// MigrationManager::OPTION_NAME_MIGRATION_IS_DONE; the bootstrap test sets it through the constant, so a drift fails there.
 		$legacy = '1' === get_option( 'woocommerce_ppcp-settings-migration-is-done' ) ? array() : get_option( 'woocommerce-ppcp-settings', array() );
 		$legacy = is_array( $legacy ) ? $legacy : array();

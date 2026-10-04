@@ -395,7 +395,7 @@ class PayPalTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should treat the dormant placeholder as a row that needs setup, with both URLs on the wallet's legacy settings section.
+	 * @testdox Should treat the dormant placeholder as a row that needs setup, with both URLs on the wallet's settings route.
 	 */
 	public function test_the_dormant_placeholder_row_needs_setup(): void {
 		$this->pin_native_ownership();
