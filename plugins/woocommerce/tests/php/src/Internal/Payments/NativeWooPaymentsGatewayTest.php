@@ -841,6 +841,95 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should never offer express gateways in admin, as the client never does, while card and an enabled Klarna stay offered.
+	 */
+	public function test_express_gateways_are_unavailable_in_admin_regardless_of_placement(): void {
+		$this->activate_native_tier();
+		$registry           = new WooPaymentsPaymentMethodRegistry();
+		$canonical_settings = array( 'express_checkout_in_payment_methods' => 'no' );
+		$feature_flag       = '0';
+		$account_service    = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data', 'get_gateway_setting', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
+			->getMock();
+		$account_service->method( 'get_cached_account_data' )->willReturn(
+			array(
+				'country'          => 'US',
+				'capabilities'     => array(
+					'card_payments'   => 'active',
+					'klarna_payments' => 'active',
+				),
+				'store_currencies' => array( 'default' => 'usd' ),
+			)
+		);
+		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
+			static function ( string $key, $fallback = null ) use ( &$canonical_settings ) {
+				return $canonical_settings[ $key ] ?? $fallback;
+			}
+		);
+		$enabled_settings = static function (): array {
+			return array( 'enabled' => 'yes' );
+		};
+		$feature_filter   = static function () use ( &$feature_flag ): string {
+			return $feature_flag;
+		};
+		$currency_filter  = static function (): string {
+			return 'USD';
+		};
+		$settings_options = array( 'pre_option_woocommerce_woocommerce_payments_settings' );
+		foreach ( array( 'apple_pay', 'google_pay', 'amazon_pay', 'klarna' ) as $payment_method_id ) {
+			$settings_options[] = "pre_option_woocommerce_woocommerce_payments_{$payment_method_id}_settings";
+		}
+		foreach ( $settings_options as $settings_option ) {
+			add_filter( $settings_option, $enabled_settings );
+		}
+		add_filter( 'pre_option__wcpay_feature_dynamic_checkout_place_order_button', $feature_filter );
+		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
+		$previous_cart = WC()->cart;
+		WC()->cart     = new \WC_Cart();
+		WC()->cart->set_total( '0' );
+		set_current_screen( 'edit-shop_subscription' );
+
+		try {
+			$this->assertTrue( is_admin(), 'The subscription edit screen is an admin request.' );
+			$provider = $this->create_processing_ready_provider();
+			$gateways = array();
+			foreach ( array( 'card', 'apple_pay', 'google_pay', 'amazon_pay', 'klarna' ) as $payment_method_id ) {
+				$definition = $registry->get( $payment_method_id );
+				$this->assertNotNull( $definition, "{$payment_method_id} should be registered." );
+				$gateway = new NativeWooPaymentsGateway( $definition );
+				$gateway->init( new RecordingPaymentProcessingService(), $provider, null, null, $account_service );
+				$gateways[ $payment_method_id ] = $gateway;
+			}
+
+			$placements = array(
+				'placement off' => array( 'no', '0' ),
+				'placement on'  => array( 'yes', '1' ),
+			);
+			foreach ( $placements as $placement => list( $setting, $flag ) ) {
+				$canonical_settings['express_checkout_in_payment_methods'] = $setting;
+				$feature_flag = $flag;
+
+				foreach ( array( 'apple_pay', 'google_pay', 'amazon_pay' ) as $payment_method_id ) {
+					$this->assertFalse( $gateways[ $payment_method_id ]->is_available(), "{$payment_method_id} must not be offered in admin ({$placement})." );
+				}
+				$this->assertTrue( $gateways['card']->is_available(), "Card stays offered in admin ({$placement})." );
+				$this->assertTrue( $gateways['klarna']->is_available(), "An enabled Klarna stays offered in admin ({$placement})." );
+			}
+		} finally {
+			set_current_screen( 'front' );
+			WC()->cart = $previous_cart;
+			foreach ( $settings_options as $settings_option ) {
+				remove_filter( $settings_option, $enabled_settings );
+			}
+			remove_filter( 'pre_option__wcpay_feature_dynamic_checkout_place_order_button', $feature_filter );
+			remove_filter( 'pre_option_woocommerce_currency', $currency_filter );
+		}
+	}
+
+	/**
 	 * @testdox Should apply definition amount limits to split gateway availability.
 	 */
 	public function test_split_gateway_availability_respects_definition_amount_limits(): void {

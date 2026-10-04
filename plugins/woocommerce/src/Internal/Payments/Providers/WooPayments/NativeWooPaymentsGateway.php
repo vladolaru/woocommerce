@@ -524,10 +524,11 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return false;
 		}
 
+		// Express methods are never offered in admin (for example, the Subscriptions payment-method select):
+		// the client's express gateways fail its enabled-at-checkout list check there.
 		if (
 			$this->payment_method_supports( self::PAYMENT_METHOD_CAPABILITY_EXPRESS_CHECKOUT )
-			&& ! is_admin()
-			&& ! $this->is_express_checkout_in_payment_methods_enabled()
+			&& ( is_admin() || ! $this->is_express_checkout_in_payment_methods_enabled() )
 		) {
 			return false;
 		}
