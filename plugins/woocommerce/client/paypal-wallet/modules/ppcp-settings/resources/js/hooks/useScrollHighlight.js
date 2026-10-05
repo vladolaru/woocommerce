@@ -18,9 +18,9 @@ const ScrollHighlightContext = createContext( null );
 /**
  * Provider that manages a registry of scrollable elements and highlight state.
  *
- * @param {Object}      props
- * @param {JSX.Element} props.children
- * @return {JSX.Element} Provider wrapper
+ * @param {Object}             props
+ * @param {React.ReactElement} props.children
+ * @return {React.ReactElement} Provider wrapper
  */
 export const ScrollHighlightProvider = ( { children } ) => {
 	const registry = useRef( new Map() );

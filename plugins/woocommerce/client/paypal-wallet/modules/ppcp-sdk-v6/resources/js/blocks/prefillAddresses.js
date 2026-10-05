@@ -28,8 +28,8 @@ function mergeAddress( existing = {}, incoming = {} ) {
  * Persists the buyer's PayPal addresses to the WC cart, optionally reflecting
  * them in the Blocks UI.
  *
- * @param {Object}  order                  - The PayPal order (Orders v2 shape).
- * @param {Object}  [options]              - Options.
+ * @param {Object}  order                   - The PayPal order (Orders v2 shape).
+ * @param {Object}  [options]               - Options.
  * @param {boolean} [options.needsShipping] - Whether the cart ships.
  * @param {boolean} [options.reflectInUi]   - Also push into the Blocks form state.
  * @return {Promise<void>} Resolves once the cart has been updated.

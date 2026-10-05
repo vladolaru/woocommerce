@@ -129,7 +129,7 @@ class WidgetBuilder {
 	}
 
 	renderAllMessages() {
-		for ( const [ wrapper, _entry ] of this.messages ) {
+		for ( const [ wrapper ] of this.messages ) {
 			this.renderMessages( wrapper );
 		}
 	}

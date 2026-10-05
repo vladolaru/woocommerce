@@ -11,8 +11,8 @@ class BaseAction {
 		// To override.
 	}
 
-	run( _status ) {
-		// To override.
+	run() {
+		// To override. Receives the rule's status.
 	}
 }
 

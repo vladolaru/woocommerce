@@ -8,7 +8,7 @@ import { warning } from '@wordpress/icons';
  * @param {Object} props                 - Component props
  * @param {Object} props.warningMessages - The warning messages to display
  * @param {string} [props.severity]      - The severity level: 'warning' (yellow) or 'error' (red)
- * @return {JSX.Element|null} The formatted warning messages or null
+ * @return {React.ReactElement|null} The formatted warning messages or null
  */
 const WarningMessages = ( { warningMessages, severity = 'warning' } ) => {
 	const messages = Object.values( warningMessages || {} ).filter( Boolean );

@@ -30,7 +30,7 @@ class CartHelper {
 	}
 
 	removeFromCart() {
-		return new Promise( ( resolve, _reject ) => {
+		return new Promise( ( resolve ) => {
 			if ( ! this.cartItemKeys || ! this.cartItemKeys.length ) {
 				resolve();
 				return;

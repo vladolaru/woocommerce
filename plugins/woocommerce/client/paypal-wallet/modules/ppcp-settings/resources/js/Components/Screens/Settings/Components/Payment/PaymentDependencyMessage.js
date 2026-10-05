@@ -8,7 +8,7 @@ import { useScrollTo } from '@ppcp-settings/hooks/useScrollHighlight';
  * @param {Object} props            - Component props
  * @param {string} props.parentId   - ID of the parent payment method
  * @param {string} props.parentName - Display name of the parent payment method
- * @return {JSX.Element} The formatted message with link
+ * @return {React.ReactElement} The formatted message with link
  */
 const PaymentDependencyMessage = ( { parentId, parentName } ) => {
 	const scrollTo = useScrollTo();

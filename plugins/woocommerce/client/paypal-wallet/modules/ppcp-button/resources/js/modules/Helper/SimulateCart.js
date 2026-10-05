@@ -10,8 +10,8 @@ class SimulateCart {
 
 	/**
 	 *
-	 * @param {Function}  onResolve
-	 * @param {Product[]} products
+	 * @param {Function}                              onResolve
+	 * @param {import('../Entity/Product').default[]} products
 	 * @return {Promise<unknown>} Resolves with the result of onResolve, rejects with the response data on failure.
 	 */
 	simulate( onResolve, products ) {

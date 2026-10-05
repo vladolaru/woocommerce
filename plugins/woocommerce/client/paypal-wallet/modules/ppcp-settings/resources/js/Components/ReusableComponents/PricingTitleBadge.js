@@ -36,6 +36,7 @@ const PricingTitleBadge = ( { item } ) => {
 	);
 
 	const label = sprintf(
+		/* translators: 1: percentage fee, 2: fixed fee amount. */
 		__( 'from %1$s%% + %2$s', 'woocommerce' ),
 		percentage,
 		fixedAmount

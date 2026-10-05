@@ -12,11 +12,11 @@ import { prefillFromPayPalOrder } from './prefillAddresses';
 import { FundingSources } from '../utils/fundingSources';
 
 /**
- * @param {Object} props                    - Props from the Blocks registry.
- * @param {Object} props.config             - The localized sdk-v6 config.
- * @param {Object} props.eventRegistration  - Blocks checkout event subscriptions.
- * @param {Object} props.emitResponse       - Blocks response-type constants.
- * @param {Object} props.shippingData       - The Blocks shipping data.
+ * @param {Object} props                   - Props from the Blocks registry.
+ * @param {Object} props.config            - The localized sdk-v6 config.
+ * @param {Object} props.eventRegistration - Blocks checkout event subscriptions.
+ * @param {Object} props.emitResponse      - Blocks response-type constants.
+ * @param {Object} props.shippingData      - The Blocks shipping data.
  * @return {Object} The cancel-link element.
  */
 export function V6ContinuationComponent( {

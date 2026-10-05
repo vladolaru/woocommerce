@@ -31,7 +31,7 @@ const transformSectionId = ( sectionId ) => {
  * @param {Object} props             - Component props
  * @param {string} props.settingName - Display name for the setting
  * @param {string} props.sectionId   - Section ID to scroll to
- * @return {JSX.Element} The formatted link element
+ * @return {React.ReactElement} The formatted link element
  */
 const SettingLink = ( { settingName, sectionId } ) => {
 	const selectTab = useSelectTab();
@@ -63,7 +63,7 @@ const SettingLink = ( { settingName, sectionId } ) => {
  * @param {Object} props               - Component props
  * @param {string} props.settingId     - ID of the required setting
  * @param {*}      props.requiredValue - Required value for the setting
- * @return {JSX.Element} The formatted message
+ * @return {React.ReactElement} The formatted message
  */
 const SettingDependencyMessage = ( { settingId, requiredValue } ) => {
 	// Setting names mapping.

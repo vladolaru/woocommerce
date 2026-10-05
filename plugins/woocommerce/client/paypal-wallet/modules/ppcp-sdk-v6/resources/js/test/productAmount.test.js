@@ -23,7 +23,7 @@ const config = ( amount ) =>
  * productForm() returns, and hands it back for dispatching events.
  *
  * @param {string|number|undefined} quantity - The quantity field's value;
- *                                              omitted entirely when undefined.
+ *                                           omitted entirely when undefined.
  * @return {HTMLFormElement} The form.
  */
 function renderProductForm( quantity ) {

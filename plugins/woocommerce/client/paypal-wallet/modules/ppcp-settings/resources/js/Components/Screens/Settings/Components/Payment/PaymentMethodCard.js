@@ -24,7 +24,7 @@ import usePaymentGatewayRefresh from '@ppcp-settings/hooks/usePaymentGatewayRefr
  * @param {Object}   props.methodsMap     - Map of all payment methods by ID
  * @param {Function} props.onTriggerModal - Callback when a method is clicked
  * @param {boolean}  props.isDisabled     - Whether the entire card is disabled
- * @return {JSX.Element} The rendered component
+ * @return {React.ReactElement} The rendered component
  */
 const PaymentMethodCard = ( {
 	id,

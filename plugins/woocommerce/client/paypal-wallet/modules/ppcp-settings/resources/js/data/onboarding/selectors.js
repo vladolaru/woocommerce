@@ -35,14 +35,9 @@ export const flags = ( state ) => {
  *
  * @param {{}}      state
  * @param {boolean} ownBrandOnly
- * @param {string}  _storeCountry
  * @return {{products:string[], options:{}}} The ISU products, based on choices made in the onboarding wizard.
  */
-export const determineProductsAndCaps = (
-	state,
-	ownBrandOnly,
-	_storeCountry
-) => {
+export const determineProductsAndCaps = ( state, ownBrandOnly ) => {
 	/**
 	 * An array of product-names that are used to build an onboarding URL via the
 	 * PartnerReferrals API. To avoid confusion with the "products" property from the

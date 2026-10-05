@@ -9,7 +9,7 @@ import { useScrollTo } from '@ppcp-settings/hooks/useScrollHighlight';
  * @param {string}  props.dependentMethodId   - ID of the dependent payment method
  * @param {string}  props.dependentMethodName - Display name of the dependent payment method
  * @param {boolean} props.requiredValue       - Required value (enabled/disabled state) for the dependent method
- * @return {JSX.Element} The formatted message with link
+ * @return {React.ReactElement} The formatted message with link
  */
 const PaymentMethodValueDependencyMessage = ( {
 	dependentMethodId,

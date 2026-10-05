@@ -13,7 +13,6 @@ import useNotices from '@ppcp-settings/hooks/useNotices';
 const Todos = () => {
 	const [ isResetting, setIsResetting ] = useState( false );
 	const { todos, isReady: areTodosReady, dismissTodo } = useTodos();
-	// eslint-disable-next-line no-shadow
 	const { setActiveModal } = useDispatch( COMMON_STORE_NAME );
 	const { resetDismissedTodos, setDismissedTodos } =
 		useDispatch( TODOS_STORE_NAME );

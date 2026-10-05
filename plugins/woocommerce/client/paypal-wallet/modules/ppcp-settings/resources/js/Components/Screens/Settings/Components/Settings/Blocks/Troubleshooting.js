@@ -25,6 +25,7 @@ const Troubleshooting = () => {
 				<ControlToggleButton
 					label={ __( 'Logging', 'woocommerce' ) }
 					description={ sprintf(
+						/* translators: %s: link to the WooCommerce logs page. */
 						__(
 							'Log additional debugging information in the WooCommerce logs that can assist technical staff to determine issues. <a href="%s" target="_blank" rel="noopener noreferrer">View logs</a>.',
 							'woocommerce'
@@ -39,6 +40,7 @@ const Troubleshooting = () => {
 			<SettingsBlock
 				title={ __( 'Webhooks', 'woocommerce' ) }
 				description={ sprintf(
+					/* translators: %s: link to the webhook status documentation. */
 					__(
 						'The following PayPal webhooks are subscribed. More information about the webhooks is available in the <a href="%s">Webhook Status documentation</a>.',
 						'woocommerce'

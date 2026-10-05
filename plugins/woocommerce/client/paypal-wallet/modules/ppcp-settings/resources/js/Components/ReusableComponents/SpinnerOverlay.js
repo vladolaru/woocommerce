@@ -8,7 +8,7 @@ import classnames from 'classnames';
  * @param {Object}  props                 Component properties.
  * @param {boolean} [props.asModal=false] Whether to display the spinner as a modal overlay.
  * @param {string}  [props.ariaLabel]     Accessible label for screen readers.
- * @return {JSX.Element} The spinner overlay component.
+ * @return {React.ReactElement} The spinner overlay component.
  */
 const SpinnerOverlay = ( {
 	asModal = false,

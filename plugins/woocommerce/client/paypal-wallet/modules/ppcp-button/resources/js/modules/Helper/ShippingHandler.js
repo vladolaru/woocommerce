@@ -32,7 +32,7 @@ export const handleShippingOptionsChange = async ( data, actions, config ) => {
 				.then( ( response ) => {
 					return response.json();
 				} )
-				.then( ( _cardData ) => {
+				.then( () => {
 					const shippingMethods =
 						document.querySelectorAll( '.shipping_method' );
 
@@ -115,7 +115,7 @@ export const handleShippingAddressChange = async ( data, actions, config ) => {
 					.then( function ( res ) {
 						return res.json();
 					} )
-					.then( function ( _customerData ) {
+					.then( function () {
 						jQuery( '.cart_totals .shop_table' ).load(
 							location.href +
 								' ' +

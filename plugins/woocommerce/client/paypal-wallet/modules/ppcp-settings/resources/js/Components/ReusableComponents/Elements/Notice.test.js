@@ -3,7 +3,7 @@ import '@testing-library/jest-dom';
 import Notice from './Notice';
 
 describe( 'Notice Component', () => {
-	it( 'it renders with the default params', () => {
+	it( 'renders with the default params', () => {
 		render( <Notice>Test</Notice> );
 		const element = screen.getByText( 'Test' );
 
@@ -13,7 +13,7 @@ describe( 'Notice Component', () => {
 		expect( element ).toHaveClass( 'type--info' );
 	} );
 
-	it( 'it loads the type param in the class', () => {
+	it( 'loads the type param in the class', () => {
 		render( <Notice type="syde">Test</Notice> );
 		const element = screen.getByText( 'Test' );
 
@@ -22,7 +22,7 @@ describe( 'Notice Component', () => {
 		expect( element ).not.toHaveClass( 'type--info' );
 	} );
 
-	it( 'it loads ustom classnames', () => {
+	it( 'loads custom classnames', () => {
 		render( <Notice className="test">Test</Notice> );
 		const element = screen.getByText( 'Test' );
 

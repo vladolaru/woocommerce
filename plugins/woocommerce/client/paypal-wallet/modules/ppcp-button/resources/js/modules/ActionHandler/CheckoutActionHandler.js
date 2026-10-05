@@ -13,7 +13,7 @@ class CheckoutActionHandler {
 
 	configuration() {
 		const spinner = this.spinner;
-		const createOrder = ( _data, _actions ) => {
+		const createOrder = () => {
 			const payer = payerData();
 			const bnCode =
 				typeof this.config.bn_codes[ this.config.context ] !==

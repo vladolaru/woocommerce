@@ -21,7 +21,11 @@ import {
 import { createElement } from '@wordpress/element';
 import { useSelect } from '@wordpress/data';
 import { __, sprintf } from '@wordpress/i18n';
+// Reused as-is from the blocks module: renders the saved-PayPal vault approval
+// into the selected saved-token row (its own namespaced SDK, no v6 clash).
 import { PayPalSavedToken } from '@ppcp-blocks/Components/paypal-saved-token';
+// Reused for the same reason, so the regular PayPal row cannot drift from the
+// v5 one it exists to match.
 import { PaypalLabel } from '@ppcp-blocks/Components/paypal-label';
 import { PayPalPlaceOrderContent } from '@ppcp-blocks/Components/paypal-place-order-content';
 import { loadSdkV6 } from './sdkLoader';
@@ -29,10 +33,6 @@ import { checkEligibility } from './eligibility';
 import { V6ExpressComponent } from './blocks/V6ExpressComponent';
 import { V6ContinuationComponent } from './blocks/V6ContinuationComponent';
 import { V6EditorPreview } from './blocks/V6EditorPreview';
-// Reused as-is from the blocks module: renders the saved-PayPal vault approval
-// into the selected saved-token row (its own namespaced SDK, no v6 clash).
-// Reused for the same reason, so the regular PayPal row cannot drift from the
-// v5 one it exists to match.
 import { FundingSources } from './utils/fundingSources';
 import { fundingSourceLabel } from './utils/fundingSourceLabel';
 import { amountFromCartTotals } from './utils/amount';
@@ -208,17 +208,17 @@ if ( config && config.page_context && config.continuation ) {
 	/**
 	 * Registers one express button, for a PayPal funding source.
 	 *
-	 * @param {Object}   args                   - The registration inputs.
-	 * @param {string}   args.name              - The name the block registry
-	 *                                          knows the method by.
-	 * @param {string}   args.gatewayId         - The gateway that processes the
-	 *                                          payment.
-	 * @param {string}   args.fundingSource     - The funding source rendered.
-	 * @param {Object}   args.content           - The element that renders the
-	 *                                          button.
-	 * @param {string[]} args.features          - What the processing gateway
-	 *                                          supports. Deliberately without
-	 *                                          a default.
+	 * @param {Object}   args               - The registration inputs.
+	 * @param {string}   args.name          - The name the block registry
+	 *                                      knows the method by.
+	 * @param {string}   args.gatewayId     - The gateway that processes the
+	 *                                      payment.
+	 * @param {string}   args.fundingSource - The funding source rendered.
+	 * @param {Object}   args.content       - The element that renders the
+	 *                                      button.
+	 * @param {string[]} args.features      - What the processing gateway
+	 *                                      supports. Deliberately without
+	 *                                      a default.
 	 */
 	const registerExpress = ( {
 		name,

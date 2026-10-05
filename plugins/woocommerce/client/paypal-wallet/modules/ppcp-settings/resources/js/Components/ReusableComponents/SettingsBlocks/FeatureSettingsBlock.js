@@ -10,7 +10,7 @@ import TitleBadge from '../TitleBadge';
  * @param {Object} props             Component properties
  * @param {string} props.title       The feature title
  * @param {string} props.description HTML description of the feature
- * @return {JSX.Element} The rendered component
+ * @return {React.ReactElement} The rendered component
  */
 const FeatureSettingsBlock = ( { title, description, ...props } ) => {
 	const { actionProps } = props;

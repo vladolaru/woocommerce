@@ -13,7 +13,7 @@ import { Content } from './Elements';
  * @param {*}       props.description             Card description content
  * @param {*}       props.children                Card content
  * @param {boolean} [props.contentContainer=true] Whether to wrap content in a container
- * @return {JSX.Element} The settings card component
+ * @return {React.ReactElement} The settings card component
  */
 const SettingsCard = ( {
 	id,

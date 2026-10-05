@@ -6,9 +6,9 @@ class UpdateCart {
 
 	/**
 	 *
-	 * @param {Function}  onResolve
-	 * @param {Product[]} products
-	 * @param {Object}    options
+	 * @param {Function}                              onResolve
+	 * @param {import('../Entity/Product').default[]} products
+	 * @param {Object}                                options
 	 * @return {Promise<unknown>} Resolves with the result of onResolve, rejects with the response data on failure.
 	 */
 	update( onResolve, products, options = {} ) {

@@ -60,11 +60,11 @@ export async function exchangeSetupToken( config, vaultSetupToken ) {
  * surface implements to submit its checkout (classic: `#place_order`; blocks:
  * the Blocks `onSubmit`).
  *
- * @param {Object}     sdkInstance        - The PayPal SDK v6 instance.
- * @param {Object}     config             - The wc_ppcp_sdk_v6 config object.
- * @param {Object}     handlers           - Surface callbacks.
- * @param {() => void} handlers.onComplete - Submits the checkout after the token is stored.
- * @param {(error: Error) => void} [handlers.onError] - Called on failure.
+ * @param {Object}                 sdkInstance         - The PayPal SDK v6 instance.
+ * @param {Object}                 config              - The wc_ppcp_sdk_v6 config object.
+ * @param {Object}                 handlers            - Surface callbacks.
+ * @param {() => void}             handlers.onComplete - Submits the checkout after the token is stored.
+ * @param {(error: Error) => void} [handlers.onError]  - Called on failure.
  * @return {Object} The PayPal save payment session.
  */
 export function createFreeTrialPayPalSession(

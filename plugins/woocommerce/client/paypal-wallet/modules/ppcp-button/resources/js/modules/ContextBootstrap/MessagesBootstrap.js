@@ -40,7 +40,7 @@ class MessagesBootstrap {
 	}
 
 	attemptDiscoverBlocks( retries ) {
-		return new Promise( ( resolve, _reject ) => {
+		return new Promise( ( resolve ) => {
 			this.discoverBlocks().then( ( found ) => {
 				if ( ! found && retries > 0 ) {
 					setTimeout( () => {

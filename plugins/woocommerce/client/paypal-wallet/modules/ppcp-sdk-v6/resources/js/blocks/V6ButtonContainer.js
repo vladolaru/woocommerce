@@ -17,13 +17,13 @@ import { createMethodButton } from '../components/buttonRenderer';
  * The button is recreated only when the session changes, so ordinary React
  * re-renders leave the mounted Web Component untouched.
  *
- * @param {Object}                            props                   - Component props.
- * @param {string}                            props.method            - The funding method (paypal, venmo, paylater).
- * @param {Object}                            props.session           - The payment session for the method.
- * @param {Object}                            props.styles            - Button styles for the current context.
- * @param {() => Promise<{orderId: string}>}  props.createOrderFn     - Returns the created order id.
- * @param {Object}                            [props.payLaterDetails] - Pay Later product details.
- * @param {() => void}                        [props.onClick]         - Called on click before the session starts.
+ * @param {Object}                           props                   - Component props.
+ * @param {string}                           props.method            - The funding method (paypal, venmo, paylater).
+ * @param {Object}                           props.session           - The payment session for the method.
+ * @param {Object}                           props.styles            - Button styles for the current context.
+ * @param {() => Promise<{orderId: string}>} props.createOrderFn     - Returns the created order id.
+ * @param {Object}                           [props.payLaterDetails] - Pay Later product details.
+ * @param {() => void}                       [props.onClick]         - Called on click before the session starts.
  * @return {Object} The container element.
  */
 export function V6ButtonContainer( {

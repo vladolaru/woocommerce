@@ -193,7 +193,7 @@ class SingleProductActionHandler {
 			.then( () => {
 				this.refreshMiniCart();
 			} )
-			.catch( ( _error ) => {
+			.catch( () => {
 				this.refreshMiniCart();
 			} );
 	}

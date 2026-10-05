@@ -12,7 +12,7 @@ import { usePaymentConfig } from '../hooks/usePaymentConfig';
  * @param {boolean} props.useAcdc      Whether the merchant can use card payments.
  * @param {string}  props.storeCountry The merchant's store country. 2-character ISO code.
  * @param {boolean} props.ownBrandOnly Whether to show only PayPal's own payment methods.
- * @return {JSX.Element} The payment options component.
+ * @return {React.ReactElement} The payment options component.
  * @class
  */
 const PaymentFlow = ( { useAcdc, storeCountry, ownBrandOnly } ) => {
