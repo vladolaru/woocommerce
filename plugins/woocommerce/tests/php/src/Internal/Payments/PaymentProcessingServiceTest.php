@@ -1837,11 +1837,11 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A webhook that pays the order between submissions stops the next submission under the lock before it sends anything.
 	 *
-	 * Design test 17 (data/t62-ambiguous-timeout-hold.md section 10). The first submission's charge gets a 502, so the
-	 * order keeps its key and the ambiguity record. The next submission loads the order; before it claims the lock, the
-	 * earlier request's `payment_intent.succeeded` arrives and the webhook finds the order by its metadata alone
-	 * (`WooPaymentsEventIngestor::get_order_from_event_object_metadata()`), so the order is paid. Under the lock the order
-	 * is read again, found paid, and nothing is sent: no charge under the kept key and no lookup.
+	 * The first submission's charge gets a 502, so the order keeps its key and the ambiguity record. The next submission
+	 * loads the order; before it claims the lock, the earlier request's `payment_intent.succeeded` arrives and the webhook
+	 * finds the order by its metadata alone (`WooPaymentsEventIngestor::get_order_from_event_object_metadata()`), so the
+	 * order is paid. Under the lock the order is read again, found paid, and nothing is sent: no charge under the kept key
+	 * and no lookup.
 	 */
 	public function test_process_checkout_charges_nothing_when_a_webhook_paid_the_order_between_submissions(): void {
 		$order                  = $this->create_woopayments_order( '10.00' );

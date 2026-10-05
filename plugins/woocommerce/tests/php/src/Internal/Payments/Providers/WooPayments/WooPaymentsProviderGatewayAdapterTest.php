@@ -973,9 +973,9 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox An ambiguous charge failure records the order, the customer it was sent with and the time beside the kept key; a definitive one records nothing.
 	 *
-	 * The record is what tells a later refused resubmit to look up what this request did (data/t62-ambiguous-timeout-hold.md
-	 * section 4.1). A 502 is the platform's own answer when its Stripe call failed (wpcom
-	 * `wcpay/core/exceptions/class-platform-failure-exception.php:30`), so the charge may have gone through.
+	 * The record is what tells a later refused resubmit to look up what this request did. A 502 is the platform's own
+	 * answer when its Stripe call failed (wpcom `wcpay/core/exceptions/class-platform-failure-exception.php:30`), so the
+	 * charge may have gone through.
 	 */
 	public function test_ambiguous_charge_failure_records_the_ambiguity_beside_the_kept_key(): void {
 		$order                  = $this->create_woopayments_order();
@@ -1298,7 +1298,8 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * @testdox An idempotency_error type on an ambiguous answer ($_dataName) under the kept key looks nothing up and keeps the key and the record.
 	 *
 	 * A 409 or a server error means the earlier request may still be running, so its intent may not be listable yet
-	 * (data/t62-ambiguous-timeout-hold.md, Step 0 check 2): the ambiguity classification wins over the error type, and the
+	 * (Stripe's docs promise read-after-write consistency for List, https://docs.stripe.com/search, but say nothing about
+	 * an intent whose create-and-confirm has not returned): the ambiguity classification wins over the error type, and the
 	 * "key is retired" warning is not written because nothing is retired (review 44 F1).
 	 *
 	 * @dataProvider provide_ambiguous_idempotency_answers
@@ -1845,8 +1846,9 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * @testdox A complete account list without the order's intent proves the earlier request took nothing: the key and record are retired and the new card is charged once.
 	 *
 	 * The account list holds every intent created since the window start, newest first, and `has_more` is false only when
-	 * no other intent is left in the window (data/t62-ambiguous-timeout-hold.md, "created[gte] live check", calls B to D),
-	 * so a complete page without the order's id and key proves no intent exists (review 45 F3).
+	 * no other intent is left in the window (recorded on a local WPCOM platform: `has_more` false once the window holds no
+	 * more intents, true while it does), so a complete page without the order's id and key proves no intent exists
+	 * (review 45 F3).
 	 */
 	public function test_complete_account_list_without_the_order_charges_the_new_card(): void {
 		$order                  = $this->create_woopayments_order();
@@ -2077,11 +2079,10 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox While the ambiguity record exists, a Stripe $_dataName under the kept key retires the key and the record: $retires.
 	 *
-	 * Monitor ruling A (data/t62-ambiguous-timeout-hold.md, decision on the implementation): only a card error or a
-	 * success proves Stripe processed this request under the key, fresh or as the stored result of the earlier request,
-	 * so either settles what the earlier request did. Stripe answers a 429 and most parameter-validation 400s before its
-	 * idempotency layer and stores neither (https://docs.stripe.com/error-low-level), so they say nothing about the
-	 * earlier request: the key and the record stay for the next attempt's lookup.
+	 * Only a card error or a success proves Stripe processed this request under the key, fresh or as the stored result of
+	 * the earlier request, so either settles what the earlier request did. Stripe answers a 429 and most
+	 * parameter-validation 400s before its idempotency layer and stores neither (https://docs.stripe.com/error-low-level),
+	 * so they say nothing about the earlier request: the key and the record stay for the next attempt's lookup.
 	 *
 	 * @dataProvider provide_stripe_answers_under_the_kept_key
 	 *

@@ -290,7 +290,8 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertStringContainsString( 'wcpay-express-checkout-wrapper', $output );
 		// Client 11.1.0 renders it wherever is_checkout() holds, which includes order-pay
-		// (class-wc-payments-express-checkout-button-display-handler.php:112-118; captures-2b/order-pay-1280-c8097.png).
+		// (class-wc-payments-express-checkout-button-display-handler.php:112-118; recorded on a local client 11.1.0
+		// order-pay page: a centred "— OR —" below the buttons).
 		$this->assertStringContainsString( '<p id="wcpay-express-checkout-button-separator" style="margin-top:1.5em;text-align:center;" hidden>', $output );
 		$this->assertSame( array( 'pay_for_order' ), $service->contexts );
 	}

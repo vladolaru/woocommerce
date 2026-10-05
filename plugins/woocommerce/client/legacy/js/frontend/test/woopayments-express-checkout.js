@@ -362,8 +362,8 @@ describe( 'WooPayments express checkout', () => {
 			submit: jest.fn().mockResolvedValue( {} ),
 			// The pages load https://js.stripe.com/v3/, whose `elements.update()` returns nothing: "Starting in
 			// Stripe.js dahlia, this method returns a Promise" (https://docs.stripe.com/js/elements_object/update),
-			// and the :8889 capture recorded `undefined` (t62/captures-2b/report.md, headline 1). Tests that model
-			// dahlia's promise set it explicitly.
+			// and a wrapper around `window.Stripe` on a local store recorded `undefined` as its return value. Tests
+			// that model dahlia's promise set it explicitly.
 			update: jest.fn(),
 		};
 		stripe = {
@@ -2470,8 +2470,8 @@ describe( 'WooPayments express checkout', () => {
 
 	// Client 11.1.0 getOnClickOptions() (shortcode-buttons-express/index.js:110-127) opens the first sheet from the
 	// server product data, with the pending rate only when an address is needed (:348-385), and the click leaves
-	// Elements alone (:321). Expected payload as captured on the client store (t62/captures-2b/report.md, F10:
-	// `[Medium 1500, Shipping 0]`, shipping required, amount unchanged). Click event: event.resolve(payload)
+	// Elements alone (:321). Expected payload as recorded on a local client 11.1.0 store for a $15 variation:
+	// `[Medium 1500, Shipping 0]`, shipping required, amount unchanged. Click event: event.resolve(payload)
 	// (https://docs.stripe.com/js.md, "expressCheckoutElement.on('click', handler)").
 	test( 'opens the first sheet of a shippable product from the server product data', async () => {
 		const resolveClick = jest.fn();
@@ -3619,7 +3619,7 @@ describe( 'WooPayments express checkout', () => {
 		} );
 
 		// Client 11.1.0 cancel (shortcode-buttons-express/index.js:432-446, event-handlers.js:320-326) empties the
-		// ephemeral cart and unblocks the page; the button stays as it was (t62/captures-2b/report.md, F10: client
+		// ephemeral cart and unblocks the page; the button stays as it was (recorded on a local client 11.1.0 store:
 		// `is-ready`, opacity 1 after cancel). The Express Checkout Element `cancel` event fires when the payment
 		// interface is dismissed, with no payload the handler reads
 		// (https://docs.stripe.com/js/elements_object/express_checkout_element_cancel_event).
@@ -4064,7 +4064,8 @@ describe( 'WooPayments express checkout', () => {
 		} );
 
 		// Client 11.1.0 button-ui.js:39-45: hiding removes `is-ready` and sets `display: none` (jQuery `.hide()`), so a
-		// hidden wallet takes no space and no click (t62/captures-2b/report.md, F4); showing reverses both. The first
+		// hidden wallet takes no space and no click (recorded on a local client 11.1.0 store: `display: none`, height
+		// 0); showing reverses both. The first
 		// mount happens in the stylesheet's initial state, without `display: none`.
 		test( 'takes a hidden wallet out of the layout and puts it back when shown', async () => {
 			const container = () =>

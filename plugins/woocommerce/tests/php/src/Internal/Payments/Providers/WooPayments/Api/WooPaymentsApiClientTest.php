@@ -1941,8 +1941,9 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Listing a customer's payment intents reads the platform's intentions list with the customer and limit as query args.
 	 *
-	 * The shape is the one Step 0 recorded on wpcom-local (data/t62-ambiguous-timeout-hold.md, check 4): Stripe's list
-	 * object proxied as the connected account, newest first, each intent carrying the store's order metadata.
+	 * The shape is the one recorded on a local WPCOM platform for a test-mode store: Stripe's list object proxied as the
+	 * connected account (`object`, `data`, `has_more`, `url`), newest first, each intent created by the store carrying
+	 * the order's `order_id` and `order_key` metadata (https://docs.stripe.com/api/payment_intents/list).
 	 */
 	public function test_list_payment_intentions_reads_the_customer_intentions_list(): void {
 		list( $sut, $http_client ) = $this->make_sut(
@@ -2002,7 +2003,8 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	 * The platform's GET intentions route declares `created` and forwards declared args to Stripe's PaymentIntents list
 	 * unchanged (wpcom `wcpay/class-intentions-controller.php:198-210`, `class-base-controller.php:425-430`), and Stripe
 	 * filters by creation time with `created[gte]` and `created[lte]`, both inclusive
-	 * (https://docs.stripe.com/api/payment_intents/list; data/t62-ambiguous-timeout-hold.md, "created[lte] live check").
+	 * (https://docs.stripe.com/api/payment_intents/list). Recorded on a local WPCOM platform: both bounds are honoured,
+	 * alone or together, inclusive and cut at the second.
 	 */
 	public function test_list_payment_intentions_created_between_reads_the_account_intentions_list(): void {
 		list( $sut, $http_client ) = $this->make_sut(
