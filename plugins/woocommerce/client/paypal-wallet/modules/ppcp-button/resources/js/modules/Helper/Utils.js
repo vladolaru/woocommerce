@@ -32,28 +32,27 @@ export const strRemoveWord = ( str, word, separator = ',' ) => {
 };
 
 export const throttle = ( func, limit ) => {
-	let inThrottle, lastArgs, lastContext;
+	let inThrottle, queuedCall;
 
 	function execute() {
 		inThrottle = true;
 		func.apply( this, arguments );
 		setTimeout( () => {
 			inThrottle = false;
-			if ( lastArgs ) {
-				const nextArgs = lastArgs;
-				const nextContext = lastContext;
-				lastArgs = lastContext = null;
-				execute.apply( nextContext, nextArgs );
+			if ( queuedCall ) {
+				const nextCall = queuedCall;
+				queuedCall = null;
+				nextCall();
 			}
 		}, limit );
 	}
 
 	return function () {
+		const args = arguments;
 		if ( ! inThrottle ) {
-			execute.apply( this, arguments );
+			execute.apply( this, args );
 		} else {
-			lastArgs = arguments;
-			lastContext = this;
+			queuedCall = () => execute.apply( this, args );
 		}
 	};
 };
