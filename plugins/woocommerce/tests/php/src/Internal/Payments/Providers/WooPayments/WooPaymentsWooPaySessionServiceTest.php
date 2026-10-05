@@ -2991,6 +2991,48 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A WooPay init error code that WordPress or Jetpack does not set is logged as unknown_error ($_dataName).
+	 *
+	 * WP_Http::request() hands back whatever a pre_http_request callback returns, and WP_Error keeps any code
+	 * (wp-includes/class-wp-error.php add(), get_error_code()), so an extension's error code can be a URL, an email or a token.
+	 *
+	 * @dataProvider woopay_init_error_codes
+	 *
+	 * @param string $code     The WP_Error code a pre_http_request callback returns.
+	 * @param string $expected The logged error_code.
+	 */
+	public function test_logs_only_known_woopay_init_error_codes( string $code, string $expected ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		$this->connect_woopay_blog();
+		add_filter( 'pre_http_request', static fn() => new \WP_Error( $code, 'Request blocked by an extension.' ) );
+		$lines = $this->record_woopayments_log_lines();
+
+		$this->assertSame( array( 'result' => 'failure' ), $this->create_service()->init_woopay_session( array( 'email' => 'shopper@example.com' ) ) );
+		$this->assertContains(
+			array( 'error', 'HTTP_REQUEST_ERROR: WooPay session init request failed.', array( 'error_code' => $expected ) ),
+			$lines->getArrayCopy()
+		);
+		if ( $code !== $expected ) {
+			$this->assertStringNotContainsString( $code, (string) wp_json_encode( $lines->getArrayCopy(), JSON_UNESCAPED_SLASHES ) );
+		}
+	}
+
+	/**
+	 * Error codes of a failed WooPay init request and what is logged for each.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function woopay_init_error_codes(): array {
+		return array(
+			'a signed URL'                => array( 'https://pay.woo.test/wp-json/platform-checkout/v1/init?token=tok_secret_123&signature=sig_abc', 'unknown_error' ),
+			'an email'                    => array( 'other-shopper@example.com', 'unknown_error' ),
+			'a token'                     => array( 'tok_secret_123', 'unknown_error' ),
+			"WordPress's blocked request" => array( 'http_request_not_executed', 'http_request_not_executed' ),
+			"Jetpack's missing token"     => array( 'missing_token', 'missing_token' ),
+		);
+	}
+
+	/**
 	 * Assert that no recorded WooPayments log line carries the session key, the shopper's email, the blog token or a WooPay URL.
 	 *
 	 * @param \ArrayObject $lines Recorded lines: level, message and context.

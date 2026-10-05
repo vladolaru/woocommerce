@@ -79,6 +79,13 @@ class WooPaymentsWooPaySessionService {
 	private const DRAFT_REUSE_OPERATION = 'WooPay draft reuse';
 
 	/**
+	 * WP_Error codes a failed WooPay init request can carry that are safe to log: WP_Http::request() and
+	 * WP_Http::_dispatch_request() (http_request_failed, http_request_not_executed, http_failure) and Jetpack Connection's
+	 * Client::build_signed_request() (missing_token, malformed_token, invalid_body).
+	 */
+	private const KNOWN_REQUEST_ERROR_CODES = array( 'http_request_failed', 'http_request_not_executed', 'http_failure', 'missing_token', 'malformed_token', 'invalid_body' );
+
+	/**
 	 * WooPayments account service.
 	 *
 	 * @var WooPaymentsAccountService
@@ -1048,7 +1055,9 @@ class WooPaymentsWooPaySessionService {
 	/**
 	 * Get the log context for a failed WooPay request: the error code and, for a cURL failure, its number.
 	 *
-	 * The error message is left out: a transport message can name the host or the URL.
+	 * The error message is left out: a transport message can name the host or the URL. The code is logged only when it is
+	 * one WordPress or Jetpack sets; a pre_http_request callback can return a WP_Error with any code, a URL or a token
+	 * included, so any other code is logged as unknown_error.
 	 *
 	 * @param mixed $response What the request returned instead of a response array.
 	 * @return array<string,int|string>
@@ -1058,7 +1067,8 @@ class WooPaymentsWooPaySessionService {
 			return array( 'response_type' => gettype( $response ) );
 		}
 
-		$context = array( 'error_code' => $response->get_error_code() );
+		$error_code = $response->get_error_code();
+		$context    = array( 'error_code' => in_array( $error_code, self::KNOWN_REQUEST_ERROR_CODES, true ) ? $error_code : 'unknown_error' );
 		// Requests words a transport failure as "cURL error <number>: <text>" (wp-includes/Requests/src/Transport/Curl.php).
 		if ( 1 === preg_match( '/^cURL error (\d+):/', $response->get_error_message(), $matches ) ) {
 			$context['curl_error'] = (int) $matches[1];
