@@ -1858,7 +1858,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		);
 		$paths    = array(
 			'failed'       => array( self::stripe_api_error( 500 ) ),
-			'cannot check' => array( self::stripe_no_such_customer(), self::http_json( 200, array( 'object' => 'list' ) ) ),
+			'cannot check' => array( self::stripe_no_such_customer(), self::list_answer_without_data() ),
 			'found'        => array( static fn( WC_Order $order ): array => self::intent_list( array( self::order_intent( $order, 'pi_earlier', 'succeeded' ) ) ) ),
 			'disputed'     => array( static fn( WC_Order $order ): array => self::intent_list( array( self::order_intent( $order, 'pi_earlier', 'succeeded', 1000, $disputed ) ) ) ),
 		);
@@ -2009,7 +2009,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	public function provide_customer_lists_that_fall_back(): array {
 		return array(
 			'a deleted customer'     => array( self::stripe_no_such_customer() ),
-			'an answer with no list' => array( self::http_json( 200, array( 'object' => 'list' ) ) ),
+			'an answer with no list' => array( self::list_answer_without_data() ),
 			'a full page of newer intents with more to read' => array(
 				self::intent_list(
 					array(
@@ -2124,7 +2124,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function provide_account_lists_that_cannot_settle(): array {
 		return array(
-			'the account answer has no list'        => array( self::http_json( 200, array( 'object' => 'list' ) ) ),
+			'the account answer has no list'        => array( self::list_answer_without_data() ),
 			'the account list refused'              => array(
 				self::http_json(
 					400,
@@ -2467,6 +2467,11 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	/**
 	 * Stripe's answer to a reused key with different parameters, passed through by the platform.
 	 *
+	 * Shape: Stripe's error object with type idempotency_error (https://docs.stripe.com/api/errors,
+	 * https://docs.stripe.com/api/idempotent_requests), read by the client's error-envelope parser
+	 * (WooPayments 11.1.0 includes/wc-payment-api/class-wc-payments-api-client.php:2852-2871); the platform proxy returns Stripe's status and body
+	 * unchanged (wpcom `wcpay/class-base-controller.php:476-491`).
+	 *
 	 * @param string $key Refused key.
 	 * @return array<string,mixed>
 	 */
@@ -2484,6 +2489,12 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Stripe's answer for a deleted customer, passed through by the platform.
+	 *
+	 * Shape: Stripe's error object (https://docs.stripe.com/api/errors: type, code, param, message; resource_missing in
+	 * https://docs.stripe.com/error-codes) with Stripe's 404, read by the client's error-envelope parser
+	 * (WooPayments 11.1.0 includes/wc-payment-api/class-wc-payments-api-client.php:2852-2871: error.code, error.message, error.type,
+	 * error.param); the platform's list route returns Stripe's status and body unchanged (wpcom
+	 * `wcpay/class-intentions-controller.php:371-373` through `wcpay/class-base-controller.php:476-491`).
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -2503,6 +2514,11 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Stripe's server error, passed through by the platform.
+	 *
+	 * Shape: Stripe's error object with type api_error and a 5xx status (https://docs.stripe.com/api/errors), read by the
+	 * client's error-envelope parser (WooPayments 11.1.0 includes/wc-payment-api/class-wc-payments-api-client.php:2852-2871: with no
+	 * error.code, error.type becomes the code); the platform proxy returns Stripe's status and body unchanged (wpcom
+	 * `wcpay/class-base-controller.php:476-491`).
 	 *
 	 * @param int $code HTTP status.
 	 * @return array<string,mixed>
@@ -2539,6 +2555,9 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	/**
 	 * Stripe's card decline, passed through by the platform.
 	 *
+	 * Same status and error fields as the recorded decline in `Fixtures/rec-1-intention-declines.json`, pair
+	 * `generic_decline`.
+	 *
 	 * @return array<string,mixed>
 	 */
 	private static function stripe_card_declined(): array {
@@ -2557,6 +2576,10 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 	/**
 	 * A succeeded create-and-confirm answer.
+	 *
+	 * The fields the store reads from the recorded answer in `Fixtures/rec-t3-basic-card.json`, pair
+	 * `basic_card_usd_create_and_confirm` (a 200 PaymentIntent with id, status succeeded, amount, currency, customer and
+	 * payment_method; https://docs.stripe.com/api/payment_intents/object).
 	 *
 	 * @param string $intent_id Intent ID.
 	 * @param string $pm        Payment method charged.
@@ -2577,7 +2600,11 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * The platform's intents list (Stripe's list object, Step 0 check 4).
+	 * The platform's intents list.
+	 *
+	 * Shape: Stripe's List PaymentIntents answer (https://docs.stripe.com/api/payment_intents/list: object list, url,
+	 * has_more, data), which the platform's GET intentions route (wpcom `wcpay/class-intentions-controller.php:198-210`)
+	 * returns unchanged (`list_intentions()`, :371-373, through `wcpay/class-base-controller.php:476-491`).
 	 *
 	 * @param array<int,array<string,mixed>> $intents  Intents, newest first.
 	 * @param bool                           $has_more Whether more pages exist.
@@ -2596,7 +2623,24 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * A 200 list answer without a data list.
+	 *
+	 * Defensive input, not a documented or recorded answer: Stripe's list always carries data
+	 * (https://docs.stripe.com/api/payment_intents/list, Returns). It proves a malformed answer is never read as "no
+	 * earlier intent".
+	 *
+	 * @return array<string,mixed>
+	 */
+	private static function list_answer_without_data(): array {
+		return self::http_json( 200, array( 'object' => 'list' ) );
+	}
+
+	/**
 	 * An intent the store's charge path created for an order, with the metadata it sends.
+	 *
+	 * Shape: Stripe's PaymentIntent object (https://docs.stripe.com/api/payment_intents/object), with the order_id,
+	 * order_key and order_number metadata WooPaymentsIntentRequestBuilder::metadata_from_order() sends; Stripe returns
+	 * metadata values as strings (https://docs.stripe.com/api/metadata).
 	 *
 	 * @param WC_Order            $order     Order.
 	 * @param string              $intent_id Intent ID.
