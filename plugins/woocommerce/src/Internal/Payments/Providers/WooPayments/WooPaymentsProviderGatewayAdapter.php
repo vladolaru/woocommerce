@@ -561,7 +561,8 @@ class WooPaymentsProviderGatewayAdapter {
 	 * a PaymentIntent carrying the order's id and key, so the order's intents decide: one that took the payment pays the
 	 * order and the new payment method is not charged; none that did (or none at all) proves no money moved, so the key is
 	 * retired and the new payment method is charged now; a failed lookup refuses this attempt and keeps the key and the
-	 * record, so the next attempt looks again.
+	 * record, so the next attempt looks again. When neither the customer's nor the account's intents can be listed, the
+	 * attempt is refused the same way and the merchant gets one note asking them to check the payment.
 	 *
 	 * @param PaymentContext      $context      Payment context.
 	 * @param array<string,mixed> $request_data Charge request.
@@ -571,17 +572,26 @@ class WooPaymentsProviderGatewayAdapter {
 	 * @throws WooPaymentsApiException When recreating a missing customer for the new charge fails.
 	 */
 	private function settle_earlier_charge( PaymentContext $context, array &$request_data, string $attempt_key, string $sent_key ) {
-		$order   = $context->get_order();
-		$record  = $this->get_charge_ambiguity_record( $order ) ?? array(
+		$order  = $context->get_order();
+		$record = $this->get_charge_ambiguity_record( $order ) ?? array(
 			'customer'  => '',
 			'failed_at' => 0,
 		);
-		$intents = $this->ambiguity_service->find_order_intents( $order, $record['customer'], $record['failed_at'] );
-		if ( null === $intents ) {
+		$lookup = $this->ambiguity_service->find_order_intents( $order, $record['customer'], $record['failed_at'] );
+		if ( WooPaymentsChargeAmbiguityService::LOOKUP_CANNOT_CHECK === $lookup['status'] ) {
+			$this->ambiguity_service->log_lookup_cannot_check( $order, $sent_key );
+			$this->add_charge_cannot_be_checked_note_once( $order );
+
+			return $this->charge_lookup_failed_outcome();
+		}
+
+		if ( WooPaymentsChargeAmbiguityService::LOOKUP_DONE !== $lookup['status'] ) {
 			$this->ambiguity_service->log_lookup_failed( $order, $sent_key );
 
 			return $this->charge_lookup_failed_outcome();
 		}
+
+		$intents = $lookup['intents'];
 
 		$paid_intent = WooPaymentsChargeAmbiguityService::find_intent_with_money( $intents );
 		if ( null !== $paid_intent ) {
@@ -655,6 +665,26 @@ class WooPaymentsProviderGatewayAdapter {
 		);
 
 		return $outcome->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false )->without_token_effects() );
+	}
+
+	/**
+	 * Tell the merchant, once per ambiguity record, that the earlier payment attempt cannot be checked.
+	 *
+	 * Every attempt on the order is refused until a list can be read, so the merchant needs to check the payment in
+	 * WooPayments. The record remembers the note, so a shopper retrying does not add one per attempt.
+	 *
+	 * @param WC_Order $order Order being charged.
+	 */
+	private function add_charge_cannot_be_checked_note_once( WC_Order $order ): void {
+		$record = $order->get_meta( self::CHARGE_AMBIGUITY_META, true );
+		if ( ! is_array( $record ) || ! empty( $record['cannot_check_noted'] ) ) {
+			return;
+		}
+
+		$order->add_order_note( __( "The earlier payment attempt for this order could not be checked, so the customer's new payment was not taken. Please check for this payment in WooPayments before the customer tries again.", 'woocommerce' ) );
+		$record['cannot_check_noted'] = true;
+		$order->update_meta_data( self::CHARGE_AMBIGUITY_META, $record );
+		$order->save_meta_data();
 	}
 
 	/**

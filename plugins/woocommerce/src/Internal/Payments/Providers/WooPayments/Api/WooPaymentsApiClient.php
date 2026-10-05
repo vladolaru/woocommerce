@@ -548,6 +548,31 @@ class WooPaymentsApiClient {
 	}
 
 	/**
+	 * List the account's WooPayments PaymentIntents created at or after a time, newest first.
+	 *
+	 * The platform's intentions list declares `created` and forwards it to Stripe's PaymentIntents list unchanged, so
+	 * `created[gte]` filters by creation time. Used when the customer list cannot be read, for example because the
+	 * customer was deleted, which leaves its PaymentIntents in place.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param int $created_since Unix time of the oldest intent to list.
+	 * @param int $limit         Most intents to return; Stripe allows up to 100.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function list_payment_intentions_created_since( int $created_since, int $limit = 100 ): array {
+		return $this->request(
+			array(
+				'created' => array( 'gte' => $created_since ),
+				'limit'   => $limit,
+			),
+			'intentions',
+			'GET'
+		);
+	}
+
+	/**
 	 * Retrieve a WooPayments PaymentIntent in an explicit account mode.
 	 *
 	 * Historical order readers use this instead of inheriting the store's current mode.

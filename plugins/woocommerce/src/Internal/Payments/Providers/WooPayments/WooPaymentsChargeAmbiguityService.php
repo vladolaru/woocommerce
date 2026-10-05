@@ -16,14 +16,30 @@ use WC_Order;
  *
  * After an ambiguous charge failure the order keeps its idempotency key, and a resubmit with another body under that key
  * is refused by Stripe with an idempotency error, which means the earlier request finished. Its money call is a single
- * create-and-confirm carrying the order's id and key in its metadata, so the customer's PaymentIntents show whether it
- * created an intent and whether that intent moved money. Client 11.1.0 has no equivalent: it sends a fresh key per
+ * create-and-confirm carrying the order's id and key in its metadata, so the customer's PaymentIntents (or the account's,
+ * when the customer's cannot be listed) show whether it created an intent and whether that intent moved money. Client
+ * 11.1.0 has no equivalent: it sends a fresh key per
  * request (`class-wc-payments-api-client.php:2690`) and charges the resubmit.
  *
  * @since 11.2.0
  * @internal Transitional internal component for the native payments runtime.
  */
 class WooPaymentsChargeAmbiguityService {
+
+	/**
+	 * Lookup answer: the order's intents were listed, possibly none.
+	 */
+	public const LOOKUP_DONE = 'done';
+
+	/**
+	 * Lookup answer: the lists could not be read this time, and a later attempt may read them.
+	 */
+	public const LOOKUP_FAILED = 'failed';
+
+	/**
+	 * Lookup answer: neither the customer's nor the account's list can be read, so a later attempt will not settle it either.
+	 */
+	public const LOOKUP_CANNOT_CHECK = 'cannot_check';
 
 	/**
 	 * PaymentIntent statuses in which the intent holds the shopper's money.
@@ -63,29 +79,86 @@ class WooPaymentsChargeAmbiguityService {
 	/**
 	 * List the PaymentIntents created for an order.
 	 *
-	 * An intent belongs to the order when its metadata carries both the order's id and its order key. A customer's list
-	 * also holds intents created elsewhere (other orders, Stripe Billing invoices), so both must match.
+	 * Lists the customer the earlier request was sent with. When Stripe or the platform refuses that list for good (a
+	 * deleted customer, for example), lists the account's intents created since shortly before the failure instead. A
+	 * transport failure or a server error leaves the lookup failed, since a later attempt may read the list.
 	 *
 	 * @param WC_Order $order       Order whose earlier charge is looked up.
 	 * @param string   $customer_id Customer the earlier charge request was sent with.
 	 * @param int      $failed_at   Unix time the earlier charge failure was recorded.
-	 * @return array<int,array<string,mixed>>|null The order's intents, newest first, possibly none; null when the lookup
-	 *                                             failed or could not prove the list complete.
+	 * @return array{status:string,intents:array<int,array<string,mixed>>} One of the LOOKUP_* answers, with the order's
+	 *                                                                    intents, newest first, when it is LOOKUP_DONE.
 	 */
-	public function find_order_intents( WC_Order $order, string $customer_id, int $failed_at ): ?array {
+	public function find_order_intents( WC_Order $order, string $customer_id, int $failed_at ): array {
 		try {
 			$list = $this->api_client->list_payment_intentions( $customer_id, self::LIST_LIMIT );
 		} catch ( WooPaymentsApiException $exception ) {
-			return null;
+			return $this->api_client->is_ambiguous_request_failure( $exception )
+				? self::lookup( self::LOOKUP_FAILED )
+				: $this->find_order_intents_created_since_failure( $order, $failed_at );
 		}
 
-		if ( ! isset( $list['data'] ) || ! is_array( $list['data'] ) ) {
+		$order_intents = $this->get_order_intents_from_list( $list, $order, $failed_at );
+
+		return null === $order_intents ? self::lookup( self::LOOKUP_FAILED ) : self::lookup( self::LOOKUP_DONE, $order_intents );
+	}
+
+	/**
+	 * List the order's PaymentIntents among the account's intents created since shortly before the recorded failure.
+	 *
+	 * A definitive refusal, or a page that cannot be proven complete, cannot change on a later attempt: the window only
+	 * grows, so a full page can never reach back past it.
+	 *
+	 * @param WC_Order $order     Order whose earlier charge is looked up.
+	 * @param int      $failed_at Unix time the earlier charge failure was recorded.
+	 * @return array{status:string,intents:array<int,array<string,mixed>>}
+	 */
+	private function find_order_intents_created_since_failure( WC_Order $order, int $failed_at ): array {
+		try {
+			$list = $this->api_client->list_payment_intentions_created_since( $failed_at - self::LOOKBACK_SECONDS, self::LIST_LIMIT );
+		} catch ( WooPaymentsApiException $exception ) {
+			return self::lookup( $this->api_client->is_ambiguous_request_failure( $exception ) ? self::LOOKUP_FAILED : self::LOOKUP_CANNOT_CHECK );
+		}
+
+		$order_intents = $this->get_order_intents_from_list( $list, $order, $failed_at );
+
+		return null === $order_intents ? self::lookup( self::LOOKUP_CANNOT_CHECK ) : self::lookup( self::LOOKUP_DONE, $order_intents );
+	}
+
+	/**
+	 * Build a lookup answer.
+	 *
+	 * @param string                         $status        One of the LOOKUP_* answers.
+	 * @param array<int,array<string,mixed>> $order_intents The order's intents.
+	 * @return array{status:string,intents:array<int,array<string,mixed>>}
+	 */
+	private static function lookup( string $status, array $order_intents = array() ): array {
+		return array(
+			'status'  => $status,
+			'intents' => $order_intents,
+		);
+	}
+
+	/**
+	 * Get the order's intents from a PaymentIntents list page.
+	 *
+	 * An intent belongs to the order when its metadata carries both the order's id and its order key. A list also holds
+	 * intents created elsewhere (other orders, Stripe Billing invoices), so both must match.
+	 *
+	 * @param array<string,mixed> $page      The list page.
+	 * @param WC_Order            $order     Order whose earlier charge is looked up.
+	 * @param int                 $failed_at Unix time the earlier charge failure was recorded.
+	 * @return array<int,array<string,mixed>>|null The order's intents, newest first, possibly none; null when the answer
+	 *                                             has no list or the page cannot be proven complete.
+	 */
+	private function get_order_intents_from_list( array $page, WC_Order $order, int $failed_at ): ?array {
+		if ( ! isset( $page['data'] ) || ! is_array( $page['data'] ) ) {
 			return null;
 		}
 
 		$order_intents = array();
 		$oldest        = null;
-		foreach ( $list['data'] as $intent ) {
+		foreach ( $page['data'] as $intent ) {
 			if ( ! is_array( $intent ) ) {
 				continue;
 			}
@@ -98,7 +171,7 @@ class WooPaymentsChargeAmbiguityService {
 		}
 
 		// A full page with no match that does not reach back before the earlier request may have left its intent for the next page.
-		if ( array() === $order_intents && ! empty( $list['has_more'] ) ) {
+		if ( array() === $order_intents && ! empty( $page['has_more'] ) ) {
 			$oldest_created = is_array( $oldest ) && is_numeric( $oldest['created'] ?? null ) ? (int) $oldest['created'] : PHP_INT_MAX;
 			if ( $oldest_created >= $failed_at - self::LOOKBACK_SECONDS ) {
 				return null;
@@ -158,6 +231,24 @@ class WooPaymentsChargeAmbiguityService {
 				$idempotency_key,
 				$order->get_id(),
 				$intent_count
+			),
+			$order,
+			$idempotency_key
+		);
+	}
+
+	/**
+	 * Log, whatever the logging setting, that neither list can be read, so this payment attempt was refused and the key kept.
+	 *
+	 * @param WC_Order $order           Order being paid.
+	 * @param string   $idempotency_key Kept charge key the earlier request was sent with.
+	 */
+	public function log_lookup_cannot_check( WC_Order $order, string $idempotency_key ): void {
+		$this->log(
+			sprintf(
+				'The charge idempotency key %1$s kept on order #%2$d was refused because the new payment request differs from the earlier one, and neither the customer\'s nor the account\'s PaymentIntents could be listed to learn whether the earlier request took the payment. This payment attempt is refused without a charge; the key is kept, every attempt on this order is refused the same way until a list can be read, and an order note asks the merchant to check the payment.',
+				$idempotency_key,
+				$order->get_id()
 			),
 			$order,
 			$idempotency_key

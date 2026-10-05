@@ -1997,6 +1997,47 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Listing the account's payment intents created since a time reads the platform's intentions list with created[gte] and limit as query args.
+	 *
+	 * The platform's GET intentions route declares `created` and forwards declared args to Stripe's PaymentIntents list
+	 * unchanged (wpcom `wcpay/class-intentions-controller.php:198-210`, `class-base-controller.php:425-430`), and Stripe
+	 * filters by creation time with `created[gte]` (https://docs.stripe.com/api/payment_intents/list).
+	 */
+	public function test_list_payment_intentions_created_since_reads_the_account_intentions_list(): void {
+		list( $sut, $http_client ) = $this->make_sut(
+			true,
+			array(
+				'object'   => 'list',
+				'data'     => array(
+					array(
+						'id'      => 'pi_recent',
+						'created' => 1700000100,
+					),
+				),
+				'has_more' => false,
+			)
+		);
+
+		$result = $sut->list_payment_intentions_created_since( 1700000000, 100 );
+
+		$this->assertSame( 'pi_recent', $result['data'][0]['id'] );
+		$this->assertSame( 'GET', $http_client->last_method );
+		$this->assertNull( $http_client->last_body );
+		$this->assertStringStartsWith( '/sites/123/wcpay/intentions?', $http_client->last_path );
+		$query = array();
+		wp_parse_str( (string) wp_parse_url( $http_client->last_path, PHP_URL_QUERY ), $query );
+		$this->assertSame(
+			array(
+				'test_mode' => '1',
+				'created'   => array( 'gte' => '1700000000' ),
+				'limit'     => '100',
+			),
+			$query
+		);
+		$this->assertArrayNotHasKey( 'customer', $query );
+	}
+
+	/**
 	 * @testdox Should reject invalid customer IDs before interpolating customer payment method requests.
 	 */
 	public function test_get_payment_methods_rejects_invalid_customer_id(): void {

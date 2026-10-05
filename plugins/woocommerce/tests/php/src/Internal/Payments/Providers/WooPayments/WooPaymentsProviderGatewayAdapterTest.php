@@ -1293,28 +1293,31 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * @testdox A failed lookup ($_dataName) refuses the attempt with the generic notice, keeps the order status, the key and the record, and the next attempt looks again.
 	 *
 	 * An error proves nothing about money, so nothing is charged: the failure is not definitive, not a decline, and keeps
-	 * the order status, so the shopper stays on checkout with the cart.
+	 * the order status, so the shopper stays on checkout with the cart. A transport failure or a server error may pass,
+	 * so it adds no merchant note. A customer list refused for good falls back to the account's list (monitor ruling B).
 	 *
 	 * @dataProvider provide_failed_lookups
 	 *
-	 * @param mixed $lookup_response Transport answer to the intents list.
+	 * @param array<int,mixed> $lookup_responses Transport answers to the intents lists, customer list first.
 	 */
-	public function test_failed_lookup_refuses_and_the_next_attempt_looks_again( $lookup_response ): void {
+	public function test_failed_lookup_refuses_and_the_next_attempt_looks_again( array $lookup_responses ): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
 		add_filter( 'wcpay_dev_mode', '__return_false' );
 		$order                  = $this->create_woopayments_order();
 		$http_client            = new FakeWooPaymentsHttpClient();
-		$http_client->responses = array(
-			self::platform_bad_gateway(),
-			self::stripe_idempotency_error( 'key_first' ),
-			$lookup_response,
-			self::stripe_idempotency_error( 'key_first' ),
-			self::intent_list( array() ),
-			self::succeeded_charge( 'pi_new_card', 'pm_new' ),
+		$http_client->responses = array_merge(
+			array( self::platform_bad_gateway(), self::stripe_idempotency_error( 'key_first' ) ),
+			$lookup_responses,
+			array(
+				self::stripe_idempotency_error( 'key_first' ),
+				self::intent_list( array() ),
+				self::succeeded_charge( 'pi_new_card', 'pm_new' ),
+			)
 		);
 		$sut                    = $this->create_timeout_adapter( $http_client, 'cus_sent' );
 		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
-		$logger = RecordingWcLogger::install();
+		$failed_at = (int) wc_get_order( $order->get_id() )->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['failed_at'];
+		$logger    = RecordingWcLogger::install();
 
 		$refused = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_second' );
 		$kept    = wc_get_order( $order->get_id() );
@@ -1327,6 +1330,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertNull( $refused->get_effect_plan() );
 		$this->assertSame( 'key_first', $kept->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
 		$this->assertSame( 'cus_sent', $kept->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['customer'] ?? null );
+		$this->assertSame( array(), self::note_texts_containing( $kept, 'could not be checked' ), 'A lookup that may pass adds no merchant note.' );
 		$this->assertSame(
 			array( 'The charge idempotency key key_first kept on order #' . $order->get_id() . ' was refused because the new payment request differs from the earlier one, and the PaymentIntents of the order could not be listed to learn whether the earlier request took the payment. This payment attempt is refused without a charge; the key is kept and the next attempt looks again.' ),
 			self::warning_lines( $logger )
@@ -1335,13 +1339,14 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$charged = $this->charge_attempt( $sut, $kept, 'pm_new', 'key_third' );
 
 		$this->assertSame(
-			array(
-				'POST intentions key_first',
-				'POST intentions key_first',
-				'GET intentions?test_mode=0&customer=cus_sent&limit=100',
-				'POST intentions key_first',
-				'GET intentions?test_mode=0&customer=cus_sent&limit=100',
-				'POST intentions key_third',
+			array_merge(
+				array( 'POST intentions key_first', 'POST intentions key_first', 'GET intentions?test_mode=0&customer=cus_sent&limit=100' ),
+				2 === count( $lookup_responses ) ? array( self::account_list_trail( $failed_at ) ) : array(),
+				array(
+					'POST intentions key_first',
+					'GET intentions?test_mode=0&customer=cus_sent&limit=100',
+					'POST intentions key_third',
+				)
 			),
 			self::request_trail( $http_client )
 		);
@@ -1349,34 +1354,160 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Lookups that fail or cannot prove the list complete.
+	 * Lookups that fail but may pass on a later attempt.
 	 *
-	 * @return array<string,array{0:mixed}>
+	 * @return array<string,array{0:array<int,mixed>}>
 	 */
 	public function provide_failed_lookups(): array {
 		return array(
-			'transport error'        => array( new WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out' ) ),
-			'customer missing (4xx)' => array(
+			'transport error'                   => array( array( new WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out' ) ) ),
+			'server error on the customer list' => array( array( self::stripe_api_error( 500 ) ) ),
+			'no list in the answer'             => array( array( self::http_json( 200, array( 'object' => 'list' ) ) ) ),
+			'a full page of newer intents with more to read' => array(
+				array(
+					self::intent_list(
+						array(
+							array(
+								'id'       => 'pi_newer',
+								'status'   => 'succeeded',
+								'created'  => time(),
+								'metadata' => array(),
+							),
+						),
+						true
+					),
+				),
+			),
+			'customer missing, then a transport error on the account list' => array(
+				array( self::stripe_no_such_customer(), new WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out' ) ),
+			),
+			'customer missing, then a server error on the account list' => array(
+				array( self::stripe_no_such_customer(), self::platform_bad_gateway() ),
+			),
+		);
+	}
+
+	/**
+	 * @testdox When the customer's intents cannot be listed for good, the account's intents since the failure settle it: the earlier payment pays the order.
+	 *
+	 * A deleted customer keeps its PaymentIntents, so the account's list, filtered to intents created from 300 s before
+	 * the recorded failure and matched on the order id and key, still shows the earlier request's intent (monitor ruling
+	 * B). The platform forwards `created` to Stripe's list unchanged (wpcom `wcpay/class-intentions-controller.php:198-210`).
+	 */
+	public function test_customer_list_refused_falls_back_to_the_account_list(): void {
+		$order                  = $this->create_woopayments_order();
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			self::platform_bad_gateway(),
+			self::stripe_idempotency_error( 'key_first' ),
+			self::stripe_no_such_customer(),
+			self::intent_list(
+				array(
+					self::order_intent( $this->create_woopayments_order(), 'pi_other_order', 'succeeded' ),
+					self::order_intent( $order, 'pi_earlier', 'succeeded' ),
+				)
+			),
+		);
+		$sut                    = $this->create_timeout_adapter( $http_client, 'cus_sent' );
+		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
+		$failed_at = (int) wc_get_order( $order->get_id() )->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['failed_at'];
+
+		$outcome = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_second' );
+		$fresh   = wc_get_order( $order->get_id() );
+
+		$this->assertSame(
+			array( 'POST intentions key_first', 'POST intentions key_first', 'GET intentions?test_mode=0&customer=cus_sent&limit=100', self::account_list_trail( $failed_at ) ),
+			self::request_trail( $http_client ),
+			'The new card must not be charged.'
+		);
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( 'pi_earlier', $outcome->get_provider_payment_id() );
+		$this->assertStringContainsString( 'wcpay_previous_successful_intent=yes', (string) ( $outcome->get_data()[ PaymentOutcome::DATA_CHECKOUT_REDIRECT ] ?? '' ) );
+		$this->assertSame( '', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$this->assertSame( '', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true ) );
+	}
+
+	/**
+	 * @testdox When neither list can settle the earlier request ($_dataName), every attempt is refused without a charge and the merchant gets one note.
+	 *
+	 * Monitor ruling B: the order is not charged while the earlier request cannot be checked. A definitive refusal, or an
+	 * account page that cannot be proven complete (the window only grows), cannot change on a later attempt, so the
+	 * merchant is told once to check the payment in WooPayments. The block is per order.
+	 *
+	 * @dataProvider provide_account_lists_that_cannot_settle
+	 *
+	 * @param array<string,mixed> $account_answer Transport answer to the account's intents list.
+	 */
+	public function test_lookup_that_cannot_check_refuses_every_attempt_with_one_note( array $account_answer ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$order                  = $this->create_woopayments_order();
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			self::platform_bad_gateway(),
+			self::stripe_idempotency_error( 'key_first' ),
+			self::stripe_no_such_customer(),
+			$account_answer,
+			self::stripe_idempotency_error( 'key_first' ),
+			self::stripe_no_such_customer(),
+			$account_answer,
+		);
+		$sut                    = $this->create_timeout_adapter( $http_client, 'cus_sent' );
+		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
+		$logger = RecordingWcLogger::install();
+
+		$first  = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_second' );
+		$second = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_third' );
+		$kept   = wc_get_order( $order->get_id() );
+
+		$this->assertSame( array( 'POST intentions key_first', 'POST intentions key_first', 'POST intentions key_first' ), array_values( array_filter( self::request_trail( $http_client ), static fn( string $line ): bool => 0 === strpos( $line, 'POST' ) ) ), 'Only the first send and the two refused kept-key sends; the new card is never charged.' );
+		$this->assertCount( 7, $http_client->requests );
+		foreach ( array( $first, $second ) as $refused ) {
+			$this->assertSame( PaymentOutcome::STATUS_FAILED, $refused->get_status() );
+			$this->assertSame( 'wcpay_charge_lookup_failed', $refused->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
+			$this->assertTrue( $refused->get_data()[ PaymentOutcome::DATA_PRESERVE_ORDER_STATUS ] ?? null );
+			$this->assertArrayNotHasKey( PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE, $refused->get_data() );
+			$this->assertNull( $refused->get_effect_plan() );
+		}
+		$this->assertSame( 'key_first', $kept->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$this->assertSame( 'cus_sent', $kept->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['customer'] ?? null );
+		$this->assertSame(
+			array( "The earlier payment attempt for this order could not be checked, so the customer's new payment was not taken. Please check for this payment in WooPayments before the customer tries again." ),
+			self::note_texts_containing( $kept, 'could not be checked' ),
+			'One note per order, not one per attempt.'
+		);
+		$line = 'The charge idempotency key key_first kept on order #' . $order->get_id() . " was refused because the new payment request differs from the earlier one, and neither the customer's nor the account's PaymentIntents could be listed to learn whether the earlier request took the payment. This payment attempt is refused without a charge; the key is kept, every attempt on this order is refused the same way until a list can be read, and an order note asks the merchant to check the payment.";
+		$this->assertSame( array( $line, $line ), self::warning_lines( $logger ) );
+	}
+
+	/**
+	 * Account-list answers that cannot settle the earlier request.
+	 *
+	 * @return array<string,array{0:array<string,mixed>}>
+	 */
+	public function provide_account_lists_that_cannot_settle(): array {
+		return array(
+			'the account list refused'              => array(
 				self::http_json(
-					404,
+					400,
 					array(
 						'error' => array(
 							'type'    => 'invalid_request_error',
-							'code'    => 'resource_missing',
-							'message' => 'No such customer: cus_sent',
+							'code'    => 'parameter_unknown',
+							'param'   => 'created[gte]',
+							'message' => 'Received unknown parameter: created[gte]',
 						),
 					)
 				),
 			),
-			'no list in the answer'  => array( self::http_json( 200, array( 'object' => 'list' ) ) ),
-			'a full page of newer intents with more to read' => array(
+			'a full account page without the order' => array(
 				self::intent_list(
 					array(
 						array(
-							'id'       => 'pi_newer',
+							'id'       => 'pi_other_shopper',
 							'status'   => 'succeeded',
 							'created'  => time(),
-							'metadata' => array(),
+							'metadata' => array( 'order_id' => '987654' ),
 						),
 					),
 					true
@@ -1630,6 +1761,53 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Stripe's answer for a deleted customer, passed through by the platform.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private static function stripe_no_such_customer(): array {
+		return self::http_json(
+			404,
+			array(
+				'error' => array(
+					'type'    => 'invalid_request_error',
+					'code'    => 'resource_missing',
+					'param'   => 'customer',
+					'message' => "No such customer: 'cus_sent'",
+				),
+			)
+		);
+	}
+
+	/**
+	 * Stripe's server error, passed through by the platform.
+	 *
+	 * @param int $code HTTP status.
+	 * @return array<string,mixed>
+	 */
+	private static function stripe_api_error( int $code ): array {
+		return self::http_json(
+			$code,
+			array(
+				'error' => array(
+					'type'    => 'api_error',
+					'message' => 'An unknown error occurred',
+				),
+			)
+		);
+	}
+
+	/**
+	 * The account-wide intents list request, as request_trail() prints it.
+	 *
+	 * @param int $failed_at Unix time of the recorded ambiguous failure.
+	 * @return string
+	 */
+	private static function account_list_trail( int $failed_at ): string {
+		return 'GET intentions?test_mode=0&created%5Bgte%5D=' . ( $failed_at - 300 ) . '&limit=100';
+	}
+
+	/**
 	 * Stripe's card decline, passed through by the platform.
 	 *
 	 * @return array<string,mixed>
@@ -1736,6 +1914,17 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	private static function note_texts( WC_Order $order ): array {
 		return array_map( static fn( $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+	}
+
+	/**
+	 * Get the texts of an order's notes that contain a phrase.
+	 *
+	 * @param WC_Order $order  Order.
+	 * @param string   $phrase Phrase.
+	 * @return string[]
+	 */
+	private static function note_texts_containing( WC_Order $order, string $phrase ): array {
+		return array_values( array_filter( self::note_texts( $order ), static fn( string $text ): bool => false !== strpos( $text, $phrase ) ) );
 	}
 
 	/**
