@@ -941,6 +941,10 @@ class WooPaymentsWooPaySessionService {
 		$blog_id    = $this->get_store_blog_id();
 		$blog_token = $this->get_store_blog_token();
 
+		if ( '' === $blog_id ) {
+			$this->get_logger()->log( 'WooPay blog_id is missing, so the WooPay session data cannot be signed.' );
+		}
+
 		if ( '' === $blog_id || '' === $blog_token || ! function_exists( 'openssl_encrypt' ) ) {
 			return array();
 		}
@@ -1015,11 +1019,15 @@ class WooPaymentsWooPaySessionService {
 			$body
 		);
 
+		// Client 11.1.0 logs a failed request and every response body (class-woopay-session.php:707-715).
 		if ( $response instanceof WP_Error || ! is_array( $response ) ) {
-			return array( 'result' => 'failure' );
+			$this->get_logger()->error( 'HTTP_REQUEST_ERROR ' . ( $response instanceof WP_Error ? $response->get_error_code() . ': ' . $response->get_error_message() : gettype( $response ) ) );
+			$body = (string) wp_json_encode( array( 'result' => 'failure' ) );
+		} else {
+			$body = wp_remote_retrieve_body( $response );
 		}
 
-		$body = wp_remote_retrieve_body( $response );
+		$this->get_logger()->log( $body );
 		$data = json_decode( $body, true );
 
 		return is_array( $data ) ? $data : array( 'result' => 'failure' );
@@ -2351,7 +2359,13 @@ class WooPaymentsWooPaySessionService {
 		 *
 		 * @since 11.0.0
 		 */
-		return (string) apply_filters( 'woocommerce_woopayments_woopay_blog_token', $blog_token );
+		$blog_token = (string) apply_filters( 'woocommerce_woopayments_woopay_blog_token', $blog_token );
+		if ( '' === $blog_token ) {
+			// Client 11.1.0 class-woopay-utilities.php:297.
+			$this->get_logger()->log( 'WooPay blog_token is currently misconfigured.' );
+		}
+
+		return $blog_token;
 	}
 
 	/**
@@ -2885,6 +2899,15 @@ class WooPaymentsWooPaySessionService {
 		}
 
 		return $this->account_service;
+	}
+
+	/**
+	 * Get the WooPayments logger, which writes only when debug logging is on (client 11.1.0 `src/Internal/Logger.php:64-91`).
+	 *
+	 * @return WooPaymentsLogger
+	 */
+	private function get_logger(): WooPaymentsLogger {
+		return wc_get_container()->get( WooPaymentsLogger::class );
 	}
 
 	/**

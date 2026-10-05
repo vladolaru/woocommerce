@@ -216,6 +216,8 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 			}
 		}
 		remove_all_filters( 'pre_http_request' );
+		remove_all_filters( 'woocommerce_logger_log_message' );
+		remove_all_filters( 'wcpay_dev_mode' );
 		remove_all_filters( 'rest_pre_dispatch' );
 		remove_all_filters( 'woocommerce_store_api_disable_nonce_check' );
 		remove_all_filters( 'woocommerce_available_payment_gateways' );
@@ -2850,6 +2852,121 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( $expected_font_rules, $captured_request['body']['font_rules'] );
 		$this->assertArrayHasKey( 'session_nonce', $captured_request['body'] );
 		$this->assertArrayHasKey( 'store_api_token', $captured_request['body'] );
+	}
+
+	/**
+	 * @testdox A failed WooPay init request is logged with the failure body, and a response body is logged, while WooPayments logging is on.
+	 *
+	 * Client 11.1.0 class-woopay-session.php:707-715.
+	 */
+	public function test_logs_woopay_init_failures_and_responses_while_logging_is_on(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		$this->connect_woopay_blog();
+		// WP_Http::request() hands back the pre_http_request value; a transport timeout is a WP_Error with the
+		// http_request_failed code (wp-includes/class-wp-http.php, WP_Http_Curl).
+		add_filter( 'pre_http_request', static fn() => new \WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out after 30001 milliseconds' ) );
+		$lines = $this->record_woopayments_log_lines();
+
+		$result = $this->create_service()->init_woopay_session( array( 'email' => 'shopper@example.com' ) );
+
+		$this->assertSame( array( 'result' => 'failure' ), $result );
+		$this->assertContains( array( 'error', 'HTTP_REQUEST_ERROR http_request_failed: cURL error 28: Operation timed out after 30001 milliseconds' ), $lines->getArrayCopy() );
+		$this->assertContains( array( 'info', '{"result":"failure"}' ), $lines->getArrayCopy() );
+
+		remove_all_filters( 'pre_http_request' );
+		// WooPay's init answer: the result and the WooPay URL the shopper is sent to (client 11.1.0
+		// client/checkout/woopay/email-input-iframe.js:496-498 and client/components/woopay/index.tsx:47-48 read them).
+		$body = '{"result":"success","url":"https://pay.woo.com/woopay/?platform_checkout_key=abc123"}';
+		add_filter(
+			'pre_http_request',
+			static fn() => array(
+				'headers'  => array(),
+				'body'     => $body,
+				'response' => array(
+					'code'    => 200,
+					'message' => 'OK',
+				),
+				'cookies'  => array(),
+				'filename' => null,
+			)
+		);
+		$lines->exchangeArray( array() );
+
+		$this->create_service()->init_woopay_session( array( 'email' => 'shopper@example.com' ) );
+
+		$this->assertSame( array( array( 'info', $body ) ), array_values( array_unique( $lines->getArrayCopy(), SORT_REGULAR ) ) );
+	}
+
+	/**
+	 * @testdox A failed WooPay init request writes no log line while WooPayments logging and dev mode are off.
+	 */
+	public function test_woopay_init_failure_logs_nothing_while_logging_is_off(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$this->connect_woopay_blog();
+		add_filter( 'pre_http_request', static fn() => new \WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out after 30001 milliseconds' ) );
+		$lines = $this->record_woopayments_log_lines();
+
+		$this->assertSame( array( 'result' => 'failure' ), $this->create_service()->init_woopay_session( array() ) );
+		$this->assertSame( array(), $lines->getArrayCopy() );
+	}
+
+	/**
+	 * @testdox Session data that cannot be signed for want of a blog token or blog ID is logged while WooPayments logging is on.
+	 *
+	 * @testWith ["", "blog-token", "WooPay blog_id is missing, so the WooPay session data cannot be signed."]
+	 *           ["12345", "", "WooPay blog_token is currently misconfigured."]
+	 *
+	 * @param string $blog_id    Store blog ID.
+	 * @param string $blog_token Store blog token.
+	 * @param string $expected   Expected log line.
+	 */
+	public function test_logs_unsignable_session_data_while_logging_is_on( string $blog_id, string $blog_token, string $expected ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		add_filter( 'woocommerce_woopayments_woopay_blog_id', static fn() => $blog_id );
+		add_filter( 'woocommerce_woopayments_woopay_blog_token', static fn() => $blog_token );
+		$lines = $this->record_woopayments_log_lines();
+
+		$this->assertSame( array(), $this->create_service()->encrypt_and_sign_data( array( 'email' => 'shopper@example.com' ) ) );
+		$this->assertContains( array( 'info', $expected ), $lines->getArrayCopy() );
+	}
+
+	/**
+	 * Connect the store blog so the Jetpack-signed WooPay init request can be built.
+	 */
+	private function connect_woopay_blog(): void {
+		add_filter( 'woocommerce_woopayments_woopay_blog_id', static fn() => '12345' );
+		add_filter( 'woocommerce_woopayments_woopay_blog_token', static fn() => 'blog-token' );
+		if ( class_exists( '\Jetpack_Options' ) ) {
+			\Jetpack_Options::update_option( 'id', 12345 );
+			\Jetpack_Options::update_option( 'blog_token', 'token-key.blog-token' );
+			\Jetpack_Options::update_option( 'time_diff', 0 );
+		}
+	}
+
+	/**
+	 * Record the level and message of every line written under the WooPayments log source until the test ends.
+	 *
+	 * WC_Logger applies the message filter once per log handler, so a line can be recorded more than once.
+	 *
+	 * @return \ArrayObject<int,array{0:string,1:string}>
+	 */
+	private function record_woopayments_log_lines(): \ArrayObject {
+		$lines = new \ArrayObject();
+		add_filter(
+			'woocommerce_logger_log_message',
+			static function ( $message, $level, $context ) use ( $lines ) {
+				if ( 'woopayments' === ( $context['source'] ?? '' ) ) {
+					$lines[] = array( (string) $level, (string) $message );
+				}
+
+				return $message;
+			},
+			10,
+			3
+		);
+
+		return $lines;
 	}
 
 	/**
