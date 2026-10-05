@@ -31,6 +31,8 @@ class SessionModule implements ServiceModule, ExecutableModule {
 
 	/**
 	 * {@inheritDoc}
+	 *
+	 * @param ContainerInterface $c The service container.
 	 */
 	public function run( ContainerInterface $c ): bool {
 		add_action(

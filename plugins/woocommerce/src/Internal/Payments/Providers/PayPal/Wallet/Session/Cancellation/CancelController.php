@@ -20,7 +20,9 @@ class CancelController {
 	public const NONCE = 'ppcp-cancel';
 
 	/**
-	 * @var Context Context data provider.
+	 * The context data provider.
+	 *
+	 * @var Context
 	 */
 	private Context $context;
 

@@ -35,12 +35,33 @@ class SessionOrderReloader {
 		OrderStatus::VOIDED,
 	);
 
+	/**
+	 * The order endpoint.
+	 *
+	 * @var OrderEndpoint
+	 */
 	private OrderEndpoint $order_endpoint;
 
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	private LoggerInterface $logger;
 
+	/**
+	 * Whether the session order was already reloaded in this request.
+	 *
+	 * @var bool
+	 */
 	private bool $reloaded = false;
 
+	/**
+	 * SessionOrderReloader constructor.
+	 *
+	 * @param OrderEndpoint   $order_endpoint The order endpoint.
+	 * @param LoggerInterface $logger         The logger.
+	 */
 	public function __construct(
 		OrderEndpoint $order_endpoint,
 		LoggerInterface $logger
@@ -49,6 +70,12 @@ class SessionOrderReloader {
 		$this->logger         = $logger;
 	}
 
+	/**
+	 * Reloads the session order from PayPal when the buyer is on the checkout page, at most once per interval.
+	 *
+	 * @param Order|null     $order           The order in the session, if any.
+	 * @param SessionHandler $session_handler The session handler.
+	 */
 	public function maybe_reload( ?Order $order, SessionHandler $session_handler ): void {
 		if ( $this->reloaded || ! $order || null === WC()->session ) {
 			return;
@@ -101,6 +128,11 @@ class SessionOrderReloader {
 		return ! wp_doing_ajax() && is_checkout();
 	}
 
+	/**
+	 * Whether the given order was reloaded within the reload interval.
+	 *
+	 * @param string $order_id The PayPal order ID.
+	 */
 	private function reloaded_recently( string $order_id ): bool {
 		$last_reload = WC()->session->get( self::LAST_RELOAD_SESSION_KEY );
 		if ( ! is_array( $last_reload ) || ( $last_reload['order_id'] ?? '' ) !== $order_id ) {
@@ -112,6 +144,11 @@ class SessionOrderReloader {
 		return $last_reload_age < self::RELOAD_INTERVAL_SECONDS;
 	}
 
+	/**
+	 * Records in the session that the given order was just reloaded.
+	 *
+	 * @param string $order_id The PayPal order ID.
+	 */
 	private function mark_as_reloaded( string $order_id ): void {
 		$this->reloaded = true;
 
@@ -132,6 +169,8 @@ class SessionOrderReloader {
 	/**
 	 * The endpoint also uses code 404 for an empty response body. That order is lost
 	 * too; the next button click creates a new one.
+	 *
+	 * @param Throwable $exception The exception thrown while reloading the order.
 	 */
 	private function is_not_found( Throwable $exception ): bool {
 		if ( $exception instanceof PayPalApiException ) {

@@ -3,8 +3,6 @@
  * A WC_Session_Handler subclass for loading the session when it is normally not available (e.g. in webhooks).
  *
  * @package Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Session
- *
- * phpcs:disable Generic.Commenting.DocComment
  */
 
 declare(strict_types=1);
@@ -50,7 +48,7 @@ class MemoryWcSession extends WC_Session_Handler {
 	}
 
 	/**
-	 * @inerhitDoc
+	 * {@inheritDoc}
 	 */
 	public function init_session_cookie(): void {
 		$this->_customer_id = self::$customer_id; // @phpstan-ignore assign.propertyType (the customer ID is passed through as received, an int or a string; WC_Session documents a string)
@@ -58,14 +56,14 @@ class MemoryWcSession extends WC_Session_Handler {
 	}
 
 	/**
-	 * @inerhitDoc
+	 * {@inheritDoc}
 	 */
 	public function get_session_data() {
 		return self::$data;
 	}
 
 	/**
-	 * @inerhitDoc
+	 * {@inheritDoc}
 	 */
 	public function forget_session(): void {
 		self::$data = array();

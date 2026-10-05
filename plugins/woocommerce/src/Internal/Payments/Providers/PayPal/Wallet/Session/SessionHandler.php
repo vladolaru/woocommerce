@@ -20,6 +20,11 @@ class SessionHandler {
 
 	private const SESSION_KEY = 'ppcp';
 
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	private LoggerInterface $logger;
 
 	/**
@@ -58,6 +63,11 @@ class SessionHandler {
 	 */
 	private $checkout_form = array();
 
+	/**
+	 * SessionHandler constructor.
+	 *
+	 * @param LoggerInterface|null $logger The logger.
+	 */
 	public function __construct( ?LoggerInterface $logger = null ) {
 		$this->logger = $logger ?? new NullLogger();
 	}
@@ -70,6 +80,14 @@ class SessionHandler {
 	public function order() {
 		$this->load_session();
 
+		/**
+		 * Fires when the session order is read.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param Order|null     $order           The order in the session, if any.
+		 * @param SessionHandler $session_handler The session handler.
+		 */
 		do_action( 'ppcp_session_get_order', $this->order, $this );
 
 		return $this->order;
