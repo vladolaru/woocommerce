@@ -70,6 +70,8 @@ class WooPaymentsPaymentMethodDetailsServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Missing plugin runtime falls back to the native API client when native owns the runtime.
 	 */
 	public function test_falls_back_to_native_api_client_when_plugin_runtime_is_absent(): void {
+		// A Stripe PaymentMethod object (Stripe API PaymentMethod; the client reads type and card.brand/last4 at
+		// class-wc-payments-payment-method-service.php:98-116, fetched through WC_Payments_API_Client::get_payment_method()).
 		$details = array(
 			'id'   => 'pm_native',
 			'type' => 'card',
@@ -84,25 +86,29 @@ class WooPaymentsPaymentMethodDetailsServiceTest extends WC_Unit_Test_Case {
 		$legacy_runtime = new WooPaymentsLegacyRuntime();
 		$legacy_runtime->init( new LegacyRuntimeProxy( false ) );
 
-		$sut = new WooPaymentsPaymentMethodDetailsService();
-		$sut->init(
-			$legacy_runtime,
-			new class( $details ) extends WooPaymentsApiClient {
+		$client = new class( $details ) extends WooPaymentsApiClient {
 				/**
 				 * Details to return.
 				 *
 				 * @var array<string,mixed>
 				 */
-				private array $details;
+			private array $details;
+
+				/**
+				 * Payment method IDs the test double was asked for.
+				 *
+				 * @var string[]
+				 */
+			public array $requested_ids = array();
 
 				/**
 				 * Constructor.
 				 *
 				 * @param array<string,mixed> $details Details to return.
 				 */
-				public function __construct( array $details ) {
-					$this->details = $details;
-				}
+			public function __construct( array $details ) {
+				$this->details = $details;
+			}
 
 				/**
 				 * Get a payment method.
@@ -110,20 +116,24 @@ class WooPaymentsPaymentMethodDetailsServiceTest extends WC_Unit_Test_Case {
 				 * @param string $payment_method_id Payment method ID.
 				 * @return array<string,mixed>
 				 */
-				public function get_payment_method( string $payment_method_id ): array {
-					return $this->details + array( 'requested_id' => $payment_method_id );
-				}
-			},
-			new StaticNativeRuntimeArbiter( true )
-		);
+			public function get_payment_method( string $payment_method_id ): array {
+				$this->requested_ids[] = $payment_method_id;
 
-		$this->assertSame( $details + array( 'requested_id' => 'pm_123' ), $sut->get_payment_method_details( 'pm_123' ) );
+				return $this->details;
+			}
+		};
+		$sut    = new WooPaymentsPaymentMethodDetailsService();
+		$sut->init( $legacy_runtime, $client, new StaticNativeRuntimeArbiter( true ) );
+
+		$this->assertSame( $details, $sut->get_payment_method_details( 'pm_123' ) );
+		$this->assertSame( array( 'pm_123' ), $client->requested_ids );
 	}
 
 	/**
 	 * @testdox Plugin runtime requests proxy to the WooPayments API client.
 	 */
 	public function test_proxies_plugin_api_client_when_plugin_runtime_is_active(): void {
+		// The payment method shape the client's API client returns (class-wc-payments-payment-method-service.php:98-116 reads it).
 		$details = array(
 			'type' => 'card',
 			'card' => array(
@@ -132,23 +142,29 @@ class WooPaymentsPaymentMethodDetailsServiceTest extends WC_Unit_Test_Case {
 			),
 		);
 
-		$this->mock_woopayments_api_client(
-			new class( $details ) {
+		$client = new class( $details ) {
 				/**
 				 * Details to return.
 				 *
 				 * @var array<string,mixed>
 				 */
-				private array $details;
+			private array $details;
+
+				/**
+				 * Payment method IDs the test double was asked for.
+				 *
+				 * @var string[]
+				 */
+			public array $requested_ids = array();
 
 				/**
 				 * Constructor.
 				 *
 				 * @param array<string,mixed> $details Details to return.
 				 */
-				public function __construct( array $details ) {
-					$this->details = $details;
-				}
+			public function __construct( array $details ) {
+				$this->details = $details;
+			}
 
 				/**
 				 * Get a payment method.
@@ -156,13 +172,16 @@ class WooPaymentsPaymentMethodDetailsServiceTest extends WC_Unit_Test_Case {
 				 * @param string $payment_method_id Payment method ID.
 				 * @return array<string,mixed>
 				 */
-				public function get_payment_method( string $payment_method_id ): array {
-					return $this->details + array( 'requested_id' => $payment_method_id );
-				}
-			}
-		);
+			public function get_payment_method( string $payment_method_id ): array {
+				$this->requested_ids[] = $payment_method_id;
 
-		$this->assertSame( $details + array( 'requested_id' => 'pm_123' ), $this->sut->get_payment_method_details( 'pm_123' ) );
+				return $this->details;
+			}
+		};
+		$this->mock_woopayments_api_client( $client );
+
+		$this->assertSame( $details, $this->sut->get_payment_method_details( 'pm_123' ) );
+		$this->assertSame( array( 'pm_123' ), $client->requested_ids );
 	}
 
 	/**

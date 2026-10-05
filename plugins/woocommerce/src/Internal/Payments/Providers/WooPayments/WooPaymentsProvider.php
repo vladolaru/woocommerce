@@ -199,6 +199,8 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 			NativePaymentsGatewayRegistry::class,
 			self::class,
 			WooPaymentsGatewayListController::class,
+			// Card info for orders paid with WooPayments, wherever an order renders: the client registers it on every request.
+			WooPaymentsOrderCardInfo::class,
 		);
 		$active_maintenance_prefix  = array_merge(
 			array( WooPaymentsCutoverNormalizationRunner::class ),
