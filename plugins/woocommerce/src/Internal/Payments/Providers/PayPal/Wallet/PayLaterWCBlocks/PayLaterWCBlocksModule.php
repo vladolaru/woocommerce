@@ -43,6 +43,13 @@ class PayLaterWCBlocksModule implements ServiceModule, ExecutableModule {
 	 * @return bool true if the module should be loaded, otherwise false.
 	 */
 	public static function is_module_loading_required(): bool {
+		/**
+		 * Filters whether the Pay Later WooCommerce Blocks module is loaded.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $enabled Whether the module is enabled; false only when the PCP_PAYLATER_WC_BLOCKS environment variable is "0".
+		 */
 		return apply_filters(
 			// phpcs:ignore WordPress.NamingConventions.ValidHookName.UseUnderscores
 			'woocommerce.feature-flags.woocommerce_paypal_payments.paylater_wc_blocks_enabled',
@@ -136,6 +143,13 @@ class PayLaterWCBlocksModule implements ServiceModule, ExecutableModule {
 	 * @return bool true if the under cart totals placement is enabled, otherwise false.
 	 */
 	public function is_under_cart_totals_placement_enabled(): bool {
+		/**
+		 * Filters whether the Pay Later message is placed under the cart totals in the cart block.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $enabled Whether the under cart totals placement is enabled; true by default.
+		 */
 		return apply_filters(
 			// phpcs:ignore WordPress.NamingConventions.ValidHookName.UseUnderscores
 			'woocommerce.feature-flags.woocommerce_paypal_payments.paylater_wc_blocks_cart_under_totals_enabled',
@@ -145,6 +159,8 @@ class PayLaterWCBlocksModule implements ServiceModule, ExecutableModule {
 
 	/**
 	 * {@inheritDoc}
+	 *
+	 * @param ContainerInterface $c The service container.
 	 */
 	public function run( ContainerInterface $c ): bool {
 		$messages_apply = $c->get( 'button.helper.messages-apply' );

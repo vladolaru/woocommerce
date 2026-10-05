@@ -65,7 +65,7 @@ class PayLaterWCBlocksUtils {
 		$cart_express_payment_block = '<div data-block-name="woocommerce/cart-express-payment-block" class="wp-block-woocommerce-cart-express-payment-block"></div>';
 
 		if ( false !== $paylater_message_block ) {
-			if ( $is_under_cart_totals_placement_enabled && $context === 'cart' ) {
+			if ( $is_under_cart_totals_placement_enabled && 'cart' === $context ) {
 				return self::insert_before_opening_div( $block_content, $paylater_message_block, $cart_express_payment_block );
 			} else {
 				return self::insert_before_last_div( $block_content, $paylater_message_block );
@@ -86,18 +86,14 @@ class PayLaterWCBlocksUtils {
 	public static function render_paylater_block( string $block_id, string $ppcp_id, string $context, $container ) {
 		$renderer = $container->get( 'paylater-wc-blocks.' . $context . '-renderer' );
 		ob_start();
-		// phpcs:ignore -- No need to escape it, the PayLaterWCBlocksRenderer class is responsible for escaping.
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- No need to escape it, the PayLaterWCBlocksRenderer class is responsible for escaping.
 		echo $renderer->render(
 			array(
-				// phpcs:ignore
-				'blockId'     => $block_id,
-				// phpcs:ignore
-				'ppcpId' => $ppcp_id,
+				'blockId' => $block_id, // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Argument of the renderer, which is responsible for escaping its output.
+				'ppcpId'  => $ppcp_id, // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Argument of the renderer, which is responsible for escaping its output.
 			),
-			// phpcs:ignore
-			$context,
-			// phpcs:ignore
-			$container
+			$context, // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Argument of the renderer, which is responsible for escaping its output.
+			$container // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Argument of the renderer, which is responsible for escaping its output.
 		);
 		return ob_get_clean();
 	}
