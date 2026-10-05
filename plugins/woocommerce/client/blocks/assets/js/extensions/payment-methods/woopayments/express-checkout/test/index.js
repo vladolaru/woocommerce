@@ -377,6 +377,10 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		baseExpressCheckoutParams.payment_method_types = [ 'card' ];
 		baseExpressCheckoutParams.is_manual_capture = false;
 		baseExpressCheckoutParams.has_subscription = false;
+		baseExpressCheckoutParams.flags = {
+			isEceUsingConfirmationTokens: true,
+		};
+		baseExpressCheckoutParams.login_confirmation = false;
 		baseExpressCheckoutParams.checkout.currency_code = 'usd';
 		baseExpressCheckoutParams.checkout.currency_decimals = 2;
 		baseExpressCheckoutParams.checkout.stripe_minor_unit = 2;
@@ -436,6 +440,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 	afterEach( () => {
 		delete window.Stripe;
 		delete window.wcpayFraudPreventionToken;
+		delete window.confirm;
 		window.fetch = originalFetch;
 		document.body.innerHTML = '';
 	} );
@@ -1377,11 +1382,6 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		expect( paymentData.map( ( entry ) => entry.key ) ).not.toContain(
 			'wcpay-confirmation-token'
 		);
-
-		baseExpressCheckoutParams.flags = {
-			isEceUsingConfirmationTokens: true,
-		};
-		baseExpressCheckoutParams.has_subscription = false;
 	} );
 
 	it( 'gates the wallet sheet behind the login confirmation dialog', async () => {
@@ -1414,9 +1414,6 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			'To pay with Google Pay, log in.'
 		);
 		expect( event.resolve ).not.toHaveBeenCalled();
-
-		delete window.confirm;
-		baseExpressCheckoutParams.login_confirmation = false;
 	} );
 
 	it( 'sends order attribution data in the extensions payload', async () => {
