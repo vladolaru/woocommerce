@@ -113,16 +113,16 @@ class RenewalHandler {
 	private $wc_payment_tokens;
 
 	/**
-	 * @param LoggerInterface              $logger The logger.
-	 * @param OrderEndpoint                $order_endpoint The order endpoint.
-	 * @param PurchaseUnitFactory          $purchase_unit_factory The purchase unit factory.
-	 * @param ShippingPreferenceFactory    $shipping_preference_factory The shipping_preference factory.
-	 * @param PayerFactory                 $payer_factory The payer factory.
-	 * @param Environment                  $environment The environment.
-	 * @param SettingsProvider             $settings_provider The Settings Provider.
-	 * @param AuthorizedPaymentsProcessor  $authorized_payments_processor The Authorized Payments Processor.
-	 * @param FundingSourceRenderer        $funding_source_renderer The funding source renderer.
-	 * @param WooCommercePaymentTokens     $wc_payment_tokens WooCommerce payments tokens factory.
+	 * @param LoggerInterface             $logger The logger.
+	 * @param OrderEndpoint               $order_endpoint The order endpoint.
+	 * @param PurchaseUnitFactory         $purchase_unit_factory The purchase unit factory.
+	 * @param ShippingPreferenceFactory   $shipping_preference_factory The shipping_preference factory.
+	 * @param PayerFactory                $payer_factory The payer factory.
+	 * @param Environment                 $environment The environment.
+	 * @param SettingsProvider            $settings_provider The Settings Provider.
+	 * @param AuthorizedPaymentsProcessor $authorized_payments_processor The Authorized Payments Processor.
+	 * @param FundingSourceRenderer       $funding_source_renderer The funding source renderer.
+	 * @param WooCommercePaymentTokens    $wc_payment_tokens WooCommerce payments tokens factory.
 	 */
 	public function __construct(
 		LoggerInterface $logger,
@@ -137,16 +137,16 @@ class RenewalHandler {
 		WooCommercePaymentTokens $wc_payment_tokens
 	) {
 
-		$this->logger                           = $logger;
-		$this->order_endpoint                   = $order_endpoint;
-		$this->purchase_unit_factory            = $purchase_unit_factory;
-		$this->shipping_preference_factory      = $shipping_preference_factory;
-		$this->payer_factory                    = $payer_factory;
-		$this->environment                      = $environment;
-		$this->settings_provider                = $settings_provider;
-		$this->authorized_payments_processor    = $authorized_payments_processor;
-		$this->funding_source_renderer          = $funding_source_renderer;
-		$this->wc_payment_tokens                = $wc_payment_tokens;
+		$this->logger                        = $logger;
+		$this->order_endpoint                = $order_endpoint;
+		$this->purchase_unit_factory         = $purchase_unit_factory;
+		$this->shipping_preference_factory   = $shipping_preference_factory;
+		$this->payer_factory                 = $payer_factory;
+		$this->environment                   = $environment;
+		$this->settings_provider             = $settings_provider;
+		$this->authorized_payments_processor = $authorized_payments_processor;
+		$this->funding_source_renderer       = $funding_source_renderer;
+		$this->wc_payment_tokens             = $wc_payment_tokens;
 	}
 
 	/**

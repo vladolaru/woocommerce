@@ -16,10 +16,10 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscript
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Service\ChangePaymentMethod;
 
 return array(
-	'wc-subscriptions.helper'                            => static function ( ContainerInterface $container ): SubscriptionHelper {
+	'wc-subscriptions.helper'                         => static function ( ContainerInterface $container ): SubscriptionHelper {
 		return new SubscriptionHelper();
 	},
-	'wc-subscriptions.renewal-handler'                   => static function ( ContainerInterface $container ): RenewalHandler {
+	'wc-subscriptions.renewal-handler'                => static function ( ContainerInterface $container ): RenewalHandler {
 		$logger                = $container->get( 'woocommerce.logger.woocommerce' );
 		$endpoint              = $container->get( 'api.endpoint.order' );
 		$purchase_unit_factory = $container->get( 'api.factory.purchase-unit' );
@@ -46,12 +46,12 @@ return array(
 			$container->get( 'button.request-data' )
 		);
 	},
-	'wc-subscriptions.change-payment-method'             => static function ( ContainerInterface $container ): ChangePaymentMethod {
+	'wc-subscriptions.change-payment-method'          => static function ( ContainerInterface $container ): ChangePaymentMethod {
 		return new ChangePaymentMethod(
 			$container->get( 'button.helper.context' )
 		);
 	},
-	'wc-subscriptions.free-trial-subscription-helper'    => static function ( ContainerInterface $container ): FreeTrialSubscriptionHelper {
+	'wc-subscriptions.free-trial-subscription-helper' => static function ( ContainerInterface $container ): FreeTrialSubscriptionHelper {
 		return new FreeTrialSubscriptionHelper();
 	},
 );
