@@ -21,10 +21,34 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Da
 class SaveConfig {
 	const ENDPOINT = 'ppc-save-message-config';
 
+	/**
+	 * The Pay Later messaging settings.
+	 *
+	 * @var PayLaterMessagingSettings
+	 */
 	protected PayLaterMessagingSettings $settings;
+
+	/**
+	 * The request data helper.
+	 *
+	 * @var RequestData
+	 */
 	protected RequestData $request_data;
+
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	private LoggerInterface $logger;
 
+	/**
+	 * SaveConfig constructor.
+	 *
+	 * @param PayLaterMessagingSettings $settings     The Pay Later messaging settings.
+	 * @param RequestData               $request_data The request data helper.
+	 * @param LoggerInterface           $logger       The logger.
+	 */
 	public function __construct(
 		PayLaterMessagingSettings $settings,
 		RequestData $request_data,
@@ -35,6 +59,9 @@ class SaveConfig {
 		$this->logger       = $logger;
 	}
 
+	/**
+	 * Returns the nonce action of the endpoint.
+	 */
 	public static function nonce(): string {
 		return self::ENDPOINT;
 	}
@@ -62,13 +89,18 @@ class SaveConfig {
 		}
 	}
 
+	/**
+	 * Saves the configurator's config as Pay Later messaging settings.
+	 *
+	 * @param array $config The config, keyed by placement.
+	 */
 	public function save_config( array $config ): void {
 		$this->settings->set_styling_per_location( true );
 		$this->settings->set_messaging_enabled( true );
 
 		$enabled_locations = array();
 		foreach ( $config as $placement => $data ) {
-			if ( $placement === 'custom_placement' ) {
+			if ( 'custom_placement' === $placement ) {
 				$data = $data[0] ?? array();
 			}
 

@@ -26,7 +26,7 @@ return array(
 
 		return $factory->for_module( 'ppcp-paylater-configurator' );
 	},
-	'paylater-configurator.factory.config'       => static function ( ContainerInterface $container ): ConfigFactory {
+	'paylater-configurator.factory.config'       => static function ( ContainerInterface $container ): ConfigFactory { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new ConfigFactory();
 	},
 	'paylater-configurator.endpoint.save-config' => static function ( ContainerInterface $container ): SaveConfig {

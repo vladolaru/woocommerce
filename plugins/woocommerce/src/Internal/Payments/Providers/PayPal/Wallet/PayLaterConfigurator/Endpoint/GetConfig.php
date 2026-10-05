@@ -20,18 +20,41 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Da
 class GetConfig {
 	const ENDPOINT = 'ppc-get-message-config';
 
+	/**
+	 * The Pay Later messaging settings.
+	 *
+	 * @var PayLaterMessagingSettings
+	 */
 	protected PayLaterMessagingSettings $settings;
+
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	private LoggerInterface $logger;
 
+	/**
+	 * GetConfig constructor.
+	 *
+	 * @param PayLaterMessagingSettings $settings The Pay Later messaging settings.
+	 * @param LoggerInterface           $logger   The logger.
+	 */
 	public function __construct( PayLaterMessagingSettings $settings, LoggerInterface $logger ) {
 		$this->settings = $settings;
 		$this->logger   = $logger;
 	}
 
+	/**
+	 * Returns the nonce action of the endpoint.
+	 */
 	public static function nonce(): string {
 		return self::ENDPOINT;
 	}
 
+	/**
+	 * Handles the request.
+	 */
 	public function handle_request(): void {
 		if ( ! current_user_can( 'manage_woocommerce' ) ) {
 			$this->logger->error( 'User does not have permission: manage_woocommerce' );

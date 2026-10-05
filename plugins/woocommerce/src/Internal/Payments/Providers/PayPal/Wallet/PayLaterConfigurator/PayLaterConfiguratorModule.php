@@ -28,6 +28,13 @@ class PayLaterConfiguratorModule implements ServiceModule, ExecutableModule {
 	 * Returns whether the module should be loaded.
 	 */
 	public static function is_enabled(): bool {
+		/**
+		 * Filters whether the Pay Later configurator module is loaded.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $enabled Whether the module is enabled; false only when the PCP_PAYLATER_CONFIGURATOR environment variable is "0".
+		 */
 		return apply_filters(
 		// phpcs:ignore WordPress.NamingConventions.ValidHookName.UseUnderscores
 			'woocommerce.feature-flags.woocommerce_paypal_payments.paylater_configurator_enabled',
@@ -44,6 +51,8 @@ class PayLaterConfiguratorModule implements ServiceModule, ExecutableModule {
 
 	/**
 	 * {@inheritDoc}
+	 *
+	 * @param ContainerInterface $c The service container.
 	 */
 	public function run( ContainerInterface $c ): bool {
 
