@@ -482,16 +482,41 @@ const addReferenceElementOptions = ( options, cartData ) => {
 	return options;
 };
 
-const getStripeElementsOptions = ( billing, cart ) => {
+/**
+ * Get the Elements options that follow the live cart: payment or setup mode, amount and setupFutureUsage.
+ *
+ * The client rebuilds these from `billing.cartTotal` on every render (express-checkout-container.js:62-84).
+ *
+ * @param {Object} billing Blocks billing data.
+ * @param {Object} cart    Cart data.
+ * @return {Object} Elements options.
+ */
+const getLiveElementsOptions = ( billing, cart ) => {
 	const cartData = normalizeStoreApiCart( cart, billing );
 	const amount = applyFilters(
 		'wcpay.express-checkout.total-amount',
 		getCartTotal( billing ),
 		cartData
 	);
+	const options = { mode: amount > 0 ? 'payment' : 'setup' };
+
+	if ( options.mode === 'payment' ) {
+		options.amount = amount;
+	}
+
+	if ( shouldUseConfirmationTokens() ) {
+		options.setupFutureUsage = getSetupFutureUsageForCart( cartData );
+	}
+
+	return options;
+};
+
+const getStripeElementsOptions = ( billing, cart ) => {
+	const cartData = normalizeStoreApiCart( cart, billing );
+	const { mode, amount } = getLiveElementsOptions( billing, cart );
 	const options = addReferenceElementOptions(
 		{
-			mode: amount > 0 ? 'payment' : 'setup',
+			mode,
 			loader: 'never',
 			currency: getCartCurrency( billing ),
 			// Without confirmation tokens, the payment method is created
@@ -509,6 +534,25 @@ const getStripeElementsOptions = ( billing, cart ) => {
 
 	return options;
 };
+
+/**
+ * Get the options whose values differ from the ones last applied, as react-stripe-js does for the client's
+ * `<Elements options>` before calling `elements.update()`.
+ *
+ * @param {Object} next    Options for the current render.
+ * @param {Object} applied Options applied last.
+ * @return {Object} Changed options.
+ */
+const getChangedElementsOptions = ( next, applied ) =>
+	Object.keys( next ).reduce( ( changed, key ) => {
+		if (
+			JSON.stringify( next[ key ] ) !== JSON.stringify( applied[ key ] )
+		) {
+			changed[ key ] = next[ key ];
+		}
+
+		return changed;
+	}, {} );
 
 const getAvailabilityElementsOptions = ( cart ) => {
 	const cartData = normalizeStoreApiCart( cart );
@@ -1125,6 +1169,9 @@ const ExpressCheckoutContent = ( {
 	const elementsRef = useRef( null );
 	const expressElementRef = useRef( null );
 	const cartDataRef = useRef( cartData );
+	const billingRef = useRef( billing );
+	const shippingDataRef = useRef( shippingData );
+	const appliedElementsOptionsRef = useRef( null );
 	const latestCartDataRef = useRef( null );
 	const walletMutatedCartRef = useRef( false );
 	const methodConfig = METHOD_CONFIG[ method ];
@@ -1146,16 +1193,22 @@ const ExpressCheckoutContent = ( {
 		[]
 	);
 
+	// The wallet handlers are registered once; they read the live Blocks data through these refs.
 	cartDataRef.current = cartData;
+	billingRef.current = billing;
+	shippingDataRef.current = shippingData;
 
 	const getCurrentCart = useCallback(
 		() =>
 			normalizeStoreApiCart(
 				latestCartDataRef.current || cartDataRef.current || {},
-				billing,
-				shippingData
+				billingRef.current,
+				shippingDataRef.current
 			),
-		[ billing, shippingData ]
+		[]
+	);
+	const liveElementsOptions = JSON.stringify(
+		getLiveElementsOptions( billing, getCurrentCart() )
 	);
 
 	useEffect( () => {
@@ -1180,6 +1233,7 @@ const ExpressCheckoutContent = ( {
 		elementsRef.current = stripeRef.current.elements(
 			getStripeElementsOptions( billing, getCurrentCart() )
 		);
+		appliedElementsOptionsRef.current = JSON.parse( liveElementsOptions );
 		expressElementRef.current = elementsRef.current.create(
 			'expressCheckout',
 			getExpressButtonOptions( method )
@@ -1209,7 +1263,8 @@ const ExpressCheckoutContent = ( {
 
 			const currentCart = getCurrentCart();
 			const shippingAddressRequired = Boolean(
-				shippingData?.needsShipping || params?.checkout?.needs_shipping
+				shippingDataRef.current?.needsShipping ||
+					params?.checkout?.needs_shipping
 			);
 			let shippingRates;
 
@@ -1274,8 +1329,8 @@ const ExpressCheckoutContent = ( {
 						data: {
 							shipping_address: getShippingAddressFromEvent(
 								event,
-								shippingData?.shippingAddress ||
-									billing?.billingAddress ||
+								shippingDataRef.current?.shippingAddress ||
+									billingRef.current?.billingAddress ||
 									{}
 							),
 						},
@@ -1412,13 +1467,13 @@ const ExpressCheckoutContent = ( {
 					? {
 							...getShippingAddressFromEvent(
 								event.shippingAddress,
-								shippingData?.shippingAddress || {}
+								shippingDataRef.current?.shippingAddress || {}
 							),
 							...( walletBillingPhone
 								? { phone: walletBillingPhone }
 								: {} ),
 					  }
-					: shippingData?.shippingAddress;
+					: shippingDataRef.current?.shippingAddress;
 				const response = await apiFetch( {
 					method: 'POST',
 					path: getStoreApiPath( '/wc/store/v1/checkout' ),
@@ -1439,7 +1494,10 @@ const ExpressCheckoutContent = ( {
 					},
 					data: {
 						payment_method: PAYMENT_METHOD_NAME,
-						billing_address: getBillingAddress( event, billing ),
+						billing_address: getBillingAddress(
+							event,
+							billingRef.current
+						),
 						shipping_address: eventShippingAddress || undefined,
 						...( orderNotes ? { customer_note: orderNotes } : {} ),
 						payment_data: getPaymentData(
@@ -1480,6 +1538,7 @@ const ExpressCheckoutContent = ( {
 		api,
 		billing,
 		getCurrentCart,
+		liveElementsOptions,
 		method,
 		methodConfig.clickEvent,
 		methodConfig.loadEvent,
@@ -1488,8 +1547,25 @@ const ExpressCheckoutContent = ( {
 		onClose,
 		refreshCartAfterWalletMutation,
 		setExpressPaymentError,
-		shippingData,
 	] );
+
+	// Keep the wallet amount in step with the cart, as the client's <Elements options> does on every render.
+	useEffect( () => {
+		if ( ! elementsRef.current || ! appliedElementsOptionsRef.current ) {
+			return;
+		}
+
+		const nextOptions = JSON.parse( liveElementsOptions );
+		const changedOptions = getChangedElementsOptions(
+			nextOptions,
+			appliedElementsOptionsRef.current
+		);
+		appliedElementsOptionsRef.current = nextOptions;
+
+		if ( Object.keys( changedOptions ).length ) {
+			elementsRef.current.update( changedOptions );
+		}
+	}, [ liveElementsOptions ] );
 
 	return (
 		<div className="wcpay-core-express-checkout">

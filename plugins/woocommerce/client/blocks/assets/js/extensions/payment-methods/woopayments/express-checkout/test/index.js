@@ -1643,6 +1643,111 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		);
 	} );
 
+	describe( 'a cart that changes after the button mounted', () => {
+		const renderAndRerender = async ( nextBilling, nextCart ) => {
+			registerExpressCheckout();
+			const registration = getRegistration(
+				'woocommerce_payments_express_checkout_applePay'
+			);
+			const props = {
+				...registration.content.props,
+				onClick: jest.fn(),
+				onClose: jest.fn(),
+				setExpressPaymentError: jest.fn(),
+			};
+			const { rerender } = render(
+				createElement( registration.content.type, {
+					...props,
+					billing,
+					...getPaymentMethodInterfaceProps(),
+				} )
+			);
+
+			await waitFor( () => {
+				expect( expressElement.mount ).toHaveBeenCalled();
+			} );
+
+			rerender(
+				createElement( registration.content.type, {
+					...props,
+					billing: nextBilling,
+					...getPaymentMethodInterfaceProps( nextCart ),
+				} )
+			);
+		};
+
+		it( 'updates the wallet amount and line items from the live cart', async () => {
+			const nextBilling = {
+				...billing,
+				cartTotal: { value: 7200 },
+				cartTotalItems: billing.cartTotalItems.map( ( item ) => {
+					if ( item.key === 'total_items' ) {
+						return { ...item, value: 6000, valueWithTax: 6000 };
+					}
+
+					return item.key === 'total_shipping'
+						? { ...item, value: 900, valueWithTax: 900 }
+						: item;
+				} ),
+			};
+			const nextCart = {
+				...blocksCart,
+				items: [
+					{
+						...blocksCart.items[ 0 ],
+						quantity: 6,
+						totals: {
+							...blocksCart.items[ 0 ].totals,
+							line_subtotal: '6000',
+						},
+					},
+				],
+			};
+			const resolve = jest.fn();
+
+			await renderAndRerender( nextBilling, nextCart );
+
+			await waitFor( () => {
+				expect( elements.update ).toHaveBeenCalledWith( {
+					amount: 7200,
+				} );
+			} );
+
+			act( () => {
+				expressHandlers.click( { resolve } );
+			} );
+
+			expect( resolve ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					lineItems: [
+						{ name: 'Beanie (x6)', amount: 6000 },
+						{ name: 'Shipping', amount: 900 },
+						{ name: 'Tax', amount: 300 },
+					],
+				} )
+			);
+		} );
+
+		it( 'asks to save the payment method once the live cart gains a subscription', async () => {
+			await renderAndRerender(
+				billing,
+				cartWithSubscriptionSchedule( [ 'payment_request' ] )
+			);
+
+			await waitFor( () => {
+				expect( elements.update ).toHaveBeenCalledWith( {
+					setupFutureUsage: 'off_session',
+				} );
+			} );
+		} );
+
+		it( 'does not update Elements when a re-render leaves the cart unchanged', async () => {
+			await renderAndRerender( { ...billing }, blocksCart );
+
+			expect( elements.update ).not.toHaveBeenCalled();
+		} );
+	} );
+
 	it( 'keeps setupFutureUsage out of Elements updates when confirmation tokens are disabled', async () => {
 		baseExpressCheckoutParams.flags = {
 			isEceUsingConfirmationTokens: false,
