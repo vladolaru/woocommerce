@@ -114,7 +114,12 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 			return $title;
 		}
 
+		// The title comes through the woocommerce_order_get_payment_method_title filter, which may return anything.
 		$method_title = $order->get_payment_method_title();
+		if ( ! is_string( $method_title ) ) {
+			return $title;
+		}
+
 		// "Payment Request" is the title of orders placed with the client's legacy payment request buttons.
 		foreach ( array( 'Apple Pay', 'Google Pay', 'Payment Request' ) as $wallet_title ) {
 			if ( 0 === strpos( $method_title, $wallet_title ) ) {

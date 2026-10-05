@@ -185,6 +185,46 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox In admin, a $label payment method title from the order getter filter leaves the gateway title alone.
+	 *
+	 * WC_Order::get_payment_method_title() returns what woocommerce_order_get_payment_method_title returns, unchecked
+	 * (abstract-wc-data.php:953-964).
+	 *
+	 * @dataProvider malformed_method_title_provider
+	 *
+	 * @param string $label        Case label.
+	 * @param mixed  $method_title Filtered payment method title.
+	 */
+	public function test_admin_gateway_title_ignores_a_malformed_method_title( string $label, $method_title ): void {
+		unset( $label );
+		$this->sut = $this->create_controller( true );
+		set_current_screen( 'woocommerce_page_wc-orders' );
+		global $theorder;
+		$theorder = $this->create_order_with_payment_method_title( 'Apple Pay (WooPayments)' );
+		$filter   = static fn() => $method_title;
+		add_filter( 'woocommerce_order_get_payment_method_title', $filter );
+
+		try {
+			$this->assertSame( 'Credit card / debit card', $this->sut->handle_woocommerce_gateway_title( 'Credit card / debit card', OrderPaymentStore::GATEWAY_ID ) );
+		} finally {
+			remove_filter( 'woocommerce_order_get_payment_method_title', $filter );
+		}
+	}
+
+	/**
+	 * Malformed payment method titles an extension's filter could return.
+	 *
+	 * @return array<string,array{0:string,1:mixed}>
+	 */
+	public function malformed_method_title_provider(): array {
+		return array(
+			'null'   => array( 'null', null ),
+			'array'  => array( 'array', array( 'Apple Pay (WooPayments)' ) ),
+			'object' => array( 'object', (object) array( 'title' => 'Apple Pay (WooPayments)' ) ),
+		);
+	}
+
+	/**
 	 * Create an order with a payment method title, paid with WooPayments unless another gateway is given.
 	 *
 	 * @param string $method_title Payment method title.
