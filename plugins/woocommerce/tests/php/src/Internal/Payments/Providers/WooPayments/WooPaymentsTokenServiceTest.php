@@ -29,6 +29,8 @@ use WC_Unit_Test_Case;
  */
 class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 
+	use ProviderTextLogAssertions;
+
 	/**
 	 * Token services created during a test.
 	 *
@@ -1278,6 +1280,122 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A platform error fetching the customer's payment methods is logged with its status and code, never its message.
+	 */
+	public function test_reconcile_fetch_failure_log_leaves_out_platform_text(): void {
+		self::enable_woopayments_debug_logging();
+		$this->register_card_gateway_id();
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+		$local_token                     = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_local' );
+		$customer_service                = $this->create_reconciling_customer_service( 'cus_1', array() );
+		$customer_service->fail_fetches  = true;
+		$customer_service->fetch_failure = self::make_provider_error();
+		$this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
+		$logger = RecordingWcLogger::install();
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
+		apply_filters( 'woocommerce_get_customer_payment_tokens', array( $local_token->get_id() => $local_token ), $user_id, '' );
+
+		$context = $this->get_logged_context( $logger, 'Failed to fetch payment methods for customer.' );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
+	 * @testdox A platform error detaching a deleted token's payment method is logged with its status and code, never its message.
+	 */
+	public function test_detach_failure_log_leaves_out_platform_text(): void {
+		self::enable_woopayments_debug_logging();
+		$user_id    = $this->factory()->user->create();
+		$api_client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Fail the detach as the platform does.
+			 *
+			 * @param string $payment_method_id Payment method ID.
+			 * @throws \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException Always.
+			 */
+			public function detach_payment_method( string $payment_method_id ): array {
+				unset( $payment_method_id );
+				throw WooPaymentsTokenServiceTest::make_provider_error();
+			}
+		};
+		$sut        = $this->create_service(
+			array(
+				'pm_sepa' => array(
+					'id'         => 'pm_sepa',
+					'type'       => 'sepa_debit',
+					'sepa_debit' => array( 'last4' => '6789' ),
+				),
+			),
+			$api_client,
+			null,
+			$this->create_account_service( true )
+		);
+		$token      = $sut->get_or_create_token_for_user( 'pm_sepa', $user_id );
+		$logger     = RecordingWcLogger::install();
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token deletion hook.
+		do_action( 'woocommerce_payment_token_deleted', $token->get_id(), $token );
+
+		$context = $this->get_logged_context( $logger, 'Error detaching payment method.' );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
+	 * @testdox A platform error setting the customer's default payment method is logged with its status and code, never its message.
+	 */
+	public function test_set_default_failure_log_leaves_out_platform_text(): void {
+		self::enable_woopayments_debug_logging();
+		$user_id          = $this->factory()->user->create();
+		$customer_service = new class() extends WooPaymentsCustomerService {
+			/**
+			 * Get a customer ID for a user.
+			 *
+			 * @param int|null $user_id User ID.
+			 * @return string|null
+			 */
+			public function get_customer_id_by_user_id( ?int $user_id ): ?string {
+				unset( $user_id );
+				return 'cus_test';
+			}
+
+			/**
+			 * Fail the update as the platform does.
+			 *
+			 * @param string $customer_id       Customer ID.
+			 * @param string $payment_method_id Payment method ID.
+			 * @return void
+			 */
+			public function set_default_payment_method_for_customer( string $customer_id, string $payment_method_id ): void {
+				unset( $customer_id, $payment_method_id );
+				throw WooPaymentsTokenServiceTest::make_provider_error();
+			}
+		};
+		$sut              = $this->create_service(
+			array(
+				'pm_sepa' => array(
+					'id'         => 'pm_sepa',
+					'type'       => 'sepa_debit',
+					'sepa_debit' => array( 'last4' => '6789' ),
+				),
+			),
+			null,
+			$customer_service
+		);
+		$token            = $sut->get_or_create_token_for_user( 'pm_sepa', $user_id );
+		$logger           = RecordingWcLogger::install();
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered default-token hook.
+		do_action( 'woocommerce_payment_token_set_default', $token->get_id(), $token );
+
+		$context = $this->get_logged_context( $logger, 'Error setting native WooPayments default payment method.' );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
 	 * @testdox Reconciliation should re-register the token filter after adding tokens.
 	 */
 	public function test_reconcile_reregisters_the_filter_after_adding_tokens(): void {
@@ -2272,6 +2390,13 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 			public bool $fail_fetches = false;
 
 			/**
+			 * What a failing fetch throws, when not the default.
+			 *
+			 * @var \Throwable|null
+			 */
+			public ?\Throwable $fetch_failure = null;
+
+			/**
 			 * Number of fetches that failed.
 			 *
 			 * @var int
@@ -2313,7 +2438,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 
 				if ( $this->fail_fetches ) {
 					++$this->failed_fetch_attempts;
-					throw new RuntimeException( 'Provider unavailable.' );
+					throw $this->fetch_failure ?? new RuntimeException( 'Provider unavailable.' );
 				}
 
 				$this->fetch_counts[ $type ] = ( $this->fetch_counts[ $type ] ?? 0 ) + 1;

@@ -115,14 +115,15 @@ class WooPaymentsPaymentMethodDetailsService {
 	}
 
 	/**
-	 * Log a payment method details fetch error through the gated WooPayments logger, as the client's callers do (gw:5088).
+	 * Log a payment method details fetch error through the gated WooPayments logger, as the client's callers do (gw:5088),
+	 * with the platform's status and code instead of its message.
 	 *
 	 * @param string    $payment_method_id Payment method ID.
 	 * @param Exception $exception         Exception.
 	 */
 	private function log_fetch_error( string $payment_method_id, Exception $exception ): void {
 		wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
-			'Error retrieving WooPayments payment method details for ' . $payment_method_id . ': ' . $exception->getMessage(),
+			'Error retrieving WooPayments payment method details for ' . $payment_method_id . '.',
 			$exception,
 			array( 'payment_method_id' => $payment_method_id )
 		);

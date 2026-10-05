@@ -28,6 +28,8 @@ use WC_Unit_Test_Case;
  */
 class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 
+	use ProviderTextLogAssertions;
+
 	/**
 	 * Tear down test fixtures.
 	 */
@@ -799,13 +801,14 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	 * @testdox A $throwable_class saving the checkout token with debug logging $logging is logged at $level.
 	 *
 	 * Client 11.1.0 logs "Error when saving payment method: " through its gated Logger::log() at info level (gw:2066);
-	 * a PHP Error, which fatals there, is written at error level whatever the setting (review 34 F3).
+	 * a PHP Error, which fatals there, is written at error level whatever the setting (review 34 F3). Native leaves the
+	 * message out (a platform error's text can hold an email or a URL).
 	 *
-	 * @testWith ["RuntimeException", "yes", "info"]
-	 *           ["RuntimeException", "no", ""]
+	 * @testWith ["WooPaymentsApiException", "yes", "info"]
+	 *           ["WooPaymentsApiException", "no", ""]
 	 *           ["TypeError", "no", "error"]
 	 *
-	 * @param string $throwable_class Class thrown by the token save.
+	 * @param string $throwable_class Short name of the class thrown by the token save.
 	 * @param string $logging         Gateway `enable_logging` setting.
 	 * @param string $level           Expected level, or '' for no line.
 	 */
@@ -820,7 +823,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_or_create_token_for_user' ) )
 			->getMock();
-		$token_service->method( 'get_or_create_token_for_user' )->willThrowException( new $throwable_class( 'Token storage failed.' ) );
+		$token_service->method( 'get_or_create_token_for_user' )->willThrowException( 'WooPaymentsApiException' === $throwable_class ? self::make_provider_error() : new $throwable_class( 'Token storage failed.' ) );
 		$logger = RecordingWcLogger::install();
 
 		$this->create_applier( $token_service )->apply(
@@ -836,15 +839,17 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => str_contains( $line[1], 'Token storage failed.' ) ) );
+		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'Error when saving payment method.' === $line[1] ) );
 		if ( '' === $level ) {
 			$this->assertSame( array(), $lines );
 			return;
 		}
 		$this->assertCount( 1, $lines );
-		$this->assertSame( array( $level, 'Error when saving payment method: Token storage failed.', 'woopayments' ), $logger->lines[ $lines[0] ] );
+		$this->assertSame( array( $level, 'Error when saving payment method.', 'woopayments' ), $logger->lines[ $lines[0] ] );
 		$this->assertSame( $order->get_id(), $logger->contexts[ $lines[0] ]['order_id'] ?? null );
-		$this->assertSame( $throwable_class, $logger->contexts[ $lines[0] ]['exception'] ?? '' );
+		$this->assertSame( $throwable_class, substr( (string) strrchr( '\\' . ( $logger->contexts[ $lines[0] ]['exception'] ?? '' ), '\\' ), 1 ) );
+		$this->assert_log_holds_no_provider_text( $logger );
+		$this->assertStringNotContainsString( 'Token storage failed', (string) wp_json_encode( $logger->lines ) );
 	}
 
 	/**

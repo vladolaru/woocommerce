@@ -16,6 +16,8 @@ use WC_Unit_Test_Case;
  */
 class WooPaymentsPaymentMethodDetailsServiceTest extends WC_Unit_Test_Case {
 
+	use ProviderTextLogAssertions;
+
 	/**
 	 * The System Under Test.
 	 *
@@ -188,20 +190,22 @@ class WooPaymentsPaymentMethodDetailsServiceTest extends WC_Unit_Test_Case {
 				 * @throws RuntimeException Always thrown for this test double.
 				 */
 				public function get_payment_method( string $payment_method_id ) {
-					throw new RuntimeException( 'API failed' );
+					unset( $payment_method_id );
+					throw WooPaymentsPaymentMethodDetailsServiceTest::make_provider_error();
 				}
 			}
 		);
 
 		$this->assertSame( array(), $this->sut->get_payment_method_details( 'pm_123' ) );
-		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => str_contains( $line[1], 'API failed' ) ) );
+		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'Error retrieving WooPayments payment method details for pm_123.' === $line[1] ) );
 		if ( ! $expected ) {
 			$this->assertSame( array(), $lines );
 			return;
 		}
 		$this->assertCount( 1, $lines );
-		$this->assertSame( array( 'error', 'Error retrieving WooPayments payment method details for pm_123: API failed', 'woopayments' ), $logger->lines[ $lines[0] ] );
-		$this->assertSame( 'RuntimeException', $logger->contexts[ $lines[0] ]['exception'] ?? '' );
+		$this->assertSame( 'error', $logger->lines[ $lines[0] ][0] );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $logger->contexts[ $lines[0] ]['http_status'], $logger->contexts[ $lines[0] ]['error_code'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
 	/**

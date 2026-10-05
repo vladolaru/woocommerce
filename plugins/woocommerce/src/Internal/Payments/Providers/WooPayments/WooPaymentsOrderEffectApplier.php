@@ -1077,7 +1077,8 @@ class WooPaymentsOrderEffectApplier {
 	/**
 	 * Log a token-save failure without losing the provider outcome.
 	 *
-	 * Client 11.1.0 logs it through its gated Logger::log() at info level (gw:2066); a PHP Error is always written.
+	 * Client 11.1.0 logs it through its gated Logger::log() at info level (gw:2066); a PHP Error is always written. The
+	 * client's line carries the platform's message; native logs its status and code instead.
 	 *
 	 * @param WC_Order  $order             Order being paid.
 	 * @param string    $payment_method_id Provider payment method ID.
@@ -1086,7 +1087,7 @@ class WooPaymentsOrderEffectApplier {
 	private function log_token_save_error( WC_Order $order, string $payment_method_id, Throwable $exception ): void {
 		try {
 			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
-				'Error when saving payment method: ' . $exception->getMessage(),
+				'Error when saving payment method.',
 				$exception,
 				array(
 					'order_id'          => $order->get_id(),

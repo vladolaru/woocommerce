@@ -38,6 +38,8 @@ use WC_Unit_Test_Case;
  */
 class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 
+	use ProviderTextLogAssertions;
+
 	/**
 	 * The System Under Test.
 	 *
@@ -348,7 +350,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * Client 11.1.0 process_redirect_payment() catches the token-save exception, logs "Error when saving payment method: ..."
 	 * at info level through its gated Logger (gw:4312) and goes on to update the order from the intent (gw:2389-2406). Only the order-status
-	 * callback stops a recurring order on that error (gw:4309-4321).
+	 * callback stops a recurring order on that error (gw:4309-4321). Native logs the platform error's status and code, never its message.
 	 */
 	public function test_handle_wp_completes_order_when_token_save_fails(): void {
 		add_filter( 'woocommerce_woopayments_is_recurring_payment', '__return_true' );
@@ -366,7 +368,8 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			 */
 			public function get_or_create_token_for_user( string $payment_method_id, int $user_id ): ?\WC_Payment_Token {
 				unset( $payment_method_id, $user_id );
-				throw new \RuntimeException( 'Token storage unavailable.' );
+				// The token save fetches the payment method from the platform; its error carries the platform's text.
+				throw WooPaymentsRedirectReturnControllerTest::make_provider_error();
 			}
 		};
 		$token_service->init( $this->createMock( WooPaymentsPaymentMethodDetailsService::class ), new StaticNativeRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
@@ -385,7 +388,12 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		// Only the WooPayments lines: core's order emails log under their own source, and whether they send depends on the
 		// mailer's first load, which an earlier test in the process may already have done with its hooks since restored.
 		$woopayments_info = array_filter( $logger->info_calls, static fn( array $call ): bool => WooPaymentsLogger::SOURCE === ( $call['context']['source'] ?? '' ) );
-		$this->assertSame( array( 'Error when saving payment method: Token storage unavailable.' ), array_column( $woopayments_info, 'message' ) );
+		$this->assertSame( array( 'Error when saving payment method.' ), array_column( $woopayments_info, 'message' ) );
+		$this->assertSame( array( 404, 'resource_missing' ), array( reset( $woopayments_info )['context']['http_status'], reset( $woopayments_info )['context']['error_code'] ) );
+		$written = (string) wp_json_encode( $logger );
+		foreach ( array( 'No such customer', 'shopper@example.com', 'pay.example.test', 'sk_test_leak123' ) as $provider_text ) {
+			$this->assertStringNotContainsString( $provider_text, $written );
+		}
 	}
 
 	/**
