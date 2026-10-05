@@ -3,6 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -11,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPayVerifiedEmailRestoreService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAdaptedExtensions;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\FakeWooPayMailchimpBlocksIntegration;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\FakeWooPayPointsRewardsBlocksIntegration;
@@ -1230,6 +1233,74 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		} finally {
 			remove_filter( 'woocommerce_is_checkout', '__return_true' );
 		}
+	}
+
+	/**
+	 * @testdox A classic checkout after an unfinished WooPay checkout places the WooPay draft order instead of a new one.
+	 *
+	 * Client 11.1.0 class-wc-payments-woopay-direct-checkout.php:56-79 moves store_api_draft_order to the pending
+	 * order_awaiting_payment that WC_Checkout::create_order() resumes, so the draft's own stock hold cannot block the order.
+	 */
+	public function test_classic_checkout_resumes_the_woopay_draft_order(): void {
+		$sut = $this->create_service( array(), array( 'platform_direct_checkout_eligible' => true ) );
+		$this->register_controller( $sut );
+		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 1 );
+		WC()->cart->calculate_totals();
+		// The draft the Store API saves when WooPay places the order (Checkout::create_or_update_draft_order()).
+		$draft = new \WC_Order();
+		$draft->set_status( OrderStatus::CHECKOUT_DRAFT );
+		$draft->set_cart_hash( WC()->cart->get_cart_hash() );
+		$draft->save();
+		WC()->session->set( 'store_api_draft_order', $draft->get_id() );
+		WC()->session->set( 'order_awaiting_payment', null );
+		Constants::set_constant( 'WOOCOMMERCE_CHECKOUT', true );
+
+		try {
+			$order_id = WC()->checkout()->create_order(
+				array(
+					'payment_method' => 'bacs',
+					'billing_email'  => 'guest@example.com',
+				)
+			);
+		} finally {
+			Constants::clear_single_constant( 'WOOCOMMERCE_CHECKOUT' );
+		}
+
+		$this->assertSame( $draft->get_id(), $order_id );
+		$this->assertSame( OrderStatus::PENDING, wc_get_order( $order_id )->get_status() );
+		$this->assertNull( WC()->session->get( 'store_api_draft_order' ) );
+	}
+
+	/**
+	 * @testdox The WooPay draft order is left alone outside a checkout request and while another order awaits payment.
+	 */
+	public function test_woopay_draft_order_is_left_alone_outside_its_case(): void {
+		$sut   = $this->create_service( array(), array( 'platform_direct_checkout_eligible' => true ) );
+		$draft = new \WC_Order();
+		$draft->set_status( OrderStatus::CHECKOUT_DRAFT );
+		$draft->save();
+		WC()->session->set( 'store_api_draft_order', $draft->get_id() );
+		WC()->session->set( 'order_awaiting_payment', null );
+
+		// An earlier test in the process can define WOOCOMMERCE_CHECKOUT; the override wins over it.
+		Constants::set_constant( 'WOOCOMMERCE_CHECKOUT', false );
+		try {
+			$this->assertNull( $sut->maybe_use_store_api_draft_order_id( null ), 'Outside a checkout request.' );
+		} finally {
+			Constants::clear_single_constant( 'WOOCOMMERCE_CHECKOUT' );
+		}
+		$this->assertSame( $draft->get_id(), WC()->session->get( 'store_api_draft_order' ) );
+
+		Constants::set_constant( 'WOOCOMMERCE_CHECKOUT', true );
+		WC()->session->set( 'order_awaiting_payment', 123 );
+		try {
+			$this->assertNull( $sut->maybe_use_store_api_draft_order_id( null ), 'With an order awaiting payment.' );
+		} finally {
+			Constants::clear_single_constant( 'WOOCOMMERCE_CHECKOUT' );
+		}
+
+		$this->assertSame( $draft->get_id(), WC()->session->get( 'store_api_draft_order' ) );
+		$this->assertSame( OrderStatus::CHECKOUT_DRAFT, wc_get_order( $draft->get_id() )->get_status() );
 	}
 
 	/**
@@ -2706,6 +2777,26 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$sut->init( $account_service, new WooPaymentsFrontendStylesService(), $tracking_controller, null, $adapted_extensions, $customer_service );
 
 		return $sut;
+	}
+
+	/**
+	 * Register the WooPay session controller's hooks for the given service, as the native bootstrap does.
+	 *
+	 * @param WooPaymentsWooPaySessionService $service Session service.
+	 * @return WooPaymentsWooPaySessionController
+	 */
+	private function register_controller( WooPaymentsWooPaySessionService $service ): WooPaymentsWooPaySessionController {
+		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'should_native_register' ) )
+			->getMock();
+		$arbiter->method( 'should_native_register' )->willReturn( true );
+
+		$controller = new WooPaymentsWooPaySessionController();
+		$controller->init( $arbiter, $service );
+		$controller->register();
+
+		return $controller;
 	}
 
 	/**

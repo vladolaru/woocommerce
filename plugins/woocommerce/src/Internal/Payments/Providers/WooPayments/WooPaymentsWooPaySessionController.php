@@ -143,6 +143,15 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 		if ( false === has_action( 'woocommerce_checkout_process', array( $this, 'maybe_show_woopay_phone_number_error' ) ) ) {
 			add_action( 'woocommerce_checkout_process', array( $this, 'maybe_show_woopay_phone_number_error' ) );
 		}
+
+		// Client 11.1.0 hooks the draft-order reuse only while direct checkout is enabled (class-wc-payments.php:1770-1777,
+		// class-wc-payments-woopay-direct-checkout.php:40-43).
+		if (
+			$this->session_service->is_woopay_direct_checkout_enabled() &&
+			false === has_filter( 'woocommerce_create_order', array( $this->session_service, 'maybe_use_store_api_draft_order_id' ) )
+		) {
+			add_filter( 'woocommerce_create_order', array( $this->session_service, 'maybe_use_store_api_draft_order_id' ) );
+		}
 	}
 
 	/**

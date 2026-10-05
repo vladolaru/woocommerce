@@ -8,7 +8,9 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Connection\Client as Jetpack_Connection_Client;
+use Automattic\Jetpack\Constants;
 use Automattic\Jetpack\Connection\Rest_Authentication;
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAdaptedExtensions;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayBlocksDataExtractor;
 use Automattic\WooCommerce\StoreApi\SessionHandler;
@@ -1474,6 +1476,40 @@ class WooPaymentsWooPaySessionService {
 	 */
 	public function should_run_woopay_direct_checkout(): bool {
 		return $this->is_woopay_direct_checkout_enabled() && $this->should_enable_woopay_on_guest_checkout();
+	}
+
+	/**
+	 * Let the classic checkout resume the Store API draft order a WooPay checkout left in the session.
+	 *
+	 * WooPay's Store API requests share the shopper's session, so a WooPay checkout that did not finish leaves its draft
+	 * (and that draft's stock hold) as `store_api_draft_order`, which core's classic checkout never resumes. Ported from
+	 * client 11.1.0 `WC_Payments_WooPay_Direct_Checkout::maybe_use_store_api_draft_order_id()`
+	 * (class-wc-payments-woopay-direct-checkout.php:56-79): the draft becomes the pending order core resumes.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param mixed $order_id Order ID from the woocommerce_create_order filter.
+	 * @return mixed The order ID, unchanged.
+	 */
+	public function maybe_use_store_api_draft_order_id( $order_id ) {
+		$session = $this->get_wc_session();
+		if ( ! Constants::is_true( 'WOOCOMMERCE_CHECKOUT' ) || ! empty( $order_id ) || null === $session || isset( $session->order_awaiting_payment ) ) {
+			return $order_id;
+		}
+
+		$draft_order_id = absint( $session->get( 'store_api_draft_order' ) );
+		$draft_order    = $draft_order_id ? wc_get_order( $draft_order_id ) : false;
+		if ( ! $draft_order instanceof WC_Order ) {
+			return $order_id;
+		}
+
+		$draft_order->set_status( OrderStatus::PENDING );
+		$draft_order->save();
+
+		$session->set( 'store_api_draft_order', null );
+		$session->set( 'order_awaiting_payment', $draft_order_id );
+
+		return $order_id;
 	}
 
 	/**
