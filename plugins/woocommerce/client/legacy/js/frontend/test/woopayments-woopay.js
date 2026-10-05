@@ -1895,6 +1895,79 @@ describe( 'WooPayments WooPay checkout', () => {
 			expect( document.body.style.overflow ).toBe( '' );
 		} );
 
+		// Client 11.1.0 leaves the dialog unnamed, drops focus on close and lets Tab leave it
+		// (express-button/express-checkout-iframe.js:42-43, :150-161); native names it after the iframe, gives
+		// focus back to where it was, as the Blocks email-lookup iframe does, and keeps focus inside while it is open.
+		describe( 'as a modal dialog', () => {
+			async function openFromFocusedButton() {
+				const { __test__ } = require( '../woopayments-woopay' );
+				__test__.setNavigate( navigate );
+				const button = document.querySelector( '#wcpay-woopay-button button' );
+				button.focus();
+				button.click();
+				await flushPromises();
+
+				return button;
+			}
+
+			test( 'is named after the iframe and takes focus', async () => {
+				await openFromFocusedButton();
+
+				const dialog = document.querySelector( '[role="dialog"]' );
+				expect( dialog.getAttribute( 'aria-label' ) ).toBe(
+					'WooPay SMS code verification'
+				);
+				expect( document.activeElement ).toBe(
+					dialog.querySelector( '.woopay-otp-iframe' )
+				);
+			} );
+
+			// WooPay's OTP iframe posts `{ action: 'close_modal' }` from the WooPay origin (client
+			// express-button/express-checkout-iframe.js:266).
+			test.each( [
+				[
+					'the close_modal message',
+					() => sendWooPayMessage( { action: 'close_modal' } ),
+				],
+				[
+					'Escape',
+					() =>
+						document.dispatchEvent(
+							new window.KeyboardEvent( 'keyup', { key: 'Escape' } )
+						),
+				],
+				[
+					'a click on the backdrop',
+					() =>
+						document.querySelector( '.woopay-otp-iframe-wrapper' ).click(),
+				],
+			] )(
+				'gives focus back to the WooPay button when closed by %s',
+				async ( label, close ) => {
+					const button = await openFromFocusedButton();
+
+					close();
+
+					expect( document.querySelector( '.woopay-otp-iframe' ) ).toBeNull();
+					expect( document.activeElement ).toBe( button );
+				}
+			);
+
+			test( 'sends focus that leaves the dialog back to the iframe while it is open', async () => {
+				const button = await openFromFocusedButton();
+				const iframe = document.querySelector( '.woopay-otp-iframe' );
+				const email = document.getElementById( 'billing_email' );
+
+				email.focus();
+				expect( document.activeElement ).toBe( iframe );
+
+				sendWooPayMessage( { action: 'close_modal' } );
+				expect( document.activeElement ).toBe( button );
+				email.focus();
+				expect( document.activeElement ).toBe( email );
+			} );
+		} );
+
 		// Client express-checkout-iframe.js:291-296: Safari restores the
 		// page from the back-forward cache with the iframe still open.
 		test( 'closes the iframe when the page is restored from the back-forward cache', async () => {

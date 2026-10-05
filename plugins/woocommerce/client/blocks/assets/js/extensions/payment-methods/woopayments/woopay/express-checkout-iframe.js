@@ -100,6 +100,15 @@ export const expressCheckoutIframe = async (
 	// Keep twentytwenty.intrinsicRatioVideos from resizing the iframe.
 	iframe.classList.add( 'intrinsic-ignore' );
 
+	// The dialog is named after the iframe it holds; client 11.1.0 names only the iframe.
+	if ( iframe.title ) {
+		iframeWrapper.setAttribute( 'aria-label', iframe.title );
+	}
+
+	// Where focus was when the dialog opened; closing gives it back, as the email-lookup iframe gives it back to the
+	// email field (email-input-iframe.js closeIframe()).
+	let previouslyFocused = null;
+
 	// Tracks the iframe header state; the default must match the platform's.
 	let iframeHeaderValue = true;
 	const getWindowSize = () => {
@@ -175,11 +184,15 @@ export const expressCheckoutIframe = async (
 		window.removeEventListener( 'pageshow', onPageShow );
 		window.removeEventListener( 'message', onMessage );
 		document.removeEventListener( 'keyup', onKeyUp );
+		document.removeEventListener( 'focusin', onFocusIn );
 
 		iframeWrapper.remove();
 		iframe.classList.remove( 'open' );
 
 		document.body.style.overflow = '';
+
+		previouslyFocused?.focus?.();
+		previouslyFocused = null;
 	};
 
 	iframeWrapper.addEventListener( 'click', closeIframe );
@@ -285,15 +298,25 @@ export const expressCheckoutIframe = async (
 		}
 	};
 
+	// A modal dialog keeps focus: Tab past the iframe's last control, or Shift+Tab before its first, lands on the page
+	// behind it and comes back to the iframe.
+	const onFocusIn = ( event ) => {
+		if ( ! iframeWrapper.contains( event.target ) ) {
+			iframe.focus();
+		}
+	};
+
 	const openIframe = ( email ) => {
 		// Only one OTP iframe at a time.
 		if ( document.querySelector( '.woopay-otp-iframe' ) ) {
 			return;
 		}
 
+		previouslyFocused = iframe.ownerDocument.activeElement;
 		window.addEventListener( 'pageshow', onPageShow );
 		window.addEventListener( 'message', onMessage );
 		document.addEventListener( 'keyup', onKeyUp );
+		document.addEventListener( 'focusin', onFocusIn );
 
 		const viewportWidth = window.document.documentElement.clientWidth;
 		const viewportHeight = window.document.documentElement.clientHeight;
