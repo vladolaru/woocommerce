@@ -22,11 +22,60 @@ class WooPaymentsExpressCheckoutCurrencyGuardTest extends WC_Unit_Test_Case {
 	private WooPaymentsExpressCheckoutCurrencyGuard $sut;
 
 	/**
+	 * WooCommerce log lines written during the test, once per log handler.
+	 *
+	 * @var array<int,array{message:string,level:string,context:array<string,mixed>}>
+	 */
+	private array $log_lines = array();
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
 		parent::setUp();
 		$this->sut = wc_get_container()->get( WooPaymentsExpressCheckoutCurrencyGuard::class );
+		add_filter( 'woocommerce_logger_log_message', array( $this, 'record_log_line' ), 10, 3 );
+	}
+
+	/**
+	 * Tear down test fixtures.
+	 */
+	public function tearDown(): void {
+		remove_filter( 'woocommerce_logger_log_message', array( $this, 'record_log_line' ), 10 );
+		parent::tearDown();
+	}
+
+	/**
+	 * Record a WooCommerce log line.
+	 *
+	 * @param string              $message Message.
+	 * @param string              $level   Level.
+	 * @param array<string,mixed> $context Context.
+	 * @return string
+	 */
+	public function record_log_line( $message, $level, $context ) {
+		$this->log_lines[] = array(
+			'message' => (string) $message,
+			'level'   => (string) $level,
+			'context' => is_array( $context ) ? $context : array(),
+		);
+
+		return $message;
+	}
+
+	/**
+	 * Count the error lines written under the payment-info source. The filter runs once per log handler, so each line
+	 * is counted once.
+	 *
+	 * @return int
+	 */
+	private function count_payment_info_errors(): int {
+		$errors = array_filter(
+			$this->log_lines,
+			static fn( array $line ): bool => 'error' === $line['level'] && 'payment-info' === ( $line['context']['source'] ?? null )
+		);
+
+		return count( array_unique( array_column( $errors, 'message' ) ) );
 	}
 
 	/**
@@ -80,6 +129,7 @@ class WooPaymentsExpressCheckoutCurrencyGuardTest extends WC_Unit_Test_Case {
 			$this->assertSame( 'wcpay_express_checkout_currency_mismatch', $exception->getErrorCode() );
 			$this->assertSame( 400, $exception->getCode() );
 		}
+		$this->assertSame( 1, $this->count_payment_info_errors() );
 	}
 
 	/**
@@ -92,7 +142,7 @@ class WooPaymentsExpressCheckoutCurrencyGuardTest extends WC_Unit_Test_Case {
 		$request = $this->create_request( $this->ece_headers( 'usd' ) );
 
 		$this->sut->assert_currency_matches_element( $order, $request );
-		$this->assertTrue( true );
+		$this->assertSame( 0, $this->count_payment_info_errors() );
 	}
 
 	/**
@@ -105,7 +155,7 @@ class WooPaymentsExpressCheckoutCurrencyGuardTest extends WC_Unit_Test_Case {
 		$request = $this->create_request( $this->ece_headers() );
 
 		$this->sut->assert_currency_matches_element( $order, $request );
-		$this->assertTrue( true );
+		$this->assertSame( 0, $this->count_payment_info_errors() );
 	}
 
 	/**
@@ -120,7 +170,7 @@ class WooPaymentsExpressCheckoutCurrencyGuardTest extends WC_Unit_Test_Case {
 		);
 
 		$this->sut->assert_currency_matches_element( $order, $request );
-		$this->assertTrue( true );
+		$this->assertSame( 0, $this->count_payment_info_errors() );
 	}
 
 	/**
@@ -139,6 +189,6 @@ class WooPaymentsExpressCheckoutCurrencyGuardTest extends WC_Unit_Test_Case {
 		);
 
 		$this->sut->assert_currency_matches_element( $order, $request );
-		$this->assertTrue( true );
+		$this->assertSame( 0, $this->count_payment_info_errors() );
 	}
 }
