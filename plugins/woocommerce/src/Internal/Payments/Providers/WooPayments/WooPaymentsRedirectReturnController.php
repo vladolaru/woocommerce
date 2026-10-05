@@ -238,7 +238,8 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 		if ( ! empty( $intent_error ) ) {
 			$logger  = wc_get_container()->get( WooPaymentsLogger::class );
 			$message = __( "We're not able to process this payment. Please try again later.", 'woocommerce' );
-			$logger->log( 'Error when processing payment: ' . ( is_array( $intent_error ) && is_scalar( $intent_error['message'] ?? null ) ? (string) $intent_error['message'] : '' ) );
+			// Client gw:2378 logs the error's message, which Stripe writes; native logs its listed codes instead.
+			$logger->log( 'Error when processing payment.', 'info', $this->get_intent_error_log_context( $intent_error ) );
 			$logger->error( 'Error occurred during the redirect payment process. Exception: ' . $message, array( 'order_id' => $order->get_id() ) );
 			$this->fail_and_return_to_checkout( $fresh_order, $intent_id, $intent_status, null, $message, true );
 			return;
@@ -284,11 +285,10 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	private function log_failure_kept_for_settlement( WC_Order $order, string $intent_id, string $intent_status, Throwable $exception ): void {
 		wc_get_container()->get( WooPaymentsLogger::class )->log_throwable_always(
 			sprintf(
-				'Confirming the %1$s intent of order #%2$d on its redirect return raised %3$s: %4$s. The order is left for the webhook or, when the platform could not deliver it, the failed-event fetch.',
+				'Confirming the %1$s intent of order #%2$d on its redirect return raised %3$s. The order is left for the webhook or, when the platform could not deliver it, the failed-event fetch.',
 				$intent_status,
 				$order->get_id(),
-				get_class( $exception ),
-				$exception->getMessage()
+				get_class( $exception )
 			),
 			$exception,
 			array(
@@ -488,7 +488,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 */
 	private function log_return_error( WC_Order $order, Throwable $exception ): void {
 		wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
-			'Error occurred during the redirect payment process. Exception: ' . $exception->getMessage(),
+			'Error occurred during the redirect payment process.',
 			$exception,
 			array( 'order_id' => $order->get_id() )
 		);
@@ -662,6 +662,27 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 		$sanitized_value = wc_clean( wp_unslash( (string) $value ) );
 
 		return is_string( $sanitized_value ) ? $sanitized_value : '';
+	}
+
+	/**
+	 * Get the listed codes of an intent's last payment or setup error, for a log line.
+	 *
+	 * @param mixed $intent_error The intent's last_payment_error or last_setup_error.
+	 * @return array<string,string>
+	 */
+	private function get_intent_error_log_context( $intent_error ): array {
+		$context = array();
+		$fields  = array(
+			'code'         => 'error_code',
+			'decline_code' => 'decline_code',
+		);
+		foreach ( $fields as $field => $key ) {
+			if ( is_array( $intent_error ) && is_string( $intent_error[ $field ] ?? null ) && '' !== $intent_error[ $field ] ) {
+				$context[ $key ] = WooPaymentsLogger::get_loggable_error_code( $intent_error[ $field ] );
+			}
+		}
+
+		return $context;
 	}
 
 	/**

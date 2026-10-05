@@ -888,8 +888,11 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assert_failed_note_with_message( $reloaded, 'pi_api_error', 'UPE payment failed: Transport unavailable.' );
 		$this->assertCount( 1, $logger->error_calls );
 		// Client gw:2429 writes Logger::exception() (includes/class-logger.php:100-112).
-		$this->assertSame( 'Error occurred during the redirect payment process. Exception: Transport unavailable.', $logger->error_calls[0]['message'] );
+		$this->assertSame( 'Error occurred during the redirect payment process.', $logger->error_calls[0]['message'] );
 		$this->assertSame( WooPaymentsApiException::class, $logger->error_calls[0]['context']['exception'] ?? '' );
+		// The platform's message stays out of the log; its status and code go in.
+		$this->assertSame( array( 503, 'wcpay_http_request_failed' ), array( $logger->error_calls[0]['context']['http_status'] ?? null, $logger->error_calls[0]['context']['error_code'] ?? null ) );
+		$this->assertStringNotContainsString( 'Transport unavailable', (string) wp_json_encode( $logger ) );
 		$this->assertArrayHasKey( 'code', $logger->error_calls[0]['context'] );
 		$this->assertArrayHasKey( 'trace', $logger->error_calls[0]['context'] );
 	}
@@ -1082,9 +1085,19 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		);
 		$this->sut                  = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_return_failed' );
+		self::enable_woopayments_debug_logging();
+		$logger = new RedirectReturnRecordingLogger();
+		add_filter( 'woocommerce_logging_class', static fn() => $logger );
 
 		$location = $this->handle_wp_expecting_redirect();
 		$reloaded = wc_get_order( $order->get_id() );
+
+		// Client gw:2378 logs the error's message; native logs its listed codes, and generic_decline is not listed.
+		$intent_error_lines = array_values( array_filter( $logger->info_calls, static fn( array $call ): bool => 'Error when processing payment.' === $call['message'] ) );
+		$this->assertCount( 1, $intent_error_lines );
+		$this->assertSame( 'card_declined', $intent_error_lines[0]['context']['error_code'] ?? '' );
+		$this->assertSame( 'unknown_error', $intent_error_lines[0]['context']['decline_code'] ?? '' );
+		$this->assertStringNotContainsString( 'Your card was declined', (string) wp_json_encode( $logger ) );
 
 		$this->assertSame( wc_get_checkout_url(), $location );
 		$this->assert_single_error_notice( "We're not able to process this payment. Please try again later." );
@@ -1312,7 +1325,11 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $logger->error_calls, 'One line, written with debug logging off.' );
 		$this->assertSame( get_class( $failure ), $logger->error_calls[0]['context']['exception'] ?? '' );
 		$this->assertSame( WooPaymentsLogger::SOURCE, $logger->error_calls[0]['context']['source'] ?? '' );
-		$this->assertStringContainsString( 'raised ' . get_class( $failure ) . ': ' . $failure->getMessage(), (string) $logger->error_calls[0]['message'] );
+		$this->assertStringContainsString( 'raised ' . get_class( $failure ) . '.', (string) $logger->error_calls[0]['message'] );
+		$this->assertStringNotContainsString( $failure->getMessage(), (string) wp_json_encode( $logger ) );
+		foreach ( self::$provider_leak_fragments as $fragment ) {
+			$this->assertStringNotContainsString( $fragment, (string) wp_json_encode( $logger ) );
+		}
 	}
 
 	/**
@@ -1326,6 +1343,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			'requires_capture, lifecycle failure' => array( 'requires_capture', 'lifecycle failure', new \RuntimeException( 'Order payment lifecycle write failed.' ) ),
 			'processing, lifecycle failure'       => array( 'processing', 'lifecycle failure', new \RuntimeException( 'Order payment lifecycle write failed.' ) ),
 			'succeeded, PHP error'                => array( 'succeeded', 'PHP error', new \TypeError( 'Return value must be of type array, null returned' ) ),
+			'succeeded, platform error'           => array( 'succeeded', 'platform error', self::make_provider_error() ),
 		);
 	}
 

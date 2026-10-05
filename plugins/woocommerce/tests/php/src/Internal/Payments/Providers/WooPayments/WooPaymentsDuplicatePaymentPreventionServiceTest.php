@@ -19,6 +19,8 @@ use WP_Error;
  */
 class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case {
 
+	use ProviderTextLogAssertions;
+
 	/**
 	 * @testdox Should redirect duplicate pending orders to a paid session order with matching cart content.
 	 */
@@ -229,6 +231,29 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$order->save();
 
 		$this->assertNull( $sut->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway() ) );
+	}
+
+	/**
+	 * @testdox A platform error fetching the attached PaymentIntent is logged with its status and code, never its message.
+	 */
+	public function test_attached_intent_fetch_failure_log_leaves_out_platform_text(): void {
+		self::enable_woopayments_debug_logging();
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$api_client->method( 'get_payment_intention' )->willThrowException( self::make_provider_error() );
+		$sut   = $this->create_service( $this->create_session(), $api_client );
+		$order = $this->create_order();
+		$order->update_meta_data( '_intent_id', 'pi_attached' );
+		$order->save();
+		$logger = RecordingWcLogger::install();
+
+		$sut->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway() );
+
+		$context = $this->get_logged_context( $logger, 'Failed to fetch attached native WooPayments payment intent.' );
+		$this->assertSame( array( 404, 'resource_missing', 'pi_attached' ), array( $context['http_status'], $context['error_code'], $context['intent_id'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
 	/**
