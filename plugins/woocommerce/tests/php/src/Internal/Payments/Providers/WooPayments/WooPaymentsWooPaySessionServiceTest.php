@@ -1389,11 +1389,12 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A classic checkout never resumes a $status order the Store API draft key names; it places a new order.
+	 * @testdox A classic checkout never resumes a $status order the Store API draft key names, nor stops for its lock; it places a new order.
 	 *
 	 * Core resumes only a checkout draft, or a pending or failed order (DraftOrderTrait::is_valid_draft_order(),
 	 * WC_Checkout::create_order() at class-wc-checkout.php:424). Client 11.1.0 sets whatever order the key names to pending
-	 * (class-wc-payments-woopay-direct-checkout.php:71-73).
+	 * (class-wc-payments-woopay-direct-checkout.php:71-73). A refund holds the settled order's payment lock throughout: only
+	 * an order that can still be paid stops the checkout while its lock is held.
 	 *
 	 * @testWith ["processing"]
 	 *           ["completed"]
@@ -1414,8 +1415,16 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$settled->save();
 		WC()->session->set( 'store_api_draft_order', $settled->get_id() );
 		WC()->session->set( 'order_awaiting_payment', null );
+		$store   = wc_get_container()->get( OrderPaymentStore::class );
+		$profile = new WooPaymentsPersistenceProfile();
+		$token   = $store->claim_order_payment_lock_for_operation( $settled, $profile, 'refund-key', 'refund' );
+		$this->assertIsString( $token );
 
-		$order_id = $this->create_classic_checkout_order();
+		try {
+			$order_id = $this->create_classic_checkout_order();
+		} finally {
+			$store->release_order_payment_lock( $settled, $profile, $token );
+		}
 
 		$this->assertIsInt( $order_id );
 		$this->assertNotSame( $settled->get_id(), $order_id, 'A new order is placed.' );
@@ -1425,12 +1434,13 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A classic checkout never resumes a pending WooPay order, which WooPay may be paying; it places a new order.
+	 * @testdox A classic checkout never resumes a pending WooPay order whose payment lock is free; it places a new order.
 	 *
 	 * The Store API checkout sets the order to pending just before it calls the gateway (Routes/V1/Checkout.php, "Set initial
 	 * status to 'pending'"), and the payment holds the order payment lock only from there on. Client 11.1.0 resumes it
 	 * (class-wc-payments-woopay-direct-checkout.php:71-73); core's Store API resumes a pending order only while the cart is
-	 * unchanged (DraftOrderTrait::is_valid_draft_order()). An abandoned pending order is left to core's unpaid-order cleanup.
+	 * unchanged (DraftOrderTrait::is_valid_draft_order()). An abandoned pending order is left to core's unpaid-order cleanup;
+	 * while a payment holds its lock, checkout stops instead (test_classic_checkout_stops_while_the_woopay_order_payment_lock_is_held).
 	 */
 	public function test_classic_checkout_never_resumes_a_pending_woopay_order(): void {
 		$sut = $this->create_service( array(), array( 'platform_direct_checkout_eligible' => true ) );
@@ -1454,38 +1464,149 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A classic checkout leaves the WooPay draft alone while another request holds its payment lock.
+	 * @testdox A classic checkout stops with a notice, places no order and leaves the $status WooPay order alone while another request holds its payment lock.
 	 *
 	 * Native checkout holds the order payment lock across the platform charge, with its attempt key as the lock value
-	 * (PaymentProcessingService::process_checkout_outcome()). Client 11.1.0 takes the draft over without any lock
+	 * (PaymentProcessingService::process_checkout_outcome()). Placing a new order instead would let this checkout charge a
+	 * second order while the first payment is unresolved. Client 11.1.0 takes the draft over without any lock
 	 * (class-wc-payments-woopay-direct-checkout.php:56-79).
+	 *
+	 * @testWith ["checkout-draft"]
+	 *           ["pending"]
+	 *           ["failed"]
+	 *
+	 * @param string $status Status of the order the Store API draft key names.
 	 */
-	public function test_classic_checkout_leaves_the_woopay_draft_while_its_payment_lock_is_held(): void {
+	public function test_classic_checkout_stops_while_the_woopay_order_payment_lock_is_held( string $status ): void {
 		$sut = $this->create_service( array(), array( 'platform_direct_checkout_eligible' => true ) );
 		$this->register_controller( $sut );
 		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 1 );
 		WC()->cart->calculate_totals();
 		$draft = new \WC_Order();
-		$draft->set_status( OrderStatus::CHECKOUT_DRAFT );
+		$draft->set_status( $status );
 		$draft->set_cart_hash( WC()->cart->get_cart_hash() );
 		$draft->save();
 		WC()->session->set( 'store_api_draft_order', $draft->get_id() );
 		WC()->session->set( 'order_awaiting_payment', null );
-		$store   = wc_get_container()->get( OrderPaymentStore::class );
-		$profile = new WooPaymentsPersistenceProfile();
-		$token   = $store->claim_order_payment_lock_for_operation( $draft, $profile, 'attempt-key-of-another-request', 'checkout' );
+		$store      = wc_get_container()->get( OrderPaymentStore::class );
+		$profile    = new WooPaymentsPersistenceProfile();
+		$token      = $store->claim_order_payment_lock_for_operation( $draft, $profile, 'attempt-key-of-another-request', 'checkout' );
+		$new_orders = array();
+		$record     = static function ( $order_id ) use ( &$new_orders ): void {
+			$new_orders[] = $order_id;
+		};
 		$this->assertIsString( $token );
+		add_action( 'woocommerce_new_order', $record );
 
 		try {
-			$order_id = $this->create_classic_checkout_order();
+			$result = $this->create_classic_checkout_order();
 		} finally {
+			remove_action( 'woocommerce_new_order', $record );
 			$store->release_order_payment_lock( $draft, $profile, $token );
 		}
 
-		$this->assertIsInt( $order_id );
-		$this->assertNotSame( $draft->get_id(), $order_id, 'A new order is placed.' );
-		$this->assertSame( OrderStatus::CHECKOUT_DRAFT, wc_get_order( $draft->get_id() )->get_status() );
+		$this->assertWPError( $result );
+		$this->assertSame( 'woocommerce_woopay_payment_in_progress', $result->get_error_code() );
+		$this->assertSame( array(), $new_orders, 'No order is placed.' );
+		$this->assertSame( $status, wc_get_order( $draft->get_id() )->get_status() );
 		$this->assertSame( $draft->get_id(), WC()->session->get( 'store_api_draft_order' ) );
+		$this->assertNull( WC()->session->get( 'order_awaiting_payment' ) );
+	}
+
+	/**
+	 * @testdox A full classic checkout retried while WooPay pays the pending order stops with a notice, places and pays no order, and keeps the order's stock hold (stock $stock).
+	 *
+	 * WC_Checkout::process_checkout() turns the WP_Error that create_order() returns from the woocommerce_create_order filter
+	 * into its checkout error notice (class-wc-checkout.php:407-410, :1425-1430, :1464-1468). With one unit left, a second
+	 * order could not reserve it while the first holds it (ReserveStock::reserve_stock_for_order()); client 11.1.0 names that
+	 * last-unit case (class-wc-payments-woopay-direct-checkout.php:46-51). Runs in a separate process because
+	 * process_checkout() defines WOOCOMMERCE_CHECKOUT for the rest of the process.
+	 *
+	 * @testWith [5]
+	 *           [1]
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * @param int $stock Stock of the product in the cart.
+	 */
+	public function test_full_classic_checkout_stops_while_woopay_pays_the_pending_order( int $stock ): void {
+		global $wpdb;
+
+		// A guest checkout: with registration required, process_customer() logs the new account in and the test session,
+		// never saved, would migrate empty (WC_Session_Handler::migrate_guest_session_to_user_session()).
+		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
+		$sut = $this->create_service( array(), array( 'platform_direct_checkout_eligible' => true ) );
+		$this->register_controller( $sut );
+		$product = \WC_Helper_Product::create_simple_product();
+		$product->set_virtual( true );
+		$product->set_manage_stock( true );
+		$product->set_stock_quantity( $stock );
+		$product->save();
+		WC()->cart->add_to_cart( $product->get_id(), 1 );
+		WC()->cart->calculate_totals();
+		// The order WooPay's Store API checkout placed: its draft held the stock (Checkout::create_or_update_draft_order() through
+		// wc_reserve_stock_for_order()), then the route set it pending before calling the gateway.
+		$paying = new \WC_Order();
+		$paying->add_product( $product, 1 );
+		$paying->set_cart_hash( WC()->cart->get_cart_hash() );
+		$paying->calculate_totals();
+		$paying->set_status( OrderStatus::CHECKOUT_DRAFT );
+		$paying->save();
+		wc_reserve_stock_for_order( $paying );
+		$paying->set_status( OrderStatus::PENDING );
+		$paying->save();
+		WC()->session->set( 'store_api_draft_order', $paying->get_id() );
+		WC()->session->set( 'order_awaiting_payment', null );
+		$reserved = static function () use ( $wpdb, $paying ): int {
+			return (int) $wpdb->get_var( $wpdb->prepare( "SELECT SUM(stock_quantity) FROM {$wpdb->wc_reserved_stock} WHERE order_id = %d", $paying->get_id() ) );
+		};
+		$this->assertSame( 1, $reserved() );
+		$store      = wc_get_container()->get( OrderPaymentStore::class );
+		$profile    = new WooPaymentsPersistenceProfile();
+		$token      = $store->claim_order_payment_lock_for_operation( $paying, $profile, 'attempt-key-of-the-woopay-charge', 'checkout' );
+		$new_orders = array();
+		$record     = static function ( $order_id ) use ( &$new_orders ): void {
+			$new_orders[] = $order_id;
+		};
+		$this->assertIsString( $token );
+		add_action( 'woocommerce_new_order', $record );
+		wc_clear_notices();
+		// The classic checkout form's fields and nonce (WC_Checkout::process_checkout() reads $_REQUEST, get_posted_data() $_POST).
+		$posted   = array(
+			'billing_first_name'                 => 'Jane',
+			'billing_last_name'                  => 'Doe',
+			'billing_address_1'                  => '1 Main Street',
+			'billing_city'                       => 'San Francisco',
+			'billing_state'                      => 'CA',
+			'billing_postcode'                   => '94110',
+			'billing_country'                    => 'US',
+			'billing_phone'                      => '5555555555',
+			'billing_email'                      => 'guest@example.com',
+			'payment_method'                     => 'woocommerce_payments',
+			'woocommerce-process-checkout-nonce' => wp_create_nonce( 'woocommerce-process_checkout' ),
+		);
+		$_POST    = $posted;
+		$_REQUEST = $posted;
+
+		try {
+			WC()->checkout()->process_checkout();
+		} finally {
+			remove_action( 'woocommerce_new_order', $record );
+			$store->release_order_payment_lock( $paying, $profile, $token );
+			$_POST    = array();
+			$_REQUEST = array();
+		}
+
+		$this->assertSame(
+			array( 'Your previous payment attempt is still being processed, so please wait a moment and check for an order confirmation before trying again.' ),
+			array_column( wc_get_notices( 'error' ), 'notice' )
+		);
+		$this->assertSame( array(), $new_orders, 'No order is placed.' );
+		$this->assertNull( WC()->session->get( 'order_awaiting_payment' ), 'No payment ran: WC_Checkout::process_order_payment() records the order it pays.' );
+		$this->assertSame( OrderStatus::PENDING, wc_get_order( $paying->get_id() )->get_status() );
+		$this->assertSame( $paying->get_id(), WC()->session->get( 'store_api_draft_order' ) );
+		$this->assertSame( 1, $reserved(), 'The paying order keeps its stock hold.' );
 	}
 
 	/**

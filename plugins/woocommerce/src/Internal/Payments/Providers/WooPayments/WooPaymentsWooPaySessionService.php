@@ -1650,12 +1650,13 @@ class WooPaymentsWooPaySessionService {
 	 * a stored `false` counts as no order awaiting payment (WC_Session::__isset() reports it as set; core writes it after a
 	 * payment or a cancellation), and only a draft or failed order is resumed: pending is the status WooPay's Store API
 	 * checkout sets before it pays, so a pending order may be paying right now. The takeover holds the order payment lock and
-	 * reads the order again under it, so it never changes an order another request is paying.
+	 * reads the order again under it, so it never changes an order another request is paying. While another request holds
+	 * that lock, checkout stops with a notice instead of placing and paying a second order (the client never refuses).
 	 *
 	 * @since 11.2.0
 	 *
 	 * @param mixed $order_id Order ID from the woocommerce_create_order filter.
-	 * @return mixed The order ID, unchanged.
+	 * @return mixed The order ID, unchanged, or a WP_Error that WC_Checkout::process_checkout() shows as the checkout error.
 	 */
 	public function maybe_use_store_api_draft_order_id( $order_id ) {
 		$session = $this->get_wc_session();
@@ -1665,7 +1666,8 @@ class WooPaymentsWooPaySessionService {
 
 		$draft_order_id = absint( $session->get( 'store_api_draft_order' ) );
 		$draft_order    = $draft_order_id ? wc_get_order( $draft_order_id ) : false;
-		if ( ! $draft_order instanceof WC_Order || ! $this->is_resumable_woopay_draft_order( $draft_order ) ) {
+		// A pending order is never resumed, but WooPay may be paying it, so its lock is checked too.
+		if ( ! $draft_order instanceof WC_Order || ! $draft_order->has_status( array( OrderStatus::CHECKOUT_DRAFT, OrderStatus::PENDING, OrderStatus::FAILED ) ) ) {
 			return $order_id;
 		}
 
@@ -1675,7 +1677,10 @@ class WooPaymentsWooPaySessionService {
 		if ( null === $lock_token ) {
 			$order_payment_store->log_order_payment_lock_refusal( $draft_order, $persistence_profile, self::DRAFT_REUSE_OPERATION );
 
-			return $order_id;
+			return new WP_Error(
+				'woocommerce_woopay_payment_in_progress',
+				__( 'Your previous payment attempt is still being processed, so please wait a moment and check for an order confirmation before trying again.', 'woocommerce' )
+			);
 		}
 
 		try {
