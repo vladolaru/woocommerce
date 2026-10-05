@@ -766,17 +766,20 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Compatibility updates are debounced through the preserved Action Scheduler hook.
+	 * @testdox Compatibility updates are scheduled two minutes out through the preserved Action Scheduler hook.
 	 */
 	public function test_schedule_compatibility_data_update_schedules_delayed_job(): void {
 		$scheduler = new RecordingActionSchedulerService();
 		$service   = $this->create_service( new StaticNativeRuntimeArbiter( true ), $scheduler );
+		$before    = time();
 
 		$service->schedule_compatibility_data_update();
 
 		$this->assertSame( 'wcpay_update_compatibility_data', $scheduler->scheduled_jobs[0]['hook'] );
 		$this->assertSame( array(), $scheduler->scheduled_jobs[0]['args'] );
-		$this->assertGreaterThanOrEqual( time() + MINUTE_IN_SECONDS, $scheduler->scheduled_jobs[0]['timestamp'] );
+		// Two minutes out, as the client schedules it (class-compatibility-service.php:54-57).
+		$this->assertGreaterThanOrEqual( $before + 2 * MINUTE_IN_SECONDS, $scheduler->scheduled_jobs[0]['timestamp'] );
+		$this->assertLessThanOrEqual( time() + 2 * MINUTE_IN_SECONDS, $scheduler->scheduled_jobs[0]['timestamp'] );
 	}
 
 	/**

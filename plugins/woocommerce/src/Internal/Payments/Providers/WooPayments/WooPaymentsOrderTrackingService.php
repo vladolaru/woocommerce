@@ -167,7 +167,9 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 				: self::TRACK_NEW_ORDER_ACTION,
 			array(
 				'order_id' => (int) $order->get_id(),
-			)
+			),
+			// Five seconds out, as the client schedules it (class-wc-payment-gateway-wcpay.php:4513-4524).
+			time() + 5
 		);
 	}
 

@@ -52,6 +52,55 @@ class WooPaymentsActionSchedulerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A job asked for before Action Scheduler initializes is scheduled once when it does, with the latest timestamp (G1-2).
+	 *
+	 * Before action_scheduler_init, Action Scheduler's functions return without scheduling; client 11.1.0
+	 * `class-wc-payments-action-scheduler-service.php:220-249` keeps one deferred job per hook, args and group.
+	 */
+	public function test_schedule_job_before_action_scheduler_init_waits_for_it(): void {
+		global $wp_actions, $wp_filter;
+		$sut   = new WooPaymentsActionSchedulerService();
+		$args  = array( 'event_id' => 'evt_deferred' );
+		$later = time() + 120;
+		$fired = $wp_actions['action_scheduler_init'] ?? null;
+		unset( $wp_actions['action_scheduler_init'] );
+
+		try {
+			$sut->schedule_job( $this->hook, $args, time() + 60 );
+			$sut->schedule_job( $this->hook, $args, $later );
+		} finally {
+			if ( null !== $fired ) {
+				$wp_actions['action_scheduler_init'] = $fired; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restores the count this test hid.
+			}
+		}
+
+		$this->assertSame( 0, $this->count_pending_actions( $this->hook, $args ), 'Nothing is scheduled before Action Scheduler initializes.' );
+		// Run only the callbacks the service registered, not Action Scheduler's own initialization.
+		$deferred = array();
+		foreach ( $wp_filter['action_scheduler_init']->callbacks as $priority => $callbacks ) {
+			foreach ( $callbacks as $callback ) {
+				if ( $callback['function'] instanceof \Closure && ( new \ReflectionFunction( $callback['function'] ) )->getClosureThis() === $sut ) {
+					$deferred[] = $callback['function'];
+					remove_action( 'action_scheduler_init', $callback['function'], $priority );
+				}
+			}
+		}
+		$this->assertCount( 1, $deferred, 'One deferred job per hook, args and group.' );
+		$deferred[0]();
+
+		$actions = as_get_scheduled_actions(
+			array(
+				'hook'   => $this->hook,
+				'args'   => $args,
+				'group'  => WooPaymentsActionSchedulerService::GROUP_ID,
+				'status' => ActionScheduler_Store::STATUS_PENDING,
+			)
+		);
+		$this->assertCount( 1, $actions );
+		$this->assertSame( $later, reset( $actions )->get_schedule()->get_date()->getTimestamp() );
+	}
+
+	/**
 	 * @testdox Scheduling avoids duplicate pending actions with the same hook, args, and group.
 	 */
 	public function test_schedule_job_avoids_duplicate_pending_actions(): void {

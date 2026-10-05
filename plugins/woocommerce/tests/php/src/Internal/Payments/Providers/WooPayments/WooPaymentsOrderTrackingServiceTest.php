@@ -158,17 +158,15 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 
 		$this->enable_sift_tracking();
 
+		$before = time();
 		$service->handle_woocommerce_update_order( $order->get_id(), $order );
 
-		$this->assertSame(
-			array(
-				array(
-					'hook' => 'wcpay_track_new_order',
-					'args' => array( 'order_id' => $order->get_id() ),
-				),
-			),
-			$scheduler->scheduled_jobs
-		);
+		$this->assertCount( 1, $scheduler->scheduled_jobs );
+		$this->assertSame( 'wcpay_track_new_order', $scheduler->scheduled_jobs[0]['hook'] );
+		$this->assertSame( array( 'order_id' => $order->get_id() ), $scheduler->scheduled_jobs[0]['args'] );
+		// Five seconds out, as the client schedules it (class-wc-payment-gateway-wcpay.php:4513-4524).
+		$this->assertGreaterThanOrEqual( $before + 5, $scheduler->scheduled_jobs[0]['timestamp'] );
+		$this->assertLessThanOrEqual( time() + 5, $scheduler->scheduled_jobs[0]['timestamp'] );
 	}
 
 	/**
@@ -208,17 +206,15 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 
 		$this->enable_sift_tracking();
 
+		$before = time();
 		$service->handle_woocommerce_update_order( $order->get_id(), $order );
 
-		$this->assertSame(
-			array(
-				array(
-					'hook' => 'wcpay_track_update_order',
-					'args' => array( 'order_id' => $order->get_id() ),
-				),
-			),
-			$scheduler->scheduled_jobs
-		);
+		$this->assertCount( 1, $scheduler->scheduled_jobs );
+		$this->assertSame( 'wcpay_track_update_order', $scheduler->scheduled_jobs[0]['hook'] );
+		$this->assertSame( array( 'order_id' => $order->get_id() ), $scheduler->scheduled_jobs[0]['args'] );
+		// Five seconds out, as the client schedules it (class-wc-payment-gateway-wcpay.php:4513-4524).
+		$this->assertGreaterThanOrEqual( $before + 5, $scheduler->scheduled_jobs[0]['timestamp'] );
+		$this->assertLessThanOrEqual( time() + 5, $scheduler->scheduled_jobs[0]['timestamp'] );
 	}
 
 	/**
