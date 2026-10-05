@@ -1423,13 +1423,9 @@ class WooPaymentsWooPaySessionService {
 			return $appearance;
 		}
 
+		// save_woopay_appearance() validates the computed appearance and stores nothing when it fails the schema.
 		$theme_appearance = $this->get_theme_appearance();
-		$computed         = $theme_appearance->compute_from_theme();
-		if ( ! $this->validate_appearance_schema( $computed ) ) {
-			return array();
-		}
-
-		$this->save_woopay_appearance( $computed, $theme_appearance->get_font_rules_from_registered_styles() );
+		$this->save_woopay_appearance( $theme_appearance->compute_from_theme(), $theme_appearance->get_font_rules_from_registered_styles() );
 
 		return $this->get_stored_woopay_appearance();
 	}

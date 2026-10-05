@@ -1609,6 +1609,212 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A classic checkout places a new order, without a fatal, when the WooPay draft no longer exists.
+	 *
+	 * Client 11.1.0 calls set_status() on the wc_get_order() result unchecked (class-wc-payments-woopay-direct-checkout.php:71-72).
+	 */
+	public function test_classic_checkout_places_a_new_order_when_the_woopay_draft_is_gone(): void {
+		$sut = $this->create_service( array(), array( 'platform_direct_checkout_eligible' => true ) );
+		$this->register_controller( $sut );
+		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 1 );
+		WC()->cart->calculate_totals();
+		$draft = new \WC_Order();
+		$draft->set_status( OrderStatus::CHECKOUT_DRAFT );
+		$draft->save();
+		$draft_id = $draft->get_id();
+		$draft->delete( true );
+		WC()->session->set( 'store_api_draft_order', $draft_id );
+		WC()->session->set( 'order_awaiting_payment', null );
+		Constants::set_constant( 'WOOCOMMERCE_CHECKOUT', true );
+
+		try {
+			$order_id = WC()->checkout()->create_order(
+				array(
+					'payment_method' => 'bacs',
+					'billing_email'  => 'guest@example.com',
+				)
+			);
+		} finally {
+			Constants::clear_single_constant( 'WOOCOMMERCE_CHECKOUT' );
+		}
+
+		$this->assertIsInt( $order_id );
+		$this->assertNotSame( $draft_id, $order_id );
+		$this->assertInstanceOf( \WC_Order::class, wc_get_order( $order_id ) );
+		$this->assertSame( $draft_id, WC()->session->get( 'store_api_draft_order' ), 'The session is left alone.' );
+	}
+
+	/**
+	 * @testdox A classic checkout keeps the order another woocommerce_create_order callback supplied and leaves the WooPay draft alone.
+	 *
+	 * Client 11.1.0 class-wc-payments-woopay-direct-checkout.php:60: only when no order ID is defined yet.
+	 */
+	public function test_classic_checkout_keeps_an_order_another_callback_supplied(): void {
+		$sut = $this->create_service( array(), array( 'platform_direct_checkout_eligible' => true ) );
+		$this->register_controller( $sut );
+		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 1 );
+		WC()->cart->calculate_totals();
+		$draft = new \WC_Order();
+		$draft->set_status( OrderStatus::CHECKOUT_DRAFT );
+		$draft->set_cart_hash( WC()->cart->get_cart_hash() );
+		$draft->save();
+		$other = wc_create_order();
+		WC()->session->set( 'store_api_draft_order', $draft->get_id() );
+		WC()->session->set( 'order_awaiting_payment', null );
+		$supply_order = static fn() => $other->get_id();
+		add_filter( 'woocommerce_create_order', $supply_order, 5 );
+		Constants::set_constant( 'WOOCOMMERCE_CHECKOUT', true );
+
+		try {
+			$order_id = WC()->checkout()->create_order( array( 'payment_method' => 'bacs' ) );
+		} finally {
+			Constants::clear_single_constant( 'WOOCOMMERCE_CHECKOUT' );
+			remove_filter( 'woocommerce_create_order', $supply_order, 5 );
+		}
+
+		$this->assertSame( $other->get_id(), $order_id );
+		$this->assertSame( OrderStatus::CHECKOUT_DRAFT, wc_get_order( $draft->get_id() )->get_status() );
+		$this->assertSame( $draft->get_id(), WC()->session->get( 'store_api_draft_order' ) );
+	}
+
+	/**
+	 * @testdox With WooPay off, a WooPay request leaves the AutomateWoo advocate and the $0 subscription needs-payment value alone.
+	 *
+	 * Client 11.1.0 class-woopay-session.php:274 and :299-301 check that WooPay is enabled; both callbacks are registered
+	 * on every request, so the check is what keeps them out.
+	 */
+	public function test_woopay_order_filters_pass_through_with_woopay_off(): void {
+		$sut = $this->create_service( array( 'platform_checkout' => 'no' ) );
+		$this->register_controller( $sut );
+		$sut->cart_contains_subscription = true;
+		$free_order                      = new \WC_Order();
+		$free_order->set_total( 0 );
+
+		$request_uri = $_SERVER['REQUEST_URI'] ?? null; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- Saved to restore it unchanged.
+		$this->simulate_woopay_store_api_request();
+		$_GET['automatewoo_referral_id'] = '42';
+		try {
+			$this->assertFalse( $sut->is_woopay_enabled() );
+			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- AutomateWoo Refer a Friend filter; its argument is the advocate ID it found.
+			$this->assertSame( 7, apply_filters( 'automatewoo/referrals/referred_order_advocate', 7 ) );
+			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Core filter WC_Order::needs_payment() applies.
+			$this->assertFalse( apply_filters( 'woocommerce_order_needs_payment', false, $free_order, array() ) );
+		} finally {
+			unset( $_GET['automatewoo_referral_id'] );
+			$_SERVER['REQUEST_URI'] = $request_uri;
+		}
+	}
+
+	/**
+	 * @testdox The WooPay session refresh keeps the browser's cached session when the request did not save through the Store API: $label.
+	 *
+	 * Client 11.1.0 swaps its handler only for WooPay Store API requests (class-woopay-session.php:79-91), and only that
+	 * handler writes the browser's cache entry (class-woopay-store-api-session-handler.php:108-125).
+	 *
+	 * @testWith ["a WooPay Store API request on the browser's own session handler", "/wp-json/wc/store/v1/checkout", false]
+	 *           ["a WooPay request to a route outside the Store API", "/wp-json/wc/v3/orders", true]
+	 *
+	 * @param string $label                Case label.
+	 * @param string $request_uri          Request URI WooPay calls.
+	 * @param bool   $store_api_session    Whether the request runs on core's Store API session handler.
+	 */
+	public function test_woopay_session_refresh_keeps_the_browser_cache_outside_its_case( string $label, string $request_uri, bool $store_api_session ): void {
+		unset( $label );
+		$browser = new \WC_Session_Handler();
+		$sut     = $this->create_service();
+		$this->register_controller( $sut );
+		$original_uri               = $_SERVER['REQUEST_URI'] ?? null; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- Saved to restore it unchanged.
+		$_SERVER['HTTP_USER_AGENT'] = 'WooPay';
+		$_SERVER['REQUEST_URI']     = $request_uri;
+		$original_session           = WC()->session;
+		if ( $store_api_session ) {
+			$customer_id                = 't_' . wp_generate_password( 30, false );
+			$_SERVER['HTTP_CART_TOKEN'] = \Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils::get_cart_token( $customer_id );
+			WC()->session               = new \Automattic\WooCommerce\StoreApi\SessionHandler();
+			WC()->session->init();
+		} else {
+			WC()->session = new \WC_Session_Handler();
+			WC()->session->init();
+			$customer_id = (string) WC()->session->get_customer_id();
+		}
+		// The browser's handler cached the session; nothing in the database backs it.
+		wp_cache_set( \WC_Cache_Helper::get_cache_prefix( WC_SESSION_CACHE_GROUP ) . $customer_id, array( 'coupon' => 'cached-by-the-browser' ), WC_SESSION_CACHE_GROUP );
+
+		try {
+			$sut->refresh_woopay_browser_session_cache();
+		} finally {
+			remove_action( 'shutdown', array( WC()->session, 'save_data' ), 20 );
+			WC()->session           = $original_session;
+			$_SERVER['REQUEST_URI'] = $original_uri;
+			unset( $_SERVER['HTTP_CART_TOKEN'] );
+		}
+
+		$this->assertSame( array( 'coupon' => 'cached-by-the-browser' ), $browser->get_session( $customer_id ) );
+	}
+
+	/**
+	 * @testdox A page with the Checkout block uses the Stripe platform account for WooPay even when it is not the store's checkout page.
+	 *
+	 * Client 11.1.0 class-wc-payment-gateway-wcpay.php:1181: is_checkout() || has_block( 'woocommerce/checkout' ). A separate
+	 * process, because an earlier test can define WOOCOMMERCE_CHECKOUT, which makes every page read as checkout.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_block_checkout_page_uses_the_stripe_platform_account(): void {
+		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 1 );
+		WC()->cart->calculate_totals();
+		$page_id = $this->factory->post->create(
+			array(
+				'post_type'    => 'page',
+				'post_content' => '<!-- wp:woocommerce/checkout /-->',
+			)
+		);
+		$this->go_to( get_permalink( $page_id ) );
+
+		$this->assertTrue( has_block( 'woocommerce/checkout' ) );
+		$this->assertFalse( is_checkout(), 'The page is not the store\'s checkout page.' );
+		$this->assertTrue( $this->create_service()->should_use_stripe_platform_on_checkout_page() );
+	}
+
+	/**
+	 * @testdox A block theme whose computed appearance fails the schema gives WooPay no appearance and stores nothing.
+	 *
+	 * Client 11.1.0 class-wc-payments-styles-cache.php:79-84 stores a computed appearance only when it passes
+	 * validate_appearance_schema(); every value must be a string of at most 200 characters.
+	 */
+	public function test_block_theme_appearance_failing_the_schema_is_not_sent_or_stored(): void {
+		$original_theme = get_stylesheet();
+		$sut            = $this->create_service(
+			array( 'is_woopay_global_theme_support_enabled' => 'yes' ),
+			array( 'platform_global_theme_support_enabled' => true )
+		);
+		// A merchant's Site Editor font stack longer than the schema allows (WP_Theme_JSON_Data::update_with() merges it into
+		// the user origin of the global styles wp_get_global_styles() reads).
+		$long_font_stack = implode( ', ', array_fill( 0, 30, 'Merchant Display Font' ) );
+		$user_styles     = static fn( $theme_json ) => $theme_json->update_with(
+			array(
+				'version' => \WP_Theme_JSON::LATEST_SCHEMA,
+				'styles'  => array( 'typography' => array( 'fontFamily' => $long_font_stack ) ),
+			)
+		);
+		add_filter( 'wp_theme_json_data_user', $user_styles );
+
+		try {
+			switch_theme( 'twentytwentyfive' );
+			wp_clean_theme_json_cache();
+			$config = $sut->get_woopay_frontend_config( 'checkout' );
+		} finally {
+			remove_filter( 'wp_theme_json_data_user', $user_styles );
+			switch_theme( $original_theme );
+			wp_clean_theme_json_cache();
+		}
+
+		$this->assertNull( $config['woopayAppearance'] );
+		$this->assertFalse( get_option( 'wcpay_woopay_checkout_appearance' ) );
+	}
+
+	/**
 	 * @testdox Should prefer a sanitized email from a valid encrypted identity envelope.
 	 */
 	public function test_encrypted_session_data_uses_valid_encrypted_identity_email(): void {
