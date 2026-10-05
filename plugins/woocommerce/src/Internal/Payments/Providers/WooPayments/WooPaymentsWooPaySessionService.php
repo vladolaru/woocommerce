@@ -554,20 +554,30 @@ class WooPaymentsWooPaySessionService {
 	}
 
 	/**
+	 * Tell whether the page being built may carry the shopper's email in its HTML.
+	 *
+	 * Only when no page cache serves the HTML to another visitor: the shopper is logged in, or the page defined DONOTCACHEPAGE,
+	 * as WC_Cache_Helper::prevent_caching() does on the configured cart, checkout and My Account pages before any page config
+	 * is built. Cart and checkout predicates are not enough: they also match other pages carrying the cart or checkout shortcode.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return bool
+	 */
+	public function may_put_shopper_email_in_page(): bool {
+		return is_user_logged_in() || Constants::is_true( 'DONOTCACHEPAGE' );
+	}
+
+	/**
 	 * Get the email that pre-fills the WooPay OTP iframe from the page HTML.
 	 *
-	 * Follows the client's chain (WooPay_Session::get_user_email(), class-woopay-session.php:433-472), but a guest's billing
-	 * email only goes into cart and checkout pages, which WC_Cache_Helper::prevent_caching() marks DONOTCACHEPAGE. Elsewhere a
-	 * page cache could serve one guest's email to the next visitor. Logged-in pages are not page-cached.
+	 * Follows the client's chain (WooPay_Session::get_user_email(), class-woopay-session.php:433-472), but only on pages that
+	 * no page cache serves to another visitor (may_put_shopper_email_in_page()).
 	 *
 	 * @return string
 	 */
 	private function get_page_prefill_email(): string {
-		if ( is_user_logged_in() || is_cart() || is_checkout() ) {
-			return $this->resolve_session_email( null );
-		}
-
-		return '';
+		return $this->may_put_shopper_email_in_page() ? $this->resolve_session_email( null ) : '';
 	}
 
 	/**

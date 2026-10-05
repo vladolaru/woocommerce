@@ -1478,36 +1478,57 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The WooPay OTP pre-fill puts the shopper's email into page HTML only where pages are not cached: $label.
+	 * @testdox The WooPay OTP pre-fill puts the shopper's email into page HTML only where no page cache serves it to others: $label.
 	 *
 	 * Client 11.1.0 pre-fills every button surface, product pages included, from WooPay_Session::get_user_email()
 	 * (class-wc-payments-woopay-button-handler.php:151, class-woopay-session.php:433-472), which reads a guest's billing
-	 * email. Core marks only the cart, checkout and My Account pages DONOTCACHEPAGE (WC_Cache_Helper::prevent_caching()), so
-	 * a guest's email goes into cart and checkout HTML only; logged-in pages are not page-cached. A separate process, because
-	 * an earlier test can define WOOCOMMERCE_CHECKOUT, which makes every page read as checkout.
+	 * email. Core defines DONOTCACHEPAGE only on the configured cart, checkout and My Account pages
+	 * (WC_Cache_Helper::prevent_caching() on wp_headers, which go_to() runs). Another page carrying the cart or checkout
+	 * shortcode reads as cart or checkout (CartCheckoutUtils::is_page_type()) without that protection. Logged-in pages are not
+	 * page-cached. A separate process, because DONOTCACHEPAGE stays defined once a page defines it, and CartCheckoutUtils
+	 * keeps its first page answer.
 	 *
-	 * @testWith ["a guest on a product page", "", false, ""]
-	 *           ["a guest on the cart page", "woocommerce_is_cart", false, "guest@example.com"]
-	 *           ["a guest on the checkout page", "woocommerce_is_checkout", false, "guest@example.com"]
-	 *           ["a logged-in shopper on a product page", "", true, "shopper-billing@example.com"]
+	 * @testWith ["a guest on a product page", "product", false, ""]
+	 *           ["a guest on the cart page", "cart", false, "guest@example.com"]
+	 *           ["a guest on the checkout page", "checkout", false, "guest@example.com"]
+	 *           ["a guest on another page carrying the cart shortcode", "other cart", false, ""]
+	 *           ["a guest on another page carrying the checkout shortcode", "other checkout", false, ""]
+	 *           ["a logged-in shopper on a product page", "product", true, "shopper-billing@example.com"]
 	 *
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 *
 	 * @param string $label     Case label.
-	 * @param string $page_hook Core filter that makes the page read as cart or checkout, or none for a product page.
+	 * @param string $page      Page the shopper views.
 	 * @param bool   $logged_in Whether the shopper is logged in.
 	 * @param string $expected  The pre-filled email.
 	 */
-	public function test_frontend_config_prefills_the_shopper_email_only_on_uncached_pages( string $label, string $page_hook, bool $logged_in, string $expected ): void {
+	public function test_frontend_config_prefills_the_shopper_email_only_on_uncached_pages( string $label, string $page, bool $logged_in, string $expected ): void {
 		unset( $label );
-		$user_id = 0;
+		$create_page = fn( string $content ): int => $this->factory->post->create(
+			array(
+				'post_type'    => 'page',
+				'post_status'  => 'publish',
+				'post_content' => $content,
+			)
+		);
+		update_option( 'woocommerce_cart_page_id', $create_page( '[woocommerce_cart]' ) );
+		update_option( 'woocommerce_checkout_page_id', $create_page( '[woocommerce_checkout]' ) );
+		$page_ids = array(
+			'product'        => \WC_Helper_Product::create_simple_product()->get_id(),
+			'cart'           => (int) get_option( 'woocommerce_cart_page_id' ),
+			'checkout'       => (int) get_option( 'woocommerce_checkout_page_id' ),
+			'other cart'     => $create_page( '[woocommerce_cart]' ),
+			'other checkout' => $create_page( '[woocommerce_checkout]' ),
+		);
+		$user_id  = 0;
 		if ( $logged_in ) {
 			$user_id = $this->factory->user->create( array( 'user_email' => 'shopper@example.com' ) );
 			wp_set_current_user( $user_id );
 		}
-		if ( '' !== $page_hook ) {
-			add_filter( $page_hook, '__return_true' );
+		$this->go_to( get_permalink( $page_ids[ $page ] ) );
+		if ( 0 === strpos( $page, 'other ' ) ) {
+			$this->assertTrue( is_cart() || is_checkout(), 'The other page reads as cart or checkout.' );
 		}
 		$customer      = WC()->customer;
 		WC()->customer = new \WC_Customer( $user_id, true );

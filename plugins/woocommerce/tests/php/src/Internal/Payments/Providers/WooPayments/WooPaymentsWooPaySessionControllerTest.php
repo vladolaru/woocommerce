@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Connection\Rest_Authentication;
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
@@ -791,6 +792,39 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( (string) $order->get_id(), $config['order_id'] );
 		$this->assertSame( $order->get_order_key(), $config['key'] );
 		$this->assertSame( '', $config['billing_email'] );
+	}
+
+	/**
+	 * @testdox A guest's session email goes into the order-pay WooPay config only when the page is protected from page caching (DONOTCACHEPAGE $do_not_cache).
+	 *
+	 * Core defines DONOTCACHEPAGE on the configured checkout page, its order-pay endpoint included
+	 * (WC_Cache_Helper::prevent_caching()); another page carrying the checkout shortcode reads as checkout without it. The
+	 * constant is overridden both ways, because an earlier test in the process can define it.
+	 *
+	 * @testWith [true, "guest@example.com"]
+	 *           [false, ""]
+	 *
+	 * @param bool   $do_not_cache Whether the page defined DONOTCACHEPAGE.
+	 * @param string $expected     Billing email in the config.
+	 */
+	public function test_order_pay_config_gives_a_guest_their_email_only_on_an_uncached_page( bool $do_not_cache, string $expected ): void {
+		$order     = \WC_Helper_Order::create_order( 0 );
+		$this->sut = $this->create_controller( true, true );
+		$this->set_order_pay_page( $order->get_id(), $order->get_order_key() );
+		$session_customer = WC()->session->get( 'customer' );
+		WC()->session->set( 'customer', array( 'email' => 'guest@example.com' ) );
+		Constants::set_constant( 'DONOTCACHEPAGE', $do_not_cache );
+
+		try {
+			$this->sut->enqueue_frontend_assets();
+		} finally {
+			Constants::clear_single_constant( 'DONOTCACHEPAGE' );
+			WC()->session->set( 'customer', $session_customer );
+		}
+		$config = $this->get_localized_woopay_config();
+
+		$this->assertSame( (string) $order->get_id(), $config['order_id'] );
+		$this->assertSame( $expected, $config['billing_email'] );
 	}
 
 	/**

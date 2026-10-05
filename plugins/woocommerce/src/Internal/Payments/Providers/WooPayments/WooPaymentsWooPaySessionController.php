@@ -883,7 +883,8 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 * Get the WooPay frontend config for a context; on an order's pay page it carries the order, its key and billing email.
 	 *
 	 * WooPay then pays that order (client 11.1.0 class-wc-payments-express-checkout-button-display-handler.php:184-222). Without
-	 * them the button stays off, so an order's pay page never starts a cart session.
+	 * them the button stays off, so an order's pay page never starts a cart session. The billing email is left empty on a page
+	 * that a page cache could serve to another visitor (may_put_shopper_email_in_page()).
 	 *
 	 * @param string $context WooPay button context.
 	 * @return array<string,mixed>
@@ -899,6 +900,10 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			$config['shouldShowWooPayButton'] = false;
 
 			return $config;
+		}
+
+		if ( ! $this->session_service->may_put_shopper_email_in_page() ) {
+			$pay_for_order_params['billing_email'] = '';
 		}
 
 		return array_merge( $config, $pay_for_order_params );
