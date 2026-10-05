@@ -17,11 +17,11 @@ use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Properties\Properties;
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
 
 return array(
-	'ppcp.asset-version'            => function ( ContainerInterface $container ): string {
+	'ppcp.asset-version'          => function ( ContainerInterface $container ): string {
 		return $container->get( 'ppcp.plugin-version' );
 	},
 
-	'assets.asset_getter_factory'   => function ( ContainerInterface $container ): AssetGetterFactory {
+	'assets.asset_getter_factory' => function ( ContainerInterface $container ): AssetGetterFactory {
 		$properties = $container->get( Package::PROPERTIES );
 		assert( $properties instanceof Properties );
 
@@ -31,22 +31,22 @@ return array(
 		);
 	},
 
-	'http.redirector'               => function ( ContainerInterface $container ): RedirectorInterface {
+	'http.redirector'             => function ( ContainerInterface $container ): RedirectorInterface {
 		return new WpRedirector();
 	},
-	'ppcp.plugin-version'           => function ( ContainerInterface $container ): string {
+	'ppcp.plugin-version'         => function ( ContainerInterface $container ): string {
 		/** @var Properties $properties */
 		$properties = $container->get( Package::PROPERTIES );
 
 		return $properties->version();
 	},
-	'ppcp.base-name'                => function ( ContainerInterface $container ): string {
+	'ppcp.base-name'              => function ( ContainerInterface $container ): string {
 		/** @var Properties $properties */
 		$properties = $container->get( Package::PROPERTIES );
 
 		return $properties->baseName();
 	},
-	'ppcp.path-to-plugin-folder'    => function ( ContainerInterface $container ): string {
+	'ppcp.path-to-plugin-folder'  => function ( ContainerInterface $container ): string {
 		/** @var Properties $properties */
 		$properties = $container->get( Package::PROPERTIES );
 
