@@ -471,7 +471,8 @@ class WooPaymentsExpressCheckoutService {
 			return false;
 		}
 
-		$supported = ! $this->is_reference_blocked_product( $product ) && $this->get_product_price( $product ) > 0;
+		// The raw price, as client 11.1.0 (button helper :657): a sign-up fee or deposit alone does not make a free product payable here.
+		$supported = ! $this->is_reference_blocked_product( $product ) && (float) $product->get_price() > 0;
 
 		/**
 		 * Filters whether a product can show WooPayments product-page express checkout.
@@ -574,8 +575,12 @@ class WooPaymentsExpressCheckoutService {
 			return array();
 		}
 
+		$price = $this->get_product_price( $product );
+		if ( null === $price ) {
+			return array();
+		}
+
 		$currency  = get_woocommerce_currency();
-		$price     = $this->get_product_price( $product );
 		$total_tax = 0.0;
 		$items     = array(
 			array(
@@ -809,30 +814,41 @@ class WooPaymentsExpressCheckoutService {
 	}
 
 	/**
-	 * Get the product display price for ECE product data.
+	 * Get the amount the product-page wallet sheet shows for one unit of the product.
+	 *
+	 * Port of the client 11.1.0 `get_product_price()` (button helper :1023-1075): the display price, the WooCommerce
+	 * Deposits amount of the product's default choice instead when Deposits is on for it, plus the sign-up fee of a
+	 * subscription. Null when either part is not a number, so no product data is sent.
 	 *
 	 * @param \WC_Product $product Product object.
-	 * @return float
+	 * @return float|null
 	 */
-	private function get_product_price( \WC_Product $product ): float {
-		$price = $product->get_price();
-		if ( '' === $price ) {
-			return 0.0;
+	private function get_product_price( \WC_Product $product ): ?float {
+		$base_price = $this->cart_prices_include_tax() ? wc_get_price_including_tax( $product ) : wc_get_price_excluding_tax( $product );
+
+		if ( class_exists( '\WC_Deposits_Product_Manager' ) && class_exists( '\WC_Deposits_Plans_Manager' ) && \WC_Deposits_Product_Manager::deposits_enabled( $product->get_id() ) ) {
+			// Deposits' own default choice: pay a deposit or pay in full.
+			if ( 'deposit' === \WC_Deposits_Product_Manager::get_deposit_selected_type( $product->get_id() ) ) {
+				$deposit_plan_id    = 0;
+				$available_plan_ids = \WC_Deposits_Plans_Manager::get_plan_ids_for_product( $product->get_id() );
+				if ( 'plan' === \WC_Deposits_Product_Manager::get_deposit_type( $product->get_id() ) && ! empty( $available_plan_ids ) ) {
+					$deposit_plan_id = $available_plan_ids[0];
+				}
+
+				$base_price = \WC_Deposits_Product_Manager::get_deposit_amount( $product, $deposit_plan_id, 'display', $base_price );
+			}
 		}
 
-		return (float) ( $this->cart_prices_include_tax() ? wc_get_price_including_tax(
-			$product,
-			array(
-				'qty'   => 1,
-				'price' => (float) $price,
-			)
-		) : wc_get_price_excluding_tax(
-			$product,
-			array(
-				'qty'   => 1,
-				'price' => (float) $price,
-			)
-		) );
+		$sign_up_fee = 0;
+		if ( in_array( $product->get_type(), array( 'subscription', 'subscription_variation' ), true ) && class_exists( '\WC_Subscriptions_Product' ) ) {
+			$sign_up_fee = \WC_Subscriptions_Product::get_sign_up_fee( $product );
+		}
+
+		if ( ! is_numeric( $base_price ) || ! is_numeric( $sign_up_fee ) ) {
+			return null;
+		}
+
+		return (float) $base_price + (float) $sign_up_fee;
 	}
 
 	/**

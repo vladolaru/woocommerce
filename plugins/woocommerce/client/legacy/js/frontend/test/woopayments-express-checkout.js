@@ -2622,6 +2622,212 @@ describe( 'WooPayments express checkout', () => {
 		);
 	} );
 
+	/**
+	 * A minimal stand-in for `wp.hooks`: filters run in priority order, then in the order they were added.
+	 *
+	 * @return {Object} Hooks API with addFilter, applyFilters, removeFilter.
+	 */
+	function createWpHooks() {
+		const filters = {};
+
+		return {
+			addFilter( hookName, namespace, callback, priority = 10 ) {
+				filters[ hookName ] = ( filters[ hookName ] || [] )
+					.concat( [ { namespace, callback, priority } ] )
+					.sort( ( a, b ) => a.priority - b.priority );
+			},
+			removeFilter( hookName, namespace ) {
+				filters[ hookName ] = ( filters[ hookName ] || [] ).filter(
+					( filter ) => filter.namespace !== namespace
+				);
+			},
+			applyFilters( hookName, value, ...args ) {
+				return ( filters[ hookName ] || [] ).reduce(
+					( filtered, filter ) => filter.callback( filtered, ...args ),
+					value
+				);
+			},
+		};
+	}
+
+	describe( 'extension compatibility on product pages', () => {
+		function getBundleCart() {
+			return {
+				needs_shipping: false,
+				totals: {
+					total_price: '4500',
+					total_refund: '0',
+					total_tax: '0',
+					total_shipping: '0',
+					currency_code: 'USD',
+					currency_minor_unit: 2,
+				},
+				items: [
+					{
+						key: 'bundle-key',
+						name: 'Gift bundle',
+						quantity: 1,
+						totals: {
+							line_subtotal: '4500',
+							line_subtotal_tax: '0',
+							currency_minor_unit: 2,
+						},
+						extensions: {
+							bundles: {
+								bundled_items: [ 'child-key' ],
+							},
+						},
+					},
+					{
+						key: 'child-key',
+						name: 'T-Shirt',
+						quantity: 1,
+						totals: {
+							line_subtotal: '2000',
+							line_subtotal_tax: '0',
+							currency_minor_unit: 2,
+						},
+						extensions: {
+							bundles: {
+								bundled_by: 'bundle-key',
+							},
+						},
+					},
+				],
+				extensions: {},
+			};
+		}
+
+		beforeEach( () => {
+			window.wp.hooks = createWpHooks();
+		} );
+
+		test( 'prices a bundle from an ephemeral cart of the selected product, not the server price', async () => {
+			setProductPage();
+			window.wcpayExpressCheckoutParams.product.product_type = 'bundle';
+			window.wp.apiFetch.mockResolvedValue( getBundleCart() );
+
+			require( '../woopayments-express-checkout' );
+			await flushPromises();
+			await flushPromises();
+
+			expect( window.wp.apiFetch ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					method: 'POST',
+					path: '/wc/store/v1/cart/add-item?currency=USD',
+					headers: expect.objectContaining( {
+						'X-WooPayments-Tokenized-Cart-Is-Ephemeral-Cart': '1',
+					} ),
+					data: { id: 123, quantity: 1, variation: [] },
+				} )
+			);
+			expect( stripe.elements ).toHaveBeenCalledWith(
+				expect.objectContaining( { amount: 4500, currency: 'usd' } )
+			);
+		} );
+
+		test( 'prices an ephemeral cart when the server sent no product data', async () => {
+			setProductPage();
+			window.wcpayExpressCheckoutParams.product = [];
+			window.wp.apiFetch.mockResolvedValue( getBundleCart() );
+
+			require( '../woopayments-express-checkout' );
+			await flushPromises();
+			await flushPromises();
+
+			expect( stripe.elements ).toHaveBeenCalledWith(
+				expect.objectContaining( { amount: 4500 } )
+			);
+			expect( expressElement.mount ).toHaveBeenCalledTimes( 1 );
+		} );
+
+		test( 'leaves items bundled by another item out of the wallet line items', async () => {
+			const resolveClick = jest.fn();
+			setProductPage();
+			window.wcpayExpressCheckoutParams.product.product_type = 'bundle';
+			window.wp.apiFetch.mockResolvedValue( getBundleCart() );
+
+			require( '../woopayments-express-checkout' );
+			await flushPromises();
+			await flushPromises();
+			await expressHandlers.click( { resolve: resolveClick } );
+
+			expect( resolveClick ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					lineItems: [ { amount: 4500, name: 'Gift bundle' } ],
+				} )
+			);
+		} );
+
+		test( 'sends the shopper\'s WooCommerce Deposits choice with the product', async () => {
+			setProductPage();
+			document.querySelector( 'form.cart' ).insertAdjacentHTML(
+				'afterbegin',
+				'<input type="radio" name="wc_deposit_option" value="yes" />' +
+					'<input type="radio" name="wc_deposit_option" value="no" checked />' +
+					'<input type="radio" name="wc_deposit_payment_plan" value="7" checked />'
+			);
+			window.wp.apiFetch.mockResolvedValue( getBundleCart() );
+
+			require( '../woopayments-express-checkout' );
+			await flushPromises();
+			await expressHandlers.click( { resolve: jest.fn() } );
+			await flushPromises();
+
+			expect( window.wp.apiFetch ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					path: '/wc/store/v1/cart/add-item?currency=USD',
+					data: {
+						id: 123,
+						quantity: 1,
+						variation: [],
+						wc_deposit_option: 'no',
+						wc_deposit_payment_plan: '7',
+					},
+				} )
+			);
+		} );
+
+		test( 're-prices the wallet when the shopper changes the WooCommerce Deposits choice', async () => {
+			setProductPage();
+			document.querySelector( 'form.cart' ).insertAdjacentHTML(
+				'afterbegin',
+				'<input type="radio" name="wc_deposit_option" value="yes" checked />' +
+					'<input type="radio" name="wc_deposit_option" value="no" />'
+			);
+			window.wp.apiFetch.mockResolvedValue( getBundleCart() );
+
+			require( '../woopayments-express-checkout' );
+			await flushPromises();
+			expect( stripe.elements ).toHaveBeenCalledWith(
+				expect.objectContaining( { amount: 2500 } )
+			);
+
+			const fullPayment = document.querySelector(
+				'input[name=wc_deposit_option][value=no]'
+			);
+			fullPayment.checked = true;
+			fullPayment.dispatchEvent(
+				new window.Event( 'change', { bubbles: true } )
+			);
+			await flushPromises();
+			await flushPromises();
+
+			expect( window.wp.apiFetch ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					path: '/wc/store/v1/cart/add-item?currency=USD',
+					headers: expect.objectContaining( {
+						'X-WooPayments-Tokenized-Cart-Is-Ephemeral-Cart': '1',
+					} ),
+					data: expect.objectContaining( { wc_deposit_option: 'no' } ),
+				} )
+			);
+			expect( elements.update ).toHaveBeenCalledWith(
+				expect.objectContaining( { amount: 4500 } )
+			);
+		} );
+	} );
+
 	test( 'does not initialize classic ECE on block checkout surfaces', async () => {
 		window.wcpayExpressCheckoutParams.has_block = true;
 

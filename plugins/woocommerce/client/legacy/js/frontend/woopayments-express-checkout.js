@@ -1811,6 +1811,93 @@
 		return Promise.resolve();
 	}
 
+	/**
+	 * Tell whether the server sent usable product-page data.
+	 *
+	 * Client 11.1.0 (shortcode-buttons-express/index.js:489-495, :504-512) prices a Product Bundle, and a product the
+	 * server could not price, from an ephemeral cart of the selected product: a bundle's own price leaves out its
+	 * priced-individually items.
+	 *
+	 * @return {boolean} Whether the localized product data can seed the wallet amount.
+	 */
+	function hasServerProductData() {
+		return Boolean(
+			config.product &&
+				config.product.total &&
+				config.product.product_type !== 'bundle'
+		);
+	}
+
+	/**
+	 * Register the extension compatibility filters the client 11.1.0 classic express checkout bundle imports.
+	 */
+	function registerExtensionCompatibility() {
+		var hooks = window.wp && window.wp.hooks;
+
+		if ( ! hooks || typeof hooks.addFilter !== 'function' ) {
+			return;
+		}
+
+		// WooCommerce Deposits: send the shopper's deposit choice with the product
+		// (client shortcode-buttons-express/compatibility/wc-deposits.js:15-33).
+		hooks.addFilter(
+			'wcpay.express-checkout.cart-add-item',
+			'automattic/wcpay/express-checkout',
+			function ( productData ) {
+				var depositsData = {};
+				var checked;
+
+				if ( ! productData ) {
+					return productData;
+				}
+
+				if ( document.querySelector( 'input[name=wc_deposit_option]' ) ) {
+					checked = document.querySelector(
+						'input[name=wc_deposit_option]:checked'
+					);
+					depositsData.wc_deposit_option = checked
+						? checked.value
+						: undefined;
+				}
+
+				if (
+					document.querySelector( 'input[name=wc_deposit_payment_plan]' )
+				) {
+					checked = document.querySelector(
+						'input[name=wc_deposit_payment_plan]:checked'
+					);
+					depositsData.wc_deposit_payment_plan = checked
+						? checked.value
+						: undefined;
+				}
+
+				return Object.assign( {}, productData, depositsData );
+			}
+		);
+
+		// Product Bundles: items bundled by another item are part of its price
+		// (client shortcode-buttons-express/compatibility/wc-product-bundles.js:6-19).
+		hooks.addFilter(
+			'wcpay.express-checkout.map-line-items',
+			'automattic/wcpay/express-checkout',
+			function ( cartData ) {
+				if ( ! cartData || ! Array.isArray( cartData.items ) ) {
+					return cartData;
+				}
+
+				return Object.assign( {}, cartData, {
+					items: cartData.items.filter( function ( item ) {
+						return ! (
+							item.extensions &&
+							item.extensions.bundles &&
+							item.extensions.bundles.bundled_by
+						);
+					} ),
+				} );
+			}
+		);
+	}
+
 	function filterSelectedProduct( product ) {
 		return applyWpFilters(
 			'wcpay.express-checkout.cart-add-item',
@@ -2086,6 +2173,9 @@
 				if ( ! ready || typeof ready.then !== 'function' ) {
 					resolvedProductCurrency = localizedProductCurrency;
 					productCurrencyResolutionPromise = null;
+					if ( ! hasServerProductData() ) {
+						return refreshIapiProductPreview();
+					}
 					cachedCartData = config.product;
 				} else {
 					productCurrencyResolutionPromise = resolveProductCurrency(
@@ -2105,7 +2195,10 @@
 						return refreshIapiProductPreview();
 					}
 
-					if ( resolvedProductCurrency !== localizedProductCurrency ) {
+					if (
+						resolvedProductCurrency !== localizedProductCurrency ||
+						! hasServerProductData()
+					) {
 						return refreshIapiProductPreview();
 					}
 
@@ -2256,6 +2349,8 @@
 		);
 	}
 
+	registerExtensionCompatibility();
+
 	$( function () {
 		if ( isBlockSurface() ) {
 			return;
@@ -2263,6 +2358,20 @@
 
 		hideExpressButton();
 		initOrderAttribution();
+
+		// A changed WooCommerce Deposits choice re-prices the wallet from the
+		// ephemeral product cart (client wc-deposits.js:7-14, update-button-data).
+		if ( isProduct() ) {
+			document
+				.querySelectorAll(
+					'input[name=wc_deposit_option],input[name=wc_deposit_payment_plan]'
+				)
+				.forEach( function ( input ) {
+					input.addEventListener( 'change', function () {
+						refreshIapiProductPreview();
+					} );
+				} );
+		}
 
 		if (
 			getButtonContext() !== 'checkout' ||

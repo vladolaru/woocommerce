@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEx
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\ExpressCheckoutExtensionDoubles;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Unit_Test_Case;
 
@@ -47,6 +48,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$this->set_order_pay_query_var( 0 );
 		unset(
 			$GLOBALS['product'],
+			$GLOBALS[ ExpressCheckoutExtensionDoubles::DEPOSIT_AMOUNT_PLAN_IDS ],
 			$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_PRODUCT_IDS ],
 			$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SUBSCRIPTION ],
 			$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ],
@@ -286,6 +288,107 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 1234, $product['displayItems'][0]['amount'] );
 		$this->assertSame( 1234, $product['total']['amount'] );
+	}
+
+	/**
+	 * @testdox Should add the sign-up fee to the product-page amount of a $type product.
+	 *
+	 * Client 11.1.0 button helper `get_product_price()` :1052-1061.
+	 *
+	 * @testWith ["subscription", 1500]
+	 *           ["subscription_variation", 1500]
+	 *           ["variable-subscription", 1000]
+	 *           ["simple", 1000]
+	 *
+	 * @param string $type     Product type.
+	 * @param int    $expected Expected amount in minor units.
+	 */
+	public function test_product_page_amount_includes_the_subscription_sign_up_fee( string $type, int $expected ): void {
+		WooCommerceSubscriptionsDoubles::load_product();
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'woocommerce_calc_taxes', 'no' );
+		$product = $this->create_typed_product( $type, '10.00' );
+		$product->update_meta_data( '_subscription_sign_up_fee', '5.00' );
+		$product->save();
+
+		$data = $this->get_product_page_data( $product );
+
+		$this->assertSame( $expected, $data['total']['amount'] );
+		$this->assertSame( $expected, $data['displayItems'][0]['amount'] );
+	}
+
+	/**
+	 * @testdox Should keep hiding product-page express checkout for a free subscription whose sign-up fee is the only charge.
+	 *
+	 * Client 11.1.0 button helper :655-658 checks the product's raw price, not the amount with the fee.
+	 */
+	public function test_product_page_hides_a_free_subscription_with_only_a_sign_up_fee(): void {
+		WooCommerceSubscriptionsDoubles::load_product();
+		$product = $this->create_typed_product( 'subscription', '0' );
+		$product->update_meta_data( '_subscription_sign_up_fee', '5.00' );
+		$product->save();
+		$GLOBALS['product'] = $product;
+		$shown              = null;
+		$capture            = function () use ( &$shown ): void {
+			$shown = $this->create_service()->should_show_payment_request_button( 'product' );
+		};
+		add_action( 'woocommerce_after_add_to_cart_form', $capture );
+		do_action( 'woocommerce_after_add_to_cart_form' ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Core hook, fired to render the product form context.
+
+		$this->assertFalse( $shown );
+	}
+
+	/**
+	 * @testdox Should show the WooCommerce Deposits amount of the product's default choice on the product page ($scenario).
+	 *
+	 * Client 11.1.0 button helper `get_product_price()` :1031-1050, with the client's Deposits test helper as the double.
+	 *
+	 * @testWith ["deposit by default", "percent", "deposit", [], 1000, [0]]
+	 *           ["full payment by default", "percent", "full", [], 4000, []]
+	 *           ["payment plan, first plan", "plan", "deposit", [7, 9], 1500, [7]]
+	 *           ["payment plan, no plans", "plan", "deposit", [], 1500, [0]]
+	 *
+	 * @param string $scenario      Scenario label.
+	 * @param string $deposit_type  Deposit type meta.
+	 * @param string $selected_type Default selected type meta.
+	 * @param int[]  $plans         Payment plan IDs.
+	 * @param int    $expected      Expected amount in minor units.
+	 * @param int[]  $plan_ids      Plan IDs the deposit amount is asked for.
+	 */
+	public function test_product_page_amount_uses_the_deposits_default_choice( string $scenario, string $deposit_type, string $selected_type, array $plans, int $expected, array $plan_ids ): void {
+		unset( $scenario );
+		ExpressCheckoutExtensionDoubles::load_deposits();
+		$GLOBALS[ ExpressCheckoutExtensionDoubles::DEPOSIT_AMOUNT_PLAN_IDS ] = array();
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'woocommerce_calc_taxes', 'no' );
+		$product = $this->create_typed_product( 'simple', '40.00' );
+		$product->update_meta_data( '_wc_deposit_enabled', 'optional' );
+		$product->update_meta_data( '_wc_deposit_type', $deposit_type );
+		$product->update_meta_data( '_wc_deposit_selected_type', $selected_type );
+		$product->update_meta_data( '_wc_deposit_amount', 'percent' === $deposit_type ? '25' : '15' );
+		$product->update_meta_data( '_wc_deposit_payment_plans', $plans );
+		$product->save();
+
+		$data = $this->get_product_page_data( $product );
+
+		$this->assertSame( $expected, $data['total']['amount'] );
+		$this->assertSame( $plan_ids, $GLOBALS[ ExpressCheckoutExtensionDoubles::DEPOSIT_AMOUNT_PLAN_IDS ] );
+	}
+
+	/**
+	 * @testdox Should send no product-page data when the Deposits amount is not a number, so the page prices an ephemeral cart instead.
+	 *
+	 * Client 11.1.0 button helper :1063-1072 throws, and `get_product_data()` returns false (:789-794).
+	 */
+	public function test_product_page_data_is_empty_without_a_numeric_price(): void {
+		ExpressCheckoutExtensionDoubles::load_deposits();
+		$product = $this->create_typed_product( 'simple', '40.00' );
+		$product->update_meta_data( '_wc_deposit_enabled', 'forced' );
+		$product->update_meta_data( '_wc_deposit_type', 'percent' );
+		$product->update_meta_data( '_wc_deposit_selected_type', 'deposit' );
+		$product->save();
+
+		$this->assertSame( array(), $this->get_product_page_data( $product ) );
 	}
 
 	/**
@@ -1710,6 +1813,72 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		);
 
 		return $account_service;
+	}
+
+	/**
+	 * Create and save a product whose type is the given one, without its extension's product class.
+	 *
+	 * @param string $type  Product type.
+	 * @param string $price Product price.
+	 * @return \WC_Product
+	 */
+	private function create_typed_product( string $type, string $price ): \WC_Product {
+		$product = new class( $type ) extends \WC_Product_Simple {
+			/**
+			 * Product type this product reports.
+			 *
+			 * @var string
+			 */
+			private string $test_type;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param string $test_type Product type.
+			 */
+			public function __construct( string $test_type ) {
+				$this->test_type = $test_type;
+				parent::__construct();
+			}
+
+			/**
+			 * Get the product type.
+			 *
+			 * @return string
+			 */
+			public function get_type() {
+				return $this->test_type;
+			}
+		};
+		$product->set_props(
+			array(
+				'name'          => 'Typed product',
+				'regular_price' => $price,
+				'price'         => $price,
+				'virtual'       => true,
+			)
+		);
+		$product->save();
+
+		return $product;
+	}
+
+	/**
+	 * Get the product-page express checkout data while the product's add-to-cart form renders.
+	 *
+	 * @param \WC_Product $product Product on the page.
+	 * @return array<string,mixed>
+	 */
+	private function get_product_page_data( \WC_Product $product ): array {
+		$GLOBALS['product'] = $product;
+		$params             = array();
+		$capture            = function () use ( &$params ): void {
+			$params = $this->create_service()->get_express_checkout_params( 'product' );
+		};
+		add_action( 'woocommerce_after_add_to_cart_form', $capture );
+		do_action( 'woocommerce_after_add_to_cart_form' ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Core hook, fired to render the product form context.
+
+		return $params['product'];
 	}
 
 	/**
