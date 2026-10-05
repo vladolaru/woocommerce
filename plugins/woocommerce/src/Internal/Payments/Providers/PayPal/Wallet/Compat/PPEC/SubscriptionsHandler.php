@@ -128,6 +128,11 @@ class SubscriptionsHandler {
 	 *
 	 * Tries the vault v3 conversion path first. If that is not applicable or fails,
 	 * falls back to the legacy BILLING_AGREEMENT token path.
+	 *
+	 * @param PaymentToken|null $token    The token another callback already chose, if any.
+	 * @param \WC_Customer      $customer The customer being charged.
+	 * @param \WC_Order         $order    The renewal order.
+	 * @return PaymentToken|null
 	 */
 	public function use_billing_agreement_as_token( $token, $customer, $order ) {
 		if ( PPECHelper::PPEC_GATEWAY_ID !== $order->get_payment_method() || ! wcs_order_contains_renewal( $order ) ) {

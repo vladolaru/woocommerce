@@ -83,7 +83,12 @@ class CompatModule implements ServiceModule, ExecutableModule {
 
 		$this->initialize_blueprint_compat_layer( $c );
 
-		add_action( 'woocommerce_paypal_payments_gateway_migrate', static fn() => delete_transient( 'ppcp_has_ppec_subscriptions' ) );
+		add_action(
+			'woocommerce_paypal_payments_gateway_migrate',
+			static function (): void {
+				delete_transient( 'ppcp_has_ppec_subscriptions' );
+			}
+		);
 
 		add_action(
 			'woocommerce_paypal_payments_authenticated_merchant',
@@ -180,8 +185,10 @@ class CompatModule implements ServiceModule, ExecutableModule {
 
 				$disable_funding = $settings->has( 'disable_funding' ) ? $settings->get( 'disable_funding' ) : array();
 
+				/** @var string[] $available_messaging_locations */
 				$available_messaging_locations = array_keys( $c->get( 'wcgateway.settings.pay-later.messaging-locations' ) );
-				$available_button_locations    = array_keys( $c->get( 'wcgateway.button.locations' ) );
+				/** @var string[] $available_button_locations */
+				$available_button_locations = array_keys( $c->get( 'wcgateway.button.locations' ) );
 
 				if ( in_array( 'credit', $disable_funding, true ) ) {
 					$settings->set( 'pay_later_button_enabled', false );
@@ -284,6 +291,7 @@ class CompatModule implements ServiceModule, ExecutableModule {
 				$settings = $c->get( 'wcgateway.settings' );
 				assert( $settings instanceof Settings );
 
+				/** @var string[] $available_button_locations */
 				$available_button_locations = array_keys( $c->get( 'wcgateway.button.locations' ) );
 				$selected_button_locations  = $this->selected_locations( $settings, $available_button_locations, 'button' );
 				if ( ! empty( $selected_button_locations ) ) {
@@ -557,6 +565,7 @@ class CompatModule implements ServiceModule, ExecutableModule {
 							$product_id = $wc_order_item->get_variation_id() ?: $wc_order_item->get_product_id();
 							$product    = wc_get_product( $product_id );
 
+							// @phpstan-ignore function.notFound (WooCommerce Bookings function; the plugin is not installed when core is analysed)
 							if ( ! is_wc_booking_product( $product ) ) {
 								continue;
 							}
@@ -578,6 +587,7 @@ class CompatModule implements ServiceModule, ExecutableModule {
 								$booking_data['persons'] = $cart_item['booking']['_persons'];
 							}
 
+							// @phpstan-ignore function.notFound (WooCommerce Bookings function; the plugin is not installed when core is analysed)
 							create_wc_booking( $cart_item['product_id'], $booking_data, 'unpaid' );
 						}
 					}

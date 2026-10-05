@@ -75,7 +75,7 @@ class WcGiftCardsCompat {
 			'woocommerce_paypal_payments_store_api_cart_extra_discount',
 			array( $this, 'store_api_cart_extra_discount' ),
 			10,
-			2
+			1
 		);
 	}
 
