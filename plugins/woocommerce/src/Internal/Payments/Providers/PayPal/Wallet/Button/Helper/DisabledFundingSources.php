@@ -140,7 +140,9 @@ class DisabledFundingSources {
 	/**
 	 * Determines whether the 'card' funding source should be disabled.
 	 *
-	 * Card funding in the PayPal button stack is off until core has a merchant setting for it; see FORK.md.
+	 * Card funding in the PayPal button stack is off by decision: the separate card button is the extension's cut
+	 * card button, not wallet functionality, and PayPal's own guest card path inside the popup is unaffected. See
+	 * FORK.md, Conventions.
 	 *
 	 * @return bool Always true.
 	 */
