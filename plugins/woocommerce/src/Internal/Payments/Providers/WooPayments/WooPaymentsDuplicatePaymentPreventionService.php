@@ -360,18 +360,21 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	}
 
 	/**
-	 * Tell the merchant, once for each intent, that the order's attached payment is disputed, without ever failing the refusal.
+	 * Tell the merchant, once for each intent, that the order's payment is disputed, without ever failing the refusal.
 	 *
 	 * The note is secondary to the refusal: a failure taking the lock, reading the order, writing the note or releasing the
 	 * lock is logged, and the submit is still refused. Otherwise the gateway's catch would answer as paid for a succeeded
 	 * intent, or fail the order. Logging that failure is best-effort too, since a logger or log filter can throw.
 	 *
+	 * @since 11.2.0
+	 *
 	 * @param WC_Order $order     Order being paid.
-	 * @param string   $intent_id The attached PaymentIntent.
+	 * @param string   $intent_id The disputed PaymentIntent.
+	 * @param bool     $lock_held Whether the caller holds the order payment lock and read the order under it.
 	 */
-	private function add_disputed_intent_note_once( WC_Order $order, string $intent_id ): void {
+	public function add_disputed_intent_note_once( WC_Order $order, string $intent_id, bool $lock_held = false ): void {
 		try {
-			$this->write_disputed_intent_note_once( $order, $intent_id );
+			$this->write_disputed_intent_note_once( $order, $intent_id, $lock_held );
 		} catch ( Throwable $failure ) {
 			try {
 				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
@@ -394,12 +397,18 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 * Every submit for the order is refused while the dispute stands. Overlapping submits each loaded the order before this
 	 * runs, so the marker is read again from storage under the order payment lock, as the dispute webhook does for its note
 	 * (WooPaymentsDisputeEventHandler::process_dispute_created()). While another operation holds the lock, the next submit
-	 * writes the note.
+	 * writes the note. A caller that already holds the lock and read the order under it writes on that order.
 	 *
 	 * @param WC_Order $order     Order being paid.
-	 * @param string   $intent_id The attached PaymentIntent.
+	 * @param string   $intent_id The disputed PaymentIntent.
+	 * @param bool     $lock_held Whether the caller holds the order payment lock and read the order under it.
 	 */
-	private function write_disputed_intent_note_once( WC_Order $order, string $intent_id ): void {
+	private function write_disputed_intent_note_once( WC_Order $order, string $intent_id, bool $lock_held ): void {
+		if ( $lock_held ) {
+			$this->write_disputed_intent_note_unless_noted( $order, $intent_id );
+			return;
+		}
+
 		$store      = wc_get_container()->get( OrderPaymentStore::class );
 		$profile    = wc_get_container()->get( WooPaymentsPersistenceProfile::class );
 		$lock_token = $store->claim_order_payment_lock_for_operation( $order, $profile, 'disputed_intent_note_' . $intent_id, 'disputed intent note' );
@@ -409,27 +418,36 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		}
 
 		try {
-			$fresh_order = $this->get_lifecycle_service()->get_fresh_order_from_data_store( $order );
-			if ( $intent_id === (string) $fresh_order->get_meta( self::DISPUTED_INTENT_NOTED_META, true ) ) {
-				return;
-			}
-
-			$note_id = $fresh_order->add_order_note(
-				sprintf(
-					/* translators: %s: PaymentIntent ID. */
-					__( 'The payment attached to this order (%s) is disputed, so the customer was not charged again. Check the dispute in WooPayments before the customer pays for this order.', 'woocommerce' ),
-					$intent_id
-				)
-			);
-			if ( 0 >= (int) $note_id ) {
-				return;
-			}
-
-			$fresh_order->update_meta_data( self::DISPUTED_INTENT_NOTED_META, $intent_id );
-			$fresh_order->save_meta_data();
+			$this->write_disputed_intent_note_unless_noted( $this->get_lifecycle_service()->get_fresh_order_from_data_store( $order ), $intent_id );
 		} finally {
 			$store->release_order_payment_lock( $order, $profile, $lock_token );
 		}
+	}
+
+	/**
+	 * Write the disputed payment note on an order read under the order payment lock, unless it names this intent already.
+	 *
+	 * @param WC_Order $order     Order read under the order payment lock.
+	 * @param string   $intent_id The disputed PaymentIntent.
+	 */
+	private function write_disputed_intent_note_unless_noted( WC_Order $order, string $intent_id ): void {
+		if ( $intent_id === (string) $order->get_meta( self::DISPUTED_INTENT_NOTED_META, true ) ) {
+			return;
+		}
+
+		$note_id = $order->add_order_note(
+			sprintf(
+				/* translators: %s: PaymentIntent ID. */
+				__( 'The payment attached to this order (%s) is disputed, so the customer was not charged again. Check the dispute in WooPayments before the customer pays for this order.', 'woocommerce' ),
+				$intent_id
+			)
+		);
+		if ( 0 >= (int) $note_id ) {
+			return;
+		}
+
+		$order->update_meta_data( self::DISPUTED_INTENT_NOTED_META, $intent_id );
+		$order->save_meta_data();
 	}
 
 	/**

@@ -421,22 +421,12 @@ class WooPaymentsIntentCodec {
 	}
 
 	/**
-	 * Tell whether a charge of the intent was fully refunded or disputed.
+	 * Tell whether a charge of the intent was fully refunded: `refunded`, or `amount_refunded` reaching its amount.
 	 *
 	 * A refunded or disputed PaymentIntent keeps its `succeeded` status. The platform pins Stripe-Version 2020-08-27
 	 * (wpcom `wcpay/utils/class-config.php:414-425`), so a listed or retrieved intent carries its charges, each with
 	 * `refunded` (true once fully refunded), `amount_refunded` and `disputed`. Every charge is read, so their order does not
 	 * matter.
-	 *
-	 * @param array<string,mixed> $intent A PaymentIntent as the platform returns it.
-	 * @return bool
-	 */
-	public static function has_given_money_back( array $intent ): bool {
-		return self::is_fully_refunded( $intent ) || self::is_disputed( $intent );
-	}
-
-	/**
-	 * Tell whether a charge of the intent was fully refunded: `refunded`, or `amount_refunded` reaching its amount.
 	 *
 	 * @param array<string,mixed> $intent A PaymentIntent as the platform returns it.
 	 * @return bool

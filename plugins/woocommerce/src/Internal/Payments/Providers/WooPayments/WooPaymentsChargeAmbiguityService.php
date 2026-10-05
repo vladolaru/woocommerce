@@ -216,15 +216,15 @@ class WooPaymentsChargeAmbiguityService {
 	/**
 	 * Get the first of the order's intents that holds the shopper's money.
 	 *
-	 * A refunded or disputed PaymentIntent keeps its `succeeded` status, so an older payment of the order that was given
-	 * back must not count as the earlier request's payment.
+	 * A fully refunded PaymentIntent keeps its `succeeded` status, so an older payment of the order that was given back
+	 * must not count as the earlier request's payment. A disputed one is returned: its money may still come back.
 	 *
 	 * @param array<int,array<string,mixed>> $order_intents The order's intents, newest first.
 	 * @return array<string,mixed>|null
 	 */
 	public static function find_intent_with_money( array $order_intents ): ?array {
 		foreach ( $order_intents as $intent ) {
-			if ( in_array( (string) ( $intent['status'] ?? '' ), self::MONEY_STATUSES, true ) && ! WooPaymentsIntentCodec::has_given_money_back( $intent ) ) {
+			if ( in_array( (string) ( $intent['status'] ?? '' ), self::MONEY_STATUSES, true ) && ! WooPaymentsIntentCodec::is_fully_refunded( $intent ) ) {
 				return $intent;
 			}
 		}
@@ -243,6 +243,26 @@ class WooPaymentsChargeAmbiguityService {
 		$this->log(
 			sprintf(
 				'The charge idempotency key %1$s kept on order #%2$d was refused because the new payment request differs from the earlier one. The earlier request created PaymentIntent %3$s, which took the payment, so the order is paid from it and the new payment method is not charged.',
+				$idempotency_key,
+				$order->get_id(),
+				$intent_id
+			),
+			$order,
+			$idempotency_key
+		);
+	}
+
+	/**
+	 * Log, whatever the logging setting, that the earlier request's payment is disputed, so this payment attempt was refused.
+	 *
+	 * @param WC_Order $order           Order being paid.
+	 * @param string   $idempotency_key Kept charge key the earlier request was sent with.
+	 * @param string   $intent_id       The earlier request's PaymentIntent.
+	 */
+	public function log_earlier_payment_disputed( WC_Order $order, string $idempotency_key, string $intent_id ): void {
+		$this->log(
+			sprintf(
+				'The charge idempotency key %1$s kept on order #%2$d was refused because the new payment request differs from the earlier one. The earlier request created PaymentIntent %3$s, whose payment is disputed, so this payment attempt is refused without a charge and the key is kept.',
 				$idempotency_key,
 				$order->get_id(),
 				$intent_id

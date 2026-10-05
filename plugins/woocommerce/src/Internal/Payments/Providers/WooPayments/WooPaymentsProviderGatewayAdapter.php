@@ -627,7 +627,8 @@ class WooPaymentsProviderGatewayAdapter {
 	 *
 	 * Runs under the checkout's order payment lock. The earlier request finished at Stripe, and its only money call creates
 	 * a PaymentIntent carrying the order's id and key, so the order's intents decide: one that took the payment pays the
-	 * order and the new payment method is not charged; none that did (or none at all) proves no money moved, so the key is
+	 * order and the new payment method is not charged, unless its payment is disputed, which refuses this attempt as the
+	 * attached-intent guard does; none that did (or none at all) proves no money moved, so the key is
 	 * retired and the new payment method is charged now; a failed lookup refuses this attempt and keeps the key and the
 	 * record, so the next attempt looks again. When neither the customer's nor the account's intents can be listed, the
 	 * attempt is refused the same way and the merchant gets one note asking them to check the payment.
@@ -663,6 +664,14 @@ class WooPaymentsProviderGatewayAdapter {
 		$intents = $lookup['intents'];
 
 		$paid_intent = WooPaymentsChargeAmbiguityService::find_intent_with_money( $intents );
+		if ( null !== $paid_intent && WooPaymentsIntentCodec::is_disputed( $paid_intent ) ) {
+			$intent_id = (string) ( $paid_intent['id'] ?? '' );
+			$this->ambiguity_service->log_earlier_payment_disputed( $order, $sent_key, $intent_id );
+			wc_get_container()->get( WooPaymentsDuplicatePaymentPreventionService::class )->add_disputed_intent_note_once( $order, $intent_id, true );
+
+			return $this->earlier_payment_disputed_outcome();
+		}
+
 		if ( null !== $paid_intent ) {
 			$this->ambiguity_service->log_earlier_payment_found( $order, $sent_key, (string) ( $paid_intent['id'] ?? '' ) );
 
@@ -756,6 +765,29 @@ class WooPaymentsProviderGatewayAdapter {
 		$record['cannot_check_noted'] = true;
 		$order->update_meta_data( self::CHARGE_AMBIGUITY_META, $record );
 		$order->save_meta_data();
+	}
+
+	/**
+	 * Build the refusal for an attempt whose earlier request's payment is disputed.
+	 *
+	 * As the attached-intent guard refuses a disputed payment: the shopper is told the payment is under review, nothing is
+	 * charged, and the order keeps its status, the key and the record, so every later attempt is refused the same way.
+	 *
+	 * @return PaymentOutcome
+	 */
+	private function earlier_payment_disputed_outcome(): PaymentOutcome {
+		return new PaymentOutcome(
+			PaymentOutcome::STATUS_FAILED,
+			'',
+			'',
+			'',
+			'',
+			array(
+				PaymentOutcome::DATA_ERROR_CODE            => WooPaymentsDuplicatePaymentPreventionService::ERROR_DISPUTED_INTENT,
+				PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE => __( "This order's payment is under review. Please contact the store.", 'woocommerce' ),
+				PaymentOutcome::DATA_PRESERVE_ORDER_STATUS => true,
+			)
+		);
 	}
 
 	/**

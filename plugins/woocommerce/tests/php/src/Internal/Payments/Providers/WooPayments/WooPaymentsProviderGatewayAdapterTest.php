@@ -1608,11 +1608,12 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox An earlier succeeded intent whose charge was $_dataName holds money: $holds_money.
 	 *
-	 * A refunded or disputed PaymentIntent keeps its `succeeded` status, so a payment of the order that was given back (a
-	 * refund and a reopened order, for example) must not complete the order again (review 44 F4). Under the platform's
-	 * pinned Stripe-Version 2020-08-27 (wpcom `wcpay/utils/class-config.php:414-425`) a listed intent carries its charges
-	 * with `refunded`, `amount_refunded` and `disputed`. An intent that gave its money back counts as one without money, so
-	 * the new card is charged; a partly refunded one still holds money and pays the order.
+	 * A refunded PaymentIntent keeps its `succeeded` status, so a payment of the order that was given back (a refund and a
+	 * reopened order, for example) must not complete the order again (review 44 F4). Under the platform's pinned
+	 * Stripe-Version 2020-08-27 (wpcom `wcpay/utils/class-config.php:414-425`) a listed intent carries its charges with
+	 * `refunded`, `amount_refunded` and `disputed`. An intent that was fully refunded counts as one without money, so the
+	 * new card is charged, whether or not it was disputed first, as on the attached-intent guard; a partly refunded one
+	 * still holds money and pays the order.
 	 *
 	 * @dataProvider provide_given_back_charges
 	 *
@@ -1671,11 +1672,11 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 				),
 				false,
 			),
-			'disputed'                      => array(
+			'refunded after a dispute'      => array(
 				array(
 					'amount'          => 1000,
-					'amount_refunded' => 0,
-					'refunded'        => false,
+					'amount_refunded' => 1000,
+					'refunded'        => true,
 					'disputed'        => true,
 				),
 				false,
@@ -1690,6 +1691,88 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 				true,
 			),
 		);
+	}
+
+	/**
+	 * @testdox An earlier intent whose payment is disputed refuses every attempt like the attached-intent guard: the under-review notice, no charge, the order status, key and record kept, and one note.
+	 *
+	 * A disputed PaymentIntent keeps its `succeeded` status and its money may still come back, so charging the new card
+	 * could take the order's money twice (review 67 F8, monitor ruling 2026-10-05). The listed intent carries its charges
+	 * with `disputed` under the platform's pinned Stripe-Version 2020-08-27 (wpcom `wcpay/utils/class-config.php:414-425`;
+	 * Charge object https://docs.stripe.com/api/charges/object). Each attempt runs under the order payment lock, as checkout
+	 * holds it (PaymentProcessingService::process_checkout_outcome()), so the note is written under that lock.
+	 */
+	public function test_earlier_intent_whose_payment_is_disputed_refuses_every_attempt_with_one_note(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$order           = $this->create_woopayments_order();
+		$disputed_intent = self::order_intent(
+			$order,
+			'pi_earlier',
+			'succeeded',
+			1000,
+			array(
+				'charges' => array(
+					'data' => array(
+						array(
+							'id'              => 'ch_earlier',
+							'amount'          => 1000,
+							'amount_refunded' => 0,
+							'refunded'        => false,
+							'disputed'        => true,
+						),
+					),
+				),
+			)
+		);
+
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			self::platform_bad_gateway(),
+			self::stripe_idempotency_error( 'key_first' ),
+			self::intent_list( array( $disputed_intent ) ),
+			self::stripe_idempotency_error( 'key_first' ),
+			self::intent_list( array( $disputed_intent ) ),
+		);
+		$sut                    = $this->create_timeout_adapter( $http_client, 'cus_sent' );
+		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
+		$logger  = RecordingWcLogger::install();
+		$store   = wc_get_container()->get( OrderPaymentStore::class );
+		$profile = wc_get_container()->get( WooPaymentsPersistenceProfile::class );
+		$refused = array();
+		foreach ( array( 'key_second', 'key_third' ) as $attempt_key ) {
+			$token = $store->claim_order_payment_lock_for_operation( $order, $profile, $attempt_key, 'checkout' );
+			$this->assertIsString( $token );
+			try {
+				$refused[] = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', $attempt_key );
+			} finally {
+				$store->release_order_payment_lock( $order, $profile, $token );
+			}
+		}
+		$kept = wc_get_order( $order->get_id() );
+
+		$this->assertSame(
+			array( 'POST intentions key_first', 'POST intentions key_first', 'GET intentions?test_mode=0&customer=cus_sent&limit=100', 'POST intentions key_first', 'GET intentions?test_mode=0&customer=cus_sent&limit=100' ),
+			self::request_trail( $http_client ),
+			'The new card must never be charged.'
+		);
+		foreach ( $refused as $outcome ) {
+			$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+			$this->assertSame( WooPaymentsDuplicatePaymentPreventionService::ERROR_DISPUTED_INTENT, $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
+			$this->assertSame( "This order's payment is under review. Please contact the store.", $outcome->get_data()[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null );
+			$this->assertTrue( $outcome->get_data()[ PaymentOutcome::DATA_PRESERVE_ORDER_STATUS ] ?? null );
+			$this->assertNull( $outcome->get_effect_plan() );
+		}
+		$this->assertSame( 'pending', $kept->get_status() );
+		$this->assertSame( 'key_first', $kept->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$this->assertSame( array( 'cus_sent' ), $kept->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['customers'] ?? null );
+		$this->assertSame(
+			array( 'The payment attached to this order (pi_earlier) is disputed, so the customer was not charged again. Check the dispute in WooPayments before the customer pays for this order.' ),
+			self::note_texts_containing( $kept, 'is disputed' ),
+			'One note per intent, not one per attempt.'
+		);
+		$line = 'The charge idempotency key key_first kept on order #' . $order->get_id() . ' was refused because the new payment request differs from the earlier one. The earlier request created PaymentIntent pi_earlier, whose payment is disputed, so this payment attempt is refused without a charge and the key is kept.';
+		$this->assertSame( array( $line, $line ), self::warning_lines( $logger ) );
 	}
 
 	/**

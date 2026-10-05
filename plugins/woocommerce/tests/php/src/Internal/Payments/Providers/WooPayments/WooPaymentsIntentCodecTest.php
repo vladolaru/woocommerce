@@ -661,7 +661,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Assert the three given-back checks on an intent.
+	 * Assert the two given-back checks on an intent.
 	 *
 	 * @param array<string,mixed> $intent         PaymentIntent.
 	 * @param bool                $fully_refunded Expected is_fully_refunded().
@@ -670,7 +670,6 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	private function assert_given_back_checks( array $intent, bool $fully_refunded, bool $disputed ): void {
 		$this->assertSame( $fully_refunded, WooPaymentsIntentCodec::is_fully_refunded( $intent ), 'is_fully_refunded()' );
 		$this->assertSame( $disputed, WooPaymentsIntentCodec::is_disputed( $intent ), 'is_disputed()' );
-		$this->assertSame( $fully_refunded || $disputed, WooPaymentsIntentCodec::has_given_money_back( $intent ), 'has_given_money_back()' );
 	}
 
 	/**
