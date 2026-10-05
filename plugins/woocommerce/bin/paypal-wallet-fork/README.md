@@ -7,11 +7,11 @@ The fork point is extension commit `0083204e7`. A real `fork.php` run writes its
 | File | What it does |
 |------|--------------|
 | `drift-report.sh` | Lists extension commits since a ref that touch forked paths, grouped by core file, and marks the ones that touch a shared-contract name (the list items of the appendix). Files dropped in core come last. |
-| `contract-list.sh` | Regenerates the shared-contract appendix (hooks, options, REST routes, handles, gateway IDs, meta keys) from the extension clone. Line 1 names the extension commit and carries no timestamp, so regenerating at the same commit gives the same file. |
-| `path-map.json` | Maps every forked extension path to its core path. `null` marks a file dropped in core. The JS rows point at the admin and blocks clients, where the JS lives since the transitional wallet package was folded into them; `fork.php` and `supplement.py` still name that package's directory because they record the original run. |
+| `contract-list.sh` | Regenerates the shared-contract appendix (hooks, options, REST routes, handles, gateway IDs, meta keys) from the extension clone. Line 1 names the extension commit and carries no timestamp, so regenerating at the same commit gives a byte-identical file: a diff after a regeneration means the extension moved. |
+| `path-map.json` | Maps every forked extension path to its core path. `null` marks a file dropped in core. The JS rows point into `plugins/woocommerce/client/admin/client/` (the settings app under `paypal-wallet/app/`, the notices script under `wp-admin-scripts/paypal-wallet-notices`) and `plugins/woocommerce/client/blocks/` (the storefront and block code under `assets/js/extensions/payment-methods/paypal-wallet/` and `assets/js/blocks/paypal-wallet/`; the extension's `package.json` and `webpack.config.js` map to the blocks client's `package.json` and `bin/webpack-entries.js`). The wallet JS has lived there since the transitional `client/paypal-wallet` package was folded into the two clients and deleted. |
 | `module-map.json` | Maps each kept extension module to its segment under `Wallet/`. Read by `fork.php`. |
-| `fork.php` | The one-shot fork. Copies the kept modules, rewrites namespaces and the text domain, and writes `path-map.json`. Kept as the record; do not run it again on a forked tree: a re-run would overwrite `path-map.json` without the entries `supplement.py` added. `--dry-run` counts and audits without writing any file. |
-| `supplement.py` | Adds classes of dropped modules that kept code still reaches, and records them in `path-map.json`. Its lists are empty, so it adds nothing; it stays as the record of how those files got in. |
+| `fork.php` | The one-shot fork. Copies the kept modules, rewrites namespaces and the text domain, and writes `path-map.json`. Kept as the record, and it still names the old package path `client/paypal-wallet/modules/` because it describes the original run; do not run it again on a forked tree: a re-run would overwrite `path-map.json` without the entries `supplement.py` added. `--dry-run` counts and audits without writing any file (not `audit.txt` either). |
+| `supplement.py` | Adds classes of dropped modules that kept code still reaches, and records them in `path-map.json`. Its lists are empty, so it adds nothing; it stays as the record of how those files got in, and its JS paths name the old `client/paypal-wallet` package for the same reason as `fork.php`. |
 
 ## Usage
 
@@ -28,3 +28,5 @@ python3 bin/paypal-wallet-fork/supplement.py <extension clone> <core clone>
 ```
 
 `contract-list.sh --out` defaults to the same appendix path (`--out -` prints to stdout); never redirect its output into the appendix. `--appendix` defaults to `src/Internal/Payments/Providers/PayPal/contract-appendix.md`. `<until-ref>` defaults to `dev/develop`. Run the scripts from `plugins/woocommerce`.
+
+The tooling can be run repeatedly without side effects: `contract-list.sh` regenerates the appendix byte-identically at the same extension commit, `fork.php --dry-run` writes no file, and no script writes to the extension clone.
