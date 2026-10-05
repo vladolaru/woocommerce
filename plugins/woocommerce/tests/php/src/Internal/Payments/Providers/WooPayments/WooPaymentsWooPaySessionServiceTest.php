@@ -941,6 +941,17 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox WooPay session data names the versioned Store API base, wc/store/v1.
+	 *
+	 * Client 11.1.0 class-woopay-session.php:908-919 sends the Store API cart route's namespace.
+	 */
+	public function test_init_session_request_sends_the_versioned_store_api_url(): void {
+		$result = $this->create_service()->get_init_session_request( 'shopper@example.com' );
+
+		$this->assertSame( get_rest_url( null, 'wc/store/v1' ), $result['store_data']['store_api_url'] );
+	}
+
+	/**
 	 * @testdox Should preload current Store API cart and checkout data for WooPay init sessions.
 	 */
 	public function test_preloads_current_store_api_cart_and_checkout_data(): void {

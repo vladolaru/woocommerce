@@ -14,7 +14,9 @@ use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAdaptedExtensions;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayBlocksDataExtractor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayThemeAppearance;
+use Automattic\WooCommerce\StoreApi\RoutesController;
 use Automattic\WooCommerce\StoreApi\SessionHandler;
+use Automattic\WooCommerce\StoreApi\StoreApi;
 use Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils;
 use WC_Order;
 use WP_Error;
@@ -2301,7 +2303,7 @@ class WooPaymentsWooPaySessionService {
 			'blog_checkout_url'              => $checkout_url,
 			'blog_shop_url'                  => $shop_url,
 			'blog_timezone'                  => wp_timezone_string(),
-			'store_api_url'                  => get_rest_url( null, 'wc/store' ),
+			'store_api_url'                  => $this->get_store_api_url(),
 			'account_id'                     => $this->get_account_service()->get_account_id(),
 			'test_mode'                      => $this->get_account_service()->is_test_mode_enabled(),
 			'capture_method'                 => $manual_capture ? 'manual' : 'automatic',
@@ -2313,6 +2315,22 @@ class WooPaymentsWooPaySessionService {
 			'checkout_schema_namespaces'     => $blocks_data->get_checkout_schema_namespaces(),
 			'optional_fields_status'         => $blocks_data->get_optional_fields_status( $custom_message ),
 		);
+	}
+
+	/**
+	 * Get the Store API base URL WooPay calls: the cart route's namespace (wc/store/v1), as client 11.1.0
+	 * `WooPay_Session::get_store_api_url()` resolves it (class-woopay-session.php:908-919).
+	 *
+	 * @return string
+	 */
+	private function get_store_api_url(): string {
+		try {
+			$namespace = StoreApi::container()->get( RoutesController::class )->get( 'cart' )->get_namespace();
+		} catch ( \Exception $e ) {
+			$namespace = 'wc/store';
+		}
+
+		return get_rest_url( null, $namespace );
 	}
 
 	/**
