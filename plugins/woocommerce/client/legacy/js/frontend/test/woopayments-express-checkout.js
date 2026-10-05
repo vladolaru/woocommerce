@@ -2992,6 +2992,79 @@ describe( 'WooPayments express checkout', () => {
 			);
 		} );
 
+		// The click adds the form's current selection, so the newest re-price must win whatever order the answers
+		// arrive in. The client keeps the last answer to arrive (shortcode-buttons-express/index.js:614-618).
+		test( 'keeps the newest quantity when an older re-price answers last', async () => {
+			const resolveClick = jest.fn();
+			const twoUnits = createDeferred();
+			const threeUnits = createDeferred();
+			jest.useFakeTimers();
+			setClassicProductForm();
+			window.wp.apiFetch
+				.mockReturnValueOnce( twoUnits.promise )
+				.mockReturnValueOnce( threeUnits.promise )
+				.mockResolvedValue( getVirtualCart( 7500, 3 ) );
+			await mountReadyWallet();
+
+			typeQuantity( '2' );
+			jest.advanceTimersByTime( 250 );
+			typeQuantity( '3' );
+			jest.advanceTimersByTime( 250 );
+			expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 2 );
+
+			threeUnits.resolve( getVirtualCart( 7500, 3 ) );
+			await flushMicrotasks();
+			twoUnits.resolve( getVirtualCart( 5000, 2 ) );
+			await flushMicrotasks();
+
+			expect( elements.update ).toHaveBeenLastCalledWith(
+				expect.objectContaining( { amount: 7500 } )
+			);
+
+			await expressHandlers.click( { resolve: resolveClick } );
+
+			expect( resolveClick ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					lineItems: [
+						{ amount: 7500, name: 'Express Widget (x3)' },
+					],
+				} )
+			);
+			expect( window.wp.apiFetch ).toHaveBeenLastCalledWith(
+				expect.objectContaining( {
+					path: '/wc/store/v1/cart/add-item?currency=USD',
+					data: { id: 123, quantity: 3, variation: [] },
+				} )
+			);
+		} );
+
+		test( 'keeps the wallet shown when an older re-price fails after the newest one priced it', async () => {
+			const twoUnits = createDeferred();
+			jest.useFakeTimers();
+			setClassicProductForm();
+			window.wp.apiFetch
+				.mockReturnValueOnce( twoUnits.promise )
+				.mockResolvedValue( getVirtualCart( 7500, 3 ) );
+			await mountReadyWallet();
+
+			typeQuantity( '2' );
+			jest.advanceTimersByTime( 250 );
+			typeQuantity( '3' );
+			jest.advanceTimersByTime( 250 );
+			await flushMicrotasks();
+			twoUnits.reject( new Error( 'Out of stock' ) );
+			await flushMicrotasks();
+
+			expect(
+				document
+					.getElementById( 'wcpay-express-checkout-element' )
+					.classList.contains( 'is-ready' )
+			).toBe( true );
+			expect( elements.update ).toHaveBeenLastCalledWith(
+				expect.objectContaining( { amount: 7500 } )
+			);
+		} );
+
 		test( 're-prices the wallet for a newly chosen classic variation', async () => {
 			setClassicProductForm( {
 				variable: true,
