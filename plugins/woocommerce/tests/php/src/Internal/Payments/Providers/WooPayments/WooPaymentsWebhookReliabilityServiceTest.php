@@ -383,7 +383,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		// A checkout that died after the platform captured keeps the lock until its TTL runs out.
 		$payment_store->lock_order_payment( $order, $profile, 'pi_lock_ttl' );
 		// Shape read by client 11.1.0 class-wc-payments-webhook-processing-service.php:494-519 (object id, status,
-		// currency, amount, payment_method, metadata.order_id, charges.data[0]).
+		// currency, amount, payment_method, charges.data[0]) and :968-1002 (metadata.order_id for the order lookup).
 		$event     = array(
 			'id'   => 'evt_lock_ttl',
 			'type' => 'payment_intent.succeeded',
@@ -458,11 +458,11 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox A $event_type delivery refused by the order payment lock is kept and retried, although the type gets one attempt after other failures.
-	 * @dataProvider event_types_off_the_retried_list
+	 * @dataProvider event_types_retried_after_a_lock_refusal
 	 *
-	 * @param string $event_type Event type that is not retried after a failure past the lock.
+	 * @param string $event_type Event type safe to apply late, retried only after a lock refusal.
 	 */
-	public function test_lock_refusal_is_retried_for_an_event_type_off_the_retried_list( string $event_type ): void {
+	public function test_lock_refusal_is_retried_for_an_event_type_safe_to_apply_late( string $event_type ): void {
 		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
 		$scheduler = new RecordingActionSchedulerService();
 		$event     = array(
@@ -493,12 +493,54 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/** @return array<string,array{string}> */
-	public static function event_types_off_the_retried_list(): array {
+	public static function event_types_retried_after_a_lock_refusal(): array {
 		return array(
-			'refund'              => array( 'charge.refunded' ),
-			'dispute'             => array( 'charge.dispute.created' ),
-			'early fraud warning' => array( 'radar.early_fraud_warning.created' ),
-			'capture expiry'      => array( 'charge.expired' ),
+			'fraud warning created' => array( 'radar.early_fraud_warning.created' ),
+			'fraud warning updated' => array( 'radar.early_fraud_warning.updated' ),
+			'capture expiry'        => array( 'charge.expired' ),
+		);
+	}
+
+	/**
+	 * @testdox A $event_type delivery refused by the order payment lock keeps its one attempt, since a late one could undo a newer event, and is noted on its order.
+	 * @dataProvider event_types_not_safe_to_apply_late
+	 *
+	 * @param string $event_type Refund or dispute event type.
+	 */
+	public function test_lock_refusal_of_a_refund_or_dispute_event_is_noted_and_not_retried( string $event_type ): void {
+		$order     = wc_create_order();
+		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$scheduler = new RecordingActionSchedulerService();
+		$event     = array(
+			'id'   => 'evt_process',
+			'type' => $event_type,
+		);
+		$refusal   = new OrderPaymentLockRefusedException( $order->get_id(), 'refund webhook' );
+		$service   = $this->create_service( $scheduler, $store, new StaticFailedEventsProvider(), new ThrowingEventIngestor( $refusal ) );
+		$store->set_event( 'evt_process', $event );
+
+		try {
+			$service->process_event( 'evt_process' );
+			$this->fail( 'The refusal must still reach Action Scheduler.' );
+		} catch ( OrderPaymentLockRefusedException $exception ) {
+			unset( $exception );
+		}
+
+		$this->assertSame( array(), $scheduler->scheduled_jobs );
+		$notes = array_filter(
+			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+			static fn( $note ): bool => false !== strpos( $note->content, 'evt_process' ) && false !== strpos( $note->content, 'kept the order locked' )
+		);
+		$this->assertCount( 1, $notes );
+	}
+
+	/** @return array<string,array{string}> */
+	public static function event_types_not_safe_to_apply_late(): array {
+		return array(
+			'refund'          => array( 'charge.refunded' ),
+			'refund updated'  => array( 'charge.refund.updated' ),
+			'dispute created' => array( 'charge.dispute.created' ),
+			'dispute closed'  => array( 'charge.dispute.closed' ),
 		);
 	}
 
@@ -513,20 +555,22 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$event_id  = 'evt_lock_exhausted_' . $path;
 		$event     = array(
 			'id'   => $event_id,
-			'type' => 'charge.dispute.created',
+			'type' => 'radar.early_fraud_warning.created',
 		);
-		$refusal   = new OrderPaymentLockRefusedException( $order->get_id(), 'dispute webhook' );
+		$refusal   = new OrderPaymentLockRefusedException( $order->get_id(), 'early fraud warning webhook' );
 		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
 		$scheduler = new RecordingActionSchedulerService();
-		$provider  = new StaticFailedEventsProvider(
+		// Page shape of the platform's failed-events list (wpcom class-webhook-controller.php:346-357: object 'list', data,
+		// has_more). The event is reduced to id and type, all the reliability service reads; the ingestor is a stub.
+		$provider = new StaticFailedEventsProvider(
 			array(
 				'data'     => 'pull' === $path ? array( $event ) : array(),
 				'has_more' => false,
 			)
 		);
-		$service   = $this->create_service( $scheduler, $store, $provider, new ThrowingEventIngestor( $refusal ) );
-		$logged    = array();
-		$logger    = function ( $message, $level ) use ( &$logged ) {
+		$service  = $this->create_service( $scheduler, $store, $provider, new ThrowingEventIngestor( $refusal ) );
+		$logged   = array();
+		$logger   = function ( $message, $level ) use ( &$logged ) {
 			$logged[] = array( $level, $message );
 			return $message;
 		};
@@ -557,7 +601,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		// The message filter runs once per log handler, so a line is counted once.
 		$errors = array_values( array_unique( array_column( array_filter( $logged, static fn( array $entry ): bool => 'error' === $entry[0] && false !== strpos( $entry[1], $event_id ) ), 1 ) ) );
 		$this->assertCount( 1, $errors, 'One error line names the dropped event.' );
-		$this->assertStringContainsString( 'charge.dispute.created', $errors[0] );
+		$this->assertStringContainsString( 'radar.early_fraud_warning.created', $errors[0] );
 		$notes = array_filter(
 			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
 			static fn( $note ): bool => false !== strpos( $note->content, $event_id ) && false !== strpos( $note->content, 'kept the order locked' )

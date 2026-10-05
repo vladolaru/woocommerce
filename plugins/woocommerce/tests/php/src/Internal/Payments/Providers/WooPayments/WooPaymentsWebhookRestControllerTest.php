@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
@@ -254,6 +255,52 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 500, $response->get_status() );
 		$this->assertNull( wc_get_container()->get( WooPaymentsFailedEventStore::class )->get_event( 'evt_refund_controller' ) );
 		$this->assertSame( array(), $this->scheduler->scheduled_jobs );
+	}
+
+	/**
+	 * @testdox A fraud warning push refused by the order payment lock is kept and scheduled to run again, although the type gets one attempt after other failures.
+	 */
+	public function test_lock_refused_fraud_warning_push_is_kept_and_scheduled(): void {
+		$order      = wc_create_order();
+		$event      = array(
+			'id'   => 'evt_efw_lock_controller',
+			'type' => 'radar.early_fraud_warning.created',
+		);
+		$controller = $this->create_controller_with_ingestor( new ThrowingEventIngestor( new OrderPaymentLockRefusedException( $order->get_id(), 'early fraud warning webhook' ) ) );
+
+		$response = $controller->handle_webhook( $this->create_post_request( $event ) );
+
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertSame( array( 'result' => 'error' ), $response->get_data() );
+		$this->assertSame( $event, wc_get_container()->get( WooPaymentsFailedEventStore::class )->get_event( 'evt_efw_lock_controller' ) );
+		$this->assertCount( 1, $this->scheduler->scheduled_jobs );
+		$this->assertSame( array( 'event_id' => 'evt_efw_lock_controller' ), $this->scheduler->scheduled_jobs[0]['args'] );
+	}
+
+	/**
+	 * @testdox A dispute push refused by the order payment lock keeps its one attempt and leaves a note on its order.
+	 */
+	public function test_lock_refused_dispute_push_is_noted_on_its_order(): void {
+		$order      = wc_create_order();
+		$controller = $this->create_controller_with_ingestor( new ThrowingEventIngestor( new OrderPaymentLockRefusedException( $order->get_id(), 'dispute webhook' ) ) );
+
+		$response = $controller->handle_webhook(
+			$this->create_post_request(
+				array(
+					'id'   => 'evt_dispute_lock_controller',
+					'type' => 'charge.dispute.created',
+				)
+			)
+		);
+
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertNull( wc_get_container()->get( WooPaymentsFailedEventStore::class )->get_event( 'evt_dispute_lock_controller' ) );
+		$this->assertSame( array(), $this->scheduler->scheduled_jobs );
+		$notes = array_filter(
+			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+			static fn( $note ): bool => false !== strpos( $note->content, 'evt_dispute_lock_controller' ) && false !== strpos( $note->content, 'kept the order locked' )
+		);
+		$this->assertCount( 1, $notes );
 	}
 
 	/**

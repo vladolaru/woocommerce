@@ -177,14 +177,19 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	 * Keep an event whose processing failed for a passing reason, and schedule a job to process it again, when it is retried.
 	 *
 	 * The platform counts the store's error reply as delivered and never sends the event again, so the store retries
-	 * it itself. Client 11.1.0 loses such an event; event types that are not retried get one attempt, as on the client,
-	 * unless the order payment lock refused them before any write.
+	 * it itself. Client 11.1.0 loses such an event; event types that are not retried get one attempt, as on the client.
+	 * A lock refusal that is not retried is noted on its order.
 	 *
 	 * @param array<string,mixed> $event   Event payload.
 	 * @param \Throwable|null     $failure Failure of the delivery, when known.
 	 */
 	public function retry_failed_event( array $event, ?\Throwable $failure = null ): void {
-		if ( empty( $event['id'] ) || ! is_string( $event['id'] ) || ! $this->is_retried_failure( $event, $failure ) ) {
+		if ( empty( $event['id'] ) || ! is_string( $event['id'] ) ) {
+			return;
+		}
+
+		if ( ! $this->is_retried_failure( $event, $failure ) ) {
+			$this->note_unretried_lock_refusal( $event['id'], $failure );
 			return;
 		}
 
@@ -228,6 +233,8 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 		} catch ( \Throwable $exception ) {
 			if ( $this->is_retried_failure( $event, $exception ) ) {
 				$this->schedule_retry_or_give_up( $event_id, $event, $attempts, $exception );
+			} else {
+				$this->note_unretried_lock_refusal( $event_id, $exception );
 			}
 			throw $exception;
 		}
@@ -238,17 +245,33 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	/**
 	 * Tell whether a failed delivery is processed again later.
 	 *
-	 * Retried event types are, after any passing failure. Every event type is when the order payment lock refused it:
-	 * the refusal comes before any write, so a later run cannot duplicate a refund, and the holder's lock expires after
-	 * its TTL. The delays outlast that TTL (OrderPaymentStore::LOCK_TTL_SECONDS): an attempt runs 11 minutes after the
-	 * first refusal, and another an hour after that.
+	 * Retried event types are, after any passing failure, and the types safe to apply late are when the order payment
+	 * lock refused them (WooPaymentsEventIngestor::is_retried_lock_refusal()). The holder's lock expires after its TTL
+	 * (OrderPaymentStore::LOCK_TTL_SECONDS), and the delays outlast it: the retries run 1, 11 and 71 minutes after the
+	 * first refused attempt of the processing job.
 	 *
 	 * @param array<string,mixed> $event   Event payload.
 	 * @param \Throwable|null     $failure Failure of the delivery, when known.
 	 * @return bool
 	 */
 	private function is_retried_failure( array $event, ?\Throwable $failure ): bool {
-		return $failure instanceof OrderPaymentLockRefusedException || $this->event_ingestor->is_retried_event( $event );
+		if ( $failure instanceof OrderPaymentLockRefusedException ) {
+			return $this->event_ingestor->is_retried_lock_refusal( $event );
+		}
+
+		return $this->event_ingestor->is_retried_event( $event );
+	}
+
+	/**
+	 * Note on its order a lock refusal that gets no other attempt, so the merchant sees the update did not reach it.
+	 *
+	 * @param string          $event_id Event ID.
+	 * @param \Throwable|null $failure  Failure of the delivery, when known.
+	 */
+	private function note_unretried_lock_refusal( string $event_id, ?\Throwable $failure ): void {
+		if ( $failure instanceof OrderPaymentLockRefusedException ) {
+			$this->add_lock_refusal_note( $failure->get_order_id(), $event_id );
+		}
 	}
 
 	/**

@@ -12,10 +12,9 @@ use RuntimeException;
 /**
  * Thrown when a delivered provider event cannot run because another operation holds the order payment lock.
  *
- * It is thrown before the refused operation writes anything, so the event can be delivered again safely, whatever
- * its type. That is why a retry policy that runs some event types only once, because a re-run after a write could
- * duplicate a refund, still retries this refusal. The holder's lock expires after its TTL, so a later attempt
- * applies the event.
+ * It is thrown before the refused operation writes anything, so a later delivery cannot duplicate a write. Whether
+ * the event is delivered again also depends on whether it is safe to apply late, after a newer event about the same
+ * payment; the provider's retry policy decides that per event type. The holder's lock expires after its TTL.
  *
  * @since 11.2.0
  * @internal Transitional internal component for the native payments runtime.

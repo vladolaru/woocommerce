@@ -220,7 +220,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( OrderPaymentLockRefusedException::class, $refusal, 'A refused delivery must fail, so the store retries it instead of acknowledging it.' );
 		$this->assertSame( $order->get_id(), $refusal->get_order_id() );
-		$this->assertSame( 'pending', wc_get_order( $order->get_id() )->get_status() );
+		$refused_order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'pending', $refused_order->get_status() );
+		$this->assertSame( '', $refused_order->get_meta( '_intent_id', true ), 'A refused delivery writes no payment meta.' );
 
 		$this->sut->process( $event );
 

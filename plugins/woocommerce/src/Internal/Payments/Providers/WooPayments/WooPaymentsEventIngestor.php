@@ -86,15 +86,31 @@ class WooPaymentsEventIngestor {
 	/**
 	 * Event types retried after a processing failure, whose handlers are safe to run again and to run late.
 	 *
-	 * Other types get one attempt, as on the client: running the refund, dispute or fraud warning handlers again after
-	 * they wrote can duplicate a refund or apply an older event over a newer one. A refusal by the order payment lock
-	 * ({@see OrderPaymentLockRefusedException}) is retried for every type, since it comes before any write.
+	 * Other types get one attempt, as on the client: running the refund, dispute or fraud warning handlers again can
+	 * duplicate a refund or apply an older event over a newer one.
 	 *
 	 * @var string[]
 	 */
 	private const RETRIED_EVENT_TYPES = array(
 		'payment_intent.succeeded',
 		'payment_intent.payment_failed',
+	);
+
+	/**
+	 * Event types also retried when the order payment lock refused them ({@see OrderPaymentLockRefusedException}).
+	 *
+	 * A refusal comes before the handler writes anything, so a retry cannot duplicate a write. What remains is whether
+	 * the event is safe to apply late, after a newer event: charge.expired is terminal, and a fraud warning only
+	 * records its warning and a note, so a late one changes no status and moves no money. Refund and dispute events
+	 * are not, since a late created or pending event would undo a newer close or failure; their refusal keeps one
+	 * attempt and is noted on the order (monitor ruling 2026-10-06).
+	 *
+	 * @var string[]
+	 */
+	private const LOCK_REFUSAL_RETRIED_EVENT_TYPES = array(
+		'charge.expired',
+		'radar.early_fraud_warning.created',
+		'radar.early_fraud_warning.updated',
 	);
 
 	/**
@@ -436,11 +452,30 @@ class WooPaymentsEventIngestor {
 	}
 
 	/**
+	 * Tell whether an event the order payment lock refused is processed again later.
+	 *
+	 * Events retried after any passing failure are, and so are the types that are safe to apply late
+	 * ({@see self::LOCK_REFUSAL_RETRIED_EVENT_TYPES}).
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param array<string,mixed> $event Event payload.
+	 * @return bool
+	 */
+	public function is_retried_lock_refusal( array $event ): bool {
+		if ( $this->is_retried_event( $event ) ) {
+			return true;
+		}
+
+		return isset( $event['type'] ) && in_array( $event['type'], self::LOCK_REFUSAL_RETRIED_EVENT_TYPES, true );
+	}
+
+	/**
 	 * Apply a lifecycle event to its order, failing the delivery when the order payment lock refuses it.
 	 *
-	 * A refused event has written nothing under the lock, so failing lets the webhook path deliver it again once the
-	 * holder's lock is gone, instead of acknowledging an event that was never applied. Owner decision O15 keeps the lock
-	 * itself, and its warning line, as they are.
+	 * A refused event has written nothing, so failing lets the webhook path deliver it again once the holder's lock is
+	 * gone, instead of acknowledging an event that was never applied. Owner decision O15 keeps the lock itself, and its
+	 * warning line, as they are.
 	 *
 	 * @param WC_Order              $order           WooPayments order the event belongs to.
 	 * @param PaymentLifecycleEvent $lifecycle_event Lifecycle event to apply.
@@ -462,14 +497,29 @@ class WooPaymentsEventIngestor {
 	 *
 	 * @param WC_Order            $order          WooPayments order the intent belongs to.
 	 * @param array<string,mixed> $payment_intent Provider payment intent object.
-	 * @throws OrderPaymentLockRefusedException When another operation holds the order payment lock; nothing is recorded under it.
+	 * @throws OrderPaymentLockRefusedException When another operation holds the order payment lock; nothing is recorded.
 	 */
 	public function record_succeeded_payment_intent( WC_Order $order, array $payment_intent ): void {
-		$this->write_succeeded_payment_intent_meta( $order, $payment_intent );
-		$this->apply_completed_payment_method_display_title( $order, $payment_intent );
-		$lifecycle_event = $this->build_succeeded_lifecycle_event( $payment_intent, $order );
-		$this->repair_recurring_order_token( $order, $payment_intent );
-		$this->apply_lifecycle_event( $order, $lifecycle_event );
+		// One claim covers the payment meta, the token repair and the status update, so a refusal leaves the order untouched.
+		$profile       = new WooPaymentsPersistenceProfile();
+		$payment_store = wc_get_container()->get( OrderPaymentStore::class );
+		$lock_token    = $payment_store->claim_order_payment_lock_for_operation( $order, $profile, $this->get_object_id( $payment_intent ), 'payment status update' );
+		if ( null === $lock_token ) {
+			$payment_store->log_order_payment_lock_refusal( $order, $profile, 'payment status update' );
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is built in the exception from an order ID and a fixed operation name, not HTML output.
+			throw new OrderPaymentLockRefusedException( $order->get_id(), 'payment status update' );
+		}
+
+		try {
+			$this->write_succeeded_payment_intent_meta( $order, $payment_intent );
+			$this->apply_completed_payment_method_display_title( $order, $payment_intent );
+			$lifecycle_event = $this->build_succeeded_lifecycle_event( $payment_intent, $order );
+			$this->repair_recurring_order_token( $order, $payment_intent );
+			$this->lifecycle_service->apply_unlocked( $order, $lifecycle_event, $profile );
+		} finally {
+			$payment_store->release_order_payment_lock( $order, $profile, $lock_token );
+		}
+
 		$this->maybe_send_ipp_receipt_email( $order, $payment_intent );
 
 		// Captures change what the uncaptured-transactions badge counts; the plugin
