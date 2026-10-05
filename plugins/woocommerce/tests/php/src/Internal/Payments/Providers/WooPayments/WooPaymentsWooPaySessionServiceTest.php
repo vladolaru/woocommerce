@@ -449,6 +449,50 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The checkout config's WooPay email lookup for a $shopper is $expected, as client 11.1.0's guest rule decides.
+	 *
+	 * Client 11.1.0 ANDs should_enable_woopay_on_guest_checkout() into the checkout config's isWooPayEnabled
+	 * (class-wc-payments-checkout.php:198, class-woopay-utilities.php:46-62); its only readers are the email input on Blocks and
+	 * classic checkout (client/checkout/blocks/index.js:123-130, client/checkout/classic/event-handlers.js:165-171), which also
+	 * require isWooPayEmailInputEnabled.
+	 *
+	 * @dataProvider guest_rule_provider
+	 *
+	 * @param string $shopper                    Shopper description.
+	 * @param bool   $logged_in                  Whether the shopper is logged in.
+	 * @param string $guest_checkout             woocommerce_enable_guest_checkout value.
+	 * @param bool   $cart_contains_subscription Whether the cart holds a subscription.
+	 * @param bool   $expected                   Whether the email lookup is offered.
+	 */
+	public function test_checkout_config_applies_the_guest_rule_to_the_woopay_email_input( string $shopper, bool $logged_in, string $guest_checkout, bool $cart_contains_subscription, bool $expected ): void {
+		unset( $shopper );
+		update_option( 'woocommerce_enable_guest_checkout', $guest_checkout );
+		wp_set_current_user( $logged_in ? self::factory()->user->create() : 0 );
+		$sut                             = $this->create_service();
+		$sut->cart_contains_subscription = $cart_contains_subscription;
+
+		$config = $sut->get_woopay_frontend_config( 'checkout' );
+
+		$this->assertTrue( $config['isWooPayEnabled'], 'WooPay stays enabled: the save-user section, which the client does not exclude, reads it.' );
+		$this->assertSame( $expected, $config['isWooPayEmailInputEnabled'] );
+	}
+
+	/**
+	 * Shoppers the client's guest rule includes or excludes.
+	 *
+	 * @return array<string,array{0:string,1:bool,2:string,3:bool,4:bool}>
+	 */
+	public function guest_rule_provider(): array {
+		return array(
+			'guest with guest checkout on'              => array( 'guest with guest checkout on', false, 'yes', false, true ),
+			'guest with guest checkout off'             => array( 'guest with guest checkout off', false, 'no', false, false ),
+			'guest with a subscription in the cart'     => array( 'guest with a subscription in the cart', false, 'yes', true, false ),
+			'logged-in shopper with guest checkout off' => array( 'logged-in shopper with guest checkout off', true, 'no', false, true ),
+			'logged-in shopper with a subscription in the cart' => array( 'logged-in shopper with a subscription in the cart', true, 'no', true, true ),
+		);
+	}
+
+	/**
 	 * @testdox Should show the WooPay button for a supported plain cart when guest checkout is enabled.
 	 */
 	public function test_woopay_button_shows_for_plain_guest_cart(): void {
@@ -3476,6 +3520,8 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should advertise the WooPay email-input flow by default while direct checkout stays unported.
 	 */
 	public function test_frontend_config_advertises_email_input_but_not_direct_checkout(): void {
+		// A guest the client's guest rule includes (see test_checkout_config_applies_the_guest_rule_to_the_woopay_email_input).
+		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
 		$config = $this->create_service( array( 'is_woopay_direct_checkout_enabled' => 'yes' ) )->get_woopay_frontend_config( 'checkout' );
 
 		$this->assertTrue( $config['isWooPayEmailInputEnabled'] );

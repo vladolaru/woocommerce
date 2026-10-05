@@ -1115,7 +1115,10 @@ class WooPaymentsWooPaySessionService {
 			'isWooPayEnabled'                   => $is_woopay_enabled,
 			'isWoopayExpressCheckoutEnabled'    => $woopay_express_available,
 			'isWoopayFirstPartyAuthEnabled'     => $woopay_first_party_auth_available,
-			'isWooPayEmailInputEnabled'         => $this->is_woopay_email_input_enabled(),
+			// Client 11.1.0 keeps the WooPay email lookup from shoppers the guest rule excludes by ANDing the rule into its checkout
+			// config's isWooPayEnabled (class-wc-payments-checkout.php:198), which only its email input reads. Native's isWooPayEnabled
+			// also gates the save-user section, which the client does not exclude, so the rule goes on the email input flag.
+			'isWooPayEmailInputEnabled'         => $this->is_woopay_email_input_enabled() && $this->should_enable_woopay_on_guest_checkout(),
 			'isWooPayDirectCheckoutEnabled'     => $this->is_woopay_direct_checkout_enabled(),
 			'isWooPayGlobalThemeSupportEnabled' => $is_global_theme_enabled,
 			'forceNetworkSavedCards'            => $this->get_account_service()->is_network_saved_cards_enabled() || $this->should_use_stripe_platform_on_checkout_page(),
