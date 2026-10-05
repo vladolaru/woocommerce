@@ -92,6 +92,10 @@ class WooPaymentsExpressCheckoutService {
 			return false;
 		}
 
+		if ( 'pay_for_order' !== $context && $this->would_add_unshown_billing_address_tax( $context ) ) {
+			return false;
+		}
+
 		return ! empty( $this->get_allowed_payment_method_types_for_context( $context, $this->get_context_currency( $context ) ) );
 	}
 
@@ -531,6 +535,32 @@ class WooPaymentsExpressCheckoutService {
 		}
 
 		return true;
+	}
+
+	/**
+	 * Tell whether the order would add billing-address tax that the wallet sheet never shows.
+	 *
+	 * With nothing to ship, no shipping address change recalculates the sheet's total, so tax based on the billing
+	 * address on tax-exclusive prices is only added at placement. Client 11.1.0 button helper :634-651.
+	 *
+	 * @param string $context Express checkout context: product, cart or checkout.
+	 * @return bool
+	 */
+	private function would_add_unshown_billing_address_tax( string $context ): bool {
+		if ( ! WooPaymentsExpressPaymentMethodTypes::is_tax_based_on_billing_address() || 'yes' === get_option( 'woocommerce_prices_include_tax' ) ) {
+			return false;
+		}
+
+		if ( 'product' === $context ) {
+			$product = $this->get_product_for_product_page();
+
+			return $product instanceof \WC_Product && ! $this->product_needs_shipping( $product );
+		}
+
+		$woocommerce = function_exists( 'WC' ) ? WC() : null;
+		$cart        = is_object( $woocommerce ) ? $woocommerce->cart : null;
+
+		return $cart instanceof \WC_Cart && ! $cart->needs_shipping();
 	}
 
 	/**

@@ -26,6 +26,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		delete_option( '_wcpay_feature_dynamic_checkout_place_order_button' );
 		delete_option( 'woocommerce_tax_based_on' );
 		delete_option( 'woocommerce_calc_taxes' );
+		delete_option( 'woocommerce_prices_include_tax' );
 		delete_option( 'woocommerce_price_num_decimals' );
 		delete_option( 'woocommerce_enable_guest_checkout' );
 		delete_option( 'woocommerce_enable_signup_and_login_from_checkout' );
@@ -139,6 +140,68 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		add_filter( 'wcpay_payment_request_is_cart_supported', '__return_false' );
 
 		$this->assertFalse( $this->create_service()->should_show_payment_request_button( 'checkout' ) );
+	}
+
+	/**
+	 * @testdox Should hide every express method on a no-shipping $context when tax follows the billing address and prices exclude tax.
+	 *
+	 * Client 11.1.0 button helper :634-651 and its test :521-544.
+	 *
+	 * @testWith ["product"]
+	 *           ["cart"]
+	 *           ["checkout"]
+	 *
+	 * @param string $context Express checkout context.
+	 */
+	public function test_hides_no_shipping_express_checkout_when_billing_tax_is_added_at_placement( string $context ): void {
+		$this->set_billing_address_taxes( 'no' );
+		$this->set_up_virtual_product_context( $context );
+
+		$this->assertFalse( $this->create_service()->should_show_payment_request_button( $context ) );
+	}
+
+	/**
+	 * @testdox Should keep express checkout on a no-shipping $context when tax follows the billing address but prices include tax.
+	 *
+	 * Client 11.1.0 button helper test :470-496.
+	 *
+	 * @testWith ["product"]
+	 *           ["cart"]
+	 *           ["checkout"]
+	 *
+	 * @param string $context Express checkout context.
+	 */
+	public function test_keeps_no_shipping_express_checkout_when_prices_include_tax( string $context ): void {
+		$this->set_billing_address_taxes( 'yes' );
+		$this->set_up_virtual_product_context( $context );
+
+		$this->assertTrue( $this->create_service()->should_show_payment_request_button( $context ) );
+	}
+
+	/**
+	 * @testdox Should keep express checkout for a cart that needs shipping when tax follows the billing address.
+	 */
+	public function test_keeps_express_checkout_for_shipping_cart_with_billing_address_taxes(): void {
+		$this->set_billing_address_taxes( 'no' );
+		\WC_Helper_Shipping::create_simple_flat_rate();
+		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id() );
+
+		$this->assertTrue( $this->create_service()->should_show_payment_request_button( 'cart' ) );
+	}
+
+	/**
+	 * @testdox Should keep express checkout on order-pay when tax follows the billing address.
+	 */
+	public function test_keeps_pay_for_order_express_checkout_with_billing_address_taxes(): void {
+		$this->set_billing_address_taxes( 'no' );
+		$order = wc_create_order();
+		$order->set_total( '24.00' );
+		$order->save();
+		$_GET['pay_for_order'] = 'true';
+		$_GET['key']           = $order->get_order_key();
+		$this->set_order_pay_query_var( $order->get_id() );
+
+		$this->assertTrue( $this->create_service()->should_show_payment_request_button( 'pay_for_order' ) );
 	}
 
 	/**
@@ -1647,6 +1710,40 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		);
 
 		return $account_service;
+	}
+
+	/**
+	 * Turn taxes on, based on the billing address, with prices entered inclusive or exclusive of tax.
+	 *
+	 * @param string $prices_include_tax `yes` or `no`.
+	 */
+	private function set_billing_address_taxes( string $prices_include_tax ): void {
+		update_option( 'woocommerce_calc_taxes', 'yes' );
+		update_option( 'woocommerce_tax_based_on', 'billing' );
+		update_option( 'woocommerce_prices_include_tax', $prices_include_tax );
+	}
+
+	/**
+	 * Put a virtual product on the product page, or in the cart for the cart and checkout contexts.
+	 *
+	 * @param string $context Express checkout context.
+	 */
+	private function set_up_virtual_product_context( string $context ): void {
+		$product = \WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'regular_price' => '12.34',
+				'price'         => '12.34',
+				'virtual'       => true,
+			)
+		);
+
+		if ( 'product' === $context ) {
+			$this->set_current_product( $product );
+			return;
+		}
+
+		WC()->cart->add_to_cart( $product->get_id() );
 	}
 
 	/**

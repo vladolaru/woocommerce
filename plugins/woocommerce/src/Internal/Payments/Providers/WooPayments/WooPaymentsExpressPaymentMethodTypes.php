@@ -105,6 +105,18 @@ class WooPaymentsExpressPaymentMethodTypes {
 	}
 
 	/**
+	 * Tell whether taxes are on and calculated from the shopper's billing address.
+	 *
+	 * Express wallet sheets only recalculate totals when the shipping address changes, so the billing address
+	 * they send at placement can add tax the sheet never showed.
+	 *
+	 * @return bool
+	 */
+	public static function is_tax_based_on_billing_address(): bool {
+		return function_exists( 'wc_tax_enabled' ) && wc_tax_enabled() && 'billing' === get_option( 'woocommerce_tax_based_on' );
+	}
+
+	/**
 	 * Create provider data from the submitted checkout field value.
 	 *
 	 * @param mixed $value Submitted checkout field value.
@@ -241,7 +253,7 @@ class WooPaymentsExpressPaymentMethodTypes {
 			return false;
 		}
 
-		if ( function_exists( 'wc_tax_enabled' ) && wc_tax_enabled() && 'billing' === get_option( 'woocommerce_tax_based_on' ) && 'pay_for_order' !== $context ) {
+		if ( self::is_tax_based_on_billing_address() && 'pay_for_order' !== $context ) {
 			return false;
 		}
 
