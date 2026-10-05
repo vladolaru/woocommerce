@@ -2082,6 +2082,48 @@ describe( 'WooPayments WooPay checkout', () => {
 			);
 		} );
 
+		test( 'sends the order with the OTP iframe session after the first-party session falls back', async () => {
+			window.wcpay_core_woopay_config.isWoopayFirstPartyAuthEnabled = true;
+			// get_woopay_session answers { blog_id, data: { session, iv, hash } } (client
+			// includes/woopay/class-woopay-utilities.php:308-335, encrypt_and_sign_data()).
+			global.jQuery.post = jest.fn( () => ( {
+				done: jest.fn( ( callback ) => {
+					callback( {
+						blog_id: '12345',
+						data: { session: 'session', iv: 'iv', hash: 'hash' },
+					} );
+
+					return { fail: jest.fn() };
+				} ),
+			} ) );
+			const { __test__ } = require( '../woopayments-woopay' );
+			__test__.setNavigate( navigate );
+
+			document.querySelector( '#wcpay-woopay-button a' ).click();
+			await flushPromises();
+			document
+				.getElementById( 'woopay-connect-iframe' )
+				.dispatchEvent( new window.Event( 'load' ) );
+			await flushPromises();
+			// WooPay Connect refuses the session with { action } alone (client connect/session-connect.js:209-213);
+			// the client then opens the OTP iframe (woopay-express-checkout-button.js:312-319).
+			sendWooPayMessage( { action: 'set_preemptive_session_data_error' } );
+			await flushPromises();
+			document
+				.querySelector( '.woopay-otp-iframe' )
+				.dispatchEvent( new window.Event( 'load' ) );
+			await flushPromises();
+
+			// Client express-checkout-iframe.js:117-125 posts the order with the iframe's session request.
+			const calls = getAjaxCalls( 'get_woopay_session' );
+			expect( calls ).toHaveLength( 1 );
+			const body = calls[ 0 ][ 1 ].body;
+			expect( body.get( 'order_id' ) ).toBe( '5707' );
+			expect( body.get( 'key' ) ).toBe( 'wc_order_abc' );
+			expect( body.get( 'billing_email' ) ).toBe( 'owner@example.com' );
+			expect( navigate ).not.toHaveBeenCalled();
+		} );
+
 		test( 'leaves the WooPay URL alone when the page carries no order key', async () => {
 			delete window.wcpay_core_woopay_config.key;
 			await openOtpIframe();
