@@ -35,7 +35,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_registration_generate_username' );
 		delete_option( 'woocommerce_registration_generate_password' );
 		wp_set_current_user( 0 );
-		unset( $_GET['pay_for_order'], $_GET['key'] );
+		unset( $_GET['pay_for_order'], $_GET['key'], $_GET['attribute_size'] );
 		remove_all_filters( 'woocommerce_woopayments_express_checkout_enabled_methods' );
 		remove_all_filters( 'wcpay_payment_request_supported_types' );
 		remove_all_filters( 'wcpay_payment_request_is_cart_supported' );
@@ -526,6 +526,49 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$product->save();
 
 		$this->assertSame( array(), $this->get_product_page_data( $product ) );
+	}
+
+	/**
+	 * @testdox Should price the variation the product form starts with on a variable product page ($scenario).
+	 *
+	 * Client 11.1.0 button helper `get_product_data()` :768-786: an attribute in the URL wins over the default
+	 * attribute, and the matching variation is the product that gets priced.
+	 *
+	 * @testWith ["default variation", "", 2000]
+	 *           ["URL attribute over the default", "L", 3000]
+	 *
+	 * @param string $scenario       Scenario label.
+	 * @param string $url_attribute  Size passed in the URL, or empty for none.
+	 * @param int    $expected       Expected amount in minor units.
+	 */
+	public function test_product_page_prices_the_initially_selected_variation( string $scenario, string $url_attribute, int $expected ): void {
+		unset( $scenario );
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'woocommerce_calc_taxes', 'no' );
+		$product = $this->create_sized_variable_product( 'M' );
+		if ( '' !== $url_attribute ) {
+			$_GET['attribute_size'] = $url_attribute;
+		}
+
+		$data = $this->get_product_page_data( $product );
+
+		$this->assertSame( $expected, $data['total']['amount'] );
+		$this->assertSame( $expected, $data['displayItems'][0]['amount'] );
+		$this->assertSame( 'variation', $data['product_type'] );
+	}
+
+	/**
+	 * @testdox Should price a variable product without a default variation at its own price.
+	 */
+	public function test_product_page_prices_a_variable_product_without_a_default_variation(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'woocommerce_calc_taxes', 'no' );
+		$product = $this->create_sized_variable_product( '' );
+
+		$data = $this->get_product_page_data( $product );
+
+		$this->assertSame( 1000, $data['total']['amount'] );
+		$this->assertSame( 'variable', $data['product_type'] );
 	}
 
 	/**
@@ -2027,6 +2070,44 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$product->save();
 
 		return $product;
+	}
+
+	/**
+	 * Create a virtual variable product with S ($10), M ($20) and L ($30) variations of a local Size attribute.
+	 *
+	 * @param string $default_size Default Size, or empty for none.
+	 * @return \WC_Product_Variable
+	 */
+	private function create_sized_variable_product( string $default_size ): \WC_Product_Variable {
+		$attribute = new \WC_Product_Attribute();
+		$attribute->set_name( 'Size' );
+		$attribute->set_options( array( 'S', 'M', 'L' ) );
+		$attribute->set_visible( true );
+		$attribute->set_variation( true );
+
+		$product = new \WC_Product_Variable();
+		$product->set_name( 'Sized Widget' );
+		$product->set_attributes( array( $attribute ) );
+		if ( '' !== $default_size ) {
+			$product->set_default_attributes( array( 'size' => $default_size ) );
+		}
+		$product->save();
+
+		foreach ( array(
+			'S' => '10',
+			'M' => '20',
+			'L' => '30',
+		) as $size => $price ) {
+			$variation = new \WC_Product_Variation();
+			$variation->set_parent_id( $product->get_id() );
+			$variation->set_attributes( array( 'size' => $size ) );
+			$variation->set_regular_price( $price );
+			$variation->set_virtual( true );
+			$variation->save();
+		}
+		\WC_Product_Variable::sync( $product->get_id() );
+
+		return wc_get_product( $product->get_id() );
 	}
 
 	/**

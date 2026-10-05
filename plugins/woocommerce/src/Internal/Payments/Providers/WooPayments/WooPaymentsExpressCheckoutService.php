@@ -534,7 +534,8 @@ class WooPaymentsExpressCheckoutService {
 			return array();
 		}
 
-		$price = $this->get_product_price( $product );
+		$product = $this->get_initially_selected_variation( $product );
+		$price   = $this->get_product_price( $product );
 		if ( null === $price ) {
 			return array();
 		}
@@ -770,6 +771,39 @@ class WooPaymentsExpressCheckoutService {
 		}
 
 		return null;
+	}
+
+	/**
+	 * Get the variation a variable product's form starts with, or the product itself when none matches.
+	 *
+	 * Port of the client 11.1.0 `get_product_data()` (button helper :768-786): an attribute passed in the URL wins over
+	 * the product's default attribute, as on the product form, so the wallet opens at the preselected variation's price.
+	 *
+	 * @param \WC_Product $product Product on the page.
+	 * @return \WC_Product
+	 */
+	private function get_initially_selected_variation( \WC_Product $product ): \WC_Product {
+		if ( ! in_array( $product->get_type(), array( 'variable', 'variable-subscription' ), true ) || ! $product instanceof \WC_Product_Variable ) {
+			return $product;
+		}
+
+		$attributes = array();
+		foreach ( array_keys( $product->get_variation_attributes() ) as $attribute_name ) {
+			$attribute_key = 'attribute_' . sanitize_title( $attribute_name );
+
+			// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only preselection, as the product form does.
+			$attributes[ $attribute_key ] = isset( $_GET[ $attribute_key ] ) && is_string( $_GET[ $attribute_key ] )
+				? wc_clean( wp_unslash( $_GET[ $attribute_key ] ) )
+				: $product->get_variation_default_attribute( $attribute_name );
+			// phpcs:enable WordPress.Security.NonceVerification.Recommended
+		}
+
+		/** @var \WC_Product_Data_Store_Interface $data_store */ // phpcs:ignore Generic.Commenting.DocComment.MissingShort
+		$data_store   = \WC_Data_Store::load( 'product' );
+		$variation_id = $data_store->find_matching_product_variation( $product, $attributes );
+		$variation    = $variation_id ? wc_get_product( $variation_id ) : null;
+
+		return $variation instanceof \WC_Product ? $variation : $product;
 	}
 
 	/**
