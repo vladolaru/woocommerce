@@ -46,6 +46,7 @@ describe( 'WooPay email input (blocks)', () => {
 	let windowListeners;
 	let documentListeners;
 	let navigate;
+	let getComputedStyleSpy;
 
 	const renderCheckout = () => {
 		document.body.innerHTML =
@@ -172,6 +173,8 @@ describe( 'WooPay email input (blocks)', () => {
 		);
 		window.addEventListener.mockRestore();
 		document.addEventListener.mockRestore();
+		getComputedStyleSpy?.mockRestore();
+		getComputedStyleSpy = undefined;
 		window.history.replaceState = nativeHistoryReplaceState;
 		[ 'tk_ai', 'skip_woopay' ].forEach( ( name ) => {
 			document.cookie = `${ name }=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;`;
@@ -537,8 +540,9 @@ describe( 'WooPay email input (blocks)', () => {
 		expect(
 			document.querySelector( '#wcpay-core-blocks-payment-element' )
 		).toBeNull();
-		jest.spyOn( window, 'getComputedStyle' ).mockImplementation(
-			( element ) => {
+		getComputedStyleSpy = jest
+			.spyOn( window, 'getComputedStyle' )
+			.mockImplementation( ( element ) => {
 				const isCheckoutLink = element.matches(
 					'.wc-block-checkout a'
 				);
@@ -569,8 +573,7 @@ describe( 'WooPay email input (blocks)', () => {
 					backgroundColor: 'rgb(255, 255, 255)',
 					getPropertyValue: ( property ) => style[ property ] || '',
 				};
-			}
-		);
+			} );
 
 		await initWooPay(
 			{

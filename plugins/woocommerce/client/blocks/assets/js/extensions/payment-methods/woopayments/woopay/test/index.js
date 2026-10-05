@@ -81,6 +81,7 @@ const getMockPaymentMethodSettings = () =>
 
 const originalFetch = window.fetch;
 let navigate;
+let getComputedStyleSpy;
 
 describe( 'wc-payment-method-woopayments-woopay', () => {
 	afterEach( () => {
@@ -111,6 +112,8 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 			},
 		} );
 		jest.clearAllMocks();
+		getComputedStyleSpy?.mockRestore();
+		getComputedStyleSpy = undefined;
 	} );
 
 	beforeEach( () => {
@@ -203,8 +206,9 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 		expect(
 			document.querySelector( '#wcpay-core-blocks-payment-element' )
 		).toBeNull();
-		jest.spyOn( window, 'getComputedStyle' ).mockImplementation(
-			( element ) => {
+		getComputedStyleSpy = jest
+			.spyOn( window, 'getComputedStyle' )
+			.mockImplementation( ( element ) => {
 				const isCheckoutLink = element.matches(
 					'.wc-block-checkout a'
 				);
@@ -235,8 +239,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 					backgroundColor: 'rgb(255, 255, 255)',
 					getPropertyValue: ( property ) => style[ property ] || '',
 				};
-			}
-		);
+			} );
 		window.fetch = jest.fn().mockResolvedValue( {
 			json: jest.fn().mockResolvedValue( {
 				result: 'success',
