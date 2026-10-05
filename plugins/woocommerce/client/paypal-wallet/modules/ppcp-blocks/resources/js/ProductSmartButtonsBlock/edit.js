@@ -2,7 +2,7 @@ import { __ } from '@wordpress/i18n';
 import { useState } from '@wordpress/element';
 import { useBlockProps } from '@wordpress/block-editor';
 import { PayPalScriptProvider, PayPalButtons } from '@paypal/react-paypal-js';
-import { useScriptParams } from '@ppcp-paylater-block/hooks/script-params';
+import { WithScriptParams } from '@ppcp-paylater-block/components/with-script-params';
 import { usePreviewTimeout } from '@ppcp-paylater-block/hooks/use-preview-timeout';
 import { usePreviewController } from '@ppcp-paylater-block/hooks/use-preview-controller';
 import { PreviewPlaceholder } from '@ppcp-paylater-block/components/preview-placeholder';
@@ -51,40 +51,52 @@ export default function Edit() {
 		);
 	}
 
-	const scriptParams = useScriptParams(
-		PcpProductSmartButtonsBlock.ajax.cart_script_params
-	);
-	if ( scriptParams === null ) {
-		return (
-			<div { ...props }>
-				<PreviewPlaceholder timedOut={ timedOut } />
-			</div>
-		);
-	}
-
-	const urlParams = {
-		...scriptParams.url_params,
-		components: 'buttons,funding-eligibility',
-		dataNamespace: 'ppcp-block-editor-product-smart-buttons',
-	};
-
 	return (
-		<div { ...props }>
-			<div className="ppcp-overlay-child" ref={ containerRef }>
-				<PayPalScriptProvider key={ renderKey } options={ urlParams }>
-					<PayPalButtons
-						forceReRender={ [ renderKey ] }
-						onInit={ () => setLoaded( true ) }
-						createOrder={ () => Promise.resolve( '' ) }
-						onApprove={ () => Promise.resolve() }
-					/>
-				</PayPalScriptProvider>
-			</div>
-			<div className="ppcp-overlay-child ppcp-unclicable-overlay">
-				{ ' ' }
-				{ /* make the buttons not clickable in the editor */ }
-				{ ! loaded && <PreviewPlaceholder timedOut={ timedOut } /> }
-			</div>
-		</div>
+		<WithScriptParams
+			requestConfig={
+				PcpProductSmartButtonsBlock.ajax.cart_script_params
+			}
+			fallback={
+				<div { ...props }>
+					<PreviewPlaceholder timedOut={ timedOut } />
+				</div>
+			}
+		>
+			{ ( scriptParams ) => {
+				const urlParams = {
+					...scriptParams.url_params,
+					components: 'buttons,funding-eligibility',
+					dataNamespace: 'ppcp-block-editor-product-smart-buttons',
+				};
+
+				return (
+					<div { ...props }>
+						<div
+							className="ppcp-overlay-child"
+							ref={ containerRef }
+						>
+							<PayPalScriptProvider
+								key={ renderKey }
+								options={ urlParams }
+							>
+								<PayPalButtons
+									forceReRender={ [ renderKey ] }
+									onInit={ () => setLoaded( true ) }
+									createOrder={ () => Promise.resolve( '' ) }
+									onApprove={ () => Promise.resolve() }
+								/>
+							</PayPalScriptProvider>
+						</div>
+						<div className="ppcp-overlay-child ppcp-unclicable-overlay">
+							{ ' ' }
+							{ /* make the buttons not clickable in the editor */ }
+							{ ! loaded && (
+								<PreviewPlaceholder timedOut={ timedOut } />
+							) }
+						</div>
+					</div>
+				);
+			} }
+		</WithScriptParams>
 	);
 }

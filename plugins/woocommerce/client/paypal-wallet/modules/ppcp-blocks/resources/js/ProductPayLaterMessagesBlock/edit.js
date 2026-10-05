@@ -3,7 +3,7 @@ import { useState, useEffect } from '@wordpress/element';
 import { InspectorControls, useBlockProps } from '@wordpress/block-editor';
 import { PanelBody } from '@wordpress/components';
 import { PayPalScriptProvider, PayPalMessages } from '@paypal/react-paypal-js';
-import { useScriptParams } from '@ppcp-paylater-block/hooks/script-params';
+import { WithScriptParams } from '@ppcp-paylater-block/components/with-script-params';
 import { usePreviewTimeout } from '@ppcp-paylater-block/hooks/use-preview-timeout';
 import { usePreviewController } from '@ppcp-paylater-block/hooks/use-preview-controller';
 import { PreviewPlaceholder } from '@ppcp-paylater-block/components/preview-placeholder';
@@ -96,76 +96,96 @@ export default function Edit( { attributes, clientId, setAttributes } ) {
 		);
 	}
 
-	const scriptParams = useScriptParams(
-		PcpProductPayLaterBlock.ajax.cart_script_params
-	);
-	if ( scriptParams === null ) {
-		return (
-			<div { ...props }>
-				<PreviewPlaceholder timedOut={ timedOut } />
-			</div>
-		);
-	}
-
-	const urlParams = {
-		...scriptParams.url_params,
-		components: 'messages',
-		dataNamespace: 'ppcp-block-editor-product-paylater-message',
-	};
-
-	// The preview reuses the button SDK params, which disable the `paylater` funding
-	// source when the Pay Later *button* is off for this location. Messaging is
-	// independent of the button, so keep paylater enabled here or nothing renders.
-	if ( urlParams[ 'disable-funding' ] ) {
-		urlParams[ 'disable-funding' ] = urlParams[ 'disable-funding' ]
-			.split( ',' )
-			.filter(
-				( source ) => source !== 'paylater' && source !== 'credit'
-			)
-			.join( ',' );
-	}
-
 	return (
-		<>
-			<InspectorControls>
-				<PanelBody
-					title={ __( 'Customize your messaging', 'woocommerce' ) }
-				>
-					<p>
-						{ __(
-							'Choose the layout and color of your messaging in the PayPal Payments Pay Later settings for the “Product” messaging placement.',
-							'woocommerce'
-						) }
-					</p>
-					<a href={ PcpProductPayLaterBlock.payLaterSettingsUrl }>
-						<button
-							type="button"
-							className="components-button is-primary"
-						>
-							{ __( 'PayPal Payments Settings', 'woocommerce' ) }
-						</button>
-					</a>
-				</PanelBody>
-			</InspectorControls>
-			<div { ...props }>
-				<div className="ppcp-overlay-child" ref={ containerRef }>
-					<PayPalScriptProvider
-						key={ renderKey }
-						options={ urlParams }
-					>
-						<PayPalMessages
-							style={ previewStyle }
-							onRender={ () => setLoaded( true ) }
-							amount={ 50.0 }
-						/>
-					</PayPalScriptProvider>
+		<WithScriptParams
+			requestConfig={ PcpProductPayLaterBlock.ajax.cart_script_params }
+			fallback={
+				<div { ...props }>
+					<PreviewPlaceholder timedOut={ timedOut } />
 				</div>
-				<div className="ppcp-overlay-child ppcp-unclicable-overlay">
-					{ ' ' }
-					{ /* make the message not clickable */ }
-					{ ! loaded && <PreviewPlaceholder timedOut={ timedOut } /> }
-				</div>
-			</div>
-		</>
+			}
+		>
+			{ ( scriptParams ) => {
+				const urlParams = {
+					...scriptParams.url_params,
+					components: 'messages',
+					dataNamespace: 'ppcp-block-editor-product-paylater-message',
+				};
+
+				// The preview reuses the button SDK params, which disable the `paylater` funding
+				// source when the Pay Later *button* is off for this location. Messaging is
+				// independent of the button, so keep paylater enabled here or nothing renders.
+				if ( urlParams[ 'disable-funding' ] ) {
+					urlParams[ 'disable-funding' ] = urlParams[
+						'disable-funding'
+					]
+						.split( ',' )
+						.filter(
+							( source ) =>
+								source !== 'paylater' && source !== 'credit'
+						)
+						.join( ',' );
+				}
+
+				return (
+					<>
+						<InspectorControls>
+							<PanelBody
+								title={ __(
+									'Customize your messaging',
+									'woocommerce'
+								) }
+							>
+								<p>
+									{ __(
+										'Choose the layout and color of your messaging in the PayPal Payments Pay Later settings for the “Product” messaging placement.',
+										'woocommerce'
+									) }
+								</p>
+								<a
+									href={
+										PcpProductPayLaterBlock.payLaterSettingsUrl
+									}
+								>
+									<button
+										type="button"
+										className="components-button is-primary"
+									>
+										{ __(
+											'PayPal Payments Settings',
+											'woocommerce'
+										) }
+									</button>
+								</a>
+							</PanelBody>
+						</InspectorControls>
+						<div { ...props }>
+							<div
+								className="ppcp-overlay-child"
+								ref={ containerRef }
+							>
+								<PayPalScriptProvider
+									key={ renderKey }
+									options={ urlParams }
+								>
+									<PayPalMessages
+										style={ previewStyle }
+										onRender={ () => setLoaded( true ) }
+										amount={ 50.0 }
+									/>
+								</PayPalScriptProvider>
+							</div>
+							<div className="ppcp-overlay-child ppcp-unclicable-overlay">
+								{ ' ' }
+								{ /* make the message not clickable */ }
+								{ ! loaded && (
+									<PreviewPlaceholder timedOut={ timedOut } />
+								) }
+							</div>
+						</div>
+					</>
+				);
+			} }
+		</WithScriptParams>
 	);
 }
