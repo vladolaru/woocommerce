@@ -49,18 +49,21 @@ class WooPaymentsClientVersionTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * WooCommerce version forms: a trunk build drops -dev, published pre-releases keep their tag.
+	 * WooCommerce version forms: a trunk build drops -dev, published pre-releases keep their tag,
+	 * and semver build metadata keeps its `+`.
 	 *
 	 * @return array<string,array{string,string}>
 	 */
 	public function woocommerce_version_provider(): array {
 		return array(
-			'final release'             => array( '10.4.0', 'WooCommerce Payments/11.1.0-native-woocommerce/10.4.0' ),
-			'trunk build'               => array( '10.4.0-dev', 'WooCommerce Payments/11.1.0-native-woocommerce/10.4.0' ),
-			'release candidate'         => array( '10.4.0-rc.1', 'WooCommerce Payments/11.1.0-native-woocommerce/10.4.0-rc.1' ),
-			'beta'                      => array( '10.4.0-beta.2', 'WooCommerce Payments/11.1.0-native-woocommerce/10.4.0-beta.2' ),
-			'header-unsafe value'       => array( "10.4.0\r\nX-Injected: 1", 'WooCommerce Payments/11.1.0-native-woocommerce/10.4.0X-Injected1' ),
-			'a -dev tag not at the end' => array( '10.4.0-dev.1', 'WooCommerce Payments/11.1.0-native-woocommerce/10.4.0-dev.1' ),
+			'final release'                         => array( '10.4.0', 'WooCommerce Payments/11.1.0-native-woocommerce/10.4.0' ),
+			'trunk build'                           => array( '10.4.0-dev', 'WooCommerce Payments/11.1.0-native-woocommerce/10.4.0' ),
+			'release candidate'                     => array( '10.4.0-rc.1', 'WooCommerce Payments/11.1.0-native-woocommerce/10.4.0-rc.1' ),
+			'beta'                                  => array( '10.4.0-beta.2', 'WooCommerce Payments/11.1.0-native-woocommerce/10.4.0-beta.2' ),
+			'build metadata'                        => array( '10.3.0+build.7', 'WooCommerce Payments/11.1.0-native-woocommerce/10.3.0+build.7' ),
+			'release candidate with build metadata' => array( '10.3.0-rc.1+build.7', 'WooCommerce Payments/11.1.0-native-woocommerce/10.3.0-rc.1+build.7' ),
+			'header-unsafe value'                   => array( "10.4.0\r\nX-Injected: 1", 'WooCommerce Payments/11.1.0-native-woocommerce/10.4.0X-Injected1' ),
+			'a -dev tag not at the end'             => array( '10.4.0-dev.1', 'WooCommerce Payments/11.1.0-native-woocommerce/10.4.0-dev.1' ),
 		);
 	}
 
@@ -92,11 +95,13 @@ class WooPaymentsClientVersionTest extends WC_Unit_Test_Case {
 	 */
 	public function platform_parse_provider(): array {
 		return array(
-			'running WooCommerce' => array( null ),
-			'trunk build'         => array( '11.2.0-dev' ),
-			'release candidate'   => array( '11.2.0-rc.1' ),
-			'beta'                => array( '11.2.0-beta.1' ),
-			'final release'       => array( '11.2.0' ),
+			'running WooCommerce'                   => array( null ),
+			'trunk build'                           => array( '11.2.0-dev' ),
+			'release candidate'                     => array( '11.2.0-rc.1' ),
+			'beta'                                  => array( '11.2.0-beta.1' ),
+			'final release'                         => array( '11.2.0' ),
+			'build metadata'                        => array( '10.3.0+build.7' ),
+			'release candidate with build metadata' => array( '10.3.0-rc.1+build.7' ),
 		);
 	}
 }
