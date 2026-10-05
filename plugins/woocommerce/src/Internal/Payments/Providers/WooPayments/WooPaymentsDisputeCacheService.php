@@ -24,11 +24,16 @@ class WooPaymentsDisputeCacheService {
 	/**
 	 * Delete all dispute-related cache entries.
 	 *
+	 * The object-cache entry is deleted whatever delete_option() did: it returns before touching the cache when the row
+	 * is already gone, which left a persistent object cache serving stale dispute counts (client 11.1.0
+	 * `class-database-cache.php:230-243`, its #9639 regression fix).
+	 *
 	 * @since 11.0.0
 	 */
 	public function delete_dispute_caches(): void {
 		foreach ( self::DISPUTE_CACHE_KEYS as $key ) {
 			delete_option( $key );
+			wp_cache_delete( $key, 'options' );
 		}
 	}
 }
