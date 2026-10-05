@@ -23,7 +23,7 @@ const LocationSelector = ( { location, setLocation } ) => {
 			<StylingSection
 				className="header-section"
 				bigTitle={ true }
-				title={ __( 'Button Styling', 'wooocommerce-paypal-payments' ) }
+				title={ __( 'Button Styling', 'woocommerce' ) }
 				description={ __(
 					'Customize the appearance of the PayPal smart buttons on your website and choose which payment buttons to display.',
 					'woocommerce'

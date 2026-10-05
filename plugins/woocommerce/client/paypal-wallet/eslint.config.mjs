@@ -18,10 +18,6 @@ export default [
 		rules: {
 			// Forked from the extension at 0083204e7 with its own lint rules; every rule the WooCommerce config
 			// turns into an error is a warning here until the inherited code is cleaned up.
-			'@wordpress/i18n-text-domain': [
-				'warn',
-				{ allowedTextDomain: 'woocommerce' },
-			],
 			'jsx-a11y/click-events-have-key-events': 'warn',
 			'jsx-a11y/no-static-element-interactions': 'warn',
 		},
