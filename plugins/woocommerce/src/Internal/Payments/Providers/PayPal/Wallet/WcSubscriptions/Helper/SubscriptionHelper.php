@@ -250,7 +250,7 @@ class SubscriptionHelper {
 			}
 		}
 
-		$cart = WC()->cart ?? null;
+		$cart = WC()->cart;
 		if ( ! $cart || $cart->is_empty() ) {
 			return '';
 		}
