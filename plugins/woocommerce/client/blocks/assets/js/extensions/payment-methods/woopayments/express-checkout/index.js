@@ -459,9 +459,11 @@ const addReferenceElementOptions = ( options, cartData ) => {
 };
 
 /**
- * Get the Elements options that follow the live cart: payment or setup mode, amount and setupFutureUsage.
+ * Get the Elements options that follow the live cart: amount and setupFutureUsage.
  *
- * The client rebuilds these from `billing.cartTotal` on every render (express-checkout-container.js:62-84).
+ * The client rebuilds these from `billing.cartTotal` on every render and stays in payment mode whatever the amount,
+ * $0 included; a free-trial cart gets its recurring total from the `total-amount` filter
+ * (express-checkout-container.js:62-84).
  *
  * @param {Object} billing Blocks billing data.
  * @param {Object} cart    Cart data.
@@ -469,16 +471,13 @@ const addReferenceElementOptions = ( options, cartData ) => {
  */
 const getLiveElementsOptions = ( billing, cart ) => {
 	const cartData = normalizeStoreApiCart( cart, billing );
-	const amount = applyFilters(
-		'wcpay.express-checkout.total-amount',
-		getCartTotal( billing ),
-		cartData
-	);
-	const options = { mode: amount > 0 ? 'payment' : 'setup' };
-
-	if ( options.mode === 'payment' ) {
-		options.amount = amount;
-	}
+	const options = {
+		amount: applyFilters(
+			'wcpay.express-checkout.total-amount',
+			getCartTotal( billing ),
+			cartData
+		),
+	};
 
 	if ( shouldUseConfirmationTokens() ) {
 		options.setupFutureUsage = getSetupFutureUsageForCart( cartData );
@@ -489,10 +488,12 @@ const getLiveElementsOptions = ( billing, cart ) => {
 
 const getStripeElementsOptions = ( billing, cart ) => {
 	const cartData = normalizeStoreApiCart( cart, billing );
-	const { mode, amount } = getLiveElementsOptions( billing, cart );
-	const options = addReferenceElementOptions(
+	const { amount } = getLiveElementsOptions( billing, cart );
+
+	return addReferenceElementOptions(
 		{
-			mode,
+			mode: 'payment',
+			amount,
 			loader: 'never',
 			currency: getCartCurrency( billing ),
 			// Without confirmation tokens, the payment method is created
@@ -503,12 +504,6 @@ const getStripeElementsOptions = ( billing, cart ) => {
 		},
 		cartData
 	);
-
-	if ( options.mode === 'payment' ) {
-		options.amount = amount;
-	}
-
-	return options;
 };
 
 /**
@@ -537,21 +532,17 @@ const getAvailabilityElementsOptions = ( cart ) => {
 		getCartTotalsAmount( cart ),
 		cartData
 	);
-	const options = addReferenceElementOptions(
+	// The client probes in payment mode with at least 1 minor unit (checkPaymentMethodIsAvailable.ts:95-97).
+	return addReferenceElementOptions(
 		{
-			mode: amount > 0 ? 'payment' : 'setup',
+			mode: 'payment',
+			amount: Math.max( amount, 1 ),
 			loader: 'never',
 			currency: getCartTotalsCurrency( cart ),
 			paymentMethodTypes: getPaymentMethodTypes( cart ),
 		},
 		cartData
 	);
-
-	if ( options.mode === 'payment' ) {
-		options.amount = Math.max( amount, 1 );
-	}
-
-	return options;
 };
 
 // The reference client's express surfaces share the connected-account Stripe

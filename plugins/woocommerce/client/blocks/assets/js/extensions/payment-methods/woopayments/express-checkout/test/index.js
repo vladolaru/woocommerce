@@ -1813,6 +1813,42 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 
 			expect( elements.update ).not.toHaveBeenCalled();
 		} );
+
+		// A 100% coupon on a cart without subscriptions. The client keeps `mode: 'payment'` and passes the filtered
+		// total, 0 included (express-checkout-container.js:62-84), and probes in payment mode with at least 1 minor
+		// unit (checkPaymentMethodIsAvailable.ts:95-97).
+		const zeroBilling = { ...billing, cartTotal: { value: 0 } };
+		const zeroCart = cartWithExpressMethods( [ 'payment_request' ], {
+			totals: { ...blocksCart.totals, total_price: '0' },
+			cartTotals: { ...blocksCart.cartTotals, total_price: '0' },
+		} );
+
+		it( 'stays in payment mode with a $0 amount when the cart drops to $0', async () => {
+			await renderAndRerender( zeroBilling, zeroCart );
+
+			await waitFor( () => {
+				expect( elements.update ).toHaveBeenCalledWith( {
+					amount: 0,
+				} );
+			} );
+			expect( elements.update ).not.toHaveBeenCalledWith(
+				expect.objectContaining( { mode: expect.anything() } )
+			);
+		} );
+
+		it( 'probes wallet availability in payment mode when the cart drops to $0', async () => {
+			availablePaymentMethods = { applePay: true };
+			registerExpressCheckout();
+
+			await expect(
+				getRegistration(
+					'woocommerce_payments_express_checkout_applePay'
+				).canMakePayment( { cart: zeroCart } )
+			).resolves.toBe( true );
+			expect( stripe.elements ).toHaveBeenCalledWith(
+				expect.objectContaining( { mode: 'payment', amount: 1 } )
+			);
+		} );
 	} );
 
 	describe( 'a WooCommerce Subscriptions free trial with nothing to pay today', () => {
