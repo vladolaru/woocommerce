@@ -8,12 +8,34 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Asset
  * Returns the URLs/paths for plugin assets.
  */
 class AssetGetter {
+	/**
+	 * The base URL of the plugin.
+	 *
+	 * @var string
+	 */
 	protected string $base_plugin_url;
 
+	/**
+	 * The path of the plugin folder.
+	 *
+	 * @var string
+	 */
 	protected string $plugin_folder_path;
 
+	/**
+	 * The module name.
+	 *
+	 * @var string
+	 */
 	protected string $module_name;
 
+	/**
+	 * AssetGetter constructor.
+	 *
+	 * @param string $base_plugin_url   The base URL of the plugin.
+	 * @param string $plugin_folder_path The path of the plugin folder.
+	 * @param string $module_name        The module name.
+	 */
 	public function __construct(
 		string $base_plugin_url,
 		string $plugin_folder_path,
@@ -82,6 +104,11 @@ class AssetGetter {
 		return $this->base_plugin_url . "static/{$this->module_name}/$asset_name";
 	}
 
+	/**
+	 * Returns the file name of a compiled asset, prefixed with the module name and the asset type.
+	 *
+	 * @param string $asset_name The asset name like 'index.js'.
+	 */
 	protected function get_compiled_asset_name( string $asset_name ): string {
 		$type = pathinfo( $asset_name, PATHINFO_EXTENSION );
 
