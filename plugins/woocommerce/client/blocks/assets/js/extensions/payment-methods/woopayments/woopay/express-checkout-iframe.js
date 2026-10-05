@@ -74,16 +74,20 @@ const showErrorMessage = ( paymentSettings, context, message ) => {
 /**
  * Open the WooPay OTP iframe for the express button.
  *
- * @param {Object}   paymentSettings Payment method settings.
- * @param {string}   context         The button context (checkout, cart, product).
- * @param {string}   emailSelector   Selector of the email field to prefill from.
- * @param {Function} navigate        Navigates the page to a URL.
+ * @param {Object}       paymentSettings Payment method settings.
+ * @param {string}       context         The button context (checkout, cart, product).
+ * @param {string}       emailSelector   Selector of the email field to prefill from.
+ * @param {Function}     navigate        Navigates the page to a URL.
+ * @param {Element|null} opener          The control that opened the dialog, which gets focus back on close. The express
+ *                                       button passes itself: it is disabled while it loads, which takes focus away
+ *                                       from it before the dialog opens.
  */
 export const expressCheckoutIframe = async (
 	paymentSettings,
 	context,
 	emailSelector,
-	navigate
+	navigate,
+	opener = null
 ) => {
 	const tracksUserId = await getTracksIdentity( paymentSettings );
 	const woopayHost = paymentSettings.woopayHost || '';
@@ -322,7 +326,7 @@ export const expressCheckoutIframe = async (
 			return;
 		}
 
-		previouslyFocused = iframe.ownerDocument.activeElement;
+		previouslyFocused = opener || iframe.ownerDocument.activeElement;
 		window.addEventListener( 'pageshow', onPageShow );
 		window.addEventListener( 'message', onMessage );
 		document.addEventListener( 'keyup', onKeyUp );

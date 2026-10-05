@@ -1186,6 +1186,65 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 				}
 			);
 
+			// A browser takes focus away from a focused control that becomes disabled (the HTML "focus fixup rule"), and
+			// the WooPay button is disabled while it loads, before the dialog opens (seen in Chromium: focusout from the
+			// loading button, then focus on the iframe). jsdom keeps focus on a disabled control and cannot blur it, so the
+			// test moves focus to another element of the page at that point instead.
+			describe( 'when the loading button loses focus before the dialog opens', () => {
+				it.each( [
+					[
+						'the close_modal message',
+						() => sendWooPayMessage( { action: 'close_modal' } ),
+					],
+					[
+						'Escape',
+						async () =>
+							fireEvent.keyUp( document, { key: 'Escape' } ),
+					],
+					[
+						'the Close button',
+						async () =>
+							fireEvent.click(
+								screen.getByRole( 'button', { name: 'Close' } )
+							),
+					],
+				] )(
+					'still gives focus back to the WooPay button when closed by %s',
+					async ( label, close ) => {
+						registerWooPay();
+						const expressRegistration =
+							registerExpressPaymentMethod.mock.calls[ 0 ][ 0 ];
+						render(
+							createElement( expressRegistration.content.type )
+						);
+						const button = screen.getByRole( 'button', {
+							name: 'WooPay',
+						} );
+						button.focus();
+						fireEvent.click( button );
+						expect( button ).toBeDisabled();
+						const elsewhere = document.createElement( 'input' );
+						document.body.appendChild( elsewhere );
+						elsewhere.focus();
+						await waitFor( () => {
+							expect(
+								document.querySelector( '.woopay-otp-iframe' )
+							).not.toBeNull();
+						} );
+						await waitFor( () => {
+							expect( button ).not.toBeDisabled();
+						} );
+
+						await close();
+
+						expect(
+							document.querySelector( '.woopay-otp-iframe' )
+						).toBeNull();
+						expect( button ).toHaveFocus();
+					}
+				);
+			} );
+
 			// The iframe here never fires `load` and never posts a message: the state of an OTP page that failed to load,
 			// where WooPay's own close control and Escape bridge do not exist.
 			describe( 'when the iframe never loads', () => {

@@ -596,7 +596,13 @@ const WooPayExpressContent = () => {
 	}, [ eventSource ] );
 
 	const continueWooPay = () =>
-		expressCheckoutIframe( settings, eventSource, '#email', navigate );
+		expressCheckoutIframe(
+			settings,
+			eventSource,
+			'#email',
+			navigate,
+			buttonRef.current
+		);
 
 	const continueWooPayFirstPartyAuth = async () => {
 		let sessionData;
