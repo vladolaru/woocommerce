@@ -554,6 +554,23 @@ class WooPaymentsWooPaySessionService {
 	}
 
 	/**
+	 * Get the email that pre-fills the WooPay OTP iframe from the page HTML.
+	 *
+	 * Follows the client's chain (WooPay_Session::get_user_email(), class-woopay-session.php:433-472), but a guest's billing
+	 * email only goes into cart and checkout pages, which WC_Cache_Helper::prevent_caching() marks DONOTCACHEPAGE. Elsewhere a
+	 * page cache could serve one guest's email to the next visitor. Logged-in pages are not page-cached.
+	 *
+	 * @return string
+	 */
+	private function get_page_prefill_email(): string {
+		if ( is_user_logged_in() || is_cart() || is_checkout() ) {
+			return $this->resolve_session_email( null );
+		}
+
+		return '';
+	}
+
+	/**
 	 * Get the sanitized email from a verified WooPay identity envelope.
 	 *
 	 * @param array<string,mixed>|null $encrypted_data Encrypted WooPay identity envelope.
@@ -1071,7 +1088,6 @@ class WooPaymentsWooPaySessionService {
 	 * @return array<string,mixed>
 	 */
 	public function get_woopay_frontend_config( string $context = 'checkout' ): array {
-		// woopaySessionEmail follows the client's OTP pre-fill chain (WooPay_Session::get_user_email(), class-woopay-session.php:433-472).
 		// isWoopayFirstPartyAuthEnabled is the express feature option, WooPay eligibility and the visitor's country, whatever the
 		// express button locations (client 11.1.0 WooPay_Utilities::is_woopay_first_party_auth_enabled(), class-woopay-utilities.php:80-82).
 		$is_woopay_enabled                 = $this->is_woopay_enabled();
@@ -1080,7 +1096,7 @@ class WooPaymentsWooPaySessionService {
 		$should_show_woopay                = $this->should_show_woopay_button_for_enabled_state( $context, $is_woopay_enabled ) && $this->is_woopay_gateway_available();
 		$woopay_appearance                 = $is_global_theme_enabled ? $this->get_woopay_appearance() : null;
 		$woopay_font_rules                 = $is_global_theme_enabled ? $this->get_woopay_font_rules() : array();
-		$woopay_session_email              = $this->resolve_session_email( null );
+		$woopay_session_email              = $this->get_page_prefill_email();
 		$woopay_minimum_session            = $is_woopay_enabled ? $this->get_encrypted_minimum_session_data() : array();
 		$woopay_express_available          = $is_woopay_enabled && $this->is_woopay_express_checkout_configured_at( $context );
 		$woopay_first_party_auth_available = $is_country_available && '1' === get_option( '_wcpay_feature_woopay_express_checkout', '1' );

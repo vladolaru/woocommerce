@@ -1342,23 +1342,48 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The WooPay OTP pre-fill uses the email a guest already gave the store.
+	 * @testdox The WooPay OTP pre-fill puts the shopper's email into page HTML only where pages are not cached: $label.
 	 *
-	 * Client 11.1.0 class-wc-payments-woopay-button-handler.php:151 uses WooPay_Session::get_user_email()
-	 * (class-woopay-session.php:433-472), which reads the WooCommerce customer's billing email for a guest.
+	 * Client 11.1.0 pre-fills every button surface, product pages included, from WooPay_Session::get_user_email()
+	 * (class-wc-payments-woopay-button-handler.php:151, class-woopay-session.php:433-472), which reads a guest's billing
+	 * email. Core marks only the cart, checkout and My Account pages DONOTCACHEPAGE (WC_Cache_Helper::prevent_caching()), so
+	 * a guest's email goes into cart and checkout HTML only; logged-in pages are not page-cached. A separate process, because
+	 * an earlier test can define WOOCOMMERCE_CHECKOUT, which makes every page read as checkout.
+	 *
+	 * @testWith ["a guest on a product page", "", false, ""]
+	 *           ["a guest on the cart page", "woocommerce_is_cart", false, "guest@example.com"]
+	 *           ["a guest on the checkout page", "woocommerce_is_checkout", false, "guest@example.com"]
+	 *           ["a logged-in shopper on a product page", "", true, "shopper-billing@example.com"]
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * @param string $label     Case label.
+	 * @param string $page_hook Core filter that makes the page read as cart or checkout, or none for a product page.
+	 * @param bool   $logged_in Whether the shopper is logged in.
+	 * @param string $expected  The pre-filled email.
 	 */
-	public function test_frontend_config_prefills_the_guest_email_from_the_customer(): void {
+	public function test_frontend_config_prefills_the_shopper_email_only_on_uncached_pages( string $label, string $page_hook, bool $logged_in, string $expected ): void {
+		unset( $label );
+		$user_id = 0;
+		if ( $logged_in ) {
+			$user_id = $this->factory->user->create( array( 'user_email' => 'shopper@example.com' ) );
+			wp_set_current_user( $user_id );
+		}
+		if ( '' !== $page_hook ) {
+			add_filter( $page_hook, '__return_true' );
+		}
 		$customer      = WC()->customer;
-		WC()->customer = new \WC_Customer( 0, true );
-		WC()->customer->set_billing_email( 'guest@example.com' );
+		WC()->customer = new \WC_Customer( $user_id, true );
+		WC()->customer->set_billing_email( $logged_in ? 'shopper-billing@example.com' : 'guest@example.com' );
 
 		try {
-			$config = $this->create_service()->get_woopay_frontend_config( 'checkout' );
+			$config = $this->create_service()->get_woopay_frontend_config( 'product' );
 		} finally {
 			WC()->customer = $customer;
 		}
 
-		$this->assertSame( 'guest@example.com', $config['woopaySessionEmail'] );
+		$this->assertSame( $expected, $config['woopaySessionEmail'] );
 	}
 
 	/**
