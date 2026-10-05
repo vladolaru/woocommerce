@@ -138,11 +138,12 @@ class WooPaymentsSubscriptionRenewalHooks implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Leave the charge idempotency key out of the data Subscriptions copies between orders and subscriptions.
+	 * Leave the charge idempotency key and its ambiguity record out of the data Subscriptions copies between orders and subscriptions.
 	 *
 	 * The key belongs to one order's charge. Subscriptions copies a parent order's meta to its subscription, and the
 	 * subscription's meta to every renewal, so a key kept after an ambiguous parent charge would be sent again by a
-	 * renewal with another body, which the provider refuses within 24 hours (review 37 F1).
+	 * renewal with another body, which the provider refuses within 24 hours (review 37 F1). The record of that ambiguous
+	 * failure belongs to the same charge, so it stays behind with the key.
 	 *
 	 * @internal
 	 *
@@ -151,14 +152,14 @@ class WooPaymentsSubscriptionRenewalHooks implements RegisterHooksInterface {
 	 */
 	public static function exclude_charge_idempotency_key( $data ) {
 		if ( is_array( $data ) ) {
-			unset( $data[ WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META ] );
+			unset( $data[ WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META ], $data[ WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META ] );
 		}
 
 		return $data;
 	}
 
 	/**
-	 * Leave the charge idempotency key out of the meta query older Subscriptions versions copy with.
+	 * Leave the charge idempotency key and its ambiguity record out of the meta query older Subscriptions versions copy with.
 	 *
 	 * @internal
 	 *
@@ -170,7 +171,7 @@ class WooPaymentsSubscriptionRenewalHooks implements RegisterHooksInterface {
 			return $meta_query;
 		}
 
-		return $meta_query . sprintf( " AND `meta_key` NOT IN ('%s')", WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META );
+		return $meta_query . sprintf( " AND `meta_key` NOT IN ('%s', '%s')", WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META );
 	}
 
 	/**

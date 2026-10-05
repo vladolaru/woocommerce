@@ -285,7 +285,8 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 	 * (`includes/core/wcs-order-functions.php:242`, `includes/early-renewal/class-wcs-cart-early-renewal.php:150`), all
 	 * through the data copier's `wc_subscriptions_object_data` filter (`includes/core/class-wc-subscriptions-data-copier.php:162`).
 	 * A renewal carrying the parent's key would send it with another body, which Stripe refuses for 24 hours (review 37 F1);
-	 * without the key the renewal charge mints a fresh one.
+	 * without the key the renewal charge mints a fresh one. The record of the parent's ambiguous charge failure belongs to
+	 * the same charge and stays behind with the key.
 	 */
 	public function test_subscriptions_copies_leave_out_the_charge_idempotency_key(): void {
 		$this->load_subscriptions( true );
@@ -295,13 +296,18 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 		foreach ( array( 'subscription', 'parent', 'renewal_order', 'resubscribe_order' ) as $copy_type ) {
 			$data = array(
 				WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META => 'key_parent_charge',
+				WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META => array(
+					'order_id'  => 123,
+					'customer'  => 'cus_parent',
+					'failed_at' => 1700000000,
+				),
 				'_payment_method_id' => 'pm_saved',
 			);
 
 			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fired as WooCommerce Subscriptions' data copier does.
 			$copied = apply_filters( 'wc_subscriptions_object_data', $data, new WC_Order(), new WC_Order(), $copy_type );
 
-			$this->assertSame( array( '_payment_method_id' => 'pm_saved' ), $copied, "A $copy_type copy must leave out only the charge key." );
+			$this->assertSame( array( '_payment_method_id' => 'pm_saved' ), $copied, "A $copy_type copy must leave out only the charge key and its ambiguity record." );
 		}
 		$this->assertFalse( has_filter( 'wcs_renewal_order_meta_query', array( WooPaymentsSubscriptionRenewalHooks::class, 'exclude_charge_idempotency_key_from_meta_query' ) ), 'The deprecated meta query filter must stay unhooked, or Subscriptions logs a deprecation.' );
 	}
@@ -324,7 +330,7 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 			$filtered = apply_filters( "wcs_{$copy_type}_meta_query", $query, new WC_Order(), new WC_Order() );
 
 			$this->assertStringStartsWith( $query, $filtered );
-			$this->assertStringContainsString( " AND `meta_key` NOT IN ('_wcpay_charge_idempotency_key')", $filtered, "The $copy_type meta query must leave out the charge key." );
+			$this->assertStringContainsString( " AND `meta_key` NOT IN ('_wcpay_charge_idempotency_key', '_wcpay_charge_ambiguity')", $filtered, "The $copy_type meta query must leave out the charge key and its ambiguity record." );
 		}
 		$this->assertFalse( has_filter( 'wc_subscriptions_object_data', array( WooPaymentsSubscriptionRenewalHooks::class, 'exclude_charge_idempotency_key' ) ) );
 	}
