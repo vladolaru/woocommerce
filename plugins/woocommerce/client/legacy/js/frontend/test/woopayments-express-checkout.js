@@ -3,6 +3,21 @@
  */
 
 describe( 'WooPayments express checkout', () => {
+	// The Express Checkout Element `ready` event in a browser with no wallet: `availablePaymentMethods` is an object
+	// of booleans, one per button (link, applePay, googlePay, paypal, amazonPay, klarna), deprecated but still sent
+	// (https://docs.stripe.com/js/element/events/on_ready).
+	const READY_WITHOUT_A_WALLET = {
+		elementType: 'expressCheckout',
+		availablePaymentMethods: {
+			link: false,
+			applePay: false,
+			googlePay: false,
+			paypal: false,
+			amazonPay: false,
+			klarna: false,
+		},
+	};
+
 	let bodyEventHandlers;
 	let containerJQuery;
 	let delegatedQuantityHandlers;
@@ -675,14 +690,35 @@ describe( 'WooPayments express checkout', () => {
 		require( '../woopayments-express-checkout' );
 		await bodyEventHandlers.updated_checkout();
 		await flushPromises();
-		// `ready` without an available method; a recorded live payload is `{ availablePaymentMethods: { amazonPay: true,
-		// applePay: false, ... } }` (t62/unit-2b2e/probe-before.js run, notes.md C4), so `{}` is a browser with none.
-		expressHandlers.ready( {} );
+		expressHandlers.ready( READY_WITHOUT_A_WALLET );
 
 		expect(
 			document.getElementById( 'wcpay-express-checkout-button-separator' )
 				.hidden
 		).toBe( false );
+	} );
+
+	// Client 11.1.0 shows the wallet and its separator only when `ready` reports at least one available method
+	// (shortcode-buttons-express/index.js:451-459, a count of the `true` values).
+	test( 'keeps the wallet hidden when the ready event reports no available method', async () => {
+		require( '../woopayments-express-checkout' );
+		await bodyEventHandlers.updated_checkout();
+		await flushPromises();
+		document.getElementById(
+			'wcpay-express-checkout-button-separator'
+		).hidden = true;
+
+		expressHandlers.ready( READY_WITHOUT_A_WALLET );
+
+		expect(
+			document
+				.getElementById( 'wcpay-express-checkout-element' )
+				.classList.contains( 'is-ready' )
+		).toBe( false );
+		expect(
+			document.getElementById( 'wcpay-express-checkout-button-separator' )
+				.hidden
+		).toBe( true );
 	} );
 
 	// Store API cart shape: docs/apis/store-api/resources-endpoints/cart.md ("Cart Response": needs_shipping,
@@ -3746,7 +3782,7 @@ describe( 'WooPayments express checkout', () => {
 			window.wp.apiFetch.mockResolvedValue( getVirtualCart( 7500, 3 ) );
 			require( '../woopayments-express-checkout' );
 			await flushMicrotasks();
-			expressHandlers.ready( {} );
+			expressHandlers.ready( READY_WITHOUT_A_WALLET );
 
 			typeQuantity( '3' );
 			jest.advanceTimersByTime( 250 );

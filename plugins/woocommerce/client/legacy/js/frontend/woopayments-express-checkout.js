@@ -3065,13 +3065,18 @@
 		);
 
 		expressElement.on( 'ready', function ( event ) {
-			if ( event && event.availablePaymentMethods ) {
+			var availablePaymentMethods = event && event.availablePaymentMethods;
+
+			if ( ! availablePaymentMethods ) {
+				return;
+			}
+
+			// Client 11.1.0 shortcode-buttons-express/index.js:451-459: shown only when at least one method is available.
+			if ( Object.values( availablePaymentMethods ).filter( Boolean ).length ) {
 				expressButtonAvailable = true;
 				showExpressButton();
-				recordExpressCheckoutLoadEvents(
-					event.availablePaymentMethods
-				);
 			}
+			recordExpressCheckoutLoadEvents( availablePaymentMethods );
 		} );
 
 		expressElement.on( 'click', async function ( event ) {
