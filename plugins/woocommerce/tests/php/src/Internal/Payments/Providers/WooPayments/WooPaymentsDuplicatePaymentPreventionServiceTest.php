@@ -598,6 +598,12 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$this->assertInstanceOf( WP_Error::class, $sut->check_payment_intent_attached_to_order_succeeded( $second, $this->create_gateway() ) );
 
 		$this->assertCount( 1, $this->get_disputed_intent_notes( $order ) );
+		// The second submit found the note already written; it must still release the lock it took.
+		$store   = wc_get_container()->get( OrderPaymentStore::class );
+		$profile = wc_get_container()->get( WooPaymentsPersistenceProfile::class );
+		$token   = $store->claim_order_payment_lock_for_operation( $order, $profile, 'refund_key', 'refund' );
+		$this->assertIsString( $token, 'The already-noted submit must release the order payment lock.' );
+		$store->release_order_payment_lock( $order, $profile, $token );
 	}
 
 	/**
