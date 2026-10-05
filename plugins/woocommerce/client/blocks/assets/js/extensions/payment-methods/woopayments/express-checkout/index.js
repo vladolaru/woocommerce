@@ -927,6 +927,11 @@ const getShippingAddressFromEvent = ( event, fallback = {} ) => {
 const getOrderNotes = () =>
 	window.wp?.data?.select?.( 'wc/store/checkout' )?.getOrderNotes?.() || '';
 
+const GENERIC_PAYMENT_ERROR_MESSAGE = __(
+	'Unable to process this payment, please try again.',
+	'woocommerce'
+);
+
 const getCheckoutErrorMessage = ( response ) => {
 	const details = response?.payment_result?.payment_details;
 	const errorDetail = Array.isArray( details )
@@ -968,6 +973,120 @@ const getRedirectUrl = ( response ) =>
 	)?.value ||
 	'';
 
+const requestOrderStatusUpdate = async ( orderId, nonce, intentId ) => {
+	const body = new window.URLSearchParams();
+	body.append( 'action', 'update_order_status' );
+	body.append( 'order_id', orderId );
+	body.append( '_ajax_nonce', nonce );
+	body.append( 'intent_id', intentId );
+	body.append( 'should_save_payment_method', 'false' );
+	body.append(
+		'is_changing_payment',
+		settings?.isChangingPayment ? 'true' : 'false'
+	);
+
+	const response = await window.fetch( params.ajax_url, {
+		method: 'POST',
+		credentials: 'same-origin',
+		headers: {
+			'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+		},
+		body,
+	} );
+
+	return response.json();
+};
+
+/**
+ * Confirm an intent that needs a next action (3DS) and get the order's return URL.
+ *
+ * Port of the client's WCPayAPI.confirmIntent() (client/checkout/api/index.js): returns `true` when the
+ * redirect carries no `#wcpay-confirm-` hash, otherwise a promise of the authenticated return URL.
+ *
+ * @param {string} redirectUrl Redirect URL or confirmation hash from the checkout response.
+ * @return {true|Promise<string>} `true` when there is nothing to confirm.
+ */
+const confirmIntent = ( redirectUrl ) => {
+	const partials = redirectUrl.match(
+		/#wcpay-confirm-(pi|si):([^:]+):([^:]+):([^:]+)(?::(.+))?$/
+	);
+
+	if ( ! partials ) {
+		return true;
+	}
+
+	const [ , intentType, orderId, clientSecret, nonce, confirmationToken ] =
+		partials;
+
+	const confirmPaymentOrSetup = async () => {
+		const stripe = getStripe();
+
+		if ( ! stripe ) {
+			throw new Error( GENERIC_PAYMENT_ERROR_MESSAGE );
+		}
+
+		if ( intentType === 'si' && confirmationToken ) {
+			return stripe.confirmSetup( {
+				clientSecret,
+				confirmParams: {
+					confirmation_token: confirmationToken,
+				},
+				redirect: 'if_required',
+			} );
+		}
+
+		return stripe.handleNextAction( { clientSecret } );
+	};
+
+	return confirmPaymentOrSetup().then( async ( result ) => {
+		const intent = result?.paymentIntent || result?.setupIntent;
+		let paymentError = intent?.last_payment_error?.message || '';
+
+		// A closed wallet iframe resolves without an error, but the intent still requires action.
+		if ( result?.paymentIntent?.status === 'requires_action' ) {
+			paymentError = 'Payment requires additional action.';
+		}
+
+		const intentId =
+			intent?.id ||
+			result?.error?.payment_intent?.id ||
+			result?.error?.setup_intent?.id;
+
+		if ( result?.error ) {
+			// The server records the failed confirmation; the shopper sees Stripe's error.
+			if ( intentId ) {
+				requestOrderStatusUpdate( orderId, nonce, intentId ).catch(
+					() => {}
+				);
+			}
+			throw new Error( result.error.message );
+		}
+
+		if ( ! intentId ) {
+			throw new Error( GENERIC_PAYMENT_ERROR_MESSAGE );
+		}
+
+		const response = await requestOrderStatusUpdate(
+			orderId,
+			nonce,
+			intentId
+		);
+
+		if ( response?.error ) {
+			throw new Error( response.error.message );
+		}
+
+		if ( paymentError ) {
+			throw new Error( paymentError );
+		}
+
+		return response?.return_url;
+	} );
+};
+
+// One API object for every express method, as the client passes its WCPayAPI instance (client/checkout/blocks/index.js).
+const expressCheckoutApi = { confirmIntent };
+
 const redirectToOrder = async ( response, api ) => {
 	const redirectUrl = getRedirectUrl( response );
 
@@ -975,16 +1094,9 @@ const redirectToOrder = async ( response, api ) => {
 		return;
 	}
 
-	if ( api?.confirmIntent ) {
-		const confirmationRequest = api.confirmIntent( redirectUrl );
-		window.location.href =
-			confirmationRequest === true
-				? redirectUrl
-				: await confirmationRequest;
-		return;
-	}
-
-	window.location.href = redirectUrl;
+	const confirmationRequest = api.confirmIntent( redirectUrl );
+	window.location.href =
+		confirmationRequest === true ? redirectUrl : await confirmationRequest;
 };
 
 const refreshBlocksCartData = () => {
@@ -1398,8 +1510,18 @@ const getExpressPaymentMethod = ( method ) => {
 		description: methodConfig.title,
 		gatewayId: PAYMENT_METHOD_NAME,
 		paymentMethodId: EXPRESS_CHECKOUT_PAYMENT_METHOD_NAME,
-		content: <ExpressCheckoutContent method={ method } />,
-		edit: <ExpressCheckoutContent method={ method } />,
+		content: (
+			<ExpressCheckoutContent
+				method={ method }
+				api={ expressCheckoutApi }
+			/>
+		),
+		edit: (
+			<ExpressCheckoutContent
+				method={ method }
+				api={ expressCheckoutApi }
+			/>
+		),
 		canMakePayment: ( { cart } ) => {
 			if (
 				! getEnabledMethodsForCart( cart ).includes(

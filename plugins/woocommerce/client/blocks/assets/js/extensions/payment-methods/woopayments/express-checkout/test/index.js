@@ -1946,6 +1946,153 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		} );
 	} );
 
+	describe( 'a wallet payment that needs 3DS', () => {
+		// jsdom implements only same-document navigation, so the order's
+		// return URL differs from the checkout page by its fragment.
+		const checkoutUrl = window.location.href;
+		const returnUrl = new URL(
+			'#order-received-77',
+			checkoutUrl
+		).toString();
+
+		// The Store API checkout response for a payment that needs a next
+		// action: PaymentResult::set_redirect_url() runs esc_url_raw(), which
+		// empties the bare hash, and Legacy::process_payment() keeps the raw
+		// gateway result in payment_details.
+		const confirmationResponse = {
+			order_id: 77,
+			status: 'pending',
+			payment_result: {
+				payment_status: 'success',
+				payment_details: [
+					{ key: 'result', value: 'success' },
+					{
+						key: 'redirect',
+						value: '#wcpay-confirm-pi:77:pi_3ds_secret_abc:nonce-3ds',
+					},
+					{ key: 'payment_method', value: 'pm_3ds_card' },
+				],
+				redirect_url: '',
+			},
+		};
+
+		const getOrderStatusUpdateBody = () =>
+			window.fetch.mock.calls.find(
+				( [ , options ] ) =>
+					options?.body?.get?.( 'action' ) === 'update_order_status'
+			)?.[ 1 ].body;
+
+		const confirmGooglePay = async ( props = {} ) => {
+			registerExpressCheckout();
+			renderExpressPaymentMethod(
+				getRegistration(
+					'woocommerce_payments_express_checkout_googlePay'
+				),
+				props
+			);
+
+			await waitFor( () => {
+				expect( expressHandlers.confirm ).toBeDefined();
+			} );
+
+			await act( async () => {
+				await expressHandlers.confirm( {
+					paymentFailed: props.paymentFailed,
+					billingDetails: {
+						email: 'shopper@example.test',
+						name: 'Ada Lovelace',
+					},
+				} );
+			} );
+		};
+
+		beforeEach( () => {
+			apiFetch.mockResolvedValueOnce( confirmationResponse );
+			window.fetch = jest.fn( ( url, options ) =>
+				Promise.resolve(
+					options?.body?.get?.( 'action' ) === 'update_order_status'
+						? {
+								json: () =>
+									Promise.resolve( {
+										return_url: returnUrl,
+									} ),
+						  }
+						: { json: () => Promise.resolve( {} ) }
+				)
+			);
+		} );
+
+		afterEach( () => {
+			window.history.replaceState( null, '', checkoutUrl );
+		} );
+
+		it( 'confirms the intent from the Store API payment details and sends the shopper to the order', async () => {
+			stripe.handleNextAction = jest.fn().mockResolvedValue( {
+				paymentIntent: { id: 'pi_3ds', status: 'succeeded' },
+			} );
+
+			await confirmGooglePay();
+
+			expect( stripe.handleNextAction ).toHaveBeenCalledWith( {
+				clientSecret: 'pi_3ds_secret_abc',
+			} );
+			const body = getOrderStatusUpdateBody();
+			expect( window.fetch ).toHaveBeenCalledWith(
+				'https://example.test/admin-ajax.php',
+				expect.objectContaining( { method: 'POST' } )
+			);
+			expect( body.get( 'order_id' ) ).toBe( '77' );
+			expect( body.get( '_ajax_nonce' ) ).toBe( 'nonce-3ds' );
+			expect( body.get( 'intent_id' ) ).toBe( 'pi_3ds' );
+			expect( window.location.href ).toBe( returnUrl );
+		} );
+
+		it( 'reports a failed authentication and shows Stripe’s error without leaving checkout', async () => {
+			const setExpressPaymentError = jest.fn();
+			const paymentFailed = jest.fn();
+			stripe.handleNextAction = jest.fn().mockResolvedValue( {
+				error: {
+					message: 'Authentication failed.',
+					payment_intent: {
+						id: 'pi_3ds',
+						status: 'requires_payment_method',
+					},
+				},
+			} );
+
+			await confirmGooglePay( { setExpressPaymentError, paymentFailed } );
+
+			expect( getOrderStatusUpdateBody().get( 'intent_id' ) ).toBe(
+				'pi_3ds'
+			);
+			expect( setExpressPaymentError ).toHaveBeenCalledWith(
+				'Authentication failed.'
+			);
+			expect( paymentFailed ).toHaveBeenCalledWith( {
+				reason: 'fail',
+				message: 'Authentication failed.',
+			} );
+			expect( window.location.href ).toBe( checkoutUrl );
+		} );
+
+		it( 'treats a closed authentication sheet as a failed payment', async () => {
+			const setExpressPaymentError = jest.fn();
+			stripe.handleNextAction = jest.fn().mockResolvedValue( {
+				paymentIntent: { id: 'pi_3ds', status: 'requires_action' },
+			} );
+
+			await confirmGooglePay( { setExpressPaymentError } );
+
+			expect( getOrderStatusUpdateBody().get( 'intent_id' ) ).toBe(
+				'pi_3ds'
+			);
+			expect( setExpressPaymentError ).toHaveBeenCalledWith(
+				'Payment requires additional action.'
+			);
+			expect( window.location.href ).toBe( checkoutUrl );
+		} );
+	} );
+
 	it( 'refreshes Blocks cart data when a mutated wallet confirmation fails', async () => {
 		const setExpressPaymentError = jest.fn();
 		const updatedCart = cartWithExpressMethods( [ 'payment_request' ], {
