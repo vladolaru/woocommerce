@@ -23,9 +23,9 @@ class WooPaymentsActionSchedulerService {
 	const GROUP_ID = 'woocommerce_payments';
 
 	/**
-	 * Latest timestamp of each job scheduled before Action Scheduler initialized, keyed by hook, args and group.
+	 * Jobs asked for before Action Scheduler initialized, keyed by blog, hook, args and group, with the latest timestamp.
 	 *
-	 * @var array<string,int>
+	 * @var array<string,array{hook:string,args:array<int|string,mixed>,timestamp:int,group:string,blog_id:int}>
 	 */
 	private array $deferred_jobs = array();
 
@@ -33,7 +33,7 @@ class WooPaymentsActionSchedulerService {
 	 * Schedule a single action unless the same hook/args/group is already pending.
 	 *
 	 * Before Action Scheduler initializes, its functions return without scheduling, so a job asked for that early is
-	 * kept and scheduled on action_scheduler_init, once per hook, args and group with the latest timestamp asked for
+	 * kept and scheduled on action_scheduler_init, once per blog, hook, args and group with the latest timestamp asked for
 	 * (client 11.1.0 `class-wc-payments-action-scheduler-service.php:220-249`). Once initialized, a job already pending
 	 * keeps its first timestamp; the client replaces it instead. Every job reads the store's state when it runs, so
 	 * the first due time loses nothing, and no pending action is unscheduled.
@@ -67,19 +67,42 @@ class WooPaymentsActionSchedulerService {
 	 * @param string                  $group     Action Scheduler group.
 	 */
 	private function defer_job( string $hook, array $args, int $timestamp, string $group ): void {
-		$key = md5( (string) wp_json_encode( array( $hook, $args, $group ) ) );
-		if ( ! isset( $this->deferred_jobs[ $key ] ) ) {
-			add_action(
-				'action_scheduler_init',
-				function () use ( $hook, $args, $group, $key ): void {
-					$timestamp = $this->deferred_jobs[ $key ];
-					unset( $this->deferred_jobs[ $key ] );
-					$this->schedule_job( $hook, $args, $timestamp, $group );
-				}
-			);
+		// A job keeps the blog it was asked for on, so a network request that switched blogs schedules it for that store.
+		$blog_id = get_current_blog_id();
+		$key     = md5( (string) wp_json_encode( array( $blog_id, $hook, $args, $group ) ) );
+		if ( array() === $this->deferred_jobs && false === has_action( 'action_scheduler_init', array( $this, 'handle_action_scheduler_init' ) ) ) {
+			add_action( 'action_scheduler_init', array( $this, 'handle_action_scheduler_init' ) );
 		}
 
-		$this->deferred_jobs[ $key ] = $timestamp;
+		$this->deferred_jobs[ $key ] = array(
+			'hook'      => $hook,
+			'args'      => $args,
+			'timestamp' => $timestamp,
+			'group'     => $group,
+			'blog_id'   => $blog_id,
+		);
+	}
+
+	/**
+	 * Schedule the jobs asked for before Action Scheduler initialized, each on its own blog, once.
+	 *
+	 * @internal
+	 */
+	public function handle_action_scheduler_init(): void {
+		remove_action( 'action_scheduler_init', array( $this, 'handle_action_scheduler_init' ) );
+		$jobs                = $this->deferred_jobs;
+		$this->deferred_jobs = array();
+
+		foreach ( $jobs as $job ) {
+			$switched = is_multisite() && get_current_blog_id() !== $job['blog_id'] && switch_to_blog( $job['blog_id'] );
+			try {
+				$this->schedule_job( $job['hook'], $job['args'], $job['timestamp'], $job['group'] );
+			} finally {
+				if ( $switched ) {
+					restore_current_blog();
+				}
+			}
+		}
 	}
 
 	/**
