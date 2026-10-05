@@ -24,13 +24,16 @@ class TokenTest extends WalletTestCase {
 	/**
 	 * Token data that is valid, with and without a creation time.
 	 *
+	 * The provider runs when the suite loads, so a creation time given here
+	 * is a placeholder: the test stamps the real one when it runs.
+	 *
 	 * @return array<string, array{stdClass}>
 	 */
 	public function data_valid_tokens(): array {
 		return array(
 			'default'            => array(
 				(object) array(
-					'created'    => time(),
+					'created'    => 0,
 					'expires_in' => 100,
 					'token'      => 'abc',
 				),
@@ -86,6 +89,11 @@ class TokenTest extends WalletTestCase {
 	 * @param stdClass $data The token data.
 	 */
 	public function test_default( stdClass $data ): void {
+		if ( property_exists( $data, 'created' ) ) {
+			// Stamped at run time: the validity window is short, and the provider ran when the suite loaded.
+			$data->created = time();
+		}
+
 		$token = new Token( $data );
 
 		$this->assertSame( $data->token, $token->token() );
