@@ -80,7 +80,7 @@ class ErrorHandler {
 	}
 
 	/**
-	 * @param message
+	 * @param {string} message
 	 * @private
 	 */
 	_prepareMessageElement( message ) {

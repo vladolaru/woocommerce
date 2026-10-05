@@ -121,7 +121,7 @@ export const paypalOrderToWcShippingAddress = ( order ) => {
 
 /**
  *
- * @param  order
+ * @param {Object} order
  * @return {{shippingAddress: Object, billingAddress: Object}}
  */
 export const paypalOrderToWcAddresses = ( order ) => {

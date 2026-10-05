@@ -6,7 +6,7 @@ class UpdateCart {
 
 	/**
 	 *
-	 * @param             onResolve
+	 * @param {Function}  onResolve
 	 * @param {Product[]} products
 	 * @param {Object}    options
 	 * @return {Promise<unknown>}

@@ -1,5 +1,5 @@
 /**
- * @param  selectorOrElement
+ * @param {string|Element} selectorOrElement
  * @return {Element}
  */
 const getElement = ( selectorOrElement ) => {

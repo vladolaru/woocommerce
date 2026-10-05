@@ -4,9 +4,9 @@ import { convertKeysToSnakeCase } from '../../../../../ppcp-blocks/resources/js/
 /**
  * Handles the shipping option change in PayPal.
  *
- * @param  data
- * @param  actions
- * @param  config
+ * @param {Object} data
+ * @param {Object} actions
+ * @param {Object} config
  * @return {Promise<void>}
  */
 export const handleShippingOptionsChange = async ( data, actions, config ) => {
@@ -70,9 +70,9 @@ export const handleShippingOptionsChange = async ( data, actions, config ) => {
 /**
  * Handles the shipping address change in PayPal.
  *
- * @param  data
- * @param  actions
- * @param  config
+ * @param {Object} data
+ * @param {Object} actions
+ * @param {Object} config
  * @return {Promise<void>}
  */
 export const handleShippingAddressChange = async ( data, actions, config ) => {

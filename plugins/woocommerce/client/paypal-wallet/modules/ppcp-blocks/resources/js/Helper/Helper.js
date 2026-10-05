@@ -1,5 +1,5 @@
 /**
- * @param  str
+ * @param {string} str
  * @return {string}
  */
 export const toSnakeCase = ( str ) => {
@@ -11,7 +11,7 @@ export const toSnakeCase = ( str ) => {
 };
 
 /**
- * @param  obj
+ * @param {Object} obj
  * @return {{}}
  */
 export const convertKeysToSnakeCase = ( obj ) => {

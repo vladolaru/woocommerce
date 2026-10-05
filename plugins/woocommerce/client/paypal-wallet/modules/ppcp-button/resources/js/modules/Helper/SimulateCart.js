@@ -10,7 +10,7 @@ class SimulateCart {
 
 	/**
 	 *
-	 * @param             onResolve
+	 * @param {Function}  onResolve
 	 * @param {Product[]} products
 	 * @return {Promise<unknown>}
 	 */
