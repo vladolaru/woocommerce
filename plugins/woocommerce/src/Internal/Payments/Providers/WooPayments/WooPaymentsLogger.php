@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Exception;
 use Throwable;
 
@@ -33,6 +34,94 @@ class WooPaymentsLogger {
 	 * Number of stack frames written for a caught throwable.
 	 */
 	private const TRACE_FRAMES = 5;
+
+	/**
+	 * Logged in place of a platform or Stripe code this class does not list.
+	 */
+	public const UNKNOWN_ERROR_CODE = 'unknown_error';
+
+	/**
+	 * Platform and Stripe error codes a log line may carry as they are.
+	 *
+	 * A code reaches the log only from this list, because the platform's code field is free text to this store: an
+	 * error envelope could hold a URL, an email or a token there. The list is the codes this code base throws or acts
+	 * on: the transport's own codes (WooPaymentsApiClient, StripeBillingApi, the request classes), the codes the
+	 * provider branches on, Stripe's error types (`throw_api_error()` uses the type when the code is missing) and the
+	 * card errors and decline codes WooPaymentsErrorMessages::get_localized_messages() translates.
+	 */
+	private const LOGGABLE_ERROR_CODES = array(
+		// Transport and request validation codes.
+		'invalid_fraud_outcome_status',
+		'wcpay_client_error_code_missing',
+		'wcpay_client_unable_to_encode_json',
+		'wcpay_core_invalid_request_parameter_invalid_redirect_url',
+		'wcpay_evidence_file_max_size',
+		'wcpay_evidence_file_read_error',
+		'wcpay_evidence_file_upload_error',
+		'wcpay_http_request_failed',
+		'wcpay_invalid_filtered_request',
+		'wcpay_invalid_payment_credential',
+		'wcpay_invalid_payment_method_types',
+		'wcpay_invalid_terminal_location_request',
+		'wcpay_mandatory_currency_from_missing',
+		'wcpay_mandatory_customer_id_missing',
+		'wcpay_mandatory_price_id_missing',
+		'wcpay_mandatory_product_id_missing',
+		'wcpay_missing_payment_method_types',
+		'wcpay_request_missing_hook',
+		'wcpay_route_validation_failure',
+		'wcpay_unparseable_or_null_body',
+		'wcpay_wpcom_not_connected',
+		// Platform codes the provider acts on.
+		'amount_too_large',
+		'amount_too_small',
+		'idempotency_key_in_use',
+		'insufficient_balance_for_refund',
+		'resource_missing',
+		'wcpay_account_not_found',
+		'wcpay_api_error',
+		'wcpay_bad_request',
+		'wcpay_blocked_by_fraud_rule',
+		'wcpay_card_testing_prevention',
+		'wcpay_fraud_ruleset_not_found',
+		'wcpay_on_boarding_disabled',
+		// Stripe error types.
+		'api_error',
+		'card_error',
+		'idempotency_error',
+		'invalid_request_error',
+		// Card errors and decline codes with a translated shopper message.
+		'authentication_required',
+		'card_declined',
+		'country_code_invalid',
+		'email_invalid',
+		'expired_card',
+		'fraudulent',
+		'incomplete_cvc',
+		'incomplete_expiry',
+		'incomplete_number',
+		'incorrect_cvc',
+		'incorrect_number',
+		'incorrect_zip',
+		'insufficient_funds',
+		'invalid_cvc',
+		'invalid_expiry_month',
+		'invalid_expiry_year',
+		'invalid_expiry_year_past',
+		'invalid_number',
+		'invalid_sofort_country',
+		'invalid_wallet_type',
+		'missing',
+		'payment_intent_authentication_failure',
+		'postal_code_invalid',
+		'processing_error',
+		'tax_id_invalid',
+	);
+
+	/**
+	 * WP_Error codes WordPress's HTTP API sets on a failed request (`WP_Http::request()`), logged as they are.
+	 */
+	private const LOGGABLE_TRANSPORT_ERROR_CODES = array( 'http_request_failed', 'http_request_not_executed', 'http_failure' );
 
 	/**
 	 * Account service.
@@ -87,7 +176,7 @@ class WooPaymentsLogger {
 	}
 
 	/**
-	 * Log a caught throwable with its class, code and a short trace.
+	 * Log a caught throwable with its class, code and a short trace, plus the platform's status and code for a platform error.
 	 *
 	 * An Exception follows the logging setting, as on the client (`includes/class-logger.php:100-112`). Any other
 	 * throwable is a PHP Error the client would let fatal, so it is always written at error level (monitor rule 2026-10-04).
@@ -99,7 +188,7 @@ class WooPaymentsLogger {
 	 */
 	public function log_throwable( string $message, Throwable $throwable, array $context = array(), string $level = 'error' ): void {
 		if ( $throwable instanceof Exception ) {
-			$this->log( $message, $level, array_merge( $context, self::get_throwable_context( $throwable ) ) );
+			$this->log( $message, $level, array_merge( $context, self::get_failure_context( $throwable ) ) );
 			return;
 		}
 
@@ -114,7 +203,7 @@ class WooPaymentsLogger {
 	 * @param array<string,mixed> $context   Context, such as order_id or intent_id.
 	 */
 	public function log_throwable_always( string $message, Throwable $throwable, array $context = array() ): void {
-		$this->log_always( $message, 'error', array_merge( $context, self::get_throwable_context( $throwable ) ) );
+		$this->log_always( $message, 'error', array_merge( $context, self::get_failure_context( $throwable ) ) );
 	}
 
 	/**
@@ -126,6 +215,58 @@ class WooPaymentsLogger {
 	 */
 	public function log_always( string $message, string $level, array $context = array() ): void {
 		wc_get_logger()->log( $level, $message, array_merge( $context, array( 'source' => self::SOURCE ) ) );
+	}
+
+	/**
+	 * Get what a log line may say about a caught throwable: get_throwable_context() plus get_api_error_context().
+	 *
+	 * @param Throwable $throwable Caught throwable.
+	 * @return array<string,int|string>
+	 */
+	public static function get_failure_context( Throwable $throwable ): array {
+		return array_merge( self::get_throwable_context( $throwable ), self::get_api_error_context( $throwable ) );
+	}
+
+	/**
+	 * Get the HTTP status and the listed codes of the platform error a throwable is, or wraps; empty for any other.
+	 *
+	 * Never the message: the platform and Stripe write it, and a transport failure's message can name the host or URL.
+	 *
+	 * @param Throwable $throwable Caught throwable.
+	 * @return array<string,int|string>
+	 */
+	public static function get_api_error_context( Throwable $throwable ): array {
+		$api_error = $throwable;
+		while ( null !== $api_error && ! $api_error instanceof WooPaymentsApiException ) {
+			$api_error = $api_error->getPrevious();
+		}
+		if ( ! $api_error instanceof WooPaymentsApiException ) {
+			return array();
+		}
+
+		$context = array(
+			'http_status' => $api_error->get_http_code(),
+			'error_code'  => self::get_loggable_error_code( $api_error->get_error_code() ),
+		);
+		if ( '' !== $api_error->get_decline_code() ) {
+			$context['decline_code'] = self::get_loggable_error_code( $api_error->get_decline_code() );
+		}
+		$transport_error_code = $api_error->get_error_data()['transport_error_code'] ?? null;
+		if ( is_string( $transport_error_code ) && '' !== $transport_error_code ) {
+			$context['transport_error_code'] = in_array( $transport_error_code, self::LOGGABLE_TRANSPORT_ERROR_CODES, true ) ? $transport_error_code : self::UNKNOWN_ERROR_CODE;
+		}
+
+		return $context;
+	}
+
+	/**
+	 * Get a platform or Stripe code as a log line may carry it: the code when this class lists it, else unknown_error.
+	 *
+	 * @param string $code Platform or Stripe code.
+	 * @return string
+	 */
+	public static function get_loggable_error_code( string $code ): string {
+		return in_array( $code, self::LOGGABLE_ERROR_CODES, true ) ? $code : self::UNKNOWN_ERROR_CODE;
 	}
 
 	/**

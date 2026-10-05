@@ -3,9 +3,11 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
+use RuntimeException;
 use WC_Unit_Test_Case;
 
 /**
@@ -13,6 +15,8 @@ use WC_Unit_Test_Case;
  * in dev mode or with the gateway's `enable_logging` setting on.
  */
 class WooPaymentsLoggerTest extends WC_Unit_Test_Case {
+
+	use ProviderTextLogAssertions;
 
 	/**
 	 * @testdox With debug logging $logging and dev mode $dev_mode, an error line is written: $expected.
@@ -132,6 +136,65 @@ class WooPaymentsLoggerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 7, $lines[0][2]['code'] );
 		$this->assertStringContainsString( __CLASS__ . '->' . __FUNCTION__ . '()', $lines[0][2]['trace'] );
 		$this->assertStringNotContainsString( 'secret-call-argument', $lines[0][2]['trace'], 'The trace leaves out call arguments.' );
+	}
+
+	/**
+	 * @testdox A platform error is logged with its HTTP status and listed codes only, also when another throwable wraps it.
+	 */
+	public function test_failure_context_carries_only_listed_codes_of_a_platform_error(): void {
+		$declined = new WooPaymentsApiException( 'Error: Your card was declined.', 'card_declined', 402, 'card_error', 'insufficient_funds' );
+		$wrapped  = new RuntimeException( 'Applying the outcome failed.', 0, $declined );
+
+		$context = WooPaymentsLogger::get_failure_context( $wrapped );
+
+		$this->assertSame( RuntimeException::class, $context['exception'] );
+		$this->assertSame( 402, $context['http_status'] );
+		$this->assertSame( 'card_declined', $context['error_code'] );
+		$this->assertSame( 'insufficient_funds', $context['decline_code'] );
+
+		// An error envelope's code and decline code are free text to this store (WooPaymentsApiClient::throw_api_error()).
+		$free_text = new WooPaymentsApiException( 'Error: x', 'https://pay.example.test/r?key=sk_test_leak123', 400, '', 'shopper@example.com' );
+		$context   = WooPaymentsLogger::get_api_error_context( $free_text );
+		$this->assertSame( 'unknown_error', $context['error_code'] );
+		$this->assertSame( 'unknown_error', $context['decline_code'] );
+
+		// WooPaymentsApiClient::request_decoded() keeps a failed request's WP_Error code as transport_error_code; a
+		// pre_http_request callback can set any code there.
+		$transport = new WooPaymentsApiException( 'Http request failed. Reason: cURL error 6: Could not resolve host: pay.example.test', 'wcpay_http_request_failed', 500, '', '', array( 'transport_error_code' => 'http_request_failed' ) );
+		$this->assertSame(
+			array(
+				'http_status'          => 500,
+				'error_code'           => 'wcpay_http_request_failed',
+				'transport_error_code' => 'http_request_failed',
+			),
+			WooPaymentsLogger::get_api_error_context( $transport )
+		);
+		$odd_transport = new WooPaymentsApiException( 'Http request failed.', 'wcpay_http_request_failed', 500, '', '', array( 'transport_error_code' => 'sk_test_leak123' ) );
+		$this->assertSame( 'unknown_error', WooPaymentsLogger::get_api_error_context( $odd_transport )['transport_error_code'] );
+
+		$this->assertSame( array(), WooPaymentsLogger::get_api_error_context( new RuntimeException( 'Order 7 could not be saved.' ) ) );
+	}
+
+	/**
+	 * @testdox A caught platform error is logged with the caller's message, its status and code, and none of its text.
+	 */
+	public function test_log_throwable_adds_the_platform_status_and_code(): void {
+		self::enable_woopayments_debug_logging();
+		$account_service = new WooPaymentsAccountService();
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ) );
+		$sut = new WooPaymentsLogger();
+		$sut->init( $account_service );
+		$logger = RecordingWcLogger::install();
+
+		$sut->log_throwable( 'Failed to fetch the payment intent.', self::make_provider_error(), array( 'order_id' => 42 ) );
+		$sut->log_throwable_always( 'Failed to fetch the payment intent again.', self::make_provider_error( 'wcpay_https://x' ) );
+
+		$context = $this->get_logged_context( $logger, 'Failed to fetch the payment intent.' );
+		$this->assertSame( 404, $context['http_status'] );
+		$this->assertSame( 'resource_missing', $context['error_code'] );
+		$this->assertSame( 42, $context['order_id'] );
+		$this->assertSame( 'unknown_error', $this->get_logged_context( $logger, 'Failed to fetch the payment intent again.' )['error_code'] );
+		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
 	/** @return array<string,array{string,bool,bool}> */
