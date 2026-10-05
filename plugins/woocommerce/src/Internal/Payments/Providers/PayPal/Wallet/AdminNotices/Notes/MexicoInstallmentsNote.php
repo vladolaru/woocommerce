@@ -27,8 +27,10 @@ class MexicoInstallmentsNote {
 
 	/**
 	 * Note initialization.
+	 *
+	 * @internal
 	 */
-	public static function init(): void {
+	final public static function init(): void {
 		try {
 			/**
 			 * The method exists in the NoteTraits trait.
@@ -113,7 +115,7 @@ class MexicoInstallmentsNote {
 	 */
 	public static function can_be_added(): bool {
 		$country = wc_get_base_location()['country'] ?? '';
-		if ( $country !== 'MX' ) {
+		if ( 'MX' !== $country ) {
 			return false;
 		}
 

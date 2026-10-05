@@ -28,7 +28,11 @@ class Repository implements RepositoryInterface {
 	public function current_message(): array {
 		return array_filter(
 			/**
-			 * Returns the list of admin messages.
+			 * Filters the list of admin messages to display.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param array $messages The messages; an empty array until a callback adds some.
 			 */
 			(array) apply_filters(
 				self::NOTICES_FILTER,
@@ -52,7 +56,10 @@ class Repository implements RepositoryInterface {
 	 * @return void
 	 */
 	public function persist( Message $message ): void {
-		$persisted_notices = get_option( self::PERSISTED_NOTICES_OPTION ) ?: array();
+		$persisted_notices = get_option( self::PERSISTED_NOTICES_OPTION );
+		if ( ! $persisted_notices ) {
+			$persisted_notices = array();
+		}
 
 		$persisted_notices[] = $message->to_array();
 
@@ -67,7 +74,10 @@ class Repository implements RepositoryInterface {
 	public function get_persisted_and_clear(): array {
 		$notices = array();
 
-		$persisted_data = get_option( self::PERSISTED_NOTICES_OPTION ) ?: array();
+		$persisted_data = get_option( self::PERSISTED_NOTICES_OPTION );
+		if ( ! $persisted_data ) {
+			$persisted_data = array();
+		}
 		foreach ( $persisted_data as $notice_data ) {
 			if ( is_array( $notice_data ) ) {
 				$notices[] = Message::from_array( $notice_data );

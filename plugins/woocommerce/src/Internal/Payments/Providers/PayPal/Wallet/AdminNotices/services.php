@@ -32,7 +32,7 @@ return array(
 			$container->get( 'ppcp.asset-version' )
 		);
 	},
-	'admin-notices.repository'            => static function ( ContainerInterface $container ): RepositoryInterface {
+	'admin-notices.repository'            => static function ( ContainerInterface $container ): RepositoryInterface { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new Repository();
 	},
 	'admin-notices.mute-message-endpoint' => static function ( ContainerInterface $container ): MuteMessageEndpoint {

@@ -68,6 +68,7 @@ class PersistentMessage extends Message {
 	/**
 	 * {@inheritDoc}
 	 *
+	 * @param array $data The message data.
 	 * @return PersistentMessage
 	 */
 	public static function from_array( array $data ): Message {

@@ -26,6 +26,11 @@ class Renderer implements RendererInterface {
 	 */
 	private $repository;
 
+	/**
+	 * The asset getter.
+	 *
+	 * @var AssetGetter
+	 */
 	private AssetGetter $asset_getter;
 
 	/**
@@ -43,9 +48,11 @@ class Renderer implements RendererInterface {
 	private $can_mute_message = false;
 
 	/**
-	 * @param RepositoryInterface $repository The message repository.
-	 * @param AssetGetter         $asset_getter
-	 * @param string              $version The module version.
+	 * Renderer constructor.
+	 *
+	 * @param RepositoryInterface $repository   The message repository.
+	 * @param AssetGetter         $asset_getter The asset getter.
+	 * @param string              $version      The module version.
 	 */
 	public function __construct(
 		RepositoryInterface $repository,

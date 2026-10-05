@@ -1,6 +1,6 @@
 <?php
 /**
- *
+ * The endpoint for muting an admin notification.
  *
  * @package Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\AdminNotices\Endpoint
  */
@@ -20,18 +20,34 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\AdminNotice
 class MuteMessageEndpoint {
 	const ENDPOINT = 'ppc-mute-message';
 
+	/**
+	 * The request data helper.
+	 *
+	 * @var RequestData
+	 */
 	private RequestData $request_data;
 
+	/**
+	 * MuteMessageEndpoint constructor.
+	 *
+	 * @param RequestData $request_data The request data helper.
+	 */
 	public function __construct(
 		RequestData $request_data
 	) {
 		$this->request_data = $request_data;
 	}
 
+	/**
+	 * Returns the nonce action of the endpoint.
+	 */
 	public static function nonce(): string {
 		return self::ENDPOINT;
 	}
 
+	/**
+	 * Handles the request.
+	 */
 	public function handle_request(): void {
 		try {
 			$data = $this->request_data->read_request( $this->nonce() );
