@@ -37,8 +37,8 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		if ( $this->sut instanceof WooPaymentsExpressCheckoutController ) {
-			foreach ( $this->get_expected_frontend_hooks() as $hook => $method ) {
-				remove_action( $hook, array( $this->sut, $method ) );
+			foreach ( $this->get_expected_frontend_hooks() as $hook => list( $method, $priority ) ) {
+				remove_action( $hook, array( $this->sut, $method ), $priority );
 			}
 			remove_filter( 'wcpay_tracks_event_properties', array( $this->sut, 'add_tracking_event_properties' ) );
 		}
@@ -68,8 +68,8 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 
 		$this->sut->register();
 
-		foreach ( $this->get_expected_frontend_hooks() as $hook => $method ) {
-			$this->assertNotFalse( has_action( $hook, array( $this->sut, $method ) ), "{$hook} should be registered." );
+		foreach ( $this->get_expected_frontend_hooks() as $hook => list( $method, $priority ) ) {
+			$this->assertSame( $priority, has_action( $hook, array( $this->sut, $method ) ), "{$hook} should be registered at priority {$priority}." );
 		}
 		$this->assertNotFalse( has_filter( 'wcpay_tracks_event_properties', array( $this->sut, 'add_tracking_event_properties' ) ) );
 	}
@@ -82,7 +82,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 
 		$this->sut->register();
 
-		foreach ( $this->get_expected_frontend_hooks() as $hook => $method ) {
+		foreach ( $this->get_expected_frontend_hooks() as $hook => list( $method ) ) {
 			$this->assertFalse( has_action( $hook, array( $this->sut, $method ) ) );
 		}
 		$this->assertFalse( has_filter( 'wcpay_tracks_event_properties', array( $this->sut, 'add_tracking_event_properties' ) ) );
@@ -96,8 +96,8 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 
 		$this->sut->register();
 
-		foreach ( $this->get_expected_frontend_hooks() as $hook => $method ) {
-			$this->assertNotFalse( has_action( $hook, array( $this->sut, $method ) ), "{$hook} should be registered." );
+		foreach ( $this->get_expected_frontend_hooks() as $hook => list( $method, $priority ) ) {
+			$this->assertSame( $priority, has_action( $hook, array( $this->sut, $method ) ), "{$hook} should be registered at priority {$priority}." );
 		}
 		$this->assertNotFalse( has_filter( 'wcpay_tracks_event_properties', array( $this->sut, 'add_tracking_event_properties' ) ) );
 	}
@@ -1014,17 +1014,19 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Get expected frontend hooks and callbacks.
+	 * Get expected frontend hooks, callbacks and priorities. The button priorities are the client 11.1.0 ones
+	 * (class-wc-payments-express-checkout-button-display-handler.php:93-96); 21 puts the cart buttons below
+	 * WooCommerce's "Proceed to checkout" button (priority 20).
 	 *
-	 * @return array<string,string>
+	 * @return array<string,array{0:string,1:int}>
 	 */
 	private function get_expected_frontend_hooks(): array {
 		return array(
-			'wp_enqueue_scripts'                           => 'enqueue_frontend_assets',
-			'woocommerce_after_add_to_cart_form'           => 'display_express_checkout_buttons',
-			'woocommerce_checkout_before_customer_details' => 'display_express_checkout_buttons',
-			'woocommerce_proceed_to_checkout'              => 'display_express_checkout_buttons',
-			'woocommerce_pay_order_before_payment'         => 'display_express_checkout_buttons',
+			'wp_enqueue_scripts'                           => array( 'enqueue_frontend_assets', 10 ),
+			'woocommerce_after_add_to_cart_form'           => array( 'display_express_checkout_buttons', 1 ),
+			'woocommerce_checkout_before_customer_details' => array( 'display_express_checkout_buttons', 1 ),
+			'woocommerce_proceed_to_checkout'              => array( 'display_express_checkout_buttons', 21 ),
+			'woocommerce_pay_order_before_payment'         => array( 'display_express_checkout_buttons', 1 ),
 		);
 	}
 

@@ -86,9 +86,9 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 			return;
 		}
 
-		foreach ( $this->get_frontend_hooks() as $hook => $callback ) {
+		foreach ( $this->get_frontend_hooks() as $hook => list( $callback, $priority ) ) {
 			if ( false === has_action( $hook, $callback ) ) {
-				add_action( $hook, $callback );
+				add_action( $hook, $callback, $priority );
 			}
 		}
 
@@ -265,17 +265,19 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get express checkout frontend hooks and callbacks.
+	 * Get express checkout frontend hooks, callbacks and priorities. The button priorities are the client 11.1.0 ones
+	 * (class-wc-payments-express-checkout-button-display-handler.php:93-96): first on product, checkout and order-pay,
+	 * and below WooCommerce's "Proceed to checkout" button (priority 20) on the cart.
 	 *
-	 * @return array<string,callable>
+	 * @return array<string,array{0:callable,1:int}>
 	 */
 	private function get_frontend_hooks(): array {
 		return array(
-			'wp_enqueue_scripts'                           => array( $this, 'enqueue_frontend_assets' ),
-			'woocommerce_after_add_to_cart_form'           => array( $this, 'display_express_checkout_buttons' ),
-			'woocommerce_checkout_before_customer_details' => array( $this, 'display_express_checkout_buttons' ),
-			'woocommerce_proceed_to_checkout'              => array( $this, 'display_express_checkout_buttons' ),
-			'woocommerce_pay_order_before_payment'         => array( $this, 'display_express_checkout_buttons' ),
+			'wp_enqueue_scripts'                           => array( array( $this, 'enqueue_frontend_assets' ), 10 ),
+			'woocommerce_after_add_to_cart_form'           => array( array( $this, 'display_express_checkout_buttons' ), 1 ),
+			'woocommerce_checkout_before_customer_details' => array( array( $this, 'display_express_checkout_buttons' ), 1 ),
+			'woocommerce_proceed_to_checkout'              => array( array( $this, 'display_express_checkout_buttons' ), 21 ),
+			'woocommerce_pay_order_before_payment'         => array( array( $this, 'display_express_checkout_buttons' ), 1 ),
 		);
 	}
 
