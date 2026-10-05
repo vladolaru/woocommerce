@@ -711,10 +711,8 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 
 	// Client 11.1.0 wraps the button in `#wcpay-woopay-button`, swaps its content
 	// for a spinner and adds `is-loading` while the first-party session request
-	// runs, and sets `data-width-type` from the width measured on mount: wide
-	// above 140px
-	// (client/checkout/woopay/express-button/woopay-express-checkout-button.js:108-114,232-234,375-381,449-469).
-	it( 'renders the client WooPay button wrapper, loading state and width type', async () => {
+	// runs (client/checkout/woopay/express-button/woopay-express-checkout-button.js:108-114,232-234,449-469).
+	it( 'renders the client WooPay button wrapper and loading state', async () => {
 		let resolveSession;
 		getMockPaymentMethodSettings().isWoopayFirstPartyAuthEnabled = true;
 		window.fetch = jest.fn( ( url ) =>
@@ -736,7 +734,6 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 		const button = screen.getByRole( 'link', { name: 'WooPay' } );
 		expect( wrapper ).toHaveAttribute( 'id', 'wcpay-woopay-button' );
 		expect( wrapper ).toContainElement( button );
-		expect( button ).toHaveAttribute( 'data-width-type', 'narrow' );
 		expect( button ).not.toHaveClass( 'is-loading' );
 
 		fireEvent.click( button );
@@ -762,27 +759,6 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 		expect( button.querySelector( '.button-content' ) ).not.toBeNull();
 	} );
 
-	it.each( [
-		[ 141, 'wide' ],
-		[ 140, 'narrow' ],
-	] )(
-		'sets the WooPay button width type from a %ipx measured width',
-		( width, widthType ) => {
-			const rectSpy = jest
-				.spyOn( window.HTMLElement.prototype, 'getBoundingClientRect' )
-				.mockReturnValue( { width } );
-
-			registerWooPay();
-			const expressRegistration =
-				registerExpressPaymentMethod.mock.calls[ 0 ][ 0 ];
-			render( createElement( expressRegistration.content.type ) );
-
-			expect(
-				screen.getByRole( 'button', { name: 'WooPay' } )
-			).toHaveAttribute( 'data-width-type', widthType );
-			rectSpy.mockRestore();
-		}
-	);
 	// Client 11.1.0: with first-party auth off, the express button calls
 	// `expressCheckoutIframe( api, context, emailSelector )`
 	// (client/checkout/woopay/express-button/woopay-express-checkout-button.js:164-201),

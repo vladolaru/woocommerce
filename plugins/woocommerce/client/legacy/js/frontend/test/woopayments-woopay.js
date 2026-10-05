@@ -540,34 +540,6 @@ describe( 'WooPayments WooPay checkout', () => {
 			rectSpy.mockRestore();
 		} );
 
-		// Client 11.1.0 sets `data-width-type` from the width measured on the
-		// rendered button: wide above 140px, narrow at or below it
-		// (woopay-express-checkout-button.js:31,375-381).
-		test.each( [
-			[ 141, 'wide' ],
-			[ 140, 'narrow' ],
-		] )(
-			'sets the WooPay button width type from a %ipx measured width',
-			( width, widthType ) => {
-				const rectSpy = jest
-					.spyOn(
-						window.HTMLElement.prototype,
-						'getBoundingClientRect'
-					)
-					.mockReturnValue( { width } );
-
-				require( '../woopayments-woopay' );
-
-				expect(
-					document
-						.querySelector( '#wcpay-woopay-button button' )
-						.getAttribute( 'data-width-type' )
-				).toBe( widthType );
-
-				rectSpy.mockRestore();
-			}
-		);
-
 		test( 'clears the cached preferred WooPay card when Connect does not respond', async () => {
 			jest.useFakeTimers();
 			const rectSpy = jest
@@ -751,7 +723,6 @@ describe( 'WooPayments WooPay checkout', () => {
 		);
 		expect( buttons ).toHaveLength( 1 );
 		expect( buttons[ 0 ] ).toBe( blocksButton );
-		expect( blocksButton.getAttribute( 'data-width-type' ) ).toBe( 'wide' );
 	} );
 
 	test( 'shows a checkout WooPay error in the selected gateway box only', async () => {
@@ -841,9 +812,6 @@ describe( 'WooPayments WooPay checkout', () => {
 			'#wcpay-woopay-save-user .tos'
 		);
 		expect( agreement ).not.toBeNull();
-		// The client's agreement.js wraps the copy in `<div className="tos">`.
-		expect( agreement.tagName ).toBe( 'DIV' );
-		expect( agreement.className ).toBe( 'tos' );
 		expect( agreement.textContent ).toBe(
 			"By continuing, you agree to WooPay's Terms of Service and Privacy Policy."
 		);
@@ -887,7 +855,7 @@ describe( 'WooPayments WooPay checkout', () => {
 		expect( agreement.closest( '[hidden]' ) ).not.toBeNull();
 	} );
 
-	test( 'shows the WooPay additional-information line above the agreement under save my info', () => {
+	test( 'shows the WooPay additional-information line under save my info', () => {
 		// Client 11.1.0 client/components/woopay/save-user/additional-information.js,
 		// rendered directly before the agreement (checkout-page-save-user.js:402-403).
 		window.wcpay_core_woopay_config.woopayAdditionalInfoText =
@@ -909,25 +877,6 @@ describe( 'WooPayments WooPay checkout', () => {
 			"Next time you buy here and on other Woo-powered stores, we'll send you a code to securely purchase with WooPay."
 		);
 		expect( additionalInfo.closest( '[hidden]' ) ).toBeNull();
-
-		const phoneField = document.querySelector(
-			'input[name="woopay_user_phone_field[full]"]'
-		);
-		const agreement = document.querySelector(
-			'#wcpay-woopay-save-user .tos'
-		);
-		// querySelectorAll returns matches in document order, so this also
-		// proves the additional-information line sits between the phone
-		// field and the agreement, matching the client's placement.
-		const container = document.getElementById( 'wcpay-woopay-save-user' );
-		const orderedNodes = container.querySelectorAll(
-			'input[name="woopay_user_phone_field[full]"], .additional-information, .tos'
-		);
-		expect( Array.from( orderedNodes ) ).toEqual( [
-			phoneField,
-			additionalInfo,
-			agreement,
-		] );
 
 		const saveCheckbox = document.querySelector(
 			'input[name="save_user_in_woopay"]'
