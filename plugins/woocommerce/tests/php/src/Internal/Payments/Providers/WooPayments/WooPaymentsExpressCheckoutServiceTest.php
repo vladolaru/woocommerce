@@ -529,23 +529,26 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should price the variation the product form starts with on a variable product page ($scenario).
+	 * @testdox Should price the variation the product form starts with on a $type product page ($scenario).
 	 *
-	 * Client 11.1.0 button helper `get_product_data()` :768-786: an attribute in the URL wins over the default
-	 * attribute, and the matching variation is the product that gets priced.
+	 * Client 11.1.0 button helper `get_product_data()` :768-786: for a `variable` or `variable-subscription` product,
+	 * an attribute in the URL wins over the default attribute, and the matching variation is the product that gets priced.
 	 *
-	 * @testWith ["default variation", "", 2000]
-	 *           ["URL attribute over the default", "L", 3000]
+	 * @testWith ["variable", "default variation", "", 2000]
+	 *           ["variable", "URL attribute over the default", "L", 3000]
+	 *           ["variable-subscription", "default variation", "", 2000]
+	 *           ["variable-subscription", "URL attribute over the default", "L", 3000]
 	 *
+	 * @param string $type           Product type the variable product reports.
 	 * @param string $scenario       Scenario label.
 	 * @param string $url_attribute  Size passed in the URL, or empty for none.
 	 * @param int    $expected       Expected amount in minor units.
 	 */
-	public function test_product_page_prices_the_initially_selected_variation( string $scenario, string $url_attribute, int $expected ): void {
+	public function test_product_page_prices_the_initially_selected_variation( string $type, string $scenario, string $url_attribute, int $expected ): void {
 		unset( $scenario );
 		update_option( 'woocommerce_currency', 'USD' );
 		update_option( 'woocommerce_calc_taxes', 'no' );
-		$product = $this->create_sized_variable_product( 'M' );
+		$product = $this->create_sized_variable_product( 'M', $type );
 		if ( '' !== $url_attribute ) {
 			$_GET['attribute_size'] = $url_attribute;
 		}
@@ -2075,10 +2078,14 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a virtual variable product with S ($10), M ($20) and L ($30) variations of a local Size attribute.
 	 *
+	 * WooCommerce Subscriptions is not installed in tests, so another `$type` is a variable product, saved and read as
+	 * one, that reports that type once loaded.
+	 *
 	 * @param string $default_size Default Size, or empty for none.
+	 * @param string $type         Product type the product reports.
 	 * @return \WC_Product_Variable
 	 */
-	private function create_sized_variable_product( string $default_size ): \WC_Product_Variable {
+	private function create_sized_variable_product( string $default_size, string $type = 'variable' ): \WC_Product_Variable {
 		$attribute = new \WC_Product_Attribute();
 		$attribute->set_name( 'Size' );
 		$attribute->set_options( array( 'S', 'M', 'L' ) );
@@ -2107,7 +2114,30 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		}
 		\WC_Product_Variable::sync( $product->get_id() );
 
-		return wc_get_product( $product->get_id() );
+		if ( 'variable' === $type ) {
+			return wc_get_product( $product->get_id() );
+		}
+
+		$typed_product            = new class( $product->get_id() ) extends \WC_Product_Variable {
+			/**
+			 * Product type this product reports once loaded; empty while the variable data store reads it.
+			 *
+			 * @var string
+			 */
+			public string $test_type = '';
+
+			/**
+			 * Get the product type.
+			 *
+			 * @return string
+			 */
+			public function get_type() {
+				return '' !== $this->test_type ? $this->test_type : parent::get_type();
+			}
+		};
+		$typed_product->test_type = $type;
+
+		return $typed_product;
 	}
 
 	/**
