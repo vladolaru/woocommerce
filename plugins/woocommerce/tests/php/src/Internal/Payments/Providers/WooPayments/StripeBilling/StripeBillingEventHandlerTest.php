@@ -453,6 +453,38 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A failed-payment update refused because another update of the same invoice is creating its renewal order leaves a note on the subscription, since that type gets one attempt.
+	 */
+	public function test_overlapping_failed_invoice_update_is_noted_on_the_subscription(): void {
+		$subscription = $this->create_subscription( self::FAILING_SUBSCRIPTION_ID );
+		// Each delivery reads the charge before it looks for the renewal order; only the first goes on to update the invoice.
+		$this->queue_response( 200, $this->get_declined_charge() );
+		$this->queue_response( 200, $this->get_declined_charge() );
+		$this->queue_billing( 'update_invoice' );
+		$event         = $this->get_event( 'invoice_payment_failed' );
+		$inner_refusal = null;
+		$overlap       = function () use ( $event, &$inner_refusal, &$overlap ): void {
+			remove_action( 'woocommerce_new_order', $overlap );
+			try {
+				$this->sut->handle_event( $event );
+			} catch ( RuntimeException $exception ) {
+				$inner_refusal = $exception;
+			}
+		};
+		add_action( 'woocommerce_new_order', $overlap );
+
+		try {
+			$this->sut->handle_event( $event );
+		} finally {
+			remove_action( 'woocommerce_new_order', $overlap );
+		}
+
+		$this->assertInstanceOf( RuntimeException::class, $inner_refusal );
+		$this->assertCount( 1, $this->get_renewal_orders( self::FAILED_INVOICE_ID ) );
+		$this->assertCount( 1, $this->get_notes_containing( wc_get_order( $subscription->get_id() ), 'could not be applied, because another update of the same invoice was running' ) );
+	}
+
+	/**
 	 * @testdox When the intent cannot be read, the renewal order is paid at once with a note and the IDs a refund needs, and the event completes (client get_and_attach_intent_info_to_order, `class-wc-payments-invoice-service.php:288-299`).
 	 */
 	public function test_unreadable_intent_pays_the_renewal_order_with_a_note(): void {

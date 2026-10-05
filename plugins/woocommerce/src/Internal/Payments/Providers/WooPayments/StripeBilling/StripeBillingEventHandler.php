@@ -17,6 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPe
 use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
 use InvalidArgumentException;
 use RuntimeException;
+use Throwable;
 use WC_Order;
 
 defined( 'ABSPATH' ) || exit;
@@ -332,7 +333,17 @@ class StripeBillingEventHandler {
 			$error_code    = (string) ( $charge['failure_code'] ?? '' );
 		}
 
-		$order = $this->get_or_create_renewal_order( $subscription, $wcpay_invoice_id, __( 'Unable to generate renewal order for subscription to record the incoming "invoice.payment_failed" event.', 'woocommerce' ) );
+		$order = $this->get_or_create_renewal_order(
+			$subscription,
+			$wcpay_invoice_id,
+			__( 'Unable to generate renewal order for subscription to record the incoming "invoice.payment_failed" event.', 'woocommerce' ),
+			sprintf(
+				/* translators: %1$s: Stripe Billing invoice ID, %2$d: renewal attempt number. */
+				__( 'A WooPayments failed-payment update for this subscription (invoice %1$s, attempt %2$d) could not be applied, because another update of the same invoice was running. Check the subscription in your WooPayments dashboard.', 'woocommerce' ),
+				$wcpay_invoice_id,
+				$attempts
+			)
+		);
 
 		if ( $error_details ) {
 			$subscription->add_order_note(
@@ -385,22 +396,32 @@ class StripeBillingEventHandler {
 	 * Get the renewal order an invoice paid, or create it.
 	 *
 	 * Two deliveries of one invoice can overlap (a slow first delivery the platform counts as failed and lists again,
-	 * or a duplicate push). The lookup, the creation and the invoice link run under a lock on the invoice, so the
-	 * second delivery either finds the linked order or fails to be retried; it never creates a second renewal order
-	 * for the same payment. The lock expires after a minute, so a delivery that died cannot block the next one.
+	 * or a duplicate push). The lookup, the creation and the invoice link run under a lock on the invoice, so a second
+	 * delivery finds the linked order or is refused: invoice.paid is retried and finds the order later; an
+	 * invoice.payment_failed gets one attempt, so its refusal leaves a note on the subscription. Like the order payment
+	 * lock, this is a lease of WooPaymentsPersistenceProfile::LOCK_TTL_SECONDS: a delivery that died cannot block the
+	 * next one, and a creation that stalls past it can be overtaken (accepted, as for the order payment lock).
 	 * Client 11.1.0 looks up and creates without a lock (class-wc-payments-subscriptions-event-handler.php:146-175).
 	 *
 	 * @param WC_Order $subscription  Subscription.
 	 * @param string   $invoice_id    Invoice ID.
 	 * @param string   $error_message Message when the renewal order cannot be created.
+	 * @param string   $refusal_note  Note left on the subscription when another delivery holds the lock, if any.
 	 * @return WC_Order
 	 * @throws StripeBillingException When the renewal order cannot be created.
 	 * @throws RuntimeException When another delivery of the invoice is creating its renewal order.
 	 */
-	private function get_or_create_renewal_order( WC_Order $subscription, string $invoice_id, string $error_message ): WC_Order {
+	private function get_or_create_renewal_order( WC_Order $subscription, string $invoice_id, string $error_message, string $refusal_note = '' ): WC_Order {
 		$lock_key   = 'wcpay_stripe_billing_renewal_' . md5( $invoice_id );
 		$lock_token = wp_generate_uuid4();
-		if ( ! $this->row_lock->claim( $lock_key, $lock_token, MINUTE_IN_SECONDS ) ) {
+		if ( ! $this->row_lock->claim( $lock_key, $lock_token, WooPaymentsPersistenceProfile::LOCK_TTL_SECONDS ) ) {
+			if ( '' !== $refusal_note ) {
+				try {
+					$subscription->add_order_note( $refusal_note );
+				} catch ( Throwable $exception ) {
+					unset( $exception );
+				}
+			}
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
 			throw new RuntimeException( sprintf( 'Another delivery of invoice %s is creating its renewal order.', $invoice_id ) );
 		}

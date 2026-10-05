@@ -271,6 +271,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_logger_log_message', $logger, 10, 2 );
 
 		try {
+			// The mismatch check reads only the envelope's livemode and id (client 11.1.0
+			// class-wc-payments-webhook-processing-service.php:268-290); the PaymentIntent body is never reached.
 			$this->sut->process(
 				$this->create_payment_intent_event(
 					'payment_intent.succeeded',
@@ -287,8 +289,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( 'pending', wc_get_order( $order->get_id() )->get_status() );
-		$errors = array_filter( $logged, static fn( array $entry ): bool => 'error' === $entry[0] && false !== strpos( $entry[1], 'evt_mode_mismatch' ) );
-		$this->assertNotEmpty( $errors, 'The skipped event must leave an error line naming it.' );
+		// The message filter runs once per log handler, so a line is counted once.
+		$errors = array_unique( array_column( array_filter( $logged, static fn( array $entry ): bool => 'error' === $entry[0] && false !== strpos( $entry[1], 'evt_mode_mismatch' ) ), 1 ) );
+		$this->assertCount( 1, $errors, 'The skipped event must leave one error line naming it.' );
 	}
 
 	/**

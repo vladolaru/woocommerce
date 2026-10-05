@@ -741,10 +741,18 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A lost partial dispute whose summary cannot be fetched refunds the disputed amount from the event, not the whole order.
+	 * @testdox A lost partial $currency dispute whose summary cannot be fetched refunds the disputed amount from the event ($expected), not the whole order.
+	 * @testWith ["USD", 300, "3.00"]
+	 *           ["JPY", 300, "300.00"]
+	 *
+	 * @param string $currency Order and dispute currency.
+	 * @param int    $amount   Dispute amount in the currency's minor units, as Stripe sends it.
+	 * @param string $expected Refund amount.
 	 */
-	public function test_lost_partial_dispute_refunds_the_event_amount_when_the_summary_fetch_fails(): void {
+	public function test_lost_partial_dispute_refunds_the_event_amount_when_the_summary_fetch_fails( string $currency, int $amount, string $expected ): void {
 		$order = $this->create_disputable_order();
+		$order->set_currency( $currency );
+		$order->set_total( 'JPY' === $currency ? '1000' : '10.00' );
 		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
 		$order->set_status( 'on-hold' );
 		$order->update_meta_data( '_charge_id', 'ch_partial_lost' );
@@ -780,14 +788,14 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 				'id'       => 'dp_partial_lost',
 				'charge'   => 'ch_partial_lost',
 				'status'   => 'lost',
-				'amount'   => 300,
-				'currency' => 'usd',
+				'amount'   => $amount,
+				'currency' => strtolower( $currency ),
 			)
 		);
 
 		$refunds = wc_get_order( $order->get_id() )->get_refunds();
 		$this->assertCount( 1, $refunds );
-		$this->assertSame( '3.00', wc_format_decimal( $refunds[0]->get_amount(), 2 ) );
+		$this->assertSame( $expected, wc_format_decimal( $refunds[0]->get_amount(), 2 ) );
 	}
 
 	/**
