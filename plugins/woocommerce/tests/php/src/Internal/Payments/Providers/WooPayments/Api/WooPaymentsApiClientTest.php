@@ -1480,6 +1480,209 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The gated transport log redacts session, checkout and credential keys at any depth, lists included, whatever their case.
+	 *
+	 * The request params are the store's own. The response body is defensive input rather than a platform shape: the
+	 * client logs whatever body the platform answers, after API_KEYS_TO_REDACT (class-wc-payments-api-client.php:2780-2784).
+	 */
+	public function test_transport_log_redacts_session_and_credential_keys_at_any_depth(): void {
+		$secrets = array(
+			'platform_checkout_key'  => 'leak-platform-checkout-key',
+			'session'                => 'leak-session',
+			'session_id'             => 'leak-session-id',
+			'woopay_session'         => 'leak-woopay-session',
+			'token'                  => 'leak-token',
+			'access_token'           => 'leak-access-token',
+			'blog_token'             => 'leak-blog-token',
+			'user_token'             => 'leak-user-token',
+			'signature'              => 'leak-signature',
+			'sig'                    => 'leak-sig',
+			'secret'                 => 'leak-secret',
+			'webhook_signing_secret' => 'leak-suffix-secret',
+			'publishable_key'        => 'leak-suffix-key',
+			'Authorization'          => 'leak-authorization',
+			'Cookie'                 => 'leak-cookie',
+		);
+		$params  = array(
+			'top'  => $secrets,
+			'list' => array( array( 'nested' => $secrets ) ),
+		);
+
+		$logger = $this->log_transport_request( $params, array( 'data' => array( 'items' => array( $secrets ) ) ) );
+
+		$request  = $this->get_transport_entry( $logger, 'API REQUEST (' );
+		$response = $this->get_transport_entry( $logger, 'API RESPONSE (' );
+		foreach ( array_keys( $secrets ) as $key ) {
+			$this->assertSame( '(redacted)', $request['context']['body']['top'][ $key ] ?? null, "Request key $key at depth one." );
+			$this->assertSame( '(redacted)', $request['context']['body']['list'][0]['nested'][ $key ] ?? null, "Request key $key inside a list." );
+			$this->assertSame( '(redacted)', $response['context']['body']['data']['items'][0][ $key ] ?? null, "Response key $key inside a list." );
+		}
+		$this->assertStringNotContainsString( 'leak-', (string) wp_json_encode( $logger->entries ) );
+	}
+
+	/**
+	 * @testdox The gated transport log strips the query from any URL value and replaces Stripe secret, restricted key and client secret values whole, whatever their key.
+	 *
+	 * The error line reads the envelope client 11.1.0 parses (class-wc-payments-api-client.php:2852-2871: error.code,
+	 * error.message, error.type) and logs "<message> (<code>)" (:2912).
+	 */
+	public function test_transport_log_redacts_url_queries_and_secret_shaped_values(): void {
+		$params = array(
+			'return_to' => 'https://shop.example.test/checkout/?key=wc_order_leak&session=leak',
+			'notes'     => array( 'Contact via https://pay.example.test/r#access_token=leak' ),
+			'live'      => 'sk_live_51Leak',
+			'test'      => 'rk_test_51Leak',
+			'unrelated' => 'pi_3Leak_secret_Leak',
+		);
+		$logger = $this->log_transport_request(
+			$params,
+			array(
+				'error' => array(
+					'code'    => 'resource_missing',
+					'message' => 'No such setup intent: seti_1Leak_secret_Leak; see https://pay.example.test/r?key=leak',
+					'type'    => 'invalid_request_error',
+				),
+			),
+			404
+		);
+
+		$body = $this->get_transport_entry( $logger, 'API REQUEST (' )['context']['body'];
+		$this->assertSame( 'https://shop.example.test/checkout/', $body['return_to'] );
+		$this->assertSame( array( 'Contact via https://pay.example.test/r' ), $body['notes'] );
+		$this->assertSame( array( '(redacted)', '(redacted)', '(redacted)' ), array( $body['live'], $body['test'], $body['unrelated'] ) );
+		$errors = array_values( array_filter( $logger->entries, static fn( array $entry ): bool => 'error' === $entry['level'] ) );
+		$this->assertSame( array( '(redacted)' ), array_column( $errors, 'message' ), 'An error line holding a client secret is replaced whole.' );
+		$this->assertStringNotContainsString( 'eak', (string) wp_json_encode( $logger->entries ) );
+	}
+
+	/**
+	 * @testdox The gated transport log never carries the request headers: neither the Authorization header Jetpack signs with nor the blog token.
+	 *
+	 * The request goes through the real WooPaymentsHttpClient and Jetpack's Client::remote_request(), which signs it with
+	 * the blog token (`token-key.blog-secret` in the jetpack_options store, the format Jetpack's Tokens class reads);
+	 * pre_http_request answers in WP_Http::request()'s array shape.
+	 */
+	public function test_transport_log_never_carries_the_signed_headers(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		$logger = $this->install_recording_logger();
+		\Jetpack_Options::update_option( 'id', 123 );
+		\Jetpack_Options::update_option( 'blog_token', 'leaktokenkey.leakblogsecret' );
+		\Jetpack_Options::update_option( 'time_diff', 0 );
+		$sent_headers = array();
+		$capture      = static function ( $preempt, array $args ) use ( &$sent_headers ) {
+			$sent_headers = $args['headers'];
+
+			return array(
+				'headers'  => array( 'content-type' => 'application/json' ),
+				'body'     => wp_json_encode( array( 'result' => 'success' ) ),
+				'response' => array(
+					'code'    => 200,
+					'message' => 'OK',
+				),
+				'cookies'  => array(),
+				'filename' => null,
+			);
+		};
+		add_filter( 'pre_http_request', $capture, 10, 2 );
+		$http_client = new class() extends \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient {
+			/**
+			 * Treat the store as connected; signing reads the blog token itself.
+			 *
+			 * @return bool
+			 */
+			public function is_connected(): bool {
+				return true;
+			}
+		};
+		$sut         = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ) );
+
+		try {
+			$sut->send_site_request( array( 'note' => 'signed' ), 'subscriptions', 'POST' );
+		} finally {
+			remove_filter( 'pre_http_request', $capture, 10 );
+			remove_all_filters( 'woocommerce_logging_class' );
+			delete_option( 'woocommerce_woocommerce_payments_settings' );
+			\Jetpack_Options::delete_option( array( 'id', 'blog_token', 'time_diff' ) );
+		}
+
+		$this->assertStringContainsString( 'leaktokenkey', (string) ( $sent_headers['Authorization'] ?? '' ), 'The request was signed with the blog token.' );
+		$this->assertNotEmpty( $logger->entries );
+		foreach ( $logger->entries as $entry ) {
+			$this->assertArrayNotHasKey( 'headers', $entry['context'] );
+			$this->assertArrayNotHasKey( 'request', $entry['context'] );
+		}
+		$logged = (string) wp_json_encode( $logger->entries );
+		foreach ( array( 'leaktokenkey', 'leakblogsecret', (string) ( $sent_headers['Authorization'] ?? 'unsigned' ) ) as $secret ) {
+			$this->assertStringNotContainsString( $secret, $logged );
+		}
+	}
+
+	/**
+	 * @testdox The gated transport log keeps none of a key-bearing URL's query, a signature two levels down and a client secret under an unknown key.
+	 */
+	public function test_transport_log_redacts_a_combined_body(): void {
+		$logger = $this->log_transport_request(
+			array(
+				'redirect' => 'https://shop.example.test/order-received/12/?key=wc_order_combinedleak',
+				'payment'  => array( 'proof' => array( 'signature' => 'combinedleak-signature' ) ),
+				'opaque'   => 'pi_3Combinedleak_secret_Combinedleak',
+			),
+			array( 'result' => 'success' )
+		);
+
+		$this->assertStringNotContainsString( 'ombinedleak', (string) wp_json_encode( $logger->entries ) );
+	}
+
+	/**
+	 * Send one POST through the API client with the gated transport log on, answered with the given body.
+	 *
+	 * @param array<string,mixed> $params        Request params.
+	 * @param array<string,mixed> $response_body Decoded response body.
+	 * @param int                 $status        HTTP status.
+	 * @return object Recording logger.
+	 */
+	private function log_transport_request( array $params, array $response_body, int $status = 200 ): object {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		$logger = $this->install_recording_logger();
+
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => $status ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode( $response_body ),
+		);
+		$sut                   = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ) );
+
+		try {
+			$sut->send_site_request( $params, 'subscriptions', 'POST' );
+		} catch ( WooPaymentsApiException $exception ) {
+			unset( $exception );
+		} finally {
+			remove_all_filters( 'woocommerce_logging_class' );
+			delete_option( 'woocommerce_woocommerce_payments_settings' );
+		}
+
+		return $logger;
+	}
+
+	/**
+	 * Get the one transport log entry whose message starts with a prefix.
+	 *
+	 * @param object $logger Recording logger.
+	 * @param string $prefix Message prefix.
+	 * @return array{level:string,message:string,context:array<string,mixed>}
+	 */
+	private function get_transport_entry( object $logger, string $prefix ): array {
+		$entries = array_values( array_filter( $logger->entries, static fn( array $entry ): bool => 0 === strpos( $entry['message'], $prefix ) ) );
+		$this->assertCount( 1, $entries );
+
+		return $entries[0];
+	}
+
+	/**
 	 * @testdox Should apply the preserved WooPayments response filter after transport requests.
 	 */
 	public function test_request_applies_preserved_response_filter_after_transport_requests(): void {

@@ -100,7 +100,30 @@ class WooPaymentsApiClient {
 		// WooPay webhook signing secret is a credential; a logged copy would let a log reader forge order-status deliveries. Native-only hardening: the plugin's list does not carry it.
 		// Authorized divergence: data/security-review.md:21 (redact more, never less).
 		'webhook_secret',
+		// Native-only: session and checkout keys and credentials the plugin's list leaves out (monitor ruling 2026-10-05).
+		'platform_checkout_key',
+		'session',
+		'session_id',
+		'woopay_session',
+		'access_token',
+		'blog_token',
+		'user_token',
+		'signature',
+		'sig',
+		'secret',
+		'authorization',
+		'cookie',
 	);
+
+	/**
+	 * Key endings redacted like API_KEYS_TO_REDACT (native-only, monitor ruling 2026-10-05): any `*_secret` or `*_key`.
+	 */
+	private const API_KEY_SUFFIXES_TO_REDACT = array( '_secret', '_key' );
+
+	/**
+	 * Logged in place of a redacted key's value, or of a value shaped like a Stripe secret.
+	 */
+	private const REDACTED = '(redacted)';
 
 	/**
 	 * Maximum recursion depth when redacting nested payloads for logging.
@@ -2349,7 +2372,9 @@ class WooPaymentsApiClient {
 			$headers['Idempotency-Key'] = '' !== $caller_idempotency_key ? $caller_idempotency_key : wp_generate_uuid4();
 		}
 
-		$redacted_params = self::redact_array( $params, self::API_KEYS_TO_REDACT );
+		// Redaction cleans every string value, so it runs only when the gated transport log is written.
+		$log_transport   = $this->can_log_transport();
+		$redacted_params = $log_transport ? self::redact_array( $params, self::API_KEYS_TO_REDACT ) : array();
 
 		/**
 		 * Filters the WooPayments native request headers before transport dispatch.
@@ -2460,10 +2485,12 @@ class WooPaymentsApiClient {
 		$is_json             = false !== strpos( strtolower( $content_type ), 'application/json' );
 		$decoded_body        = json_decode( $response_body, true );
 
-		$this->log_transport_info(
-			sprintf( 'API RESPONSE (%s): %s %s', $log_request_id, $method, $redacted_path ),
-			array( 'body' => self::redact_array( is_array( $decoded_body ) ? $decoded_body : $response_body, self::API_KEYS_TO_REDACT ) )
-		);
+		if ( $log_transport ) {
+			$this->log_transport_info(
+				sprintf( 'API RESPONSE (%s): %s %s', $log_request_id, $method, $redacted_path ),
+				array( 'body' => self::redact_array( is_array( $decoded_body ) ? $decoded_body : $response_body, self::API_KEYS_TO_REDACT ) )
+			);
+		}
 
 		if ( $return_raw_response && 400 > $response_code ) {
 			return is_array( $response ) ? $response : array();
@@ -2826,7 +2853,7 @@ class WooPaymentsApiClient {
 	}
 
 	/**
-	 * Log a transport error line when transport logging is enabled.
+	 * Log a transport error line when transport logging is enabled, cleaned by redact_string().
 	 *
 	 * @param string $message Log message.
 	 */
@@ -2835,7 +2862,7 @@ class WooPaymentsApiClient {
 			return;
 		}
 
-		wc_get_logger()->error( $message, array( 'source' => 'woopayments' ) );
+		wc_get_logger()->error( self::redact_string( $message ), array( 'source' => 'woopayments' ) );
 	}
 
 	/**
@@ -2862,7 +2889,9 @@ class WooPaymentsApiClient {
 	 *
 	 * Ported from the plugin's redact_array: matching keys are replaced with
 	 * '(redacted)' at any depth, objects log as their class name, and deep
-	 * recursion is cut off.
+	 * recursion is cut off. Native also matches keys whatever their case and
+	 * by ending (API_KEY_SUFFIXES_TO_REDACT), and cleans every string value
+	 * with redact_string().
 	 *
 	 * @param mixed    $input          Payload to redact.
 	 * @param string[] $keys_to_redact Keys to redact.
@@ -2872,6 +2901,10 @@ class WooPaymentsApiClient {
 	private static function redact_array( $input, array $keys_to_redact, int $level = 0 ) {
 		if ( is_object( $input ) ) {
 			return get_class( $input ) . '()';
+		}
+
+		if ( is_string( $input ) ) {
+			return self::redact_string( $input );
 		}
 
 		if ( ! is_array( $input ) ) {
@@ -2885,8 +2918,8 @@ class WooPaymentsApiClient {
 		$result = array();
 
 		foreach ( $input as $key => $value ) {
-			if ( in_array( $key, $keys_to_redact, true ) ) {
-				$result[ $key ] = '(redacted)';
+			if ( self::is_key_to_redact( $key, $keys_to_redact ) ) {
+				$result[ $key ] = self::REDACTED;
 				continue;
 			}
 
@@ -2894,6 +2927,50 @@ class WooPaymentsApiClient {
 		}
 
 		return $result;
+	}
+
+	/**
+	 * Tell whether a payload key is redacted: a listed key, or one ending in a listed suffix, whatever its case.
+	 *
+	 * @param int|string $key            Payload key.
+	 * @param string[]   $keys_to_redact Keys to redact.
+	 * @return bool
+	 */
+	private static function is_key_to_redact( $key, array $keys_to_redact ): bool {
+		if ( ! is_string( $key ) ) {
+			return false;
+		}
+
+		$key = strtolower( $key );
+		if ( in_array( $key, $keys_to_redact, true ) ) {
+			return true;
+		}
+
+		foreach ( self::API_KEY_SUFFIXES_TO_REDACT as $suffix ) {
+			if ( strlen( $key ) > strlen( $suffix ) && substr( $key, -strlen( $suffix ) ) === $suffix ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Clean a logged string value, whatever key it sits under.
+	 *
+	 * A value holding a Stripe secret or restricted key (`sk_live_…`, `rk_test_…`) or a client secret
+	 * (`pi_…_secret_…`) is replaced whole; every URL in it loses its query string and fragment, which can carry
+	 * session keys and tokens.
+	 *
+	 * @param string $value Logged value.
+	 * @return string
+	 */
+	private static function redact_string( string $value ): string {
+		if ( preg_match( '/\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]+|\b[a-z]+_[A-Za-z0-9]+_secret_[A-Za-z0-9]+/', $value ) ) {
+			return self::REDACTED;
+		}
+
+		return (string) preg_replace( '#(\bhttps?://[^\s?\#"\'<>]*)[?\#][^\s"\'<>]*#i', '$1', $value );
 	}
 
 	/**
