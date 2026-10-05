@@ -435,6 +435,33 @@ class WooPaymentsWooPaySessionService {
 	}
 
 	/**
+	 * Drop the browser's cached copy of the session a WooPay Store API request just saved.
+	 *
+	 * WooPay's Cart-Token names the shopper's own session, and the Store API session handler saves that row without
+	 * touching the object cache the browser's `WC_Session_Handler::get_session()` reads first, so a persistent cache kept
+	 * serving the session as it was before WooPay changed it. Client 11.1.0 swaps in a handler that also writes the cache
+	 * (class-woopay-session.php:59, :79-91; class-woopay-store-api-session-handler.php:108-125); core's handler is final, so
+	 * this runs after it saves on shutdown and lets the next browser read go to the database.
+	 *
+	 * @since 11.2.0
+	 */
+	public function refresh_woopay_browser_session_cache(): void {
+		if ( ! $this->is_request_from_woopay() || ! $this->is_store_api_request() || ! $this->is_woopay_enabled() ) {
+			return;
+		}
+
+		$session = function_exists( 'WC' ) && WC() ? WC()->session : null;
+		if ( ! $session instanceof SessionHandler ) {
+			return;
+		}
+
+		$customer_id = (string) $session->get_customer_id();
+		if ( '' !== $customer_id ) {
+			wp_cache_delete( \WC_Cache_Helper::get_cache_prefix( WC_SESSION_CACHE_GROUP ) . $customer_id, WC_SESSION_CACHE_GROUP );
+		}
+	}
+
+	/**
 	 * Restore the customer id a verified-email WooPay order was detached from.
 	 *
 	 * @param int|mixed $order_id Order ID from the woopay_restore_order_customer_id event.

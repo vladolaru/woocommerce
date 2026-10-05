@@ -1351,6 +1351,39 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The browser sees the session a WooPay Store API request saved, even with a persistent object cache.
+	 *
+	 * Client 11.1.0 class-woopay-store-api-session-handler.php:108-125 refreshes the cache entry the browser's
+	 * WC_Session_Handler::get_session() reads first.
+	 */
+	public function test_woopay_store_api_save_reaches_the_browser_session(): void {
+		$customer_id = 't_' . wp_generate_password( 30, false );
+		$browser     = new \WC_Session_Handler();
+		// The browser's handler cached the session before the shopper went to WooPay.
+		wp_cache_set( \WC_Cache_Helper::get_cache_prefix( WC_SESSION_CACHE_GROUP ) . $customer_id, array( 'coupon' => 'before-woopay' ), WC_SESSION_CACHE_GROUP );
+		$sut = $this->create_service();
+		$this->register_controller( $sut );
+		$this->simulate_woopay_store_api_request();
+		$_SERVER['HTTP_CART_TOKEN'] = \Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils::get_cart_token( $customer_id );
+		$original_session           = WC()->session;
+		WC()->session               = new \Automattic\WooCommerce\StoreApi\SessionHandler();
+		WC()->session->init();
+
+		try {
+			WC()->session->set( 'coupon', 'added-in-woopay' );
+			// What the Store API handler's own shutdown callback (priority 20) does, then the WooPay refresh after it.
+			WC()->session->save_data();
+			$this->assertSame( 21, has_action( 'shutdown', array( $sut, 'refresh_woopay_browser_session_cache' ) ) );
+			$sut->refresh_woopay_browser_session_cache();
+		} finally {
+			remove_action( 'shutdown', array( WC()->session, 'save_data' ), 20 );
+			WC()->session = $original_session;
+		}
+
+		$this->assertSame( 'added-in-woopay', maybe_unserialize( $browser->get_session( $customer_id ) )['coupon'] );
+	}
+
+	/**
 	 * @testdox Should prefer a sanitized email from a valid encrypted identity envelope.
 	 */
 	public function test_encrypted_session_data_uses_valid_encrypted_identity_email(): void {

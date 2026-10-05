@@ -90,6 +90,11 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			add_filter( 'automatewoo/referrals/referred_order_advocate', array( $this->session_service, 'automatewoo_refer_a_friend_referral_from_parameter' ) );
 		}
 
+		// After the Store API session handler saves the session on shutdown (priority 20, StoreApi\SessionHandler::init()).
+		if ( false === has_action( 'shutdown', array( $this->session_service, 'refresh_woopay_browser_session_cache' ) ) ) {
+			add_action( 'shutdown', array( $this->session_service, 'refresh_woopay_browser_session_cache' ), 21 );
+		}
+
 		// The session route stays registered whenever native owns the runtime: the plugin
 		// registers it unconditionally and answers ineligible or unsigned callers through the
 		// permission callback (401), so a disabled/ineligible state must not turn into a 404
