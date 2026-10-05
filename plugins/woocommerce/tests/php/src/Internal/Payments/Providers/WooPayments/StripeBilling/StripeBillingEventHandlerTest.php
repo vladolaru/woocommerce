@@ -481,7 +481,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( RuntimeException::class, $inner_refusal );
 		$this->assertCount( 1, $this->get_renewal_orders( self::FAILED_INVOICE_ID ) );
-		$this->assertCount( 1, $this->get_notes_containing( wc_get_order( $subscription->get_id() ), 'could not be applied, because another update of the same invoice was running' ) );
+		$this->assertCount( 1, $this->get_notes_containing( wc_get_order( $subscription->get_id() ), 'A WooPayments failed-payment update for this subscription (invoice ' . self::FAILED_INVOICE_ID . ', attempt 1) could not be applied, because another update of the same invoice was running.' ) );
 	}
 
 	/**

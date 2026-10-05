@@ -263,34 +263,24 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	public function test_webhook_mode_mismatch_logs_the_event(): void {
 		$order = $this->create_woopayments_order();
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
-		$logged = array();
-		$logger = function ( $message, $level ) use ( &$logged ) {
-			$logged[] = array( $level, $message );
-			return $message;
-		};
-		add_filter( 'woocommerce_logger_log_message', $logger, 10, 2 );
+		$logger = RecordingWcLogger::install();
 
-		try {
-			// The mismatch check reads only the envelope's livemode and id (client 11.1.0
-			// class-wc-payments-webhook-processing-service.php:268-290); the PaymentIntent body is never reached.
-			$this->sut->process(
-				$this->create_payment_intent_event(
-					'payment_intent.succeeded',
-					$order,
-					array(),
-					array(
-						'id'       => 'evt_mode_mismatch',
-						'livemode' => true,
-					)
+		// The mismatch check reads only the envelope's livemode and id (client 11.1.0
+		// class-wc-payments-webhook-processing-service.php:268-290); the PaymentIntent body is never reached.
+		$this->sut->process(
+			$this->create_payment_intent_event(
+				'payment_intent.succeeded',
+				$order,
+				array(),
+				array(
+					'id'       => 'evt_mode_mismatch',
+					'livemode' => true,
 				)
-			);
-		} finally {
-			remove_filter( 'woocommerce_logger_log_message', $logger, 10 );
-		}
+			)
+		);
 
 		$this->assertSame( 'pending', wc_get_order( $order->get_id() )->get_status() );
-		// The message filter runs once per log handler, so a line is counted once.
-		$errors = array_unique( array_column( array_filter( $logged, static fn( array $entry ): bool => 'error' === $entry[0] && false !== strpos( $entry[1], 'evt_mode_mismatch' ) ), 1 ) );
+		$errors = array_filter( $logger->get_errors(), static fn( array $line ): bool => false !== strpos( $line[1], 'evt_mode_mismatch' ) );
 		$this->assertCount( 1, $errors, 'The skipped event must leave one error line naming it.' );
 	}
 
@@ -321,6 +311,99 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			$this->assertSame( 'pi_123', $body['data']['object']['id'] );
 			$this->assertSame( '(redacted)', $body['data']['object']['client_secret'] );
 		}
+	}
+
+	/**
+	 * @testdox The received line redacts the personal data a recorded invoice event carries.
+	 */
+	public function test_received_line_redacts_personal_data_of_a_recorded_invoice_event(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		$logger = RecordingWcLogger::install();
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$recording = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/rec-t63-invoice-events.json' ), true );
+		$event     = $recording['entries'][0]['body'];
+		// The recorded invoice left these empty; fill them as a real customer's invoice carries them.
+		$event['data']['object'] = array_merge(
+			$event['data']['object'],
+			array(
+				'customer_phone'   => '+15555550100',
+				'customer_email'   => 'shopper@example.com',
+				'customer_tax_ids' => array(
+					array(
+						'type'  => 'eu_vat',
+						'value' => 'DE123456789',
+					),
+				),
+				'description'      => 'Renewal for Jane Doe, 1 Main Street',
+				'customer_address' => array(
+					'line1'       => '1 Main Street',
+					'postal_code' => '10001',
+				),
+			)
+		);
+
+		try {
+			$this->sut->process( $event );
+		} catch ( \Throwable $exception ) {
+			// The line is written before the event is handled; how the handling ends does not matter here.
+			unset( $exception );
+		}
+
+		$received = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'debug' === $line[0] && 0 === strpos( $line[1], 'WEBHOOK RECEIVED: ' ) ) );
+		$this->assertCount( 1, $received );
+		$invoice = $logger->contexts[ $received[0] ]['body']['data']['object'];
+		foreach ( array( 'customer_phone', 'customer_email', 'customer_name', 'customer_tax_ids', 'description' ) as $key ) {
+			$this->assertSame( '(redacted)', $invoice[ $key ], $key );
+		}
+		$this->assertSame( '(redacted)', $invoice['customer_address']['line1'] );
+		$this->assertSame( '(redacted)', $invoice['customer_address']['postal_code'] );
+	}
+
+	/**
+	 * @testdox A delivery of an event already processed still writes its received line, so a replay is visible.
+	 */
+	public function test_received_line_is_written_for_an_already_processed_event(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		$logger = RecordingWcLogger::install();
+		$event  = $this->create_payment_intent_event( 'payment_intent.succeeded', $this->create_woopayments_order(), array(), array( 'id' => 'evt_received_twice' ) );
+
+		$this->sut->process( $event );
+		$this->sut->process( $event );
+
+		$received = array_filter( $logger->lines, static fn( array $line ): bool => 'WEBHOOK RECEIVED: payment_intent.succeeded evt_received_twice' === $line[1] );
+		$this->assertCount( 2, $received );
+	}
+
+	/**
+	 * @testdox A log handler that throws while the received line is written does not stop the event from being applied.
+	 */
+	public function test_failing_received_line_does_not_stop_the_event(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		$order = $this->create_woopayments_order();
+		add_filter(
+			'woocommerce_logging_class',
+			static function () {
+				return new class() extends RecordingWcLogger {
+					/**
+					 * Fail as a broken log handler does.
+					 *
+					 * @param string              $message Message.
+					 * @param array<string,mixed> $context Context.
+					 * @throws RuntimeException For a non-empty message.
+					 */
+					public function debug( $message, $context = array() ) {
+						if ( '' !== (string) $message ) {
+							throw new RuntimeException( 'Log handler failure.' );
+						}
+						parent::debug( $message, $context );
+					}
+				};
+			}
+		);
+
+		$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order, array(), array( 'id' => 'evt_received_logger_fails' ) ) );
+
+		$this->assertSame( 'completed', wc_get_order( $order->get_id() )->get_status() );
 	}
 
 	/**
@@ -5256,6 +5339,12 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Create a payment-intent-shaped event.
+	 *
+	 * The envelope (id, type, data.object) and the PaymentIntent fields are the ones client 11.1.0 reads:
+	 * class-wc-payments-webhook-processing-service.php:145-160 (envelope), :494-519 (id, currency, amount,
+	 * payment_method, charges.data[0] with its payment_method_details.card.mandate and application_fee_amount) and
+	 * :968-1002 (metadata.order_id and order_key for the order lookup); status is the PaymentIntent's own field
+	 * (Stripe API PaymentIntent object).
 	 *
 	 * @param string              $type      Event type.
 	 * @param WC_Order            $order     Order object.

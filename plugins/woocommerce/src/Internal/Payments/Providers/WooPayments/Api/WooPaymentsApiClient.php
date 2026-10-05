@@ -114,12 +114,17 @@ class WooPaymentsApiClient {
 		'secret',
 		'authorization',
 		'cookie',
+		// Native-only: the received-webhook line logs whole platform objects (Codex review 75). Tax IDs and free-text
+		// descriptions can carry personal data; the *_email and *_phone endings below cover receipt_email and customer_phone.
+		'customer_tax_ids',
+		'description',
 	);
 
 	/**
-	 * Key endings redacted like API_KEYS_TO_REDACT (native-only, monitor ruling 2026-10-05): any `*_secret` or `*_key`.
+	 * Key endings redacted like API_KEYS_TO_REDACT (native-only): any `*_secret` or `*_key` (monitor ruling 2026-10-05),
+	 * and any `*_email` or `*_phone`, such as a PaymentIntent's receipt_email or an invoice's customer_phone (Codex review 75).
 	 */
-	private const API_KEY_SUFFIXES_TO_REDACT = array( '_secret', '_key' );
+	private const API_KEY_SUFFIXES_TO_REDACT = array( '_secret', '_key', '_email', '_phone' );
 
 	/**
 	 * Logged in place of a redacted key's value, a value shaped like a Stripe secret, or everything after a URL's host.
