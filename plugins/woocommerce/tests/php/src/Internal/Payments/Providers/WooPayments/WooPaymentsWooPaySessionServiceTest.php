@@ -3442,7 +3442,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * @return TestableWooPaySessionService
 	 */
 	private function create_service( array $settings = array(), array $account_data = array(), ?WooPaymentsWooPayAdaptedExtensions $adapted_extensions = null, ?callable $event_recorder = null, ?WooPaymentsCustomerService $customer_service = null, bool $test_mode = true ): TestableWooPaySessionService {
-		$settings     = array_merge(
+		$settings = array_merge(
 			array(
 				'enabled'                              => 'yes',
 				'platform_checkout'                    => 'yes',
@@ -3458,6 +3458,11 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 			),
 			$settings
 		);
+		// The cached account is the platform's GET accounts answer, compose_basic_account_info() in the WooPayments server
+		// (endpoints/wcpay/class-accounts-controller.php:1074; account_id :1111, details_submitted :1122, capabilities :1125,
+		// country :1158, platform_checkout_eligible :1162, platform_direct_checkout_eligible :1163, pre_check_save_my_info
+		// :1189), read by client 11.1.0 at class-wc-payments-account.php:286, :291-292, :2733,
+		// class-wc-payments-features.php:207, :239 and class-woopay-save-user.php:76.
 		$account_data = array_merge(
 			array(
 				'account_id'                 => 'acct_123',

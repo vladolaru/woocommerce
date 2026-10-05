@@ -957,7 +957,9 @@ class Task25WooPayApiClient extends WooPaymentsApiClient {
 			throw $this->update_woopay_exception;
 		}
 
-		// The platform's POST accounts/platform_checkout handler answers { "result": "success" }, which client 11.1.0 update_woopay() returns as decoded.
+		// The platform's POST accounts/platform_checkout handler, update_woopay() in the WooPayments server
+		// (endpoints/wcpay/class-accounts-controller.php:338-341, :597-621), answers rest_ensure_response( [ 'result' => 'success' ] )
+		// (:616-620); client 11.1.0 update_woopay() returns the decoded body (class-wc-payments-api-client.php:1103-1112).
 		return array( 'result' => 'success' );
 	}
 }
@@ -994,6 +996,10 @@ class Task25WooPayAccountService extends WooPaymentsAccountService {
 	public function get_cached_account_data( bool $force_refresh = false ): array {
 		unset( $force_refresh );
 
+		// The platform's GET accounts answer, compose_basic_account_info() in the WooPayments server
+		// (endpoints/wcpay/class-accounts-controller.php:1074; account_id :1111, details_submitted :1122, status :1124,
+		// capabilities :1125, platform_checkout_eligible :1162), read by client 11.1.0 at class-wc-payments-account.php:286,
+		// :291-292 and class-wc-payments-features.php:207.
 		return array_merge(
 			array(
 				'account_id'                 => 'acct_woopay_sync',
