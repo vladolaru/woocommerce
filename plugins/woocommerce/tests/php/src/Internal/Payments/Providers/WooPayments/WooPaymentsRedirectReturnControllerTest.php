@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableControlle
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
@@ -969,7 +970,9 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$container = wc_get_container();
 		if ( 'a webhook put on hold just before the lock' === $change ) {
 			// A webhook takes the order payment lock, writes on-hold and releases it right before this return claims it.
-			$container->replace( OrderPaymentStore::class, new RedirectReturnWebhookFirstOrderPaymentStore() );
+			$webhook_first_store = new RedirectReturnWebhookFirstOrderPaymentStore();
+			$webhook_first_store->init( new TransientRowLock() );
+			$container->replace( OrderPaymentStore::class, $webhook_first_store );
 		}
 		$this->sut = $this->create_controller( true, null, $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_held_during_fetch' );

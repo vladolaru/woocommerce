@@ -83,9 +83,9 @@ class OrderPaymentStore {
 	/**
 	 * Lock held in the database rows of a transient.
 	 *
-	 * @var TransientRowLock|null
+	 * @var TransientRowLock
 	 */
-	private ?TransientRowLock $row_lock = null;
+	private TransientRowLock $row_lock;
 
 	/**
 	 * Initialize the class instance.
@@ -214,7 +214,7 @@ class OrderPaymentStore {
 			return $token;
 		}
 
-		return $this->get_row_lock()->claim( $lock_key, maybe_serialize( $value ), $ttl, $holder_key, maybe_serialize( $holder ) ) ? $token : null;
+		return $this->row_lock->claim( $lock_key, maybe_serialize( $value ), $ttl, $holder_key, maybe_serialize( $holder ) ) ? $token : null;
 	}
 
 	/**
@@ -345,7 +345,7 @@ class OrderPaymentStore {
 			return;
 		}
 
-		$this->get_row_lock()->release( $lock_key, maybe_serialize( $holder['lock_value'] ), $holder_key, $stored_holder );
+		$this->row_lock->release( $lock_key, maybe_serialize( $holder['lock_value'] ), $holder_key, $stored_holder );
 	}
 
 	/**
@@ -390,24 +390,9 @@ class OrderPaymentStore {
 			return get_transient( $key );
 		}
 
-		$stored = $this->get_row_lock()->read( $key );
+		$stored = $this->row_lock->read( $key );
 
 		return null === $stored ? false : maybe_unserialize( $stored );
-	}
-
-	/**
-	 * Get the lock held in the database rows of a transient.
-	 *
-	 * Falls back to the container for instances built without init().
-	 *
-	 * @return TransientRowLock
-	 */
-	private function get_row_lock(): TransientRowLock {
-		if ( null === $this->row_lock ) {
-			$this->row_lock = wc_get_container()->get( TransientRowLock::class );
-		}
-
-		return $this->row_lock;
 	}
 
 	/**

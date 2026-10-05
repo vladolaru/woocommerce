@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEarlyFraudWarningEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
@@ -302,6 +303,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 		$order   = $this->create_woopayments_order();
 		$store   = new OrderPaymentStore();
 		$profile = new WooPaymentsPersistenceProfile();
+		$store->init( new TransientRowLock() );
 		$this->assertNotNull( $store->claim_order_payment_lock( $order, $profile, 'other_operation' ) );
 		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
 		$handler->init( $store, $profile );
@@ -431,6 +433,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 			}
 		};
 		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
+		$store->init( new TransientRowLock() );
 		$handler->init( $store, new WooPaymentsPersistenceProfile() );
 
 		$handler->process(
@@ -564,6 +567,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 				return false;
 			}
 		};
+		$store->init( new TransientRowLock() );
 		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
 		$handler->init( $store, $profile, $notes );
 
