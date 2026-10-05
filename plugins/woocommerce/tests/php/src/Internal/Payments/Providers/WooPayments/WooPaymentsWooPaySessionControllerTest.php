@@ -946,6 +946,31 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox On an order's pay page the WooPay button pays the order even when the checkout page also carries a product shortcode.
+	 *
+	 * The classic script adds the product to the cart before WooPay when the button reads data-product_page="1" or its context
+	 * is product (woopayments-woopay.js isProductPageWooPayButton(), prepareProductCartForWooPay()); the order context and
+	 * the order's params keep it on the order.
+	 */
+	public function test_order_pay_with_a_product_shortcode_on_the_checkout_page_pays_the_order(): void {
+		$product  = \WC_Helper_Product::create_simple_product( true );
+		$owner_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$order    = \WC_Helper_Order::create_order( $owner_id );
+		wp_set_current_user( $owner_id );
+		$this->sut = $this->create_controller( true, true );
+		$this->set_order_pay_page( $order->get_id(), $order->get_order_key(), '[woocommerce_checkout] [product_page id="' . $product->get_id() . '"]' );
+
+		$html = $this->sut->get_express_checkout_button_html();
+		$this->sut->enqueue_frontend_assets();
+		$config = $this->get_localized_woopay_config();
+
+		$this->assertStringContainsString( '<div id="wcpay-woopay-button" data-product_page="0">', $html );
+		$this->assertSame( 'pay_for_order', $config['woopayButton']['context'] );
+		$this->assertSame( (string) $order->get_id(), $config['order_id'] );
+		$this->assertSame( $order->get_order_key(), $config['key'] );
+	}
+
+	/**
 	 * @testdox Offers WooPay for the order on order-pay when the checkout page holds the Checkout block.
 	 *
 	 * Core renders the classic checkout form there (src/Blocks/BlockTypes/Checkout.php render() on the order-pay endpoint);

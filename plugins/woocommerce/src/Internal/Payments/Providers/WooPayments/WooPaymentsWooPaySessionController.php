@@ -1044,13 +1044,15 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 * @return string
 	 */
 	private function get_current_button_context(): string {
-		if ( ( function_exists( 'is_product' ) && is_product() ) || $this->is_product_page_shortcode_surface() ) {
-			return 'product';
-		}
-
-		// Client 11.1.0 get_button_context() (class-wc-payments-express-checkout-button-helper.php:450-468).
+		// Order-pay first, so a product shortcode on the checkout page cannot make the order's button a product button. Client
+		// 11.1.0 get_button_context() checks the product first (class-wc-payments-express-checkout-button-helper.php:450-468)
+		// but adds the order to its config whatever the context (express checkout display handler :184-222).
 		if ( $this->is_order_pay_surface() ) {
 			return 'pay_for_order';
+		}
+
+		if ( ( function_exists( 'is_product' ) && is_product() ) || $this->is_product_page_shortcode_surface() ) {
+			return 'product';
 		}
 
 		if ( function_exists( 'is_checkout' ) && is_checkout() ) {
