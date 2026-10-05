@@ -1,6 +1,6 @@
 /**
  * @param {string} str
- * @return {string}
+ * @return {string} The string in snake case.
  */
 export const toSnakeCase = ( str ) => {
 	return str
@@ -12,7 +12,7 @@ export const toSnakeCase = ( str ) => {
 
 /**
  * @param {Object} obj
- * @return {{}}
+ * @return {{}} A copy of the object with its keys in snake case.
  */
 export const convertKeysToSnakeCase = ( obj ) => {
 	const newObj = {};

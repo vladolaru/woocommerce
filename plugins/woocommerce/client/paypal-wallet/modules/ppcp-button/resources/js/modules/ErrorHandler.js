@@ -36,7 +36,7 @@ class ErrorHandler {
 	}
 
 	/**
-	 * @return {string}
+	 * @return {string} The HTML of the message container.
 	 */
 	currentHtml() {
 		const messageContainer = this._getMessageContainer();

@@ -1,6 +1,6 @@
 /**
  * @param {string|Element} selectorOrElement
- * @return {Element}
+ * @return {Element} The matching element.
  */
 const getElement = ( selectorOrElement ) => {
 	if ( typeof selectorOrElement === 'string' ) {

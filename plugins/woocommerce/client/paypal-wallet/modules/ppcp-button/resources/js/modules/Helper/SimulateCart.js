@@ -12,7 +12,7 @@ class SimulateCart {
 	 *
 	 * @param {Function}  onResolve
 	 * @param {Product[]} products
-	 * @return {Promise<unknown>}
+	 * @return {Promise<unknown>} Resolves with the result of onResolve, rejects with the response data on failure.
 	 */
 	simulate( onResolve, products ) {
 		return new Promise( ( resolve, reject ) => {

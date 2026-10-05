@@ -23,7 +23,6 @@ export default [
 				'warn',
 				{ allowedTextDomain: 'woocommerce' },
 			],
-			'jsdoc/require-returns-description': 'warn',
 			'no-alert': 'warn',
 			'no-useless-constructor': 'warn',
 			'@wordpress/no-unused-vars-before-return': 'warn',

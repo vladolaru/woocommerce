@@ -9,7 +9,7 @@ class UpdateCart {
 	 * @param {Function}  onResolve
 	 * @param {Product[]} products
 	 * @param {Object}    options
-	 * @return {Promise<unknown>}
+	 * @return {Promise<unknown>} Resolves with the result of onResolve, rejects with the response data on failure.
 	 */
 	update( onResolve, products, options = {} ) {
 		return new Promise( ( resolve, reject ) => {

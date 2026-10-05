@@ -1,6 +1,6 @@
 /**
  * @param {string} fullName
- * @return {Array}
+ * @return {Array} The first name and the last name, in that order.
  */
 export const splitFullName = ( fullName ) => {
 	fullName = fullName.trim();
@@ -16,7 +16,7 @@ export const splitFullName = ( fullName ) => {
 
 /**
  * @param {Object} address
- * @return {Object}
+ * @return {Object} The address in WooCommerce's field names.
  */
 export const paypalAddressToWc = ( address ) => {
 	let map = {
@@ -61,7 +61,7 @@ export const paypalAddressToWc = ( address ) => {
 
 /**
  * @param {Object} shipping
- * @return {Object}
+ * @return {Object} The shipping details in WooCommerce's field names.
  */
 export const paypalShippingToWc = ( shipping ) => {
 	const [ firstName, lastName ] = shipping.name
@@ -76,7 +76,7 @@ export const paypalShippingToWc = ( shipping ) => {
 
 /**
  * @param {Object} payer
- * @return {Object}
+ * @return {Object} The payer's name, phone and address in WooCommerce's field names.
  */
 export const paypalPayerToWc = ( payer ) => {
 	const firstName = payer?.name?.given_name ?? '';
@@ -94,7 +94,7 @@ export const paypalPayerToWc = ( payer ) => {
 
 /**
  * @param {Object} order
- * @return {Object}
+ * @return {Object} The shipping address in WooCommerce's field names, empty when the order has none.
  */
 export const paypalOrderToWcShippingAddress = ( order ) => {
 	const shipping = order?.purchase_units?.[ 0 ]?.shipping;
@@ -122,7 +122,7 @@ export const paypalOrderToWcShippingAddress = ( order ) => {
 /**
  *
  * @param {Object} order
- * @return {{shippingAddress: Object, billingAddress: Object}}
+ * @return {{shippingAddress: Object, billingAddress: Object}} The shipping and billing addresses in WooCommerce's field names.
  */
 export const paypalOrderToWcAddresses = ( order ) => {
 	const shippingAddress = paypalOrderToWcShippingAddress( order );
@@ -154,7 +154,7 @@ export const paypalOrderToWcAddresses = ( order ) => {
  *
  * @param {Object} address1
  * @param {Object} address2
- * @return {any}
+ * @return {any} The merged address, or the merged billing and shipping addresses when the inputs hold those.
  */
 export const mergeWcAddress = ( address1, address2 ) => {
 	if ( 'billingAddress' in address1 ) {

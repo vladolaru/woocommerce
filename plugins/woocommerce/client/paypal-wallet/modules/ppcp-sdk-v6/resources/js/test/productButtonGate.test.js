@@ -67,7 +67,7 @@ function wrapperEl() {
  * can assert whether the gate's mouseup handler routed a click to it.
  *
  * @param {HTMLFormElement} form
- * @return {jest.Mock}
+ * @return {jest.Mock} The spy that records the clicks.
  */
 function spyOnSubmit( form ) {
 	const spy = jest.fn();
