@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
@@ -16,6 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use ReflectionClass;
 use RuntimeException;
+use WC_Order;
 use WC_Unit_Test_Case;
 
 /**
@@ -582,6 +584,159 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'on-hold', $order->get_status(), 'The retried dispute webhook must restore the dispute hold.' );
 		$this->assertSame( array( 'dp_lock_contention' ), $order->get_meta( '_wcpay_open_dispute_ids', true ), 'The retried dispute webhook must persist its open-dispute record.' );
 		$this->assertCount( 1, $this->find_order_note( $order, 'Payment has been disputed' ), 'The retried dispute webhook must add exactly one note.' );
+	}
+
+	/**
+	 * @testdox A $event_type delivery refused by a held order payment lock writes nothing to the order.
+	 * @dataProvider dispute_events_after_created
+	 *
+	 * @param string $event_type Dispute event type.
+	 */
+	public function test_dispute_event_after_created_is_refused_by_a_held_order_payment_lock( string $event_type ): void {
+		$order = $this->create_disputable_order();
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_status( 'on-hold' );
+		$order->update_meta_data( '_charge_id', 'ch_locked_close' );
+		$order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_locked_close' ) );
+		$order->save();
+		$payment_store = wc_get_container()->get( OrderPaymentStore::class );
+		$profile       = new WooPaymentsPersistenceProfile();
+		$this->assertNotNull( $payment_store->claim_order_payment_lock( $order, $profile, 'pi_lock_holder' ) );
+
+		try {
+			$this->sut->process(
+				$event_type,
+				array(
+					'id'     => 'dp_locked_close',
+					'charge' => 'ch_locked_close',
+					'status' => 'won',
+				)
+			);
+			$this->fail( 'The delivery must be refused while another operation holds the order payment lock.' );
+		} catch ( OrderPaymentLockRefusedException $exception ) {
+			$this->assertSame( $order->get_id(), $exception->get_order_id() );
+		} finally {
+			$payment_store->unlock_order_payment( $order, $profile );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertSame( array( 'dp_locked_close' ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$dispute_notes = array_filter(
+			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+			static fn( $note ): bool => false !== stripos( $note->content, 'dispute' )
+		);
+		$this->assertCount( 0, $dispute_notes );
+	}
+
+	/** @return array<string,array{string}> */
+	public static function dispute_events_after_created(): array {
+		return array(
+			'closed'  => array( 'charge.dispute.closed' ),
+			'updated' => array( 'charge.dispute.updated' ),
+		);
+	}
+
+	/**
+	 * @testdox A dispute close re-reads the order under the lock, so a sibling dispute opened just before it stays open and keeps the hold.
+	 */
+	public function test_dispute_closed_keeps_a_sibling_dispute_opened_before_its_lock(): void {
+		$order = $this->create_disputable_order();
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_status( 'on-hold' );
+		$order->update_meta_data( '_charge_id', 'ch_sibling' );
+		$order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_first' ) );
+		$order->save();
+		$store = new class() extends OrderPaymentStore {
+			/**
+			 * Whether the concurrent dispute has been recorded.
+			 *
+			 * @var bool
+			 */
+			public bool $sibling_recorded = false;
+
+			/**
+			 * Record a sibling dispute, as a concurrent dispute created delivery would under the lock, then grant the claim.
+			 *
+			 * @param WC_Order                      $order     Order being locked.
+			 * @param ProviderPersistenceVocabulary $profile   Persistence profile.
+			 * @param string|null                   $reference Payment reference.
+			 * @param string                        $operation Operation claiming the lock.
+			 * @return string|null
+			 */
+			public function claim_order_payment_lock_for_operation( WC_Order $order, ProviderPersistenceVocabulary $profile, ?string $reference, string $operation ): ?string {
+				unset( $profile, $reference, $operation );
+				if ( ! $this->sibling_recorded ) {
+					$this->sibling_recorded = true;
+					// A separate request loads its own copy of the order.
+					$writer = new WC_Order( $order->get_id() );
+					$writer->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_first', 'dp_sibling' ) );
+					$writer->save();
+				}
+
+				return 'test_lock_token';
+			}
+
+			/**
+			 * Release nothing: the claim above holds no lock.
+			 *
+			 * @param WC_Order                      $order      Order being unlocked.
+			 * @param ProviderPersistenceVocabulary $profile    Persistence profile.
+			 * @param string                        $lock_token Claim token.
+			 */
+			public function release_order_payment_lock( WC_Order $order, ProviderPersistenceVocabulary $profile, string $lock_token ): void {
+				unset( $order, $profile, $lock_token );
+			}
+		};
+		wc_get_container()->replace( OrderPaymentStore::class, $store );
+		$handler = new WooPaymentsDisputeEventHandler();
+		$handler->init(
+			wc_get_container()->get( WooPaymentsLegacyRuntime::class ),
+			new class() extends WooPaymentsApiClient {},
+			wc_get_container()->get( WooPaymentsDisputeCacheService::class )
+		);
+
+		$handler->process(
+			'charge.dispute.closed',
+			array(
+				'id'     => 'dp_first',
+				'charge' => 'ch_sibling',
+				'status' => 'won',
+			)
+		);
+
+		$this->assertTrue( $store->sibling_recorded, 'The close must claim the order payment lock.' );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( array( 'dp_sibling' ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assertSame( 'on-hold', $order->get_status(), 'The sibling dispute keeps the hold.' );
+	}
+
+	/**
+	 * @testdox A dispute close keeps a site's own '__return_false' on the order emails it silences while it runs.
+	 */
+	public function test_dispute_closed_keeps_the_sites_own_email_filters(): void {
+		$order = $this->create_disputable_order();
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_status( 'on-hold' );
+		$order->update_meta_data( '_charge_id', 'ch_site_filter' );
+		$order->save();
+		add_filter( 'woocommerce_email_enabled_customer_completed_order', '__return_false' );
+
+		try {
+			$this->sut->process(
+				'charge.dispute.closed',
+				array(
+					'id'     => 'dp_site_filter',
+					'charge' => 'ch_site_filter',
+					'status' => 'won',
+				)
+			);
+
+			$this->assertSame( 10, has_filter( 'woocommerce_email_enabled_customer_completed_order', '__return_false' ), 'The site disabled this email; the close must leave that in place.' );
+		} finally {
+			remove_filter( 'woocommerce_email_enabled_customer_completed_order', '__return_false' );
+		}
+		$this->assertSame( 'completed', wc_get_order( $order->get_id() )->get_status() );
 	}
 
 	/**

@@ -5,6 +5,9 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
@@ -557,6 +560,68 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 		$order->save();
 
 		return $order;
+	}
+
+	/**
+	 * @testdox A charge.refunded that read the order before an admin refund linked its row, and claims the lock after, reuses that row instead of creating a second refund.
+	 */
+	public function test_charge_refunded_looks_up_the_linked_refund_under_the_lock(): void {
+		$order   = $this->create_refundable_order();
+		$store   = new class() extends OrderPaymentStore {
+			/**
+			 * Whether the admin refund has been linked.
+			 *
+			 * @var bool
+			 */
+			public bool $admin_refund_linked = false;
+
+			/**
+			 * Finish the admin refund, as the gateway does under the lock, then grant the webhook's claim.
+			 *
+			 * @param WC_Order                      $order     Order being locked.
+			 * @param ProviderPersistenceVocabulary $profile   Persistence profile.
+			 * @param string|null                   $reference Payment reference.
+			 * @param string                        $operation Operation claiming the lock.
+			 * @return string|null
+			 */
+			public function claim_order_payment_lock_for_operation( WC_Order $order, ProviderPersistenceVocabulary $profile, ?string $reference, string $operation ): ?string {
+				unset( $profile, $reference, $operation );
+				if ( ! $this->admin_refund_linked ) {
+					$this->admin_refund_linked = true;
+					$refund                    = wc_create_refund(
+						array(
+							'amount'   => '4.00',
+							'reason'   => 'Requested by customer',
+							'order_id' => $order->get_id(),
+						)
+					);
+					$refund->update_meta_data( '_wcpay_refund_id', 're_123' );
+					$refund->save();
+				}
+
+				return 'test_lock_token';
+			}
+
+			/**
+			 * Release nothing: the claim above holds no lock.
+			 *
+			 * @param WC_Order                      $order      Order being unlocked.
+			 * @param ProviderPersistenceVocabulary $profile    Persistence profile.
+			 * @param string                        $lock_token Claim token.
+			 */
+			public function release_order_payment_lock( WC_Order $order, ProviderPersistenceVocabulary $profile, string $lock_token ): void {
+				unset( $order, $profile, $lock_token );
+			}
+		};
+		$handler = new WooPaymentsRefundEventHandler();
+		$handler->init( wc_get_container()->get( WooPaymentsLegacyRuntime::class ), $store, new WooPaymentsPersistenceProfile() );
+
+		$handler->process( 'charge.refunded', $this->get_successful_refund_charge() );
+
+		$this->assertTrue( $store->admin_refund_linked, 'The webhook must claim the order payment lock.' );
+		$refunds = wc_get_order( $order->get_id() )->get_refunds();
+		$this->assertCount( 1, $refunds, 'One platform refund keeps one local refund row.' );
+		$this->assertSame( 're_123', $refunds[0]->get_meta( '_wcpay_refund_id', true ) );
 	}
 
 	/**

@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
@@ -127,18 +128,21 @@ class WooPaymentsRefundEventHandler {
 		$is_partial_refund = $refund_amount < $charge_amount;
 		$is_pending_refund = 'pending' === $refund_status;
 		$order             = $this->get_order_for_charge_id( $charge_id, $charge );
-		$existing_refund   = $this->get_refund_by_provider_refund_id( $order, $refund_id );
 
 		if ( $charge_amount < 0 || $refund_amount < 0 || $refunded_amount > (float) $order->get_total() ) {
 			throw new RuntimeException( esc_html( sprintf( 'The refund amount is not valid for charge ID: %s', $charge_id ) ) );
 		}
 
-		if ( $existing_refund instanceof WC_Order_Refund && $is_pending_refund && 'successful' === $order->get_meta( '_wcpay_refund_status', true ) ) {
-			return;
-		}
-
 		$lock_token = $this->claim_refund_lock( $order, $refund_id );
 		try {
+			// Read the order again under the lock: a WP Admin refund of the same platform refund links its local row while
+			// it holds the lock, and a lookup made before the claim would miss it and create a second refund.
+			$order           = $this->get_fresh_order( $order );
+			$existing_refund = $this->get_refund_by_provider_refund_id( $order, $refund_id );
+			if ( $existing_refund instanceof WC_Order_Refund && $is_pending_refund && 'successful' === $order->get_meta( '_wcpay_refund_status', true ) ) {
+				return;
+			}
+
 			$wc_refund = $existing_refund instanceof WC_Order_Refund
 				? $existing_refund
 				: $this->create_local_refund(
@@ -168,13 +172,15 @@ class WooPaymentsRefundEventHandler {
 		$status         = $this->get_required_string( $refund, 'status' );
 		$balance_txn_id = $this->get_refund_balance_transaction_id( $refund['balance_transaction'] ?? null );
 		$order          = $this->get_order_for_charge_id( $charge_id );
-		$wc_refund      = $this->get_refund_by_provider_refund_id( $order, $refund_id );
 
+		// Each branch looks the local refund up again on the order read under the lock, as charge.refunded does: a WP
+		// Admin refund of the same platform refund links its row while it holds the lock.
 		switch ( $status ) {
 			case 'failed':
 				$lock_token = $this->claim_refund_lock( $order, $refund_id );
 				try {
-					$this->handle_failed_refund( $order, $refund_id, $amount, $currency, $wc_refund, false, $this->get_optional_string( $refund, 'failure_reason' ) );
+					$order = $this->get_fresh_order( $order );
+					$this->handle_failed_refund( $order, $refund_id, $amount, $currency, $this->get_refund_by_provider_refund_id( $order, $refund_id ), false, $this->get_optional_string( $refund, 'failure_reason' ) );
 				} finally {
 					$this->order_payment_store->release_order_payment_lock( $order, $this->persistence_profile, $lock_token );
 				}
@@ -183,19 +189,27 @@ class WooPaymentsRefundEventHandler {
 			case 'cancelled':
 				$lock_token = $this->claim_refund_lock( $order, $refund_id );
 				try {
-					$this->handle_failed_refund( $order, $refund_id, $amount, $currency, $wc_refund, true );
+					$order = $this->get_fresh_order( $order );
+					$this->handle_failed_refund( $order, $refund_id, $amount, $currency, $this->get_refund_by_provider_refund_id( $order, $refund_id ), true );
 				} finally {
 					$this->order_payment_store->release_order_payment_lock( $order, $this->persistence_profile, $lock_token );
 				}
 				return;
 			case 'succeeded':
-				if ( $wc_refund instanceof WC_Order_Refund ) {
-					$lock_token = $this->claim_refund_lock( $order, $refund_id );
-					try {
+				// Only a refund this store already has gets the success note; one it does not have needs no lock.
+				if ( ! $this->get_refund_by_provider_refund_id( $order, $refund_id ) instanceof WC_Order_Refund ) {
+					return;
+				}
+
+				$lock_token = $this->claim_refund_lock( $order, $refund_id );
+				try {
+					$order     = $this->get_fresh_order( $order );
+					$wc_refund = $this->get_refund_by_provider_refund_id( $order, $refund_id );
+					if ( $wc_refund instanceof WC_Order_Refund ) {
 						$this->add_note_and_metadata_for_created_refund( $order, $wc_refund, $refund_id, $balance_txn_id, false );
-					} finally {
-						$this->order_payment_store->release_order_payment_lock( $order, $this->persistence_profile, $lock_token );
 					}
+				} finally {
+					$this->order_payment_store->release_order_payment_lock( $order, $this->persistence_profile, $lock_token );
 				}
 				return;
 		}
@@ -517,6 +531,22 @@ class WooPaymentsRefundEventHandler {
 		$payment_method = (string) $order->get_payment_method();
 
 		return OrderPaymentStore::GATEWAY_ID === $payment_method || 0 === strpos( $payment_method, OrderPaymentStore::GATEWAY_ID_PREFIX );
+	}
+
+	/**
+	 * Read an order again from its data store, refunds included, for a decision made under the order payment lock.
+	 *
+	 * WC_Order::get_refunds() keeps the order's refund IDs in the object cache for the request, so a lookup made earlier
+	 * in the same request (another Action Scheduler action of the batch, or a check before the claim) would hide a
+	 * refund another request linked since; that cache entry is dropped too.
+	 *
+	 * @param WC_Order $order Order object.
+	 * @return WC_Order
+	 */
+	private function get_fresh_order( WC_Order $order ): WC_Order {
+		wp_cache_delete( \WC_Cache_Helper::get_cache_prefix( 'orders' ) . 'refund_ids' . $order->get_id(), 'orders' );
+
+		return wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
 	}
 
 	/**

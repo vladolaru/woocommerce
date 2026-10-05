@@ -200,28 +200,26 @@ class WooPaymentsDisputeEventHandler {
 		$note       = $this->get_dispute_created_note( $charge_id, $amount, $reason, $due_by, $is_inquiry, $balance_transaction_id, $dispute_id );
 		$note_type  = $is_inquiry ? 'created_inquiry' : 'created_dispute';
 
-		$lock_token = $this->claim_dispute_lock( $order, $dispute_id );
-
-		try {
-			$order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
-
-			$this->add_dispute_order_note_once(
-				$order,
-				$note,
-				$dispute_id,
-				$status,
-				$note_type,
-				function () use ( $order, $dispute_id ): void {
-					$this->add_open_dispute_id( $order, $dispute_id );
-					$order->update_status( 'on-hold' );
-				},
-				// Plugin versions predating the dispute-ID suffix wrote the bare note;
-				// on a cutover store the replayed webhook must still match it.
-				array( $this->get_dispute_created_note( $charge_id, $amount, $reason, $due_by, $is_inquiry, $balance_transaction_id ) )
-			);
-		} finally {
-			$this->get_order_payment_store()->release_order_payment_lock( $order, $this->get_persistence_profile(), $lock_token );
-		}
+		$this->run_under_dispute_lock(
+			$order,
+			$dispute_id,
+			function ( WC_Order $order ) use ( $note, $dispute_id, $status, $note_type, $charge_id, $amount, $reason, $due_by, $is_inquiry, $balance_transaction_id ): bool {
+				return $this->add_dispute_order_note_once(
+					$order,
+					$note,
+					$dispute_id,
+					$status,
+					$note_type,
+					function () use ( $order, $dispute_id ): void {
+						$this->add_open_dispute_id( $order, $dispute_id );
+						$order->update_status( 'on-hold' );
+					},
+					// Plugin versions predating the dispute-ID suffix wrote the bare note;
+					// on a cutover store the replayed webhook must still match it.
+					array( $this->get_dispute_created_note( $charge_id, $amount, $reason, $due_by, $is_inquiry, $balance_transaction_id ) )
+				);
+			}
+		);
 	}
 
 	/**
@@ -239,16 +237,40 @@ class WooPaymentsDisputeEventHandler {
 		$note       = $this->get_dispute_closed_note( $charge_id, $status, $is_inquiry, $balance_transaction_id, $dispute_id );
 		$note_type  = $is_inquiry ? 'closed_inquiry' : 'closed_dispute';
 
-		$this->add_dispute_order_note_once(
+		$this->run_under_dispute_lock(
+			$order,
+			$dispute_id,
+			fn( WC_Order $order ): bool => $this->apply_dispute_closed( $order, $note, $dispute_id, $status, $note_type, $charge_id, $is_inquiry, $balance_transaction_id )
+		);
+	}
+
+	/**
+	 * Apply a dispute close to an order read under the order payment lock.
+	 *
+	 * @param WC_Order $order                  Order read under the lock.
+	 * @param string   $note                   Closed note.
+	 * @param string   $dispute_id             Dispute ID.
+	 * @param string   $status                 Dispute status.
+	 * @param string   $note_type              Note type.
+	 * @param string   $charge_id              Charge ID.
+	 * @param bool     $is_inquiry             Whether the dispute is an inquiry.
+	 * @param string   $balance_transaction_id Balance transaction ID.
+	 * @return bool True when the close was applied.
+	 */
+	private function apply_dispute_closed( WC_Order $order, string $note, string $dispute_id, string $status, string $note_type, string $charge_id, bool $is_inquiry, string $balance_transaction_id ): bool {
+		// A callback of its own, so removing it cannot remove a site's own '__return_false' on these emails.
+		$disable_email = static fn(): bool => false;
+
+		return $this->add_dispute_order_note_once(
 			$order,
 			$note,
 			$dispute_id,
 			$status,
 			$note_type,
-			function () use ( $order, $status, $dispute_id, $charge_id ): void {
-				add_filter( 'woocommerce_email_enabled_customer_completed_order', '__return_false' );
-				add_filter( 'woocommerce_email_enabled_customer_refunded_order', '__return_false' );
-				add_filter( 'woocommerce_email_enabled_customer_completed_renewal_order', '__return_false' );
+			function () use ( $order, $status, $dispute_id, $charge_id, $disable_email ): void {
+				add_filter( 'woocommerce_email_enabled_customer_completed_order', $disable_email );
+				add_filter( 'woocommerce_email_enabled_customer_refunded_order', $disable_email );
+				add_filter( 'woocommerce_email_enabled_customer_completed_renewal_order', $disable_email );
 
 				$open_dispute_ids = $this->close_open_dispute_id( $order, $dispute_id );
 
@@ -287,9 +309,9 @@ class WooPaymentsDisputeEventHandler {
 						$order->update_status( 'completed' );
 					}
 				} finally {
-					remove_filter( 'woocommerce_email_enabled_customer_completed_order', '__return_false' );
-					remove_filter( 'woocommerce_email_enabled_customer_refunded_order', '__return_false' );
-					remove_filter( 'woocommerce_email_enabled_customer_completed_renewal_order', '__return_false' );
+					remove_filter( 'woocommerce_email_enabled_customer_completed_order', $disable_email );
+					remove_filter( 'woocommerce_email_enabled_customer_refunded_order', $disable_email );
+					remove_filter( 'woocommerce_email_enabled_customer_completed_renewal_order', $disable_email );
 				}
 			},
 			// Plugin versions predating the dispute-ID suffix wrote the bare note;
@@ -336,7 +358,11 @@ class WooPaymentsDisputeEventHandler {
 			$dispute_id
 		);
 
-		return $this->add_dispute_order_note_once( $order, $note, $dispute_id, $status, $note_type );
+		return $this->run_under_dispute_lock(
+			$order,
+			$dispute_id,
+			fn( WC_Order $order ): bool => $this->add_dispute_order_note_once( $order, $note, $dispute_id, $status, $note_type )
+		);
 	}
 
 	/**
@@ -707,7 +733,30 @@ class WooPaymentsDisputeEventHandler {
 	}
 
 	/**
-	 * Claim the shared order payment lock for a dispute-created webhook mutation.
+	 * Run a dispute change under the order payment lock, on the order read again after the claim.
+	 *
+	 * A concurrent delivery for the same order, such as a duplicate close or a sibling dispute's created event,
+	 * writes under the same lock, so the change sees those writes instead of overwriting them from a stale read.
+	 * Client 11.1.0 takes no lock in its dispute handlers; this is a recorded better-than-client row.
+	 *
+	 * @param WC_Order                $order      Order the event resolved to.
+	 * @param string                  $dispute_id Provider dispute ID.
+	 * @param callable(WC_Order):bool $change     Change to run on the order read under the lock.
+	 * @return bool What the change returned.
+	 * @throws OrderPaymentLockRefusedException When another operation holds the order payment lock; nothing has been written.
+	 */
+	private function run_under_dispute_lock( WC_Order $order, string $dispute_id, callable $change ): bool {
+		$lock_token = $this->claim_dispute_lock( $order, $dispute_id );
+
+		try {
+			return $change( wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order ) );
+		} finally {
+			$this->get_order_payment_store()->release_order_payment_lock( $order, $this->get_persistence_profile(), $lock_token );
+		}
+	}
+
+	/**
+	 * Claim the shared order payment lock for a dispute webhook mutation.
 	 *
 	 * @param WC_Order $order      Order object.
 	 * @param string   $dispute_id Provider dispute ID.
