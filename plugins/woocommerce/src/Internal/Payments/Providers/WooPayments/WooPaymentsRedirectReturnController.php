@@ -498,7 +498,8 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * Log a failed intent fetch.
 	 *
 	 * A platform error follows the client's logging setting (gw:2429). Any other throwable is a code or
-	 * environment fault, so it is always logged with its class (decided divergence, monitor ruling 2026-10-04).
+	 * environment fault, so it is always logged with its class, code and trace, never its message (decided divergence,
+	 * monitor ruling 2026-10-04).
 	 *
 	 * @param WC_Order  $order     Order object.
 	 * @param string    $intent_id Requested intent ID.
@@ -510,15 +511,10 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 			return;
 		}
 
-		wc_get_logger()->error(
-			sprintf(
-				'Error fetching the intent for native WooPayments redirect return for order %1$d: %2$s: %3$s',
-				$order->get_id(),
-				get_class( $exception ),
-				$exception->getMessage()
-			),
+		wc_get_container()->get( WooPaymentsLogger::class )->log_throwable_always(
+			'Error fetching the intent for native WooPayments redirect return.',
+			$exception,
 			array(
-				'source'    => WooPaymentsLogger::SOURCE,
 				'order_id'  => $order->get_id(),
 				'intent_id' => $intent_id,
 			)

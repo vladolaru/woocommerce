@@ -920,11 +920,11 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A non-API error fetching the intent shows only the generic notice and is logged with its class even with debug logging off.
+	 * @testdox A non-API error fetching the intent shows only the generic notice and is logged with its class, never its message, even with debug logging off.
 	 *
 	 * Decided divergence (monitor ruling 2026-10-04): client 11.1.0 shows a non-API exception's raw message
 	 * (get_filtered_error_message(), utils:770-800, via gw:2447) and logs it only with debug logging on. Native shows the
-	 * generic notice and always logs the throwable's class and message.
+	 * generic notice and always logs the throwable's class, code and trace (review 67 F9).
 	 */
 	public function test_handle_wp_hides_non_api_fetch_error_and_always_logs_it(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
@@ -942,8 +942,10 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( wc_get_checkout_url(), $location );
 		$this->assert_single_error_notice( "We're not able to process this payment. Please try again later." );
 		$this->assertCount( 1, $logger->error_calls );
-		$this->assertStringContainsString( 'RuntimeException', $logger->error_calls[0]['message'] );
-		$this->assertStringContainsString( 'Undefined array key "client_secret"', $logger->error_calls[0]['message'] );
+		$this->assertSame( 'Error fetching the intent for native WooPayments redirect return.', $logger->error_calls[0]['message'] );
+		$this->assertSame( \RuntimeException::class, $logger->error_calls[0]['context']['exception'] ?? null );
+		$this->assertSame( array( $order->get_id(), 'pi_runtime_error', WooPaymentsLogger::SOURCE ), array( $logger->error_calls[0]['context']['order_id'] ?? null, $logger->error_calls[0]['context']['intent_id'] ?? null, $logger->error_calls[0]['context']['source'] ?? null ) );
+		$this->assertStringNotContainsString( 'client_secret', (string) wp_json_encode( $logger ) );
 	}
 
 	/**
