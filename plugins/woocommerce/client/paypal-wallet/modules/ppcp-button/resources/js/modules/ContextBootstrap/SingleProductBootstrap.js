@@ -121,7 +121,7 @@ class SingleProductBootstrap {
 		return (
 			BootstrapHelper.shouldEnable( this ) &&
 			! this.priceAmountIsZero() &&
-			( null === addToCartButton ||
+			( addToCartButton === null ||
 				! addToCartButton.classList.contains( 'disabled' ) )
 		);
 	}

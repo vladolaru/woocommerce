@@ -74,7 +74,7 @@ const sanitizeLocation = ( oldDetails, newDetails ) => {
 	// Skip if provided details are not a plain object.
 	if (
 		! newDetails ||
-		'object' !== typeof newDetails ||
+		typeof newDetails !== 'object' ||
 		Array.isArray( newDetails )
 	) {
 		return oldDetails;

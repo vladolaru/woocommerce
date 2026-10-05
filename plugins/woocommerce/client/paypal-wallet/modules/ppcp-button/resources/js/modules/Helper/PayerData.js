@@ -72,8 +72,8 @@ function normalizePayerDetails( details ) {
 function mergePayerDetails( firstPayer, secondPayer ) {
 	const mergeNestedObjects = ( target, source ) => {
 		for ( const [ key, value ] of Object.entries( source ) ) {
-			if ( null !== value && undefined !== value ) {
-				if ( 'object' === typeof value ) {
+			if ( value !== null && undefined !== value ) {
+				if ( typeof value === 'object' ) {
 					target[ key ] = mergeNestedObjects(
 						target[ key ] || {},
 						value
@@ -113,7 +113,7 @@ function getCheckoutBillingDetails() {
 		}
 	} );
 
-	if ( data.phone && 'string' === typeof data.phone ) {
+	if ( data.phone && typeof data.phone === 'string' ) {
 		data.phone = {
 			phone_type: 'HOME',
 			phone_number: { national_number: data.phone },
@@ -125,11 +125,11 @@ function getCheckoutBillingDetails() {
 
 function setCheckoutBillingDetails( payer ) {
 	const setValue = ( path, field, value ) => {
-		if ( null === value || undefined === value || ! field ) {
+		if ( value === null || undefined === value || ! field ) {
 			return;
 		}
 
-		if ( 'phone' === path[ 0 ] && 'object' === typeof value ) {
+		if ( path[ 0 ] === 'phone' && typeof value === 'object' ) {
 			value = value.phone_number?.national_number;
 		}
 
@@ -164,7 +164,7 @@ export function getSessionBillingDetails() {
  * @param {unknown} details - New payer details
  */
 export function setSessionBillingDetails( details ) {
-	if ( ! details || 'object' !== typeof details ) {
+	if ( ! details || typeof details !== 'object' ) {
 		return;
 	}
 

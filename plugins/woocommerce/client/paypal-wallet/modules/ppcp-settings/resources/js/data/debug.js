@@ -47,7 +47,7 @@ export const addDebugTools = ( context, modules ) => {
 				if ( cbFilter ) {
 					contents = cbFilter( contents, selector, storeName );
 
-					if ( undefined !== contents && null !== contents ) {
+					if ( undefined !== contents && contents !== null ) {
 						console.log( `.${ selector }() [filtered]`, contents );
 					}
 				} else {

@@ -128,7 +128,7 @@ function styleFor( wrapper, configStyle ) {
 	return {
 		logoType: LOGO_TYPES[ logoType ] || 'WORDMARK',
 		logoPosition:
-			'inline' === logoType
+			logoType === 'inline'
 				? 'INLINE'
 				: LOGO_POSITIONS[ position ] || 'LEFT',
 		textColor:

@@ -58,7 +58,7 @@ export const wooSettings = ( state ) => {
 	 * @type {boolean}
 	 */
 	const ownBrandOnly =
-		'true' === simulateBrandedOnly || settings.ownBrandOnly;
+		simulateBrandedOnly === 'true' || settings.ownBrandOnly;
 
 	return { ...settings, ownBrandOnly };
 };

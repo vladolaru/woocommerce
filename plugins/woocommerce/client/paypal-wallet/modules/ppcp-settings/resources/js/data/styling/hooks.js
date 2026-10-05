@@ -199,7 +199,7 @@ export const useLabelProps = ( location ) => {
 export const useLayoutProps = ( location ) => {
 	const { getLocationProp, setLocationProp } = useHooks();
 	const { details } = useLocationProps( location );
-	const isAvailable = false !== details.props.layout;
+	const isAvailable = details.props.layout !== false;
 
 	const sanitize = ( value ) => {
 		const isValidColor = Object.values( STYLING_LAYOUTS ).some(
@@ -223,7 +223,7 @@ export const useTaglineProps = ( location ) => {
 
 	// Tagline is only available for horizontal layouts.
 	const isAvailable =
-		false !== details.props.tagline &&
+		details.props.tagline !== false &&
 		STYLING_LAYOUTS.horizontal.value ===
 			getLocationProp( location, 'layout' );
 

@@ -5,7 +5,7 @@ const CheckboxGroup = ( { name, options, value, onChange } ) => {
 	const handleChange = useCallback(
 		( key, checked ) => {
 			const getNewValue = () => {
-				if ( 'boolean' === typeof value ) {
+				if ( typeof value === 'boolean' ) {
 					return checked;
 				}
 

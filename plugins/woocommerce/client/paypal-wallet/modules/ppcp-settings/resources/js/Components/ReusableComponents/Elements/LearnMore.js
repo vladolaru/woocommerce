@@ -2,7 +2,7 @@ import { __ } from '@wordpress/i18n';
 import { Button } from '@wordpress/components';
 
 const LearnMore = ( { url } ) => {
-	if ( ! url || '#' === url ) {
+	if ( ! url || url === '#' ) {
 		return null;
 	}
 

@@ -8,7 +8,7 @@ const Description = ( { children, className = '' } ) => {
 
 	const elementClasses = classNames( 'ppcp--description', className );
 
-	if ( 'string' !== typeof children ) {
+	if ( typeof children !== 'string' ) {
 		return <span className={ elementClasses }>{ children }</span>;
 	}
 

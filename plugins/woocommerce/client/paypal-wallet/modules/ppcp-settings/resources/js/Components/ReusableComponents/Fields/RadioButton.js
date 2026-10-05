@@ -24,7 +24,7 @@ const RadioButton = ( {
 		className: 'ppcp-r__radio-value',
 		type: 'radio',
 		onChange: handleChange,
-		checked: null === checked ? value === currentValue : checked,
+		checked: checked === null ? value === currentValue : checked,
 		id,
 		name,
 		value,

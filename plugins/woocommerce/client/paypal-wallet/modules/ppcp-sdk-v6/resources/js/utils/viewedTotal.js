@@ -60,7 +60,7 @@ function stateFor( context ) {
  */
 async function resolve( config, context ) {
 	try {
-		if ( 'product' === context ) {
+		if ( context === 'product' ) {
 			const { total } = await simulateCart( config );
 
 			return total ?? '';
@@ -139,7 +139,7 @@ export function watchViewedTotal( config, context ) {
 
 	refresh( config, context ).catch( () => {} );
 
-	if ( 'product' === context && ! listening ) {
+	if ( context === 'product' && ! listening ) {
 		const form = productForm();
 		if ( form ) {
 			listening = true;

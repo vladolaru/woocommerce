@@ -282,14 +282,14 @@ export const useDirectAuthentication = () => {
 			async () => {
 				let data;
 
-				if ( 'function' === typeof connectionDetails ) {
+				if ( typeof connectionDetails === 'function' ) {
 					try {
 						data = connectionDetails();
 					} catch ( exception ) {
 						createErrorNotice( exception.message );
 						return;
 					}
-				} else if ( 'object' === typeof connectionDetails ) {
+				} else if ( typeof connectionDetails === 'object' ) {
 					data = connectionDetails;
 				}
 

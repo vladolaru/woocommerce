@@ -26,7 +26,7 @@ const stores = [
 
 stores.forEach( ( store ) => {
 	try {
-		if ( false === store.initStore() ) {
+		if ( store.initStore() === false ) {
 			console.error(
 				`Store initialization failed for ${ store.STORE_NAME }`
 			);

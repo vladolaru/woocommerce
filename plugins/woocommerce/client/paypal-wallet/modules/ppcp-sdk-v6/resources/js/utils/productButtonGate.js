@@ -46,7 +46,7 @@ export function resetProductButtonGate() {
  * @param {Object} config - The wc_ppcp_sdk_v6 config object.
  */
 export function initProductButtonGate( config ) {
-	if ( 'product' !== config?.page_context || initialized ) {
+	if ( config?.page_context !== 'product' || initialized ) {
 		return;
 	}
 

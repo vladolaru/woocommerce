@@ -31,7 +31,7 @@ export function describeError( error ) {
 export async function logEvent( config, event, detail = '', level = 'error' ) {
 	try {
 		const write =
-			'error' === level || 'warning' === level
+			level === 'error' || level === 'warning'
 				? // eslint-disable-next-line no-console
 				  console.error
 				: // eslint-disable-next-line no-console

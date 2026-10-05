@@ -23,7 +23,6 @@ export default [
 				'warn',
 				{ allowedTextDomain: 'woocommerce' },
 			],
-			yoda: 'warn',
 			'jsdoc/require-param-type': 'warn',
 			'jsdoc/require-returns-description': 'warn',
 			'jsdoc/check-param-names': 'warn',

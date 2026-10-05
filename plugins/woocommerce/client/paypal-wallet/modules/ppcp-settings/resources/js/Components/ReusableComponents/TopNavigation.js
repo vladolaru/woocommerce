@@ -30,7 +30,7 @@ const TopNavigation = ( {
 	const handleTitleClick = useCallback( () => {
 		if ( exitOnTitleClick ) {
 			goToWooCommercePaymentsTab();
-		} else if ( 'function' === typeof onTitleClick ) {
+		} else if ( typeof onTitleClick === 'function' ) {
 			onTitleClick();
 		}
 	}, [ exitOnTitleClick, goToWooCommercePaymentsTab, onTitleClick ] );

@@ -96,7 +96,7 @@ const ELIGIBILITY_REFRESH_DEBOUNCE_MS = 300;
 
 	const sdkPageType = config.page_context || 'mini-cart';
 
-	const messagesFollowCartTotal = 'product' !== config.page_context;
+	const messagesFollowCartTotal = config.page_context !== 'product';
 
 	let amount = config.amount;
 	let refreshPromise = Promise.resolve();
@@ -392,7 +392,7 @@ const ELIGIBILITY_REFRESH_DEBOUNCE_MS = 300;
 	 * it back on.
 	 */
 	function trackProductTotal() {
-		if ( 'product' !== config.page_context ) {
+		if ( config.page_context !== 'product' ) {
 			return;
 		}
 
