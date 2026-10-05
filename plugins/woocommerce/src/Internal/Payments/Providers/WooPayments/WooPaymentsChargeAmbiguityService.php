@@ -224,39 +224,12 @@ class WooPaymentsChargeAmbiguityService {
 	 */
 	public static function find_intent_with_money( array $order_intents ): ?array {
 		foreach ( $order_intents as $intent ) {
-			if ( in_array( (string) ( $intent['status'] ?? '' ), self::MONEY_STATUSES, true ) && ! self::has_given_money_back( $intent ) ) {
+			if ( in_array( (string) ( $intent['status'] ?? '' ), self::MONEY_STATUSES, true ) && ! WooPaymentsIntentCodec::has_given_money_back( $intent ) ) {
 				return $intent;
 			}
 		}
 
 		return null;
-	}
-
-	/**
-	 * Tell whether a charge of the intent was fully refunded or disputed.
-	 *
-	 * The platform pins Stripe-Version 2020-08-27 (wpcom `wcpay/utils/class-config.php:414-425`), so a listed intent
-	 * carries its charges, each with `refunded` (true once fully refunded), `amount_refunded` and `disputed`. Every charge
-	 * is read, so the list's order does not matter.
-	 *
-	 * @param array<string,mixed> $intent A listed PaymentIntent.
-	 * @return bool
-	 */
-	private static function has_given_money_back( array $intent ): bool {
-		$charges = isset( $intent['charges']['data'] ) && is_array( $intent['charges']['data'] ) ? $intent['charges']['data'] : array();
-		foreach ( $charges as $charge ) {
-			if ( ! is_array( $charge ) ) {
-				continue;
-			}
-
-			$amount          = is_numeric( $charge['amount'] ?? null ) ? (int) $charge['amount'] : 0;
-			$amount_refunded = is_numeric( $charge['amount_refunded'] ?? null ) ? (int) $charge['amount_refunded'] : 0;
-			if ( true === ( $charge['refunded'] ?? false ) || ( 0 < $amount && $amount_refunded >= $amount ) || true === ( $charge['disputed'] ?? false ) ) {
-				return true;
-			}
-		}
-
-		return false;
 	}
 
 	/**

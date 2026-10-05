@@ -46,6 +46,19 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	public const FLAG_PREVIOUS_SUCCESSFUL_INTENT = 'wcpay_previous_successful_intent';
 
 	/**
+	 * Error code of the refusal for an order whose attached payment is disputed.
+	 */
+	public const ERROR_DISPUTED_INTENT = 'duplicate_payment_disputed';
+
+	/**
+	 * Order meta holding the attached PaymentIntent the dispute note was written for.
+	 *
+	 * Keyed by the intent, so a copy of the meta on another order (Subscriptions copies order meta) never hides that order's
+	 * note: its attached intent differs.
+	 */
+	private const DISPUTED_INTENT_NOTED_META = '_wcpay_disputed_intent_noted';
+
+	/**
 	 * Payment methods paid offline after checkout, through a voucher.
 	 *
 	 * Mirrors the plugin's Payment_Method::OFFLINE_PAYMENT_METHODS (client 11.1.0 `includes/constants/class-payment-method.php:61-63`).
@@ -317,6 +330,19 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 			return null;
 		}
 
+		// A full refund or a dispute leaves the intent `succeeded`; client 11.1.0 reads only the status
+		// (class-duplicate-payment-prevention-service.php:105-107) and completes the order from it. A fully refunded intent is
+		// no payment of the order, so checkout charges again. A disputed one is refused: the money may still come back.
+		if ( WooPaymentsIntentCodec::is_fully_refunded( $intent ) ) {
+			return null;
+		}
+
+		if ( WooPaymentsIntentCodec::is_disputed( $intent ) ) {
+			$this->add_disputed_intent_note_once( $order, $intent_id );
+
+			return new WP_Error( self::ERROR_DISPUTED_INTENT, __( "This order's payment is under review. Please contact the store.", 'woocommerce' ) );
+		}
+
 		if ( 'succeeded' === $status ) {
 			$this->remove_session_processing_order( $order->get_id() );
 		}
@@ -329,6 +355,31 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		$this->apply_attached_intent_lifecycle( $intent, $order );
 
 		return $this->success_redirect( $gateway, $order, self::FLAG_PREVIOUS_SUCCESSFUL_INTENT );
+	}
+
+	/**
+	 * Tell the merchant, once for each intent, that the order's attached payment is disputed.
+	 *
+	 * Every submit for the order is refused while the dispute stands, so the note is written only when the order has no
+	 * note yet for this intent.
+	 *
+	 * @param WC_Order $order     Order being paid.
+	 * @param string   $intent_id The attached PaymentIntent.
+	 */
+	private function add_disputed_intent_note_once( WC_Order $order, string $intent_id ): void {
+		if ( $intent_id === (string) $order->get_meta( self::DISPUTED_INTENT_NOTED_META, true ) ) {
+			return;
+		}
+
+		$order->add_order_note(
+			sprintf(
+				/* translators: %s: PaymentIntent ID. */
+				__( 'The payment attached to this order (%s) is disputed, so the customer was not charged again. Check the dispute in WooPayments before the customer pays for this order.', 'woocommerce' ),
+				$intent_id
+			)
+		);
+		$order->update_meta_data( self::DISPUTED_INTENT_NOTED_META, $intent_id );
+		$order->save_meta_data();
 	}
 
 	/**

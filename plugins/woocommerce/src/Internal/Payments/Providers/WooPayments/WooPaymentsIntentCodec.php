@@ -421,6 +421,67 @@ class WooPaymentsIntentCodec {
 	}
 
 	/**
+	 * Tell whether a charge of the intent was fully refunded or disputed.
+	 *
+	 * A refunded or disputed PaymentIntent keeps its `succeeded` status. The platform pins Stripe-Version 2020-08-27
+	 * (wpcom `wcpay/utils/class-config.php:414-425`), so a listed or retrieved intent carries its charges, each with
+	 * `refunded` (true once fully refunded), `amount_refunded` and `disputed`. Every charge is read, so their order does not
+	 * matter.
+	 *
+	 * @param array<string,mixed> $intent A PaymentIntent as the platform returns it.
+	 * @return bool
+	 */
+	public static function has_given_money_back( array $intent ): bool {
+		return self::is_fully_refunded( $intent ) || self::is_disputed( $intent );
+	}
+
+	/**
+	 * Tell whether a charge of the intent was fully refunded: `refunded`, or `amount_refunded` reaching its amount.
+	 *
+	 * @param array<string,mixed> $intent A PaymentIntent as the platform returns it.
+	 * @return bool
+	 */
+	public static function is_fully_refunded( array $intent ): bool {
+		foreach ( self::get_intent_charges( $intent ) as $charge ) {
+			$amount          = is_numeric( $charge['amount'] ?? null ) ? (int) $charge['amount'] : 0;
+			$amount_refunded = is_numeric( $charge['amount_refunded'] ?? null ) ? (int) $charge['amount_refunded'] : 0;
+			if ( true === ( $charge['refunded'] ?? false ) || ( 0 < $amount && $amount_refunded >= $amount ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Tell whether a charge of the intent is disputed.
+	 *
+	 * @param array<string,mixed> $intent A PaymentIntent as the platform returns it.
+	 * @return bool
+	 */
+	public static function is_disputed( array $intent ): bool {
+		foreach ( self::get_intent_charges( $intent ) as $charge ) {
+			if ( true === ( $charge['disputed'] ?? false ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Get the charges of an intent that are arrays.
+	 *
+	 * @param array<string,mixed> $intent A PaymentIntent as the platform returns it.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function get_intent_charges( array $intent ): array {
+		$charges = isset( $intent['charges']['data'] ) && is_array( $intent['charges']['data'] ) ? $intent['charges']['data'] : array();
+
+		return array_values( array_filter( $charges, 'is_array' ) );
+	}
+
+	/**
 	 * Build the legacy-compatible frontend confirmation hash from explicit values.
 	 *
 	 * @param int    $order_id           Order ID.

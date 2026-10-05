@@ -1818,7 +1818,8 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$existing_intent_result = $this->get_duplicate_payment_prevention_service()->check_payment_intent_attached_to_order_succeeded( $order, $this );
 		if ( is_wp_error( $existing_intent_result ) ) {
 			// The plugin fails the order with the mismatch as the note (client 11.1.0 `gw:1324-1325`). A guard lookup that
-			// failed on a PHP Error leaves the order pending, as the client's fatal does (monitor ruling 2026-10-04 (1)).
+			// failed on a PHP Error leaves the order pending, as the client's fatal does (monitor ruling 2026-10-04 (1)). A
+			// disputed attached payment leaves the order as it is; the guard has written its note.
 			$is_amount_mismatch = 'duplicate_payment_amount_mismatch' === $existing_intent_result->get_error_code();
 
 			return $this->refuse_checkout(

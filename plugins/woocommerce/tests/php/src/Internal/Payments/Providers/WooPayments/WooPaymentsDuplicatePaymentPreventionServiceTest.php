@@ -442,6 +442,152 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	}
 
 	/**
+	 * @testdox An attached succeeded PaymentIntent that is $_dataName $expected.
+	 *
+	 * A refunded or disputed intent keeps `succeeded`; client 11.1.0 reads only the status
+	 * (class-duplicate-payment-prevention-service.php:105-107) and would complete the order from it.
+	 *
+	 * @dataProvider attached_intent_charges
+	 *
+	 * @param array<string,mixed> $charge_fields Fields of the intent's charge.
+	 * @param string              $expected      What the guard does: "charges again", "refuses the submit" or "pays the order".
+	 */
+	public function test_attached_intent_with_money_given_back_or_disputed( array $charge_fields, string $expected ): void {
+		$order = $this->create_order( 'hash', 'pending' );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->save();
+
+		$result = $this->create_service( $this->create_session(), $this->create_api_client_answering( $this->create_charged_intent( $order, $charge_fields ) ) )
+			->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway() );
+		$order  = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		if ( 'pays the order' === $expected ) {
+			$this->assertIsArray( $result );
+			$this->assertSame( 'pi_existing', $order->get_transaction_id() );
+			return;
+		}
+
+		if ( 'refuses the submit' === $expected ) {
+			$this->assertInstanceOf( WP_Error::class, $result );
+			$this->assertSame( WooPaymentsDuplicatePaymentPreventionService::ERROR_DISPUTED_INTENT, $result->get_error_code() );
+			$this->assertNotSame( '', $result->get_error_message() );
+		} else {
+			$this->assertNull( $result );
+		}
+		$this->assertSame( '', $order->get_transaction_id() );
+		$this->assertSame( 'pending', $order->get_status() );
+	}
+
+	/**
+	 * Charges of an attached succeeded intent.
+	 *
+	 * @return array<string,array{0:array<string,mixed>,1:string}>
+	 */
+	public function attached_intent_charges(): array {
+		return array(
+			'fully refunded'            => array(
+				array(
+					'refunded'        => true,
+					'amount_refunded' => 1200,
+					'disputed'        => false,
+				),
+				'charges again',
+			),
+			'refunded up to its amount' => array(
+				array(
+					'refunded'        => false,
+					'amount_refunded' => 1200,
+					'disputed'        => false,
+				),
+				'charges again',
+			),
+			'disputed'                  => array(
+				array(
+					'refunded'        => false,
+					'amount_refunded' => 0,
+					'disputed'        => true,
+				),
+				'refuses the submit',
+			),
+			'partly refunded'           => array(
+				array(
+					'refunded'        => false,
+					'amount_refunded' => 500,
+					'disputed'        => false,
+				),
+				'pays the order',
+			),
+		);
+	}
+
+	/**
+	 * @testdox A disputed attached payment refuses every submit and notes the order once, naming the intent.
+	 */
+	public function test_disputed_attached_intent_notes_the_order_once_across_retries(): void {
+		$order = $this->create_order( 'hash', 'pending' );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->save();
+		$sut = $this->create_service(
+			$this->create_session(),
+			$this->create_api_client_answering(
+				$this->create_charged_intent(
+					$order,
+					array(
+						'amount_refunded' => 0,
+						'disputed'        => true,
+					)
+				)
+			)
+		);
+
+		foreach ( array( 1, 2, 3 ) as $attempt ) {
+			$result = $sut->check_payment_intent_attached_to_order_succeeded( wc_get_order( $order->get_id() ), $this->create_gateway() );
+			$this->assertInstanceOf( WP_Error::class, $result, "Attempt $attempt" );
+		}
+
+		$notes = array_filter(
+			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+			static fn( object $note ): bool => false !== strpos( (string) $note->content, 'pi_existing' ) && false !== strpos( (string) $note->content, 'disputed' )
+		);
+		$this->assertCount( 1, $notes );
+	}
+
+	/**
+	 * A succeeded attached PaymentIntent whose charge carries the given fields.
+	 *
+	 * The platform's GET intentions/{id} answer carries the intent's charges with `amount`, `amount_refunded`, `refunded`
+	 * and `disputed` (recorded in Fixtures/rec-t3-3ds-manual.json; Stripe "The Charge object").
+	 *
+	 * @param WC_Order            $order         Order the intent belongs to.
+	 * @param array<string,mixed> $charge_fields Fields of the intent's charge.
+	 * @return array<string,mixed>
+	 */
+	private function create_charged_intent( WC_Order $order, array $charge_fields ): array {
+		$intent                       = $this->create_intent_response( $order, 'succeeded', 1200 );
+		$intent['charges']['data'][0] = array_merge( $intent['charges']['data'][0], array( 'amount' => 1200 ), $charge_fields );
+
+		return $intent;
+	}
+
+	/**
+	 * An API client answering the attached-intent fetch, which must never charge.
+	 *
+	 * @param array<string,mixed> $intent Intent the fetch returns.
+	 * @return WooPaymentsApiClient
+	 */
+	private function create_api_client_answering( array $intent ): WooPaymentsApiClient {
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention', 'create_and_confirm_payment_intention' ) )
+			->getMock();
+		$api_client->method( 'get_payment_intention' )->with( 'pi_existing' )->willReturn( $intent );
+		$api_client->expects( $this->never() )->method( 'create_and_confirm_payment_intention' );
+
+		return $api_client;
+	}
+
+	/**
 	 * @testdox Should return an amount-mismatch error when the attached PaymentIntent total differs from the order total.
 	 */
 	public function test_check_payment_intent_attached_to_order_succeeded_returns_amount_mismatch_error(): void {
