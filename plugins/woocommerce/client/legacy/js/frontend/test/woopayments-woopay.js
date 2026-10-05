@@ -1957,14 +1957,19 @@ describe( 'WooPayments WooPay checkout', () => {
 			// The iframe here never fires `load` and never posts a message: the state of an OTP page that failed to load,
 			// where WooPay's own close control and Escape bridge do not exist.
 			describe( 'when the iframe never loads', () => {
-				// The browser's sequential navigation out of an iframe whose document has no control: the next focusable
-				// element in document order, or the first one on the page after the last.
+				// The browser's sequential navigation out of an iframe whose document has no control: the next element a
+				// Tab reaches (tabIndex 0 or more, not disabled) in document order, or the first one on the page after the
+				// last. jsdom has no cross-document Tab.
 				function tabOutOf( element ) {
-					const focusable = Array.from(
+					const tabbable = Array.from(
 						document.querySelectorAll( 'button, input, iframe' )
+					).filter(
+						( candidate ) =>
+							candidate === element ||
+							( candidate.tabIndex >= 0 && ! candidate.disabled )
 					);
 					const next =
-						focusable[ focusable.indexOf( element ) + 1 ] || focusable[ 0 ];
+						tabbable[ tabbable.indexOf( element ) + 1 ] || tabbable[ 0 ];
 					next.focus();
 				}
 
@@ -1983,6 +1988,9 @@ describe( 'WooPayments WooPay checkout', () => {
 					expect( close ).toBeDefined();
 					expect( close.type ).toBe( 'button' );
 					expect( document.activeElement ).toBe( close );
+					// Reachable with Tab, right after the iframe.
+					expect( close.tabIndex ).toBeGreaterThanOrEqual( 0 );
+					expect( iframe.nextElementSibling ).toBe( close );
 
 					tabOutOf( close );
 					expect( document.activeElement ).toBe( iframe );
