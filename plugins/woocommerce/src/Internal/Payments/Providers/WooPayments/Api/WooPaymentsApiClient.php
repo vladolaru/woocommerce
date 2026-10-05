@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDocumentsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaginatedListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsReportingBalanceSummaryRequest;
+use Throwable;
 use WP_Error;
 use WP_REST_Request;
 
@@ -2841,6 +2842,36 @@ class WooPaymentsApiClient {
 			),
 			true
 		);
+	}
+
+	/**
+	 * Write one debug line with a payload, redacted, when transport logging is enabled.
+	 *
+	 * The received-event line of the webhook path uses it: client 11.1.0 writes 'WEBHOOK RECEIVED: <type> <id>' with the
+	 * redacted body for every event it receives (class-wc-payments-webhook-processing-service.php:155-160), through its
+	 * gated logger. A failure to write the line never reaches the caller.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string              $label   Line text.
+	 * @param array<string,mixed> $payload Payload, redacted here before it is written.
+	 */
+	public function log_redacted_payload( string $label, array $payload ): void {
+		try {
+			if ( ! $this->can_log_transport() ) {
+				return;
+			}
+
+			wc_get_logger()->debug(
+				$label,
+				array(
+					'body'   => $this->redact_for_log( $payload ),
+					'source' => 'woopayments',
+				)
+			);
+		} catch ( Throwable $exception ) {
+			unset( $exception );
+		}
 	}
 
 	/**

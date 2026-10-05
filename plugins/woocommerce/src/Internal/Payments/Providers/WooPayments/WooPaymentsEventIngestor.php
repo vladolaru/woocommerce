@@ -254,6 +254,11 @@ class WooPaymentsEventIngestor {
 	 */
 	public function process( array $event ): void {
 		$event_id = $this->get_event_id( $event );
+		// Sweep row 300: the client's received line, first, so a skipped, deduplicated or refused event still leaves one.
+		$this->api_client->log_redacted_payload(
+			sprintf( 'WEBHOOK RECEIVED: %1$s %2$s', is_string( $event['type'] ?? null ) ? $event['type'] : '', $event_id ),
+			$event
+		);
 
 		if ( '' !== $event_id && $this->is_event_already_processed( $event_id ) ) {
 			return;
@@ -1364,19 +1369,24 @@ class WooPaymentsEventIngestor {
 		try {
 			$this->legacy_proxy->call_function( 'do_action', $hook, $event_type, $event );
 		} catch ( Throwable $exception ) {
-			$logger = $this->legacy_runtime->get_logger();
-			if ( is_object( $logger ) && is_callable( array( $logger, 'error' ) ) ) {
-				// A callback can let a platform error out, directly or wrapped, so its message is not logged.
-				$logger->error(
-					'A WooPayments webhook delivery hook callback failed.',
-					array_merge(
-						WooPaymentsLogger::get_failure_context( $exception ),
-						array(
-							'source' => 'native-payments-webhook',
-							'hook'   => $hook,
+			// Logging is best-effort: a failing log handler must not turn an isolated hook failure into a failed event.
+			try {
+				$logger = $this->legacy_runtime->get_logger();
+				if ( is_object( $logger ) && is_callable( array( $logger, 'error' ) ) ) {
+					// A callback can let a platform error out, directly or wrapped, so its message is not logged.
+					$logger->error(
+						'A WooPayments webhook delivery hook callback failed.',
+						array_merge(
+							WooPaymentsLogger::get_failure_context( $exception ),
+							array(
+								'source' => 'native-payments-webhook',
+								'hook'   => $hook,
+							)
 						)
-					)
-				);
+					);
+				}
+			} catch ( Throwable $logger_exception ) {
+				unset( $logger_exception );
 			}
 		}
 	}

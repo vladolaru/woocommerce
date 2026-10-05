@@ -292,6 +292,70 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox With $label, a received event writes $expected 'WEBHOOK RECEIVED' debug line, with its body redacted.
+	 * @testWith ["transport logging on", "yes", 1]
+	 *           ["transport logging off", "no", 0]
+	 *
+	 * @param string $label          Case label.
+	 * @param string $enable_logging Gateway enable_logging setting.
+	 * @param int    $expected       Expected received lines.
+	 */
+	public function test_received_event_is_logged_only_under_the_transport_log_gate( string $label, string $enable_logging, int $expected ): void {
+		unset( $label );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => $enable_logging ) );
+		$logger = RecordingWcLogger::install();
+		$order  = $this->create_woopayments_order();
+		// A PaymentIntent carries its client_secret (Stripe API PaymentIntent object); the client redacts it from this line
+		// (class-wc-payments-webhook-processing-service.php:155-160, WC_Payments_API_Client::API_KEYS_TO_REDACT).
+		$event = $this->create_payment_intent_event( 'payment_intent.succeeded', $order, array( 'client_secret' => 'pi_123_secret_abc' ), array( 'id' => 'evt_received_line' ) );
+
+		$this->sut->process( $event );
+
+		$received = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'debug' === $line[0] && 'WEBHOOK RECEIVED: payment_intent.succeeded evt_received_line' === $line[1] ) );
+		$this->assertCount( $expected, $received );
+		if ( 1 === $expected ) {
+			$body = $logger->contexts[ $received[0] ]['body'];
+			$this->assertSame( 'pi_123', $body['data']['object']['id'] );
+			$this->assertSame( '(redacted)', $body['data']['object']['client_secret'] );
+		}
+	}
+
+	/**
+	 * @testdox A delivery hook that throws, logged by a logger that throws too, does not stop the event from being applied.
+	 */
+	public function test_failing_log_of_a_failing_delivery_hook_does_not_stop_the_event(): void {
+		$order    = $this->create_woopayments_order();
+		$throwing = static function (): void {
+			throw new RuntimeException( 'Delivery hook callback failure.' );
+		};
+		add_action( 'woocommerce_payments_before_webhook_delivery', $throwing );
+		add_filter(
+			'woocommerce_logging_class',
+			static function () {
+				return new class() extends RecordingWcLogger {
+					/**
+					 * Fail as a broken log handler does.
+					 *
+					 * @param string              $message Message.
+					 * @param array<string,mixed> $context Context.
+					 * @throws RuntimeException Always, for a non-empty message.
+					 */
+					public function error( $message, $context = array() ) {
+						if ( '' !== (string) $message ) {
+							throw new RuntimeException( 'Log handler failure.' );
+						}
+						parent::error( $message, $context );
+					}
+				};
+			}
+		);
+
+		$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order, array(), array( 'id' => 'evt_hook_and_logger_fail' ) ) );
+
+		$this->assertSame( 'completed', wc_get_order( $order->get_id() )->get_status() );
+	}
+
+	/**
 	 * @testdox payment_intent.succeeded repairs the payment token on an unpaid recurring order.
 	 */
 	public function test_payment_intent_succeeded_repairs_token_for_recurring_unpaid_order(): void {
