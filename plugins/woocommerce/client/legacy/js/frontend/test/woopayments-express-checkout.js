@@ -5015,6 +5015,14 @@ describe( 'WooPayments express checkout', () => {
 			document
 				.querySelectorAll( '.woocommerce-notices-wrapper' )
 				.forEach( ( wrapper ) => wrapper.remove() );
+			// A wallet error an earlier attempt left, moved out of the wrappers by a customized page: with nowhere to show the
+			// new error, it must stay too.
+			document
+				.querySelector( 'form.checkout' )
+				.insertAdjacentHTML(
+					'afterbegin',
+					'<ul class="woocommerce-error" role="alert" data-woopayments-wallet-error><li>Earlier wallet error</li></ul>'
+				);
 			window.wp.apiFetch
 				.mockResolvedValueOnce( getCartResponse() )
 				// Store API payment error (src/StoreApi/Utilities/CheckoutTrait.php:135, status 400; shape from
@@ -5038,6 +5046,7 @@ describe( 'WooPayments express checkout', () => {
 			} );
 
 			expect( getErrorTexts() ).toEqual( [
+				'Earlier wallet error',
 				'Checkout error',
 				'Extension error',
 			] );
