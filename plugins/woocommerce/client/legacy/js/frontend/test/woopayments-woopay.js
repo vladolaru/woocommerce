@@ -1912,6 +1912,191 @@ describe( 'WooPayments WooPay checkout', () => {
 		} );
 	} );
 
+	// Client 11.1.0 pays an order from its pay page by posting the order, its key and the billing email with every WooPay
+	// session request (express-checkout-iframe.js:117-125, init-woopay.js:54-63, woopay-express-checkout-button.js:298-304)
+	// and appending them to the WooPay URL it navigates to (woopay/utils.js:48-63).
+	describe( 'order-pay', () => {
+		const payForOrderParams =
+			'pay_for_order=true&order_id=5707&key=wc_order_abc&billing_email=owner%40example.com';
+		let navigate;
+		let postMessage;
+
+		function sendWooPayMessage( data ) {
+			window.dispatchEvent(
+				new window.MessageEvent( 'message', {
+					origin: 'https://pay.woo.test',
+					data: data,
+				} )
+			);
+		}
+
+		function getAjaxCalls( endpoint ) {
+			return window.fetch.mock.calls.filter(
+				( [ url ] ) => url === '/?wc-ajax=wcpay_' + endpoint
+			);
+		}
+
+		beforeEach( () => {
+			navigate = jest.fn();
+			postMessage = jest.fn();
+			Object.defineProperty(
+				window.HTMLIFrameElement.prototype,
+				'contentWindow',
+				{
+					configurable: true,
+					get: () => ( { postMessage } ),
+				}
+			);
+			// The order-pay form has no billing email field.
+			document.body.innerHTML =
+				'<form id="order_review">' +
+				'<div id="wcpay-woopay-button"><div class="woopay-express-button is-placeholder"></div></div>' +
+				'</form>';
+			// wp_localize_script serves top-level scalars as strings.
+			Object.assign( window.wcpay_core_woopay_config, {
+				pay_for_order: 'true',
+				order_id: '5707',
+				key: 'wc_order_abc',
+				billing_email: 'owner@example.com',
+				woopaySessionEmail: 'session@example.com',
+				testMode: '1',
+				wcpayVersionNumber: '11.1.0',
+			} );
+			window.wcpay_core_woopay_config.woopayButton.context =
+				'pay_for_order';
+			window.history.replaceState( null, '', '/' );
+		} );
+
+		afterEach( () => {
+			sendWooPayMessage( { action: 'close_modal' } );
+			delete window.HTMLIFrameElement.prototype.contentWindow;
+		} );
+
+		async function openOtpIframe() {
+			const { __test__ } = require( '../woopayments-woopay' );
+			__test__.setNavigate( navigate );
+			document.querySelector( '#wcpay-woopay-button button' ).click();
+			await flushPromises();
+
+			return document.querySelector( '.woopay-otp-iframe' );
+		}
+
+		test( 'opens the OTP iframe with the billing email the page gives the visitor', async () => {
+			const iframe = await openOtpIframe();
+			const query = new window.URL( iframe.getAttribute( 'src' ) )
+				.searchParams;
+
+			expect( query.get( 'email' ) ).toBe( 'owner@example.com' );
+			expect( query.get( 'express_context' ) ).toBe( 'pay_for_order' );
+		} );
+
+		test( 'starts WooPay for the order and sends WooPay to that order', async () => {
+			// The init_woopay answer is WooPay's init response passed through: { result, url }
+			// (client class-woopay-session.php:696-716, read at express-checkout-iframe.js:249-252).
+			window.fetch = jest.fn( ( url ) =>
+				Promise.resolve( {
+					json: () =>
+						Promise.resolve(
+							url === '/?wc-ajax=wcpay_init_woopay'
+								? {
+										result: 'success',
+										url: 'https://pay.woo.test/woopay/?platform_checkout_key=abc',
+								  }
+								: {}
+						),
+				} )
+			);
+			await openOtpIframe();
+
+			sendWooPayMessage( {
+				action: 'redirect_to_woopay',
+				platformCheckoutUserSession: 'platform-session-1',
+			} );
+			await flushPromises();
+
+			const body = getAjaxCalls( 'init_woopay' )[ 0 ][ 1 ].body;
+			expect( body.get( 'order_id' ) ).toBe( '5707' );
+			expect( body.get( 'key' ) ).toBe( 'wc_order_abc' );
+			expect( body.get( 'billing_email' ) ).toBe( 'owner@example.com' );
+			expect( navigate ).toHaveBeenCalledWith(
+				'https://pay.woo.test/woopay/?platform_checkout_key=abc&' +
+					payForOrderParams
+			);
+		} );
+
+		test( 'adds the order to the skip-session-init redirect', async () => {
+			await openOtpIframe();
+
+			// Client express-checkout-iframe.js:225-230: { action, redirectUrl }.
+			sendWooPayMessage( {
+				action: 'redirect_to_woopay_skip_session_init',
+				redirectUrl: 'https://pay.woo.test/woopay/?skip=1',
+			} );
+
+			expect( navigate ).toHaveBeenCalledWith(
+				'https://pay.woo.test/woopay/?skip=1&' + payForOrderParams
+			);
+		} );
+
+		test( 'sends the order with the first-party session and to the WooPay redirect', async () => {
+			window.wcpay_core_woopay_config.isWoopayFirstPartyAuthEnabled = true;
+			// get_woopay_session answers with the encrypted session: { blog_id, data: { session, iv, hash } }
+			// (client woopay-express-checkout-button.js:306-308, native encrypt_and_sign_data()).
+			global.jQuery.post = jest.fn( () => ( {
+				done: jest.fn( ( callback ) => {
+					callback( {
+						blog_id: '12345',
+						data: { session: 'session', iv: 'iv', hash: 'hash' },
+					} );
+
+					return { fail: jest.fn() };
+				} ),
+			} ) );
+			const { __test__ } = require( '../woopayments-woopay' );
+			__test__.setNavigate( navigate );
+
+			document.querySelector( '#wcpay-woopay-button a' ).click();
+			await flushPromises();
+			document
+				.getElementById( 'woopay-connect-iframe' )
+				.dispatchEvent( new window.Event( 'load' ) );
+			await flushPromises();
+			// WooPay Connect answers { action, value } (client connect/session-connect.js:207-208); the value's
+			// redirect_url is what the client follows (woopay-express-checkout-button.js:321).
+			sendWooPayMessage( {
+				action: 'set_preemptive_session_data_success',
+				value: { redirect_url: 'https://pay.woo.test/checkout/session' },
+			} );
+			await flushPromises();
+
+			expect( global.jQuery.post ).toHaveBeenCalledWith(
+				'/?wc-ajax=wcpay_get_woopay_session',
+				expect.objectContaining( {
+					order_id: '5707',
+					key: 'wc_order_abc',
+					billing_email: 'owner@example.com',
+				} )
+			);
+			expect( navigate ).toHaveBeenCalledWith(
+				'https://pay.woo.test/checkout/session?' + payForOrderParams
+			);
+		} );
+
+		test( 'leaves the WooPay URL alone when the page carries no order key', async () => {
+			delete window.wcpay_core_woopay_config.key;
+			await openOtpIframe();
+
+			sendWooPayMessage( {
+				action: 'redirect_to_woopay_skip_session_init',
+				redirectUrl: 'https://pay.woo.test/woopay/?skip=1',
+			} );
+
+			expect( navigate ).toHaveBeenCalledWith(
+				'https://pay.woo.test/woopay/?skip=1'
+			);
+		} );
+	} );
+
 	// The footer Tracks script records this click on every cart (woopayments-frontend-tracks.js), so WooPay must not record it too.
 	test( 'leaves the cart Proceed to checkout click to the footer Tracks script', () => {
 		document.body.innerHTML =

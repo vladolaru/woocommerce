@@ -98,6 +98,25 @@
 		return field && field.value ? field.value : config.woopaySessionEmail || '';
 	}
 
+	// Port of the plugin's appendRedirectionParams() (client 11.1.0
+	// woopay/utils.js:48-63): on an order's pay page WooPay needs the order,
+	// its key and the billing email to pay that order instead of a cart.
+	function appendRedirectionParams( woopayUrl ) {
+		var url;
+
+		if ( ! config.pay_for_order || ! config.order_id || ! config.key ) {
+			return woopayUrl;
+		}
+
+		url = new window.URL( woopayUrl );
+		url.searchParams.append( 'pay_for_order', config.pay_for_order );
+		url.searchParams.append( 'order_id', config.order_id );
+		url.searchParams.append( 'key', config.key );
+		url.searchParams.append( 'billing_email', config.billing_email );
+
+		return url.href;
+	}
+
 	function escapeHtml( value ) {
 		var element = document.createElement( 'div' );
 
@@ -1058,7 +1077,7 @@
 			}
 
 			if ( response && response.result === 'success' ) {
-				navigate( response.url );
+				navigate( appendRedirectionParams( response.url ) );
 				return;
 			}
 
@@ -1083,7 +1102,7 @@
 					break;
 				case 'redirect_to_woopay_skip_session_init':
 					if ( data.redirectUrl ) {
-						navigate( data.redirectUrl );
+						navigate( appendRedirectionParams( data.redirectUrl ) );
 					}
 					break;
 				case 'redirect_to_platform_checkout':
@@ -1231,11 +1250,16 @@
 
 		return getTracksIdentity().then( function ( identity ) {
 			var emailInput = document.querySelector( emailSelector );
+			// The order-pay page has no email field; client 11.1.0 takes the
+			// order's email there (express-checkout-iframe.js:22-33). Native
+			// takes the billing email the page may give this visitor.
+			var email =
+				config.pay_for_order === 'true'
+					? config.billing_email
+					: emailInput && emailInput.value;
 
 			tracksUserId = identity;
-			openIframe(
-				( emailInput && emailInput.value ) || config.woopaySessionEmail
-			);
+			openIframe( email || config.woopaySessionEmail );
 		} );
 	}
 
@@ -1288,7 +1312,7 @@
 				}
 
 				if ( sessionResponse && sessionResponse.redirect_url ) {
-					navigate( sessionResponse.redirect_url );
+					navigate( appendRedirectionParams( sessionResponse.redirect_url ) );
 				}
 				isWooPayRequesting = false;
 			} );
