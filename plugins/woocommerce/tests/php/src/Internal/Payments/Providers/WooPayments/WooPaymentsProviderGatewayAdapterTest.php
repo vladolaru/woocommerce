@@ -1044,9 +1044,22 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * Native recreates a deleted customer before every charge (`WooPaymentsCustomerService::update_customer_for_order()`),
 	 * so a resubmit under the kept key can go out with a new customer and fail ambiguously again. The earlier request's
 	 * intent belongs to the first customer, so the new customer's complete list proves nothing about it (review 45 F1).
+	 * The first failure is recorded well before the lookup, so the window must come from the record, not the clock
+	 * (review 47 F1).
 	 */
 	public function test_kept_key_sent_with_two_customers_looks_up_the_account_list_from_the_first_failure(): void {
-		$order                  = $this->create_woopayments_order();
+		$order     = $this->create_woopayments_order();
+		$failed_at = time() - 1000;
+		$order->update_meta_data( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, 'key_first' );
+		$order->update_meta_data(
+			WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META,
+			array(
+				'order_id'  => $order->get_id(),
+				'customer'  => 'cus_a',
+				'failed_at' => $failed_at,
+			)
+		);
+		$order->save_meta_data();
 		$http_client            = self::create_routed_http_client(
 			array(
 				'customer=cus_b'   => self::intent_list( array() ),
@@ -1055,25 +1068,20 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		);
 		$http_client->responses = array(
 			self::platform_bad_gateway(),
-			self::platform_bad_gateway(),
 			self::stripe_idempotency_error( 'key_first' ),
 			self::succeeded_charge( 'pi_new_card', 'pm_new' ),
 		);
-		$customer_service       = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
-		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturnOnConsecutiveCalls( 'cus_a', 'cus_b', 'cus_b' );
-		$sut = $this->create_timeout_adapter( $http_client, '', $customer_service );
-		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
-		$failed_at = (int) wc_get_order( $order->get_id() )->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['failed_at'];
-		$this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_second', 'key_second' );
+		$sut                    = $this->create_timeout_adapter( $http_client, 'cus_b' );
+		$this->charge_attempt( $sut, $order, 'pm_second', 'key_second' );
 
 		$outcome = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_third' );
 
 		$this->assertSame( 'pi_earlier', $outcome->get_provider_payment_id(), 'The earlier payment pays the order.' );
 		$this->assertSame( 'cus_a', $outcome->get_customer_id() );
 		$this->assertSame(
-			array( 'POST intentions key_first', 'POST intentions key_first', 'POST intentions key_first', self::account_list_trail( $failed_at ) ),
+			array( 'POST intentions key_first', 'POST intentions key_first', self::account_list_trail( $failed_at ) ),
 			self::request_trail( $http_client ),
-			'The new card must not be charged.'
+			'The account list starts from the recorded first failure, and the new card is not charged.'
 		);
 	}
 
