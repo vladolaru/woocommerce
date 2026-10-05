@@ -494,12 +494,35 @@ describe( 'woopayments-express-checkout', () => {
 	describe( 'redirectToOrder', () => {
 		const confirmationHash =
 			'#wcpay-confirm-pi:77:pi_123_secret_456:nonce-abc';
+		// The Store API checkout response for a payment that needs a next
+		// action: PaymentResult::set_redirect_url() runs esc_url_raw(), which
+		// empties the bare hash, and Legacy::process_payment() keeps the raw
+		// gateway result in payment_details.
+		const confirmationResponse = {
+			payment_result: {
+				payment_status: 'success',
+				payment_details: [
+					{ key: 'result', value: 'success' },
+					{ key: 'redirect', value: confirmationHash },
+					{ key: 'payment_method', value: 'pm_3ds_card' },
+				],
+				redirect_url: '',
+			},
+		};
 
 		it( 'navigates directly when the redirect URL carries no confirmation hash', async () => {
 			const { redirectToOrder, navigate } = loadModule( baseParams() );
 
 			await redirectToOrder( {
 				payment_result: {
+					payment_status: 'success',
+					payment_details: [
+						{ key: 'result', value: 'success' },
+						{
+							key: 'redirect',
+							value: 'http://shop.test/thank-you/',
+						},
+					],
 					redirect_url: 'http://shop.test/thank-you/',
 				},
 			} );
@@ -507,6 +530,23 @@ describe( 'woopayments-express-checkout', () => {
 			expect( navigate ).toHaveBeenCalledWith(
 				'http://shop.test/thank-you/'
 			);
+		} );
+
+		it( 'rejects with the payment error when the payment status is not success', async () => {
+			const { redirectToOrder, navigate } = loadModule( baseParams() );
+
+			await expect(
+				redirectToOrder( {
+					payment_result: {
+						payment_status: 'pending',
+						payment_details: [
+							{ key: 'errorMessage', value: 'Card declined.' },
+						],
+						redirect_url: '',
+					},
+				} )
+			).rejects.toThrow( 'Card declined.' );
+			expect( navigate ).not.toHaveBeenCalled();
 		} );
 
 		it( 'confirms the intent and navigates to the authenticated return URL', async () => {
@@ -521,9 +561,7 @@ describe( 'woopayments-express-checkout', () => {
 				baseParams( stripeParams )
 			);
 
-			await redirectToOrder( {
-				payment_result: { redirect_url: confirmationHash },
-			} );
+			await redirectToOrder( confirmationResponse );
 
 			expect( handleNextAction ).toHaveBeenCalledWith( {
 				clientSecret: 'pi_123_secret_456',
@@ -558,9 +596,7 @@ describe( 'woopayments-express-checkout', () => {
 			);
 
 			await expect(
-				redirectToOrder( {
-					payment_result: { redirect_url: confirmationHash },
-				} )
+				redirectToOrder( confirmationResponse )
 			).rejects.toThrow( 'Authentication failed.' );
 			const fetchBody = await orderStatusFormData;
 			expect( fetchBody.get( 'action' ) ).toBe( 'update_order_status' );
@@ -583,9 +619,7 @@ describe( 'woopayments-express-checkout', () => {
 
 			try {
 				await expect(
-					redirectToOrder( {
-						payment_result: { redirect_url: confirmationHash },
-					} )
+					redirectToOrder( confirmationResponse )
 				).rejects.toThrow( 'Authentication failed.' );
 				expect( fetchSpy ).not.toHaveBeenCalled();
 				expect( navigate ).not.toHaveBeenCalled();
@@ -611,9 +645,7 @@ describe( 'woopayments-express-checkout', () => {
 			);
 
 			await expect(
-				redirectToOrder( {
-					payment_result: { redirect_url: confirmationHash },
-				} )
+				redirectToOrder( confirmationResponse )
 			).rejects.toThrow( 'Payment requires additional action.' );
 			const fetchBody = await orderStatusFormData;
 			expect( fetchBody.get( 'intent_id' ) ).toBe( 'pi_123' );
@@ -634,9 +666,7 @@ describe( 'woopayments-express-checkout', () => {
 			);
 
 			await expect(
-				redirectToOrder( {
-					payment_result: { redirect_url: confirmationHash },
-				} )
+				redirectToOrder( confirmationResponse )
 			).rejects.toThrow( 'Order update failed.' );
 			expect( navigate ).not.toHaveBeenCalled();
 		} );

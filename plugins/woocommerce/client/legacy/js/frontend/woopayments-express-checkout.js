@@ -1286,12 +1286,38 @@
 			} );
 	}
 
+	function getPaymentDetail( paymentResult, key ) {
+		var details =
+			paymentResult && Array.isArray( paymentResult.payment_details )
+				? paymentResult.payment_details
+				: [];
+		var detail = details.find( function ( entry ) {
+			return entry && entry.key === key;
+		} );
+
+		return detail && detail.value ? detail.value : '';
+	}
+
 	function redirectToOrder( response ) {
-		var redirectUrl =
-			response &&
-			response.payment_result &&
-			response.payment_result.redirect_url;
+		var paymentResult = response && response.payment_result;
+		var redirectUrl;
 		var confirmation;
+
+		if ( ! paymentResult || paymentResult.payment_status !== 'success' ) {
+			return Promise.reject(
+				new Error(
+					( response && response.message ) ||
+						getPaymentDetail( paymentResult, 'errorMessage' ) ||
+						GENERIC_PAYMENT_ERROR_MESSAGE
+				)
+			);
+		}
+
+		// The Store API escapes redirect_url, which empties a bare
+		// `#wcpay-confirm-...` hash; the raw value stays in payment_details.
+		redirectUrl =
+			paymentResult.redirect_url ||
+			getPaymentDetail( paymentResult, 'redirect' );
 
 		if ( ! redirectUrl ) {
 			return Promise.resolve();

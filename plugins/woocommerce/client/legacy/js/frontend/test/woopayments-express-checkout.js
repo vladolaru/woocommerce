@@ -698,6 +698,131 @@ describe( 'WooPayments express checkout', () => {
 		);
 	} );
 
+	// The Store API checkout response for a payment that needs a next action:
+	// esc_url_raw() empties the bare hash in redirect_url (PaymentResult), and
+	// the raw gateway result stays in payment_details (Legacy::process_payment).
+	function getConfirmationCheckoutResponse( orderId ) {
+		return {
+			order_id: orderId,
+			status: 'pending',
+			payment_result: {
+				payment_status: 'success',
+				payment_details: [
+					{ key: 'result', value: 'success' },
+					{
+						key: 'redirect',
+						value:
+							'#wcpay-confirm-pi:' +
+							orderId +
+							':pi_3ds_secret_abc:nonce-3ds',
+					},
+					{ key: 'payment_method', value: 'pm_3ds_card' },
+				],
+				redirect_url: '',
+			},
+		};
+	}
+
+	function mockOrderStatusUpdate( returnUrl ) {
+		window.fetch = jest.fn( ( url, options ) =>
+			Promise.resolve(
+				options &&
+					options.body &&
+					options.body.get &&
+					options.body.get( 'action' ) === 'update_order_status'
+					? { json: () => Promise.resolve( { return_url: returnUrl } ) }
+					: {}
+			)
+		);
+	}
+
+	function getOrderStatusUpdateBody() {
+		const call = window.fetch.mock.calls.find(
+			( [ , options ] ) =>
+				options &&
+				options.body &&
+				options.body.get &&
+				options.body.get( 'action' ) === 'update_order_status'
+		);
+
+		return call ? call[ 1 ].body : null;
+	}
+
+	test.each( [
+		[ 'classic checkout', 'checkout', 77 ],
+		[ 'pay-for-order', 'pay_for_order', 123 ],
+	] )(
+		'confirms a %s wallet payment that needs 3DS from the Store API payment details',
+		async ( surface, context, orderId ) => {
+			const navigate = jest.fn();
+			stripe.handleNextAction = jest.fn().mockResolvedValue( {
+				paymentIntent: { id: 'pi_3ds', status: 'succeeded' },
+			} );
+			mockOrderStatusUpdate(
+				'https://example.test/checkout/order-received/' + orderId + '/'
+			);
+			if ( context === 'pay_for_order' ) {
+				window.wcpayExpressCheckoutParams.button_context =
+					'pay_for_order';
+				window.wcpayExpressCheckoutParams.order_id = orderId;
+				window.wcpayExpressCheckoutParams.pay_for_order = 'true';
+				window.wcpayExpressCheckoutParams.key = 'wc_order_key_123';
+				window.wcpayExpressCheckoutParams.billing_email =
+					'order@example.test';
+				window.wp.apiFetch
+					.mockResolvedValueOnce( getOrderPayResponse() )
+					.mockResolvedValueOnce(
+						getConfirmationCheckoutResponse( orderId )
+					);
+			} else {
+				window.wp.apiFetch
+					.mockResolvedValueOnce( getCartResponse() )
+					.mockResolvedValueOnce(
+						getConfirmationCheckoutResponse( orderId )
+					);
+			}
+			require( '../woopayments-express-checkout' ).__test__.setNavigate(
+				navigate
+			);
+
+			if ( context === 'checkout' ) {
+				await bodyEventHandlers.updated_checkout();
+			}
+			await flushPromises();
+
+			await expressHandlers.confirm( {
+				billingDetails: {
+					email: 'shopper@example.test',
+					name: 'Ada Lovelace',
+				},
+			} );
+
+			expect( window.wp.apiFetch ).toHaveBeenLastCalledWith(
+				expect.objectContaining( {
+					method: 'POST',
+					path:
+						context === 'pay_for_order'
+							? '/wc/store/v1/checkout/' + orderId
+							: '/wc/store/v1/checkout?currency=USD',
+				} )
+			);
+			expect( stripe.handleNextAction ).toHaveBeenCalledWith( {
+				clientSecret: 'pi_3ds_secret_abc',
+			} );
+			const body = getOrderStatusUpdateBody();
+			expect( body.get( 'order_id' ) ).toBe( String( orderId ) );
+			expect( body.get( '_ajax_nonce' ) ).toBe( 'nonce-3ds' );
+			expect( body.get( 'intent_id' ) ).toBe( 'pi_3ds' );
+			expect( navigate ).toHaveBeenCalledWith(
+				'https://example.test/checkout/order-received/' + orderId + '/'
+			);
+			expect(
+				document.querySelector( '.woocommerce-notices-wrapper' )
+					.textContent
+			).toBe( '' );
+		}
+	);
+
 	test( 'mounts product page ECE from server product data without reading the current cart', async () => {
 		window.wcpayExpressCheckoutParams.button_context = 'product';
 		window.wcpayExpressCheckoutParams.product = {
@@ -1062,7 +1187,9 @@ describe( 'WooPayments express checkout', () => {
 			.mockResolvedValueOnce( firstCart )
 			.mockResolvedValueOnce( nextCart )
 			.mockResolvedValueOnce( nextCart )
-			.mockResolvedValueOnce( { payment_result: {} } );
+			.mockResolvedValueOnce( {
+				payment_result: { payment_status: 'success', payment_details: [] },
+			} );
 
 		require( '../woopayments-express-checkout' );
 		await flushMicrotasks();
