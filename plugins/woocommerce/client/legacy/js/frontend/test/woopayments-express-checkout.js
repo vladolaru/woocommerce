@@ -2233,10 +2233,8 @@ describe( 'WooPayments express checkout', () => {
 		);
 		await flushPromises();
 
-		expect( elements.update ).toHaveBeenCalledWith( {
-			amount: 3000,
-			setupFutureUsage: null,
-		} );
+		// The client keeps the click's add-item answer out of Elements (shortcode-buttons-express/index.js:321).
+		expect( elements.update ).not.toHaveBeenCalled();
 	} );
 
 	test( 'carries the product tokenized cart session into checkout', async () => {
@@ -2304,10 +2302,6 @@ describe( 'WooPayments express checkout', () => {
 			},
 		} );
 
-		expect( elements.update ).toHaveBeenCalledWith( {
-			amount: 3000,
-			setupFutureUsage: null,
-		} );
 		expect( window.wp.apiFetch ).toHaveBeenLastCalledWith(
 			expect.objectContaining( {
 				method: 'POST',
@@ -2402,69 +2396,51 @@ describe( 'WooPayments express checkout', () => {
 		);
 	} );
 
-	test( 'deletes the isolated product cart session when product amount update fails', async () => {
+	// Client 11.1.0 getOnClickOptions() (shortcode-buttons-express/index.js:110-127) opens the first sheet from the
+	// server product data, with the pending rate only when an address is needed (:348-385), and the click leaves
+	// Elements alone (:321). Expected payload as captured on the client store (t62/captures-2b/report.md, F10:
+	// `[Medium 1500, Shipping 0]`, shipping required, amount unchanged). Click event: event.resolve(payload)
+	// (https://docs.stripe.com/js.md, "expressCheckoutElement.on('click', handler)").
+	test( 'opens the first sheet of a shippable product from the server product data', async () => {
 		const resolveClick = jest.fn();
-		document.body.innerHTML =
-			'<div class="woocommerce-notices-wrapper"></div>' +
-			'<form class="cart">' +
-			'<button type="submit" name="add-to-cart" value="123">Add to cart</button>' +
-			'</form>' +
-			'<div class="wcpay-express-checkout-wrapper">' +
-			'<div id="wcpay-express-checkout-element"></div>' +
-			'<p id="wcpay-express-checkout-button-separator">OR</p>' +
-			'</div>';
-		window.wcpayExpressCheckoutParams.button_context = 'product';
-		window.wcpayExpressCheckoutParams.product = {
-			displayItems: [ { label: 'Express Widget', amount: 2500 } ],
-			total: { label: 'Express Widget', amount: 2500, pending: true },
-			needs_shipping: false,
-			currency: 'usd',
-			country_code: 'US',
-			product_type: 'simple',
-		};
-		window.wp.apiFetch
-			.mockResolvedValueOnce(
-				getStoreApiResponse(
-					{
-						needs_shipping: false,
-						totals: {
-							total_price: '3000',
-							total_refund: '0',
-							currency_code: 'USD',
-						},
+		setProductPage();
+		window.wcpayExpressCheckoutParams.product.needs_shipping = true;
+		window.wcpayExpressCheckoutParams.product.displayItems = [
+			{ label: 'Express Widget', amount: 2500 },
+			{ label: 'Shipping', amount: 0, pending: true },
+		];
+		// Store API add-item answer for the tokenized cart, with the default address's shipping (cart.md "Add Item").
+		window.wp.apiFetch.mockResolvedValue(
+			getStoreApiResponse(
+				{
+					needs_shipping: true,
+					totals: {
+						total_price: '4500',
+						total_refund: '0',
+						currency_code: 'USD',
 					},
-					{
-						'X-WooPayments-Tokenized-Cart-Session':
-							'cart-session-token',
-					}
-				)
+					items: [],
+				},
+				{ 'X-WooPayments-Tokenized-Cart-Session': 'cart-session-token' }
 			)
-			.mockResolvedValueOnce( getStoreApiResponse( { items: [] }, {} ) );
-		// Stripe.js dahlia: `elements.update()` returns a promise (https://docs.stripe.com/js/elements_object/update).
-		elements.update.mockRejectedValue( new Error( 'update failed' ) );
+		);
 
 		require( '../woopayments-express-checkout' );
 		await flushPromises();
 		await expressHandlers.click( { resolve: resolveClick } );
 		await flushPromises();
-		await flushPromises();
 
 		expect( resolveClick ).toHaveBeenCalledWith(
 			expect.objectContaining( {
-				emailRequired: true,
+				shippingAddressRequired: true,
+				shippingRates: [ { id: 'pending', displayName: 'Pending', amount: 0 } ],
+				lineItems: [
+					{ name: 'Express Widget', amount: 2500 },
+					{ name: 'Shipping', amount: 0 },
+				],
 			} )
 		);
-		expect( window.wp.apiFetch ).toHaveBeenLastCalledWith(
-			expect.objectContaining( {
-				method: 'GET',
-				path: '/wc/store/v1/cart?currency=USD',
-				headers: expect.objectContaining( {
-					'X-WooPayments-Tokenized-Cart-Session':
-						'cart-session-token',
-					'X-WooPayments-Tokenized-Cart-Is-Ephemeral-Cart': '1',
-				} ),
-			} )
-		);
+		expect( elements.update ).not.toHaveBeenCalled();
 	} );
 
 	test( 'deletes the isolated product cart session when product checkout fails after add-item', async () => {
@@ -2741,9 +2717,7 @@ describe( 'WooPayments express checkout', () => {
 			),
 		};
 		// Stripe.js dahlia: `elements.update()` returns a promise (https://docs.stripe.com/js/elements_object/update).
-		elements.update
-			.mockResolvedValueOnce( {} )
-			.mockReturnValue( update.promise );
+		elements.update.mockReturnValue( update.promise );
 
 		require( '../woopayments-express-checkout' );
 		await flushPromises();

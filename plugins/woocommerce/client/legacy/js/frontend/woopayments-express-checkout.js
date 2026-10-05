@@ -2591,11 +2591,11 @@
 			data: product,
 		} )
 			.then( function ( cartData ) {
+				// The sheet's working cart. Elements keeps the amount the sheet opened with until a shipping event
+				// updates it, as on the client (shortcode-buttons-express/index.js:321, event-handlers.js:122).
 				cachedCartData = cartData;
 
-				return updateElementsForCart( cartData ).then( function () {
-					return cartData;
-				} );
+				return cartData;
 			} )
 			.catch( function ( error ) {
 				return emptyProductCart().then( function () {
@@ -2757,19 +2757,42 @@
 	}
 
 	function getClickOptions() {
-		var shippingAddressRequired = isPayForOrder()
-			? false
-			: Boolean(
-					cachedCartData
-						? cachedCartData.needs_shipping
-						: config.checkout && config.checkout.needs_shipping
-			  );
-		var shippingRates =
-			cachedCartData && cachedCartData.needs_shipping
-				? getShippingRates( cachedCartData )
-				: undefined;
-
+		// Before a Store API cart prices the product page, the button holds the server product data, which has no
+		// `totals` (client 11.1.0 getOnClickOptions(), shortcode-buttons-express/index.js:95-128).
+		var productData =
+			isProduct() && ! ( cachedCartData && cachedCartData.totals )
+				? cachedCartData || config.product
+				: null;
+		var shippingAddressRequired;
+		var shippingRates;
 		var lineItems;
+
+		if ( productData ) {
+			shippingAddressRequired = Boolean( productData.needs_shipping );
+			lineItems = ( productData.displayItems || [] ).map( function (
+				item
+			) {
+				return {
+					name: item.label,
+					amount: item.amount,
+				};
+			} );
+		} else {
+			shippingAddressRequired = isPayForOrder()
+				? false
+				: Boolean(
+						cachedCartData
+							? cachedCartData.needs_shipping
+							: config.checkout && config.checkout.needs_shipping
+				  );
+			shippingRates =
+				cachedCartData && cachedCartData.needs_shipping
+					? getShippingRates( cachedCartData )
+					: undefined;
+			lineItems = cachedCartData
+				? getDisplayItems( cachedCartData )
+				: undefined;
+		}
 
 		// Fallback for initialization (and initialization _only_), before an
 		// address is provided by the ECE.
@@ -2778,19 +2801,6 @@
 			( ! shippingRates || ! shippingRates.length )
 		) {
 			shippingRates = [ getPendingShippingRate() ];
-		}
-
-		if ( cachedCartData ) {
-			lineItems = getDisplayItems( cachedCartData );
-		} else if ( isProduct() && config.product ) {
-			lineItems = ( config.product.displayItems || [] ).map( function (
-				item
-			) {
-				return {
-					name: item.label,
-					amount: item.amount,
-				};
-			} );
 		}
 
 		return {
