@@ -39,7 +39,7 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	public const WEBHOOK_TOPIC = 'order.status_changed';
 
 	/**
-	 * Transient key of the lock that lets one request at a time create the webhook.
+	 * Transient key of the lock that lets one request at a time create the webhook or change its secret.
 	 *
 	 * @var string
 	 */
@@ -51,6 +51,13 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	 * @var int
 	 */
 	private const CLAIM_TTL = 5 * MINUTE_IN_SECONDS;
+
+	/**
+	 * Option set to 'yes' when an account refresh asks for a new webhook secret.
+	 *
+	 * @var string
+	 */
+	private const ROTATION_DUE_OPTION = 'woocommerce_woopayments_woopay_webhook_rotation_due';
 
 	/**
 	 * WooCommerce logger source.
@@ -136,7 +143,7 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 			add_action( 'admin_init', array( $this, 'maybe_create_woopay_order_webhook' ) );
 		}
 
-		// Client 11.1.0 removes the webhook on account refresh and on the WooPay-disable settings change, not per admin page.
+		// Client 11.1.0 removes the webhook on account refresh and on the WooPay-disable settings change, not per admin page; native rotates the secret after a refresh instead.
 		if ( false === has_action( 'woocommerce_payments_account_refreshed', array( $this, 'reconcile_webhook' ) ) ) {
 			add_action( 'woocommerce_payments_account_refreshed', array( $this, 'reconcile_webhook' ) );
 		}
@@ -147,7 +154,11 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Reconcile the WooPay order-status webhook with the account and the WooPay setting.
+	 * Reconcile the WooPay order-status webhook after an account refresh.
+	 *
+	 * Removes every WooPay webhook when WooPay is no longer available. Otherwise asks the next admin page for a new secret:
+	 * client 11.1.0 removes the row on every refresh and creates one with a new secret on the next admin page
+	 * (class-wc-payments.php:683), which leaves WooPay without a webhook in between; rotating in place does not.
 	 *
 	 * @since 11.0.0
 	 */
@@ -161,21 +172,17 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( ! current_user_can( 'manage_woocommerce' ) ) {
-			return;
-		}
-
-		$this->maybe_create_webhook();
+		update_option( self::ROTATION_DUE_OPTION, 'yes', true );
 	}
 
 	/**
-	 * Create the webhook on admin pages only while WooPay is on, so admin pages read nothing while it is off.
+	 * Keep the webhook on admin pages, for WooCommerce managers and only while WooPay is on, so admin pages read nothing while it is off.
 	 *
 	 * @since 11.2.0
 	 */
 	public function maybe_create_woopay_order_webhook(): void {
-		if ( $this->arbiter->should_native_register() && $this->session_service->is_woopay_enabled() ) {
-			$this->reconcile_webhook();
+		if ( $this->arbiter->should_native_register() && $this->session_service->is_woopay_enabled() && current_user_can( 'manage_woocommerce' ) ) {
+			$this->maybe_create_webhook();
 		}
 	}
 
@@ -318,26 +325,30 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Create the WooPay webhook unless exactly one already exists.
+	 * Create the WooPay webhook unless exactly one already exists, and rotate its secret when an account refresh asked for it.
 	 *
 	 * The row is the state the plugin and native share, so it is identified by what it is, not by who wrote it: a
 	 * store switching from the plugin keeps the plugin's row, whose secret WooPay already holds. Several rows are
 	 * replaced by one, since WooPay holds at most one of their secrets and nothing tells which.
 	 */
 	private function maybe_create_webhook(): void {
-		if ( 1 === count( $this->find_woopay_webhook_ids() ) ) {
+		if ( 1 === count( $this->find_woopay_webhook_ids() ) && ! $this->is_rotation_due() ) {
 			return;
 		}
 
 		$token = wp_generate_uuid4();
 		if ( ! $this->row_lock->claim( self::CLAIM_KEY, $token, self::CLAIM_TTL ) ) {
-			// Another request is creating the webhook; the next admin page checks again.
+			// Another request is creating the webhook or changing its secret; the next admin page checks again.
 			return;
 		}
 
 		try {
 			$webhook_ids = $this->find_woopay_webhook_ids();
-			if ( 1 !== count( $webhook_ids ) && $this->delete_webhooks( $webhook_ids ) ) {
+			if ( 1 === count( $webhook_ids ) ) {
+				if ( $this->is_rotation_due() ) {
+					$this->rotate_secret( $webhook_ids[0] );
+				}
+			} elseif ( $this->delete_webhooks( $webhook_ids ) ) {
 				$this->create_webhook();
 			}
 		} finally {
@@ -371,7 +382,49 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 			unset( $api_exception );
 			$this->delete_webhooks( array( $webhook->get_id() ) );
 			$this->log_reconciliation_error( 'Unable to register the WooPay order-status webhook secret with the platform.' );
+			return;
 		}
+
+		update_option( self::ROTATION_DUE_OPTION, 'no', true );
+	}
+
+	/**
+	 * Give the webhook a new secret: register it with the platform, then save it on the same row.
+	 *
+	 * The row stays active throughout. A failed registration leaves the row and the request for a new secret in place, so
+	 * the next admin page tries again.
+	 *
+	 * @param int $webhook_id Webhook ID.
+	 */
+	private function rotate_secret( int $webhook_id ): void {
+		$webhook = wc_get_webhook( $webhook_id );
+		if ( ! $webhook instanceof WC_Webhook ) {
+			return;
+		}
+
+		$secret = wp_generate_password( 50, false );
+		try {
+			$this->api_client->update_woopay( array( 'webhook_secret' => $secret ) );
+		} catch ( WooPaymentsApiException $api_exception ) {
+			unset( $api_exception );
+			$this->log_reconciliation_error( 'Unable to rotate the WooPay order-status webhook secret with the platform.' );
+			return;
+		}
+
+		$webhook->set_secret( $secret );
+		// Saving an active row still pending its first ping sends WooCommerce's ping to WooPay; client 11.1.0 never saves the row after creating it.
+		$webhook->set_pending_delivery( false );
+		$webhook->save();
+		update_option( self::ROTATION_DUE_OPTION, 'no', true );
+	}
+
+	/**
+	 * Tell whether an account refresh asked for a new webhook secret.
+	 *
+	 * @return bool
+	 */
+	private function is_rotation_due(): bool {
+		return 'yes' === get_option( self::ROTATION_DUE_OPTION );
 	}
 
 	/**

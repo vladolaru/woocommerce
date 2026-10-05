@@ -52,11 +52,19 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	private ?Task25WooPayApiClient $api_client = null;
 
 	/**
+	 * Administrator running the admin pages.
+	 *
+	 * @var int
+	 */
+	private int $admin_id = 0;
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
 		parent::setUp();
-		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
+		$this->admin_id = $this->factory->user->create( array( 'role' => 'administrator' ) );
+		wp_set_current_user( $this->admin_id );
 	}
 
 	/**
@@ -298,6 +306,102 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $webhook_ids );
 		$this->assertCount( 2, $this->api_client->woopay_updates );
 		$this->assertSame( array( 'webhook_secret' => wc_get_webhook( $webhook_ids[0] )->get_secret() ), $this->api_client->woopay_updates[1] );
+	}
+
+	/**
+	 * @testdox An account refresh gets the webhook a new secret on the next admin page, on the same row, with no time without a webhook.
+	 *
+	 * Fails when the refresh leaves the secret alone (WooPay never gets a fresh secret, unlike client 11.1.0, which recreates
+	 * the row), when it deletes the row (no webhook until the next admin page), or when it calls the platform itself.
+	 */
+	public function test_account_refresh_rotates_the_secret_in_place(): void {
+		$plugin_webhook = $this->create_plugin_webhook();
+		$sync           = $this->create_sync( true, true );
+		$sync->register();
+		wp_set_current_user( 0 );
+
+		do_action( 'woocommerce_payments_account_refreshed', array() );
+
+		$this->assertSame( array( $plugin_webhook->get_id() ), $this->find_woopay_webhook_ids(), 'The webhook must stay in place across the refresh.' );
+		$this->assertSame( array(), $this->api_client->woopay_updates, 'The refresh itself must not call the platform.' );
+
+		wp_set_current_user( $this->admin_id );
+		$this->run_admin_init_for( $sync );
+
+		$secret = wc_get_webhook( $plugin_webhook->get_id() )->get_secret();
+		$this->assertSame( array( $plugin_webhook->get_id() ), $this->find_woopay_webhook_ids(), 'The secret must change on the same row.' );
+		$this->assertNotSame( self::PLUGIN_SECRET, $secret );
+		$this->assertSame( 50, strlen( $secret ) );
+		$this->assertSame( array( array( 'webhook_secret' => $secret ) ), $this->api_client->woopay_updates );
+
+		$this->run_admin_init_for( $sync );
+
+		$this->assertCount( 1, $this->api_client->woopay_updates, 'One refresh asks for one new secret.' );
+	}
+
+	/**
+	 * @testdox A failed secret rotation keeps the secret WooPay holds and the next admin page tries again.
+	 *
+	 * Fails when the row takes the new secret before the platform accepted it, or when the request for a new secret is dropped
+	 * on failure.
+	 */
+	public function test_failed_secret_rotation_keeps_the_secret_and_retries(): void {
+		$logger = new Task25RecordingLogger();
+		add_filter( 'woocommerce_logging_class', static fn() => $logger );
+		$plugin_webhook = $this->create_plugin_webhook();
+		$sync           = $this->create_sync( true, true );
+		$sync->register();
+		do_action( 'woocommerce_payments_account_refreshed', array() );
+		// The platform answers an update it cannot apply with Bad_Request_Exception, code wcpay_bad_request, status 400.
+		$this->api_client->update_woopay_exception = new WooPaymentsApiException( 'Error updating account. Webhook secret is empty.', 'wcpay_bad_request', 400 );
+
+		$this->run_admin_init_for( $sync );
+
+		$this->assertSame( self::PLUGIN_SECRET, wc_get_webhook( $plugin_webhook->get_id() )->get_secret() );
+		$this->assertSame( array( 'Unable to rotate the WooPay order-status webhook secret with the platform.' ), array_column( $logger->error_calls, 'message' ) );
+		$this->assertNull( $this->read_option_row( self::CLAIM_OPTION ), 'The lock must be released after a failure.' );
+
+		$this->api_client->update_woopay_exception = null;
+		$this->run_admin_init_for( $sync );
+
+		$secret = wc_get_webhook( $plugin_webhook->get_id() )->get_secret();
+		$this->assertNotSame( self::PLUGIN_SECRET, $secret );
+		$this->assertCount( 2, $this->api_client->woopay_updates );
+		$this->assertSame( array( 'webhook_secret' => $secret ), $this->api_client->woopay_updates[1] );
+	}
+
+	/**
+	 * @testdox Rotating the secret sends no request to WooPay besides the platform call.
+	 *
+	 * Fails when the rotation saves the row with its first ping still pending: WooCommerce then posts a ping to WooPay's
+	 * merchant-notification endpoint, which client 11.1.0 never does.
+	 */
+	public function test_secret_rotation_sends_no_ping_to_woopay(): void {
+		$this->create_plugin_webhook();
+		$sync = $this->create_sync( true, true );
+		$sync->register();
+		do_action( 'woocommerce_payments_account_refreshed', array() );
+		$requests = array();
+		$record   = static function ( $preempt, $args, $url ) use ( &$requests ) {
+			unset( $preempt, $args );
+			$requests[] = $url;
+			return array(
+				'headers'  => array(),
+				'body'     => '',
+				'response' => array(
+					'code'    => 200,
+					'message' => 'OK',
+				),
+				'cookies'  => array(),
+			);
+		};
+		add_filter( 'pre_http_request', $record, 10, 3 );
+
+		$this->run_admin_init_for( $sync );
+		remove_filter( 'pre_http_request', $record, 10 );
+
+		$this->assertCount( 1, $this->api_client->woopay_updates, 'The rotation must have run.' );
+		$this->assertSame( array(), $requests );
 	}
 
 	/**
