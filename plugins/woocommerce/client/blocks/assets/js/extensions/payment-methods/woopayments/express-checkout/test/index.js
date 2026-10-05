@@ -2561,11 +2561,25 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 
 		// Client 11.1.0 completePayment() locks the page with jQuery BlockUI before it navigates
 		// (block-buttons/hooks/use-express-checkout.js:52-55, event-handlers.js:290-298, :316-318). BlockUI's page-level
-		// `$.blockUI( options )` comes with WooCommerce's `woocommerce` script (`wc-jquery-blockui`,
-		// includes/class-wc-frontend-scripts.php) and returns nothing useful.
+		// `$.blockUI( options )` and `$.unblockUI()` come with WooCommerce's `woocommerce` script (`wc-jquery-blockui`,
+		// includes/class-wc-frontend-scripts.php) and return nothing useful.
 		describe( 'with jQuery BlockUI on the page', () => {
+			// Store API checkout success (src/StoreApi/Schemas/V1/CheckoutSchema.php:160-193) naming the order page.
+			const answerWithOrderPage = () =>
+				apiFetch.mockResolvedValueOnce( {
+					order_id: 77,
+					payment_result: {
+						payment_status: 'success',
+						payment_details: [
+							{ key: 'result', value: 'success' },
+						],
+						redirect_url:
+							'http://localhost/checkout/order-received/77/?key=wc_order_abc',
+					},
+				} );
+
 			beforeEach( () => {
-				window.jQuery = { blockUI: jest.fn() };
+				window.jQuery = { blockUI: jest.fn(), unblockUI: jest.fn() };
 			} );
 
 			afterEach( () => {
@@ -2595,6 +2609,61 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				expect(
 					window.jQuery.blockUI.mock.invocationCallOrder[ 0 ]
 				).toBeLessThan( navigate.mock.invocationCallOrder[ 0 ] );
+			} );
+
+			// Client 11.1.0: a throw from `window.location = url` is inside onConfirmHandler()'s try, so abortPayment() shows
+			// it and unblocks (event-handlers.js:244-271, :312-314). Setting `location.href` to a URL the browser cannot
+			// parse throws a TypeError (https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-location-href).
+			it( 'unlocks the page and shows the error when leaving for the order throws', async () => {
+				const setExpressPaymentError = jest.fn();
+				navigate.mockImplementation( () => {
+					throw new TypeError(
+						"Failed to set the 'href' property on 'Location': 'http://[' is not a valid URL."
+					);
+				} );
+				answerWithOrderPage();
+
+				await confirmGooglePay( { setExpressPaymentError } );
+
+				expect( window.jQuery.blockUI ).toHaveBeenCalledTimes( 1 );
+				expect( window.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
+				expect(
+					window.jQuery.unblockUI.mock.invocationCallOrder[ 0 ]
+				).toBeGreaterThan( navigate.mock.invocationCallOrder[ 0 ] );
+				expect( setExpressPaymentError ).toHaveBeenCalledWith(
+					"Failed to set the 'href' property on 'Location': 'http://[' is not a valid URL."
+				);
+			} );
+
+			// The back-forward cache restores the page as it was left, overlay included, when the shopper goes Back from
+			// the order page (`pageshow` with `persisted`, https://developer.mozilla.org/docs/Web/API/PageTransitionEvent).
+			it( 'unlocks the page when it comes back from the back-forward cache', async () => {
+				answerWithOrderPage();
+
+				await confirmGooglePay();
+				expect( window.jQuery.blockUI ).toHaveBeenCalledTimes( 1 );
+
+				window.dispatchEvent(
+					new window.PageTransitionEvent( 'pageshow', {
+						persisted: false,
+					} )
+				);
+				expect( window.jQuery.unblockUI ).not.toHaveBeenCalled();
+
+				window.dispatchEvent(
+					new window.PageTransitionEvent( 'pageshow', {
+						persisted: true,
+					} )
+				);
+				expect( window.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
+
+				// Only the overlay these wallets put up is removed: a later restore leaves other page locks alone.
+				window.dispatchEvent(
+					new window.PageTransitionEvent( 'pageshow', {
+						persisted: true,
+					} )
+				);
+				expect( window.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
 			} );
 
 			it( 'leaves the page usable when the payment fails', async () => {

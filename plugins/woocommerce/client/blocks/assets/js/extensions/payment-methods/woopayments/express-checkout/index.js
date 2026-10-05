@@ -1152,6 +1152,15 @@ const unlockPage = () => {
 	window.jQuery?.unblockUI?.();
 };
 
+// The back-forward cache restores the page as it was left, overlay included: Back from the order page. Client 11.1.0
+// keeps that page locked (no pageshow handler in client/express-checkout). Added once per page (same listener), and a
+// no-op once the overlay is gone.
+const onPageShow = ( event ) => {
+	if ( event.persisted ) {
+		unlockPage();
+	}
+};
+
 /**
  * Lock the page with jQuery BlockUI, as client 11.1.0 blockUI() does (event-handlers.js:290-298). Without BlockUI on the
  * page nothing is locked, as on the classic pages.
@@ -1169,6 +1178,7 @@ const lockPage = () => {
 		},
 	} );
 	isPageLocked = true;
+	window.addEventListener( 'pageshow', onPageShow );
 };
 
 /**
