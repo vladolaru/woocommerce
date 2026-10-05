@@ -1766,29 +1766,29 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			'a client secret glued to a prefix'         => array( 'ref7pi_3LeakGlued_secret_LeakGlued', '(redacted)' ),
 			'a URL glued to a prefix'                   => array( 'seehttps://shop.example.test/?key=leak-glued-url', 'seehttps://shop.example.test/' ),
 			'JSON text with a unicode-escaped secret'   => array( '{"note":"sk\u005flive\u005fLeakUnicode"}', '(redacted)' ),
-			'JSON text nested too deep to decode'       => array( str_repeat( '{"a":', 10 ) . '{"session":"leak-deep-json"}' . str_repeat( '}', 10 ), '(redacted)' ),
+			'JSON text after leading whitespace'        => array( ' {"session":"leak-padded-json"}', '(redacted)' ),
+			'deeply nested JSON text'                   => array( str_repeat( '{"a":', 10 ) . '{"session":"leak-deep-json"}' . str_repeat( '}', 10 ), '(redacted)' ),
+			'JSON text with a percent-encoded key'      => array( '{"%73ession":"leak-encoded-key"}', '(redacted)' ),
+			'JSON text with percent-encoded quotes'     => array( '{%22session%22:%22leak-encoded-quotes%22}', '(redacted)' ),
 		);
 	}
 
 	/**
-	 * @testdox The gated transport log decodes JSON text of up to 8192 bytes and replaces longer JSON text whole, without decoding it.
+	 * @testdox The gated transport log keeps a clean value of 2048 bytes and replaces a longer one whole.
 	 *
-	 * The response body is synthetic transport-only input.
+	 * The length check runs before any pattern, so a long value cannot make the log slow. The response body is synthetic
+	 * transport-only input.
 	 */
-	public function test_transport_log_decodes_json_text_only_up_to_its_size_bound(): void {
-		$padding = static fn( int $length ): string => str_repeat( 'a', $length );
-		$params  = array(
-			'clean_at_bound'     => '{"note":"' . $padding( 8192 - 11 ) . '"}',
-			'session_at_bound'   => '{"session":"' . $padding( 8192 - 14 ) . '"}',
-			'clean_beyond_bound' => '{"note":"' . $padding( 8192 - 10 ) . '"}',
+	public function test_transport_log_replaces_values_longer_than_2048_bytes_whole(): void {
+		$params = array(
+			'at_bound'     => str_repeat( 'a', 2048 ),
+			'beyond_bound' => str_repeat( 'a', 2049 ),
 		);
-		$this->assertSame( array( 8192, 8192, 8193 ), array_map( 'strlen', array_values( $params ) ) );
 
 		$body = $this->get_transport_entry( $this->log_transport_request( $params, array( 'data' => array() ) ), 'API REQUEST (' )['context']['body'];
 
-		$this->assertSame( $params['clean_at_bound'], $body['clean_at_bound'], 'JSON text within the bound is decoded and kept when nothing in it is redacted.' );
-		$this->assertSame( '(redacted)', $body['session_at_bound'], 'JSON text within the bound is decoded and its keys are checked.' );
-		$this->assertSame( '(redacted)', $body['clean_beyond_bound'], 'Longer JSON text is replaced whole without being decoded, so a large value cannot slow the log down.' );
+		$this->assertSame( $params['at_bound'], $body['at_bound'] );
+		$this->assertSame( '(redacted)', $body['beyond_bound'] );
 	}
 
 	/**
