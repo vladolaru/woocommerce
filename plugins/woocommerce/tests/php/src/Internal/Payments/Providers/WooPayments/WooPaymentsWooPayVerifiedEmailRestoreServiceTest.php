@@ -937,8 +937,8 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	/**
 	 * @testdox A restore that throws ($throwable_class $where) is logged with the order, whatever the logging setting, and the cron event ends cleanly.
 	 *
-	 * Client 11.1.0 catches nothing in its restore callback (class-woopay-session.php:228-237), so any failure, an Exception
-	 * included, is a fatal that core always logs.
+	 * Client 11.1.0 catches nothing in its restore callback (class-woopay-session.php:227-237), so a PHP Error, or an Exception
+	 * outside core's WC_Abstract_Order::save() (which catches only Exception), escapes as a fatal.
 	 *
 	 * @testWith ["Error", "while the order saves"]
 	 *           ["TypeError", "while the order saves"]

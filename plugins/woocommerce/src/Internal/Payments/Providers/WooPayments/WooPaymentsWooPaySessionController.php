@@ -985,7 +985,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	/**
 	 * Tell whether the current request supports WooPay direct checkout.
 	 *
-	 * Client 11.1.0 `should_enqueue_scripts()` (class-wc-payments-woopay-direct-checkout.php:127-131): a cart page, any page
+	 * Client 11.1.0 `should_enqueue_scripts()` (class-wc-payments-woopay-direct-checkout.php:130-134): a cart page, any page
 	 * where a Mini-Cart block rendered (the checkout page too), or a page other than checkout with the classic cart widget.
 	 *
 	 * @return bool

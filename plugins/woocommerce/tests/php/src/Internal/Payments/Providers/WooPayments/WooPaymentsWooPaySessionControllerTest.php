@@ -493,7 +493,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Should run direct checkout on a classic checkout page where a Mini-Cart block renders, as client 11.1.0.
 	 *
 	 * Client 11.1.0 should_enqueue_scripts() loads direct checkout wherever woocommerce_blocks_cart_enqueue_data fired, the
-	 * checkout page included (class-wc-payments-woopay-direct-checkout.php:127-131).
+	 * checkout page included (class-wc-payments-woopay-direct-checkout.php:130-134).
 	 */
 	public function test_enqueue_frontend_assets_runs_direct_checkout_for_a_mini_cart_block_on_classic_checkout(): void {
 		$service                                      = new RecordingWooPaySessionService();

@@ -198,8 +198,9 @@ class WooPaymentsWooPayVerifiedEmailRestoreService implements RegisterHooksInter
 	/**
 	 * Restore one order from its durable marker.
 	 *
-	 * A failed restore is logged whatever the logging setting, with the IDs needed to restore the order by hand: client 11.1.0
-	 * catches nothing here, so its failure is a fatal that core always logs (class-woopay-session.php:228-237). No retry.
+	 * A failed restore is logged whatever the logging setting, with the IDs needed to restore the order by hand. Client 11.1.0
+	 * catches nothing here (class-woopay-session.php:227-237): an Exception inside the save is caught and logged by core's
+	 * WC_Abstract_Order::save() under the woocommerce source; any other failure escapes as a fatal. No retry.
 	 *
 	 * @param int $order_id Order ID.
 	 * @return bool True when a marker was consumed.
