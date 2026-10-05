@@ -35,7 +35,6 @@ export default [
 			'jsx-a11y/no-static-element-interactions': 'warn',
 			'@wordpress/i18n-no-collapsible-whitespace': 'warn',
 			'@wordpress/i18n-no-variables': 'warn',
-			'no-bitwise': 'warn',
 		},
 	},
 ];

@@ -36,7 +36,7 @@ class Rule {
 		let status = true;
 
 		for ( const [ , condition ] of Object.entries( this.conditions ) ) {
-			status &= condition.status;
+			status = status && condition.status;
 		}
 
 		if ( status !== this.status ) {
