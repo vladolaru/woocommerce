@@ -1546,7 +1546,8 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * The list is newest first, so a full page (`has_more`) that reaches back past the earlier request's window holds every
 	 * intent created since; the earlier request was sent at most one request timeout plus its transport retries before the
 	 * failure was recorded, and the window is 300 s (review 44 F6). A page that stops inside the window may have left the
-	 * earlier intent for the next page, so it proves nothing and the attempt is refused.
+	 * earlier intent for the next page, so it proves nothing and the account's list around the failure settles it (review
+	 * 67 F3); a complete one without the order lets the new card be charged.
 	 *
 	 * @dataProvider provide_full_pages_against_the_window
 	 *
@@ -1578,18 +1579,23 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 				),
 				true
 			),
-			self::succeeded_charge( 'pi_new_card', 'pm_new' ),
 		);
+		if ( ! $proves_none ) {
+			$http_client->responses[] = self::intent_list( array() );
+		}
+		$http_client->responses[] = self::succeeded_charge( 'pi_new_card', 'pm_new' );
 
 		$outcome = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_second' );
 
-		if ( $proves_none ) {
-			$this->assertSame( 'pi_new_card', $outcome->get_provider_payment_id() );
-			$this->assertSame( 'POST intentions key_second', self::request_trail( $http_client )[3] ?? null );
-			return;
-		}
-		$this->assertSame( 'wcpay_charge_lookup_failed', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
-		$this->assertCount( 3, $http_client->requests, 'The new card must not be charged.' );
+		$this->assertSame(
+			array_merge(
+				array( 'POST intentions key_first', 'POST intentions key_first', 'GET intentions?test_mode=0&customer=cus_sent&limit=100' ),
+				$proves_none ? array() : array( self::account_list_trail( $failed_at ) ),
+				array( 'POST intentions key_second' )
+			),
+			self::request_trail( $http_client )
+		);
+		$this->assertSame( 'pi_new_card', $outcome->get_provider_payment_id() );
 	}
 
 	/**
@@ -1848,21 +1854,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		return array(
 			'transport error'                   => array( array( new WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out' ) ) ),
 			'server error on the customer list' => array( array( self::stripe_api_error( 500 ) ) ),
-			'a full page of newer intents with more to read' => array(
-				array(
-					self::intent_list(
-						array(
-							array(
-								'id'       => 'pi_newer',
-								'status'   => 'succeeded',
-								'created'  => time(),
-								'metadata' => array(),
-							),
-						),
-						true
-					),
-				),
-			),
 			'customer missing, then a transport error on the account list' => array(
 				array( self::stripe_no_such_customer(), new WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out' ) ),
 			),
@@ -1873,13 +1864,14 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox When the customer's intents cannot be listed ($_dataName), the account's intents since the failure settle it: the earlier payment pays the order.
+	 * @testdox When the customer's intents cannot settle it ($_dataName), the account's intents since the failure do: the earlier payment pays the order.
 	 *
 	 * A deleted customer keeps its PaymentIntents, so the account's list, filtered to intents created from 3600 s before
 	 * the recorded failure and matched on the order id and key, still shows the earlier request's intent (monitor ruling
 	 * B). The platform forwards `created` to Stripe's list unchanged (wpcom `wcpay/class-intentions-controller.php:198-210`).
 	 * An answer without a list falls back too, so a changed answer shape cannot refuse every attempt without the merchant
-	 * note (review 45 F5).
+	 * note (review 45 F5). So does a full customer page that stops inside the 300 s window: the customer's list has no time
+	 * bound and only gets newer, so a later attempt could never read further (review 67 F3).
 	 *
 	 * @dataProvider provide_customer_lists_that_fall_back
 	 *
@@ -1927,6 +1919,19 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		return array(
 			'a deleted customer'     => array( self::stripe_no_such_customer() ),
 			'an answer with no list' => array( self::http_json( 200, array( 'object' => 'list' ) ) ),
+			'a full page of newer intents with more to read' => array(
+				self::intent_list(
+					array(
+						array(
+							'id'       => 'pi_newer',
+							'status'   => 'succeeded',
+							'created'  => time(),
+							'metadata' => array(),
+						),
+					),
+					true
+				),
+			),
 		);
 	}
 

@@ -97,10 +97,11 @@ class WooPaymentsChargeAmbiguityService {
 	 * List the PaymentIntents created for an order.
 	 *
 	 * Lists the customer the earlier requests were sent with. When they were sent with more than one customer, or Stripe
-	 * or the platform refuses the customer's list for good (a deleted customer, for example) or answers without a list,
-	 * lists the account's intents created between shortly before the first failure and shortly after the latest one
-	 * instead, which match on the order whatever the customer. A transport failure or a server error leaves the lookup
-	 * failed, since a later attempt may read the list.
+	 * or the platform refuses the customer's list for good (a deleted customer, for example), answers without a list, or
+	 * answers with a full page that cannot be proven complete (the list has no time bound, so it only gets newer), lists
+	 * the account's intents created between shortly before the first failure and shortly after the latest one instead,
+	 * which match on the order whatever the customer. A transport failure or a server error leaves the lookup failed,
+	 * since a later attempt may read the list.
 	 *
 	 * @param WC_Order          $order          Order whose earlier charge is looked up.
 	 * @param array<int,string> $customer_ids   Customers the earlier charge requests under the key were sent with.
@@ -122,13 +123,9 @@ class WooPaymentsChargeAmbiguityService {
 				: $this->find_order_intents_created_around_failures( $order, $failed_at, $last_failed_at );
 		}
 
-		if ( ! isset( $list['data'] ) || ! is_array( $list['data'] ) ) {
-			return $this->find_order_intents_created_around_failures( $order, $failed_at, $last_failed_at );
-		}
-
 		$order_intents = $this->get_order_intents_from_list( $list, $order, $failed_at - self::LOOKBACK_SECONDS );
 
-		return null === $order_intents ? self::lookup( self::LOOKUP_FAILED ) : self::lookup( self::LOOKUP_DONE, $order_intents );
+		return null === $order_intents ? $this->find_order_intents_created_around_failures( $order, $failed_at, $last_failed_at ) : self::lookup( self::LOOKUP_DONE, $order_intents );
 	}
 
 	/**
