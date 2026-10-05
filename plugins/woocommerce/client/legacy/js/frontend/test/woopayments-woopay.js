@@ -1033,6 +1033,8 @@ describe( 'WooPayments WooPay checkout', () => {
 			} );
 		}
 
+		// WooPay Connect iframe: WooPayments 11.1.0 connect/woopay-connect.js:71-81 and :144-151 post each request
+		// ( { action } ) to the iframe's contentWindow.postMessage; this stub records them.
 		function installConnect() {
 			const postMessage = jest.fn();
 			Object.defineProperty(
@@ -1047,6 +1049,9 @@ describe( 'WooPayments WooPay checkout', () => {
 			return postMessage;
 		}
 
+		// WooPay Connect answers: WooPayments 11.1.0 connect/woopay-connect.js:36-48 accepts message events from the
+		// woopayHost origin and hands event.data, shaped { action, value }, to callbackFn (session-connect.js:184-216,
+		// user-connect.js:72-86).
 		function emitConnectMessage( action, value, origin = 'https://pay.woo.test' ) {
 			window.dispatchEvent(
 				new window.MessageEvent( 'message', {
@@ -1162,6 +1167,9 @@ describe( 'WooPayments WooPay checkout', () => {
 		test( 'runs direct checkout from the light mini-cart config without asking Connect for a preferred card', async () => {
 			// Client 11.1.0 gives a mini-cart page only the common config (class-wc-payments.php:1797-1835) and fetches the
 			// preferred card only from its express-button bundle (express-button/index.js:115-120).
+			// Connect messages: WooPayments 11.1.0 session-connect.js:168-177 sends { action: 'isWooPayReachable' } and :204-205
+			// reads the answer { action: 'get_is_woopay_reachable_success', value }; user-connect.js:56-61 sends
+			// { action: 'getPreferredPaymentMethod' }, which this page must not send.
 			document.body.innerHTML =
 				'<div class="widget_shopping_cart"><a class="button checkout" href="https://store.test/checkout/">Checkout</a></div>';
 			window.wcpay_core_woopay_config = {
