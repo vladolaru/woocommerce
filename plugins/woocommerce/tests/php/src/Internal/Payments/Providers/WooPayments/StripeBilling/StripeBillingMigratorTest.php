@@ -3,11 +3,14 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingApi;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingMigrator;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingSubscriptionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
@@ -235,6 +238,38 @@ class StripeBillingMigratorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The migration log names a mapped platform error from $failing_call by its status and code, never its message.
+	 * @testWith ["get_subscription", "---- ERROR: Failed to fetch subscription #%1$d (%2$s) from Stripe. Platform error: HTTP status 400, error code amount_too_small."]
+	 *           ["cancel_subscription", "---- ERROR: Failed to cancel the Stripe subscription (%2$s). Platform error: HTTP status 400, error code amount_too_small."]
+	 *
+	 * The platform answers with the recorded amount_too_small envelope (`Fixtures/rec-t63-billing-api.json`, pair
+	 * `error_amount_too_small`: top-level code, message and data.minimum_amount / data.currency, the shape client 11.1.0
+	 * turns into Amount_Too_Small_Exception, class-wc-payments-api-client.php:2845-2851), its message replaced by one holding
+	 * an email, a URL and a key. StripeBillingApi maps it to a StripeBillingException that wraps the platform error.
+	 *
+	 * @param string $failing_call Platform call that fails.
+	 * @param string $expected     Expected migration log line, with the subscription and Stripe subscription IDs.
+	 */
+	public function test_migration_log_leaves_out_a_mapped_platform_errors_text( string $failing_call, string $expected ): void {
+		$envelope            = $this->get_recorded_body( 'error_amount_too_small' );
+		$envelope['message'] = "No such customer: 'cus_123'; ask shopper@example.com, see https://pay.example.test/r?key=sk_test_leak123";
+		$http_client         = new FakeWooPaymentsHttpClient();
+		if ( 'cancel_subscription' === $failing_call ) {
+			$http_client->responses[] = self::json_response( 200, $this->active_wcpay_subscription );
+		}
+		$http_client->responses[] = self::json_response( 400, $envelope );
+		$this->build_migrator_over_the_platform( $http_client );
+		$sut          = new StripeBillingMigrator();
+		$subscription = $this->create_stripe_billed_subscription( self::MAIN_SUBSCRIPTION_ID );
+		$logger       = RecordingWcLogger::install();
+
+		$sut->migrate_wcpay_subscription( $subscription->get_id() );
+
+		$this->get_logged_context( $logger, sprintf( $expected, $subscription->get_id(), self::MAIN_SUBSCRIPTION_ID ) );
+		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
 	 * @testdox The migration log leaves out an invalid Stripe subscription's body, which client 11.1.0 logs whole (migrator.php:226).
 	 */
 	public function test_migration_log_leaves_out_an_invalid_stripe_subscription_body(): void {
@@ -422,6 +457,40 @@ class StripeBillingMigratorTest extends WC_Unit_Test_Case {
 		$sut->init_hooks();
 
 		return array( $sut, $api );
+	}
+
+	/**
+	 * Build the Stripe Billing platform calls over a recording transport, so a platform answer goes through the real mapping.
+	 *
+	 * @param FakeWooPaymentsHttpClient $http_client Recording transport.
+	 */
+	private function build_migrator_over_the_platform( FakeWooPaymentsHttpClient $http_client ): void {
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_test_mode_enabled' ) )
+			->getMock();
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$api_client = new WooPaymentsApiClient();
+		$api_client->init( $http_client, $account_service );
+		$api = new StripeBillingApi();
+		$api->init( $api_client );
+		$this->reset_container_resolutions();
+		wc_get_container()->replace( StripeBillingApi::class, $api );
+	}
+
+	/**
+	 * A transport answer in WP_Http::request()'s array shape.
+	 *
+	 * @param int                 $status HTTP status.
+	 * @param array<string,mixed> $body   Decoded body.
+	 * @return array<string,mixed>
+	 */
+	private static function json_response( int $status, array $body ): array {
+		return array(
+			'response' => array( 'code' => $status ),
+			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
+			'body'     => wp_json_encode( $body ),
+		);
 	}
 
 	/**
