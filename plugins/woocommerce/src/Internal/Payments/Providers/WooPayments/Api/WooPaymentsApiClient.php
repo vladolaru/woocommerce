@@ -2379,7 +2379,7 @@ class WooPaymentsApiClient {
 
 		// Redaction cleans every string value, so it runs only when the gated transport log is written.
 		$log_transport   = $this->can_log_transport();
-		$redacted_params = $log_transport ? self::redact_array( $params, self::API_KEYS_TO_REDACT ) : array();
+		$redacted_params = $log_transport ? $this->redact_for_log( $params ) : array();
 
 		/**
 		 * Filters the WooPayments native request headers before transport dispatch.
@@ -2493,7 +2493,7 @@ class WooPaymentsApiClient {
 		if ( $log_transport ) {
 			$this->log_transport_info(
 				sprintf( 'API RESPONSE (%s): %s %s', $log_request_id, $method, $redacted_path ),
-				array( 'body' => self::redact_array( is_array( $decoded_body ) ? $decoded_body : $response_body, self::API_KEYS_TO_REDACT ) )
+				array( 'body' => $this->redact_for_log( is_array( $decoded_body ) ? $decoded_body : $response_body ) )
 			);
 		}
 
@@ -2871,7 +2871,7 @@ class WooPaymentsApiClient {
 		}
 
 		wc_get_logger()->error(
-			sprintf( '%s (%s)', self::redact_string( $error_message ), self::redact_string( $error_code ) ),
+			sprintf( '%s (%s)', (string) $this->redact_for_log( $error_message ), (string) $this->redact_for_log( $error_code ) ),
 			array( 'source' => 'woopayments' )
 		);
 	}
@@ -2893,6 +2893,19 @@ class WooPaymentsApiClient {
 		$settings = get_option( 'woocommerce_woocommerce_payments_settings' );
 
 		return is_array( $settings ) && 'yes' === ( $settings['enable_logging'] ?? '' );
+	}
+
+	/**
+	 * Redact what the gated transport log writes: a request's params, a response body, or the platform error's message or code.
+	 *
+	 * Called only when that log is written: redaction looks at every string value, so a store with logging off does none of
+	 * this work.
+	 *
+	 * @param mixed $input Params, body, message or code.
+	 * @return mixed
+	 */
+	protected function redact_for_log( $input ) {
+		return self::redact_array( $input, self::API_KEYS_TO_REDACT );
 	}
 
 	/**

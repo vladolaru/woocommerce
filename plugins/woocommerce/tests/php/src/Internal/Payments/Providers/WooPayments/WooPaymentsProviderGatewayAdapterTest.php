@@ -5907,16 +5907,20 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A checkout of an order whose attached payment is disputed is still refused, and charges nothing, when the dispute note fails and $_dataName.
 	 *
-	 * The note is told apart from the refusal: re-reading the order for it throws here, and the refusal must still reach the
-	 * shopper rather than the gateway's catch, which answers as paid for a succeeded intent and fails the order otherwise.
+	 * The note is told apart from the refusal: re-reading the order for it throws here, an Exception or a PHP Error, and the
+	 * refusal must still reach the shopper rather than the gateway's catch, which answers as paid for a succeeded intent and
+	 * fails the order otherwise, and which a PHP Error passes through.
 	 *
-	 * @testWith ["the payment was never applied to the order", "requires_action"]
-	 *           ["the merchant set the paid order back to pending", "succeeded"]
+	 * @testWith ["the payment was never applied to the order", "requires_action", "RuntimeException"]
+	 *           ["the merchant set the paid order back to pending", "succeeded", "RuntimeException"]
+	 *           ["the payment was never applied to the order and the read fails with a PHP Error", "requires_action", "TypeError"]
+	 *           ["the merchant set the paid order back to pending and the read fails with a PHP Error", "succeeded", "TypeError"]
 	 *
 	 * @param string $label            Case description.
 	 * @param string $intention_status The order's `_intention_status`.
+	 * @param string $thrown           Class the order read throws.
 	 */
-	public function test_checkout_keeps_the_dispute_refusal_when_its_note_fails( string $label, string $intention_status ): void {
+	public function test_checkout_keeps_the_dispute_refusal_when_its_note_fails( string $label, string $intention_status, string $thrown ): void {
 		unset( $label );
 		$order = $this->create_order_left_by_a_completed_challenge();
 		$order->update_meta_data( '_intention_status', $intention_status );
@@ -5925,16 +5929,32 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			'disputed' => true,
 			'dispute'  => 'dp_1UJjK4BzWlxcwgpPDisputed',
 		);
-		$failing_reads   = new class() extends OrderPaymentLifecycleService {
+		$failing_reads   = new class( $thrown ) extends OrderPaymentLifecycleService {
+			/**
+			 * Class the order read throws.
+			 *
+			 * @var string
+			 */
+			private string $thrown;
+
+			/**
+			 * Set the class the order read throws.
+			 *
+			 * @param string $thrown Class the order read throws.
+			 */
+			public function __construct( string $thrown ) {
+				$this->thrown = $thrown;
+			}
+
 			/**
 			 * Fail the order read the dispute note makes.
 			 *
 			 * @param WC_Order $order Order.
-			 * @throws \RuntimeException Always.
+			 * @throws \Throwable Always.
 			 */
 			public function get_fresh_order_from_data_store( WC_Order $order ): WC_Order {
 				unset( $order );
-				throw new \RuntimeException( 'Order read failed.' );
+				throw new $this->thrown( 'Order read failed.' );
 			}
 		};
 
@@ -5959,7 +5979,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pending', $order->get_status(), 'The order status must not change.' );
 		$this->assertSame( array( 'GET intentions/' . self::CHALLENGE_COMPLETED_INTENT_ID ), self::platform_calls( $http_client ), 'Only the attached intent may be read; nothing may be charged.' );
 		$context = $this->get_logged_context( $logger, 'Failed to note the disputed payment attached to the order.' );
-		$this->assertSame( array( $order->get_id(), self::CHALLENGE_COMPLETED_INTENT_ID, \RuntimeException::class ), array( $context['order_id'], $context['intent_id'], $context['exception'] ) );
+		$this->assertSame( array( $order->get_id(), self::CHALLENGE_COMPLETED_INTENT_ID, $thrown ), array( $context['order_id'], $context['intent_id'], $context['exception'] ) );
 		$store   = wc_get_container()->get( OrderPaymentStore::class );
 		$profile = wc_get_container()->get( WooPaymentsPersistenceProfile::class );
 		$token   = $store->claim_order_payment_lock_for_operation( $order, $profile, 'refund_key', 'refund' );

@@ -1451,6 +1451,79 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The transport log redacts nothing while logging is off, and the request, the response and the error line once it is on.
+	 *
+	 * Redaction looks at every string value, so a store with logging off must not pay for it; the subclass counts each
+	 * redaction. The error envelope is the one client 11.1.0 parses (class-wc-payments-api-client.php:2852-2871: error.code,
+	 * error.message, error.type) and logs as "<message> (<code>)" (:2912).
+	 */
+	public function test_transport_log_redaction_runs_only_when_the_log_is_written(): void {
+		delete_option( 'woocommerce_woocommerce_payments_settings' );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$logger = $this->install_recording_logger();
+
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 404 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode(
+				array(
+					'error' => array(
+						'code'    => 'resource_missing',
+						'message' => 'No such subscription.',
+						'type'    => 'invalid_request_error',
+					),
+				)
+			),
+		);
+		$sut                   = new class() extends WooPaymentsApiClient {
+			/**
+			 * Redactions made.
+			 *
+			 * @var int
+			 */
+			public int $redactions = 0;
+
+			/**
+			 * Count the redaction, then redact.
+			 *
+			 * @param mixed $input Params, body, message or code.
+			 * @return mixed
+			 */
+			protected function redact_for_log( $input ) {
+				++$this->redactions;
+
+				return parent::redact_for_log( $input );
+			}
+		};
+		$sut->init( $http_client, $this->create_account_service( false ) );
+		$send = static function () use ( $sut ): void {
+			try {
+				$sut->send_site_request( array( 'note' => 'https://shop.example.test/?key=wc_order_1' ), 'subscriptions', 'POST' );
+			} catch ( WooPaymentsApiException $exception ) {
+				unset( $exception );
+			}
+		};
+
+		try {
+			$send();
+			$redactions_while_off = $sut->redactions;
+			$entries_while_off    = $logger->entries;
+			update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+			$send();
+		} finally {
+			remove_all_filters( 'woocommerce_logging_class' );
+			remove_filter( 'wcpay_dev_mode', '__return_false' );
+			delete_option( 'woocommerce_woocommerce_payments_settings' );
+		}
+
+		$this->assertSame( array(), $entries_while_off );
+		$this->assertSame( 0, $redactions_while_off, 'Nothing is redacted while logging is off.' );
+		$this->assertSame( 4, $sut->redactions, 'With logging on: the params, the response body, and the error message and code.' );
+	}
+
+	/**
 	 * @testdox Should log transport traffic in dev mode without the logging setting.
 	 */
 	public function test_transport_logs_in_dev_mode_without_setting(): void {
@@ -1502,6 +1575,8 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			'publishable_key'        => 'leak-suffix-key',
 			'Authorization'          => 'leak-authorization',
 			'Cookie'                 => 'leak-cookie',
+			'Session_Key'            => 'leak-mixed-case-suffix-key',
+			'X_Client_Secret'        => 'leak-mixed-case-suffix-secret',
 		);
 		$params  = array(
 			'top'  => $secrets,
