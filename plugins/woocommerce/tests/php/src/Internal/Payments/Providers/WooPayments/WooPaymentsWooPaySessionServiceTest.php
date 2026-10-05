@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Enums\OrderStatus;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
@@ -1461,6 +1462,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( OrderStatus::PENDING, wc_get_order( $pending->get_id() )->get_status() );
 		$this->assertSame( $pending->get_id(), WC()->session->get( 'store_api_draft_order' ) );
 		$this->assertNull( WC()->session->get( 'order_awaiting_payment' ) );
+		$this->assert_order_payment_lock_is_free( $pending, 'The status check under the lock returned early; the lock must be released.' );
 	}
 
 	/**
@@ -1653,6 +1655,116 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertNotSame( $draft_id, $order_id, 'A new order is placed.' );
 		$this->assertSame( OrderStatus::PROCESSING, wc_get_order( $draft_id )->get_status() );
 		$this->assertSame( $draft_id, WC()->session->get( 'store_api_draft_order' ) );
+		$this->assert_order_payment_lock_is_free( $draft, 'The status check under the lock returned early; the lock must be released.' );
+	}
+
+	/**
+	 * @testdox The WooPay draft takeover holds the order payment lock while it writes the order.
+	 *
+	 * A payment request that starts while the takeover saves the order (WC_Abstract_Order::save() fires
+	 * woocommerce_before_order_object_save before the data store write) is refused by the lock.
+	 */
+	public function test_woopay_draft_takeover_holds_the_payment_lock_while_it_writes(): void {
+		$sut = $this->create_service( array(), array( 'platform_direct_checkout_eligible' => true ) );
+		$this->register_controller( $sut );
+		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 1 );
+		WC()->cart->calculate_totals();
+		$draft = new \WC_Order();
+		$draft->set_status( OrderStatus::CHECKOUT_DRAFT );
+		$draft->set_cart_hash( WC()->cart->get_cart_hash() );
+		$draft->save();
+		$draft_id = $draft->get_id();
+		WC()->session->set( 'store_api_draft_order', $draft_id );
+		WC()->session->set( 'order_awaiting_payment', null );
+		$store   = wc_get_container()->get( OrderPaymentStore::class );
+		$profile = new WooPaymentsPersistenceProfile();
+		$claims  = array();
+		$pay     = static function ( $order ) use ( $store, $profile, $draft_id, &$claims ): void {
+			// The first save of the order is the takeover's; WC_Checkout::create_order() saves it again after the release.
+			if ( array() === $claims && $order instanceof \WC_Order && $draft_id === $order->get_id() && OrderStatus::PENDING === $order->get_status() ) {
+				$token    = $store->claim_order_payment_lock_for_operation( $order, $profile, 'attempt-key-of-another-request', 'checkout' );
+				$claims[] = $token;
+				if ( null !== $token ) {
+					$store->release_order_payment_lock( $order, $profile, $token );
+				}
+			}
+		};
+		add_action( 'woocommerce_before_order_object_save', $pay );
+
+		try {
+			$order_id = $this->create_classic_checkout_order();
+		} finally {
+			remove_action( 'woocommerce_before_order_object_save', $pay );
+		}
+
+		$this->assertSame( array( null ), $claims, 'The payment that started during the write was refused.' );
+		$this->assertSame( $draft_id, $order_id );
+		$this->assert_order_payment_lock_is_free( $draft, 'The takeover released the lock.' );
+	}
+
+	/**
+	 * @testdox The WooPay draft takeover releases the order payment lock when the $step under it throws, and leaves the order and session alone.
+	 *
+	 * The fresh read fails through a lifecycle service whose read throws (a native class, replaced in the container). The
+	 * save fails through woocommerce_before_order_object_save, which WC_Abstract_Order::save() fires before the data store
+	 * write; save() catches an Exception and only logs it (abstract-wc-order.php:278-317), so the failure that reaches the
+	 * takeover is an Error.
+	 *
+	 * @testWith ["read"]
+	 *           ["save"]
+	 *
+	 * @param string $step The step that throws.
+	 */
+	public function test_woopay_draft_takeover_releases_the_payment_lock_when_it_fails( string $step ): void {
+		$sut = $this->create_service( array(), array( 'platform_direct_checkout_eligible' => true ) );
+		$this->register_controller( $sut );
+		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 1 );
+		WC()->cart->calculate_totals();
+		$draft = new \WC_Order();
+		$draft->set_status( OrderStatus::CHECKOUT_DRAFT );
+		$draft->set_cart_hash( WC()->cart->get_cart_hash() );
+		$draft->save();
+		$draft_id = $draft->get_id();
+		WC()->session->set( 'store_api_draft_order', $draft_id );
+		WC()->session->set( 'order_awaiting_payment', null );
+		$fail = static function ( $order ) use ( $draft_id ): void {
+			if ( $order instanceof \WC_Order && $draft_id === $order->get_id() ) {
+				throw new \Error( 'The save failed.' );
+			}
+		};
+		if ( 'read' === $step ) {
+			wc_get_container()->replace(
+				OrderPaymentLifecycleService::class,
+				new class() extends OrderPaymentLifecycleService {
+					/**
+					 * Fail the fresh read.
+					 *
+					 * @param \WC_Order $order Order.
+					 * @throws \RuntimeException Always.
+					 */
+					public function get_fresh_order_from_data_store( \WC_Order $order ): \WC_Order {
+						throw new \RuntimeException( 'The read failed.' );
+					}
+				}
+			);
+		} else {
+			add_action( 'woocommerce_before_order_object_save', $fail );
+		}
+
+		$thrown = null;
+		try {
+			$this->create_classic_checkout_order();
+		} catch ( \Throwable $failure ) {
+			$thrown = $failure->getMessage();
+		} finally {
+			remove_action( 'woocommerce_before_order_object_save', $fail );
+		}
+
+		$this->assertSame( 'read' === $step ? 'The read failed.' : 'The save failed.', $thrown );
+		$this->assertSame( OrderStatus::CHECKOUT_DRAFT, wc_get_order( $draft_id )->get_status() );
+		$this->assertSame( $draft_id, WC()->session->get( 'store_api_draft_order' ) );
+		$this->assertNull( WC()->session->get( 'order_awaiting_payment' ) );
+		$this->assert_order_payment_lock_is_free( $draft, 'The takeover released the lock in finally.' );
 	}
 
 	/**
@@ -3549,6 +3661,20 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		} finally {
 			Constants::clear_single_constant( 'WOOCOMMERCE_CHECKOUT' );
 		}
+	}
+
+	/**
+	 * Assert that another request can claim the order payment lock, then release it.
+	 *
+	 * @param \WC_Order $order   Order.
+	 * @param string    $message Failure message.
+	 */
+	private function assert_order_payment_lock_is_free( \WC_Order $order, string $message ): void {
+		$store   = wc_get_container()->get( OrderPaymentStore::class );
+		$profile = new WooPaymentsPersistenceProfile();
+		$token   = $store->claim_order_payment_lock_for_operation( $order, $profile, 'attempt-key', 'checkout' );
+		$this->assertIsString( $token, $message );
+		$store->release_order_payment_lock( $order, $profile, $token );
 	}
 
 	/**
