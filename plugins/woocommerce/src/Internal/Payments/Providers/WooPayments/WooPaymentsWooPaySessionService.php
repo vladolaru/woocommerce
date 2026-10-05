@@ -1648,7 +1648,9 @@ class WooPaymentsWooPaySessionService {
 	 * WooPay's Store API requests share the shopper's session, so a WooPay checkout that did not finish leaves its draft
 	 * (and that draft's stock hold) as `store_api_draft_order`, which core's classic checkout never resumes. Ported from
 	 * client 11.1.0 `WC_Payments_WooPay_Direct_Checkout::maybe_use_store_api_draft_order_id()`
-	 * (class-wc-payments-woopay-direct-checkout.php:56-79): the draft becomes the pending order core resumes.
+	 * (class-wc-payments-woopay-direct-checkout.php:56-79): the draft becomes the pending order core resumes. Unlike the client,
+	 * a stored `false` counts as no order awaiting payment (WC_Session::__isset() reports it as set; core writes it after a
+	 * payment or a cancellation), and only a draft, pending or failed order is resumed, as core's own resume rules allow.
 	 *
 	 * @since 11.2.0
 	 *
@@ -1657,13 +1659,13 @@ class WooPaymentsWooPaySessionService {
 	 */
 	public function maybe_use_store_api_draft_order_id( $order_id ) {
 		$session = $this->get_wc_session();
-		if ( ! Constants::is_true( 'WOOCOMMERCE_CHECKOUT' ) || ! empty( $order_id ) || null === $session || isset( $session->order_awaiting_payment ) ) {
+		if ( ! Constants::is_true( 'WOOCOMMERCE_CHECKOUT' ) || ! empty( $order_id ) || null === $session || absint( $session->get( 'order_awaiting_payment' ) ) > 0 ) {
 			return $order_id;
 		}
 
 		$draft_order_id = absint( $session->get( 'store_api_draft_order' ) );
 		$draft_order    = $draft_order_id ? wc_get_order( $draft_order_id ) : false;
-		if ( ! $draft_order instanceof WC_Order ) {
+		if ( ! $draft_order instanceof WC_Order || ! $draft_order->has_status( array( OrderStatus::CHECKOUT_DRAFT, OrderStatus::PENDING, OrderStatus::FAILED ) ) ) {
 			return $order_id;
 		}
 

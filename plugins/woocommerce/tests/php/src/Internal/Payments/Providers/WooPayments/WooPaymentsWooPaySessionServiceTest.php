@@ -1283,6 +1283,85 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A classic checkout resumes a $status WooPay draft order after an earlier order in the same session was paid.
+	 *
+	 * WC_Order::payment_complete() and the unpaid-order cancellation write false to order_awaiting_payment
+	 * (class-wc-order.php:147, class-wc-form-handler.php:918), and WC_Session::__isset() reports a stored false as set, so
+	 * core reads that key with get() and treats a falsy value as no order (class-wc-cart.php:886-891). Client 11.1.0 uses
+	 * isset() (class-wc-payments-woopay-direct-checkout.php:62) and skips the draft here. The Store API keeps a pending or
+	 * failed order (a failed WooPay payment) under the draft key for a retry (DraftOrderTrait::is_valid_draft_order()).
+	 *
+	 * @testWith ["checkout-draft"]
+	 *           ["pending"]
+	 *           ["failed"]
+	 *
+	 * @param string $status Status of the order the Store API draft key names.
+	 */
+	public function test_classic_checkout_resumes_the_woopay_draft_order_after_an_earlier_paid_order( string $status ): void {
+		$sut = $this->create_service( array(), array( 'platform_direct_checkout_eligible' => true ) );
+		$this->register_controller( $sut );
+		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 1 );
+		WC()->cart->calculate_totals();
+		$draft = new \WC_Order();
+		$draft->set_status( $status );
+		$draft->set_cart_hash( WC()->cart->get_cart_hash() );
+		$draft->save();
+		WC()->session->set( 'store_api_draft_order', $draft->get_id() );
+		WC()->session->set( 'order_awaiting_payment', false );
+		Constants::set_constant( 'WOOCOMMERCE_CHECKOUT', true );
+
+		try {
+			$order_id = WC()->checkout()->create_order(
+				array(
+					'payment_method' => 'bacs',
+					'billing_email'  => 'guest@example.com',
+				)
+			);
+		} finally {
+			Constants::clear_single_constant( 'WOOCOMMERCE_CHECKOUT' );
+		}
+
+		$this->assertSame( $draft->get_id(), $order_id );
+		$this->assertSame( OrderStatus::PENDING, wc_get_order( $order_id )->get_status() );
+	}
+
+	/**
+	 * @testdox A classic checkout never resumes a paid order the Store API draft key names; it places a new order.
+	 *
+	 * Core resumes only a checkout draft, or a pending or failed order (DraftOrderTrait::is_valid_draft_order(),
+	 * WC_Checkout::create_order() at class-wc-checkout.php:420). Client 11.1.0 sets whatever order the key names to pending
+	 * (class-wc-payments-woopay-direct-checkout.php:71-73).
+	 */
+	public function test_classic_checkout_never_resumes_a_paid_order_named_as_the_woopay_draft(): void {
+		$sut = $this->create_service( array(), array( 'platform_direct_checkout_eligible' => true ) );
+		$this->register_controller( $sut );
+		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 1 );
+		WC()->cart->calculate_totals();
+		$paid = new \WC_Order();
+		$paid->set_status( OrderStatus::PROCESSING );
+		$paid->set_cart_hash( WC()->cart->get_cart_hash() );
+		$paid->save();
+		WC()->session->set( 'store_api_draft_order', $paid->get_id() );
+		WC()->session->set( 'order_awaiting_payment', null );
+		Constants::set_constant( 'WOOCOMMERCE_CHECKOUT', true );
+
+		try {
+			$order_id = WC()->checkout()->create_order(
+				array(
+					'payment_method' => 'bacs',
+					'billing_email'  => 'guest@example.com',
+				)
+			);
+		} finally {
+			Constants::clear_single_constant( 'WOOCOMMERCE_CHECKOUT' );
+		}
+
+		$this->assertIsInt( $order_id );
+		$this->assertNotSame( $paid->get_id(), $order_id, 'A new order is placed.' );
+		$this->assertSame( OrderStatus::PROCESSING, wc_get_order( $paid->get_id() )->get_status() );
+	}
+
+	/**
 	 * @testdox The WooPay draft order is left alone outside a checkout request and while another order awaits payment.
 	 */
 	public function test_woopay_draft_order_is_left_alone_outside_its_case(): void {
