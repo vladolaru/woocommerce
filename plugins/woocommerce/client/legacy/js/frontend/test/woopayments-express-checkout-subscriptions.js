@@ -584,6 +584,27 @@ describe( 'ECE WC Subscriptions compatibility', () => {
 			expect( result.totals.total_items ).toBe( '1999' );
 		} );
 
+		it( 'prices a $0 trial bundle from its parent alone, since bundled items are dropped first', () => {
+			// Client 11.1.0 imports the Product Bundles filter before the Subscriptions one at the same priority
+			// (shortcode-buttons-express/index.js:16-17), so the recurring price is split over the parent only.
+			const parent = buildTrialSubscriptionItem( { name: 'Gift box' } );
+			parent.key = 'bundle-key';
+			parent.extensions.bundles = { bundled_items: [ 'child-key' ] };
+			const child = buildTrialSubscriptionItem( { name: 'Box item' } );
+			child.key = 'child-key';
+			child.extensions.bundles = { bundled_by: 'bundle-key' };
+			const cart = buildTrialCart( { items: [ parent, child ] } );
+
+			const result = applyFilters(
+				'wcpay.express-checkout.map-line-items',
+				cart
+			);
+
+			expect( result.items ).toHaveLength( 1 );
+			expect( result.items[ 0 ].name ).toBe( 'Gift box (recurring)' );
+			expect( result.items[ 0 ].totals.line_total ).toBe( '1999' );
+		} );
+
 		it( 'splits recurring total evenly across items of the same billing period', () => {
 			const cart = buildTrialCart( {
 				items: [

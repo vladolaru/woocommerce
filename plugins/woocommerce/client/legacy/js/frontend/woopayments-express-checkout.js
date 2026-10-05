@@ -1875,10 +1875,11 @@
 			}
 		);
 
-		registerSubscriptionsCompatibility( hooks );
-
 		// Product Bundles: items bundled by another item are part of its price
 		// (client shortcode-buttons-express/compatibility/wc-product-bundles.js:6-19).
+		// Registered before the Subscriptions filters, as the client imports it
+		// (shortcode-buttons-express/index.js:16-17), so a bundle's recurring price
+		// is split over its parent only.
 		hooks.addFilter(
 			'wcpay.express-checkout.map-line-items',
 			'automattic/wcpay/express-checkout',
@@ -1898,6 +1899,8 @@
 				} );
 			}
 		);
+
+		registerSubscriptionsCompatibility( hooks );
 	}
 
 	/**
