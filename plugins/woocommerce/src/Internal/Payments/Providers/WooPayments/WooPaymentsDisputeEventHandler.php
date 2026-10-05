@@ -240,24 +240,25 @@ class WooPaymentsDisputeEventHandler {
 		$this->run_under_dispute_lock(
 			$order,
 			$dispute_id,
-			fn( WC_Order $order ): bool => $this->apply_dispute_closed( $order, $note, $dispute_id, $status, $note_type, $charge_id, $is_inquiry, $balance_transaction_id )
+			fn( WC_Order $order ): bool => $this->apply_dispute_closed( $order, $event_object, $note, $dispute_id, $status, $note_type, $charge_id, $is_inquiry, $balance_transaction_id )
 		);
 	}
 
 	/**
 	 * Apply a dispute close to an order read under the order payment lock.
 	 *
-	 * @param WC_Order $order                  Order read under the lock.
-	 * @param string   $note                   Closed note.
-	 * @param string   $dispute_id             Dispute ID.
-	 * @param string   $status                 Dispute status.
-	 * @param string   $note_type              Note type.
-	 * @param string   $charge_id              Charge ID.
-	 * @param bool     $is_inquiry             Whether the dispute is an inquiry.
-	 * @param string   $balance_transaction_id Balance transaction ID.
+	 * @param WC_Order            $order                  Order read under the lock.
+	 * @param array<string,mixed> $event_object           Dispute object of the event.
+	 * @param string              $note                   Closed note.
+	 * @param string              $dispute_id             Dispute ID.
+	 * @param string              $status                 Dispute status.
+	 * @param string              $note_type              Note type.
+	 * @param string              $charge_id              Charge ID.
+	 * @param bool                $is_inquiry             Whether the dispute is an inquiry.
+	 * @param string              $balance_transaction_id Balance transaction ID.
 	 * @return bool True when the close was applied.
 	 */
-	private function apply_dispute_closed( WC_Order $order, string $note, string $dispute_id, string $status, string $note_type, string $charge_id, bool $is_inquiry, string $balance_transaction_id ): bool {
+	private function apply_dispute_closed( WC_Order $order, array $event_object, string $note, string $dispute_id, string $status, string $note_type, string $charge_id, bool $is_inquiry, string $balance_transaction_id ): bool {
 		// A callback of its own, so removing it cannot remove a site's own '__return_false' on these emails.
 		$disable_email = static fn(): bool => false;
 
@@ -267,7 +268,7 @@ class WooPaymentsDisputeEventHandler {
 			$dispute_id,
 			$status,
 			$note_type,
-			function () use ( $order, $status, $dispute_id, $charge_id, $disable_email ): void {
+			function () use ( $order, $event_object, $status, $dispute_id, $charge_id, $disable_email ): void {
 				add_filter( 'woocommerce_email_enabled_customer_completed_order', $disable_email );
 				add_filter( 'woocommerce_email_enabled_customer_refunded_order', $disable_email );
 				add_filter( 'woocommerce_email_enabled_customer_completed_renewal_order', $disable_email );
@@ -276,7 +277,7 @@ class WooPaymentsDisputeEventHandler {
 
 				try {
 					if ( 'lost' === $status ) {
-						$this->create_dispute_lost_refund( $order, $this->get_dispute_summary( $dispute_id, $charge_id ), $charge_id, $dispute_id, $status );
+						$this->create_dispute_lost_refund( $order, $this->get_lost_dispute_amount( $event_object, $dispute_id, $charge_id ), $charge_id, $dispute_id, $status );
 					} elseif ( ! empty( $open_dispute_ids ) ) {
 						// Another dispute on the same charge is still running its evidence
 						// deadline, and the hold it put on the order has to outlive this one.
@@ -442,6 +443,36 @@ class WooPaymentsDisputeEventHandler {
 				'dispute_status' => $status,
 				'refund_amount'  => $refund_amount,
 			)
+		);
+	}
+
+	/**
+	 * Get the amount a lost dispute refunds: the platform's dispute summary, or the event's own dispute when it fails.
+	 *
+	 * The summary's disputed_amount and currency are the Stripe dispute's amount and currency (platform
+	 * class-dispute-service.php, the summary builder), which the closed event carries too. Client 11.1.0 refunds the
+	 * order's whole remaining amount when the fetch fails; for a partial dispute that over-refunds.
+	 *
+	 * @param array<string,mixed> $event_object Dispute object of the event.
+	 * @param string              $dispute_id   Dispute ID.
+	 * @param string              $charge_id    Charge ID.
+	 * @return array<string,mixed> Summary with disputed_amount and currency, or empty when neither source has them.
+	 */
+	private function get_lost_dispute_amount( array $event_object, string $dispute_id, string $charge_id ): array {
+		$summary = $this->get_dispute_summary( $dispute_id, $charge_id );
+		if ( ! empty( $summary['disputed_amount'] ) ) {
+			return $summary;
+		}
+
+		$amount   = $event_object['amount'] ?? null;
+		$currency = $event_object['currency'] ?? null;
+		if ( ! is_int( $amount ) || $amount <= 0 || ! is_string( $currency ) || '' === $currency ) {
+			return $summary;
+		}
+
+		return array(
+			'disputed_amount' => $amount,
+			'currency'        => strtoupper( $currency ),
 		);
 	}
 

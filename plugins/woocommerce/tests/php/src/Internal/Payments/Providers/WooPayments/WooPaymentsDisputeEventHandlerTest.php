@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
@@ -737,6 +738,56 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 			remove_filter( 'woocommerce_email_enabled_customer_completed_order', '__return_false' );
 		}
 		$this->assertSame( 'completed', wc_get_order( $order->get_id() )->get_status() );
+	}
+
+	/**
+	 * @testdox A lost partial dispute whose summary cannot be fetched refunds the disputed amount from the event, not the whole order.
+	 */
+	public function test_lost_partial_dispute_refunds_the_event_amount_when_the_summary_fetch_fails(): void {
+		$order = $this->create_disputable_order();
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_status( 'on-hold' );
+		$order->update_meta_data( '_charge_id', 'ch_partial_lost' );
+		$order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_partial_lost' ) );
+		$order->save();
+		$handler = new WooPaymentsDisputeEventHandler();
+		$handler->init(
+			wc_get_container()->get( WooPaymentsLegacyRuntime::class ),
+			new class() extends WooPaymentsApiClient {
+				/**
+				 * Fail as the platform does when it cannot answer.
+				 *
+				 * @param string $dispute_id Dispute ID.
+				 * @return array<string,mixed>
+				 * @throws WooPaymentsApiException For every dispute ID the platform would look up.
+				 */
+				public function get_dispute_summary( string $dispute_id ): array {
+					if ( '' !== $dispute_id ) {
+						throw new WooPaymentsApiException( 'Service unavailable.', 'wcpay_server_error', 503 );
+					}
+
+					return array();
+				}
+			},
+			wc_get_container()->get( WooPaymentsDisputeCacheService::class )
+		);
+
+		// A Stripe Dispute object, the charge.dispute.closed event's data.object: amount and currency are the fields the
+		// platform's summary copies into disputed_amount and currency (wpcom class-dispute-service.php:454-455).
+		$handler->process(
+			'charge.dispute.closed',
+			array(
+				'id'       => 'dp_partial_lost',
+				'charge'   => 'ch_partial_lost',
+				'status'   => 'lost',
+				'amount'   => 300,
+				'currency' => 'usd',
+			)
+		);
+
+		$refunds = wc_get_order( $order->get_id() )->get_refunds();
+		$this->assertCount( 1, $refunds );
+		$this->assertSame( '3.00', wc_format_decimal( $refunds[0]->get_amount(), 2 ) );
 	}
 
 	/**
