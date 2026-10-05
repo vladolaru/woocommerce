@@ -50,7 +50,7 @@ class SessionOrderReloader {
 	}
 
 	public function maybe_reload( ?Order $order, SessionHandler $session_handler ): void {
-		if ( $this->reloaded || ! $order || ! isset( WC()->session ) ) {
+		if ( $this->reloaded || ! $order || null === WC()->session ) {
 			return;
 		}
 

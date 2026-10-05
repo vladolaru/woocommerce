@@ -229,7 +229,7 @@ class SessionHandler {
 	 * Loads the data from the session.
 	 */
 	private function load_session(): void {
-		if ( isset( WC()->session ) ) {
+		if ( null !== WC()->session ) {
 			$data = WC()->session->get( self::SESSION_KEY );
 		} else {
 			$data = array();

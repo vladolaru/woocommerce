@@ -52,8 +52,8 @@ class MemoryWcSession extends WC_Session_Handler {
 	/**
 	 * @inerhitDoc
 	 */
-	public function init_session_cookie() {
-		$this->_customer_id = self::$customer_id;
+	public function init_session_cookie(): void {
+		$this->_customer_id = self::$customer_id; // @phpstan-ignore assign.propertyType (the customer ID is passed through as received, an int or a string; WC_Session documents a string)
 		$this->_data        = self::$data;
 	}
 
@@ -67,7 +67,7 @@ class MemoryWcSession extends WC_Session_Handler {
 	/**
 	 * @inerhitDoc
 	 */
-	public function forget_session() {
+	public function forget_session(): void {
 		self::$data = array();
 
 		parent::forget_session();
