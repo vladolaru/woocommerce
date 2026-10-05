@@ -2350,6 +2350,68 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			expect( window.location.href ).toBe( checkoutUrl );
 		} );
 
+		// A payment that needs a SetupIntent confirmed (a $0 subscription sign-up): the gateway answers
+		// `#wcpay-confirm-si:<order>:<client secret>:<nonce>[:<confirmation token>]`
+		// (WooPaymentsIntentCodec::confirmation_redirect_for()). stripe.confirmSetup() and
+		// stripe.handleNextAction() resolve with `{ setupIntent }` (https://docs.stripe.com/js.md,
+		// "stripe.confirmSetup(options)", "stripe.handleNextAction(options)").
+		it.each( [
+			[
+				'with the confirmation token, through confirmSetup',
+				'#wcpay-confirm-si:77:seti_3ds_secret_abc:nonce-3ds:ctoken_si',
+				'confirmSetup',
+				{
+					clientSecret: 'seti_3ds_secret_abc',
+					confirmParams: { confirmation_token: 'ctoken_si' },
+					redirect: 'if_required',
+				},
+			],
+			[
+				'without a confirmation token, through handleNextAction',
+				'#wcpay-confirm-si:77:seti_3ds_secret_abc:nonce-3ds',
+				'handleNextAction',
+				{ clientSecret: 'seti_3ds_secret_abc' },
+			],
+		] )(
+			'confirms a setup intent %s and sends the shopper to the order',
+			async ( label, hash, stripeMethod, expectedArgs ) => {
+				apiFetch.mockReset();
+				apiFetch.mockResolvedValueOnce( {
+					...confirmationResponse,
+					payment_result: {
+						...confirmationResponse.payment_result,
+						payment_details: [
+							{ key: 'result', value: 'success' },
+							{ key: 'redirect', value: hash },
+						],
+					},
+				} );
+				stripe.confirmSetup = jest.fn().mockResolvedValue( {
+					setupIntent: { id: 'seti_3ds', status: 'succeeded' },
+				} );
+				stripe.handleNextAction = jest.fn().mockResolvedValue( {
+					setupIntent: { id: 'seti_3ds', status: 'succeeded' },
+				} );
+
+				await confirmGooglePay();
+
+				expect( stripe[ stripeMethod ] ).toHaveBeenCalledTimes( 1 );
+				expect( stripe[ stripeMethod ] ).toHaveBeenCalledWith(
+					expectedArgs
+				);
+				const otherMethod =
+					stripeMethod === 'confirmSetup'
+						? 'handleNextAction'
+						: 'confirmSetup';
+				expect( stripe[ otherMethod ] ).not.toHaveBeenCalled();
+				const body = getOrderStatusUpdateBody();
+				expect( body.get( 'order_id' ) ).toBe( '77' );
+				expect( body.get( '_ajax_nonce' ) ).toBe( 'nonce-3ds' );
+				expect( body.get( 'intent_id' ) ).toBe( 'seti_3ds' );
+				expect( window.location.href ).toBe( returnUrl );
+			}
+		);
+
 		it( 'treats a closed authentication sheet as a failed payment', async () => {
 			const setExpressPaymentError = jest.fn();
 			stripe.handleNextAction = jest.fn().mockResolvedValue( {
