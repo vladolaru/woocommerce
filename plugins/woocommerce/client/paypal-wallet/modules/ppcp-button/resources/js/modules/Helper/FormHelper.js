@@ -1,8 +1,8 @@
 /**
  * Common Form utility methods
  */
-export default class FormHelper {
-	static getPrefixedFields( formElement, prefix ) {
+const FormHelper = {
+	getPrefixedFields( formElement, prefix ) {
 		const formData = new FormData( formElement );
 		const fields = {};
 
@@ -13,9 +13,9 @@ export default class FormHelper {
 		}
 
 		return fields;
-	}
+	},
 
-	static getFilteredFields( formElement, exactFilters, prefixFilters ) {
+	getFilteredFields( formElement, exactFilters, prefixFilters ) {
 		const formData = new FormData( formElement );
 		const fields = {};
 		const counters = {};
@@ -48,5 +48,7 @@ export default class FormHelper {
 		}
 
 		return fields;
-	}
-}
+	},
+};
+
+export default FormHelper;

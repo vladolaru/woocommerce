@@ -6,6 +6,10 @@ import { CommonHooks } from '@ppcp-settings/data';
 import SettingsBlock from '@ppcp-settings/Components/ReusableComponents/SettingsBlock';
 import useNotices from '@ppcp-settings/hooks/useNotices';
 
+const sleep = ( ms ) => {
+	return new Promise( ( resolve ) => setTimeout( resolve, ms ) );
+};
+
 const SimulationBlock = () => {
 	const {
 		createSuccessNotice,
@@ -16,9 +20,6 @@ const SimulationBlock = () => {
 	const { startWebhookSimulation, checkWebhookSimulationState } =
 		CommonHooks.useWebhooks();
 	const [ simulating, setSimulating ] = useState( false );
-	const sleep = ( ms ) => {
-		return new Promise( ( resolve ) => setTimeout( resolve, ms ) );
-	};
 	const startSimulation = async ( maxRetries ) => {
 		const webhookInfoNoticeId = 'paypal-webhook-simulation-info-notice';
 		const triggerWebhookInfoNotice = () => {

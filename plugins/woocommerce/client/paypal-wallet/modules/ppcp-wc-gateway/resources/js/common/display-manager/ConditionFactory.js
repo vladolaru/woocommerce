@@ -2,8 +2,8 @@ import ElementCondition from './condition/ElementCondition';
 import BoolCondition from './condition/BoolCondition';
 import JsVariableCondition from './condition/JsVariableCondition';
 
-class ConditionFactory {
-	static make( conditionConfig, triggerUpdate ) {
+const ConditionFactory = {
+	make( conditionConfig, triggerUpdate ) {
 		switch ( conditionConfig.type ) {
 			case 'element':
 				return new ElementCondition( conditionConfig, triggerUpdate );
@@ -19,7 +19,7 @@ class ConditionFactory {
 		throw new Error(
 			'[ConditionFactory] Unknown condition: ' + conditionConfig.type
 		);
-	}
-}
+	},
+};
 
 export default ConditionFactory;

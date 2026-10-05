@@ -5,10 +5,11 @@ import { TabPanel } from '@wordpress/components';
 
 import { updateQueryString } from '@ppcp-settings/utils/navigation';
 
+const isValidTab = ( tabsList, checkTab ) => {
+	return tabsList.some( ( tab ) => tab.name === checkTab );
+};
+
 const TabBar = ( { tabs, activePanel, setActivePanel } ) => {
-	const isValidTab = ( tabsList, checkTab ) => {
-		return tabsList.some( ( tab ) => tab.name === checkTab );
-	};
 	const updateActivePanel = useCallback(
 		( tabName ) => {
 			if ( isValidTab( tabs, tabName ) ) {

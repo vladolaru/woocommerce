@@ -3,15 +3,15 @@
  */
 const CONTAINER_ID = 'ppcp-settings-container';
 
+// Lets the observer callback run: jsdom delivers mutation records in a microtask.
+const flushMutations = () =>
+	new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
 describe( 'settings app mount', () => {
 	let createRoot;
 	let roots;
 	let observers;
 	const NativeMutationObserver = global.MutationObserver;
-
-	// Lets the observer callback run: jsdom delivers mutation records in a microtask.
-	const flushMutations = () =>
-		new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
 
 	const addContainer = () => {
 		const node = document.createElement( 'div' );

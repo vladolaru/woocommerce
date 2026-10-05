@@ -50,6 +50,9 @@ const FIELD_MAP = {
 	'#billing_phone': [ 'phone' ],
 };
 
+// Name of the window property that holds the details set during this page view.
+const PAYER_SESSION_KEY = '_PpcpPayerSessionDetails';
+
 function normalizePayerDetails( details ) {
 	return {
 		email_address: details.email_address,
@@ -69,23 +72,49 @@ function normalizePayerDetails( details ) {
 	};
 }
 
-function mergePayerDetails( firstPayer, secondPayer ) {
-	const mergeNestedObjects = ( target, source ) => {
-		for ( const [ key, value ] of Object.entries( source ) ) {
-			if ( value !== null && undefined !== value ) {
-				if ( typeof value === 'object' ) {
-					target[ key ] = mergeNestedObjects(
-						target[ key ] || {},
-						value
-					);
-				} else {
-					target[ key ] = value;
-				}
+const mergeNestedObjects = ( target, source ) => {
+	for ( const [ key, value ] of Object.entries( source ) ) {
+		if ( value !== null && undefined !== value ) {
+			if ( typeof value === 'object' ) {
+				target[ key ] = mergeNestedObjects(
+					target[ key ] || {},
+					value
+				);
+			} else {
+				target[ key ] = value;
 			}
 		}
-		return target;
-	};
+	}
+	return target;
+};
 
+const getElementValue = ( selector ) =>
+	document.querySelector( selector )?.value;
+
+const setNestedValue = ( obj, path, value ) => {
+	let current = obj;
+	for ( let i = 0; i < path.length - 1; i++ ) {
+		current = current[ path[ i ] ] = current[ path[ i ] ] || {};
+	}
+	current[ path[ path.length - 1 ] ] = value;
+};
+
+const setValue = ( path, field, value ) => {
+	if ( value === null || undefined === value || ! field ) {
+		return;
+	}
+
+	if ( path[ 0 ] === 'phone' && typeof value === 'object' ) {
+		value = value.phone_number?.national_number;
+	}
+
+	field.value = value;
+};
+
+const getNestedValue = ( obj, path ) =>
+	path.reduce( ( current, key ) => current?.[ key ], obj );
+
+function mergePayerDetails( firstPayer, secondPayer ) {
 	return mergeNestedObjects(
 		normalizePayerDetails( firstPayer ),
 		normalizePayerDetails( secondPayer )
@@ -93,17 +122,6 @@ function mergePayerDetails( firstPayer, secondPayer ) {
 }
 
 function getCheckoutBillingDetails() {
-	const getElementValue = ( selector ) =>
-		document.querySelector( selector )?.value;
-
-	const setNestedValue = ( obj, path, value ) => {
-		let current = obj;
-		for ( let i = 0; i < path.length - 1; i++ ) {
-			current = current[ path[ i ] ] = current[ path[ i ] ] || {};
-		}
-		current[ path[ path.length - 1 ] ] = value;
-	};
-
 	const data = {};
 
 	Object.entries( FIELD_MAP ).forEach( ( [ selector, path ] ) => {
@@ -124,21 +142,6 @@ function getCheckoutBillingDetails() {
 }
 
 function setCheckoutBillingDetails( payer ) {
-	const setValue = ( path, field, value ) => {
-		if ( value === null || undefined === value || ! field ) {
-			return;
-		}
-
-		if ( path[ 0 ] === 'phone' && typeof value === 'object' ) {
-			value = value.phone_number?.national_number;
-		}
-
-		field.value = value;
-	};
-
-	const getNestedValue = ( obj, path ) =>
-		path.reduce( ( current, key ) => current?.[ key ], obj );
-
 	Object.entries( FIELD_MAP ).forEach( ( [ selector, path ] ) => {
 		const value = getNestedValue( payer, path );
 		const element = document.querySelector( selector );
@@ -154,7 +157,7 @@ export function getWooCommerceCustomerDetails() {
 
 export function getSessionBillingDetails() {
 	// Populated by JS via `setSessionBillingDetails()`
-	return window._PpcpPayerSessionDetails;
+	return window[ PAYER_SESSION_KEY ];
 }
 
 /**
@@ -168,7 +171,7 @@ export function setSessionBillingDetails( details ) {
 		return;
 	}
 
-	window._PpcpPayerSessionDetails = normalizePayerDetails( details );
+	window[ PAYER_SESSION_KEY ] = normalizePayerDetails( details );
 }
 
 export function payerData() {

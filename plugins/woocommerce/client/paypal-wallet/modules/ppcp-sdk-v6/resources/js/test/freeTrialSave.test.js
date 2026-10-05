@@ -70,18 +70,18 @@ describe( 'exchangeSetupToken', () => {
 	} );
 } );
 
-describe( 'createFreeTrialPayPalSession', () => {
-	function fakeSdk() {
-		const capture = {};
-		return {
-			capture,
-			createPayPalSavePaymentSession: ( sessionConfig ) => {
-				capture.config = sessionConfig;
-				return { session: true };
-			},
-		};
-	}
+function fakeSdk() {
+	const capture = {};
+	return {
+		capture,
+		createPayPalSavePaymentSession: ( sessionConfig ) => {
+			capture.config = sessionConfig;
+			return { session: true };
+		},
+	};
+}
 
+describe( 'createFreeTrialPayPalSession', () => {
 	test( 'builds the save session from the sdk instance with onApprove, onCancel and onError handlers', () => {
 		const sdk = fakeSdk();
 

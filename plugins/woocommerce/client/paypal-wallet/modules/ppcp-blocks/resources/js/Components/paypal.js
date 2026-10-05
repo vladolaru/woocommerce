@@ -407,12 +407,12 @@ export const PayPalComponent = ( {
 		{ React, ReactDOM }
 	);
 
-	const getOnShippingOptionsChange = ( fundingSource ) => {
+	const getOnShippingOptionsChange = ( source ) => {
 		if ( config.scriptData.server_side_shipping_callback.enabled ) {
 			return null;
 		}
 
-		if ( fundingSource === 'venmo' ) {
+		if ( source === 'venmo' ) {
 			return null;
 		}
 
@@ -423,12 +423,12 @@ export const PayPalComponent = ( {
 		};
 	};
 
-	const getOnShippingAddressChange = ( fundingSource ) => {
+	const getOnShippingAddressChange = ( source ) => {
 		if ( config.scriptData.server_side_shipping_callback.enabled ) {
 			return null;
 		}
 
-		if ( fundingSource === 'venmo' ) {
+		if ( source === 'venmo' ) {
 			return null;
 		}
 

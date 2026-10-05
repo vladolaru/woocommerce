@@ -281,14 +281,14 @@ describe( 'renderMessages()', () => {
 	} );
 } );
 
-describe( 'buildMessageElement()', () => {
-	const baseStyle = () => ( {
-		logoType: 'WORDMARK',
-		logoPosition: 'LEFT',
-		textColor: 'BLACK',
-		fontSize: '',
-	} );
+const baseStyle = () => ( {
+	logoType: 'WORDMARK',
+	logoPosition: 'LEFT',
+	textColor: 'BLACK',
+	fontSize: '',
+} );
 
+describe( 'buildMessageElement()', () => {
 	test( 'sets auto-bootstrap and every attribute from the options', () => {
 		const element = buildMessageElement( document, {
 			amount: '100.00',

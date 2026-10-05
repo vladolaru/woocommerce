@@ -21,15 +21,20 @@ function baseConfig( overrides = {} ) {
 	};
 }
 
+// The window properties the loader keeps its page-level caches in.
+const INSTANCE_KEY = '__ppcpV6InstancePromise';
+const SCRIPT_PROMISES_KEY = '__ppcpV6ScriptPromises';
+const METADATA_ID_KEY = '__ppcpV6ClientMetadataId';
+
 beforeEach( () => {
 	jest.resetModules();
 	mockPostJson.mockReset();
 	mockLoadScript.mockReset();
 	mockLoadScript.mockResolvedValue( undefined );
 	mockPostJson.mockResolvedValue( { client_token: 'TOKEN' } );
-	delete window.__ppcpV6InstancePromise;
-	delete window.__ppcpV6ScriptPromises;
-	delete window.__ppcpV6ClientMetadataId;
+	delete window[ INSTANCE_KEY ];
+	delete window[ SCRIPT_PROMISES_KEY ];
+	delete window[ METADATA_ID_KEY ];
 	( { loadSdkV6 } = require( './sdkLoader' ) );
 	window.paypal = { createInstance: jest.fn().mockResolvedValue( {} ) };
 } );
@@ -116,7 +121,7 @@ describe( 'loadSdkV6', () => {
 
 		// Resetting only the instance cache forces a second createInstance call
 		// while leaving the page-level metadata id cache intact.
-		delete window.__ppcpV6InstancePromise;
+		delete window[ INSTANCE_KEY ];
 		window.paypal.createInstance.mockClear();
 
 		await loadSdkV6( baseConfig(), 'checkout' );

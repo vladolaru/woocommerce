@@ -1,5 +1,5 @@
-class ResumeFlowHelper {
-	static PAYPAL_PARAMS = [
+const ResumeFlowHelper = {
+	PAYPAL_PARAMS: [
 		'onApprove',
 		'token',
 		'PayerID',
@@ -10,9 +10,9 @@ class ResumeFlowHelper {
 		'switch_initiated_time',
 		'onCancel',
 		'onError',
-	];
+	],
 
-	static cleanHashParams() {
+	cleanHashParams() {
 		if ( ! window.location.hash ) {
 			return;
 		}
@@ -39,9 +39,9 @@ class ResumeFlowHelper {
 				window.location.pathname + window.location.search
 			);
 		}
-	}
+	},
 
-	static isResumeFlow() {
+	isResumeFlow() {
 		if ( ! window.location.hash ) {
 			return false;
 		}
@@ -53,14 +53,14 @@ class ResumeFlowHelper {
 			const paramName = param.split( '=' )[ 0 ];
 			return paramName === 'switch_initiated_time';
 		} );
-	}
+	},
 
-	static reloadButtonsIfRequired( buttonWrapper ) {
+	reloadButtonsIfRequired( buttonWrapper ) {
 		if ( this.isResumeFlow() ) {
 			this.cleanHashParams();
 			jQuery( buttonWrapper ).trigger( 'ppcp-reload-buttons' );
 		}
-	}
-}
+	},
+};
 
 export default ResumeFlowHelper;

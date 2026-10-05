@@ -8,6 +8,8 @@ import merge from 'deepmerge';
 import ResumeFlowHelper from '@ppcp-button/Helper/ResumeFlowHelper';
 import { debounce } from '@ppcp-blocks/Helper/debounce';
 
+const digitsOf = ( text ) => parseInt( text.replace( /\D/g, '' ), 10 );
+
 class SingleProductBootstrap {
 	constructor( gateway, renderer, errorHandler ) {
 		this.gateway = gateway;
@@ -127,7 +129,7 @@ class SingleProductBootstrap {
 	}
 
 	priceAmount( returnOnUndefined = 0 ) {
-		const priceText = [
+		const priceCandidates = [
 			() =>
 				document.querySelector(
 					'form.cart ins .woocommerce-Price-amount'
@@ -160,17 +162,18 @@ class SingleProductBootstrap {
 			},
 		]
 			.map( ( f ) => f() )
-			.filter( ( val ) => val !== null && val !== undefined )
-			.sort( ( a, b ) => {
-				if (
-					parseInt( a.replace( /\D/g, '' ), 10 ) <
-					parseInt( b.replace( /\D/g, '' ), 10 )
-				) {
-					return 1;
-				}
-				return -1;
-			} )
-			.find( ( val ) => val );
+			.filter( ( val ) => val !== null && val !== undefined );
+
+		// The highest price wins; the last one found wins a tie.
+		const priceText = priceCandidates
+			.filter( ( val ) => val )
+			.reduce(
+				( best, val ) =>
+					best === undefined || digitsOf( val ) >= digitsOf( best )
+						? val
+						: best,
+				undefined
+			);
 
 		if ( typeof priceText === 'undefined' ) {
 			return returnOnUndefined;

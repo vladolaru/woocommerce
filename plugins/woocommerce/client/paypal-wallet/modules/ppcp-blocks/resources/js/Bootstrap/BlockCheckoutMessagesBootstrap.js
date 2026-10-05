@@ -10,12 +10,12 @@ class BlockCheckoutMessagesBootstrap {
 	init() {
 		this.messagesBootstrap.init();
 
-		this._updateCartTotal();
+		this.#updateCartTotal();
 
 		if ( wp.data?.subscribe ) {
 			wp.data.subscribe(
 				debounce( () => {
-					this._updateCartTotal();
+					this.#updateCartTotal();
 				}, 300 )
 			);
 		}
@@ -24,7 +24,7 @@ class BlockCheckoutMessagesBootstrap {
 	/**
 	 * @private
 	 */
-	_getCartTotal() {
+	#getCartTotal() {
 		if ( ! wp.data.select ) {
 			return null;
 		}
@@ -44,8 +44,8 @@ class BlockCheckoutMessagesBootstrap {
 	/**
 	 * @private
 	 */
-	_updateCartTotal() {
-		const currentTotal = this._getCartTotal();
+	#updateCartTotal() {
+		const currentTotal = this.#getCartTotal();
 		if ( currentTotal === null ) {
 			return;
 		}

@@ -9,11 +9,12 @@ const CONTAINER_SELECTOR = '#ppcp-vault-component';
 let vaultSdkPromise = null;
 
 class VaultRenderer {
+	#renderGen = 0;
+
 	constructor( config ) {
 		this.config = config;
 		this.vaultInstance = null;
 		this.rendered = false;
-		this._renderGen = 0;
 	}
 
 	async loadSdk() {
@@ -49,11 +50,11 @@ class VaultRenderer {
 		}
 
 		// Claim this generation so concurrent calls and stale post-reset calls abort.
-		const gen = ++this._renderGen;
+		const gen = ++this.#renderGen;
 
 		await this.loadSdk();
 
-		if ( this._renderGen !== gen || this.rendered ) {
+		if ( this.#renderGen !== gen || this.rendered ) {
 			return;
 		}
 
@@ -117,14 +118,14 @@ class VaultRenderer {
 		this.vaultInstance?.close?.();
 		this.vaultInstance = null;
 		this.rendered = false;
-		this._renderGen++;
+		this.#renderGen++;
 	}
 
 	reset() {
 		this.vaultInstance?.close?.();
 		this.vaultInstance = null;
 		this.rendered = false;
-		this._renderGen++;
+		this.#renderGen++;
 		const container = document.querySelector( CONTAINER_SELECTOR );
 		if ( container ) {
 			container.innerHTML = '';

@@ -1,4 +1,4 @@
-describe( 'fraudnet.js _injectConfig', () => {
+describe( 'fraudnet.js injectConfig', () => {
 	beforeAll( () => {
 		global.FraudNetConfig = {
 			f: 'fraudnet-session-id',

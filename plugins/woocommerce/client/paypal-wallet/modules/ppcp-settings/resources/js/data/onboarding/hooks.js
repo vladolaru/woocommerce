@@ -13,6 +13,10 @@ import { createHooksForStore } from '@ppcp-settings/data/utils';
 import { PRODUCT_TYPES } from './configuration';
 import { STORE_NAME } from './constants';
 
+const saveTransient = ( setter, value, source ) => {
+	setter( value, source );
+};
+
 const useHooks = () => {
 	const { useTransient, usePersistent } = createHooksForStore( STORE_NAME );
 	const dispatchActions = useDispatch( STORE_NAME );
@@ -43,10 +47,6 @@ const useHooks = () => {
 	const savePersistent = async ( setter, value, source ) => {
 		setter( value, source );
 		await dispatchActions.persist();
-	};
-
-	const saveTransient = ( setter, value, source ) => {
-		setter( value, source );
 	};
 
 	return {

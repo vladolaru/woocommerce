@@ -32,6 +32,13 @@ const buttonsSpinner = new Spinner(
 	document.querySelector( '.ppc-button-wrapper' )
 );
 
+const hasMessages = () => {
+	return (
+		PayPalCommerceGateway.messages.is_hidden === false &&
+		document.querySelector( PayPalCommerceGateway.messages.wrapper )
+	);
+};
+
 const bootstrap = () => {
 	const checkoutFormSelector = 'form.woocommerce-checkout';
 
@@ -49,7 +56,7 @@ const bootstrap = () => {
 		PayPalCommerceGateway.ajax.save_checkout_form.nonce
 	);
 
-	new MultistepCheckoutHelper( checkoutFormSelector );
+	void new MultistepCheckoutHelper( checkoutFormSelector );
 
 	jQuery( 'form.woocommerce-checkout input' ).on( 'keydown', ( e ) => {
 		if (
@@ -59,13 +66,6 @@ const bootstrap = () => {
 			e.preventDefault();
 		}
 	} );
-
-	const hasMessages = () => {
-		return (
-			PayPalCommerceGateway.messages.is_hidden === false &&
-			document.querySelector( PayPalCommerceGateway.messages.wrapper )
-		);
-	};
 
 	const doBasicCheckoutValidation = () => {
 		if (

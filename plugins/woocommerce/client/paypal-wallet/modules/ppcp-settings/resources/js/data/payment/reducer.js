@@ -29,6 +29,10 @@ const defaultPersistent = Object.freeze( {
 	__meta: false,
 } );
 
+// Keys the dependency logic adds to a payment method's data. They are saved with the method, so the names stay as they are.
+const DISABLED_BY_DEPENDENCY = '_disabledByDependency';
+const ORIGINAL_STATE = '_originalState';
+
 // Reducer logic.
 
 const [ changeTransient, changePersistent ] = createReducerSetters(
@@ -85,8 +89,8 @@ const reducer = createReducer( defaultTransient, defaultPersistent, {
 			[ methodId ]: {
 				...method,
 				enabled: false,
-				_disabledByDependency: true,
-				_originalState: method.enabled,
+				[ DISABLED_BY_DEPENDENCY ]: true,
+				[ ORIGINAL_STATE ]: method.enabled,
 			},
 		};
 
@@ -100,7 +104,7 @@ const reducer = createReducer( defaultTransient, defaultPersistent, {
 		const { methodId } = payload;
 		const method = state.data[ methodId ];
 
-		if ( ! method || ! method._disabledByDependency ) {
+		if ( ! method || ! method[ DISABLED_BY_DEPENDENCY ] ) {
 			return state;
 		}
 
@@ -109,9 +113,9 @@ const reducer = createReducer( defaultTransient, defaultPersistent, {
 			...state.data,
 			[ methodId ]: {
 				...method,
-				enabled: method._originalState === true,
-				_disabledByDependency: false,
-				_originalState: undefined,
+				enabled: method[ ORIGINAL_STATE ] === true,
+				[ DISABLED_BY_DEPENDENCY ]: false,
+				[ ORIGINAL_STATE ]: undefined,
 			},
 		};
 

@@ -14,32 +14,32 @@ class ErrorHandler {
 	}
 
 	appendPreparedErrorMessageElement( errorMessageElement ) {
-		this._getMessageContainer().replaceWith( errorMessageElement );
+		this.#getMessageContainer().replaceWith( errorMessageElement );
 	}
 
 	/**
 	 * @param {string} text
 	 */
 	message( text ) {
-		this._addMessage( text );
+		this.#addMessage( text );
 
-		this._scrollToMessages();
+		this.#scrollToMessages();
 	}
 
 	/**
 	 * @param {Array} texts
 	 */
 	messages( texts ) {
-		texts.forEach( ( t ) => this._addMessage( t ) );
+		texts.forEach( ( t ) => this.#addMessage( t ) );
 
-		this._scrollToMessages();
+		this.#scrollToMessages();
 	}
 
 	/**
 	 * @return {string} The HTML of the message container.
 	 */
 	currentHtml() {
-		const messageContainer = this._getMessageContainer();
+		const messageContainer = this.#getMessageContainer();
 		return messageContainer.outerHTML;
 	}
 
@@ -47,28 +47,28 @@ class ErrorHandler {
 	 * @private
 	 * @param {string} text
 	 */
-	_addMessage( text ) {
+	#addMessage( text ) {
 		if ( text.length === 0 ) {
 			throw new Error( 'A new message text must be a non-empty string.' );
 		}
 
-		const messageContainer = this._getMessageContainer();
+		const messageContainer = this.#getMessageContainer();
 
-		const messageNode = this._prepareMessageElement( text );
+		const messageNode = this.#prepareMessageElement( text );
 		messageContainer.appendChild( messageNode );
 	}
 
 	/**
 	 * @private
 	 */
-	_scrollToMessages() {
+	#scrollToMessages() {
 		jQuery.scroll_to_notices( jQuery( '.woocommerce-error' ) );
 	}
 
 	/**
 	 * @private
 	 */
-	_getMessageContainer() {
+	#getMessageContainer() {
 		let messageContainer = document.querySelector( 'ul.woocommerce-error' );
 		if ( messageContainer === null ) {
 			messageContainer = document.createElement( 'ul' );
@@ -83,7 +83,7 @@ class ErrorHandler {
 	 * @param {string} message
 	 * @private
 	 */
-	_prepareMessageElement( message ) {
+	#prepareMessageElement( message ) {
 		const li = document.createElement( 'li' );
 		li.innerHTML = message;
 

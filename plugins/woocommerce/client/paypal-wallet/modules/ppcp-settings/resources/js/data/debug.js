@@ -10,6 +10,11 @@ import {
 	TrackingStoreName,
 } from './index';
 
+const describe = ( fnName, fnInfo ) => {
+	// eslint-disable-next-line no-console
+	console.log( `\n%c${ fnName }:`, 'font-weight:bold', fnInfo, '\n\n' );
+};
+
 export const addDebugTools = ( context, modules ) => {
 	if ( ! context ) {
 		return;
@@ -20,11 +25,6 @@ export const addDebugTools = ( context, modules ) => {
      // In version 3.0.0 we want to have the debug tools available on every installation
      if ( ! context.debug ) { return }
      */
-
-	const describe = ( fnName, fnInfo ) => {
-		// eslint-disable-next-line no-console
-		console.log( `\n%c${ fnName }:`, 'font-weight:bold', fnInfo, '\n\n' );
-	};
 
 	const debugApi = ( window.ppcpDebugger = window.ppcpDebugger || {} );
 

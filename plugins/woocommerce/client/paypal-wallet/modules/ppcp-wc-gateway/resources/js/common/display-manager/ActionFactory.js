@@ -1,8 +1,8 @@
 import VisibilityAction from './action/VisibilityAction';
 import AttributeAction from './action/AttributeAction';
 
-class ActionFactory {
-	static make( actionConfig ) {
+const ActionFactory = {
+	make( actionConfig ) {
 		switch ( actionConfig.type ) {
 			case 'visibility':
 				return new VisibilityAction( actionConfig );
@@ -13,7 +13,7 @@ class ActionFactory {
 		throw new Error(
 			'[ActionFactory] Unknown action: ' + actionConfig.type
 		);
-	}
-}
+	},
+};
 
 export default ActionFactory;

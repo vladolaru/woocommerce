@@ -7,13 +7,11 @@ jest.mock( '@ppcp-sdk-v6/messages/editorPreview', () => ( {
 
 import { useV6MessagePreview } from './use-v6-message-preview';
 
-class MockResizeObserver {
-	constructor( callback ) {
-		this.callback = callback;
-		this.observe = jest.fn();
-		this.disconnect = jest.fn();
-		MockResizeObserver.instances.push( this );
-	}
+function MockResizeObserver( callback ) {
+	this.callback = callback;
+	this.observe = jest.fn();
+	this.disconnect = jest.fn();
+	MockResizeObserver.instances.push( this );
 }
 MockResizeObserver.instances = [];
 

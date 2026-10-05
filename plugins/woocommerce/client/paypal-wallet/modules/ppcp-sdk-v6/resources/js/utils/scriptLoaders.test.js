@@ -16,7 +16,9 @@ describe( 'loadScript', () => {
 			document.head.querySelectorAll( `script[src="${ url }"]` )
 		).toHaveLength( 1 );
 
-		document.head.querySelector( `script[src="${ url }"]` ).onload();
+		document.head
+			.querySelector( `script[src="${ url }"]` )
+			.dispatchEvent( new Event( 'load' ) );
 
 		return expect(
 			Promise.all( [ first, second ] )
@@ -27,7 +29,9 @@ describe( 'loadScript', () => {
 		const url = 'https://example.test/failing.js';
 
 		const pending = loadScript( url );
-		document.head.querySelector( `script[src="${ url }"]` ).onerror();
+		document.head
+			.querySelector( `script[src="${ url }"]` )
+			.dispatchEvent( new Event( 'error' ) );
 
 		await expect( pending ).rejects.toThrow(
 			`Failed to load script: ${ url }`
@@ -41,7 +45,9 @@ describe( 'loadScript', () => {
 		const url = 'https://example.test/retry.js';
 
 		const firstAttempt = loadScript( url );
-		document.head.querySelector( `script[src="${ url }"]` ).onerror();
+		document.head
+			.querySelector( `script[src="${ url }"]` )
+			.dispatchEvent( new Event( 'error' ) );
 		await expect( firstAttempt ).rejects.toThrow();
 
 		const retry = loadScript( url );
@@ -49,24 +55,25 @@ describe( 'loadScript', () => {
 		const tags = document.head.querySelectorAll( `script[src="${ url }"]` );
 		expect( tags ).toHaveLength( 1 );
 
-		tags[ 0 ].onload();
-		await expect( retry ).resolves.toBeUndefined();
+		tags[ 0 ].dispatchEvent( new Event( 'load' ) );
+		await expect( retry ).resolves.toBeInstanceOf( Event );
 	} );
 } );
 
-describe( 'loadScript with a targetWindow', () => {
-	function fakeWindow() {
-		return {
-			document: {
-				head: { appendChild: jest.fn() },
-				createElement: jest.fn( () => ( {
-					remove: jest.fn(),
-					setAttribute: jest.fn(),
-				} ) ),
-			},
-		};
-	}
+function fakeWindow() {
+	return {
+		document: {
+			head: { appendChild: jest.fn() },
+			createElement: jest.fn( () => ( {
+				addEventListener: jest.fn(),
+				remove: jest.fn(),
+				setAttribute: jest.fn(),
+			} ) ),
+		},
+	};
+}
 
+describe( 'loadScript with a targetWindow', () => {
 	test( 'appends the script tag into the given window instead of the global one', () => {
 		const otherWindow = fakeWindow();
 		const url = 'https://example.test/other-window.js';

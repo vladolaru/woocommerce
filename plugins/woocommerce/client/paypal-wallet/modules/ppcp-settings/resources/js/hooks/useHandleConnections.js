@@ -148,9 +148,9 @@ export const useHandleOnboardingButton = ( isSandbox ) => {
 		script.src = isSandbox
 			? PAYPAL_PARTNER_SDK_URL.sandbox
 			: PAYPAL_PARTNER_SDK_URL.production;
-		script.onload = () => {
+		script.addEventListener( 'load', () => {
 			setScriptLoaded( true );
-		};
+		} );
 		document.body.appendChild( script );
 
 		return () => {

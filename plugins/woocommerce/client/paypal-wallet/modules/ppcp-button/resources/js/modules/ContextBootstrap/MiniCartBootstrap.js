@@ -46,7 +46,7 @@ class MiniCartBootstrap {
 		if ( typeof wp !== 'undefined' && wp.data?.subscribe ) {
 			wp.data.subscribe(
 				debounce( () => {
-					this._handleStoreCartChange();
+					this.#handleStoreCartChange();
 				}, 300 ),
 				'wc/store/cart'
 			);
@@ -64,7 +64,7 @@ class MiniCartBootstrap {
 	/**
 	 * @private
 	 */
-	_handleStoreCartChange() {
+	#handleStoreCartChange() {
 		if ( typeof wp === 'undefined' || ! wp.data?.select ) {
 			return;
 		}

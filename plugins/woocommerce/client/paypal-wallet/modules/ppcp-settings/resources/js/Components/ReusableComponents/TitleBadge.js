@@ -1,5 +1,5 @@
 const TitleBadge = ( { text, type } ) => {
-	const className = 'ppcp-r-title-badge ' + `ppcp-r-title-badge--${ type }`;
+	const className = `ppcp-r-title-badge ppcp-r-title-badge--${ type }`;
 	return (
 		<span
 			className={ className }

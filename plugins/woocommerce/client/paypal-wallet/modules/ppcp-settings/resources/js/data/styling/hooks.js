@@ -106,91 +106,100 @@ export const useStylingLocation = () => {
 	return { location, setLocation };
 };
 
+const sanitizeEnabled = ( value ) => ( undefined === value ? true : !! value );
+
 export const useLocationProps = ( location ) => {
 	const { getLocationProp, setLocationProp } = useHooks();
 	const details = STYLING_LOCATIONS[ location ] ?? {};
 
-	const sanitize = ( value ) => ( undefined === value ? true : !! value );
-
 	return {
 		choices: Object.values( STYLING_LOCATIONS ),
 		details,
-		isActive: sanitize( getLocationProp( location, 'enabled' ) ),
+		isActive: sanitizeEnabled( getLocationProp( location, 'enabled' ) ),
 		setActive: ( state ) =>
-			setLocationProp( location, 'enabled', sanitize( state ) ),
+			setLocationProp( location, 'enabled', sanitizeEnabled( state ) ),
 	};
+};
+
+const sanitizeMethods = ( value ) => {
+	if ( Array.isArray( value ) ) {
+		return value;
+	}
+	return value ? [ value ] : [];
 };
 
 export const usePaymentMethodProps = ( location ) => {
 	const { getLocationProp, setLocationProp } = useHooks();
 
-	const sanitize = ( value ) => {
-		if ( Array.isArray( value ) ) {
-			return value;
-		}
-		return value ? [ value ] : [];
-	};
-
 	return {
 		choices: Object.values( STYLING_PAYMENT_METHODS ),
-		paymentMethods: sanitize( getLocationProp( location, 'methods' ) ),
+		paymentMethods: sanitizeMethods(
+			getLocationProp( location, 'methods' )
+		),
 		setPaymentMethods: ( methods ) =>
-			setLocationProp( location, 'methods', sanitize( methods ) ),
+			setLocationProp( location, 'methods', sanitizeMethods( methods ) ),
 	};
+};
+
+const sanitizeColor = ( value ) => {
+	const isValidColor = Object.values( STYLING_COLORS ).some(
+		( color ) => color.value === value
+	);
+	return isValidColor ? value : STYLING_COLORS.gold.value;
 };
 
 export const useColorProps = ( location ) => {
 	const { getLocationProp, setLocationProp } = useHooks();
 
-	const sanitize = ( value ) => {
-		const isValidColor = Object.values( STYLING_COLORS ).some(
-			( color ) => color.value === value
-		);
-		return isValidColor ? value : STYLING_COLORS.gold.value;
-	};
-
 	return {
 		choices: Object.values( STYLING_COLORS ),
-		color: sanitize( getLocationProp( location, 'color' ) ),
+		color: sanitizeColor( getLocationProp( location, 'color' ) ),
 		setColor: ( color ) =>
-			setLocationProp( location, 'color', sanitize( color ) ),
+			setLocationProp( location, 'color', sanitizeColor( color ) ),
 	};
+};
+
+const sanitizeShape = ( value ) => {
+	const isValidColor = Object.values( STYLING_SHAPES ).some(
+		( color ) => color.value === value
+	);
+	return isValidColor ? value : STYLING_SHAPES.rect.value;
 };
 
 export const useShapeProps = ( location ) => {
 	const { getLocationProp, setLocationProp } = useHooks();
 
-	const sanitize = ( value ) => {
-		const isValidColor = Object.values( STYLING_SHAPES ).some(
-			( color ) => color.value === value
-		);
-		return isValidColor ? value : STYLING_SHAPES.rect.value;
-	};
-
 	return {
 		choices: Object.values( STYLING_SHAPES ),
-		shape: sanitize( getLocationProp( location, 'shape' ) ),
+		shape: sanitizeShape( getLocationProp( location, 'shape' ) ),
 		setShape: ( shape ) =>
-			setLocationProp( location, 'shape', sanitize( shape ) ),
+			setLocationProp( location, 'shape', sanitizeShape( shape ) ),
 	};
+};
+
+const sanitizeLabel = ( value ) => {
+	const isValidColor = Object.values( STYLING_LABELS ).some(
+		( color ) => color.value === value
+	);
+	return isValidColor ? value : STYLING_LABELS.paypal.value;
 };
 
 export const useLabelProps = ( location ) => {
 	const { getLocationProp, setLocationProp } = useHooks();
 
-	const sanitize = ( value ) => {
-		const isValidColor = Object.values( STYLING_LABELS ).some(
-			( color ) => color.value === value
-		);
-		return isValidColor ? value : STYLING_LABELS.paypal.value;
-	};
-
 	return {
 		choices: Object.values( STYLING_LABELS ),
-		label: sanitize( getLocationProp( location, 'label' ) ),
+		label: sanitizeLabel( getLocationProp( location, 'label' ) ),
 		setLabel: ( label ) =>
-			setLocationProp( location, 'label', sanitize( label ) ),
+			setLocationProp( location, 'label', sanitizeLabel( label ) ),
 	};
+};
+
+const sanitizeLayout = ( value ) => {
+	const isValidColor = Object.values( STYLING_LAYOUTS ).some(
+		( color ) => color.value === value
+	);
+	return isValidColor ? value : STYLING_LAYOUTS.vertical.value;
 };
 
 export const useLayoutProps = ( location ) => {
@@ -198,21 +207,16 @@ export const useLayoutProps = ( location ) => {
 	const { details } = useLocationProps( location );
 	const isAvailable = details.props.layout !== false;
 
-	const sanitize = ( value ) => {
-		const isValidColor = Object.values( STYLING_LAYOUTS ).some(
-			( color ) => color.value === value
-		);
-		return isValidColor ? value : STYLING_LAYOUTS.vertical.value;
-	};
-
 	return {
 		choices: Object.values( STYLING_LAYOUTS ),
 		isAvailable,
-		layout: sanitize( getLocationProp( location, 'layout' ) ),
+		layout: sanitizeLayout( getLocationProp( location, 'layout' ) ),
 		setLayout: ( layout ) =>
-			setLocationProp( location, 'layout', sanitize( layout ) ),
+			setLocationProp( location, 'layout', sanitizeLayout( layout ) ),
 	};
 };
+
+const sanitizeTagline = ( value ) => !! value;
 
 export const useTaglineProps = ( location ) => {
 	const { getLocationProp, setLocationProp } = useHooks();
@@ -224,14 +228,12 @@ export const useTaglineProps = ( location ) => {
 		STYLING_LAYOUTS.horizontal.value ===
 			getLocationProp( location, 'layout' );
 
-	const sanitize = ( value ) => !! value;
-
 	return {
 		isAvailable,
 		tagline: isAvailable
-			? sanitize( getLocationProp( location, 'tagline' ) )
+			? sanitizeTagline( getLocationProp( location, 'tagline' ) )
 			: false,
 		setTagline: ( tagline ) =>
-			setLocationProp( location, 'tagline', sanitize( tagline ) ),
+			setLocationProp( location, 'tagline', sanitizeTagline( tagline ) ),
 	};
 };

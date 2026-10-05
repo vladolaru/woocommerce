@@ -32,10 +32,10 @@ const onApprove = ( context, errorHandler ) => {
 			.then( ( res ) => {
 				return res.json();
 			} )
-			.then( ( data ) => {
-				if ( ! data.success ) {
-					if ( data.data.code === 100 ) {
-						errorHandler.message( data.data.message );
+			.then( ( result ) => {
+				if ( ! result.success ) {
+					if ( result.data.code === 100 ) {
+						errorHandler.message( result.data.message );
 					} else {
 						errorHandler.genericError();
 					}
@@ -45,7 +45,7 @@ const onApprove = ( context, errorHandler ) => {
 					) {
 						return actions.restart();
 					}
-					throw new Error( data.data.message );
+					throw new Error( result.data.message );
 				}
 
 				// in some cases a different method may get selected,

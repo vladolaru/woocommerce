@@ -6,11 +6,149 @@ import widgetBuilder from '@ppcp-button/Renderer/WidgetBuilder';
 import { PaymentContext } from '@ppcp-button/Helper/CheckoutMethodState';
 import { debounce } from './helper/debounce';
 
-document.addEventListener( 'DOMContentLoaded', () => {
-	function disableAll( nodeList ) {
-		nodeList.forEach( ( node ) => node.setAttribute( 'disabled', 'true' ) );
-	}
+function disableAll( nodeList ) {
+	nodeList.forEach( ( node ) => node.setAttribute( 'disabled', 'true' ) );
+}
 
+function loadPaypalScript( settings, onLoaded = () => {} ) {
+	loadScript( JSON.parse( JSON.stringify( settings ) ) ) // clone the object to prevent modification
+		.then( ( paypal ) => {
+			widgetBuilder.setPaypal( paypal );
+
+			document.dispatchEvent(
+				new CustomEvent( 'ppcp_paypal_script_loaded' )
+			);
+
+			onLoaded( paypal );
+		} )
+		.catch( () => {
+			// The preview stays empty when the PayPal script fails to load.
+		} );
+}
+
+function getButtonSettings( wrapperSelector, fields ) {
+	const layoutElement = jQuery( fields.layout );
+	const layout =
+		layoutElement.length && layoutElement.is( ':visible' )
+			? layoutElement.val()
+			: 'vertical';
+	const style = {
+		color: jQuery( fields.color ).val(),
+		shape: jQuery( fields.shape ).val(),
+		label: jQuery( fields.label ).val(),
+		tagline:
+			layout === 'horizontal' &&
+			jQuery( fields.tagline ).is( ':checked' ),
+		layout,
+	};
+	if ( 'height' in fields ) {
+		style.height = parseInt( jQuery( fields.height ).val(), 10 );
+	}
+	if ( 'poweredby_tagline' in fields ) {
+		style.layout = jQuery( fields.poweredby_tagline ).is( ':checked' )
+			? 'vertical'
+			: 'horizontal';
+	}
+	return {
+		button: {
+			wrapper: wrapperSelector,
+			style,
+		},
+	};
+}
+
+function getMessageSettings( wrapperSelector, fields ) {
+	const layout = jQuery( fields.layout ).val();
+	const style = {
+		layout,
+		logo: {
+			type: jQuery( fields.logo_type ).val(),
+			position: jQuery( fields.logo_position ).val(),
+		},
+		text: {
+			color: jQuery( fields.text_color ).val(),
+		},
+		color: jQuery( fields.flex_color ).val(),
+		ratio: jQuery( fields.flex_ratio ).val(),
+	};
+
+	return {
+		wrapper: wrapperSelector,
+		style,
+		amount: 30,
+		placement: 'product',
+	};
+}
+
+function getButtonDefaultSettings( wrapperSelector ) {
+	const style = {
+		color: 'gold',
+		shape: 'pill',
+		label: 'paypal',
+		tagline: false,
+		layout: 'vertical',
+	};
+	return {
+		button: {
+			wrapper: wrapperSelector,
+			style,
+		},
+	};
+}
+
+const renderButtonPreview = ( settings ) => {
+	const previewSettings = {
+		context: PaymentContext.Preview,
+		...settings,
+	};
+
+	const wrapperSelector = previewSettings.button?.wrapper;
+	const wrapper = document.querySelector( wrapperSelector );
+
+	if ( ! wrapper ) {
+		return;
+	}
+	wrapper.innerHTML = '';
+
+	const renderer = new Renderer(
+		previewSettings,
+		( data, actions ) => actions.reject(),
+		null
+	);
+
+	try {
+		renderer.render( {} );
+		jQuery( document ).trigger(
+			'ppcp_paypal_render_preview',
+			previewSettings
+		);
+	} catch {
+		// A failed preview render leaves the preview as it was.
+	}
+};
+
+const renderMessagePreview = ( settings ) => {
+	let wrapper = document.querySelector( settings.wrapper );
+	if ( ! wrapper ) {
+		return;
+	}
+	// looks like .innerHTML = '' is not enough, PayPal somehow renders with old style
+	const parent = wrapper.parentElement;
+	parent.removeChild( wrapper );
+	wrapper = document.createElement( 'div' );
+	wrapper.setAttribute( 'id', settings.wrapper.replace( '#', '' ) );
+	parent.appendChild( wrapper );
+
+	const messageRenderer = new MessageRenderer( settings );
+
+	try {
+		messageRenderer.renderWithAmount( settings.amount );
+	} catch {
+		// A failed preview render leaves the preview as it was.
+	}
+};
+
+document.addEventListener( 'DOMContentLoaded', () => {
 	const disabledCheckboxes = document.querySelectorAll(
 		'.ppcp-disabled-checkbox'
 	);
@@ -95,38 +233,7 @@ document.addEventListener( 'DOMContentLoaded', () => {
 	}
 
 	function createButtonPreview( settingsCallback ) {
-		const render = ( settings ) => {
-			const previewSettings = {
-				context: PaymentContext.Preview,
-				...settings,
-			};
-
-			const wrapperSelector = previewSettings.button?.wrapper;
-			const wrapper = document.querySelector( wrapperSelector );
-
-			if ( ! wrapper ) {
-				return;
-			}
-			wrapper.innerHTML = '';
-
-			const renderer = new Renderer(
-				previewSettings,
-				( data, actions ) => actions.reject(),
-				null
-			);
-
-			try {
-				renderer.render( {} );
-				jQuery( document ).trigger(
-					'ppcp_paypal_render_preview',
-					previewSettings
-				);
-			} catch {
-				// A failed preview render leaves the preview as it was.
-			}
-		};
-
-		renderPreview( settingsCallback, render );
+		renderPreview( settingsCallback, renderButtonPreview );
 	}
 
 	function shouldShowPayLaterButton() {
@@ -192,99 +299,8 @@ document.addEventListener( 'DOMContentLoaded', () => {
 		return settings;
 	}
 
-	function loadPaypalScript( settings, onLoaded = () => {} ) {
-		loadScript( JSON.parse( JSON.stringify( settings ) ) ) // clone the object to prevent modification
-			.then( ( paypal ) => {
-				widgetBuilder.setPaypal( paypal );
-
-				document.dispatchEvent(
-					new CustomEvent( 'ppcp_paypal_script_loaded' )
-				);
-
-				onLoaded( paypal );
-			} )
-			.catch( () => {
-				// The preview stays empty when the PayPal script fails to load.
-			} );
-	}
-
-	function getButtonSettings( wrapperSelector, fields ) {
-		const layoutElement = jQuery( fields.layout );
-		const layout =
-			layoutElement.length && layoutElement.is( ':visible' )
-				? layoutElement.val()
-				: 'vertical';
-		const style = {
-			color: jQuery( fields.color ).val(),
-			shape: jQuery( fields.shape ).val(),
-			label: jQuery( fields.label ).val(),
-			tagline:
-				layout === 'horizontal' &&
-				jQuery( fields.tagline ).is( ':checked' ),
-			layout,
-		};
-		if ( 'height' in fields ) {
-			style.height = parseInt( jQuery( fields.height ).val(), 10 );
-		}
-		if ( 'poweredby_tagline' in fields ) {
-			style.layout = jQuery( fields.poweredby_tagline ).is( ':checked' )
-				? 'vertical'
-				: 'horizontal';
-		}
-		return {
-			button: {
-				wrapper: wrapperSelector,
-				style,
-			},
-		};
-	}
-
 	function createMessagesPreview( settingsCallback ) {
-		const render = ( settings ) => {
-			let wrapper = document.querySelector( settings.wrapper );
-			if ( ! wrapper ) {
-				return;
-			}
-			// looks like .innerHTML = '' is not enough, PayPal somehow renders with old style
-			const parent = wrapper.parentElement;
-			parent.removeChild( wrapper );
-			wrapper = document.createElement( 'div' );
-			wrapper.setAttribute( 'id', settings.wrapper.replace( '#', '' ) );
-			parent.appendChild( wrapper );
-
-			const messageRenderer = new MessageRenderer( settings );
-
-			try {
-				messageRenderer.renderWithAmount( settings.amount );
-			} catch {
-				// A failed preview render leaves the preview as it was.
-			}
-		};
-
-		renderPreview( settingsCallback, render );
-	}
-
-	function getMessageSettings( wrapperSelector, fields ) {
-		const layout = jQuery( fields.layout ).val();
-		const style = {
-			layout,
-			logo: {
-				type: jQuery( fields.logo_type ).val(),
-				position: jQuery( fields.logo_position ).val(),
-			},
-			text: {
-				color: jQuery( fields.text_color ).val(),
-			},
-			color: jQuery( fields.flex_color ).val(),
-			ratio: jQuery( fields.flex_ratio ).val(),
-		};
-
-		return {
-			wrapper: wrapperSelector,
-			style,
-			amount: 30,
-			placement: 'product',
-		};
+		renderPreview( settingsCallback, renderMessagePreview );
 	}
 
 	function renderPreview( settingsCallback, render ) {
@@ -315,22 +331,6 @@ document.addEventListener( 'DOMContentLoaded', () => {
 		} );
 
 		render( oldSettings );
-	}
-
-	function getButtonDefaultSettings( wrapperSelector ) {
-		const style = {
-			color: 'gold',
-			shape: 'pill',
-			label: 'paypal',
-			tagline: false,
-			layout: 'vertical',
-		};
-		return {
-			button: {
-				wrapper: wrapperSelector,
-				style,
-			},
-		};
 	}
 
 	const previewElements = document.querySelectorAll( '.ppcp-preview' );

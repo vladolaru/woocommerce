@@ -48,12 +48,12 @@ export function loadScript( url, targetWindow = window ) {
 			const script = targetWindow.document.createElement( 'script' );
 			script.src = url;
 			script.async = true;
-			script.onload = resolve;
-			script.onerror = () => {
+			script.addEventListener( 'load', resolve );
+			script.addEventListener( 'error', () => {
 				script.remove();
 				delete scriptPromises[ url ];
 				reject( new Error( `Failed to load script: ${ url }` ) );
-			};
+			} );
 			targetWindow.document.head.appendChild( script );
 		} );
 	}

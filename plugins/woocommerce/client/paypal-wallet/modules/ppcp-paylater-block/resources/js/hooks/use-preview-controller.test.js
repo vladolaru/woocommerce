@@ -5,13 +5,11 @@ import {
 	MAX_RETRIES,
 } from './use-preview-controller';
 
-class MockMutationObserver {
-	constructor( callback ) {
-		this.callback = callback;
-		this.observe = jest.fn();
-		this.disconnect = jest.fn();
-		MockMutationObserver.instances.push( this );
-	}
+function MockMutationObserver( callback ) {
+	this.callback = callback;
+	this.observe = jest.fn();
+	this.disconnect = jest.fn();
+	MockMutationObserver.instances.push( this );
 }
 MockMutationObserver.instances = [];
 

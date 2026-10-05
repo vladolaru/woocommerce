@@ -31,9 +31,7 @@ class CheckoutActionHandler {
 				document.querySelector( formSelector )
 			);
 
-			const createaccount = jQuery( '#createaccount' ).is( ':checked' )
-				? true
-				: false;
+			const createaccount = jQuery( '#createaccount' ).is( ':checked' );
 
 			const paymentMethod = getCurrentPaymentMethod();
 			const fundingSource = window.ppcpFundingSource;

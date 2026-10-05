@@ -4,8 +4,8 @@ import { disable, enable, isDisabled } from './ButtonDisabler';
 /**
  * Common Bootstrap methods to avoid code repetition.
  */
-export default class BootstrapHelper {
-	static handleButtonStatus( bs, options ) {
+const BootstrapHelper = {
+	handleButtonStatus( bs, options ) {
 		options = options || {};
 		options.wrapper = options.wrapper || bs.gateway.button.wrapper;
 
@@ -26,18 +26,18 @@ export default class BootstrapHelper {
 				shouldEnable,
 			] );
 		}
-	}
+	},
 
-	static shouldEnable( bs, options ) {
+	shouldEnable( bs, options ) {
 		options = options || {};
 		if ( typeof options.isDisabled === 'undefined' ) {
 			options.isDisabled = bs.gateway.button.is_disabled;
 		}
 
 		return bs.shouldRender() && options.isDisabled !== true;
-	}
+	},
 
-	static updateScriptData( bs, newData ) {
+	updateScriptData( bs, newData ) {
 		const newObj = merge( bs.gateway, newData );
 
 		const isChanged =
@@ -50,5 +50,7 @@ export default class BootstrapHelper {
 				newObj,
 			] );
 		}
-	}
-}
+	},
+};
+
+export default BootstrapHelper;

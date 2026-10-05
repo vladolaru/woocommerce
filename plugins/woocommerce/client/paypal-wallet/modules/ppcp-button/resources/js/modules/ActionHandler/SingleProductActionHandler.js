@@ -134,13 +134,13 @@ class SingleProductActionHandler {
 					.then( function ( res ) {
 						return res.json();
 					} )
-					.then( function ( data ) {
-						if ( ! data.success ) {
+					.then( function ( result ) {
+						if ( ! result.success ) {
 							errorHandler.clear();
-							errorHandler.message( data.data.message );
+							errorHandler.message( result.data.message );
 							throw { type: 'create-order-error' };
 						}
-						return data.data.id;
+						return result.data.id;
 					} );
 			};
 

@@ -15,6 +15,8 @@ export const ButtonEvents = Object.freeze( {
 	REDRAW: 'ppcp_redraw_method',
 } );
 
+const sanitize = ( id ) => id.replace( /^#/, '' );
+
 /**
  *
  * @param {string} defaultId     - Default wrapper ID.
@@ -31,8 +33,6 @@ export function combineWrapperIds(
 	blockId = '',
 	gatewayId = ''
 ) {
-	const sanitize = ( id ) => id.replace( /^#/, '' );
-
 	return {
 		Default: sanitize( defaultId ),
 		SmartButton: sanitize( smartButtonId ),

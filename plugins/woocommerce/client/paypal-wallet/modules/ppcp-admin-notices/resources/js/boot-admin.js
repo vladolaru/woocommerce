@@ -14,9 +14,8 @@ class AdminMessageHandler {
 	setupDismissibleMessages() {
 		const muteConfig = this.#config?.ajax?.mute_message;
 
-		const addDismissibleMessage = ( element ) => {
+		const addDismissibleMessage = ( element ) =>
 			new DismissibleMessage( element, muteConfig );
-		};
 
 		document
 			.querySelectorAll( '.notice[data-ppcp-msg-id]' )
@@ -24,4 +23,4 @@ class AdminMessageHandler {
 	}
 }
 
-new AdminMessageHandler( window.wc_admin_notices );
+void new AdminMessageHandler( window.wc_admin_notices );

@@ -56,6 +56,9 @@ export const useStore = () => {
 	};
 };
 
+const removeEmpty = ( list ) =>
+	list.filter( ( item ) => item && item.id?.length );
+
 export const usePaymentMethods = () => {
 	const { usePersistent } = useStoreData();
 
@@ -63,9 +66,6 @@ export const usePaymentMethods = () => {
 	const [ paypal ] = usePersistent( 'ppcp-gateway' );
 	const [ venmo ] = usePersistent( 'venmo' );
 	const [ payLater ] = usePersistent( 'pay-later' );
-
-	const removeEmpty = ( list ) =>
-		list.filter( ( item ) => item && item.id?.length );
 
 	const payPalCheckout = removeEmpty( [ paypal, venmo, payLater ] );
 
