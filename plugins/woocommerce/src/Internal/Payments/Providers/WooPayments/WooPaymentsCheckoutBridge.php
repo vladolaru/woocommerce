@@ -1710,57 +1710,14 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether card checkout initializes Stripe through the platform account because WooPay applies, as client
-	 * 11.1.0 `should_use_stripe_platform_on_checkout_page()` does (gw:1173-1191, eligibility from `WC_Payments_Features::is_woopay_eligible()`,
-	 * class-wc-payments-features.php:193-209). It forces network saved cards and hides the classic save checkbox.
+	 * Tell whether card checkout initializes Stripe through the platform account because WooPay applies; the WooPay
+	 * session service owns the one predicate both the card and the WooPay config read (client 11.1.0
+	 * class-wc-payments-checkout.php:194, :599).
 	 *
 	 * @return bool
 	 */
 	public function should_use_stripe_platform_on_checkout_page(): bool {
-		if ( ! class_exists( 'Automattic\WooCommerce\StoreApi\Routes\V1\AbstractCartRoute' ) ) {
-			return false;
-		}
-
-		$account_service = $this->get_account_service();
-		$account_data    = $account_service->get_cached_account_data();
-		if (
-			empty( $account_data['platform_checkout_eligible'] )
-			|| $account_service->is_account_rejected()
-			|| $account_service->is_account_under_review()
-			|| 'yes' !== $this->get_string_gateway_setting( 'platform_checkout', 'no' )
-		) {
-			return false;
-		}
-
-		if (
-			! ( function_exists( 'is_checkout' ) && is_checkout() )
-			&& ! ( function_exists( 'has_block' ) && has_block( 'woocommerce/checkout' ) )
-		) {
-			return false;
-		}
-
-		if ( function_exists( 'is_wc_endpoint_url' ) && is_wc_endpoint_url( 'order-pay' ) ) {
-			return false;
-		}
-
-		return function_exists( 'WC' ) &&
-			WC() &&
-			WC()->cart instanceof \WC_Cart &&
-			! WC()->cart->is_empty() &&
-			WC()->cart->needs_payment();
-	}
-
-	/**
-	 * Get a string WooPayments gateway setting.
-	 *
-	 * @param string $key Setting key.
-	 * @param string $fallback Fallback value.
-	 * @return string
-	 */
-	private function get_string_gateway_setting( string $key, string $fallback ): string {
-		$value = $this->get_account_service()->get_gateway_setting( $key, $fallback );
-
-		return is_scalar( $value ) && '' !== (string) $value ? sanitize_text_field( (string) $value ) : $fallback;
+		return $this->get_woopay_session_service()->should_use_stripe_platform_on_checkout_page();
 	}
 
 	/**

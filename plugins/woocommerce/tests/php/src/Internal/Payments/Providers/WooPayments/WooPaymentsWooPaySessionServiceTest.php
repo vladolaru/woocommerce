@@ -1152,6 +1152,87 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Checkout uses the Stripe platform account for WooPay only for an eligible account with WooPay on: $label.
+	 *
+	 * Client 11.1.0 should_use_stripe_platform_on_checkout_page() (class-wc-payment-gateway-wcpay.php:1173-1191) with
+	 * WC_Payments_Features::is_woopay_eligible() (class-wc-payments-features.php:193-209): the cached account must be
+	 * platform_checkout_eligible and neither rejected nor under review, platform_checkout must be 'yes', the page must be
+	 * checkout and not order-pay, and the cart must need payment. Ported from the client's
+	 * test_should_use_stripe_platform_on_checkout_page_not_woopay_eligible and _not_woopay
+	 * (tests/unit/test-class-wc-payment-gateway-wcpay.php:4789-4799).
+	 *
+	 * @testWith ["eligible, WooPay on, checkout with a cart", {"platform_checkout_eligible": true}, "yes", false, true]
+	 *           ["not WooPay eligible", {"platform_checkout_eligible": false}, "yes", false, false]
+	 *           ["WooPay off", {"platform_checkout_eligible": true}, "no", false, false]
+	 *           ["rejected account", {"platform_checkout_eligible": true, "status": "rejected.fraud"}, "yes", false, false]
+	 *           ["account under review", {"platform_checkout_eligible": true, "status": "under_review"}, "yes", false, false]
+	 *           ["the order-pay page", {"platform_checkout_eligible": true}, "yes", true, false]
+	 *
+	 * @param string              $label             Case label.
+	 * @param array<string,mixed> $account_data      Cached account data.
+	 * @param string              $platform_checkout WooPay setting.
+	 * @param bool                $is_order_pay      Whether the request is the order-pay endpoint.
+	 * @param bool                $expected          Whether checkout uses the platform account.
+	 */
+	public function test_should_use_stripe_platform_on_checkout_page( string $label, array $account_data, string $platform_checkout, bool $is_order_pay, bool $expected ): void {
+		global $wp;
+		unset( $label );
+		add_filter( 'woocommerce_is_checkout', '__return_true' );
+		if ( $is_order_pay ) {
+			$wp->query_vars['order-pay'] = 1;
+		}
+		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 1 );
+		WC()->cart->calculate_totals();
+		$sut = $this->create_service( array( 'platform_checkout' => $platform_checkout ), $account_data );
+
+		try {
+			$this->assertSame( $expected, $sut->should_use_stripe_platform_on_checkout_page() );
+		} finally {
+			remove_filter( 'woocommerce_is_checkout', '__return_true' );
+			unset( $wp->query_vars['order-pay'] );
+		}
+	}
+
+	/**
+	 * @testdox Checkout does not use the Stripe platform account off the checkout page, even for an eligible account with WooPay on.
+	 *
+	 * Client 11.1.0 class-wc-payment-gateway-wcpay.php:1181 requires is_checkout() || has_block( 'woocommerce/checkout' ). A
+	 * separate process, because an earlier test can define WOOCOMMERCE_CHECKOUT for the rest of the run.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_should_not_use_stripe_platform_off_the_checkout_page(): void {
+		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 1 );
+		WC()->cart->calculate_totals();
+
+		$this->assertFalse( $this->create_service()->should_use_stripe_platform_on_checkout_page() );
+	}
+
+	/**
+	 * @testdox The WooPay config forces network saved cards for a visitor outside the WooPay countries, whose save-user fields stay unloaded.
+	 *
+	 * Client 11.1.0 reads one predicate for both configs (class-wc-payments-checkout.php:194, :599) and gates only the
+	 * save-user script on the visitor's country (class-woopay-save-user.php:55).
+	 */
+	public function test_woopay_config_and_card_config_share_the_platform_predicate_for_a_visitor_outside_the_woopay_countries(): void {
+		add_filter( 'woocommerce_is_checkout', '__return_true' );
+		// WC_Geolocation::geolocate_ip() returns the country this filter gives before any lookup.
+		add_filter( 'woocommerce_geolocate_ip', static fn() => 'DE' );
+		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 1 );
+		WC()->cart->calculate_totals();
+		$sut = $this->create_service( array(), array(), null, null, null, false );
+
+		try {
+			$this->assertTrue( $sut->get_woopay_frontend_config( 'checkout' )['forceNetworkSavedCards'] );
+			$this->assertFalse( $sut->should_load_woopay_save_user_assets( 'checkout' ) );
+			$this->assertTrue( $sut->should_use_stripe_platform_on_checkout_page() );
+		} finally {
+			remove_filter( 'woocommerce_is_checkout', '__return_true' );
+		}
+	}
+
+	/**
 	 * @testdox Should prefer a sanitized email from a valid encrypted identity envelope.
 	 */
 	public function test_encrypted_session_data_uses_valid_encrypted_identity_email(): void {

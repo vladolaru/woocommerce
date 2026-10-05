@@ -995,7 +995,7 @@ class WooPaymentsWooPaySessionService {
 			'isWooPayEmailInputEnabled'         => $this->is_woopay_email_input_enabled(),
 			'isWooPayDirectCheckoutEnabled'     => $this->is_woopay_direct_checkout_enabled(),
 			'isWooPayGlobalThemeSupportEnabled' => $is_global_theme_enabled,
-			'forceNetworkSavedCards'            => $this->get_account_service()->is_network_saved_cards_enabled() || $this->should_use_stripe_platform_on_checkout_page( $context ),
+			'forceNetworkSavedCards'            => $this->get_account_service()->is_network_saved_cards_enabled() || $this->should_use_stripe_platform_on_checkout_page(),
 			'ajaxUrl'                           => admin_url( 'admin-ajax.php' ),
 			'platformTrackerNonce'              => wp_create_nonce( 'platform_tracks_nonce' ),
 			'isShopperTrackingEnabled'          => $this->get_frontend_tracking_controller()->is_shopper_tracking_enabled(),
@@ -1215,7 +1215,7 @@ class WooPaymentsWooPaySessionService {
 		return 'checkout' === $this->normalize_button_context( $context ) &&
 			$this->is_woopay_enabled() &&
 			$this->is_woopay_country_available() &&
-			( $this->get_account_service()->is_network_saved_cards_enabled() || $this->should_use_stripe_platform_on_checkout_page( $context ) );
+			( $this->get_account_service()->is_network_saved_cards_enabled() || $this->should_use_stripe_platform_on_checkout_page() );
 	}
 
 	/**
@@ -1758,18 +1758,28 @@ class WooPaymentsWooPaySessionService {
 	}
 
 	/**
-	 * Tell whether checkout should use the Stripe platform account for WooPay.
+	 * Tell whether card checkout initializes Stripe through the platform account because WooPay applies, as client
+	 * 11.1.0 `should_use_stripe_platform_on_checkout_page()` does (class-wc-payment-gateway-wcpay.php:1173-1191). It forces
+	 * network saved cards in both the card and the WooPay config and hides the classic save checkbox; the visitor's
+	 * country only decides whether the save-user fields load (class-woopay-save-user.php:55).
 	 *
-	 * @param string $context Express checkout context.
+	 * @since 11.2.0
+	 *
 	 * @return bool
 	 */
-	private function should_use_stripe_platform_on_checkout_page( string $context ): bool {
+	public function should_use_stripe_platform_on_checkout_page(): bool {
+		if ( ! $this->is_woopay_eligible() || 'yes' !== $this->get_string_gateway_setting( 'platform_checkout', 'no' ) ) {
+			return false;
+		}
+
 		if (
-			'checkout' !== $this->normalize_button_context( $context ) ||
-			! $this->is_woopay_enabled() ||
-			! $this->is_woopay_country_available() ||
-			( function_exists( 'is_wc_endpoint_url' ) && is_wc_endpoint_url( 'order-pay' ) )
+			! ( function_exists( 'is_checkout' ) && is_checkout() )
+			&& ! ( function_exists( 'has_block' ) && has_block( 'woocommerce/checkout' ) )
 		) {
+			return false;
+		}
+
+		if ( function_exists( 'is_wc_endpoint_url' ) && is_wc_endpoint_url( 'order-pay' ) ) {
 			return false;
 		}
 
@@ -1778,6 +1788,25 @@ class WooPaymentsWooPaySessionService {
 			WC()->cart instanceof \WC_Cart &&
 			! WC()->cart->is_empty() &&
 			WC()->cart->needs_payment();
+	}
+
+	/**
+	 * Tell whether the account is eligible for WooPay, like client 11.1.0 `WC_Payments_Features::is_woopay_eligible()`
+	 * (class-wc-payments-features.php:193-209).
+	 *
+	 * @return bool
+	 */
+	private function is_woopay_eligible(): bool {
+		if ( ! class_exists( 'Automattic\WooCommerce\StoreApi\Routes\V1\AbstractCartRoute' ) ) {
+			return false;
+		}
+
+		$account_service = $this->get_account_service();
+		$account_data    = $account_service->get_cached_account_data();
+
+		return ! empty( $account_data['platform_checkout_eligible'] )
+			&& ! $account_service->is_account_rejected()
+			&& ! $account_service->is_account_under_review();
 	}
 
 	/**
