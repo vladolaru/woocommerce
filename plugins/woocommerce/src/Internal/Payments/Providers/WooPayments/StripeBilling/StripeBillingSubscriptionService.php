@@ -450,7 +450,8 @@ class StripeBillingSubscriptionService {
 				$this->invoice_service->set_subscription_invoice_id( $subscription, (string) $response['latest_invoice'] );
 			}
 		} catch ( \Exception $exception ) {
-			$this->logger->log( sprintf( 'There was a problem creating the WooPayments subscription. %s', $exception->getMessage() ) );
+			// The client appends the exception's message (the platform's text); native logs its class, status and code.
+			$this->logger->log_throwable( 'There was a problem creating the WooPayments subscription.', $exception, array( 'subscription_id' => $subscription->get_id() ), 'info' );
 
 			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Checkout error notice text with its own markup, escaped where the notice is printed.
 			if ( $exception instanceof StripeBillingException && StripeBillingException::AMOUNT_TOO_SMALL === $exception->get_error_code() ) {
@@ -549,7 +550,7 @@ class StripeBillingSubscriptionService {
 		try {
 			$this->api->cancel_subscription( $wcpay_subscription_id );
 		} catch ( WooPaymentsApiException $exception ) {
-			$this->logger->log( sprintf( 'There was a problem canceling the subscription on WooPayments server: %s.', $exception->getMessage() ) );
+			$this->logger->log_throwable( 'There was a problem canceling the subscription on WooPayments server.', $exception, array( 'subscription_id' => $subscription->get_id() ), 'info' );
 		}
 	}
 
@@ -1196,7 +1197,7 @@ class StripeBillingSubscriptionService {
 		try {
 			return $this->api->update_subscription( $wcpay_subscription_id, $data );
 		} catch ( WooPaymentsApiException $exception ) {
-			$this->logger->log( sprintf( 'There was a problem updating the WooPayments subscription on server: %s', $exception->getMessage() ) );
+			$this->logger->log_throwable( 'There was a problem updating the WooPayments subscription on server.', $exception, array( 'subscription_id' => $subscription->get_id() ), 'info' );
 			return null;
 		}
 	}

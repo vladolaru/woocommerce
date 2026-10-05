@@ -310,7 +310,8 @@ class StripeBillingEventHandler {
 			try {
 				$charge = $this->api_client->get_charge( $event_object['charge'] );
 			} catch ( WooPaymentsApiException $exception ) {
-				$this->logger->log( sprintf( 'Unable to retrieve charge data for invoice.payment_failed webhook. Charge ID: %s; Error: %s', $event_object['charge'], $exception->getMessage() ), 'error' );
+				// The client appends the platform's message; native logs its status and code.
+				$this->logger->log_throwable( sprintf( 'Unable to retrieve charge data for invoice.payment_failed webhook. Charge ID: %s.', $event_object['charge'] ), $exception );
 			}
 		}
 

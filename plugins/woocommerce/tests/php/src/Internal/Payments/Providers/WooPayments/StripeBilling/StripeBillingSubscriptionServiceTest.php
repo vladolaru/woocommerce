@@ -13,6 +13,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -29,6 +31,8 @@ use WC_Unit_Test_Case;
  * first as the client's `request()` adds it (`class-wc-payments-api-client.php:2635-2640`).
  */
 class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
+
+	use ProviderTextLogAssertions;
 
 	/**
 	 * User IDs the customer lookup was asked for.
@@ -607,6 +611,45 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		$this->sut->$method( $subscription );
 
 		$this->assertSame( 1, $this->http_client->request_count );
+	}
+
+	/**
+	 * @testdox A platform error from $method is logged with its status and code, never its message.
+	 * @testWith ["create_subscription", "There was a problem creating the WooPayments subscription."]
+	 *           ["cancel_subscription", "There was a problem canceling the subscription on WooPayments server."]
+	 *           ["set_pending_cancel_for_subscription", "There was a problem updating the WooPayments subscription on server."]
+	 *
+	 * Client 11.1.0 appends the platform's message (`class-wc-payments-subscription-service.php:459`, `:528`, `:1017`).
+	 *
+	 * @param string $method   Service method that calls the platform.
+	 * @param string $expected Expected line.
+	 */
+	public function test_platform_error_log_leaves_out_platform_text( string $method, string $expected ): void {
+		// The error envelope WooPaymentsApiClient::throw_api_error() reads (error.code, error.message, error.type).
+		$this->http_client->responses[] = $this->make_response(
+			404,
+			array(
+				'error' => array(
+					'code'    => 'resource_missing',
+					'message' => "No such customer: 'cus_123'; ask shopper@example.com, see https://pay.example.test/r?key=sk_test_leak123",
+					'type'    => 'invalid_request_error',
+				),
+			)
+		);
+
+		$subscription          = $this->create_subscription( 'create_subscription' === $method ? array() : array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ) );
+		$this->logging_enabled = true;
+		$logger                = RecordingWcLogger::install();
+
+		if ( 'create_subscription' === $method ) {
+			$this->get_checkout_error( $subscription );
+		} else {
+			$this->sut->$method( $subscription );
+		}
+
+		$context = $this->get_logged_context( $logger, $expected );
+		$this->assertSame( array( 404, 'resource_missing', $subscription->get_id() ), array( $context['http_status'], $context['error_code'], $context['subscription_id'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
 	/**

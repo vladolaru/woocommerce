@@ -151,7 +151,7 @@ class StripeBillingProductService {
 
 				return $this->create_product_for_item_type( $type );
 			} catch ( \Exception $exception ) {
-				$this->log( sprintf( 'Error occurred when fetching product : wcpay_product_id=%s, account_id=%s, error=%s', $wcpay_product_id, $stripe_account_id, $exception->getMessage() ) );
+				$this->log( sprintf( 'Error occurred when fetching product : wcpay_product_id=%s, account_id=%s', $wcpay_product_id, $stripe_account_id ), $exception );
 				return $this->create_product_for_item_type( $type );
 			}
 		}
@@ -309,7 +309,7 @@ class StripeBillingProductService {
 			$product->save();
 			return true;
 		} catch ( \Exception $exception ) {
-			$this->log( sprintf( 'Error validating WooPayments product: product_id=%d, wcpay_product_id=%s, account_id=%s, error=%s', $product->get_id(), (string) $wcpay_product_id, $current_account_id, $exception->getMessage() ) );
+			$this->log( sprintf( 'Error validating WooPayments product: product_id=%d, wcpay_product_id=%s, account_id=%s', $product->get_id(), (string) $wcpay_product_id, $current_account_id ), $exception );
 			return false;
 		}
 	}
@@ -337,7 +337,7 @@ class StripeBillingProductService {
 			$product->update_meta_data( $product_id_key . '_linked_to', $stripe_account_id );
 			$product->save();
 		} catch ( \Exception $exception ) {
-			$this->log( sprintf( 'There was a problem creating the product #%s in WooPayments: %s', $product->get_id(), $exception->getMessage() ) );
+			$this->log( sprintf( 'There was a problem creating the product #%s in WooPayments.', $product->get_id() ), $exception );
 		} finally {
 			$this->listening = true;
 		}
@@ -411,7 +411,7 @@ class StripeBillingProductService {
 			$product->update_meta_data( self::PRODUCT_HASH_KEY, $this->get_product_hash( $product ) );
 			$product->save();
 		} catch ( \Exception $exception ) {
-			$this->log( sprintf( 'There was a problem updating the product #%s in WooPayments: %s', $product->get_id(), $exception->getMessage() ) );
+			$this->log( sprintf( 'There was a problem updating the product #%s in WooPayments.', $product->get_id() ), $exception );
 		} finally {
 			$this->listening = true;
 		}
@@ -434,7 +434,7 @@ class StripeBillingProductService {
 					)
 				);
 			} catch ( WooPaymentsApiException $exception ) {
-				$this->log( 'There was a problem archiving the ' . $environment . ' product in WooPayments: ' . $exception->getMessage() );
+				$this->log( 'There was a problem archiving the ' . $environment . ' product in WooPayments.', $exception );
 			}
 		}
 	}
@@ -455,7 +455,7 @@ class StripeBillingProductService {
 					)
 				);
 			} catch ( WooPaymentsApiException $exception ) {
-				$this->log( 'There was a problem unarchiving the ' . $environment . ' product in WooPayments: ' . $exception->getMessage() );
+				$this->log( 'There was a problem unarchiving the ' . $environment . ' product in WooPayments.', $exception );
 			}
 		}
 	}
@@ -482,7 +482,7 @@ class StripeBillingProductService {
 					)
 				);
 			} catch ( WooPaymentsApiException $exception ) {
-				$this->log( 'There was a problem archiving the ' . $environment . ' product price ID in WooPayments: ' . $exception->getMessage() );
+				$this->log( 'There was a problem archiving the ' . $environment . ' product price ID in WooPayments.', $exception );
 			}
 
 			$product->delete_meta_data( $price_id_key );
@@ -590,11 +590,20 @@ class StripeBillingProductService {
 	}
 
 	/**
-	 * Log a failure when WooPayments logging is on.
+	 * Log a failure when WooPayments logging is on, at info level as the client does.
 	 *
-	 * @param string $message Message.
+	 * The client appends the exception's message, which the platform writes (an email, a URL, any text); native logs
+	 * the exception's class, code, trace and the platform's status and code instead.
+	 *
+	 * @param string          $message   Message.
+	 * @param \Throwable|null $exception Caught exception, when there is one.
 	 */
-	private function log( string $message ): void {
-		$this->logger->log( $message );
+	private function log( string $message, ?\Throwable $exception = null ): void {
+		if ( null === $exception ) {
+			$this->logger->log( $message );
+			return;
+		}
+
+		$this->logger->log_throwable( $message, $exception, array(), 'info' );
 	}
 }

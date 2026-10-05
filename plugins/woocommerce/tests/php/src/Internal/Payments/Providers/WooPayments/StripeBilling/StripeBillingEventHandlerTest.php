@@ -32,6 +32,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
@@ -50,6 +51,8 @@ use WC_Unit_Test_Case;
  * as the client's `request()` adds it (`class-wc-payments-api-client.php:2635-2640`).
  */
 class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
+
+	use ProviderTextLogAssertions;
 
 	private const EVENTS_FIXTURE  = __DIR__ . '/../Fixtures/rec-t63-invoice-events.json';
 	private const BILLING_FIXTURE = __DIR__ . '/../Fixtures/rec-t63-billing-api.json';
@@ -664,6 +667,37 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $this->get_notes_containing( $subscription, 'WooPayments subscription renewal attempt 1 failed.' ) );
 		$this->assertSame( array(), $this->get_notes_containing( $this->get_renewal_orders( self::FAILED_INVOICE_ID )[0], 'Payment for the order failed' ) );
 		$this->assertSame( 'on-hold', $subscription->get_status() );
+	}
+
+	/**
+	 * @testdox A platform error reading a failed attempt's charge is logged with its status and code, never its message.
+	 *
+	 * Client 11.1.0 appends the platform's message (`class-wc-payments-subscriptions-event-handler.php:242`).
+	 */
+	public function test_unreadable_charge_log_leaves_out_platform_text(): void {
+		$subscription = $this->create_subscription( self::FAILING_SUBSCRIPTION_ID );
+		// The error envelope WooPaymentsApiClient::throw_api_error() reads (error.code, error.message, error.type).
+		$this->queue_response(
+			404,
+			array(
+				'error' => array(
+					'code'    => 'resource_missing',
+					'message' => "No such customer: 'cus_123'; ask shopper@example.com, see https://pay.example.test/r?key=sk_test_leak123",
+					'type'    => 'invalid_request_error',
+				),
+			)
+		);
+		$this->queue_billing( 'update_invoice' );
+		$logger = RecordingWcLogger::install();
+
+		$this->sut->handle_event( $this->get_event( 'invoice_payment_failed' ) );
+
+		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'Unable to retrieve charge data for invoice.payment_failed webhook. Charge ID: ' ) ) );
+		$this->assertCount( 1, $lines );
+		$this->assertSame( 'error', $logger->lines[ $lines[0] ][0] );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $logger->contexts[ $lines[0] ]['http_status'], $logger->contexts[ $lines[0] ]['error_code'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
+		$this->assertSame( 'on-hold', wc_get_order( $subscription->get_id() )->get_status() );
 	}
 
 	/**

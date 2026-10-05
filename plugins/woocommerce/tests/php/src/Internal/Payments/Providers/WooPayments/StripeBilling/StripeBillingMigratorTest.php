@@ -8,6 +8,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingMigrator;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingSubscriptionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -25,6 +27,8 @@ use WC_Unit_Test_Case;
  * repairer classes stay defined once loaded; only the Stripe Billing module asks for them.
  */
 class StripeBillingMigratorTest extends WC_Unit_Test_Case {
+
+	use ProviderTextLogAssertions;
 
 	private const FIXTURE = __DIR__ . '/../Fixtures/rec-t63-billing-api.json';
 
@@ -201,6 +205,116 @@ class StripeBillingMigratorTest extends WC_Unit_Test_Case {
 		$sut->migrate_wcpay_subscription( $subscription->get_id() );
 
 		$this->assertSame( array( $card->get_id() ), array_values( wc_get_order( $subscription->get_id() )->get_payment_tokens() ) );
+	}
+
+	/**
+	 * @testdox The migration log names a platform error fetching or cancelling the Stripe subscription by its status and code, never its message.
+	 * @testWith ["get_subscription", "---- ERROR: Failed to fetch subscription #%1$d (%2$s) from Stripe. Platform error: HTTP status 404, error code resource_missing."]
+	 *           ["cancel_subscription", "---- ERROR: Failed to cancel the Stripe subscription (%2$s). Platform error: HTTP status 404, error code resource_missing."]
+	 *
+	 * Client 11.1.0 appends the platform's message (class-wc-payments-subscriptions-migrator.php:222, :256).
+	 *
+	 * @param string $failing_call Platform call that fails.
+	 * @param string $expected     Expected migration log line, with the subscription and Stripe subscription IDs.
+	 */
+	public function test_migration_log_leaves_out_platform_error_text( string $failing_call, string $expected ): void {
+		list( $sut, $api ) = $this->build_migrator();
+		$subscription      = $this->create_stripe_billed_subscription( self::MAIN_SUBSCRIPTION_ID );
+		if ( 'get_subscription' === $failing_call ) {
+			$api->method( 'get_subscription' )->willThrowException( self::make_provider_error() );
+		} else {
+			$api->method( 'get_subscription' )->willReturn( $this->active_wcpay_subscription );
+			$api->method( 'cancel_subscription' )->willThrowException( self::make_provider_error() );
+		}
+		$logger = RecordingWcLogger::install();
+
+		$sut->migrate_wcpay_subscription( $subscription->get_id() );
+
+		$this->get_logged_context( $logger, sprintf( $expected, $subscription->get_id(), self::MAIN_SUBSCRIPTION_ID ) );
+		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
+	 * @testdox The migration log leaves out an invalid Stripe subscription's body, which client 11.1.0 logs whole (migrator.php:226).
+	 */
+	public function test_migration_log_leaves_out_an_invalid_stripe_subscription_body(): void {
+		list( $sut, $api ) = $this->build_migrator();
+		$subscription      = $this->create_stripe_billed_subscription( self::MAIN_SUBSCRIPTION_ID );
+		// A Stripe subscription with no status, carrying the customer's email and a URL elsewhere in the body.
+		$api->method( 'get_subscription' )->willReturn(
+			array(
+				'id'       => self::MAIN_SUBSCRIPTION_ID,
+				'metadata' => array( 'note' => 'No such customer: shopper@example.com, see https://pay.example.test/r?key=sk_test_leak123' ),
+			)
+		);
+		$logger = RecordingWcLogger::install();
+
+		$sut->migrate_wcpay_subscription( $subscription->get_id() );
+
+		$this->get_logged_context( $logger, sprintf( '---- ERROR: Cannot migrate subscription #%1$d (%2$s). Invalid data fetched from Stripe: the subscription has no ID or status.', $subscription->get_id(), self::MAIN_SUBSCRIPTION_ID ) );
+		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
+	 * @testdox The migration log names a Stripe subscription status Stripe does not document as unknown.
+	 */
+	public function test_migration_log_names_an_undocumented_stripe_status_unknown(): void {
+		list( $sut, $api ) = $this->build_migrator();
+		$subscription      = $this->create_stripe_billed_subscription( self::MAIN_SUBSCRIPTION_ID );
+		$api->method( 'get_subscription' )->willReturn( array( 'status' => 'shopper@example.com' ) + $this->active_wcpay_subscription );
+		$logger = RecordingWcLogger::install();
+
+		$sut->migrate_wcpay_subscription( $subscription->get_id() );
+
+		$this->get_logged_context( $logger, sprintf( '---- Stripe subscription (%1$s) has "unknown" status. Skipping canceling the subscription at Stripe.', self::MAIN_SUBSCRIPTION_ID ) );
+		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
+	 * @testdox The migration log names a platform error saving the Stripe payment method by its status and code, never its message.
+	 */
+	public function test_migration_log_leaves_out_token_save_error_text(): void {
+		list( $sut, $api ) = $this->build_migrator();
+		$subscription      = $this->create_stripe_billed_subscription( self::MAIN_SUBSCRIPTION_ID, array(), false );
+		$token_service     = $this->createMock( WooPaymentsTokenService::class );
+		$token_service->method( 'get_or_create_token_for_user' )->willThrowException( self::make_provider_error() );
+		wc_get_container()->replace( WooPaymentsTokenService::class, $token_service );
+		$api->method( 'get_subscription' )->willReturn( array( 'default_payment_method' => 'pm_rec_t63_other_card' ) + $this->active_wcpay_subscription );
+		$logger = RecordingWcLogger::install();
+
+		$sut->migrate_wcpay_subscription( $subscription->get_id() );
+
+		$this->get_logged_context( $logger, sprintf( '---- WARNING: Subscription #%1$d is missing a payment token and we failed to create one. Error: Platform error: HTTP status 404, error code resource_missing.', $subscription->get_id() ) );
+		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
+	 * @testdox The migration log names a fatal error by its type, file and line, never its message (client 11.1.0 logs the message, migrator.php:504).
+	 */
+	public function test_migration_log_leaves_out_a_fatal_errors_message(): void {
+		list( $sut ) = $this->build_migrator();
+		$action_id   = as_schedule_single_action(
+			time(),
+			StripeBillingMigrator::MIGRATE_HOOK,
+			array(
+				'migrate_subscription' => 42,
+				'attempt'              => 0,
+			)
+		);
+		$logger      = RecordingWcLogger::install();
+
+		$sut->handle_unexpected_shutdown(
+			$action_id,
+			array(
+				'type'    => E_ERROR,
+				'message' => 'Uncaught WooPaymentsApiException: Error: No such customer: shopper@example.com, see https://pay.example.test/r?key=sk_test_leak123',
+				'file'    => '/var/www/wp-content/plugins/woocommerce/src/Example.php',
+				'line'    => 12,
+			)
+		);
+
+		$this->get_logged_context( $logger, '---- ERROR: Unexpected shutdown while migrating subscription #42: PHP error type 1 in /var/www/wp-content/plugins/woocommerce/src/Example.php on line 12.' );
+		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
 	/**

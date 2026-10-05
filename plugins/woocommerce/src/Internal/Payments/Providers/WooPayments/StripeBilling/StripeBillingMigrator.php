@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeB
 
 use ActionScheduler_Store;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
@@ -53,6 +54,11 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 	 * Stripe subscription statuses that are cancelled at Stripe.
 	 */
 	private const ACTIVE_STATUSES = array( 'active', 'past_due', 'trialing', 'paused' );
+
+	/**
+	 * Stripe subscription statuses the migration log names; any other status Stripe returns is logged as `unknown`.
+	 */
+	private const LOGGABLE_STATUSES = array( 'active', 'canceled', 'incomplete', 'incomplete_expired', 'past_due', 'paused', 'trialing', 'unpaid' );
 
 	/**
 	 * Subscription meta renamed with a `_migrated` prefix.
@@ -205,7 +211,8 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 		}
 
 		if ( is_array( $error ) && ! empty( $error['type'] ) && in_array( $error['type'], array( E_ERROR, E_PARSE, E_COMPILE_ERROR, E_USER_ERROR, E_RECOVERABLE_ERROR ), true ) ) {
-			$this->migration_log->log( sprintf( '---- ERROR: Unexpected shutdown while migrating subscription #%1$d: %2$s in %3$s on line %4$s.', $migration_args['migrate_subscription'], $error['message'] ?? 'No message', $error['file'] ?? 'no file found', $error['line'] ?? '0' ) );
+			// The client logs the fatal's message; native leaves it out, since an uncaught exception's message can be the platform's text.
+			$this->migration_log->log( sprintf( '---- ERROR: Unexpected shutdown while migrating subscription #%1$d: PHP error type %2$d in %3$s on line %4$s.', $migration_args['migrate_subscription'], (int) $error['type'], $error['file'] ?? 'no file found', $error['line'] ?? '0' ) );
 		}
 
 		$this->maybe_reschedule_migration( $migration_args['migrate_subscription'], $migration_args['attempt'] );
@@ -453,11 +460,12 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 		try {
 			$wcpay_subscription = $this->get_api()->get_subscription( $wcpay_subscription_id );
 		} catch ( WooPaymentsApiException $e ) {
-			throw new RuntimeException( sprintf( '---- ERROR: Failed to fetch subscription #%1$d (%2$s) from Stripe. %3$s', $subscription->get_id(), $wcpay_subscription_id, $e->getMessage() ) );
+			throw new RuntimeException( sprintf( '---- ERROR: Failed to fetch subscription #%1$d (%2$s) from Stripe. %3$s', $subscription->get_id(), $wcpay_subscription_id, $this->describe_failure( $e ) ) );
 		}
 
 		if ( empty( $wcpay_subscription['id'] ) || empty( $wcpay_subscription['status'] ) ) {
-			throw new RuntimeException( sprintf( '---- ERROR: Cannot migrate subscription #%1$d (%2$s). Invalid data fetched from Stripe: %3$s', $subscription->get_id(), $wcpay_subscription_id, var_export( $wcpay_subscription, true ) ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export
+			// The client logs the whole fetched subscription; native leaves the platform's body out of the log.
+			throw new RuntimeException( sprintf( '---- ERROR: Cannot migrate subscription #%1$d (%2$s). Invalid data fetched from Stripe: the subscription has no ID or status.', $subscription->get_id(), $wcpay_subscription_id ) );
 		}
 		// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
@@ -482,7 +490,7 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 			$wcpay_subscription = $this->get_api()->cancel_subscription( (string) $wcpay_subscription['id'] );
 		} catch ( WooPaymentsApiException $e ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message goes to the migration log, not to output.
-			throw new RuntimeException( sprintf( '---- ERROR: Failed to cancel the Stripe subscription (%1$s). %2$s', $wcpay_subscription['id'], $e->getMessage() ) );
+			throw new RuntimeException( sprintf( '---- ERROR: Failed to cancel the Stripe subscription (%1$s). %2$s', $wcpay_subscription['id'], $this->describe_failure( $e ) ) );
 		}
 
 		$this->migration_log->log( sprintf( '---- Stripe subscription (%1$s) successfully canceled.', $wcpay_subscription['id'] ?? '' ) );
@@ -572,7 +580,8 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 	}
 
 	/**
-	 * Get the Stripe subscription status for the log; an active subscription whose collection is paused reads `paused`.
+	 * Get the Stripe subscription status for the log; an active subscription whose collection is paused reads `paused`,
+	 * and a status Stripe does not document reads `unknown`.
 	 *
 	 * A subscription put on hold in WooCommerce stays active at Stripe with its collection paused.
 	 *
@@ -588,7 +597,23 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 			return 'paused';
 		}
 
-		return (string) $wcpay_subscription['status'];
+		return in_array( $wcpay_subscription['status'], self::LOGGABLE_STATUSES, true ) ? $wcpay_subscription['status'] : 'unknown';
+	}
+
+	/**
+	 * Describe a failure for the migration log without its message: a platform error by its HTTP status and listed
+	 * code, anything else by its class. The client logs the message, which the platform writes.
+	 *
+	 * @param \Throwable $failure Failure.
+	 * @return string
+	 */
+	private function describe_failure( \Throwable $failure ): string {
+		$context = WooPaymentsLogger::get_api_error_context( $failure );
+		if ( array() === $context ) {
+			return sprintf( 'Failure: %s.', get_class( $failure ) );
+		}
+
+		return sprintf( 'Platform error: HTTP status %1$d, error code %2$s.', $context['http_status'], $context['error_code'] );
 	}
 
 	/**
@@ -654,7 +679,7 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 				$error = $token ? '' : 'The payment method could not be saved.';
 			} catch ( \Exception $e ) {
 				$token = null;
-				$error = $e->getMessage();
+				$error = $this->describe_failure( $e );
 			}
 
 			if ( ! $token ) {

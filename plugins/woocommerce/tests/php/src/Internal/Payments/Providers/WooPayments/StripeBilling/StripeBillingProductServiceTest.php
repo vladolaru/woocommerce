@@ -9,6 +9,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionVariationProductDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\VariableSubscriptionProductDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
@@ -24,6 +26,8 @@ use WC_Unit_Test_Case;
  * first as the client's `request()` adds it (`class-wc-payments-api-client.php:2635-2640`).
  */
 class StripeBillingProductServiceTest extends WC_Unit_Test_Case {
+
+	use ProviderTextLogAssertions;
 
 	private const FIXTURE = __DIR__ . '/../Fixtures/rec-t63-billing-api.json';
 
@@ -72,6 +76,13 @@ class StripeBillingProductServiceTest extends WC_Unit_Test_Case {
 	private bool $test_mode = true;
 
 	/**
+	 * Whether the gateway's debug logging setting is on, as the WooPayments logger reads it.
+	 *
+	 * @var bool
+	 */
+	private bool $logging = false;
+
+	/**
 	 * Set up the service over a fake transport, connected to the recorded account.
 	 */
 	public function setUp(): void {
@@ -88,6 +99,7 @@ class StripeBillingProductServiceTest extends WC_Unit_Test_Case {
 		$account_service->method( 'is_test_mode_enabled' )->willReturnCallback( fn() => $this->test_mode );
 		$account_service->method( 'is_test_mode_onboarding_enabled' )->willReturnCallback( fn() => $this->test_mode );
 		$account_service->method( 'get_account_id' )->willReturn( self::RECORDED_ACCOUNT_ID );
+		$account_service->method( 'get_gateway_setting' )->willReturnCallback( fn( string $key ) => 'enable_logging' === $key && $this->logging ? 'yes' : null );
 
 		$api_client = new WooPaymentsApiClient();
 		$api_client->init( $this->http_client, $account_service );
@@ -107,6 +119,109 @@ class StripeBillingProductServiceTest extends WC_Unit_Test_Case {
 	public function tearDown(): void {
 		unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_PRODUCT_IDS ] );
 		parent::tearDown();
+	}
+
+	/**
+	 * @testdox A platform error $scenario is logged with its status and code, never its message.
+	 * @testWith ["fetching an item's unlinked Stripe product", "Error occurred when fetching product : wcpay_product_id=prod_VMl10VL0VK371N, account_id=acct_1TrY2nBzWlxcwgpP"]
+	 *           ["checking a product's unlinked Stripe product", "Error validating WooPayments product: product_id=%d, wcpay_product_id=prod_VMl10VL0VK371N, account_id=acct_1TrY2nBzWlxcwgpP"]
+	 *           ["creating a Stripe product", "There was a problem creating the product #%d in WooPayments."]
+	 *           ["updating a Stripe product", "There was a problem updating the product #%d in WooPayments."]
+	 *           ["archiving a Stripe product", "There was a problem archiving the live product in WooPayments."]
+	 *           ["unarchiving a Stripe product", "There was a problem unarchiving the live product in WooPayments."]
+	 *           ["archiving a legacy price", "There was a problem archiving the live product price ID in WooPayments."]
+	 *
+	 * Client 11.1.0 appends the platform's message to each line (`class-wc-payments-product-service.php`).
+	 *
+	 * @param string $scenario Platform call that fails.
+	 * @param string $expected Expected line, with the product ID for %d.
+	 */
+	public function test_platform_error_log_leaves_out_platform_text( string $scenario, string $expected ): void {
+		$this->logging = true;
+		$product       = null;
+		switch ( $scenario ) {
+			case "fetching an item's unlinked Stripe product":
+				update_option( '_wcpay_product_id_test_shipping', self::RECORDED_PRODUCT_ID );
+				$this->queue_platform_error();
+				$this->queue_platform_error();
+				break;
+			case "checking a product's unlinked Stripe product":
+				$product = $this->create_subscription_product( 'REC-T63 Coffee Box', 'REC-T63 monthly coffee box', array( '_wcpay_product_id_test' => self::RECORDED_PRODUCT_ID ) );
+				$this->queue_platform_error();
+				$this->queue_platform_error();
+				break;
+			case 'creating a Stripe product':
+				$product = $this->create_subscription_product( 'REC-T63 Coffee Box', 'REC-T63 monthly coffee box' );
+				$this->queue_platform_error();
+				break;
+			case 'updating a Stripe product':
+				$product = $this->create_subscription_product(
+					'REC-T63 Coffee Box Deluxe',
+					'REC-T63 monthly coffee box, renamed',
+					array(
+						'_wcpay_product_id_test'           => self::RECORDED_PRODUCT_ID,
+						'_wcpay_product_id_test_linked_to' => self::RECORDED_ACCOUNT_ID,
+						'_wcpay_product_hash'              => '157edb40778acb45ff5dce71451e7ff1',
+					)
+				);
+				$this->queue_platform_error();
+				break;
+			case 'archiving a Stripe product':
+			case 'unarchiving a Stripe product':
+				$this->test_mode = false;
+				$product         = $this->create_subscription_product(
+					'REC-T63 Coffee Box',
+					'REC-T63 monthly coffee box',
+					array(
+						'_wcpay_product_id_live'           => self::RECORDED_PRODUCT_ID,
+						'_wcpay_product_id_live_linked_to' => self::RECORDED_ACCOUNT_ID,
+					)
+				);
+				$this->queue_platform_error();
+				break;
+			default:
+				$this->test_mode = false;
+				$product         = $this->create_subscription_product(
+					'REC-T63 Coffee Box',
+					'REC-T63 monthly coffee box',
+					array(
+						'_wcpay_product_id_live'           => self::RECORDED_PRODUCT_ID,
+						'_wcpay_product_id_live_linked_to' => self::RECORDED_ACCOUNT_ID,
+						'_wcpay_product_price_id_live'     => self::LIVE_PRICE_ID,
+					)
+				);
+				$this->queue_platform_error();
+				$this->queue_platform_error();
+		}
+		$logger = RecordingWcLogger::install();
+
+		switch ( $scenario ) {
+			case "fetching an item's unlinked Stripe product":
+				try {
+					$this->sut->get_wcpay_product_id_for_item( 'shipping' );
+				} catch ( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException $exception ) {
+					// The Stripe product the fetch falls back to creating fails too, and that failure is the caller's.
+					unset( $exception );
+				}
+				break;
+			case "checking a product's unlinked Stripe product":
+			case 'creating a Stripe product':
+				$this->sut->get_or_create_wcpay_product_id( $product );
+				break;
+			case 'updating a Stripe product':
+				$this->sut->maybe_schedule_product_create_or_update( $product->get_id() );
+				$this->sut->create_or_update_products();
+				break;
+			case 'unarchiving a Stripe product':
+				$this->sut->maybe_unarchive_product( $product->get_id() );
+				break;
+			default:
+				$this->sut->maybe_archive_product( $product->get_id() );
+		}
+
+		$context = $this->get_logged_context( $logger, sprintf( $expected, null === $product ? 0 : $product->get_id() ) );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
 	/**
@@ -718,6 +833,26 @@ class StripeBillingProductServiceTest extends WC_Unit_Test_Case {
 		}
 
 		return $entries;
+	}
+
+	/**
+	 * Queue the platform's answer to a failed request: HTTP 404 with the error envelope WooPaymentsApiClient::throw_api_error()
+	 * reads (error.code, error.message, error.type, as the platform forwards Stripe's), its message holding an email and a URL.
+	 */
+	private function queue_platform_error(): void {
+		$this->http_client->responses[] = array(
+			'response' => array( 'code' => 404 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode(
+				array(
+					'error' => array(
+						'code'    => 'resource_missing',
+						'message' => "No such customer: 'cus_123'; ask shopper@example.com, see https://pay.example.test/r?key=sk_test_leak123",
+						'type'    => 'invalid_request_error',
+					),
+				)
+			),
+		);
 	}
 
 	/**
