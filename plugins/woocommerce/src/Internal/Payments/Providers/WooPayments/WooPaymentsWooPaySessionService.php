@@ -898,7 +898,7 @@ class WooPaymentsWooPaySessionService {
 			// theme support is enabled — the plugin gates both fallbacks the same way, so a
 			// merchant who turns the setting off stops pushing stale theme data into WooPay.
 			'appearance'           => null === $appearance
-				? ( $this->is_woopay_global_theme_support_enabled() ? $this->get_woopay_appearance() : null )
+				? ( $this->is_woopay_global_theme_support_enabled() ? $this->get_woopay_appearance_or_null() : null )
 				: $this->sanitize_array_recursive( $appearance ),
 			'font_rules'           => array() === $font_rules
 				? ( $this->is_woopay_global_theme_support_enabled() ? $this->get_woopay_font_rules() : array() )
@@ -1094,7 +1094,7 @@ class WooPaymentsWooPaySessionService {
 		$is_country_available              = $is_woopay_enabled && $this->is_woopay_country_available();
 		$is_global_theme_enabled           = $this->is_woopay_global_theme_support_enabled();
 		$should_show_woopay                = $this->should_show_woopay_button_for_enabled_state( $context, $is_woopay_enabled ) && $this->is_woopay_gateway_available();
-		$woopay_appearance                 = $is_global_theme_enabled ? $this->get_woopay_appearance() : null;
+		$woopay_appearance                 = $is_global_theme_enabled ? $this->get_woopay_appearance_or_null() : null;
 		$woopay_font_rules                 = $is_global_theme_enabled ? $this->get_woopay_font_rules() : array();
 		$woopay_session_email              = $this->get_page_prefill_email();
 		$woopay_minimum_session            = $is_woopay_enabled ? $this->get_encrypted_minimum_session_data() : array();
@@ -1432,6 +1432,20 @@ class WooPaymentsWooPaySessionService {
 		$this->save_woopay_appearance( $computed, $theme_appearance->get_font_rules_from_registered_styles() );
 
 		return $this->get_stored_woopay_appearance();
+	}
+
+	/**
+	 * Get the WooPay appearance to send to the browser or WooPay, or null when there is none.
+	 *
+	 * Client 11.1.0 sends null then (class-wc-payments-styles-cache.php:87). An empty array prints as `[]`, which JS reads as
+	 * an appearance, so the classic checkout would skip its DOM fallback (woopayments-checkout.js getWooPayEmailInputAppearance()).
+	 *
+	 * @return array<string,mixed>|null
+	 */
+	private function get_woopay_appearance_or_null(): ?array {
+		$appearance = $this->get_woopay_appearance();
+
+		return array() === $appearance ? null : $appearance;
 	}
 
 	/**

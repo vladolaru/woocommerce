@@ -1471,6 +1471,34 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox With global theme support on and no appearance on a classic theme, the page and WooPay get null, so the classic checkout measures its own.
+	 *
+	 * Client 11.1.0 WC_Payments_Styles_Cache::get_woopay_appearance() returns null then (class-wc-payments-styles-cache.php:87),
+	 * localized by class-wc-payments-woopay-button-handler.php:153-155 and sent by class-woopay-session.php:488-490. The
+	 * classic checkout script falls back to the page's own styles only when woopayAppearance is falsy
+	 * (woopayments-checkout.js getWooPayEmailInputAppearance()), and an empty PHP array prints as a truthy `[]`.
+	 */
+	public function test_no_woopay_appearance_is_sent_as_null(): void {
+		$original_theme = get_stylesheet();
+		$sut            = $this->create_service(
+			array( 'is_woopay_global_theme_support_enabled' => 'yes' ),
+			array( 'platform_global_theme_support_enabled' => true )
+		);
+
+		try {
+			switch_theme( 'storefront' );
+			$config  = $sut->get_woopay_frontend_config( 'checkout' );
+			$request = $sut->get_init_session_request( 'shopper@example.com' );
+		} finally {
+			switch_theme( $original_theme );
+		}
+
+		$this->assertTrue( $config['isWooPayGlobalThemeSupportEnabled'] );
+		$this->assertNull( $config['woopayAppearance'] );
+		$this->assertNull( $request['appearance'] );
+	}
+
+	/**
 	 * @testdox A WooPay $0 subscription order needs payment even when WooCommerce Subscriptions says it does not.
 	 *
 	 * Client 11.1.0 class-woopay-session.php:62, :298-316: on a WooPay Store API request, a $0 order with a subscription in
