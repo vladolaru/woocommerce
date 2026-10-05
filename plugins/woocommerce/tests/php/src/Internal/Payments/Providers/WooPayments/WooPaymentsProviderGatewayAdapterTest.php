@@ -1782,6 +1782,97 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The lookup's answer stands when its always-on log line throws: $_dataName.
+	 *
+	 * The logger is WooCommerce's own, so each line runs the woocommerce_logger_log_message filter (WC_Logger::log()); the
+	 * filter throws on the lookup's line here. A failing logger must not turn a refusal that keeps the order status into a
+	 * plain failure, skip the merchant note, or fail an order the earlier request paid (review 67, monitor question).
+	 *
+	 * @dataProvider provide_lookup_log_failures
+	 *
+	 * @param string           $path             Lookup answer.
+	 * @param array<int,mixed> $lookup_responses Transport answers to the intents lists.
+	 * @param string           $thrown           Class the filter throws.
+	 */
+	public function test_lookup_answer_stands_when_its_log_line_fails( string $path, array $lookup_responses, string $thrown ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$order = $this->create_woopayments_order();
+		foreach ( $lookup_responses as $index => $response ) {
+			if ( is_callable( $response ) ) {
+				$lookup_responses[ $index ] = $response( $order );
+			}
+		}
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array_merge( array( self::platform_bad_gateway(), self::stripe_idempotency_error( 'key_first' ) ), $lookup_responses );
+		$sut                    = $this->create_timeout_adapter( $http_client, 'cus_sent' );
+		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
+		$throws = 0;
+		add_filter(
+			'woocommerce_logger_log_message',
+			static function ( $message ) use ( $thrown, &$throws ) {
+				if ( false !== strpos( (string) $message, 'was refused because the new payment request differs from the earlier one' ) ) {
+					++$throws;
+					throw new $thrown( 'Log write failed.' );
+				}
+
+				return null;
+			}
+		);
+
+		$outcome = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_second' );
+		$fresh   = wc_get_order( $order->get_id() );
+
+		$this->assertSame( 1, $throws, 'The lookup line was written once.' );
+		$this->assertSame( array(), array_values( array_filter( self::request_trail( $http_client ), static fn( string $line ): bool => 'POST intentions key_second' === $line ) ), 'The new card must not be charged.' );
+		if ( 'found' === $path ) {
+			$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+			$this->assertSame( 'pi_earlier', $outcome->get_provider_payment_id() );
+			return;
+		}
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertTrue( $outcome->get_data()[ PaymentOutcome::DATA_PRESERVE_ORDER_STATUS ] ?? null );
+		$this->assertSame( 'disputed' === $path ? WooPaymentsDuplicatePaymentPreventionService::ERROR_DISPUTED_INTENT : 'wcpay_charge_lookup_failed', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
+		$this->assertSame( 'key_first', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$this->assertCount( 'cannot check' === $path ? 1 : 0, self::note_texts_containing( $fresh, 'could not be checked' ) );
+		$this->assertCount( 'disputed' === $path ? 1 : 0, self::note_texts_containing( $fresh, 'is disputed' ) );
+	}
+
+	/**
+	 * Lookup answers, each with its list answers, with an Exception and a PHP Error thrown by the log filter.
+	 *
+	 * @return array<string,array{0:string,1:array<int,mixed>,2:string}>
+	 */
+	public function provide_lookup_log_failures(): array {
+		$disputed = array(
+			'charges' => array(
+				'data' => array(
+					array(
+						'id'       => 'ch_earlier',
+						'amount'   => 1000,
+						'refunded' => false,
+						'disputed' => true,
+					),
+				),
+			),
+		);
+		$paths    = array(
+			'failed'       => array( self::stripe_api_error( 500 ) ),
+			'cannot check' => array( self::stripe_no_such_customer(), self::http_json( 200, array( 'object' => 'list' ) ) ),
+			'found'        => array( static fn( WC_Order $order ): array => self::intent_list( array( self::order_intent( $order, 'pi_earlier', 'succeeded' ) ) ) ),
+			'disputed'     => array( static fn( WC_Order $order ): array => self::intent_list( array( self::order_intent( $order, 'pi_earlier', 'succeeded', 1000, $disputed ) ) ) ),
+		);
+		$cases    = array();
+		foreach ( $paths as $path => $responses ) {
+			foreach ( array( \RuntimeException::class, \Error::class ) as $thrown ) {
+				$cases[ "the lookup $path and the filter throws $thrown" ] = array( $path, $responses, $thrown );
+			}
+		}
+
+		return $cases;
+	}
+
+	/**
 	 * @testdox A failed lookup ($_dataName) refuses the attempt with the generic notice, keeps the order status, the key and the record, and the next attempt looks again.
 	 *
 	 * An error proves nothing about money, so nothing is charged: the failure is not definitive, not a decline, and keeps
@@ -6167,6 +6258,61 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		}
 
 		return $cases;
+	}
+
+	/**
+	 * @testdox An amount-mismatch refusal keeps its notice, failed status and note, and charges nothing, when logging it throws $thrown.
+	 *
+	 * The logger is WooCommerce's own, so the refusal's line runs the woocommerce_logger_log_message filter
+	 * (WC_Logger::log()); the filter throws on it here. The attached intent is the recorded completed challenge for 10.99
+	 * (Fixtures/rec-t3-3ds-manual.json), and the order total changed to 12.00 since, so the guard refuses with the
+	 * overpayment notice (client 11.1.0 class-duplicate-payment-prevention-service.php:117-130).
+	 *
+	 * @testWith ["RuntimeException"]
+	 *           ["Error"]
+	 *
+	 * @param string $thrown Class the filter throws.
+	 */
+	public function test_checkout_keeps_the_amount_mismatch_refusal_when_its_logging_fails( string $thrown ): void {
+		$order = $this->create_order_left_by_a_completed_challenge();
+		$order->set_total( '12.00' );
+		$order->save();
+
+		$http_client              = new FakeWooPaymentsHttpClient();
+		$http_client->responses[] = self::http_json( 200, $this->attached_intent_given_back( $order, array() ) );
+		$gateway                  = $this->create_gateway_with_real_duplicate_guard( $http_client );
+		self::enable_woopayments_debug_logging();
+		$throws = 0;
+		add_filter(
+			'woocommerce_logger_log_message',
+			static function ( $message ) use ( $thrown, &$throws ) {
+				if ( 'Error occurred during the payment process.' === $message ) {
+					++$throws;
+					throw new $thrown( 'Log write failed.' );
+				}
+
+				return null;
+			}
+		);
+
+		$_POST['wcpay-payment-method'] = 'pm_card_visa';
+
+		try {
+			$result = $gateway->process_payment( $order->get_id() );
+		} finally {
+			unset( $_POST['wcpay-payment-method'] );
+		}
+
+		$order   = wc_get_order( $order->get_id() );
+		$notices = array_column( wc_get_notices( 'error' ), 'notice' );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 1, $throws, 'The refusal line was written once.' );
+		$this->assertSame( 'failure', $result['result'] ?? '' );
+		$this->assertCount( 1, $notices );
+		$this->assertStringContainsString( 'so we prevented an overpayment', $notices[0] );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertNotSame( array(), self::note_texts_containing( $order, 'so we prevented an overpayment' ), 'The failed status carries the refusal as its note.' );
+		$this->assertSame( array( 'GET intentions/' . self::CHALLENGE_COMPLETED_INTENT_ID ), self::platform_calls( $http_client ), 'Only the attached intent may be read; nothing may be charged.' );
 	}
 
 	/**

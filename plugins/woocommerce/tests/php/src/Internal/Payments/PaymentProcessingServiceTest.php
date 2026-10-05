@@ -2016,6 +2016,44 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should still refuse, without a charge, an order another submission changed when the refusal's log line throws $thrown.
+	 *
+	 * The logger is WooCommerce's own, so the line runs the woocommerce_logger_log_message filter (WC_Logger::log()).
+	 *
+	 * @testWith ["RuntimeException"]
+	 *           ["Error"]
+	 *
+	 * @param string $thrown Class the filter throws.
+	 */
+	public function test_process_checkout_refusal_for_a_changed_order_survives_a_throwing_log_filter( string $thrown ): void {
+		$order  = $this->create_woopayments_order( '10.00' );
+		$loaded = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $loaded );
+		$order->set_status( 'failed' );
+		$order->save();
+		$throws = 0;
+		add_filter(
+			'woocommerce_logger_log_message',
+			static function ( $message ) use ( $thrown, &$throws ) {
+				if ( false !== strpos( (string) $message, 'changed before this request claimed its payment lock' ) ) {
+					++$throws;
+					throw new $thrown( 'Log write failed.' );
+				}
+
+				return $message;
+			}
+		);
+
+		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_second' ) );
+		$outcome  = $this->sut->process_checkout_outcome( PaymentContext::for_checkout( $loaded, OrderPaymentStore::GATEWAY_ID, 'pm_second' ), $provider );
+
+		$this->assertSame( 1, $throws, 'The refusal line was written once.' );
+		$this->assertSame( 0, $provider->charge_calls, 'Another submission is at work on this order.' );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'A payment operation is already in progress for this order.', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ] ?? null );
+	}
+
+	/**
 	 * Unpaid changes another submission makes between this request's load and its claim.
 	 *
 	 * @return array<string,array{0:string,1:string}>

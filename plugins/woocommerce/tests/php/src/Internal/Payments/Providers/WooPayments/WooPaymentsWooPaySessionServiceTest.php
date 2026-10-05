@@ -1529,20 +1529,23 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A classic checkout stops with a notice, places no order and leaves the $status WooPay order alone while another request holds its payment lock.
+	 * @testdox A classic checkout stops with a notice, places no order and leaves the $status WooPay order alone while another request holds its payment lock (refusal log line throws: $log_throws).
 	 *
 	 * Native checkout holds the order payment lock across the platform charge, with its attempt key as the lock value
 	 * (PaymentProcessingService::process_checkout_outcome()). Placing a new order instead would let this checkout charge a
 	 * second order while the first payment is unresolved. Client 11.1.0 takes the draft over without any lock
-	 * (class-wc-payments-woopay-direct-checkout.php:56-79).
+	 * (class-wc-payments-woopay-direct-checkout.php:56-79). The refusal's log line runs the woocommerce_logger_log_message
+	 * filter (WC_Logger::log()); a filter that throws there must not change the refusal.
 	 *
-	 * @testWith ["checkout-draft"]
-	 *           ["pending"]
-	 *           ["failed"]
+	 * @testWith ["checkout-draft", false]
+	 *           ["pending", false]
+	 *           ["failed", false]
+	 *           ["pending", true]
 	 *
-	 * @param string $status Status of the order the Store API draft key names.
+	 * @param string $status     Status of the order the Store API draft key names.
+	 * @param bool   $log_throws Whether the log filter throws on the lock refusal line.
 	 */
-	public function test_classic_checkout_stops_while_the_woopay_order_payment_lock_is_held( string $status ): void {
+	public function test_classic_checkout_stops_while_the_woopay_order_payment_lock_is_held( string $status, bool $log_throws ): void {
 		$sut = $this->create_service( array(), array( 'platform_direct_checkout_eligible' => true ) );
 		$this->register_controller( $sut );
 		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 1 );
@@ -1562,6 +1565,20 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		};
 		$this->assertIsString( $token );
 		add_action( 'woocommerce_new_order', $record );
+		$throws = 0;
+		if ( $log_throws ) {
+			add_filter(
+				'woocommerce_logger_log_message',
+				static function ( $message ) use ( &$throws ) {
+					if ( 0 === strpos( (string) $message, 'order payment lock refused: ' ) ) {
+						++$throws;
+						throw new \Error( 'Log write failed.' );
+					}
+
+					return $message;
+				}
+			);
+		}
 
 		try {
 			$result = $this->create_classic_checkout_order();
@@ -1570,6 +1587,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 			$store->release_order_payment_lock( $draft, $profile, $token );
 		}
 
+		$this->assertSame( $log_throws ? 1 : 0, $throws );
 		$this->assertWPError( $result );
 		$this->assertSame( 'woocommerce_woopay_payment_in_progress', $result->get_error_code() );
 		$this->assertSame( array(), $new_orders, 'No order is placed.' );
