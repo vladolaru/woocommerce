@@ -11,7 +11,7 @@ import {
 } from './index';
 
 const describe = ( fnName, fnInfo ) => {
-	// eslint-disable-next-line no-console
+	// eslint-disable-next-line no-console -- Debug tool output; these helpers exist to print to the console.
 	console.log( `\n%c${ fnName }:`, 'font-weight:bold', fnInfo, '\n\n' );
 };
 
