@@ -276,7 +276,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should render the ECE container with pay-for-order context on order-pay pages.
+	 * @testdox Should render the ECE container and the OR separator with pay-for-order context on order-pay pages.
 	 */
 	public function test_display_express_checkout_buttons_renders_on_order_pay_page(): void {
 		$service   = new RecordingExpressCheckoutService();
@@ -289,7 +289,9 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		$output = (string) ob_get_clean();
 
 		$this->assertStringContainsString( 'wcpay-express-checkout-wrapper', $output );
-		$this->assertStringNotContainsString( 'wcpay-express-checkout-button-separator', $output );
+		// Client 11.1.0 renders it wherever is_checkout() holds, which includes order-pay
+		// (class-wc-payments-express-checkout-button-display-handler.php:112-118; captures-2b/order-pay-1280-c8097.png).
+		$this->assertStringContainsString( '<p id="wcpay-express-checkout-button-separator" style="margin-top:1.5em;text-align:center;" hidden>', $output );
 		$this->assertSame( array( 'pay_for_order' ), $service->contexts );
 	}
 

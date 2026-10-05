@@ -202,7 +202,7 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 
 	/**
 	 * Display the express checkout buttons in one wrapper: the WooPay button, then the Stripe Express Checkout Element,
-	 * then one "OR" separator on checkout (client 11.1.0 class-wc-payments-express-checkout-button-display-handler.php:112-152).
+	 * then one "OR" separator on checkout and order-pay (client 11.1.0 class-wc-payments-express-checkout-button-display-handler.php:112-152).
 	 * The separator starts hidden without a WooPay button; the classic script shows it once the wallet is ready.
 	 */
 	public function display_express_checkout_buttons(): void {
@@ -224,7 +224,8 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 		if ( $show_element ) {
 			echo '<div id="wcpay-express-checkout-element"></div>';
 		}
-		if ( 'checkout' === $context ) {
+		// Client 11.1.0 renders it wherever is_checkout() holds, which includes the order-pay endpoint.
+		if ( in_array( $context, array( 'checkout', 'pay_for_order' ), true ) ) {
 			echo '<p id="wcpay-express-checkout-button-separator" style="margin-top:1.5em;text-align:center;"' . ( '' === $woopay_button ? ' hidden' : '' ) . '>&mdash; ' . esc_html__( 'OR', 'woocommerce' ) . ' &mdash;</p>';
 		}
 		echo '</div>';
