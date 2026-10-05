@@ -1638,9 +1638,9 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should enable WooPay first-party auth only when WooPay express checkout is available.
+	 * @testdox WooPay first-party auth follows the express feature option, eligibility and country, not the button locations.
 	 */
-	public function test_first_party_auth_flag_requires_available_woopay_express_checkout(): void {
+	public function test_first_party_auth_flag_follows_the_express_option_eligibility_and_country(): void {
 		$this->assertTrue(
 			$this->create_service()->get_woopay_frontend_config( 'checkout' )['isWoopayFirstPartyAuthEnabled'],
 			'US eligible WooPay checkout should enable first-party auth.'
@@ -1663,10 +1663,21 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 			'Stores with WooPay disabled should not enable first-party auth.'
 		);
 
-		$this->assertFalse(
+		// Client 11.1.0 class-woopay-utilities.php:80-82 checks the express feature option, eligibility and country only.
+		$this->assertTrue(
 			$this->create_service( array( 'express_checkout_checkout_methods' => array() ) )->get_woopay_frontend_config( 'checkout' )['isWoopayFirstPartyAuthEnabled'],
-			'Checkout contexts without WooPay express checkout should not enable first-party auth.'
+			'Removing the WooPay button from checkout must keep first-party auth for the email input.'
 		);
+
+		update_option( '_wcpay_feature_woopay_express_checkout', '0' );
+		try {
+			$this->assertFalse(
+				$this->create_service()->get_woopay_frontend_config( 'checkout' )['isWoopayFirstPartyAuthEnabled'],
+				'The WooPay express feature option turned off disables first-party auth.'
+			);
+		} finally {
+			delete_option( '_wcpay_feature_woopay_express_checkout' );
+		}
 	}
 
 	/**

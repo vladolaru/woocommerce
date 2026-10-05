@@ -1033,6 +1033,8 @@ class WooPaymentsWooPaySessionService {
 	 */
 	public function get_woopay_frontend_config( string $context = 'checkout' ): array {
 		// woopaySessionEmail follows the client's OTP pre-fill chain (WooPay_Session::get_user_email(), class-woopay-session.php:433-472).
+		// isWoopayFirstPartyAuthEnabled is the express feature option, WooPay eligibility and the visitor's country, whatever the
+		// express button locations (client 11.1.0 WooPay_Utilities::is_woopay_first_party_auth_enabled(), class-woopay-utilities.php:80-82).
 		$is_woopay_enabled                 = $this->is_woopay_enabled();
 		$is_country_available              = $is_woopay_enabled && $this->is_woopay_country_available();
 		$is_global_theme_enabled           = $this->is_woopay_global_theme_support_enabled();
@@ -1042,7 +1044,7 @@ class WooPaymentsWooPaySessionService {
 		$woopay_session_email              = $this->resolve_session_email( null );
 		$woopay_minimum_session            = $is_woopay_enabled ? $this->get_encrypted_minimum_session_data() : array();
 		$woopay_express_available          = $is_woopay_enabled && $this->is_woopay_express_checkout_configured_at( $context );
-		$woopay_first_party_auth_available = $woopay_express_available && $is_country_available;
+		$woopay_first_party_auth_available = $is_country_available && '1' === get_option( '_wcpay_feature_woopay_express_checkout', '1' );
 
 		return array(
 			'isWooPayEnabled'                   => $is_woopay_enabled,
