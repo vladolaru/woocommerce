@@ -15,8 +15,18 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\E
  */
 class OwnWebhookResolver {
 
+	/**
+	 * The incoming webhook endpoint.
+	 *
+	 * @var IncomingWebhookEndpoint
+	 */
 	private IncomingWebhookEndpoint $incoming_webhook_endpoint;
 
+	/**
+	 * OwnWebhookResolver constructor.
+	 *
+	 * @param IncomingWebhookEndpoint $incoming_webhook_endpoint The incoming webhook endpoint.
+	 */
 	public function __construct( IncomingWebhookEndpoint $incoming_webhook_endpoint ) {
 		$this->incoming_webhook_endpoint = $incoming_webhook_endpoint;
 	}
@@ -34,7 +44,7 @@ class OwnWebhookResolver {
 	 */
 	public function is_own( Webhook $webhook ): bool {
 		$stored_id = $this->stored_id();
-		if ( $stored_id !== '' && $webhook->id() === $stored_id ) {
+		if ( '' !== $stored_id && $webhook->id() === $stored_id ) {
 			return true;
 		}
 
@@ -52,7 +62,7 @@ class OwnWebhookResolver {
 	public function points_here( Webhook $webhook ): bool {
 		$own_identity = $this->own_identity();
 
-		return $own_identity !== '' && $own_identity === $this->identity( $webhook->url() );
+		return '' !== $own_identity && $own_identity === $this->identity( $webhook->url() );
 	}
 
 	/**

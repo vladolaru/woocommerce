@@ -17,22 +17,74 @@ class WebhookRegistrar {
 	const EVENT_HOOK = 'ppcp-register-event';
 	const KEY        = 'ppcp-webhook';
 
+	/**
+	 * The webhook factory.
+	 *
+	 * @var WebhookFactory
+	 */
 	private WebhookFactory $webhook_factory;
 
+	/**
+	 * The endpoint.
+	 *
+	 * @var WebhookEndpoint
+	 */
 	private WebhookEndpoint $endpoint;
 
+	/**
+	 * The incoming webhook endpoint.
+	 *
+	 * @var IncomingWebhookEndpoint
+	 */
 	private IncomingWebhookEndpoint $incoming_webhook_endpoint;
 
+	/**
+	 * The last webhook event storage.
+	 *
+	 * @var WebhookEventStorage
+	 */
 	private WebhookEventStorage $last_webhook_event_storage;
 
+	/**
+	 * The webhook simulation.
+	 *
+	 * @var WebhookSimulation
+	 */
 	private WebhookSimulation $webhook_simulation;
 
+	/**
+	 * The webhook orchestrator.
+	 *
+	 * @var WebhookOrchestrator
+	 */
 	private WebhookOrchestrator $webhook_orchestrator;
 
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	private LoggerInterface $logger;
 
+	/**
+	 * The own webhook resolver.
+	 *
+	 * @var OwnWebhookResolver
+	 */
 	private OwnWebhookResolver $own_webhook_resolver;
 
+	/**
+	 * WebhookRegistrar constructor.
+	 *
+	 * @param WebhookFactory          $webhook_factory            The webhook factory.
+	 * @param WebhookEndpoint         $endpoint                   The endpoint.
+	 * @param IncomingWebhookEndpoint $incoming_webhook_endpoint  The incoming webhook endpoint.
+	 * @param WebhookEventStorage     $last_webhook_event_storage The last webhook event storage.
+	 * @param WebhookSimulation       $webhook_simulation         The webhook simulation.
+	 * @param WebhookOrchestrator     $webhook_orchestrator       The webhook orchestrator.
+	 * @param LoggerInterface         $logger                     The logger.
+	 * @param OwnWebhookResolver      $own_webhook_resolver       The own webhook resolver.
+	 */
 	public function __construct(
 		WebhookFactory $webhook_factory,
 		WebhookEndpoint $endpoint,

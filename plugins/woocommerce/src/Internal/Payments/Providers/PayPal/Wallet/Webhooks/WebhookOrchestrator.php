@@ -13,8 +13,18 @@ class WebhookOrchestrator {
 	private const LOCK_KEY      = 'ppcp_webhook_operation_lock';
 	private const LOCK_DURATION = 60;
 
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	private LoggerInterface $logger;
 
+	/**
+	 * WebhookOrchestrator constructor.
+	 *
+	 * @param LoggerInterface $logger The logger.
+	 */
 	public function __construct( LoggerInterface $logger ) {
 		$this->logger = $logger;
 	}
@@ -44,15 +54,28 @@ class WebhookOrchestrator {
 		}
 	}
 
+	/**
+	 * Returns whether it is locked.
+	 */
 	private function is_locked(): bool {
 		return false !== get_transient( self::LOCK_KEY );
 	}
 
+	/**
+	 * Acquire lock.
+	 *
+	 * @param string $action The action.
+	 */
 	private function acquire_lock( string $action ): void {
 		set_transient( self::LOCK_KEY, true, self::LOCK_DURATION );
 		$this->logger->debug( "Webhook lock acquired for '$action'." );
 	}
 
+	/**
+	 * Release lock.
+	 *
+	 * @param string $action The action.
+	 */
 	private function release_lock( string $action ): void {
 		delete_transient( self::LOCK_KEY );
 		$this->logger->debug( "Webhook lock released for '$action'." );

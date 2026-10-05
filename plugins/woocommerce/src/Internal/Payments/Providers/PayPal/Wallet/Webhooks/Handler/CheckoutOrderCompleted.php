@@ -50,7 +50,8 @@ class CheckoutOrderCompleted implements RequestHandler {
 	/**
 	 * Whether a handler is responsible for a given request or not.
 	 *
-	 * @param WP_REST_Request<array<string, mixed>> $request The request.
+	 * @param WP_REST_Request $request The request.
+	 * @phpstan-param WP_REST_Request<array<string, mixed>> $request
 	 *
 	 * @return bool
 	 */
@@ -61,7 +62,8 @@ class CheckoutOrderCompleted implements RequestHandler {
 	/**
 	 * Responsible for handling the request.
 	 *
-	 * @param WP_REST_Request<array<string, mixed>> $request The request.
+	 * @param WP_REST_Request $request The request.
+	 * @phpstan-param WP_REST_Request<array<string, mixed>> $request
 	 *
 	 * @return WP_REST_Response
 	 */

@@ -50,7 +50,8 @@ class PaymentCapturePending implements RequestHandler {
 	/**
 	 * Whether a handler is responsible for a given request or not.
 	 *
-	 * @param \WP_REST_Request<array<string, mixed>> $request The request.
+	 * @param \WP_REST_Request $request The request.
+	 * @phpstan-param \WP_REST_Request<array<string, mixed>> $request
 	 *
 	 * @return bool
 	 */
@@ -61,18 +62,19 @@ class PaymentCapturePending implements RequestHandler {
 	/**
 	 * Responsible for handling the request.
 	 *
-	 * @param WP_REST_Request<array<string, mixed>> $request The request.
+	 * @param WP_REST_Request $request The request.
+	 * @phpstan-param WP_REST_Request<array<string, mixed>> $request
 	 *
 	 * @return WP_REST_Response
 	 */
 	public function handle_request( WP_REST_Request $request ): WP_REST_Response {
-		$order_id = $request['resource'] !== null && isset( $request['resource']['custom_id'] )
+		$order_id = null !== $request['resource'] && isset( $request['resource']['custom_id'] )
 			? $request['resource']['custom_id']
 			: 0;
 		if ( ! $order_id ) {
 			$message = sprintf(
 				'No order for webhook event %s was found.',
-				$request['id'] !== null && isset( $request['id'] ) ? $request['id'] : ''
+				null !== $request['id'] && isset( $request['id'] ) ? $request['id'] : ''
 			);
 			return $this->failure_response( $message );
 		}
@@ -87,7 +89,7 @@ class PaymentCapturePending implements RequestHandler {
 		if ( ! ( $wc_order instanceof \WC_Order ) ) {
 			$message = sprintf(
 				'WC order for PayPal ID %s not found.',
-				$request['resource'] !== null && isset( $request['resource']['id'] ) ? $request['resource']['id'] : ''
+				null !== $request['resource'] && isset( $request['resource']['id'] ) ? $request['resource']['id'] : ''
 			);
 
 			return $this->failure_response( $message );

@@ -66,7 +66,8 @@ class PaymentCaptureCompleted implements RequestHandler {
 	/**
 	 * Whether a handler is responsible for a given request or not.
 	 *
-	 * @param \WP_REST_Request<array<string, mixed>> $request The request.
+	 * @param \WP_REST_Request $request The request.
+	 * @phpstan-param \WP_REST_Request<array<string, mixed>> $request
 	 *
 	 * @return bool
 	 */
@@ -77,7 +78,8 @@ class PaymentCaptureCompleted implements RequestHandler {
 	/**
 	 * Responsible for handling the request.
 	 *
-	 * @param \WP_REST_Request<array<string, mixed>> $request The request.
+	 * @param \WP_REST_Request $request The request.
+	 * @phpstan-param \WP_REST_Request<array<string, mixed>> $request
 	 *
 	 * @return WP_REST_Response
 	 */
@@ -106,6 +108,11 @@ class PaymentCaptureCompleted implements RequestHandler {
 
 		/**
 		 * Allow access to the webhook logic before updating the WC order.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param \WC_Order   $wc_order The WooCommerce order.
+		 * @param mixed       $order_id The PayPal order ID as the webhook carries it, or null.
 		 */
 		do_action( 'woocommerce_paypal_payments_payment_capture_completed_webhook_handler', $wc_order, $order_id );
 

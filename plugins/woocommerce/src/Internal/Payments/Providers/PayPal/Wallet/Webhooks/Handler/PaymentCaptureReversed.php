@@ -53,7 +53,8 @@ class PaymentCaptureReversed implements RequestHandler {
 	/**
 	 * Whether a handler is responsible for a given request or not.
 	 *
-	 * @param \WP_REST_Request<array<string, mixed>> $request The request.
+	 * @param \WP_REST_Request $request The request.
+	 * @phpstan-param \WP_REST_Request<array<string, mixed>> $request
 	 *
 	 * @return bool
 	 */
@@ -64,7 +65,8 @@ class PaymentCaptureReversed implements RequestHandler {
 	/**
 	 * Responsible for handling the request.
 	 *
-	 * @param \WP_REST_Request<array<string, mixed>> $request The request.
+	 * @param \WP_REST_Request $request The request.
+	 * @phpstan-param \WP_REST_Request<array<string, mixed>> $request
 	 *
 	 * @return \WP_REST_Response
 	 */
@@ -90,6 +92,12 @@ class PaymentCaptureReversed implements RequestHandler {
 
 		/**
 		 * Allows adding an update status note.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param string    $note       The note added when the order status is updated; empty by default.
+		 * @param \WC_Order $wc_order   The WooCommerce order.
+		 * @param mixed     $event_type The webhook event type.
 		 */
 		$note = apply_filters( 'ppcp_payment_capture_reversed_webhook_update_status_note', '', $wc_order, $request['event_type'] );
 

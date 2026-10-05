@@ -154,7 +154,8 @@ class IncomingWebhookEndpoint {
 	/**
 	 * Verifies the current request.
 	 *
-	 * @param \WP_REST_Request<array<string, mixed>> $request The request.
+	 * @param \WP_REST_Request $request The request.
+	 * @phpstan-param \WP_REST_Request<array<string, mixed>> $request
 	 *
 	 * @return bool
 	 */
@@ -212,7 +213,8 @@ class IncomingWebhookEndpoint {
 	/**
 	 * Handles the request.
 	 *
-	 * @param \WP_REST_Request<array<string, mixed>> $request The request.
+	 * @param \WP_REST_Request $request The request.
+	 * @phpstan-param \WP_REST_Request<array<string, mixed>> $request
 	 *
 	 * @return \WP_REST_Response
 	 */
@@ -243,7 +245,8 @@ class IncomingWebhookEndpoint {
 	 * Processes the request. Split out from handle_request() so the latter
 	 * can wrap it in a single catch-all try/catch.
 	 *
-	 * @param \WP_REST_Request<array<string, mixed>> $request The request.
+	 * @param \WP_REST_Request $request The request.
+	 * @phpstan-param \WP_REST_Request<array<string, mixed>> $request
 	 *
 	 * @return \WP_REST_Response
 	 */
@@ -269,7 +272,10 @@ class IncomingWebhookEndpoint {
 
 		foreach ( $this->handlers as $handler ) {
 			if ( $handler->responsible_for_request( $request ) ) {
-				$event_type = ( $handler->event_types() ? current( $handler->event_types() ) : '' ) ?: '';
+				$event_type = $handler->event_types() ? current( $handler->event_types() ) : '';
+				if ( ! $event_type ) {
+					$event_type = '';
+				}
 
 				$this->logger->debug(
 					sprintf(
@@ -290,7 +296,7 @@ class IncomingWebhookEndpoint {
 			}
 		}
 
-		$event_type = $request['event_type'] ?: '';
+		$event_type = $request['event_type'] ? $request['event_type'] : '';
 		if ( in_array( $event_type, array( 'BILLING_AGREEMENTS.AGREEMENT.CREATED' ), true ) ) {
 			return $this->success_response();
 		}
@@ -339,7 +345,8 @@ class IncomingWebhookEndpoint {
 	/**
 	 * Creates WebhookEvent from request data.
 	 *
-	 * @param \WP_REST_Request<array<string, mixed>> $request The request with event data.
+	 * @param \WP_REST_Request $request The request with event data.
+	 * @phpstan-param \WP_REST_Request<array<string, mixed>> $request
 	 *
 	 * @return WebhookEvent
 	 * @throws RuntimeException When failed to create.

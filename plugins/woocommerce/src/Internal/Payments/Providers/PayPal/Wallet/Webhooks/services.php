@@ -218,7 +218,7 @@ return array(
 	'webhook.last-webhook-storage'            => static function ( ContainerInterface $container ): WebhookEventStorage {
 		return new WebhookEventStorage( $container->get( 'webhook.last-webhook-storage.key' ) );
 	},
-	'webhook.last-webhook-storage.key'        => static function ( ContainerInterface $container ): string {
+	'webhook.last-webhook-storage.key'        => static function ( ContainerInterface $container ): string { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return 'ppcp-last-webhook';
 	},
 

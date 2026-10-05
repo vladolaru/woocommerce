@@ -100,7 +100,8 @@ class CheckoutOrderApproved implements RequestHandler {
 	/**
 	 * Whether a handler is responsible for a given request or not.
 	 *
-	 * @param \WP_REST_Request<array<string, mixed>> $request The request.
+	 * @param \WP_REST_Request $request The request.
+	 * @phpstan-param \WP_REST_Request<array<string, mixed>> $request
 	 *
 	 * @return bool
 	 */
@@ -111,7 +112,8 @@ class CheckoutOrderApproved implements RequestHandler {
 	/**
 	 * Responsible for handling the request.
 	 *
-	 * @param \WP_REST_Request<array<string, mixed>> $request The request.
+	 * @param \WP_REST_Request $request The request.
+	 * @phpstan-param \WP_REST_Request<array<string, mixed>> $request
 	 *
 	 * @return \WP_REST_Response
 	 */
@@ -121,7 +123,7 @@ class CheckoutOrderApproved implements RequestHandler {
 			return $this->failure_response(
 				sprintf(
 					'No order ID in webhook event %s.',
-					$request['id'] ?: ''
+					$request['id'] ? $request['id'] : ''
 				)
 			);
 		}
@@ -144,6 +146,13 @@ class CheckoutOrderApproved implements RequestHandler {
 				return $this->success_response();
 			}
 
+			/**
+			 * Filters whether the CHECKOUT.ORDER.APPROVED webhook may create the WooCommerce order.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param bool $can_create Whether the webhook may create the order; false by default.
+			 */
 			if ( ! (bool) apply_filters( 'woocommerce_paypal_payments_order_approved_webhook_can_create_wc_order', false ) ) {
 				return $this->success_response();
 			}
@@ -166,7 +175,7 @@ class CheckoutOrderApproved implements RequestHandler {
 				return $this->failure_response(
 					sprintf(
 						'Failed to create WC order in webhook event %s, checkout data not found.',
-						$request['id'] ?: ''
+						$request['id'] ? $request['id'] : ''
 					)
 				);
 			}
@@ -178,7 +187,7 @@ class CheckoutOrderApproved implements RequestHandler {
 				return $this->failure_response(
 					sprintf(
 						'Failed to create WC order in webhook event %s.',
-						$request['id'] ?: ''
+						$request['id'] ? $request['id'] : ''
 					)
 				);
 			}
@@ -227,6 +236,12 @@ class CheckoutOrderApproved implements RequestHandler {
 				 * - true bool controls execution of 'OrderProcessor::process()'
 				 * - null because it's mostly for PayPalGateway instance to handle
 				 * - $wc_order \WC_Order
+				 *
+				 * @since 11.3.0
+				 *
+				 * @param bool                     $process  Whether OrderProcessor::process() is called; true by default.
+				 * @param \WC_Payment_Gateway|null $gateway  The gateway; null here because the PayPalGateway instance is not involved.
+				 * @param \WC_Order                $wc_order The WooCommerce order.
 				 */
 				$process = apply_filters( 'woocommerce_paypal_payments_before_order_process', true, null, $wc_order );
 				if ( $process ) {

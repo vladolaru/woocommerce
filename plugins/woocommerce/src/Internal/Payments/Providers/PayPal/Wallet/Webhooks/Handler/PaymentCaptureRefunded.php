@@ -64,7 +64,8 @@ class PaymentCaptureRefunded implements RequestHandler {
 	/**
 	 * Whether a handler is responsible for a given request or not.
 	 *
-	 * @param WP_REST_Request<array<string, mixed>> $request The request.
+	 * @param WP_REST_Request $request The request.
+	 * @phpstan-param WP_REST_Request<array<string, mixed>> $request
 	 *
 	 * @return bool
 	 */
@@ -75,12 +76,13 @@ class PaymentCaptureRefunded implements RequestHandler {
 	/**
 	 * Responsible for handling the request.
 	 *
-	 * @param WP_REST_Request<array<string, mixed>> $request The request.
+	 * @param WP_REST_Request $request The request.
+	 * @phpstan-param WP_REST_Request<array<string, mixed>> $request
 	 *
 	 * @return WP_REST_Response
 	 */
 	public function handle_request( WP_REST_Request $request ): WP_REST_Response {
-		$resource = ( $request['resource'] ?? array() ) ?: array();
+		$resource = ( $request['resource'] ?? array() ) ? $request['resource'] : array();
 
 		$order_id  = $resource['custom_id'] ?? 0;
 		$refund_id = (string) ( $resource['id'] ?? '' );

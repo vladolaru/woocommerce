@@ -40,6 +40,8 @@ class WebhookModule implements ServiceModule, FactoryModule, ExecutableModule {
 
 	/**
 	 * {@inheritDoc}
+	 *
+	 * @param ContainerInterface $container The service container.
 	 */
 	public function run( ContainerInterface $container ): bool {
 
