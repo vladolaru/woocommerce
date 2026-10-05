@@ -48,6 +48,13 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	private WooPaymentsFraudPreventionService $fraud_prevention_service;
 
 	/**
+	 * WooPay controller, which supplies the WooPay button placeholder.
+	 *
+	 * @var WooPaymentsWooPaySessionController
+	 */
+	private WooPaymentsWooPaySessionController $woopay_controller;
+
+	/**
 	 * Whether express checkout buttons have already rendered in this request.
 	 *
 	 * @var bool
@@ -59,14 +66,16 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter      $arbiter                  Runtime owner arbiter.
-	 * @param WooPaymentsExpressCheckoutService $express_checkout_service Express checkout service.
-	 * @param WooPaymentsFraudPreventionService $fraud_prevention_service Fraud prevention service.
+	 * @param NativePaymentsRuntimeArbiter       $arbiter                  Runtime owner arbiter.
+	 * @param WooPaymentsExpressCheckoutService  $express_checkout_service Express checkout service.
+	 * @param WooPaymentsFraudPreventionService  $fraud_prevention_service Fraud prevention service.
+	 * @param WooPaymentsWooPaySessionController $woopay_controller        WooPay controller.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsExpressCheckoutService $express_checkout_service, WooPaymentsFraudPreventionService $fraud_prevention_service ): void {
+	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsExpressCheckoutService $express_checkout_service, WooPaymentsFraudPreventionService $fraud_prevention_service, WooPaymentsWooPaySessionController $woopay_controller ): void {
 		$this->arbiter                  = $arbiter;
 		$this->express_checkout_service = $express_checkout_service;
 		$this->fraud_prevention_service = $fraud_prevention_service;
+		$this->woopay_controller        = $woopay_controller;
 	}
 
 	/**
@@ -192,24 +201,31 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Display the Stripe Express Checkout Element placeholder.
+	 * Display the express checkout buttons in one wrapper: the WooPay button, then the Stripe Express Checkout Element,
+	 * then one "OR" separator on checkout (client 11.1.0 class-wc-payments-express-checkout-button-display-handler.php:112-152).
+	 * The separator starts hidden without a WooPay button; the classic script shows it once the wallet is ready.
 	 */
 	public function display_express_checkout_buttons(): void {
 		if ( $this->has_rendered_express_checkout_buttons || ! $this->is_supported_frontend_surface() ) {
 			return;
 		}
 
-		$context = $this->get_current_button_context();
-		if ( ! $this->express_checkout_service->should_show_payment_request_button( $context ) ) {
+		$context       = $this->get_current_button_context();
+		$woopay_button = $this->woopay_controller->get_express_checkout_button_html();
+		$show_element  = $this->express_checkout_service->should_show_payment_request_button( $context );
+		if ( ! $show_element && '' === $woopay_button ) {
 			return;
 		}
 
 		$this->has_rendered_express_checkout_buttons = true;
 
 		echo '<div class="wcpay-express-checkout-wrapper">';
-		echo '<div id="wcpay-express-checkout-element"></div>';
+		echo $woopay_button; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped when WooPaymentsWooPaySessionController builds it.
+		if ( $show_element ) {
+			echo '<div id="wcpay-express-checkout-element"></div>';
+		}
 		if ( 'checkout' === $context ) {
-			echo '<p id="wcpay-express-checkout-button-separator">&mdash; ' . esc_html__( 'OR', 'woocommerce' ) . ' &mdash;</p>';
+			echo '<p id="wcpay-express-checkout-button-separator" style="margin-top:1.5em;text-align:center;"' . ( '' === $woopay_button ? ' hidden' : '' ) . '>&mdash; ' . esc_html__( 'OR', 'woocommerce' ) . ' &mdash;</p>';
 		}
 		echo '</div>';
 	}

@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEx
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionController;
 use WC_Unit_Test_Case;
 
 /**
@@ -221,6 +222,57 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'wcpay-express-checkout-wrapper', $output );
 		$this->assertStringContainsString( 'id="wcpay-express-checkout-element"', $output );
 		$this->assertStringContainsString( 'wcpay-express-checkout-button-separator', $output );
+	}
+
+	/**
+	 * @testdox Should render the WooPay button, then the ECE container, then one OR separator in one wrapper on checkout.
+	 */
+	public function test_display_express_checkout_buttons_renders_woopay_and_ece_in_one_wrapper(): void {
+		$this->sut = $this->create_controller( true, true, null, '<div id="wcpay-woopay-button"></div>' );
+		$this->set_checkout_shortcode_page();
+
+		ob_start();
+		$this->sut->display_express_checkout_buttons();
+		$output = (string) ob_get_clean();
+
+		// Client 11.1.0 class-wc-payments-express-checkout-button-display-handler.php:134-149.
+		$this->assertSame(
+			'<div class="wcpay-express-checkout-wrapper"><div id="wcpay-woopay-button"></div><div id="wcpay-express-checkout-element"></div>' .
+			'<p id="wcpay-express-checkout-button-separator" style="margin-top:1.5em;text-align:center;">&mdash; OR &mdash;</p></div>',
+			$output
+		);
+	}
+
+	/**
+	 * @testdox Should start the OR separator hidden when no WooPay button shows, for the wallet to reveal.
+	 */
+	public function test_display_express_checkout_buttons_starts_separator_hidden_without_woopay(): void {
+		$this->sut = $this->create_controller( true, true );
+		$this->set_checkout_shortcode_page();
+
+		ob_start();
+		$this->sut->display_express_checkout_buttons();
+		$output = (string) ob_get_clean();
+
+		// Client 11.1.0 class-wc-payments-express-checkout-button-display-handler.php:115, :131.
+		$this->assertStringContainsString( '<p id="wcpay-express-checkout-button-separator" style="margin-top:1.5em;text-align:center;" hidden>', $output );
+		$this->assertSame( 1, substr_count( $output, 'wcpay-express-checkout-button-separator' ) );
+	}
+
+	/**
+	 * @testdox Should render the WooPay button and its separator when the Express Checkout Element is off.
+	 */
+	public function test_display_express_checkout_buttons_renders_woopay_alone_when_ece_is_off(): void {
+		$this->sut = $this->create_controller( true, false, null, '<div id="wcpay-woopay-button"></div>' );
+		$this->set_checkout_shortcode_page();
+
+		ob_start();
+		$this->sut->display_express_checkout_buttons();
+		$output = (string) ob_get_clean();
+
+		$this->assertStringContainsString( '<div class="wcpay-express-checkout-wrapper"><div id="wcpay-woopay-button"></div><p id="wcpay-express-checkout-button-separator"', $output );
+		$this->assertStringNotContainsString( 'wcpay-express-checkout-element', $output );
+		$this->assertStringNotContainsString( ' hidden>', $output );
 	}
 
 	/**
@@ -881,9 +933,10 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 * @param bool                                   $native_register     Whether native should register hooks.
 	 * @param bool                                   $payment_request_on  Whether payment request should be available.
 	 * @param WooPaymentsExpressCheckoutService|null $service            Optional service double.
+	 * @param string                                 $woopay_button      WooPay placeholder markup the WooPay controller returns.
 	 * @return WooPaymentsExpressCheckoutController
 	 */
-	private function create_controller( bool $native_register, bool $payment_request_on, ?WooPaymentsExpressCheckoutService $service = null ): WooPaymentsExpressCheckoutController {
+	private function create_controller( bool $native_register, bool $payment_request_on, ?WooPaymentsExpressCheckoutService $service = null, string $woopay_button = '' ): WooPaymentsExpressCheckoutController {
 		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'should_native_register' ) )
@@ -895,8 +948,11 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 			$service->should_show_payment_request_button = $payment_request_on;
 		}
 
+		$woopay_controller = $this->createStub( WooPaymentsWooPaySessionController::class );
+		$woopay_controller->method( 'get_express_checkout_button_html' )->willReturn( $woopay_button );
+
 		$controller = new WooPaymentsExpressCheckoutController();
-		$controller->init( $arbiter, $service, $this->createStub( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService::class ) );
+		$controller->init( $arbiter, $service, $this->createStub( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService::class ), $woopay_controller );
 
 		return $controller;
 	}

@@ -242,9 +242,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		add_filter( 'woocommerce_is_cart', '__return_true' );
 
 		$this->sut->enqueue_frontend_assets();
-		ob_start();
-		$this->sut->display_express_checkout_buttons();
-		$express_button = (string) ob_get_clean();
+		$express_button = $this->sut->get_express_checkout_button_html();
 
 		$this->assertTrue( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
 		$this->assertTrue( wp_style_is( 'wc-woopayments-woopay', 'enqueued' ) );
@@ -282,9 +280,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		add_filter( 'woocommerce_is_cart', '__return_true' );
 
 		$this->sut->enqueue_frontend_assets();
-		ob_start();
-		$this->sut->display_express_checkout_buttons();
-		$express_button = (string) ob_get_clean();
+		$express_button = $this->sut->get_express_checkout_button_html();
 
 		$this->assertTrue( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
 		$this->assertTrue( wp_style_is( 'wc-woopayments-woopay', 'enqueued' ) );
@@ -559,58 +555,59 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should render the WooPay separator on checkout.
+	 * @testdox Should give only the WooPay placeholder for the shared wrapper on checkout.
 	 */
-	public function test_display_express_checkout_buttons_renders_separator_on_checkout(): void {
+	public function test_express_checkout_button_html_is_the_placeholder_on_checkout(): void {
 		$this->sut = $this->create_controller( true, true );
 		$this->set_checkout_shortcode_page();
 
-		ob_start();
-		$this->sut->display_express_checkout_buttons();
-		$output = (string) ob_get_clean();
+		$output = $this->sut->get_express_checkout_button_html();
 
-		$this->assertStringContainsString( 'id="wcpay-woopay-button"', $output );
-		$this->assertStringContainsString( 'wcpay-express-checkout-button-separator', $output );
+		$this->assertStringStartsWith( '<div id="wcpay-woopay-button" data-product_page="0">', $output );
+		$this->assertStringNotContainsString( 'wcpay-express-checkout-wrapper', $output );
+		$this->assertStringNotContainsString( 'wcpay-express-checkout-button-separator', $output );
 	}
 
 	/**
-	 * @testdox Should not render the WooPay separator on product pages.
+	 * @testdox Should give no WooPay placeholder when WooPay is disabled.
 	 */
-	public function test_display_express_checkout_buttons_omits_separator_on_product_page(): void {
+	public function test_express_checkout_button_html_is_empty_when_woopay_is_disabled(): void {
+		$this->sut = $this->create_controller( true, false );
+		$this->set_checkout_shortcode_page();
+
+		$this->assertSame( '', $this->sut->get_express_checkout_button_html() );
+	}
+
+	/**
+	 * @testdox Should give a product-context WooPay placeholder on product pages.
+	 */
+	public function test_express_checkout_button_html_on_product_page(): void {
 		$this->sut = $this->create_controller( true, true );
 		$this->set_current_product();
 
-		ob_start();
-		$this->sut->display_express_checkout_buttons();
-		$output = (string) ob_get_clean();
-
-		$this->assertStringContainsString( 'id="wcpay-woopay-button"', $output );
-		$this->assertStringNotContainsString( 'wcpay-express-checkout-button-separator', $output );
+		$this->assertStringContainsString( 'data-product_page="1"', $this->sut->get_express_checkout_button_html() );
 	}
 
 	/**
 	 * @testdox Should render product-context WooPay on product_page shortcode pages.
 	 */
-	public function test_display_express_checkout_buttons_supports_product_page_shortcode(): void {
+	public function test_express_checkout_button_html_supports_product_page_shortcode(): void {
 		$this->sut = $this->create_controller( true, true );
 		$product   = \WC_Helper_Product::create_simple_product( true );
 		$product->set_sku( 'woopay-controller-shortcode' );
 		$product->save();
 		$this->set_current_page_with_content( "[product_page columns='3' class='featured' sku='woopay-controller-shortcode']" );
 
-		ob_start();
-		$this->sut->display_express_checkout_buttons();
-		$output = (string) ob_get_clean();
+		$output = $this->sut->get_express_checkout_button_html();
 
 		$this->assertStringContainsString( 'id="wcpay-woopay-button"', $output );
 		$this->assertStringContainsString( 'data-product_page="1"', $output );
-		$this->assertStringNotContainsString( 'wcpay-express-checkout-button-separator', $output );
 	}
 
 	/**
 	 * @testdox Should evaluate the button filter once while rendering with the real session service.
 	 */
-	public function test_display_express_checkout_buttons_applies_button_filter_once(): void {
+	public function test_express_checkout_button_html_applies_button_filter_once(): void {
 		$this->make_base_gateway_available();
 		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
 		$service   = $this->create_real_enabled_session_service();
@@ -626,9 +623,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 			}
 		);
 
-		ob_start();
-		$this->sut->display_express_checkout_buttons();
-		$output = (string) ob_get_clean();
+		$output = $this->sut->get_express_checkout_button_html();
 
 		$this->assertStringContainsString( 'id="wcpay-woopay-button"', $output );
 		$this->assertSame( 1, $enabled_filter_calls );
@@ -1282,13 +1277,9 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	private function get_expected_frontend_hooks(): array {
 		return array(
-			'wp_enqueue_scripts'                           => 'enqueue_frontend_assets',
-			'wp_footer'                                    => 'enqueue_frontend_assets',
-			'woocommerce_checkout_before_customer_details' => 'display_express_checkout_buttons',
-			'woocommerce_proceed_to_checkout'              => 'display_express_checkout_buttons',
-			'woocommerce_after_add_to_cart_form'           => 'display_express_checkout_buttons',
-			'woocommerce_pay_order_before_payment'         => 'display_express_checkout_buttons',
-			'woocommerce_payment_complete'                 => 'handle_woocommerce_payment_complete',
+			'wp_enqueue_scripts'           => 'enqueue_frontend_assets',
+			'wp_footer'                    => 'enqueue_frontend_assets',
+			'woocommerce_payment_complete' => 'handle_woocommerce_payment_complete',
 		);
 	}
 

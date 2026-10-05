@@ -44,13 +44,6 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	private WooPaymentsWooPaySessionService $session_service;
 
 	/**
-	 * Whether WooPay express checkout buttons have already rendered in this request.
-	 *
-	 * @var bool
-	 */
-	private bool $has_rendered_express_checkout_buttons = false;
-
-	/**
 	 * Whether WooPay frontend assets have already been localized and enqueued.
 	 *
 	 * @var bool
@@ -415,17 +408,20 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Display the WooPay express checkout placeholder.
+	 * Get the WooPay button placeholder, which WooPaymentsExpressCheckoutController renders first in the one express
+	 * checkout wrapper (client 11.1.0 class-wc-payments-express-checkout-button-display-handler.php:125-152).
+	 *
+	 * @return string Escaped markup, or an empty string when the WooPay button does not show on this page.
 	 */
-	public function display_express_checkout_buttons(): void {
-		if ( $this->has_rendered_express_checkout_buttons || ! $this->is_supported_frontend_surface() ) {
-			return;
+	public function get_express_checkout_button_html(): string {
+		if ( ! $this->is_supported_frontend_surface() || ! $this->session_service->is_woopay_enabled() ) {
+			return '';
 		}
 
 		$context = $this->get_current_button_context();
 		$config  = $this->session_service->get_woopay_frontend_config( $context );
 		if ( empty( $config['shouldShowWooPayButton'] ) ) {
-			return;
+			return '';
 		}
 
 		$settings = is_array( $config['woopayButton'] ?? null ) ? $config['woopayButton'] : array();
@@ -434,16 +430,9 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 		$height   = isset( $settings['height'] ) && is_scalar( $settings['height'] ) ? (string) $settings['height'] : '48';
 		$radius   = isset( $settings['radius'] ) && is_scalar( $settings['radius'] ) ? (string) $settings['radius'] : '4';
 
-		$this->has_rendered_express_checkout_buttons = true;
-
-		echo '<div class="wcpay-express-checkout-wrapper">';
-		echo '<div id="wcpay-woopay-button" data-product_page="' . esc_attr( 'product' === $context ? '1' : '0' ) . '">';
-		echo '<div class="woopay-express-button is-placeholder" aria-label="' . esc_attr__( 'WooPay', 'woocommerce' ) . '" data-type="' . esc_attr( $type ) . '" data-theme="' . esc_attr( $theme ) . '" data-size="' . esc_attr( (string) ( $settings['size'] ?? 'default' ) ) . '" style="height: ' . esc_attr( $height ) . 'px; border-radius: ' . esc_attr( $radius ) . 'px"></div>';
-		echo '</div>';
-		if ( 'checkout' === $context ) {
-			echo '<p id="wcpay-express-checkout-button-separator">&mdash; ' . esc_html__( 'OR', 'woocommerce' ) . ' &mdash;</p>';
-		}
-		echo '</div>';
+		return '<div id="wcpay-woopay-button" data-product_page="' . esc_attr( 'product' === $context ? '1' : '0' ) . '">' .
+			'<div class="woopay-express-button is-placeholder" aria-label="' . esc_attr__( 'WooPay', 'woocommerce' ) . '" data-type="' . esc_attr( $type ) . '" data-theme="' . esc_attr( $theme ) . '" data-size="' . esc_attr( (string) ( $settings['size'] ?? 'default' ) ) . '" style="height: ' . esc_attr( $height ) . 'px; border-radius: ' . esc_attr( $radius ) . 'px"></div>' .
+			'</div>';
 	}
 
 	/**
@@ -801,13 +790,9 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 */
 	private function get_frontend_hooks(): array {
 		return array(
-			'wp_enqueue_scripts'                           => array( $this, 'enqueue_frontend_assets' ),
-			'wp_footer'                                    => array( $this, 'enqueue_frontend_assets' ),
-			'woocommerce_checkout_before_customer_details' => array( $this, 'display_express_checkout_buttons' ),
-			'woocommerce_proceed_to_checkout'              => array( $this, 'display_express_checkout_buttons' ),
-			'woocommerce_after_add_to_cart_form'           => array( $this, 'display_express_checkout_buttons' ),
-			'woocommerce_pay_order_before_payment'         => array( $this, 'display_express_checkout_buttons' ),
-			'woocommerce_payment_complete'                 => array( $this, 'handle_woocommerce_payment_complete' ),
+			'wp_enqueue_scripts'           => array( $this, 'enqueue_frontend_assets' ),
+			'wp_footer'                    => array( $this, 'enqueue_frontend_assets' ),
+			'woocommerce_payment_complete' => array( $this, 'handle_woocommerce_payment_complete' ),
 		);
 	}
 

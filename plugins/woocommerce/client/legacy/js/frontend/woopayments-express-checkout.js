@@ -3076,9 +3076,8 @@
 			return;
 		}
 
-		// The container starts in the stylesheet's hidden state (no `is-ready`), as on the client, so the first mount
-		// is not inside a `display: none` element.
-		setSeparatorHidden( true );
+		// The container starts in the stylesheet's hidden state (no `is-ready`) and the separator in the state the
+		// server rendered (hidden unless a WooPay button shows), as on the client.
 		initOrderAttribution();
 
 		if ( isProduct() ) {

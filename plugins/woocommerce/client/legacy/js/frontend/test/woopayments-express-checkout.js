@@ -640,6 +640,30 @@ describe( 'WooPayments express checkout', () => {
 		);
 	} );
 
+	// The server renders the separator visible next to a WooPay button and hidden otherwise (client 11.1.0
+	// class-wc-payments-express-checkout-button-display-handler.php:115, :131); the client script changes it only when
+	// the wallet reports `ready` with a method (shortcode-buttons-express/index.js:448-460) or a cart is not eligible.
+	test( 'keeps the separator of a WooPay button in a browser without a wallet', async () => {
+		document.body.innerHTML =
+			'<div class="woocommerce-notices-wrapper"></div>' +
+			'<div class="wcpay-express-checkout-wrapper">' +
+			'<div id="wcpay-woopay-button"></div>' +
+			'<div id="wcpay-express-checkout-element"></div>' +
+			'<p id="wcpay-express-checkout-button-separator">OR</p>' +
+			'</div>';
+		require( '../woopayments-express-checkout' );
+		await bodyEventHandlers.updated_checkout();
+		await flushPromises();
+		// `ready` without an available method; a recorded live payload is `{ availablePaymentMethods: { amazonPay: true,
+		// applePay: false, ... } }` (t62/unit-2b2e/probe-before.js run, notes.md C4), so `{}` is a browser with none.
+		expressHandlers.ready( {} );
+
+		expect(
+			document.getElementById( 'wcpay-express-checkout-button-separator' )
+				.hidden
+		).toBe( false );
+	} );
+
 	// Store API cart shape: docs/apis/store-api/resources-endpoints/cart.md ("Cart Response": needs_shipping,
 	// shipping_rates[].shipping_rates[] with rate_id, price, selected; totals.total_price).
 	function getCartWithShippingRate( total ) {
@@ -3586,16 +3610,12 @@ describe( 'WooPayments express checkout', () => {
 			expect( elements.update ).toHaveBeenCalledWith(
 				expect.objectContaining( { amount: 7500 } )
 			);
+			// Product pages get no separator from the server (it renders only on checkout).
 			expect(
 				document
 					.getElementById( 'wcpay-express-checkout-element' )
 					.classList.contains( 'is-ready' )
 			).toBe( false );
-			expect(
-				document.getElementById(
-					'wcpay-express-checkout-button-separator'
-				).hidden
-			).toBe( true );
 		} );
 
 		// Native departure: the client skips this re-price, because WooCommerce enables the add-to-cart button only
