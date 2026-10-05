@@ -362,6 +362,92 @@ class WooPaymentsTokenizedCartSessionHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A $_dataName starts a new tokenized session instead of loading the one it names.
+	 *
+	 * @dataProvider refused_token_provider
+	 *
+	 * @param callable $make_token Builds the header value from the saved session ID.
+	 */
+	public function test_starts_a_new_session_for_a_refused_token( callable $make_token ): void {
+		$session_id = $this->save_session_started_by( 0 );
+		// A saved session whose key lacks the tokenized prefix, for the token naming one.
+		$this->insert_session_row( '5', maybe_serialize( array( 'cart' => maybe_serialize( array( 'line' => array( 'quantity' => 1 ) ) ) ) ), time() + HOUR_IN_SECONDS );
+
+		$_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION'] = $make_token( $session_id );
+		$handler = $this->init_handler();
+
+		$this->assertStringStartsWith( 't_', $handler->get_customer_id() );
+		$this->assertNotSame( $session_id, $handler->get_customer_id() );
+		$this->assertSame( array(), $handler->get( 'cart' ) );
+	}
+
+	/**
+	 * Header values the handler must not load a session from. Every token but the last is signed with the handler's own
+	 * secret, the one core's Store API Cart-Token also uses (CartTokenUtils::get_cart_token_secret()).
+	 *
+	 * @return array<string,array{0:callable}>
+	 */
+	public function refused_token_provider(): array {
+		$sign = static function ( array $payload ): string {
+			return JsonWebToken::create( $payload, WooPaymentsTokenizedCartSessionHandler::get_token_secret() );
+		};
+
+		return array(
+			'Store API Cart-Token for the session' => array(
+				static function ( string $session_id ): string {
+					return \Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils::get_cart_token( $session_id );
+				},
+			),
+			'token from another issuer'            => array(
+				static function ( string $session_id ) use ( $sign ): string {
+					return $sign(
+						array(
+							'session_id' => $session_id,
+							'exp'        => time() + HOUR_IN_SECONDS,
+							'iss'        => 'store-api',
+						)
+					);
+				},
+			),
+			'token naming a session without t_'    => array(
+				static function ( string $session_id ) use ( $sign ): string {
+					unset( $session_id );
+					return $sign(
+						array(
+							'session_id' => '5',
+							'exp'        => time() + HOUR_IN_SECONDS,
+							'iss'        => 'woopayments/product-page',
+						)
+					);
+				},
+			),
+			'expired token'                        => array(
+				static function ( string $session_id ) use ( $sign ): string {
+					return $sign(
+						array(
+							'session_id' => $session_id,
+							'exp'        => time() - 1,
+							'iss'        => 'woopayments/product-page',
+						)
+					);
+				},
+			),
+			'token signed with another secret'     => array(
+				static function ( string $session_id ): string {
+					return JsonWebToken::create(
+						array(
+							'session_id' => $session_id,
+							'exp'        => time() + HOUR_IN_SECONDS,
+							'iss'        => 'woopayments/product-page',
+						),
+						'another-secret'
+					);
+				},
+			),
+		);
+	}
+
+	/**
 	 * Save a tokenized session started by a customer.
 	 *
 	 * @param int $user_id User ID, 0 for a guest.
