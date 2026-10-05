@@ -1616,6 +1616,44 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox While the ambiguity record exists, a missing customer is not recreated: no charge under a recovery key, and the key and the record stay.
+	 *
+	 * The recovery would send the new card under `K:customer-recovery`, a key Stripe never saw, with no lookup of what the
+	 * earlier request under K did (review 44 F2). The answer is the platform's own: its fraud-rule check reads the customer
+	 * before the Stripe charge (wpcom `wcpay/class-intentions-controller.php:1322-1328`) and turns Stripe's missing-customer
+	 * error into a REST error with a top-level code (`stripe/class-stripe-client.php:878-908`, `:920-940`).
+	 */
+	public function test_missing_customer_under_the_kept_key_is_not_recreated_while_the_record_exists(): void {
+		$order                  = $this->create_woopayments_order();
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			self::platform_bad_gateway(),
+			self::http_json(
+				404,
+				array(
+					'code'    => 'resource_missing',
+					'message' => 'Invalid request error: resource_missing (customer id)',
+					'data'    => array( 'status' => 404 ),
+				)
+			),
+			self::succeeded_charge( 'pi_recovered', 'pm_new' ),
+		);
+		$customer_service       = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order', 'recreate_customer_for_order' ) )->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_sent' );
+		$customer_service->expects( $this->never() )->method( 'recreate_customer_for_order' );
+		$sut = $this->create_timeout_adapter( $http_client, 'cus_sent', $customer_service );
+		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
+
+		$outcome = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_second' );
+		$fresh   = wc_get_order( $order->get_id() );
+
+		$this->assertSame( array( 'POST intentions key_first', 'POST intentions key_first' ), self::request_trail( $http_client ), 'The new card must not be charged under a recovery key.' );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'key_first', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$this->assertSame( 'cus_sent', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['customer'] ?? null );
+	}
+
+	/**
 	 * @testdox Without an ambiguity record, a refusal the platform made itself retires the key as before.
 	 */
 	public function test_platform_refusal_without_ambiguity_record_retires_the_key(): void {
@@ -1712,11 +1750,12 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	/**
 	 * Build an adapter on the real API client, with only the platform's HTTP answers faked.
 	 *
-	 * @param FakeWooPaymentsHttpClient $http_client Platform answers.
-	 * @param string                    $customer_id Customer the charges are sent with.
+	 * @param FakeWooPaymentsHttpClient       $http_client      Platform answers.
+	 * @param string                          $customer_id      Customer the charges are sent with.
+	 * @param WooPaymentsCustomerService|null $customer_service Customer service to use instead of one that only returns the customer.
 	 * @return WooPaymentsProviderGatewayAdapter
 	 */
-	private function create_timeout_adapter( FakeWooPaymentsHttpClient $http_client, string $customer_id ): WooPaymentsProviderGatewayAdapter {
+	private function create_timeout_adapter( FakeWooPaymentsHttpClient $http_client, string $customer_id, ?WooPaymentsCustomerService $customer_service = null ): WooPaymentsProviderGatewayAdapter {
 		$account_service = $this->create_account_service( false );
 		$api_client      = new class() extends WooPaymentsApiClient {
 			/**
@@ -1729,8 +1768,10 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			}
 		};
 		$api_client->init( $http_client, $account_service );
-		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
-		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( $customer_id );
+		if ( null === $customer_service ) {
+			$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
+			$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( $customer_id );
+		}
 
 		return $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, null, $account_service );
 	}

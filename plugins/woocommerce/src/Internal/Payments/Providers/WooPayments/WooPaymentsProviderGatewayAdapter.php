@@ -463,7 +463,8 @@ class WooPaymentsProviderGatewayAdapter {
 	 * Send a positive-amount charge under the order's kept key, or under the attempt key when none is kept.
 	 *
 	 * A kept key refused because the new request differs from the earlier one (a new card after a timeout) settles what
-	 * the earlier request did before anything is charged; see settle_earlier_charge().
+	 * the earlier request did before anything is charged; see settle_earlier_charge(). A missing customer is recreated and
+	 * the charge retried, except while the order's ambiguity record exists.
 	 *
 	 * @param PaymentContext      $context      Payment context.
 	 * @param array<string,mixed> $request_data Charge request; its customer is replaced when a missing customer is recreated.
@@ -486,7 +487,9 @@ class WooPaymentsProviderGatewayAdapter {
 				$this->log_kept_charge_key_refused( $order, $sent_key );
 			}
 
-			if ( ! $this->is_missing_customer_exception( $exception ) ) {
+			// While the record exists the recovery would charge under a key Stripe never saw, with no lookup of the earlier
+			// request; the failure keeps the key and the record instead, so a later attempt reaches the lookup.
+			if ( ! $this->is_missing_customer_exception( $exception ) || null !== $this->get_charge_ambiguity_record( $order ) ) {
 				return $this->failed_charge_outcome( $order, $exception, true, (string) ( $request_data['customer'] ?? '' ), self::is_scheduled_renewal( $context ) );
 			}
 		}
