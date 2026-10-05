@@ -113,11 +113,11 @@ class DataSanitizer {
 	 * Helper. Ensures the value is a string.
 	 *
 	 * @param mixed  $value   Value to sanitize.
-	 * @param string $default Default value.
+	 * @param string $default_value Default value.
 	 * @return string Sanitized string.
 	 */
-	public function sanitize_text( $value, string $default = '' ): string {
-		return sanitize_text_field( $value ?? $default );
+	public function sanitize_text( $value, string $default_value = '' ): string {
+		return sanitize_text_field( $value ?? $default_value );
 	}
 
 	/**
@@ -128,12 +128,12 @@ class DataSanitizer {
 	 *
 	 * @param mixed    $value        Value to sanitize.
 	 * @param string[] $valid_values List of allowed return values. Must use ASCII-only characters.
-	 * @param string   $default      Default value.
+	 * @param string   $default_value Default value.
 	 * @return string Sanitized string.
 	 */
-	public function sanitize_enum( $value, array $valid_values, string $default = '' ): string {
+	public function sanitize_enum( $value, array $valid_values, string $default_value = '' ): string {
 		if ( empty( $valid_values ) ) {
-			return $default;
+			return $default_value;
 		}
 
 		$value = $this->sanitize_text( $value );
@@ -142,7 +142,7 @@ class DataSanitizer {
 			return $match;
 		}
 
-		$default_match = $this->find_enum_value( $default, $valid_values );
+		$default_match = $this->find_enum_value( $default_value, $valid_values );
 		if ( $default_match ) {
 			return $default_match;
 		}
@@ -176,16 +176,16 @@ class DataSanitizer {
 	/**
 	 * Helper. Ensures the value is an array and all items are sanitized.
 	 *
-	 * @param null|array $array             Value to sanitize.
+	 * @param null|array $items             Value to sanitize.
 	 * @param callable   $sanitize_callback Callback to sanitize each item in the array.
 	 * @return array Array with sanitized items.
 	 */
-	public function sanitize_array( ?array $array, callable $sanitize_callback ): array {
-		if ( ! is_array( $array ) ) {
+	public function sanitize_array( ?array $items, callable $sanitize_callback ): array {
+		if ( ! is_array( $items ) ) {
 			return array();
 		}
 
-		return array_map( $sanitize_callback, $array );
+		return array_map( $sanitize_callback, $items );
 	}
 
 	/**

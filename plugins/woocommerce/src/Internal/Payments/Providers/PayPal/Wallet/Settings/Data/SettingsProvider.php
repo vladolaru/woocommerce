@@ -17,14 +17,62 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\DT
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\DTO\MerchantConnectionDTO;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 
+/**
+ * Read access to the PayPal settings, assembled from the individual settings models.
+ */
 class SettingsProvider {
+	/**
+	 * The general settings.
+	 *
+	 * @var GeneralSettings
+	 */
 	private GeneralSettings $general_settings;
+
+	/**
+	 * The onboarding profile.
+	 *
+	 * @var OnboardingProfile
+	 */
 	private OnboardingProfile $onboarding_profile;
+
+	/**
+	 * The payment settings.
+	 *
+	 * @var PaymentSettings
+	 */
 	private PaymentSettings $payment_settings;
+
+	/**
+	 * The settings tab model.
+	 *
+	 * @var SettingsModel
+	 */
 	private SettingsModel $settings_model;
+
+	/**
+	 * The styling settings.
+	 *
+	 * @var StylingSettings
+	 */
 	private StylingSettings $styling_settings;
+
+	/**
+	 * The Pay Later messaging settings.
+	 *
+	 * @var PayLaterMessagingSettings
+	 */
 	private PayLaterMessagingSettings $paylater_messaging_settings;
 
+	/**
+	 * Constructor.
+	 *
+	 * @param GeneralSettings           $general_settings The general settings.
+	 * @param OnboardingProfile         $onboarding_profile The onboarding profile.
+	 * @param PaymentSettings           $payment_settings The payment settings.
+	 * @param SettingsModel             $settings_model The settings tab model.
+	 * @param StylingSettings           $styling_settings The styling settings.
+	 * @param PayLaterMessagingSettings $paylater_messaging_settings The Pay Later messaging settings.
+	 */
 	public function __construct(
 		GeneralSettings $general_settings,
 		OnboardingProfile $onboarding_profile,
@@ -417,6 +465,8 @@ class SettingsProvider {
 	/**
 	 * Returns the styling options for a specified location. The location name recognizes
 	 * legacy and modern naming.
+	 *
+	 * @param string $location The location name.
 	 */
 	public function button_styling( string $location ): LocationStylingDTO {
 		switch ( $location ) {
@@ -492,6 +542,8 @@ class SettingsProvider {
 
 	/**
 	 * Whether the given gateway is enabled.
+	 *
+	 * @param string $method_id ID of the payment method.
 	 */
 	public function gateway_enabled( string $method_id ): bool {
 		return $this->payment_settings->is_method_enabled( $method_id );
@@ -548,10 +600,20 @@ class SettingsProvider {
 		);
 	}
 
+	/**
+	 * Returns the locations where Pay Later messaging is shown.
+	 *
+	 * @return array
+	 */
 	public function pay_later_messaging_locations(): array {
 		return $this->paylater_messaging_settings->get_messaging_locations();
 	}
 
+	/**
+	 * Returns the description of the PayPal gateway, with a default when none is stored.
+	 *
+	 * @return string
+	 */
 	public function paypal_gateway_description(): string {
 		return $this->payment_settings->get_method_description(
 			PayPalGateway::ID,
@@ -559,23 +621,55 @@ class SettingsProvider {
 		);
 	}
 
+	/**
+	 * Returns the locations where the smart buttons are shown.
+	 *
+	 * @return array
+	 */
 	public function smart_button_locations(): array {
 		return $this->styling_settings->get_smart_button_locations();
 	}
 
+	/**
+	 * Returns the locations where the Pay Later button is shown.
+	 *
+	 * @return array
+	 */
 	public function pay_later_button_locations(): array {
 		return $this->styling_settings->get_pay_later_button_locations();
 	}
 
+	/**
+	 * Whether the Pay Later button is enabled.
+	 *
+	 * @return bool
+	 */
 	public function pay_later_button_enabled(): bool {
 		return $this->payment_settings->get_paylater_enabled();
 	}
 
+	/**
+	 * Whether Pay Later messaging is enabled.
+	 *
+	 * @return bool
+	 */
 	public function pay_later_messaging_enabled(): bool {
 		return $this->paylater_messaging_settings->get_messaging_enabled();
 	}
 
+	/**
+	 * Whether an authorized payment is captured when the order status changes.
+	 *
+	 * @return bool
+	 */
 	public function capture_on_status_change(): bool {
+		/**
+		 * Filters whether an authorized payment is captured when the order status changes.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $capture Whether to capture; the stored setting by default.
+		 */
 		return apply_filters(
 			'woocommerce_paypal_payments_capture_on_status_change',
 			$this->payment_settings->get_capture_on_status_change()

@@ -158,6 +158,8 @@ abstract class RestEndpoint extends WC_REST_Controller {
 	 * @param mixed $value The value to sanitize.
 	 *
 	 * @return bool The boolean value.
+	 *
+	 * phpcs:ignore Generic.Commenting.Todo.CommentFound -- Existing follow-up note kept as written.
 	 * @todo Switch to the DataSanitizer class.
 	 */
 	public function to_boolean( $value ): bool {
@@ -170,6 +172,8 @@ abstract class RestEndpoint extends WC_REST_Controller {
 	 * @param mixed $value The value to sanitize.
 	 *
 	 * @return int The numeric value.
+	 *
+	 * phpcs:ignore Generic.Commenting.Todo.CommentFound -- Existing follow-up note kept as written.
 	 * @todo Switch to the DataSanitizer class.
 	 */
 	public function to_number( $value ): int {

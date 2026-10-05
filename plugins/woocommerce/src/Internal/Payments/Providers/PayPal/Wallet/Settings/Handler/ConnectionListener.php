@@ -42,31 +42,43 @@ class ConnectionListener {
 
 	/**
 	 * Whether the current request renders the plugin's settings page.
+	 *
+	 * @var bool
 	 */
 	private bool $is_settings_page;
 
 	/**
 	 * Access to the onboarding URL manager.
+	 *
+	 * @var OnboardingUrlManager
 	 */
 	private OnboardingUrlManager $url_manager;
 
 	/**
 	 * Authentication manager service, responsible to update connection details.
+	 *
+	 * @var AuthenticationManager
 	 */
 	private AuthenticationManager $authentication_manager;
 
 	/**
 	 * A redirector-instance to redirect the merchant after authentication.
+	 *
+	 * @var RedirectorInterface
 	 */
 	private RedirectorInterface $redirector;
 
 	/**
 	 * Queues user-facing notices that are shown after the redirect.
+	 *
+	 * @var OnboardingNotices
 	 */
 	private OnboardingNotices $notices;
 
 	/**
 	 * Logger instance, mainly used for debugging purposes.
+	 *
+	 * @var LoggerInterface
 	 */
 	private LoggerInterface $logger;
 
@@ -74,11 +86,15 @@ class ConnectionListener {
 	 * ID of the current user, set by the process() method.
 	 *
 	 * The default value is 0 (guest), until the real ID is provided to process().
+	 *
+	 * @var int
 	 */
 	private int $user_id = 0;
 
 	/**
 	 * The request details (usually the GET data) which were provided.
+	 *
+	 * @var array
 	 */
 	private array $request_data = array();
 
@@ -105,7 +121,7 @@ class ConnectionListener {
 		$this->authentication_manager = $authentication_manager;
 		$this->redirector             = $redirector;
 		$this->notices                = $notices;
-		$this->logger                 = $logger ?: new NullLogger();
+		$this->logger                 = $logger ?? new NullLogger();
 	}
 
 	/**
@@ -445,6 +461,10 @@ class ConnectionListener {
 	private function get_onboarding_redirect_url(): string {
 		/**
 		 * The URL opened at the end of onboarding after saving the merchant ID/email.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param string $url The URL to open; the PayPal gateway settings page by default.
 		 */
 		return apply_filters(
 			'woocommerce_paypal_payments_onboarding_redirect_url',

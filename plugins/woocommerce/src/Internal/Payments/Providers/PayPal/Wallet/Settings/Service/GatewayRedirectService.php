@@ -77,14 +77,12 @@ class GatewayRedirectService {
 		}
 
 		// Get current URL parameters.
-		// phpcs:disable WordPress.Security.NonceVerification.Recommended
-		$page    = isset( $_GET['page'] ) ? wc_clean( wp_unslash( $_GET['page'] ) ) : '';
-		$tab     = isset( $_GET['tab'] ) ? wc_clean( wp_unslash( $_GET['tab'] ) ) : '';
-		$section = isset( $_GET['section'] ) ? wc_clean( wp_unslash( $_GET['section'] ) ) : '';
-		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+		$page    = isset( $_GET['page'] ) ? wc_clean( wp_unslash( $_GET['page'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Navigation parameters read only to choose a redirect to the settings app; nothing is stored and a link carries no nonce. Runs only in the admin (the is_admin() early return in handle_redirects()), and the target is a local admin URL (wp_safe_redirect).
+		$tab     = isset( $_GET['tab'] ) ? wc_clean( wp_unslash( $_GET['tab'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Navigation parameters read only to choose a redirect to the settings app; nothing is stored and a link carries no nonce. Runs only in the admin (the is_admin() early return in handle_redirects()), and the target is a local admin URL (wp_safe_redirect).
+		$section = isset( $_GET['section'] ) ? wc_clean( wp_unslash( $_GET['section'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Navigation parameters read only to choose a redirect to the settings app; nothing is stored and a link carries no nonce. Runs only in the admin (the is_admin() early return in handle_redirects()), and the target is a local admin URL (wp_safe_redirect).
 
 		// Check if we're on a WooCommerce settings page and checkout tab.
-		if ( $page !== 'wc-settings' || $tab !== 'checkout' ) {
+		if ( 'wc-settings' !== $page || 'checkout' !== $tab ) {
 			return;
 		}
 
@@ -95,7 +93,7 @@ class GatewayRedirectService {
 
 		// Keep what the old URL carried (the app's panel and highlight, and the arguments PayPal appends when it returns a merchant from onboarding).
 		$carried = array();
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Navigation parameters read only to choose a redirect to the settings app; nothing is stored and a link carries no nonce. Runs only in the admin (the is_admin() early return in handle_redirects()), and the target is a local admin URL (wp_safe_redirect).
 		foreach ( wp_unslash( $_GET ) as $name => $value ) {
 			if ( is_string( $value ) && ! in_array( $name, array( 'page', 'tab', 'section', 'path' ), true ) ) {
 				$carried[ $name ] = wc_clean( $value );

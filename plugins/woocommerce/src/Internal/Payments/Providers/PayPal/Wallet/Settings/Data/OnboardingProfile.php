@@ -242,8 +242,18 @@ class OnboardingProfile extends AbstractDataModel {
 
 		// Timing is important - we can sync only on/after woocommerce_init fired.
 		if ( did_action( 'woocommerce_init' ) ) {
+			/**
+			 * Fires when the payment gateways are to be synced with the onboarding result.
+			 *
+			 * @since 11.3.0
+			 */
 			do_action( 'woocommerce_paypal_payments_sync_gateways' );
 		} else {
+			/**
+			 * Fires when the payment gateways are to be synced with the onboarding result, once WooCommerce is initialized.
+			 *
+			 * @since 11.3.0
+			 */
 			add_action( 'woocommerce_init', static fn() => do_action( 'woocommerce_paypal_payments_sync_gateways' ) );
 		}
 	}

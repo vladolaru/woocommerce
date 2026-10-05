@@ -20,15 +20,39 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\H
 class PaymentSettingsMigration implements SettingsMigrationInterface {
 
 	/**
+	 * The legacy settings of the PayPal Payments extension.
+	 *
 	 * @var array<string, mixed>
 	 */
 	protected array $settings;
+
+	/**
+	 * The payment settings model.
+	 *
+	 * @var PaymentSettings
+	 */
 	protected PaymentSettings $payment_settings;
 
+	/**
+	 * Whether the Pay upon Invoice gateway was enabled in the legacy settings.
+	 *
+	 * @var bool
+	 */
 	protected bool $legacy_pui_enabled;
 
+	/**
+	 * Whether the OXXO gateway was enabled in the legacy settings.
+	 *
+	 * @var bool
+	 */
 	protected bool $legacy_oxxo_enabled;
 
+	/**
+	 * Constructor.
+	 *
+	 * @param array           $settings The legacy settings of the PayPal Payments extension.
+	 * @param PaymentSettings $payment_settings The payment settings model.
+	 */
 	public function __construct(
 		array $settings,
 		PaymentSettings $payment_settings
@@ -43,6 +67,9 @@ class PaymentSettingsMigration implements SettingsMigrationInterface {
 		$this->legacy_oxxo_enabled = is_array( $oxxo_option ) && ( $oxxo_option['enabled'] ?? 'no' ) === 'yes';
 	}
 
+	/**
+	 * Migrates the payment method settings from the legacy settings.
+	 */
 	public function migrate(): void {
 		$disable_funding = (array) ( $this->settings['disable_funding'] ?? array() );
 		if ( ! in_array( 'venmo', $disable_funding, true ) ) {
@@ -77,7 +104,7 @@ class PaymentSettingsMigration implements SettingsMigrationInterface {
 		}
 
 		if ( isset( $this->settings['dcc_name_on_card'] ) ) {
-			$this->payment_settings->set_cardholder_name( $this->settings['dcc_name_on_card'] === 'yes' );
+			$this->payment_settings->set_cardholder_name( 'yes' === $this->settings['dcc_name_on_card'] );
 		}
 
 		if ( ! empty( $this->settings['title'] ) ) {

@@ -28,6 +28,8 @@ abstract class AbstractDataModel {
 	/**
 	 * Whether the "saved" action is currently being dispatched, used to
 	 * prevent infinite-loops when an action handler calls save() again.
+	 *
+	 * @var bool
 	 */
 	private bool $firing_saved_action = false;
 
@@ -90,6 +92,8 @@ abstract class AbstractDataModel {
 		try {
 			/**
 			 * Fires after a settings model has been saved to the database.
+			 *
+			 * @since 11.3.0
 			 *
 			 * @param AbstractDataModel $model The settings model that was saved.
 			 */
@@ -160,6 +164,11 @@ abstract class AbstractDataModel {
 		return $stripped_key ? "set_$stripped_key" : '';
 	}
 
+	/**
+	 * Returns the option key the model is stored under.
+	 *
+	 * @return string
+	 */
 	protected function get_option_key(): string {
 		return static::OPTION_KEY;
 	}

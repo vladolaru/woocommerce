@@ -16,9 +16,16 @@ class PaymentMethodsEligibilityService {
 
 	/**
 	 * PayPal Country (or Woo Country if not onboarded)
+	 *
+	 * @var string
 	 */
 	private string $merchant_country;
 
+	/**
+	 * Constructor.
+	 *
+	 * @param string $merchant_country The merchant country code.
+	 */
 	public function __construct(
 		string $merchant_country
 	) {
@@ -32,7 +39,7 @@ class PaymentMethodsEligibilityService {
 	 */
 	public function get_eligibility_checks(): array {
 		return array(
-			'venmo' => fn() => $this->merchant_country === 'US',
+			'venmo' => fn() => 'US' === $this->merchant_country,
 		);
 	}
 }

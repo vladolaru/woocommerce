@@ -111,6 +111,7 @@ class SettingsModel extends AbstractDataModel {
 
 			// Array of string values.
 			'disabled_cards'           => array(),
+			// phpcs:ignore Generic.Commenting.Todo.TaskFound -- Existing follow-up note kept as written.
 			'card_icons'               => array(), // todo: not implemented.
 		);
 	}
@@ -262,7 +263,7 @@ class SettingsModel extends AbstractDataModel {
 	 */
 	public function get_three_d_secure_enum( ?string $three_d_secure = null ): string {
 		// If no value is provided, use the current setting.
-		if ( $three_d_secure === null ) {
+		if ( null === $three_d_secure ) {
 			$three_d_secure = $this->get_three_d_secure();
 		}
 

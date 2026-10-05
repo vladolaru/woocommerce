@@ -42,12 +42,34 @@ class MerchantDataResolver {
 	 */
 	private const RETRY_DELAY = 15 * MINUTE_IN_SECONDS;
 
+	/**
+	 * The general settings.
+	 *
+	 * @var GeneralSettings
+	 */
 	private GeneralSettings $settings;
 
+	/**
+	 * Creates the partners endpoint for the current environment.
+	 *
+	 * @var PartnersEndpointFactory
+	 */
 	private PartnersEndpointFactory $partners_endpoint_factory;
 
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	private LoggerInterface $logger;
 
+	/**
+	 * Constructor.
+	 *
+	 * @param GeneralSettings         $settings The general settings.
+	 * @param PartnersEndpointFactory $partners_endpoint_factory Creates the partners endpoint for the current environment.
+	 * @param LoggerInterface|null    $logger The logger; a null logger when omitted.
+	 */
 	public function __construct(
 		GeneralSettings $settings,
 		PartnersEndpointFactory $partners_endpoint_factory,
@@ -55,7 +77,7 @@ class MerchantDataResolver {
 	) {
 		$this->settings                  = $settings;
 		$this->partners_endpoint_factory = $partners_endpoint_factory;
-		$this->logger                    = $logger ?: new NullLogger();
+		$this->logger                    = $logger ?? new NullLogger();
 	}
 
 	/**

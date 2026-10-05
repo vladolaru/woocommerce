@@ -107,7 +107,7 @@ class OnboardingRestEndpoint extends RestEndpoint {
 	public function __construct( OnboardingProfile $profile ) {
 		$this->profile = $profile;
 
-		$this->field_map['products']['sanitize'] = static fn( $list ) => array_map( 'sanitize_text_field', $list );
+		$this->field_map['products']['sanitize'] = static fn( $items ) => array_map( 'sanitize_text_field', $items );
 	}
 
 	/**
@@ -171,7 +171,8 @@ class OnboardingRestEndpoint extends RestEndpoint {
 	/**
 	 * Updates onboarding details based on the request.
 	 *
-	 * @param WP_REST_Request<array<string, mixed>> $request Full data about the request.
+	 * @param WP_REST_Request $request Full data about the request.
+	 * @phpstan-param WP_REST_Request<array<string, mixed>> $request
 	 *
 	 * @return WP_REST_Response The updated state of the onboarding wizard.
 	 */

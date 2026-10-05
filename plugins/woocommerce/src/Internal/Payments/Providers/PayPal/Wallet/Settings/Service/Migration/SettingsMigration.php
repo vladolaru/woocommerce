@@ -24,14 +24,49 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Se
 class SettingsMigration implements SettingsMigrationInterface {
 
 	/**
+	 * The legacy settings of the PayPal Payments extension.
+	 *
 	 * @var array<string, mixed>
 	 */
 	protected array $settings;
+
+	/**
+	 * The general settings.
+	 *
+	 * @var GeneralSettings
+	 */
 	protected GeneralSettings $general_settings;
+
+	/**
+	 * The partners endpoint.
+	 *
+	 * @var PartnersEndpoint
+	 */
 	protected PartnersEndpoint $partners_endpoint;
+
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	protected LoggerInterface $logger;
+
+	/**
+	 * The seller type resolver.
+	 *
+	 * @var SellerTypeResolver
+	 */
 	protected SellerTypeResolver $seller_type_resolver;
 
+	/**
+	 * Constructor.
+	 *
+	 * @param array              $settings The legacy settings of the PayPal Payments extension.
+	 * @param GeneralSettings    $general_settings The general settings.
+	 * @param PartnersEndpoint   $partners_endpoint The partners endpoint.
+	 * @param LoggerInterface    $logger The logger.
+	 * @param SellerTypeResolver $seller_type_resolver The seller type resolver.
+	 */
 	public function __construct(
 		array $settings,
 		GeneralSettings $general_settings,
@@ -46,10 +81,18 @@ class SettingsMigration implements SettingsMigrationInterface {
 		$this->seller_type_resolver = $seller_type_resolver;
 	}
 
+	/**
+	 * Whether the general settings hold a connected merchant.
+	 *
+	 * @return bool
+	 */
 	public function is_merchant_connected(): bool {
 		return $this->general_settings->is_merchant_connected();
 	}
 
+	/**
+	 * Migrates the connection details and the seller type from the legacy settings.
+	 */
 	public function migrate(): void {
 		if ( empty( $this->settings['client_id'] )
 			|| empty( $this->settings['client_secret'] )

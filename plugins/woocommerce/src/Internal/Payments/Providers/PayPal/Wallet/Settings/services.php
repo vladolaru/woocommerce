@@ -120,7 +120,7 @@ return array(
 			$container->get( 'settings.service.sanitizer' )
 		);
 	},
-	'settings.data.payment'                               => static function ( ContainerInterface $container ): PaymentSettings {
+	'settings.data.payment'                               => static function ( ContainerInterface $container ): PaymentSettings { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new PaymentSettings();
 	},
 	'settings.data.paylater-messaging-settings'           => static function ( ContainerInterface $container ): PayLaterMessagingSettings {
@@ -262,7 +262,7 @@ return array(
 			$container->get( 'settings.data.settings' )
 		);
 	},
-	'settings.casual-selling.supported-countries'         => static function ( ContainerInterface $container ): array {
+	'settings.casual-selling.supported-countries'         => static function ( ContainerInterface $container ): array { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return array(
 			'AR',
 			'AU',
@@ -328,10 +328,10 @@ return array(
 			$container->get( 'woocommerce.logger.woocommerce' )
 		);
 	},
-	'settings.service.onboarding-notices'                 => static function ( ContainerInterface $container ): OnboardingNotices {
+	'settings.service.onboarding-notices'                 => static function ( ContainerInterface $container ): OnboardingNotices { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new OnboardingNotices();
 	},
-	'settings.service.signup-link-cache'                  => static function ( ContainerInterface $container ): Cache {
+	'settings.service.signup-link-cache'                  => static function ( ContainerInterface $container ): Cache { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new Cache( 'ppcp-paypal-signup-link' );
 	},
 	'settings.service.onboarding-url-manager'             => static function ( ContainerInterface $container ): OnboardingUrlManager {
@@ -358,7 +358,7 @@ return array(
 			$container->get( 'woocommerce.logger.woocommerce' )
 		);
 	},
-	'settings.service.sanitizer'                          => static function ( ContainerInterface $container ): DataSanitizer {
+	'settings.service.sanitizer'                          => static function ( ContainerInterface $container ): DataSanitizer { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new DataSanitizer();
 	},
 	'settings.service.data-manager'                       => static function ( ContainerInterface $container ): SettingsDataManager {
@@ -429,7 +429,7 @@ return array(
 			$container->get( 'settings.service.todos_sorting' )
 		);
 	},
-	'settings.data.todos'                                 => static function ( ContainerInterface $container ): TodosModel {
+	'settings.data.todos'                                 => static function ( ContainerInterface $container ): TodosModel { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new TodosModel();
 	},
 	'settings.data.definition.todos'                      => static function ( ContainerInterface $container ): TodosDefinition {
@@ -445,7 +445,7 @@ return array(
 			$container->get( 'settings.data.general' )
 		);
 	},
-	'settings.data.definition.method_dependencies'        => static function ( ContainerInterface $container ): PaymentMethodsDependenciesDefinition {
+	'settings.data.definition.method_dependencies'        => static function ( ContainerInterface $container ): PaymentMethodsDependenciesDefinition { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new PaymentMethodsDependenciesDefinition();
 	},
 	'settings.service.pay_later_status'                   => static function ( ContainerInterface $container ): array {
@@ -453,13 +453,13 @@ return array(
 		$pay_later_settings = $pay_later_endpoint->get_details()->get_data();
 
 		$pay_later_statuses = array(
-			'cart'             => $pay_later_settings['data']['cart']['status'] === 'enabled',
-			'checkout'         => $pay_later_settings['data']['checkout']['status'] === 'enabled',
-			'product'          => $pay_later_settings['data']['product']['status'] === 'enabled',
-			'shop'             => $pay_later_settings['data']['shop']['status'] === 'enabled',
-			'home'             => $pay_later_settings['data']['home']['status'] === 'enabled',
+			'cart'             => 'enabled' === $pay_later_settings['data']['cart']['status'],
+			'checkout'         => 'enabled' === $pay_later_settings['data']['checkout']['status'],
+			'product'          => 'enabled' === $pay_later_settings['data']['product']['status'],
+			'shop'             => 'enabled' === $pay_later_settings['data']['shop']['status'],
+			'home'             => 'enabled' === $pay_later_settings['data']['home']['status'],
 			'custom_placement' => ! empty( $pay_later_settings['data']['custom_placement'] ) &&
-									$pay_later_settings['data']['custom_placement'][0]['status'] === 'enabled',
+									'enabled' === $pay_later_settings['data']['custom_placement'][0]['status'],
 		);
 
 		$is_pay_later_messaging_enabled_for_any_location = ! array_filter( $pay_later_statuses );
@@ -479,13 +479,18 @@ return array(
 			'product_enabled'        => $styling_data['product']->enabled ?? false,
 		);
 	},
-	'settings.service.merchant_capabilities'              => static function ( ContainerInterface $container ): array {
+	'settings.service.merchant_capabilities'              => static function ( ContainerInterface $container ): array { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		/**
 		 * Use the REST API filter to collect eligibility flags.
 		 *
+		 * phpcs:ignore Generic.Commenting.Todo.TaskFound -- Existing follow-up note kept as written.
 		 * TODO: We should switch to using the new `*.eligibility.check` services, which return a callback instead of a boolean.
 		 *       Problem with booleans is, that they are evaluated during DI service creation (plugin_loaded), and some relevant filters are not registered at that point.
 		 *       Overthink the capability system, it's difficult to reuse across the plugin.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param array $features The merchant features, keyed by feature ID; empty by default.
 		 */
 		$features = apply_filters(
 			'woocommerce_paypal_payments_rest_common_merchant_features',
@@ -506,6 +511,7 @@ return array(
 
 		$button_locations = $container->get( 'settings.service.button_locations' );
 
+		// phpcs:ignore Generic.Commenting.Todo.TaskFound -- Existing follow-up note kept as written.
 		// TODO: This "merchant_capabilities" service is only used here. Could it be merged to make the code cleaner and less segmented?
 		$capabilities = $container->get( 'settings.service.merchant_capabilities' );
 
@@ -515,6 +521,13 @@ return array(
 		$messages_apply = $container->get( 'button.helper.messages-apply' );
 		assert( $messages_apply instanceof MessagesApply );
 
+		/**
+		 * Filters whether the Working Capital feature flag is enabled.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $enabled Whether the feature flag is enabled; true by default.
+		 */
 		$is_working_capital_feature_flag_enabled = apply_filters(
 		// phpcs:ignore WordPress.NamingConventions.ValidHookName.UseUnderscores -- feature flags use this convention
 			'woocommerce.feature-flags.woocommerce_paypal_payments.working_capital_enabled',
@@ -561,6 +574,13 @@ return array(
 		);
 	},
 	'settings.data.definition.features'                   => static function ( ContainerInterface $container ): FeaturesDefinition {
+		/**
+		 * Filters the merchant features, keyed by feature ID, that mark capabilities as active in the settings app.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param array $features The merchant features, keyed by feature ID; empty by default.
+		 */
 		$features = apply_filters(
 			'woocommerce_paypal_payments_rest_common_merchant_features',
 			array()
@@ -616,7 +636,7 @@ return array(
 	'settings.service.gateway-redirect'                   => static function (): GatewayRedirectService {
 		return new GatewayRedirectService();
 	},
-	'settings.services.loading-screen-service'            => static function ( ContainerInterface $container ): LoadingScreenService {
+	'settings.services.loading-screen-service'            => static function ( ContainerInterface $container ): LoadingScreenService { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new LoadingScreenService();
 	},
 	/**

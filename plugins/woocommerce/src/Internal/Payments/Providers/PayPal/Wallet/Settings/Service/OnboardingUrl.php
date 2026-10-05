@@ -13,41 +13,71 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Setti
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\Cache;
 use Throwable;
 
+/**
+ * An onboarding URL with the token and seller nonce that protect it, cached per user and cache key.
+ */
 class OnboardingUrl {
 
 	/**
 	 * The user ID to associate with the cache key
+	 *
+	 * @var int
 	 */
 	private int $user_id;
 
 	/**
 	 * The cryptographically secure secret
+	 *
+	 * @var string|null
 	 */
 	private ?string $secret = null;
 
 	/**
 	 * Unix Timestamp when token was generated
+	 *
+	 * @var int|null
 	 */
 	private ?int $time = null;
 
 	/**
 	 * The "action_url" from /v2/customer/partner-referrals
+	 *
+	 * @var string|null
 	 */
 	private ?string $url = null;
 
 	/**
 	 * The cryptographically random seller nonce (PKCE code_verifier)
+	 *
+	 * @var string|null
 	 */
 	private ?string $nonce = null;
 
+	/**
+	 * The cache that stores the URL data.
+	 *
+	 * @var Cache
+	 */
 	private Cache $cache;
 
+	/**
+	 * The prefix of the cache key.
+	 *
+	 * @var string
+	 */
 	private string $cache_key_prefix;
 
+	/**
+	 * The time to live of the cached URL data, in seconds.
+	 *
+	 * @var int
+	 */
 	private int $cache_ttl = MONTH_IN_SECONDS;
 
 	/**
 	 * The TTL for the previous token cache.
+	 *
+	 * @var int
 	 */
 	private int $previous_cache_ttl = 60;
 
@@ -78,7 +108,8 @@ class OnboardingUrl {
 		}
 
 		try {
-			$json_string = self::url_safe_base64_decode( $token ) ?: '';
+			$decoded     = self::url_safe_base64_decode( $token );
+			$json_string = $decoded ? $decoded : '';
 			$token_data  = json_decode( $json_string, true, 512, JSON_THROW_ON_ERROR );
 		} catch ( Throwable $exception ) {
 			return false;
@@ -111,7 +142,7 @@ class OnboardingUrl {
 	public static function validate_token_and_delete( Cache $cache, string $token, int $user_id ): bool {
 		$onboarding_url = self::make_from_token( $cache, $token, $user_id );
 
-		if ( $onboarding_url === false ) {
+		if ( false === $onboarding_url ) {
 			return false;
 		}
 
@@ -142,7 +173,7 @@ class OnboardingUrl {
 	public static function validate_previous_token( Cache $cache, string $token, int $user_id ): bool {
 		$onboarding_url = self::make_from_token( $cache, $token, $user_id );
 
-		if ( $onboarding_url === false ) {
+		if ( false === $onboarding_url ) {
 			return false;
 		}
 
@@ -175,7 +206,12 @@ class OnboardingUrl {
 		return true;
 	}
 
-	public function init(): void {
+	/**
+	 * Generates a new secret and seller nonce, and resets the URL.
+	 *
+	 * @internal
+	 */
+	final public function init(): void {
 		try {
 			$this->secret = bin2hex( random_bytes( 16 ) );
 			$this->nonce  = bin2hex( random_bytes( 32 ) );
@@ -188,6 +224,13 @@ class OnboardingUrl {
 		$this->url  = null;
 	}
 
+	/**
+	 * Checks that cached data is complete, belongs to this user and was written with the current salt.
+	 *
+	 * @param array $cache_data The cached data.
+	 *
+	 * @return bool True when the data can be used.
+	 */
 	private function validate_cache_data( array $cache_data ): bool {
 		if (
 			! ( $cache_data['user_id'] ?? false )
@@ -205,7 +248,7 @@ class OnboardingUrl {
 		}
 
 		// Detect if salt has changed.
-		if ( $cache_data['hash_check'] !== wp_hash( '' ) ) {
+		if ( wp_hash( '' ) !== $cache_data['hash_check'] ) {
 			return false;
 		}
 
@@ -254,10 +297,20 @@ class OnboardingUrl {
 		return self::url_safe_base64_encode( $token );
 	}
 
+	/**
+	 * Returns the onboarding URL, or an empty string when none is set.
+	 *
+	 * @return string
+	 */
 	public function get_onboarding_url(): string {
 		return $this->url ?? '';
 	}
 
+	/**
+	 * Sets the onboarding URL.
+	 *
+	 * @param string $url The onboarding URL.
+	 */
 	public function set_onboarding_url( string $url ): void {
 		$this->url = $url;
 	}
@@ -286,6 +339,11 @@ class OnboardingUrl {
 		);
 	}
 
+	/**
+	 * Returns the seller nonce, or an empty string when none is set.
+	 *
+	 * @return string
+	 */
 	public function seller_nonce(): string {
 		return $this->nonce ?? '';
 	}
@@ -299,14 +357,31 @@ class OnboardingUrl {
 		$this->cache->delete( $this->cache_key() );
 	}
 
+	/**
+	 * Returns the cache key of the URL data.
+	 *
+	 * @return string
+	 */
 	private function cache_key(): string {
 		return implode( '_', array( $this->cache_key_prefix, $this->user_id ) );
 	}
 
+	/**
+	 * Returns the cache key of the previous token.
+	 *
+	 * @return string
+	 */
 	private function previous_cache_key(): string {
 		return $this->cache_key() . '_previous';
 	}
 
+	/**
+	 * Whether the given token matches the cached previous token.
+	 *
+	 * @param string $previous_token The token to compare.
+	 *
+	 * @return bool
+	 */
 	private function matches_previous_token( string $previous_token ): bool {
 		if ( ! $this->cache->has( $this->previous_cache_key() ) ) {
 			return false;
@@ -317,6 +392,11 @@ class OnboardingUrl {
 		return $cached_token === $previous_token;
 	}
 
+	/**
+	 * Caches the given token as the previous token.
+	 *
+	 * @param string $previous_token The token to cache.
+	 */
 	private function replace_previous_token( string $previous_token ): void {
 		$this->cache->set(
 			$this->previous_cache_key(),
@@ -325,20 +405,31 @@ class OnboardingUrl {
 		);
 	}
 
-	private static function url_safe_base64_encode( string $string ): string {
-		//phpcs:disable WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode
-		$encoded_string  = base64_encode( $string );
+	/**
+	 * Encodes a string as URL-safe base64 without padding.
+	 *
+	 * @param string $value The string to encode.
+	 *
+	 * @return string
+	 */
+	private static function url_safe_base64_encode( string $value ): string {
+		$encoded_string  = base64_encode( $value ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- URL-safe encoding of the onboarding token, not obfuscation.
 		$url_safe_string = str_replace( array( '+', '/' ), array( '-', '_' ), $encoded_string );
 
 		return rtrim( $url_safe_string, '=' );
 	}
 
-	/** @phpstan-ignore missingType.return */
+	/**
+	 * Decodes a URL-safe base64 string.
+	 *
+	 * @param string $url_safe_string The URL-safe base64 string.
+	 *
+	 * @return string The decoded string.
+	 */
 	private static function url_safe_base64_decode( string $url_safe_string ) {
 		$padded_string  = str_pad( $url_safe_string, strlen( $url_safe_string ) % 4, '=', STR_PAD_RIGHT );
 		$encoded_string = str_replace( array( '-', '_' ), array( '+', '/' ), $padded_string );
 
-		//phpcs:disable WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode
-		return base64_decode( $encoded_string );
+		return base64_decode( $encoded_string ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes the URL-safe onboarding token, not obfuscated code.
 	}
 }

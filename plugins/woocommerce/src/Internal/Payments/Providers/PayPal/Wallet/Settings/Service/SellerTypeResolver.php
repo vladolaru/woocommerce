@@ -11,6 +11,9 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Da
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\DTO\MerchantConnectionDTO;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Enum\SellerTypeEnum;
 
+/**
+ * Resolves the seller type of the merchant from the seller status and stores it.
+ */
 class SellerTypeResolver {
 
 	/**
@@ -70,7 +73,7 @@ class SellerTypeResolver {
 			$seller_status = $partners_endpoint->seller_status();
 			$seller_type   = $this->resolve( $seller_status );
 
-			if ( $seller_type !== SellerTypeEnum::UNKNOWN ) {
+			if ( SellerTypeEnum::UNKNOWN !== $seller_type ) {
 				$current    = $general_settings->get_merchant_data();
 				$connection = new MerchantConnectionDTO(
 					$current->is_sandbox,
@@ -84,6 +87,11 @@ class SellerTypeResolver {
 				$general_settings->set_merchant_data( $connection );
 				$general_settings->save();
 
+				/**
+				 * Clears the APM eligibility flags from the default settings object.
+				 *
+				 * @since 11.3.0
+				 */
 				do_action( 'woocommerce_paypal_payments_clear_apm_product_status' );
 			}
 		} catch ( Exception $e ) {

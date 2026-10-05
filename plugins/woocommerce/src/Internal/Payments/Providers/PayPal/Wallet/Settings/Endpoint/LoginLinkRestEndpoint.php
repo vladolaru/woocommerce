@@ -29,13 +29,31 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Se
 class LoginLinkRestEndpoint extends RestEndpoint {
 	/**
 	 * The base path for this REST controller.
+	 *
+	 * @var string
 	 */
 	protected $rest_base = 'login_link';
 
+	/**
+	 * The connection URL generator.
+	 *
+	 * @var ConnectionUrlGenerator
+	 */
 	protected ConnectionUrlGenerator $url_generator;
 
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	protected LoggerInterface $logger;
 
+	/**
+	 * Constructor.
+	 *
+	 * @param ConnectionUrlGenerator $url_generator The connection URL generator.
+	 * @param LoggerInterface        $logger The logger.
+	 */
 	public function __construct( ConnectionUrlGenerator $url_generator, LoggerInterface $logger ) {
 		$this->url_generator = $url_generator;
 		$this->logger        = $logger;
@@ -93,7 +111,8 @@ class LoginLinkRestEndpoint extends RestEndpoint {
 	/**
 	 * Returns the full login URL for the requested environment and products.
 	 *
-	 * @param WP_REST_Request<array<string, mixed>> $request The request object.
+	 * @param WP_REST_Request $request The request object.
+	 * @phpstan-param WP_REST_Request<array<string, mixed>> $request
 	 *
 	 * @return WP_REST_Response The login URL or an error response.
 	 */

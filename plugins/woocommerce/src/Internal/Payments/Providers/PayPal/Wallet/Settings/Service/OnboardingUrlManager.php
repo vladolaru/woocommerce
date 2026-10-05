@@ -46,7 +46,7 @@ class OnboardingUrlManager {
 	 */
 	public function __construct( Cache $cache, ?LoggerInterface $logger = null ) {
 		$this->cache  = $cache;
-		$this->logger = $logger ?: new NullLogger();
+		$this->logger = $logger ?? new NullLogger();
 	}
 
 	/**
@@ -72,7 +72,7 @@ class OnboardingUrlManager {
 	public function get_seller_nonce_for_token( string $token, int $user_id ): string {
 		$onboarding_url = OnboardingUrl::make_from_token( $this->cache, $token, $user_id );
 
-		if ( $onboarding_url === false || ! $onboarding_url->load() ) {
+		if ( false === $onboarding_url || ! $onboarding_url->load() ) {
 			return '';
 		}
 

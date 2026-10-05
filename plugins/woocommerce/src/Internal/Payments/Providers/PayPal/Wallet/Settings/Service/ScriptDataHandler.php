@@ -5,6 +5,8 @@
  * @package Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service
  */
 
+declare( strict_types = 1 );
+
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\PartnerAttribution;
@@ -16,19 +18,74 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Da
  */
 class ScriptDataHandler {
 
+	/**
+	 * Gives the paths and URLs of the built assets.
+	 *
+	 * @var AssetGetter
+	 */
 	private AssetGetter $asset_getter;
+
+	/**
+	 * Whether the Pay Later configurator is available.
+	 *
+	 * @var bool
+	 */
 	protected bool $paylater_is_available;
+
+	/**
+	 * The store country code.
+	 *
+	 * @var string
+	 */
 	protected string $store_country;
+
+	/**
+	 * The PayPal merchant ID of the partner.
+	 *
+	 * @var string
+	 */
 	protected string $merchant_id;
+
+	/**
+	 * The language choices of the buttons.
+	 *
+	 * @var array
+	 */
 	protected array $button_language_choices;
+
+	/**
+	 * Provides the PayPal partner attribution.
+	 *
+	 * @var PartnerAttribution
+	 */
 	protected PartnerAttribution $partner_attribution;
+
+	/**
+	 * The settings provider.
+	 *
+	 * @var SettingsProvider
+	 */
 	protected SettingsProvider $settings_provider;
 
 	/**
 	 * Whether the SDK v6 module is loaded. Defaulted for existing callers.
+	 *
+	 * @var bool
 	 */
 	private bool $is_sdk_v6_active;
 
+	/**
+	 * Constructor.
+	 *
+	 * @param AssetGetter        $asset_getter            Gives the paths and URLs of the built assets.
+	 * @param bool               $paylater_is_available   Whether the Pay Later configurator is available.
+	 * @param string             $store_country           The store country code.
+	 * @param string             $merchant_id             The PayPal merchant ID of the partner.
+	 * @param array              $button_language_choices The language choices of the buttons.
+	 * @param PartnerAttribution $partner_attribution     Provides the PayPal partner attribution.
+	 * @param SettingsProvider   $settings_provider       The settings provider.
+	 * @param bool               $is_sdk_v6_active        Whether the SDK v6 module is loaded.
+	 */
 	public function __construct(
 		AssetGetter $asset_getter,
 		bool $paylater_is_available,
@@ -86,7 +143,11 @@ class ScriptDataHandler {
 			'woocommerce',
 		);
 
-		/** @psalm-suppress UnresolvableInclude */
+		/**
+		 * Require resolves.
+		 *
+		 * @psalm-suppress UnresolvableInclude
+		 */
 		$style_asset_file = require $this->asset_getter->get_asset_php_path( 'styles.css' );
 
 		wp_register_style(
@@ -159,6 +220,11 @@ class ScriptDataHandler {
 			$script_data
 		);
 
+		/**
+		 * Fires after the scripts and styles of the settings app are registered and localized.
+		 *
+		 * @since 11.3.0
+		 */
 		do_action( 'woocommerce_paypal_payments_settings_scripts_enqueued' );
 	}
 }

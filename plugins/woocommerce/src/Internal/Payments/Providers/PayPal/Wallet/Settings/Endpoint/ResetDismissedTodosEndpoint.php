@@ -67,7 +67,8 @@ class ResetDismissedTodosEndpoint extends RestEndpoint {
 	/**
 	 * Resets all dismissed todos.
 	 *
-	 * @param WP_REST_Request<array<string, mixed>> $request The request instance.
+	 * @param WP_REST_Request $request The request instance.
+	 * @phpstan-param WP_REST_Request<array<string, mixed>> $request
 	 * @return WP_REST_Response The response containing reset status.
 	 */
 	public function reset_dismissed_todos( WP_REST_Request $request ): WP_REST_Response {

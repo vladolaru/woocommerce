@@ -33,11 +33,25 @@ class SettingsTabMigration implements SettingsMigrationInterface {
 	);
 
 	/**
+	 * The legacy settings of the PayPal Payments extension.
+	 *
 	 * @var array<string, mixed>
 	 */
 	protected array $settings;
+
+	/**
+	 * The settings tab model.
+	 *
+	 * @var SettingsModel
+	 */
 	protected SettingsModel $settings_tab;
 
+	/**
+	 * Constructor.
+	 *
+	 * @param array         $settings The legacy settings of the PayPal Payments extension.
+	 * @param SettingsModel $settings_tab The settings tab model.
+	 */
 	public function __construct(
 		array $settings,
 		SettingsModel $settings_tab
@@ -46,6 +60,9 @@ class SettingsTabMigration implements SettingsMigrationInterface {
 		$this->settings_tab = $settings_tab;
 	}
 
+	/**
+	 * Migrates the settings of the settings tab from the legacy settings.
+	 */
 	public function migrate(): void {
 		$data = array();
 
@@ -57,20 +74,20 @@ class SettingsTabMigration implements SettingsMigrationInterface {
 			switch ( $old_key ) {
 				case 'subtotal_mismatch_behavior':
 					$value            = $this->settings[ $old_key ];
-					$data[ $new_key ] = $value === PurchaseUnitSanitizer::MODE_EXTRA_LINE ? 'correction' : 'no_details';
+					$data[ $new_key ] = PurchaseUnitSanitizer::MODE_EXTRA_LINE === $value ? 'correction' : 'no_details';
 					break;
 				case 'landing_page':
 					$value            = $this->settings[ $old_key ];
-					$data[ $new_key ] = $value === ExperienceContext::LANDING_PAGE_LOGIN
+					$data[ $new_key ] = ExperienceContext::LANDING_PAGE_LOGIN === $value
 						? 'login'
-						: ( $value === ExperienceContext::LANDING_PAGE_GUEST_CHECKOUT
+						: ( ExperienceContext::LANDING_PAGE_GUEST_CHECKOUT === $value
 							? 'guest_checkout'
 							: 'any'
 						);
 					break;
 				case 'intent':
 					$value                  = $this->settings[ $old_key ];
-					$data['authorize_only'] = $value === 'authorize';
+					$data['authorize_only'] = 'authorize' === $value;
 					break;
 				case 'blocks_final_review_enabled':
 					$data[ $new_key ] = ! $this->settings[ $old_key ];

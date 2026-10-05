@@ -22,16 +22,33 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\H
 class StylingSettingsMigration implements SettingsMigrationInterface {
 
 	/**
+	 * The legacy settings of the PayPal Payments extension.
+	 *
 	 * @var array<string, mixed>
 	 */
 	protected array $settings;
+
+	/**
+	 * The styling settings model.
+	 *
+	 * @var StylingSettings
+	 */
 	protected StylingSettings $styling_settings;
 
+	/**
+	 * Constructor.
+	 *
+	 * @param array           $settings The legacy settings of the PayPal Payments extension.
+	 * @param StylingSettings $styling_settings The styling settings model.
+	 */
 	public function __construct( array $settings, StylingSettings $styling_settings ) {
 		$this->settings         = $settings;
 		$this->styling_settings = $styling_settings;
 	}
 
+	/**
+	 * Migrates the button styling from the legacy settings.
+	 */
 	public function migrate(): void {
 		if ( empty( $this->settings ) || ! isset( $this->settings['smart_button_locations'] ) ) {
 			return;
@@ -109,7 +126,7 @@ class StylingSettingsMigration implements SettingsMigrationInterface {
 
 		$enabled_locations = $this->settings[ $key ];
 
-		if ( $location === 'cart' ) {
+		if ( 'cart' === $location ) {
 			return in_array( $location, $enabled_locations, true ) || in_array( 'cart-block', $enabled_locations, true );
 		}
 
@@ -142,7 +159,7 @@ class StylingSettingsMigration implements SettingsMigrationInterface {
 	 * @return string|bool|null The style value or null if not found.
 	 */
 	private function style_for_context( string $style, string $location ) {
-		if ( $location === 'cart' ) {
+		if ( 'cart' === $location ) {
 			return $this->get_style_value( "button_{$location}_{$style}" )
 				?? $this->get_style_value( "button_cart-block_{$style}" );
 		}

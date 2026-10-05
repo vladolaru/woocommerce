@@ -80,14 +80,15 @@ class AuthenticationManager {
 	/**
 	 * Constructor.
 	 *
-	 * @param GeneralSettings                $common_settings  Data model that stores the connection details.
-	 * @param EnvironmentConfig<string>      $connection_host  API host for direct authentication.
-	 * @param EnvironmentConfig<LoginSeller> $login_endpoint   API handler to fetch merchant credentials.
-	 * @param ConnectionState                $connection_state Connection state manager.
-	 * @param PayPalBearerFactory            $bearer_factory   Builds bearers for explicit credentials.
-	 * @param ?LoggerInterface               $logger           Logging instance.
+	 * @param GeneralSettings      $common_settings  Data model that stores the connection details.
+	 * @param EnvironmentConfig    $connection_host  API host for direct authentication.
+	 * @param EnvironmentConfig    $login_endpoint   API handler to fetch merchant credentials.
+	 * @param ConnectionState      $connection_state Connection state manager.
+	 * @param PayPalBearerFactory  $bearer_factory   Builds bearers for explicit credentials.
+	 * @param LoggerInterface|null $logger           Logging instance.
 	 *
-	 * phpcs:disable Squiz.Commenting.FunctionComment.IncorrectTypeHint
+	 * @phpstan-param EnvironmentConfig<string> $connection_host
+	 * @phpstan-param EnvironmentConfig<LoginSeller> $login_endpoint
 	 */
 	public function __construct(
 		GeneralSettings $common_settings,
@@ -102,7 +103,7 @@ class AuthenticationManager {
 		$this->login_endpoint   = $login_endpoint;
 		$this->connection_state = $connection_state;
 		$this->bearer_factory   = $bearer_factory;
-		$this->logger           = $logger ?: new NullLogger();
+		$this->logger           = $logger ?? new NullLogger();
 	}
 
 	/**
@@ -136,17 +137,23 @@ class AuthenticationManager {
 		/**
 		 * Broadcast, that the plugin disconnected from PayPal. This allows other
 		 * modules to clean up merchant-related details, such as eligibility flags.
+		 *
+		 * @since 11.3.0
 		 */
 		do_action( 'woocommerce_paypal_payments_merchant_disconnected' );
 
 		/**
 		 * Request to flush caches after disconnecting the merchant. While there
 		 * is no need for it here, it's good house-keeping practice to clean up.
+		 *
+		 * @since 11.3.0
 		 */
 		do_action( 'woocommerce_paypal_payments_flush_api_cache' );
 
 		/**
 		 * Clear the APM eligibility flags from the default settings object.
+		 *
+		 * @since 11.3.0
 		 */
 		do_action( 'woocommerce_paypal_payments_clear_apm_product_status' );
 	}
@@ -314,6 +321,7 @@ class AuthenticationManager {
 	 * @param bool   $use_sandbox Whether to use the sandbox mode.
 	 * @param string $shared_id   The OAuth client ID.
 	 * @param string $auth_code   The OAuth authorization code.
+	 * @param string $seller_nonce The seller nonce issued with the onboarding URL.
 	 * @return MerchantConnectionDTO A DTO containing the connection details.
 	 * @throws RuntimeException When failed to retrieve payee.
 	 */
@@ -459,13 +467,13 @@ class AuthenticationManager {
 			throw new RuntimeException(
 				'Failed to retrieve payee details.',
 				0,
-				$exception
+				$exception // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Previous exception for chaining, never printed; the message is a literal.
 			);
 		} catch ( Throwable $exception ) {
 			throw new RuntimeException(
 				'Failed to retrieve payee details.',
 				0,
-				$exception
+				$exception // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Previous exception for chaining, never printed; the message is a literal.
 			);
 		}
 
@@ -494,6 +502,7 @@ class AuthenticationManager {
 	 * @param string $shared_id   The shared onboarding ID.
 	 * @param string $auth_code   The authorization code.
 	 * @param bool   $use_sandbox Whether to use the sandbox mode.
+	 * @param string $seller_nonce The seller nonce issued with the onboarding URL.
 	 * @return array
 	 * @throws RuntimeException When failed to fetch credentials.
 	 */
@@ -534,6 +543,8 @@ class AuthenticationManager {
 			 * Request to flush caches before authenticating the merchant, to
 			 * ensure the new merchant does not use stale data from previous
 			 * connections.
+			 *
+			 * @since 11.3.0
 			 */
 			do_action( 'woocommerce_paypal_payments_flush_api_cache' );
 
@@ -543,16 +554,22 @@ class AuthenticationManager {
 			 * and seller type via a direct (in-process) seller-status lookup.
 			 * This is the right time to initialize merchant relative flags for the
 			 * first time.
+			 *
+			 * @since 11.3.0
 			 */
 			do_action( 'woocommerce_paypal_payments_authenticated_merchant' );
 
 			/**
 			 * Clear the APM eligibility flags from the default settings object.
+			 *
+			 * @since 11.3.0
 			 */
 			do_action( 'woocommerce_paypal_payments_clear_apm_product_status' );
 
 			/**
 			 * Subscribe the new merchant to relevant PayPal webhooks.
+			 *
+			 * @since 11.3.0
 			 */
 			do_action( WebhookRegistrar::EVENT_HOOK );
 		}

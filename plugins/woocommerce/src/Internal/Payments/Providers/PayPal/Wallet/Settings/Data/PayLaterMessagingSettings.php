@@ -7,15 +7,27 @@ use RuntimeException;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\DTO\PayLaterMessagingDTO;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\DataSanitizer;
 
+/**
+ * The Pay Later messaging settings: whether messaging is on, where it shows and how each location is styled.
+ */
 class PayLaterMessagingSettings extends AbstractDataModel {
 
 	protected const OPTION_KEY = 'woocommerce-ppcp-data-paylater-messaging';
 
 	private const LEGACY_OPTION_KEY = 'woocommerce-ppcp-settings';
 
+	/**
+	 * The sanitizer for the stored values.
+	 *
+	 * @var DataSanitizer
+	 */
 	protected DataSanitizer $sanitizer;
 
 	/**
+	 * Constructor.
+	 *
+	 * @param DataSanitizer $sanitizer The sanitizer for the stored values.
+	 *
 	 * @throws RuntimeException If the OPTION_KEY is not defined in the child class.
 	 */
 	public function __construct( DataSanitizer $sanitizer ) {
@@ -26,6 +38,11 @@ class PayLaterMessagingSettings extends AbstractDataModel {
 		$this->maybe_migrate_from_legacy();
 	}
 
+	/**
+	 * Returns the default values of the model.
+	 *
+	 * @return array The defaults, keyed by field.
+	 */
 	protected function get_defaults(): array {
 		return array(
 			'messaging_enabled'    => false,
@@ -40,26 +57,56 @@ class PayLaterMessagingSettings extends AbstractDataModel {
 		);
 	}
 
+	/**
+	 * Whether Pay Later messaging is enabled.
+	 *
+	 * @return bool
+	 */
 	public function get_messaging_enabled(): bool {
 		return (bool) $this->data['messaging_enabled'];
 	}
 
+	/**
+	 * Sets whether Pay Later messaging is enabled.
+	 *
+	 * @param bool $enabled Whether messaging is enabled.
+	 */
 	public function set_messaging_enabled( bool $enabled ): void {
 		$this->data['messaging_enabled'] = $enabled;
 	}
 
+	/**
+	 * Whether each location has its own messaging style.
+	 *
+	 * @return bool
+	 */
 	public function get_styling_per_location(): bool {
 		return (bool) $this->data['styling_per_location'];
 	}
 
+	/**
+	 * Sets whether each location has its own messaging style.
+	 *
+	 * @param bool $enabled Whether styling is per location.
+	 */
 	public function set_styling_per_location( bool $enabled ): void {
 		$this->data['styling_per_location'] = $enabled;
 	}
 
+	/**
+	 * Returns the locations where messaging is shown.
+	 *
+	 * @return array
+	 */
 	public function get_messaging_locations(): array {
 		return (array) $this->data['messaging_locations'];
 	}
 
+	/**
+	 * Sets the locations where messaging is shown, sanitized as text.
+	 *
+	 * @param array $locations The location names.
+	 */
 	public function set_messaging_locations( array $locations ): void {
 		$this->data['messaging_locations'] = $this->sanitizer->sanitize_array(
 			$locations,
@@ -67,6 +114,11 @@ class PayLaterMessagingSettings extends AbstractDataModel {
 		);
 	}
 
+	/**
+	 * Returns the messaging style of the cart location.
+	 *
+	 * @return PayLaterMessagingDTO
+	 */
 	public function get_cart(): PayLaterMessagingDTO {
 		return $this->data['cart'];
 	}
@@ -80,6 +132,11 @@ class PayLaterMessagingSettings extends AbstractDataModel {
 		$this->data['cart'] = $this->sanitize_paylater_messaging( $styles, 'cart' );
 	}
 
+	/**
+	 * Returns the messaging style of the checkout location.
+	 *
+	 * @return PayLaterMessagingDTO
+	 */
 	public function get_checkout(): PayLaterMessagingDTO {
 		return $this->data['checkout'];
 	}
@@ -93,6 +150,11 @@ class PayLaterMessagingSettings extends AbstractDataModel {
 		$this->data['checkout'] = $this->sanitize_paylater_messaging( $styles, 'checkout' );
 	}
 
+	/**
+	 * Returns the messaging style of the product location.
+	 *
+	 * @return PayLaterMessagingDTO
+	 */
 	public function get_product(): PayLaterMessagingDTO {
 		return $this->data['product'];
 	}
@@ -106,6 +168,11 @@ class PayLaterMessagingSettings extends AbstractDataModel {
 		$this->data['product'] = $this->sanitize_paylater_messaging( $styles, 'product' );
 	}
 
+	/**
+	 * Returns the messaging style of the shop location.
+	 *
+	 * @return PayLaterMessagingDTO
+	 */
 	public function get_shop(): PayLaterMessagingDTO {
 		return $this->data['shop'];
 	}
@@ -119,6 +186,11 @@ class PayLaterMessagingSettings extends AbstractDataModel {
 		$this->data['shop'] = $this->sanitize_paylater_messaging( $styles, 'shop' );
 	}
 
+	/**
+	 * Returns the messaging style of the home location.
+	 *
+	 * @return PayLaterMessagingDTO
+	 */
 	public function get_home(): PayLaterMessagingDTO {
 		return $this->data['home'];
 	}
@@ -132,6 +204,11 @@ class PayLaterMessagingSettings extends AbstractDataModel {
 		$this->data['home'] = $this->sanitize_paylater_messaging( $styles, 'home' );
 	}
 
+	/**
+	 * Returns the messaging style of the custom placement.
+	 *
+	 * @return PayLaterMessagingDTO
+	 */
 	public function get_custom_placement(): PayLaterMessagingDTO {
 		return $this->data['custom_placement'];
 	}
@@ -244,6 +321,9 @@ class PayLaterMessagingSettings extends AbstractDataModel {
 		return $dto;
 	}
 
+	/**
+	 * Copies the messaging settings from the legacy extension option when this model has no stored data yet.
+	 */
 	private function maybe_migrate_from_legacy(): void {
 		$has_new_data = get_option( static::OPTION_KEY );
 		if ( false !== $has_new_data && ! empty( $has_new_data ) ) {

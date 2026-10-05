@@ -17,8 +17,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Da
 /**
  * Class TodosDefinition
  *
- * Provides the definitions for all available todos in the system.
- * Each todo has a title, description, eligibility condition, and associated action.
+ * Provides the definitions for all available to-do items in the system.
+ * Each to-do has a title, description, eligibility condition, and associated action.
  */
 class TodosDefinition {
 
@@ -36,6 +36,11 @@ class TodosDefinition {
 	 */
 	protected GeneralSettings $settings;
 
+	/**
+	 * The to-do state model.
+	 *
+	 * @var TodosModel
+	 */
 	protected TodosModel $todos;
 
 	/**
@@ -56,9 +61,9 @@ class TodosDefinition {
 	}
 
 	/**
-	 * Returns the full list of todo definitions with their eligibility conditions.
+	 * Returns the full list of to-do definitions with their eligibility conditions.
 	 *
-	 * @return array The array of todo definitions.
+	 * @return array The array of to-do definitions.
 	 */
 	public function get(): array {
 		$eligibility_checks = $this->eligibilities->get_eligibility_checks();
@@ -167,6 +172,13 @@ class TodosDefinition {
 			'priority'    => 0,
 		);
 
+		/**
+		 * Filters the list of to-do definitions shown in the settings app.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param array $items The to-do definitions.
+		 */
 		return apply_filters( 'woocommerce_paypal_payments_todos_list', $todo_items );
 	}
 

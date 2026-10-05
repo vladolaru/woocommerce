@@ -29,16 +29,47 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Da
  */
 class SettingsDataManager {
 
+	/**
+	 * The payment methods definition.
+	 *
+	 * @var PaymentMethodsDefinition
+	 */
 	private PaymentMethodsDefinition $methods_definition;
+
+	/**
+	 * The onboarding profile.
+	 *
+	 * @var OnboardingProfile
+	 */
 	private OnboardingProfile $onboarding_profile;
+
+	/**
+	 * The settings tab model.
+	 *
+	 * @var SettingsModel
+	 */
 	private SettingsModel $payment_settings;
+
+	/**
+	 * The styling settings.
+	 *
+	 * @var StylingSettings
+	 */
 	private StylingSettings $styling_settings;
+
+	/**
+	 * The payment settings.
+	 *
+	 * @var PaymentSettings
+	 */
 	private PaymentSettings $payment_methods;
 
 	/**
 	 * Data accessors for pay later messaging settings.
 	 *
 	 * @var array
+	 *
+	 * phpcs:ignore Generic.Commenting.Todo.CommentFound -- Existing follow-up note kept as written.
 	 * @todo This should be a proper class!
 	 */
 	private array $paylater_messaging;
@@ -51,6 +82,18 @@ class SettingsDataManager {
 	 */
 	private array $models_to_reset = array();
 
+	/**
+	 * Constructor.
+	 *
+	 * @param PaymentMethodsDefinition $methods_definition The payment methods definition.
+	 * @param OnboardingProfile        $onboarding_profile The onboarding profile.
+	 * @param GeneralSettings          $general_settings The general settings.
+	 * @param SettingsModel            $payment_settings The settings tab model.
+	 * @param StylingSettings          $styling_settings The styling settings.
+	 * @param PaymentSettings          $payment_methods The payment settings.
+	 * @param array                    $paylater_messaging The data accessors for the Pay Later messaging settings.
+	 * @param AbstractDataModel        ...$data_models More data models to reset.
+	 */
 	public function __construct(
 		PaymentMethodsDefinition $methods_definition,
 		OnboardingProfile $onboarding_profile,
@@ -58,6 +101,7 @@ class SettingsDataManager {
 		SettingsModel $payment_settings,
 		StylingSettings $styling_settings,
 		PaymentSettings $payment_methods,
+		// phpcs:ignore Generic.Commenting.Todo.TaskFound -- Existing follow-up note kept as written.
 		array $paylater_messaging, // TODO should be migrated to an AbstractDataModel.
 		AbstractDataModel ...$data_models
 	) {
@@ -88,6 +132,8 @@ class SettingsDataManager {
 		/**
 		 * Broadcast the settings-reset event to allow other modules to perform
 		 * cleanup tasks, if needed.
+		 *
+		 * @since 11.3.0
 		 */
 		do_action( 'woocommerce_paypal_payments_reset_settings' );
 
@@ -129,6 +175,10 @@ class SettingsDataManager {
 		 *
 		 * Other modules or integrations can use this hook to initialize
 		 * additional plugin settings on first merchant login.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param ConfigurationFlagsDTO $flags The configuration flags.
 		 */
 		do_action( 'woocommerce_paypal_payments_apply_default_configuration', $flags );
 	}
@@ -205,6 +255,8 @@ class SettingsDataManager {
 			/**
 			 * Allow plugins to modify apm payment gateway states before saving.
 			 *
+			 * @since 11.3.0
+			 *
 			 * @param PaymentSettings $payment_methods The payment methods object.
 			 * @param array $methods_apm List of APM methods.
 			 * @param ConfigurationFlagsDTO $flags Configuration flags that determine which gateways to enable.
@@ -214,6 +266,8 @@ class SettingsDataManager {
 
 		/**
 		 * Allow plugins to modify payment gateway states before saving.
+		 *
+		 * @since 11.3.0
 		 *
 		 * @param PaymentSettings $payment_methods The payment methods object.
 		 * @param ConfigurationFlagsDTO $flags Configuration flags that determine which gateways to enable.
@@ -246,7 +300,7 @@ class SettingsDataManager {
 	 *
 	 * @param ConfigurationFlagsDTO $flags Shop configuration flags.
 	 */
-	protected function apply_payment_methods( ConfigurationFlagsDTO $flags ): void {
+	protected function apply_payment_methods( ConfigurationFlagsDTO $flags ): void { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- Protected step kept with the signature shared by the apply_* methods.
 		$this->payment_methods->toggle_method_state( 'pay-later', true );
 		$this->payment_methods->save();
 	}
@@ -257,7 +311,7 @@ class SettingsDataManager {
 	 * @param ConfigurationFlagsDTO $flags Shop configuration flags.
 	 * @return void
 	 */
-	protected function apply_location_styles( ConfigurationFlagsDTO $flags ): void {
+	protected function apply_location_styles( ConfigurationFlagsDTO $flags ): void { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- Protected step kept with the signature shared by the apply_* methods.
 		$methods = array(
 			PayPalGateway::ID,
 			'venmo',
@@ -292,7 +346,7 @@ class SettingsDataManager {
 	 * @param ConfigurationFlagsDTO $flags Shop configuration flags.
 	 * @return void
 	 */
-	protected function apply_pay_later_messaging( ConfigurationFlagsDTO $flags ): void {
+	protected function apply_pay_later_messaging( ConfigurationFlagsDTO $flags ): void { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- Protected step kept with the signature shared by the apply_* methods.
 		$config = $this->paylater_messaging['read'];
 
 		$config['cart']['status']     = 'enabled';

@@ -55,10 +55,14 @@ class WebhookSettingsEndpoint extends RestEndpoint {
 
 	/**
 	 * Tells this site's own webhook apart from other sites' webhooks on the same app.
+	 *
+	 * @var OwnWebhookResolver
 	 */
 	private OwnWebhookResolver $own_webhook_resolver;
 
 	/**
+	 * Constructor.
+	 *
 	 * @param WebhookEndpoint    $webhook_endpoint     A list of subscribed webhooks and a
 	 *                                                 webhook endpoint URL.
 	 * @param WebhookRegistrar   $webhook_registrar    A service that allows resubscribing

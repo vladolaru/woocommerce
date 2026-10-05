@@ -54,7 +54,18 @@ class FeaturesDefinition {
 	 */
 	public const FEATURE_VAULT_COMPONENT = 'vault_component';
 
+	/**
+	 * The features eligibility service.
+	 *
+	 * @var FeaturesEligibilityService
+	 */
 	protected FeaturesEligibilityService $eligibilities;
+
+	/**
+	 * The general settings service.
+	 *
+	 * @var GeneralSettings
+	 */
 	protected GeneralSettings $settings;
 
 	/**
@@ -63,8 +74,22 @@ class FeaturesDefinition {
 	 * @var array
 	 */
 	protected array $merchant_capabilities;
+
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	protected LoggerInterface $logger;
 
+	/**
+	 * Constructor.
+	 *
+	 * @param FeaturesEligibilityService $eligibilities The features eligibility service.
+	 * @param GeneralSettings            $settings The general settings service.
+	 * @param array                      $merchant_capabilities The merchant capabilities.
+	 * @param LoggerInterface            $logger The logger.
+	 */
 	public function __construct(
 		FeaturesEligibilityService $eligibilities,
 		GeneralSettings $settings,
@@ -229,6 +254,13 @@ class FeaturesDefinition {
 			),
 		);
 
+		/**
+		 * Filters the list of feature definitions shown in the settings app.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param array $feature_items The feature definitions.
+		 */
 		return apply_filters( 'woocommerce_paypal_payments_features_list', $feature_items );
 	}
 }

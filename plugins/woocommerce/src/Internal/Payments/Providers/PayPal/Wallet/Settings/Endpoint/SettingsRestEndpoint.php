@@ -157,7 +157,8 @@ class SettingsRestEndpoint extends RestEndpoint {
 	/**
 	 * Updates the settings with provided data.
 	 *
-	 * @param WP_REST_Request<array<string, mixed>> $request The request instance containing new settings.
+	 * @param WP_REST_Request $request The request instance containing new settings.
+	 * @phpstan-param WP_REST_Request<array<string, mixed>> $request
 	 * @return WP_REST_Response The response containing updated settings or error details.
 	 */
 	public function update_details( WP_REST_Request $request ): WP_REST_Response {

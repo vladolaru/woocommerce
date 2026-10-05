@@ -25,6 +25,13 @@ class PaymentMethodsDependenciesDefinition {
 			'pay-later' => array( PayPalGateway::ID ),
 		);
 
+		/**
+		 * Filters the dependencies between payment methods, as dependent method ID => parent method IDs.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param array $dependencies The payment method dependencies.
+		 */
 		return apply_filters(
 			'woocommerce_paypal_payments_payment_method_dependencies',
 			$dependencies
@@ -40,6 +47,13 @@ class PaymentMethodsDependenciesDefinition {
 	 * @return array The dependency relationships between settings and payment methods
 	 */
 	public function get_setting_dependencies(): array {
+		/**
+		 * Filters the settings that payment methods depend on, as method ID => required settings and values.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param array $dependencies The setting dependencies; empty by default.
+		 */
 		return apply_filters(
 			'woocommerce_paypal_payments_setting_dependencies',
 			array()
@@ -52,6 +66,13 @@ class PaymentMethodsDependenciesDefinition {
 	 * @return array Value dependencies for the method or empty array if none exist
 	 */
 	public function get_payment_method_value_dependencies(): array {
+		/**
+		 * Filters the value dependencies between payment methods, as method ID => required values of other methods.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param array $dependencies The payment method value dependencies; empty by default.
+		 */
 		return apply_filters(
 			'woocommerce_paypal_payments_method_value_dependencies',
 			array()
@@ -80,7 +101,7 @@ class PaymentMethodsDependenciesDefinition {
 	public function add_dependency_info_to_methods( array $methods ): array {
 		foreach ( $methods as $method_id => &$method ) {
 			// Skip the __meta key.
-			if ( $method_id === '__meta' ) {
+			if ( '__meta' === $method_id ) {
 				continue;
 			}
 

@@ -53,6 +53,8 @@ class CommonRestEndpoint extends RestEndpoint {
 
 	/**
 	 * Pending user-facing onboarding notices, surfaced to the settings app.
+	 *
+	 * @var OnboardingNotices
 	 */
 	protected OnboardingNotices $notices;
 
@@ -70,6 +72,7 @@ class CommonRestEndpoint extends RestEndpoint {
 			'js_name'  => 'useManualConnection',
 			'sanitize' => 'to_boolean',
 		),
+		// phpcs:ignore Generic.Commenting.Todo.TaskFound -- Existing follow-up note kept as written.
 		// TODO: Is this really a "read-and-write" field? If no, it should not be listed in this map!
 		'webhooks'              => array(
 			'js_name' => 'webhooks',
@@ -236,7 +239,8 @@ class CommonRestEndpoint extends RestEndpoint {
 	/**
 	 * Updates common details based on the request.
 	 *
-	 * @param WP_REST_Request<array<string, mixed>> $request Full data about the request.
+	 * @param WP_REST_Request $request Full data about the request.
+	 * @phpstan-param WP_REST_Request<array<string, mixed>> $request
 	 *
 	 * @return WP_REST_Response The new common settings.
 	 */
@@ -300,6 +304,13 @@ class CommonRestEndpoint extends RestEndpoint {
 		);
 
 		if ( $this->settings->is_merchant_connected() ) {
+			/**
+			 * Filters the merchant features the settings app receives for a connected merchant.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param array $features The merchant features; empty by default.
+			 */
 			$extra_data['features'] = apply_filters(
 				'woocommerce_paypal_payments_rest_common_merchant_features',
 				array(),

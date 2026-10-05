@@ -146,7 +146,7 @@ class PaymentRestEndpoint extends RestEndpoint {
 
 		foreach ( $all_payment_methods as $key => $payment_method ) {
 			// Skip the __meta key as we've already handled it.
-			if ( $key === '__meta' ) {
+			if ( '__meta' === $key ) {
 				continue;
 			}
 
@@ -181,13 +181,21 @@ class PaymentRestEndpoint extends RestEndpoint {
 
 		$gateway_settings['paypalShowLogo'] = $this->payment_settings->get_paypal_show_logo();
 
+		/**
+		 * Filters the payment methods data the settings app receives.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param array $gateway_settings The payment methods data.
+		 */
 		return $this->return_success( apply_filters( 'woocommerce_paypal_payments_payment_methods', $gateway_settings ) );
 	}
 
 	/**
 	 * Updates payment methods details based on the request.
 	 *
-	 * @param WP_REST_Request<array<string, mixed>> $request Full data about the request.
+	 * @param WP_REST_Request $request Full data about the request.
+	 * @phpstan-param WP_REST_Request<array<string, mixed>> $request
 	 *
 	 * @return WP_REST_Response The updated payment methods details.
 	 */

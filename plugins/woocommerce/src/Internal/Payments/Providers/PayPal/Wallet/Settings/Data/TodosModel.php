@@ -52,22 +52,22 @@ class TodosModel extends AbstractDataModel {
 	}
 
 	/**
-	 * Updates dismissed todos.
+	 * Updates the dismissed to-do items.
 	 *
-	 * @param array $todo_ids Array of todo IDs to mark as dismissed.
+	 * @param array $ids Array of to-do IDs to mark as dismissed.
 	 */
-	public function update_dismissed_todos( array $todo_ids ): void {
-		$this->data['dismissedTodos'] = array_unique( $todo_ids );
+	public function update_dismissed_todos( array $ids ): void {
+		$this->data['dismissedTodos'] = array_unique( $ids );
 		$this->save();
 	}
 
 	/**
 	 * Updates completed onclick todos.
 	 *
-	 * @param array $todo_ids Array of todo IDs to mark as completed.
+	 * @param array $ids Array of to-do IDs to mark as completed.
 	 */
-	public function update_completed_onclick_todos( array $todo_ids ): void {
-		$this->data['completedOnClickTodos'] = array_unique( $todo_ids );
+	public function update_completed_onclick_todos( array $ids ): void {
+		$this->data['completedOnClickTodos'] = array_unique( $ids );
 		$this->save();
 	}
 

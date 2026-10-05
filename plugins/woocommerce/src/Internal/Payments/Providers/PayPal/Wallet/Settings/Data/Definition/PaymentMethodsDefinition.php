@@ -194,6 +194,13 @@ class PaymentMethodsDefinition {
 			),
 		);
 
+		/**
+		 * Filters the payment methods of the PayPal group.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param array $group The payment method definitions of the group.
+		 */
 		return apply_filters( 'woocommerce_paypal_payments_gateway_group_paypal', $group );
 	}
 
@@ -203,6 +210,13 @@ class PaymentMethodsDefinition {
 	 * @return array
 	 */
 	public function group_card_methods(): array {
+		/**
+		 * Filters the payment methods of the card group.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param array $group The payment method definitions of the group; empty by default.
+		 */
 		return apply_filters( 'woocommerce_paypal_payments_gateway_group_cards', array() );
 	}
 
@@ -212,6 +226,13 @@ class PaymentMethodsDefinition {
 	 * @return array
 	 */
 	public function group_apms(): array {
+		/**
+		 * Filters the payment methods of the alternative payment methods group.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param array $group The payment method definitions of the group; empty by default.
+		 */
 		return apply_filters( 'woocommerce_paypal_payments_gateway_group_apm', array() );
 	}
 }

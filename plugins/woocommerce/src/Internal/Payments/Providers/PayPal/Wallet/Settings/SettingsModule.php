@@ -56,6 +56,8 @@ class SettingsModule implements ServiceModule, ExecutableModule {
 
 	/**
 	 * {@inheritDoc}
+	 *
+	 * @param ContainerInterface $container The service container.
 	 */
 	public function run( ContainerInterface $container ): bool {
 		// Suppress WooCommerce Settings UI elements via CSS to improve the loading experience.
@@ -123,7 +125,7 @@ class SettingsModule implements ServiceModule, ExecutableModule {
 
 				$migration_done = get_option( MigrationManager::OPTION_NAME_MIGRATION_IS_DONE );
 
-				if ( (string) $migration_done !== '1' ) {
+				if ( '1' !== (string) $migration_done ) {
 					add_action(
 						'admin_notices',
 						static function (): void {
@@ -246,6 +248,11 @@ class SettingsModule implements ServiceModule, ExecutableModule {
 				assert( $partners_endpoint instanceof PartnersEndpoint );
 				assert( $seller_type_resolver instanceof SellerTypeResolver );
 
+				/**
+				 * Clears the APM eligibility flags from the default settings object.
+				 *
+				 * @since 11.3.0
+				 */
 				do_action( 'woocommerce_paypal_payments_clear_apm_product_status' );
 				$seller_type_resolver->resolve_unknown_seller_type(
 					$general_settings,
@@ -342,7 +349,7 @@ class SettingsModule implements ServiceModule, ExecutableModule {
 
 					if (
 						! in_array( $payment_gateway_id, $all_gateway_ids, true )
-						|| $payment_gateway_id === PayPalGateway::ID
+						|| PayPalGateway::ID === $payment_gateway_id
 						|| $this->is_gateway_enabled( $payment_gateway_id )
 					) {
 						continue;
@@ -410,7 +417,7 @@ class SettingsModule implements ServiceModule, ExecutableModule {
 				$own_brand_only    = $general_settings->own_brand_only();
 				$installation_path = $general_settings->get_installation_path();
 
-				if ( ! $own_brand_only && $installation_path !== InstallationPathEnum::DIRECT ) {
+				if ( ! $own_brand_only && InstallationPathEnum::DIRECT !== $installation_path ) {
 					$partner_attribution->initialize_bn_code( InstallationPathEnum::DIRECT, true );
 				}
 			}
@@ -580,6 +587,6 @@ class SettingsModule implements ServiceModule, ExecutableModule {
 		$gateway_settings = get_option( "woocommerce_{$gateway_name}_settings", array() );
 		$gateway_enabled  = $gateway_settings['enabled'] ?? false;
 
-		return $gateway_enabled === 'yes';
+		return 'yes' === $gateway_enabled;
 	}
 }

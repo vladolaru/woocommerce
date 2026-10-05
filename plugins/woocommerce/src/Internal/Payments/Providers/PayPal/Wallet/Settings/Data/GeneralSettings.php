@@ -408,9 +408,9 @@ class GeneralSettings extends AbstractDataModel {
 		// Temporary dev/test mode.
 		$simulate_cookie = sanitize_key( wp_unslash( $_COOKIE['simulate-branded-only'] ?? '' ) );
 
-		if ( $simulate_cookie === 'true' ) {
+		if ( 'true' === $simulate_cookie ) {
 			return true;
-		} elseif ( $simulate_cookie === 'false' ) {
+		} elseif ( 'false' === $simulate_cookie ) {
 			return false;
 		}
 

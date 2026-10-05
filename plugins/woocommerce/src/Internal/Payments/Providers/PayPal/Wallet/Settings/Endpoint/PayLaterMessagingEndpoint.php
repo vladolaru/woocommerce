@@ -98,7 +98,8 @@ class PayLaterMessagingEndpoint extends RestEndpoint {
 	/**
 	 * Updates Pay Later Messaging configuration details based on the request.
 	 *
-	 * @param WP_REST_Request<array<string, mixed>> $request Full data about the request.
+	 * @param WP_REST_Request $request Full data about the request.
+	 * @phpstan-param WP_REST_Request<array<string, mixed>> $request
 	 *
 	 * @return WP_REST_Response The updated Pay Later Messaging configuration details.
 	 */

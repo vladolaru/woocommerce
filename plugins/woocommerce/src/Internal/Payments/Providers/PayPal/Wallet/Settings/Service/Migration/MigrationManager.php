@@ -22,13 +22,58 @@ class MigrationManager implements SettingsMigrationInterface {
 
 	public const OPTION_NAME_MIGRATION_IS_DONE = 'woocommerce_ppcp-settings-migration-is-done';
 
+	/**
+	 * Migrates the general settings.
+	 *
+	 * @var SettingsMigration
+	 */
 	protected SettingsMigration $general_settings_migration;
+
+	/**
+	 * Migrates the settings tab.
+	 *
+	 * @var SettingsTabMigration
+	 */
 	protected SettingsTabMigration $settings_tab_migration;
+
+	/**
+	 * Migrates the styling settings.
+	 *
+	 * @var StylingSettingsMigration
+	 */
 	protected StylingSettingsMigration $styling_settings_migration;
+
+	/**
+	 * Migrates the payment settings.
+	 *
+	 * @var PaymentSettingsMigration
+	 */
 	protected PaymentSettingsMigration $payment_settings_migration;
+
+	/**
+	 * The onboarding profile.
+	 *
+	 * @var OnboardingProfile
+	 */
 	protected OnboardingProfile $onboarding_profile;
+
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	protected LoggerInterface $logger;
 
+	/**
+	 * Constructor.
+	 *
+	 * @param SettingsMigration        $general_settings_migration Migrates the general settings.
+	 * @param SettingsTabMigration     $settings_tab_migration Migrates the settings tab.
+	 * @param StylingSettingsMigration $styling_settings_migration Migrates the styling settings.
+	 * @param PaymentSettingsMigration $payment_settings_migration Migrates the payment settings.
+	 * @param OnboardingProfile        $onboarding_profile The onboarding profile.
+	 * @param LoggerInterface          $logger The logger.
+	 */
 	public function __construct(
 		SettingsMigration $general_settings_migration,
 		SettingsTabMigration $settings_tab_migration,
@@ -45,6 +90,9 @@ class MigrationManager implements SettingsMigrationInterface {
 		$this->logger                     = $logger;
 	}
 
+	/**
+	 * Runs all settings migrations and marks the migration as done.
+	 */
 	public function migrate(): void {
 		/**
 		 * When this is a new merchant that never had the legacy UI we can simply
@@ -120,6 +168,8 @@ class MigrationManager implements SettingsMigrationInterface {
 		 * The PartnersEndpoint call in SettingsMigration may use the wrong environment
 		 * (production instead of sandbox) before sandbox_merchant is set, causing
 		 * stale false values in reference_transaction and other caches.
+		 *
+		 * @since 11.3.0
 		 */
 		do_action( 'woocommerce_paypal_payments_clear_apm_product_status' );
 	}

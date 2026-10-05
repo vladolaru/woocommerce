@@ -54,12 +54,12 @@ class ConnectionUrlGenerator {
 	 *
 	 * Initializes the cache and logger properties of the class.
 	 *
-	 * @param EnvironmentConfig<PartnerReferrals> $partner_referrals PartnerReferrals for URL generation.
-	 * @param PartnerReferralsData                $referrals_data    Default partner referrals data.
-	 * @param OnboardingUrlManager                $url_manager       Manages access to OnboardingUrl instances.
-	 * @param ?LoggerInterface                    $logger            The logger object for logging messages.
+	 * @param EnvironmentConfig    $partner_referrals PartnerReferrals for URL generation.
+	 * @param PartnerReferralsData $referrals_data    Default partner referrals data.
+	 * @param OnboardingUrlManager $url_manager       Manages access to OnboardingUrl instances.
+	 * @param LoggerInterface|null $logger            The logger object for logging messages.
 	 *
-	 *  phpcs:disable Squiz.Commenting.FunctionComment.IncorrectTypeHint
+	 * @phpstan-param EnvironmentConfig<PartnerReferrals> $partner_referrals
 	 */
 	public function __construct(
 		EnvironmentConfig $partner_referrals,
@@ -70,7 +70,7 @@ class ConnectionUrlGenerator {
 		$this->partner_referrals = $partner_referrals;
 		$this->referrals_data    = $referrals_data;
 		$this->url_manager       = $url_manager;
-		$this->logger            = $logger ?: new NullLogger();
+		$this->logger            = $logger ?? new NullLogger();
 	}
 
 	/**
@@ -153,6 +153,11 @@ class ConnectionUrlGenerator {
 			/**
 			 * Filters the cached onboarding URL. Used for cache control
 			 * when testing or development.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param string $url The cached onboarding URL.
+			 * @param OnboardingUrl $onboarding_url The onboarding URL object it was read from.
 			 */
 			return apply_filters(
 				'woocommerce_paypal_payments_cached_onboarding_url',
@@ -183,7 +188,7 @@ class ConnectionUrlGenerator {
 		$seller_nonce     = $onboarding_url->seller_nonce();
 
 		if ( ! $onboarding_token ) {
-			throw new RuntimeException( 'Could not generate an onboarding token for: ' . $cache_key );
+			throw new RuntimeException( 'Could not generate an onboarding token for: ' . $cache_key ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Only logged by LoginLinkRestEndpoint::get_login_url(), which answers with a fixed translated message.
 		}
 
 		$data = $this->prepare_referral_data( $products, $flags, $onboarding_token, $seller_nonce );
@@ -192,7 +197,7 @@ class ConnectionUrlGenerator {
 			$referral = $this->partner_referrals->get_value( $for_sandbox );
 			$url      = $referral->signup_link( $data );
 		} catch ( Exception $e ) {
-			throw new RuntimeException( 'Could not generate an onboarding URL for: ' . $cache_key . ': ' . $e->getMessage(), 0, $e );
+			throw new RuntimeException( 'Could not generate an onboarding URL for: ' . $cache_key . ': ' . $e->getMessage(), 0, $e ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Only logged by LoginLinkRestEndpoint::get_login_url(), which answers with a fixed translated message.
 		}
 
 		return add_query_arg( $query_args, $url );
@@ -204,6 +209,7 @@ class ConnectionUrlGenerator {
 	 * @param array  $products         The products array.
 	 * @param array  $flags            Onboarding flags.
 	 * @param string $onboarding_token The onboarding token.
+	 * @param string $seller_nonce The seller nonce issued with the onboarding URL.
 	 *
 	 * @return array The prepared referral data.
 	 */

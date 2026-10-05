@@ -130,6 +130,9 @@ class PaymentSettings extends AbstractDataModel {
 
 	/**
 	 * Updates the payment method title.
+	 *
+	 * @param string $method_id ID of the payment method.
+	 * @param string $title The new title.
 	 */
 	public function set_method_title( string $method_id, string $title ): void {
 		$gateway = $this->get_gateway( $method_id );
@@ -148,6 +151,9 @@ class PaymentSettings extends AbstractDataModel {
 
 	/**
 	 * Updates the payment method description.
+	 *
+	 * @param string $method_id ID of the payment method.
+	 * @param string $description The new description.
 	 */
 	public function set_method_description( string $method_id, string $description ): void {
 		$gateway = $this->get_gateway( $method_id );
@@ -237,6 +243,10 @@ class PaymentSettings extends AbstractDataModel {
 	}
 
 	/**
+	 * Sets whether the PayPal logo is shown.
+	 *
+	 * @param bool $value Whether the logo is shown.
+	 *
 	 * @see self::get_paypal_show_logo()
 	 */
 	public function set_paypal_show_logo( bool $value ): void {
@@ -244,6 +254,10 @@ class PaymentSettings extends AbstractDataModel {
 	}
 
 	/**
+	 * Sets whether the cardholder name is requested.
+	 *
+	 * @param bool $value Whether the cardholder name is requested.
+	 *
 	 * @see self::get_cardholder_name()
 	 */
 	public function set_cardholder_name( bool $value ): void {
@@ -251,6 +265,10 @@ class PaymentSettings extends AbstractDataModel {
 	}
 
 	/**
+	 * Sets whether the card logos are shown.
+	 *
+	 * @param bool $value Whether the card logos are shown.
+	 *
 	 * @see self::get_show_card_logos()
 	 */
 	public function set_show_card_logos( bool $value ): void {
@@ -262,6 +280,8 @@ class PaymentSettings extends AbstractDataModel {
 	 *
 	 * The key belongs to the PayPal Payments extension's Fastlane setting. Onboarding still switches it on, and
 	 * nothing in core reads it back.
+	 *
+	 * @param bool $value Whether the watermark is shown.
 	 */
 	public function set_fastlane_display_watermark( bool $value ): void {
 		$this->data['fastlane_display_watermark'] = $value;
@@ -269,6 +289,8 @@ class PaymentSettings extends AbstractDataModel {
 
 	/**
 	 * Set Venmo enabled.
+	 *
+	 * @param bool $value Whether Venmo is enabled.
 	 */
 	public function set_venmo_enabled( bool $value ): void {
 		$this->data['venmo_enabled'] = $value;
@@ -276,6 +298,8 @@ class PaymentSettings extends AbstractDataModel {
 
 	/**
 	 * Set Pay Later enabled.
+	 *
+	 * @param bool $value Whether Pay Later is enabled.
 	 */
 	public function set_paylater_enabled( bool $value ): void {
 		$this->data['paylater_enabled'] = $value;
@@ -283,6 +307,8 @@ class PaymentSettings extends AbstractDataModel {
 
 	/**
 	 * Get the gateway object for the given method ID.
+	 *
+	 * @param string $method_id ID of the payment method.
 	 */
 	private function get_gateway( string $method_id ): ?WC_Payment_Gateway {
 		if ( isset( $this->unsaved_gateways[ $method_id ] ) ) {
@@ -303,6 +329,8 @@ class PaymentSettings extends AbstractDataModel {
 
 	/**
 	 * Store the gateway object for later saving.
+	 *
+	 * @param WC_Payment_Gateway $gateway The gateway that was modified.
 	 */
 	private function modified_gateway( WC_Payment_Gateway $gateway ): void {
 		$this->unsaved_gateways[ $gateway->id ] = $gateway;
@@ -317,6 +345,8 @@ class PaymentSettings extends AbstractDataModel {
 
 	/**
 	 * Stored format, no writer in core.
+	 *
+	 * @param bool $value Whether the domain is verified.
 	 *
 	 * @see self::get_applepay_validated()
 	 */
@@ -334,6 +364,8 @@ class PaymentSettings extends AbstractDataModel {
 	/**
 	 * Stored format, no writer in core.
 	 *
+	 * @param string $value The checkout data mode.
+	 *
 	 * @see self::get_applepay_checkout_data_mode()
 	 */
 	public function set_applepay_checkout_data_mode( string $value ): void {
@@ -349,6 +381,8 @@ class PaymentSettings extends AbstractDataModel {
 
 	/**
 	 * Stored format; written only by the settings migration.
+	 *
+	 * @param string $value The invoice brand name.
 	 */
 	public function set_pui_brand_name( string $value ): void {
 		$this->data['pui_brand_name'] = $value;
@@ -363,6 +397,8 @@ class PaymentSettings extends AbstractDataModel {
 
 	/**
 	 * Stored format; written only by the settings migration.
+	 *
+	 * @param string $value The invoice logo URL.
 	 */
 	public function set_pui_logo_url( string $value ): void {
 		$this->data['pui_logo_url'] = $value;
@@ -377,6 +413,8 @@ class PaymentSettings extends AbstractDataModel {
 
 	/**
 	 * Stored format; written only by the settings migration.
+	 *
+	 * @param string $value The customer service instructions.
 	 */
 	public function set_pui_customer_service_instructions( string $value ): void {
 		$this->data['pui_customer_service_instructions'] = $value;

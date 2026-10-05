@@ -1,6 +1,6 @@
 <?php
 /**
- * Service for sorting and filtering todo items.
+ * Service for sorting and filtering to-do items.
  *
  * @package Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service
  */
@@ -12,12 +12,12 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Setti
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\TodosModel;
 
 /**
- * Service class that provides todo sorting and filtering functionality.
+ * Service class that provides to-do sorting and filtering functionality.
  */
 class TodosSortingAndFilteringService {
 
 	/**
-	 * Pay Later messaging todo IDs in priority order.
+	 * Pay Later messaging to-do IDs in priority order.
 	 *
 	 * @var array
 	 */
@@ -28,7 +28,7 @@ class TodosSortingAndFilteringService {
 	);
 
 	/**
-	 * Button placement todo IDs in priority order.
+	 * Button placement to-do IDs in priority order.
 	 *
 	 * @var array
 	 */
@@ -55,18 +55,18 @@ class TodosSortingAndFilteringService {
 	}
 
 	/**
-	 * Returns Pay Later messaging todo IDs in priority order.
+	 * Returns Pay Later messaging to-do IDs in priority order.
 	 *
-	 * @return array Pay Later messaging todo IDs.
+	 * @return array Pay Later messaging to-do IDs.
 	 */
 	public function get_pay_later_ids(): array {
 		return self::PAY_LATER_IDS;
 	}
 
 	/**
-	 * Returns Button Placement todo IDs in priority order.
+	 * Returns Button Placement to-do IDs in priority order.
 	 *
-	 * @return array Button Placement todo IDs.
+	 * @return array Button Placement to-do IDs.
 	 */
 	public function get_button_placement_ids(): array {
 		return self::BUTTON_PLACEMENT_IDS;
@@ -96,8 +96,8 @@ class TodosSortingAndFilteringService {
 	 * Takes into account dismissed todos.
 	 *
 	 * @param array $todos The array of todos to filter.
-	 * @param array $group_ids Array of todo IDs in priority order.
-	 * @return array Filtered todos with only one todo from the specified group.
+	 * @param array $group_ids Array of to-do IDs in priority order.
+	 * @return array Filtered todos with only one to-do from the specified group.
 	 */
 	public function filter_highest_priority_todo( array $todos, array $group_ids ): array {
 		$dismissed_todos = $this->todos_model->get_dismissed_todos();
@@ -116,10 +116,10 @@ class TodosSortingAndFilteringService {
 			}
 		);
 
-		// Find the highest priority todo from the group that's eligible AND not dismissed.
+		// Find the highest priority to-do from the group that's eligible AND not dismissed.
 		$priority_todo = null;
 		foreach ( $group_ids as $todo_id ) {
-			// Skip if this todo ID is dismissed.
+			// Skip if this to-do ID is dismissed.
 			if ( in_array( $todo_id, $dismissed_todos, true ) ) {
 				continue;
 			}

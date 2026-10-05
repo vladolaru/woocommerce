@@ -68,6 +68,6 @@ class LoadingScreenService {
 		$section = wc_clean( wp_unslash( $_GET['section'] ?? '' ) );
 		// phpcs:enable WordPress.Security.NonceVerification.Recommended
 
-		return $page === 'wc-settings' && $tab === 'checkout' && $section === 'ppcp-gateway';
+		return 'wc-settings' === $page && 'checkout' === $tab && 'ppcp-gateway' === $section;
 	}
 }

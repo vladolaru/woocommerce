@@ -27,7 +27,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Da
  * Class CompleteOnClickEndpoint
  *
  * Handles REST API endpoints for marking todos as completed when clicked.
- * Extends the base RestEndpoint class to provide specific todo completion functionality.
+ * Extends the base RestEndpoint class to provide specific to-do completion functionality.
  */
 class CompleteOnClickEndpoint extends RestEndpoint {
 	/**
@@ -56,7 +56,7 @@ class CompleteOnClickEndpoint extends RestEndpoint {
 	/**
 	 * Registers the routes for the complete-onclick endpoint.
 	 *
-	 * Sets up the REST API route for handling todo completion via POST requests.
+	 * Sets up the REST API route for handling to-do completion via POST requests.
 	 *
 	 * @return void
 	 */
@@ -73,12 +73,13 @@ class CompleteOnClickEndpoint extends RestEndpoint {
 	}
 
 	/**
-	 * Handles the completion of a todo item via click.
+	 * Handles the completion of a to-do item via click.
 	 *
-	 * Processes the POST request to mark a specific todo as completed,
+	 * Processes the POST request to mark a specific to-do as completed,
 	 * updating the stored settings accordingly.
 	 *
-	 * @param WP_REST_Request<array<string, mixed>> $request The incoming REST request object.
+	 * @param WP_REST_Request $request The incoming REST request object.
+	 * @phpstan-param WP_REST_Request<array<string, mixed>> $request
 	 * @return WP_REST_Response The REST response indicating success or failure.
 	 */
 	public function complete_onclick( WP_REST_Request $request ): WP_REST_Response {
