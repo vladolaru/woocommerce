@@ -2110,9 +2110,30 @@ describe( 'WooPayments WooPay checkout', () => {
 			// the client then opens the OTP iframe (woopay-express-checkout-button.js:312-319).
 			sendWooPayMessage( { action: 'set_preemptive_session_data_error' } );
 			await flushPromises();
-			document
-				.querySelector( '.woopay-otp-iframe' )
-				.dispatchEvent( new window.Event( 'load' ) );
+			// The iframe's own get_woopay_session request gets the encrypted session too:
+			// { blog_id, data: { session, iv, hash } } (client includes/woopay/class-woopay-utilities.php:308-335,
+			// encrypt_and_sign_data()).
+			const otpSession = {
+				blog_id: '12345',
+				data: { session: 'otp-session', iv: 'otp-iv', hash: 'otp-hash' },
+			};
+			window.fetch = jest.fn( ( url ) =>
+				Promise.resolve( {
+					json: () =>
+						Promise.resolve(
+							url === '/?wc-ajax=wcpay_get_woopay_session'
+								? otpSession
+								: { success: true }
+						),
+				} )
+			);
+			const otpIframe = document.querySelector( '.woopay-otp-iframe' );
+			const otpPostMessage = jest.fn();
+			Object.defineProperty( otpIframe, 'contentWindow', {
+				configurable: true,
+				value: { postMessage: otpPostMessage },
+			} );
+			otpIframe.dispatchEvent( new window.Event( 'load' ) );
 			await flushPromises();
 
 			// Client express-checkout-iframe.js:117-125 posts the order with the iframe's session request.
@@ -2122,6 +2143,17 @@ describe( 'WooPayments WooPay checkout', () => {
 			expect( body.get( 'order_id' ) ).toBe( '5707' );
 			expect( body.get( 'key' ) ).toBe( 'wc_order_abc' );
 			expect( body.get( 'billing_email' ) ).toBe( 'owner@example.com' );
+			// Client express-checkout-iframe.js:125-132 hands the session to the OTP iframe, for the WooPay host only.
+			expect(
+				otpPostMessage.mock.calls.filter(
+					( [ message ] ) => message.action === 'setSessionData'
+				)
+			).toEqual( [
+				[
+					{ action: 'setSessionData', value: otpSession },
+					'https://pay.woo.test',
+				],
+			] );
 			expect( navigate ).not.toHaveBeenCalled();
 		} );
 
