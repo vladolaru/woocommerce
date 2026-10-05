@@ -590,24 +590,101 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An intent whose charges are $_dataName: fully refunded $fully_refunded, disputed $disputed.
+	 * @testdox An intent whose charge attempts are $_dataName: fully refunded $fully_refunded, disputed $disputed.
 	 *
-	 * A PaymentIntent can make several charge attempts, and listing its charges shows "both successful and unsuccessful
-	 * attempts", at most one of them succeeded (Stripe docs, "The Payment Intents API", Identifying charges on a
-	 * PaymentIntent). Stripe lists newest first (API reference, Pagination), so the succeeded charge usually comes before
-	 * earlier declines; both orders are covered.
+	 * Lists shaped as the platform returns them. A PaymentIntent can make several charge attempts, and listing its charges
+	 * shows "both successful and unsuccessful attempts", at most one of them succeeded (Stripe docs, "The Payment Intents
+	 * API", Identifying charges on a PaymentIntent). Stripe lists them newest first (API reference, Pagination,
+	 * https://docs.stripe.com/api/pagination), so a succeeded charge comes before the declines it followed. An intent whose
+	 * attempts were all declined is back to `requires_payment_method` (Stripe docs, "How PaymentIntents work").
 	 *
 	 * @dataProvider charge_attempt_lists
+	 *
+	 * @param string                         $intent_status  The intent's `status`.
+	 * @param array<int,array<string,mixed>> $charges        The intent's `charges.data`.
+	 * @param bool                           $fully_refunded Expected is_fully_refunded().
+	 * @param bool                           $disputed       Expected is_disputed().
+	 */
+	public function test_refund_and_dispute_checks_read_every_charge_attempt( string $intent_status, array $charges, bool $fully_refunded, bool $disputed ): void {
+		$this->assert_given_back_checks( self::intent_with_charges( $intent_status, $charges ), $fully_refunded, $disputed );
+	}
+
+	/**
+	 * Charge attempt lists of one PaymentIntent, as the platform returns them.
+	 *
+	 * @return array<string,array{0:string,1:array<int,array<string,mixed>>,2:bool,3:bool}>
+	 */
+	public function charge_attempt_lists(): array {
+		$declined_first  = self::failed_charge_attempt( 'ch_declined_1' );
+		$declined_second = self::failed_charge_attempt( 'ch_declined_2' );
+
+		return array(
+			'a refunded charge after two declines'     => array( 'succeeded', array( self::fully_refunded_charge(), $declined_second, $declined_first ), true, false ),
+			'a disputed charge after a decline'        => array( 'succeeded', array( self::succeeded_charge( array( 'disputed' => true ) ), $declined_first ), false, true ),
+			'a partly refunded charge after a decline' => array( 'succeeded', array( self::succeeded_charge( array( 'amount_refunded' => 500 ) ), $declined_first ), false, false ),
+			'declines only'                            => array( 'requires_payment_method', array( $declined_second, $declined_first ), false, false ),
+		);
+	}
+
+	/**
+	 * @testdox Defensive input the platform does not send, $_dataName: fully refunded $fully_refunded, disputed $disputed.
+	 *
+	 * These lists break Stripe's contract on purpose, so the checks do not rely on it: a list in the reverse of Stripe's
+	 * newest-first order (API reference, Pagination, https://docs.stripe.com/api/pagination), and a charge refunded up to
+	 * its amount whose `refunded` is still false, which Stripe sets once a charge is fully refunded (API reference, "The
+	 * Charge object", https://docs.stripe.com/api/charges/object).
+	 *
+	 * @dataProvider defensive_charge_attempt_lists
 	 *
 	 * @param array<int,array<string,mixed>> $charges        The intent's `charges.data`.
 	 * @param bool                           $fully_refunded Expected is_fully_refunded().
 	 * @param bool                           $disputed       Expected is_disputed().
 	 */
-	public function test_refund_and_dispute_checks_read_every_charge_attempt( array $charges, bool $fully_refunded, bool $disputed ): void {
-		$intent = array(
+	public function test_refund_and_dispute_checks_hold_for_defensive_charge_lists( array $charges, bool $fully_refunded, bool $disputed ): void {
+		$this->assert_given_back_checks( self::intent_with_charges( 'succeeded', $charges ), $fully_refunded, $disputed );
+	}
+
+	/**
+	 * Charge attempt lists that break Stripe's contract.
+	 *
+	 * @return array<string,array{0:array<int,array<string,mixed>>,1:bool,2:bool}>
+	 */
+	public function defensive_charge_attempt_lists(): array {
+		$declined_first  = self::failed_charge_attempt( 'ch_declined_1' );
+		$declined_second = self::failed_charge_attempt( 'ch_declined_2' );
+
+		return array(
+			'a refunded charge listed after its declines' => array( array( $declined_first, $declined_second, self::fully_refunded_charge() ), true, false ),
+			'a disputed charge listed after its decline'  => array( array( $declined_first, self::succeeded_charge( array( 'disputed' => true ) ) ), false, true ),
+			'a fully refunded amount with refunded false' => array( array( self::succeeded_charge( array( 'amount_refunded' => 1200 ) ), $declined_first ), true, false ),
+		);
+	}
+
+	/**
+	 * Assert the three given-back checks on an intent.
+	 *
+	 * @param array<string,mixed> $intent         PaymentIntent.
+	 * @param bool                $fully_refunded Expected is_fully_refunded().
+	 * @param bool                $disputed       Expected is_disputed().
+	 */
+	private function assert_given_back_checks( array $intent, bool $fully_refunded, bool $disputed ): void {
+		$this->assertSame( $fully_refunded, WooPaymentsIntentCodec::is_fully_refunded( $intent ), 'is_fully_refunded()' );
+		$this->assertSame( $disputed, WooPaymentsIntentCodec::is_disputed( $intent ), 'is_disputed()' );
+		$this->assertSame( $fully_refunded || $disputed, WooPaymentsIntentCodec::has_given_money_back( $intent ), 'has_given_money_back()' );
+	}
+
+	/**
+	 * A PaymentIntent with the given status and charge attempts.
+	 *
+	 * @param string                         $status  The intent's `status`.
+	 * @param array<int,array<string,mixed>> $charges The intent's `charges.data`.
+	 * @return array<string,mixed>
+	 */
+	private static function intent_with_charges( string $status, array $charges ): array {
+		return array(
 			'id'      => 'pi_attempts',
 			'object'  => 'payment_intent',
-			'status'  => 'succeeded',
+			'status'  => $status,
 			'amount'  => 1200,
 			// The PaymentIntent `charges` list as the platform returns it on Stripe-Version 2020-08-27.
 			'charges' => array(
@@ -618,41 +695,27 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 				'url'         => '/v1/charges?payment_intent=pi_attempts',
 			),
 		);
-
-		$this->assertSame( $fully_refunded, WooPaymentsIntentCodec::is_fully_refunded( $intent ), 'is_fully_refunded()' );
-		$this->assertSame( $disputed, WooPaymentsIntentCodec::is_disputed( $intent ), 'is_disputed()' );
-		$this->assertSame( $fully_refunded || $disputed, WooPaymentsIntentCodec::has_given_money_back( $intent ), 'has_given_money_back()' );
 	}
 
 	/**
-	 * Charge attempt lists of one PaymentIntent.
+	 * A fully refunded charge as Stripe returns it: `refunded` true and `amount_refunded` equal to its amount (API reference,
+	 * "The Charge object", https://docs.stripe.com/api/charges/object).
 	 *
-	 * @return array<string,array{0:array<int,array<string,mixed>>,1:bool,2:bool}>
+	 * @return array<string,mixed>
 	 */
-	public function charge_attempt_lists(): array {
-		$declined_first  = self::failed_charge_attempt( 'ch_declined_1' );
-		$declined_second = self::failed_charge_attempt( 'ch_declined_2' );
-		$fully_refunded  = self::succeeded_charge(
+	private static function fully_refunded_charge(): array {
+		return self::succeeded_charge(
 			array(
 				'refunded'        => true,
 				'amount_refunded' => 1200,
 			)
 		);
-
-		return array(
-			'refunded after two declines, newest first' => array( array( $fully_refunded, $declined_second, $declined_first ), true, false ),
-			'refunded after two declines, oldest first' => array( array( $declined_first, $declined_second, $fully_refunded ), true, false ),
-			'refunded up to its amount after a decline' => array( array( self::succeeded_charge( array( 'amount_refunded' => 1200 ) ), $declined_first ), true, false ),
-			'disputed after a decline, newest first'    => array( array( self::succeeded_charge( array( 'disputed' => true ) ), $declined_first ), false, true ),
-			'disputed after a decline, oldest first'    => array( array( $declined_first, self::succeeded_charge( array( 'disputed' => true ) ) ), false, true ),
-			'partly refunded after a decline'           => array( array( $declined_first, self::succeeded_charge( array( 'amount_refunded' => 500 ) ) ), false, false ),
-			'declines only'                             => array( array( $declined_second, $declined_first ), false, false ),
-		);
 	}
 
 	/**
-	 * A succeeded charge, reduced to the fields the checks read (Stripe API reference, "The Charge object": `refunded` is
-	 * true only once the charge is fully refunded, a partial refund leaves it false and raises `amount_refunded`).
+	 * A succeeded charge, reduced to the fields the checks read (Stripe API reference, "The Charge object",
+	 * https://docs.stripe.com/api/charges/object: `refunded` is true only once the charge is fully refunded, a partial refund
+	 * leaves it false and raises `amount_refunded`).
 	 *
 	 * @param array<string,mixed> $fields Fields to change.
 	 * @return array<string,mixed>
