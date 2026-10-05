@@ -119,7 +119,7 @@ return array(
 		return new DisableGateways( $settings_provider, $settings_status, $subscription_helper, $context );
 	},
 
-	'wcgateway.is-wc-settings-page'                       => static function ( ContainerInterface $container ): bool {
+	'wcgateway.is-wc-settings-page'                       => static function ( ContainerInterface $container ): bool { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		$page = isset( $_GET['page'] ) ? sanitize_text_field( wp_unslash( $_GET['page'] ) ) : '';
 
 		return 'wc-settings' === $page;
@@ -286,7 +286,7 @@ return array(
 	},
 
 	'wcgateway.notice.authorize-order-action'             =>
-		static function ( ContainerInterface $container ): AuthorizeOrderActionNotice {
+		static function ( ContainerInterface $container ): AuthorizeOrderActionNotice { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 			return new AuthorizeOrderActionNotice();
 		},
 
@@ -371,10 +371,10 @@ return array(
 			$container->get( 'settings.settings-provider' )
 		);
 	},
-	'wcgateway.admin.fees-renderer'                       => static function ( ContainerInterface $container ): FeesRenderer {
+	'wcgateway.admin.fees-renderer'                       => static function ( ContainerInterface $container ): FeesRenderer { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new FeesRenderer();
 	},
-	'wcgateway.all-funding-sources'                       => static function ( ContainerInterface $container ): array {
+	'wcgateway.all-funding-sources'                       => static function ( ContainerInterface $container ): array { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return array(
 			'card'       => _x( 'Credit or debit cards', 'Name of payment method', 'woocommerce' ),
 			'sepa'       => _x( 'SEPA-Lastschrift', 'Name of payment method', 'woocommerce' ),
@@ -394,7 +394,7 @@ return array(
 	/**
 	 * The sources that do not cause issues about redirecting (on mobile, ...) and sometimes not returning back.
 	 */
-	'wcgateway.funding-sources-without-redirect'          => static function ( ContainerInterface $container ): array {
+	'wcgateway.funding-sources-without-redirect'          => static function ( ContainerInterface $container ): array { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return array( 'paypal', 'paylater', 'venmo', 'card' );
 	},
 
@@ -429,11 +429,11 @@ return array(
 		);
 	},
 
-	'wcgateway.transaction-url-sandbox'                   => static function ( ContainerInterface $container ): string {
+	'wcgateway.transaction-url-sandbox'                   => static function ( ContainerInterface $container ): string { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return 'https://www.sandbox.paypal.com/cgi-bin/webscr?cmd=_view-a-trans&id=%s';
 	},
 
-	'wcgateway.transaction-url-live'                      => static function ( ContainerInterface $container ): string {
+	'wcgateway.transaction-url-live'                      => static function ( ContainerInterface $container ): string { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return 'https://www.paypal.com/cgi-bin/webscr?cmd=_view-a-trans&id=%s';
 	},
 
@@ -544,24 +544,30 @@ return array(
 		/**
 		 * Whether the logging of the plugin errors/events is enabled.
 		 *
+		 * @since 11.3.0
+		 *
 		 * @param bool $is_enabled Whether the logging is enabled.
 		 */
 		return apply_filters( 'woocommerce_paypal_payments_is_logging_enabled', $is_enabled );
 	},
 
-	'wcgateway.use-place-order-button'                    => function ( ContainerInterface $container ): bool {
+	'wcgateway.use-place-order-button'                    => function ( ContainerInterface $container ): bool { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		/**
 		 * Whether to use the standard "Place order" button with redirect to PayPal instead of the PayPal smart buttons.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $use Whether to use the Place order button; false by default.
 		 */
 		return apply_filters(
 			'woocommerce_paypal_payments_use_place_order_button',
 			false
 		);
 	},
-	'wcgateway.enable-reference-transactions-url-sandbox' => static function ( ContainerInterface $container ): string {
+	'wcgateway.enable-reference-transactions-url-sandbox' => static function ( ContainerInterface $container ): string { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return 'https://www.sandbox.paypal.com/bizsignup/entry?product=ADVANCED_VAULTING';
 	},
-	'wcgateway.enable-reference-transactions-url-live'    => static function ( ContainerInterface $container ): string {
+	'wcgateway.enable-reference-transactions-url-live'    => static function ( ContainerInterface $container ): string { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return 'https://www.paypal.com/bizsignup/entry?product=ADVANCED_VAULTING';
 	},
 	'wcgateway.settings.connection.reference-transactions-status-text' => static function ( ContainerInterface $container ): string {
@@ -597,10 +603,10 @@ return array(
 			esc_html( $button_text )
 		);
 	},
-	'installments.status-cache'                           => static function ( ContainerInterface $container ): Cache {
+	'installments.status-cache'                           => static function ( ContainerInterface $container ): Cache { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new Cache( 'ppcp-paypal-installments-status-cache' );
 	},
-	'wcgateway.button.locations'                          => static function ( ContainerInterface $container ): array {
+	'wcgateway.button.locations'                          => static function ( ContainerInterface $container ): array { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return array(
 			'product'   => 'Single Product',
 			'cart'      => 'Classic Cart',
@@ -614,7 +620,7 @@ return array(
 
 		return array_keys( $button_locations );
 	},
-	'wcgateway.button.recommended-styling-notice'         => static function ( ContainerInterface $container ): string {
+	'wcgateway.button.recommended-styling-notice'         => static function ( ContainerInterface $container ): string { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		if ( CartCheckoutDetector::has_block_checkout() ) {
 			$block_checkout_page_string_html = '<a href="' . esc_url( wc_get_page_permalink( 'checkout' ) ) . '">' . __( 'Checkout block', 'woocommerce' ) . '</a>';
 		} else {
@@ -663,7 +669,7 @@ return array(
 	'wcgateway.settings.pay-later.default-button-locations' => static function ( ContainerInterface $container ): array {
 		return $container->get( 'wcgateway.button.default-locations' );
 	},
-	'wcgateway.ppcp-gateways'                             => static function ( ContainerInterface $container ): array {
+	'wcgateway.ppcp-gateways'                             => static function ( ContainerInterface $container ): array { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return array(
 			PayPalGateway::ID,
 			GatewayIds::CREDIT_CARD,
@@ -680,7 +686,7 @@ return array(
 			$container->get( 'wcgateway.ppcp-gateways' )
 		);
 	},
-	'wcgateway.is-fraudnet-enabled'                       => static function ( ContainerInterface $container ): bool {
+	'wcgateway.is-fraudnet-enabled'                       => static function ( ContainerInterface $container ): bool { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return true;
 	},
 	'wcgateway.fraudnet-assets'                           => function ( ContainerInterface $container ): FraudNetAssets {
@@ -696,7 +702,14 @@ return array(
 			$container->get( 'button.helper.context' )
 		);
 	},
-	'wcgateway.wp-paypal-locales-map'                     => static function ( ContainerInterface $container ): array {
+	'wcgateway.wp-paypal-locales-map'                     => static function ( ContainerInterface $container ): array { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
+		/**
+		 * Filters the locale options of the button language setting.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param array $locales The locale names, keyed by locale code.
+		 */
 		return apply_filters(
 			'woocommerce_paypal_payments_button_locales',
 			array(
@@ -802,6 +815,13 @@ return array(
 		$settings_provider = $container->get( 'settings.settings-provider' );
 		assert( $settings_provider instanceof SettingsProvider );
 
+		/**
+		 * Filters whether the Working Capital feature is enabled.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $enabled Whether the feature is enabled; true by default.
+		 */
 		$is_working_capital_feature_flag_enabled = apply_filters(
 		// phpcs:ignore WordPress.NamingConventions.ValidHookName.UseUnderscores -- feature flags use this convention
 			'woocommerce.feature-flags.woocommerce_paypal_payments.working_capital_enabled',
@@ -908,6 +928,13 @@ return array(
 		$settings_provider = $container->get( 'settings.settings-provider' );
 		assert( $settings_provider instanceof SettingsProvider );
 
+		/**
+		 * Filters whether the Working Capital feature is enabled.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $enabled Whether the feature is enabled; true by default.
+		 */
 		$is_working_capital_feature_flag_enabled = apply_filters(
 		// phpcs:ignore WordPress.NamingConventions.ValidHookName.UseUnderscores -- feature flags use this convention
 			'woocommerce.feature-flags.woocommerce_paypal_payments.working_capital_enabled',
@@ -955,6 +982,13 @@ return array(
 	},
 
 	'wcgateway.contact-module.eligibility.check'          => static function ( ContainerInterface $container ): callable {
+		/**
+		 * Filters whether the Contact Module feature is enabled.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $enabled Whether the feature is enabled; true unless the PCP_CONTACT_MODULE_ENABLED environment variable is 0.
+		 */
 		$feature_enabled = (bool) apply_filters(
 		// phpcs:ignore WordPress.NamingConventions.ValidHookName.UseUnderscores -- feature flags use this convention
 			'woocommerce.feature-flags.woocommerce_paypal_payments.contact_module_enabled',
@@ -978,6 +1012,10 @@ return array(
 			/**
 			 * The contact module is enabled for US-based merchants by default.
 			 * This filter provides the official way to opt-out of using it on this store.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param bool $enabled Whether the contact module is enabled.
 			 */
 			return (bool) apply_filters(
 				'woocommerce_paypal_payments_contact_module_enabled',
@@ -1002,7 +1040,7 @@ return array(
 	/**
 	 * Returns a prefix for the site, ensuring the same site always gets the same prefix (unless the URL changes).
 	 */
-	'wcgateway.settings.invoice-prefix'                   => static function ( ContainerInterface $container ): string {
+	'wcgateway.settings.invoice-prefix'                   => static function ( ContainerInterface $container ): string { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		$site_url = get_site_url( get_current_blog_id() );
 		$hash     = md5( $site_url );
 		$letters  = preg_replace( '~\d~', '', $hash ) ?? '';
@@ -1014,7 +1052,7 @@ return array(
 	/**
 	 * Returns random 6 characters length alphabetic prefix, followed by a hyphen.
 	 */
-	'wcgateway.settings.invoice-prefix-random'            => static function ( ContainerInterface $container ): string {
+	'wcgateway.settings.invoice-prefix-random'            => static function ( ContainerInterface $container ): string { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		$characters = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
 		$prefix     = '';
 		for ( $i = 0; $i < 6; $i++ ) {
@@ -1047,7 +1085,7 @@ return array(
 			$container->get( 'wcgateway.store-api.factory.money' )
 		);
 	},
-	'wcgateway.store-api.factory.money'                   => static function ( ContainerInterface $container ): MoneyFactory {
+	'wcgateway.store-api.factory.money'                   => static function ( ContainerInterface $container ): MoneyFactory { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new MoneyFactory();
 	},
 
@@ -1081,6 +1119,13 @@ return array(
 					&& ! $has_plain_permalinks
 					&& $webhooks_working;
 
+		/**
+		 * Filters whether the server-side shipping callback is enabled.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $enabled Whether the callback is enabled; true unless the environment variable disables it, the permalinks are plain or webhooks are not arriving.
+		 */
 		return apply_filters(
 		// phpcs:ignore WordPress.NamingConventions.ValidHookName.UseUnderscores
 			'woocommerce.feature-flags.woocommerce_paypal_payments.server_side_shipping_callback_enabled',
@@ -1088,7 +1133,14 @@ return array(
 		);
 	},
 
-	'wcgateway.appswitch-enabled'                         => static function ( ContainerInterface $container ): bool {
+	'wcgateway.appswitch-enabled'                         => static function ( ContainerInterface $container ): bool { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
+		/**
+		 * Filters whether the AppSwitch feature is enabled.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $enabled Whether the feature is enabled; true unless the PCP_APPSWITCH_ENABLED environment variable is 0.
+		 */
 		return apply_filters(
 		// phpcs:ignore WordPress.NamingConventions.ValidHookName.UseUnderscores
 			'woocommerce.feature-flags.woocommerce_paypal_payments.appswitch_enabled',

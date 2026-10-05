@@ -58,6 +58,10 @@ class ConnectionState {
 			/**
 			 * Action that fires before the connection status changes from
 			 * disconnected to connected.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param bool $is_connected The new status: true when connecting, false when disconnecting.
 			 */
 			do_action( 'woocommerce_paypal_payments_merchant_connection_change', true );
 		}
@@ -74,6 +78,10 @@ class ConnectionState {
 			/**
 			 * Action that fires before the connection status changes from
 			 * connected to disconnected.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param bool $is_connected The new status: true when connecting, false when disconnecting.
 			 */
 			do_action( 'woocommerce_paypal_payments_merchant_connection_change', false );
 		}

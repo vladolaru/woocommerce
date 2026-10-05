@@ -1,5 +1,7 @@
 <?php
 /**
+ * InboxNoteFactory.
+ *
  * @package Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\WcInboxNotes
  */
 
@@ -12,6 +14,17 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGat
  */
 class InboxNoteFactory {
 
+	/**
+	 * Creates an inbox note.
+	 *
+	 * @param string                   $title      The title.
+	 * @param string                   $content    The content.
+	 * @param string                   $type       The type.
+	 * @param string                   $name       The name.
+	 * @param string                   $status     The status.
+	 * @param bool                     $is_enabled Whether the note is enabled.
+	 * @param InboxNoteActionInterface ...$actions The actions.
+	 */
 	public function create_note(
 		string $title,
 		string $content,

@@ -111,6 +111,8 @@ trait TransactionIdHandlingTrait {
 	 *
 	 * PENDING is deliberately absent: it may yet settle, so its id is the reference to
 	 * keep. So are the refunded states, which describe money that did move.
+	 *
+	 * @param Capture $capture The capture.
 	 */
 	private function is_dead_capture( Capture $capture ): bool {
 		return $capture->status()->is( CaptureStatus::DECLINED )
@@ -123,6 +125,8 @@ trait TransactionIdHandlingTrait {
 	 * The counterpart to is_dead_capture(). Narrower than that one on purpose: VOIDED
 	 * and EXPIRED hold no money either, but listing them changes which id an order
 	 * stores, rather than only keeping a wrong one out.
+	 *
+	 * @param Authorization $authorization The authorization.
 	 */
 	private function is_dead_authorization( Authorization $authorization ): bool {
 		return $authorization->status()->is( AuthorizationStatus::DENIED );

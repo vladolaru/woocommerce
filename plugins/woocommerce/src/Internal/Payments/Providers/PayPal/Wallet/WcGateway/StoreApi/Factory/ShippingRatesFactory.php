@@ -8,14 +8,26 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGat
  * Factory for the Store API shipping rates.
  */
 class ShippingRatesFactory {
+	/**
+	 * The money factory.
+	 *
+	 * @var MoneyFactory
+	 */
 	private MoneyFactory $money_factory;
 
+	/**
+	 * ShippingRatesFactory constructor.
+	 *
+	 * @param MoneyFactory $money_factory The money factory.
+	 */
 	public function __construct( MoneyFactory $money_factory ) {
 		$this->money_factory = $money_factory;
 	}
 
 	/**
 	 * Extracts shipping rates from the 'shipping_rates' object in the cart response.
+	 *
+	 * @param array $obj The obj.
 	 */
 	public function from_response_obj( array $obj ): array {
 		$rates = array();
@@ -27,6 +39,11 @@ class ShippingRatesFactory {
 		return $rates;
 	}
 
+	/**
+	 * Parses a shipping rate of the response.
+	 *
+	 * @param array $obj The obj.
+	 */
 	private function parse_shipping_rate( array $obj ): ShippingRate {
 		return new ShippingRate(
 			$obj['rate_id'],

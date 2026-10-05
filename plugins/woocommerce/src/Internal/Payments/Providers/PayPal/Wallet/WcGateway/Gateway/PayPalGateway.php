@@ -80,26 +80,81 @@ class PayPalGateway extends \WC_Payment_Gateway {
 	 */
 	const PAYMENT_SOURCES_WITH_PAYER_EMAIL = array( 'paypal', 'paylater', 'venmo' );
 
+	/**
+	 * The funding source renderer.
+	 *
+	 * @var FundingSourceRenderer
+	 */
 	protected FundingSourceRenderer $funding_source_renderer;
 
+	/**
+	 * The order processor.
+	 *
+	 * @var OrderProcessor
+	 */
 	protected OrderProcessor $order_processor;
 
+	/**
+	 * The settings provider.
+	 *
+	 * @var SettingsProvider
+	 */
 	protected SettingsProvider $settings_provider;
 
+	/**
+	 * The session handler.
+	 *
+	 * @var SessionHandler
+	 */
 	protected SessionHandler $session_handler;
 
+	/**
+	 * The refund processor.
+	 *
+	 * @var RefundProcessor
+	 */
 	private RefundProcessor $refund_processor;
 
+	/**
+	 * The transaction URL provider.
+	 *
+	 * @var TransactionUrlProvider
+	 */
 	protected TransactionUrlProvider $transaction_url_provider;
 
+	/**
+	 * The subscription helper.
+	 *
+	 * @var SubscriptionHelper
+	 */
 	protected SubscriptionHelper $subscription_helper;
 
+	/**
+	 * Whether onboarding was completed.
+	 *
+	 * @var bool
+	 */
 	private bool $onboarded;
 
+	/**
+	 * The environment.
+	 *
+	 * @var Environment
+	 */
 	protected Environment $environment;
 
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	private LoggerInterface $logger;
 
+	/**
+	 * The shop country used by the API.
+	 *
+	 * @var string
+	 */
 	protected string $api_shop_country;
 
 	/**
@@ -109,16 +164,46 @@ class PayPalGateway extends \WC_Payment_Gateway {
 	 */
 	private $paypal_checkout_url_factory;
 
+	/**
+	 * The payment tokens endpoint.
+	 *
+	 * @var PaymentTokensEndpoint
+	 */
 	private PaymentTokensEndpoint $payment_tokens_endpoint;
 
+	/**
+	 * The WooCommerce payment tokens helper.
+	 *
+	 * @var WooCommercePaymentTokens
+	 */
 	private WooCommercePaymentTokens $wc_payment_tokens;
 
+	/**
+	 * Whether the settings module is enabled.
+	 *
+	 * @var bool
+	 */
 	private bool $admin_settings_enabled;
 
+	/**
+	 * The PayPal vault payment capture endpoint.
+	 *
+	 * @var CapturePayPalPayment
+	 */
 	private CapturePayPalPayment $capture_paypal_payment;
 
+	/**
+	 * The order endpoint.
+	 *
+	 * @var OrderEndpoint
+	 */
 	private OrderEndpoint $order_endpoint;
 
+	/**
+	 * The context.
+	 *
+	 * @var Context
+	 */
 	private Context $context;
 
 	/**
@@ -186,6 +271,8 @@ class PayPalGateway extends \WC_Payment_Gateway {
 	public $order_button_text;
 
 	/**
+	 * PayPalGateway constructor.
+	 *
 	 * @param FundingSourceRenderer    $funding_source_renderer The funding source renderer.
 	 * @param OrderProcessor           $order_processor The Order Processor.
 	 * @param SettingsProvider         $config The settings.
@@ -196,11 +283,11 @@ class PayPalGateway extends \WC_Payment_Gateway {
 	 * @param SubscriptionHelper       $subscription_helper The subscription helper.
 	 * @param Environment              $environment The environment.
 	 * @param LoggerInterface          $logger The logger.
-	 * @param string                   $api_shop_country The api shop country.
+	 * @param string                   $api_shop_country The shop country used by the API.
 	 * @param callable(string):string  $paypal_checkout_url_factory The function return the PayPal checkout URL for the given order ID.
 	 * @param PaymentTokensEndpoint    $payment_tokens_endpoint Payment tokens endpoint.
 	 * @param WooCommercePaymentTokens $wc_payment_tokens WooCommerce payment tokens.
-	 * @param AssetGetter              $asset_getter
+	 * @param AssetGetter              $asset_getter The asset getter.
 	 * @param bool                     $admin_settings_enabled Whether settings module is enabled.
 	 * @param CapturePayPalPayment     $capture_paypal_payment The PayPal vault payment capture endpoint.
 	 * @param OrderEndpoint            $order_endpoint The order endpoint.
@@ -242,11 +329,18 @@ class PayPalGateway extends \WC_Payment_Gateway {
 		$this->paypal_checkout_url_factory = $paypal_checkout_url_factory;
 		$this->payment_tokens_endpoint     = $payment_tokens_endpoint;
 		$this->wc_payment_tokens           = $wc_payment_tokens;
-		$this->icon                        = apply_filters( 'woocommerce_paypal_payments_paypal_gateway_icon', $asset_getter->get_static_asset_url( 'images/paypal.svg' ) );
-		$this->admin_settings_enabled      = $admin_settings_enabled;
-		$this->capture_paypal_payment      = $capture_paypal_payment;
-		$this->order_endpoint              = $order_endpoint;
-		$this->context                     = $context;
+		/**
+		 * Filters the icon of the PayPal gateway.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param string $icon The URL of the icon.
+		 */
+		$this->icon                   = apply_filters( 'woocommerce_paypal_payments_paypal_gateway_icon', $asset_getter->get_static_asset_url( 'images/paypal.svg' ) );
+		$this->admin_settings_enabled = $admin_settings_enabled;
+		$this->capture_paypal_payment = $capture_paypal_payment;
+		$this->order_endpoint         = $order_endpoint;
+		$this->context                = $context;
 
 		$default_support = array(
 			'products',
@@ -257,13 +351,36 @@ class PayPalGateway extends \WC_Payment_Gateway {
 
 		$this->supports = array_merge(
 			$default_support,
+			/**
+			 * Filters the features the PayPal gateway supports in addition to the defaults.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param array $supports The additional features; empty by default.
+			 */
 			apply_filters( 'woocommerce_paypal_payments_paypal_gateway_supports', array() )
 		);
 
 		$this->method_title       = $this->define_method_title();
 		$this->method_description = $this->define_method_description();
-		$this->title              = apply_filters( 'woocommerce_paypal_payments_gateway_title', $this->settings_provider->paypal_gateway_title(), $this );
-		$this->description        = apply_filters( 'woocommerce_paypal_payments_gateway_description', $this->settings_provider->paypal_gateway_description(), $this );
+		/**
+		 * Filters the title of the PayPal gateway.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param string        $title   The title from the settings.
+		 * @param PayPalGateway $gateway The gateway.
+		 */
+		$this->title = apply_filters( 'woocommerce_paypal_payments_gateway_title', $this->settings_provider->paypal_gateway_title(), $this );
+		/**
+		 * Filters the description of the PayPal gateway.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param string        $description The description from the settings.
+		 * @param PayPalGateway $gateway     The gateway.
+		 */
+		$this->description = apply_filters( 'woocommerce_paypal_payments_gateway_description', $this->settings_provider->paypal_gateway_description(), $this );
 
 		$funding_source = $this->session_handler->funding_source();
 		if ( $funding_source ) {
@@ -324,6 +441,8 @@ class PayPalGateway extends \WC_Payment_Gateway {
 
 		/**
 		 * Filters the gateway description.
+		 *
+		 * @since 11.3.0
 		 *
 		 * @param string $description Gateway description (already sanitized with wp_kses_post).
 		 * @param PayPalGateway $gateway Gateway instance.
@@ -510,7 +629,11 @@ class PayPalGateway extends \WC_Payment_Gateway {
 			&& $this->is_free_trial_order( $wc_order )
 			&& ! $this->subscription_helper->paypal_subscription_id()
 		) {
-			/** @var \stdClass|null $ppcp_guest_payment_for_free_trial */
+			/**
+			 * The guest payment data saved in the session for the free trial.
+			 *
+			 * @var \stdClass|null $ppcp_guest_payment_for_free_trial
+			 */
 			$ppcp_guest_payment_for_free_trial = WC()->session->get( 'ppcp_guest_payment_for_free_trial' ) ?? null;
 			if ( is_object( $ppcp_guest_payment_for_free_trial ) ) {
 				$customer_id = $ppcp_guest_payment_for_free_trial->customer->id ?? '';
@@ -567,7 +690,7 @@ class PayPalGateway extends \WC_Payment_Gateway {
 				}
 				foreach ( $customer_tokens as $token ) {
 					$payment_source_name = $token['payment_source']->name() ?? '';
-					if ( $payment_source_name === 'paypal' || $payment_source_name === 'venmo' ) {
+					if ( 'paypal' === $payment_source_name || 'venmo' === $payment_source_name ) {
 						$wc_order->payment_complete();
 						return $this->handle_payment_success( $wc_order );
 					}
@@ -580,6 +703,8 @@ class PayPalGateway extends \WC_Payment_Gateway {
 			 * path). A non-empty URL redirects the buyer to PayPal to approve saving
 			 * their account; the return endpoint then stores the token and completes
 			 * this order. An empty string keeps the "No saved PayPal account." failure.
+			 *
+			 * @since 11.3.0
 			 *
 			 * @param string   $redirect_url The redirect URL (empty by default).
 			 * @param WC_Order $wc_order     The pending WC order.
@@ -613,12 +738,25 @@ class PayPalGateway extends \WC_Payment_Gateway {
 				 * - true bool controls execution of 'OrderProcessor::process()'
 				 * - $this \WC_Payment_Gateway
 				 * - $wc_order \WC_Order
+				 *
+				 * @since 11.3.0
+				 *
+				 * @param bool                     $process  Whether OrderProcessor::process() is called; true by default.
+				 * @param \WC_Payment_Gateway|null $gateway  The gateway; the PayPalGateway instance here (the webhook passes null).
+				 * @param \WC_Order                $wc_order The WooCommerce order.
 				 */
 				$process = apply_filters( 'woocommerce_paypal_payments_before_order_process', true, $this, $wc_order );
 				if ( $process ) {
 					$this->order_processor->process( $wc_order );
 				}
 
+				/**
+				 * Fires before the successful payment is handled and the customer is redirected.
+				 *
+				 * @since 11.3.0
+				 *
+				 * @param \WC_Order $wc_order The WooCommerce order.
+				 */
 				do_action( 'woocommerce_paypal_payments_before_handle_payment_success', $wc_order );
 
 				return $this->handle_payment_success( $wc_order );
@@ -735,14 +873,21 @@ class PayPalGateway extends \WC_Payment_Gateway {
 			parent::admin_options();
 		}
 
+		/**
+		 * Fires after the admin options of the PayPal gateway are printed.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param PayPalGateway $gateway The gateway.
+		 */
 		do_action( 'woocommerce_paypal_payments_gateway_admin_options_wrapper', $this );
 	}
 
 	/**
 	 * Check whether customer is changing subscription payment.
 	 *
-	 * @param SubscriptionHelper $subscription_helper
-	 * @param WC_Order           $wc_order
+	 * @param SubscriptionHelper $subscription_helper The subscription helper.
+	 * @param WC_Order           $wc_order The order.
 	 * @return bool
 	 */
 	private function is_customer_changing_subscription_payment( SubscriptionHelper $subscription_helper, WC_Order $wc_order ): bool {
@@ -753,10 +898,10 @@ class PayPalGateway extends \WC_Payment_Gateway {
 	/**
 	 * Adds the given WC payment token into the given WC Order.
 	 *
-	 * @param WC_Order       $wc_order
-	 * @param int            $wc_payment_token_id
-	 * @param string         $return_url
-	 * @param SessionHandler $session_handler
+	 * @param WC_Order       $wc_order The order.
+	 * @param int            $wc_payment_token_id The ID of the WooCommerce payment token.
+	 * @param string         $return_url The URL to redirect to.
+	 * @param SessionHandler $session_handler The session handler.
 	 * @return array{result: string, redirect: string, errorMessage?: string}
 	 */
 	private function add_payment_token_to_order(

@@ -11,16 +11,50 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\S
  * ShippingRate object for the Store API.
  */
 class ShippingRate {
+	/**
+	 * The rate ID.
+	 *
+	 * @var string
+	 */
 	private string $rate_id;
 
+	/**
+	 * The name.
+	 *
+	 * @var string
+	 */
 	private string $name;
 
+	/**
+	 * Whether the rate is selected.
+	 *
+	 * @var bool
+	 */
 	private bool $selected;
 
+	/**
+	 * The price.
+	 *
+	 * @var Money
+	 */
 	private Money $price;
 
+	/**
+	 * The taxes.
+	 *
+	 * @var Money
+	 */
 	private Money $taxes;
 
+	/**
+	 * ShippingRate constructor.
+	 *
+	 * @param string $rate_id  The rate ID.
+	 * @param string $name     The name.
+	 * @param bool   $selected Whether the rate is selected.
+	 * @param Money  $price    The price.
+	 * @param Money  $taxes    The taxes.
+	 */
 	public function __construct(
 		string $rate_id,
 		string $name,
@@ -35,22 +69,37 @@ class ShippingRate {
 		$this->taxes    = $taxes;
 	}
 
+	/**
+	 * Returns the rate ID.
+	 */
 	public function rate_id(): string {
 		return $this->rate_id;
 	}
 
+	/**
+	 * Returns the name.
+	 */
 	public function name(): string {
 		return $this->name;
 	}
 
+	/**
+	 * Returns whether the rate is selected.
+	 */
 	public function selected(): bool {
 		return $this->selected;
 	}
 
+	/**
+	 * Returns the price.
+	 */
 	public function price(): Money {
 		return $this->price;
 	}
 
+	/**
+	 * Returns the taxes.
+	 */
 	public function taxes(): Money {
 		return $this->taxes;
 	}

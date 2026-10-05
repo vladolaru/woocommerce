@@ -19,11 +19,39 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\H
  * Class DisableGateways
  */
 class DisableGateways {
+	/**
+	 * The context.
+	 *
+	 * @var Context
+	 */
 	private Context $context;
+	/**
+	 * The settings provider.
+	 *
+	 * @var SettingsProvider
+	 */
 	private SettingsProvider $settings_provider;
+	/**
+	 * The settings status.
+	 *
+	 * @var SettingsStatus
+	 */
 	protected SettingsStatus $settings_status;
+	/**
+	 * The subscription helper.
+	 *
+	 * @var SubscriptionHelper
+	 */
 	private SubscriptionHelper $subscription_helper;
 
+	/**
+	 * DisableGateways constructor.
+	 *
+	 * @param SettingsProvider   $settings_provider   The settings provider.
+	 * @param SettingsStatus     $settings_status     The settings status.
+	 * @param SubscriptionHelper $subscription_helper The subscription helper.
+	 * @param Context            $context             The context.
+	 */
 	public function __construct(
 		SettingsProvider $settings_provider,
 		SettingsStatus $settings_status,
@@ -93,7 +121,7 @@ class DisableGateways {
 		}
 
 		foreach ( WC()->payment_gateways->payment_gateways() as $gateway ) {
-			if ( PayPalGateway::ID === $gateway->id && $gateway->enabled !== 'yes' ) {
+			if ( PayPalGateway::ID === $gateway->id && 'yes' !== $gateway->enabled ) {
 				return true;
 			}
 		}

@@ -75,8 +75,12 @@ class RefreshFeatureStatusEndpoint {
 	 */
 	public function handle_request(): void {
 		$now               = time();
-		$last_request_time = $this->cache->get( self::CACHE_KEY ) ?: 0;
-		$seconds_missing   = $last_request_time + self::TIMEOUT - $now;
+		$last_request_time = $this->cache->get( self::CACHE_KEY );
+		if ( ! $last_request_time ) {
+			$last_request_time = 0;
+		}
+
+		$seconds_missing = $last_request_time + self::TIMEOUT - $now;
 
 		if ( ! $this->verify_nonce() ) {
 			wp_send_json_error(
@@ -99,6 +103,11 @@ class RefreshFeatureStatusEndpoint {
 		}
 
 		$this->cache->set( self::CACHE_KEY, $now, self::TIMEOUT );
+		/**
+		 * Fires when the cached status of the PayPal products and payment methods should be cleared.
+		 *
+		 * @since 11.3.0
+		 */
 		do_action( 'woocommerce_paypal_payments_clear_apm_product_status' );
 		wp_send_json_success();
 	}
@@ -109,7 +118,8 @@ class RefreshFeatureStatusEndpoint {
 	 * @return bool
 	 */
 	private function verify_nonce(): bool {
-		$json = json_decode( file_get_contents( 'php://input' ) ?: '', true );
+		$input = file_get_contents( 'php://input' );
+		$json  = json_decode( $input ? $input : '', true );
 		return wp_verify_nonce( $json['nonce'] ?? '', self::nonce() ) !== false;
 	}
 }

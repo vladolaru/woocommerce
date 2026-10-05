@@ -181,10 +181,15 @@ class RefundProcessor {
 			throw new RuntimeException( 'No capture.' );
 		}
 
-		$capture = $captures[0];
-		$refund  = new RefundCapture(
+		$capture    = $captures[0];
+		$invoice_id = $capture->invoice_id();
+		if ( ! $invoice_id ) {
+			$invoice_id = $this->prefix . $wc_order->get_order_number();
+		}
+
+		$refund = new RefundCapture(
 			$capture,
-			$capture->invoice_id() ?: $this->prefix . $wc_order->get_order_number(),
+			$invoice_id,
 			$reason,
 			new Amount(
 				new Money( $amount, $wc_order->get_currency() )

@@ -77,8 +77,18 @@ class PaymentMethodTitleEnricher {
 		'venmo'  => 'venmo',
 	);
 
+	/**
+	 * The asset getter.
+	 *
+	 * @var AssetGetter
+	 */
 	private AssetGetter $asset_getter;
 
+	/**
+	 * PaymentMethodTitleEnricher constructor.
+	 *
+	 * @param AssetGetter $asset_getter The asset getter.
+	 */
 	public function __construct( AssetGetter $asset_getter ) {
 		$this->asset_getter = $asset_getter;
 	}
@@ -93,6 +103,8 @@ class PaymentMethodTitleEnricher {
 	public function enrich( string $title, WC_Order $order ): string {
 		/**
 		 * Whether to enrich the payment method title with contextual payment details.
+		 *
+		 * @since 11.3.0
 		 *
 		 * @param bool     $enrich Whether to enrich the title. Default true.
 		 * @param WC_Order $order  The order the title belongs to.
@@ -114,12 +126,14 @@ class PaymentMethodTitleEnricher {
 		 * replaced with a custom one. Return an empty string to keep the title
 		 * unchanged without disabling enrichment globally.
 		 *
+		 * @since 11.3.0
+		 *
 		 * @param string   $detail The detail built from the order, or an empty string.
 		 * @param WC_Order $order  The order the title belongs to.
 		 */
 		$detail = (string) apply_filters( 'woocommerce_paypal_payments_payment_method_title_detail', $detail, $order );
 
-		if ( $detail === '' ) {
+		if ( '' === $detail ) {
 			return $title;
 		}
 
@@ -142,6 +156,8 @@ class PaymentMethodTitleEnricher {
 		 * wp_kses_post(), which strips disallowed inline CSS properties, so prefer a class
 		 * over inline styles.
 		 *
+		 * @since 11.3.0
+		 *
 		 * @param string   $icon_html The icon markup. Default empty string.
 		 * @param string   $icon_url  URL of the bundled icon for this source and brand, or empty.
 		 * @param string   $source    The raw payment source meta value, e.g. "paypal" or "card".
@@ -157,7 +173,7 @@ class PaymentMethodTitleEnricher {
 			$order
 		);
 
-		if ( $icon_html !== '' ) {
+		if ( '' !== $icon_html ) {
 			$detail = $icon_html . ' ' . $detail;
 		}
 
@@ -168,6 +184,8 @@ class PaymentMethodTitleEnricher {
 		 *
 		 * Only applied when a detail is actually appended, never on the paths that
 		 * return the title unchanged.
+		 *
+		 * @since 11.3.0
 		 *
 		 * @param string   $enriched The assembled title, e.g. "PayPal (buyer@example.com)".
 		 * @param string   $title    The original payment method title.
@@ -198,7 +216,7 @@ class PaymentMethodTitleEnricher {
 		if ( in_array( $source, self::CARD_SOURCES, true ) ) {
 			$file = self::BRAND_ICONS[ strtoupper( $brand ) ] ?? '';
 
-			return $file === ''
+			return '' === $file
 				? ''
 				: $this->asset_getter->get_static_asset_url( "images/$file.svg" );
 		}
@@ -208,11 +226,13 @@ class PaymentMethodTitleEnricher {
 
 	/**
 	 * Builds the contextual detail string for the order, or an empty string when unavailable.
+	 *
+	 * @param WC_Order $order The order.
 	 */
 	private function build_detail( WC_Order $order ): string {
 		$source = $this->payment_source( $order );
 
-		if ( $source === 'paypal' ) {
+		if ( 'paypal' === $source ) {
 			$email = sanitize_email( (string) $order->get_meta( PayPalGateway::ORDER_PAYER_EMAIL_META_KEY ) );
 			return $email;
 		}
@@ -221,7 +241,7 @@ class PaymentMethodTitleEnricher {
 			$brand       = $this->card_brand( $order );
 			$last_digits = (string) $order->get_meta( PayPalGateway::ORDER_CARD_LAST_DIGITS_META_KEY );
 
-			if ( $brand === '' || $last_digits === '' ) {
+			if ( '' === $brand || '' === $last_digits ) {
 				return '';
 			}
 
@@ -238,6 +258,8 @@ class PaymentMethodTitleEnricher {
 
 	/**
 	 * Returns the payment source stored on the order, e.g. "paypal" or "card".
+	 *
+	 * @param WC_Order $order The order.
 	 */
 	private function payment_source( WC_Order $order ): string {
 		return (string) $order->get_meta( PayPalGateway::ORDER_PAYMENT_SOURCE_META_KEY );
@@ -245,6 +267,8 @@ class PaymentMethodTitleEnricher {
 
 	/**
 	 * Returns the raw card brand stored on the order, e.g. "VISA", or an empty string.
+	 *
+	 * @param WC_Order $order The order.
 	 */
 	private function card_brand( WC_Order $order ): string {
 		return (string) $order->get_meta( PayPalGateway::ORDER_CARD_BRAND_META_KEY );

@@ -41,7 +41,7 @@ class FraudNet {
 		}
 
 		$fraudnet_session_id = WC()->session->get( 'ppcp_fraudnet_session_id' );
-		if ( is_string( $fraudnet_session_id ) && $fraudnet_session_id !== '' ) {
+		if ( is_string( $fraudnet_session_id ) && '' !== $fraudnet_session_id ) {
 			return $fraudnet_session_id;
 		}
 

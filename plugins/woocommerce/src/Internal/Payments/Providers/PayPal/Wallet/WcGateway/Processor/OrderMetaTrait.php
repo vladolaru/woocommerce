@@ -29,7 +29,7 @@ trait OrderMetaTrait {
 	 * @param Environment         $environment The environment.
 	 * @param OrderTransient|null $order_transient The order transient helper.
 	 */
-	public function add_paypal_meta(
+	public function add_paypal_meta( // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- Public method shared by three classes; the parameter is kept so the signature does not change.
 		WC_Order $wc_order,
 		Order $order,
 		Environment $environment,
@@ -64,6 +64,14 @@ trait OrderMetaTrait {
 
 		$wc_order->save();
 
+		/**
+		 * Fires after the WooCommerce order was created and patched with the PayPal order.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param \WC_Order $wc_order The WooCommerce order.
+		 * @param Order     $order    The PayPal order.
+		 */
 		do_action( 'woocommerce_paypal_payments_woocommerce_order_created', $wc_order, $order );
 	}
 
@@ -109,6 +117,14 @@ trait OrderMetaTrait {
 		}
 
 		if ( $added ) {
+			/**
+			 * Fires after the PayPal contact details are saved to the order because they differ from the billing details.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param \WC_Order $wc_order The WooCommerce order.
+			 * @param Order     $order    The PayPal order.
+			 */
 			do_action( 'woocommerce_paypal_payments_contacts_added', $wc_order, $order );
 		}
 	}
@@ -147,6 +163,9 @@ trait OrderMetaTrait {
 
 	/**
 	 * Persists the card brand and last 4 digits for card-backed payment sources.
+	 *
+	 * @param WC_Order $wc_order The wc order.
+	 * @param Order    $order    The order.
 	 */
 	private function add_card_details_meta( WC_Order $wc_order, Order $order ): void {
 		$payment_source = $order->payment_source();
@@ -159,10 +178,10 @@ trait OrderMetaTrait {
 		$brand       = isset( $card->brand ) ? (string) $card->brand : '';
 		$last_digits = isset( $card->last_digits ) ? (string) $card->last_digits : '';
 
-		if ( $brand !== '' ) {
+		if ( '' !== $brand ) {
 			$wc_order->update_meta_data( PayPalGateway::ORDER_CARD_BRAND_META_KEY, $brand );
 		}
-		if ( $last_digits !== '' ) {
+		if ( '' !== $last_digits ) {
 			$wc_order->update_meta_data( PayPalGateway::ORDER_CARD_LAST_DIGITS_META_KEY, $last_digits );
 		}
 	}

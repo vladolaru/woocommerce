@@ -22,7 +22,7 @@ class CartCheckoutDetector {
 	 * @return array List of widget types if any exist, otherwise an empty array.
 	 */
 	private static function get_elementor_widgets( $page_id ): array {
-		$elementor_data = get_post_meta( $page_id, '_elementor_data' );
+		$elementor_data = get_post_meta( $page_id, '_elementor_data', false );
 
 		if ( isset( $elementor_data[0] ) ) {
 			// Parse the Elementor json and find all widgets for a specific page.
@@ -38,7 +38,7 @@ class CartCheckoutDetector {
 			$widgets_list = array();
 
 			foreach ( $output_array as $found ) {
-				/** @phpstan-ignore isset.offset */
+				// @phpstan-ignore isset.offset
 				if ( ! isset( $found[1] ) ) {
 					continue;
 				}

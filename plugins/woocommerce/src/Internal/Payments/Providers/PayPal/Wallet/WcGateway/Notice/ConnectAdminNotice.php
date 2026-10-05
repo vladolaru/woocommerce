@@ -13,6 +13,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\AdminNotice
 class ConnectAdminNotice {
 	/**
 	 * Whether the merchant completed the onboarding and is connected to PayPal.
+	 *
+	 * @var bool
 	 */
 	private bool $is_connected;
 
@@ -24,6 +26,8 @@ class ConnectAdminNotice {
 	private bool $is_current_country_send_only;
 
 	/**
+	 * ConnectAdminNotice constructor.
+	 *
 	 * @param bool $is_connected Whether onboarding was completed.
 	 * @param bool $is_current_country_send_only Whether the current store's country is classified as a send-only country.
 	 */
@@ -63,7 +67,7 @@ class ConnectAdminNotice {
 	 */
 	private function is_current_page_plugins_page(): bool {
 		global $pagenow;
-		return isset( $pagenow ) && $pagenow === 'plugins.php';
+		return isset( $pagenow ) && 'plugins.php' === $pagenow;
 	}
 
 	/**

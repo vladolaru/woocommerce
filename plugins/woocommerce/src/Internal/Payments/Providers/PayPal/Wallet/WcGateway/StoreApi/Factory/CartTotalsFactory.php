@@ -10,14 +10,26 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\S
  * Factory for the Store API cart totals.
  */
 class CartTotalsFactory {
+	/**
+	 * The money factory.
+	 *
+	 * @var MoneyFactory
+	 */
 	private MoneyFactory $money_factory;
 
+	/**
+	 * CartTotalsFactory constructor.
+	 *
+	 * @param MoneyFactory $money_factory The money factory.
+	 */
 	public function __construct( MoneyFactory $money_factory ) {
 		$this->money_factory = $money_factory;
 	}
 
 	/**
 	 * Parses the 'totals' object from the cart response.
+	 *
+	 * @param array $obj The obj.
 	 */
 	public function from_response_obj( array $obj ): CartTotals {
 		return new CartTotals(

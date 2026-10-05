@@ -81,6 +81,11 @@ trait PaymentsStatusHandlingTrait {
 				$wc_order->payment_complete();
 				/**
 				 * Fired when PayPal order is captured.
+				 *
+				 * @since 11.3.0
+				 *
+				 * @param \WC_Order $wc_order The WooCommerce order.
+				 * @param Capture   $capture  The PayPal capture.
 				 */
 				do_action( 'woocommerce_paypal_payments_order_captured', $wc_order, $capture );
 				break;
@@ -99,7 +104,7 @@ trait PaymentsStatusHandlingTrait {
 				$decline_message = $fraud
 					? $fraud->get_customer_decline_message()
 					: __( 'Payment provider declined the payment, please use a different payment method.', 'woocommerce' );
-				throw new RuntimeException( $decline_message );
+				throw new RuntimeException( $decline_message ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is the customer decline message, which a store can filter to include markup (such as a support link); it is shown as a checkout notice or an order note, so escaping would print that markup as text.
 			case CaptureStatus::PENDING:
 			case CaptureStatus::FAILED:
 				$wc_order->update_status(
@@ -138,6 +143,11 @@ trait PaymentsStatusHandlingTrait {
 				);
 				/**
 				 * Fired when PayPal order is authorized.
+				 *
+				 * @since 11.3.0
+				 *
+				 * @param \WC_Order     $wc_order      The WooCommerce order.
+				 * @param Authorization $authorization The PayPal authorization.
 				 */
 				do_action( 'woocommerce_paypal_payments_order_authorized', $wc_order, $authorization );
 				break;
@@ -146,7 +156,7 @@ trait PaymentsStatusHandlingTrait {
 					'failed',
 					__( 'Could not get the payment authorization.', 'woocommerce' )
 				);
-				throw new RuntimeException( __( 'Payment provider declined the payment, please use a different payment method.', 'woocommerce' ) );
+				throw new RuntimeException( esc_html__( 'Payment provider declined the payment, please use a different payment method.', 'woocommerce' ) );
 		}
 	}
 

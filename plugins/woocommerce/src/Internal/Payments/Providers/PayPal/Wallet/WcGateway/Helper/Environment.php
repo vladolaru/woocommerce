@@ -66,6 +66,8 @@ class Environment {
 			/**
 			 * Action that fires before the environment status changes.
 			 *
+			 * @since 11.3.0
+			 *
 			 * @param string $new_environment The new environment name.
 			 * @param string $old_environment The previous environment name.
 			 */

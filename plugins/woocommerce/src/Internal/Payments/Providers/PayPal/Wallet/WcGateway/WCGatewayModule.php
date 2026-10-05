@@ -76,6 +76,8 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 
 	/**
 	 * {@inheritDoc}
+	 *
+	 * @param ContainerInterface $c The service container.
 	 */
 	public function run( ContainerInterface $c ): bool {
 		$this->register_payment_gateways( $c );
@@ -120,6 +122,11 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 				}
 				/**
 				 * The filter can be used to remove the rows with PayPal fees in WC orders.
+				 *
+				 * @since 11.3.0
+				 *
+				 * @param bool      $show     Whether to show the fees; true by default.
+				 * @param \WC_Order $wc_order The WooCommerce order.
 				 */
 				if ( ! apply_filters( 'woocommerce_paypal_payments_show_fees_on_order_admin_page', true, $wc_order ) ) {
 					return;
@@ -145,6 +152,7 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 				$settings = $c->get( 'wcgateway.settings' );
 				assert( $settings instanceof Settings );
 
+				// phpcs:ignore Generic.Commenting.Todo.TaskFound -- Existing follow-up note kept as written.
 				// todo: #legacy-ui assets that can be removed.
 				$assets = new SettingsPageAssets(
 					$c->get( 'wcgateway.asset_getter' ),
@@ -165,6 +173,7 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 			}
 		);
 
+		// phpcs:ignore Generic.Commenting.Todo.TaskFound -- Existing follow-up note kept as written.
 		// todo: remove this with #legacy-ui code?
 		add_filter(
 			Repository::NOTICES_FILTER,
@@ -254,6 +263,11 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 		add_action(
 			'woocommerce_paypal_payments_gateway_migrate_on_update',
 			static function () {
+				/**
+				 * Fires when the cached status of the PayPal products and payment methods should be cleared.
+				 *
+				 * @since 11.3.0
+				 */
 				do_action( 'woocommerce_paypal_payments_clear_apm_product_status' );
 			}
 		);
@@ -305,12 +319,17 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 
 				$intent   = strtoupper( (string) $wc_order->get_meta( PayPalGateway::INTENT_META_KEY ) );
 				$captured = wc_string_to_bool( $wc_order->get_meta( AuthorizedPaymentsProcessor::CAPTURED_META_KEY ) );
-				if ( $intent !== 'AUTHORIZE' || $captured ) {
+				if ( 'AUTHORIZE' !== $intent || $captured ) {
 					return;
 				}
 
 				/**
 				 * The filter returning the WC order statuses which trigger capturing of payment authorization.
+				 *
+				 * @since 11.3.0
+				 *
+				 * @param string[]  $statuses The order statuses; processing and completed by default.
+				 * @param \WC_Order $wc_order The WooCommerce order.
 				 */
 				$capture_statuses = apply_filters( 'woocommerce_paypal_payments_auto_capture_statuses', array( 'processing', 'completed' ), $wc_order );
 				if ( ! in_array( $to, $capture_statuses, true ) ) {
@@ -546,10 +565,11 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 				$authorized_payments_processor = $container->get( 'wcgateway.processor.authorized-payments' );
 
 				if ( $authorized_payments_processor->reauthorize_payment( $wc_order ) !== AuthorizedPaymentsProcessor::SUCCESSFUL ) {
-					$message = sprintf(
+					$failure_reason = $authorized_payments_processor->reauthorization_failure_reason();
+					$message        = sprintf(
 						'%1$s %2$s',
 						esc_html__( 'Reauthorization with PayPal failed: ', 'woocommerce' ),
-						$authorized_payments_processor->reauthorization_failure_reason() ?: ''
+						$failure_reason ? $failure_reason : ''
 					);
 					$admin_notices->persist( new Message( $message, 'error' ) );
 				} else {
@@ -708,6 +728,8 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 
 	/**
 	 * Registers inbox notes in the WooCommerce Admin inbox section.
+	 *
+	 * @param ContainerInterface $container The service container.
 	 */
 	protected function register_woo_inbox_notes( ContainerInterface $container ): void {
 		add_action(
@@ -785,6 +807,8 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 	/**
 	 * Enriches the payment method title with payment details
 	 * (payer email or card brand + last 4 digits) for supported gateways.
+	 *
+	 * @param ContainerInterface $c The service container.
 	 */
 	private function register_payment_method_title_enrichment( ContainerInterface $c ): void {
 		add_filter(
@@ -841,6 +865,8 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 
 	/**
 	 * Ensures PayPal handles block-checkout express payments even when another PCP gateway is sorted first in WC Settings → Payments.
+	 *
+	 * @param ContainerInterface $c The service container.
 	 */
 	private function register_block_express_payment_method_handler( ContainerInterface $c ): void {
 		// Request-scoped guard for the save listener below: the ID of the WC order this request
@@ -875,8 +901,13 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 					$session_handler         = $c->get( 'session.handler' );
 					$funding_source_renderer = $c->get( 'wcgateway.funding-source.renderer' );
 
-					$funding_source = $payment_data['funding_source']
-						?: ( $session_handler->funding_source() ?: 'paypal' );
+					$funding_source = $payment_data['funding_source'];
+					if ( ! $funding_source ) {
+						$funding_source = $session_handler->funding_source();
+						if ( ! $funding_source ) {
+							$funding_source = 'paypal';
+						}
+					}
 					$order->set_payment_method_title( $funding_source_renderer->render_name( $funding_source ) );
 
 					$marked_order_id = $order->get_id();
@@ -955,12 +986,19 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 
 		/**
 		 * We use this filter to de-customize the order details - 'billing' and 'shipping' section.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $show Whether to show the PayPal email field; true by default.
 		 */
 		if ( ! apply_filters( 'woocommerce_paypal_payments_order_details_show_paypal_email', true ) ) {
 			return $fields;
 		}
 
-		$email = $theorder->get_meta( PayPalGateway::ORDER_PAYER_EMAIL_META_KEY ) ?: '';
+		$email = $theorder->get_meta( PayPalGateway::ORDER_PAYER_EMAIL_META_KEY );
+		if ( ! $email ) {
+			$email = '';
+		}
 
 		$fields['paypal_email'] = array(
 			'label'             => __( 'PayPal email address', 'woocommerce' ),
@@ -987,6 +1025,13 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 			return;
 		}
 
+		/**
+		 * Filters whether the original contact details are shown in the order details.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $show Whether to show them; true by default.
+		 */
 		if ( ! apply_filters( 'woocommerce_paypal_payments_order_details_show_original_contact', true ) ) {
 			return;
 		}

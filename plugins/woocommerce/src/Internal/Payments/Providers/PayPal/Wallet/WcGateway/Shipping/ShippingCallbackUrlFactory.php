@@ -11,10 +11,26 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\S
  * URL generation for the server-side shipping callback.
  */
 class ShippingCallbackUrlFactory {
+	/**
+	 * The cart endpoint.
+	 *
+	 * @var CartEndpoint
+	 */
 	private CartEndpoint $cart_endpoint;
 
+	/**
+	 * The shipping callback endpoint.
+	 *
+	 * @var ShippingCallbackEndpoint
+	 */
 	private ShippingCallbackEndpoint $shipping_callback_endpoint;
 
+	/**
+	 * ShippingCallbackUrlFactory constructor.
+	 *
+	 * @param CartEndpoint             $cart_endpoint              The cart endpoint.
+	 * @param ShippingCallbackEndpoint $shipping_callback_endpoint The shipping callback endpoint.
+	 */
 	public function __construct( CartEndpoint $cart_endpoint, ShippingCallbackEndpoint $shipping_callback_endpoint ) {
 		$this->cart_endpoint              = $cart_endpoint;
 		$this->shipping_callback_endpoint = $shipping_callback_endpoint;

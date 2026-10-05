@@ -34,23 +34,86 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\E
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 
+/**
+ * Class OrderProcessor.
+ */
 class OrderProcessor {
 
 	use OrderMetaTrait;
 	use PaymentsStatusHandlingTrait;
 	use TransactionIdHandlingTrait;
 
+	/**
+	 * The environment.
+	 *
+	 * @var Environment
+	 */
 	protected Environment $environment;
+	/**
+	 * The session handler.
+	 *
+	 * @var SessionHandler
+	 */
 	private SessionHandler $session_handler;
+	/**
+	 * The order endpoint.
+	 *
+	 * @var OrderEndpoint
+	 */
 	private OrderEndpoint $order_endpoint;
+	/**
+	 * The order factory.
+	 *
+	 * @var OrderFactory
+	 */
 	private OrderFactory $order_factory;
+	/**
+	 * The authorized payments processor.
+	 *
+	 * @var AuthorizedPaymentsProcessor
+	 */
 	private AuthorizedPaymentsProcessor $authorized_payments_processor;
+	/**
+	 * The settings provider.
+	 *
+	 * @var SettingsProvider
+	 */
 	private SettingsProvider $settings_provider;
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	private LoggerInterface $logger;
+	/**
+	 * The subscription helper.
+	 *
+	 * @var SubscriptionHelper
+	 */
 	private SubscriptionHelper $subscription_helper;
+	/**
+	 * The order helper.
+	 *
+	 * @var OrderHelper
+	 */
 	private OrderHelper $order_helper;
+	/**
+	 * The purchase unit factory.
+	 *
+	 * @var PurchaseUnitFactory
+	 */
 	private PurchaseUnitFactory $purchase_unit_factory;
+	/**
+	 * The payer factory.
+	 *
+	 * @var PayerFactory
+	 */
 	private PayerFactory $payer_factory;
+	/**
+	 * The shipping preference factory.
+	 *
+	 * @var ShippingPreferenceFactory
+	 */
 	private ShippingPreferenceFactory $shipping_preference_factory;
 
 	/**
@@ -59,8 +122,30 @@ class OrderProcessor {
 	 * @var array
 	 */
 	private array $restore_order_data = array();
+	/**
+	 * The experience context builder.
+	 *
+	 * @var ExperienceContextBuilder
+	 */
 	private ExperienceContextBuilder $experience_context_builder;
 
+	/**
+	 * OrderProcessor constructor.
+	 *
+	 * @param SessionHandler              $session_handler               The session handler.
+	 * @param OrderEndpoint               $order_endpoint                The order endpoint.
+	 * @param OrderFactory                $order_factory                 The order factory.
+	 * @param AuthorizedPaymentsProcessor $authorized_payments_processor The authorized payments processor.
+	 * @param SettingsProvider            $settings_provider             The settings provider.
+	 * @param LoggerInterface             $logger                        The logger.
+	 * @param Environment                 $environment                   The environment.
+	 * @param SubscriptionHelper          $subscription_helper           The subscription helper.
+	 * @param OrderHelper                 $order_helper                  The order helper.
+	 * @param PurchaseUnitFactory         $purchase_unit_factory         The purchase unit factory.
+	 * @param PayerFactory                $payer_factory                 The payer factory.
+	 * @param ShippingPreferenceFactory   $shipping_preference_factory   The shipping preference factory.
+	 * @param ExperienceContextBuilder    $experience_context_builder    The experience context builder.
+	 */
 	public function __construct(
 		SessionHandler $session_handler,
 		OrderEndpoint $order_endpoint,
@@ -112,8 +197,11 @@ class OrderProcessor {
 		try {
 			$order = $this->session_handler->order();
 			if ( ! $order ) {
-				// phpcs:ignore WordPress.Security.NonceVerification
-				$order_id = $wc_order->get_meta( PayPalGateway::ORDER_ID_META_KEY ) ?: wc_clean( wp_unslash( $_POST['paypal_order_id'] ?? '' ) );
+				$order_id = $wc_order->get_meta( PayPalGateway::ORDER_ID_META_KEY );
+				if ( ! $order_id ) {
+					// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Not every caller carries a form nonce. The posted ID only selects which PayPal order to fetch, and is read only when the order meta and the session hold none. Guards by caller: classic checkout and pay-for-order by the WooCommerce form nonce (WC_Checkout::process_checkout(), WC_Form_Handler::pay_action()), the approve-order endpoint by its request nonce (RequestData::read_request()), the free-trial vault return by its one-time return nonce; the return-URL endpoint, the block checkout and the webhook carry no form nonce.
+					$order_id = wc_clean( wp_unslash( $_POST['paypal_order_id'] ?? '' ) );
+				}
 				if ( is_string( $order_id ) && $order_id ) {
 					try {
 						$order = $this->order_endpoint->order( $order_id );
@@ -187,6 +275,14 @@ class OrderProcessor {
 				$this->authorized_payments_processor->capture_authorized_payment( $wc_order );
 			}
 
+			/**
+			 * Fires after the PayPal order has been processed for a WooCommerce order.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param \WC_Order $wc_order The WooCommerce order.
+			 * @param Order     $order    The PayPal order.
+			 */
 			do_action( 'woocommerce_paypal_payments_after_order_processor', $wc_order, $order );
 		} finally {
 			$this->release_processing_lock( $wc_order );
@@ -224,6 +320,14 @@ class OrderProcessor {
 			$this->authorized_payments_processor->capture_authorized_payment( $wc_order );
 		}
 
+		/**
+		 * Fires after the PayPal order has been processed for a WooCommerce order.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param \WC_Order $wc_order The WooCommerce order.
+		 * @param Order     $order    The PayPal order.
+		 */
 		do_action( 'woocommerce_paypal_payments_after_order_processor', $wc_order, $order );
 	}
 
@@ -527,7 +631,16 @@ class OrderProcessor {
 			}
 
 			$original_name = $item->get_name();
-			$new_name      = apply_filters( 'woocommerce_paypal_payments_order_line_item_name', $original_name, $item->get_id(), $wc_order->get_id() );
+			/**
+			 * Filters the name of an order line item sent to PayPal.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param string $name     The line item name.
+			 * @param int    $item_id  The order item ID.
+			 * @param int    $order_id The WooCommerce order ID.
+			 */
+			$new_name = apply_filters( 'woocommerce_paypal_payments_order_line_item_name', $original_name, $item->get_id(), $wc_order->get_id() );
 
 			if ( $new_name !== $original_name ) {
 				$this->restore_order_data['names'][ $item->get_id() ] = $original_name;

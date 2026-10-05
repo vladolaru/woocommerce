@@ -22,6 +22,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\G
  * Class FraudNetAssets
  */
 class FraudNetAssets {
+	/**
+	 * The asset getter.
+	 *
+	 * @var AssetGetter
+	 */
 	private AssetGetter $asset_getter;
 
 	/**
@@ -45,6 +50,11 @@ class FraudNetAssets {
 	 */
 	protected $environment;
 
+	/**
+	 * The settings provider.
+	 *
+	 * @var SettingsProvider
+	 */
 	protected SettingsProvider $settings_provider;
 
 	/**
@@ -75,8 +85,26 @@ class FraudNetAssets {
 	 */
 	protected $is_fraudnet_enabled;
 
+	/**
+	 * The context.
+	 *
+	 * @var Context
+	 */
 	protected Context $context;
 
+	/**
+	 * FraudNetAssets constructor.
+	 *
+	 * @param AssetGetter       $asset_getter        The asset getter.
+	 * @param string            $version             The version.
+	 * @param FraudNet          $fraud_net           The fraud net.
+	 * @param Environment       $environment         The environment.
+	 * @param SettingsProvider  $settings_provider   The settings provider.
+	 * @param GatewayRepository $gateway_repository  The gateway repository.
+	 * @param SessionHandler    $session_handler     The session handler.
+	 * @param bool              $is_fraudnet_enabled Whether is fraudnet is enabled.
+	 * @param Context           $context             The context.
+	 */
 	public function __construct(
 		AssetGetter $asset_getter,
 		string $version,

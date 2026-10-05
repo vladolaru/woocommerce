@@ -15,8 +15,18 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Da
  * Class SettingsStatus
  */
 class SettingsStatus {
+	/**
+	 * The settings provider.
+	 *
+	 * @var SettingsProvider
+	 */
 	protected SettingsProvider $settings_provider;
 
+	/**
+	 * SettingsStatus constructor.
+	 *
+	 * @param SettingsProvider $settings_provider The settings provider.
+	 */
 	public function __construct( SettingsProvider $settings_provider ) {
 		$this->settings_provider = $settings_provider;
 	}
@@ -82,7 +92,7 @@ class SettingsStatus {
 	 * @return bool true if is enabled, otherwise false.
 	 */
 	public function is_smart_button_enabled_for_location( string $location ): bool {
-		if ( $location === 'block-editor' ) {
+		if ( 'block-editor' === $location ) {
 			$location = 'checkout-block';
 		}
 
@@ -120,6 +130,14 @@ class SettingsStatus {
 	protected function is_location_enabled( array $locations, string $location ): bool {
 		$location = $this->normalize_location( $location );
 
+		/**
+		 * Filters the locations where the buttons or messages are enabled.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param array  $locations The enabled locations.
+		 * @param string $type      The kind of list; always "locations".
+		 */
 		$selected_locations = apply_filters(
 			'woocommerce_paypal_payments_selected_button_locations',
 			$locations,

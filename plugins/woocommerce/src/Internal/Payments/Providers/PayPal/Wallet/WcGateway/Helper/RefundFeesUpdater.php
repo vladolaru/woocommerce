@@ -130,7 +130,10 @@ class RefundFeesUpdater {
 			return;
 		}
 
-		$currency_code = current( $currency_codes ) ?: '';
+		$currency_code = current( $currency_codes );
+		if ( ! $currency_code ) {
+			$currency_code = '';
+		}
 
 		$meta_data = array(
 			'gross_amount' => ( new Money( $gross_amount_total, $currency_code ) )->to_array(),

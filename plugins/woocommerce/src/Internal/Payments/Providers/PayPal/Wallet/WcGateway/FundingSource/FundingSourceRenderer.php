@@ -15,6 +15,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Da
  * Class FundingSourceRenderer
  */
 class FundingSourceRenderer {
+	/**
+	 * The settings provider.
+	 *
+	 * @var SettingsProvider
+	 */
 	protected SettingsProvider $settings_provider;
 
 	/**
@@ -32,6 +37,8 @@ class FundingSourceRenderer {
 	protected $own_funding_sources = array( 'venmo', 'paylater', 'paypal' );
 
 	/**
+	 * FundingSourceRenderer constructor.
+	 *
 	 * @param SettingsProvider      $settings_provider Settings provider.
 	 * @param array<string, string> $funding_sources   Map funding source ID -> human-readable name.
 	 */

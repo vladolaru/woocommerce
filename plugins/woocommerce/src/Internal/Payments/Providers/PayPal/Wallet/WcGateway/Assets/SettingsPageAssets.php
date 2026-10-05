@@ -20,6 +20,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscript
  * Class SettingsPageAssets
  */
 class SettingsPageAssets {
+	/**
+	 * The asset getter.
+	 *
+	 * @var AssetGetter
+	 */
 	private AssetGetter $asset_getter;
 
 	/**
@@ -92,6 +97,11 @@ class SettingsPageAssets {
 	 */
 	private $is_settings_page;
 
+	/**
+	 * The reference transaction status.
+	 *
+	 * @var ReferenceTransactionStatus
+	 */
 	private ReferenceTransactionStatus $reference_transaction_status;
 
 	/**
@@ -102,7 +112,9 @@ class SettingsPageAssets {
 	private $is_paypal_payment_method_page;
 
 	/**
-	 * @param AssetGetter                $asset_getter
+	 * SettingsPageAssets constructor.
+	 *
+	 * @param AssetGetter                $asset_getter The asset getter.
 	 * @param string                     $version                            The assets version.
 	 * @param SubscriptionHelper         $subscription_helper The subscription helper.
 	 * @param string                     $client_id The PayPal SDK client ID.
@@ -113,7 +125,7 @@ class SettingsPageAssets {
 	 * @param array                      $disabled_sources The list of disabled funding sources.
 	 * @param array                      $all_funding_sources The list of all existing funding sources.
 	 * @param bool                       $is_settings_page Whether it's a settings page of this plugin.
-	 * @param ReferenceTransactionStatus $reference_transaction_status
+	 * @param ReferenceTransactionStatus $reference_transaction_status The reference transaction status.
 	 * @param bool                       $is_paypal_payment_method_page Whether we're on a settings page for our plugin's payment methods.
 	 */
 	public function __construct(
@@ -192,6 +204,13 @@ class SettingsPageAssets {
 		wp_localize_script(
 			'ppcp-gateway-settings',
 			'PayPalCommerceGatewaySettings',
+			/**
+			 * Filters the data localized to the gateway settings script as PayPalCommerceGatewaySettings.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param array $settings The script data.
+			 */
 			apply_filters(
 				'woocommerce_paypal_payments_admin_gateway_settings',
 				array(

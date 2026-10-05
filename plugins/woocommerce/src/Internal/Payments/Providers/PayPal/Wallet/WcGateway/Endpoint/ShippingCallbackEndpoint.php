@@ -21,14 +21,42 @@ class ShippingCallbackEndpoint {
 	private const NAMESPACE = 'paypal/v1';
 	private const ROUTE     = 'shipping-callback';
 
+	/**
+	 * The cart endpoint.
+	 *
+	 * @var CartEndpoint
+	 */
 	private CartEndpoint $cart_endpoint;
 
+	/**
+	 * The amount factory.
+	 *
+	 * @var AmountFactory
+	 */
 	private AmountFactory $amount_factory;
 
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	private LoggerInterface $logger;
 
+	/**
+	 * The cart data storage.
+	 *
+	 * @var CartDataTransientStorage
+	 */
 	private CartDataTransientStorage $cart_data_storage;
 
+	/**
+	 * ShippingCallbackEndpoint constructor.
+	 *
+	 * @param CartEndpoint             $cart_endpoint     The cart endpoint.
+	 * @param AmountFactory            $amount_factory    The amount factory.
+	 * @param LoggerInterface          $logger            The logger.
+	 * @param CartDataTransientStorage $cart_data_storage The cart data storage.
+	 */
 	public function __construct(
 		CartEndpoint $cart_endpoint,
 		AmountFactory $amount_factory,
@@ -67,7 +95,8 @@ class ShippingCallbackEndpoint {
 	/**
 	 * Checks that the request belongs to a stored cart and PayPal order.
 	 *
-	 * @param \WP_REST_Request<array<string, mixed>> $request The request.
+	 * @param \WP_REST_Request $request The request.
+	 * @phpstan-param \WP_REST_Request<array<string, mixed>> $request
 	 * @return bool
 	 */
 	public function verify_request( \WP_REST_Request $request ): bool {
@@ -84,7 +113,8 @@ class ShippingCallbackEndpoint {
 	/**
 	 * Handles the shipping callback request.
 	 *
-	 * @param \WP_REST_Request<array<string, mixed>> $request The request.
+	 * @param \WP_REST_Request $request The request.
+	 * @phpstan-param \WP_REST_Request<array<string, mixed>> $request
 	 * @return WP_REST_Response
 	 */
 	public function handle_request( \WP_REST_Request $request ): WP_REST_Response {

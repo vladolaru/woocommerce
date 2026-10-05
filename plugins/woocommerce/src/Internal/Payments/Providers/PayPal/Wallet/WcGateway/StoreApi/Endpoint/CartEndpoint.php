@@ -16,10 +16,26 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\S
 class CartEndpoint {
 	use RequestTrait;
 
+	/**
+	 * The cart factory.
+	 *
+	 * @var CartFactory
+	 */
 	private CartFactory $cart_factory;
 
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	private LoggerInterface $logger;
 
+	/**
+	 * CartEndpoint constructor.
+	 *
+	 * @param CartFactory     $cart_factory The cart factory.
+	 * @param LoggerInterface $logger       The logger.
+	 */
 	public function __construct( CartFactory $cart_factory, LoggerInterface $logger ) {
 		$this->cart_factory = $cart_factory;
 		$this->logger       = $logger;
@@ -91,6 +107,10 @@ class CartEndpoint {
 	}
 
 	/**
+	 * Performs a request to the cart endpoint and returns the parsed response.
+	 *
+	 * @param string $path The path.
+	 * @param array  $args The args.
 	 * @throws \JsonException If cannot decode JSON from the response.
 	 * @throws Exception If response contains error code or has empty body.
 	 */
@@ -145,10 +165,18 @@ class CartEndpoint {
 		return new CartResponse( $cart, $cart_token );
 	}
 
+	/**
+	 * Returns the URL of a cart endpoint path.
+	 *
+	 * @param string $path The path.
+	 */
 	protected function cart_endpoint_url( string $path ): string {
 		return $this->base_api_url() . $path;
 	}
 
+	/**
+	 * Returns the base URL of the Store API.
+	 */
 	protected function base_api_url(): string {
 		return rest_url( '/wc/store/v1/' );
 	}

@@ -17,22 +17,65 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\F
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
 use WP_Error;
 
+/**
+ * Class CapturePayPalPayment.
+ */
 class CapturePayPalPayment {
 
 	use RequestTrait;
 
+	/**
+	 * The host.
+	 *
+	 * @var string
+	 */
 	private string $host;
 
+	/**
+	 * The bearer.
+	 *
+	 * @var Bearer
+	 */
 	private Bearer $bearer;
 
+	/**
+	 * The order factory.
+	 *
+	 * @var OrderFactory
+	 */
 	private OrderFactory $order_factory;
 
+	/**
+	 * The purchase unit factory.
+	 *
+	 * @var PurchaseUnitFactory
+	 */
 	private PurchaseUnitFactory $purchase_unit_factory;
 
+	/**
+	 * The settings provider.
+	 *
+	 * @var SettingsProvider
+	 */
 	private SettingsProvider $settings_provider;
 
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	private LoggerInterface $logger;
 
+	/**
+	 * CapturePayPalPayment constructor.
+	 *
+	 * @param string              $host                  The host.
+	 * @param Bearer              $bearer                The bearer.
+	 * @param OrderFactory        $order_factory         The order factory.
+	 * @param PurchaseUnitFactory $purchase_unit_factory The purchase unit factory.
+	 * @param SettingsProvider    $settings_provider     The settings provider.
+	 * @param LoggerInterface     $logger                The logger.
+	 */
 	public function __construct(
 		string $host,
 		Bearer $bearer,
@@ -57,6 +100,9 @@ class CapturePayPalPayment {
 	 * unit, never from the request root, so from_wc_order() populates
 	 * them directly on the purchase unit built above.
 	 *
+	 * @param string   $vault_id            The vault id.
+	 * @param WC_Order $wc_order            The wc order.
+	 * @param string   $payment_source_name The payment source name.
 	 * @throws RuntimeException When request fails.
 	 */
 	public function create_order(
@@ -124,7 +170,7 @@ class CapturePayPalPayment {
 
 			$response = $this->request( $url, $args );
 			if ( $response instanceof WP_Error ) {
-				throw new RuntimeException( $response->get_error_message() );
+				throw new RuntimeException( esc_html( $response->get_error_message() ) );
 			}
 
 			$json        = json_decode( $response['body'] );

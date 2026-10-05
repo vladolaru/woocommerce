@@ -23,6 +23,11 @@ use WP_Screen;
  * Class VoidButtonAssets
  */
 class VoidButtonAssets {
+	/**
+	 * The asset getter.
+	 *
+	 * @var AssetGetter
+	 */
 	private AssetGetter $asset_getter;
 
 	/**
@@ -47,7 +52,9 @@ class VoidButtonAssets {
 	private $refund_processor;
 
 	/**
-	 * @param AssetGetter     $asset_getter
+	 * VoidButtonAssets constructor.
+	 *
+	 * @param AssetGetter     $asset_getter The asset getter.
 	 * @param string          $version The assets version.
 	 * @param OrderEndpoint   $order_endpoint The order endpoint.
 	 * @param RefundProcessor $refund_processor The Refund Processor.
@@ -82,7 +89,7 @@ class VoidButtonAssets {
 		if ( ! $current_screen instanceof WP_Screen ) {
 			return false;
 		}
-		if ( $current_screen->post_type !== 'shop_order' ) {
+		if ( 'shop_order' !== $current_screen->post_type ) {
 			return false;
 		}
 

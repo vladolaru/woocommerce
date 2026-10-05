@@ -28,6 +28,11 @@ class ApmCapabilityStatus extends ProductStatus {
 	public const KEY             = 'products_local_apms_enabled';
 	public const CAPABILITY_NAME = 'PAYPAL_CHECKOUT_ALTERNATIVE_PAYMENT_METHODS';
 
+	/**
+	 * Checks the PayPal API response for the product status.
+	 *
+	 * @param SellerStatus $seller_status The seller status.
+	 */
 	protected function check_api_response( SellerStatus $seller_status ): bool {
 		foreach ( $seller_status->capabilities() as $capability ) {
 			if ( $capability->name() === self::CAPABILITY_NAME && $capability->status() === SellerStatusCapability::STATUS_ACTIVE ) {

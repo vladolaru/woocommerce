@@ -189,6 +189,13 @@ class VoidOrderEndpoint {
 				'order_id'       => $wc_order->get_id(),
 				'line_items'     => $this->refund_items( $wc_order ),
 				'refund_payment' => false,
+				/**
+				 * Filters whether the items of an order are restocked when its authorization is voided.
+				 *
+				 * @since 11.3.0
+				 *
+				 * @param bool $restock Whether to restock the items; true by default.
+				 */
 				'restock_items'  => (bool) apply_filters( 'woocommerce_paypal_payments_void_restock_items', true ),
 			)
 		);

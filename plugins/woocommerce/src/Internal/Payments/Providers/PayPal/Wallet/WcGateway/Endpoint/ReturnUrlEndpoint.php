@@ -160,7 +160,15 @@ class ReturnUrlEndpoint {
 	 * @return string Checkout URL with error query arguments, if any.
 	 */
 	private function get_checkout_url_with_error(): string {
-		$url  = wc_get_checkout_url();
+		$url = wc_get_checkout_url();
+		/**
+		 * Filters the query arguments added to the checkout URL after a failed return from PayPal.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param array             $args     The query arguments; empty by default.
+		 * @param ReturnUrlEndpoint $endpoint The return URL endpoint.
+		 */
 		$args = apply_filters( 'ppcp_return_url_error_args', array(), $this );
 		if ( ! empty( $args ) ) {
 			$url = add_query_arg( $args, $url );

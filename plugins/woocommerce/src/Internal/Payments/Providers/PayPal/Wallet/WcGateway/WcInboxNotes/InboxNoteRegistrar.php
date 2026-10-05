@@ -1,5 +1,7 @@
 <?php
 /**
+ * InboxNoteRegistrar.
+ *
  * @package Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\WcInboxNotes
  */
 
@@ -16,16 +18,32 @@ use Automattic\WooCommerce\Admin\Notes\Notes;
 class InboxNoteRegistrar {
 
 	/**
+	 * The inbox notes to register.
+	 *
 	 * @var InboxNoteInterface[]
 	 */
 	protected array $inbox_notes;
+	/**
+	 * The plugin base name.
+	 *
+	 * @var string
+	 */
 	protected string $plugin_base_name;
 
+	/**
+	 * InboxNoteRegistrar constructor.
+	 *
+	 * @param array  $inbox_notes      The inbox notes.
+	 * @param string $plugin_base_name The plugin base name.
+	 */
 	public function __construct( array $inbox_notes, string $plugin_base_name ) {
 		$this->inbox_notes      = $inbox_notes;
 		$this->plugin_base_name = $plugin_base_name;
 	}
 
+	/**
+	 * Registers the inbox notes.
+	 */
 	public function register(): void {
 		if ( wp_doing_ajax() ) {
 			return;
