@@ -81,6 +81,24 @@ class OrderPaymentStore {
 	private const LOCK_REFUSAL_LOG_SOURCE = 'woopayments';
 
 	/**
+	 * Lock held in the database rows of a transient.
+	 *
+	 * @var TransientRowLock|null
+	 */
+	private ?TransientRowLock $row_lock = null;
+
+	/**
+	 * Initialize the class instance.
+	 *
+	 * @internal
+	 *
+	 * @param TransientRowLock $row_lock Lock held in the database rows of a transient.
+	 */
+	final public function init( TransientRowLock $row_lock ): void {
+		$this->row_lock = $row_lock;
+	}
+
+	/**
 	 * Get the preserved provider order/refund payment meta keys.
 	 *
 	 * @since 11.0.0
@@ -196,7 +214,7 @@ class OrderPaymentStore {
 			return $token;
 		}
 
-		return $this->claim_lock_rows( $lock_key, $value, $ttl, $holder_key, maybe_serialize( $holder ) ) ? $token : null;
+		return $this->get_row_lock()->claim( $lock_key, maybe_serialize( $value ), $ttl, $holder_key, maybe_serialize( $holder ) ) ? $token : null;
 	}
 
 	/**
@@ -320,39 +338,14 @@ class OrderPaymentStore {
 			return;
 		}
 
-		$value_option          = '_transient_' . $lock_key;
-		$timeout_option        = '_transient_timeout_' . $lock_key;
-		$holder_option         = '_transient_' . $holder_key;
-		$holder_timeout_option = '_transient_timeout_' . $holder_key;
-		$stored_holder         = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $holder_option ) );
-		$holder                = null === $stored_holder ? null : maybe_unserialize( $stored_holder );
+		$stored_holder = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", '_transient_' . $holder_key ) );
+		$holder        = null === $stored_holder ? null : maybe_unserialize( $stored_holder );
 
 		if ( ! $this->is_holder_of_claim( $holder, $lock_token ) ) {
 			return;
 		}
 
-		// One statement deletes the lock and its holder record, and only while both are still this claim's: a takeover
-		// rewrites the holder record in the same statement that takes the lock over.
-		$delete  = $wpdb->prepare(
-			"DELETE lock_value, lock_timeout, lock_holder, lock_holder_timeout FROM {$wpdb->options} AS lock_value
-			INNER JOIN {$wpdb->options} AS lock_holder ON lock_holder.option_name = %s AND lock_holder.option_value = %s
-			LEFT JOIN {$wpdb->options} AS lock_timeout ON lock_timeout.option_name = %s
-			LEFT JOIN {$wpdb->options} AS lock_holder_timeout ON lock_holder_timeout.option_name = %s
-			WHERE lock_value.option_name = %s AND lock_value.option_value = %s",
-			$holder_option,
-			$stored_holder,
-			$timeout_option,
-			$holder_timeout_option,
-			$value_option,
-			maybe_serialize( $holder['lock_value'] )
-		);
-		$deleted = $wpdb->query( $delete ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Prepared above.
-		if ( false === $deleted ) {
-			// A failed delete, such as a deadlock victim, would otherwise leave the lock held for a full TTL.
-			$wpdb->query( $delete ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Prepared above.
-		}
-
-		$this->forget_cached_options( array( $value_option, $timeout_option, $holder_option, $holder_timeout_option ) );
+		$this->get_row_lock()->release( $lock_key, maybe_serialize( $holder['lock_value'] ), $holder_key, $stored_holder );
 	}
 
 	/**
@@ -397,250 +390,24 @@ class OrderPaymentStore {
 			return get_transient( $key );
 		}
 
-		$value_option   = '_transient_' . $key;
-		$timeout_option = '_transient_timeout_' . $key;
-		$rows           = $this->select_lock_rows( $value_option, $timeout_option );
+		$stored = $this->get_row_lock()->read( $key );
 
-		if ( ! isset( $rows[ $value_option ] ) || ( isset( $rows[ $timeout_option ] ) && (int) $rows[ $timeout_option ]->option_value < time() ) ) {
-			return false;
-		}
-
-		return maybe_unserialize( $rows[ $value_option ]->option_value );
+		return null === $stored ? false : maybe_unserialize( $stored );
 	}
 
 	/**
-	 * Read the value and expiry rows of a lock transient straight from the database.
+	 * Get the lock held in the database rows of a transient.
 	 *
-	 * @param string $value_option   Lock value option name.
-	 * @param string $timeout_option Lock expiry option name.
-	 * @return array<string,\stdClass> Rows keyed by option name.
+	 * Falls back to the container for instances built without init().
+	 *
+	 * @return TransientRowLock
 	 */
-	private function select_lock_rows( string $value_option, string $timeout_option ): array {
-		global $wpdb;
-
-		return (array) $wpdb->get_results(
-			$wpdb->prepare(
-				"SELECT option_name, option_value FROM {$wpdb->options} WHERE option_name IN (%s, %s)",
-				$value_option,
-				$timeout_option
-			),
-			OBJECT_K
-		);
-	}
-
-	/**
-	 * Claim the order payment lock rows in the options table, so exactly one concurrent claimant wins.
-	 *
-	 * WordPress add_option() trusts the request's notoptions cache and then upserts, so it can overwrite a
-	 * lock another request stored after this one read it as missing. Like WC_Install::seed_autoloaded_option(),
-	 * the claim uses INSERT IGNORE instead. Claimants compete for the value row alone; the one that inserts
-	 * it then writes the expiry row, replacing an expiry row a stopped release left behind. An expired lock
-	 * is taken over with one UPDATE that matches the exact value and expiry read, so only one of several
-	 * overlapping takeovers changes the rows. The winner then writes its holder record; a takeover also replaces
-	 * the former holder's record in the same UPDATE, so the former holder can no longer release the lock. Only a lock
-	 * removed without its release, by the expired-transient cleanup or an unconditional unlock, can leave a former
-	 * holder's record in place until a new claim's holder write replaces it.
-	 *
-	 * @param string $lock_key      Lock transient key.
-	 * @param string $value         Lock value.
-	 * @param int    $ttl           Lock time-to-live, in seconds.
-	 * @param string $holder_key    Holder record transient key.
-	 * @param string $stored_holder Serialized holder record of this claim.
-	 * @return bool True when the lock was claimed.
-	 */
-	private function claim_lock_rows( string $lock_key, string $value, int $ttl, string $holder_key, string $stored_holder ): bool {
-		global $wpdb;
-
-		$value_option          = '_transient_' . $lock_key;
-		$timeout_option        = '_transient_timeout_' . $lock_key;
-		$holder_option         = '_transient_' . $holder_key;
-		$holder_timeout_option = '_transient_timeout_' . $holder_key;
-		$stored_value          = maybe_serialize( $value );
-		$expiration            = (string) ( time() + $ttl );
-
-		// Read before competing for the value row: when this request wins it, an expiry row seen here was left by
-		// a stopped release or by a holder that released since, and the winner replaces it.
-		$leftover_timeout = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $timeout_option ) );
-
-		$inserted = (int) $wpdb->query(
-			$wpdb->prepare(
-				"INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'off')",
-				$value_option,
-				$stored_value
-			)
-		);
-
-		if ( 1 === $inserted ) {
-			$claimed = $this->write_claimed_lock_expiry( $value_option, $timeout_option, $stored_value, $leftover_timeout, $expiration );
-		} else {
-			$claimed = $this->take_over_expired_lock_rows( $value_option, $timeout_option, $stored_value, $expiration, $holder_option, $stored_holder );
+	private function get_row_lock(): TransientRowLock {
+		if ( null === $this->row_lock ) {
+			$this->row_lock = wc_get_container()->get( TransientRowLock::class );
 		}
 
-		if ( $claimed ) {
-			$wpdb->query(
-				$wpdb->prepare(
-					"INSERT INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'off'), (%s, %s, 'off')
-					ON DUPLICATE KEY UPDATE option_value = VALUES(option_value)",
-					$holder_option,
-					$stored_holder,
-					$holder_timeout_option,
-					$expiration
-				)
-			);
-		}
-
-		$this->forget_cached_options( array( $value_option, $timeout_option, $holder_option, $holder_timeout_option ) );
-
-		return $claimed;
-	}
-
-	/**
-	 * Write the expiry row of a lock whose value row this request just inserted.
-	 *
-	 * A leftover expiry row read before the insert is replaced only while it still holds that value. When the
-	 * expiry row changed meanwhile, the claim holds the lock exactly when the value row is still its own, and
-	 * then makes sure an expiry row exists. A takeover of an expired leftover also leaves the value unchanged
-	 * when the taker uses the same lock value, so after one could have run the claim is refused.
-	 *
-	 * @param string      $value_option     Lock value option name.
-	 * @param string      $timeout_option   Lock expiry option name.
-	 * @param string      $stored_value     Serialized lock value this request inserted.
-	 * @param string|null $leftover_timeout Expiry row value read before the value row was inserted, if any.
-	 * @param string      $expiration       New lock expiry timestamp.
-	 * @return bool True when this request holds the lock.
-	 */
-	private function write_claimed_lock_expiry( string $value_option, string $timeout_option, string $stored_value, ?string $leftover_timeout, string $expiration ): bool {
-		global $wpdb;
-
-		if ( null === $leftover_timeout ) {
-			$written = $this->insert_lock_expiry( $timeout_option, $expiration );
-		} else {
-			$written = (int) $wpdb->query(
-				$wpdb->prepare(
-					"UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s AND option_value = %s",
-					$expiration,
-					$timeout_option,
-					$leftover_timeout
-				)
-			);
-		}
-
-		if ( 0 < $written ) {
-			return true;
-		}
-
-		// The expiry row was deleted by a release, filled in by a refused rival, already held this expiry, or
-		// was replaced by a takeover.
-		$rows = $this->select_lock_rows( $value_option, $timeout_option );
-
-		if ( ! isset( $rows[ $value_option ] ) || $rows[ $value_option ]->option_value !== $stored_value ) {
-			return false;
-		}
-
-		if ( ! isset( $rows[ $timeout_option ] ) ) {
-			$this->insert_lock_expiry( $timeout_option, $expiration );
-
-			return true;
-		}
-
-		// Every expiry row written after the read is in the future, so only an expired leftover can be taken over.
-		return null === $leftover_timeout || (int) $leftover_timeout >= time();
-	}
-
-	/**
-	 * Insert the expiry row of a lock unless one already exists.
-	 *
-	 * @param string $timeout_option Lock expiry option name.
-	 * @param string $expiration     Lock expiry timestamp.
-	 * @return int Number of rows inserted.
-	 */
-	private function insert_lock_expiry( string $timeout_option, string $expiration ): int {
-		global $wpdb;
-
-		return (int) $wpdb->query(
-			$wpdb->prepare(
-				"INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'off')",
-				$timeout_option,
-				$expiration
-			)
-		);
-	}
-
-	/**
-	 * Take over order payment lock rows whose expiry has passed.
-	 *
-	 * A value row without an expiry row is treated as held. It appears while a claimant is between inserting
-	 * its value row and its expiry row, or when it stopped there, so it gets an expiry here instead of
-	 * blocking the order forever.
-	 *
-	 * @param string $value_option   Lock value option name.
-	 * @param string $timeout_option Lock expiry option name.
-	 * @param string $stored_value   Serialized lock value to store.
-	 * @param string $expiration     New lock expiry timestamp.
-	 * @param string $holder_option  Holder record option name.
-	 * @param string $stored_holder  Serialized holder record of this claim.
-	 * @return bool True when this request took the lock over.
-	 */
-	private function take_over_expired_lock_rows( string $value_option, string $timeout_option, string $stored_value, string $expiration, string $holder_option, string $stored_holder ): bool {
-		global $wpdb;
-
-		$rows = $this->select_lock_rows( $value_option, $timeout_option );
-
-		if ( ! isset( $rows[ $value_option ] ) ) {
-			return false;
-		}
-
-		if ( ! isset( $rows[ $timeout_option ] ) ) {
-			$this->insert_lock_expiry( $timeout_option, $expiration );
-
-			return false;
-		}
-
-		if ( (int) $rows[ $timeout_option ]->option_value >= time() ) {
-			return false;
-		}
-
-		return 0 < (int) $wpdb->query(
-			$wpdb->prepare(
-				"UPDATE {$wpdb->options} AS lock_value
-				INNER JOIN {$wpdb->options} AS lock_timeout ON lock_timeout.option_name = %s
-				LEFT JOIN {$wpdb->options} AS lock_holder ON lock_holder.option_name = %s
-				SET lock_value.option_value = %s, lock_timeout.option_value = %s, lock_holder.option_value = %s
-				WHERE lock_value.option_name = %s AND lock_value.option_value = %s AND lock_timeout.option_value = %s",
-				$timeout_option,
-				$holder_option,
-				$stored_value,
-				$expiration,
-				$stored_holder,
-				$value_option,
-				$rows[ $value_option ]->option_value,
-				$rows[ $timeout_option ]->option_value
-			)
-		);
-	}
-
-	/**
-	 * Drop options written with raw SQL from the object caches, so later reads see the database.
-	 *
-	 * @param string[] $option_names Option names.
-	 */
-	private function forget_cached_options( array $option_names ): void {
-		$notoptions = wp_cache_get( 'notoptions', 'options' );
-		$alloptions = wp_cache_get( 'alloptions', 'options' );
-
-		foreach ( $option_names as $option_name ) {
-			wp_cache_delete( $option_name, 'options' );
-
-			if ( is_array( $notoptions ) && isset( $notoptions[ $option_name ] ) ) {
-				unset( $notoptions[ $option_name ] );
-				wp_cache_set( 'notoptions', $notoptions, 'options' );
-			}
-
-			if ( is_array( $alloptions ) && isset( $alloptions[ $option_name ] ) ) {
-				unset( $alloptions[ $option_name ] );
-				wp_cache_set( 'alloptions', $alloptions, 'options' );
-			}
-		}
+		return $this->row_lock;
 	}
 
 	/**
