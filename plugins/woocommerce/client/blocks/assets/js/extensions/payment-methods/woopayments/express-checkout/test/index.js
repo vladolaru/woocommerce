@@ -2427,6 +2427,96 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		} );
 	} );
 
+	// Client 11.1.0 locks the page with jQuery BlockUI when a wallet button is clicked and unlocks it when the sheet is
+	// canceled or the payment fails (block-buttons/hooks/use-express-checkout.js:47-63, :141-143; event-handlers.js:290-326).
+	// BlockUI's page API, `$.blockUI( options )` and `$.unblockUI()`, comes with WooCommerce's `woocommerce` script
+	// (`wc-jquery-blockui`, includes/class-wc-frontend-scripts.php).
+	describe( 'the page lock while a wallet sheet is open', () => {
+		const openGooglePaySheet = async ( props = {} ) => {
+			registerExpressCheckout();
+			renderExpressPaymentMethod(
+				getRegistration(
+					'woocommerce_payments_express_checkout_googlePay'
+				),
+				props
+			);
+
+			await waitFor( () => {
+				expect( expressHandlers.click ).toBeDefined();
+			} );
+
+			// Express Checkout Element `click` event: `expressPaymentType` and `resolve( options )`
+			// (https://docs.stripe.com/js/elements_object/express_checkout_element_click_event).
+			act( () => {
+				expressHandlers.click( {
+					expressPaymentType: 'google_pay',
+					resolve: jest.fn(),
+				} );
+			} );
+		};
+
+		beforeEach( () => {
+			window.jQuery = { blockUI: jest.fn(), unblockUI: jest.fn() };
+		} );
+
+		afterEach( () => {
+			delete window.jQuery;
+		} );
+
+		it( 'locks the page when a wallet button is clicked', async () => {
+			await openGooglePaySheet();
+
+			expect( window.jQuery.blockUI ).toHaveBeenCalledWith( {
+				message: null,
+				overlayCSS: {
+					background: '#fff',
+					opacity: 0.6,
+				},
+			} );
+			expect( window.jQuery.unblockUI ).not.toHaveBeenCalled();
+		} );
+
+		it( 'unlocks the page when the wallet sheet is canceled', async () => {
+			await openGooglePaySheet();
+
+			// Express Checkout Element `cancel` event (https://docs.stripe.com/js/elements_object/express_checkout_element_cancel_event).
+			act( () => {
+				expressHandlers.cancel();
+			} );
+
+			expect( window.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
+		} );
+
+		it( 'unlocks the page and shows the error when the payment fails', async () => {
+			const setExpressPaymentError = jest.fn();
+			// Store API checkout error (AbstractRoute::error_to_response(): code, message, data.status), a declined
+			// payment (src/StoreApi/Utilities/CheckoutTrait.php:135).
+			apiFetch.mockRejectedValueOnce( {
+				code: 'woocommerce_rest_checkout_process_payment_error',
+				message: 'Your card was declined.',
+				data: { status: 400 },
+			} );
+			await openGooglePaySheet( { setExpressPaymentError } );
+
+			// Express Checkout Element `confirm` event with billingDetails (https://docs.stripe.com/js.md,
+			// "expressCheckoutElement.on('confirm', handler)").
+			await act( async () => {
+				await expressHandlers.confirm( {
+					paymentFailed: jest.fn(),
+					billingDetails: {
+						email: 'shopper@example.test',
+						name: 'Ada Lovelace',
+					},
+				} );
+			} );
+
+			expect( window.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
+			expect( setExpressPaymentError ).toHaveBeenCalledWith(
+				'Your card was declined.'
+			);
+		} );
+	} );
+
 	describe( 'leaving checkout after a successful wallet payment', () => {
 		const pageUrl = window.location.href;
 		let navigate;

@@ -1136,25 +1136,50 @@ let navigate = ( url ) => {
 	window.location.href = url;
 };
 
+// Whether the BlockUI page overlay up now is the one these wallets put up.
+let isPageLocked = false;
+
+/**
+ * Remove the page overlay, as client 11.1.0 unblockUI() does (event-handlers.js:300-302), only when these wallets put it
+ * up, so another script's page lock stays.
+ */
+const unlockPage = () => {
+	if ( ! isPageLocked ) {
+		return;
+	}
+
+	isPageLocked = false;
+	window.jQuery?.unblockUI?.();
+};
+
+/**
+ * Lock the page with jQuery BlockUI, as client 11.1.0 blockUI() does (event-handlers.js:290-298). Without BlockUI on the
+ * page nothing is locked, as on the classic pages.
+ */
+const lockPage = () => {
+	if ( typeof window.jQuery?.blockUI !== 'function' ) {
+		return;
+	}
+
+	window.jQuery.blockUI( {
+		message: null,
+		overlayCSS: {
+			background: '#fff',
+			opacity: 0.6,
+		},
+	} );
+	isPageLocked = true;
+};
+
 /**
  * Lock the page and leave for the order, as client 11.1.0 completePayment() does
- * (block-buttons/hooks/use-express-checkout.js:52-55, onCompletePaymentHandler() at event-handlers.js:290-298, :316-318),
- * so the Checkout block cannot start a second payment while the next page loads. Without jQuery BlockUI on the page
- * nothing is locked, as on the classic pages.
+ * (block-buttons/hooks/use-express-checkout.js:52-55, onCompletePaymentHandler() at event-handlers.js:316-318),
+ * so the Checkout block cannot start a second payment while the next page loads.
  *
  * @param {string} url The page to go to.
  */
 const completePayment = ( url ) => {
-	if ( typeof window.jQuery?.blockUI === 'function' ) {
-		window.jQuery.blockUI( {
-			message: null,
-			overlayCSS: {
-				background: '#fff',
-				opacity: 0.6,
-			},
-		} );
-	}
-
+	lockPage();
 	navigate( url );
 };
 
@@ -1314,6 +1339,9 @@ const ExpressCheckoutContent = ( {
 			}
 
 			onClick?.();
+			// Client 11.1.0 locks the page while the wallet sheet is open (block-buttons/hooks/use-express-checkout.js:141-143,
+			// onClickHandler() at event-handlers.js:304-310); a cancel or a failed payment unlocks it.
+			lockPage();
 			if ( methodConfig.clickEvent ) {
 				recordWooPaymentsUserEvent(
 					getTrackingSettings(),
@@ -1341,6 +1369,8 @@ const ExpressCheckoutContent = ( {
 		// Client 11.1.0 refreshes on cancel only after an address pick (event-handlers.js:319-325); native also does after a
 		// rate pick, which the server cart already holds. Accepted improvement, inbox N-266.
 		expressElementRef.current.on( 'cancel', () => {
+			// Client 11.1.0 onCancelHandler() (event-handlers.js:320-326, block-buttons/hooks/use-express-checkout.js:47-50).
+			unlockPage();
 			refreshCartAfterWalletMutation( refreshBlocksCartUi );
 			onClose?.();
 		} );
@@ -1560,6 +1590,9 @@ const ExpressCheckoutContent = ( {
 					reason: 'fail',
 					message,
 				} );
+				// Client 11.1.0 abortPayment() unlocks the page on every failure, a navigation that throws included
+				// (event-handlers.js:254-271, onAbortPaymentHandler() at :312-314, block-buttons/hooks/use-express-checkout.js:57-63).
+				unlockPage();
 				refreshCartAfterWalletMutation();
 				setExpressPaymentError?.( message );
 			}
