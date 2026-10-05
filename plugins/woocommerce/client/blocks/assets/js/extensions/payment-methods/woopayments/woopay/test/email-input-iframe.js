@@ -104,22 +104,30 @@ describe( 'WooPay email input (blocks)', () => {
 	};
 
 	beforeEach( () => {
+		// Answer shapes, client 11.1.0 (the sender, then where client/checkout/woopay/email-input-iframe.js reads it):
 		fetchResponses = {
+			// wp_send_json_success( [ 'signature' ] ) (includes/class-wc-payments.php:1906-1911); read at :357-371.
 			'/?wc-ajax=wcpay_get_woopay_signature': {
 				body: { success: true, data: { signature: 'sig-1' } },
 			},
+			// The platform's init answer passed through (includes/woopay/class-woopay-session.php:711-716); read at
+			// :496-498.
 			'/?wc-ajax=wcpay_init_woopay': {
 				body: {
 					result: 'success',
 					url: `${ WOOPAY_HOST }/checkout/?session=1`,
 				},
 			},
+			// encrypt_and_sign_data(): { blog_id, data: { session, iv, hash } } (includes/woopay/class-woopay-utilities.php:326-335,
+			// sent by class-woopay-session.php:742); read at :201. Only data.session is read.
 			'/?wc-ajax=wcpay_get_woopay_session': {
 				body: { data: { session: 'encrypted' } },
 			},
+			// WooPay's user lookup answers { 'user-exists': bool }; read at :411-415.
 			[ `${ WOOPAY_HOST }/wp-json/platform-checkout/v1/user/exists?` ]: {
 				body: { 'user-exists': true },
 			},
+			// platform_tracks: wp_send_json_success() (includes/class-woopay-tracker.php:122).
 			[ baseSettings.ajaxUrl ]: { body: { success: true } },
 		};
 		window.fetch = jest.fn( ( url ) => {
@@ -615,8 +623,10 @@ describe( 'WooPay email input (blocks)', () => {
 	} );
 
 	test( 'shows the unavailable notice below the field and closes the iframe when init_woopay fails', async () => {
+		// A failed init request answers "the same message platform would respond with on failure" (client 11.1.0
+		// includes/woopay/class-woopay-session.php:707-710); native's session service answers the same.
 		fetchResponses[ '/?wc-ajax=wcpay_init_woopay' ] = {
-			body: { result: 'error' },
+			body: { result: 'failure' },
 		};
 		const input = await setup();
 		await typeEmail( input, 'shopper@example.com' );
@@ -740,8 +750,10 @@ describe( 'WooPay email input (blocks)', () => {
 		} );
 
 		test( 'gives focus back to the email field when WooPay cannot start', async () => {
+			// A failed init request answers `{ result: 'failure' }` (client 11.1.0
+			// includes/woopay/class-woopay-session.php:707-710).
 			fetchResponses[ '/?wc-ajax=wcpay_init_woopay' ] = {
-				body: { result: 'error' },
+				body: { result: 'failure' },
 			};
 			const { input } = await openDialog();
 
