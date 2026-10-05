@@ -490,9 +490,54 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not enqueue direct checkout assets for mini-carts on checkout pages.
+	 * @testdox Should run direct checkout on a classic checkout page where a Mini-Cart block renders, as client 11.1.0.
+	 *
+	 * Client 11.1.0 should_enqueue_scripts() loads direct checkout wherever woocommerce_blocks_cart_enqueue_data fired, the
+	 * checkout page included (class-wc-payments-woopay-direct-checkout.php:127-131).
 	 */
-	public function test_enqueue_frontend_assets_skips_mini_carts_on_checkout_pages(): void {
+	public function test_enqueue_frontend_assets_runs_direct_checkout_for_a_mini_cart_block_on_classic_checkout(): void {
+		$service                                      = new RecordingWooPaySessionService();
+		$service->should_show_woopay_button           = false;
+		$service->should_load_woopay_save_user_assets = false;
+		$service->direct_checkout_enabled             = true;
+		$this->sut                                    = $this->create_controller( true, true, $service );
+		$this->sut->register();
+		$this->set_checkout_shortcode_page();
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		do_action( 'woocommerce_blocks_cart_enqueue_data' );
+
+		$this->sut->enqueue_frontend_assets();
+
+		$this->assertTrue( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
+		// wp_localize_script() sends scalars as strings.
+		$this->assertSame( '1', $this->get_localized_woopay_config()['isWooPayDirectCheckoutEnabled'] );
+	}
+
+	/**
+	 * @testdox Should run direct checkout on a Checkout block page where a Mini-Cart block renders, with the light config.
+	 */
+	public function test_enqueue_frontend_assets_runs_direct_checkout_for_a_mini_cart_block_on_checkout_block_page(): void {
+		$service                                      = new RecordingWooPaySessionService();
+		$service->should_show_woopay_button           = false;
+		$service->should_load_woopay_save_user_assets = false;
+		$service->direct_checkout_enabled             = true;
+		$this->sut                                    = $this->create_controller( true, true, $service );
+		$this->sut->register();
+		$this->reset_frontend_surface_state();
+		update_option( 'woocommerce_checkout_page_id', $this->set_current_page_with_content( '<!-- wp:woocommerce/checkout --><div class="wp-block-woocommerce-checkout"></div><!-- /wp:woocommerce/checkout -->' ) );
+		$this->reset_cart_checkout_page_cache();
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		do_action( 'woocommerce_blocks_cart_enqueue_data' );
+
+		$this->sut->enqueue_frontend_assets();
+
+		$this->assert_light_direct_checkout_assets( $service );
+	}
+
+	/**
+	 * @testdox Should not enqueue direct checkout assets for the classic cart widget on checkout pages, as client 11.1.0.
+	 */
+	public function test_enqueue_frontend_assets_skips_the_classic_cart_widget_on_checkout_pages(): void {
 		$service                                      = new RecordingWooPaySessionService();
 		$service->should_show_woopay_button           = false;
 		$service->should_load_woopay_save_user_assets = false;
@@ -504,8 +549,6 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 			wp_register_script( 'wc-cart-fragments', 'https://example.com/cart-fragments.js', array(), '1.0', true );
 		}
 		wp_enqueue_script( 'wc-cart-fragments' );
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
-		do_action( 'woocommerce_blocks_cart_enqueue_data' );
 
 		$this->sut->enqueue_frontend_assets();
 

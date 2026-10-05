@@ -985,17 +985,18 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	/**
 	 * Tell whether the current request supports WooPay direct checkout.
 	 *
+	 * Client 11.1.0 `should_enqueue_scripts()` (class-wc-payments-woopay-direct-checkout.php:127-131): a cart page, any page
+	 * where a Mini-Cart block rendered (the checkout page too), or a page other than checkout with the classic cart widget.
+	 *
 	 * @return bool
 	 */
 	private function is_supported_direct_checkout_surface(): bool {
-		if ( ( function_exists( 'is_checkout' ) && is_checkout() ) || $this->current_surface_has_block( 'woocommerce/checkout' ) ) {
-			return false;
+		if ( $this->is_cart_surface() || 0 < did_action( 'woocommerce_blocks_cart_enqueue_data' ) ) {
+			return true;
 		}
 
-		return ( function_exists( 'is_cart' ) && is_cart() ) ||
-			$this->current_surface_has_block( 'woocommerce/cart' ) ||
-			0 < did_action( 'woocommerce_blocks_cart_enqueue_data' ) ||
-			wp_script_is( 'wc-cart-fragments', 'enqueued' );
+		return wp_script_is( 'wc-cart-fragments', 'enqueued' ) &&
+			! ( ( function_exists( 'is_checkout' ) && is_checkout() ) || $this->current_surface_has_block( 'woocommerce/checkout' ) );
 	}
 
 	/**
