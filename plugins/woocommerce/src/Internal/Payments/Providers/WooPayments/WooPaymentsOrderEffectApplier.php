@@ -719,7 +719,15 @@ class WooPaymentsOrderEffectApplier {
 			 * @param string $suffix Express-checkout payment-method title suffix.
 			 */
 			$suffix = apply_filters( 'wcpay_payment_request_payment_method_title_suffix', 'WooPayments' );
-			$suffix = is_string( $suffix ) ? $suffix : 'WooPayments';
+			// An empty return removes the suffix, as on the client (class-wc-payment-gateway-wcpay.php:2735-2740), so
+			// '__return_false' drops it; another non-scalar return keeps the default rather than printing "Array".
+			if ( empty( $suffix ) ) {
+				$suffix = '';
+			} elseif ( is_scalar( $suffix ) ) {
+				$suffix = (string) $suffix;
+			} else {
+				$suffix = 'WooPayments';
+			}
 
 			return '' === $suffix ? $title : $title . ' (' . $suffix . ')';
 		}

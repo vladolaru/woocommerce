@@ -1292,12 +1292,15 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Completed express PaymentIntents ignore malformed title suffix filter returns through the payment lifecycle.
+	 * @testdox Completed express PaymentIntents store the title "$expected_title" when the suffix filter returns $label, through the payment lifecycle.
 	 * @dataProvider malformed_payment_request_suffix_data
 	 *
-	 * @param mixed $suffix Filter return value.
+	 * @param string $label          Case label.
+	 * @param mixed  $suffix         Filter return value.
+	 * @param string $expected_title Stored payment method title.
 	 */
-	public function test_completed_express_payment_intents_ignore_malformed_title_suffix_filter_returns_through_payment_lifecycle( $suffix ): void {
+	public function test_completed_express_payment_intents_ignore_malformed_title_suffix_filter_returns_through_payment_lifecycle( string $label, $suffix, string $expected_title ): void {
+		unset( $label );
 		$order           = $this->create_woopayments_order( '10.00' );
 		$sequence        = new \ArrayObject();
 		$provider        = $this->completed_payment_intent_provider( $this->completed_link_payment_intent_result(), $sequence );
@@ -1335,20 +1338,24 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 1, $lifecycle_calls );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'completed', $order->get_status() );
-		$this->assertSame( 'Link (WooPayments)', $order->get_payment_method_title() );
-		$this->assertSame( array( 'transport:direct', 'suffix', 'lifecycle:Link (WooPayments)', 'finalization' ), $sequence->getArrayCopy() );
+		$this->assertSame( $expected_title, $order->get_payment_method_title() );
+		$this->assertSame( array( 'transport:direct', 'suffix', 'lifecycle:' . $expected_title, 'finalization' ), $sequence->getArrayCopy() );
 		$this->assertSame( '', $order->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
 	}
 
 	/**
-	 * Provide malformed public suffix filter returns.
+	 * Provide unusual public suffix filter returns: a malformed one keeps the default, an empty one removes the suffix
+	 * as on the client (class-wc-payment-gateway-wcpay.php:2735-2740), where '__return_false' is the usual way to drop it.
 	 *
-	 * @return array<string,array{mixed}>
+	 * @return array<string,array{string,mixed,string}>
 	 */
 	public function malformed_payment_request_suffix_data(): array {
 		return array(
-			'array'                 => array( array( 'unexpected' ) ),
-			'non-stringable object' => array( new \stdClass() ),
+			'array'                 => array( 'an array', array( 'unexpected' ), 'Link (WooPayments)' ),
+			'non-stringable object' => array( 'an object', new \stdClass(), 'Link (WooPayments)' ),
+			'false'                 => array( 'false', false, 'Link' ),
+			'null'                  => array( 'null', null, 'Link' ),
+			'empty string'          => array( 'an empty string', '', 'Link' ),
 		);
 	}
 
