@@ -152,7 +152,8 @@ class WooPaymentsLoggerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'card_declined', $context['error_code'] );
 		$this->assertSame( 'insufficient_funds', $context['decline_code'] );
 
-		// An error envelope's code and decline code are free text to this store (WooPaymentsApiClient::throw_api_error()).
+		// An error envelope's code and decline code are free text to this store: client 11.1.0 copies error.code and
+		// error.decline_code as they are (class-wc-payments-api-client.php:2853, :2866, :2869).
 		$free_text = new WooPaymentsApiException( 'Error: x', 'https://pay.example.test/r?key=sk_test_leak123', 400, '', 'shopper@example.com' );
 		$context   = WooPaymentsLogger::get_api_error_context( $free_text );
 		$this->assertSame( 'unknown_error', $context['error_code'] );

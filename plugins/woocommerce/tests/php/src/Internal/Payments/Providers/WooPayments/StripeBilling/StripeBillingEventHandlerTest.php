@@ -676,7 +676,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_unreadable_charge_log_leaves_out_platform_text(): void {
 		$subscription = $this->create_subscription( self::FAILING_SUBSCRIPTION_ID );
-		// The error envelope WooPaymentsApiClient::throw_api_error() reads (error.code, error.message, error.type).
+		// The error envelope client 11.1.0 reads (error.code, error.message, error.type; class-wc-payments-api-client.php:2852-2871).
 		$this->queue_response(
 			404,
 			array(

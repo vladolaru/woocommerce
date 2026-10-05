@@ -20,8 +20,10 @@ trait ProviderTextLogAssertions {
 	/**
 	 * Build the platform error the transport throws for an error envelope whose message holds an email, a URL and a key.
 	 *
-	 * Shape of WooPaymentsApiClient::throw_api_error(): 'Error: ' plus the envelope's error.message, its error.code,
-	 * the HTTP status, its error.type and error.decline_code.
+	 * Client 11.1.0 check_response_for_errors() (class-wc-payments-api-client.php) reads the envelope's error.code,
+	 * error.message, error.type and error.decline_code (:2852-2871) and throws API_Exception( 'Error: ' . message, code,
+	 * HTTP status, type, decline code ) (:2906-2909, :2928). Its mapped variants, the top-level amount_too_small shape
+	 * (:2845-2851) and the mixed-currencies message (:2876-2892), go through the real mapping in the Stripe Billing tests.
 	 *
 	 * @param string $code         Envelope error.code.
 	 * @param int    $status       HTTP status.

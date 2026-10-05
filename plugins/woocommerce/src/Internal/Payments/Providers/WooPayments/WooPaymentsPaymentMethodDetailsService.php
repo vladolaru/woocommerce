@@ -115,7 +115,7 @@ class WooPaymentsPaymentMethodDetailsService {
 	}
 
 	/**
-	 * Log a payment method details fetch error through the gated WooPayments logger, as the client's callers do (gw:5088),
+	 * Log a payment method details fetch error through the gated WooPayments logger, as the client's callers do (gw:5086),
 	 * with the platform's status and code instead of its message.
 	 *
 	 * @param string    $payment_method_id Payment method ID.

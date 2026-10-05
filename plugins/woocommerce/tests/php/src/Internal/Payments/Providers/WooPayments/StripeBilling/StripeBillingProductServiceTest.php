@@ -836,8 +836,9 @@ class StripeBillingProductServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Queue the platform's answer to a failed request: HTTP 404 with the error envelope WooPaymentsApiClient::throw_api_error()
-	 * reads (error.code, error.message, error.type, as the platform forwards Stripe's), its message holding an email and a URL.
+	 * Queue the platform's answer to a failed request: HTTP 404 with the error envelope client 11.1.0 reads (error.code,
+	 * error.message, error.type, as the platform forwards Stripe's; class-wc-payments-api-client.php:2852-2871), its message
+	 * holding an email and a URL.
 	 */
 	private function queue_platform_error(): void {
 		$this->http_client->responses[] = array(

@@ -625,7 +625,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	 * @param string $expected Expected line.
 	 */
 	public function test_platform_error_log_leaves_out_platform_text( string $method, string $expected ): void {
-		// The error envelope WooPaymentsApiClient::throw_api_error() reads (error.code, error.message, error.type).
+		// The error envelope client 11.1.0 reads (error.code, error.message, error.type; class-wc-payments-api-client.php:2852-2871).
 		$this->http_client->responses[] = $this->make_response(
 			404,
 			array(

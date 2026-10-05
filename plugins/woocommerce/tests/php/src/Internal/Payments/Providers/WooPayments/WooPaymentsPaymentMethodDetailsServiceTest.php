@@ -168,7 +168,7 @@ class WooPaymentsPaymentMethodDetailsServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A client exception returns no details and is logged under woopayments only with debug logging $logging.
 	 *
-	 * The client's callers log a failed fetch through the gated Logger at error level (gw:5088); review 34 F3.
+	 * The client's callers log a failed fetch through the gated Logger at error level (gw:5086); review 34 F3.
 	 *
 	 * @testWith ["yes", true]
 	 *           ["no", false]

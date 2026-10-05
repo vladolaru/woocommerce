@@ -1322,6 +1322,8 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		};
 		$sut        = $this->create_service(
 			array(
+				// A SEPA Debit PaymentMethod reduced to what the token reads: Stripe API reference, PaymentMethod object
+				// (`type`, `sepa_debit.last4`); client 11.1.0 reads `sepa_debit.last4` (class-wc-payments-token-service.php:81-85).
 				'pm_sepa' => array(
 					'id'         => 'pm_sepa',
 					'type'       => 'sepa_debit',
@@ -1375,6 +1377,8 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		};
 		$sut              = $this->create_service(
 			array(
+				// The SEPA Debit PaymentMethod of the detach test above (Stripe API reference, PaymentMethod object; client
+				// 11.1.0 class-wc-payments-token-service.php:81-85).
 				'pm_sepa' => array(
 					'id'         => 'pm_sepa',
 					'type'       => 'sepa_debit',
