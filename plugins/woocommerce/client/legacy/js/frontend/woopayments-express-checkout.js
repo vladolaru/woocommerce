@@ -22,6 +22,7 @@
 	var iapiSelectionRefreshTimer = null;
 	var iapiObserverInstalled = false;
 	var expressButtonAvailable = false;
+	var variationChangeAwaitsButton = false;
 	var navigate = function ( url ) {
 		window.location.href = url;
 	};
@@ -3065,9 +3066,22 @@
 			$( document.body ).on(
 				'woocommerce_variation_has_changed',
 				function () {
+					variationChangeAwaitsButton = isAddToCartBlocked();
 					updateButtonData();
 				}
 			);
+
+			// Native departure from the client: WooCommerce fires the change above before it enables the add-to-cart
+			// button for a variation chosen on a cleared form (it does so on `show_variation`), so the change finds
+			// the form blocked and skips the re-price. Re-price that change once WooCommerce shows the variation.
+			$( document.body ).on( 'show_variation', function () {
+				if ( ! variationChangeAwaitsButton ) {
+					return;
+				}
+
+				variationChangeAwaitsButton = false;
+				updateButtonData();
+			} );
 
 			// Every quantity input blocks the button at once, so it cannot be clicked at a stale amount, and the
 			// wallet is re-priced 250ms after the last one (client wc-product-page.js:64-83).

@@ -3153,6 +3153,72 @@ describe( 'WooPayments express checkout', () => {
 			).toBe( true );
 		} );
 
+		// Native departure: the client skips this re-price, because WooCommerce enables the add-to-cart button only
+		// after `woocommerce_variation_has_changed` (add-to-cart-variation.js onChange, show_variation 300ms later).
+		test( 'prices a variation chosen on a cleared classic form once WooCommerce enables the button', async () => {
+			const resolveClick = jest.fn();
+			setClassicProductForm( {
+				variable: true,
+				buttonClasses: 'disabled wc-variation-selection-needed',
+			} );
+			window.wp.apiFetch.mockResolvedValue( getVirtualCart( 3000, 1 ) );
+			await mountReadyWallet();
+
+			document.querySelector( '.variations select' ).value = 'large';
+			document.querySelector( 'input[name="variation_id"]' ).value = '125';
+			bodyEventHandlers.woocommerce_variation_has_changed();
+			await flushMicrotasks();
+			expect( window.wp.apiFetch ).not.toHaveBeenCalled();
+
+			document
+				.querySelector( '.single_add_to_cart_button' )
+				.classList.remove( 'disabled', 'wc-variation-selection-needed' );
+			bodyEventHandlers.show_variation();
+			await flushMicrotasks();
+
+			expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 1 );
+			expect( window.wp.apiFetch ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					path: '/wc/store/v1/cart/add-item?currency=USD',
+					data: {
+						id: 125,
+						quantity: 1,
+						variation: [
+							{ attribute: 'attribute_pa_size', value: 'large' },
+						],
+					},
+				} )
+			);
+			expect( elements.update ).toHaveBeenCalledWith(
+				expect.objectContaining( { amount: 3000 } )
+			);
+
+			await expressHandlers.click( { resolve: resolveClick } );
+
+			expect( resolveClick ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					lineItems: [ { amount: 3000, name: 'Express Widget' } ],
+				} )
+			);
+		} );
+
+		test( 'prices a switch between chosen classic variations once', async () => {
+			setClassicProductForm( {
+				variable: true,
+				size: 'large',
+				variationId: '125',
+			} );
+			window.wp.apiFetch.mockResolvedValue( getVirtualCart( 3000, 1 ) );
+			await mountReadyWallet();
+
+			bodyEventHandlers.woocommerce_variation_has_changed();
+			await flushMicrotasks();
+			bodyEventHandlers.show_variation();
+			await flushMicrotasks();
+
+			expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 1 );
+		} );
+
 		test( 'hides the wallet when the re-priced cart cannot be fetched', async () => {
 			setClassicProductForm( {
 				variable: true,
