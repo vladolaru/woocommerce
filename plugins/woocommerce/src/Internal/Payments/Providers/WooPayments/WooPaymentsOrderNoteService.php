@@ -1283,8 +1283,10 @@ class WooPaymentsOrderNoteService {
 				break;
 		}
 
+		// The message is the platform's text, so it is escaped as the checkout path escapes it; the plugin-catalog rendering
+		// above stays as the client wrote it, so a note written before cutover still matches.
 		/* translators: %s: provider error message. */
-		return sprintf( __( 'With the following message: <code>%s</code>', 'woocommerce' ), $message );
+		return sprintf( __( 'With the following message: <code>%s</code>', 'woocommerce' ), esc_html( $message ) );
 	}
 
 	/**

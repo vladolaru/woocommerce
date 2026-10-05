@@ -1548,6 +1548,41 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox payment_intent.payment_failed writes the platform's error message into the note as text, not markup.
+	 */
+	public function test_payment_intent_failed_note_escapes_the_platform_message(): void {
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_payment_method_id', 'pm_123' );
+		$order->save();
+
+		$this->sut->process(
+			$this->create_payment_intent_event(
+				'payment_intent.payment_failed',
+				$order,
+				array(
+					'status'             => 'requires_payment_method',
+					// last_payment_error carries the platform's free-text message (Stripe API PaymentIntent object).
+					'last_payment_error' => array(
+						'code'           => 'card_declined',
+						'message'        => 'Declined <b>by issuer</b> & "flagged"',
+						'payment_method' => array(
+							'id'   => 'pm_123',
+							'type' => 'card',
+						),
+					),
+				),
+				array( 'id' => 'evt_escaped_failure_note' )
+			)
+		);
+
+		$notes  = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		$failed = array_values( array_filter( $notes, static fn( $note ): bool => false !== strpos( $note->content, 'With the following message' ) ) );
+		$this->assertCount( 1, $failed );
+		$this->assertStringContainsString( 'Declined &lt;b&gt;by issuer&lt;/b&gt;', $failed[0]->content );
+		$this->assertStringNotContainsString( '<b>by issuer</b>', $failed[0]->content );
+	}
+
+	/**
 	 * @testdox payment_intent.payment_failed marks AU BECS debit orders failed.
 	 */
 	public function test_payment_intent_failed_marks_au_becs_debit_order_failed(): void {
