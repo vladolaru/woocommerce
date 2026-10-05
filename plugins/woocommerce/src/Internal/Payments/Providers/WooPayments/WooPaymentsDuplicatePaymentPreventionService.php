@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
@@ -361,26 +362,45 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	/**
 	 * Tell the merchant, once for each intent, that the order's attached payment is disputed.
 	 *
-	 * Every submit for the order is refused while the dispute stands, so the note is written only when the order has no
-	 * note yet for this intent.
+	 * Every submit for the order is refused while the dispute stands. Overlapping submits each loaded the order before this
+	 * runs, so the marker is read again from storage under the order payment lock, as the dispute webhook does for its note
+	 * (WooPaymentsDisputeEventHandler::process_dispute_created()). While another operation holds the lock, the next submit
+	 * writes the note.
 	 *
 	 * @param WC_Order $order     Order being paid.
 	 * @param string   $intent_id The attached PaymentIntent.
 	 */
 	private function add_disputed_intent_note_once( WC_Order $order, string $intent_id ): void {
-		if ( $intent_id === (string) $order->get_meta( self::DISPUTED_INTENT_NOTED_META, true ) ) {
+		$store      = wc_get_container()->get( OrderPaymentStore::class );
+		$profile    = wc_get_container()->get( WooPaymentsPersistenceProfile::class );
+		$lock_token = $store->claim_order_payment_lock_for_operation( $order, $profile, 'disputed_intent_note_' . $intent_id, 'disputed intent note' );
+		if ( null === $lock_token ) {
+			$store->log_order_payment_lock_refusal( $order, $profile, 'disputed intent note' );
 			return;
 		}
 
-		$order->add_order_note(
-			sprintf(
-				/* translators: %s: PaymentIntent ID. */
-				__( 'The payment attached to this order (%s) is disputed, so the customer was not charged again. Check the dispute in WooPayments before the customer pays for this order.', 'woocommerce' ),
-				$intent_id
-			)
-		);
-		$order->update_meta_data( self::DISPUTED_INTENT_NOTED_META, $intent_id );
-		$order->save_meta_data();
+		try {
+			$fresh_order = $this->get_lifecycle_service()->get_fresh_order_from_data_store( $order );
+			if ( $intent_id === (string) $fresh_order->get_meta( self::DISPUTED_INTENT_NOTED_META, true ) ) {
+				return;
+			}
+
+			$note_id = $fresh_order->add_order_note(
+				sprintf(
+					/* translators: %s: PaymentIntent ID. */
+					__( 'The payment attached to this order (%s) is disputed, so the customer was not charged again. Check the dispute in WooPayments before the customer pays for this order.', 'woocommerce' ),
+					$intent_id
+				)
+			);
+			if ( 0 >= (int) $note_id ) {
+				return;
+			}
+
+			$fresh_order->update_meta_data( self::DISPUTED_INTENT_NOTED_META, $intent_id );
+			$fresh_order->save_meta_data();
+		} finally {
+			$store->release_order_payment_lock( $order, $profile, $lock_token );
+		}
 	}
 
 	/**

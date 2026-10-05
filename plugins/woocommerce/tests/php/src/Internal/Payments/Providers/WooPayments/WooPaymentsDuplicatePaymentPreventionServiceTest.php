@@ -5,10 +5,12 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use WC_Order;
 use WC_Payment_Gateway;
 use WC_Unit_Test_Case;
@@ -576,6 +578,110 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 			static fn( object $note ): bool => false !== strpos( (string) $note->content, 'pi_existing' ) && false !== strpos( (string) $note->content, 'disputed' )
 		);
 		$this->assertCount( 1, $notes );
+	}
+
+	/**
+	 * @testdox Two submits that loaded the order before either noted the dispute write the dispute note once.
+	 *
+	 * Both requests read the order before the guard runs; the second one's instance holds no marker even after the first
+	 * saved it, so the marker is read again from storage while the note is written.
+	 */
+	public function test_disputed_note_is_written_once_for_order_instances_loaded_before_either_submit(): void {
+		$order  = $this->create_order_with_disputed_attached_intent();
+		$sut    = $this->create_service( $this->create_session(), $this->create_api_client_answering( $this->create_charged_intent( $order, array( 'disputed' => true ) ) ) );
+		$first  = wc_get_order( $order->get_id() );
+		$second = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $first );
+		$this->assertInstanceOf( WC_Order::class, $second );
+
+		$this->assertInstanceOf( WP_Error::class, $sut->check_payment_intent_attached_to_order_succeeded( $first, $this->create_gateway() ) );
+		$this->assertInstanceOf( WP_Error::class, $sut->check_payment_intent_attached_to_order_succeeded( $second, $this->create_gateway() ) );
+
+		$this->assertCount( 1, $this->get_disputed_intent_notes( $order ) );
+	}
+
+	/**
+	 * @testdox The dispute note waits for the next submit while another operation holds the order payment lock, and the submit is still refused.
+	 */
+	public function test_disputed_note_is_not_written_while_another_operation_holds_the_order(): void {
+		$order   = $this->create_order_with_disputed_attached_intent();
+		$sut     = $this->create_service( $this->create_session(), $this->create_api_client_answering( $this->create_charged_intent( $order, array( 'disputed' => true ) ) ) );
+		$store   = wc_get_container()->get( OrderPaymentStore::class );
+		$profile = wc_get_container()->get( WooPaymentsPersistenceProfile::class );
+		$token   = $store->claim_order_payment_lock_for_operation( $order, $profile, 'dispute_webhook_dp_held', 'dispute webhook' );
+		$this->assertIsString( $token );
+		$logger = RecordingWcLogger::install();
+
+		$held_result = $sut->check_payment_intent_attached_to_order_succeeded( wc_get_order( $order->get_id() ), $this->create_gateway() );
+		$held_notes  = $this->get_disputed_intent_notes( $order );
+		$store->release_order_payment_lock( $order, $profile, $token );
+		$free_result = $sut->check_payment_intent_attached_to_order_succeeded( wc_get_order( $order->get_id() ), $this->create_gateway() );
+
+		$this->assertInstanceOf( WP_Error::class, $held_result );
+		$this->assertSame( WooPaymentsDuplicatePaymentPreventionService::ERROR_DISPUTED_INTENT, $held_result->get_error_code() );
+		$this->assertSame( array(), $held_notes, 'No note may be written while another operation holds the order.' );
+		$refusals = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] && str_starts_with( $line[1], 'order payment lock refused: order ' . $order->get_id() . ', refused disputed intent note, held by dispute webhook' ) ) );
+		$this->assertCount( 1, $refusals, 'The refused note is logged like every other lock refusal.' );
+		$this->assertInstanceOf( WP_Error::class, $free_result );
+		$this->assertCount( 1, $this->get_disputed_intent_notes( $order ) );
+		$next_token = $store->claim_order_payment_lock_for_operation( $order, $profile, 'refund_key', 'refund' );
+		$this->assertIsString( $next_token, 'The guard must release the lock it took.' );
+		$store->release_order_payment_lock( $order, $profile, $next_token );
+	}
+
+	/**
+	 * @testdox A dispute note that could not be stored is not marked as written, so the next submit writes it.
+	 */
+	public function test_disputed_note_that_was_not_stored_is_written_by_the_next_submit(): void {
+		global $wpdb;
+
+		$order = $this->create_order_with_disputed_attached_intent();
+		$sut   = $this->create_service( $this->create_session(), $this->create_api_client_answering( $this->create_charged_intent( $order, array( 'disputed' => true ) ) ) );
+		// An empty query makes wpdb::query() return false, so wp_insert_comment() and add_order_note() store nothing.
+		$fail_note_inserts = static fn( $query ) => str_starts_with( ltrim( (string) $query ), "INSERT INTO `{$wpdb->comments}`" ) ? '' : $query;
+		add_filter( 'query', $fail_note_inserts );
+
+		try {
+			$failed_result = $sut->check_payment_intent_attached_to_order_succeeded( wc_get_order( $order->get_id() ), $this->create_gateway() );
+		} finally {
+			remove_filter( 'query', $fail_note_inserts );
+		}
+		$after_failure = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $after_failure );
+		$this->assertInstanceOf( WP_Error::class, $failed_result );
+		$this->assertSame( array(), $this->get_disputed_intent_notes( $order ) );
+		$this->assertSame( '', (string) $after_failure->get_meta( '_wcpay_disputed_intent_noted', true ), 'A note that was not stored must not be marked as written.' );
+
+		$this->assertInstanceOf( WP_Error::class, $sut->check_payment_intent_attached_to_order_succeeded( wc_get_order( $order->get_id() ), $this->create_gateway() ) );
+		$this->assertCount( 1, $this->get_disputed_intent_notes( $order ) );
+	}
+
+	/**
+	 * Create a pending order whose `_intent_id` names the attached intent.
+	 *
+	 * @return WC_Order
+	 */
+	private function create_order_with_disputed_attached_intent(): WC_Order {
+		$order = $this->create_order( 'hash', 'pending' );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * Get the order's notes that name the attached intent as disputed.
+	 *
+	 * @param WC_Order $order Order.
+	 * @return array<int,object>
+	 */
+	private function get_disputed_intent_notes( WC_Order $order ): array {
+		return array_values(
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( object $note ): bool => false !== strpos( (string) $note->content, 'pi_existing' ) && false !== strpos( (string) $note->content, 'disputed' )
+			)
+		);
 	}
 
 	/**
