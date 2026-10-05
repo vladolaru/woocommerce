@@ -188,7 +188,6 @@ describe( 'WooPayments express checkout', () => {
 			needs_shipping: true,
 			totals: {
 				total_price: '5000',
-				total_refund: '0',
 				currency_code: 'USD',
 			},
 			billing_address: {
@@ -218,7 +217,6 @@ describe( 'WooPayments express checkout', () => {
 			needs_shipping: true,
 			totals: {
 				total_price: '4200',
-				total_refund: '0',
 				currency_code: 'EUR',
 			},
 			extensions: {
@@ -275,11 +273,16 @@ describe( 'WooPayments express checkout', () => {
 			'" />';
 	}
 
+	// Store API order (GET /wc/store/v1/order/{id}, docs/apis/store-api/resources-endpoints/order.md); unlike the cart,
+	// its totals carry `total_refund` (src/StoreApi/Schemas/V1/OrderSchema.php).
 	function getOrderPayResponse() {
 		var cartResponse = getCartResponse();
 
 		return Object.assign( {}, cartResponse, {
 			needs_shipping: false,
+			totals: Object.assign( {}, cartResponse.totals, {
+				total_refund: '0',
+			} ),
 			billing_address: Object.assign( {}, cartResponse.billing_address, {
 				email: 'order@example.test',
 			} ),
@@ -727,7 +730,6 @@ describe( 'WooPayments express checkout', () => {
 		return Object.assign( getCartResponse(), {
 			totals: {
 				total_price: String( total ),
-				total_refund: '0',
 				currency_code: 'USD',
 			},
 			items: [],
@@ -1842,7 +1844,6 @@ describe( 'WooPayments express checkout', () => {
 			needs_shipping: false,
 			totals: {
 				total_price: '3000',
-				total_refund: '0',
 				currency_code: 'USD',
 			},
 		} );
@@ -1909,7 +1910,6 @@ describe( 'WooPayments express checkout', () => {
 			needs_shipping: false,
 			totals: {
 				total_price: '3000',
-				total_refund: '0',
 				currency_code: 'USD',
 			},
 		} );
@@ -1998,7 +1998,6 @@ describe( 'WooPayments express checkout', () => {
 			needs_shipping: false,
 			totals: {
 				total_price: '4000',
-				total_refund: '0',
 				currency_code: 'USD',
 			},
 		} );
@@ -2070,7 +2069,6 @@ describe( 'WooPayments express checkout', () => {
 						needs_shipping: false,
 						totals: {
 							total_price: '4000',
-							total_refund: '0',
 							currency_code: 'USD',
 						},
 					},
@@ -2085,7 +2083,6 @@ describe( 'WooPayments express checkout', () => {
 					needs_shipping: false,
 					totals: {
 						total_price: '4000',
-						total_refund: '0',
 						currency_code: 'USD',
 					},
 				} )
@@ -2146,7 +2143,6 @@ describe( 'WooPayments express checkout', () => {
 				needs_shipping: false,
 				totals: {
 					total_price: '4000',
-					total_refund: '0',
 					currency_code: 'USD',
 				},
 			} )
@@ -2205,7 +2201,6 @@ describe( 'WooPayments express checkout', () => {
 				needs_shipping: false,
 				totals: {
 					total_price: '5000',
-					total_refund: '0',
 					currency_code: 'USD',
 				},
 			} );
@@ -2234,7 +2229,6 @@ describe( 'WooPayments express checkout', () => {
 				needs_shipping: false,
 				totals: {
 					total_price: '4000',
-					total_refund: '0',
 					currency_code: 'USD',
 				},
 			} )
@@ -2302,7 +2296,6 @@ describe( 'WooPayments express checkout', () => {
 					needs_shipping: false,
 					totals: {
 						total_price: '3000',
-						total_refund: '0',
 						currency_code: 'USD',
 					},
 				},
@@ -2346,7 +2339,6 @@ describe( 'WooPayments express checkout', () => {
 						needs_shipping: false,
 						totals: {
 							total_price: '3000',
-							total_refund: '0',
 							currency_code: 'USD',
 						},
 					},
@@ -2432,7 +2424,6 @@ describe( 'WooPayments express checkout', () => {
 						needs_shipping: false,
 						totals: {
 							total_price: '2500',
-							total_refund: '0',
 							currency_code: 'USD',
 						},
 					},
@@ -2497,7 +2488,6 @@ describe( 'WooPayments express checkout', () => {
 					needs_shipping: true,
 					totals: {
 						total_price: '4500',
-						total_refund: '0',
 						currency_code: 'USD',
 					},
 					items: [],
@@ -2550,7 +2540,6 @@ describe( 'WooPayments express checkout', () => {
 						needs_shipping: false,
 						totals: {
 							total_price: '2500',
-							total_refund: '0',
 							currency_code: 'USD',
 						},
 					},
@@ -2616,7 +2605,6 @@ describe( 'WooPayments express checkout', () => {
 						needs_shipping: true,
 						totals: {
 							total_price: '2500',
-							total_refund: '0',
 							currency_code: 'USD',
 						},
 					},
@@ -2632,7 +2620,6 @@ describe( 'WooPayments express checkout', () => {
 						needs_shipping: true,
 						totals: {
 							total_price: '3000',
-							total_refund: '0',
 							currency_code: 'USD',
 						},
 						items: [
@@ -2876,7 +2863,6 @@ describe( 'WooPayments express checkout', () => {
 						needs_shipping: true,
 						totals: {
 							total_price: '3000',
-							total_refund: '0',
 							currency_code: 'USD',
 						},
 						items: [],
@@ -2894,7 +2880,6 @@ describe( 'WooPayments express checkout', () => {
 						needs_shipping: true,
 						totals: {
 							total_price: '3500',
-							total_refund: '0',
 							currency_code: 'USD',
 						},
 						items: [
@@ -2998,7 +2983,6 @@ describe( 'WooPayments express checkout', () => {
 				needs_shipping: false,
 				totals: {
 					total_price: '4500',
-					total_refund: '0',
 					total_tax: '0',
 					total_shipping: '0',
 					currency_code: 'USD',
@@ -3220,13 +3204,13 @@ describe( 'WooPayments express checkout', () => {
 			};
 		}
 
-		// A product with nothing to ship: no shipping address event ever corrects the sheet.
+		// A product with nothing to ship: no shipping address event ever corrects the sheet. Store API cart shape:
+		// docs/apis/store-api/resources-endpoints/cart.md ("Cart Response": items[].quantity, items[].totals, totals).
 		function getVirtualCart( total, quantity ) {
 			return {
 				needs_shipping: false,
 				totals: {
 					total_price: String( total ),
-					total_refund: '0',
 					total_tax: '0',
 					total_shipping: '0',
 					currency_code: 'USD',
@@ -4158,7 +4142,6 @@ describe( 'WooPayments express checkout', () => {
 					],
 					totals: {
 						total_price: '0',
-						total_refund: '0',
 						total_items: '0',
 						total_tax: '0',
 						total_shipping: '0',
@@ -4332,7 +4315,6 @@ describe( 'WooPayments express checkout', () => {
 						needs_shipping: false,
 						totals: {
 							total_price: '2500',
-							total_refund: '0',
 							currency_code: 'USD',
 						},
 						items: [],
@@ -4443,7 +4425,6 @@ describe( 'WooPayments express checkout', () => {
 			return Object.assign( getCartResponse(), {
 				totals: {
 					total_price: '5000',
-					total_refund: '0',
 					currency_code: currency,
 				},
 				shipping_rates: [],
