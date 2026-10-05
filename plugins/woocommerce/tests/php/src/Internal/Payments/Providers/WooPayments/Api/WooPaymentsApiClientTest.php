@@ -1997,13 +1997,14 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Listing the account's payment intents created since a time reads the platform's intentions list with created[gte] and limit as query args.
+	 * @testdox Listing the account's payment intents created within a time range reads the platform's intentions list with created[gte], created[lte] and limit as query args.
 	 *
 	 * The platform's GET intentions route declares `created` and forwards declared args to Stripe's PaymentIntents list
 	 * unchanged (wpcom `wcpay/class-intentions-controller.php:198-210`, `class-base-controller.php:425-430`), and Stripe
-	 * filters by creation time with `created[gte]` (https://docs.stripe.com/api/payment_intents/list).
+	 * filters by creation time with `created[gte]` and `created[lte]`, both inclusive
+	 * (https://docs.stripe.com/api/payment_intents/list; data/t62-ambiguous-timeout-hold.md, "created[lte] live check").
 	 */
-	public function test_list_payment_intentions_created_since_reads_the_account_intentions_list(): void {
+	public function test_list_payment_intentions_created_between_reads_the_account_intentions_list(): void {
 		list( $sut, $http_client ) = $this->make_sut(
 			true,
 			array(
@@ -2018,7 +2019,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$result = $sut->list_payment_intentions_created_since( 1700000000, 100 );
+		$result = $sut->list_payment_intentions_created_between( 1700000000, 1700007500, 100 );
 
 		$this->assertSame( 'pi_recent', $result['data'][0]['id'] );
 		$this->assertSame( 'GET', $http_client->last_method );
@@ -2029,7 +2030,10 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertSame(
 			array(
 				'test_mode' => '1',
-				'created'   => array( 'gte' => '1700000000' ),
+				'created'   => array(
+					'gte' => '1700000000',
+					'lte' => '1700007500',
+				),
 				'limit'     => '100',
 			),
 			$query

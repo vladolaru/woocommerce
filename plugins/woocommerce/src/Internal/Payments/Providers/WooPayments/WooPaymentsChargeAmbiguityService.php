@@ -60,12 +60,20 @@ class WooPaymentsChargeAmbiguityService {
 	private const LOOKBACK_SECONDS = 300;
 
 	/**
-	 * Seconds before the recorded failure from which the account's intents are listed.
+	 * Seconds before the first recorded failure from which the account's intents are listed.
 	 *
 	 * Stripe filters `created` by its own clock and the failure time comes from the store's, so the window is wider than
 	 * the request timing alone needs. A wider window can only turn a charge into "cannot check", never the reverse.
 	 */
 	private const ACCOUNT_LOOKBACK_SECONDS = 3600;
+
+	/**
+	 * Seconds after the latest recorded failure up to which the account's intents are listed.
+	 *
+	 * The same clock difference applies after the failure, and the platform can still create the intent after the store
+	 * gave up waiting. A fixed end keeps the answer the same on every attempt instead of filling up with newer intents.
+	 */
+	private const ACCOUNT_LOOKAHEAD_SECONDS = 3600;
 
 	/**
 	 * Native API client.
@@ -90,19 +98,20 @@ class WooPaymentsChargeAmbiguityService {
 	 *
 	 * Lists the customer the earlier requests were sent with. When they were sent with more than one customer, or Stripe
 	 * or the platform refuses the customer's list for good (a deleted customer, for example) or answers without a list,
-	 * lists the account's intents created since shortly before the first failure instead, which match on the order
-	 * whatever the customer. A transport failure or a server error leaves the lookup failed, since a later attempt may
-	 * read the list.
+	 * lists the account's intents created between shortly before the first failure and shortly after the latest one
+	 * instead, which match on the order whatever the customer. A transport failure or a server error leaves the lookup
+	 * failed, since a later attempt may read the list.
 	 *
-	 * @param WC_Order          $order        Order whose earlier charge is looked up.
-	 * @param array<int,string> $customer_ids Customers the earlier charge requests under the key were sent with.
-	 * @param int               $failed_at    Unix time the first earlier charge failure was recorded.
+	 * @param WC_Order          $order          Order whose earlier charge is looked up.
+	 * @param array<int,string> $customer_ids   Customers the earlier charge requests under the key were sent with.
+	 * @param int               $failed_at      Unix time the first earlier charge failure was recorded.
+	 * @param int               $last_failed_at Unix time the latest earlier charge failure was recorded.
 	 * @return array{status:string,intents:array<int,array<string,mixed>>} One of the LOOKUP_* answers, with the order's
 	 *                                                                    intents, newest first, when it is LOOKUP_DONE.
 	 */
-	public function find_order_intents( WC_Order $order, array $customer_ids, int $failed_at ): array {
+	public function find_order_intents( WC_Order $order, array $customer_ids, int $failed_at, int $last_failed_at ): array {
 		if ( 1 !== count( $customer_ids ) ) {
-			return $this->find_order_intents_created_since_failure( $order, $failed_at );
+			return $this->find_order_intents_created_around_failures( $order, $failed_at, $last_failed_at );
 		}
 
 		try {
@@ -110,11 +119,11 @@ class WooPaymentsChargeAmbiguityService {
 		} catch ( WooPaymentsApiException $exception ) {
 			return $this->api_client->is_ambiguous_request_failure( $exception )
 				? self::lookup( self::LOOKUP_FAILED )
-				: $this->find_order_intents_created_since_failure( $order, $failed_at );
+				: $this->find_order_intents_created_around_failures( $order, $failed_at, $last_failed_at );
 		}
 
 		if ( ! isset( $list['data'] ) || ! is_array( $list['data'] ) ) {
-			return $this->find_order_intents_created_since_failure( $order, $failed_at );
+			return $this->find_order_intents_created_around_failures( $order, $failed_at, $last_failed_at );
 		}
 
 		$order_intents = $this->get_order_intents_from_list( $list, $order, $failed_at - self::LOOKBACK_SECONDS );
@@ -123,19 +132,22 @@ class WooPaymentsChargeAmbiguityService {
 	}
 
 	/**
-	 * List the order's PaymentIntents among the account's intents created since shortly before the recorded failure.
+	 * List the order's PaymentIntents among the account's intents created around the recorded failures.
 	 *
-	 * A definitive refusal, or a page that cannot be proven complete, cannot change on a later attempt: every listed intent
-	 * is inside the window and the window only grows, so a full page can never reach back past it.
+	 * The window runs from shortly before the first failure to shortly after the latest one: the only request under the
+	 * key that Stripe can have run is one whose answer was lost, so its intent is inside. A definitive refusal, or a page
+	 * that cannot be proven complete, cannot change on a later attempt: every listed intent is inside the window, so a
+	 * full page can never reach back past its start.
 	 *
-	 * @param WC_Order $order     Order whose earlier charge is looked up.
-	 * @param int      $failed_at Unix time the first earlier charge failure was recorded.
+	 * @param WC_Order $order          Order whose earlier charge is looked up.
+	 * @param int      $failed_at      Unix time the first earlier charge failure was recorded.
+	 * @param int      $last_failed_at Unix time the latest earlier charge failure was recorded.
 	 * @return array{status:string,intents:array<int,array<string,mixed>>}
 	 */
-	private function find_order_intents_created_since_failure( WC_Order $order, int $failed_at ): array {
+	private function find_order_intents_created_around_failures( WC_Order $order, int $failed_at, int $last_failed_at ): array {
 		$created_since = $failed_at - self::ACCOUNT_LOOKBACK_SECONDS;
 		try {
-			$list = $this->api_client->list_payment_intentions_created_since( $created_since, self::LIST_LIMIT );
+			$list = $this->api_client->list_payment_intentions_created_between( $created_since, $last_failed_at + self::ACCOUNT_LOOKAHEAD_SECONDS, self::LIST_LIMIT );
 		} catch ( WooPaymentsApiException $exception ) {
 			return self::lookup( $this->api_client->is_ambiguous_request_failure( $exception ) ? self::LOOKUP_FAILED : self::LOOKUP_CANNOT_CHECK );
 		}

@@ -547,8 +547,9 @@ class WooPaymentsProviderGatewayAdapter {
 	 * Get this order's record of the ambiguous charge failures that kept its charge key.
 	 *
 	 * @param WC_Order $order Order being charged.
-	 * @return array{customers:array<int,string>,failed_at:int}|null Null when the order has no record of its own, or the
-	 *                                                               record names no customer to look up.
+	 * @return array{customers:array<int,string>,failed_at:int,last_failed_at:int}|null Null when the order has no record
+	 *                                                                                  of its own, or the record names no
+	 *                                                                                  customer to look up.
 	 */
 	private function get_charge_ambiguity_record( WC_Order $order ): ?array {
 		$record = $this->read_charge_ambiguity_record( $order );
@@ -557,18 +558,20 @@ class WooPaymentsProviderGatewayAdapter {
 		}
 
 		return array(
-			'customers' => $record['customers'],
-			'failed_at' => $record['failed_at'],
+			'customers'      => $record['customers'],
+			'failed_at'      => $record['failed_at'],
+			'last_failed_at' => $record['last_failed_at'],
 		);
 	}
 
 	/**
 	 * Read the ambiguity record when it names this order.
 	 *
-	 * A record written with a single `customer` is read as a list of one.
+	 * A record written with a single `customer` is read as a list of one, and one written without `last_failed_at` as
+	 * failing last at its first failure.
 	 *
 	 * @param WC_Order $order Order being charged.
-	 * @return array{order_id:int,customers:array<int,string>,failed_at:int,cannot_check_noted:bool}|null
+	 * @return array{order_id:int,customers:array<int,string>,failed_at:int,last_failed_at:int,cannot_check_noted:bool}|null
 	 */
 	private function read_charge_ambiguity_record( WC_Order $order ): ?array {
 		$record = $order->get_meta( self::CHARGE_AMBIGUITY_META, true );
@@ -577,11 +580,13 @@ class WooPaymentsProviderGatewayAdapter {
 		}
 
 		$customers = $record['customers'] ?? array( $record['customer'] ?? '' );
+		$failed_at = (int) ( $record['failed_at'] ?? 0 );
 
 		return array(
 			'order_id'           => $order->get_id(),
 			'customers'          => array_values( array_filter( is_array( $customers ) ? $customers : array(), 'is_string' ) ),
-			'failed_at'          => (int) ( $record['failed_at'] ?? 0 ),
+			'failed_at'          => $failed_at,
+			'last_failed_at'     => max( $failed_at, (int) ( $record['last_failed_at'] ?? 0 ) ),
 			'cannot_check_noted' => ! empty( $record['cannot_check_noted'] ),
 		);
 	}
@@ -591,19 +596,23 @@ class WooPaymentsProviderGatewayAdapter {
 	 *
 	 * A later ambiguous answer under the same key merges into the order's record instead of replacing it: the earlier
 	 * request may have taken the money under the first customer, inside the window from the first failure, so both stay
-	 * in view, and a merchant already told the payment cannot be checked is not told again. A request sent with no
-	 * customer is recorded as an empty entry.
+	 * in view, and a merchant already told the payment cannot be checked is not told again. The latest failure time moves
+	 * on, since the later request may be the one Stripe ran under the key, when the earlier one never reached it. A
+	 * request sent with no customer is recorded as an empty entry.
 	 *
 	 * @param WC_Order $order       Order being charged.
 	 * @param string   $customer_id Customer the request was sent with.
 	 */
 	private function record_charge_ambiguity( WC_Order $order, string $customer_id ): void {
+		$now    = time();
 		$record = $this->read_charge_ambiguity_record( $order ) ?? array(
 			'order_id'           => $order->get_id(),
 			'customers'          => array(),
-			'failed_at'          => time(),
+			'failed_at'          => $now,
 			'cannot_check_noted' => false,
 		);
+
+		$record['last_failed_at'] = $now;
 		if ( ! in_array( $customer_id, $record['customers'], true ) ) {
 			$record['customers'][] = $customer_id;
 		}
@@ -632,10 +641,11 @@ class WooPaymentsProviderGatewayAdapter {
 	private function settle_earlier_charge( PaymentContext $context, array &$request_data, string $attempt_key, string $sent_key ) {
 		$order  = $context->get_order();
 		$record = $this->get_charge_ambiguity_record( $order ) ?? array(
-			'customers' => array( '' ),
-			'failed_at' => 0,
+			'customers'      => array( '' ),
+			'failed_at'      => 0,
+			'last_failed_at' => time(),
 		);
-		$lookup = $this->ambiguity_service->find_order_intents( $order, $record['customers'], $record['failed_at'] );
+		$lookup = $this->ambiguity_service->find_order_intents( $order, $record['customers'], $record['failed_at'], $record['last_failed_at'] );
 		if ( WooPaymentsChargeAmbiguityService::LOOKUP_CANNOT_CHECK === $lookup['status'] ) {
 			$this->ambiguity_service->log_lookup_cannot_check( $order, $sent_key );
 			$this->add_charge_cannot_be_checked_note_once( $order );

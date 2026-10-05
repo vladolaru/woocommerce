@@ -1025,6 +1025,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$http_client            = new FakeWooPaymentsHttpClient();
 		$http_client->responses = array( self::platform_bad_gateway(), self::platform_bad_gateway() );
 		$sut                    = $this->create_timeout_adapter( $http_client, 'cus_b' );
+		$before                 = time();
 
 		$this->charge_attempt( $sut, $order, 'pm_new', 'key_second' );
 		$this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_other', 'key_third' );
@@ -1035,6 +1036,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( $order->get_id(), $record['order_id'] ?? null );
 		$this->assertSame( array( 'cus_a', 'cus_b' ), $record['customers'] ?? null, 'Every customer sent under the key, each once.' );
 		$this->assertSame( $earliest, $record['failed_at'] ?? null, 'The earliest failure time stays.' );
+		$this->assertGreaterThanOrEqual( $before, $record['last_failed_at'] ?? 0, 'The latest failure time moves on.' );
 		$this->assertTrue( $record['cannot_check_noted'] ?? false, 'The merchant was already told; the flag stays.' );
 	}
 
@@ -1044,8 +1046,9 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * Native recreates a deleted customer before every charge (`WooPaymentsCustomerService::update_customer_for_order()`),
 	 * so a resubmit under the kept key can go out with a new customer and fail ambiguously again. The earlier request's
 	 * intent belongs to the first customer, so the new customer's complete list proves nothing about it (review 45 F1).
-	 * The first failure is recorded well before the lookup, so the window must come from the record, not the clock
-	 * (review 47 F1).
+	 * The first failure is recorded well before the lookup, so the window must start from the record, not the clock
+	 * (review 47 F1). The second request may be the one Stripe ran under the key, so the window ends after its failure
+	 * (review 47 F2).
 	 */
 	public function test_kept_key_sent_with_two_customers_looks_up_the_account_list_from_the_first_failure(): void {
 		$order     = $this->create_woopayments_order();
@@ -1072,16 +1075,58 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			self::succeeded_charge( 'pi_new_card', 'pm_new' ),
 		);
 		$sut                    = $this->create_timeout_adapter( $http_client, 'cus_b' );
+		$before                 = time();
 		$this->charge_attempt( $sut, $order, 'pm_second', 'key_second' );
+		$last_failed_at = (int) ( wc_get_order( $order->get_id() )->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['last_failed_at'] ?? 0 );
+		$this->assertGreaterThanOrEqual( $before, $last_failed_at, 'The second failure is the latest.' );
+		$this->assertLessThanOrEqual( time(), $last_failed_at );
 
 		$outcome = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_third' );
 
 		$this->assertSame( 'pi_earlier', $outcome->get_provider_payment_id(), 'The earlier payment pays the order.' );
 		$this->assertSame( 'cus_a', $outcome->get_customer_id() );
 		$this->assertSame(
-			array( 'POST intentions key_first', 'POST intentions key_first', self::account_list_trail( $failed_at ) ),
+			array( 'POST intentions key_first', 'POST intentions key_first', self::account_list_trail( $failed_at, $last_failed_at ) ),
 			self::request_trail( $http_client ),
-			'The account list starts from the recorded first failure, and the new card is not charged.'
+			'The account list runs from the first recorded failure to the latest, and the new card is not charged.'
+		);
+	}
+
+	/**
+	 * @testdox An ambiguity record written without a latest failure time bounds the account list by its one failure time, so the earlier payment is still found.
+	 *
+	 * Records written before the window had an end carry only `failed_at`. Reading a missing latest time as 0 would end
+	 * the window before the earlier intent, so a complete page would charge the new card.
+	 */
+	public function test_record_without_a_latest_failure_time_ends_the_account_list_after_its_failure(): void {
+		$order     = $this->create_woopayments_order();
+		$failed_at = time() - 1000;
+		$order->update_meta_data( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, 'key_first' );
+		$order->update_meta_data(
+			WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META,
+			array(
+				'order_id'  => $order->get_id(),
+				'customers' => array( 'cus_sent' ),
+				'failed_at' => $failed_at,
+			)
+		);
+		$order->save_meta_data();
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			self::stripe_idempotency_error( 'key_first' ),
+			self::stripe_no_such_customer(),
+			self::intent_list( array( self::order_intent( $order, 'pi_earlier', 'succeeded', 1000, array( 'created' => $failed_at - 60 ) ) ) ),
+			self::succeeded_charge( 'pi_new_card', 'pm_new' ),
+		);
+		$sut                    = $this->create_timeout_adapter( $http_client, 'cus_sent' );
+
+		$outcome = $this->charge_attempt( $sut, $order, 'pm_new', 'key_second' );
+
+		$this->assertSame( 'pi_earlier', $outcome->get_provider_payment_id(), 'The earlier payment pays the order.' );
+		$this->assertSame(
+			array( 'POST intentions key_first', 'GET intentions?test_mode=0&customer=cus_sent&limit=100', self::account_list_trail( $failed_at, $failed_at ) ),
+			self::request_trail( $http_client ),
+			'The new card must not be charged.'
 		);
 	}
 
@@ -2260,14 +2305,18 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	/**
 	 * The account-wide intents list request, as request_trail() prints it.
 	 *
-	 * The window starts 3600 s before the recorded failure: the store's clock and Stripe's `created` may disagree, and a
-	 * wider window only turns a charge into "cannot check" (review 45 F2). The customer list keeps its 300 s window.
+	 * The window starts 3600 s before the first recorded failure: the store's clock and Stripe's `created` may disagree,
+	 * and a wider window only turns a charge into "cannot check" (review 45 F2). It ends 3600 s after the latest recorded
+	 * failure, for the same clock difference, and because a later request under the key may be the one Stripe ran (review
+	 * 47 F2). The platform honours both ends ("created[lte] live check (2026-10-05)"). The customer list keeps its 300 s
+	 * window.
 	 *
-	 * @param int $failed_at Unix time of the first recorded ambiguous failure.
+	 * @param int      $failed_at      Unix time of the first recorded ambiguous failure.
+	 * @param int|null $last_failed_at Unix time of the latest recorded ambiguous failure; the first when only one was.
 	 * @return string
 	 */
-	private static function account_list_trail( int $failed_at ): string {
-		return 'GET intentions?test_mode=0&created%5Bgte%5D=' . ( $failed_at - 3600 ) . '&limit=100';
+	private static function account_list_trail( int $failed_at, ?int $last_failed_at = null ): string {
+		return 'GET intentions?test_mode=0&created%5Bgte%5D=' . ( $failed_at - 3600 ) . '&created%5Blte%5D=' . ( ( $last_failed_at ?? $failed_at ) + 3600 ) . '&limit=100';
 	}
 
 	/**
