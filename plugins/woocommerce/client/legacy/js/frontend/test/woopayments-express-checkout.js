@@ -4629,6 +4629,52 @@ describe( 'WooPayments express checkout', () => {
 			}
 		);
 
+		// The back-forward cache restores the page as it was left, overlay included, when the shopper goes Back from the
+		// order page (`pageshow` with `persisted`, https://developer.mozilla.org/docs/Web/API/PageTransitionEvent).
+		test( 'unlocks the page when it comes back from the back-forward cache after leaving for the order', async () => {
+			const navigate = jest.fn();
+			window.wp.apiFetch
+				.mockResolvedValueOnce( getCartResponse() )
+				// Store API checkout success: payment_result.redirect_url (src/StoreApi/Schemas/V1/CheckoutSchema.php:187-191).
+				.mockResolvedValueOnce( {
+					payment_result: {
+						payment_status: 'success',
+						redirect_url: 'https://example.test/checkout/order-received/77/',
+						payment_details: [],
+					},
+				} );
+			require( '../woopayments-express-checkout' ).__test__.setNavigate(
+				navigate
+			);
+			await bodyEventHandlers.updated_checkout();
+			await flushPromises();
+			await expressHandlers.click( { resolve: jest.fn() } );
+			await expressHandlers.confirm( {
+				billingDetails: {
+					email: 'shopper@example.test',
+					name: 'Ada Lovelace',
+				},
+			} );
+			expect( navigate ).toHaveBeenCalled();
+			expect( window.jQuery.unblockUI ).not.toHaveBeenCalled();
+
+			window.dispatchEvent(
+				new window.PageTransitionEvent( 'pageshow', { persisted: false } )
+			);
+			expect( window.jQuery.unblockUI ).not.toHaveBeenCalled();
+
+			window.dispatchEvent(
+				new window.PageTransitionEvent( 'pageshow', { persisted: true } )
+			);
+			expect( window.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
+
+			// Only the lock the payment put up is released: a later restore leaves other page locks alone.
+			window.dispatchEvent(
+				new window.PageTransitionEvent( 'pageshow', { persisted: true } )
+			);
+			expect( window.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
+		} );
+
 		// Register row 238 (kept): without jQuery BlockUI on the page the lock and unlock do nothing, and the sheet
 		// still opens.
 		test( 'opens and cancels the sheet when jQuery BlockUI is not loaded', async () => {

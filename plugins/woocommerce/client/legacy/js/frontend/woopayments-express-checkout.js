@@ -928,9 +928,19 @@
 		}
 	}
 
+	// The back-forward cache restores the page as it was left, overlay included: Back from the order page. Client 11.1.0
+	// keeps that page locked (no pageshow handler in client/express-checkout). Removed once it has unlocked the page.
+	function unblockPageOnRestore( event ) {
+		if ( event.persisted ) {
+			window.removeEventListener( 'pageshow', unblockPageOnRestore );
+			unblockPage();
+		}
+	}
+
 	// Client 11.1.0 completePayment() (shortcode-buttons-express/index.js:214-217, event-handlers.js:316-318).
 	function completePayment( url ) {
 		blockPage();
+		window.addEventListener( 'pageshow', unblockPageOnRestore );
 		navigate( url );
 	}
 
