@@ -351,6 +351,8 @@ class PaymentProcessingService {
 	/**
 	 * Log a post-provider application failure so a money-moving operation is never silently dropped.
 	 *
+	 * The failure's message is left out: a provider's effects can throw its platform's text, which can hold an email or a URL.
+	 *
 	 * @param WC_Order       $order     Order object.
 	 * @param PaymentOutcome $outcome   Reconcilable provider outcome.
 	 * @param string         $operation Provider operation.
@@ -370,7 +372,8 @@ class PaymentProcessingService {
 					'order_id'                 => $order->get_id(),
 					'payment_reference'        => $outcome->get_provider_payment_id(),
 					'operation'                => $operation,
-					'error'                    => $exception->getMessage(),
+					'exception_class'          => get_class( $exception ),
+					'exception_code'           => $exception->getCode(),
 					'reconciliation_persisted' => $reconciliation_persisted,
 				)
 			);
@@ -429,7 +432,7 @@ class PaymentProcessingService {
 				$provider_outcome = $provider->refund( $context, $idempotency_key );
 			} catch ( Throwable $exception ) {
 				$provider_outcome = $this->exception_policy->to_failed_outcome( $exception );
-				$this->log_provider_failure( $order, 'refund', $idempotency_key, $exception, $provider_outcome );
+				$this->log_provider_failure( $order, 'refund', $idempotency_key, $exception );
 			}
 			$outcome = $provider_outcome;
 
@@ -700,7 +703,7 @@ class PaymentProcessingService {
 			return $provider->charge( $context, $idempotency_key );
 		} catch ( Throwable $exception ) {
 			$outcome = $this->exception_policy->to_failed_outcome( $exception );
-			$this->log_provider_failure( $context->get_order(), 'charge', $idempotency_key, $exception, $outcome );
+			$this->log_provider_failure( $context->get_order(), 'charge', $idempotency_key, $exception );
 
 			return $outcome;
 		}
@@ -769,7 +772,7 @@ class PaymentProcessingService {
 					: $provider->cancel( $context, $idempotency_key );
 			} catch ( Throwable $exception ) {
 				$provider_outcome = $this->exception_policy->to_failed_outcome( $exception );
-				$this->log_provider_failure( $order, $operation, $idempotency_key, $exception, $provider_outcome );
+				$this->log_provider_failure( $order, $operation, $idempotency_key, $exception );
 			}
 			$outcome = $provider_outcome;
 
@@ -796,15 +799,15 @@ class PaymentProcessingService {
 	/**
 	 * Log a provider operation throwable with idempotency correlation.
 	 *
-	 * Logging is best-effort and must never replace the normalized failed outcome.
+	 * Logging is best-effort and must never replace the normalized failed outcome. The exception's message and the
+	 * provider's error code are left out: both are the provider platform's text, which can hold an email, a URL or a key.
 	 *
-	 * @param WC_Order       $order           Order being processed.
-	 * @param string         $operation       Provider operation.
-	 * @param string         $idempotency_key Operation key: the per-attempt key for charges, the derived key otherwise.
-	 * @param Throwable      $exception       Provider throwable.
-	 * @param PaymentOutcome $outcome         Normalized failed outcome.
+	 * @param WC_Order  $order           Order being processed.
+	 * @param string    $operation       Provider operation.
+	 * @param string    $idempotency_key Operation key: the per-attempt key for charges, the derived key otherwise.
+	 * @param Throwable $exception       Provider throwable.
 	 */
-	private function log_provider_failure( WC_Order $order, string $operation, string $idempotency_key, Throwable $exception, PaymentOutcome $outcome ): void {
+	private function log_provider_failure( WC_Order $order, string $operation, string $idempotency_key, Throwable $exception ): void {
 		try {
 			$logger = $this->logger;
 			if ( null === $logger ) {
@@ -815,18 +818,15 @@ class PaymentProcessingService {
 				$logger = wc_get_logger();
 			}
 
-			$data                = $outcome->get_data();
-			$provider_error_code = isset( $data[ PaymentOutcome::DATA_ERROR_CODE ] ) ? (string) $data[ PaymentOutcome::DATA_ERROR_CODE ] : '';
 			$logger->error(
 				'Native payment provider operation threw an exception.',
 				array(
-					'source'              => 'woopayments-payments',
-					'operation'           => $operation,
-					'order_id'            => $order->get_id(),
-					'idempotency_key'     => $idempotency_key,
-					'exception_class'     => get_class( $exception ),
-					'exception_message'   => $exception->getMessage(),
-					'provider_error_code' => $provider_error_code,
+					'source'          => 'woopayments-payments',
+					'operation'       => $operation,
+					'order_id'        => $order->get_id(),
+					'idempotency_key' => $idempotency_key,
+					'exception_class' => get_class( $exception ),
+					'exception_code'  => $exception->getCode(),
 				)
 			);
 		} catch ( Throwable $logging_exception ) {

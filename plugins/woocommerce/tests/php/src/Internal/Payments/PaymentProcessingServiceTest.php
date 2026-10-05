@@ -493,15 +493,16 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 * @param string $operation Provider operation.
 	 */
 	public function test_provider_throwable_emits_one_structured_operation_log( string $operation ): void {
-		$order     = $this->create_woopayments_order( '10.00' );
-		$exception = new class( 'Provider transport failed.' ) extends RuntimeException {
+		$order = $this->create_woopayments_order( '10.00' );
+		// A provider's platform writes both the message and the code; either can hold an email, a URL or a key.
+		$exception = new class( 'No such customer: shopper@example.com, see https://pay.example.test/r?key=sk_test_leak123', 7 ) extends RuntimeException {
 			/**
 			 * Get the provider error code.
 			 *
 			 * @return string
 			 */
 			public function get_error_code(): string {
-				return 'provider_transport_failure';
+				return 'https://pay.example.test/code';
 			}
 		};
 
@@ -581,16 +582,19 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'Native payment provider operation threw an exception.', $logger->error_calls[0]['message'] );
 		$this->assertSame(
 			array(
-				'source'              => 'woopayments-payments',
-				'operation'           => $operation,
-				'order_id'            => $order->get_id(),
-				'idempotency_key'     => $expected_idempotency_key,
-				'exception_class'     => get_class( $exception ),
-				'exception_message'   => 'Provider transport failed.',
-				'provider_error_code' => 'provider_transport_failure',
+				'source'          => 'woopayments-payments',
+				'operation'       => $operation,
+				'order_id'        => $order->get_id(),
+				'idempotency_key' => $expected_idempotency_key,
+				'exception_class' => get_class( $exception ),
+				'exception_code'  => 7,
 			),
 			$logger->error_calls[0]['context']
 		);
+		$written = (string) wp_json_encode( $logger->error_calls );
+		foreach ( array( 'No such customer', 'shopper@example.com', 'pay.example.test', 'sk_test_leak123' ) as $provider_text ) {
+			$this->assertStringNotContainsString( $provider_text, $written );
+		}
 	}
 
 	/**
@@ -2741,6 +2745,58 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'refund', $context['operation'] );
 		$this->assertSame( 're_missing_target', $context['payment_reference'] );
 		$this->assertFalse( $context['reconciliation_persisted'] );
+	}
+
+	/**
+	 * @testdox A post-charge apply failure is logged with its class and code, never its message.
+	 */
+	public function test_post_charge_apply_failure_log_leaves_out_the_failure_message(): void {
+		$order     = $this->create_woopayments_order( '10.00' );
+		$lifecycle = new class() extends OrderPaymentLifecycleService {
+			/**
+			 * Throw a provider's platform text, as a provider effect that calls its platform can.
+			 *
+			 * @param WC_Order                      $order               Order object.
+			 * @param PaymentLifecycleEvent         $event               Lifecycle event.
+			 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
+			 * @throws RuntimeException Always.
+			 */
+			public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabulary $persistence_profile ): void {
+				unset( $order, $event, $persistence_profile );
+				throw new RuntimeException( 'No such customer: shopper@example.com, see https://pay.example.test/r?key=sk_test_leak123', 9 );
+			}
+		};
+		$lifecycle->init( $this->store );
+		$sut         = $this->build_sut_with_lifecycle( $lifecycle );
+		$provider    = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_apply_failure', '', 'pm_apply_failure' ) );
+		$fake_logger = $this->create_fake_logger();
+		add_filter(
+			'woocommerce_logging_class',
+			function () use ( $fake_logger ) {
+				return $fake_logger;
+			}
+		);
+
+		$this->expect_outcome_apply_exception(
+			static fn() => $sut->process_checkout_outcome( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_apply_failure' ), $provider )
+		);
+
+		remove_all_filters( 'woocommerce_logging_class' );
+
+		$apply_logs = array_values(
+			array_filter(
+				$fake_logger->error_calls,
+				static fn( array $call ): bool => 0 === strpos( $call['message'], 'Native payment provider operation returned a reconcilable outcome' )
+			)
+		);
+		$this->assertCount( 1, $apply_logs );
+		$this->assertSame( RuntimeException::class, $apply_logs[0]['context']['exception_class'] );
+		$this->assertSame( 9, $apply_logs[0]['context']['exception_code'] );
+		$this->assertSame( 'pi_apply_failure', $apply_logs[0]['context']['payment_reference'] );
+		$written = (string) wp_json_encode( $fake_logger->error_calls );
+		foreach ( array( 'No such customer', 'shopper@example.com', 'pay.example.test', 'sk_test_leak123' ) as $provider_text ) {
+			$this->assertStringNotContainsString( $provider_text, $written );
+		}
 	}
 
 	/**
