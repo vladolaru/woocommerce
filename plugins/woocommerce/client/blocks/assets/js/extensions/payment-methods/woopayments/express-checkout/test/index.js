@@ -2437,6 +2437,116 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				'http://localhost/checkout/?step=pay'
 			);
 		} );
+
+		// The `redirect` payment detail is the gateway's raw result (Legacy::process_payment()), not run through
+		// esc_url_raw() as redirect_url is (PaymentResult::set_redirect_url()); only an http(s) page is followed.
+		it.each( [
+			[ 'a javascript: URL', 'javascript:alert(1)', 'http://localhost/' ],
+			[ 'an invalid URL', 'http://', 'http://localhost/' ],
+			[
+				'a page-relative URL',
+				'/checkout/order-received/77/?key=wc_order_abc',
+				'http://localhost/checkout/order-received/77/?key=wc_order_abc',
+			],
+		] )(
+			'follows a fallback redirect that is %s only when it is an http(s) page',
+			async ( label, redirect, expected ) => {
+				// Store API checkout success (checkout.md "Process Order and Payment") whose redirect_url is empty and
+				// whose payment_details carry the raw redirect.
+				apiFetch.mockResolvedValueOnce( {
+					order_id: 77,
+					payment_result: {
+						payment_status: 'success',
+						payment_details: [
+							{ key: 'result', value: 'success' },
+							{ key: 'redirect', value: redirect },
+						],
+						redirect_url: '',
+					},
+				} );
+
+				await confirmGooglePay();
+
+				expect( navigate ).toHaveBeenCalledTimes( 1 );
+				expect( navigate ).toHaveBeenCalledWith( expected );
+			}
+		);
+
+		describe( 'after confirming a payment that needs 3DS', () => {
+			// update_order_status answers `{ return_url }` on success (client checkout/api/index.js:283-297; native
+			// WooPaymentsCheckoutAjaxController).
+			const answerOrderStatusUpdate = ( answer ) => {
+				window.fetch = jest.fn( ( url, options ) =>
+					Promise.resolve( {
+						json: () =>
+							Promise.resolve(
+								options?.body?.get?.( 'action' ) ===
+									'update_order_status'
+									? answer
+									: {}
+							),
+					} )
+				);
+			};
+
+			beforeEach( () => {
+				// Store API checkout answer for a payment that needs a next action: esc_url_raw() empties the bare hash
+				// in redirect_url, the raw gateway result stays in payment_details.
+				apiFetch.mockResolvedValueOnce( {
+					order_id: 77,
+					status: 'pending',
+					payment_result: {
+						payment_status: 'success',
+						payment_details: [
+							{ key: 'result', value: 'success' },
+							{
+								key: 'redirect',
+								value: '#wcpay-confirm-pi:77:pi_3ds_secret_abc:nonce-3ds',
+							},
+						],
+						redirect_url: '',
+					},
+				} );
+				// stripe.handleNextAction() resolves with `{ paymentIntent }` (https://docs.stripe.com/js.md,
+				// "stripe.handleNextAction(options)").
+				stripe.handleNextAction = jest.fn().mockResolvedValue( {
+					paymentIntent: { id: 'pi_3ds', status: 'succeeded' },
+				} );
+			} );
+
+			it.each( [
+				[ 'empty', { return_url: '' } ],
+				[ 'missing', {} ],
+				[ 'blank', { return_url: ' \n ' } ],
+				[ 'a javascript: URL', { return_url: 'javascript:alert(1)' } ],
+			] )(
+				'shows the payment error and stays on the page when the return URL is %s',
+				async ( label, answer ) => {
+					const setExpressPaymentError = jest.fn();
+					answerOrderStatusUpdate( answer );
+
+					await confirmGooglePay( { setExpressPaymentError } );
+
+					expect( setExpressPaymentError ).toHaveBeenCalledWith(
+						'Unable to process this payment, please try again.'
+					);
+					expect( navigate ).not.toHaveBeenCalled();
+				}
+			);
+
+			it( 'resolves a page-relative return URL against the page', async () => {
+				answerOrderStatusUpdate( {
+					return_url:
+						' /checkout/order-received/77/?key=wc_order_abc ',
+				} );
+
+				await confirmGooglePay();
+
+				expect( navigate ).toHaveBeenCalledWith(
+					'http://localhost/checkout/order-received/77/?key=wc_order_abc'
+				);
+			} );
+		} );
 	} );
 
 	it( 'refreshes Blocks cart data when a mutated wallet confirmation fails', async () => {

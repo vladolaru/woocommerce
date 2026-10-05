@@ -561,6 +561,40 @@ describe( 'woopayments-express-checkout', () => {
 			}
 		} );
 
+		// The `redirect` payment detail is the gateway's raw result (Legacy::process_payment()), not run through
+		// esc_url_raw() as redirect_url is (PaymentResult::set_redirect_url()); only an http(s) page is followed.
+		it.each( [
+			[ 'a javascript: URL', 'javascript:alert(1)', 'http://localhost/' ],
+			[ 'a data: URL', 'data:text/html,<p>paid</p>', 'http://localhost/' ],
+			[ 'an invalid URL', 'http://', 'http://localhost/' ],
+			[
+				'a page-relative URL',
+				' /checkout/order-received/77/?key=wc_order_abc ',
+				'http://localhost/checkout/order-received/77/?key=wc_order_abc',
+			],
+		] )(
+			'follows a fallback redirect that is %s only when it is an http(s) page',
+			async ( label, redirect, expected ) => {
+				const { redirectToOrder, navigate } = loadModule( baseParams() );
+
+				// Store API checkout success (docs/apis/store-api/resources-endpoints/checkout.md, "Process Order and
+				// Payment") whose redirect_url is empty and whose payment_details carry the raw redirect.
+				await redirectToOrder( {
+					payment_result: {
+						payment_status: 'success',
+						payment_details: [
+							{ key: 'result', value: 'success' },
+							{ key: 'redirect', value: redirect },
+						],
+						redirect_url: '',
+					},
+				} );
+
+				expect( navigate ).toHaveBeenCalledTimes( 1 );
+				expect( navigate ).toHaveBeenCalledWith( expected );
+			}
+		);
+
 		it( 'rejects with the payment error when the payment status is not success', async () => {
 			const { redirectToOrder, navigate } = loadModule( baseParams() );
 
@@ -602,6 +636,60 @@ describe( 'woopayments-express-checkout', () => {
 			expect( fetchBody.get( 'intent_id' ) ).toBe( 'pi_123' );
 			expect( navigate ).toHaveBeenCalledWith(
 				'http://shop.test/order-received/77/'
+			);
+		} );
+
+		// update_order_status answers `{ return_url }` on success (WooPaymentsCheckoutAjaxController, client
+		// checkout/api/index.js:283-297); only an http(s) page is followed.
+		it.each( [
+			[ 'empty', { return_url: '' } ],
+			[ 'missing', {} ],
+				[ 'blank', { return_url: ' \n ' } ],
+			[ 'a javascript: URL', { return_url: 'javascript:alert(1)' } ],
+			[ 'an invalid URL', { return_url: 'http://' } ],
+		] )(
+			'rejects with the generic error when the return URL is %s',
+			async ( label, answer ) => {
+				mockOrderStatusUpdate( answer );
+				// stripe.handleNextAction() resolves with `{ paymentIntent }` (https://docs.stripe.com/js.md,
+				// "stripe.handleNextAction(options)").
+				window.Stripe = jest.fn( () => ( {
+					handleNextAction: jest.fn( () =>
+						Promise.resolve( { paymentIntent: { id: 'pi_123' } } )
+					),
+				} ) );
+				const { redirectToOrder, navigate } = loadModule(
+					baseParams( stripeParams )
+				);
+
+				await expect(
+					redirectToOrder( confirmationResponse )
+				).rejects.toThrow(
+					'Unable to process this payment, please try again.'
+				);
+				expect( navigate ).not.toHaveBeenCalled();
+			}
+		);
+
+		it( 'resolves a page-relative return URL against the page', async () => {
+			mockOrderStatusUpdate( {
+				return_url: ' /checkout/order-received/77/?key=wc_order_abc ',
+			} );
+			// stripe.handleNextAction() resolves with `{ paymentIntent }` (https://docs.stripe.com/js.md,
+			// "stripe.handleNextAction(options)").
+			window.Stripe = jest.fn( () => ( {
+				handleNextAction: jest.fn( () =>
+					Promise.resolve( { paymentIntent: { id: 'pi_123' } } )
+				),
+			} ) );
+			const { redirectToOrder, navigate } = loadModule(
+				baseParams( stripeParams )
+			);
+
+			await redirectToOrder( confirmationResponse );
+
+			expect( navigate ).toHaveBeenCalledWith(
+				'http://localhost/checkout/order-received/77/?key=wc_order_abc'
 			);
 		} );
 

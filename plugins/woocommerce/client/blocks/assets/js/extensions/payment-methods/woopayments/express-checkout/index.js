@@ -984,6 +984,31 @@ const getRedirectUrl = ( response ) =>
 	)?.value ||
 	'';
 
+/**
+ * The URL resolved against the page when it is an http: or https: one, so a payment answer never sends the shopper to a
+ * javascript: or data: URL.
+ *
+ * @param {string} url Absolute or page-relative URL.
+ * @return {string} The resolved URL, or '' for an empty, invalid or non-http(s) one.
+ */
+const getHttpUrl = ( url ) => {
+	const trimmed = typeof url === 'string' ? url.trim() : '';
+
+	if ( ! trimmed ) {
+		return '';
+	}
+
+	try {
+		const resolved = new window.URL( trimmed, window.location.href );
+
+		return [ 'http:', 'https:' ].includes( resolved.protocol )
+			? resolved.href
+			: '';
+	} catch {
+		return '';
+	}
+};
+
 const requestOrderStatusUpdate = async ( orderId, nonce, intentId ) => {
 	const body = new window.URLSearchParams();
 	body.append( 'action', 'update_order_status' );
@@ -1091,7 +1116,14 @@ const confirmIntent = ( redirectUrl ) => {
 			throw new Error( paymentError );
 		}
 
-		return response?.return_url;
+		// As the classic express script checks it: an empty or non-http(s) return URL is no order page.
+		const returnUrl = getHttpUrl( response?.return_url );
+
+		if ( ! returnUrl ) {
+			throw new Error( GENERIC_PAYMENT_ERROR_MESSAGE );
+		}
+
+		return returnUrl;
 	} );
 };
 
@@ -1104,17 +1136,18 @@ let navigate = ( url ) => {
 
 const redirectToOrder = async ( response, api ) => {
 	const redirectUrl = getRedirectUrl( response );
+	const confirmationRequest = api.confirmIntent( redirectUrl );
 
-	// Client 11.1.0 completePayment( '' ) (event-handlers.js:234-251, block-buttons/hooks/use-express-checkout.js:52-55):
-	// the payment went through but the answer names no page, so reload this one, which `''` resolves to.
-	if ( ! redirectUrl ) {
-		navigate( window.location.href.split( '#' )[ 0 ] );
+	if ( confirmationRequest !== true ) {
+		navigate( await confirmationRequest );
 		return;
 	}
 
-	const confirmationRequest = api.confirmIntent( redirectUrl );
+	// Client 11.1.0 completePayment( '' ) (event-handlers.js:234-251, block-buttons/hooks/use-express-checkout.js:52-55):
+	// the payment went through but the answer names no page, so reload this one, which `''` resolves to. The raw
+	// payment detail skipped esc_url_raw(), so a redirect that is not an http(s) URL counts as none.
 	navigate(
-		confirmationRequest === true ? redirectUrl : await confirmationRequest
+		getHttpUrl( redirectUrl ) || window.location.href.split( '#' )[ 0 ]
 	);
 };
 

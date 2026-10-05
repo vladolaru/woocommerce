@@ -1336,6 +1336,32 @@
 		};
 	}
 
+	/**
+	 * The URL resolved against the page when it is an http: or https: one, so a payment answer never sends the shopper
+	 * to a javascript: or data: URL.
+	 *
+	 * @param {string} url Absolute or page-relative URL.
+	 * @return {string} The resolved URL, or '' for an empty, invalid or non-http(s) one.
+	 */
+	function getHttpUrl( url ) {
+		var resolved;
+
+		url = typeof url === 'string' ? url.trim() : '';
+		if ( ! url ) {
+			return '';
+		}
+
+		try {
+			resolved = new window.URL( url, window.location.href );
+		} catch ( error ) {
+			return '';
+		}
+
+		return resolved.protocol === 'http:' || resolved.protocol === 'https:'
+			? resolved.href
+			: '';
+	}
+
 	function requestOrderStatusUpdate( confirmation, intentId ) {
 		var body = new window.FormData();
 
@@ -1465,25 +1491,13 @@
 					);
 				}
 
-				returnUrl =
-					response && typeof response.return_url === 'string'
-						? response.return_url.trim()
-						: '';
+				returnUrl = getHttpUrl( response && response.return_url );
 
 				if ( ! returnUrl ) {
 					throw new Error( GENERIC_PAYMENT_ERROR_MESSAGE );
 				}
 
-				returnUrl = new window.URL( returnUrl, window.location.href );
-
-				if (
-					returnUrl.protocol !== 'http:' &&
-					returnUrl.protocol !== 'https:'
-				) {
-					throw new Error( GENERIC_PAYMENT_ERROR_MESSAGE );
-				}
-
-				completePayment( returnUrl.href );
+				completePayment( returnUrl );
 			} );
 	}
 
@@ -1520,13 +1534,6 @@
 			paymentResult.redirect_url ||
 			getPaymentDetail( paymentResult, 'redirect' );
 
-		// Client 11.1.0 completePayment( '' ) (event-handlers.js:234-251, shortcode-buttons-express/index.js:214-217): the
-		// payment went through but the answer names no page, so reload this one, which `''` resolves to.
-		if ( ! redirectUrl ) {
-			completePayment( window.location.href.split( '#' )[ 0 ] );
-			return Promise.resolve();
-		}
-
 		confirmation = parseConfirmationHash( redirectUrl );
 
 		// When the intent needs a next action (SCA/3DS), the server responds
@@ -1537,7 +1544,12 @@
 			return confirmIntentAndRedirect( confirmation );
 		}
 
-		completePayment( redirectUrl );
+		// Client 11.1.0 completePayment( '' ) (event-handlers.js:234-251, shortcode-buttons-express/index.js:214-217): the
+		// payment went through but the answer names no page, so reload this one, which `''` resolves to. The raw
+		// payment detail skipped esc_url_raw(), so a redirect that is not an http(s) URL counts as none.
+		completePayment(
+			getHttpUrl( redirectUrl ) || window.location.href.split( '#' )[ 0 ]
+		);
 		return Promise.resolve();
 	}
 
