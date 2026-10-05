@@ -28,6 +28,13 @@ class PayLaterBlockModule implements ServiceModule, ExecutableModule {
 	 * Returns whether the block module should be loaded.
 	 */
 	public static function is_module_loading_required(): bool {
+		/**
+		 * Filters whether the Pay Later block module is loaded.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $enabled Whether the module is enabled; false only when the PCP_PAYLATER_BLOCK environment variable is "0".
+		 */
 		return apply_filters(
 			// phpcs:ignore WordPress.NamingConventions.ValidHookName.UseUnderscores
 			'woocommerce.feature-flags.woocommerce_paypal_payments.paylater_block_enabled',
@@ -71,6 +78,8 @@ class PayLaterBlockModule implements ServiceModule, ExecutableModule {
 
 	/**
 	 * {@inheritDoc}
+	 *
+	 * @param ContainerInterface $c The service container.
 	 */
 	public function run( ContainerInterface $c ): bool {
 		$messages_apply = $c->get( 'button.helper.messages-apply' );
@@ -125,12 +134,10 @@ class PayLaterBlockModule implements ServiceModule, ExecutableModule {
 						'render_callback' => function ( array $attributes ) use ( $c ) {
 							$renderer = $c->get( 'paylater-block.renderer' );
 							ob_start();
-							// phpcs:ignore -- No need to escape it, the PayLaterBlockRenderer class is responsible for escaping.
+							// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- No need to escape it, the PayLaterBlockRenderer class is responsible for escaping.
 							echo $renderer->render(
-								// phpcs:ignore
 								$attributes,
-								// phpcs:ignore
-								$c
+								$c // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Argument of the renderer, which is responsible for escaping its output.
 							);
 							return ob_get_clean();
 						},
