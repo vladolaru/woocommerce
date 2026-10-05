@@ -20,13 +20,14 @@ const getNamespaceOptions = ( namespace ) => {
 
 export const loadPaypalScript = ( config, onLoaded, onError = null ) => {
 	const dataNamespace = config?.data_namespace || '';
-	const options = getNamespaceOptions( dataNamespace );
 
 	// If PayPal is already loaded for this namespace, call the onLoaded callback and return.
 	if ( typeof window.paypal !== 'undefined' && ! dataNamespace ) {
 		onLoaded();
 		return;
 	}
+
+	const options = getNamespaceOptions( dataNamespace );
 
 	// Add the onLoaded callback to the onLoadedCallbacks stack.
 	options.onLoadedCallbacks.push( onLoaded );

@@ -24,7 +24,6 @@ export default [
 				{ allowedTextDomain: 'woocommerce' },
 			],
 			'no-alert': 'warn',
-			'@wordpress/no-unused-vars-before-return': 'warn',
 			'jsdoc/check-alignment': 'warn',
 			'jsx-a11y/click-events-have-key-events': 'warn',
 			'jsx-a11y/no-static-element-interactions': 'warn',
