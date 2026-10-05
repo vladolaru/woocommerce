@@ -1247,7 +1247,9 @@ class WooPaymentsEventIngestor {
 	}
 
 	/**
-	 * Tell whether the webhook livemode does not match native runtime mode.
+	 * Tell whether the webhook livemode does not match native runtime mode, logging one error line when it does.
+	 *
+	 * Client 11.1.0 `class-wc-payments-webhook-processing-service.php:268-290` skips the event and logs the same line.
 	 *
 	 * @param array<string,mixed> $event Event payload.
 	 * @return bool
@@ -1257,17 +1259,32 @@ class WooPaymentsEventIngestor {
 			return false;
 		}
 
-		return $this->is_native_live_mode() !== (bool) $event['livemode'];
+		if ( $this->is_native_live_mode() === (bool) $event['livemode'] ) {
+			return false;
+		}
+
+		try {
+			wc_get_logger()->error(
+				sprintf( 'Webhook event mode did not match the gateway mode (event ID: %s)', $this->get_event_id( $event ) ),
+				array( 'source' => 'native-payments-webhook' )
+			);
+		} catch ( Throwable $exception ) {
+			unset( $exception );
+		}
+
+		return true;
 	}
 
 	/**
 	 * Tell whether native WooPayments is in live mode.
 	 *
+	 * The same mode every other native reader uses (WooPaymentsAccountService::is_test_mode_enabled(): test-mode
+	 * onboarding, dev mode and the wcpay_test_mode filter included), as the client checks WC_Payments::mode()->is_live().
+	 *
 	 * @return bool
 	 */
 	private function is_native_live_mode(): bool {
-		$settings = $this->legacy_proxy->call_function( 'get_option', 'woocommerce_woocommerce_payments_settings', array() );
-		$live     = ! is_array( $settings ) || 'yes' !== ( $settings['test_mode'] ?? 'no' );
+		$live = ! $this->get_account_service()->is_test_mode_enabled();
 
 		/**
 		 * Filters whether native WooPayments webhook processing is in live mode.

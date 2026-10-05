@@ -237,6 +237,61 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A test-mode event reaches the order when the store runs in test mode through wcpay_test_mode while its gateway setting says live.
+	 */
+	public function test_webhook_mode_follows_the_full_test_mode_check(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'processing' );
+		$order->update_meta_data( '_charge_id', 'ch_3UJbTlBzWlxcwgpP0vNaexjT' );
+		$order->save();
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'no' ) );
+		add_filter( 'wcpay_test_mode', '__return_true' );
+
+		try {
+			// Recorded in test mode: livemode is false.
+			$this->sut->process( $this->load_recorded_dispute_created_event( 'accept_case_created' ) );
+		} finally {
+			remove_filter( 'wcpay_test_mode', '__return_true' );
+		}
+
+		$this->assertSame( 'on-hold', wc_get_order( $order->get_id() )->get_status() );
+	}
+
+	/**
+	 * @testdox An event whose mode differs from the store's is skipped with one error line naming it, as on the client.
+	 */
+	public function test_webhook_mode_mismatch_logs_the_event(): void {
+		$order = $this->create_woopayments_order();
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$logged = array();
+		$logger = function ( $message, $level ) use ( &$logged ) {
+			$logged[] = array( $level, $message );
+			return $message;
+		};
+		add_filter( 'woocommerce_logger_log_message', $logger, 10, 2 );
+
+		try {
+			$this->sut->process(
+				$this->create_payment_intent_event(
+					'payment_intent.succeeded',
+					$order,
+					array(),
+					array(
+						'id'       => 'evt_mode_mismatch',
+						'livemode' => true,
+					)
+				)
+			);
+		} finally {
+			remove_filter( 'woocommerce_logger_log_message', $logger, 10 );
+		}
+
+		$this->assertSame( 'pending', wc_get_order( $order->get_id() )->get_status() );
+		$errors = array_filter( $logged, static fn( array $entry ): bool => 'error' === $entry[0] && false !== strpos( $entry[1], 'evt_mode_mismatch' ) );
+		$this->assertNotEmpty( $errors, 'The skipped event must leave an error line naming it.' );
+	}
+
+	/**
 	 * @testdox payment_intent.succeeded repairs the payment token on an unpaid recurring order.
 	 */
 	public function test_payment_intent_succeeded_repairs_token_for_recurring_unpaid_order(): void {
