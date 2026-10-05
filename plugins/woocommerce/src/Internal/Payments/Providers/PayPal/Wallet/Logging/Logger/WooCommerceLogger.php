@@ -25,34 +25,51 @@ class WooCommerceLogger implements LoggerInterface {
 
 	/**
 	 * The WooCommerce logger.
+	 *
+	 * @var WC_Logger_Interface
 	 */
 	private WC_Logger_Interface $wc_logger;
 
 	/**
 	 * The source (Plugin), which logs the message.
+	 *
+	 * @var string
 	 */
 	private string $source;
 
 	/**
 	 * The method of the current request.
+	 *
+	 * @var string
 	 */
 	private string $request_method;
 
 	/**
 	 * The URI of the current request.
+	 *
+	 * @var string
 	 */
 	private string $request_uri;
 
+	/**
+	 * The time the request started, as a float of seconds since the epoch.
+	 *
+	 * @var float
+	 */
 	private float $started_at;
 
 	/**
 	 * Whether the request was already announced in the log.
+	 *
+	 * @var bool
 	 */
 	private bool $request_logged = false;
 
 	/**
 	 * A random prefix which is visible in every log message, to better
 	 * understand which messages belong to the same request.
+	 *
+	 * @var string
 	 */
 	private static string $prefix = '';
 
@@ -66,11 +83,9 @@ class WooCommerceLogger implements LoggerInterface {
 		$this->wc_logger = $wc_logger;
 		$this->source    = $source;
 
-		// phpcs:disable -- Intentionally not sanitized, for logging purposes.
-		$method     = wp_unslash( $_SERVER['REQUEST_METHOD'] ?? 'CLI' );
-		$uri        = wp_unslash( $_SERVER['REQUEST_URI'] ?? '-' );
-		$started_at = (float) ( $_SERVER['REQUEST_TIME_FLOAT'] ?? microtime( true ) );
-		// phpcs:enable
+		$method     = wp_unslash( $_SERVER['REQUEST_METHOD'] ?? 'CLI' ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Logged verbatim, never output; sanitising would alter the logged value.
+		$uri        = wp_unslash( $_SERVER['REQUEST_URI'] ?? '-' ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Logged verbatim, never output; sanitising would alter the logged value.
+		$started_at = (float) ( $_SERVER['REQUEST_TIME_FLOAT'] ?? microtime( true ) ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- A float server timestamp, cast to float and only logged.
 
 		$this->request_method = is_string( $method ) ? $method : 'CLI';
 		$this->request_uri    = is_string( $uri ) ? $uri : '-';
@@ -114,6 +129,8 @@ class WooCommerceLogger implements LoggerInterface {
 		 * the detection below. Must be set before the first log message of
 		 * that request, since the prefix is built once.
 		 *
+		 * @since 11.3.0
+		 *
 		 * @param string $kind The detected kind, empty for a page load.
 		 */
 		$kind = apply_filters( 'woocommerce_paypal_payments_log_request_kind', self::request_kind() );
@@ -156,6 +173,8 @@ class WooCommerceLogger implements LoggerInterface {
 	/**
 	 * Announces the current request, once, before the first message of that
 	 * request.
+	 *
+	 * @param string $source The log source.
 	 */
 	private function log_new_request( string $source ): void {
 		$this->request_logged = true;
@@ -163,6 +182,8 @@ class WooCommerceLogger implements LoggerInterface {
 		/**
 		 * Skips the announcement, for a request whose log is a single message
 		 * that names everything the announcement would.
+		 *
+		 * @since 11.3.0
 		 *
 		 * @param bool $bail Whether to skip the announcement.
 		 */
