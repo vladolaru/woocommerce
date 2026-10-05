@@ -10,6 +10,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionService;
+use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
 use WC_Helper_Order;
 use WC_Unit_Test_Case;
@@ -19,9 +20,15 @@ use WC_Webhook;
  * Tests for the WooPaymentsWooPayOrderStatusSync class.
  */
 class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
-	private const WEBHOOK_ID_OPTION   = 'woocommerce_native_woopayments_woopay_webhook_id';
-	private const WEBHOOK_LOCK_OPTION = 'woocommerce_native_woopayments_woopay_webhook_lock';
 
+	private const WEBHOOK_NAME       = 'WooPayments woopay order status sync';
+	private const WOOPAY_URL         = 'https://pay.woo.com/wp-json/platform-checkout/v1/merchant-notification';
+	private const CLAIM_OPTION       = '_transient_woocommerce_woopayments_woopay_webhook_claim';
+	private const CLAIM_EXPIRY       = '_transient_timeout_woocommerce_woopayments_woopay_webhook_claim';
+	private const SETTINGS_OPTION    = 'woocommerce_woocommerce_payments_settings';
+	private const PLUGIN_SECRET      = 'plugin-secret';
+	private const TRANSLATED_NAME    = 'Synchronisation du statut des commandes WooPay';
+	private const PLUGIN_TEXT_DOMAIN = 'woocommerce-payments';
 
 	/**
 	 * Created sync instances whose hooks must be removed after each test.
@@ -29,20 +36,6 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	 * @var WooPaymentsWooPayOrderStatusSync[]
 	 */
 	private array $syncs = array();
-
-	/**
-	 * Created webhook IDs.
-	 *
-	 * @var int[]
-	 */
-	private array $webhook_ids = array();
-
-	/**
-	 * Most recently created mutable WooPay session service.
-	 *
-	 * @var Task25WooPaySessionService|null
-	 */
-	private ?Task25WooPaySessionService $session_service = null;
 
 	/**
 	 * Most recently created mutable WooPayments account service.
@@ -63,8 +56,6 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	 */
 	public function setUp(): void {
 		parent::setUp();
-		delete_option( self::WEBHOOK_ID_OPTION );
-		delete_option( self::WEBHOOK_LOCK_OPTION );
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
 	}
 
@@ -76,23 +67,8 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 			$this->remove_sync_hooks( $sync );
 		}
 
-		foreach ( $this->webhook_ids as $webhook_id ) {
-			$webhook = new WC_Webhook( $webhook_id );
-			$webhook->delete( true );
-		}
-		$owned_webhook_id = absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) );
-		if ( 0 < $owned_webhook_id ) {
-			$owned_webhook = wc_get_webhook( $owned_webhook_id );
-			if ( $owned_webhook instanceof WC_Webhook ) {
-				$owned_webhook->delete( true );
-			}
-		}
-
 		remove_all_actions( 'wcpay_webhook_platform_checkout_order_status_changed' );
 		remove_all_filters( 'woocommerce_logging_class' );
-		remove_all_filters( 'woocommerce_pre_delete_data' );
-		delete_option( self::WEBHOOK_ID_OPTION );
-		delete_option( self::WEBHOOK_LOCK_OPTION );
 		wp_set_current_user( 0 );
 
 		if ( class_exists( '\Jetpack_Options' ) ) {
@@ -118,7 +94,7 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$this->assertSame( 10, has_action( 'admin_init', array( $native_sync, 'maybe_create_woopay_order_webhook' ) ) );
 		$this->assertSame( 10, has_action( 'woocommerce_payments_account_refreshed', array( $native_sync, 'reconcile_webhook' ) ) );
 		$this->assertSame( 10, has_action( 'update_option_woocommerce_woocommerce_payments_settings', array( $native_sync, 'handle_settings_update' ) ) );
-		$this->assertSame( 10, has_action( 'wcpay_store_setup_sync', array( $native_sync, 'reconcile_webhook' ) ) );
+		$this->assertFalse( has_action( 'wcpay_store_setup_sync', array( $native_sync, 'reconcile_webhook' ) ), 'Client 11.1.0 does not touch the webhook on the store setup sync.' );
 
 		$plugin_sync = $this->create_sync( false );
 		$plugin_sync->register();
@@ -131,866 +107,366 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$this->assertFalse( has_action( 'admin_init', array( $plugin_sync, 'maybe_create_woopay_order_webhook' ) ) );
 		$this->assertFalse( has_action( 'woocommerce_payments_account_refreshed', array( $plugin_sync, 'reconcile_webhook' ) ) );
 		$this->assertFalse( has_action( 'update_option_woocommerce_woocommerce_payments_settings', array( $plugin_sync, 'handle_settings_update' ) ) );
-		$this->assertFalse( has_action( 'wcpay_store_setup_sync', array( $plugin_sync, 'reconcile_webhook' ) ) );
 	}
 
 	/**
-	 * @testdox Enabled native WooPay creates and owns the exact WooCommerce webhook row.
+	 * @testdox Enabled native WooPay creates the exact WooCommerce webhook row and registers its secret.
 	 */
-	public function test_enabled_native_woopay_creates_and_stores_exact_webhook(): void {
+	public function test_enabled_native_woopay_creates_exact_webhook(): void {
 		$sync = $this->create_sync( true, true );
 		$sync->register();
 
-		$sync->reconcile_webhook();
+		$this->run_admin_init_for( $sync );
 
-		$webhook_id = absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) );
-		$webhook    = wc_get_webhook( $webhook_id );
-		$this->assertGreaterThan( 0, $webhook_id );
+		$webhook_ids = $this->find_woopay_webhook_ids();
+		$this->assertCount( 1, $webhook_ids );
+		$webhook = wc_get_webhook( $webhook_ids[0] );
 		$this->assertInstanceOf( WC_Webhook::class, $webhook );
-		$this->assertSame( 'WooPayments woopay order status sync', $webhook->get_name() );
+		$this->assertSame( self::WEBHOOK_NAME, $webhook->get_name() );
 		$this->assertSame( get_current_user_id(), $webhook->get_user_id() );
 		$this->assertSame( 'order.status_changed', $webhook->get_topic() );
-		$this->assertSame( 'https://pay.woo.com/wp-json/platform-checkout/v1/merchant-notification', $webhook->get_delivery_url() );
+		$this->assertSame( self::WOOPAY_URL, $webhook->get_delivery_url() );
 		$this->assertSame( 'active', $webhook->get_status() );
 		$this->assertSame( 'wp_api_v3', $webhook->get_api_version() );
 		$this->assertSame( 50, strlen( $webhook->get_secret() ) );
-		$this->assertArrayNotHasKey( self::WEBHOOK_ID_OPTION, wp_load_alloptions( true ) );
-		$this->assertFalse( get_option( self::WEBHOOK_LOCK_OPTION, false ) );
 		$this->assertSame( array( array( 'webhook_secret' => $webhook->get_secret() ) ), $this->api_client->woopay_updates, 'The new webhook secret must be registered with the platform.' );
+		$this->assertNull( $this->read_option_row( self::CLAIM_OPTION ), 'The creation lock must be released.' );
+		$this->assertNull( $this->read_option_row( self::CLAIM_EXPIRY ) );
 	}
 
 	/**
-	 * @testdox A failed platform secret registration rolls the local webhook back.
+	 * @testdox A store switching from the plugin keeps the plugin's webhook: one delivery per status change, the plugin's secret, no platform call.
+	 *
+	 * Fails when the webhook is identified by anything the plugin's row lacks, such as an option only native writes: native then
+	 * creates a second row, rotates WooPay's secret and every status change is delivered twice.
 	 */
-	public function test_failed_woopay_secret_registration_rolls_back_local_webhook(): void {
+	public function test_switch_with_woopay_on_adopts_the_plugin_webhook(): void {
+		$plugin_webhook = $this->create_plugin_webhook();
+		$sync           = $this->create_sync( true, true );
+		$sync->register();
+
+		$this->run_admin_init_for( $sync );
+
+		$order = WC_Helper_Order::create_order();
+		$order->update_meta_data( 'is_woopay', true );
+		$order->save();
+		$deliveries = $this->count_deliveries_of_a_status_change( $order );
+
+		$this->assertSame( array( $plugin_webhook->get_id() ), $deliveries, 'Exactly one webhook, the plugin\'s, must deliver the status change.' );
+		$this->assertSame( self::PLUGIN_SECRET, wc_get_webhook( $plugin_webhook->get_id() )->get_secret(), 'WooPay already holds the plugin row\'s secret.' );
+		$this->assertSame( array(), $this->api_client->woopay_updates, 'Adopting the plugin row must not call the platform.' );
+	}
+
+	/**
+	 * @testdox Turning WooPay off removes every WooPay webhook, the plugin's included, and leaves other webhooks alone.
+	 *
+	 * Fails when removal is limited to rows native created: the plugin's row keeps delivering to WooPay.
+	 */
+	public function test_turning_woopay_off_removes_the_plugin_webhook(): void {
+		$plugin_webhook   = $this->create_plugin_webhook();
+		$other_url        = $this->create_webhook_row( self::WEBHOOK_NAME, 'https://example.com/webhook', 'order.status_changed', 'active' );
+		$other_topic      = $this->create_webhook_row( 'WooPay order updates', self::WOOPAY_URL, 'order.updated', 'active' );
+		$disabled_webhook = $this->create_webhook_row( self::WEBHOOK_NAME, self::WOOPAY_URL, 'order.status_changed', 'disabled' );
+		$sync             = $this->create_sync( true, true );
+		$sync->register();
+		update_option( self::SETTINGS_OPTION, array( 'platform_checkout' => 'yes' ) );
+		wp_set_current_user( 0 );
+
+		update_option( self::SETTINGS_OPTION, array( 'platform_checkout' => 'no' ) );
+
+		$this->assertNull( wc_get_webhook( $plugin_webhook->get_id() ) );
+		$this->assertSame( array(), $this->find_woopay_webhook_ids() );
+		$this->assertInstanceOf( WC_Webhook::class, wc_get_webhook( $other_url->get_id() ), 'A webhook to another URL is not WooPay\'s.' );
+		$this->assertInstanceOf( WC_Webhook::class, wc_get_webhook( $other_topic->get_id() ), 'A webhook on another topic is not WooPay\'s.' );
+		$this->assertInstanceOf( WC_Webhook::class, wc_get_webhook( $disabled_webhook->get_id() ), 'Inactive rows are left alone, as in client 11.1.0.' );
+	}
+
+	/**
+	 * @testdox Several WooPay webhooks are replaced by one new webhook whose secret is registered once.
+	 *
+	 * Fails when the fast path accepts any number of rows, or when several rows are left in place: WooPay holds at most one of
+	 * their secrets, so the others' deliveries fail verification.
+	 */
+	public function test_several_woopay_webhooks_collapse_to_one_known_pair(): void {
+		$first  = $this->create_plugin_webhook();
+		$second = $this->create_plugin_webhook();
+		$sync   = $this->create_sync( true, true );
+		$sync->register();
+
+		$this->run_admin_init_for( $sync );
+
+		$webhook_ids = $this->find_woopay_webhook_ids();
+		$this->assertCount( 1, $webhook_ids );
+		$this->assertNotContains( $first->get_id(), $webhook_ids );
+		$this->assertNotContains( $second->get_id(), $webhook_ids );
+		$this->assertSame( array( array( 'webhook_secret' => wc_get_webhook( $webhook_ids[0] )->get_secret() ) ), $this->api_client->woopay_updates );
+	}
+
+	/**
+	 * @testdox A creation lock another request holds stops this request from creating a webhook, even when this request cached the lock as missing.
+	 *
+	 * Fails when the lock goes back to add_option() or update_option(): both trust the request's notoptions cache and upsert, so
+	 * two requests both create a row and the second rotates WooPay's secret.
+	 */
+	public function test_held_creation_lock_blocks_creation(): void {
 		$sync = $this->create_sync( true, true );
 		$sync->register();
-		$this->api_client->update_woopay_exception = new WooPaymentsApiException( 'Error updating account.', 'wcpay_bad_request', 400 );
+		// This request reads the lock as missing, which WordPress records in its notoptions cache.
+		$this->assertFalse( get_option( self::CLAIM_OPTION ) );
+		// Another request then takes the lock.
+		$this->insert_claim_rows( 'other-request', time() + 300 );
 
-		$sync->reconcile_webhook();
+		$this->run_admin_init_for( $sync );
+
+		$this->assertSame( array(), $this->find_woopay_webhook_ids() );
+		$this->assertSame( array(), $this->api_client->woopay_updates );
+		$this->assertSame( 'other-request', $this->read_option_row( self::CLAIM_OPTION ), 'The other request must keep its lock.' );
+	}
+
+	/**
+	 * @testdox An expired creation lock left by a stopped request is taken over, and released after creation.
+	 *
+	 * Fails when the takeover goes: a request that died holding the lock would block the webhook forever. Fails when the release
+	 * goes: every admin page would then wait for the lock to expire.
+	 */
+	public function test_expired_creation_lock_is_taken_over_and_released(): void {
+		$sync = $this->create_sync( true, true );
+		$sync->register();
+		$this->insert_claim_rows( 'stopped-request', time() - 10 );
+
+		$this->run_admin_init_for( $sync );
+
+		$this->assertCount( 1, $this->find_woopay_webhook_ids() );
+		$this->assertCount( 1, $this->api_client->woopay_updates );
+		$this->assertNull( $this->read_option_row( self::CLAIM_OPTION ) );
+		$this->assertNull( $this->read_option_row( self::CLAIM_EXPIRY ) );
+	}
+
+	/**
+	 * @testdox A reactivated plugin finds native's webhook with its own translated name lookup.
+	 *
+	 * Fails when the name or its text domain changes: the plugin then misses native's row, creates a second one and rotates
+	 * WooPay's secret.
+	 */
+	public function test_reactivated_plugin_finds_native_webhook_in_its_locale(): void {
+		$translate = static function ( $translation, $text, $domain ) {
+			return self::PLUGIN_TEXT_DOMAIN === $domain && self::WEBHOOK_NAME === $text ? self::TRANSLATED_NAME : $translation;
+		};
+		add_filter( 'gettext', $translate, 10, 3 );
+		$sync = $this->create_sync( true, true );
+		$sync->register();
+		$this->run_admin_init_for( $sync );
+
+		// The plugin's own lookup, client 11.1.0 WooPay_Order_Status_Sync::get_webhook().
+		$plugin_lookup = \WC_Data_Store::load( 'webhook' )->search_webhooks(
+			array(
+				'search' => __( 'WooPayments woopay order status sync', 'woocommerce-payments' ), // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- The plugin's lookup, in its text domain.
+				'status' => 'active',
+				'limit'  => 1,
+			)
+		);
+		remove_filter( 'gettext', $translate, 10 );
+
+		$this->assertSame( $this->find_woopay_webhook_ids(), array_map( 'intval', $plugin_lookup ) );
+		$this->assertCount( 1, $plugin_lookup );
+	}
+
+	/**
+	 * @testdox A failed platform secret registration deletes the new row and releases the lock, so the next admin page creates the pair.
+	 *
+	 * Fails when the rollback goes (WooPay would not hold the secret of an active row) or when the lock is not released on failure.
+	 */
+	public function test_failed_secret_registration_rolls_back_and_the_next_admin_page_retries(): void {
+		$logger = new Task25RecordingLogger();
+		add_filter( 'woocommerce_logging_class', static fn() => $logger );
+		$sync = $this->create_sync( true, true );
+		$sync->register();
+		// The platform answers an update it cannot apply with Bad_Request_Exception, code wcpay_bad_request, status 400.
+		$this->api_client->update_woopay_exception = new WooPaymentsApiException( 'Error updating account. Webhook secret is empty.', 'wcpay_bad_request', 400 );
+
+		$this->run_admin_init_for( $sync );
 
 		$this->assertCount( 1, $this->api_client->woopay_updates );
-		$this->assertSame( 0, absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) ), 'A webhook whose secret WooPay does not hold must not stay owned.' );
-		$this->assertCount( 0, $this->find_webhooks_by_name( 'WooPayments woopay order status sync' ), 'The local webhook row must be rolled back.' );
-	}
+		$this->assertSame( array(), $this->find_woopay_webhook_ids(), 'A webhook whose secret WooPay does not hold must not stay active.' );
+		$this->assertNull( $this->read_option_row( self::CLAIM_OPTION ), 'The lock must be released after a failure.' );
+		$this->assertSame( array( 'Unable to register the WooPay order-status webhook secret with the platform.' ), array_column( $logger->error_calls, 'message' ) );
 
-	/**
-	 * @testdox Repeated enabled reconciliation keeps exactly one owned webhook.
-	 */
-	public function test_repeated_enabled_reconciliation_is_idempotent(): void {
-		$sync = $this->create_sync( true, true );
-		$sync->register();
+		$this->api_client->update_woopay_exception = null;
+		$this->run_admin_init_for( $sync );
 
-		$sync->reconcile_webhook();
-		$first_id = absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) );
-		$sync->reconcile_webhook();
-		$second_id = absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) );
-
-		$this->assertGreaterThan( 0, $first_id );
-		$this->assertSame( $first_id, $second_id );
-		$this->assertCount( 1, $this->find_webhooks_by_name( 'WooPayments woopay order status sync' ) );
-		$this->assertCount( 1, $this->api_client->woopay_updates, 'The secret must only be registered when a webhook is created.' );
-	}
-
-	/**
-	 * @testdox Enabled reconciliation replaces an inactive owned webhook without touching unrelated rows.
-	 */
-	public function test_enabled_reconciliation_repairs_inactive_owned_webhook(): void {
-		$sync = $this->create_sync( true, true );
-		$sync->register();
-		$sync->reconcile_webhook();
-
-		$owned_webhook = wc_get_webhook( absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) ) );
-		$this->assertInstanceOf( WC_Webhook::class, $owned_webhook );
-		$owned_webhook->set_status( 'disabled' );
-		$owned_webhook->save();
-
-		$same_url_webhook    = $this->create_named_webhook( 'Same URL but unrelated', 'https://pay.woo.com/wp-json/platform-checkout/v1/merchant-notification' );
-		$unrelated_webhook   = $this->create_named_webhook( 'Unrelated webhook', 'https://example.com/webhook' );
-		$this->webhook_ids[] = $same_url_webhook->get_id();
-		$this->webhook_ids[] = $unrelated_webhook->get_id();
-
-		$sync->reconcile_webhook();
-
-		$final_id      = absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) );
-		$final_webhook = wc_get_webhook( $final_id );
-		$this->assertGreaterThan( 0, $final_id );
-		$this->assertInstanceOf( WC_Webhook::class, $final_webhook );
-		$this->assertSame( 'active', $final_webhook->get_status() );
-		$this->assertSame( 'WooPayments woopay order status sync', $final_webhook->get_name() );
-		$this->assertSame( 'order.status_changed', $final_webhook->get_topic() );
-		$this->assertSame( 'https://pay.woo.com/wp-json/platform-checkout/v1/merchant-notification', $final_webhook->get_delivery_url() );
-		$this->assertSame( 'wp_api_v3', $final_webhook->get_api_version() );
-		$this->assertCount( 1, $this->find_webhooks_by_name( 'WooPayments woopay order status sync' ) );
-		$this->assertInstanceOf( WC_Webhook::class, wc_get_webhook( $same_url_webhook->get_id() ) );
-		$this->assertInstanceOf( WC_Webhook::class, wc_get_webhook( $unrelated_webhook->get_id() ) );
-	}
-
-	/**
-	 * @testdox Failed inactive ownership deletion aborts replacement and remains retryable.
-	 */
-	public function test_inactive_owned_webhook_delete_failure_preserves_ownership_until_retry(): void {
-		$logger = new Task25RecordingLogger();
-		add_filter( 'woocommerce_logging_class', static fn() => $logger );
-		$sync = $this->create_sync( true, true );
-		$sync->register();
-		$sync->reconcile_webhook();
-
-		$inactive_id      = absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) );
-		$inactive_webhook = wc_get_webhook( $inactive_id );
-		$this->assertInstanceOf( WC_Webhook::class, $inactive_webhook );
-		$inactive_webhook->set_status( 'disabled' );
-		$inactive_webhook->save();
-		$same_url_webhook    = $this->create_named_webhook( 'Same URL but unrelated', 'https://pay.woo.com/wp-json/platform-checkout/v1/merchant-notification' );
-		$unrelated_webhook   = $this->create_named_webhook( 'Unrelated webhook', 'https://example.com/webhook' );
-		$this->webhook_ids[] = $inactive_id;
-		$this->webhook_ids[] = $same_url_webhook->get_id();
-		$this->webhook_ids[] = $unrelated_webhook->get_id();
-		$prevent_delete      = static function ( $check, $data_object ) use ( $inactive_id ) {
-			return $data_object instanceof WC_Webhook && $inactive_id === $data_object->get_id() ? false : $check;
-		};
-		add_filter( 'woocommerce_pre_delete_data', $prevent_delete, 10, 2 );
-
-		$sync->reconcile_webhook();
-		$blocked_webhook_ids = $this->find_webhooks_by_name( 'WooPayments woopay order status sync' );
-		$this->webhook_ids   = array_values( array_unique( array_merge( $this->webhook_ids, $blocked_webhook_ids ) ) );
-		remove_filter( 'woocommerce_pre_delete_data', $prevent_delete, 10 );
-
-		$this->assertSame( $inactive_id, absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) ) );
-		$this->assertSame( 'disabled', wc_get_webhook( $inactive_id )->get_status() );
-		$this->assertSame( array( $inactive_id ), $blocked_webhook_ids );
-		$this->assertFalse( get_option( self::WEBHOOK_LOCK_OPTION, false ) );
-		$this->assertCount( 1, $logger->error_calls );
-		$this->assertSame( 'woocommerce-woopayments', $logger->error_calls[0]['context']['source'] ?? null );
-
-		$sync->reconcile_webhook();
-
-		$final_id          = absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) );
-		$final_webhook     = wc_get_webhook( $final_id );
-		$final_webhook_ids = $this->find_webhooks_by_name( 'WooPayments woopay order status sync' );
-		$this->webhook_ids = array_values( array_unique( array_merge( $this->webhook_ids, $final_webhook_ids ) ) );
-		$this->assertNotSame( $inactive_id, $final_id );
-		$this->assertNull( wc_get_webhook( $inactive_id ) );
-		$this->assertSame( array( $final_id ), $final_webhook_ids );
-		$this->assertInstanceOf( WC_Webhook::class, $final_webhook );
-		$this->assertSame( 'active', $final_webhook->get_status() );
-		$this->assertSame( 'order.status_changed', $final_webhook->get_topic() );
-		$this->assertSame( 'https://pay.woo.com/wp-json/platform-checkout/v1/merchant-notification', $final_webhook->get_delivery_url() );
-		$this->assertSame( 'wp_api_v3', $final_webhook->get_api_version() );
-		$this->assertInstanceOf( WC_Webhook::class, wc_get_webhook( $same_url_webhook->get_id() ) );
-		$this->assertInstanceOf( WC_Webhook::class, wc_get_webhook( $unrelated_webhook->get_id() ) );
-		$this->assertFalse( get_option( self::WEBHOOK_LOCK_OPTION, false ) );
-	}
-
-	/**
-	 * @testdox Disabling WooPay during webhook persistence leaves no owned row and re-enabling creates one.
-	 */
-	public function test_disable_during_webhook_save_cleans_published_ownership(): void {
-		$sync = new Task25DisableDuringSaveWooPayOrderStatusSync();
-		$this->create_sync( true, true, $sync )->register();
-		$sync->after_save_callback = function () use ( $sync ): void {
-			$this->account_service->woopay_enabled = false;
-			$sync->reconcile_webhook();
-		};
-
-		$sync->reconcile_webhook();
-		$disabled_webhook_ids = $this->find_webhooks_by_name( 'WooPayments woopay order status sync' );
-		$disabled_option_id   = get_option( self::WEBHOOK_ID_OPTION, false );
-		$disabled_lock        = get_option( self::WEBHOOK_LOCK_OPTION, false );
-
-		$sync->after_save_callback             = null;
-		$this->account_service->woopay_enabled = true;
-		$sync->reconcile_webhook();
-		$final_webhook_ids = $this->find_webhooks_by_name( 'WooPayments woopay order status sync' );
-		$this->webhook_ids = array_values( array_unique( array_merge( $this->webhook_ids, $disabled_webhook_ids, $final_webhook_ids ) ) );
-
-		$this->assertFalse( $disabled_option_id );
-		$this->assertFalse( $disabled_lock );
-		$this->assertCount( 0, $disabled_webhook_ids );
-		$this->assertGreaterThan( 0, absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) ) );
-		$this->assertCount( 1, $final_webhook_ids );
-	}
-
-	/**
-	 * @testdox A stale lock holder cannot release its successor or admit a third creator.
-	 */
-	public function test_stale_creation_lock_release_preserves_successor_ownership(): void {
-		$sync = new Task25InspectableLockWooPayOrderStatusSync();
-		$this->create_sync( true, true, $sync )->register();
-
-		$first_token = $sync->acquire_test_creation_lock();
-		$this->assertNotNull( $first_token );
-		$stale_lock               = get_option( self::WEBHOOK_LOCK_OPTION, array() );
-		$stale_lock['created_at'] = time() - MINUTE_IN_SECONDS - 1;
-		update_option( self::WEBHOOK_LOCK_OPTION, $stale_lock, false );
-
-		$successor_token = $sync->acquire_test_creation_lock();
-		$this->assertNotNull( $successor_token );
-		$this->assertNotSame( $first_token, $successor_token );
-		$sync->release_test_creation_lock( $first_token );
-		$successor_lock_after_release = get_option( self::WEBHOOK_LOCK_OPTION, false );
-
-		$sync->reconcile_webhook();
-		$webhook_ids_while_successor_owns_lock = $this->find_webhooks_by_name( 'WooPayments woopay order status sync' );
-		$sync->release_test_creation_lock( $successor_token );
-		$sync->reconcile_webhook();
-		$final_webhook_ids = $this->find_webhooks_by_name( 'WooPayments woopay order status sync' );
-		$this->webhook_ids = array_values( array_unique( array_merge( $this->webhook_ids, $webhook_ids_while_successor_owns_lock, $final_webhook_ids ) ) );
-
-		$this->assertIsArray( $successor_lock_after_release );
-		$this->assertSame( $successor_token, $successor_lock_after_release['token'] ?? null );
-		$this->assertCount( 0, $webhook_ids_while_successor_owns_lock );
-		$this->assertCount( 1, $final_webhook_ids );
-	}
-
-	/**
-	 * @testdox Two stale-lock successors leave one current holder and one exact owned webhook.
-	 */
-	public function test_stale_creation_lock_takeover_fences_two_successors(): void {
-		$first_successor  = new Task25CoordinatedStaleLockWooPayOrderStatusSync();
-		$second_successor = new Task25InspectableLockWooPayOrderStatusSync();
-		$this->create_sync( true, true, $first_successor )->register();
-		$this->create_sync( true, true, $second_successor );
-
-		$stale_holder_token = $first_successor->acquire_test_creation_lock();
-		$this->assertNotNull( $stale_holder_token );
-		$stale_lock               = get_option( self::WEBHOOK_LOCK_OPTION, array() );
-		$stale_lock['created_at'] = time() - MINUTE_IN_SECONDS - 1;
-		update_option( self::WEBHOOK_LOCK_OPTION, $stale_lock, false );
-
-		$second_successor_token                    = null;
-		$first_successor->during_stale_replacement = function () use ( $second_successor, &$second_successor_token ): void {
-			$second_successor_token = $second_successor->acquire_test_creation_lock();
-		};
-		$first_successor_token                     = $first_successor->acquire_test_creation_lock();
-
-		$successor_tokens = array_values( array_filter( array( $first_successor_token, $second_successor_token ) ) );
-		$this->assertCount( 1, $successor_tokens, 'Only one successor may return an acquired stale lock.' );
-
-		if ( is_string( $second_successor_token ) ) {
-			$second_successor->release_test_creation_lock( $second_successor_token );
-		}
-		if ( is_string( $first_successor_token ) ) {
-			$first_successor->release_test_creation_lock( $first_successor_token );
-		}
-		$first_successor->reconcile_webhook();
-
-		$webhook_ids       = $this->find_webhooks_by_name( 'WooPayments woopay order status sync' );
-		$this->webhook_ids = array_values( array_unique( array_merge( $this->webhook_ids, $webhook_ids ) ) );
-		$owned_id          = absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) );
-		$owned_webhook     = wc_get_webhook( $owned_id );
+		$webhook_ids = $this->find_woopay_webhook_ids();
 		$this->assertCount( 1, $webhook_ids );
-		$this->assertSame( $webhook_ids[0], $owned_id );
-		$this->assertInstanceOf( WC_Webhook::class, $owned_webhook );
-		$this->assertSame( 'active', $owned_webhook->get_status() );
-		$this->assertSame( 'order.status_changed', $owned_webhook->get_topic() );
-		$this->assertSame( 'https://pay.woo.com/wp-json/platform-checkout/v1/merchant-notification', $owned_webhook->get_delivery_url() );
-		$this->assertFalse( get_option( self::WEBHOOK_LOCK_OPTION, false ) );
+		$this->assertCount( 2, $this->api_client->woopay_updates );
+		$this->assertSame( array( 'webhook_secret' => wc_get_webhook( $webhook_ids[0] )->get_secret() ), $this->api_client->woopay_updates[1] );
 	}
 
 	/**
-	 * @testdox The valid publisher removes a previously published contender by owned ID.
+	 * @testdox With its webhook in place, an admin page runs no write and no platform call.
 	 */
-	public function test_valid_publication_removes_prior_contender_by_owned_id(): void {
-		$sync = new Task25DisableDuringSaveWooPayOrderStatusSync();
-		$this->create_sync( true, true, $sync )->register();
-
-		$prior_contender_id        = 0;
-		$sync->after_save_callback = function () use ( &$prior_contender_id ): void {
-			$prior_contender     = $this->create_named_webhook( 'WooPayments woopay order status sync', 'https://pay.woo.com/wp-json/platform-checkout/v1/merchant-notification' );
-			$prior_contender_id  = $prior_contender->get_id();
-			$this->webhook_ids[] = $prior_contender_id;
-			update_option( self::WEBHOOK_ID_OPTION, $prior_contender_id, false );
-		};
-
-		$sync->reconcile_webhook();
-
-		$webhook_ids       = $this->find_webhooks_by_name( 'WooPayments woopay order status sync' );
-		$this->webhook_ids = array_values( array_unique( array_merge( $this->webhook_ids, $webhook_ids ) ) );
-		$owned_id          = absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) );
-		$this->assertGreaterThan( 0, $prior_contender_id );
-		$this->assertNull( wc_get_webhook( $prior_contender_id ) );
-		$this->assertCount( 1, $webhook_ids );
-		$this->assertSame( $webhook_ids[0], $owned_id );
-		$this->assertFalse( get_option( self::WEBHOOK_LOCK_OPTION, false ) );
-	}
-
-	/**
-	 * @testdox Failed prior contender deletion aborts publication and cleans the new unowned row.
-	 */
-	public function test_prior_contender_delete_failure_preserves_contender_and_aborts_publication(): void {
-		$logger = new Task25RecordingLogger();
-		add_filter( 'woocommerce_logging_class', static fn() => $logger );
-		$sync = new Task25DisableDuringSaveWooPayOrderStatusSync();
-		$this->create_sync( true, true, $sync )->register();
-
-		$prior_contender_id        = 0;
-		$sync->after_save_callback = function () use ( &$prior_contender_id ): void {
-			$prior_contender     = $this->create_named_webhook( 'WooPayments woopay order status sync', 'https://pay.woo.com/wp-json/platform-checkout/v1/merchant-notification' );
-			$prior_contender_id  = $prior_contender->get_id();
-			$this->webhook_ids[] = $prior_contender_id;
-			update_option( self::WEBHOOK_ID_OPTION, $prior_contender_id, false );
-		};
-		$prevent_delete            = static function ( $check, $data_object ) use ( &$prior_contender_id ) {
-			return $data_object instanceof WC_Webhook && $prior_contender_id === $data_object->get_id() ? false : $check;
-		};
-		add_filter( 'woocommerce_pre_delete_data', $prevent_delete, 10, 2 );
-
-		$sync->reconcile_webhook();
-		$sync->after_save_callback = null;
-		$webhook_ids               = $this->find_webhooks_by_name( 'WooPayments woopay order status sync' );
-		$this->webhook_ids         = array_values( array_unique( array_merge( $this->webhook_ids, $webhook_ids ) ) );
-		remove_filter( 'woocommerce_pre_delete_data', $prevent_delete, 10 );
-
-		$this->assertGreaterThan( 0, $prior_contender_id );
-		$this->assertSame( $prior_contender_id, absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) ) );
-		$this->assertSame( array( $prior_contender_id ), $webhook_ids );
-		$this->assertSame( 'active', wc_get_webhook( $prior_contender_id )->get_status() );
-		$this->assertFalse( get_option( self::WEBHOOK_LOCK_OPTION, false ) );
-		$this->assertCount( 1, $logger->error_calls );
-		$this->assertSame( 'woocommerce-woopayments', $logger->error_calls[0]['context']['source'] ?? null );
-	}
-
-	/**
-	 * @testdox A holder that loses its lock after save cannot publish or remove successor ownership.
-	 */
-	public function test_lost_lock_holder_does_not_publish_or_delete_successor_lock(): void {
-		$sync = new Task25SaveInterleavingWooPayOrderStatusSync();
-		$this->create_sync( true, true, $sync )->register();
-		$successor_token           = wp_generate_uuid4();
-		$sync->after_save_callback = static function () use ( $successor_token ): void {
-			update_option(
-				self::WEBHOOK_LOCK_OPTION,
-				array(
-					'token'      => $successor_token,
-					'created_at' => time(),
-				),
-				false
-			);
-		};
-
-		$sync->reconcile_webhook();
-
-		$successor_lock = get_option( self::WEBHOOK_LOCK_OPTION, false );
-		$this->assertFalse( get_option( self::WEBHOOK_ID_OPTION, false ) );
-		$this->assertCount( 0, $this->find_webhooks_by_name( 'WooPayments woopay order status sync' ) );
-		$this->assertIsArray( $successor_lock );
-		$this->assertSame( $successor_token, $successor_lock['token'] ?? null );
-
-		$sync->after_save_callback = null;
-		$sync->release_test_creation_lock( $successor_token );
-		$sync->reconcile_webhook();
-		$final_webhook_ids = $this->find_webhooks_by_name( 'WooPayments woopay order status sync' );
-		$this->webhook_ids = array_values( array_unique( array_merge( $this->webhook_ids, $final_webhook_ids ) ) );
-		$this->assertCount( 1, $final_webhook_ids );
-		$this->assertSame( $final_webhook_ids[0], absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) ) );
-		$this->assertFalse( get_option( self::WEBHOOK_LOCK_OPTION, false ) );
-	}
-
-	/**
-	 * @testdox A vetoed pre-publication loser cleanup is logged without touching successor ownership.
-	 */
-	public function test_lost_lock_holder_logs_vetoed_unowned_webhook_cleanup(): void {
-		$logger = new Task25RecordingLogger();
-		add_filter( 'woocommerce_logging_class', static fn() => $logger );
-		$sync = new Task25SaveInterleavingWooPayOrderStatusSync();
-		$this->create_sync( true, true, $sync )->register();
-		$successor_token           = wp_generate_uuid4();
-		$sync->after_save_callback = static function () use ( $successor_token ): void {
-			update_option(
-				self::WEBHOOK_LOCK_OPTION,
-				array(
-					'token'      => $successor_token,
-					'created_at' => time(),
-				),
-				false
-			);
-		};
-		$prevent_delete            = static function ( $check, $data_object ) {
-			return $data_object instanceof WC_Webhook && 'WooPayments woopay order status sync' === $data_object->get_name() ? false : $check;
-		};
-		add_filter( 'woocommerce_pre_delete_data', $prevent_delete, 10, 2 );
-
-		$sync->reconcile_webhook();
-		$unowned_webhook_ids = $this->find_webhooks_by_name( 'WooPayments woopay order status sync' );
-		$this->webhook_ids   = array_values( array_unique( array_merge( $this->webhook_ids, $unowned_webhook_ids ) ) );
-		remove_filter( 'woocommerce_pre_delete_data', $prevent_delete, 10 );
-
-		$successor_lock = get_option( self::WEBHOOK_LOCK_OPTION, false );
-		$this->assertFalse( get_option( self::WEBHOOK_ID_OPTION, false ) );
-		$this->assertCount( 1, $unowned_webhook_ids );
-		$this->assertIsArray( $successor_lock );
-		$this->assertSame( $successor_token, $successor_lock['token'] ?? null );
-		$this->assertCount( 1, $logger->error_calls );
-		$this->assertSame( 'Unable to clean up an unowned WooPay order-status webhook.', $logger->error_calls[0]['message'] ?? null );
-		$this->assertSame( 'woocommerce-woopayments', $logger->error_calls[0]['context']['source'] ?? null );
-
-		$sync->after_save_callback = null;
-		$sync->release_test_creation_lock( $successor_token );
-		$this->assertFalse( get_option( self::WEBHOOK_LOCK_OPTION, false ) );
-	}
-
-	/**
-	 * @testdox A holder that loses its lock after publication leaves valid ownership for its successor.
-	 */
-	public function test_post_publication_lock_loss_preserves_valid_owned_row_and_successor_lock(): void {
-		$sync = new Task25AfterPublicationWooPayOrderStatusSync();
-		$this->create_sync( true, true, $sync )->register();
-		$successor_token                  = wp_generate_uuid4();
-		$sync->after_publication_callback = static function () use ( $successor_token ): void {
-			update_option(
-				self::WEBHOOK_LOCK_OPTION,
-				array(
-					'token'      => $successor_token,
-					'created_at' => time(),
-				),
-				false
-			);
-		};
-
-		$sync->reconcile_webhook();
-
-		$owned_id       = absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) );
-		$owned_webhook  = wc_get_webhook( $owned_id );
-		$successor_lock = get_option( self::WEBHOOK_LOCK_OPTION, false );
-		$this->assertGreaterThan( 0, $owned_id );
-		$this->assertInstanceOf( WC_Webhook::class, $owned_webhook );
-		$this->assertSame( 'active', $owned_webhook->get_status() );
-		$this->assertIsArray( $successor_lock );
-		$this->assertSame( $successor_token, $successor_lock['token'] ?? null );
-
-		$sync->release_test_creation_lock( $successor_token );
-		$sync->reconcile_webhook();
-		$final_webhook_ids = $this->find_webhooks_by_name( 'WooPayments woopay order status sync' );
-		$this->webhook_ids = array_values( array_unique( array_merge( $this->webhook_ids, $final_webhook_ids ) ) );
-		$this->assertCount( 1, $final_webhook_ids );
-		$this->assertSame( $owned_id, absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) ) );
-		$this->assertFalse( get_option( self::WEBHOOK_LOCK_OPTION, false ) );
-	}
-
-	/**
-	 * @testdox Rapid disable and re-enable after publication finishes with one exact owned webhook.
-	 */
-	public function test_post_publication_disable_reenable_retries_missing_ownership(): void {
-		$sync = new Task25AfterPublicationWooPayOrderStatusSync();
-		$this->create_sync( true, true, $sync )->register();
-		$account_service = $this->account_service;
-		$this->assertInstanceOf( Task25WooPayAccountService::class, $account_service );
-		$unrelated_webhook                = $this->create_named_webhook( 'Unrelated webhook', 'https://example.com/webhook' );
-		$this->webhook_ids[]              = $unrelated_webhook->get_id();
-		$sync->after_publication_callback = function () use ( $sync, $account_service ): void {
-			$account_service->woopay_enabled = false;
-			$sync->reconcile_webhook();
-			$account_service->woopay_enabled = true;
-			$sync->reconcile_webhook();
-		};
-
-		$sync->reconcile_webhook();
-
-		$webhook_ids       = $this->find_webhooks_by_name( 'WooPayments woopay order status sync' );
-		$this->webhook_ids = array_values( array_unique( array_merge( $this->webhook_ids, $webhook_ids ) ) );
-		$owned_id          = absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) );
-		$owned_webhook     = wc_get_webhook( $owned_id );
-		$this->assertCount( 1, $webhook_ids );
-		$this->assertSame( $webhook_ids[0], $owned_id );
-		$this->assertInstanceOf( WC_Webhook::class, $owned_webhook );
-		$this->assertSame( 'active', $owned_webhook->get_status() );
-		$this->assertSame( 'order.status_changed', $owned_webhook->get_topic() );
-		$this->assertSame( 'https://pay.woo.com/wp-json/platform-checkout/v1/merchant-notification', $owned_webhook->get_delivery_url() );
-		$this->assertInstanceOf( WC_Webhook::class, wc_get_webhook( $unrelated_webhook->get_id() ) );
-		$this->assertFalse( get_option( self::WEBHOOK_LOCK_OPTION, false ) );
-	}
-
-	/**
-	 * @testdox Disabling WooPay deletes only the stored native webhook ID.
-	 */
-	public function test_disabled_reconciliation_deletes_only_owned_webhook(): void {
+	public function test_admin_page_with_the_webhook_in_place_writes_nothing(): void {
 		$sync = $this->create_sync( true, true );
 		$sync->register();
-		$sync->reconcile_webhook();
-		$owned_id = absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) );
-
-		$same_url_webhook                      = $this->create_named_webhook( 'Same URL but unrelated', 'https://pay.woo.com/wp-json/platform-checkout/v1/merchant-notification' );
-		$different_url_webhook                 = $this->create_named_webhook( 'Unrelated webhook', 'https://example.com/webhook' );
-		$this->webhook_ids[]                   = $same_url_webhook->get_id();
-		$this->webhook_ids[]                   = $different_url_webhook->get_id();
-		$this->account_service->woopay_enabled = false;
-
-		$sync->reconcile_webhook();
-
-		$this->assertNull( wc_get_webhook( $owned_id ) );
-		$this->assertFalse( get_option( self::WEBHOOK_ID_OPTION, false ) );
-		$this->assertInstanceOf( WC_Webhook::class, wc_get_webhook( $same_url_webhook->get_id() ) );
-		$this->assertInstanceOf( WC_Webhook::class, wc_get_webhook( $different_url_webhook->get_id() ) );
-	}
-
-	/**
-	 * @testdox Failed disabled ownership deletion retains the row and option for retry.
-	 */
-	public function test_disabled_owned_webhook_delete_failure_preserves_ownership_until_retry(): void {
-		$logger = new Task25RecordingLogger();
-		add_filter( 'woocommerce_logging_class', static fn() => $logger );
-		$sync = $this->create_sync( true, true );
-		$sync->register();
-		$sync->reconcile_webhook();
-
-		$owned_id                              = absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) );
-		$this->webhook_ids[]                   = $owned_id;
-		$this->account_service->woopay_enabled = false;
-		$prevent_delete                        = static function ( $check, $data_object ) use ( $owned_id ) {
-			return $data_object instanceof WC_Webhook && $owned_id === $data_object->get_id() ? false : $check;
+		$this->run_admin_init_for( $sync );
+		$webhook_ids = $this->find_woopay_webhook_ids();
+		$writes      = array();
+		$record      = static function ( $query ) use ( &$writes ) {
+			if ( preg_match( '/^\s*(INSERT|UPDATE|DELETE|REPLACE)\b/i', $query ) ) {
+				$writes[] = $query;
+			}
+			return $query;
 		};
-		add_filter( 'woocommerce_pre_delete_data', $prevent_delete, 10, 2 );
+		add_filter( 'query', $record );
 
-		$sync->reconcile_webhook();
-		remove_filter( 'woocommerce_pre_delete_data', $prevent_delete, 10 );
+		$this->run_admin_init_for( $sync );
+		remove_filter( 'query', $record );
 
-		$this->assertSame( $owned_id, absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) ) );
-		$this->assertInstanceOf( WC_Webhook::class, wc_get_webhook( $owned_id ) );
-		$this->assertFalse( get_option( self::WEBHOOK_LOCK_OPTION, false ) );
-		$this->assertCount( 1, $logger->error_calls );
-		$this->assertSame( 'woocommerce-woopayments', $logger->error_calls[0]['context']['source'] ?? null );
-
-		$sync->reconcile_webhook();
-
-		$this->assertNull( wc_get_webhook( $owned_id ) );
-		$this->assertFalse( get_option( self::WEBHOOK_ID_OPTION, false ) );
-		$this->assertFalse( get_option( self::WEBHOOK_LOCK_OPTION, false ) );
-		$this->assertCount( 1, $logger->error_calls );
+		$this->assertSame( array(), $writes );
+		$this->assertSame( $webhook_ids, $this->find_woopay_webhook_ids() );
+		$this->assertCount( 1, $this->api_client->woopay_updates, 'The secret is registered only when a webhook is created.' );
 	}
 
 	/**
-	 * @testdox Missing and stale owned webhook IDs are safe when WooPay is disabled.
+	 * @testdox Admin pages run no query while WooPay is off, like client 11.1.0, which registers nothing then.
 	 */
-	public function test_disabled_reconciliation_cleans_missing_and_stale_ids_safely(): void {
-		$sync = $this->create_sync( true, false );
-		$sync->register();
-
-		$sync->reconcile_webhook();
-		$this->assertFalse( get_option( self::WEBHOOK_ID_OPTION, false ) );
-
-		update_option( self::WEBHOOK_ID_OPTION, 999999, false );
-		$sync->reconcile_webhook();
-
-		$this->assertFalse( get_option( self::WEBHOOK_ID_OPTION, false ) );
-	}
-
-	/**
-	 * @testdox Disabled reconciliation runs no query when there is no owned webhook to remove.
-	 */
-	public function test_disabled_reconciliation_without_owned_webhook_runs_no_query(): void {
+	public function test_admin_init_runs_no_query_while_woopay_is_off(): void {
 		global $wpdb;
 		$sync = $this->create_sync( true, false );
 		$sync->register();
-		$sync->reconcile_webhook();
-
 		$queries_before = $wpdb->num_queries;
-		$sync->reconcile_webhook();
 
-		$this->assertSame( 0, $wpdb->num_queries - $queries_before, 'admin_init runs this on every admin page and admin-ajax request.' );
-		$this->assertFalse( get_option( self::WEBHOOK_ID_OPTION, false ) );
+		$this->run_admin_init_for( $sync );
+
+		$this->assertSame( 0, $wpdb->num_queries - $queries_before );
 	}
 
 	/**
-	 * @testdox Admin pages read no webhook option while WooPay is off, like client 11.1.0, which registers nothing then.
+	 * @testdox A gateway settings save that keeps WooPay on keeps the webhook, whatever else it changes.
 	 */
-	public function test_admin_init_reads_no_webhook_option_while_woopay_is_off(): void {
-		$sync = $this->create_sync( true, false );
+	public function test_settings_save_that_keeps_woopay_on_keeps_the_webhook(): void {
+		$plugin_webhook = $this->create_plugin_webhook();
+		$sync           = $this->create_sync( true, true );
 		$sync->register();
-		$reads = 0;
-		$count = static function ( $pre ) use ( &$reads ) {
-			++$reads;
-			return $pre;
-		};
-		add_filter( 'pre_option_' . self::WEBHOOK_ID_OPTION, $count );
-
-		try {
-			$this->run_admin_init_for( $sync );
-		} finally {
-			remove_filter( 'pre_option_' . self::WEBHOOK_ID_OPTION, $count );
-		}
-
-		$this->assertSame( 0, $reads );
-	}
-
-	/**
-	 * @testdox Turning WooPay off in the gateway settings removes the owned webhook without a current administrator.
-	 */
-	public function test_settings_disable_transition_removes_owned_webhook(): void {
-		$sync = $this->create_sync( true, true );
-		$sync->register();
-		$sync->reconcile_webhook();
-		$owned_id = absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) );
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'platform_checkout' => 'yes' ) );
-		wp_set_current_user( 0 );
-
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'platform_checkout' => 'no' ) );
-
-		$this->assertGreaterThan( 0, $owned_id );
-		$this->assertNull( wc_get_webhook( $owned_id ) );
-		$this->assertFalse( get_option( self::WEBHOOK_ID_OPTION, false ) );
-		delete_option( 'woocommerce_woocommerce_payments_settings' );
-	}
-
-	/**
-	 * @testdox A gateway settings save that keeps WooPay on keeps the owned webhook, whatever else it changes.
-	 */
-	public function test_settings_save_that_keeps_woopay_on_keeps_owned_webhook(): void {
-		$sync = $this->create_sync( true, true );
-		$sync->register();
-		$sync->reconcile_webhook();
-		$owned_id = absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) );
 		update_option(
-			'woocommerce_woocommerce_payments_settings',
+			self::SETTINGS_OPTION,
 			array(
 				'platform_checkout' => 'yes',
 				'test_mode'         => 'no',
 			)
 		);
 
-		try {
-			update_option(
-				'woocommerce_woocommerce_payments_settings',
-				array(
-					'platform_checkout' => 'yes',
-					'test_mode'         => 'yes',
-				)
-			);
-		} finally {
-			delete_option( 'woocommerce_woocommerce_payments_settings' );
-		}
+		update_option(
+			self::SETTINGS_OPTION,
+			array(
+				'platform_checkout' => 'yes',
+				'test_mode'         => 'yes',
+			)
+		);
 
-		$this->assertGreaterThan( 0, $owned_id );
-		$this->assertInstanceOf( \WC_Webhook::class, wc_get_webhook( $owned_id ) );
-		$this->assertSame( $owned_id, absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) ) );
+		$this->assertSame( array( $plugin_webhook->get_id() ), $this->find_woopay_webhook_ids() );
 	}
 
 	/**
-	 * @testdox An account refresh that leaves WooPay unavailable removes the owned webhook.
+	 * @testdox An account refresh that leaves WooPay unavailable removes every WooPay webhook, without a current administrator.
 	 */
-	public function test_account_refresh_removes_owned_webhook_when_woopay_is_unavailable(): void {
+	public function test_account_refresh_removes_the_webhooks_when_woopay_is_unavailable(): void {
+		$this->create_plugin_webhook();
 		$sync = $this->create_sync( true, true );
 		$sync->register();
-		$sync->reconcile_webhook();
-		$owned_id                              = absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) );
+		$this->run_admin_init_for( $sync );
 		$this->account_service->woopay_enabled = false;
+		wp_set_current_user( 0 );
 
 		do_action( 'woocommerce_payments_account_refreshed', array() );
 
-		$this->assertGreaterThan( 0, $owned_id );
-		$this->assertNull( wc_get_webhook( $owned_id ) );
-		$this->assertFalse( get_option( self::WEBHOOK_ID_OPTION, false ) );
+		$this->assertSame( array(), $this->find_woopay_webhook_ids() );
 	}
 
 	/**
-	 * @testdox Enabled reconciliation recovers from a stale stored webhook ID.
+	 * @testdox Plugin-owned runtime never touches WooPay webhook rows.
 	 */
-	public function test_enabled_reconciliation_recovers_from_stale_id(): void {
-		update_option( self::WEBHOOK_ID_OPTION, 999999, false );
-		$sync = $this->create_sync( true, true );
+	public function test_plugin_owned_runtime_does_not_touch_webhooks(): void {
+		$plugin_webhook = $this->create_plugin_webhook();
+		$sync           = $this->create_sync( false, false );
 		$sync->register();
 
+		$sync->maybe_create_woopay_order_webhook();
 		$sync->reconcile_webhook();
+		$sync->handle_settings_update( array( 'platform_checkout' => 'yes' ), array( 'platform_checkout' => 'no' ) );
 
-		$webhook_id = absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) );
-		$this->assertGreaterThan( 0, $webhook_id );
-		$this->assertNotSame( 999999, $webhook_id );
-		$this->assertInstanceOf( WC_Webhook::class, wc_get_webhook( $webhook_id ) );
-	}
-
-	/**
-	 * @testdox Plugin-owned runtime never reconciles WooPay webhook rows.
-	 */
-	public function test_plugin_owned_runtime_does_not_mutate_webhooks(): void {
-		$sync = $this->create_sync( false, true );
-		$sync->register();
-
-		$sync->reconcile_webhook();
-		$sync->reconcile_webhook();
-
-		$this->assertFalse( get_option( self::WEBHOOK_ID_OPTION, false ) );
-		$this->assertCount( 0, $this->find_webhooks_by_name( 'WooPayments woopay order status sync' ) );
+		$this->assertSame( array( $plugin_webhook->get_id() ), $this->find_woopay_webhook_ids() );
+		$this->assertSame( array(), $this->api_client->woopay_updates );
 	}
 
 	/**
 	 * @testdox Webhook creation requires a WooCommerce-managing administrator.
 	 */
-	public function test_enabled_reconciliation_does_not_create_without_capability(): void {
+	public function test_creation_requires_a_woocommerce_manager(): void {
 		wp_set_current_user( 0 );
 		$sync = $this->create_sync( true, true );
 		$sync->register();
 
-		$sync->reconcile_webhook();
+		$this->run_admin_init_for( $sync );
 
-		$this->assertFalse( get_option( self::WEBHOOK_ID_OPTION, false ) );
+		$this->assertSame( array(), $this->find_woopay_webhook_ids() );
 	}
 
 	/**
-	 * @testdox Restricted account status $status prevents native WooPay webhook creation.
+	 * @testdox Restricted account status $status prevents creation and removes the existing webhook.
 	 * @dataProvider restricted_account_statuses
 	 *
 	 * @param string $status Restricted account status.
 	 */
-	public function test_restricted_account_does_not_create_native_webhook( string $status ): void {
-		$sync = $this->create_sync( true, true, null, $status );
+	public function test_restricted_account_prevents_creation_and_removes_the_webhook( string $status ): void {
+		$sync = $this->create_sync( true, true, $status );
 		$sync->register();
+		$this->run_admin_init_for( $sync );
+		$this->assertSame( array(), $this->find_woopay_webhook_ids() );
 
-		$sync->reconcile_webhook();
+		$plugin_webhook = $this->create_plugin_webhook();
+		do_action( 'woocommerce_payments_account_refreshed', array() );
 
-		$this->assertFalse( get_option( self::WEBHOOK_ID_OPTION, false ) );
-		$this->assertCount( 0, $this->find_webhooks_by_name( 'WooPayments woopay order status sync' ) );
+		$this->assertNull( wc_get_webhook( $plugin_webhook->get_id() ) );
 	}
 
 	/**
-	 * @testdox Restricted account status $status removes the existing native-owned WooPay webhook.
-	 * @dataProvider restricted_account_statuses
-	 *
-	 * @param string $status Restricted account status.
-	 */
-	public function test_restricted_account_removes_native_owned_webhook( string $status ): void {
-		$sync = $this->create_sync( true, true );
-		$sync->register();
-		$sync->reconcile_webhook();
-		$owned_id = absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) );
-
-		$this->account_service->account_status = $status;
-		$sync->reconcile_webhook();
-
-		$this->assertGreaterThan( 0, $owned_id );
-		$this->assertNull( wc_get_webhook( $owned_id ) );
-		$this->assertFalse( get_option( self::WEBHOOK_ID_OPTION, false ) );
-	}
-
-	/**
-	 * @testdox Plugin ownership leaves the existing native webhook untouched for restricted status $status.
-	 * @dataProvider restricted_account_statuses
-	 *
-	 * @param string $status Restricted account status.
-	 */
-	public function test_plugin_owned_restricted_account_does_not_mutate_native_webhook( string $status ): void {
-		$native_sync = $this->create_sync( true, true );
-		$native_sync->register();
-		$native_sync->reconcile_webhook();
-		$owned_id = absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) );
-
-		$plugin_sync = $this->create_sync( false, true, null, $status );
-		$plugin_sync->register();
-		$plugin_sync->reconcile_webhook();
-
-		$this->assertGreaterThan( 0, $owned_id );
-		$this->assertSame( $owned_id, absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) ) );
-		$this->assertInstanceOf( WC_Webhook::class, wc_get_webhook( $owned_id ) );
-	}
-
-	/**
-	 * @testdox Invalid account data prevents native WooPay webhook creation.
+	 * @testdox Invalid account data prevents creation and removes the existing webhook.
 	 * @dataProvider invalid_woopay_accounts
 	 *
 	 * @param array<string,mixed> $account_data Invalid account data.
 	 */
-	public function test_invalid_account_does_not_create_native_webhook( array $account_data ): void {
-		$sync = $this->create_sync( true, true, null, '', $account_data );
+	public function test_invalid_account_prevents_creation_and_removes_the_webhook( array $account_data ): void {
+		$sync = $this->create_sync( true, true, '', $account_data );
 		$sync->register();
+		$this->run_admin_init_for( $sync );
+		$this->assertSame( array(), $this->find_woopay_webhook_ids() );
 
-		$sync->reconcile_webhook();
+		$plugin_webhook = $this->create_plugin_webhook();
+		do_action( 'woocommerce_payments_account_refreshed', array() );
 
-		$this->assertFalse( get_option( self::WEBHOOK_ID_OPTION, false ) );
-		$this->assertCount( 0, $this->find_webhooks_by_name( 'WooPayments woopay order status sync' ) );
+		$this->assertNull( wc_get_webhook( $plugin_webhook->get_id() ) );
 	}
 
 	/**
-	 * @testdox Invalid account data removes the existing native-owned WooPay webhook.
-	 * @dataProvider invalid_woopay_accounts
-	 *
-	 * @param array<string,mixed> $account_data Invalid account data.
+	 * @testdox A failed webhook save is logged, leaves no row, makes no platform call and releases the lock.
 	 */
-	public function test_invalid_account_removes_native_owned_webhook( array $account_data ): void {
-		$sync = $this->create_sync( true, true );
-		$sync->register();
-		$sync->reconcile_webhook();
-		$owned_id = absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) );
-
-		$this->account_service->account_data_overrides = $account_data;
-		$sync->reconcile_webhook();
-
-		$this->assertGreaterThan( 0, $owned_id );
-		$this->assertNull( wc_get_webhook( $owned_id ) );
-		$this->assertFalse( get_option( self::WEBHOOK_ID_OPTION, false ) );
-	}
-
-	/**
-	 * @testdox Plugin ownership leaves the native webhook untouched for invalid account data.
-	 * @dataProvider invalid_woopay_accounts
-	 *
-	 * @param array<string,mixed> $account_data Invalid account data.
-	 */
-	public function test_plugin_owned_invalid_account_does_not_mutate_native_webhook( array $account_data ): void {
-		$native_sync = $this->create_sync( true, true );
-		$native_sync->register();
-		$native_sync->reconcile_webhook();
-		$owned_id = absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) );
-
-		$plugin_sync = $this->create_sync( false, true, null, '', $account_data );
-		$plugin_sync->register();
-		$plugin_sync->reconcile_webhook();
-
-		$this->assertGreaterThan( 0, $owned_id );
-		$this->assertSame( $owned_id, absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) ) );
-		$this->assertInstanceOf( WC_Webhook::class, wc_get_webhook( $owned_id ) );
-	}
-
-	/**
-	 * @testdox Disabled reconciliation removes the owned webhook without requiring a current administrator.
-	 */
-	public function test_disabled_reconciliation_removes_owned_webhook_without_capability(): void {
-		$sync = $this->create_sync( true, true );
-		$sync->register();
-		$sync->reconcile_webhook();
-		$owned_id = absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) );
-
-		$this->account_service->woopay_enabled = false;
-		wp_set_current_user( 0 );
-		$sync->reconcile_webhook();
-
-		$this->assertGreaterThan( 0, $owned_id );
-		$this->assertNull( wc_get_webhook( $owned_id ) );
-		$this->assertFalse( get_option( self::WEBHOOK_ID_OPTION, false ) );
-	}
-
-	/**
-	 * @testdox Webhook save failures are contained, logged, and leave no ownership residue.
-	 * @dataProvider webhook_save_failure_modes
-	 *
-	 * @param string $failure_mode Synthetic save failure mode.
-	 */
-	public function test_webhook_save_failure_is_safe_and_logged( string $failure_mode ): void {
+	public function test_failed_webhook_save_is_logged(): void {
 		$logger = new Task25RecordingLogger();
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
-		$sync = new Task25FailingWooPayOrderStatusSync( $failure_mode );
-		$this->create_sync( true, true, $sync )->register();
+		$sync = $this->create_sync( true, true );
+		$sync->register();
+		$fail_insert = static function ( $query ) {
+			return false !== stripos( $query, 'INSERT INTO `' . $GLOBALS['wpdb']->prefix . 'wc_webhooks`' ) ? '' : $query;
+		};
+		add_filter( 'query', $fail_insert );
 
-		$sync->reconcile_webhook();
-		$remaining_webhook_ids = $this->find_webhooks_by_name( 'WooPayments woopay order status sync' );
-		array_push( $this->webhook_ids, ...$remaining_webhook_ids );
+		$this->run_admin_init_for( $sync );
+		remove_filter( 'query', $fail_insert );
 
-		$this->assertFalse( get_option( self::WEBHOOK_ID_OPTION, false ) );
-		$this->assertFalse( get_option( self::WEBHOOK_LOCK_OPTION, false ) );
-		$this->assertCount( 0, $remaining_webhook_ids );
-		$this->assertCount( 1, $logger->error_calls );
-		$this->assertSame( 'woocommerce-woopayments', $logger->error_calls[0]['context']['source'] );
-	}
-
-	/**
-	 * Webhook save failure modes.
-	 *
-	 * @return array<string,array{string}>
-	 */
-	public function webhook_save_failure_modes(): array {
-		return array(
-			'zero ID'                      => array( 'zero' ),
-			'throwable before persistence' => array( 'throw_before' ),
-			'throwable after persistence'  => array( 'throw_after' ),
-		);
+		$this->assertSame( array(), $this->find_woopay_webhook_ids() );
+		$this->assertSame( array(), $this->api_client->woopay_updates );
+		$this->assertNull( $this->read_option_row( self::CLAIM_OPTION ) );
+		$this->assertSame( array( 'Unable to create the WooPay order-status webhook.' ), array_column( $logger->error_calls, 'message' ) );
+		$this->assertSame( 'woocommerce-woopayments', $logger->error_calls[0]['context']['source'] ?? null );
 	}
 
 	/**
@@ -1017,37 +493,6 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 			'missing card payments'     => array( array( 'capabilities' => array() ) ),
 			'card payments unrequested' => array( array( 'capabilities' => array( 'card_payments' => 'unrequested' ) ) ),
 		);
-	}
-
-	/**
-	 * @testdox A plugin-created WooPay order-status webhook row resolves under native topic filters.
-	 */
-	public function test_plugin_created_webhook_row_resolves_under_native_filters(): void {
-		$this->assertFalse( wc_is_webhook_valid_topic( 'order.status_changed' ) );
-
-		$this->with_plugin_topic_filters(
-			function (): void {
-				$webhook             = $this->create_plugin_created_webhook( 'https://pay.woo.com/wp-json/platform-checkout/v1/merchant-notification' );
-				$this->webhook_ids[] = $webhook->get_id();
-				$this->assertSame( 'order.status_changed', $webhook->get_topic() );
-				$this->assertNotSame( 0, $webhook->get_id() );
-			}
-		);
-
-		$this->assertFalse( wc_is_webhook_valid_topic( 'order.status_changed' ) );
-
-		$sync = $this->create_sync( true );
-		$sync->register();
-
-		$this->assertTrue( wc_is_webhook_valid_topic( 'order.status_changed' ) );
-		$this->assertContains(
-			'wcpay_webhook_platform_checkout_order_status_changed',
-			WC_Webhook::get_default_topic_hooks()['order.status_changed']
-		);
-
-		$webhook = new WC_Webhook( $this->webhook_ids[0] );
-		$this->assertSame( 'order.status_changed', $webhook->get_topic() );
-		$this->assertContains( 'wcpay_webhook_platform_checkout_order_status_changed', $webhook->get_hooks() );
 	}
 
 	/**
@@ -1090,10 +535,8 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$sync = $this->create_sync( true );
 		$sync->register();
 
-		$woopay_webhook            = $this->create_plugin_created_webhook( 'https://pay.woo.com/wp-json/platform-checkout/v1/merchant-notification' );
-		$this->webhook_ids[]       = $woopay_webhook->get_id();
-		$non_woopay_webhook        = $this->create_plugin_created_webhook( 'https://example.com/webhook' );
-		$this->webhook_ids[]       = $non_woopay_webhook->get_id();
+		$woopay_webhook            = $this->create_plugin_webhook();
+		$non_woopay_webhook        = $this->create_webhook_row( self::WEBHOOK_NAME, 'https://example.com/webhook', 'order.status_changed', 'active' );
 		$pre_processing_payload    = array(
 			'status' => 'processing',
 			'id'     => 123,
@@ -1117,25 +560,22 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a sync instance.
 	 *
-	 * @param bool                                  $native_register Whether native should register.
-	 * @param bool                                  $woopay_enabled Whether native WooPay is enabled.
-	 * @param WooPaymentsWooPayOrderStatusSync|null $sync           Optional sync test double.
-	 * @param string                                $account_status Restricted account status.
-	 * @param array<string,mixed>                   $account_data   Account data overrides.
+	 * @param bool                $native_register Whether native should register.
+	 * @param bool                $woopay_enabled  Whether WooPay is on in the gateway settings.
+	 * @param string              $account_status  Account status.
+	 * @param array<string,mixed> $account_data    Account data overrides.
 	 * @return WooPaymentsWooPayOrderStatusSync
 	 */
-	private function create_sync( bool $native_register, bool $woopay_enabled = true, ?WooPaymentsWooPayOrderStatusSync $sync = null, string $account_status = '', array $account_data = array() ): WooPaymentsWooPayOrderStatusSync {
-		$this->assertTrue( class_exists( WooPaymentsWooPayOrderStatusSync::class ), 'WooPaymentsWooPayOrderStatusSync should exist.' );
-
+	private function create_sync( bool $native_register, bool $woopay_enabled = true, string $account_status = '', array $account_data = array() ): WooPaymentsWooPayOrderStatusSync {
 		$this->account_service                         = new Task25WooPayAccountService();
 		$this->account_service->woopay_enabled         = $woopay_enabled;
 		$this->account_service->account_status         = $account_status;
 		$this->account_service->account_data_overrides = $account_data;
-		$this->session_service                         = new Task25WooPaySessionService();
-		$this->session_service->init( $this->account_service, new WooPaymentsFrontendStylesService(), new WooPaymentsFrontendTrackingController() );
+		$session_service                               = new Task25WooPaySessionService();
+		$session_service->init( $this->account_service, new WooPaymentsFrontendStylesService(), new WooPaymentsFrontendTrackingController() );
 		$this->api_client = new Task25WooPayApiClient();
-		$sync             = $sync ?? new WooPaymentsWooPayOrderStatusSync();
-		$sync->init( new StaticNativeRuntimeArbiter( $native_register ), $this->session_service, $this->api_client );
+		$sync             = new WooPaymentsWooPayOrderStatusSync();
+		$sync->init( new StaticNativeRuntimeArbiter( $native_register ), $session_service, $this->api_client, new TransientRowLock() );
 
 		$this->syncs[] = $sync;
 
@@ -1143,85 +583,129 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a WooPay webhook row using the plugin-created row shape.
+	 * Create a WooPay webhook row the way client 11.1.0 WooPay_Order_Status_Sync::register_webhook() does.
 	 *
-	 * @param string $delivery_url Delivery URL.
 	 * @return WC_Webhook
 	 */
-	private function create_plugin_created_webhook( string $delivery_url ): WC_Webhook {
-		return $this->create_named_webhook( 'WooPayments woopay order status sync', $delivery_url );
+	private function create_plugin_webhook(): WC_Webhook {
+		return $this->create_webhook_row( self::WEBHOOK_NAME, self::WOOPAY_URL, 'order.status_changed', 'active', self::PLUGIN_SECRET );
 	}
 
 	/**
-	 * Create a named webhook row.
+	 * Create a webhook row while the plugin's topic filters are present, as the plugin created its rows.
 	 *
 	 * @param string $name         Webhook name.
 	 * @param string $delivery_url Delivery URL.
+	 * @param string $topic        Topic.
+	 * @param string $status       Status.
+	 * @param string $secret       Secret.
 	 * @return WC_Webhook
 	 */
-	private function create_named_webhook( string $name, string $delivery_url ): WC_Webhook {
-		$webhook = new WC_Webhook();
-		$webhook->set_name( $name );
-		$webhook->set_user_id( get_current_user_id() );
-		$webhook->set_topic( 'order.status_changed' );
-		$webhook->set_secret( 'test-secret' );
-		$webhook->set_delivery_url( $delivery_url );
-		$webhook->set_status( 'active' );
-		$webhook->save();
+	private function create_webhook_row( string $name, string $delivery_url, string $topic, string $status, string $secret = 'test-secret' ): WC_Webhook {
+		// Client 11.1.0 WooPay_Order_Status_Sync::add_resource(), add_event() and add_topics() make the order.status_changed topic valid.
+		$add_resource = static fn( array $resources ): array => array_merge( $resources, array( 'order' ) );
+		$add_event    = static fn( array $events ): array => array_merge( $events, array( 'status_changed' ) );
+		add_filter( 'woocommerce_valid_webhook_resources', $add_resource );
+		add_filter( 'woocommerce_valid_webhook_events', $add_event );
+
+		try {
+			$webhook = new WC_Webhook();
+			$webhook->set_name( $name );
+			$webhook->set_user_id( get_current_user_id() );
+			$webhook->set_topic( $topic );
+			$webhook->set_secret( $secret );
+			$webhook->set_delivery_url( $delivery_url );
+			$webhook->set_status( $status );
+			$webhook->save();
+		} finally {
+			remove_filter( 'woocommerce_valid_webhook_resources', $add_resource );
+			remove_filter( 'woocommerce_valid_webhook_events', $add_event );
+		}
+
+		$this->assertSame( $topic, $webhook->get_topic(), 'The fixture row must keep its topic.' );
 
 		return $webhook;
 	}
 
 	/**
-	 * Find webhook IDs by name through the WooCommerce webhook data store.
+	 * Find the active WooPay order-status webhooks straight from the database.
 	 *
-	 * @param string $name Webhook name.
 	 * @return int[]
 	 */
-	private function find_webhooks_by_name( string $name ): array {
-		$data_store = \WC_Data_Store::load( 'webhook' );
+	private function find_woopay_webhook_ids(): array {
+		global $wpdb;
 
 		return array_map(
-			'absint',
-			$data_store->search_webhooks(
-				array(
-					'search' => $name,
-					'limit'  => -1,
+			'intval',
+			$wpdb->get_col(
+				$wpdb->prepare(
+					"SELECT webhook_id FROM {$wpdb->prefix}wc_webhooks WHERE status = 'active' AND topic = 'order.status_changed' AND delivery_url = %s ORDER BY webhook_id",
+					self::WOOPAY_URL
 				)
 			)
 		);
 	}
 
 	/**
-	 * Run a callback while the old plugin's topic filters are present.
+	 * Change a WooPay order's status with every active webhook loaded, and return the IDs of the webhooks that processed a delivery.
 	 *
-	 * @param callable $callback Callback.
+	 * @param \WC_Order $order WooPay order.
+	 * @return int[]
 	 */
-	private function with_plugin_topic_filters( callable $callback ): void {
-		$add_resource = static function ( array $resources ): array {
-			$resources[] = 'order';
-			return $resources;
+	private function count_deliveries_of_a_status_change( \WC_Order $order ): array {
+		$deliveries = array();
+		$record     = static function ( $webhook ) use ( &$deliveries ): void {
+			$deliveries[] = $webhook->get_id();
 		};
-		$add_event    = static function ( array $events ): array {
-			$events[] = 'status_changed';
-			return $events;
-		};
-		$add_topic    = static function ( array $topic_hooks ): array {
-			$topic_hooks['order.status_changed'][] = 'wcpay_webhook_platform_checkout_order_status_changed';
-			return $topic_hooks;
-		};
+		remove_action( 'woocommerce_webhook_process_delivery', 'wc_webhook_process_delivery', 10 );
+		add_action( 'woocommerce_webhook_process_delivery', $record );
+		wc_load_webhooks( 'active' );
 
-		add_filter( 'woocommerce_valid_webhook_resources', $add_resource );
-		add_filter( 'woocommerce_valid_webhook_events', $add_event );
-		add_filter( 'woocommerce_webhook_topic_hooks', $add_topic, 20 );
+		$order->update_status( 'completed' );
 
-		try {
-			$callback();
-		} finally {
-			remove_filter( 'woocommerce_valid_webhook_resources', $add_resource );
-			remove_filter( 'woocommerce_valid_webhook_events', $add_event );
-			remove_filter( 'woocommerce_webhook_topic_hooks', $add_topic, 20 );
-		}
+		remove_action( 'woocommerce_webhook_process_delivery', $record );
+		add_action( 'woocommerce_webhook_process_delivery', 'wc_webhook_process_delivery', 10, 2 );
+
+		return $deliveries;
+	}
+
+	/**
+	 * Store the creation lock rows directly in the database, as another request would.
+	 *
+	 * @param string $value      Lock value.
+	 * @param int    $expiration Lock expiry timestamp.
+	 */
+	private function insert_claim_rows( string $value, int $expiration ): void {
+		global $wpdb;
+
+		$wpdb->insert(
+			$wpdb->options,
+			array(
+				'option_name'  => self::CLAIM_EXPIRY,
+				'option_value' => (string) $expiration,
+				'autoload'     => 'off',
+			)
+		);
+		$wpdb->insert(
+			$wpdb->options,
+			array(
+				'option_name'  => self::CLAIM_OPTION,
+				'option_value' => $value,
+				'autoload'     => 'off',
+			)
+		);
+	}
+
+	/**
+	 * Read an option row straight from the database.
+	 *
+	 * @param string $name Option name.
+	 * @return string|null Stored value, or null when the row does not exist.
+	 */
+	private function read_option_row( string $name ): ?string {
+		global $wpdb;
+
+		return $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $name ) );
 	}
 
 	/**
@@ -1235,11 +719,9 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		remove_filter( 'woocommerce_webhook_topic_hooks', array( $sync, 'add_topics' ), 20 );
 		remove_filter( 'woocommerce_webhook_payload', array( $sync, 'create_payload' ) );
 		remove_action( 'woocommerce_order_status_changed', array( $sync, 'send_webhook' ) );
-		remove_action( 'admin_init', array( $sync, 'reconcile_webhook' ) );
 		remove_action( 'admin_init', array( $sync, 'maybe_create_woopay_order_webhook' ) );
 		remove_action( 'woocommerce_payments_account_refreshed', array( $sync, 'reconcile_webhook' ) );
 		remove_action( 'update_option_woocommerce_woocommerce_payments_settings', array( $sync, 'handle_settings_update' ) );
-		remove_action( 'wcpay_store_setup_sync', array( $sync, 'reconcile_webhook' ) );
 	}
 
 	/**
@@ -1262,7 +744,7 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 // phpcs:disable Generic.Files.OneObjectStructurePerFile.MultipleFound,Squiz.Classes.ClassFileName.NoMatch,SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName,Squiz.Commenting.FunctionComment.Missing
 
 /**
- * Mutable WooPay session service for webhook lifecycle tests.
+ * WooPay session service with a fixed WooPay host.
  */
 class Task25WooPaySessionService extends WooPaymentsWooPaySessionService {
 	public function get_woopay_rest_url( string $endpoint ): string {
@@ -1271,7 +753,7 @@ class Task25WooPaySessionService extends WooPaymentsWooPaySessionService {
 }
 
 /**
- * Recording WooPay API client for webhook lifecycle tests.
+ * Recording WooPay API client.
  */
 class Task25WooPayApiClient extends WooPaymentsApiClient {
 	/**
@@ -1295,16 +777,17 @@ class Task25WooPayApiClient extends WooPaymentsApiClient {
 			throw $this->update_woopay_exception;
 		}
 
+		// The platform's POST accounts/platform_checkout handler answers { "result": "success" }, which client 11.1.0 update_woopay() returns as decoded.
 		return array( 'result' => 'success' );
 	}
 }
 
 /**
- * Mutable WooPayments account service for webhook lifecycle tests.
+ * Mutable WooPayments account service.
  */
 class Task25WooPayAccountService extends WooPaymentsAccountService {
 	/**
-	 * Whether WooPay is enabled in gateway settings.
+	 * Whether WooPay is on in the gateway settings.
 	 *
 	 * @var bool
 	 */
@@ -1333,7 +816,7 @@ class Task25WooPayAccountService extends WooPaymentsAccountService {
 
 		return array_merge(
 			array(
-				'account_id'                 => 'acct_task_25',
+				'account_id'                 => 'acct_woopay_sync',
 				'details_submitted'          => true,
 				'capabilities'               => array( 'card_payments' => 'active' ),
 				'platform_checkout_eligible' => true,
@@ -1341,142 +824,6 @@ class Task25WooPayAccountService extends WooPaymentsAccountService {
 			),
 			$this->account_data_overrides
 		);
-	}
-}
-
-/**
- * WooPay sync whose webhook persistence fails for test coverage.
- */
-class Task25FailingWooPayOrderStatusSync extends WooPaymentsWooPayOrderStatusSync {
-	/**
-	 * Synthetic save failure mode.
-	 *
-	 * @var string
-	 */
-	private string $failure_mode;
-
-	public function __construct( string $failure_mode ) {
-		$this->failure_mode = $failure_mode;
-	}
-
-	protected function save_webhook( WC_Webhook $webhook ): int {
-		if ( 'throw_before' === $this->failure_mode ) {
-			throw new \RuntimeException( 'Synthetic webhook save failure.' );
-		}
-		if ( 'throw_after' === $this->failure_mode ) {
-			parent::save_webhook( $webhook );
-			throw new \RuntimeException( 'Synthetic webhook post-save failure.' );
-		}
-
-		return 0;
-	}
-}
-
-/**
- * WooPay sync that coordinates an account-state change during persistence.
- */
-class Task25DisableDuringSaveWooPayOrderStatusSync extends WooPaymentsWooPayOrderStatusSync {
-	/**
-	 * Callback invoked after the webhook row is persisted but before save returns.
-	 *
-	 * @var \Closure|null
-	 */
-	public ?\Closure $after_save_callback = null;
-
-	protected function save_webhook( WC_Webhook $webhook ): int {
-		$webhook_id = parent::save_webhook( $webhook );
-		if ( $this->after_save_callback instanceof \Closure ) {
-			( $this->after_save_callback )();
-		}
-
-		return $webhook_id;
-	}
-}
-
-/**
- * WooPay sync exposing creation-lock ownership transitions for concurrency tests.
- */
-class Task25InspectableLockWooPayOrderStatusSync extends WooPaymentsWooPayOrderStatusSync {
-	public function acquire_test_creation_lock(): ?string {
-		return parent::acquire_creation_lock();
-	}
-
-	public function release_test_creation_lock( string $token ): void {
-		parent::release_creation_lock( $token );
-	}
-}
-
-/**
- * WooPay sync coordinating two successors that observed the same stale lock.
- */
-class Task25CoordinatedStaleLockWooPayOrderStatusSync extends Task25InspectableLockWooPayOrderStatusSync {
-	/**
-	 * Callback invoked after this request observes a stale lock and before replacement.
-	 *
-	 * @var \Closure|null
-	 */
-	public ?\Closure $during_stale_replacement = null;
-
-	protected function replace_stale_creation_lock( array $observed_lock, array $replacement ): bool {
-		if ( $this->during_stale_replacement instanceof \Closure ) {
-			$callback                       = $this->during_stale_replacement;
-			$this->during_stale_replacement = null;
-			$callback();
-		}
-
-		return parent::replace_stale_creation_lock( $observed_lock, $replacement );
-	}
-}
-
-/**
- * WooPay sync coordinating a lock ownership change immediately after persistence.
- */
-class Task25SaveInterleavingWooPayOrderStatusSync extends WooPaymentsWooPayOrderStatusSync {
-	/**
-	 * Callback invoked after the webhook row is persisted but before save returns.
-	 *
-	 * @var \Closure|null
-	 */
-	public ?\Closure $after_save_callback = null;
-
-	protected function save_webhook( WC_Webhook $webhook ): int {
-		$webhook_id = parent::save_webhook( $webhook );
-		if ( $this->after_save_callback instanceof \Closure ) {
-			( $this->after_save_callback )();
-		}
-
-		return $webhook_id;
-	}
-
-	public function release_test_creation_lock( string $token ): void {
-		parent::release_creation_lock( $token );
-	}
-}
-
-/**
- * WooPay sync coordinating state transitions immediately after ownership publication.
- */
-class Task25AfterPublicationWooPayOrderStatusSync extends WooPaymentsWooPayOrderStatusSync {
-	/**
-	 * One-shot callback invoked after ownership publication.
-	 *
-	 * @var \Closure|null
-	 */
-	public ?\Closure $after_publication_callback = null;
-
-	protected function publish_webhook_ownership( int $webhook_id ): bool {
-		$published = parent::publish_webhook_ownership( $webhook_id );
-		if ( $published && $this->after_publication_callback instanceof \Closure ) {
-			$callback                         = $this->after_publication_callback;
-			$this->after_publication_callback = null;
-			$callback();
-		}
-
-		return $published;
-	}
-
-	public function release_test_creation_lock( string $token ): void {
-		parent::release_creation_lock( $token );
 	}
 }
 
