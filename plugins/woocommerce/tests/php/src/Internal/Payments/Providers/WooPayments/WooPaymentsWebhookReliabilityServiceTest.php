@@ -8,6 +8,8 @@ use ActionScheduler_Store;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFailedEventStore;
@@ -174,6 +176,36 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$last_fetch = (int) get_option( self::EXPECTED_LAST_FETCH_OPTION, 0 );
 		$this->assertGreaterThanOrEqual( $before, $last_fetch );
 		$this->assertLessThanOrEqual( $after, $last_fetch );
+	}
+
+	/**
+	 * @testdox A failed fetch from the platform leaves the last fetch time alone, so the status report does not show a healthy fetch.
+	 */
+	public function test_failed_fetch_does_not_record_a_fetch_time(): void {
+		update_option( self::EXPECTED_LAST_FETCH_OPTION, 1700000000, false );
+		$provider = new WooPaymentsFailedEventsProvider();
+		$provider->init(
+			new class() extends WooPaymentsApiClient {
+				/**
+				 * Fail as the platform does when it cannot answer.
+				 *
+				 * @return array<string,mixed>
+				 * @throws WooPaymentsApiException Always, while the platform is down.
+				 */
+				public function get_failed_webhook_events(): array {
+					if ( 0 < time() ) {
+						throw new WooPaymentsApiException( 'Service unavailable.', 'wcpay_server_error', 503 );
+					}
+
+					return array();
+				}
+			}
+		);
+		$service = $this->create_service( new RecordingActionSchedulerService(), wc_get_container()->get( WooPaymentsFailedEventStore::class ), $provider, new RecordingEventIngestor() );
+
+		$service->fetch_events_and_schedule_processing_jobs();
+
+		$this->assertSame( 1700000000, (int) get_option( self::EXPECTED_LAST_FETCH_OPTION ) );
 	}
 
 	/**

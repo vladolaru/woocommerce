@@ -152,7 +152,10 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	 */
 	public function fetch_events_and_schedule_processing_jobs(): void {
 		$response = $this->failed_events_provider->get_failed_webhook_events();
-		update_option( self::LAST_FETCH_OPTION_KEY, time(), false );
+		// The status report shows this as the last fetch; a failed one must not look like a healthy fetch.
+		if ( ! $this->failed_events_provider->did_last_fetch_fail() ) {
+			update_option( self::LAST_FETCH_OPTION_KEY, time(), false );
+		}
 
 		foreach ( $response['data'] as $event ) {
 			if ( empty( $event['id'] ) || ! is_string( $event['id'] ) ) {

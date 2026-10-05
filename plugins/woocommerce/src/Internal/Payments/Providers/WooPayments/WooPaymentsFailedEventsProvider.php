@@ -33,6 +33,13 @@ class WooPaymentsFailedEventsProvider {
 	private ?WooPaymentsApiClient $api_client = null;
 
 	/**
+	 * Whether the last fetch from the platform failed.
+	 *
+	 * @var bool
+	 */
+	private bool $last_fetch_failed = false;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -56,10 +63,12 @@ class WooPaymentsFailedEventsProvider {
 			'has_more' => false,
 		);
 
+		$this->last_fetch_failed = false;
 		if ( null !== $this->api_client ) {
 			try {
 				$events = $this->api_client->get_failed_webhook_events();
 			} catch ( WooPaymentsApiException $exception ) {
+				$this->last_fetch_failed = true;
 				// The client appends the platform's message; native logs its status and code.
 				wc_get_logger()->error(
 					'Can not fetch failed events from the server.',
@@ -82,6 +91,17 @@ class WooPaymentsFailedEventsProvider {
 		);
 
 		return $this->normalize_events_page( $events );
+	}
+
+	/**
+	 * Tell whether the last call to get_failed_webhook_events() failed to reach the platform.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return bool
+	 */
+	public function did_last_fetch_fail(): bool {
+		return $this->last_fetch_failed;
 	}
 
 	/**
