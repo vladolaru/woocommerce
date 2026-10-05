@@ -221,6 +221,13 @@ class SubscriptionHelper {
 			return '';
 		}
 
+		/**
+		 * Filters whether the subscription mode is forced to disabled.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $subscription_mode_disabled True to disable the subscription mode. Default false.
+		 */
 		$subscription_mode_disabled = (bool) apply_filters(
 			'woocommerce_paypal_payments_subscription_mode_disabled',
 			false
@@ -245,7 +252,7 @@ class SubscriptionHelper {
 			$product = wc_get_product();
 			assert( $product instanceof WC_Product );
 
-			if ( $product->get_type() === 'subscription' && $product->meta_exists( 'ppcp_subscription_plan' ) ) {
+			if ( 'subscription' === $product->get_type() && $product->meta_exists( 'ppcp_subscription_plan' ) ) {
 				return $product->get_meta( 'ppcp_subscription_plan' )['id'];
 			}
 		}
@@ -259,16 +266,20 @@ class SubscriptionHelper {
 			$product = wc_get_product( $item['product_id'] );
 			assert( $product instanceof WC_Product );
 
-			if ( $product->get_type() === 'subscription' && $product->meta_exists( 'ppcp_subscription_plan' ) ) {
+			if ( 'subscription' === $product->get_type() && $product->meta_exists( 'ppcp_subscription_plan' ) ) {
 				return $product->get_meta( 'ppcp_subscription_plan' )['id'];
 			}
 
-			if ( $product->get_type() === 'variable-subscription' ) {
+			if ( 'variable-subscription' === $product->get_type() ) {
 				assert( $product instanceof WC_Product_Variable );
 
 				$product_variations = $product->get_available_variations();
 				foreach ( $product_variations as $variation ) {
-					/** @psalm-suppress UndefinedMethod */
+					/**
+					 * The product is a subscription variation, whose methods Psalm does not know.
+					 *
+					 * @psalm-suppress UndefinedMethod
+					 */
 					$variation_product = wc_get_product( $variation['variation_id'] ) ?? '';
 					if ( $variation_product && $variation_product->meta_exists( 'ppcp_subscription_plan' ) ) {
 						return $variation_product->get_meta( 'ppcp_subscription_plan' )['id'];

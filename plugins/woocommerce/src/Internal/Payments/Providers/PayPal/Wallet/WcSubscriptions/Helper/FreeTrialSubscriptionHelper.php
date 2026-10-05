@@ -6,6 +6,9 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSub
 use WC_Subscriptions;
 use WC_Subscriptions_Product;
 
+/**
+ * Helper for carts and orders that contain a free trial subscription.
+ */
 class FreeTrialSubscriptionHelper {
 	/**
 	 * Checks if the cart contains only free trial.

@@ -113,6 +113,8 @@ class RenewalHandler {
 	private $wc_payment_tokens;
 
 	/**
+	 * RenewalHandler constructor.
+	 *
 	 * @param LoggerInterface             $logger The logger.
 	 * @param OrderEndpoint               $order_endpoint The order endpoint.
 	 * @param PurchaseUnitFactory         $purchase_unit_factory The purchase unit factory.
@@ -209,7 +211,7 @@ class RenewalHandler {
 		// Vault v3.
 		$payment_source = null;
 		$payment_method = $wc_order->get_payment_method();
-		if ( $payment_method === PayPalGateway::ID ) {
+		if ( PayPalGateway::ID === $payment_method ) {
 			$customer_tokens = $this->wc_payment_tokens->customer_tokens( $user_id );
 
 			$wc_tokens = WC_Payment_Tokens::get_customer_tokens( $user_id, PayPalGateway::ID );
@@ -277,7 +279,7 @@ class RenewalHandler {
 		// PPEC compat: allow filters to provide a token for legacy billing agreement renewals.
 		$token = $this->get_token_for_customer( $customer, $wc_order );
 		if ( $token ) {
-			if ( $payment_method === PayPalGateway::ID || $payment_method === 'ppec_paypal' ) {
+			if ( PayPalGateway::ID === $payment_method || 'ppec_paypal' === $payment_method ) {
 				$order = $this->order_endpoint->create(
 					array( $purchase_unit ),
 					$shipping_preference,
@@ -320,7 +322,13 @@ class RenewalHandler {
 	 */
 	private function get_token_for_customer( \WC_Customer $customer, \WC_Order $wc_order ) {
 		/**
-		 * Returns a payment token for a customer, or null.
+		 * Filters the payment token used to renew a subscription, so PPEC compatibility can supply one.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param \Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\PaymentToken|null $token The payment token for the customer; null by default.
+		 * @param \WC_Customer $customer The customer.
+		 * @param \WC_Order    $wc_order The current WooCommerce order we want to process.
 		 */
 		$token = apply_filters( 'woocommerce_paypal_payments_subscriptions_get_token_for_customer', null, $customer, $wc_order );
 		if ( null !== $token ) {

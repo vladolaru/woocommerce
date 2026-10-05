@@ -16,7 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscript
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Service\ChangePaymentMethod;
 
 return array(
-	'wc-subscriptions.helper'                         => static function ( ContainerInterface $container ): SubscriptionHelper {
+	'wc-subscriptions.helper'                         => static function ( ContainerInterface $container ): SubscriptionHelper { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new SubscriptionHelper();
 	},
 	'wc-subscriptions.renewal-handler'                => static function ( ContainerInterface $container ): RenewalHandler {
@@ -51,7 +51,7 @@ return array(
 			$container->get( 'button.helper.context' )
 		);
 	},
-	'wc-subscriptions.free-trial-subscription-helper' => static function ( ContainerInterface $container ): FreeTrialSubscriptionHelper {
+	'wc-subscriptions.free-trial-subscription-helper' => static function ( ContainerInterface $container ): FreeTrialSubscriptionHelper { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new FreeTrialSubscriptionHelper();
 	},
 );

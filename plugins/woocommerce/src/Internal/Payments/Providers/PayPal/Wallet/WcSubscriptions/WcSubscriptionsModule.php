@@ -52,6 +52,8 @@ class WcSubscriptionsModule implements ServiceModule, ExecutableModule {
 
 	/**
 	 * {@inheritDoc}
+	 *
+	 * @param ContainerInterface $c The service container.
 	 */
 	public function run( ContainerInterface $c ): bool {
 		$subscriptions_helper = $c->get( 'wc-subscriptions.helper' );
@@ -91,7 +93,7 @@ class WcSubscriptionsModule implements ServiceModule, ExecutableModule {
 			function ( $payment_method_to_display, $subscription, $context ) {
 				$payment_gateway = wc_get_payment_gateway_by_order( $subscription );
 
-				if ( $payment_gateway instanceof \WC_Payment_Gateway && $payment_gateway->id === PayPalGateway::ID ) {
+				if ( $payment_gateway instanceof \WC_Payment_Gateway && PayPalGateway::ID === $payment_gateway->id ) {
 					return $subscription->get_payment_method_title( $context );
 				}
 
@@ -144,8 +146,8 @@ class WcSubscriptionsModule implements ServiceModule, ExecutableModule {
 			 *
 			 * @psalm-suppress MissingClosureParamType
 			 */
-			function ( bool $process, $gateway, WC_Order $wc_order ) use ( $c ) {
-				if ( ! $gateway instanceof PayPalGateway || $gateway::ID !== PayPalGateway::ID ) {
+			function ( bool $process, $gateway, WC_Order $wc_order ) use ( $c ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- The woocommerce_paypal_payments_before_order_process callback receives three arguments.
+				if ( ! $gateway instanceof PayPalGateway || PayPalGateway::ID !== $gateway::ID ) {
 					return $process;
 				}
 
