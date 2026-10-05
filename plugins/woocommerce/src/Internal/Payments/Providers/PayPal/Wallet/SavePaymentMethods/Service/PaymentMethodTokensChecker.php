@@ -12,6 +12,9 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SaveP
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\PaymentTokensEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\RuntimeException;
 
+/**
+ * Checks whether a customer has saved payment method tokens at PayPal.
+ */
 class PaymentMethodTokensChecker {
 
 	/**
@@ -21,6 +24,11 @@ class PaymentMethodTokensChecker {
 	 */
 	private PaymentTokensEndpoint $payment_method_tokens_endpoint;
 
+	/**
+	 * PaymentMethodTokensChecker constructor.
+	 *
+	 * @param PaymentTokensEndpoint $payment_method_tokens_endpoint Payment method tokens endpoint.
+	 */
 	public function __construct( PaymentTokensEndpoint $payment_method_tokens_endpoint ) {
 		$this->payment_method_tokens_endpoint = $payment_method_tokens_endpoint;
 	}
@@ -40,7 +48,7 @@ class PaymentMethodTokensChecker {
 			$tokens = $this->payment_method_tokens_endpoint->payment_tokens_for_customer( $customer_id );
 			foreach ( $tokens as $token ) {
 				$payment_source = $token['payment_source']->name() ?? '';
-				if ( $payment_source === 'paypal' ) {
+				if ( 'paypal' === $payment_source ) {
 					return true;
 				}
 			}

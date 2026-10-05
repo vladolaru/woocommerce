@@ -20,6 +20,9 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\E
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\PaymentSource;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 
+/**
+ * Handles the buyer's return from PayPal after approving a free-trial vault setup token.
+ */
 class FreeTrialVaultReturnEndpoint {
 
 	public const ENDPOINT = 'ppc-free-trial-vault-return';
@@ -34,10 +37,26 @@ class FreeTrialVaultReturnEndpoint {
 	 */
 	public const RETURN_NONCE_META = '_ppcp_free_trial_vault_nonce';
 
+	/**
+	 * The payment method tokens endpoint.
+	 *
+	 * @var PaymentMethodTokensEndpoint
+	 */
 	private PaymentMethodTokensEndpoint $payment_method_tokens_endpoint;
 
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	private LoggerInterface $logger;
 
+	/**
+	 * FreeTrialVaultReturnEndpoint constructor.
+	 *
+	 * @param PaymentMethodTokensEndpoint $payment_method_tokens_endpoint The payment method tokens endpoint.
+	 * @param LoggerInterface             $logger                         The logger.
+	 */
 	public function __construct(
 		PaymentMethodTokensEndpoint $payment_method_tokens_endpoint,
 		LoggerInterface $logger
@@ -50,14 +69,11 @@ class FreeTrialVaultReturnEndpoint {
 	 * Handles the incoming return request.
 	 */
 	public function handle_request(): void {
-		// phpcs:disable WordPress.Security.NonceVerification.Recommended
-		$wc_order_id = isset( $_GET['ppcp_vault_wc_order'] ) ? absint( wp_unslash( $_GET['ppcp_vault_wc_order'] ) ) : 0;
+		$wc_order_id = isset( $_GET['ppcp_vault_wc_order'] ) ? absint( wp_unslash( $_GET['ppcp_vault_wc_order'] ) ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- The order carries its own one-time return nonce, compared with hash_equals() below in handle_request().
 
 		// wp_unslash() can return an array, so the value is sanitized on the next line behind an is_string() guard.
-		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-		$provided_nonce = wp_unslash( $_GET['ppcp_vault_nonce'] ?? '' );
+		$provided_nonce = wp_unslash( $_GET['ppcp_vault_nonce'] ?? '' ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- This is the one-time return nonce, compared with hash_equals() below in handle_request(); sanitized on the next line behind an is_string() guard.
 		$provided_nonce = is_string( $provided_nonce ) ? sanitize_text_field( $provided_nonce ) : '';
-		// phpcs:enable WordPress.Security.NonceVerification.Recommended
 
 		$wc_order = $wc_order_id ? wc_get_order( $wc_order_id ) : false;
 		if ( ! ( $wc_order instanceof WC_Order ) ) {

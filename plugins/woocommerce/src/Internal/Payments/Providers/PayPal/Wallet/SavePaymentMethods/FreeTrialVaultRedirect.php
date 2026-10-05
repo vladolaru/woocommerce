@@ -22,12 +22,31 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\E
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\PaymentSource;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SavePaymentMethods\Endpoint\FreeTrialVaultReturnEndpoint;
 
+/**
+ * Creates a PayPal setup token for a free-trial order and returns the approval URL.
+ */
 class FreeTrialVaultRedirect {
 
+	/**
+	 * The payment method tokens endpoint.
+	 *
+	 * @var PaymentMethodTokensEndpoint
+	 */
 	private PaymentMethodTokensEndpoint $payment_method_tokens_endpoint;
 
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	private LoggerInterface $logger;
 
+	/**
+	 * FreeTrialVaultRedirect constructor.
+	 *
+	 * @param PaymentMethodTokensEndpoint $payment_method_tokens_endpoint The payment method tokens endpoint.
+	 * @param LoggerInterface             $logger                         The logger.
+	 */
 	public function __construct(
 		PaymentMethodTokensEndpoint $payment_method_tokens_endpoint,
 		LoggerInterface $logger

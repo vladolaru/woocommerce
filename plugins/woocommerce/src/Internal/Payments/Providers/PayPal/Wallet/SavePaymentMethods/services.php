@@ -40,11 +40,18 @@ return array(
 			$container->get( 'api.merchant.country' )
 		);
 	},
-	'save-payment-methods.supported-countries'           => static function ( ContainerInterface $container ): array {
+	'save-payment-methods.supported-countries'           => static function ( ContainerInterface $container ): array { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		if ( has_filter( 'woocommerce_paypal_payments_save_payment_methods_supported_country_currency_matrix' ) ) {
 			_deprecated_hook( 'woocommerce_paypal_payments_save_payment_methods_supported_country_currency_matrix', '3.0.0', 'woocommerce_paypal_payments_save_payment_methods_supported_countries', esc_attr__( 'Please use the new Hook to filter countries for saved payments in PayPal Payments.', 'woocommerce' ) );
 		}
 
+		/**
+		 * Filters the countries where Save Payment Methods is supported.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param string[] $countries The supported country codes.
+		 */
 		return apply_filters(
 			'woocommerce_paypal_payments_save_payment_methods_supported_countries',
 			array(

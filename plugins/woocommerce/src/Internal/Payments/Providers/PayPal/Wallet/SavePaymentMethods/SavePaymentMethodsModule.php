@@ -50,6 +50,8 @@ class SavePaymentMethodsModule implements ServiceModule, ExecutableModule {
 
 	/**
 	 * {@inheritDoc}
+	 *
+	 * @param ContainerInterface $c The service container.
 	 */
 	public function run( ContainerInterface $c ): bool {
 		if ( ! $c->get( 'save-payment-methods.eligible' ) ) {
@@ -125,7 +127,7 @@ class SavePaymentMethodsModule implements ServiceModule, ExecutableModule {
 
 						$funding_source = (string) ( $request_data['funding_source'] ?? '' );
 
-						if ( $payment_method === PayPalGateway::ID ) {
+						if ( PayPalGateway::ID === $payment_method ) {
 							if ( ! $settings_provider->save_paypal_and_venmo() ) {
 								return $data;
 							}
@@ -134,7 +136,15 @@ class SavePaymentMethodsModule implements ServiceModule, ExecutableModule {
 								return $data;
 							}
 
-							$new_attributes['vault']['usage_type']                     = 'MERCHANT';
+							$new_attributes['vault']['usage_type'] = 'MERCHANT';
+
+							/**
+							 * Filters whether a customer may vault more than one PayPal payment token.
+							 *
+							 * @since 11.3.0
+							 *
+							 * @param bool $permit Whether multiple payment tokens are permitted; false by default.
+							 */
 							$new_attributes['vault']['permit_multiple_payment_tokens'] = apply_filters( 'woocommerce_paypal_payments_permit_multiple_payment_tokens', false );
 						} else {
 							return $data;
@@ -239,6 +249,8 @@ class SavePaymentMethodsModule implements ServiceModule, ExecutableModule {
 						 * (its own save button + card fields), so the two stacks
 						 * do not both render into the same container.
 						 *
+						 * @since 11.3.0
+						 *
 						 * @param bool $render Whether to enqueue the v5 assets.
 						 */
 						if ( ! apply_filters( 'woocommerce_paypal_payments_render_add_payment_method_assets', true ) ) {
@@ -314,6 +326,10 @@ class SavePaymentMethodsModule implements ServiceModule, ExecutableModule {
 							 * checkout (`woocommerce_paypal_payments_localized_script_data`) so
 							 * stage overrides (e.g. `script_attributes.sdkBaseUrl`) can be applied
 							 * without touching the module.
+							 *
+							 * @since 11.3.0
+							 *
+							 * @param array $add_payment_method_data The localized script data.
 							 */
 							$add_payment_method_data = apply_filters(
 								'woocommerce_paypal_payments_add_payment_method_localized_script_data',

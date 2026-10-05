@@ -45,6 +45,13 @@ class CreatePaymentToken implements EndpointInterface {
 	 */
 	private $wc_payment_tokens;
 
+	/**
+	 * CreatePaymentToken constructor.
+	 *
+	 * @param RequestData                 $request_data                   The request data.
+	 * @param PaymentMethodTokensEndpoint $payment_method_tokens_endpoint The payment method tokens endpoint.
+	 * @param WooCommercePaymentTokens    $wc_payment_tokens              The WC payment tokens.
+	 */
 	public function __construct(
 		RequestData $request_data,
 		PaymentMethodTokensEndpoint $payment_method_tokens_endpoint,

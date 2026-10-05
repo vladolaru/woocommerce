@@ -58,6 +58,13 @@ class SavePaymentMethodsApplies {
 	 * @return bool
 	 */
 	public function for_merchant(): bool {
+		/**
+		 * Filters whether the current merchant is eligible for Save Payment Methods.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $eligible Whether the merchant is eligible; true by default.
+		 */
 		return apply_filters(
 			'woocommerce_paypal_payments_is_eligible_for_save_payment_methods',
 			true
