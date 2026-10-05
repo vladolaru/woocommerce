@@ -35,10 +35,28 @@ class SubscriptionsHandler {
 	 */
 	private $mock_gateway;
 
+	/**
+	 * The billing agreement to Vault v3 token converter.
+	 *
+	 * @var BillingAgreementTokenConverter
+	 */
 	private BillingAgreementTokenConverter $token_converter;
 
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	private LoggerInterface $logger;
 
+	/**
+	 * SubscriptionsHandler constructor.
+	 *
+	 * @param RenewalHandler                 $ppcp_renewal_handler The renewal handler.
+	 * @param MockGateway                    $gateway              The mock PPEC gateway.
+	 * @param BillingAgreementTokenConverter $token_converter      The billing agreement to Vault v3 token converter.
+	 * @param LoggerInterface                $logger               The logger.
+	 */
 	public function __construct(
 		RenewalHandler $ppcp_renewal_handler,
 		MockGateway $gateway,
@@ -152,6 +170,8 @@ class SubscriptionsHandler {
 	 *
 	 * Checks if the subscription already has a converted vault token. If not,
 	 * attempts conversion from the billing agreement via the PayPal Vault v3 API.
+	 *
+	 * @param \WC_Order $order The renewal order.
 	 */
 	private function get_vault_v3_token( \WC_Order $order ): ?PaymentToken {
 		$subscriptions = wcs_get_subscriptions_for_renewal_order( $order );
@@ -191,6 +211,11 @@ class SubscriptionsHandler {
 		return new PaymentToken( $vault_token_id, new stdClass(), PaymentToken::TYPE_PAYMENT_METHOD_TOKEN );
 	}
 
+	/**
+	 * Returns a billing agreement token for the renewal order, if it has one.
+	 *
+	 * @param \WC_Order $order The renewal order.
+	 */
 	private function get_billing_agreement_token( \WC_Order $order ): ?PaymentToken {
 		$billing_agreement_id = $this->resolve_billing_agreement_id( $order );
 		if ( ! $billing_agreement_id ) {
@@ -200,6 +225,11 @@ class SubscriptionsHandler {
 		return new PaymentToken( $billing_agreement_id, new stdClass(), 'BILLING_AGREEMENT' );
 	}
 
+	/**
+	 * Finds the billing agreement ID on the renewal order or on its subscription's parent order.
+	 *
+	 * @param \WC_Order $order The renewal order.
+	 */
 	private function resolve_billing_agreement_id( \WC_Order $order ): ?string {
 		$billing_agreement_id = $order->get_meta( '_ppec_billing_agreement_id', true );
 		if ( $billing_agreement_id ) {

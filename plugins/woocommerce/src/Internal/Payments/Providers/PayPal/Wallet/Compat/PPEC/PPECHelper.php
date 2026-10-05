@@ -5,6 +5,8 @@
  * @package Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Compat\PPEC
  */
 
+declare(strict_types=1);
+
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Compat\PPEC;
 
 use Automattic\WooCommerce\Utilities\OrderUtil;
@@ -34,8 +36,8 @@ class PPECHelper {
 	 */
 	public static function site_has_ppec_subscriptions() {
 		$has_ppec_subscriptions = get_transient( 'ppcp_has_ppec_subscriptions' );
-		if ( $has_ppec_subscriptions !== false ) {
-			return $has_ppec_subscriptions === 'true';
+		if ( false !== $has_ppec_subscriptions ) {
+			return 'true' === $has_ppec_subscriptions;
 		}
 
 		global $wpdb;
@@ -74,11 +76,15 @@ class PPECHelper {
 	 * @return bool
 	 */
 	public static function use_ppec_compat_layer_for_subscriptions() {
-		/**
-		 * The filter returning whether the compatibility layer for PPEC Subscriptions should be initialized.
-		 */
 		return ( ! self::is_plugin_active() )
 			&& self::site_has_ppec_subscriptions()
+			/**
+			 * Filters whether the compatibility layer for PPEC Subscriptions should be initialized.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param bool $process Whether to initialize the compatibility layer; true by default.
+			 */
 			&& apply_filters( 'woocommerce_paypal_payments_process_legacy_subscriptions', true );
 	}
 }

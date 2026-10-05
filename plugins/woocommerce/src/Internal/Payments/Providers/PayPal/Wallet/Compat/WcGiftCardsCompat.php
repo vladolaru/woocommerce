@@ -35,11 +35,15 @@ class WcGiftCardsCompat {
 	private const SESSION_KEY = 'ppcp_gc_cart_discount';
 
 	/**
+	 * The button context helper.
+	 *
 	 * @var Context
 	 */
 	private Context $context;
 
 	/**
+	 * WcGiftCardsCompat constructor.
+	 *
 	 * @param Context $context The button context helper.
 	 */
 	public function __construct( Context $context ) {
@@ -104,7 +108,7 @@ class WcGiftCardsCompat {
 	 *
 	 * @param \WC_Cart $cart The WooCommerce cart.
 	 */
-	public function store_cart_discount( \WC_Cart $cart ): void {
+	public function store_cart_discount( \WC_Cart $cart ): void { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The woocommerce_after_calculate_totals callback signature is fixed.
 		if ( ! function_exists( 'WC_GC' ) || ! WC_GC()->cart || ! WC()->session ) {
 			return;
 		}
@@ -116,7 +120,7 @@ class WcGiftCardsCompat {
 		$totals      = WC_GC()->cart->get_account_totals_breakdown();
 		$gc_discount = (float) ( $totals['cart_total'] ?? 0.0 ) - (float) ( $totals['remaining_total'] ?? 0.0 );
 
-		WC()->session->set( self::SESSION_KEY, $gc_discount ?: 0.0 );
+		WC()->session->set( self::SESSION_KEY, $gc_discount ? $gc_discount : 0.0 );
 	}
 
 	/**
@@ -126,14 +130,14 @@ class WcGiftCardsCompat {
 	 * @param \WC_Cart $cart  The WooCommerce cart.
 	 * @return float
 	 */
-	public function cart_extra_discount( float $extra, \WC_Cart $cart ): float {
+	public function cart_extra_discount( float $extra, \WC_Cart $cart ): float { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- The woocommerce_paypal_payments_cart_extra_discount callback signature is fixed.
 		if ( ! function_exists( 'WC_GC' ) || ! WC()->session ) {
 			return $extra;
 		}
 
 		$gc_discount = (float) ( WC()->session->get( self::SESSION_KEY ) ?? 0.0 );
 
-		return $extra + ( $gc_discount ?: 0.0 );
+		return $extra + ( $gc_discount ? $gc_discount : 0.0 );
 	}
 
 	/**

@@ -9,14 +9,39 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\E
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\PaymentSource;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Repository\CustomerRepository;
 
+/**
+ * Converts a PayPal Express Checkout billing agreement into a Vault v3 payment token.
+ */
 class BillingAgreementTokenConverter {
 
+	/**
+	 * The payment method tokens endpoint.
+	 *
+	 * @var PaymentMethodTokensEndpoint
+	 */
 	private PaymentMethodTokensEndpoint $payment_method_tokens_endpoint;
 
+	/**
+	 * The customer repository.
+	 *
+	 * @var CustomerRepository
+	 */
 	private CustomerRepository $customer_repository;
 
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	private LoggerInterface $logger;
 
+	/**
+	 * BillingAgreementTokenConverter constructor.
+	 *
+	 * @param PaymentMethodTokensEndpoint $payment_method_tokens_endpoint The payment method tokens endpoint.
+	 * @param CustomerRepository          $customer_repository            The customer repository.
+	 * @param LoggerInterface             $logger                         The logger.
+	 */
 	public function __construct(
 		PaymentMethodTokensEndpoint $payment_method_tokens_endpoint,
 		CustomerRepository $customer_repository,
@@ -28,6 +53,10 @@ class BillingAgreementTokenConverter {
 	}
 
 	/**
+	 * Converts a billing agreement into a Vault v3 payment token.
+	 *
+	 * @param string $billing_agreement_id The PayPal billing agreement ID.
+	 * @param int    $user_id              The ID of the user the token belongs to.
 	 * @return string|null The vault token ID on success, null on failure.
 	 */
 	public function convert( string $billing_agreement_id, int $user_id ): ?string {

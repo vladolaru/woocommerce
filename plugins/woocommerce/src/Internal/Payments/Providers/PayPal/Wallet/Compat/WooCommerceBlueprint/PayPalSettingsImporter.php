@@ -253,14 +253,14 @@ class PayPalSettingsImporter implements StepProcessor {
 	 * arrays after convert_objects_to_arrays(). This method uses DataSanitizer to
 	 * restore the proper DTO instances before writing to the database.
 	 *
-	 * @todo The blueprint importer currently hardcodes which options contain
-	 *       DTOs and which keys within them need hydration. This couples the
-	 *       importer to the internal structure of StylingSettings and
-	 *       PayLaterMessagingSettings. Consider having AbstractDataModel
-	 *       subclasses register their own hydration/sanitization logic so
-	 *       the importer can delegate without knowing the details. This
-	 *       would also make adding new DTO-based options automatic rather
-	 *       than requiring importer changes.
+	 * Possible follow-up: the blueprint importer currently hardcodes which options contain
+	 * DTOs and which keys within them need hydration. This couples the
+	 * importer to the internal structure of StylingSettings and
+	 * PayLaterMessagingSettings. Consider having AbstractDataModel
+	 * subclasses register their own hydration/sanitization logic so
+	 * the importer can delegate without knowing the details. This
+	 * would also make adding new DTO-based options automatic rather
+	 * than requiring importer changes.
 	 *
 	 * @param string $option_name  Option name.
 	 * @param mixed  $option_value Option value.
@@ -317,7 +317,7 @@ class PayPalSettingsImporter implements StepProcessor {
 	private function values_are_equal( $value1, $value2 ): bool {
 		// For arrays and objects, serialize for comparison to handle deep equality.
 		if ( ( is_array( $value1 ) || is_object( $value1 ) ) && ( is_array( $value2 ) || is_object( $value2 ) ) ) {
-			return serialize( $value1 ) === serialize( $value2 );
+			return serialize( $value1 ) === serialize( $value2 ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize -- Serialized only to compare two in-memory values for deep equality; nothing is stored or unserialized.
 		}
 
 		// For scalar values, use strict comparison.

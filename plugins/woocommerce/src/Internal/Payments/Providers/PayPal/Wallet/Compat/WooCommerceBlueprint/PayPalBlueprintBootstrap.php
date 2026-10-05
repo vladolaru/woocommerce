@@ -55,9 +55,11 @@ class PayPalBlueprintBootstrap {
 	/**
 	 * Initialize the PayPal Blueprint functionality.
 	 *
+	 * @internal
+	 *
 	 * @return void
 	 */
-	public function init(): void {
+	final public function init(): void {
 		$this->register_hooks();
 	}
 

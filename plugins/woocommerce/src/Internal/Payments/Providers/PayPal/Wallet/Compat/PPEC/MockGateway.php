@@ -5,6 +5,8 @@
  * @package Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Compat\PPEC
  */
 
+declare(strict_types=1);
+
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Compat\PPEC;
 
 /**

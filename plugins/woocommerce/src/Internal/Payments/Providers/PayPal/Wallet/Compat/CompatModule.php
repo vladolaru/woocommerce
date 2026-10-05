@@ -41,7 +41,8 @@ class CompatModule implements ServiceModule, ExecutableModule {
 	/**
 	 * {@inheritDoc}
 	 *
-	 * @throws NotFoundException
+	 * @param ContainerInterface $c The service container.
+	 * @throws NotFoundException When a required service is not found.
 	 */
 	public function run( ContainerInterface $c ): bool {
 
@@ -185,9 +186,17 @@ class CompatModule implements ServiceModule, ExecutableModule {
 
 				$disable_funding = $settings->has( 'disable_funding' ) ? $settings->get( 'disable_funding' ) : array();
 
-				/** @var string[] $available_messaging_locations */
+				/**
+				 * The messaging location keys.
+				 *
+				 * @var string[] $available_messaging_locations
+				 */
 				$available_messaging_locations = array_keys( $c->get( 'wcgateway.settings.pay-later.messaging-locations' ) );
-				/** @var string[] $available_button_locations */
+				/**
+				 * The button location keys.
+				 *
+				 * @var string[] $available_button_locations
+				 */
 				$available_button_locations = array_keys( $c->get( 'wcgateway.button.locations' ) );
 
 				if ( in_array( 'credit', $disable_funding, true ) ) {
@@ -230,7 +239,7 @@ class CompatModule implements ServiceModule, ExecutableModule {
 	 */
 	protected function migrate_message_styling_settings_by_location( Settings $settings, string $location ): void {
 
-		$old_location = $location === 'checkout' ? '' : "_{$location}";
+		$old_location = 'checkout' === $location ? '' : "_{$location}";
 
 		$layout        = $settings->has( "message{$old_location}_layout" ) ? $settings->get( "message{$old_location}_layout" ) : 'text';
 		$logo_type     = $settings->has( "message{$old_location}_logo" ) ? $settings->get( "message{$old_location}_logo" ) : 'primary';
@@ -259,7 +268,7 @@ class CompatModule implements ServiceModule, ExecutableModule {
 		$button_locations = array();
 
 		foreach ( $all_locations as $location ) {
-			$location_setting_name_part = $location === 'checkout' ? '' : "_{$location}";
+			$location_setting_name_part = 'checkout' === $location ? '' : "_{$location}";
 			$setting_name               = "{$type}{$location_setting_name_part}_enabled";
 
 			if ( $settings->has( $setting_name ) && $settings->get( $setting_name ) ) {
@@ -291,7 +300,11 @@ class CompatModule implements ServiceModule, ExecutableModule {
 				$settings = $c->get( 'wcgateway.settings' );
 				assert( $settings instanceof Settings );
 
-				/** @var string[] $available_button_locations */
+				/**
+				 * The button location keys.
+				 *
+				 * @var string[] $available_button_locations
+				 */
 				$available_button_locations = array_keys( $c->get( 'wcgateway.button.locations' ) );
 				$selected_button_locations  = $this->selected_locations( $settings, $available_button_locations, 'button' );
 				if ( ! empty( $selected_button_locations ) ) {
@@ -314,8 +327,14 @@ class CompatModule implements ServiceModule, ExecutableModule {
 		add_action(
 			'woocommerce_paypal_payments_gateway_migrate_on_update',
 			function () {
-				$payment_settings = get_option( 'woocommerce-ppcp-data-payment' ) ?: array();
-				$data_settings    = get_option( 'woocommerce-ppcp-data-settings' ) ?: array();
+				$payment_settings = get_option( 'woocommerce-ppcp-data-payment' );
+				if ( ! $payment_settings ) {
+					$payment_settings = array();
+				}
+				$data_settings = get_option( 'woocommerce-ppcp-data-settings' );
+				if ( ! $data_settings ) {
+					$data_settings = array();
+				}
 
 				// Skip if payment settings don't have the setting but data settings do.
 				if ( ! isset( $payment_settings['three_d_secure'] ) || isset( $data_settings['three_d_secure'] ) ) {
@@ -390,8 +409,8 @@ class CompatModule implements ServiceModule, ExecutableModule {
 		add_action(
 			'woocommerce_paypal_payments_gateway_migrate_on_update',
 			static function () {
-				$legacy_settings  = (array) get_option( 'woocommerce-ppcp-settings' ) ?: array();
-				$payment_settings = (array) get_option( 'woocommerce-ppcp-data-payment' ) ?: array();
+				$legacy_settings  = (array) get_option( 'woocommerce-ppcp-settings' );
+				$payment_settings = (array) get_option( 'woocommerce-ppcp-data-payment' );
 
 				// Noop if the legacy setting does not exist, or the setting was already migrated.
 				if ( ! isset( $legacy_settings['capture_on_status_change'] ) || isset( $payment_settings['capture_on_status_change'] ) ) {
@@ -562,8 +581,11 @@ class CompatModule implements ServiceModule, ExecutableModule {
 								continue;
 							}
 
-							$product_id = $wc_order_item->get_variation_id() ?: $wc_order_item->get_product_id();
-							$product    = wc_get_product( $product_id );
+							$product_id = $wc_order_item->get_variation_id();
+							if ( ! $product_id ) {
+								$product_id = $wc_order_item->get_product_id();
+							}
+							$product = wc_get_product( $product_id );
 
 							// @phpstan-ignore function.notFound (WooCommerce Bookings function; the plugin is not installed when core is analysed)
 							if ( ! is_wc_booking_product( $product ) ) {
@@ -662,7 +684,7 @@ class CompatModule implements ServiceModule, ExecutableModule {
 	protected function disable_legacy_paypal_standard_on_connect(): void {
 		$sub_count = $this->count_wps_active_subscriptions();
 
-		if ( $sub_count !== null && $sub_count > 0 ) {
+		if ( null !== $sub_count && $sub_count > 0 ) {
 			// Persist count to a transient so the notice survives the AJAX connect request
 			// and appears on the next admin page load.
 			set_transient( 'ppcp_wps_standard_subs_notice', $sub_count, 30 * DAY_IN_SECONDS );

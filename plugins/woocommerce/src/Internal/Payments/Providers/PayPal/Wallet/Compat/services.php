@@ -48,7 +48,7 @@ return array(
 		);
 	},
 
-	'compat.plugin-script-names'                    => static function ( ContainerInterface $container ): array {
+	'compat.plugin-script-names'                    => static function ( ContainerInterface $container ): array { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return array(
 			'ppcp-smart-button',
 			'ppcp-wc-payment-tokens-myaccount-payments',
@@ -58,7 +58,7 @@ return array(
 		);
 	},
 
-	'compat.plugin-script-file-names'               => static function ( ContainerInterface $container ): array {
+	'compat.plugin-script-file-names'               => static function ( ContainerInterface $container ): array { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return array(
 			'button.js',
 			'gateway-settings.js',

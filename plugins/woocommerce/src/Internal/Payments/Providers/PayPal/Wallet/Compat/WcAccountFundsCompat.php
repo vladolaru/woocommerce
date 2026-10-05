@@ -21,6 +21,9 @@ class WcAccountFundsCompat {
 	// Written on order creation, before payment processing, and by the pre-4.0 path too.
 	private const ORDER_META = '_funds_used';
 
+	/**
+	 * Registers the hooks.
+	 */
 	public function register(): void {
 		add_filter(
 			'woocommerce_paypal_payments_cart_extra_discount',
@@ -42,12 +45,20 @@ class WcAccountFundsCompat {
 		);
 	}
 
-	public function cart_extra_discount( float $extra, \WC_Cart $cart ): float {
+	/**
+	 * Adds the applied Account Funds credit to the extra discount of a cart.
+	 *
+	 * @param float    $extra The extra discount accumulated so far.
+	 * @param \WC_Cart $cart  The WooCommerce cart.
+	 */
+	public function cart_extra_discount( float $extra, \WC_Cart $cart ): float { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- The woocommerce_paypal_payments_cart_extra_discount callback signature is fixed.
 		return $extra + $this->applied_cart_credit();
 	}
 
 	/**
 	 * Same for the Store API, which works in minor units on both sides of the sum.
+	 *
+	 * @param int $extra The extra discount accumulated so far, in minor units.
 	 */
 	public function store_api_cart_extra_discount( int $extra ): int {
 		return $extra + (int) round( $this->applied_cart_credit() * 10 ** wc_get_price_decimals() );
@@ -56,6 +67,9 @@ class WcAccountFundsCompat {
 	/**
 	 * Read from order meta rather than the cart: the cart session is gone on the
 	 * pay-for-order page, and a stored order keeps the amount it was reduced by.
+	 *
+	 * @param float     $extra The extra discount accumulated so far.
+	 * @param \WC_Order $order The order.
 	 */
 	public function order_extra_discount( float $extra, \WC_Order $order ): float {
 		return $extra + max( 0.0, (float) $order->get_meta( self::ORDER_META ) );
