@@ -108,20 +108,20 @@ class SdkV6Manager {
 		MessageStyleMapper $message_style_mapper,
 		MessagesEligibility $messages_eligibility
 	) {
-		$this->asset_getter                = $asset_getter;
-		$this->version                     = $version;
-		$this->environment                 = $environment;
-		$this->style_mapper                = $style_mapper;
-		$this->settings_status             = $settings_status;
-		$this->context                     = $context;
-		$this->session_handler             = $session_handler;
-		$this->cancel_view                 = $cancel_view;
-		$this->final_review_enabled        = $final_review_enabled;
-		$this->vaulting_enabled            = $vaulting_enabled;
-		$this->subscription_helper         = $subscription_helper;
-		$this->free_trial_helper           = $free_trial_helper;
-		$this->message_style_mapper        = $message_style_mapper;
-		$this->messages_eligibility        = $messages_eligibility;
+		$this->asset_getter         = $asset_getter;
+		$this->version              = $version;
+		$this->environment          = $environment;
+		$this->style_mapper         = $style_mapper;
+		$this->settings_status      = $settings_status;
+		$this->context              = $context;
+		$this->session_handler      = $session_handler;
+		$this->cancel_view          = $cancel_view;
+		$this->final_review_enabled = $final_review_enabled;
+		$this->vaulting_enabled     = $vaulting_enabled;
+		$this->subscription_helper  = $subscription_helper;
+		$this->free_trial_helper    = $free_trial_helper;
+		$this->message_style_mapper = $message_style_mapper;
+		$this->messages_eligibility = $messages_eligibility;
 	}
 
 	/**
@@ -846,7 +846,7 @@ class SdkV6Manager {
 				'checkout' => wc_get_checkout_url(),
 			),
 			'labels'              => array(
-				'generic_error'          => __(
+				'generic_error' => __(
 					'Something went wrong. Please try again or choose another payment source.',
 					'woocommerce'
 				),
