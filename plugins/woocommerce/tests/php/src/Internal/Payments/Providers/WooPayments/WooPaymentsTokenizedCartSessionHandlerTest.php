@@ -244,6 +244,39 @@ class WooPaymentsTokenizedCartSessionHandlerTest extends WC_Unit_Test_Case {
 
 		// The same shopper, now logged in, can keep using the token.
 		$this->assertSame( $token_session_id, $this->init_handler()->get_customer_id() );
+
+		// The shopper's next normal request: core's handler, with the browser cookie and the new account logged in, migrates
+		// the browser guest session to the account and deletes the guest row (class-wc-session-handler.php:186-189, :218-246).
+		$browser = new \WC_Session_Handler();
+		$browser->init();
+		remove_action( 'shutdown', array( $browser, 'save_data' ), 20 );
+		remove_action( 'woocommerce_set_cart_cookies', array( $browser, 'set_customer_session_cookie' ), 10 );
+		remove_action( 'wp', array( $browser, 'maybe_set_customer_session_cookie' ), 99 );
+		remove_action( 'template_redirect', array( $browser, 'destroy_session_if_empty' ), 999 );
+		remove_action( 'wp_logout', array( $browser, 'destroy_session' ) );
+
+		$this->assertSame( (string) $user_id, $browser->get_customer_id() );
+		$this->assertSame( array( 'browser-line' => array( 'quantity' => 3 ) ), maybe_unserialize( $this->get_session_row( (string) $user_id )['cart'] ?? '' ), "The account's session holds the browser cart." );
+		$this->assertNull( $this->get_session_value( $browser_id ), 'The guest row is gone after the migration.' );
+	}
+
+	/**
+	 * @testdox Rebinding a saved session to a newly logged-in account is saved even when nothing else in the session changes.
+	 *
+	 * WC_Session_Handler::save_data() writes only a dirty session (class-wc-session-handler.php:563-565).
+	 */
+	public function test_rebinding_on_login_is_saved_without_other_session_changes(): void {
+		$session_id = $this->save_session_started_by( 0 );
+		$this->set_token_header( $session_id );
+		$handler = $this->init_handler();
+		$user_id = self::factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$handler->init_session_cookie();
+		$handler->save_data();
+
+		$this->assertSame( (string) $user_id, $this->get_session_row( $session_id )['token_customer_id'] ?? null );
+		$this->assertSame( $session_id, $this->init_handler()->get_customer_id(), 'The account can load the session on its next request.' );
 	}
 
 	/**
