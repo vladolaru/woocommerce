@@ -97,12 +97,26 @@ const TodoItem = ( {
 	onClick,
 	onDismiss,
 } ) => {
+	const handleKeyDown = ( event ) => {
+		// Keys pressed on the dismiss button inside the row belong to that button.
+		if ( event.target !== event.currentTarget ) {
+			return;
+		}
+
+		if ( event.key === 'Enter' || event.key === ' ' ) {
+			event.preventDefault();
+			onClick();
+		}
+	};
+
 	return (
 		<div
 			className={ `ppcp-r-todo-item ${
 				isCompleted ? 'is-completed' : ''
 			} ${ isDismissing ? 'is-dismissing' : '' }` }
 			onClick={ onClick }
+			onKeyDown={ handleKeyDown }
+			tabIndex={ 0 }
 		>
 			<div className="ppcp-r-todo-item__inner">
 				<div className="ppcp-r-todo-item__icon">
