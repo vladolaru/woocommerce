@@ -105,7 +105,7 @@ class PayLaterWCBlocksRenderer {
 
 			$processor = new \WP_HTML_Tag_Processor( $html );
 
-			if ( $processor->next_tag( 'div' ) ) {
+			if ( $processor->next_tag( array( 'tag_name' => 'div' ) ) ) {
 				$processor->set_attribute( 'data-block-name', esc_attr( $attributes['blockId'] ?? '' ) );
 				$processor->set_attribute( 'class', 'ppcp-messages' );
 				$processor->set_attribute( 'data-partner-attribution-id', $bn_code );

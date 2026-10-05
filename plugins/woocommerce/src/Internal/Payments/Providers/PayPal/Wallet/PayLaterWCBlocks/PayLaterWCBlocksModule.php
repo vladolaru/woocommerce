@@ -237,7 +237,7 @@ class PayLaterWCBlocksModule implements ServiceModule, ExecutableModule {
 		/**
 		 * Registers slugs as block categories with WordPress.
 		 */
-		add_action(
+		add_filter(
 			'block_categories_all',
 			function ( array $categories ): array {
 				return array_merge(
@@ -251,7 +251,7 @@ class PayLaterWCBlocksModule implements ServiceModule, ExecutableModule {
 				);
 			},
 			10,
-			2
+			1
 		);
 
 		add_action(
