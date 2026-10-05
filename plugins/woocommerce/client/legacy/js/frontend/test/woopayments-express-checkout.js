@@ -3286,6 +3286,60 @@ describe( 'WooPayments express checkout', () => {
 			).toBeNull();
 		} );
 
+		// Client 11.1.0 shortcode-buttons-express/index.js:323-342: when the product cannot be added after a click, the
+		// wallet is unmounted and hidden with its separator; the next form change runs update-button-data, which mounts a
+		// new one because Elements is gone (index.js:635-637).
+		test( 'takes the wallet away when the product cannot be added on a click, and mounts a new one on the next change', async () => {
+			jest.useFakeTimers();
+			setClassicProductForm();
+			// Stripe.js `element.unmount()` detaches the Element and returns nothing
+			// (https://docs.stripe.com/js/element/other_methods/unmount).
+			expressElement.unmount = jest.fn();
+			window.wp.apiFetch
+				// With `parse: false` @wordpress/api-fetch rejects with the fetch Response itself for a non-2xx status
+				// (api-fetch src/utils/response.js:72-74, parseAndThrowError).
+				.mockRejectedValueOnce( { status: 500, ok: false } )
+				.mockResolvedValue( getVirtualCart( 7500, 3 ) );
+			await mountReadyWallet();
+			const container = document.getElementById(
+				'wcpay-express-checkout-element'
+			);
+			const separator = document.getElementById(
+				'wcpay-express-checkout-button-separator'
+			);
+			expect( container.classList.contains( 'is-ready' ) ).toBe( true );
+
+			// Express Checkout Element `click` event: expressPaymentType and resolve (https://docs.stripe.com/js.md,
+			// "expressCheckoutElement.on('click', handler)").
+			await expressHandlers.click( {
+				expressPaymentType: 'apple_pay',
+				resolve: jest.fn(),
+			} );
+			await flushMicrotasks();
+
+			expect( expressElement.unmount ).toHaveBeenCalledTimes( 1 );
+			expect( container.classList.contains( 'is-ready' ) ).toBe( false );
+			expect( container.style.display ).toBe( 'none' );
+			expect( separator.hidden ).toBe( true );
+			expect( stripe.elements ).toHaveBeenCalledTimes( 1 );
+
+			typeQuantity( '3' );
+			jest.advanceTimersByTime( 250 );
+			await flushMicrotasks();
+
+			expect( stripe.elements ).toHaveBeenCalledTimes( 2 );
+			expect( expressElement.mount ).toHaveBeenCalledTimes( 2 );
+			// The new wallet shows only once it reports a payment method.
+			expect( container.style.display ).toBe( 'none' );
+
+			expressHandlers.ready( {
+				availablePaymentMethods: { applePay: true },
+			} );
+
+			expect( container.classList.contains( 'is-ready' ) ).toBe( true );
+			expect( container.style.display ).toBe( '' );
+		} );
+
 		test( 'opens the sheet of a product with nothing to ship at the re-priced quantity', async () => {
 			const resolveClick = jest.fn();
 			jest.useFakeTimers();

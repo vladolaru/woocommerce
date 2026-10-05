@@ -2845,6 +2845,15 @@
 					'Unable to add this product to the cart.';
 				setError( productAddToCartErrorMessage );
 				unblockPage();
+				// Client 11.1.0 shortcode-buttons-express/index.js:323-342: the wallet goes away; the next product form
+				// change mounts a new one (applyProductPreview() with no Elements).
+				if ( expressElement && expressElement.unmount ) {
+					expressElement.unmount();
+				}
+				expressElement = null;
+				elements = null;
+				expressButtonAvailable = false;
+				hideExpressButton();
 				throw error;
 			}
 		);
