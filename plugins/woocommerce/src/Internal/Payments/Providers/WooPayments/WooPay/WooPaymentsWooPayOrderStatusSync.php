@@ -345,7 +345,7 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 		try {
 			$webhook_ids = $this->find_woopay_webhook_ids();
 			if ( 1 === count( $webhook_ids ) ) {
-				if ( $this->is_rotation_due() ) {
+				if ( $this->is_rotation_due_in_database() ) {
 					$this->rotate_secret( $webhook_ids[0] );
 				}
 			} elseif ( $this->delete_webhooks( $webhook_ids ) ) {
@@ -391,8 +391,8 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	/**
 	 * Give the webhook a new secret: register it with the platform, then save it on the same row.
 	 *
-	 * The row stays active throughout. A failed registration leaves the row and the request for a new secret in place, so
-	 * the next admin page tries again.
+	 * The row stays active throughout. A failed registration, or a row that did not take the new secret, leaves the request
+	 * for a new secret in place, so the next admin page tries again.
 	 *
 	 * @param int $webhook_id Webhook ID.
 	 */
@@ -415,6 +415,13 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 		// Saving an active row still pending its first ping sends WooCommerce's ping to WooPay; client 11.1.0 never saves the row after creating it.
 		$webhook->set_pending_delivery( false );
 		$webhook->save();
+
+		// WC_Webhook_Data_Store::update() ignores a failed database write, and WooPay already holds the new secret.
+		if ( $secret !== $this->read_webhook_secret( $webhook_id ) ) {
+			$this->log_reconciliation_error( 'Unable to save the rotated WooPay order-status webhook secret.' );
+			return;
+		}
+
 		update_option( self::ROTATION_DUE_OPTION, 'no', true );
 	}
 
@@ -425,6 +432,32 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	 */
 	private function is_rotation_due(): bool {
 		return 'yes' === get_option( self::ROTATION_DUE_OPTION );
+	}
+
+	/**
+	 * Tell whether a new webhook secret is still due, from the database.
+	 *
+	 * Each request keeps the autoloaded options it loaded at its start, so under the claim this request's copy can still ask
+	 * for a rotation another request has just finished.
+	 *
+	 * @return bool
+	 */
+	private function is_rotation_due_in_database(): bool {
+		global $wpdb;
+
+		return 'yes' === $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", self::ROTATION_DUE_OPTION ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Under the claim the flag must reflect other requests' writes.
+	}
+
+	/**
+	 * Read a webhook's secret straight from its row.
+	 *
+	 * @param int $webhook_id Webhook ID.
+	 * @return string|null The stored secret, or null when the row does not exist.
+	 */
+	private function read_webhook_secret( int $webhook_id ): ?string {
+		global $wpdb;
+
+		return $wpdb->get_var( $wpdb->prepare( "SELECT secret FROM {$wpdb->prefix}wc_webhooks WHERE webhook_id = %d", $webhook_id ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Confirms the write WC_Webhook_Data_Store::update() does not check.
 	}
 
 	/**

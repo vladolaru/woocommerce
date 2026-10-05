@@ -21,14 +21,15 @@ use WC_Webhook;
  */
 class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 
-	private const WEBHOOK_NAME       = 'WooPayments woopay order status sync';
-	private const WOOPAY_URL         = 'https://pay.woo.com/wp-json/platform-checkout/v1/merchant-notification';
-	private const CLAIM_OPTION       = '_transient_woocommerce_woopayments_woopay_webhook_claim';
-	private const CLAIM_EXPIRY       = '_transient_timeout_woocommerce_woopayments_woopay_webhook_claim';
-	private const SETTINGS_OPTION    = 'woocommerce_woocommerce_payments_settings';
-	private const PLUGIN_SECRET      = 'plugin-secret';
-	private const TRANSLATED_NAME    = 'Synchronisation du statut des commandes WooPay';
-	private const PLUGIN_TEXT_DOMAIN = 'woocommerce-payments';
+	private const WEBHOOK_NAME        = 'WooPayments woopay order status sync';
+	private const WOOPAY_URL          = 'https://pay.woo.com/wp-json/platform-checkout/v1/merchant-notification';
+	private const CLAIM_OPTION        = '_transient_woocommerce_woopayments_woopay_webhook_claim';
+	private const CLAIM_EXPIRY        = '_transient_timeout_woocommerce_woopayments_woopay_webhook_claim';
+	private const SETTINGS_OPTION     = 'woocommerce_woocommerce_payments_settings';
+	private const PLUGIN_SECRET       = 'plugin-secret';
+	private const TRANSLATED_NAME     = 'Synchronisation du statut des commandes WooPay';
+	private const PLUGIN_TEXT_DOMAIN  = 'woocommerce-payments';
+	private const ROTATION_DUE_OPTION = 'woocommerce_woopayments_woopay_webhook_rotation_due';
 
 	/**
 	 * Created sync instances whose hooks must be removed after each test.
@@ -368,6 +369,69 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$this->assertNotSame( self::PLUGIN_SECRET, $secret );
 		$this->assertCount( 2, $this->api_client->woopay_updates );
 		$this->assertSame( array( 'webhook_secret' => $secret ), $this->api_client->woopay_updates[1] );
+	}
+
+	/**
+	 * @testdox A rotated secret the webhook row did not save keeps the request for a new secret, and the next admin page rotates again.
+	 *
+	 * WC_Webhook_Data_Store::update() ignores the result of its $wpdb->update() (class-wc-webhook-data-store.php:145-151),
+	 * so a failed write is invisible to save(). Fails when the flag is cleared although WooPay holds a secret the row lacks.
+	 */
+	public function test_rotated_secret_the_row_did_not_save_is_rotated_again(): void {
+		$logger = new Task25RecordingLogger();
+		add_filter( 'woocommerce_logging_class', static fn() => $logger );
+		$plugin_webhook = $this->create_plugin_webhook();
+		$sync           = $this->create_sync( true, true );
+		$sync->register();
+		do_action( 'woocommerce_payments_account_refreshed', array() );
+		// The database refuses the row update: an empty query makes $wpdb->query() return false, as a failed write does.
+		$fail_update = static function ( $query ) {
+			return 0 === stripos( $query, 'UPDATE `' . $GLOBALS['wpdb']->prefix . 'wc_webhooks`' ) ? '' : $query;
+		};
+		add_filter( 'query', $fail_update );
+
+		try {
+			$this->run_admin_init_for( $sync );
+		} finally {
+			remove_filter( 'query', $fail_update );
+		}
+
+		$this->assertCount( 1, $this->api_client->woopay_updates, 'WooPay got the new secret.' );
+		$this->assertSame( self::PLUGIN_SECRET, $this->read_webhook_secret( $plugin_webhook->get_id() ), 'The row kept the old secret.' );
+		$this->assertSame( 'yes', $this->read_option_row( self::ROTATION_DUE_OPTION ), 'The next admin page must rotate again.' );
+		$this->assertSame( array( 'Unable to save the rotated WooPay order-status webhook secret.' ), array_column( $logger->error_calls, 'message' ) );
+		$this->assertNull( $this->read_option_row( self::CLAIM_OPTION ), 'The lock must be released.' );
+
+		$this->run_admin_init_for( $sync );
+
+		$this->assertCount( 2, $this->api_client->woopay_updates );
+		$this->assertSame( array( 'webhook_secret' => $this->read_webhook_secret( $plugin_webhook->get_id() ) ), $this->api_client->woopay_updates[1] );
+		$this->assertSame( 'no', $this->read_option_row( self::ROTATION_DUE_OPTION ) );
+	}
+
+	/**
+	 * @testdox A second admin request that loaded its options before another request rotated the secret does not rotate it again.
+	 *
+	 * Each request reads autoloaded options once, at its start (wp_load_alloptions()). Fails when the check under the claim
+	 * trusts that copy: two requests right after a refresh then both call the platform.
+	 */
+	public function test_request_with_a_stale_rotation_flag_does_not_rotate_again(): void {
+		$plugin_webhook = $this->create_plugin_webhook();
+		$sync           = $this->create_sync( true, true );
+		$sync->register();
+		do_action( 'woocommerce_payments_account_refreshed', array() );
+		// The second request's copy of the autoloaded options, taken while the flag was still set.
+		$stale_alloptions = wp_load_alloptions();
+		$this->assertSame( 'yes', $stale_alloptions[ self::ROTATION_DUE_OPTION ] ?? null );
+
+		$this->run_admin_init_for( $sync );
+		$rotated_secret = $this->read_webhook_secret( $plugin_webhook->get_id() );
+		wp_cache_set( 'alloptions', $stale_alloptions, 'options' );
+		$this->run_admin_init_for( $sync );
+
+		$this->assertCount( 1, $this->api_client->woopay_updates, 'One refresh asks for one new secret.' );
+		$this->assertSame( $rotated_secret, $this->read_webhook_secret( $plugin_webhook->get_id() ) );
+		$this->assertNull( $this->read_option_row( self::CLAIM_OPTION ), 'The lock must be released.' );
 	}
 
 	/**
@@ -798,6 +862,18 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 				'autoload'     => 'off',
 			)
 		);
+	}
+
+	/**
+	 * Read a webhook's secret straight from its row.
+	 *
+	 * @param int $webhook_id Webhook ID.
+	 * @return string|null Stored secret, or null when the row does not exist.
+	 */
+	private function read_webhook_secret( int $webhook_id ): ?string {
+		global $wpdb;
+
+		return $wpdb->get_var( $wpdb->prepare( "SELECT secret FROM {$wpdb->prefix}wc_webhooks WHERE webhook_id = %d", $webhook_id ) );
 	}
 
 	/**
