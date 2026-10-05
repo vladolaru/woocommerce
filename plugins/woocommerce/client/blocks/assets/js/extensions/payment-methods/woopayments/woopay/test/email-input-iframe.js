@@ -33,6 +33,7 @@ const baseSettings = {
 	woopayAppearance: { theme: 'stripe' },
 	woopayFontRules: [ { cssSrc: 'https://fonts.wp.com/font.css' } ],
 	woopayOtpIframeTitle: 'WooPay SMS code verification',
+	woopayOtpCloseLabel: 'Close',
 	woopayUnavailableMessage: 'WooPay is unavailable at this time.',
 };
 
@@ -669,6 +670,89 @@ describe( 'WooPay email input (blocks)', () => {
 		expect(
 			document.querySelector( '.woopay-otp-iframe-wrapper' )
 		).toBeNull();
+	} );
+
+	// Better than client 11.1.0, whose email-lookup dialog is unnamed, lets focus leave and loses it on a failure close
+	// (client/checkout/woopay/email-input-iframe.js:234-248); the express OTP dialog has the same pattern.
+	describe( 'as a modal dialog', () => {
+		const openDialog = async () => {
+			const input = await setup();
+			await typeEmail( input, 'shopper@example.com' );
+			const dialog = document.querySelector( '[role="dialog"]' );
+			expect( dialog ).not.toBeNull();
+
+			return { input, dialog };
+		};
+
+		test( 'is named after the iframe and takes focus', async () => {
+			const { dialog } = await openDialog();
+
+			expect( dialog ).toHaveAttribute(
+				'aria-label',
+				'WooPay SMS code verification'
+			);
+			expect(
+				dialog.querySelector( '.woopay-otp-iframe' )
+			).toHaveFocus();
+		} );
+
+		test( 'sends focus that leaves the dialog back to the iframe while it is open', async () => {
+			const { input, dialog } = await openDialog();
+			const iframe = dialog.querySelector( '.woopay-otp-iframe' );
+			const placeOrder = document.querySelector(
+				'.wc-block-components-checkout-place-order-button'
+			);
+
+			placeOrder.focus();
+			expect( iframe ).toHaveFocus();
+
+			// WooPay's OTP iframe posts `{ action: 'close_modal' }` from the WooPay origin (client
+			// email-input-iframe.js:510-512).
+			postWooPayMessage( { action: 'close_modal' } );
+			expect( input ).toHaveFocus();
+			placeOrder.focus();
+			expect( placeOrder ).toHaveFocus();
+		} );
+
+		// The iframe here never loads and never posts a message: WooPay's own close control and Escape bridge do not exist.
+		test( 'offers a Close button after the iframe that Tab reaches, and closing it gives focus back to the email field', async () => {
+			const { input, dialog } = await openDialog();
+			const iframe = dialog.querySelector( '.woopay-otp-iframe' );
+			const close = dialog.querySelector( 'button' );
+
+			expect( close ).toHaveTextContent( 'Close' );
+			expect( close.type ).toBe( 'button' );
+			expect( close.tabIndex ).toBeGreaterThanOrEqual( 0 );
+			expect(
+				// eslint-disable-next-line no-bitwise
+				iframe.compareDocumentPosition( close ) &
+					window.Node.DOCUMENT_POSITION_FOLLOWING
+			).toBeTruthy();
+
+			close.focus();
+			expect( close ).toHaveFocus();
+			close.click();
+
+			expect( document.querySelector( '[role="dialog"]' ) ).toBeNull();
+			expect( input ).toHaveFocus();
+		} );
+
+		test( 'gives focus back to the email field when WooPay cannot start', async () => {
+			fetchResponses[ '/?wc-ajax=wcpay_init_woopay' ] = {
+				body: { result: 'error' },
+			};
+			const { input } = await openDialog();
+
+			postWooPayMessage( {
+				action: 'redirect_to_woopay',
+				platformCheckoutUserSession: 'session-token',
+			} );
+			await flushPromises();
+			await flushPromises();
+
+			expect( document.querySelector( '[role="dialog"]' ) ).toBeNull();
+			expect( input ).toHaveFocus();
+		} );
 	} );
 
 	test( 'leaves focus where it is on an Escape while the OTP iframe is closed', async () => {

@@ -271,6 +271,11 @@ export const handleWooPayEmailInput = async ( field, paymentSettings ) => {
 	// Keep twentytwenty.intrinsicRatioVideos from resizing the iframe.
 	iframe.classList.add( 'intrinsic-ignore' );
 
+	// The dialog is named after the iframe it holds, as the express OTP dialog is; client 11.1.0 names neither.
+	if ( iframe.title ) {
+		iframeWrapper.setAttribute( 'aria-label', iframe.title );
+	}
+
 	const iframeArrow = document.createElement( 'span' );
 	iframeArrow.setAttribute( 'aria-hidden', 'true' );
 	iframeArrow.classList.add( 'arrow' );
@@ -405,18 +410,43 @@ export const handleWooPayEmailInput = async ( field, paymentSettings ) => {
 	iframeWrapper.insertBefore( iframeArrow, null );
 	iframeWrapper.insertBefore( iframe, null );
 
+	// The dialog's own way out, as on the express OTP dialog (express-checkout-iframe.js): WooPay's iframe draws a close
+	// control and turns Escape into close_modal, but neither exists when the iframe never loads. After the iframe, so Tab
+	// past the iframe's last control reaches it; the stylesheet shows it only while it has focus. Its click reaches the
+	// wrapper's click handler, which closes the dialog.
+	const closeButton = document.createElement( 'button' );
+	closeButton.type = 'button';
+	closeButton.classList.add( 'woopay-otp-iframe-close' );
+	closeButton.textContent = paymentSettings.woopayOtpCloseLabel || '';
+	iframeWrapper.insertBefore( closeButton, null );
+
+	// A modal dialog keeps focus: Tab past the Close button, or Shift+Tab before the iframe's first control, lands on the
+	// page behind it and comes back to the iframe.
+	const onFocusIn = ( event ) => {
+		if ( ! iframeWrapper.contains( event.target ) ) {
+			iframe.focus();
+		}
+	};
+
 	const errorMessage = document.createElement( 'div' );
 	errorMessage.textContent = paymentSettings.woopayUnavailableMessage || '';
 	errorMessage.classList.add( 'wc-block-checkout__guest-checkout-notice' );
 
+	// Focus goes back to the email field on every close that takes it from the dialog, the failure closes included; client
+	// 11.1.0 gives it back only on the closes that ask for it (email-input-iframe.js:234-243), and the page loses it otherwise.
 	const closeIframe = ( focus = true ) => {
+		const dialogHadFocus = iframeWrapper.contains(
+			iframeWrapper.ownerDocument.activeElement
+		);
+
 		window.removeEventListener( 'resize', getWindowSize );
 		window.removeEventListener( 'resize', setPopoverPosition );
+		document.removeEventListener( 'focusin', onFocusIn );
 
 		iframeWrapper.remove();
 		iframe.classList.remove( 'open' );
 
-		if ( focus ) {
+		if ( focus || dialogHadFocus ) {
 			woopayEmailInput.focus();
 		}
 
@@ -430,6 +460,8 @@ export const handleWooPayEmailInput = async ( field, paymentSettings ) => {
 		if ( document.querySelector( '.woopay-otp-iframe' ) ) {
 			return;
 		}
+
+		document.addEventListener( 'focusin', onFocusIn );
 
 		const viewportWidth = window.document.documentElement.clientWidth;
 		const viewportHeight = window.document.documentElement.clientHeight;
