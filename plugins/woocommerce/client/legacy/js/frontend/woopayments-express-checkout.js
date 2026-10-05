@@ -15,6 +15,9 @@
 	// What the product-page button was priced from when the sheet opened; the click puts the sheet's working cart
 	// in `cachedCartData`, and closing the sheet brings this back.
 	var productPricedCartData = null;
+	// Counts product-page sheet opens, so the late answers of a closed sheet's cart requests leave a newer sheet's cart
+	// session alone.
+	var productCartGeneration = 0;
 	// The last address the shopper chose in the open sheet; cancel puts it into the page form.
 	var lastSelectedAddress = null;
 	var resolvedProductCurrency = '';
@@ -227,7 +230,14 @@
 		return headers;
 	}
 
-	function normalizeStoreApiResponse( response ) {
+	/**
+	 * Read a product-page Store API response: keep its nonce and, unless told otherwise, its tokenized cart session.
+	 *
+	 * @param {Object}  response     The raw response (`parse: false`).
+	 * @param {boolean} adoptSession False when the session in the response must not replace the current one.
+	 * @return {*} The response body.
+	 */
+	function normalizeStoreApiResponse( response, adoptSession ) {
 		var nextNonce;
 		var nextSession;
 
@@ -249,7 +259,11 @@
 		nextSession = response.headers.get(
 			'X-WooPayments-Tokenized-Cart-Session'
 		);
-		if ( nextSession !== null && nextSession !== undefined ) {
+		if (
+			adoptSession !== false &&
+			nextSession !== null &&
+			nextSession !== undefined
+		) {
 			tokenizedCartSession = nextSession;
 		}
 
@@ -281,7 +295,15 @@
 		return query ? path + '?' + query : path;
 	}
 
-	function requestCart( options ) {
+	/**
+	 * Send a Store API cart request with the tokenized cart headers.
+	 *
+	 * @param {Object}   options        apiFetch options.
+	 * @param {Function} [adoptSession] Asked when the answer arrives whether its tokenized session replaces the
+	 *                                  current one (always, when omitted).
+	 * @return {Promise} The response body.
+	 */
+	function requestCart( options, adoptSession ) {
 		var apiFetch = getApiFetch();
 		var includeSessionNonce = isProduct();
 		var requestOptions = Object.assign( {}, options, {
@@ -302,7 +324,12 @@
 			requestOptions.parse = false;
 		}
 
-		return apiFetch( requestOptions ).then( normalizeStoreApiResponse );
+		return apiFetch( requestOptions ).then( function ( response ) {
+			return normalizeStoreApiResponse(
+				response,
+				! adoptSession || adoptSession()
+			);
+		} );
 	}
 
 	function requestOrder( options ) {
@@ -2709,14 +2736,19 @@
 		);
 	}
 
-	function addSelectedProductToCart( product ) {
+	function addSelectedProductToCart( product, generation ) {
 		tokenizedCartSession = '';
 
-		return requestCart( {
-			method: 'POST',
-			path: '/wc/store/v1/cart/add-item',
-			data: product,
-		} )
+		return requestCart(
+			{
+				method: 'POST',
+				path: '/wc/store/v1/cart/add-item',
+				data: product,
+			},
+			function () {
+				return generation === productCartGeneration;
+			}
+		)
 			.then( function ( cartData ) {
 				// The sheet's working cart. Elements keeps the amount the sheet opened with until a shipping event
 				// updates it, as on the client (shortcode-buttons-express/index.js:321, event-handlers.js:122).
@@ -2725,7 +2757,7 @@
 				return cartData;
 			} )
 			.catch( function ( error ) {
-				return emptyProductCart().then( function () {
+				return emptyProductCart( generation ).then( function () {
 					throw error;
 				} );
 			} );
@@ -2745,7 +2777,14 @@
 
 		iapiPreviewRequestId++;
 		productAddToCartErrorMessage = '';
-		productPricedCartData = cachedCartData;
+		productCartGeneration++;
+		// A closed sheet whose cart is still being emptied left its working cart in `cachedCartData`; the button is
+		// still priced from `productPricedCartData`.
+		if ( tokenizedCartSession === null ) {
+			productPricedCartData = cachedCartData;
+		} else {
+			cachedCartData = productPricedCartData;
+		}
 
 		if ( ! product ) {
 			productAddToCartErrorMessage =
@@ -2753,7 +2792,10 @@
 			return false;
 		}
 
-		productAddToCartPromise = addSelectedProductToCart( product ).catch(
+		productAddToCartPromise = addSelectedProductToCart(
+			product,
+			productCartGeneration
+		).catch(
 			function ( error ) {
 				productAddToCartErrorMessage =
 					( error && error.message ) ||
@@ -2871,26 +2913,48 @@
 			} );
 	}
 
-	function emptyProductCart() {
-		if ( ! isProduct() || tokenizedCartSession === null ) {
+	/**
+	 * Empty the ephemeral cart of a product-page sheet and forget its session.
+	 *
+	 * Once a newer sheet opened, the session belongs to that sheet: nothing is sent or reset for the older one, whose
+	 * tokenized session is left to WooCommerce's session expiry.
+	 *
+	 * @param {number} [generation] The sheet whose cart to empty; the current one by default.
+	 * @return {Promise} Settles once the cart was emptied.
+	 */
+	function emptyProductCart( generation ) {
+		var forget = function () {
+			if ( generation === productCartGeneration ) {
+				tokenizedCartSession = null;
+				cachedCartData = productPricedCartData;
+			}
+		};
+
+		if ( generation === undefined ) {
+			generation = productCartGeneration;
+		}
+
+		if (
+			! isProduct() ||
+			tokenizedCartSession === null ||
+			generation !== productCartGeneration
+		) {
 			return Promise.resolve();
 		}
 
-		return requestCart( {
-			method: 'GET',
-			path: '/wc/store/v1/cart',
-			headers: {
-				'X-WooPayments-Tokenized-Cart-Is-Ephemeral-Cart': '1',
+		// The answer carries the session being deleted; it never becomes the current one.
+		return requestCart(
+			{
+				method: 'GET',
+				path: '/wc/store/v1/cart',
+				headers: {
+					'X-WooPayments-Tokenized-Cart-Is-Ephemeral-Cart': '1',
+				},
 			},
-		} )
-			.then( function () {
-				tokenizedCartSession = null;
-				cachedCartData = productPricedCartData;
-			} )
-			.catch( function () {
-				tokenizedCartSession = null;
-				cachedCartData = productPricedCartData;
-			} );
+			function () {
+				return false;
+			}
+		).then( forget, forget );
 	}
 
 	function getClickOptions() {
@@ -3182,9 +3246,13 @@
 		// the cart, empty it, put the sheet's last address into the page form, and unblock the page; the button stays as
 		// it is.
 		expressElement.on( 'cancel', function () {
+			var generation = productCartGeneration;
+
 			productAddToCartPromise
 				.catch( function () {} )
-				.then( emptyProductCart );
+				.then( function () {
+					return emptyProductCart( generation );
+				} );
 
 			if ( lastSelectedAddress ) {
 				updateShippingAddressUI( lastSelectedAddress );

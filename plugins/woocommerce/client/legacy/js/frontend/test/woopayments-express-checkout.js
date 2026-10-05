@@ -3674,6 +3674,141 @@ describe( 'WooPayments express checkout', () => {
 			);
 		} );
 
+		// A shopper who cancels and opens the sheet again before the first sheet's cart was emptied: the second sheet
+		// owns its own tokenized cart session, and the late answers of the first sheet's requests must not take it
+		// away (a request without the session header lands on a new, empty tokenized cart on the server). Store API
+		// answers: add-item and cart as in cart.md ("Add Item", "Cart Response"); the tokenized session token comes
+		// back in the `X-WooPayments-Tokenized-Cart-Session` response header.
+		describe( 'a second sheet opened while the first one\'s cart is being emptied', () => {
+			let pending;
+
+			function routeStoreApi() {
+				pending = { addItem: [], emptyCart: [] };
+				window.wp.apiFetch.mockImplementation( ( options ) => {
+					const deferred = createDeferred();
+					if ( options.path.indexOf( '/wc/store/v1/cart/add-item' ) === 0 ) {
+						pending.addItem.push( deferred );
+						return deferred.promise;
+					}
+					if (
+						options.headers[
+							'X-WooPayments-Tokenized-Cart-Is-Ephemeral-Cart'
+						]
+					) {
+						pending.emptyCart.push( deferred );
+						return deferred.promise;
+					}
+					return Promise.resolve(
+						getStoreApiResponse(
+							Object.assign( getVirtualCart( 2500, 1 ), {
+								needs_shipping: true,
+								shipping_rates: [
+									{
+										shipping_rates: [
+											{
+												rate_id: 'flat_rate:1',
+												name: 'Flat rate',
+												price: '0',
+												taxes: '0',
+												selected: true,
+												meta_data: [],
+											},
+										],
+									},
+								],
+							} ),
+							{}
+						)
+					);
+				} );
+			}
+
+			function answerWithSession( deferred, session ) {
+				deferred.resolve(
+					getStoreApiResponse( getVirtualCart( 2500, 1 ), {
+						'X-WooPayments-Tokenized-Cart-Session': session,
+					} )
+				);
+			}
+
+			async function changeAddress() {
+				await expressHandlers.shippingaddresschange( {
+					name: 'Ada Lovelace',
+					address: {
+						city: 'San Francisco',
+						state: 'CA',
+						postal_code: '94107',
+						country: 'US',
+					},
+					resolve: jest.fn(),
+					reject: jest.fn(),
+				} );
+
+				return window.wp.apiFetch.mock.calls
+					.map( ( [ options ] ) => options )
+					.filter(
+						( options ) =>
+							options.path.indexOf(
+								'/wc/store/v1/cart/update-customer'
+							) === 0
+					)
+					.pop();
+			}
+
+			test( 'keeps the second sheet\'s cart when the first empty answers last', async () => {
+				const firstOpen = jest.fn();
+				const secondOpen = jest.fn();
+				setClassicProductForm();
+				window.wcpayExpressCheckoutParams.product.needs_shipping = true;
+				routeStoreApi();
+				await mountReadyWallet();
+
+				await expressHandlers.click( { resolve: firstOpen } );
+				answerWithSession( pending.addItem[ 0 ], 'session-one' );
+				await flushMicrotasks();
+				expressHandlers.cancel();
+				await flushMicrotasks();
+				expect( pending.emptyCart ).toHaveLength( 1 );
+
+				await expressHandlers.click( { resolve: secondOpen } );
+				answerWithSession( pending.addItem[ 1 ], 'session-two' );
+				await flushMicrotasks();
+				answerWithSession( pending.emptyCart[ 0 ], 'session-one' );
+				await flushMicrotasks();
+
+				expect( secondOpen.mock.calls[ 0 ][ 0 ] ).toEqual(
+					firstOpen.mock.calls[ 0 ][ 0 ]
+				);
+				expect( ( await changeAddress() ).headers ).toEqual(
+					expect.objectContaining( {
+						'X-WooPayments-Tokenized-Cart-Session': 'session-two',
+					} )
+				);
+			} );
+
+			test( 'does not empty the second sheet\'s cart when the first add-item answers last', async () => {
+				setClassicProductForm();
+				window.wcpayExpressCheckoutParams.product.needs_shipping = true;
+				routeStoreApi();
+				await mountReadyWallet();
+
+				await expressHandlers.click( { resolve: jest.fn() } );
+				expressHandlers.cancel();
+				await expressHandlers.click( { resolve: jest.fn() } );
+				answerWithSession( pending.addItem[ 1 ], 'session-two' );
+				await flushMicrotasks();
+				answerWithSession( pending.addItem[ 0 ], 'session-one' );
+				await flushMicrotasks();
+
+				expect( pending.emptyCart ).toHaveLength( 0 );
+				expect( ( await changeAddress() ).headers ).toEqual(
+					expect.objectContaining( {
+						'X-WooPayments-Tokenized-Cart-Session': 'session-two',
+					} )
+				);
+			} );
+		} );
+
 		test( 'keeps the button unblocked and unpriced while the classic variation is cleared', async () => {
 			const resolveClick = jest.fn();
 			setClassicProductForm( {
