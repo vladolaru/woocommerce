@@ -1389,39 +1389,39 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A classic checkout never resumes a paid order the Store API draft key names; it places a new order.
+	 * @testdox A classic checkout never resumes a $status order the Store API draft key names; it places a new order.
 	 *
 	 * Core resumes only a checkout draft, or a pending or failed order (DraftOrderTrait::is_valid_draft_order(),
-	 * WC_Checkout::create_order() at class-wc-checkout.php:420). Client 11.1.0 sets whatever order the key names to pending
+	 * WC_Checkout::create_order() at class-wc-checkout.php:424). Client 11.1.0 sets whatever order the key names to pending
 	 * (class-wc-payments-woopay-direct-checkout.php:71-73).
+	 *
+	 * @testWith ["processing"]
+	 *           ["completed"]
+	 *           ["on-hold"]
+	 *           ["cancelled"]
+	 *           ["refunded"]
+	 *
+	 * @param string $status Status of the order the Store API draft key names.
 	 */
-	public function test_classic_checkout_never_resumes_a_paid_order_named_as_the_woopay_draft(): void {
+	public function test_classic_checkout_never_resumes_a_settled_order_named_as_the_woopay_draft( string $status ): void {
 		$sut = $this->create_service( array(), array( 'platform_direct_checkout_eligible' => true ) );
 		$this->register_controller( $sut );
 		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 1 );
 		WC()->cart->calculate_totals();
-		$paid = new \WC_Order();
-		$paid->set_status( OrderStatus::PROCESSING );
-		$paid->set_cart_hash( WC()->cart->get_cart_hash() );
-		$paid->save();
-		WC()->session->set( 'store_api_draft_order', $paid->get_id() );
+		$settled = new \WC_Order();
+		$settled->set_status( $status );
+		$settled->set_cart_hash( WC()->cart->get_cart_hash() );
+		$settled->save();
+		WC()->session->set( 'store_api_draft_order', $settled->get_id() );
 		WC()->session->set( 'order_awaiting_payment', null );
-		Constants::set_constant( 'WOOCOMMERCE_CHECKOUT', true );
 
-		try {
-			$order_id = WC()->checkout()->create_order(
-				array(
-					'payment_method' => 'bacs',
-					'billing_email'  => 'guest@example.com',
-				)
-			);
-		} finally {
-			Constants::clear_single_constant( 'WOOCOMMERCE_CHECKOUT' );
-		}
+		$order_id = $this->create_classic_checkout_order();
 
 		$this->assertIsInt( $order_id );
-		$this->assertNotSame( $paid->get_id(), $order_id, 'A new order is placed.' );
-		$this->assertSame( OrderStatus::PROCESSING, wc_get_order( $paid->get_id() )->get_status() );
+		$this->assertNotSame( $settled->get_id(), $order_id, 'A new order is placed.' );
+		$this->assertSame( $status, wc_get_order( $settled->get_id() )->get_status() );
+		$this->assertSame( $settled->get_id(), WC()->session->get( 'store_api_draft_order' ) );
+		$this->assertNull( WC()->session->get( 'order_awaiting_payment' ) );
 	}
 
 	/**
