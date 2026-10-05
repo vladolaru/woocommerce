@@ -98,6 +98,60 @@ describe( 'settings payments provider routes', () => {
 		] );
 	} );
 
+	it( 'ignores a non-array filter result', () => {
+		const nativeElement = <div>Native route</div>;
+
+		registerSettingsPaymentsProviderRoute( {
+			id: 'native-provider',
+			path: 'native-provider/overview',
+			element: nativeElement,
+		} );
+
+		addFilter(
+			SETTINGS_PAYMENTS_PROVIDER_ROUTES_FILTER,
+			'woocommerce/test-broken-filter',
+			() => 'not a list of routes'
+		);
+
+		expect( getSettingsPaymentsProviderRoutes() ).toEqual( [
+			{
+				id: 'native-provider',
+				path: '/native-provider/overview',
+				element: nativeElement,
+			},
+		] );
+	} );
+
+	it( 'drops a route without an element', () => {
+		const nativeElement = <div>Native route</div>;
+
+		registerSettingsPaymentsProviderRoute( {
+			id: 'native-provider',
+			path: '/native-provider/overview',
+			element: nativeElement,
+		} );
+
+		addFilter(
+			SETTINGS_PAYMENTS_PROVIDER_ROUTES_FILTER,
+			'woocommerce/test-incomplete-routes',
+			( routes ) => [
+				...routes,
+				{ id: 'no-element', path: '/no-element' },
+				{ id: 'no-path', element: <div>No path</div> },
+				{ path: '/no-id', element: <div>No ID</div> },
+				null,
+			]
+		);
+
+		expect( getSettingsPaymentsProviderRoutes() ).toEqual( [
+			{
+				id: 'native-provider',
+				path: '/native-provider/overview',
+				element: nativeElement,
+			},
+		] );
+	} );
+
 	it( 'fails closed when two provider routes use the same path', () => {
 		registerSettingsPaymentsProviderRoute( {
 			id: 'first-provider',

@@ -1,0 +1,155 @@
+import { __, sprintf } from '@wordpress/i18n';
+import { useEffect, useState } from '@wordpress/element';
+
+import { OptionSelector } from '../../../ReusableComponents/Fields';
+import { OnboardingHooks, PRODUCT_TYPES } from '../../../../data';
+import OnboardingHeader from '../Components/OnboardingHeader';
+
+const DetailsVirtual = () => (
+	<ul className="ppcp-r-services">
+		<li>{ __( 'Services', 'woocommerce' ) }</li>
+		<li>{ __( 'Downloadable', 'woocommerce' ) }</li>
+		<li>{ __( 'Bookings', 'woocommerce' ) }</li>
+		<li>{ __( 'Deposits', 'woocommerce' ) }</li>
+	</ul>
+);
+
+const DetailsPhysical = () => (
+	<ul className="ppcp-r-services">
+		<li>{ __( 'Goods', 'woocommerce' ) }</li>
+		<li>{ __( 'Deliveries', 'woocommerce' ) }</li>
+	</ul>
+);
+
+const DetailsSubscriptions = ( { showLink, showNotice } ) => (
+	<>
+		{ showLink && (
+			<p
+				dangerouslySetInnerHTML={ {
+					__html: sprintf(
+						/* translators: %s is the URL to the WooCommerce Subscriptions product page */
+						__(
+							'* To use subscriptions, you must have <a target="_blank" href="%s">WooCommerce Subscriptions</a> enabled.',
+							'woocommerce'
+						),
+						'https://woocommerce.com/products/woocommerce-subscriptions/'
+					),
+				} }
+			/>
+		) }
+		{ showNotice && (
+			<p>
+				{ __(
+					'* Business account is required for subscriptions.',
+					'woocommerce'
+				) }
+			</p>
+		) }
+	</>
+);
+
+const StepProducts = () => {
+	const { products, setProducts } = OnboardingHooks.useProducts();
+	const { canUseSubscriptions } = OnboardingHooks.useFlags();
+	const [ , setOptionState ] = useState( null );
+	const [ productChoices, setProductChoices ] = useState( [] );
+	const { isCasualSeller } = OnboardingHooks.useBusiness();
+
+	useEffect( () => {
+		const productChoicesFull = [
+			{
+				value: PRODUCT_TYPES.VIRTUAL,
+				title: __( 'Virtual', 'woocommerce' ),
+				description: __(
+					'Items do not require shipping.',
+					'woocommerce'
+				),
+				contents: <DetailsVirtual />,
+			},
+			{
+				value: PRODUCT_TYPES.PHYSICAL,
+				title: __( 'Physical Goods', 'woocommerce' ),
+				description: __( 'Items require shipping.', 'woocommerce' ),
+				contents: <DetailsPhysical />,
+			},
+			{
+				value: PRODUCT_TYPES.SUBSCRIPTIONS,
+				title: __( 'Subscriptions', 'woocommerce' ),
+				description: __(
+					'Recurring payments for either physical goods or services.',
+					'woocommerce'
+				),
+				isDisabled: isCasualSeller,
+				contents: (
+					/*
+					 * Note: The link should be only displayed if the subscriptions plugin is not installed.
+					 * But when the plugin is not active, this option is completely hidden;
+					 * This means: In the current configuration, we never show the link.
+					 */
+					<DetailsSubscriptions
+						showLink={ false }
+						showNotice={ isCasualSeller }
+					/>
+				),
+			},
+		];
+
+		const initChoices = () => {
+			const choices = productChoicesFull.map( ( choice ) => {
+				if (
+					choice.value === PRODUCT_TYPES.SUBSCRIPTIONS &&
+					! canUseSubscriptions
+				) {
+					return {
+						...choice,
+						isDisabled: true,
+						contents: (
+							<DetailsSubscriptions
+								showLink={ true }
+								showNotice={ isCasualSeller }
+							/>
+						),
+					};
+				}
+				return choice;
+			} );
+
+			setProductChoices( choices );
+			setOptionState( canUseSubscriptions );
+		};
+
+		initChoices();
+	}, [ canUseSubscriptions, isCasualSeller ] );
+
+	const handleChange = ( key, checked ) => {
+		const getNewValue = () => {
+			if ( checked ) {
+				return [ ...products, key ];
+			}
+			return products.filter( ( val ) => val !== key );
+		};
+
+		setProducts( getNewValue(), 'user' );
+	};
+
+	return (
+		<div className="ppcp-r-page-products">
+			<OnboardingHeader
+				title={ __(
+					'Tell us about the products you sell',
+					'woocommerce'
+				) }
+			/>
+			<div className="ppcp-r-inner-container">
+				<OptionSelector
+					multiSelect={ true }
+					options={ productChoices }
+					onChange={ handleChange }
+					value={ products }
+				/>
+			</div>
+		</div>
+	);
+};
+
+export default StepProducts;

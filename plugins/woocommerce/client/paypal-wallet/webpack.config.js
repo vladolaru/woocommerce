@@ -11,7 +11,6 @@ const BUILD_DIR = path.resolve(
 
 // Entries per kept module, as in the extension's webpack.config.js; the compiled name is "<module>-<type>-<path with dashes>".
 const modulesAssets = {
-	'ppcp-admin-notices': [ 'js/boot-admin.js', 'css/styles.scss' ],
 	'ppcp-blocks': [
 		'js/checkout-block.js',
 		'js/ProductPayLaterMessagesBlock/product-paylater-block.js',
@@ -34,7 +33,6 @@ const modulesAssets = {
 		'css/gateway.scss',
 		'css/checkout-block.scss',
 	],
-	'ppcp-settings': [ 'js/index.js', 'css/styles.scss' ],
 	'ppcp-wc-gateway': [
 		'js/common.js',
 		'js/gateway-settings.js',

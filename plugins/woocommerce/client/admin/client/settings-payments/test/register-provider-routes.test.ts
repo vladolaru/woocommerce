@@ -1,9 +1,22 @@
 describe( 'Settings Payments provider route bootstrap', () => {
+	const originalSettings = window.wcSettings;
+
 	beforeEach( () => {
 		jest.resetModules();
+		window.wcSettings = {
+			...originalSettings,
+			admin: {
+				...originalSettings?.admin,
+				paypalWalletOwned: true,
+			},
+		};
 	} );
 
-	it( 'registers the PayPal Wallet route from the bootstrap module', async () => {
+	afterEach( () => {
+		window.wcSettings = originalSettings;
+	} );
+
+	it( 'registers the PayPal Wallet route from the bootstrap module while core owns the wallet', async () => {
 		await jest.isolateModulesAsync( async () => {
 			const { getSettingsPaymentsProviderRoutes } = await import(
 				'../provider-routes'

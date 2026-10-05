@@ -375,7 +375,6 @@ return array(
 	},
 	'settings.service.script-data-handler'                => static function ( ContainerInterface $container ): ScriptDataHandler {
 		return new ScriptDataHandler(
-			$container->get( 'settings.asset_getter' ),
 			$container->get( 'paylater-configurator.is-available' ),
 			$container->get( 'wcgateway.store-country' ),
 			$container->get( 'api.partner_merchant_id' ),

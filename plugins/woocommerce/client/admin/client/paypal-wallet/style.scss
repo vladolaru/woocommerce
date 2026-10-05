@@ -7,3 +7,9 @@
 #wpbody:has(.paypal-wallet-settings) {
 	margin-block-start: 0;
 }
+
+// The wrapper sits flush with the screen edges; the notice keeps the inline offset of the Payments settings screens.
+.paypal-wallet-settings__notice {
+	margin-block: 16px;
+	margin-inline: 30px;
+}

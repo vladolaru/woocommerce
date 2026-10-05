@@ -9,10 +9,10 @@ declare(strict_types=1);
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\AdminNotices\Renderer;
 
+use Automattic\WooCommerce\Internal\Admin\WCAdminAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\AdminNotices\Repository\RepositoryInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\AdminNotices\Endpoint\MuteMessageEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\AdminNotices\Entity\PersistentMessage;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetter;
 
 /**
  * Class Renderer
@@ -25,13 +25,6 @@ class Renderer implements RendererInterface {
 	 * @var RepositoryInterface
 	 */
 	private $repository;
-
-	/**
-	 * The asset getter.
-	 *
-	 * @var AssetGetter
-	 */
-	private AssetGetter $asset_getter;
 
 	/**
 	 * Used to enqueue assets.
@@ -50,18 +43,15 @@ class Renderer implements RendererInterface {
 	/**
 	 * Renderer constructor.
 	 *
-	 * @param RepositoryInterface $repository   The message repository.
-	 * @param AssetGetter         $asset_getter The asset getter.
-	 * @param string              $version      The module version.
+	 * @param RepositoryInterface $repository The message repository.
+	 * @param string              $version    The module version.
 	 */
 	public function __construct(
 		RepositoryInterface $repository,
-		AssetGetter $asset_getter,
 		string $version
 	) {
-		$this->repository   = $repository;
-		$this->asset_getter = $asset_getter;
-		$this->version      = $version;
+		$this->repository = $repository;
+		$this->version    = $version;
 	}
 
 	/**
@@ -103,13 +93,14 @@ class Renderer implements RendererInterface {
 
 		wp_register_style(
 			'wc-ppcp-admin-notice',
-			$this->asset_getter->get_asset_url( 'styles.css' ),
+			WCAdminAssets::get_url( 'paypal-wallet-notices/style', 'css' ),
 			array(),
 			$this->version
 		);
+		wp_style_add_data( 'wc-ppcp-admin-notice', 'rtl', 'replace' );
 		wp_register_script(
 			'wc-ppcp-admin-notice',
-			$this->asset_getter->get_asset_url( 'boot-admin.js' ),
+			WCAdminAssets::get_url( 'wp-admin-scripts/paypal-wallet-notices', 'js' ),
 			array(),
 			$this->version,
 			true

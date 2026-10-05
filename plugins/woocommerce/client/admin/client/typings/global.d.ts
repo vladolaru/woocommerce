@@ -109,6 +109,8 @@ declare global {
 					};
 				};
 				siteVisibilitySettings: Record< string, string >;
+				/** Present and true only while core owns the PayPal wallet. */
+				paypalWalletOwned?: boolean;
 			};
 		};
 		wcAdminFeatures: DeprecatedWcAdminFeatureFlags & {

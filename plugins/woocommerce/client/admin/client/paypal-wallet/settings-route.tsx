@@ -2,7 +2,9 @@
  * External dependencies
  */
 import { __ } from '@wordpress/i18n';
-import { useEffect } from '@wordpress/element';
+import { Component, lazy, Suspense } from '@wordpress/element';
+import { Notice, Spinner } from '@wordpress/components';
+import type { ReactNode } from 'react';
 
 /**
  * Internal dependencies
@@ -16,75 +18,78 @@ declare global {
 	}
 }
 
-const RELOAD_MARKER_KEY = 'wc_paypal_wallet_settings_reloaded_at';
-const RELOAD_RETRY_DELAY_MS = 10000;
+/**
+ * The wallet's settings app, loaded on the first visit to the route. Its data (`window.ppcpSettings`) and stylesheet
+ * come with the `ppcp-admin-settings` script that core enqueues on this route.
+ */
+const PayPalWalletSettingsApp = lazy(
+	() => import( /* webpackChunkName: "paypal-wallet-settings-app" */ './app' )
+);
 
 /**
- * Loads this page from the server when it was reached without the wallet's settings app on the page.
- *
- * A client-side navigation from another Payments settings screen only loads the app when that screen's request enqueued
- * it. A page load enqueues it, so one reload fixes the page. A marker keeps a missing bundle from reloading in a loop.
+ * Tells the merchant the settings could not be shown, with a link that loads this route from the server. The link is
+ * a full page load because both failures it covers need one: the page request is what enqueues the settings data,
+ * and a failed chunk import stays failed until the page loads again.
  */
-const reloadWhenSettingsAppIsMissing = () => {
-	if ( window.ppcpSettings ) {
-		return;
+const SettingsUnavailableNotice = () => (
+	<Notice
+		className="paypal-wallet-settings__notice"
+		status="error"
+		isDismissible={ false }
+	>
+		{ __(
+			'The PayPal Wallet settings could not be loaded.',
+			'woocommerce'
+		) }{ ' ' }
+		<a href={ window.location.href.split( '#' )[ 0 ] }>
+			{ __( 'Reload the page', 'woocommerce' ) }
+		</a>
+	</Notice>
+);
+
+/**
+ * Shows the notice instead of a blank screen when the app throws, for example when its chunk fails to download.
+ */
+class SettingsAppBoundary extends Component<
+	{ children: ReactNode },
+	{ hasError: boolean }
+> {
+	state = { hasError: false };
+
+	static getDerivedStateFromError() {
+		return { hasError: true };
 	}
 
-	try {
-		const reloadedAt = Number(
-			window.sessionStorage.getItem( RELOAD_MARKER_KEY )
+	render() {
+		return this.state.hasError ? (
+			<SettingsUnavailableNotice />
+		) : (
+			this.props.children
 		);
-
-		if ( Date.now() - reloadedAt < RELOAD_RETRY_DELAY_MS ) {
-			return;
-		}
-
-		window.sessionStorage.setItem(
-			RELOAD_MARKER_KEY,
-			String( Date.now() )
-		);
-	} catch {
-		// Without storage a loop cannot be ruled out, so leave the page as it is.
-		return;
 	}
-
-	window.location.reload();
-};
+}
 
 /**
- * Runs the check once the page has finished loading. On a page load the localized settings are printed after the admin
- * app first renders, so an earlier check would reload a page that is about to have them.
+ * The PayPal Wallet settings route of the Payments settings shell. The wallet's settings app renders the page header
+ * itself, with the title, the back arrow, Save and the tabs. Its styles and scroll targets are scoped to the
+ * `ppcp-settings-container` ID.
  *
- * @return A cleanup that removes the pending load listener.
+ * Every link to the route is a full page load today, so `ppcpSettings` is on the page. A client-side navigation would
+ * reach the route without it, and the app cannot run then, so the route shows the notice instead.
  */
-const reloadWhenSettingsAppIsMissingAfterLoad = () => {
-	if ( document.readyState === 'complete' ) {
-		reloadWhenSettingsAppIsMissing();
-		return undefined;
-	}
-
-	window.addEventListener( 'load', reloadWhenSettingsAppIsMissing, {
-		once: true,
-	} );
-
-	return () =>
-		window.removeEventListener( 'load', reloadWhenSettingsAppIsMissing );
-};
-
-/**
- * The PayPal Wallet settings route of the Payments settings shell. The wallet's own settings app (built by
- * `@woocommerce/paypal-wallet`, enqueued by core on this page) mounts into the container below and renders the page
- * header itself, with the title, the back arrow, Save and the tabs.
- */
-export const PayPalWalletSettingsRoute = () => {
-	useEffect( reloadWhenSettingsAppIsMissingAfterLoad, [] );
-
-	return (
-		<>
-			<Header title={ __( 'Settings', 'woocommerce' ) } />
-			<div className="paypal-wallet-settings">
-				<div id="ppcp-settings-container" />
-			</div>
-		</>
-	);
-};
+export const PayPalWalletSettingsRoute = () => (
+	<>
+		<Header title={ __( 'Settings', 'woocommerce' ) } />
+		<div className="paypal-wallet-settings" id="ppcp-settings-container">
+			{ window.ppcpSettings ? (
+				<SettingsAppBoundary>
+					<Suspense fallback={ <Spinner /> }>
+						<PayPalWalletSettingsApp />
+					</Suspense>
+				</SettingsAppBoundary>
+			) : (
+				<SettingsUnavailableNotice />
+			) }
+		</div>
+	</>
+);

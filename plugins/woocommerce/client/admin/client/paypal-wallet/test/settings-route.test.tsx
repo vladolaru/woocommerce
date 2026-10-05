@@ -14,119 +14,129 @@ jest.mock( '~/settings-payments/components/header/header', () => ( {
 	),
 } ) );
 
-const RELOAD_MARKER_KEY = 'wc_paypal_wallet_settings_reloaded_at';
+const mockAppRender = jest.fn();
 
-const setReadyState = ( readyState: 'interactive' | 'complete' ) =>
-	Object.defineProperty( document, 'readyState', {
-		configurable: true,
-		get: () => readyState,
-	} );
+jest.mock( '../app', () => ( {
+	__esModule: true,
+	default: () => {
+		mockAppRender();
+		return <div data-testid="paypal-wallet-app">PayPal wallet app</div>;
+	},
+} ) );
 
 describe( 'PayPalWalletSettingsRoute', () => {
-	const originalLocation = window.location;
-	let reload: jest.Mock;
-
 	beforeEach( () => {
-		setReadyState( 'complete' );
-		reload = jest.fn();
-		Object.defineProperty( window, 'location', {
-			configurable: true,
-			value: { ...originalLocation, reload },
-		} );
-		window.sessionStorage.clear();
-		delete window.ppcpSettings;
+		mockAppRender.mockClear();
+		window.ppcpSettings = {};
 	} );
 
 	afterEach( () => {
-		// Removes the instance override, which puts the real readyState back.
-		delete ( document as { readyState?: unknown } ).readyState;
-		Object.defineProperty( window, 'location', {
-			configurable: true,
-			value: originalLocation,
-		} );
 		delete window.ppcpSettings;
 	} );
 
-	it( 'renders the container the wallet app mounts into', () => {
-		window.ppcpSettings = {};
-
+	it( 'renders the settings app from its lazy chunk inside the container its styles are scoped to', async () => {
 		const { container } = render( <PayPalWalletSettingsRoute /> );
+
+		const app = await screen.findByTestId( 'paypal-wallet-app' );
 
 		expect(
 			container.querySelector(
-				'.paypal-wallet-settings > #ppcp-settings-container'
+				'.paypal-wallet-settings#ppcp-settings-container'
 			)
-		).toBeInTheDocument();
-		expect( reload ).not.toHaveBeenCalled();
+		).toContainElement( app );
+		expect( mockAppRender ).toHaveBeenCalledTimes( 1 );
 	} );
 
-	it( 'leaves the page header to the wallet app', () => {
-		window.ppcpSettings = {};
-
+	it( 'leaves the page header to the wallet app', async () => {
 		render( <PayPalWalletSettingsRoute /> );
+		await screen.findByTestId( 'paypal-wallet-app' );
 
 		expect( screen.queryByRole( 'link' ) ).not.toBeInTheDocument();
 		expect( screen.queryByRole( 'button' ) ).not.toBeInTheDocument();
 		expect( screen.queryByRole( 'heading' ) ).not.toBeInTheDocument();
-		expect( screen.queryByText( 'PayPal Wallet' ) ).not.toBeInTheDocument();
 		expect( screen.getByTestId( 'header' ) ).toHaveTextContent(
 			'Settings'
 		);
 	} );
 
-	it( 'reloads the page once when the settings app is not on the page', () => {
+	it( 'mounts the app again on re-entry', async () => {
+		const first = render( <PayPalWalletSettingsRoute /> );
+		await screen.findByTestId( 'paypal-wallet-app' );
+		first.unmount();
+
 		render( <PayPalWalletSettingsRoute /> );
+		await screen.findByTestId( 'paypal-wallet-app' );
 
-		expect( reload ).toHaveBeenCalledTimes( 1 );
-		expect(
-			window.sessionStorage.getItem( RELOAD_MARKER_KEY )
-		).not.toBeNull();
-	} );
-
-	it( 'does not reload again right after a reload that did not bring the settings app', () => {
-		window.sessionStorage.setItem(
-			RELOAD_MARKER_KEY,
-			String( Date.now() )
+		expect( screen.getAllByTestId( 'paypal-wallet-app' ) ).toHaveLength(
+			1
 		);
-
-		render( <PayPalWalletSettingsRoute /> );
-
-		expect( reload ).not.toHaveBeenCalled();
+		expect( mockAppRender ).toHaveBeenCalledTimes( 2 );
 	} );
 
-	it( 'does not reload when the settings arrive between the first render and the load event', () => {
-		setReadyState( 'interactive' );
+	it( 'shows a notice with a link that loads the route again when the page has no settings data', () => {
+		delete window.ppcpSettings;
 
-		render( <PayPalWalletSettingsRoute /> );
-		expect( reload ).not.toHaveBeenCalled();
+		const { container } = render( <PayPalWalletSettingsRoute /> );
 
-		window.ppcpSettings = {};
-		window.dispatchEvent( new Event( 'load' ) );
+		expect(
+			container.querySelector( '.paypal-wallet-settings__notice' )
+		).toHaveTextContent(
+			'The PayPal Wallet settings could not be loaded.'
+		);
+		expect(
+			screen.getByRole( 'link', { name: 'Reload the page' } )
+		).toHaveAttribute( 'href', window.location.href.split( '#' )[ 0 ] );
+		expect( screen.queryByTestId( 'paypal-wallet-app' ) ).toBeNull();
+		expect( mockAppRender ).not.toHaveBeenCalled();
+	} );
+} );
 
-		expect( reload ).not.toHaveBeenCalled();
+const registeredRouteIds = async () => {
+	let ids: string[] = [];
+
+	await jest.isolateModulesAsync( async () => {
+		const { getSettingsPaymentsProviderRoutes } = await import(
+			'~/settings-payments/provider-routes'
+		);
+		await import( '../routes' );
+
+		ids = getSettingsPaymentsProviderRoutes().map( ( { id } ) => id );
 	} );
 
-	it( 'reloads once when the settings are still missing at the load event', () => {
-		setReadyState( 'interactive' );
+	return ids;
+};
 
-		render( <PayPalWalletSettingsRoute /> );
-		expect( reload ).not.toHaveBeenCalled();
+describe( 'PayPal wallet route registration', () => {
+	const originalSettings = window.wcSettings;
 
-		window.dispatchEvent( new Event( 'load' ) );
-		// Without the marker only the one-shot listener can stop a second reload.
-		window.sessionStorage.clear();
-		window.dispatchEvent( new Event( 'load' ) );
-
-		expect( reload ).toHaveBeenCalledTimes( 1 );
+	afterEach( () => {
+		window.wcSettings = originalSettings;
 	} );
 
-	it( 'leaves no load listener behind when it unmounts before the page has loaded', () => {
-		setReadyState( 'interactive' );
+	const setOwnership = ( admin: Record< string, unknown > ) => {
+		window.wcSettings = {
+			...originalSettings,
+			admin: admin as typeof window.wcSettings.admin,
+		};
+	};
 
-		const { unmount } = render( <PayPalWalletSettingsRoute /> );
-		unmount();
-		window.dispatchEvent( new Event( 'load' ) );
+	it( 'registers the route while core owns the PayPal wallet', async () => {
+		setOwnership( { paypalWalletOwned: true } );
 
-		expect( reload ).not.toHaveBeenCalled();
+		expect( await registeredRouteIds() ).toEqual( [
+			'paypal-wallet-settings',
+		] );
 	} );
+
+	it.each( [
+		[ 'the flag is absent', {} ],
+		[ 'the flag is not exactly true', { paypalWalletOwned: 'yes' } ],
+	] )(
+		'does not register the route when %s',
+		async ( _description, admin ) => {
+			setOwnership( admin );
+
+			expect( await registeredRouteIds() ).toEqual( [] );
+		}
+	);
 } );

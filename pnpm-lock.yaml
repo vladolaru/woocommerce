@@ -2745,6 +2745,9 @@ importers:
       '@dnd-kit/sortable':
         specifier: ^7.0.2
         version: 7.0.2(@dnd-kit/core@6.1.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react@18.3.1)
+      '@paypal/react-paypal-js':
+        specifier: ^8.9.2
+        version: 8.9.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@react-spring/web':
         specifier: ^9.7.3
         version: 9.7.5(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -2832,6 +2835,9 @@ importers:
       '@wordpress/core-data':
         specifier: catalog:wp-min
         version: 7.33.9(@date-fns/tz@1.4.1)(@emotion/is-prop-valid@1.4.0)(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(date-fns@4.1.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(stylelint@16.26.1(typescript@5.7.3))
+      '@wordpress/data':
+        specifier: catalog:wp-min
+        version: 10.33.1(@types/react@18.3.28)(react@18.3.1)
       '@wordpress/data-controls':
         specifier: catalog:wp-min
         version: 4.33.1(@types/react@18.3.28)(react@18.3.1)
@@ -2916,6 +2922,9 @@ importers:
       '@xstate5/react':
         specifier: npm:@xstate/react@4
         version: '@xstate/react@4.1.3(@types/react@18.3.28)(react@18.3.1)(xstate@4.37.1)'
+      classnames:
+        specifier: ^2.5.1
+        version: 2.5.1
       clsx:
         specifier: 2.1.x
         version: 2.1.1
@@ -2958,6 +2967,9 @@ importers:
       react-router-dom:
         specifier: ~6.3.0
         version: 6.3.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      react-select:
+        specifier: ^5.10.2
+        version: 5.10.2(@types/react@18.3.28)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       react-transition-group:
         specifier: ^4.4.5
         version: 4.4.5(react-dom@18.3.1(react@18.3.1))(react@18.3.1)

@@ -135,6 +135,10 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 		if ( ! $this->arbiter->should_native_register() ) {
 			return;
 		}
+		// The admin client registers the wallet's Payments settings route only when core owns the wallet.
+		if ( is_admin() ) {
+			add_filter( 'woocommerce_admin_shared_settings', array( $this, 'share_ownership_with_admin_app' ) );
+		}
 		if ( $this->is_dormant() ) {
 			// Only the admin screens and the wc-admin REST routes that build the Payments settings list show the placeholder row.
 			if ( is_admin() || $this->is_wc_admin_rest_request() ) {
@@ -197,6 +201,26 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 		}
 
 		return ! $this->is_wallet_admin_request();
+	}
+
+	/**
+	 * Tell the admin client that core owns the wallet, as `wcSettings.admin.paypalWalletOwned`.
+	 *
+	 * Hooked to `woocommerce_admin_shared_settings` only when core owns the wallet.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @param mixed $settings The shared admin settings.
+	 *
+	 * @return mixed The settings with the flag added, or the value unchanged when it is not an array.
+	 */
+	public function share_ownership_with_admin_app( $settings ) {
+		if ( ! is_array( $settings ) ) {
+			return $settings;
+		}
+		$settings['paypalWalletOwned'] = true;
+
+		return $settings;
 	}
 
 	/**

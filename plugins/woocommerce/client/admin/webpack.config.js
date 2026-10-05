@@ -289,7 +289,7 @@ const jsConfig = {
 				sideEffects: true,
 			},
 			{
-				test: /\.(png|jpe?g|gif|svg|eot|ttf|woff|woff2)$/,
+				test: /\.(png|jpe?g|gif|svg|eot|ttf|otf|woff|woff2)$/,
 				type: 'asset',
 			},
 			...styleConfig.rules,
@@ -321,6 +321,15 @@ const jsConfig = {
 	},
 	plugins: [
 		...styleConfig.plugins,
+		// The PayPal wallet settings app builds its image URLs at runtime from `ppcpSettings.assets.imagesUrl`.
+		new CopyWebpackPlugin( {
+			patterns: [
+				{
+					from: './client/paypal-wallet/app/images',
+					to: 'paypal-wallet-settings/images',
+				},
+			],
+		} ),
 		// Substitute the `__i18n_text_domain__` identifier used by the
 		// @woocommerce/email-editor package with the WooCommerce text
 		// domain so strings extract and translate under `woocommerce`.

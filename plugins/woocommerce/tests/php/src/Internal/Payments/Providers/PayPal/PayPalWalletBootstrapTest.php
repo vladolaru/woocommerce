@@ -732,6 +732,39 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 	/**
 	 * @group paypal-wallet-boot
 	 *
+	 * @testdox Should share the ownership flag with the admin client on an admin request while core owns the wallet.
+	 */
+	public function test_shares_the_ownership_flag_with_the_admin_app(): void {
+		delete_option( 'woocommerce-ppcp-data-common' );
+		set_current_screen( 'woocommerce_page_wc-settings' );
+		$this->build_sut( true );
+
+		$this->sut->maybe_boot();
+
+		$this->assertSame( 10, has_filter( 'woocommerce_admin_shared_settings', array( $this->sut, 'share_ownership_with_admin_app' ) ) );
+		$settings = $this->sut->share_ownership_with_admin_app( array( 'currentUserId' => 1 ) );
+		$this->assertTrue( $settings['paypalWalletOwned'] );
+		$this->assertSame( 1, $settings['currentUserId'], 'The other shared settings must be kept' );
+		$this->assertSame( 'not an array', $this->sut->share_ownership_with_admin_app( 'not an array' ), 'A value that is not an array must pass through' );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should not share the ownership flag while the extension owns the wallet.
+	 */
+	public function test_does_not_share_the_ownership_flag_when_the_extension_owns(): void {
+		set_current_screen( 'woocommerce_page_wc-settings' );
+		$this->build_sut( false, PayPalWalletRuntimeArbiter::OWNER_EXTENSION );
+
+		$this->sut->maybe_boot();
+
+		$this->assertFalse( has_filter( 'woocommerce_admin_shared_settings', array( $this->sut, 'share_ownership_with_admin_app' ) ) );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
 	 * @testdox Should boot a not-connected wallet on the legacy gateway settings section.
 	 */
 	public function test_boots_dormant_wallet_on_its_legacy_settings_section(): void {

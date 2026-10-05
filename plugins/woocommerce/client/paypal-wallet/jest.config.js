@@ -9,8 +9,6 @@ module.exports = {
 		'^react-dom$': require.resolve( 'react-dom' ),
 		'^@ppcp-button/(.*)$':
 			'<rootDir>/modules/ppcp-button/resources/js/modules/$1',
-		'^@ppcp-settings/(.*)$':
-			'<rootDir>/modules/ppcp-settings/resources/js/$1',
 		'^@ppcp-blocks/(.*)$': '<rootDir>/modules/ppcp-blocks/resources/js/$1',
 		'^@ppcp-paylater-block/(.*)$':
 			'<rootDir>/modules/ppcp-paylater-block/resources/js/$1',

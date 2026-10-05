@@ -9,8 +9,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service;
 
+use Automattic\WooCommerce\Internal\Admin\WCAdminAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\PartnerAttribution;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetter;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
 
 /**
@@ -19,11 +19,10 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Da
 class ScriptDataHandler {
 
 	/**
-	 * Gives the paths and URLs of the built assets.
-	 *
-	 * @var AssetGetter
+	 * The admin client build of the settings page: the `ppcp-admin-settings` script, its stylesheet and the app images.
+	 * The app itself is a lazy chunk of the Payments settings route.
 	 */
-	private AssetGetter $asset_getter;
+	private const ADMIN_BUILD_NAME = 'paypal-wallet-settings';
 
 	/**
 	 * Whether the Pay Later configurator is available.
@@ -77,7 +76,6 @@ class ScriptDataHandler {
 	/**
 	 * Constructor.
 	 *
-	 * @param AssetGetter        $asset_getter            Gives the paths and URLs of the built assets.
 	 * @param bool               $paylater_is_available   Whether the Pay Later configurator is available.
 	 * @param string             $store_country           The store country code.
 	 * @param string             $merchant_id             The PayPal merchant ID of the partner.
@@ -87,7 +85,6 @@ class ScriptDataHandler {
 	 * @param bool               $is_sdk_v6_active        Whether the SDK v6 module is loaded.
 	 */
 	public function __construct(
-		AssetGetter $asset_getter,
 		bool $paylater_is_available,
 		string $store_country,
 		string $merchant_id,
@@ -96,7 +93,6 @@ class ScriptDataHandler {
 		SettingsProvider $settings_provider,
 		bool $is_sdk_v6_active = false
 	) {
-		$this->asset_getter            = $asset_getter;
 		$this->paylater_is_available   = $paylater_is_available;
 		$this->store_country           = $store_country;
 		$this->merchant_id             = $merchant_id;
@@ -122,40 +118,29 @@ class ScriptDataHandler {
 			return;
 		}
 
-		/**
-		 * Require resolves.
-		 *
-		 * @psalm-suppress UnresolvableInclude
-		 */
-		$script_asset_file = require $this->asset_getter->get_asset_php_path( 'index.js' );
+		$script_asset_file = $this->get_admin_asset_data( 'wp-admin-scripts', self::ADMIN_BUILD_NAME, 'js' );
 
 		wp_register_script(
 			'ppcp-admin-settings',
-			$this->asset_getter->get_asset_url( 'index.js' ),
+			WCAdminAssets::get_url( 'wp-admin-scripts/' . self::ADMIN_BUILD_NAME, 'js' ),
 			$script_asset_file['dependencies'],
 			$script_asset_file['version'],
 			true
 		);
 
+		// No wp_set_script_translations() here: this script holds no strings. The app's strings are in its lazy chunk,
+		// whose translations core's admin combines into the wc-admin-app translations of the page.
 		wp_enqueue_script( 'ppcp-admin-settings', '', array( 'wp-i18n' ), $script_asset_file['version'], true );
-		wp_set_script_translations(
-			'ppcp-admin-settings',
-			'woocommerce',
-		);
 
-		/**
-		 * Require resolves.
-		 *
-		 * @psalm-suppress UnresolvableInclude
-		 */
-		$style_asset_file = require $this->asset_getter->get_asset_php_path( 'styles.css' );
+		$style_asset_file = $this->get_admin_asset_data( self::ADMIN_BUILD_NAME, 'style', 'css' );
 
 		wp_register_style(
 			'ppcp-admin-settings',
-			$this->asset_getter->get_asset_url( 'styles.css' ),
+			WCAdminAssets::get_url( self::ADMIN_BUILD_NAME . '/style', 'css' ),
 			$style_asset_file['dependencies'],
 			$style_asset_file['version']
 		);
+		wp_style_add_data( 'ppcp-admin-settings', 'rtl', 'replace' );
 
 		wp_enqueue_style( 'ppcp-admin-settings' );
 
@@ -176,7 +161,7 @@ class ScriptDataHandler {
 
 		$script_data = array(
 			'assets'                          => array(
-				'imagesUrl' => $this->asset_getter->get_static_asset_url( 'images/' ),
+				'imagesUrl' => plugins_url( WCAdminAssets::get_path( 'css' ) . self::ADMIN_BUILD_NAME . '/images/', WC_ADMIN_PLUGIN_FILE ),
 			),
 			'wcPaymentsTabUrl'                => admin_url( 'admin.php?page=wc-settings&tab=checkout' ),
 			'pluginSettingsUrl'               => admin_url( 'admin.php?page=wc-settings&tab=checkout&path=/paypal-wallet' ),
@@ -226,5 +211,30 @@ class ScriptDataHandler {
 		 * @since 11.3.0
 		 */
 		do_action( 'woocommerce_paypal_payments_settings_scripts_enqueued' );
+	}
+
+	/**
+	 * The dependencies and version webpack wrote next to a file of the admin client build. A missing build gives no
+	 * dependencies and the WooCommerce version, so the page still loads.
+	 *
+	 * @param string $path_name The folder of the file under the admin build.
+	 * @param string $file      The file name, without its extension.
+	 * @param string $ext       The file extension, `js` or `css`.
+	 * @return array{dependencies: string[], version: string}
+	 */
+	private function get_admin_asset_data( string $path_name, string $file, string $ext ): array {
+		try {
+			$asset = require WC_ADMIN_ABSPATH . WC_ADMIN_DIST_JS_FOLDER . $path_name . '/' . WCAdminAssets::get_script_asset_filename( $path_name, $file );
+		} catch ( \Exception $e ) {
+			$asset = array();
+		}
+
+		$dependencies = is_array( $asset ) && is_array( $asset['dependencies'] ?? null ) ? array_values( array_filter( $asset['dependencies'], 'is_string' ) ) : array();
+		$version      = is_array( $asset ) && is_string( $asset['version'] ?? null ) ? $asset['version'] : null;
+
+		return array(
+			'dependencies' => $dependencies,
+			'version'      => (string) WCAdminAssets::get_file_version( $ext, $version ),
+		);
 	}
 }

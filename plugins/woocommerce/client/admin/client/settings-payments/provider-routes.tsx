@@ -52,12 +52,39 @@ export const registerSettingsPaymentsProviderRoute = (
 	registeredRoutes = [ ...registeredRoutes, normalizeRoute( route ) ];
 };
 
+/**
+ * Whether a value returned through the filter can be rendered as a route.
+ */
+const isRenderableRoute = (
+	route: unknown
+): route is SettingsPaymentsProviderRoute => {
+	if ( ! route || typeof route !== 'object' ) {
+		return false;
+	}
+
+	const { id, path, element } = route as Record< string, unknown >;
+
+	return (
+		typeof id === 'string' &&
+		id !== '' &&
+		typeof path === 'string' &&
+		path !== '' &&
+		element !== undefined &&
+		element !== null
+	);
+};
+
 export const getSettingsPaymentsProviderRoutes =
 	(): SettingsPaymentsProviderRoute[] => {
-		const routes = applyFilters(
+		const filteredRoutes: unknown = applyFilters(
 			SETTINGS_PAYMENTS_PROVIDER_ROUTES_FILTER,
 			registeredRoutes.map( normalizeRoute )
-		) as SettingsPaymentsProviderRoute[];
+		);
+		// Any callback can return anything: keep the registered routes when the result is not a list, and drop entries
+		// that cannot be rendered.
+		const routes = Array.isArray( filteredRoutes )
+			? filteredRoutes.filter( isRenderableRoute )
+			: registeredRoutes;
 		const normalizedRoutes = sortRoutes( routes.map( normalizeRoute ) );
 
 		assertUniquePaths( normalizedRoutes );

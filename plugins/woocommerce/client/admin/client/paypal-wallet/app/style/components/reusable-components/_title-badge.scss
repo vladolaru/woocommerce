@@ -1,0 +1,27 @@
+.ppcp-r-title-badge {
+	--badge-bg-color: #f5f5f5;
+	--badge-text-color: #2f2f2f;
+
+	color: var(--badge-text-color);
+	background-color: var(--badge-bg-color);
+
+	@include font(12, 16, 400);
+	padding: 4px 8px;
+	border-radius: 2px;
+	white-space: nowrap;
+
+	&.ppcp-r-title-badge--positive {
+		--badge-bg-color: #daffe0;
+		--badge-text-color: #144722;
+	}
+
+	&.ppcp-r-title-badge--negative {
+		--badge-bg-color: #faeded;
+		--badge-text-color: #5c0000;
+	}
+
+	&.ppcp-r-title-badge--info {
+		--badge-bg-color: #b6cff7;
+		--badge-text-color: #1e1e1e;
+	}
+}
