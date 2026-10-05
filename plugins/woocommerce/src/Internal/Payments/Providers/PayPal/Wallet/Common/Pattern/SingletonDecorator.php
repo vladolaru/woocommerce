@@ -8,6 +8,8 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Commo
 
 /**
  * Class SingletonDecorator.
+ *
+ * @phpstan-consistent-constructor
  */
 class SingletonDecorator {
 

@@ -10,7 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Commo
 /**
  * Class SingletonTrait.
  */
-trait SingletonTrait {
+trait SingletonTrait { // @phpstan-ignore trait.unused (inherited from the extension and used by no wallet class; kept for drift porting)
 	/**
 	 * The single instance of the class.
 	 *
