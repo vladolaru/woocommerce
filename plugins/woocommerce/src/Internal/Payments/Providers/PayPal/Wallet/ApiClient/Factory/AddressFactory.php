@@ -8,6 +8,9 @@ use WC_Order;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\Address;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\RuntimeException;
 
+/**
+ * Creates Address objects from PayPal responses and WooCommerce data.
+ */
 class AddressFactory {
 
 	/**

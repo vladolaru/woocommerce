@@ -96,7 +96,11 @@ class Token {
 	 * @param string $json The JSON string.
 	 */
 	public static function from_json( string $json ): Token {
-		/** @var \stdClass $json */
+		/**
+		 * The decoded token response.
+		 *
+		 * @var \stdClass $json
+		 */
 		$json = (object) json_decode( $json );
 		if ( isset( $json->access_token ) || isset( $json->client_token ) ) {
 			$json->token = $json->access_token ?? $json->client_token;

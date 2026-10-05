@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Authentication;
 
 use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
@@ -23,16 +25,50 @@ class UserIdToken {
 	 */
 	const RATE_LIMIT_SCOPE = 'id-token';
 
+	/**
+	 * The PayPal API host.
+	 *
+	 * @var string
+	 */
 	private string $host;
 
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	private LoggerInterface $logger;
 
+	/**
+	 * The client credentials.
+	 *
+	 * @var ClientCredentials
+	 */
 	private ClientCredentials $client_credentials;
 
+	/**
+	 * The cache.
+	 *
+	 * @var Cache
+	 */
 	private Cache $cache;
 
+	/**
+	 * The token rate limiter.
+	 *
+	 * @var TokenRateLimiter
+	 */
 	private TokenRateLimiter $rate_limiter;
 
+	/**
+	 * UserIdToken constructor.
+	 *
+	 * @param string            $host The PayPal API host.
+	 * @param LoggerInterface   $logger The logger.
+	 * @param ClientCredentials $client_credentials The client credentials.
+	 * @param Cache             $cache The cache.
+	 * @param TokenRateLimiter  $rate_limiter The token rate limiter.
+	 */
 	public function __construct(
 		string $host,
 		LoggerInterface $logger,
@@ -73,7 +109,7 @@ class UserIdToken {
 
 		$wait = $this->rate_limiter->retry_after_seconds( self::RATE_LIMIT_SCOPE );
 		if ( null !== $wait ) {
-			throw new RuntimeException( sprintf( 'PayPal token requests are paused for %d more seconds after a previous failure.', $wait ) );
+			throw new RuntimeException( esc_html( sprintf( 'PayPal token requests are paused for %d more seconds after a previous failure.', $wait ) ) );
 		}
 
 		$url = trailingslashit( $this->host ) . 'v1/oauth2/token?grant_type=client_credentials&response_type=id_token';
@@ -104,14 +140,14 @@ class UserIdToken {
 
 		if ( $response instanceof WP_Error ) {
 			$this->rate_limiter->register_failure( self::RATE_LIMIT_SCOPE, 0, $response );
-			throw new RuntimeException( $response->get_error_message() );
+			throw new RuntimeException( esc_html( $response->get_error_message() ) );
 		}
 
 		$json        = json_decode( $response['body'] );
 		$status_code = (int) wp_remote_retrieve_response_code( $response );
 		if ( 200 !== $status_code ) {
 			$this->rate_limiter->register_failure( self::RATE_LIMIT_SCOPE, $status_code, $response );
-			throw new PayPalApiException( $json, $status_code );
+			throw new PayPalApiException( $json, $status_code ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Carries the decoded PayPal response object, not text; the message is built in PayPalApiException::__construct().
 		}
 
 		$id_token = $json->id_token;

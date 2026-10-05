@@ -101,10 +101,7 @@ class PaymentMethodTokensEndpoint {
 		$json        = json_decode( $response['body'] );
 		$status_code = (int) wp_remote_retrieve_response_code( $response );
 		if ( ! in_array( $status_code, array( 200, 201 ), true ) ) {
-			throw new PayPalApiException(
-				$json,
-				$status_code
-			);
+			throw new PayPalApiException( $json, $status_code ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Carries the decoded PayPal response object, not text; the message is built in PayPalApiException::__construct().
 		}
 
 		return $json;
@@ -154,10 +151,7 @@ class PaymentMethodTokensEndpoint {
 		$json        = json_decode( $response['body'] );
 		$status_code = (int) wp_remote_retrieve_response_code( $response );
 		if ( ! in_array( $status_code, array( 200, 201 ), true ) ) {
-			throw new PayPalApiException(
-				$json,
-				$status_code
-			);
+			throw new PayPalApiException( $json, $status_code ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Carries the decoded PayPal response object, not text; the message is built in PayPalApiException::__construct().
 		}
 
 		return $json;

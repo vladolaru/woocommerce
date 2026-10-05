@@ -72,7 +72,10 @@ class Order {
 	 * @var PaymentSource|null
 	 */
 	private $payment_source;
+
 	/**
+	 * The links of the order.
+	 *
 	 * @var mixed|null
 	 */
 	private $links;
@@ -90,7 +93,7 @@ class Order {
 	 * @param string             $intent The intent.
 	 * @param DateTime|null      $create_time The create time.
 	 * @param DateTime|null      $update_time The update time.
-	 * @param mixed|null         $links
+	 * @param mixed|null         $links The links of the order.
 	 */
 	public function __construct(
 		string $id,

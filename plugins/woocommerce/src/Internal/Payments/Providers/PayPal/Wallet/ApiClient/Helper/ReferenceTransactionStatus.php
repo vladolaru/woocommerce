@@ -18,8 +18,18 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\E
  */
 class ReferenceTransactionStatus {
 
+	/**
+	 * The partners endpoint.
+	 *
+	 * @var PartnersEndpoint
+	 */
 	protected PartnersEndpoint $partners_endpoint;
 
+	/**
+	 * ReferenceTransactionStatus constructor.
+	 *
+	 * @param PartnersEndpoint $partners_endpoint The partners endpoint.
+	 */
 	public function __construct( PartnersEndpoint $partners_endpoint ) {
 		$this->partners_endpoint = $partners_endpoint;
 	}

@@ -72,8 +72,24 @@ class PayPalBearer implements Bearer {
 	 */
 	private $logger;
 
+	/**
+	 * The token rate limiter.
+	 *
+	 * @var TokenRateLimiter
+	 */
 	private TokenRateLimiter $rate_limiter;
 
+	/**
+	 * PayPalBearer constructor.
+	 *
+	 * @param Cache                 $cache The cache.
+	 * @param string                $host The PayPal API host.
+	 * @param string                $key The client ID.
+	 * @param string                $secret The client secret.
+	 * @param LoggerInterface       $logger The logger.
+	 * @param SettingsProvider|null $settings The settings provider.
+	 * @param TokenRateLimiter      $rate_limiter The token rate limiter.
+	 */
 	public function __construct(
 		Cache $cache,
 		string $host,
@@ -164,7 +180,7 @@ class PayPalBearer implements Bearer {
 		$wait = $this->rate_limiter->retry_after_seconds( self::RATE_LIMIT_SCOPE );
 		if ( null !== $wait ) {
 			throw new RuntimeException(
-				sprintf( 'PayPal token requests are paused for %d more seconds after a previous failure.', $wait )
+				esc_html( sprintf( 'PayPal token requests are paused for %d more seconds after a previous failure.', $wait ) )
 			);
 		}
 

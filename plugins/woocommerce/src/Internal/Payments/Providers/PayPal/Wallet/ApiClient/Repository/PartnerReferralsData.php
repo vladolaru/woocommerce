@@ -11,6 +11,9 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiCl
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\DccApplies;
 
+/**
+ * Builds the partner referrals data sent to PayPal when onboarding a merchant.
+ */
 class PartnerReferralsData {
 	/**
 	 * The DCC Applies Helper object.
@@ -23,6 +26,11 @@ class PartnerReferralsData {
 	 */
 	private DccApplies $dcc_applies;
 
+	/**
+	 * PartnerReferralsData constructor.
+	 *
+	 * @param DccApplies $dcc_applies The DCC applies helper.
+	 */
 	public function __construct( DccApplies $dcc_applies ) {
 		$this->dcc_applies = $dcc_applies;
 	}
@@ -56,6 +64,10 @@ class PartnerReferralsData {
 		/**
 		 * Filter the return-URL, which is called at the end of the OAuth onboarding
 		 * process, when the merchant clicks the "Return to your shop" button.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param string $return_url The return URL.
 		 */
 		$return_url = apply_filters(
 			'woocommerce_paypal_payments_partner_config_override_return_url',
@@ -65,6 +77,10 @@ class PartnerReferralsData {
 		/**
 		 * Filter the label of the "Return to your shop" button.
 		 * It's displayed on the very last page of the onboarding popup.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param string $return_url_label The button label.
 		 */
 		$return_url_label = apply_filters(
 			'woocommerce_paypal_payments_partner_config_override_return_url_description',
@@ -86,7 +102,7 @@ class PartnerReferralsData {
 
 		$first_party_features[] = 'BILLING_AGREEMENT';
 
-		if ( $use_card_payments !== false ) {
+		if ( false !== $use_card_payments ) {
 			$first_party_features[] = 'VAULT';
 			$first_party_features[] = 'FUTURE_PAYMENT';
 		}
@@ -124,6 +140,10 @@ class PartnerReferralsData {
 
 		/**
 		 * Filter the final partners referrals data collection.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param array $payload The partner referrals data.
 		 */
 		$payload = apply_filters( 'ppcp_partner_referrals_data', $payload );
 

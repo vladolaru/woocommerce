@@ -175,12 +175,19 @@ class OrderEndpoint {
 	): Order {
 		$bearer = $this->bearer->bearer();
 		$data   = array(
+			/**
+			 * Filters the intent of the PayPal order being created.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param string $intent The order intent, such as CAPTURE or AUTHORIZE.
+			 */
 			'intent'         => apply_filters( 'woocommerce_paypal_payments_order_intent', $this->intent ),
 			'purchase_units' => array_map(
 				static function ( PurchaseUnit $item ) use ( $shipping_preference ): array {
 					$data = $item->to_array();
 
-					if ( $shipping_preference !== ExperienceContext::SHIPPING_PREFERENCE_GET_FROM_FILE ) {
+					if ( ExperienceContext::SHIPPING_PREFERENCE_GET_FROM_FILE !== $shipping_preference ) {
 						// Shipping options are not allowed to be sent when not getting the address from PayPal.
 						unset( $data['shipping']['options'] );
 
@@ -205,6 +212,12 @@ class OrderEndpoint {
 
 		/**
 		 * The filter can be used to modify the order creation request body data.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param array $data The request body data.
+		 * @param string $payment_method The WooCommerce payment method.
+		 * @param array $request_data The request data.
 		 */
 		$data = apply_filters( 'ppcp_create_order_request_body_data', $data, $payment_method, $request_data );
 		$url  = trailingslashit( $this->host ) . 'v2/checkout/orders';
@@ -263,6 +276,13 @@ class OrderEndpoint {
 
 		$order = $this->order_factory->from_paypal_response( $json );
 
+		/**
+		 * Fires after a PayPal order was created.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param Order $order The created PayPal order.
+		 */
 		do_action( 'woocommerce_paypal_payments_paypal_order_created', $order );
 
 		return $order;
@@ -281,6 +301,13 @@ class OrderEndpoint {
 			return $order;
 		}
 
+		/**
+		 * Fires before a PayPal order is captured.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param Order $order The PayPal order about to be captured.
+		 */
 		do_action( 'woocommerce_paypal_payments_before_capture_order', $order );
 
 		$bearer = $this->bearer->bearer();
@@ -346,7 +373,7 @@ class OrderEndpoint {
 			$decline_message = $fraud
 				? $fraud->get_customer_decline_message()
 				: __( 'Payment provider declined the payment, please use a different payment method.', 'woocommerce' );
-			throw new RuntimeException( $decline_message );
+			throw new RuntimeException( $decline_message ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The customer decline message can be filtered (woocommerce_paypal_payments_customer_decline_message) to include markup such as a support link, and it is shown as a checkout notice; escaping would print that markup as text.
 		}
 
 		return $order;
@@ -419,7 +446,7 @@ class OrderEndpoint {
 		// @phpstan-ignore method.nonObject (an order whose purchase unit has no payments fails here, as it did in the extension)
 		$authorization_status = $order->purchase_units()[0]->payments()->authorizations()[0]->status() ?? null;
 		if ( $authorization_status && $authorization_status->is( AuthorizationStatus::DENIED ) ) {
-			throw new RuntimeException( __( 'Payment provider declined the payment, please use a different payment method.', 'woocommerce' ) );
+			throw new RuntimeException( esc_html__( 'Payment provider declined the payment, please use a different payment method.', 'woocommerce' ) );
 		}
 
 		return $order;
@@ -525,6 +552,10 @@ class OrderEndpoint {
 
 		/**
 		 * The filter can be used to modify the order patching request body data (the final prices, items).
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param array $patches The patch request body data.
 		 */
 		$patches_array = apply_filters( 'ppcp_patch_order_request_body_data', $patches_array );
 
@@ -603,13 +634,13 @@ class OrderEndpoint {
 
 		$response = $this->request( $url, $args );
 		if ( $response instanceof WP_Error ) {
-			throw new RuntimeException( $response->get_error_message() );
+			throw new RuntimeException( esc_html( $response->get_error_message() ) );
 		}
 
 		$json        = json_decode( $response['body'] );
 		$status_code = (int) wp_remote_retrieve_response_code( $response );
 		if ( 200 !== $status_code ) {
-			throw new PayPalApiException( $json, $status_code );
+			throw new PayPalApiException( $json, $status_code ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Carries the decoded PayPal response object, not text; the message is built in PayPalApiException::__construct().
 		}
 
 		return $json;

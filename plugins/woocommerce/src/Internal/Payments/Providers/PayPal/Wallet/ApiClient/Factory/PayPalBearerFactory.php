@@ -36,10 +36,26 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Da
  */
 class PayPalBearerFactory {
 
+	/**
+	 * The token rate limiter.
+	 *
+	 * @var TokenRateLimiter
+	 */
 	private TokenRateLimiter $rate_limiter;
 
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	private LoggerInterface $logger;
 
+	/**
+	 * PayPalBearerFactory constructor.
+	 *
+	 * @param TokenRateLimiter $rate_limiter The token rate limiter.
+	 * @param LoggerInterface  $logger The logger.
+	 */
 	public function __construct( TokenRateLimiter $rate_limiter, LoggerInterface $logger ) {
 		$this->rate_limiter = $rate_limiter;
 		$this->logger       = $logger;

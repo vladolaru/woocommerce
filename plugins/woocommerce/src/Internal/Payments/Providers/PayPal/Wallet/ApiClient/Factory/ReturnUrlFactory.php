@@ -13,14 +13,17 @@ class ReturnUrlFactory {
 	public const PCP_QUERY_ARG = 'pcp-return';
 
 	/**
+	 * Returns the URL to return to after the PayPal flow for the context.
+	 *
 	 * @param string                $context The context, like in ContextTrait.
 	 * @param array<string, mixed>  $request_data The request parameters, if exist.
 	 *  'order_id`, 'purchase_units' etc.
 	 * @param array<string, string> $custom_query_args Additional query args to add into the URL.
 	 *
+	 * @return string
 	 * @throws RuntimeException When required data is missing for the context.
 	 */
-	public function from_context(
+	public function from_context( // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- Part of the public signature kept as in the extension; this implementation adds no query arguments.
 		string $context,
 		array $request_data = array(),
 		array $custom_query_args = array()
@@ -28,6 +31,15 @@ class ReturnUrlFactory {
 		return $this->wc_url_from_context( $context, $request_data );
 	}
 
+	/**
+	 * Returns the WooCommerce URL to return to for the context.
+	 *
+	 * @param string $context The context, like in ContextTrait.
+	 * @param array  $request_data The request parameters, if exist.
+	 *
+	 * @return string
+	 * @throws RuntimeException When required data is missing for the context.
+	 */
 	protected function wc_url_from_context( string $context, array $request_data = array() ): string {
 		switch ( $context ) {
 			case 'cart':

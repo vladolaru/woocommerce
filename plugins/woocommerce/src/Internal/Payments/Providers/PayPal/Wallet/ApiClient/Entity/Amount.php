@@ -4,21 +4,50 @@ declare(strict_types=1);
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity;
 
+/**
+ * An amount of money, with its optional breakdown.
+ */
 class Amount {
 
+	/**
+	 * The money of the amount.
+	 *
+	 * @var Money
+	 */
 	private Money $money;
 
+	/**
+	 * The amount breakdown.
+	 *
+	 * @var AmountBreakdown|null
+	 */
 	private ?AmountBreakdown $breakdown;
 
+	/**
+	 * Amount constructor.
+	 *
+	 * @param Money                $money The money of the amount.
+	 * @param AmountBreakdown|null $breakdown The amount breakdown.
+	 */
 	public function __construct( Money $money, ?AmountBreakdown $breakdown = null ) {
 		$this->money     = $money;
 		$this->breakdown = $breakdown;
 	}
 
+	/**
+	 * Returns the currency code.
+	 *
+	 * @return string
+	 */
 	public function currency_code(): string {
 		return $this->money->currency_code();
 	}
 
+	/**
+	 * Returns the value.
+	 *
+	 * @return float
+	 */
 	public function value(): float {
 		return $this->money->value();
 	}
@@ -32,6 +61,11 @@ class Amount {
 		return $this->money->value_str();
 	}
 
+	/**
+	 * Returns the breakdown of the amount, if any.
+	 *
+	 * @return AmountBreakdown|null
+	 */
 	public function breakdown(): ?AmountBreakdown {
 		return $this->breakdown;
 	}

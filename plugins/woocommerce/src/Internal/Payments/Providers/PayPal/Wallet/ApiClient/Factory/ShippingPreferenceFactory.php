@@ -24,10 +24,11 @@ class ShippingPreferenceFactory {
 	/**
 	 * Returns shipping_preference for the given state.
 	 *
-	 * @param PurchaseUnit $purchase_unit The PurchaseUnit.
-	 * @param string       $context The operation context like 'checkout', 'cart'.
-	 * @param WC_Cart|null $cart The current cart if relevant.
-	 * @param string       $funding_source The funding source (PayPal button) like 'paypal', 'venmo', 'card'.
+	 * @param PurchaseUnit  $purchase_unit The PurchaseUnit.
+	 * @param string        $context The operation context like 'checkout', 'cart'.
+	 * @param WC_Cart|null  $cart The current cart if relevant.
+	 * @param string        $funding_source The funding source (PayPal button) like 'paypal', 'venmo', 'card'.
+	 * @param WC_Order|null $wc_order The order, if relevant.
 	 * @return string
 	 */
 	public function from_state(
@@ -40,6 +41,14 @@ class ShippingPreferenceFactory {
 		/**
 		 *  If you are using this filter to set 'NO_SHIPPING', you may also want to disable sending
 		 *  shipping fields completely.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param string|null $shipping_preference The shipping preference, null by default.
+		 * @param PurchaseUnit $purchase_unit The purchase unit.
+		 * @param string $context The operation context, such as checkout or cart.
+		 * @param WC_Cart|null $cart The current cart, if relevant.
+		 * @param string $funding_source The funding source, such as paypal, venmo or card.
 		 *
 		 * @see PurchaseUnitFactory::shipping_needed() for
 		 *  the woocommerce_paypal_payments_shipping_needed filter.
@@ -93,6 +102,13 @@ class ShippingPreferenceFactory {
 		return ExperienceContext::SHIPPING_PREFERENCE_GET_FROM_FILE;
 	}
 
+	/**
+	 * Whether the WooCommerce order needs shipping.
+	 *
+	 * @param WC_Order $wc_order The order.
+	 *
+	 * @return bool
+	 */
 	protected function wc_order_needs_shipping( WC_Order $wc_order ): bool {
 		/**
 		 * WC 9.9.0+.

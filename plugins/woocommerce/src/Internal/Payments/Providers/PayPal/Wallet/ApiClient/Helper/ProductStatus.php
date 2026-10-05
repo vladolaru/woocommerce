@@ -31,25 +31,62 @@ abstract class ProductStatus {
 	/**
 	 * Caches the SellerStatus API response to avoid duplicate API calls
 	 * during the same request.
+	 *
+	 * @var SellerStatus|null
 	 */
 	private static ?SellerStatus $seller_status = null;
 
+	/**
+	 * Whether the merchant is eligible for the product, null if not yet determined.
+	 *
+	 * @var bool|null
+	 */
 	private ?bool $is_eligible = null;
 
+	/**
+	 * Whether the last status request failed.
+	 *
+	 * @var bool
+	 */
 	private bool $has_request_failure = false;
 
 	/**
 	 * Whether the merchant onboarding process was completed and the
 	 * merchant API is available.
+	 *
+	 * @var bool
 	 */
 	private bool $is_connected;
 
+	/**
+	 * The partners endpoint.
+	 *
+	 * @var PartnersEndpoint
+	 */
 	private PartnersEndpoint $partners_endpoint;
 
+	/**
+	 * The API failure registry.
+	 *
+	 * @var FailureRegistry
+	 */
 	private FailureRegistry $api_failure_registry;
 
+	/**
+	 * The result cache.
+	 *
+	 * @var ProductStatusResultCache
+	 */
 	protected ProductStatusResultCache $result_cache;
 
+	/**
+	 * ProductStatus constructor.
+	 *
+	 * @param bool                     $is_connected Whether the merchant onboarding was completed.
+	 * @param PartnersEndpoint         $partners_endpoint The partners endpoint.
+	 * @param FailureRegistry          $api_failure_registry The API failure registry.
+	 * @param ProductStatusResultCache $result_cache The result cache.
+	 */
 	public function __construct(
 		bool $is_connected,
 		PartnersEndpoint $partners_endpoint,
@@ -136,8 +173,11 @@ abstract class ProductStatus {
 	 * Can be overwritten by child classes to filter the local state.
 	 *
 	 * This check is used to determine the `is_active()` state of the product.
+	 *
+	 * @param bool $skip_filters Whether to skip filters; unused by this base implementation.
+	 * @return bool|null
 	 */
-	public function check_local_state( bool $skip_filters = false ): ?bool {
+	public function check_local_state( bool $skip_filters = false ): ?bool { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- Overridable signature; this base implementation applies no filters.
 		$local_state = $this->result_cache->get( static::KEY );
 
 		if ( $local_state ) {
@@ -147,11 +187,17 @@ abstract class ProductStatus {
 		return null;
 	}
 
+	/**
+	 * Records that the product is available for the merchant.
+	 */
 	protected function mark_as_enabled(): void {
 		$this->is_eligible = true;
 		$this->result_cache->set( static::KEY, self::STATE_IS_ENABLED, $this->get_cache_lifespan( true ) );
 	}
 
+	/**
+	 * Records that the product is not available for the merchant.
+	 */
 	protected function mark_as_disabled(): void {
 		$this->is_eligible = false;
 		$this->result_cache->set( static::KEY, self::STATE_IS_DISABLED, $this->get_cache_lifespan( false ) );
@@ -160,8 +206,11 @@ abstract class ProductStatus {
 	/**
 	 * Defines the result-cache lifespan, in seconds. By default, the result does not expire,
 	 * but child classes can override this to define custom TTLs.
+	 *
+	 * @param bool $is_eligible Whether the merchant is eligible for the product.
+	 * @return int
 	 */
-	protected function get_cache_lifespan( bool $is_eligible ): int {
+	protected function get_cache_lifespan( bool $is_eligible ): int { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- Overridable signature; DCCProductStatus uses the parameter.
 		return 0;
 	}
 

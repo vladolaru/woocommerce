@@ -9,12 +9,33 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper;
 
+/**
+ * Caches the product status results in a transient, with per-key expiry.
+ */
 class ProductStatusResultCache {
 	private const CACHE_KEY = 'woocommerce-ppcp-cache-product-status';
 
+	/**
+	 * Whether the cached results were already loaded.
+	 *
+	 * @var bool
+	 */
 	private bool $loaded = false;
+
+	/**
+	 * The cache.
+	 *
+	 * @var array
+	 */
 	private array $cache = array();
 
+	/**
+	 * Returns the cached value for the key, or an empty string when missing or expired.
+	 *
+	 * @param string $key The cache key.
+	 *
+	 * @return string
+	 */
 	public function get( string $key ): string {
 		$this->load();
 
@@ -34,6 +55,13 @@ class ProductStatusResultCache {
 		return $entry['value'] ?? '';
 	}
 
+	/**
+	 * Stores a value in the cache.
+	 *
+	 * @param string $key The cache key.
+	 * @param string $value The value to store.
+	 * @param int    $expiration The lifetime in seconds, 0 for no expiry.
+	 */
 	public function set( string $key, string $value, int $expiration = 0 ): void {
 		$this->load();
 
@@ -45,6 +73,11 @@ class ProductStatusResultCache {
 		$this->save();
 	}
 
+	/**
+	 * Removes a key from the cache.
+	 *
+	 * @param string $key The cache key.
+	 */
 	public function clear( string $key ): void {
 		$this->load();
 
@@ -52,6 +85,9 @@ class ProductStatusResultCache {
 		$this->save();
 	}
 
+	/**
+	 * Loads the cache from storage once per request.
+	 */
 	private function load(): void {
 		if ( $this->loaded ) {
 			return;
@@ -64,6 +100,9 @@ class ProductStatusResultCache {
 		$this->loaded = true;
 	}
 
+	/**
+	 * Writes the cache to storage.
+	 */
 	private function save(): void {
 		$this->save_to_storage( $this->cache );
 	}
@@ -79,6 +118,8 @@ class ProductStatusResultCache {
 
 	/**
 	 * Low-level data storage; can be overridden for testing.
+	 *
+	 * @param array $data The data to store.
 	 */
 	protected function save_to_storage( array $data ): void {
 		set_transient( self::CACHE_KEY, $data );

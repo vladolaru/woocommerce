@@ -94,7 +94,18 @@ class Item {
 	 */
 	protected $cart_item_key;
 
+	/**
+	 * The ID of the product.
+	 *
+	 * @var int|null
+	 */
 	private ?int $product_id;
+
+	/**
+	 * The discount of the item.
+	 *
+	 * @var Money|null
+	 */
 	protected ?Money $discount;
 
 	/**
@@ -111,6 +122,8 @@ class Item {
 	 * @param string     $image_url The product image url.
 	 * @param float      $tax_rate The tax rate.
 	 * @param ?string    $cart_item_key The cart key for this item.
+	 * @param int|null   $product_id The ID of the product.
+	 * @param Money|null $discount The discount of the item.
 	 */
 	public function __construct(
 		string $name,
@@ -242,10 +255,20 @@ class Item {
 		return $this->cart_item_key;
 	}
 
+	/**
+	 * Returns the ID of the product, if known.
+	 *
+	 * @return int|null
+	 */
 	public function product_id(): ?int {
 		return $this->product_id;
 	}
 
+	/**
+	 * Returns the discount of the item, if any.
+	 *
+	 * @return Money|null
+	 */
 	public function discount(): ?Money {
 		return $this->discount;
 	}

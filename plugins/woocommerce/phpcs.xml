@@ -8,8 +8,10 @@
 	<exclude-pattern>tests/cli/</exclude-pattern>
 	<exclude-pattern>client/admin/docs/examples/</exclude-pattern>
 	<exclude-pattern>includes/libraries/</exclude-pattern>
-	<!-- Anchored to the production tree so the core-authored tests under tests/php/src/.../Wallet/ stay linted. -->
-	<exclude-pattern>plugins/woocommerce/src/Internal/Payments/Providers/PayPal/Wallet/</exclude-pattern>
+	<!-- The PayPal wallet's stored-class shim: byte-identical to the extension by design (see SerializedClasses/load.php), deleted when the extension stores arrays. Anchored to the production tree so the core-authored tests under tests/php/src/.../Wallet/ stay linted. -->
+	<exclude-pattern>plugins/woocommerce/src/Internal/Payments/Providers/PayPal/Wallet/SerializedClasses/LocationStylingDTO.php</exclude-pattern>
+	<exclude-pattern>plugins/woocommerce/src/Internal/Payments/Providers/PayPal/Wallet/SerializedClasses/OAuthConnectionDTO.php</exclude-pattern>
+	<exclude-pattern>plugins/woocommerce/src/Internal/Payments/Providers/PayPal/Wallet/SerializedClasses/PayLaterMessagingDTO.php</exclude-pattern>
 	<exclude-pattern>includes/legacy/</exclude-pattern>
 	<exclude-pattern>includes/api/legacy/</exclude-pattern>
 	<exclude-pattern>includes/api/v1/</exclude-pattern>

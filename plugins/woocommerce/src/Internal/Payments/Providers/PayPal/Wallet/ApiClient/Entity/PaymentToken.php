@@ -116,6 +116,10 @@ class PaymentToken {
 	public static function get_valid_types() {
 		/**
 		 * Returns a list of valid payment token types.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param string[] $types The valid payment token types.
 		 */
 		return apply_filters(
 			'woocommerce_paypal_payments_valid_payment_token_types',

@@ -186,10 +186,7 @@ class PaymentsEndpoint {
 
 		$status_code = (int) wp_remote_retrieve_response_code( $response );
 		if ( 201 !== $status_code ) {
-			throw new PayPalApiException(
-				$json,
-				$status_code
-			);
+			throw new PayPalApiException( $json, $status_code ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Carries the decoded PayPal response object, not text; the message is built in PayPalApiException::__construct().
 		}
 
 		return $this->capture_factory->from_paypal_response( $json );
@@ -230,15 +227,16 @@ class PaymentsEndpoint {
 			throw new RuntimeException( 'Could not reauthorize authorized payment.' );
 		}
 
-		/** @var \stdClass|null $json */
+		/**
+		 * The decoded response.
+		 *
+		 * @var \stdClass|null $json
+		 */
 		$json = json_decode( $response['body'] );
 
 		$status_code = (int) wp_remote_retrieve_response_code( $response );
 		if ( 201 !== $status_code || ! is_object( $json ) ) {
-			throw new PayPalApiException(
-				$json,
-				$status_code
-			);
+			throw new PayPalApiException( $json, $status_code ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Carries the decoded PayPal response object, not text; the message is built in PayPalApiException::__construct().
 		}
 
 		return $json->id;
@@ -273,13 +271,14 @@ class PaymentsEndpoint {
 		}
 
 		$status_code = (int) wp_remote_retrieve_response_code( $response );
-		/** @var \stdClass|null $json */
+		/**
+		 * The decoded response.
+		 *
+		 * @var \stdClass|null $json
+		 */
 		$json = json_decode( $response['body'] );
 		if ( 201 !== $status_code || ! is_object( $json ) ) {
-			throw new PayPalApiException(
-				$json,
-				$status_code
-			);
+			throw new PayPalApiException( $json, $status_code ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Carries the decoded PayPal response object, not text; the message is built in PayPalApiException::__construct().
 		}
 
 		return $json->id;
@@ -316,7 +315,7 @@ class PaymentsEndpoint {
 		// Currently it can return body with 200 status, despite the docs saying that it should be 204 No content.
 		// We don't care much about body, so just checking that it was successful.
 		if ( $status_code < 200 || $status_code > 299 ) {
-			throw new PayPalApiException( null, $status_code );
+			throw new PayPalApiException( null, $status_code ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Carries only the integer status code; the message is built in PayPalApiException::__construct().
 		}
 	}
 }

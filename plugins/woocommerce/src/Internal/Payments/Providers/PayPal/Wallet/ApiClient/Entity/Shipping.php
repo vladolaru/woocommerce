@@ -30,11 +30,15 @@ class Shipping {
 
 	/**
 	 * Custom contact email address, usually added via the Contact Module.
+	 *
+	 * @var string|null
 	 */
 	private ?string $email_address;
 
 	/**
 	 * Custom contact phone number, usually added via the Contact Module.
+	 *
+	 * @var Phone|null
 	 */
 	private ?Phone $phone_number;
 

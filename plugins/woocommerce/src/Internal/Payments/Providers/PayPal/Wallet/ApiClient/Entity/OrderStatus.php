@@ -50,9 +50,11 @@ class OrderStatus {
 	public function __construct( string $status ) {
 		if ( ! in_array( $status, self::VALID_STATUS, true ) ) {
 			throw new RuntimeException(
-				sprintf(
-					'%s is not a valid status',
-					$status
+				esc_html(
+					sprintf(
+						'%s is not a valid status',
+						$status
+					)
 				)
 			);
 		}

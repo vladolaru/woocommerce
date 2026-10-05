@@ -72,6 +72,17 @@ class PurchaseUnitFactory {
 	 */
 	private $sanitizer;
 
+	/**
+	 * PurchaseUnitFactory constructor.
+	 *
+	 * @param AmountFactory              $amount_factory The amount factory.
+	 * @param ItemFactory                $item_factory The item factory.
+	 * @param ShippingFactory            $shipping_factory The shipping factory.
+	 * @param PaymentsFactory            $payments_factory The payments factory.
+	 * @param string                     $prefix The prefix for the unique IDs.
+	 * @param string                     $soft_descriptor The soft descriptor.
+	 * @param PurchaseUnitSanitizer|null $sanitizer The purchase unit sanitizer.
+	 */
 	public function __construct(
 		AmountFactory $amount_factory,
 		ItemFactory $item_factory,
@@ -134,6 +145,11 @@ class PurchaseUnitFactory {
 
 		/**
 		 * Returns PurchaseUnit for the WC order.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param PurchaseUnit $purchase_unit The purchase unit built from the order.
+		 * @param \WC_Order $order The order.
 		 */
 		return apply_filters(
 			'woocommerce_paypal_payments_purchase_unit_from_wc_order',
@@ -166,7 +182,11 @@ class PurchaseUnitFactory {
 
 		$shipping = null;
 		$customer = \WC()->customer;
-		/** @psalm-suppress RedundantConditionGivenDocblockType False positive. Ignored because $customer can be null as well. */
+		/**
+		 * Psalm reports a redundant condition here, which is a false positive because $customer can be null as well.
+		 *
+		 * @psalm-suppress RedundantConditionGivenDocblockType
+		 */
 		if ( $this->shipping_needed( ...array_values( $items ) ) && $customer instanceof \WC_Customer ) {
 			$shipping         = $this->shipping_factory->from_wc_customer( \WC()->customer, $with_shipping_options );
 			$shipping_address = $shipping->address();
@@ -291,6 +311,11 @@ class PurchaseUnitFactory {
 		 * If you are returning false from this filter, do not forget to also set
 		 * shipping_preference to 'NO_SHIPPING', otherwise PayPal will return an error.
 		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool|null $shipping_needed Whether shipping is needed; null lets the default check decide.
+		 * @param Item[] $items The items of the purchase unit.
+		 *
 		 * @see ShippingPreferenceFactory::from_state() for
 		 *      the 'woocommerce_paypal_payments_shipping_preference' filter.
 		 */
@@ -348,9 +373,12 @@ class PurchaseUnitFactory {
 	 */
 	private function sanitize_soft_descriptor( string $soft_descriptor ): string {
 		$decoded   = html_entity_decode( $soft_descriptor, ENT_QUOTES, 'UTF-8' );
-		$sanitized = preg_replace( '/[^a-zA-Z0-9 *\-.]/', '', $decoded ) ?: '';
+		$cleaned   = preg_replace( '/[^a-zA-Z0-9 *\-.]/', '', $decoded );
+		$sanitized = $cleaned ? $cleaned : '';
 
-		return substr( $sanitized, 0, 22 ) ?: '';
+		$truncated = substr( $sanitized, 0, 22 );
+
+		return $truncated ? $truncated : '';
 	}
 
 	/**

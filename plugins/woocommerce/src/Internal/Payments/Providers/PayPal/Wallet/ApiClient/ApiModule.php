@@ -47,6 +47,8 @@ class ApiModule implements ServiceModule, FactoryModule, ExecutableModule {
 
 	/**
 	 * {@inheritDoc}
+	 *
+	 * @param ContainerInterface $c The service container.
 	 */
 	public function run( ContainerInterface $c ): bool {
 		add_action(
@@ -63,6 +65,14 @@ class ApiModule implements ServiceModule, FactoryModule, ExecutableModule {
 				foreach ( ( $data['purchase_units'] ?? array() ) as $purchase_unit_index => $purchase_unit ) {
 					foreach ( ( $purchase_unit['items'] ?? array() ) as $item_index => $item ) {
 						$data['purchase_units'][ $purchase_unit_index ]['items'][ $item_index ]['name'] =
+							/**
+							 * Filters the name of a cart line item sent to PayPal.
+							 *
+							 * @since 11.3.0
+							 *
+							 * @param string $name The cart line item name.
+							 * @param string|null $cart_item_key The cart item key, if known.
+							 */
 							apply_filters( 'woocommerce_paypal_payments_cart_line_item_name', $item['name'], $item['cart_item_key'] ?? null );
 					}
 				}

@@ -21,8 +21,18 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\H
  */
 class ApiHostResolver {
 
+	/**
+	 * The connection state.
+	 *
+	 * @var ConnectionState
+	 */
 	private ConnectionState $connection_state;
 
+	/**
+	 * ApiHostResolver constructor.
+	 *
+	 * @param ConnectionState $connection_state The connection state.
+	 */
 	public function __construct( ConnectionState $connection_state ) {
 		$this->connection_state = $connection_state;
 	}

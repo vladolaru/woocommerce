@@ -61,9 +61,11 @@ class AuthorizationStatus {
 	public function __construct( string $status, ?AuthorizationStatusDetails $details = null ) {
 		if ( ! in_array( $status, self::VALID_STATUS, true ) ) {
 			throw new RuntimeException(
-				sprintf(
-					'%s is not a valid status',
-					$status
+				esc_html(
+					sprintf(
+						'%s is not a valid status',
+						$status
+					)
 				)
 			);
 		}

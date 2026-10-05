@@ -114,7 +114,7 @@ return array(
 			$container->get( 'api.token-rate-limiter' )
 		);
 	},
-	'api.paypal-host'                           => function ( ContainerInterface $container ): string {
+	'api.paypal-host'                           => function ( ContainerInterface $container ): string { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return PAYPAL_API_URL;
 	},
 	'api.paypal-website-url'                    => static function ( ContainerInterface $container ): string {
@@ -171,7 +171,7 @@ return array(
 			$container->get( 'woocommerce.logger.woocommerce' )
 		);
 	},
-	'api.token-rate-limiter-cache'              => static function ( ContainerInterface $container ): Cache {
+	'api.token-rate-limiter-cache'              => static function ( ContainerInterface $container ): Cache { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new Cache( 'ppcp-token-rate-limiter' );
 	},
 	'api.endpoint.partners'                     => static function ( ContainerInterface $container ): PartnersEndpoint {
@@ -211,10 +211,10 @@ return array(
 			$container->get( 'woocommerce.logger.woocommerce' )
 		);
 	},
-	'api.partners-seller-status-cache'          => static function ( ContainerInterface $container ): Cache {
+	'api.partners-seller-status-cache'          => static function ( ContainerInterface $container ): Cache { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new Cache( 'ppcp-seller-status-' );
 	},
-	'api.factory.sellerstatus'                  => static function ( ContainerInterface $container ): SellerStatusFactory {
+	'api.factory.sellerstatus'                  => static function ( ContainerInterface $container ): SellerStatusFactory { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new SellerStatusFactory();
 	},
 	'api.endpoint.payment-tokens'               => static function ( ContainerInterface $container ): PaymentTokensEndpoint {
@@ -390,10 +390,10 @@ return array(
 			$container->get( 'settings.merchant-details' )
 		);
 	},
-	'api.factory.webhook'                       => static function ( ContainerInterface $container ): WebhookFactory {
+	'api.factory.webhook'                       => static function ( ContainerInterface $container ): WebhookFactory { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new WebhookFactory();
 	},
-	'api.factory.webhook-event'                 => static function ( ContainerInterface $container ): WebhookEventFactory {
+	'api.factory.webhook-event'                 => static function ( ContainerInterface $container ): WebhookEventFactory { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new WebhookEventFactory();
 	},
 	'api.factory.capture'                       => static function ( ContainerInterface $container ): CaptureFactory {
@@ -433,10 +433,10 @@ return array(
 			$sanitizer
 		);
 	},
-	'api.factory.patch-collection-factory'      => static function ( ContainerInterface $container ): PatchCollectionFactory {
+	'api.factory.patch-collection-factory'      => static function ( ContainerInterface $container ): PatchCollectionFactory { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new PatchCollectionFactory();
 	},
-	'api.factory.payee'                         => static function ( ContainerInterface $container ): PayeeFactory {
+	'api.factory.payee'                         => static function ( ContainerInterface $container ): PayeeFactory { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new PayeeFactory();
 	},
 	'api.factory.item'                          => static function ( ContainerInterface $container ): ItemFactory {
@@ -450,10 +450,10 @@ return array(
 			$container->get( 'api.factory.shipping-option' )
 		);
 	},
-	'api.factory.return-url'                    => static function ( ContainerInterface $container ): ReturnUrlFactory {
+	'api.factory.return-url'                    => static function ( ContainerInterface $container ): ReturnUrlFactory { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new ReturnUrlFactory();
 	},
-	'api.factory.shipping-preference'           => static function ( ContainerInterface $container ): ShippingPreferenceFactory {
+	'api.factory.shipping-preference'           => static function ( ContainerInterface $container ): ShippingPreferenceFactory { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new ShippingPreferenceFactory();
 	},
 	'api.factory.shipping-option'               => static function ( ContainerInterface $container ): ShippingOptionFactory {
@@ -469,17 +469,17 @@ return array(
 			$container->get( 'api.shop.currency.getter' )
 		);
 	},
-	'api.factory.money'                         => static function ( ContainerInterface $container ): MoneyFactory {
+	'api.factory.money'                         => static function ( ContainerInterface $container ): MoneyFactory { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new MoneyFactory();
 	},
 	'api.factory.payer'                         => static function ( ContainerInterface $container ): PayerFactory {
 		$address_factory = $container->get( 'api.factory.address' );
 		return new PayerFactory( $address_factory );
 	},
-	'api.factory.refund_payer'                  => static function ( ContainerInterface $container ): RefundPayerFactory {
+	'api.factory.refund_payer'                  => static function ( ContainerInterface $container ): RefundPayerFactory { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new RefundPayerFactory();
 	},
-	'api.factory.address'                       => static function ( ContainerInterface $container ): AddressFactory {
+	'api.factory.address'                       => static function ( ContainerInterface $container ): AddressFactory { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new AddressFactory();
 	},
 	'api.factory.order'                         => static function ( ContainerInterface $container ): OrderFactory {
@@ -499,7 +499,7 @@ return array(
 	'api.factory.authorization'                 => static function ( ContainerInterface $container ): AuthorizationFactory {
 		return new AuthorizationFactory( $container->get( 'api.factory.fraud-processor-response' ) );
 	},
-	'api.factory.exchange-rate'                 => static function ( ContainerInterface $container ): ExchangeRateFactory {
+	'api.factory.exchange-rate'                 => static function ( ContainerInterface $container ): ExchangeRateFactory { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new ExchangeRateFactory();
 	},
 	'api.factory.platform-fee'                  => static function ( ContainerInterface $container ): PlatformFeeFactory {
@@ -521,7 +521,7 @@ return array(
 			$container->get( 'api.factory.platform-fee' )
 		);
 	},
-	'api.factory.fraud-processor-response'      => static function ( ContainerInterface $container ): FraudProcessorResponseFactory {
+	'api.factory.fraud-processor-response'      => static function ( ContainerInterface $container ): FraudProcessorResponseFactory { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new FraudProcessorResponseFactory();
 	},
 	'api.helpers.dccapplies'                    => static function ( ContainerInterface $container ): DccApplies {
@@ -532,10 +532,10 @@ return array(
 		);
 	},
 
-	'api.shop.currency.getter'                  => static function ( ContainerInterface $container ): CurrencyGetter {
+	'api.shop.currency.getter'                  => static function ( ContainerInterface $container ): CurrencyGetter { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new CurrencyGetter();
 	},
-	'api.shop.country'                          => static function ( ContainerInterface $container ): string {
+	'api.shop.country'                          => static function ( ContainerInterface $container ): string { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		$location = wc_get_base_location();
 		return $location['country'];
 	},
@@ -552,7 +552,7 @@ return array(
 	 *
 	 * From https://developer.paypal.com/docs/reports/reference/paypal-supported-currencies/
 	 */
-	'api.supported-currencies'                  => static function ( ContainerInterface $container ): array {
+	'api.supported-currencies'                  => static function ( ContainerInterface $container ): array { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return array(
 			'AUD',
 			'BRL',
@@ -585,7 +585,15 @@ return array(
 	/**
 	 * The matrix which countries and currency combinations can be used for DCC.
 	 */
-	'api.dcc-supported-country-currency-matrix' => static function ( ContainerInterface $container ): array {
+	'api.dcc-supported-country-currency-matrix' => static function ( ContainerInterface $container ): array { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
+
+		/**
+		 * Filters the currencies that can be used for DCC.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param string[] $currencies The currencies supported by default.
+		 */
 		$default_currencies = apply_filters(
 			'woocommerce_paypal_payments_supported_currencies',
 			array(
@@ -616,6 +624,10 @@ return array(
 
 		/**
 		 * Returns which countries and currency combinations can be used for DCC.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param array<string, string[]> $matrix The supported currencies, keyed by country code.
 		 */
 		return apply_filters(
 			'woocommerce_paypal_payments_supported_country_currency_matrix',
@@ -669,7 +681,7 @@ return array(
 		);
 	},
 
-	'api.paylater-countries'                    => static function ( ContainerInterface $container ): array {
+	'api.paylater-countries'                    => static function ( ContainerInterface $container ): array { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		$default_countries = array(
 			'US',
 			'DE',
@@ -680,12 +692,20 @@ return array(
 			'ES',
 			'CA',
 		);
+
+		/**
+		 * Filters the countries where Pay Later can be used.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param string[] $countries The country codes where Pay Later is supported.
+		 */
 		return apply_filters(
 			'woocommerce_paypal_payments_supported_paylater_countries',
 			$default_countries
 		);
 	},
-	'api.order-helper'                          => static function ( ContainerInterface $container ): OrderHelper {
+	'api.order-helper'                          => static function ( ContainerInterface $container ): OrderHelper { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new OrderHelper();
 	},
 	'api.helper.order-transient'                => static function ( ContainerInterface $container ): OrderTransient {
@@ -693,7 +713,7 @@ return array(
 		$purchase_unit_sanitizer = $container->get( 'api.helper.purchase-unit-sanitizer' );
 		return new OrderTransient( $cache, $purchase_unit_sanitizer );
 	},
-	'api.helper.failure-registry'               => static function ( ContainerInterface $container ): FailureRegistry {
+	'api.helper.failure-registry'               => static function ( ContainerInterface $container ): FailureRegistry { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		$cache = new Cache( 'ppcp-paypal-api-status-cache' );
 		return new FailureRegistry( $cache );
 	},
@@ -720,13 +740,13 @@ return array(
 			$container->get( 'settings.settings-provider' )
 		);
 	},
-	'api.paypal-bearer-cache'                   => static function ( ContainerInterface $container ): Cache {
+	'api.paypal-bearer-cache'                   => static function ( ContainerInterface $container ): Cache { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new Cache( 'ppcp-paypal-bearer' );
 	},
-	'api.client-credentials-cache'              => static function ( ContainerInterface $container ): Cache {
+	'api.client-credentials-cache'              => static function ( ContainerInterface $container ): Cache { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new Cache( 'ppcp-client-credentials-cache' );
 	},
-	'api.user-id-token-cache'                   => static function ( ContainerInterface $container ): Cache {
+	'api.user-id-token-cache'                   => static function ( ContainerInterface $container ): Cache { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new Cache( 'ppcp-id-token-cache' );
 	},
 	'api.user-id-token'                         => static function ( ContainerInterface $container ): UserIdToken {
@@ -747,22 +767,22 @@ return array(
 			$container->get( 'api.token-rate-limiter' )
 		);
 	},
-	'api.paypal-host-production'                => static function ( ContainerInterface $container ): string {
+	'api.paypal-host-production'                => static function ( ContainerInterface $container ): string { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return PAYPAL_API_URL;
 	},
-	'api.paypal-host-sandbox'                   => static function ( ContainerInterface $container ): string {
+	'api.paypal-host-sandbox'                   => static function ( ContainerInterface $container ): string { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return PAYPAL_SANDBOX_API_URL;
 	},
-	'api.paypal-website-url-production'         => static function ( ContainerInterface $container ): string {
+	'api.paypal-website-url-production'         => static function ( ContainerInterface $container ): string { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return PAYPAL_URL;
 	},
-	'api.paypal-website-url-sandbox'            => static function ( ContainerInterface $container ): string {
+	'api.paypal-website-url-sandbox'            => static function ( ContainerInterface $container ): string { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return PAYPAL_SANDBOX_URL;
 	},
-	'api.partner_merchant_id-production'        => static function ( ContainerInterface $container ): string {
+	'api.partner_merchant_id-production'        => static function ( ContainerInterface $container ): string { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return CONNECT_WOO_MERCHANT_ID;
 	},
-	'api.partner_merchant_id-sandbox'           => static function ( ContainerInterface $container ): string {
+	'api.partner_merchant_id-sandbox'           => static function ( ContainerInterface $container ): string { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return CONNECT_WOO_SANDBOX_MERCHANT_ID;
 	},
 	'api.endpoint.login-seller-production'      => static function ( ContainerInterface $container ): LoginSeller {
@@ -845,7 +865,7 @@ return array(
 
 		return CONNECT_WOO_URL;
 	},
-	'api.helper.partner-attribution'            => static function ( ContainerInterface $container ): PartnerAttribution {
+	'api.helper.partner-attribution'            => static function ( ContainerInterface $container ): PartnerAttribution { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new PartnerAttribution(
 			'ppcp_bn_code',
 			array(
@@ -881,7 +901,9 @@ return array(
 		/**
 		 * Allows disabling the subscription mode when using the new settings UI.
 		 *
-		 * @returns bool true if the subscription mode should be disabled, false otherwise (default is false).
+		 * @since 11.3.0
+		 *
+		 * @param bool $disabled Whether the subscription mode is disabled; false by default.
 		 */
 		$subscription_mode_disabled = (bool) apply_filters( 'woocommerce_paypal_payments_subscription_mode_disabled', false );
 		return $subscription_mode_disabled ? SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_DISABLED : $subscription_mode_value;

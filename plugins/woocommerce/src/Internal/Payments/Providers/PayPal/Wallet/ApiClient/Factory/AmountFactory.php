@@ -120,7 +120,10 @@ class AmountFactory {
 	}
 
 	/**
-	 *  Returns an Amount object based off a WooCommerce cart object from the Store API.
+	 * Returns an Amount object based off a WooCommerce cart object from the Store API.
+	 *
+	 * @param CartTotals $cart_totals The cart totals of the Store API.
+	 * @return Amount
 	 */
 	public function from_store_api_cart( CartTotals $cart_totals ): Amount {
 		// Store API values are in integer minor units (e.g. cents), so integer
@@ -136,6 +139,11 @@ class AmountFactory {
 		 * Some plugins (e.g. WooCommerce Gift Cards) reduce cart->total via WC_Cart::set_total()
 		 * without registering a coupon or fee. Allow them to contribute their discount amount here.
 		 * The value must be an integer in the cart currency's minor unit (e.g. cents for USD).
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param int $extra_discount The extra discount in the minor unit of the cart currency, 0 by default.
+		 * @param CartTotals $cart_totals The cart totals.
 		 */
 		$discount_minor += max( 0, (int) apply_filters( 'woocommerce_paypal_payments_store_api_cart_extra_discount', 0, $cart_totals ) );
 
@@ -304,17 +312,21 @@ class AmountFactory {
 
 			if ( ! isset( $item->value ) || ! is_numeric( $item->value ) ) {
 				throw new RuntimeException(
-					sprintf(
-						'No value given for breakdown %s',
-						$key
+					esc_html(
+						sprintf(
+							'No value given for breakdown %s',
+							$key
+						)
 					)
 				);
 			}
 			if ( ! isset( $item->currency_code ) ) {
 				throw new RuntimeException(
-					sprintf(
-						'No currency given for breakdown %s',
-						$key
+					esc_html(
+						sprintf(
+							'No currency given for breakdown %s',
+							$key
+						)
 					)
 				);
 			}
@@ -381,6 +393,11 @@ class AmountFactory {
 	private function extra_discount( string $filter_name, $context ): float {
 		/**
 		 * Filters extra discount amounts not captured by standard WC discount/fee getters.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param float $extra_discount The extra discount, 0.0 by default.
+		 * @param mixed $context The cart or order the discount is for.
 		 */
 		return max( 0.0, (float) apply_filters( $filter_name, 0.0, $context ) );
 	}

@@ -24,16 +24,31 @@ class ExperienceContextBuilder {
 
 	/**
 	 * The object being built.
+	 *
+	 * @var ExperienceContext
 	 */
 	private ExperienceContext $experience_context;
 
 	/**
 	 * The Settings Provider class.
+	 *
+	 * @var SettingsProvider
 	 */
 	private SettingsProvider $settings;
 
+	/**
+	 * The shipping callback URL factory.
+	 *
+	 * @var ShippingCallbackUrlFactory
+	 */
 	private ShippingCallbackUrlFactory $shipping_callback_url_factory;
 
+	/**
+	 * ExperienceContextBuilder constructor.
+	 *
+	 * @param SettingsProvider           $settings The settings provider.
+	 * @param ShippingCallbackUrlFactory $shipping_callback_url_factory The shipping callback URL factory.
+	 */
 	public function __construct(
 		SettingsProvider $settings,
 		ShippingCallbackUrlFactory $shipping_callback_url_factory

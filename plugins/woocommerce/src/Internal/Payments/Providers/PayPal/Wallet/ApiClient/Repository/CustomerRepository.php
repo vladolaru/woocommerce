@@ -57,7 +57,9 @@ class CustomerRepository {
 			return $guest_customer_id;
 		}
 
-		return get_user_meta( $user_id, 'ppcp_customer_id', true ) ?: $this->prefix . (string) $user_id;
+		$customer_id = get_user_meta( $user_id, 'ppcp_customer_id', true );
+
+		return $customer_id ? $customer_id : $this->prefix . (string) $user_id;
 	}
 
 	/**
@@ -73,6 +75,9 @@ class CustomerRepository {
 	 * plugin resolves it. Reading only the latter would miss an ID PayPal has
 	 * already issued and have it create a second customer for the same user,
 	 * orphaning the tokens stored against the first.
+	 *
+	 * @param int $user_id The user ID.
+	 * @return string
 	 */
 	public function paypal_customer_id_for_user( int $user_id ): string {
 		if ( 0 === $user_id ) {

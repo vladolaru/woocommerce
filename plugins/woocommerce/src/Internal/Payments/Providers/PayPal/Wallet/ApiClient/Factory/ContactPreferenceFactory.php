@@ -20,11 +20,15 @@ class ContactPreferenceFactory {
 	/**
 	 * Whether the contact module toggle is enabled in the plugin settings.
 	 * Allows eligible merchants to opt out of the feature.
+	 *
+	 * @var bool
 	 */
 	private bool $is_contact_module_active;
 
 	/**
 	 * Used to determine if a merchant is eligible to use the contact preference.
+	 *
+	 * @var MerchantDetails
 	 */
 	private MerchantDetails $merchant_details;
 

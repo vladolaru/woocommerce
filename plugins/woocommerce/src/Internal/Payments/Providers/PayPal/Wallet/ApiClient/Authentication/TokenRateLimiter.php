@@ -47,10 +47,26 @@ class TokenRateLimiter {
 	 */
 	const STATE_KEY_SUFFIX = '-circuit-state';
 
+	/**
+	 * The cache.
+	 *
+	 * @var Cache
+	 */
 	private Cache $cache;
 
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	private LoggerInterface $logger;
 
+	/**
+	 * TokenRateLimiter constructor.
+	 *
+	 * @param Cache           $cache The cache.
+	 * @param LoggerInterface $logger The logger.
+	 */
 	public function __construct( Cache $cache, LoggerInterface $logger ) {
 		$this->cache  = $cache;
 		$this->logger = $logger;
@@ -175,7 +191,7 @@ class TokenRateLimiter {
 	 */
 	private function parse_retry_after( $response ): ?int {
 		$raw = wp_remote_retrieve_header( $response, 'retry-after' );
-		if ( ! is_string( $raw ) || $raw === '' ) {
+		if ( ! is_string( $raw ) || '' === $raw ) {
 			return null;
 		}
 

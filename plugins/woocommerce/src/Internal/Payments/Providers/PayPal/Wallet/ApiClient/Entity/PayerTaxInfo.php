@@ -50,9 +50,11 @@ class PayerTaxInfo {
 
 		if ( ! in_array( $type, self::VALID_TYPES, true ) ) {
 			throw new RuntimeException(
-				sprintf(
-					'%s is not a valid tax type.',
-					$type
+				esc_html(
+					sprintf(
+						'%s is not a valid tax type.',
+						$type
+					)
 				)
 			);
 		}

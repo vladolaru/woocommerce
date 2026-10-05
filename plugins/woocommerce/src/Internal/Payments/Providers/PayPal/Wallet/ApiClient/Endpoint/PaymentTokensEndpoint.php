@@ -84,13 +84,13 @@ class PaymentTokensEndpoint {
 
 		$response = $this->request( $url, $args );
 		if ( $response instanceof WP_Error ) {
-			throw new RuntimeException( $response->get_error_message() );
+			throw new RuntimeException( esc_html( $response->get_error_message() ) );
 		}
 
 		$json        = json_decode( $response['body'] );
 		$status_code = (int) wp_remote_retrieve_response_code( $response );
 		if ( 204 !== $status_code ) {
-			throw new PayPalApiException( $json, $status_code );
+			throw new PayPalApiException( $json, $status_code ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Carries the decoded PayPal response object, not text; the message is built in PayPalApiException::__construct().
 		}
 	}
 
@@ -116,13 +116,13 @@ class PaymentTokensEndpoint {
 
 		$response = $this->request( $url, $args );
 		if ( $response instanceof WP_Error ) {
-			throw new RuntimeException( $response->get_error_message() );
+			throw new RuntimeException( esc_html( $response->get_error_message() ) );
 		}
 
 		$json        = json_decode( $response['body'] );
 		$status_code = (int) wp_remote_retrieve_response_code( $response );
 		if ( 200 !== $status_code ) {
-			throw new PayPalApiException( $json, $status_code );
+			throw new PayPalApiException( $json, $status_code ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Carries the decoded PayPal response object, not text; the message is built in PayPalApiException::__construct().
 		}
 
 		$tokens         = array();

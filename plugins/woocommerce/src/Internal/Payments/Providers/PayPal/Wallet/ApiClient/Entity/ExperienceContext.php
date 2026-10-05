@@ -35,52 +35,72 @@ class ExperienceContext {
 
 	/**
 	 * The return url.
+	 *
+	 * @var string|null
 	 */
 	private ?string $return_url = null;
 
 	/**
 	 * The cancel url.
+	 *
+	 * @var string|null
 	 */
 	private ?string $cancel_url = null;
 
 	/**
 	 * The brand name.
+	 *
+	 * @var string|null
 	 */
 	private ?string $brand_name = null;
 
 	/**
 	 * The locale.
+	 *
+	 * @var string|null
 	 */
 	private ?string $locale = null;
 
 	/**
 	 * The landing page.
+	 *
+	 * @var string|null
 	 */
 	private ?string $landing_page = null;
 
 	/**
 	 * The shipping preference.
+	 *
+	 * @var string|null
 	 */
 	private ?string $shipping_preference = null;
 
 	/**
 	 * The user action.
+	 *
+	 * @var string|null
 	 */
 	private ?string $user_action = null;
 
 	/**
 	 * The payment method preference.
+	 *
+	 * @var string|null
 	 */
 	private ?string $payment_method_preference = null;
 
 	/**
 	 * Controls the contact module, and when defined, the API response will
 	 * include additional details in the `purchase_units[].shipping` object.
+	 *
+	 * @var string|null
 	 */
 	private ?string $contact_preference = null;
 
 	/**
 	 * The callback config.
+	 *
+	 * @var CallbackConfig|null
 	 */
 	private ?CallbackConfig $order_update_callback_config = null;
 
@@ -292,7 +312,7 @@ class ExperienceContext {
 		$class = new ReflectionClass( $this );
 		foreach ( $class->getProperties() as $prop ) {
 			$value = $this->{$prop->getName()};
-			if ( $value === null ) {
+			if ( null === $value ) {
 				continue;
 			}
 			if ( is_object( $value ) && method_exists( $value, 'to_array' ) ) {

@@ -148,6 +148,8 @@ class PartnersEndpoint {
 			/**
 			 * Filters the seller status object before it is returned.
 			 *
+			 * @since 11.3.0
+			 *
 			 * @param SellerStatus $status The seller status (from cache or API).
 			 */
 			return apply_filters( 'woocommerce_paypal_payments_seller_status', $cached );
@@ -173,6 +175,13 @@ class PartnersEndpoint {
 
 		$this->cache->set( self::SELLER_STATUS_CACHE_KEY, $status, self::SELLER_STATUS_CACHE_TTL );
 
+		/**
+		 * Filters the seller status object before it is returned.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param SellerStatus $status The seller status, freshly fetched from the API.
+		 */
 		return apply_filters( 'woocommerce_paypal_payments_seller_status', $status );
 	}
 
@@ -191,6 +200,8 @@ class PartnersEndpoint {
 		 * Return a SellerStatus instance to use as fallback instead of
 		 * throwing. Return null to let the exception propagate.
 		 *
+		 * @since 11.3.0
+		 *
 		 * @param SellerStatus|null $fallback Default null (no fallback).
 		 */
 		$fallback = apply_filters( 'woocommerce_paypal_payments_seller_status_fallback', null );
@@ -204,6 +215,13 @@ class PartnersEndpoint {
 
 			$this->cache->set( self::SELLER_STATUS_CACHE_KEY, $fallback, self::SELLER_STATUS_CACHE_TTL );
 
+			/**
+			 * Filters the seller status object before it is returned.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param SellerStatus $status The fallback seller status.
+			 */
 			return apply_filters( 'woocommerce_paypal_payments_seller_status', $fallback );
 		}
 

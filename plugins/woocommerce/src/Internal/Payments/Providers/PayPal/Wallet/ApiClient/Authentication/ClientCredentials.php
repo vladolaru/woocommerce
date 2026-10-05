@@ -7,10 +7,23 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiCl
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Exception\NotFoundException;
 
+/**
+ * Provides the client ID and secret of the connected merchant as API credentials.
+ */
 class ClientCredentials {
 
+	/**
+	 * The settings provider.
+	 *
+	 * @var SettingsProvider
+	 */
 	protected SettingsProvider $settings;
 
+	/**
+	 * ClientCredentials constructor.
+	 *
+	 * @param SettingsProvider $settings The settings provider.
+	 */
 	public function __construct( SettingsProvider $settings ) {
 		$this->settings = $settings;
 	}

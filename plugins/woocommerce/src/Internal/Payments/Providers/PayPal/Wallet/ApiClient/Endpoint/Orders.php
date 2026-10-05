@@ -92,7 +92,7 @@ class Orders {
 
 		$response = $this->request( $url, $args );
 		if ( $response instanceof WP_Error ) {
-			throw new RuntimeException( $response->get_error_message() );
+			throw new RuntimeException( esc_html( $response->get_error_message() ) );
 		}
 
 		$status_code = (int) wp_remote_retrieve_response_code( $response );
@@ -101,13 +101,10 @@ class Orders {
 
 			$message = $body->details[0]->description ?? '';
 			if ( $message ) {
-				throw new RuntimeException( $message );
+				throw new RuntimeException( esc_html( $message ) );
 			}
 
-			throw new PayPalApiException(
-				$body,
-				$status_code
-			);
+			throw new PayPalApiException( $body, $status_code ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Carries the decoded PayPal response object, not text; the message is built in PayPalApiException::__construct().
 		}
 
 		return $response;
@@ -140,22 +137,19 @@ class Orders {
 
 		$response = $this->request( $url, $args );
 		if ( $response instanceof WP_Error ) {
-			throw new RuntimeException( $response->get_error_message() );
+			throw new RuntimeException( esc_html( $response->get_error_message() ) );
 		}
 
 		$status_code = (int) wp_remote_retrieve_response_code( $response );
-		if ( $status_code !== 200 ) {
+		if ( 200 !== $status_code ) {
 			$body = json_decode( $response['body'] );
 
 			$message = $body->details[0]->description ?? '';
 			if ( $message ) {
-				throw new RuntimeException( $message );
+				throw new RuntimeException( esc_html( $message ) );
 			}
 
-			throw new PayPalApiException(
-				$body,
-				$status_code
-			);
+			throw new PayPalApiException( $body, $status_code ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Carries the decoded PayPal response object, not text; the message is built in PayPalApiException::__construct().
 		}
 
 		return $response;
@@ -183,22 +177,19 @@ class Orders {
 
 		$response = $this->request( $url, $args );
 		if ( $response instanceof WP_Error ) {
-			throw new RuntimeException( $response->get_error_message() );
+			throw new RuntimeException( esc_html( $response->get_error_message() ) );
 		}
 
 		$status_code = (int) wp_remote_retrieve_response_code( $response );
-		if ( $status_code !== 200 ) {
+		if ( 200 !== $status_code ) {
 			$body = json_decode( $response['body'] );
 
 			$message = $body->details[0]->description ?? '';
 			if ( $message ) {
-				throw new RuntimeException( $message );
+				throw new RuntimeException( esc_html( $message ) );
 			}
 
-			throw new PayPalApiException(
-				$body,
-				$status_code
-			);
+			throw new PayPalApiException( $body, $status_code ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Carries the decoded PayPal response object, not text; the message is built in PayPalApiException::__construct().
 		}
 
 		return $response;
@@ -229,22 +220,19 @@ class Orders {
 
 		$response = $this->request( $url, $args );
 		if ( $response instanceof WP_Error ) {
-			throw new RuntimeException( $response->get_error_message() );
+			throw new RuntimeException( esc_html( $response->get_error_message() ) );
 		}
 
 		$status_code = (int) wp_remote_retrieve_response_code( $response );
-		if ( $status_code !== 204 ) {
+		if ( 204 !== $status_code ) {
 			$body = json_decode( $response['body'] );
 
 			$message = $body->details[0]->description ?? '';
 			if ( $message ) {
-				throw new RuntimeException( $message );
+				throw new RuntimeException( esc_html( $message ) );
 			}
 
-			throw new PayPalApiException(
-				$body,
-				$status_code
-			);
+			throw new PayPalApiException( $body, $status_code ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Carries the decoded PayPal response object, not text; the message is built in PayPalApiException::__construct().
 		}
 
 		return $response;

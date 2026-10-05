@@ -200,6 +200,8 @@ class FraudProcessorResponse {
 		 * Use this to customize the wording shown to buyers, e.g. to match your
 		 * store's tone of voice or add store-specific support contact details.
 		 *
+		 * @since 11.3.0
+		 *
 		 * @param string                 $message The generated decline message.
 		 * @param FraudProcessorResponse $fraud_processor_response The fraud processor response that triggered the decline.
 		 */
@@ -261,6 +263,8 @@ class FraudProcessorResponse {
 
 		/**
 		 * Filters the plain-language decline reason used inside the customer-facing decline message.
+		 *
+		 * @since 11.3.0
 		 *
 		 * @param string                 $message The decline reason shown to the customer.
 		 * @param string                 $response_code The raw processor response code.

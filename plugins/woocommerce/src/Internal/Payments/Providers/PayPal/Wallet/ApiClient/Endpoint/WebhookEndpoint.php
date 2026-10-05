@@ -63,6 +63,15 @@ class WebhookEndpoint {
 	 */
 	private $logger;
 
+	/**
+	 * WebhookEndpoint constructor.
+	 *
+	 * @param ApiHostResolver     $host_resolver The API host resolver.
+	 * @param Bearer              $bearer The bearer.
+	 * @param WebhookFactory      $webhook_factory The webhook factory.
+	 * @param WebhookEventFactory $webhook_event_factory The webhook event factory.
+	 * @param LoggerInterface     $logger The logger.
+	 */
 	public function __construct(
 		ApiHostResolver $host_resolver,
 		Bearer $bearer,
@@ -111,10 +120,7 @@ class WebhookEndpoint {
 		$json        = json_decode( $response['body'] );
 		$status_code = (int) wp_remote_retrieve_response_code( $response );
 		if ( 201 !== $status_code ) {
-			throw new PayPalApiException(
-				$json,
-				$status_code
-			);
+			throw new PayPalApiException( $json, $status_code ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Carries the decoded PayPal response object, not text; the message is built in PayPalApiException::__construct().
 		}
 
 		$hook = $this->webhook_factory->from_paypal_response( $json );
@@ -147,10 +153,7 @@ class WebhookEndpoint {
 		$json        = json_decode( $response['body'] );
 		$status_code = (int) wp_remote_retrieve_response_code( $response );
 		if ( 200 !== $status_code ) {
-			throw new PayPalApiException(
-				$json,
-				$status_code
-			);
+			throw new PayPalApiException( $json, $status_code ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Carries the decoded PayPal response object, not text; the message is built in PayPalApiException::__construct().
 		}
 
 		return array_map(
@@ -197,10 +200,7 @@ class WebhookEndpoint {
 			if ( is_array( $response ) ) {
 				$json = json_decode( $response['body'] );
 			}
-			throw new PayPalApiException(
-				$json,
-				$status_code
-			);
+			throw new PayPalApiException( $json, $status_code ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Carries the decoded PayPal response object, not text; the message is built in PayPalApiException::__construct().
 		}
 	}
 
@@ -241,10 +241,7 @@ class WebhookEndpoint {
 		$json        = json_decode( $response['body'] );
 		$status_code = (int) wp_remote_retrieve_response_code( $response );
 		if ( 202 !== $status_code ) {
-			throw new PayPalApiException(
-				$json,
-				$status_code
-			);
+			throw new PayPalApiException( $json, $status_code ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Carries the decoded PayPal response object, not text; the message is built in PayPalApiException::__construct().
 		}
 
 		return $this->webhook_event_factory->from_paypal_response( $json );

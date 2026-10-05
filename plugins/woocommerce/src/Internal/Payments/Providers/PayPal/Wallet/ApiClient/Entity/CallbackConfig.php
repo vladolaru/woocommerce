@@ -20,10 +20,14 @@ class CallbackConfig {
 
 	/**
 	 * The URL that will be called when the events occur.
+	 *
+	 * @var string
 	 */
 	private string $url;
 
 	/**
+	 * CallbackConfig constructor.
+	 *
 	 * @param string[] $events The events.
 	 * @param string   $url The URL that will be called when the events occur.
 	 */

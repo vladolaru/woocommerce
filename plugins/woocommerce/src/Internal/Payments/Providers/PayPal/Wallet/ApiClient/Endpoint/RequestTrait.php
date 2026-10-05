@@ -39,6 +39,11 @@ trait RequestTrait {
 		 * This filter can be used to alter the request args.
 		 * For example, during testing, the PayPal-Mock-Response header could be
 		 * added here.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param array $args The request arguments.
+		 * @param string $url The request URL.
 		 */
 		$args = apply_filters( 'ppcp_request_args', $args, $url );
 
@@ -53,6 +58,8 @@ trait RequestTrait {
 			 * authentication failure. Listeners are expected to refresh the
 			 * cached access token and rebuild the `Authorization` header so the
 			 * retry uses a token with the current scopes.
+			 *
+			 * @since 11.3.0
 			 *
 			 * @param array  $args The request arguments.
 			 * @param string $url  The request URL.

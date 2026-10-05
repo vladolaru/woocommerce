@@ -82,9 +82,9 @@ class WebhookEvent {
 	 * @param string        $event_type The event that triggered the webhook event notification, such as 'CHECKOUT.ORDER.APPROVED'.
 	 * @param string        $summary A summary description for the event notification.
 	 * @param string        $resource_version The resource version in the webhook notification, such as '1.0'.
-	 * @param object        $resource The resource that triggered the webhook event notification.
+	 * @param object        $resource_data The resource that triggered the webhook event notification.
 	 */
-	public function __construct( string $id, ?DateTime $create_time, string $resource_type, string $event_version, string $event_type, string $summary, string $resource_version, $resource ) {
+	public function __construct( string $id, ?DateTime $create_time, string $resource_type, string $event_version, string $event_type, string $summary, string $resource_version, $resource_data ) {
 		$this->id               = $id;
 		$this->create_time      = $create_time;
 		$this->resource_type    = $resource_type;
@@ -92,7 +92,7 @@ class WebhookEvent {
 		$this->event_type       = $event_type;
 		$this->summary          = $summary;
 		$this->resource_version = $resource_version;
-		$this->resource         = $resource;
+		$this->resource         = $resource_data;
 	}
 
 	/**

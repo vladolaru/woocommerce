@@ -24,22 +24,74 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\H
  */
 class ResolvingBearer implements Bearer {
 
+	/**
+	 * The connection state.
+	 *
+	 * @var ConnectionState
+	 */
 	private ConnectionState $connection_state;
 
+	/**
+	 * The cache.
+	 *
+	 * @var Cache
+	 */
 	private Cache $cache;
 
+	/**
+	 * The API host resolver.
+	 *
+	 * @var ApiHostResolver
+	 */
 	private ApiHostResolver $host_resolver;
 
+	/**
+	 * The client ID.
+	 *
+	 * @var string
+	 */
 	private string $key;
 
+	/**
+	 * The client secret.
+	 *
+	 * @var string
+	 */
 	private string $secret;
 
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	private LoggerInterface $logger;
 
+	/**
+	 * The settings provider.
+	 *
+	 * @var SettingsProvider|null
+	 */
 	private ?SettingsProvider $settings;
 
+	/**
+	 * The token rate limiter.
+	 *
+	 * @var TokenRateLimiter
+	 */
 	private TokenRateLimiter $rate_limiter;
 
+	/**
+	 * ResolvingBearer constructor.
+	 *
+	 * @param ConnectionState       $connection_state The connection state.
+	 * @param Cache                 $cache The cache.
+	 * @param ApiHostResolver       $host_resolver The API host resolver.
+	 * @param string                $key The client ID.
+	 * @param string                $secret The client secret.
+	 * @param LoggerInterface       $logger The logger.
+	 * @param SettingsProvider|null $settings The settings provider.
+	 * @param TokenRateLimiter      $rate_limiter The token rate limiter.
+	 */
 	public function __construct(
 		ConnectionState $connection_state,
 		Cache $cache,

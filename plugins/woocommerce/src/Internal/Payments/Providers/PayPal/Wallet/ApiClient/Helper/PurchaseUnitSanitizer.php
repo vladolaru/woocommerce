@@ -165,7 +165,7 @@ class PurchaseUnitSanitizer {
 	private function sanitize_item_amount_mismatch(): void {
 		$item_mismatch = $this->calculate_item_mismatch();
 
-		if ( $this->mode === self::MODE_EXTRA_LINE ) {
+		if ( self::MODE_EXTRA_LINE === $this->mode ) {
 			if ( $item_mismatch < 0 ) {
 
 				// Do floors on item amounts so item_mismatch is a positive value.
@@ -207,7 +207,7 @@ class PurchaseUnitSanitizer {
 			$item_mismatch = $this->calculate_item_mismatch();
 		}
 
-		if ( $item_mismatch !== 0.0 ) {
+		if ( 0.0 !== $item_mismatch ) {
 			// Ditch items.
 			if ( $this->allow_ditch_items && isset( $this->purchase_unit['items'] ) ) {
 				unset( $this->purchase_unit['items'] );
@@ -227,7 +227,7 @@ class PurchaseUnitSanitizer {
 		// Check if all items are digital goods.
 		foreach ( $this->items() as $item ) {
 			$category = $item['category'] ?? Item::PHYSICAL_GOODS;
-			if ( $category !== Item::DIGITAL_GOODS ) {
+			if ( Item::DIGITAL_GOODS !== $category ) {
 				return Item::PHYSICAL_GOODS;
 			}
 		}
@@ -244,7 +244,7 @@ class PurchaseUnitSanitizer {
 	private function sanitize_item_tax_mismatch(): void {
 		$tax_mismatch = $this->calculate_tax_mismatch();
 
-		if ( $this->allow_ditch_items && $tax_mismatch !== 0.0 ) {
+		if ( $this->allow_ditch_items && 0.0 !== $tax_mismatch ) {
 			// Unset tax in items.
 			foreach ( $this->purchase_unit['items'] as $index => $item ) {
 				if ( isset( $this->purchase_unit['items'][ $index ]['tax'] ) ) {
@@ -265,7 +265,7 @@ class PurchaseUnitSanitizer {
 	private function sanitize_breakdown_mismatch(): void {
 		$breakdown_mismatch = $this->calculate_breakdown_mismatch();
 
-		if ( $this->allow_ditch_items && $breakdown_mismatch !== 0.0 ) {
+		if ( $this->allow_ditch_items && 0.0 !== $breakdown_mismatch ) {
 			// Ditch breakdowns and items.
 			if ( isset( $this->purchase_unit['items'] ) ) {
 				unset( $this->purchase_unit['items'] );

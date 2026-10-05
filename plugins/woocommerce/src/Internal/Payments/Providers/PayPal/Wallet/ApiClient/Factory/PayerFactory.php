@@ -130,6 +130,7 @@ class PayerFactory {
 			isset( $data->name->given_name ) ? (string) $data->name->given_name : '',
 			isset( $data->name->surname ) ? (string) $data->name->surname : ''
 		);
+		// phpcs:ignore Generic.Commenting.Todo.TaskFound -- Existing follow-up note kept as written.
 		// TODO deal with phones without type instead of passing a invalid type.
 		$phone      = ( isset( $data->phone->phone_number->national_number ) ) ? new PhoneWithType(
 			( isset( $data->phone->phone_type ) ) ? $data->phone->phone_type : 'undefined',
@@ -193,11 +194,8 @@ class PayerFactory {
 		}
 
 		if ( ! is_email( $billing_email ) ) {
-			/*
-			phpcs:disable WordPress.WP.I18n.TextDomainMismatch
-			translators: %s: email address
-			*/
-			throw new RuntimeException( sprintf( __( '%s is not a valid email address.', 'woocommerce' ), esc_html( $billing_email ) ) );
+			/* translators: %s: email address */
+			throw new RuntimeException( sprintf( esc_html__( '%s is not a valid email address.', 'woocommerce' ), esc_html( $billing_email ) ) );
 		}
 
 		return new Payer(

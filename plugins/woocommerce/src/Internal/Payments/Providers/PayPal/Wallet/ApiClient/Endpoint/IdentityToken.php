@@ -114,7 +114,7 @@ class IdentityToken {
 		);
 
 		$vault_enabled               = $this->settings->save_paypal_and_venmo();
-		$subscriptions_mode_vaulting = $this->subscription_mode === SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_VAULTING;
+		$subscriptions_mode_vaulting = SubscriptionHelper::SUBSCRIPTION_MODE_VALUE_VAULTING === $this->subscription_mode;
 
 		if ( $vault_enabled || $subscriptions_mode_vaulting ) {
 			$customer_id = $this->customer_repository->customer_id_for_user( ( $user_id ) );

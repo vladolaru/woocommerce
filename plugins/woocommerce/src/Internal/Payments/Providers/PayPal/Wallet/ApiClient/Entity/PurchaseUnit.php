@@ -112,6 +112,7 @@ class PurchaseUnit {
 	 * @param string        $invoice_id The invoice ID.
 	 * @param string        $soft_descriptor The soft descriptor.
 	 * @param Payments|null $payments The Payments.
+	 * @param array|null    $supplementary_data The supplementary data.
 	 */
 	public function __construct(
 		Amount $amount,
@@ -126,11 +127,10 @@ class PurchaseUnit {
 		?array $supplementary_data = null
 	) {
 
-		$this->amount       = $amount;
-		$this->shipping     = $shipping;
-		$this->reference_id = $reference_id;
-		$this->description  = $description;
-        //phpcs:disable Inpsyde.CodeQuality.ArgumentTypeDeclaration.NoArgumentType
+		$this->amount             = $amount;
+		$this->shipping           = $shipping;
+		$this->reference_id       = $reference_id;
+		$this->description        = $description;
 		$this->items              = array_values(
 			array_filter(
 				$items,
@@ -354,6 +354,11 @@ class PurchaseUnit {
 	public function apply_ditch_items_mismatch_filter( bool $ditched_items_breakdown, array $purchase_unit ): array {
 		/**
 		 * The filter can be used to control when the items and totals breakdown are removed from PayPal order info.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $ditch Whether the items and breakdown are ditched; the default is the value passed in.
+		 * @param PurchaseUnit $purchase_unit The purchase unit.
 		 */
 		$ditch = apply_filters( 'ppcp_ditch_items_breakdown', $ditched_items_breakdown, $this );
 

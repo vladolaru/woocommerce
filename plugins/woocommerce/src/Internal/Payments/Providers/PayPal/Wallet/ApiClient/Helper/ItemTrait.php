@@ -14,12 +14,14 @@ trait ItemTrait {
 	/**
 	 * Cleans up item strings (title and description for example) and prepares them for sending to PayPal.
 	 *
-	 * @param string $string Item string.
+	 * @param string $text Item string.
 	 * @return string
 	 */
-	protected function prepare_item_string( string $string ): string {
-		$string = strip_shortcodes( wp_strip_all_tags( $string ) );
-		return substr( $string, 0, 127 ) ?: '';
+	protected function prepare_item_string( string $text ): string {
+		$text      = strip_shortcodes( wp_strip_all_tags( $text ) );
+		$truncated = substr( $text, 0, 127 );
+
+		return $truncated ? $truncated : '';
 	}
 
 	/**
@@ -29,6 +31,8 @@ trait ItemTrait {
 	 * @return string
 	 */
 	protected function prepare_sku( string $sku ): string {
-		return substr( wp_strip_all_tags( $sku ), 0, 127 ) ?: '';
+		$truncated = substr( wp_strip_all_tags( $sku ), 0, 127 );
+
+		return $truncated ? $truncated : '';
 	}
 }

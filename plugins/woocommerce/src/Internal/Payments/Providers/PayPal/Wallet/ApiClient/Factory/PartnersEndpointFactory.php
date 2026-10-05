@@ -41,26 +41,54 @@ class PartnersEndpointFactory {
 	 */
 	private EnvironmentConfig $partner_id;
 
+	/**
+	 * The seller status factory.
+	 *
+	 * @var SellerStatusFactory
+	 */
 	private SellerStatusFactory $seller_status_factory;
 
+	/**
+	 * The failure registry.
+	 *
+	 * @var FailureRegistry
+	 */
 	private FailureRegistry $failure_registry;
 
+	/**
+	 * The cache.
+	 *
+	 * @var Cache
+	 */
 	private Cache $cache;
 
+	/**
+	 * The bearer factory.
+	 *
+	 * @var PayPalBearerFactory
+	 */
 	private PayPalBearerFactory $bearer_factory;
 
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	private LoggerInterface $logger;
 
 	/**
-	 * @param EnvironmentConfig<string> $paypal_host
-	 * @param EnvironmentConfig<string> $partner_id
-	 * @param SellerStatusFactory       $seller_status_factory
-	 * @param FailureRegistry           $failure_registry
-	 * @param Cache                     $cache
-	 * @param PayPalBearerFactory       $bearer_factory
-	 * @param LoggerInterface           $logger
+	 * PartnersEndpointFactory constructor.
 	 *
-	 * phpcs:disable Squiz.Commenting.FunctionComment.IncorrectTypeHint
+	 * @param EnvironmentConfig   $paypal_host The PayPal API host, per environment.
+	 * @param EnvironmentConfig   $partner_id The partner merchant ID, per environment.
+	 * @param SellerStatusFactory $seller_status_factory The seller status factory.
+	 * @param FailureRegistry     $failure_registry The failure registry.
+	 * @param Cache               $cache The cache.
+	 * @param PayPalBearerFactory $bearer_factory The bearer factory.
+	 * @param LoggerInterface     $logger The logger.
+	 *
+	 * @phpstan-param EnvironmentConfig<string> $paypal_host
+	 * @phpstan-param EnvironmentConfig<string> $partner_id
 	 */
 	public function __construct(
 		EnvironmentConfig $paypal_host,
