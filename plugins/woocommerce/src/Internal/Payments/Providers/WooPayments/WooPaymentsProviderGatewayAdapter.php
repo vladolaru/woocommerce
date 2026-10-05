@@ -622,7 +622,8 @@ class WooPaymentsProviderGatewayAdapter {
 	 * The intent is the earlier request's late response, so it is mapped from its own payment method and customer, never
 	 * the new one, and no token is saved or attached for this attempt's payment method, which was not charged. The shopper
 	 * goes to the order-received page with the "We prevented multiple payments" notice. An intent for another amount than
-	 * the order total fails the order with the duplicate-payment amount mismatch and keeps the key, as money moved.
+	 * the order total, or in another currency, fails the order with the duplicate-payment amount mismatch and keeps the
+	 * key, as money moved.
 	 *
 	 * @param WC_Order            $order       Order being charged.
 	 * @param array<string,mixed> $intent      The order's PaymentIntent that took the payment.
@@ -630,7 +631,7 @@ class WooPaymentsProviderGatewayAdapter {
 	 * @return PaymentOutcome
 	 */
 	private function earlier_payment_outcome( WC_Order $order, array $intent, string $customer_id ): PaymentOutcome {
-		$amount_error = wc_get_container()->get( WooPaymentsDuplicatePaymentPreventionService::class )->get_amount_mismatch_error( $intent, $order );
+		$amount_error = wc_get_container()->get( WooPaymentsDuplicatePaymentPreventionService::class )->get_amount_mismatch_error( $intent, $order, true );
 		if ( $amount_error instanceof \WP_Error ) {
 			return new PaymentOutcome(
 				PaymentOutcome::STATUS_FAILED,

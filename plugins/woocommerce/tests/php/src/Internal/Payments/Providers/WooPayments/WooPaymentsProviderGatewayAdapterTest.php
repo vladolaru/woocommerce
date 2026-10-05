@@ -1271,6 +1271,36 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An earlier payment in another currency than the order's refuses like an amount mismatch, even when the amounts match.
+	 *
+	 * Classic checkout reuses the session's order on a matching cart hash and rewrites its currency and total
+	 * (`class-wc-checkout.php:413-436`), so a shopper who switched currency after the timeout can bring the order back with
+	 * a total whose minor units equal the paid intent's (review 44 F5). The duplicate-payment guards compare amounts only, as
+	 * client 11.1.0 does; this lookup also compares the currency.
+	 */
+	public function test_earlier_payment_in_another_currency_refuses_and_keeps_the_key(): void {
+		$order                  = $this->create_woopayments_order();
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			self::platform_bad_gateway(),
+			self::stripe_idempotency_error( 'key_first' ),
+			self::intent_list( array( self::order_intent( $order, 'pi_earlier', 'succeeded', 1000, array( 'currency' => 'eur' ) ) ) ),
+		);
+		$sut                    = $this->create_timeout_adapter( $http_client, 'cus_sent' );
+		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
+
+		$outcome = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_second' );
+		$fresh   = wc_get_order( $order->get_id() );
+
+		$this->assertCount( 3, $http_client->requests, 'The new card must not be charged.' );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'duplicate_payment_amount_mismatch', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
+		$this->assertStringContainsString( '&euro;', (string) ( $outcome->get_data()[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? '' ), 'The paid amount shows in the intent\'s currency.' );
+		$this->assertSame( 'key_first', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$this->assertSame( 'cus_sent', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['customer'] ?? null );
+	}
+
+	/**
 	 * @testdox When the earlier request left $_dataName for the order, the key and record are retired and the new card is charged once under the attempt key.
 	 *
 	 * The list is read-after-write consistent for a finished create (https://docs.stripe.com/search, Step 0 check 2) and

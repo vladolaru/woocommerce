@@ -474,19 +474,25 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	/**
 	 * Get an amount mismatch error when the intent amount differs from the order total.
 	 *
-	 * Also used when a charge refused under a kept key finds that the earlier request paid the order.
+	 * Also used when a charge refused under a kept key finds that the earlier request paid the order; that caller also
+	 * compares the currency, since the order may have been reused in another currency. The duplicate-payment guards
+	 * compare the amount only, as client 11.1.0 does.
 	 *
 	 * @internal
 	 *
-	 * @param array<string,mixed> $intent Intent response.
-	 * @param WC_Order            $order  Order.
+	 * @param array<string,mixed> $intent           Intent response.
+	 * @param WC_Order            $order            Order.
+	 * @param bool                $compare_currency Whether an intent in another currency than the order's is a mismatch too.
 	 * @return WP_Error|null
 	 */
-	public function get_amount_mismatch_error( array $intent, WC_Order $order ): ?WP_Error {
+	public function get_amount_mismatch_error( array $intent, WC_Order $order, bool $compare_currency = false ): ?WP_Error {
 		$charged_amount       = isset( $intent['amount'] ) && is_numeric( $intent['amount'] ) ? (int) $intent['amount'] : 0;
 		$order_total_in_cents = $this->get_order_data_service()->prepare_amount( (float) $order->get_total(), (string) $order->get_currency() );
-
-		if ( $order_total_in_cents === $charged_amount ) {
+		$charged_currency     = (string) $order->get_currency();
+		$intent_currency      = isset( $intent['currency'] ) && is_string( $intent['currency'] ) ? strtoupper( $intent['currency'] ) : '';
+		if ( $compare_currency && strtoupper( $charged_currency ) !== $intent_currency ) {
+			$charged_currency = $intent_currency;
+		} elseif ( $order_total_in_cents === $charged_amount ) {
 			return null;
 		}
 
@@ -495,7 +501,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 			sprintf(
 				/* translators: 1: charged amount, 2: current order total. */
 				__( 'This order was already paid for %1$s, but the order total has since changed to %2$s, so we prevented an overpayment. Please create a new order for any additional items.', 'woocommerce' ),
-				wc_price( WooPaymentsCurrencyUtils::amount_from_minor_units( $charged_amount, (string) $order->get_currency() ), array( 'currency' => $order->get_currency() ) ),
+				wc_price( WooPaymentsCurrencyUtils::amount_from_minor_units( $charged_amount, $charged_currency ), array( 'currency' => $charged_currency ) ),
 				wc_price( (float) $order->get_total(), array( 'currency' => $order->get_currency() ) )
 			)
 		);
