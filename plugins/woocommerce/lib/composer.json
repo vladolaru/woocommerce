@@ -21,10 +21,12 @@
 	},
 	"scripts": {
 		"post-install-cmd": [
-			"\"../vendor/bin/mozart\" compose"
+			"\"../vendor/bin/mozart\" compose",
+			"rm -rf packages/Psr/Log/Test"
 		],
 		"post-update-cmd": [
-			"\"../vendor/bin/mozart\" compose"
+			"\"../vendor/bin/mozart\" compose",
+			"rm -rf packages/Psr/Log/Test"
 		]
 	},
 	"extra": {
