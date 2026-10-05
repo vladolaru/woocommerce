@@ -1,4 +1,3 @@
-/* global describe, test, expect */
 import { strAddWord, strRemoveWord } from './Utils';
 
 describe( 'strAddWord', () => {

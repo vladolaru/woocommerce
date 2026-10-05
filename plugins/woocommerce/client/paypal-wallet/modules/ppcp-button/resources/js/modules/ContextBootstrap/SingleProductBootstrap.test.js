@@ -1,4 +1,3 @@
-/* global jest, describe, test, expect, beforeEach, afterEach */
 jest.mock( '@ppcp-button/Helper/UpdateCart', () =>
 	jest.fn().mockImplementation( () => ( {} ) )
 );

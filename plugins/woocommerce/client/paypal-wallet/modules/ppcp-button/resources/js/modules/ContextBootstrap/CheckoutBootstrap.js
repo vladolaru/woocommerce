@@ -1,5 +1,3 @@
-/* global PayPalCommerceGateway */
-
 import CheckoutActionHandler from '../ActionHandler/CheckoutActionHandler';
 import { setVisible, setVisibleByClass } from '../Helper/Hiding';
 import {

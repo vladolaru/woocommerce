@@ -1,4 +1,3 @@
-/* global describe, test, expect */
 import { getUserIdToken } from './ConfigProcessor';
 
 const baseConfig = ( overrides = {} ) => ( {

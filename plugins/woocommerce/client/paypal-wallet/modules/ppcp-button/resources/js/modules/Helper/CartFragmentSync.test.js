@@ -1,4 +1,3 @@
-/* global describe, test, expect, beforeEach, afterEach, jest */
 import { initCartFragmentSync } from './CartFragmentSync';
 
 describe( 'initCartFragmentSync', () => {

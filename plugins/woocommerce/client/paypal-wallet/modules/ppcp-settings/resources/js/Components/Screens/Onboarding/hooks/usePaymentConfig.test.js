@@ -1,4 +1,3 @@
-/* global describe, test, expect, jest */
 import { renderHook } from '@testing-library/react';
 import { usePaymentConfig } from './usePaymentConfig';
 
