@@ -789,6 +789,32 @@
 		setSeparatorHidden( true );
 	}
 
+	// Client 11.1.0 event-handlers.js:290-302: the whole page is blocked while the wallet sheet is open, so the form
+	// behind it cannot change the sheet's cart. Without jQuery BlockUI on the page both do nothing (register row 238).
+	function blockPage() {
+		if ( typeof $.blockUI === 'function' ) {
+			$.blockUI( {
+				message: null,
+				overlayCSS: {
+					background: '#fff',
+					opacity: 0.6,
+				},
+			} );
+		}
+	}
+
+	function unblockPage() {
+		if ( typeof $.unblockUI === 'function' ) {
+			$.unblockUI();
+		}
+	}
+
+	// Client 11.1.0 completePayment() (shortcode-buttons-express/index.js:214-217, event-handlers.js:316-318).
+	function completePayment( url ) {
+		blockPage();
+		navigate( url );
+	}
+
 	function setError( message ) {
 		var notices = document.querySelector( '.woocommerce-notices-wrapper' );
 		var error;
@@ -1298,7 +1324,7 @@
 					throw new Error( GENERIC_PAYMENT_ERROR_MESSAGE );
 				}
 
-				navigate( returnUrl.href );
+				completePayment( returnUrl.href );
 			} );
 	}
 
@@ -1349,7 +1375,7 @@
 			return confirmIntentAndRedirect( confirmation );
 		}
 
-		navigate( redirectUrl );
+		completePayment( redirectUrl );
 		return Promise.resolve();
 	}
 
@@ -2643,6 +2669,7 @@
 					( error && error.message ) ||
 					'Unable to add this product to the cart.';
 				setError( productAddToCartErrorMessage );
+				unblockPage();
 				throw error;
 			}
 		);
@@ -2681,6 +2708,7 @@
 
 				if ( cartCurrencyDriftedFromElement( cartData ) ) {
 					setError( getCurrencyMismatchMessage( cartData ) );
+					unblockPage();
 					event.reject();
 					return;
 				}
@@ -2728,6 +2756,7 @@
 			.then( function ( cartData ) {
 				if ( cartCurrencyDriftedFromElement( cartData ) ) {
 					setError( getCurrencyMismatchMessage( cartData ) );
+					unblockPage();
 					event.reject();
 					return;
 				}
@@ -2950,6 +2979,8 @@
 		} );
 
 		expressElement.on( 'click', async function ( event ) {
+			var clickOptions;
+
 			// If login is required for checkout, display the redirect
 			// confirmation dialog instead of opening the wallet sheet.
 			if ( config.login_confirmation ) {
@@ -2982,12 +3013,15 @@
 					}
 				}
 
-				event.resolve( getClickOptions() );
+				clickOptions = getClickOptions();
+				blockPage();
+				event.resolve( clickOptions );
 			} catch ( error ) {
 				setError(
 					( error && error.message ) ||
 						GENERIC_PAYMENT_ERROR_MESSAGE
 				);
+				unblockPage();
 				await emptyProductCart();
 			}
 		} );
@@ -3038,16 +3072,18 @@
 					( error && error.message ) ||
 						GENERIC_PAYMENT_ERROR_MESSAGE
 				);
+				unblockPage();
 				await emptyProductCart();
 			}
 		} );
 
-		// Client 11.1.0 (shortcode-buttons-express/index.js:432-446): once the product reached the cart, empty it; the
-		// button stays as it is.
+		// Client 11.1.0 (shortcode-buttons-express/index.js:432-446, event-handlers.js:320-326): once the product reached
+		// the cart, empty it, and unblock the page; the button stays as it is.
 		expressElement.on( 'cancel', function () {
 			productAddToCartPromise
 				.catch( function () {} )
 				.then( emptyProductCart );
+			unblockPage();
 		} );
 
 		expressElement.mount( '#wcpay-express-checkout-element' );

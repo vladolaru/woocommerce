@@ -303,6 +303,10 @@ describe( 'WooPayments express checkout', () => {
 		};
 		window.alert = jest.fn();
 		const jQueryMock = createJQueryMock();
+		// jQuery BlockUI's page-level `$.blockUI( options )` / `$.unblockUI()`, loaded by WooCommerce's `woocommerce`
+		// script (`wc-jquery-blockui`, includes/class-wc-frontend-scripts.php); both return nothing useful.
+		jQueryMock.blockUI = jest.fn();
+		jQueryMock.unblockUI = jest.fn();
 		global.jQuery = jQueryMock;
 		global.$ = jQueryMock;
 		window.jQuery = jQueryMock;
@@ -3903,6 +3907,269 @@ describe( 'WooPayments express checkout', () => {
 					data: { package_id: 'sub_month_0', rate_id: 'flat_rate:3' },
 				} )
 			);
+		} );
+	} );
+
+	// Client 11.1.0 event-handlers.js:290-326: the whole page is blocked on every wallet click (onClickHandler), and
+	// unblocked on abort (onAbortPaymentHandler: failed add-to-cart, currency drift, failed confirm) and on cancel
+	// (onCancelHandler); a completed payment blocks it again before leaving (onCompletePaymentHandler). Event shapes
+	// (https://docs.stripe.com/js.md): `click` carries expressPaymentType and resolve ("expressCheckoutElement.on('click',
+	// handler)"); `cancel` takes no payload and fires when the customer dismisses the payment interface
+	// ("element.on('cancel', handler)").
+	describe( 'the page is locked while the wallet sheet is open', () => {
+		const PAGE_LOCK_OPTIONS = {
+			message: null,
+			overlayCSS: {
+				background: '#fff',
+				opacity: 0.6,
+			},
+		};
+
+		async function mountCheckoutWallet() {
+			require( '../woopayments-express-checkout' );
+			await bodyEventHandlers.updated_checkout();
+			await flushPromises();
+		}
+
+		test( 'locks the page when the shopper opens the sheet on a product page and unlocks it on cancel', async () => {
+			const resolveClick = jest.fn();
+			setProductPage();
+			// Store API add-item answer for the tokenized cart (docs/apis/store-api/resources-endpoints/cart.md, "Add Item").
+			window.wp.apiFetch.mockResolvedValue(
+				getStoreApiResponse(
+					{
+						needs_shipping: false,
+						totals: {
+							total_price: '2500',
+							total_refund: '0',
+							currency_code: 'USD',
+						},
+						items: [],
+					},
+					{ 'X-WooPayments-Tokenized-Cart-Session': 'cart-session-token' }
+				)
+			);
+
+			require( '../woopayments-express-checkout' );
+			await flushPromises();
+			await expressHandlers.click( {
+				expressPaymentType: 'apple_pay',
+				resolve: resolveClick,
+			} );
+
+			expect( window.jQuery.blockUI ).toHaveBeenCalledTimes( 1 );
+			expect( window.jQuery.blockUI ).toHaveBeenCalledWith( PAGE_LOCK_OPTIONS );
+			expect(
+				window.jQuery.blockUI.mock.invocationCallOrder[ 0 ]
+			).toBeLessThan( resolveClick.mock.invocationCallOrder[ 0 ] );
+			expect( window.jQuery.unblockUI ).not.toHaveBeenCalled();
+
+			expressHandlers.cancel();
+			await flushPromises();
+
+			expect( window.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
+		} );
+
+		test( 'locks the page when the shopper opens the sheet on classic checkout', async () => {
+			await mountCheckoutWallet();
+
+			await expressHandlers.click( {
+				expressPaymentType: 'google_pay',
+				resolve: jest.fn(),
+			} );
+
+			expect( window.jQuery.blockUI ).toHaveBeenCalledWith( PAGE_LOCK_OPTIONS );
+		} );
+
+		test( 'does not lock the page when the click asks the shopper to log in', async () => {
+			window.wcpayExpressCheckoutParams.login_confirmation = {
+				message: 'Log in to pay with **Apple Pay**',
+				redirect_url: 'https://example.test/my-account/',
+			};
+			const confirmDialog = jest
+				.spyOn( window, 'confirm' )
+				.mockImplementation( () => false );
+			await mountCheckoutWallet();
+
+			await expressHandlers.click( {
+				expressPaymentType: 'apple_pay',
+				resolve: jest.fn(),
+			} );
+
+			expect( confirmDialog ).toHaveBeenCalled();
+			expect( window.jQuery.blockUI ).not.toHaveBeenCalled();
+			confirmDialog.mockRestore();
+		} );
+
+		test( 'unlocks the page when the wallet payment fails', async () => {
+			window.wp.apiFetch
+				.mockResolvedValueOnce( getCartResponse() )
+				// Store API checkout error (docs/apis/store-api/resources-endpoints/checkout.md, error response:
+				// code, message, data.status).
+				.mockRejectedValueOnce( {
+					code: 'woocommerce_rest_checkout_process_payment_error',
+					message: 'Your card was declined.',
+					data: { status: 400 },
+				} );
+			await mountCheckoutWallet();
+			await expressHandlers.click( { resolve: jest.fn() } );
+
+			// Express Checkout Element `confirm` event with billingDetails (https://docs.stripe.com/js.md,
+			// "expressCheckoutElement.on('confirm', handler)").
+			await expressHandlers.confirm( {
+				billingDetails: {
+					email: 'shopper@example.test',
+					name: 'Ada Lovelace',
+				},
+			} );
+
+			expect( window.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
+			expect(
+				document.querySelector( '.woocommerce-notices-wrapper' ).textContent
+			).toBe( 'Your card was declined.' );
+		} );
+
+		test( 'unlocks the page when the product cannot be added to the sheet\'s cart', async () => {
+			setProductPage();
+			// With `parse: false` @wordpress/api-fetch rejects with the fetch Response itself for a non-2xx status
+			// (api-fetch src/utils/response.js:72-74, parseAndThrowError).
+			window.wp.apiFetch
+				.mockRejectedValueOnce( { status: 500, ok: false } )
+				.mockResolvedValue( getStoreApiResponse( { items: [] }, {} ) );
+
+			require( '../woopayments-express-checkout' );
+			await flushPromises();
+			await expressHandlers.click( { resolve: jest.fn() } );
+			await flushPromises();
+
+			expect( window.jQuery.blockUI ).toHaveBeenCalledTimes( 1 );
+			expect( window.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
+		} );
+
+		// The Store API cart answers in the currency the chosen address maps to (cart.md "Cart Response",
+		// totals.currency_code); the sheet stays in the currency the Element booted with.
+		function getCartInCurrency( currency ) {
+			return Object.assign( getCartResponse(), {
+				totals: {
+					total_price: '5000',
+					total_refund: '0',
+					currency_code: currency,
+				},
+				shipping_rates: [],
+			} );
+		}
+
+		test( 'unlocks the page when the address chosen in the sheet needs another currency', async () => {
+			const rejectShipping = jest.fn();
+			window.wp.apiFetch
+				.mockResolvedValueOnce( getCartResponse() )
+				.mockResolvedValueOnce( getCartInCurrency( 'EUR' ) );
+			await mountCheckoutWallet();
+			await expressHandlers.click( { resolve: jest.fn() } );
+
+			// `shippingaddresschange`: name, address, resolve, reject
+			// (https://docs.stripe.com/js/elements_object/express_checkout_element_shippingaddresschange_event).
+			await expressHandlers.shippingaddresschange( {
+				name: 'Ada Lovelace',
+				address: {
+					city: 'Berlin',
+					state: '',
+					postal_code: '10115',
+					country: 'DE',
+				},
+				resolve: jest.fn(),
+				reject: rejectShipping,
+			} );
+
+			expect( rejectShipping ).toHaveBeenCalled();
+			expect( window.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
+		} );
+
+		test( 'unlocks the page when the rate chosen in the sheet needs another currency', async () => {
+			const rejectRate = jest.fn();
+			window.wp.apiFetch
+				.mockResolvedValueOnce( getCartResponse() )
+				.mockResolvedValueOnce( getCartInCurrency( 'EUR' ) );
+			await mountCheckoutWallet();
+			await expressHandlers.click( { resolve: jest.fn() } );
+
+			// `shippingratechange`: shippingRate, resolve, reject (https://docs.stripe.com/js.md, "Handle shippingratechange event").
+			await expressHandlers.shippingratechange( {
+				shippingRate: { id: 'flat_rate:1', amount: 500, displayName: 'Flat rate' },
+				resolve: jest.fn(),
+				reject: rejectRate,
+			} );
+
+			expect( rejectRate ).toHaveBeenCalled();
+			expect( window.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
+		} );
+
+		test.each( [
+			[
+				'straight to the order page',
+				// Store API checkout success (checkout.md "Process Order and Payment": payment_result.redirect_url).
+				() => ( {
+					payment_result: {
+						payment_status: 'success',
+						redirect_url: 'https://example.test/checkout/order-received/77/',
+						payment_details: [],
+					},
+				} ),
+			],
+			[ 'after confirming a 3DS payment', () => getConfirmationCheckoutResponse( 77 ) ],
+		] )(
+			'locks the page again before leaving %s',
+			async ( path, getCheckoutResponse ) => {
+				const navigate = jest.fn();
+				// stripe.handleNextAction() resolves with `{ paymentIntent }` or `{ error }` (https://docs.stripe.com/js.md,
+				// "stripe.handleNextAction(options)").
+				stripe.handleNextAction = jest.fn().mockResolvedValue( {
+					paymentIntent: { id: 'pi_3ds', status: 'succeeded' },
+				} );
+				mockOrderStatusUpdate( 'https://example.test/checkout/order-received/77/' );
+				window.wp.apiFetch
+					.mockResolvedValueOnce( getCartResponse() )
+					.mockResolvedValueOnce( getCheckoutResponse() );
+				require( '../woopayments-express-checkout' ).__test__.setNavigate(
+					navigate
+				);
+				await bodyEventHandlers.updated_checkout();
+				await flushPromises();
+				await expressHandlers.click( { resolve: jest.fn() } );
+
+				await expressHandlers.confirm( {
+					billingDetails: {
+						email: 'shopper@example.test',
+						name: 'Ada Lovelace',
+					},
+				} );
+
+				expect( navigate ).toHaveBeenCalledWith(
+					'https://example.test/checkout/order-received/77/'
+				);
+				expect( window.jQuery.blockUI ).toHaveBeenCalledTimes( 2 );
+				expect(
+					window.jQuery.blockUI.mock.invocationCallOrder[ 1 ]
+				).toBeLessThan( navigate.mock.invocationCallOrder[ 0 ] );
+			}
+		);
+
+		// Register row 238 (kept): without jQuery BlockUI on the page the lock and unlock do nothing, and the sheet
+		// still opens.
+		test( 'opens and cancels the sheet when jQuery BlockUI is not loaded', async () => {
+			const resolveClick = jest.fn();
+			delete window.jQuery.blockUI;
+			delete window.jQuery.unblockUI;
+			await mountCheckoutWallet();
+
+			await expressHandlers.click( { resolve: resolveClick } );
+			expressHandlers.cancel();
+			await flushPromises();
+
+			expect( resolveClick ).toHaveBeenCalled();
+			expect(
+				document.querySelector( '.woocommerce-notices-wrapper' ).textContent
+			).toBe( '' );
 		} );
 	} );
 
