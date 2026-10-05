@@ -230,6 +230,84 @@ describe( 'WooPayments WooPay checkout', () => {
 		expect( document.querySelector( '.woopay-otp-iframe' ) ).not.toBeNull();
 	} );
 
+	test.each( [
+		[
+			'submits the product form when an extension rejects the add-to-cart',
+			// The store's wc-ajax add_to_cart answer for a failed woocommerce_add_to_cart_validation (HTTP 400).
+			{ status: 400, responseJSON: { error: true, submit: true } },
+			true,
+		],
+		[
+			'keeps the generic error for another add-to-cart failure',
+			// The store's answer for an unknown product (HTTP 404).
+			{
+				status: 404,
+				responseJSON: {
+					error: {
+						code: 'invalid_product_id',
+						message: 'Invalid product ID.',
+					},
+				},
+			},
+			false,
+		],
+		[
+			'reads the JSON body when jQuery left it unparsed',
+			{
+				status: 400,
+				responseText: JSON.stringify( { error: true, submit: true } ),
+			},
+			true,
+		],
+	] )( '%s', async ( name, jqXHR, submits ) => {
+		// Client 11.1.0 woopay-express-checkout-button.js:186-196 submits the product form on res.submit so the extension's
+		// notice shows. jQuery hands .fail() the jqXHR, whose responseJSON holds a JSON body
+		// (https://api.jquery.com/jQuery.ajax/#jqXHR).
+		document.body.innerHTML =
+			'<form class="cart">' +
+			'<input type="hidden" name="product_id" value="123" />' +
+			'<button type="submit" class="single_add_to_cart_button" name="add-to-cart" value="123">Add to cart</button>' +
+			'<div id="wcpay-woopay-button" data-product_page="1"><div class="woopay-express-button is-placeholder"></div></div>' +
+			'<div class="wcpay-core-payment-errors" hidden></div>' +
+			'</form>';
+		window.wcpay_core_woopay_config.addToCartNonce = 'add-to-cart-nonce';
+		window.wcpay_core_woopay_config.confirmationErrorMessage =
+			'There was a problem processing the payment. Please try again.';
+		window.wcpay_core_woopay_config.woopayButton.context = 'product';
+		const submit = jest
+			.spyOn( window.HTMLFormElement.prototype, 'submit' )
+			.mockImplementation( () => {} );
+		global.jQuery.post = jest.fn( () => {
+			const request = {
+				done: jest.fn( () => request ),
+				fail: jest.fn( ( callback ) => {
+					callback( jqXHR );
+					return request;
+				} ),
+			};
+			return request;
+		} );
+
+		try {
+			require( '../woopayments-woopay' );
+			document.querySelector( '#wcpay-woopay-button button' ).click();
+			await flushPromises();
+
+			expect( submit ).toHaveBeenCalledTimes( submits ? 1 : 0 );
+			expect(
+				document.querySelector( '.wcpay-core-payment-errors' )
+					.textContent
+			).toBe(
+				submits
+					? ''
+					: 'There was a problem processing the payment. Please try again.'
+			);
+			expect( document.querySelector( '.woopay-otp-iframe' ) ).toBeNull();
+		} finally {
+			submit.mockRestore();
+		}
+	} );
+
 	test( 'adds a classic variable product when its button has no value', async () => {
 		document.body.innerHTML =
 			'<form class="variations_form cart">' +

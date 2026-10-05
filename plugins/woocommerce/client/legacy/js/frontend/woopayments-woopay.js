@@ -1344,11 +1344,37 @@
 		} );
 
 		if ( request.fail ) {
-			request.fail( function () {
-				setError( config.confirmationErrorMessage || '' );
+			request.fail( function ( jqXHR ) {
+				var form;
+
 				isWooPayRequesting = false;
+				// A failed woocommerce_add_to_cart_validation answers 400 { error: true, submit: true }: submit the product
+				// form so the extension's own notice shows, as client 11.1.0 does (woopay-express-checkout-button.js:186-196).
+				if ( getAddToCartFailure( jqXHR ).submit ) {
+					form = getProductFormElement();
+					if ( form ) {
+						form.submit();
+						return;
+					}
+				}
+
+				setError( config.confirmationErrorMessage || '' );
 			} );
 		}
+	}
+
+	function getAddToCartFailure( jqXHR ) {
+		var body = jqXHR && jqXHR.responseJSON;
+
+		if ( ! body && jqXHR && typeof jqXHR.responseText === 'string' ) {
+			try {
+				body = JSON.parse( jqXHR.responseText );
+			} catch ( error ) {
+				body = null;
+			}
+		}
+
+		return body && typeof body === 'object' ? body : {};
 	}
 
 	function initWooPay( event ) {
