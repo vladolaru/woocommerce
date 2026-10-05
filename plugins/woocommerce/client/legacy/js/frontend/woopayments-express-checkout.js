@@ -933,6 +933,21 @@
 	}
 
 	/**
+	 * The text of an error that may carry notice markup, as client 11.1.0 getErrorMessageFromNotice()
+	 * (express-checkout/utils/error-messages.ts:7-13) gets it. DOMParser builds an inert document, so no script runs
+	 * and no image loads, and the whole text is kept where the client keeps only the first node's.
+	 *
+	 * @param {string} notice Error message or notice HTML.
+	 * @return {string} Plain text.
+	 */
+	function getErrorMessageFromNotice( notice ) {
+		return (
+			new window.DOMParser().parseFromString( String( notice ), 'text/html' )
+				.body.textContent || ''
+		).trim();
+	}
+
+	/**
 	 * Client 11.1.0 abortPayment() (shortcode-buttons-express/index.js:186-206): earlier errors go, the new one goes
 	 * into the first notices wrapper and the page scrolls to it. The notice uses core's error markup
 	 * (templates/notices/error.php), whose role="alert" has screen readers announce it.
@@ -947,6 +962,10 @@
 		if ( ! message ) {
 			return;
 		}
+
+		message =
+			getErrorMessageFromNotice( message ) ||
+			GENERIC_PAYMENT_ERROR_MESSAGE;
 
 		document
 			.querySelectorAll( '.woocommerce-error' )

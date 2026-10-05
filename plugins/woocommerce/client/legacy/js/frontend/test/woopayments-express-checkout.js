@@ -4840,6 +4840,76 @@ describe( 'WooPayments express checkout', () => {
 			).toBe( errors[ 0 ] );
 		} );
 
+		// Client 11.1.0 getErrorMessageFromNotice() (express-checkout/utils/error-messages.ts:7-13) shows the text of a
+		// notice, not its markup.
+		test.each( [
+			[
+				'a Store API error with notice markup',
+				() =>
+					// Store API checkout error (docs/apis/store-api/resources-endpoints/checkout.md, error response); the
+					// message carries the notice HTML WooCommerce added (wc_add_notice() accepts markup).
+					Promise.reject( {
+						code: 'woocommerce_rest_checkout_process_payment_error',
+						message:
+							'\n\t<strong>Error:</strong> Your card was declined. <a href="https://example.test/help">Get help</a>\n',
+						data: { status: 400 },
+					} ),
+				'Error: Your card was declined. Get help',
+			],
+			[
+				'a failed payment result with markup in errorMessage',
+				() =>
+					// Store API checkout response (checkout.md "Process Order and Payment": payment_result.payment_status,
+					// payment_details[] of key/value).
+					Promise.resolve( {
+						payment_result: {
+							payment_status: 'failure',
+							payment_details: [
+								{
+									key: 'errorMessage',
+									value: 'Card declined &amp; <em>not</em> charged.<img src="x" alt="">',
+								},
+							],
+							redirect_url: '',
+						},
+					} ),
+				'Card declined & not charged.',
+			],
+			[
+				'an escaped message whose text has angle brackets',
+				() =>
+					// Store API checkout error (docs/apis/store-api/resources-endpoints/checkout.md, error response).
+					Promise.reject( {
+						code: 'woocommerce_rest_invalid_coupon',
+						message: 'Coupon &lt;b&gt;SAVE10&lt;/b&gt; is not valid.',
+						data: { status: 400 },
+					} ),
+				'Coupon <b>SAVE10</b> is not valid.',
+			],
+		] )( 'shows the text of %s, never its markup', async ( label, checkoutAnswer, expected ) => {
+			setCheckoutWithEarlierErrors();
+			window.wp.apiFetch
+				.mockResolvedValueOnce( getCartResponse() )
+				.mockImplementationOnce( checkoutAnswer );
+			require( '../woopayments-express-checkout' );
+			await bodyEventHandlers.updated_checkout();
+			await flushPromises();
+			await expressHandlers.click( { resolve: jest.fn() } );
+
+			// Express Checkout Element `confirm` event (https://docs.stripe.com/js.md, "expressCheckoutElement.on('confirm', handler)").
+			await expressHandlers.confirm( {
+				billingDetails: {
+					email: 'shopper@example.test',
+					name: 'Ada Lovelace',
+				},
+			} );
+			await flushPromises();
+
+			const error = document.querySelector( '.woocommerce-error' );
+			expect( error.textContent ).toBe( expected );
+			expect( error.querySelector( 'strong, a, em, img, b' ) ).toBeNull();
+		} );
+
 		test( 'removes earlier errors even when the page has no notices wrapper', async () => {
 			setCheckoutWithEarlierErrors();
 			document
