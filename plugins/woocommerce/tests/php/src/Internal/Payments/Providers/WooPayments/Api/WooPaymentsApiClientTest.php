@@ -303,6 +303,11 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	 * Pinned WooPayments 11.1.0: Refund_Charge::get_api() and ::DEFAULT_PARAMS.
 	 */
 	public function test_request_lifts_idempotency_key_and_preserves_filtered_params(): void {
+		// Reduced fixture: the platform answers with the Stripe Refund object, payment_intent expanded (wpcom
+		// wp-content/rest-api-plugins/endpoints/wcpay/class-refunds-controller.php:114-149, process_refund();
+		// Stripe API reference, "The Refund object"); a full recorded body is in Fixtures/rec-5a-refunds.json.
+		// Only `id` is kept: this test is about the request. WooPayments 11.1.0 reads currency, id, status and
+		// balance_transaction from it (includes/class-wc-payment-gateway-wcpay.php:2978, :3009).
 		$http_client           = new FakeWooPaymentsHttpClient();
 		$http_client->blog_id  = 123;
 		$http_client->response = array(
@@ -545,6 +550,10 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	 * @testdox Should generate reference transport headers for non-GET requests without caller idempotency keys.
 	 */
 	public function test_post_request_generates_transport_headers_without_caller_idempotency_key(): void {
+		// Reduced fixture: the platform proxies Stripe POST /v1/customers and returns the Stripe Customer object
+		// (wpcom wp-content/rest-api-plugins/endpoints/wcpay/class-customers-controller.php:200-223,
+		// create_customer(); Stripe API reference, "The Customer object"). Only `id` is kept, the one field
+		// WooPayments 11.1.0 reads (includes/wc-payment-api/class-wc-payments-api-client.php:1376-1384).
 		$http_client           = new FakeWooPaymentsHttpClient();
 		$http_client->blog_id  = 123;
 		$http_client->response = array(
@@ -2318,6 +2327,11 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			$captured_url  = $url;
 			$captured_args = $parsed_args;
 
+			// Reduced fixture: the platform returns a JSON list of items carrying id, type, category, title,
+			// description, priority, required, icon and an optional notice (wpcom
+			// wp-content/rest-api-plugins/endpoints/wcpay/service/class-payment-methods-service.php:179-203,
+			// item defaults :345-360, notice :378-390). Only `id` and `title` are kept, the two keys
+			// WooPayments 11.1.0 requires of every item (includes/class-wc-payments-account.php:698-713).
 			return array(
 				'response' => array( 'code' => 200 ),
 				'headers'  => array( 'content-type' => 'application/json' ),

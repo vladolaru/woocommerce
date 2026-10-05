@@ -3757,9 +3757,16 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 				unset( $idempotency_key );
 				$this->last_request_data = $request_data;
 
+				// Reduced fixture of a just-confirmed SEPA Direct Debit PaymentIntent. SEPA is a delayed
+				// notification method: once submitted the intent is `processing` and reaches `succeeded` later
+				// (Stripe docs, https://docs.stripe.com/payments/sepa-debit/accept-a-payment, "Confirm the
+				// PaymentIntent succeeded"). The platform returns the intent with a `charges` list, as recorded
+				// for a card in Fixtures/rec-t3-basic-card.json; WooPayments 11.1.0 reads its total_count and
+				// data (includes/wc-payment-api/class-wc-payments-api-client.php:2403). The list is left empty
+				// and amount, created and metadata are omitted: this test checks only the request.
 				return array(
 					'id'             => 'pi_sepa',
-					'status'         => 'succeeded',
+					'status'         => 'processing',
 					'client_secret'  => 'secret_sepa',
 					'customer'       => 'cus_native',
 					'payment_method' => 'pm_sepa',
