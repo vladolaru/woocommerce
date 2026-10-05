@@ -15,6 +15,8 @@
 	// What the product-page button was priced from when the sheet opened; the click puts the sheet's working cart
 	// in `cachedCartData`, and closing the sheet brings this back.
 	var productPricedCartData = null;
+	// The last address the shopper chose in the open sheet; cancel puts it into the page form.
+	var lastSelectedAddress = null;
 	var resolvedProductCurrency = '';
 	var productCurrencyResolutionPromise = null;
 	var productEnabledMethodCeiling = Array.isArray( config.enabled_methods )
@@ -806,6 +808,94 @@
 	function unblockPage() {
 		if ( typeof $.unblockUI === 'function' ) {
 			$.unblockUI();
+		}
+	}
+
+	/**
+	 * Client 11.1.0 updateShortcodeField() (utils/shipping-fields.js:28-53): a country or state select takes the option
+	 * whose value or name matches, any other field takes the value.
+	 *
+	 * @param {string} formSelector Selector of the form holding the field.
+	 * @param {string} fieldName    Field name.
+	 * @param {string} value        New value.
+	 */
+	function updateShortcodeField( formSelector, fieldName, value ) {
+		var field = document.querySelector(
+			formSelector + ' [name="' + fieldName + '"]'
+		);
+		var match;
+
+		if ( ! field ) {
+			return;
+		}
+
+		if ( field.tagName === 'SELECT' && /country|state/.test( fieldName ) ) {
+			match = Array.from( field.options ).find( function ( option ) {
+				return (
+					option.value === value ||
+					option.textContent.trim().toLowerCase() ===
+						value.toLowerCase()
+				);
+			} );
+
+			if ( match ) {
+				field.value = match.value;
+				$( field ).trigger( 'change' ).trigger( 'close' );
+			}
+		} else {
+			field.value = value;
+			$( field ).trigger( 'change' );
+		}
+	}
+
+	/**
+	 * Put the address chosen in the sheet into the classic cart's shipping calculator or the classic checkout's billing
+	 * fields. Client 11.1.0 updateShippingAddressUI() and updateShortcodeShippingUI() (utils/shipping-fields.js:70-127):
+	 * nothing on other pages, nothing for CA and GB, whose wallet postcodes are redacted.
+	 *
+	 * @param {Object} eventAddress The `shippingaddresschange` event's address.
+	 */
+	function updateShippingAddressUI( eventAddress ) {
+		var context = getButtonContext();
+		var address;
+		var recalculateButton;
+
+		if (
+			( context !== 'cart' && context !== 'checkout' ) ||
+			[ 'CA', 'GB' ].indexOf( eventAddress.country ) !== -1
+		) {
+			return;
+		}
+
+		address = normalizeAddress( eventAddress );
+		[ 'country', 'state', 'city', 'postcode' ].forEach( function ( key ) {
+			if ( ! address[ key ] ) {
+				return;
+			}
+
+			if ( context === 'cart' ) {
+				updateShortcodeField(
+					'form.woocommerce-shipping-calculator',
+					'calc_shipping_' + key,
+					address[ key ]
+				);
+			} else {
+				updateShortcodeField(
+					'form.woocommerce-checkout',
+					'billing_' + key,
+					address[ key ]
+				);
+			}
+		} );
+
+		if ( context === 'cart' ) {
+			recalculateButton = document.querySelector(
+				'form.woocommerce-shipping-calculator [name="calc_shipping"]'
+			);
+
+			if ( recalculateButton ) {
+				recalculateButton.click();
+			}
 		}
 	}
 
@@ -2687,6 +2777,10 @@
 	}
 
 	function handleShippingAddressChange( event ) {
+		// Recorded before the request, so a change the store could not price still counts (client 11.1.0
+		// event-handlers.js:93).
+		lastSelectedAddress = event.address;
+
 		// Please note that `event.address` might not contain all the fields.
 		// Some fields might not be present (like `line_1` or `line_2`) due to
 		// semi-anonymized data.
@@ -3080,11 +3174,17 @@
 		} );
 
 		// Client 11.1.0 (shortcode-buttons-express/index.js:432-446, event-handlers.js:320-326): once the product reached
-		// the cart, empty it, and unblock the page; the button stays as it is.
+		// the cart, empty it, put the sheet's last address into the page form, and unblock the page; the button stays as
+		// it is.
 		expressElement.on( 'cancel', function () {
 			productAddToCartPromise
 				.catch( function () {} )
 				.then( emptyProductCart );
+
+			if ( lastSelectedAddress ) {
+				updateShippingAddressUI( lastSelectedAddress );
+			}
+			lastSelectedAddress = null;
 			unblockPage();
 		} );
 

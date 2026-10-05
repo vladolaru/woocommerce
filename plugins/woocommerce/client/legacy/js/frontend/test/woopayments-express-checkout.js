@@ -11,6 +11,7 @@ describe( 'WooPayments express checkout', () => {
 	let expressHandlers;
 	let originalFetch;
 	let stripe;
+	let triggeredFieldEvents;
 
 	async function flushPromises() {
 		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
@@ -106,6 +107,21 @@ describe( 'WooPayments express checkout', () => {
 
 			if ( selectorOrCallback === '.quantity' ) {
 				return createQuantityJQuery();
+			}
+
+			// `$( field ).trigger( type )`: records which jQuery events the script fires on a form field, chainable as
+			// in jQuery.
+			if ( selectorOrCallback instanceof window.Element ) {
+				const fieldResult = {
+					trigger: jest.fn( ( type ) => {
+						triggeredFieldEvents.push( [
+							selectorOrCallback.name,
+							type,
+						] );
+						return fieldResult;
+					} ),
+				};
+				return fieldResult;
 			}
 
 			return defaultResult;
@@ -287,6 +303,7 @@ describe( 'WooPayments express checkout', () => {
 		jest.resetModules();
 		bodyEventHandlers = {};
 		delegatedQuantityHandlers = [];
+		triggeredFieldEvents = [];
 		expressHandlers = {};
 		document.body.innerHTML =
 			'<div class="woocommerce-notices-wrapper"></div>' +
@@ -4294,6 +4311,183 @@ describe( 'WooPayments express checkout', () => {
 			expect(
 				document.querySelector( '.woocommerce-notices-wrapper' ).textContent
 			).toBe( '' );
+		} );
+	} );
+
+	// Client 11.1.0 onCancelHandler() (event-handlers.js:320-326) puts the last address chosen in the sheet
+	// (`lastSelectedAddress`, set at the start of every address change, :93) into the page form through
+	// updateShippingAddressUI() (utils/shipping-fields.js:116-127): the shipping calculator on the classic cart, the
+	// billing fields on classic checkout, nothing for CA and GB (redacted postcodes). The address is the
+	// `shippingaddresschange` event's partial address (city, state, postal_code, country:
+	// https://docs.stripe.com/js/elements_object/express_checkout_element_shippingaddresschange_event).
+	describe( 'the address chosen in the sheet reaches the page form on cancel', () => {
+		const berlin = {
+			city: 'Berlin',
+			state: 'BE',
+			postal_code: '10115',
+			country: 'DE',
+		};
+
+		function setClassicCheckoutForm() {
+			document.body.innerHTML =
+				'<div class="woocommerce-notices-wrapper"></div>' +
+				'<form class="checkout woocommerce-checkout">' +
+				'<div class="wcpay-express-checkout-wrapper">' +
+				'<div id="wcpay-express-checkout-element"></div>' +
+				'<p id="wcpay-express-checkout-button-separator">OR</p>' +
+				'</div>' +
+				'<select name="billing_country">' +
+				'<option value="US" selected>United States (US)</option>' +
+				'<option value="DE">Germany</option>' +
+				'</select>' +
+				'<input type="text" name="billing_state" value="CA" />' +
+				'<input type="text" name="billing_city" value="San Francisco" />' +
+				'<input type="text" name="billing_postcode" value="94107" />' +
+				'</form>';
+		}
+
+		function getField( name ) {
+			return document.querySelector( '[name="' + name + '"]' );
+		}
+
+		async function changeAddressInCheckoutSheet( address, cartResponse ) {
+			window.wp.apiFetch
+				.mockResolvedValueOnce( getCartResponse() )
+				.mockImplementationOnce( cartResponse );
+			require( '../woopayments-express-checkout' );
+			await bodyEventHandlers.updated_checkout();
+			await flushPromises();
+			await expressHandlers.click( { resolve: jest.fn() } );
+			await expressHandlers.shippingaddresschange( {
+				name: 'Ada Lovelace',
+				address,
+				resolve: jest.fn(),
+				reject: jest.fn(),
+			} );
+		}
+
+		test( 'fills the classic checkout billing fields with the sheet\'s last address', async () => {
+			setClassicCheckoutForm();
+			await changeAddressInCheckoutSheet( berlin, () =>
+				Promise.resolve( getCartWithShippingRate( 5500 ) )
+			);
+
+			expect( getField( 'billing_country' ).value ).toBe( 'US' );
+
+			expressHandlers.cancel();
+
+			expect( getField( 'billing_country' ).value ).toBe( 'DE' );
+			expect( getField( 'billing_state' ).value ).toBe( 'BE' );
+			expect( getField( 'billing_city' ).value ).toBe( 'Berlin' );
+			expect( getField( 'billing_postcode' ).value ).toBe( '10115' );
+			expect( triggeredFieldEvents ).toEqual( [
+				[ 'billing_country', 'change' ],
+				[ 'billing_country', 'close' ],
+				[ 'billing_state', 'change' ],
+				[ 'billing_city', 'change' ],
+				[ 'billing_postcode', 'change' ],
+			] );
+		} );
+
+		test( 'chooses a country option by its name', async () => {
+			setClassicCheckoutForm();
+			await changeAddressInCheckoutSheet(
+				{ city: 'Berlin', state: '', postal_code: '10115', country: 'germany' },
+				() => Promise.resolve( getCartWithShippingRate( 5500 ) )
+			);
+
+			expressHandlers.cancel();
+
+			expect( getField( 'billing_country' ).value ).toBe( 'DE' );
+			// An empty part of the address leaves its field as it was.
+			expect( getField( 'billing_state' ).value ).toBe( 'CA' );
+		} );
+
+		test( 'fills the fields with an address whose change the store could not price', async () => {
+			setClassicCheckoutForm();
+			// Store API error for update-customer (docs/apis/store-api/resources-endpoints/cart.md error responses:
+			// code, message, data.status).
+			await changeAddressInCheckoutSheet( berlin, () =>
+				Promise.reject( {
+					code: 'woocommerce_rest_cart_error',
+					message: 'Error',
+					data: { status: 400 },
+				} )
+			);
+
+			expressHandlers.cancel();
+
+			expect( getField( 'billing_city' ).value ).toBe( 'Berlin' );
+		} );
+
+		test( 'leaves the checkout fields alone for a United Kingdom address', async () => {
+			setClassicCheckoutForm();
+			await changeAddressInCheckoutSheet(
+				{ city: 'London', state: '', postal_code: 'SW1A', country: 'GB' },
+				() => Promise.resolve( getCartWithShippingRate( 5500 ) )
+			);
+
+			expressHandlers.cancel();
+
+			expect( getField( 'billing_city' ).value ).toBe( 'San Francisco' );
+			expect( triggeredFieldEvents ).toEqual( [] );
+		} );
+
+		test( 'fills the fields once per address change', async () => {
+			setClassicCheckoutForm();
+			await changeAddressInCheckoutSheet( berlin, () =>
+				Promise.resolve( getCartWithShippingRate( 5500 ) )
+			);
+			expressHandlers.cancel();
+			getField( 'billing_city' ).value = 'Potsdam';
+
+			await expressHandlers.click( { resolve: jest.fn() } );
+			expressHandlers.cancel();
+
+			expect( getField( 'billing_city' ).value ).toBe( 'Potsdam' );
+		} );
+
+		test( 'fills the classic cart shipping calculator and recalculates', async () => {
+			const recalculate = jest.fn( ( event ) => event.preventDefault() );
+			window.wcpayExpressCheckoutParams.button_context = 'cart';
+			document.body.innerHTML =
+				'<div class="woocommerce-notices-wrapper"></div>' +
+				'<form class="woocommerce-shipping-calculator">' +
+				'<select name="calc_shipping_country">' +
+				'<option value="US" selected>United States (US)</option>' +
+				'<option value="DE">Germany</option>' +
+				'</select>' +
+				'<input type="text" name="calc_shipping_state" value="CA" />' +
+				'<input type="text" name="calc_shipping_city" value="" />' +
+				'<input type="text" name="calc_shipping_postcode" value="94107" />' +
+				'<button type="submit" name="calc_shipping" value="1">Update</button>' +
+				'</form>' +
+				'<div class="wcpay-express-checkout-wrapper">' +
+				'<div id="wcpay-express-checkout-element"></div>' +
+				'</div>';
+			document
+				.querySelector( 'form.woocommerce-shipping-calculator' )
+				.addEventListener( 'submit', recalculate );
+			window.wp.apiFetch
+				.mockResolvedValueOnce( getCartResponse() )
+				.mockResolvedValueOnce( getCartWithShippingRate( 5500 ) );
+			require( '../woopayments-express-checkout' );
+			await flushPromises();
+			await expressHandlers.click( { resolve: jest.fn() } );
+			await expressHandlers.shippingaddresschange( {
+				name: 'Ada Lovelace',
+				address: berlin,
+				resolve: jest.fn(),
+				reject: jest.fn(),
+			} );
+
+			expressHandlers.cancel();
+
+			expect( getField( 'calc_shipping_country' ).value ).toBe( 'DE' );
+			expect( getField( 'calc_shipping_state' ).value ).toBe( 'BE' );
+			expect( getField( 'calc_shipping_city' ).value ).toBe( 'Berlin' );
+			expect( getField( 'calc_shipping_postcode' ).value ).toBe( '10115' );
+			expect( recalculate ).toHaveBeenCalledTimes( 1 );
 		} );
 	} );
 
