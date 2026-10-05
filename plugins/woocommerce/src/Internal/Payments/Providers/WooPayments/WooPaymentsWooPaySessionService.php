@@ -1169,6 +1169,7 @@ class WooPaymentsWooPaySessionService {
 			'woopayTermsOfServiceLabel'         => __( 'Terms of Service', 'woocommerce' ),
 			'woopayPrivacyPolicyLabel'          => __( 'Privacy Policy', 'woocommerce' ),
 			'woopayOtpIframeTitle'              => __( 'WooPay SMS code verification', 'woocommerce' ),
+			'woopayOtpCloseLabel'               => __( 'Close', 'woocommerce' ),
 			'woopayUnavailableMessage'          => __( 'WooPay is unavailable at this time. Please complete your checkout below. Sorry for the inconvenience.', 'woocommerce' ),
 			'woopayExpressUnavailableMessage'   => __( 'WooPay is unavailable at this time. Sorry for the inconvenience.', 'woocommerce' ),
 		);

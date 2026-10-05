@@ -9,6 +9,7 @@ import {
 	screen,
 	waitFor,
 } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { createElement } from '@wordpress/element';
 import { registerExpressPaymentMethod } from '@woocommerce/blocks-registry';
 import { dispatch } from '@wordpress/data';
@@ -63,6 +64,7 @@ jest.mock( '@woocommerce/settings', () => {
 		testMode: true,
 		wcpayVersionNumber: '11.1.0',
 		woopayOtpIframeTitle: 'WooPay SMS code verification',
+		woopayOtpCloseLabel: 'Close',
 		woopayExpressUnavailableMessage:
 			'WooPay is unavailable at this time. Sorry for the inconvenience.',
 		woopaySessionNonce: 'session-nonce',
@@ -1203,6 +1205,61 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 					expect( button ).toHaveFocus();
 				}
 			);
+
+			// The iframe here never fires `load` and never posts a message: the state of an OTP page that failed to load,
+			// where WooPay's own close control and Escape bridge do not exist.
+			describe( 'when the iframe never loads', () => {
+				// The browser's sequential navigation out of an iframe whose document has no control: the next focusable
+				// element in document order, or the first one on the page after the last.
+				const tabOutOf = ( element ) => {
+					const focusable = Array.from(
+						document.querySelectorAll( 'button, input, iframe' )
+					);
+					const next =
+						focusable[ focusable.indexOf( element ) + 1 ] ||
+						focusable[ 0 ];
+					next.focus();
+				};
+
+				it( 'lets the shopper Tab to a Close button, and Tab past it comes back to the iframe', async () => {
+					await openFromFocusedButton();
+					const dialog = screen.getByRole( 'dialog' );
+					const iframe = dialog.querySelector( '.woopay-otp-iframe' );
+
+					tabOutOf( iframe );
+					const close = screen.getByRole( 'button', {
+						name: 'Close',
+					} );
+					expect( close ).toHaveFocus();
+					expect( dialog ).toContainElement( close );
+
+					tabOutOf( close );
+					expect( iframe ).toHaveFocus();
+				} );
+
+				it.each( [
+					[ 'Enter', '{Enter}' ],
+					[ 'Space', ' ' ],
+					[ 'Escape', '{Escape}' ],
+				] )(
+					'closes on %s from the Close button and gives focus back to the WooPay button',
+					async ( label, keys ) => {
+						const user = userEvent.setup();
+						const button = await openFromFocusedButton();
+						tabOutOf(
+							document.querySelector( '.woopay-otp-iframe' )
+						);
+						expect(
+							screen.getByRole( 'button', { name: 'Close' } )
+						).toHaveFocus();
+
+						await user.keyboard( keys );
+
+						expect( screen.queryByRole( 'dialog' ) ).toBeNull();
+						expect( button ).toHaveFocus();
+					}
+				);
+			} );
 
 			it( 'sends focus that leaves the dialog back to the iframe while it is open', async () => {
 				const button = await openFromFocusedButton();

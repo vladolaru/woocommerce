@@ -1561,6 +1561,7 @@ describe( 'WooPayments WooPay checkout', () => {
 				testMode: '1',
 				wcpayVersionNumber: '11.1.0',
 				woopayOtpIframeTitle: 'WooPay SMS code verification',
+				woopayOtpCloseLabel: 'Close',
 				woopayExpressUnavailableMessage:
 					'WooPay is unavailable at this time. Sorry for the inconvenience.',
 				woopayButtonNonce: 'button-nonce',
@@ -1952,6 +1953,69 @@ describe( 'WooPayments WooPay checkout', () => {
 					expect( document.activeElement ).toBe( button );
 				}
 			);
+
+			// The iframe here never fires `load` and never posts a message: the state of an OTP page that failed to load,
+			// where WooPay's own close control and Escape bridge do not exist.
+			describe( 'when the iframe never loads', () => {
+				// The browser's sequential navigation out of an iframe whose document has no control: the next focusable
+				// element in document order, or the first one on the page after the last.
+				function tabOutOf( element ) {
+					const focusable = Array.from(
+						document.querySelectorAll( 'button, input, iframe' )
+					);
+					const next =
+						focusable[ focusable.indexOf( element ) + 1 ] || focusable[ 0 ];
+					next.focus();
+				}
+
+				function getCloseButton() {
+					return Array.from(
+						document.querySelectorAll( '[role="dialog"] button' )
+					).find( ( button ) => button.textContent === 'Close' );
+				}
+
+				test( 'lets the shopper Tab to a Close button, and Tab past it comes back to the iframe', async () => {
+					await openFromFocusedButton();
+					const iframe = document.querySelector( '.woopay-otp-iframe' );
+
+					tabOutOf( iframe );
+					const close = getCloseButton();
+					expect( close ).toBeDefined();
+					expect( close.type ).toBe( 'button' );
+					expect( document.activeElement ).toBe( close );
+
+					tabOutOf( close );
+					expect( document.activeElement ).toBe( iframe );
+				} );
+
+				// The classic suite has no user-event: Enter or Space on a focused button makes the browser click it.
+				test.each( [
+					[ 'activated', ( close ) => close.click() ],
+					[
+						'given Escape',
+						( close ) =>
+							close.dispatchEvent(
+								new window.KeyboardEvent( 'keyup', {
+									key: 'Escape',
+									bubbles: true,
+								} )
+							),
+					],
+				] )(
+					'closes when the Close button is %s and gives focus back to the WooPay button',
+					async ( label, press ) => {
+						const button = await openFromFocusedButton();
+						tabOutOf( document.querySelector( '.woopay-otp-iframe' ) );
+						const close = getCloseButton();
+						expect( document.activeElement ).toBe( close );
+
+						press( close );
+
+						expect( document.querySelector( '[role="dialog"]' ) ).toBeNull();
+						expect( document.activeElement ).toBe( button );
+					}
+				);
+			} );
 
 			test( 'sends focus that leaves the dialog back to the iframe while it is open', async () => {
 				const button = await openFromFocusedButton();

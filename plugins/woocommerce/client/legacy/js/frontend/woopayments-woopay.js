@@ -1010,6 +1010,11 @@
 		var userEmail = '';
 		var iframeWrapper = document.createElement( 'div' );
 		var iframe = document.createElement( 'iframe' );
+		// The dialog's own way out. WooPay's iframe draws a close control and turns Escape into close_modal, but
+		// neither exists when the iframe never loads, and a key pressed inside the iframe never reaches this page.
+		// After the iframe, so Tab past the iframe's last control reaches it; the stylesheet shows it only while it
+		// has focus.
+		var closeButton = document.createElement( 'button' );
 		// Where focus was when the dialog opened; closing gives it back, as the Blocks email-lookup iframe gives it
 		// back to the email field (blocks woopay/email-input-iframe.js closeIframe()).
 		var previouslyFocused = null;
@@ -1170,8 +1175,8 @@
 			}
 		}
 
-		// A modal dialog keeps focus: Tab past the iframe's last control, or Shift+Tab before its first, lands on the
-		// page behind it and comes back to the iframe.
+		// A modal dialog keeps focus: Tab past the close button, or Shift+Tab before the iframe's first control, lands
+		// on the page behind it and comes back to the iframe.
 		function onFocusIn( event ) {
 			if ( ! iframeWrapper.contains( event.target ) ) {
 				iframe.focus();
@@ -1269,7 +1274,13 @@
 			iframe.classList.add( 'open' );
 		} );
 
+		closeButton.type = 'button';
+		closeButton.classList.add( 'woopay-otp-iframe-close' );
+		closeButton.textContent = config.woopayOtpCloseLabel || '';
+
 		iframeWrapper.insertBefore( iframe, null );
+		iframeWrapper.insertBefore( closeButton, null );
+		// A click on the backdrop or on the close button closes the dialog.
 		iframeWrapper.addEventListener( 'click', closeIframe );
 
 		return getTracksIdentity().then( function ( identity ) {

@@ -295,6 +295,39 @@
 	}
 }
 
+// The OTP dialog's own close button: WooPay's iframe draws a close control, so this one stays visually hidden until it
+// has keyboard focus, like a skip link. It is the keyboard way out when the iframe never loads.
+.woopay-otp-iframe-close {
+	position: fixed;
+	inset-block-start: 16px;
+	inset-inline-end: 16px;
+	z-index: 355001;
+	inline-size: 1px;
+	block-size: 1px;
+	padding: 0;
+	margin: 0;
+	border: 0;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+
+	&:focus {
+		inline-size: auto;
+		block-size: auto;
+		padding: 8px 16px;
+		overflow: visible;
+		clip-path: none;
+		border: 1px solid #1e1e1e;
+		border-radius: 4px;
+		background: #fff;
+		color: #1e1e1e;
+		font-size: 16px;
+		line-height: 1.5;
+		outline: 2px solid #1e1e1e;
+		outline-offset: 2px;
+	}
+}
+
 .woopay-otp-iframe-wrapper {
 	.arrow {
 		position: fixed;

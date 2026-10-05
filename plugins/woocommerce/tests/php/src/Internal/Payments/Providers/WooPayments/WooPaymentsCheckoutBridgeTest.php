@@ -1981,8 +1981,9 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		'supports',                        // index.js:1277, woopay/index.js:18.
 		'PRE_CHECK_SAVE_MY_INFO',          // index.js:706 (the client localizes it as woopayCheckout).
 		'woopayOtpIframeTitle',            // woopay/email-input-iframe.js:269, woopay/express-checkout-iframe.js:98.
+		'woopayOtpCloseLabel',             // woopay/express-checkout-iframe.js:187.
 		'woopayUnavailableMessage',        // woopay/email-input-iframe.js:409.
-		'woopayExpressUnavailableMessage', // woopay/express-checkout-iframe.js:231.
+		'woopayExpressUnavailableMessage', // woopay/express-checkout-iframe.js:254.
 	);
 
 	/**

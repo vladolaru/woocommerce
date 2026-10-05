@@ -178,6 +178,15 @@ export const expressCheckoutIframe = async (
 
 	iframeWrapper.insertBefore( iframe, null );
 
+	// The dialog's own way out. WooPay's iframe draws a close control and turns Escape into close_modal, but neither
+	// exists when the iframe never loads, and a key pressed inside the iframe never reaches this page. After the iframe,
+	// so Tab past the iframe's last control reaches it; the stylesheet shows it only while it has focus.
+	const closeButton = document.createElement( 'button' );
+	closeButton.type = 'button';
+	closeButton.classList.add( 'woopay-otp-iframe-close' );
+	closeButton.textContent = paymentSettings.woopayOtpCloseLabel || '';
+	iframeWrapper.insertBefore( closeButton, null );
+
 	const closeIframe = () => {
 		window.removeEventListener( 'resize', getWindowSize );
 		window.removeEventListener( 'resize', setPopoverPosition );
@@ -195,6 +204,7 @@ export const expressCheckoutIframe = async (
 		previouslyFocused = null;
 	};
 
+	// A click on the backdrop or on the close button closes the dialog.
 	iframeWrapper.addEventListener( 'click', closeIframe );
 
 	const getWooPayHostOrigin = () => {
@@ -298,8 +308,8 @@ export const expressCheckoutIframe = async (
 		}
 	};
 
-	// A modal dialog keeps focus: Tab past the iframe's last control, or Shift+Tab before its first, lands on the page
-	// behind it and comes back to the iframe.
+	// A modal dialog keeps focus: Tab past the close button, or Shift+Tab before the iframe's first control, lands on
+	// the page behind it and comes back to the iframe.
 	const onFocusIn = ( event ) => {
 		if ( ! iframeWrapper.contains( event.target ) ) {
 			iframe.focus();
