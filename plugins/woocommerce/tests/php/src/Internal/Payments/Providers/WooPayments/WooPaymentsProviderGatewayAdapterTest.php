@@ -1345,6 +1345,93 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An earlier succeeded intent whose charge was $_dataName holds money: $holds_money.
+	 *
+	 * A refunded or disputed PaymentIntent keeps its `succeeded` status, so a payment of the order that was given back (a
+	 * refund and a reopened order, for example) must not complete the order again (review 44 F4). Under the platform's
+	 * pinned Stripe-Version 2020-08-27 (wpcom `wcpay/utils/class-config.php:414-425`) a listed intent carries its charges
+	 * with `refunded`, `amount_refunded` and `disputed`. An intent that gave its money back counts as one without money, so
+	 * the new card is charged; a partly refunded one still holds money and pays the order.
+	 *
+	 * @dataProvider provide_given_back_charges
+	 *
+	 * @param array<string,mixed> $charge      The intent's charge.
+	 * @param bool                $holds_money Whether the order is paid from the earlier intent.
+	 */
+	public function test_earlier_intent_that_gave_its_money_back_does_not_pay_the_order( array $charge, bool $holds_money ): void {
+		$order                  = $this->create_woopayments_order();
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			self::platform_bad_gateway(),
+			self::stripe_idempotency_error( 'key_first' ),
+			self::intent_list(
+				array(
+					self::order_intent(
+						$order,
+						'pi_earlier',
+						'succeeded',
+						1000,
+						array( 'charges' => array( 'data' => array( array_merge( array( 'id' => 'ch_earlier' ), $charge ) ) ) )
+					),
+				)
+			),
+			self::succeeded_charge( 'pi_new_card', 'pm_new' ),
+		);
+		$sut                    = $this->create_timeout_adapter( $http_client, 'cus_sent' );
+		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
+
+		$outcome = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_second' );
+
+		$this->assertSame( $holds_money ? 'pi_earlier' : 'pi_new_card', $outcome->get_provider_payment_id() );
+		$this->assertSame( $holds_money ? 3 : 4, count( $http_client->requests ), $holds_money ? 'The new card must not be charged.' : 'The new card is charged once.' );
+	}
+
+	/**
+	 * Charges of an earlier succeeded intent.
+	 *
+	 * Each field is pinned on its own; Stripe sets `refunded` together with `amount_refunded` reaching the amount.
+	 *
+	 * @return array<string,array{0:array<string,mixed>,1:bool}>
+	 */
+	public function provide_given_back_charges(): array {
+		return array(
+			'flagged refunded'              => array(
+				array(
+					'amount'   => 1000,
+					'refunded' => true,
+				),
+				false,
+			),
+			'refunded for its whole amount' => array(
+				array(
+					'amount'          => 1000,
+					'amount_refunded' => 1000,
+					'refunded'        => false,
+				),
+				false,
+			),
+			'disputed'                      => array(
+				array(
+					'amount'          => 1000,
+					'amount_refunded' => 0,
+					'refunded'        => false,
+					'disputed'        => true,
+				),
+				false,
+			),
+			'partly refunded'               => array(
+				array(
+					'amount'          => 1000,
+					'amount_refunded' => 300,
+					'refunded'        => false,
+					'disputed'        => false,
+				),
+				true,
+			),
+		);
+	}
+
+	/**
 	 * @testdox A failed lookup ($_dataName) refuses the attempt with the generic notice, keeps the order status, the key and the record, and the next attempt looks again.
 	 *
 	 * An error proves nothing about money, so nothing is charged: the failure is not definitive, not a decline, and keeps
