@@ -2671,6 +2671,130 @@ describe( 'WooPayments express checkout', () => {
 		);
 	} );
 
+	// Client 11.1.0 event-handlers.js:130-132 and :173-175: a failed address or rate change only rejects it; the sheet
+	// stays open on the same product cart, which is emptied on cancel (index.js:432-443).
+	describe( 'a failed wallet shipping change on a product page', () => {
+		// Store API cart with the product and one rate (cart.md "Cart Response"), as the tokenized cart answers.
+		function getProductCartWithRate() {
+			return getStoreApiResponse(
+				Object.assign( getCartWithShippingRate( 3000 ), {
+					items: [
+						{
+							name: 'Express Widget',
+							quantity: 1,
+							totals: {
+								line_subtotal: '2500',
+								line_subtotal_tax: '0',
+							},
+						},
+					],
+				} ),
+				{ 'X-WooPayments-Tokenized-Cart-Session': 'cart-session-token' }
+			);
+		}
+
+		// With `parse: false` @wordpress/api-fetch rejects with the fetch Response for a non-2xx status
+		// (api-fetch src/utils/response.js:72-74).
+		const failedStoreApiResponse = { status: 500, ok: false };
+
+		const address = {
+			city: 'San Francisco',
+			state: 'CA',
+			postal_code: '94107',
+			country: 'US',
+		};
+
+		async function openProductSheet() {
+			setProductPage();
+			window.wcpayExpressCheckoutParams.product.needs_shipping = true;
+			require( '../woopayments-express-checkout' );
+			await flushPromises();
+			await expressHandlers.click( { resolve: jest.fn() } );
+			await flushPromises();
+		}
+
+		function getEphemeralCartRequests() {
+			return window.wp.apiFetch.mock.calls.filter(
+				( [ options ] ) =>
+					options.headers &&
+					options.headers[
+						'X-WooPayments-Tokenized-Cart-Is-Ephemeral-Cart'
+					]
+			);
+		}
+
+		// `shippingaddresschange`: name, address, resolve, reject
+		// (https://docs.stripe.com/js/elements_object/express_checkout_element_shippingaddresschange_event).
+		test( 'keeps the sheet on its product cart after an address change fails', async () => {
+			const rejectFirst = jest.fn();
+			const resolveSecond = jest.fn();
+			window.wp.apiFetch
+				.mockResolvedValueOnce( getProductCartWithRate() )
+				.mockRejectedValueOnce( failedStoreApiResponse )
+				.mockResolvedValueOnce( getProductCartWithRate() );
+			await openProductSheet();
+
+			await expressHandlers.shippingaddresschange( {
+				name: 'Ada Lovelace',
+				address,
+				resolve: jest.fn(),
+				reject: rejectFirst,
+			} );
+			await expressHandlers.shippingaddresschange( {
+				name: 'Ada Lovelace',
+				address,
+				resolve: resolveSecond,
+				reject: jest.fn(),
+			} );
+
+			expect( rejectFirst ).toHaveBeenCalled();
+			expect( getEphemeralCartRequests() ).toHaveLength( 0 );
+			expect( window.wp.apiFetch ).toHaveBeenLastCalledWith(
+				expect.objectContaining( {
+					path: '/wc/store/v1/cart/update-customer?currency=USD',
+					headers: expect.objectContaining( {
+						'X-WooPayments-Tokenized-Cart-Session':
+							'cart-session-token',
+					} ),
+				} )
+			);
+			expect( resolveSecond ).toHaveBeenCalled();
+		} );
+
+		// `shippingratechange`: shippingRate, resolve, reject (https://docs.stripe.com/js.md, "Handle shippingratechange event").
+		test( 'keeps the sheet on its product cart after a rate change fails', async () => {
+			const rejectFirst = jest.fn();
+			window.wp.apiFetch
+				.mockResolvedValueOnce( getProductCartWithRate() )
+				.mockRejectedValueOnce( failedStoreApiResponse )
+				.mockResolvedValueOnce( getProductCartWithRate() );
+			await openProductSheet();
+
+			await expressHandlers.shippingratechange( {
+				shippingRate: { id: 'flat_rate:1', amount: 500, displayName: 'Flat rate' },
+				resolve: jest.fn(),
+				reject: rejectFirst,
+			} );
+			await expressHandlers.shippingratechange( {
+				shippingRate: { id: 'flat_rate:1', amount: 500, displayName: 'Flat rate' },
+				resolve: jest.fn(),
+				reject: jest.fn(),
+			} );
+
+			expect( rejectFirst ).toHaveBeenCalled();
+			expect( getEphemeralCartRequests() ).toHaveLength( 0 );
+			expect( window.wp.apiFetch ).toHaveBeenLastCalledWith(
+				expect.objectContaining( {
+					path: '/wc/store/v1/cart/select-shipping-rate?currency=USD',
+					headers: expect.objectContaining( {
+						'X-WooPayments-Tokenized-Cart-Session':
+							'cart-session-token',
+					} ),
+				} )
+			);
+		} );
+	} );
+
 	test( 'selects the product cart shipping rate before confirmation', async () => {
 		const resolveRate = jest.fn();
 		const update = createDeferred();

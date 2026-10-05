@@ -2733,8 +2733,9 @@
 				} );
 			} )
 			.catch( function () {
+				// The sheet stays open on the same cart (client 11.1.0 event-handlers.js:130-132, :173-175); cancel
+				// empties it.
 				event.reject();
-				return emptyProductCart();
 			} );
 	}
 
@@ -2770,8 +2771,9 @@
 				} );
 			} )
 			.catch( function () {
+				// The sheet stays open on the same cart (client 11.1.0 event-handlers.js:130-132, :173-175); cancel
+				// empties it.
 				event.reject();
-				return emptyProductCart();
 			} );
 	}
 
