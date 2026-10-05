@@ -216,6 +216,26 @@ export async function createOrder( config, context, fundingSource ) {
 }
 
 /**
+ * Approves the order and stores it in the WC session without creating the
+ * WC order or redirecting.
+ *
+ * The block checkout submit creates the WC order through the gateway, so
+ * unlike the classic approveOrder this must not create it or navigate away.
+ *
+ * @param {Object} config        - The wc_ppcp_sdk_v6 config object.
+ * @param {string} fundingSource - The funding source used for payment.
+ * @param {string} orderId       - The PayPal order ID.
+ * @return {Promise<void>} Resolves when the order has been approved.
+ */
+export async function approveOrderInSession( config, fundingSource, orderId ) {
+	await postJson( config.ajax.approve_order, {
+		order_id: orderId,
+		funding_source: fundingSource,
+		should_create_wc_order: false,
+	} );
+}
+
+/**
  * Reports an approved PayPal order and takes the buyer wherever it leads.
  *
  * should_create_wc_order is requested except on classic checkout and for Venmo
@@ -322,26 +342,6 @@ export async function approveOrder( config, context, fundingSource, orderId ) {
 export async function getOrder( config, orderId ) {
 	return postJson( config.ajax.get_order, {
 		order_id: orderId,
-	} );
-}
-
-/**
- * Approves the order and stores it in the WC session without creating the
- * WC order or redirecting.
- *
- * The block checkout submit creates the WC order through the gateway, so
- * unlike the classic approveOrder this must not create it or navigate away.
- *
- * @param {Object} config        - The wc_ppcp_sdk_v6 config object.
- * @param {string} fundingSource - The funding source used for payment.
- * @param {string} orderId       - The PayPal order ID.
- * @return {Promise<void>} Resolves when the order has been approved.
- */
-export async function approveOrderInSession( config, fundingSource, orderId ) {
-	await postJson( config.ajax.approve_order, {
-		order_id: orderId,
-		funding_source: fundingSource,
-		should_create_wc_order: false,
 	} );
 }
 

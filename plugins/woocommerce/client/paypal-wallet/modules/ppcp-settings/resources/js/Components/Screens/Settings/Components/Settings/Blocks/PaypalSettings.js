@@ -11,6 +11,52 @@ import Accordion from '@ppcp-settings/Components/ReusableComponents/AccordionSec
 import { SettingsHooks } from '@ppcp-settings/data';
 import SoftDescriptorInput from '@ppcp-settings/Components/ReusableComponents/Controls/SoftdescriptorInput';
 
+const subtotalAdjustmentChoices = [
+	{
+		value: 'correction',
+		label: __( 'Add a correction', 'woocommerce' ),
+		description: __(
+			'Adds an additional line item with the missing amount.',
+			'woocommerce'
+		),
+	},
+	{
+		value: 'no_details',
+		label: __( 'Do not send line items', 'woocommerce' ),
+		description: __(
+			'Resubmit the transaction without line item details.',
+			'woocommerce'
+		),
+	},
+];
+
+const landingPageChoices = [
+	{
+		value: 'any',
+		label: __( 'No preference', 'woocommerce' ),
+		description: __(
+			'Shows the buyer the PayPal login for a recognized PayPal buyer.',
+			'woocommerce'
+		),
+	},
+	{
+		value: 'login',
+		label: __( 'Login page', 'woocommerce' ),
+		description: __(
+			'Always show the buyer the PayPal login screen.',
+			'woocommerce'
+		),
+	},
+	{
+		value: 'guest_checkout',
+		label: __( 'Guest checkout page', 'woocommerce' ),
+		description: __(
+			'Always show the buyer the guest checkout fields first.',
+			'woocommerce'
+		),
+	},
+];
+
 const PaypalSettings = ( { hasContactModule } ) => {
 	const {
 		contactModule,
@@ -143,51 +189,5 @@ const PaypalSettings = ( { hasContactModule } ) => {
 		</Accordion>
 	);
 };
-
-const subtotalAdjustmentChoices = [
-	{
-		value: 'correction',
-		label: __( 'Add a correction', 'woocommerce' ),
-		description: __(
-			'Adds an additional line item with the missing amount.',
-			'woocommerce'
-		),
-	},
-	{
-		value: 'no_details',
-		label: __( 'Do not send line items', 'woocommerce' ),
-		description: __(
-			'Resubmit the transaction without line item details.',
-			'woocommerce'
-		),
-	},
-];
-
-const landingPageChoices = [
-	{
-		value: 'any',
-		label: __( 'No preference', 'woocommerce' ),
-		description: __(
-			'Shows the buyer the PayPal login for a recognized PayPal buyer.',
-			'woocommerce'
-		),
-	},
-	{
-		value: 'login',
-		label: __( 'Login page', 'woocommerce' ),
-		description: __(
-			'Always show the buyer the PayPal login screen.',
-			'woocommerce'
-		),
-	},
-	{
-		value: 'guest_checkout',
-		label: __( 'Guest checkout page', 'woocommerce' ),
-		description: __(
-			'Always show the buyer the guest checkout fields first.',
-			'woocommerce'
-		),
-	},
-];
 
 export default PaypalSettings;

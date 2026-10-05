@@ -161,6 +161,38 @@ document.addEventListener( 'DOMContentLoaded', () => {
 		'#ppcp-pay_later_button_enabled'
 	);
 
+	function initializePayLaterPreview() {
+		if ( ! payLaterButtonInput ) {
+			return;
+		}
+
+		const payLaterButtonPreview = document.querySelector(
+			'.ppcp-button-preview[data-ppcp-preview-block="paylater"]'
+		);
+
+		if ( ! payLaterButtonPreview ) {
+			return;
+		}
+
+		if ( ! payLaterButtonInput.checked ) {
+			payLaterButtonPreview.classList.add( 'disabled' );
+		}
+
+		if (
+			payLaterButtonInput.classList.contains( 'ppcp-disabled-checkbox' )
+		) {
+			payLaterButtonPreview.style.display = 'none';
+		}
+
+		payLaterButtonInput.addEventListener( 'click', () => {
+			payLaterButtonPreview.classList.remove( 'disabled' );
+
+			if ( ! payLaterButtonInput.checked ) {
+				payLaterButtonPreview.classList.add( 'disabled' );
+			}
+		} );
+	}
+
 	initializePayLaterPreview();
 
 	[
@@ -200,36 +232,34 @@ document.addEventListener( 'DOMContentLoaded', () => {
 		}
 	} );
 
-	function initializePayLaterPreview() {
-		if ( ! payLaterButtonInput ) {
-			return;
-		}
+	function renderPreview( settingsCallback, render ) {
+		let oldSettings = settingsCallback();
 
-		const payLaterButtonPreview = document.querySelector(
-			'.ppcp-button-preview[data-ppcp-preview-block="paylater"]'
+		form.on(
+			'change',
+			':input',
+			debounce( () => {
+				const newSettings = settingsCallback();
+				if (
+					JSON.stringify( oldSettings ) ===
+					JSON.stringify( newSettings )
+				) {
+					return;
+				}
+
+				render( newSettings );
+
+				oldSettings = newSettings;
+			}, 300 )
 		);
 
-		if ( ! payLaterButtonPreview ) {
-			return;
-		}
+		jQuery( document ).on( 'ppcp_paypal_script_loaded', () => {
+			oldSettings = settingsCallback();
 
-		if ( ! payLaterButtonInput.checked ) {
-			payLaterButtonPreview.classList.add( 'disabled' );
-		}
-
-		if (
-			payLaterButtonInput.classList.contains( 'ppcp-disabled-checkbox' )
-		) {
-			payLaterButtonPreview.style.display = 'none';
-		}
-
-		payLaterButtonInput.addEventListener( 'click', () => {
-			payLaterButtonPreview.classList.remove( 'disabled' );
-
-			if ( ! payLaterButtonInput.checked ) {
-				payLaterButtonPreview.classList.add( 'disabled' );
-			}
+			render( oldSettings );
 		} );
+
+		render( oldSettings );
 	}
 
 	function createButtonPreview( settingsCallback ) {
@@ -301,36 +331,6 @@ document.addEventListener( 'DOMContentLoaded', () => {
 
 	function createMessagesPreview( settingsCallback ) {
 		renderPreview( settingsCallback, renderMessagePreview );
-	}
-
-	function renderPreview( settingsCallback, render ) {
-		let oldSettings = settingsCallback();
-
-		form.on(
-			'change',
-			':input',
-			debounce( () => {
-				const newSettings = settingsCallback();
-				if (
-					JSON.stringify( oldSettings ) ===
-					JSON.stringify( newSettings )
-				) {
-					return;
-				}
-
-				render( newSettings );
-
-				oldSettings = newSettings;
-			}, 300 )
-		);
-
-		jQuery( document ).on( 'ppcp_paypal_script_loaded', () => {
-			oldSettings = settingsCallback();
-
-			render( oldSettings );
-		} );
-
-		render( oldSettings );
 	}
 
 	const previewElements = document.querySelectorAll( '.ppcp-preview' );

@@ -6,6 +6,44 @@ const PAYMENT_STORE = 'wc/paypal/payment';
 // Track original states of dependent methods
 const originalStates = {};
 
+const handleDisableDependents = ( dependentIds, methods ) => {
+	dependentIds.forEach( ( methodId ) => {
+		if ( methods[ methodId ] ) {
+			if ( ! ( methodId in originalStates ) ) {
+				originalStates[ methodId ] = methods[ methodId ].enabled;
+			}
+			methods[ methodId ].enabled = false;
+			methods[ methodId ].isDisabled = true;
+		}
+	} );
+};
+
+const checkAllDependenciesSatisfied = ( methodId, methods ) => {
+	const method = methods[ methodId ];
+	if ( ! method || ! method.depends_on_payment_methods ) {
+		return true;
+	}
+
+	return ! method.depends_on_payment_methods.some( ( parentId ) => {
+		const parent = methods[ parentId ];
+		return ! parent || parent.enabled === false;
+	} );
+};
+
+const handleRestoreDependents = ( dependentIds, methods ) => {
+	dependentIds.forEach( ( methodId ) => {
+		if (
+			methods[ methodId ] &&
+			methodId in originalStates &&
+			checkAllDependenciesSatisfied( methodId, methods )
+		) {
+			methods[ methodId ].enabled = originalStates[ methodId ];
+			methods[ methodId ].isDisabled = false;
+			delete originalStates[ methodId ];
+		}
+	} );
+};
+
 /**
  * Initialize payment method dependency synchronization
  */
@@ -87,42 +125,4 @@ export const initPaymentDependencySync = () => {
 	} );
 
 	return unsubscribe;
-};
-
-const handleDisableDependents = ( dependentIds, methods ) => {
-	dependentIds.forEach( ( methodId ) => {
-		if ( methods[ methodId ] ) {
-			if ( ! ( methodId in originalStates ) ) {
-				originalStates[ methodId ] = methods[ methodId ].enabled;
-			}
-			methods[ methodId ].enabled = false;
-			methods[ methodId ].isDisabled = true;
-		}
-	} );
-};
-
-const handleRestoreDependents = ( dependentIds, methods ) => {
-	dependentIds.forEach( ( methodId ) => {
-		if (
-			methods[ methodId ] &&
-			methodId in originalStates &&
-			checkAllDependenciesSatisfied( methodId, methods )
-		) {
-			methods[ methodId ].enabled = originalStates[ methodId ];
-			methods[ methodId ].isDisabled = false;
-			delete originalStates[ methodId ];
-		}
-	} );
-};
-
-const checkAllDependenciesSatisfied = ( methodId, methods ) => {
-	const method = methods[ methodId ];
-	if ( ! method || ! method.depends_on_payment_methods ) {
-		return true;
-	}
-
-	return ! method.depends_on_payment_methods.some( ( parentId ) => {
-		const parent = methods[ parentId ];
-		return ! parent || parent.enabled === false;
-	} );
 };

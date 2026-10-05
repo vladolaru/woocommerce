@@ -2,6 +2,22 @@ import classNames from 'classnames';
 import { useScrollTarget } from '@ppcp-settings/hooks/useScrollHighlight';
 import { Description, Header, Title, TitleExtra, Content } from './Elements';
 
+const BlockTitle = ( { blockTitle, blockSuffix, blockDescription } ) => {
+	if ( ! blockTitle && ! blockDescription ) {
+		return null;
+	}
+
+	return (
+		<Header>
+			<Title>
+				{ blockTitle }
+				<TitleExtra>{ blockSuffix }</TitleExtra>
+			</Title>
+			<Description>{ blockDescription }</Description>
+		</Header>
+	);
+};
+
 const SettingsBlock = ( {
 	id,
 	className,
@@ -43,19 +59,3 @@ const SettingsBlock = ( {
 };
 
 export default SettingsBlock;
-
-const BlockTitle = ( { blockTitle, blockSuffix, blockDescription } ) => {
-	if ( ! blockTitle && ! blockDescription ) {
-		return null;
-	}
-
-	return (
-		<Header>
-			<Title>
-				{ blockTitle }
-				<TitleExtra>{ blockSuffix }</TitleExtra>
-			</Title>
-			<Description>{ blockDescription }</Description>
-		</Header>
-	);
-};

@@ -15,6 +15,15 @@ const getBusinessType = ( isCasualSeller ) => {
 		: BUSINESS_TYPES.BUSINESS;
 };
 
+const DetailsAccountType = () => (
+	<p>
+		{ __(
+			'* Business account is required for subscriptions.',
+			'woocommerce'
+		) }
+	</p>
+);
+
 const StepBusiness = () => {
 	const { isCasualSeller, setIsCasualSeller } = OnboardingHooks.useBusiness();
 	const [ businessChoice, setBusinessChoice ] = useState(
@@ -69,14 +78,5 @@ const StepBusiness = () => {
 		</div>
 	);
 };
-
-const DetailsAccountType = () => (
-	<p>
-		{ __(
-			'* Business account is required for subscriptions.',
-			'woocommerce'
-		) }
-	</p>
-);
 
 export default StepBusiness;

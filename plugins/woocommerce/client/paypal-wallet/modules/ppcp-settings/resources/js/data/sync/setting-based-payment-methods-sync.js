@@ -8,6 +8,25 @@ const SETTINGS_STORE = 'wc/paypal/settings';
 const settingDependentStates = {};
 
 /**
+ * Check if all payment method dependencies are satisfied for a method
+ *
+ * @param {string} methodId - ID of the method to check
+ * @param {Object} methods  - All payment methods
+ * @return {boolean} True if all dependencies are satisfied
+ */
+const checkPaymentDependenciesSatisfied = ( methodId, methods ) => {
+	const method = methods[ methodId ];
+	if ( ! method || ! method.depends_on_payment_methods ) {
+		return true;
+	}
+
+	return ! method.depends_on_payment_methods.some( ( parentId ) => {
+		const parent = methods[ parentId ];
+		return ! parent || parent.enabled === false;
+	} );
+};
+
+/**
  * Initialize setting dependency synchronization
  */
 export const initSettingBasedPaymentMethodsSync = () => {
@@ -134,25 +153,6 @@ export const initSettingBasedPaymentMethodsSync = () => {
 	} );
 
 	return unsubscribe;
-};
-
-/**
- * Check if all payment method dependencies are satisfied for a method
- *
- * @param {string} methodId - ID of the method to check
- * @param {Object} methods  - All payment methods
- * @return {boolean} True if all dependencies are satisfied
- */
-const checkPaymentDependenciesSatisfied = ( methodId, methods ) => {
-	const method = methods[ methodId ];
-	if ( ! method || ! method.depends_on_payment_methods ) {
-		return true;
-	}
-
-	return ! method.depends_on_payment_methods.some( ( parentId ) => {
-		const parent = methods[ parentId ];
-		return ! parent || parent.enabled === false;
-	} );
 };
 
 export default initSettingBasedPaymentMethodsSync;

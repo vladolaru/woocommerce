@@ -12,6 +12,25 @@ import WelcomeDocs from '../Components/WelcomeDocs';
 import AdvancedOptionsForm from '../Components/AdvancedOptionsForm';
 import { usePaymentConfig } from '../hooks/usePaymentConfig';
 
+const WelcomeFeatures = () => {
+	return (
+		<div className="ppcp-r-welcome-features">
+			<div className="ppcp-r-welcome-features__col">
+				<span>{ __( 'Deposits', 'woocommerce' ) }</span>
+				<p>{ __( 'Instant', 'woocommerce' ) }</p>
+			</div>
+			<div className="ppcp-r-welcome-features__col">
+				<span>{ __( 'Payment Capture', 'woocommerce' ) }</span>
+				<p>{ __( 'Authorize only or Capture', 'woocommerce' ) }</p>
+			</div>
+			<div className="ppcp-r-welcome-features__col">
+				<span>{ __( 'Recurring payments', 'woocommerce' ) }</span>
+				<p>{ __( 'Supported', 'woocommerce' ) }</p>
+			</div>
+		</div>
+	);
+};
+
 const StepWelcome = ( { onNext } ) => {
 	const { storeCountry, ownBrandOnly } = CommonHooks.useWooSettings();
 	const { canUseCardPayments } = OnboardingHooks.useFlags();
@@ -72,22 +91,4 @@ const StepWelcome = ( { onNext } ) => {
 	);
 };
 
-const WelcomeFeatures = () => {
-	return (
-		<div className="ppcp-r-welcome-features">
-			<div className="ppcp-r-welcome-features__col">
-				<span>{ __( 'Deposits', 'woocommerce' ) }</span>
-				<p>{ __( 'Instant', 'woocommerce' ) }</p>
-			</div>
-			<div className="ppcp-r-welcome-features__col">
-				<span>{ __( 'Payment Capture', 'woocommerce' ) }</span>
-				<p>{ __( 'Authorize only or Capture', 'woocommerce' ) }</p>
-			</div>
-			<div className="ppcp-r-welcome-features__col">
-				<span>{ __( 'Recurring payments', 'woocommerce' ) }</span>
-				<p>{ __( 'Supported', 'woocommerce' ) }</p>
-			</div>
-		</div>
-	);
-};
 export default StepWelcome;

@@ -179,10 +179,6 @@ export const PayPalComponent = ( {
 		}
 	};
 
-	const shouldHandleShippingInPayPal = () => {
-		return shouldskipFinalConfirmation() && config.needShipping;
-	};
-
 	const shouldskipFinalConfirmation = () => {
 		if ( config.finalReviewEnabled ) {
 			return false;
@@ -192,6 +188,10 @@ export const PayPalComponent = ( {
 			window.ppcpFundingSource !== 'venmo' ||
 			! config.scriptData.vaultingEnabled
 		);
+	};
+
+	const shouldHandleShippingInPayPal = () => {
+		return shouldskipFinalConfirmation() && config.needShipping;
 	};
 
 	let handleShippingOptionsChange = null;

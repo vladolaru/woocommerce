@@ -3,6 +3,14 @@ import classNames from 'classnames';
 import { useScrollTarget } from '@ppcp-settings/hooks/useScrollHighlight';
 import { Content } from './Elements';
 
+const InnerContent = ( { showCards, children } ) => {
+	if ( showCards ) {
+		return <Content>{ children }</Content>;
+	}
+
+	return children;
+};
+
 /**
  * Renders a settings card.
  *
@@ -61,11 +69,3 @@ const SettingsCard = ( {
 };
 
 export default SettingsCard;
-
-const InnerContent = ( { showCards, children } ) => {
-	if ( showCards ) {
-		return <Content>{ children }</Content>;
-	}
-
-	return children;
-};

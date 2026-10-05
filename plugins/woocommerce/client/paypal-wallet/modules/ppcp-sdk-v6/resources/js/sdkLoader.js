@@ -52,30 +52,6 @@ const PAGE_TYPE_MAP = {
 };
 
 /**
- * Loads the SDK script, fetches a client token and creates the instance.
- *
- * Memoized on the in-flight promise so concurrent callers share one
- * token fetch and one instance; reset on failure to allow retries.
- * Dispatches the ppcp-sdk-v6-ready event once, when the instance exists.
- *
- * @param {Object} config  - The wc_ppcp_sdk_v6 config object.
- * @param {string} context - The page context used for the SDK pageType.
- * @return {Promise<Object>} The SDK instance.
- */
-export function loadSdkV6( config, context ) {
-	if ( ! cachedInstance() ) {
-		window[ INSTANCE_KEY ] = createInstance( config, context ).catch(
-			( error ) => {
-				delete window[ INSTANCE_KEY ];
-				throw error;
-			}
-		);
-	}
-
-	return cachedInstance();
-}
-
-/**
  * Performs the actual script load, token fetch and instance creation.
  *
  * @param {Object} config  - The wc_ppcp_sdk_v6 config object.
@@ -112,4 +88,28 @@ async function createInstance( config, context ) {
 	);
 
 	return sdkInstance;
+}
+
+/**
+ * Loads the SDK script, fetches a client token and creates the instance.
+ *
+ * Memoized on the in-flight promise so concurrent callers share one
+ * token fetch and one instance; reset on failure to allow retries.
+ * Dispatches the ppcp-sdk-v6-ready event once, when the instance exists.
+ *
+ * @param {Object} config  - The wc_ppcp_sdk_v6 config object.
+ * @param {string} context - The page context used for the SDK pageType.
+ * @return {Promise<Object>} The SDK instance.
+ */
+export function loadSdkV6( config, context ) {
+	if ( ! cachedInstance() ) {
+		window[ INSTANCE_KEY ] = createInstance( config, context ).catch(
+			( error ) => {
+				delete window[ INSTANCE_KEY ];
+				throw error;
+			}
+		);
+	}
+
+	return cachedInstance();
 }

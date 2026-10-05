@@ -4,22 +4,6 @@ import { CommonHooks } from '@ppcp-settings/data';
 import SettingsBlock from '@ppcp-settings/Components/ReusableComponents/SettingsBlock';
 import { Title } from '@ppcp-settings/Components/ReusableComponents/Elements';
 
-const HooksListBlock = () => {
-	const { webhooks } = CommonHooks.useWebhooks();
-	const { url, events } = webhooks;
-
-	if ( ! url || ! events?.length ) {
-		return <div>...</div>;
-	}
-
-	return (
-		<SettingsBlock separatorAndGap={ false } className="ppcp--webhooks">
-			<WebhookUrl url={ url } />
-			<WebhookEvents events={ events } />
-		</SettingsBlock>
-	);
-};
-
 const WebhookUrl = ( { url } ) => {
 	return (
 		<div>
@@ -39,6 +23,22 @@ const WebhookEvents = ( { events } ) => {
 				) ) }
 			</ul>
 		</div>
+	);
+};
+
+const HooksListBlock = () => {
+	const { webhooks } = CommonHooks.useWebhooks();
+	const { url, events } = webhooks;
+
+	if ( ! url || ! events?.length ) {
+		return <div>...</div>;
+	}
+
+	return (
+		<SettingsBlock separatorAndGap={ false } className="ppcp--webhooks">
+			<WebhookUrl url={ url } />
+			<WebhookEvents events={ events } />
+		</SettingsBlock>
 	);
 };
 

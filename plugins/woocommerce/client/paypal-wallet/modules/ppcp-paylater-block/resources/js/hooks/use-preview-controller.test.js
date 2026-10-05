@@ -13,14 +13,6 @@ function MockMutationObserver( callback ) {
 }
 MockMutationObserver.instances = [];
 
-function buildNode( { withIframe = false, offsetHeight = 0 } = {} ) {
-	const node = document.createElement( 'div' );
-	if ( withIframe ) {
-		appendIframe( node, offsetHeight );
-	}
-	return node;
-}
-
 function appendIframe( node, offsetHeight ) {
 	const iframe = document.createElement( 'iframe' );
 	Object.defineProperty( iframe, 'offsetHeight', {
@@ -29,6 +21,14 @@ function appendIframe( node, offsetHeight ) {
 	} );
 	node.appendChild( iframe );
 	return iframe;
+}
+
+function buildNode( { withIframe = false, offsetHeight = 0 } = {} ) {
+	const node = document.createElement( 'div' );
+	if ( withIframe ) {
+		appendIframe( node, offsetHeight );
+	}
+	return node;
 }
 
 beforeEach( () => {

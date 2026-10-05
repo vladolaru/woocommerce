@@ -55,6 +55,8 @@ const ELIGIBILITY_REFRESH_DEBOUNCE_MS = 300;
 
 	setErrorLabels( config.labels );
 
+	let amount = config.amount;
+
 	// A $0 free-trial subscription is vaulted through the PayPal save flow, which
 	// needs a form to submit afterwards.
 	const FREE_TRIAL_CONTEXTS = [ 'checkout', 'pay-now' ];
@@ -98,7 +100,6 @@ const ELIGIBILITY_REFRESH_DEBOUNCE_MS = 300;
 
 	const messagesFollowCartTotal = config.page_context !== 'product';
 
-	let amount = config.amount;
 	let refreshPromise = Promise.resolve();
 	let eligibilityPromise = null;
 	const sessionPromises = {};
@@ -119,18 +120,6 @@ const ELIGIBILITY_REFRESH_DEBOUNCE_MS = 300;
 			} );
 		}
 		return eligibilityPromise;
-	}
-
-	function ensureSessions( context ) {
-		if ( ! sessionPromises[ context ] ) {
-			sessionPromises[ context ] = createSessions( context ).catch(
-				( error ) => {
-					delete sessionPromises[ context ];
-					throw error;
-				}
-			);
-		}
-		return sessionPromises[ context ];
 	}
 
 	/**
@@ -178,6 +167,18 @@ const ELIGIBILITY_REFRESH_DEBOUNCE_MS = 300;
 		}
 
 		return sessions;
+	}
+
+	function ensureSessions( context ) {
+		if ( ! sessionPromises[ context ] ) {
+			sessionPromises[ context ] = createSessions( context ).catch(
+				( error ) => {
+					delete sessionPromises[ context ];
+					throw error;
+				}
+			);
+		}
+		return sessionPromises[ context ];
 	}
 
 	/**

@@ -1,49 +1,26 @@
 import classNames from 'classnames';
 import { PayPalCheckbox, PayPalRdb } from './index';
 
-const OptionSelector = ( {
-	multiSelect = false,
-	options,
-	value,
-	onChange,
-} ) => (
-	<div className="ppcp-r-select-box-wrapper">
-		{ options.map(
-			( {
-				value: itemValue,
-				title,
-				description,
-				contents,
-				isDisabled = false,
-			} ) => {
-				let isSelected;
+const InputField = ( { value, onChange, isRadio, isSelected, isDisabled } ) => {
+	if ( isRadio ) {
+		return (
+			<PayPalRdb
+				value={ value }
+				onChange={ onChange }
+				checked={ isSelected }
+			/>
+		);
+	}
 
-				if ( Array.isArray( value ) ) {
-					isSelected = value.includes( itemValue );
-				} else {
-					isSelected = value === itemValue;
-				}
-
-				return (
-					<OptionItem
-						key={ itemValue }
-						itemTitle={ title }
-						itemDescription={ description }
-						itemValue={ itemValue }
-						onChange={ onChange }
-						isMulti={ multiSelect }
-						isSelected={ isSelected }
-						isDisabled={ isDisabled }
-					>
-						{ contents }
-					</OptionItem>
-				);
-			}
-		) }
-	</div>
-);
-
-export default OptionSelector;
+	return (
+		<PayPalCheckbox
+			value={ value }
+			onChange={ onChange }
+			checked={ isSelected }
+			disabled={ isDisabled }
+		/>
+	);
+};
 
 const OptionItem = ( {
 	itemTitle,
@@ -88,23 +65,46 @@ const OptionItem = ( {
 	);
 };
 
-const InputField = ( { value, onChange, isRadio, isSelected, isDisabled } ) => {
-	if ( isRadio ) {
-		return (
-			<PayPalRdb
-				value={ value }
-				onChange={ onChange }
-				checked={ isSelected }
-			/>
-		);
-	}
+const OptionSelector = ( {
+	multiSelect = false,
+	options,
+	value,
+	onChange,
+} ) => (
+	<div className="ppcp-r-select-box-wrapper">
+		{ options.map(
+			( {
+				value: itemValue,
+				title,
+				description,
+				contents,
+				isDisabled = false,
+			} ) => {
+				let isSelected;
 
-	return (
-		<PayPalCheckbox
-			value={ value }
-			onChange={ onChange }
-			checked={ isSelected }
-			disabled={ isDisabled }
-		/>
-	);
-};
+				if ( Array.isArray( value ) ) {
+					isSelected = value.includes( itemValue );
+				} else {
+					isSelected = value === itemValue;
+				}
+
+				return (
+					<OptionItem
+						key={ itemValue }
+						itemTitle={ title }
+						itemDescription={ description }
+						itemValue={ itemValue }
+						onChange={ onChange }
+						isMulti={ multiSelect }
+						isSelected={ isSelected }
+						isDisabled={ isDisabled }
+					>
+						{ contents }
+					</OptionItem>
+				);
+			}
+		) }
+	</div>
+);
+
+export default OptionSelector;

@@ -3,6 +3,64 @@ import { useEffect, useState } from '@wordpress/element';
 import { useDispatch, useSelect } from '@wordpress/data';
 import { STORE_NAME as TODOS_STORE_NAME } from '@ppcp-settings/data/todos';
 
+const TodoItem = ( {
+	title,
+	description,
+	isCompleted,
+	isDismissing,
+	onClick,
+	onDismiss,
+} ) => {
+	const handleKeyDown = ( event ) => {
+		// Keys pressed on the dismiss button inside the row belong to that button.
+		if ( event.target !== event.currentTarget ) {
+			return;
+		}
+
+		if ( event.key === 'Enter' || event.key === ' ' ) {
+			event.preventDefault();
+			onClick();
+		}
+	};
+
+	return (
+		<div
+			className={ `ppcp-r-todo-item ${
+				isCompleted ? 'is-completed' : ''
+			} ${ isDismissing ? 'is-dismissing' : '' }` }
+			role="button"
+			onClick={ onClick }
+			onKeyDown={ handleKeyDown }
+			tabIndex={ 0 }
+		>
+			<div className="ppcp-r-todo-item__inner">
+				<div className="ppcp-r-todo-item__icon">
+					{ isCompleted && (
+						<span className="dashicons dashicons-yes"></span>
+					) }
+				</div>
+				<div className="ppcp-r-todo-item__content">
+					<div className="ppcp-r-todo-item__description">
+						{ title }
+					</div>
+					{ description && (
+						<div className="ppcp-r-todo-item__secondary-description">
+							{ description }
+						</div>
+					) }
+				</div>
+				<button
+					className="ppcp-r-todo-item__dismiss"
+					onClick={ onDismiss }
+					aria-label="Dismiss todo item"
+				>
+					<span className="dashicons dashicons-no-alt"></span>
+				</button>
+			</div>
+		</div>
+	);
+};
+
 const TodoSettingsBlock = ( {
 	todosData,
 	className = '',
@@ -85,64 +143,6 @@ const TodoSettingsBlock = ( {
 					onClick={ () => handleClick( todo ) }
 				/>
 			) ) }
-		</div>
-	);
-};
-
-const TodoItem = ( {
-	title,
-	description,
-	isCompleted,
-	isDismissing,
-	onClick,
-	onDismiss,
-} ) => {
-	const handleKeyDown = ( event ) => {
-		// Keys pressed on the dismiss button inside the row belong to that button.
-		if ( event.target !== event.currentTarget ) {
-			return;
-		}
-
-		if ( event.key === 'Enter' || event.key === ' ' ) {
-			event.preventDefault();
-			onClick();
-		}
-	};
-
-	return (
-		<div
-			className={ `ppcp-r-todo-item ${
-				isCompleted ? 'is-completed' : ''
-			} ${ isDismissing ? 'is-dismissing' : '' }` }
-			role="button"
-			onClick={ onClick }
-			onKeyDown={ handleKeyDown }
-			tabIndex={ 0 }
-		>
-			<div className="ppcp-r-todo-item__inner">
-				<div className="ppcp-r-todo-item__icon">
-					{ isCompleted && (
-						<span className="dashicons dashicons-yes"></span>
-					) }
-				</div>
-				<div className="ppcp-r-todo-item__content">
-					<div className="ppcp-r-todo-item__description">
-						{ title }
-					</div>
-					{ description && (
-						<div className="ppcp-r-todo-item__secondary-description">
-							{ description }
-						</div>
-					) }
-				</div>
-				<button
-					className="ppcp-r-todo-item__dismiss"
-					onClick={ onDismiss }
-					aria-label="Dismiss todo item"
-				>
-					<span className="dashicons dashicons-no-alt"></span>
-				</button>
-			</div>
 		</div>
 	);
 };

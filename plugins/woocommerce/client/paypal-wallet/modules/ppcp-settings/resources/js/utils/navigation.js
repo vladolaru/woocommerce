@@ -20,6 +20,16 @@ export const getQuery = () =>
 	Object.fromEntries( new URLSearchParams( getLocation().search ) );
 
 /**
+ * Return a URL with set query parameters.
+ *
+ * @param {Object} query    Object of params to be updated.
+ * @param {string} basePath Optional. Define the path for the new URL.
+ * @return {string} Updated URL merging query params into existing params.
+ */
+export const getNewPath = ( query, basePath = getPath() ) =>
+	addQueryArgs( basePath, query );
+
+/**
  * Updates the query parameters of the current page.
  *
  * @param {Object}  query           Object of params to be updated.
@@ -30,16 +40,6 @@ export const updateQueryString = ( query, replace = false ) => {
 	const newQuery = replace ? query : { ...getQuery(), ...query };
 	return pushHistory( getNewPath( newQuery ) );
 };
-
-/**
- * Return a URL with set query parameters.
- *
- * @param {Object} query    Object of params to be updated.
- * @param {string} basePath Optional. Define the path for the new URL.
- * @return {string} Updated URL merging query params into existing params.
- */
-export const getNewPath = ( query, basePath = getPath() ) =>
-	addQueryArgs( basePath, query );
 
 /**
  * Filter an object to only include specified keys.

@@ -15,57 +15,6 @@ const SAVE_CONFIRMATION_DURATION = 2500;
 // How long does the CSS transition last (match this with _navigation.scss values)
 const NOTIFICATION_ANIMATION_DURATION = 300;
 
-const SettingsNavigation = ( {
-	canSave = true,
-	tabs = [],
-	activePanel = '',
-	setActivePanel = () => {},
-} ) => {
-	const { persistAll } = useStoreManager();
-	const title = __( 'PayPal Wallet', 'woocommerce' );
-	const [ isSaving, setIsSaving ] = useState( false );
-
-	const handleSave = () => {
-		setIsSaving( true );
-		speak( __( 'Saving settings…', 'woocommerce' ), 'assertive' );
-		persistAll();
-	};
-
-	return (
-		<TopNavigation
-			title={ title }
-			exitOnTitleClick={ true }
-			subNavigation={
-				<TabBar
-					tabs={ tabs }
-					activePanel={ activePanel }
-					setActivePanel={ setActivePanel }
-				/>
-			}
-		>
-			{ canSave && (
-				<>
-					<Button
-						variant="primary"
-						onClick={ handleSave }
-						aria-busy={ isSaving }
-					>
-						{ isSaving
-							? __( 'Saving…', 'woocommerce' )
-							: __( 'Save', 'woocommerce' ) }
-					</Button>
-					<SaveStateMessage
-						setIsSaving={ setIsSaving }
-						isSaving={ isSaving }
-					/>
-				</>
-			) }
-		</TopNavigation>
-	);
-};
-
-export default SettingsNavigation;
-
 const SaveStateMessage = ( { setIsSaving, isSaving } ) => {
 	const [ isVisible, setIsVisible ] = useState( false );
 	const [ isAnimating, setIsAnimating ] = useState( false );
@@ -132,3 +81,54 @@ const SaveStateMessage = ( { setIsSaving, isSaving } ) => {
 		</span>
 	);
 };
+
+const SettingsNavigation = ( {
+	canSave = true,
+	tabs = [],
+	activePanel = '',
+	setActivePanel = () => {},
+} ) => {
+	const { persistAll } = useStoreManager();
+	const title = __( 'PayPal Wallet', 'woocommerce' );
+	const [ isSaving, setIsSaving ] = useState( false );
+
+	const handleSave = () => {
+		setIsSaving( true );
+		speak( __( 'Saving settings…', 'woocommerce' ), 'assertive' );
+		persistAll();
+	};
+
+	return (
+		<TopNavigation
+			title={ title }
+			exitOnTitleClick={ true }
+			subNavigation={
+				<TabBar
+					tabs={ tabs }
+					activePanel={ activePanel }
+					setActivePanel={ setActivePanel }
+				/>
+			}
+		>
+			{ canSave && (
+				<>
+					<Button
+						variant="primary"
+						onClick={ handleSave }
+						aria-busy={ isSaving }
+					>
+						{ isSaving
+							? __( 'Saving…', 'woocommerce' )
+							: __( 'Save', 'woocommerce' ) }
+					</Button>
+					<SaveStateMessage
+						setIsSaving={ setIsSaving }
+						isSaving={ isSaving }
+					/>
+				</>
+			) }
+		</TopNavigation>
+	);
+};
+
+export default SettingsNavigation;

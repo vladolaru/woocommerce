@@ -80,28 +80,6 @@ export function addStoreToFunnel( storeName, funnelId ) {
 }
 
 /**
- * Initialize all registered tracking funnels.
- */
-export function initializeTracking() {
-	const initialized = {};
-
-	// Initialize each registered funnel.
-	Object.values( trackingRegistry.funnels ).forEach( ( funnel ) => {
-		if ( ! funnel.isInitialized ) {
-			const instance = initializeTrackingFunnel( funnel.funnelId );
-			if ( instance ) {
-				initialized[ funnel.funnelId ] = instance;
-				trackingRegistry.funnels[
-					funnel.funnelId
-				].isInitialized = true;
-			}
-		}
-	} );
-
-	return initialized;
-}
-
-/**
  * Initialize a single tracking funnel with subscription manager coordination.
  * @param {string} funnelId - The funnel ID to initialize.
  */
@@ -252,6 +230,28 @@ function initializeTrackingFunnel( funnelId ) {
 	trackingRegistry.instances[ funnelId ] = instance;
 
 	return instance;
+}
+
+/**
+ * Initialize all registered tracking funnels.
+ */
+export function initializeTracking() {
+	const initialized = {};
+
+	// Initialize each registered funnel.
+	Object.values( trackingRegistry.funnels ).forEach( ( funnel ) => {
+		if ( ! funnel.isInitialized ) {
+			const instance = initializeTrackingFunnel( funnel.funnelId );
+			if ( instance ) {
+				initialized[ funnel.funnelId ] = instance;
+				trackingRegistry.funnels[
+					funnel.funnelId
+				].isInitialized = true;
+			}
+		}
+	} );
+
+	return initialized;
 }
 
 /**

@@ -159,6 +159,30 @@ export const useWebhooks = () => {
 	};
 };
 
+// Read-only access to the sanitized merchant details.
+export const useMerchant = () => {
+	const merchant = useSelect(
+		( select ) => select( STORE_NAME ).merchant(),
+		[]
+	);
+
+	return useMemo(
+		() => ( {
+			isConnected: merchant.isConnected ?? false,
+			isSandbox: merchant.isSandbox ?? true,
+			id: merchant.id ?? '',
+			email: merchant.email ?? '',
+			clientId: merchant.clientId ?? '',
+			clientSecret: merchant.clientSecret ?? '',
+			isBusinessSeller: merchant.sellerType === 'business',
+			isCasualSeller: merchant.sellerType === 'personal',
+			isSendOnlyCountry: merchant.isSendOnlyCountry ?? false,
+		} ),
+		// the merchant object is stable, so a new memo is only generated when a merchant prop changes.
+		[ merchant ]
+	);
+};
+
 export const useMerchantInfo = () => {
 	const { features } = useHooks();
 	const merchant = useMerchant();
@@ -191,30 +215,6 @@ export const useMerchantInfo = () => {
 		verifyLoginStatus, // Callback
 		isReady,
 	};
-};
-
-// Read-only access to the sanitized merchant details.
-export const useMerchant = () => {
-	const merchant = useSelect(
-		( select ) => select( STORE_NAME ).merchant(),
-		[]
-	);
-
-	return useMemo(
-		() => ( {
-			isConnected: merchant.isConnected ?? false,
-			isSandbox: merchant.isSandbox ?? true,
-			id: merchant.id ?? '',
-			email: merchant.email ?? '',
-			clientId: merchant.clientId ?? '',
-			clientSecret: merchant.clientSecret ?? '',
-			isBusinessSeller: merchant.sellerType === 'business',
-			isCasualSeller: merchant.sellerType === 'personal',
-			isSendOnlyCountry: merchant.isSendOnlyCountry ?? false,
-		} ),
-		// the merchant object is stable, so a new memo is only generated when a merchant prop changes.
-		[ merchant ]
-	);
 };
 
 export const useActiveModal = () => {

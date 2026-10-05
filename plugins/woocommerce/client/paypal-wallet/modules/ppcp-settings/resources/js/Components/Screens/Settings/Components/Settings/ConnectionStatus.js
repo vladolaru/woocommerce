@@ -9,6 +9,17 @@ import { CardActions } from '@ppcp-settings/Components/ReusableComponents/Elemen
 import DisconnectButton from './Parts/DisconnectButton';
 import ConnectionStatusBadge from './Parts/ConnectionStatusBadge';
 
+const ConnectionDescription = () => {
+	return (
+		<>
+			{ __( 'Your PayPal account connection details.', 'woocommerce' ) }
+			<CardActions isDimmed={ true }>
+				<DisconnectButton />
+			</CardActions>
+		</>
+	);
+};
+
 const ConnectionStatus = () => {
 	const merchant = CommonHooks.useMerchant();
 	const className = classNames( 'ppcp-connection-details ppcp--value-list', {
@@ -56,14 +67,3 @@ const ConnectionStatus = () => {
 };
 
 export default ConnectionStatus;
-
-const ConnectionDescription = () => {
-	return (
-		<>
-			{ __( 'Your PayPal account connection details.', 'woocommerce' ) }
-			<CardActions isDimmed={ true }>
-				<DisconnectButton />
-			</CardActions>
-		</>
-	);
-};

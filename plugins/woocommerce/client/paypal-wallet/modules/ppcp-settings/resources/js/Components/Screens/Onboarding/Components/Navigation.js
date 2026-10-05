@@ -5,35 +5,6 @@ import { OnboardingHooks } from '@ppcp-settings/data';
 import { useNavigation } from '@ppcp-settings/hooks/useNavigation';
 import TopNavigation from '@ppcp-settings/Components/ReusableComponents/TopNavigation';
 
-const OnboardingNavigation = ( { stepDetails, onNext, onPrev } ) => {
-	const { goToWooCommercePaymentsTab } = useNavigation();
-	const { title, isFirst, percentage, showNext, canProceed } = stepDetails;
-
-	const state = OnboardingHooks.useNavigationState();
-	const isDisabled = ! canProceed( state );
-
-	return (
-		<TopNavigation
-			title={ title }
-			isMainTitle={ isFirst }
-			exitOnTitleClick={ isFirst }
-			onTitleClick={ onPrev }
-			showProgressBar={ true }
-			progressBarPercent={ percentage * 0.9 }
-		>
-			<OnboardingNavigationActions
-				onExit={ goToWooCommercePaymentsTab }
-				isFirst={ isFirst }
-				isDisabled={ isDisabled }
-				showNext={ showNext }
-				onNext={ onNext }
-			/>
-		</TopNavigation>
-	);
-};
-
-export default OnboardingNavigation;
-
 const OnboardingNavigationActions = ( {
 	isFirst,
 	showNext,
@@ -64,3 +35,32 @@ const OnboardingNavigationActions = ( {
 		</>
 	);
 };
+
+const OnboardingNavigation = ( { stepDetails, onNext, onPrev } ) => {
+	const { goToWooCommercePaymentsTab } = useNavigation();
+	const { title, isFirst, percentage, showNext, canProceed } = stepDetails;
+
+	const state = OnboardingHooks.useNavigationState();
+	const isDisabled = ! canProceed( state );
+
+	return (
+		<TopNavigation
+			title={ title }
+			isMainTitle={ isFirst }
+			exitOnTitleClick={ isFirst }
+			onTitleClick={ onPrev }
+			showProgressBar={ true }
+			progressBarPercent={ percentage * 0.9 }
+		>
+			<OnboardingNavigationActions
+				onExit={ goToWooCommercePaymentsTab }
+				isFirst={ isFirst }
+				isDisabled={ isDisabled }
+				showNext={ showNext }
+				onNext={ onNext }
+			/>
+		</TopNavigation>
+	);
+};
+
+export default OnboardingNavigation;

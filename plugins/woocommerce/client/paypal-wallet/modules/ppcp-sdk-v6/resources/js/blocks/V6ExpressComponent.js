@@ -122,6 +122,9 @@ export function V6ExpressComponent( {
 	// to land on the review page rather than leave the buyer with no method.
 	const continuationOnErrorRef = useRef( false );
 
+	// A primitive, so it changes only when the requirement flips.
+	const needsShipping = Boolean( shippingData?.needsShipping );
+
 	const approve = async ( data ) => {
 		try {
 			const order = await getOrder( config, data.orderId );
@@ -198,9 +201,6 @@ export function V6ExpressComponent( {
 			),
 		};
 	} );
-
-	// A primitive, so it changes only when the requirement flips.
-	const needsShipping = Boolean( shippingData?.needsShipping );
 
 	// createSession() calls into the SDK, so it must not run during render.
 	const [ session, setSession ] = useState( null );

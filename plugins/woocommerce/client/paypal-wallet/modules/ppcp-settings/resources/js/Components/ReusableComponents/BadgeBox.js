@@ -1,6 +1,14 @@
 import { LearnMore } from './Elements';
 import { PPIcon } from './Icons';
 
+// If `children` is not empty, the `children` prop is output and wrapped in spaces.
+const BadgeContent = ( { children } ) => {
+	if ( ! children ) {
+		return null;
+	}
+	return <> { children } </>;
+};
+
 const ImageBadge = ( { images } ) => {
 	if ( ! images || ! images.length ) {
 		return null;
@@ -19,14 +27,6 @@ const ImageBadge = ( { images } ) => {
 			</span>
 		</BadgeContent>
 	);
-};
-
-// If `children` is not empty, the `children` prop is output and wrapped in spaces.
-const BadgeContent = ( { children } ) => {
-	if ( ! children ) {
-		return null;
-	}
-	return <> { children } </>;
 };
 
 const BadgeDescription = ( { description, learnMoreLink } ) => {

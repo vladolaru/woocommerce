@@ -7,6 +7,8 @@
  */
 export function waitForElement( selector, timeout = 3000, interval = 100 ) {
 	return new Promise( ( resolve, reject ) => {
+		let intervalId = null;
+
 		const timeoutId = setTimeout( () => {
 			clearInterval( intervalId );
 			reject( `Element "${ selector }" not found within ${ timeout }ms` );
@@ -19,7 +21,7 @@ export function waitForElement( selector, timeout = 3000, interval = 100 ) {
 			return;
 		}
 
-		const intervalId = setInterval( () => {
+		intervalId = setInterval( () => {
 			const el = document.querySelector( selector );
 
 			if ( el ) {

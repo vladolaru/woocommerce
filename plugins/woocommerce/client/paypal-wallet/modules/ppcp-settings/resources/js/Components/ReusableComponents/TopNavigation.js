@@ -7,6 +7,17 @@ import useIsScrolled from '@ppcp-settings/hooks/useIsScrolled';
 import { useNavigation } from '@ppcp-settings/hooks/useNavigation';
 import BusyStateWrapper from './BusyStateWrapper';
 
+const ProgressBar = ( { percent } ) => {
+	percent = Math.min( Math.max( percent, 0 ), 100 );
+
+	return (
+		<div
+			className="ppcp-r-navigation--progress-bar"
+			style={ { width: `${ percent }%` } }
+		/>
+	);
+};
+
 const TopNavigation = ( {
 	title,
 	children,
@@ -78,17 +89,6 @@ const TopNavigation = ( {
 				) }
 			</nav>
 		</>
-	);
-};
-
-const ProgressBar = ( { percent } ) => {
-	percent = Math.min( Math.max( percent, 0 ), 100 );
-
-	return (
-		<div
-			className="ppcp-r-navigation--progress-bar"
-			style={ { width: `${ percent }%` } }
-		/>
 	);
 };
 

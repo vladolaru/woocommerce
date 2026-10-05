@@ -5,6 +5,49 @@ import { OptionSelector } from '@ppcp-settings/Components/ReusableComponents/Fie
 import { OnboardingHooks, PRODUCT_TYPES } from '@ppcp-settings/data';
 import OnboardingHeader from '@ppcp-settings/Components/Screens/Onboarding/Components/OnboardingHeader';
 
+const DetailsVirtual = () => (
+	<ul className="ppcp-r-services">
+		<li>{ __( 'Services', 'woocommerce' ) }</li>
+		<li>{ __( 'Downloadable', 'woocommerce' ) }</li>
+		<li>{ __( 'Bookings', 'woocommerce' ) }</li>
+		<li>{ __( 'Deposits', 'woocommerce' ) }</li>
+	</ul>
+);
+
+const DetailsPhysical = () => (
+	<ul className="ppcp-r-services">
+		<li>{ __( 'Goods', 'woocommerce' ) }</li>
+		<li>{ __( 'Deliveries', 'woocommerce' ) }</li>
+	</ul>
+);
+
+const DetailsSubscriptions = ( { showLink, showNotice } ) => (
+	<>
+		{ showLink && (
+			<p
+				dangerouslySetInnerHTML={ {
+					__html: sprintf(
+						/* translators: %s is the URL to the WooCommerce Subscriptions product page */
+						__(
+							'* To use subscriptions, you must have <a target="_blank" href="%s">WooCommerce Subscriptions</a> enabled.',
+							'woocommerce'
+						),
+						'https://woocommerce.com/products/woocommerce-subscriptions/'
+					),
+				} }
+			/>
+		) }
+		{ showNotice && (
+			<p>
+				{ __(
+					'* Business account is required for subscriptions.',
+					'woocommerce'
+				) }
+			</p>
+		) }
+	</>
+);
+
 const StepProducts = () => {
 	const { products, setProducts } = OnboardingHooks.useProducts();
 	const { canUseSubscriptions } = OnboardingHooks.useFlags();
@@ -110,46 +153,3 @@ const StepProducts = () => {
 };
 
 export default StepProducts;
-
-const DetailsVirtual = () => (
-	<ul className="ppcp-r-services">
-		<li>{ __( 'Services', 'woocommerce' ) }</li>
-		<li>{ __( 'Downloadable', 'woocommerce' ) }</li>
-		<li>{ __( 'Bookings', 'woocommerce' ) }</li>
-		<li>{ __( 'Deposits', 'woocommerce' ) }</li>
-	</ul>
-);
-
-const DetailsPhysical = () => (
-	<ul className="ppcp-r-services">
-		<li>{ __( 'Goods', 'woocommerce' ) }</li>
-		<li>{ __( 'Deliveries', 'woocommerce' ) }</li>
-	</ul>
-);
-
-const DetailsSubscriptions = ( { showLink, showNotice } ) => (
-	<>
-		{ showLink && (
-			<p
-				dangerouslySetInnerHTML={ {
-					__html: sprintf(
-						/* translators: %s is the URL to the WooCommerce Subscriptions product page */
-						__(
-							'* To use subscriptions, you must have <a target="_blank" href="%s">WooCommerce Subscriptions</a> enabled.',
-							'woocommerce'
-						),
-						'https://woocommerce.com/products/woocommerce-subscriptions/'
-					),
-				} }
-			/>
-		) }
-		{ showNotice && (
-			<p>
-				{ __(
-					'* Business account is required for subscriptions.',
-					'woocommerce'
-				) }
-			</p>
-		) }
-	</>
-);

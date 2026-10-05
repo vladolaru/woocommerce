@@ -1,5 +1,16 @@
 import { Separator } from '@ppcp-settings/Components/ReusableComponents/Elements';
 
+const PaymentMethodItem = ( { Component, learnMore, showSeparator } ) => {
+	return (
+		<>
+			<Component learnMore={ learnMore } />
+			{ showSeparator && (
+				<Separator className="ppcp-r-payment-method--separator" />
+			) }
+		</>
+	);
+};
+
 const PaymentMethodsGroup = ( { methods, learnMoreConfig } ) => {
 	return (
 		<>
@@ -16,14 +27,3 @@ const PaymentMethodsGroup = ( { methods, learnMoreConfig } ) => {
 };
 
 export default PaymentMethodsGroup;
-
-const PaymentMethodItem = ( { Component, learnMore, showSeparator } ) => {
-	return (
-		<>
-			<Component learnMore={ learnMore } />
-			{ showSeparator && (
-				<Separator className="ppcp-r-payment-method--separator" />
-			) }
-		</>
-	);
-};

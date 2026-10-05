@@ -70,23 +70,86 @@ export function resetMessages() {
 }
 
 /**
- * Starts watching for placeholders and fills the ones already present.
+ * Finds placeholders that still need a message.
  *
- * Observer first, so a placeholder inserted while the initial pass awaits the
- * SDK still triggers a rescan.
- *
- * @param {Object} config      - The wc_ppcp_sdk_v6 config object.
- * @param {string} sdkPageType - The page context for the shared SDK instance.
- * @return {Promise<number>} How many messages the initial pass rendered.
+ * @param {Object} config - The wc_ppcp_sdk_v6 config object.
+ * @return {Element[]} The placeholders to fill.
  */
-export async function initMessages( config, sdkPageType ) {
-	if ( ! config?.messages?.enabled || config.messages.is_hidden ) {
-		return 0;
+function wrappersNeedingMessage( config ) {
+	return Array.from(
+		document.querySelectorAll( config.messages.wrapper )
+	).filter(
+		( wrapper ) =>
+			! inFlight.has( wrapper ) &&
+			! wrapper.querySelector( MESSAGE_TAG_NAME )
+	);
+}
+
+/**
+ * The amount messages should currently price.
+ *
+ * @param {Object} config - The wc_ppcp_sdk_v6 config object.
+ * @return {string} The amount.
+ */
+function currentAmount( config ) {
+	return latestAmount ?? config.messages.amount;
+}
+
+/**
+ * Builds a message Web Component, not yet in the DOM.
+ *
+ * Every attribute must be set before insertion: the component reads them on
+ * connect. Created in `doc`, whose window must have the SDK loaded, or the
+ * element is never upgraded.
+ *
+ * @param {Document} doc              - The document to create the element in.
+ * @param {Object}   options          - The message options.
+ * @param {string}   options.amount   - The amount to price.
+ * @param {string}   options.currency - The currency code.
+ * @param {string}   options.pageType - The v6 page type.
+ * @param {Object}   options.style    - The v6 style values.
+ * @return {Element} The configured element.
+ */
+export function buildMessageElement(
+	doc,
+	{ amount, currency, pageType, style }
+) {
+	const element = doc.createElement( MESSAGE_TAG_NAME );
+
+	// Required: without it the component lays out but never fetches, leaving an
+	// empty one-line box.
+	element.setAttribute( 'auto-bootstrap', '' );
+
+	if ( amount ) {
+		element.setAttribute( 'amount', amount );
+	}
+	element.setAttribute( 'currency-code', currency );
+	element.setAttribute( 'page-type', pageType );
+	element.setAttribute( 'logo-type', style.logoType );
+	element.setAttribute( 'logo-position', style.logoPosition );
+	element.setAttribute( 'text-color', style.textColor );
+
+	if ( style.fontSize ) {
+		element.style.setProperty(
+			'--paypal-message-font-size',
+			style.fontSize
+		);
 	}
 
-	watchForWrappers( config, sdkPageType );
+	return element;
+}
 
-	return renderMessages( config, sdkPageType );
+/**
+ * Resolves the v6 page type for one placeholder.
+ *
+ * @param {Element} wrapper - The placeholder element.
+ * @param {Object}  config  - The wc_ppcp_sdk_v6 config object.
+ * @return {string} The v6 page type.
+ */
+function pageTypeFor( wrapper, config ) {
+	const placement = wrapper.getAttribute( 'data-pp-placement' );
+
+	return PLACEMENT_PAGE_TYPES[ placement ] || config.messages.page_type;
 }
 
 /**
@@ -136,102 +199,6 @@ function styleFor( wrapper, configStyle ) {
 			'BLACK',
 		fontSize: fontSize( wrapper.getAttribute( 'data-pp-style-text-size' ) ),
 	};
-}
-
-/**
- * Resolves the v6 page type for one placeholder.
- *
- * @param {Element} wrapper - The placeholder element.
- * @param {Object}  config  - The wc_ppcp_sdk_v6 config object.
- * @return {string} The v6 page type.
- */
-function pageTypeFor( wrapper, config ) {
-	const placement = wrapper.getAttribute( 'data-pp-placement' );
-
-	return PLACEMENT_PAGE_TYPES[ placement ] || config.messages.page_type;
-}
-
-/**
- * Finds placeholders that still need a message.
- *
- * @param {Object} config - The wc_ppcp_sdk_v6 config object.
- * @return {Element[]} The placeholders to fill.
- */
-function wrappersNeedingMessage( config ) {
-	return Array.from(
-		document.querySelectorAll( config.messages.wrapper )
-	).filter(
-		( wrapper ) =>
-			! inFlight.has( wrapper ) &&
-			! wrapper.querySelector( MESSAGE_TAG_NAME )
-	);
-}
-
-/**
- * Re-runs discovery on DOM changes.
- *
- * Observes document.body, not the placeholders: block pages replace those,
- * which would leave an observer holding a detached node.
- *
- * @param {Object} config      - The wc_ppcp_sdk_v6 config object.
- * @param {string} sdkPageType - The page context for the shared SDK instance.
- */
-function watchForWrappers( config, sdkPageType ) {
-	if ( watching || ! document.body ) {
-		return;
-	}
-	watching = true;
-
-	new MutationObserver( () => {
-		clearTimeout( rescanTimer );
-		rescanTimer = setTimeout( () => {
-			renderMessages( config, sdkPageType ).catch( () => {} );
-		}, RESCAN_DEBOUNCE_MS );
-	} ).observe( document.body, { childList: true, subtree: true } );
-}
-
-/**
- * Builds a message Web Component, not yet in the DOM.
- *
- * Every attribute must be set before insertion: the component reads them on
- * connect. Created in `doc`, whose window must have the SDK loaded, or the
- * element is never upgraded.
- *
- * @param {Document} doc              - The document to create the element in.
- * @param {Object}   options          - The message options.
- * @param {string}   options.amount   - The amount to price.
- * @param {string}   options.currency - The currency code.
- * @param {string}   options.pageType - The v6 page type.
- * @param {Object}   options.style    - The v6 style values.
- * @return {Element} The configured element.
- */
-export function buildMessageElement(
-	doc,
-	{ amount, currency, pageType, style }
-) {
-	const element = doc.createElement( MESSAGE_TAG_NAME );
-
-	// Required: without it the component lays out but never fetches, leaving an
-	// empty one-line box.
-	element.setAttribute( 'auto-bootstrap', '' );
-
-	if ( amount ) {
-		element.setAttribute( 'amount', amount );
-	}
-	element.setAttribute( 'currency-code', currency );
-	element.setAttribute( 'page-type', pageType );
-	element.setAttribute( 'logo-type', style.logoType );
-	element.setAttribute( 'logo-position', style.logoPosition );
-	element.setAttribute( 'text-color', style.textColor );
-
-	if ( style.fontSize ) {
-		element.style.setProperty(
-			'--paypal-message-font-size',
-			style.fontSize
-		);
-	}
-
-	return element;
 }
 
 /**
@@ -301,13 +268,46 @@ export async function renderMessages( config, sdkPageType ) {
 }
 
 /**
- * The amount messages should currently price.
+ * Re-runs discovery on DOM changes.
  *
- * @param {Object} config - The wc_ppcp_sdk_v6 config object.
- * @return {string} The amount.
+ * Observes document.body, not the placeholders: block pages replace those,
+ * which would leave an observer holding a detached node.
+ *
+ * @param {Object} config      - The wc_ppcp_sdk_v6 config object.
+ * @param {string} sdkPageType - The page context for the shared SDK instance.
  */
-function currentAmount( config ) {
-	return latestAmount ?? config.messages.amount;
+function watchForWrappers( config, sdkPageType ) {
+	if ( watching || ! document.body ) {
+		return;
+	}
+	watching = true;
+
+	new MutationObserver( () => {
+		clearTimeout( rescanTimer );
+		rescanTimer = setTimeout( () => {
+			renderMessages( config, sdkPageType ).catch( () => {} );
+		}, RESCAN_DEBOUNCE_MS );
+	} ).observe( document.body, { childList: true, subtree: true } );
+}
+
+/**
+ * Starts watching for placeholders and fills the ones already present.
+ *
+ * Observer first, so a placeholder inserted while the initial pass awaits the
+ * SDK still triggers a rescan.
+ *
+ * @param {Object} config      - The wc_ppcp_sdk_v6 config object.
+ * @param {string} sdkPageType - The page context for the shared SDK instance.
+ * @return {Promise<number>} How many messages the initial pass rendered.
+ */
+export async function initMessages( config, sdkPageType ) {
+	if ( ! config?.messages?.enabled || config.messages.is_hidden ) {
+		return 0;
+	}
+
+	watchForWrappers( config, sdkPageType );
+
+	return renderMessages( config, sdkPageType );
 }
 
 /**

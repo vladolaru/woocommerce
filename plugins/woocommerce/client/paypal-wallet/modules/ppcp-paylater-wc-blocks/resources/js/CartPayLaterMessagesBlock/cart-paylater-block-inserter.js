@@ -31,63 +31,27 @@
 	);
 
 	/**
-	 * Subscribes to changes in the block editor, specifically checking for the presence of 'woocommerce/cart'.
+	 * Recursively searches for a block by name among all blocks.
+	 * @param {Array}  blocks    - The array of blocks to search.
+	 * @param {string} blockName - The name of the block to find.
+	 * @return {Object|null} The found block, or null if not found.
 	 */
-	subscribe( () => {
-		const currentBlocks = getBlocks();
-
-		currentBlocks.forEach( ( block ) => {
-			if ( block.name === 'woocommerce/cart' ) {
-				ensurePayLaterBlockExists( block );
+	function findBlockByName( blocks, blockName ) {
+		for ( const block of blocks ) {
+			if ( block.name === blockName ) {
+				return block;
 			}
-		} );
-	} );
-
-	/**
-	 * Ensures the 'woocommerce-paypal-payments/cart-paylater-messages' block exists inside the 'woocommerce/cart' block.
-	 * @param {Object} cartBlock - The cart block instance.
-	 */
-	function ensurePayLaterBlockExists( cartBlock ) {
-		const payLaterBlock = findBlockByName(
-			cartBlock.innerBlocks,
-			'woocommerce-paypal-payments/cart-paylater-messages'
-		);
-		if ( ! payLaterBlock ) {
-			waitForBlock(
-				'woocommerce/cart-totals-block',
-				'woocommerce-paypal-payments/cart-paylater-messages',
-				'woocommerce/cart-order-summary-block'
-			);
+			if ( block.innerBlocks.length > 0 ) {
+				const foundBlock = findBlockByName(
+					block.innerBlocks,
+					blockName
+				);
+				if ( foundBlock ) {
+					return foundBlock;
+				}
+			}
 		}
-	}
-
-	/**
-	 * Waits for a specific block to appear using async/await pattern before executing the insertBlockAfter function.
-	 * @param {string} targetBlockName - Name of the block to wait for.
-	 * @param {string} newBlockName    - Name of the new block to insert after the target.
-	 * @param {string} anchorBlockName - Name of the anchor block to determine position.
-	 * @param {number} attempts        - The number of attempts made to find the target block.
-	 */
-	async function waitForBlock(
-		targetBlockName,
-		newBlockName,
-		anchorBlockName = '',
-		attempts = 0
-	) {
-		const targetBlock = findBlockByName( getBlocks(), targetBlockName );
-		if ( targetBlock ) {
-			await delay( 1000 ); // We need this to ensure the block is fully rendered
-			insertBlockAfter( targetBlockName, newBlockName, anchorBlockName );
-		} else if ( attempts < 10 ) {
-			// Poll up to 10 times
-			await delay( 1000 ); // Wait 1 second before retrying
-			await waitForBlock(
-				targetBlockName,
-				newBlockName,
-				anchorBlockName,
-				attempts + 1
-			);
-		}
+		return null;
 	}
 
 	/**
@@ -156,26 +120,62 @@
 	}
 
 	/**
-	 * Recursively searches for a block by name among all blocks.
-	 * @param {Array}  blocks    - The array of blocks to search.
-	 * @param {string} blockName - The name of the block to find.
-	 * @return {Object|null} The found block, or null if not found.
+	 * Waits for a specific block to appear using async/await pattern before executing the insertBlockAfter function.
+	 * @param {string} targetBlockName - Name of the block to wait for.
+	 * @param {string} newBlockName    - Name of the new block to insert after the target.
+	 * @param {string} anchorBlockName - Name of the anchor block to determine position.
+	 * @param {number} attempts        - The number of attempts made to find the target block.
 	 */
-	function findBlockByName( blocks, blockName ) {
-		for ( const block of blocks ) {
-			if ( block.name === blockName ) {
-				return block;
-			}
-			if ( block.innerBlocks.length > 0 ) {
-				const foundBlock = findBlockByName(
-					block.innerBlocks,
-					blockName
-				);
-				if ( foundBlock ) {
-					return foundBlock;
-				}
-			}
+	async function waitForBlock(
+		targetBlockName,
+		newBlockName,
+		anchorBlockName = '',
+		attempts = 0
+	) {
+		const targetBlock = findBlockByName( getBlocks(), targetBlockName );
+		if ( targetBlock ) {
+			await delay( 1000 ); // We need this to ensure the block is fully rendered
+			insertBlockAfter( targetBlockName, newBlockName, anchorBlockName );
+		} else if ( attempts < 10 ) {
+			// Poll up to 10 times
+			await delay( 1000 ); // Wait 1 second before retrying
+			await waitForBlock(
+				targetBlockName,
+				newBlockName,
+				anchorBlockName,
+				attempts + 1
+			);
 		}
-		return null;
 	}
+
+	/**
+	 * Ensures the 'woocommerce-paypal-payments/cart-paylater-messages' block exists inside the 'woocommerce/cart' block.
+	 * @param {Object} cartBlock - The cart block instance.
+	 */
+	function ensurePayLaterBlockExists( cartBlock ) {
+		const payLaterBlock = findBlockByName(
+			cartBlock.innerBlocks,
+			'woocommerce-paypal-payments/cart-paylater-messages'
+		);
+		if ( ! payLaterBlock ) {
+			waitForBlock(
+				'woocommerce/cart-totals-block',
+				'woocommerce-paypal-payments/cart-paylater-messages',
+				'woocommerce/cart-order-summary-block'
+			);
+		}
+	}
+
+	/**
+	 * Subscribes to changes in the block editor, specifically checking for the presence of 'woocommerce/cart'.
+	 */
+	subscribe( () => {
+		const currentBlocks = getBlocks();
+
+		currentBlocks.forEach( ( block ) => {
+			if ( block.name === 'woocommerce/cart' ) {
+				ensurePayLaterBlockExists( block );
+			}
+		} );
+	} );
 } )( window.wp );
