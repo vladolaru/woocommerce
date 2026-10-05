@@ -1874,7 +1874,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox With WooPay off, a WooPay request leaves the AutomateWoo advocate and the $0 subscription needs-payment value alone.
 	 *
-	 * Client 11.1.0 class-woopay-session.php:274 and :299-301 check that WooPay is enabled; both callbacks are registered
+	 * Client 11.1.0 class-woopay-session.php:278-280 and :303-305 check that WooPay is enabled; both callbacks are registered
 	 * on every request, so the check is what keeps them out.
 	 */
 	public function test_woopay_order_filters_pass_through_with_woopay_off(): void {
