@@ -2472,6 +2472,60 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			window.history.replaceState( null, '', pageUrl );
 		} );
 
+		// Client 11.1.0 completePayment() locks the page with jQuery BlockUI before it navigates
+		// (block-buttons/hooks/use-express-checkout.js:52-55, event-handlers.js:290-298, :316-318). BlockUI's page-level
+		// `$.blockUI( options )` comes with WooCommerce's `woocommerce` script (`wc-jquery-blockui`,
+		// includes/class-wc-frontend-scripts.php) and returns nothing useful.
+		describe( 'with jQuery BlockUI on the page', () => {
+			beforeEach( () => {
+				window.jQuery = { blockUI: jest.fn() };
+			} );
+
+			afterEach( () => {
+				delete window.jQuery;
+			} );
+
+			it( 'locks the page before it leaves for the order', async () => {
+				// Store API checkout success (src/StoreApi/Schemas/V1/CheckoutSchema.php:160-193) naming the order page.
+				apiFetch.mockResolvedValueOnce( {
+					order_id: 77,
+					payment_result: {
+						payment_status: 'success',
+						payment_details: [
+							{ key: 'result', value: 'success' },
+						],
+						redirect_url:
+							'http://localhost/checkout/order-received/77/?key=wc_order_abc',
+					},
+				} );
+
+				await confirmGooglePay();
+
+				expect( window.jQuery.blockUI ).toHaveBeenCalledTimes( 1 );
+				expect( navigate ).toHaveBeenCalledWith(
+					'http://localhost/checkout/order-received/77/?key=wc_order_abc'
+				);
+				expect(
+					window.jQuery.blockUI.mock.invocationCallOrder[ 0 ]
+				).toBeLessThan( navigate.mock.invocationCallOrder[ 0 ] );
+			} );
+
+			it( 'leaves the page usable when the payment fails', async () => {
+				// Store API checkout error (AbstractRoute::error_to_response(): code, message, data.status), a declined
+				// payment (src/StoreApi/Utilities/CheckoutTrait.php:135).
+				apiFetch.mockRejectedValueOnce( {
+					code: 'woocommerce_rest_checkout_process_payment_error',
+					message: 'Your card was declined.',
+					data: { status: 400 },
+				} );
+
+				await confirmGooglePay();
+
+				expect( window.jQuery.blockUI ).not.toHaveBeenCalled();
+				expect( navigate ).not.toHaveBeenCalled();
+			} );
+		} );
+
 		// Client 11.1.0: with no redirect, `api.confirmIntent( '' )` returns true and `completePayment( '' )` sets
 		// `window.location = ''` (event-handlers.js:234-251, block-buttons/hooks/use-express-checkout.js:52-55), which
 		// resolves to the page URL without its fragment: the page reloads.
@@ -2596,6 +2650,31 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 					expect( navigate ).not.toHaveBeenCalled();
 				}
 			);
+
+			it( 'locks the page once the payment is confirmed, before it leaves for the order', async () => {
+				// jQuery BlockUI's page-level `$.blockUI( options )` (`wc-jquery-blockui`, includes/class-wc-frontend-scripts.php).
+				window.jQuery = { blockUI: jest.fn() };
+				answerOrderStatusUpdate( {
+					return_url:
+						'http://localhost/checkout/order-received/77/?key=wc_order_abc',
+				} );
+
+				try {
+					await confirmGooglePay();
+
+					expect( window.jQuery.blockUI ).toHaveBeenCalledTimes( 1 );
+					expect(
+						window.jQuery.blockUI.mock.invocationCallOrder[ 0 ]
+					).toBeGreaterThan(
+						stripe.handleNextAction.mock.invocationCallOrder[ 0 ]
+					);
+					expect(
+						window.jQuery.blockUI.mock.invocationCallOrder[ 0 ]
+					).toBeLessThan( navigate.mock.invocationCallOrder[ 0 ] );
+				} finally {
+					delete window.jQuery;
+				}
+			} );
 
 			it( 'resolves a page-relative return URL against the page', async () => {
 				answerOrderStatusUpdate( {

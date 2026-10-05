@@ -1136,19 +1136,41 @@ let navigate = ( url ) => {
 	window.location.href = url;
 };
 
+/**
+ * Lock the page and leave for the order, as client 11.1.0 completePayment() does
+ * (block-buttons/hooks/use-express-checkout.js:52-55, onCompletePaymentHandler() at event-handlers.js:290-298, :316-318),
+ * so the Checkout block cannot start a second payment while the next page loads. Without jQuery BlockUI on the page
+ * nothing is locked, as on the classic pages.
+ *
+ * @param {string} url The page to go to.
+ */
+const completePayment = ( url ) => {
+	if ( typeof window.jQuery?.blockUI === 'function' ) {
+		window.jQuery.blockUI( {
+			message: null,
+			overlayCSS: {
+				background: '#fff',
+				opacity: 0.6,
+			},
+		} );
+	}
+
+	navigate( url );
+};
+
 const redirectToOrder = async ( response, api ) => {
 	const redirectUrl = getRedirectUrl( response );
 	const confirmationRequest = api.confirmIntent( redirectUrl );
 
 	if ( confirmationRequest !== true ) {
-		navigate( await confirmationRequest );
+		completePayment( await confirmationRequest );
 		return;
 	}
 
 	// Client 11.1.0 completePayment( '' ) (event-handlers.js:234-251, block-buttons/hooks/use-express-checkout.js:52-55):
 	// the payment went through but the answer names no page, so reload this one, which `''` resolves to. The raw
 	// payment detail skipped esc_url_raw(), so a redirect that is not an http(s) URL counts as none.
-	navigate(
+	completePayment(
 		getHttpUrl( redirectUrl ) || window.location.href.split( '#' )[ 0 ]
 	);
 };
