@@ -698,8 +698,8 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * new card sends a different body under it, which Stripe refuses with an idempotency_error. The refusal is definitive,
 	 * so the key is retired and the next attempt charges under a fresh key, as every client attempt does
 	 * (`class-wc-payments-api-client.php:2690`). The first request may have charged, so an always-on warning names the
-	 * order and the key and says the key is retired (area 2a #7, ruling (a); unit 2a-9a; unit timeout: the wording names
-	 * the missing record). A conflict on a fresh key is not a replay and gets no warning. The response is what the platform sends:
+	 * order and the key and says the key is retired (area 2a #7, ruling (a); unit 2a-9a; units timeout and timeout-b: the
+	 * wording names the missing record and a record without a customer). A conflict on a fresh key is not a replay and gets no warning. The response is what the platform sends:
 	 * it proxies the intention request and returns Stripe's status and error body unchanged (wpcom
 	 * `wcpay/class-base-controller.php:476-490`), and Stripe answers a body mismatch with a 400 whose error type is
 	 * `idempotency_error` and no code.
@@ -750,7 +750,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $warnings );
 		$this->assertSame( 'woopayments', $logger->lines[ $warnings[0] ][2] );
 		$this->assertSame(
-			'The charge idempotency key key_kept kept on order #' . $order->get_id() . ' was refused because the new payment request differs from the earlier one. The order has no record of an ambiguous failure under this key, or the payment is a scheduled renewal, so nothing looks up what the earlier request did: the key is retired and the next payment attempt for this order charges under a fresh key, with no protection against a charge the earlier request may have made.',
+			'The charge idempotency key key_kept kept on order #' . $order->get_id() . ' was refused because the new payment request differs from the earlier one. The order has no record of an ambiguous failure under this key, the record names no customer to look up, or the payment is a scheduled renewal, so nothing looks up what the earlier request did: the key is retired and the next payment attempt for this order charges under a fresh key, with no protection against a charge the earlier request may have made.',
 			$logger->lines[ $warnings[0] ][1]
 		);
 		// The line says the key is retired, so the code must have retired it.
@@ -1132,6 +1132,61 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( 'key_first', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
 		$this->assertSame( 'cus_sent', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['customer'] ?? null );
+	}
+
+	/**
+	 * @testdox An idempotency_error type on an ambiguous answer ($_dataName) under the kept key looks nothing up and keeps the key and the record.
+	 *
+	 * A 409 or a server error means the earlier request may still be running, so its intent may not be listable yet
+	 * (data/t62-ambiguous-timeout-hold.md, Step 0 check 2): the ambiguity classification wins over the error type, and the
+	 * "key is retired" warning is not written because nothing is retired (review 44 F1).
+	 *
+	 * @dataProvider provide_ambiguous_idempotency_answers
+	 *
+	 * @param int $status HTTP status of the answer.
+	 */
+	public function test_ambiguous_answer_with_idempotency_type_under_the_kept_key_does_not_look_up( int $status ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$order                  = $this->create_woopayments_order();
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			self::platform_bad_gateway(),
+			self::http_json(
+				$status,
+				array(
+					'error' => array(
+						'type'    => 'idempotency_error',
+						'code'    => 409 === $status ? 'idempotency_key_in_use' : 'idempotency_error',
+						'message' => 'There is currently another in-progress request using this Idempotent Key: key_first. Please try again later.',
+					),
+				)
+			),
+		);
+		$sut                    = $this->create_timeout_adapter( $http_client, 'cus_sent' );
+		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
+		$logger = RecordingWcLogger::install();
+
+		$outcome = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_second' );
+		$fresh   = wc_get_order( $order->get_id() );
+
+		$this->assertSame( array( 'POST intentions key_first', 'POST intentions key_first' ), self::request_trail( $http_client ), 'No intents list may be read while the earlier request may still run.' );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'key_first', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$this->assertSame( 'cus_sent', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['customer'] ?? null );
+		$this->assertSame( array(), self::warning_lines( $logger ) );
+	}
+
+	/**
+	 * Ambiguous answers that carry Stripe's idempotency_error type.
+	 *
+	 * @return array<string,array{0:int}>
+	 */
+	public function provide_ambiguous_idempotency_answers(): array {
+		return array(
+			'409 conflict' => array( 409 ),
+			'502 error'    => array( 502 ),
+		);
 	}
 
 	/**

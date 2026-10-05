@@ -482,7 +482,7 @@ class WooPaymentsProviderGatewayAdapter {
 				return $this->settle_earlier_charge( $context, $request_data, $attempt_key, $sent_key );
 			}
 
-			if ( $attempt_key !== $sent_key && $this->is_idempotency_key_conflict( $exception ) ) {
+			if ( $attempt_key !== $sent_key && $this->is_idempotency_key_conflict( $exception ) && ! $this->api_client->is_ambiguous_request_failure( $exception ) ) {
 				$this->log_kept_charge_key_refused( $order, $sent_key );
 			}
 
@@ -509,8 +509,10 @@ class WooPaymentsProviderGatewayAdapter {
 	 * Tell whether Stripe refused the order's kept charge key after an ambiguous failure because the new request differs.
 	 *
 	 * All four must hold: a kept key was sent instead of the attempt's own; Stripe answered with an idempotency error, which
-	 * it raises only when it holds a finished result for the key; this order's ambiguity record exists; the payment is not
-	 * a scheduled renewal (a renewal retry resends the same body, so Stripe replays the stored result instead).
+	 * it raises only when it holds a finished result for the key, and the answer is not ambiguous (a 409 or a server error
+	 * means the earlier request may still be running, so its intent may not be listable yet); this order's ambiguity
+	 * record exists; the payment is not a scheduled renewal (a renewal retry resends the same body, so Stripe replays the
+	 * stored result instead).
 	 *
 	 * @param WC_Order                $order       Order being charged.
 	 * @param string                  $attempt_key Key minted fresh for this payment attempt.
@@ -522,6 +524,7 @@ class WooPaymentsProviderGatewayAdapter {
 	private function is_kept_key_refusal_after_ambiguity( WC_Order $order, string $attempt_key, string $sent_key, WooPaymentsApiException $exception, PaymentContext $context ): bool {
 		return $attempt_key !== $sent_key
 			&& $this->is_idempotency_key_conflict( $exception )
+			&& ! $this->api_client->is_ambiguous_request_failure( $exception )
 			&& null !== $this->get_charge_ambiguity_record( $order )
 			&& ! self::is_scheduled_renewal( $context );
 	}
@@ -748,9 +751,11 @@ class WooPaymentsProviderGatewayAdapter {
 	 * Warn that a kept charge key could not replay the earlier request and no lookup settles what that request did.
 	 *
 	 * The new attempt sent a different body (a new card, for example), so it failed instead of replaying. With no record
-	 * of an ambiguous failure under the key (a request cut off mid-send), or for a scheduled renewal, the refusal is a
-	 * definitive failure: failed_charge_outcome() retires the key and the next attempt charges under a fresh one, as every
-	 * client attempt does (`class-wc-payments-api-client.php:2690`). With a record, settle_earlier_charge() runs instead.
+	 * of an ambiguous failure under the key (a request cut off mid-send), a record that names no customer to look up, or
+	 * for a scheduled renewal, the refusal is a definitive failure: failed_charge_outcome() retires the key and the next
+	 * attempt charges under a fresh one, as every client attempt does (`class-wc-payments-api-client.php:2690`). With a
+	 * record, settle_earlier_charge() runs instead. An ambiguous answer (a 409 or a server error) keeps the key, so it
+	 * gets no warning.
 	 * Written whatever the logging setting, since support needs it to reconcile the order if the earlier request charged.
 	 *
 	 * @param WC_Order $order           Order being charged.
@@ -759,7 +764,7 @@ class WooPaymentsProviderGatewayAdapter {
 	private function log_kept_charge_key_refused( WC_Order $order, string $idempotency_key ): void {
 		wc_get_container()->get( WooPaymentsLogger::class )->log_always(
 			sprintf(
-				'The charge idempotency key %1$s kept on order #%2$d was refused because the new payment request differs from the earlier one. The order has no record of an ambiguous failure under this key, or the payment is a scheduled renewal, so nothing looks up what the earlier request did: the key is retired and the next payment attempt for this order charges under a fresh key, with no protection against a charge the earlier request may have made.',
+				'The charge idempotency key %1$s kept on order #%2$d was refused because the new payment request differs from the earlier one. The order has no record of an ambiguous failure under this key, the record names no customer to look up, or the payment is a scheduled renewal, so nothing looks up what the earlier request did: the key is retired and the next payment attempt for this order charges under a fresh key, with no protection against a charge the earlier request may have made.',
 				$idempotency_key,
 				$order->get_id()
 			),
