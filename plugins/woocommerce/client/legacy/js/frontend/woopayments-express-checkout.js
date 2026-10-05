@@ -932,18 +932,41 @@
 		navigate( url );
 	}
 
+	/**
+	 * Client 11.1.0 abortPayment() (shortcode-buttons-express/index.js:186-206): earlier errors go, the new one goes
+	 * into the first notices wrapper and the page scrolls to it. The notice uses core's error markup
+	 * (templates/notices/error.php), whose role="alert" has screen readers announce it.
+	 *
+	 * @param {string} message Error message.
+	 */
 	function setError( message ) {
-		var notices = document.querySelector( '.woocommerce-notices-wrapper' );
+		var notices;
 		var error;
+		var item;
 
-		if ( ! notices || ! message ) {
+		if ( ! message ) {
 			return;
 		}
 
-		error = document.createElement( 'div' );
+		document
+			.querySelectorAll( '.woocommerce-error' )
+			.forEach( function ( notice ) {
+				notice.remove();
+			} );
+
+		notices = document.querySelector( '.woocommerce-notices-wrapper' );
+		if ( ! notices ) {
+			return;
+		}
+
+		error = document.createElement( 'ul' );
 		error.className = 'woocommerce-error';
-		error.textContent = message;
+		error.setAttribute( 'role', 'alert' );
+		item = document.createElement( 'li' );
+		item.textContent = message;
+		error.appendChild( item );
 		notices.appendChild( error );
+		error.scrollIntoView( { behavior: 'smooth', block: 'start' } );
 	}
 
 	function splitName( name ) {

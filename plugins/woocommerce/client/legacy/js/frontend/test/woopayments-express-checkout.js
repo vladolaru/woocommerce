@@ -376,10 +376,13 @@ describe( 'WooPayments express checkout', () => {
 		};
 		window.Stripe = jest.fn( () => stripe );
 		window.fetch = jest.fn().mockResolvedValue( {} );
+		// jsdom does not implement scrolling.
+		window.HTMLElement.prototype.scrollIntoView = jest.fn();
 	} );
 
 	afterEach( () => {
 		jest.useRealTimers();
+		delete window.HTMLElement.prototype.scrollIntoView;
 		delete global.jQuery;
 		delete global.$;
 		delete window.jQuery;
@@ -4720,6 +4723,96 @@ describe( 'WooPayments express checkout', () => {
 			expect( getField( 'calc_shipping_city' ).value ).toBe( 'Berlin' );
 			expect( getField( 'calc_shipping_postcode' ).value ).toBe( '10115' );
 			expect( recalculate ).toHaveBeenCalledTimes( 1 );
+		} );
+	} );
+
+	// Client 11.1.0 abortPayment() (shortcode-buttons-express/index.js:186-206) removes every earlier
+	// `.woocommerce-error`, appends the new one to the first notices wrapper and scrolls to it; native uses core's
+	// error notice markup (templates/notices/error.php: `<ul class="woocommerce-error" role="alert"><li>`) so screen
+	// readers announce it.
+	describe( 'a wallet error replaces earlier errors and is announced', () => {
+		function setCheckoutWithEarlierErrors() {
+			document.body.innerHTML =
+				'<div class="woocommerce-notices-wrapper">' +
+				'<ul class="woocommerce-error" role="alert"><li>Earlier error</li></ul>' +
+				'</div>' +
+				'<form class="checkout"><div class="woocommerce-NoticeGroup">' +
+				'<ul class="woocommerce-error"><li>Checkout error</li></ul>' +
+				'</div></form>' +
+				'<div class="woocommerce-notices-wrapper"></div>' +
+				'<div class="wcpay-express-checkout-wrapper">' +
+				'<div id="wcpay-express-checkout-element"></div>' +
+				'</div>';
+		}
+
+		test( 'shows a failed payment as the only error, announced and scrolled into view', async () => {
+			setCheckoutWithEarlierErrors();
+			window.wp.apiFetch
+				.mockResolvedValueOnce( getCartResponse() )
+				// Store API checkout error (docs/apis/store-api/resources-endpoints/checkout.md, error response:
+				// code, message, data.status).
+				.mockRejectedValueOnce( {
+					code: 'woocommerce_rest_checkout_process_payment_error',
+					message: 'Your card was declined.',
+					data: { status: 400 },
+				} );
+			require( '../woopayments-express-checkout' );
+			await bodyEventHandlers.updated_checkout();
+			await flushPromises();
+			await expressHandlers.click( { resolve: jest.fn() } );
+
+			// Express Checkout Element `confirm` event with billingDetails (https://docs.stripe.com/js.md,
+			// "expressCheckoutElement.on('confirm', handler)").
+			await expressHandlers.confirm( {
+				billingDetails: {
+					email: 'shopper@example.test',
+					name: 'Ada Lovelace',
+				},
+			} );
+
+			const errors = document.querySelectorAll( '.woocommerce-error' );
+			expect( errors ).toHaveLength( 1 );
+			expect( errors[ 0 ].parentElement ).toBe(
+				document.querySelector( '.woocommerce-notices-wrapper' )
+			);
+			expect( errors[ 0 ].getAttribute( 'role' ) ).toBe( 'alert' );
+			expect( errors[ 0 ].tagName ).toBe( 'UL' );
+			expect( errors[ 0 ].querySelector( 'li' ).textContent ).toBe(
+				'Your card was declined.'
+			);
+			expect( errors[ 0 ].scrollIntoView ).toHaveBeenCalledTimes( 1 );
+			expect(
+				errors[ 0 ].scrollIntoView.mock.contexts[ 0 ]
+			).toBe( errors[ 0 ] );
+		} );
+
+		test( 'removes earlier errors even when the page has no notices wrapper', async () => {
+			setCheckoutWithEarlierErrors();
+			document
+				.querySelectorAll( '.woocommerce-notices-wrapper' )
+				.forEach( ( wrapper ) => wrapper.remove() );
+			window.wp.apiFetch
+				.mockResolvedValueOnce( getCartResponse() )
+				// Store API checkout error (docs/apis/store-api/resources-endpoints/checkout.md, error response).
+				.mockRejectedValueOnce( {
+					code: 'woocommerce_rest_checkout_process_payment_error',
+					message: 'Your card was declined.',
+					data: { status: 400 },
+				} );
+			require( '../woopayments-express-checkout' );
+			await bodyEventHandlers.updated_checkout();
+			await flushPromises();
+			await expressHandlers.click( { resolve: jest.fn() } );
+
+			// Express Checkout Element `confirm` event (https://docs.stripe.com/js.md, "expressCheckoutElement.on('confirm', handler)").
+			await expressHandlers.confirm( {
+				billingDetails: {
+					email: 'shopper@example.test',
+					name: 'Ada Lovelace',
+				},
+			} );
+
+			expect( document.querySelectorAll( '.woocommerce-error' ) ).toHaveLength( 0 );
 		} );
 	} );
 
