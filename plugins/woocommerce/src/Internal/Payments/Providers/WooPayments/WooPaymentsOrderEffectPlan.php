@@ -199,6 +199,20 @@ class WooPaymentsOrderEffectPlan implements ProviderOperationEffectPlan {
 	}
 
 	/**
+	 * Get a copy of this plan that saves and attaches no payment token, for an intent the shopper's current payment method did not pay.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return self
+	 */
+	public function without_token_effects(): self {
+		$plan                      = clone $this;
+		$plan->apply_token_effects = false;
+
+		return $plan;
+	}
+
+	/**
 	 * Tell whether the effects write the transaction fee and net meta.
 	 *
 	 * @return bool

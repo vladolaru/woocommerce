@@ -474,11 +474,15 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	/**
 	 * Get an amount mismatch error when the intent amount differs from the order total.
 	 *
+	 * Also used when a charge refused under a kept key finds that the earlier request paid the order.
+	 *
+	 * @internal
+	 *
 	 * @param array<string,mixed> $intent Intent response.
 	 * @param WC_Order            $order  Order.
 	 * @return WP_Error|null
 	 */
-	private function get_amount_mismatch_error( array $intent, WC_Order $order ): ?WP_Error {
+	public function get_amount_mismatch_error( array $intent, WC_Order $order ): ?WP_Error {
 		$charged_amount       = isset( $intent['amount'] ) && is_numeric( $intent['amount'] ) ? (int) $intent['amount'] : 0;
 		$order_total_in_cents = $this->get_order_data_service()->prepare_amount( (float) $order->get_total(), (string) $order->get_currency() );
 

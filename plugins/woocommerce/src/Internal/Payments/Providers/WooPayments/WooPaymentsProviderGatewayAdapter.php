@@ -31,6 +31,17 @@ class WooPaymentsProviderGatewayAdapter {
 	public const CHARGE_IDEMPOTENCY_KEY_META = '_wcpay_charge_idempotency_key';
 
 	/**
+	 * Order meta key recording the ambiguous charge failure that kept the order's charge idempotency key.
+	 *
+	 * An array with the order ID, the customer the failed request was sent with and the time of the failure. It lives and
+	 * dies with the kept key, and lets a refused resubmit look up what the failed request did.
+	 *
+	 * @var string
+	 * @since 11.2.0
+	 */
+	public const CHARGE_AMBIGUITY_META = '_wcpay_charge_ambiguity';
+
+	/**
 	 * Provider data key set when a capture runs because the order status changed to completed.
 	 */
 	public const PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE = 'capture_on_status_change';
@@ -99,18 +110,26 @@ class WooPaymentsProviderGatewayAdapter {
 	private WooPaymentsSettingsService $settings_service;
 
 	/**
+	 * Charge ambiguity service.
+	 *
+	 * @var WooPaymentsChargeAmbiguityService
+	 */
+	private WooPaymentsChargeAmbiguityService $ambiguity_service;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsLegacyRuntime        $legacy_runtime     Legacy runtime.
-	 * @param WooPaymentsApiClient            $api_client         Native API client.
-	 * @param WooPaymentsCustomerService      $customer_service   Customer service.
-	 * @param WooPaymentsIntentRequestBuilder $request_builder    Request builder.
-	 * @param WooPaymentsAccountService       $account_service    Account service.
-	 * @param WooPaymentsOrderDataService     $order_data_service Order data service.
-	 * @param WooPaymentsOrderNoteService     $note_service       Order note service.
-	 * @param WooPaymentsSettingsService      $settings_service   Settings service.
+	 * @param WooPaymentsLegacyRuntime          $legacy_runtime     Legacy runtime.
+	 * @param WooPaymentsApiClient              $api_client         Native API client.
+	 * @param WooPaymentsCustomerService        $customer_service   Customer service.
+	 * @param WooPaymentsIntentRequestBuilder   $request_builder    Request builder.
+	 * @param WooPaymentsAccountService         $account_service    Account service.
+	 * @param WooPaymentsOrderDataService       $order_data_service Order data service.
+	 * @param WooPaymentsOrderNoteService       $note_service       Order note service.
+	 * @param WooPaymentsSettingsService        $settings_service   Settings service.
+	 * @param WooPaymentsChargeAmbiguityService $ambiguity_service  Charge ambiguity service.
 	 */
 	final public function init(
 		WooPaymentsLegacyRuntime $legacy_runtime,
@@ -120,7 +139,8 @@ class WooPaymentsProviderGatewayAdapter {
 		WooPaymentsAccountService $account_service,
 		WooPaymentsOrderDataService $order_data_service,
 		WooPaymentsOrderNoteService $note_service,
-		WooPaymentsSettingsService $settings_service
+		WooPaymentsSettingsService $settings_service,
+		WooPaymentsChargeAmbiguityService $ambiguity_service
 	): void {
 		$this->legacy_runtime     = $legacy_runtime;
 		$this->api_client         = $api_client;
@@ -130,6 +150,7 @@ class WooPaymentsProviderGatewayAdapter {
 		$this->order_data_service = $order_data_service;
 		$this->note_service       = $note_service;
 		$this->settings_service   = $settings_service;
+		$this->ambiguity_service  = $ambiguity_service;
 	}
 
 	/**
@@ -394,34 +415,13 @@ class WooPaymentsProviderGatewayAdapter {
 			$result = $this->api_client->get_payment_intention( $woopay_intent_id );
 			$this->assert_woopay_intent_belongs_to_order( $result, $order, true );
 		} else {
-			$request_data    = $this->request_builder->charge_request_data( $context, $payment_credential, $customer_id, $is_recurring );
-			$attempt_key     = $idempotency_key;
-			$idempotency_key = $this->resolve_charge_idempotency_key( $order, $idempotency_key );
-
-			try {
-				$result = $this->api_client->create_and_confirm_payment_intention( $request_data, $idempotency_key );
-			} catch ( WooPaymentsApiException $exception ) {
-				if ( $attempt_key !== $idempotency_key && $this->is_idempotency_key_conflict( $exception ) ) {
-					$this->log_kept_charge_key_refused( $order, $idempotency_key );
-				}
-
-				if ( ! $this->is_missing_customer_exception( $exception ) ) {
-					return $this->failed_charge_outcome( $order, $exception, true );
-				}
-
-				$customer_id              = $this->customer_service->recreate_customer_for_order( $order );
-				$request_data['customer'] = $customer_id;
-				// A different body under the same key would be refused, so the retry gets its own key, kept on the order
-				// so that an ambiguous failure of the retry replays the retry.
-				$idempotency_key = self::get_customer_recovery_idempotency_key( $idempotency_key );
-				$order->update_meta_data( self::CHARGE_IDEMPOTENCY_KEY_META, $idempotency_key );
-				$order->save_meta_data();
-				try {
-					$result = $this->api_client->create_and_confirm_payment_intention( $request_data, $idempotency_key );
-				} catch ( WooPaymentsApiException $exception ) {
-					return $this->failed_charge_outcome( $order, $exception, true );
-				}
+			$request_data = $this->request_builder->charge_request_data( $context, $payment_credential, $customer_id, $is_recurring );
+			$result       = $this->send_charge_request( $context, $request_data, $idempotency_key );
+			if ( $result instanceof PaymentOutcome ) {
+				return $result;
 			}
+
+			$customer_id = (string) ( $request_data['customer'] ?? $customer_id );
 		}
 
 		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
@@ -445,14 +445,228 @@ class WooPaymentsProviderGatewayAdapter {
 	 */
 	private function resolve_charge_idempotency_key( WC_Order $order, string $candidate ): string {
 		$persisted_key = (string) $order->get_meta( self::CHARGE_IDEMPOTENCY_KEY_META, true );
-		if ( '' !== $persisted_key ) {
+		$record        = $order->get_meta( self::CHARGE_AMBIGUITY_META, true );
+		// A record naming another order means the key was copied from that order with it, so neither belongs here.
+		$is_copied = is_array( $record ) && (int) ( $record['order_id'] ?? 0 ) !== $order->get_id();
+		if ( '' !== $persisted_key && ! $is_copied ) {
 			return $persisted_key;
 		}
 
+		$order->delete_meta_data( self::CHARGE_AMBIGUITY_META );
 		$order->update_meta_data( self::CHARGE_IDEMPOTENCY_KEY_META, $candidate );
 		$order->save_meta_data();
 
 		return $candidate;
+	}
+
+	/**
+	 * Send a positive-amount charge under the order's kept key, or under the attempt key when none is kept.
+	 *
+	 * A kept key refused because the new request differs from the earlier one (a new card after a timeout) settles what
+	 * the earlier request did before anything is charged; see settle_earlier_charge().
+	 *
+	 * @param PaymentContext      $context      Payment context.
+	 * @param array<string,mixed> $request_data Charge request; its customer is replaced when a missing customer is recreated.
+	 * @param string              $attempt_key  Key minted fresh for this payment attempt.
+	 * @return array<string,mixed>|PaymentOutcome The PaymentIntent response, or the outcome to return instead.
+	 * @throws WooPaymentsApiException When recreating a missing customer fails.
+	 */
+	private function send_charge_request( PaymentContext $context, array &$request_data, string $attempt_key ) {
+		$order    = $context->get_order();
+		$sent_key = $this->resolve_charge_idempotency_key( $order, $attempt_key );
+
+		try {
+			return $this->api_client->create_and_confirm_payment_intention( $request_data, $sent_key );
+		} catch ( WooPaymentsApiException $exception ) {
+			if ( $this->is_kept_key_refusal_after_ambiguity( $order, $attempt_key, $sent_key, $exception, $context ) ) {
+				return $this->settle_earlier_charge( $context, $request_data, $attempt_key, $sent_key );
+			}
+
+			if ( $attempt_key !== $sent_key && $this->is_idempotency_key_conflict( $exception ) ) {
+				$this->log_kept_charge_key_refused( $order, $sent_key );
+			}
+
+			if ( ! $this->is_missing_customer_exception( $exception ) ) {
+				return $this->failed_charge_outcome( $order, $exception, true, (string) ( $request_data['customer'] ?? '' ) );
+			}
+		}
+
+		$customer_id              = $this->customer_service->recreate_customer_for_order( $order );
+		$request_data['customer'] = $customer_id;
+		// A different body under the same key would be refused, so the retry gets its own key, kept on the order so that an
+		// ambiguous failure of the retry replays the retry.
+		$recovery_key = self::get_customer_recovery_idempotency_key( $sent_key );
+		$order->update_meta_data( self::CHARGE_IDEMPOTENCY_KEY_META, $recovery_key );
+		$order->save_meta_data();
+		try {
+			return $this->api_client->create_and_confirm_payment_intention( $request_data, $recovery_key );
+		} catch ( WooPaymentsApiException $exception ) {
+			return $this->failed_charge_outcome( $order, $exception, true, $customer_id );
+		}
+	}
+
+	/**
+	 * Tell whether Stripe refused the order's kept charge key after an ambiguous failure because the new request differs.
+	 *
+	 * All four must hold: a kept key was sent instead of the attempt's own; Stripe answered with an idempotency error, which
+	 * it raises only when it holds a finished result for the key; this order's ambiguity record exists; the payment is not
+	 * a scheduled renewal (a renewal retry resends the same body, so Stripe replays the stored result instead).
+	 *
+	 * @param WC_Order                $order       Order being charged.
+	 * @param string                  $attempt_key Key minted fresh for this payment attempt.
+	 * @param string                  $sent_key    Key the request was sent with.
+	 * @param WooPaymentsApiException $exception   Provider request failure.
+	 * @param PaymentContext          $context     Payment context.
+	 * @return bool
+	 */
+	private function is_kept_key_refusal_after_ambiguity( WC_Order $order, string $attempt_key, string $sent_key, WooPaymentsApiException $exception, PaymentContext $context ): bool {
+		return $attempt_key !== $sent_key
+			&& $this->is_idempotency_key_conflict( $exception )
+			&& null !== $this->get_charge_ambiguity_record( $order )
+			&& true !== ( $context->get_provider_data()['scheduled_subscription_payment'] ?? false );
+	}
+
+	/**
+	 * Get this order's record of the ambiguous charge failure that kept its charge key.
+	 *
+	 * @param WC_Order $order Order being charged.
+	 * @return array{customer:string,failed_at:int}|null Null when the order has no complete record of its own.
+	 */
+	private function get_charge_ambiguity_record( WC_Order $order ): ?array {
+		$record = $order->get_meta( self::CHARGE_AMBIGUITY_META, true );
+		if ( ! is_array( $record ) || (int) ( $record['order_id'] ?? 0 ) !== $order->get_id() || ! is_string( $record['customer'] ?? null ) || '' === $record['customer'] ) {
+			return null;
+		}
+
+		return array(
+			'customer'  => $record['customer'],
+			'failed_at' => (int) ( $record['failed_at'] ?? 0 ),
+		);
+	}
+
+	/**
+	 * Settle what the earlier request under the kept key did, then answer this payment attempt.
+	 *
+	 * Runs under the checkout's order payment lock. The earlier request finished at Stripe, and its only money call creates
+	 * a PaymentIntent carrying the order's id and key, so the order's intents decide: one that took the payment pays the
+	 * order and the new payment method is not charged; none that did (or none at all) proves no money moved, so the key is
+	 * retired and the new payment method is charged now; a failed lookup refuses this attempt and keeps the key and the
+	 * record, so the next attempt looks again.
+	 *
+	 * @param PaymentContext      $context      Payment context.
+	 * @param array<string,mixed> $request_data Charge request.
+	 * @param string              $attempt_key  Key minted fresh for this payment attempt.
+	 * @param string              $sent_key     Kept key Stripe refused.
+	 * @return array<string,mixed>|PaymentOutcome The new charge's PaymentIntent response, or the outcome to return instead.
+	 * @throws WooPaymentsApiException When recreating a missing customer for the new charge fails.
+	 */
+	private function settle_earlier_charge( PaymentContext $context, array &$request_data, string $attempt_key, string $sent_key ) {
+		$order   = $context->get_order();
+		$record  = $this->get_charge_ambiguity_record( $order ) ?? array(
+			'customer'  => '',
+			'failed_at' => 0,
+		);
+		$intents = $this->ambiguity_service->find_order_intents( $order, $record['customer'], $record['failed_at'] );
+		if ( null === $intents ) {
+			$this->ambiguity_service->log_lookup_failed( $order, $sent_key );
+
+			return $this->charge_lookup_failed_outcome();
+		}
+
+		$paid_intent = WooPaymentsChargeAmbiguityService::find_intent_with_money( $intents );
+		if ( null !== $paid_intent ) {
+			$this->ambiguity_service->log_earlier_payment_found( $order, $sent_key, (string) ( $paid_intent['id'] ?? '' ) );
+
+			return $this->earlier_payment_outcome( $order, $paid_intent, $record['customer'] );
+		}
+
+		$this->ambiguity_service->log_charging_after_no_earlier_payment( $order, $sent_key, count( $intents ) );
+		if ( array() !== $intents ) {
+			$order->add_order_note( __( 'An earlier payment attempt for this order did not go through.', 'woocommerce' ) );
+		}
+
+		$this->retire_charge_idempotency_key( $order );
+
+		return $this->send_charge_request( $context, $request_data, $attempt_key );
+	}
+
+	/**
+	 * Build the outcome for an order the earlier request under the kept key paid.
+	 *
+	 * The intent is the earlier request's late response, so it is mapped from its own payment method and customer, never
+	 * the new one, and no token is saved or attached for this attempt's payment method, which was not charged. The shopper
+	 * goes to the order-received page with the "We prevented multiple payments" notice. An intent for another amount than
+	 * the order total fails the order with the duplicate-payment amount mismatch and keeps the key, as money moved.
+	 *
+	 * @param WC_Order            $order       Order being charged.
+	 * @param array<string,mixed> $intent      The order's PaymentIntent that took the payment.
+	 * @param string              $customer_id Customer the earlier request was sent with.
+	 * @return PaymentOutcome
+	 */
+	private function earlier_payment_outcome( WC_Order $order, array $intent, string $customer_id ): PaymentOutcome {
+		$amount_error = wc_get_container()->get( WooPaymentsDuplicatePaymentPreventionService::class )->get_amount_mismatch_error( $intent, $order );
+		if ( $amount_error instanceof \WP_Error ) {
+			return new PaymentOutcome(
+				PaymentOutcome::STATUS_FAILED,
+				(string) ( $intent['id'] ?? '' ),
+				'',
+				'',
+				'',
+				array(
+					PaymentOutcome::DATA_ERROR_CODE    => (string) $amount_error->get_error_code(),
+					PaymentOutcome::DATA_ERROR_MESSAGE => $amount_error->get_error_message(),
+					PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE => $amount_error->get_error_message(),
+					PaymentOutcome::DATA_NOTE          => $amount_error->get_error_message(),
+				)
+			);
+		}
+
+		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			$intent,
+			WooPaymentsIntentMappingContext::for_native( $order->get_id(), $order->get_checkout_order_received_url(), '', $customer_id )
+		);
+		$data    = $outcome->get_data();
+
+		$data[ PaymentOutcome::DATA_CHECKOUT_REDIRECT ] = add_query_arg(
+			WooPaymentsDuplicatePaymentPreventionService::FLAG_PREVIOUS_SUCCESSFUL_INTENT,
+			'yes',
+			$order->get_checkout_order_received_url()
+		);
+
+		$order->add_order_note( __( "The earlier payment attempt for this order went through, so the customer's new payment was not taken.", 'woocommerce' ) );
+
+		$outcome = new PaymentOutcome(
+			$outcome->get_status(),
+			$outcome->get_provider_payment_id(),
+			$outcome->get_redirect_url(),
+			$outcome->get_payment_method_id(),
+			$outcome->get_customer_id(),
+			$data
+		);
+
+		return $outcome->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false )->without_token_effects() );
+	}
+
+	/**
+	 * Build the refusal for an attempt whose earlier request could not be looked up.
+	 *
+	 * The order keeps its status, the key and the record, and the shopper gets the generic retry notice; the failure is not
+	 * definitive and not a decline, so the key stays and the failed-transaction limiter is not bumped.
+	 *
+	 * @return PaymentOutcome
+	 */
+	private function charge_lookup_failed_outcome(): PaymentOutcome {
+		return new PaymentOutcome(
+			PaymentOutcome::STATUS_FAILED,
+			'',
+			'',
+			'',
+			'',
+			array(
+				PaymentOutcome::DATA_ERROR_CODE            => 'wcpay_charge_lookup_failed',
+				PaymentOutcome::DATA_PRESERVE_ORDER_STATUS => true,
+			)
+		);
 	}
 
 	/**
@@ -466,12 +680,30 @@ class WooPaymentsProviderGatewayAdapter {
 	}
 
 	/**
-	 * Warn that a charge key kept after an ambiguous failure could not replay the earlier request.
+	 * Tell whether a definitive failure under a key kept after an ambiguous failure came from the platform, not from Stripe.
 	 *
-	 * The new attempt sent a different body (a new card, for example), so it failed instead of replaying. The refusal is a
-	 * definitive failure, so failed_charge_outcome() retires the key and the next attempt charges under a fresh one, as every
-	 * client attempt does (`class-wc-payments-api-client.php:2690`). Written whatever the logging setting, since support needs
-	 * it to reconcile the order if the earlier request charged (area 2a #7, ruling (a)).
+	 * Stripe's answers reach the store unchanged as `{"error":{"type":…}}`, and Stripe's error object always has a type
+	 * (wpcom `wcpay/class-base-controller.php:476-490`). The platform's own refusals are WordPress REST errors with a
+	 * top-level code and no error object (wpcom `wcpay/core/exceptions/class-rest-exception.php:54-64`, for example
+	 * `wcpay_blocked_by_fraud_rule` from `class-fraud-rule-exception.php:27`), so the API client gives them no error type,
+	 * as it gives none to a request refused before it was sent.
+	 *
+	 * @param WC_Order                $order     Order being charged.
+	 * @param WooPaymentsApiException $exception Definitive request failure.
+	 * @return bool
+	 */
+	private function is_platform_refusal_under_kept_ambiguous_key( WC_Order $order, WooPaymentsApiException $exception ): bool {
+		return '' === $exception->get_error_type() && null !== $this->get_charge_ambiguity_record( $order );
+	}
+
+	/**
+	 * Warn that a kept charge key could not replay the earlier request and no lookup settles what that request did.
+	 *
+	 * The new attempt sent a different body (a new card, for example), so it failed instead of replaying. With no record
+	 * of an ambiguous failure under the key (a request cut off mid-send), or for a scheduled renewal, the refusal is a
+	 * definitive failure: failed_charge_outcome() retires the key and the next attempt charges under a fresh one, as every
+	 * client attempt does (`class-wc-payments-api-client.php:2690`). With a record, settle_earlier_charge() runs instead.
+	 * Written whatever the logging setting, since support needs it to reconcile the order if the earlier request charged.
 	 *
 	 * @param WC_Order $order           Order being charged.
 	 * @param string   $idempotency_key Kept charge key that was refused.
@@ -479,7 +711,7 @@ class WooPaymentsProviderGatewayAdapter {
 	private function log_kept_charge_key_refused( WC_Order $order, string $idempotency_key ): void {
 		wc_get_container()->get( WooPaymentsLogger::class )->log_always(
 			sprintf(
-				'The charge idempotency key %1$s kept on order #%2$d after an ambiguous failure was refused because the new payment request differs from the earlier one. The key is retired: the next payment attempt for this order charges under a fresh key, with no protection against a charge the earlier request may have made.',
+				'The charge idempotency key %1$s kept on order #%2$d was refused because the new payment request differs from the earlier one. The order has no record of an ambiguous failure under this key, or the payment is a scheduled renewal, so nothing looks up what the earlier request did: the key is retired and the next payment attempt for this order charges under a fresh key, with no protection against a charge the earlier request may have made.',
 				$idempotency_key,
 				$order->get_id()
 			),
@@ -525,12 +757,13 @@ class WooPaymentsProviderGatewayAdapter {
 	}
 
 	/**
-	 * Delete the order's charge idempotency key, so the next attempt sends a fresh one.
+	 * Delete the order's charge idempotency key and its ambiguity record, so the next attempt sends a fresh key.
 	 *
 	 * @param WC_Order $order Order that was charged.
 	 */
 	private function retire_charge_idempotency_key( WC_Order $order ): void {
 		$order->delete_meta_data( self::CHARGE_IDEMPOTENCY_KEY_META );
+		$order->delete_meta_data( self::CHARGE_AMBIGUITY_META );
 		$order->save_meta_data();
 	}
 
@@ -574,15 +807,31 @@ class WooPaymentsProviderGatewayAdapter {
 	 * seller message when the charge outcome carried one), and a card error
 	 * marks the fraud meta box allow because fraud checks passed.
 	 *
+	 * A PaymentIntent dispatch failure decides the order's kept charge key. An ambiguous one keeps it and records the
+	 * failure for a later lookup. A definitive one retires both, except that while this order's record exists a refusal
+	 * that did not come from Stripe keeps them: the platform's own pre-charge refusals (a fraud rule block, for example)
+	 * never reach Stripe, so they say nothing about the earlier request under the key.
+	 *
 	 * @param WC_Order                $order                       Order object.
 	 * @param WooPaymentsApiException $exception                   Transport exception.
 	 * @param bool                    $is_payment_intent_dispatch Whether the exception came from PaymentIntent dispatch.
+	 * @param string                  $customer_id                 Customer the PaymentIntent request was sent with.
 	 * @return PaymentOutcome
 	 */
-	private function failed_charge_outcome( WC_Order $order, WooPaymentsApiException $exception, bool $is_payment_intent_dispatch = false ): PaymentOutcome {
+	private function failed_charge_outcome( WC_Order $order, WooPaymentsApiException $exception, bool $is_payment_intent_dispatch = false, string $customer_id = '' ): PaymentOutcome {
 		$outcome = WooPaymentsIntentCodec::failed_transport_outcome( 'charge', $exception );
 		$data    = $outcome->get_data();
-		if ( $is_payment_intent_dispatch && ! $this->api_client->is_ambiguous_request_failure( $exception ) ) {
+		if ( $is_payment_intent_dispatch && $this->api_client->is_ambiguous_request_failure( $exception ) ) {
+			$order->update_meta_data(
+				self::CHARGE_AMBIGUITY_META,
+				array(
+					'order_id'  => $order->get_id(),
+					'customer'  => $customer_id,
+					'failed_at' => time(),
+				)
+			);
+			$order->save_meta_data();
+		} elseif ( $is_payment_intent_dispatch && ! $this->is_platform_refusal_under_kept_ambiguous_key( $order, $exception ) ) {
 			$data[ self::DEFINITIVE_CHARGE_FAILURE_DATA_KEY ] = true;
 			// Retired now rather than only after the lifecycle: a local failure applying this outcome must not leave the
 			// key for the next attempt, which would get the stored failure back.

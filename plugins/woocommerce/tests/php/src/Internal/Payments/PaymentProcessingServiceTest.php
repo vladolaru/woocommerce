@@ -33,6 +33,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use RuntimeException;
 use WC_Order;
 use WC_Order_Refund;
@@ -1754,6 +1755,168 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->sut->process_checkout_outcome( PaymentContext::for_checkout( $retry, OrderPaymentStore::GATEWAY_ID, 'pm_first' ), $provider );
 
 		$this->assertSame( array( $kept_key, $kept_key ), $sent_keys->getArrayCopy(), 'A submission that loads the order after the ambiguous attempt replays its key.' );
+	}
+
+	/**
+	 * @testdox A new-card submission refused under the kept key completes the order from the earlier request's intent ($status) and charges nothing.
+	 *
+	 * The first submission's charge gets a 502, so the order keeps its key and the ambiguity record. The shopper resubmits
+	 * with a new card: Stripe refuses the kept key with an idempotency_error, the intents list shows the earlier request's
+	 * intent holding the money, and the lifecycle applies it as the late answer. The shopper lands on order-received with
+	 * the "We prevented multiple payments" flag.
+	 *
+	 * @testWith ["succeeded", "completed"]
+	 *           ["requires_capture", "on-hold"]
+	 *
+	 * @param string $status       Status of the earlier request's intent.
+	 * @param string $order_status Order status the lifecycle writes.
+	 */
+	public function test_process_checkout_pays_the_order_from_the_earlier_request_after_a_new_card_refusal( string $status, string $order_status ): void {
+		$order                  = $this->create_woopayments_order( '10.00' );
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			$this->json_transport_response(
+				502,
+				array(
+					'code'    => 'wcpay_request_failure',
+					'message' => 'Error: cURL error when connecting to Stripe (see error properties for details).',
+					'data'    => array( 'status' => 502 ),
+				)
+			),
+			$this->json_transport_response(
+				400,
+				array(
+					'error' => array(
+						'type'    => 'idempotency_error',
+						'message' => 'Keys for idempotent requests can only be used with the same parameters they were first used with.',
+					),
+				)
+			),
+			$this->json_transport_response(
+				200,
+				array(
+					'object'   => 'list',
+					'data'     => array(
+						array(
+							'id'             => 'pi_earlier',
+							'object'         => 'payment_intent',
+							'status'         => $status,
+							'amount'         => 1000,
+							'currency'       => 'usd',
+							'created'        => time() - 60,
+							'customer'       => 'cus_timeout',
+							'payment_method' => 'pm_earlier',
+							'metadata'       => array(
+								'order_id'  => (string) $order->get_id(),
+								'order_key' => $order->get_order_key(),
+							),
+						),
+					),
+					'has_more' => false,
+				)
+			),
+		);
+		$provider               = $this->timeout_transport_provider( $http_client );
+
+		$this->sut->process_checkout_outcome( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_first' ), $provider );
+		$resubmit = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $resubmit );
+		$result = $this->sut->process_checkout( PaymentContext::for_checkout( $resubmit, OrderPaymentStore::GATEWAY_ID, 'pm_new' ), $provider );
+		$paid   = wc_get_order( $order->get_id() );
+
+		$this->assertCount( 3, $http_client->requests, 'The new card must not be charged.' );
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertStringContainsString( 'wcpay_previous_successful_intent=yes', $result['redirect'] );
+		$this->assertSame( $order_status, $paid->get_status() );
+		$this->assertSame( 'pi_earlier', $paid->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'pm_earlier', $paid->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( '', $paid->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$this->assertSame( '', $paid->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true ) );
+	}
+
+	/**
+	 * @testdox A submission whose lookup fails is refused without a charge and leaves the order status, and the next submission charges the new card once.
+	 *
+	 * The order is pending again before the resubmit, as a Store API checkout leaves it, so a refusal that changed the
+	 * status would show.
+	 */
+	public function test_process_checkout_refuses_when_the_lookup_fails_and_charges_once_on_the_next_submission(): void {
+		$order                  = $this->create_woopayments_order( '10.00' );
+		$idempotency_error      = $this->json_transport_response(
+			400,
+			array(
+				'error' => array(
+					'type'    => 'idempotency_error',
+					'message' => 'Keys for idempotent requests can only be used with the same parameters they were first used with.',
+				),
+			)
+		);
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			$this->json_transport_response(
+				502,
+				array(
+					'code'    => 'wcpay_request_failure',
+					'message' => 'Error: cURL error when connecting to Stripe (see error properties for details).',
+					'data'    => array( 'status' => 502 ),
+				)
+			),
+			$idempotency_error,
+			$this->json_transport_response(
+				500,
+				array(
+					'error' => array(
+						'type'    => 'api_error',
+						'message' => 'An unknown error occurred',
+					),
+				)
+			),
+			$idempotency_error,
+			$this->json_transport_response(
+				200,
+				array(
+					'object'   => 'list',
+					'data'     => array(),
+					'has_more' => false,
+				)
+			),
+			$this->json_transport_response(
+				200,
+				array(
+					'id'             => 'pi_new_card',
+					'status'         => 'succeeded',
+					'amount'         => 1000,
+					'currency'       => 'usd',
+					'customer'       => 'cus_timeout',
+					'payment_method' => 'pm_new',
+				)
+			),
+		);
+		$provider               = $this->timeout_transport_provider( $http_client );
+		$this->sut->process_checkout_outcome( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_first' ), $provider );
+		$pending = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $pending );
+		$pending->set_status( 'pending' );
+		$pending->save();
+
+		$refused = $this->sut->process_checkout_outcome( PaymentContext::for_checkout( $pending, OrderPaymentStore::GATEWAY_ID, 'pm_new' ), $provider );
+		$kept    = wc_get_order( $order->get_id() );
+
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $refused->get_status() );
+		$this->assertSame( 'wcpay_charge_lookup_failed', $refused->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
+		$this->assertSame( 'pending', $kept->get_status() );
+		$this->assertNotSame( '', $kept->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$this->assertIsArray( $kept->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true ) );
+		$this->assertCount( 3, $http_client->requests, 'A failed lookup must not charge.' );
+
+		$this->sut->process_checkout_outcome( PaymentContext::for_checkout( $kept, OrderPaymentStore::GATEWAY_ID, 'pm_new' ), $provider );
+		$paid    = wc_get_order( $order->get_id() );
+		$charges = array_values( array_filter( $http_client->requests, static fn( array $request ): bool => 'POST' === $request['method'] ) );
+
+		$this->assertSame( 'completed', $paid->get_status() );
+		$this->assertSame( 'pi_new_card', $paid->get_meta( '_intent_id', true ) );
+		$this->assertCount( 4, $charges, 'Two refused sends under the kept key, then exactly one charge of the new card.' );
+		$this->assertNotSame( $charges[0]['headers']['Idempotency-Key'], $charges[3]['headers']['Idempotency-Key'], 'The new card is charged under a fresh key.' );
 	}
 
 	/**
@@ -3598,6 +3761,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
 			->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_free_trial' );
+		$ambiguity_service = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsChargeAmbiguityService();
+		$ambiguity_service->init( $api_client );
 		$adapter = new WooPaymentsProviderGatewayAdapter();
 		$adapter->init(
 			$legacy_runtime,
@@ -3607,7 +3772,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			$account_service,
 			new WooPaymentsOrderDataService(),
 			new WooPaymentsOrderNoteService(),
-			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService::class )
+			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService::class ),
+			$ambiguity_service
 		);
 		$provider = new WooPaymentsProvider();
 		$provider->init(
@@ -3763,6 +3929,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
 			->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_ambiguous' );
+		$ambiguity_service = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsChargeAmbiguityService();
+		$ambiguity_service->init( $api_client );
 		$adapter = new WooPaymentsProviderGatewayAdapter();
 		$adapter->init(
 			$legacy_runtime,
@@ -3772,7 +3940,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			$account_service,
 			new WooPaymentsOrderDataService(),
 			new WooPaymentsOrderNoteService(),
-			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService::class )
+			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService::class ),
+			$ambiguity_service
 		);
 		$provider = new WooPaymentsProvider();
 		$provider->init(
@@ -3784,6 +3953,82 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		);
 
 		return $provider;
+	}
+
+	/**
+	 * Build a real WooPayments provider on the real API client, with only the platform's HTTP answers faked.
+	 *
+	 * @param FakeWooPaymentsHttpClient $http_client Platform answers, in order.
+	 * @return WooPaymentsProvider
+	 */
+	private function timeout_transport_provider( FakeWooPaymentsHttpClient $http_client ): WooPaymentsProvider {
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_account_country', 'get_mode', 'is_test_mode_enabled' ) )
+			->getMock();
+		$account_service->method( 'get_account_country' )->willReturn( 'US' );
+		$account_service->method( 'get_mode' )->willReturn( 'test' );
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$api_client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Skip the backoff between transport retries.
+			 *
+			 * @param int $backoff_microseconds Backoff.
+			 */
+			protected function sleep_before_retry( int $backoff_microseconds ): void {
+				unset( $backoff_microseconds );
+			}
+		};
+		$api_client->init( $http_client, $account_service );
+		$legacy_runtime = $this->getMockBuilder( WooPaymentsLegacyRuntime::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_logger' ) )
+			->getMock();
+		$legacy_runtime->method( 'get_logger' )->willReturn( null );
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_timeout' );
+		$ambiguity_service = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsChargeAmbiguityService();
+		$ambiguity_service->init( $api_client );
+		$adapter = new WooPaymentsProviderGatewayAdapter();
+		$adapter->init(
+			$legacy_runtime,
+			$api_client,
+			$customer_service,
+			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder::class ),
+			$account_service,
+			new WooPaymentsOrderDataService(),
+			new WooPaymentsOrderNoteService(),
+			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService::class ),
+			$ambiguity_service
+		);
+		$provider = new WooPaymentsProvider();
+		$provider->init(
+			$adapter,
+			$api_client,
+			$account_service,
+			null,
+			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
+		);
+
+		return $provider;
+	}
+
+	/**
+	 * Build a JSON transport response.
+	 *
+	 * @param int                 $code HTTP status.
+	 * @param array<string,mixed> $body Decoded body.
+	 * @return array<string,mixed>
+	 */
+	private function json_transport_response( int $code, array $body ): array {
+		return array(
+			'response' => array( 'code' => $code ),
+			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
+			'body'     => (string) wp_json_encode( $body ),
+		);
 	}
 
 	/**
