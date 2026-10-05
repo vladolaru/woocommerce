@@ -20,8 +20,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\G
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\ApmCapabilityStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\DCCProductStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\WCGatewayModule;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Doubles\ContainerDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
-use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
 use ReflectionMethod;
 use WC_Session_Handler;
 
@@ -63,14 +63,7 @@ class WCGatewayModuleTest extends WalletTestCase {
 			'wcgateway.admin.fees-renderer'       => $this->mock( FeesRenderer::class ),
 		);
 
-		$container = $this->mock( ContainerInterface::class );
-		$container->shouldReceive( 'get' )->andReturnUsing(
-			static function ( $id ) use ( $services ) {
-				return $services[ $id ];
-			}
-		);
-
-		( new WCGatewayModule() )->run( $container );
+		( new WCGatewayModule() )->run( new ContainerDouble( $services ) );
 	}
 
 	/**

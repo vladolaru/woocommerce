@@ -15,13 +15,12 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Walle
 use Mockery\MockInterface;
 use WC_Order;
 use WC_Payment_Token_CC;
-
-require_once __DIR__ . '/WcsGetSubscriptionStub.php';
+use WcSubscriptionsDouble;
 
 /**
  * Real users, orders as subscriptions, real payment tokens, and the real AJAX response; the request body is a mock of
- * the request reader and `wcs_get_subscription()` is answered from a list the test fills (the plugin is not loaded in
- * core's suite).
+ * the request reader and `wcs_get_subscription()` is answered by the WooCommerce Subscriptions double, from a list the
+ * test fills (the plugin is not loaded in core's suite).
  *
  * Nothing in this endpoint is PayPal-hosted, so every case applies to the wallet as it is.
  *
@@ -51,10 +50,15 @@ class SubscriptionChangePaymentMethodTest extends WalletTestCase {
 	private int $other_id;
 
 	/**
-	 * Build the request reader and two customers.
+	 * Load the WooCommerce Subscriptions double, and build the request reader and two customers.
 	 */
 	public function setUp(): void {
 		parent::setUp();
+
+		require_once dirname( __DIR__, 2 ) . '/Doubles/WcSubscriptionsDouble.php';
+		if ( ! WcSubscriptionsDouble::in_effect() ) {
+			$this->markTestSkipped( 'WooCommerce Subscriptions is loaded: its own functions answer, not the double.' );
+		}
 
 		$this->request_data = $this->mock( RequestData::class );
 		$this->owner_id     = self::factory()->user->create();
@@ -66,7 +70,7 @@ class SubscriptionChangePaymentMethodTest extends WalletTestCase {
 	 */
 	public function tearDown(): void {
 		try {
-			$GLOBALS['wallet_test_wcs_subscriptions'] = array();
+			WcSubscriptionsDouble::reset();
 			wp_set_current_user( 0 );
 		} finally {
 			parent::tearDown();
@@ -85,7 +89,7 @@ class SubscriptionChangePaymentMethodTest extends WalletTestCase {
 		$subscription->set_payment_method( 'bacs' );
 		$subscription->save();
 
-		$GLOBALS['wallet_test_wcs_subscriptions'][ $subscription->get_id() ] = $subscription;
+		WcSubscriptionsDouble::register_subscription( $subscription );
 
 		return $subscription;
 	}
