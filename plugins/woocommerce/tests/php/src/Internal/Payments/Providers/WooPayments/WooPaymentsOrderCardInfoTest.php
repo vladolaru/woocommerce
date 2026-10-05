@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Orders\PaymentInfo;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderCardInfo;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
@@ -24,6 +25,7 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		remove_all_filters( 'wc_order_payment_card_info' );
+		remove_all_filters( 'wcpay_dev_mode' );
 		$this->reset_container_replacements();
 		parent::tearDown();
 	}
@@ -172,6 +174,40 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 		$this->assertSame( '', $info['brand'] );
 		$this->assertSame( '', $info['last4'] );
 		$this->assertSame( array( 'pm_failing' ), $client->requested_ids, 'Core\'s fallback must not fetch again.' );
+	}
+
+	/**
+	 * @testdox A failed fetch writes the always-on payment-info line once, with logging off, as core's own fallback does (sweep row 220).
+	 */
+	public function test_failed_fetch_writes_one_payment_info_line_with_logging_off(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Fail as the platform does when it cannot answer.
+			 *
+			 * @param string $payment_method_id Payment method ID.
+			 * @return array<string,mixed>
+			 * @throws WooPaymentsApiException For every payment method ID.
+			 */
+			public function get_payment_method( string $payment_method_id ): array {
+				if ( '' !== $payment_method_id ) {
+					throw new WooPaymentsApiException( 'No such payment method: pm_gone', 'resource_missing', 404 );
+				}
+
+				return array();
+			}
+		};
+		$this->register_card_info_service( $client );
+		$logger = RecordingWcLogger::install();
+
+		$info = PaymentInfo::get_card_info( $this->create_card_info_order( 'pm_gone' ) );
+
+		$this->assertSame( '', $info['last4'] );
+		$lines = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'payment-info' === $line[2] ) );
+		$this->assertCount( 1, $lines );
+		$this->assertSame( 'error', $lines[0][0] );
+		$this->assertStringNotContainsString( 'No such payment method', $lines[0][1], 'The platform message stays out of the line.' );
 	}
 
 	/**

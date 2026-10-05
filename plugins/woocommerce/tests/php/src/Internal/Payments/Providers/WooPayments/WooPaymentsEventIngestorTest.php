@@ -339,6 +339,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 					'order_id'              => '123',
 					'delivery_instructions' => 'Leave with Jane Doe, call +15555550100',
 				),
+				// custom_fields entries are {name, value} (Stripe API Invoice object, custom_fields).
 				'custom_fields'    => array(
 					array(
 						'name'  => 'Contact',
@@ -376,7 +377,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The received line redacts a PaymentIntent's receipt email and free-text metadata, and keeps its order reference.
+	 * @testdox The received line redacts a PaymentIntent's receipt email and every metadata value but the listed references and flags with token values.
 	 */
 	public function test_received_line_redacts_a_payment_intent_receipt_email(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
@@ -388,7 +389,15 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			$order,
 			array(
 				'receipt_email' => 'shopper@example.com',
-				'metadata'      => array( 'gift_message' => 'Happy birthday, Jane' ),
+				'metadata'      => array(
+					'gift_message'     => 'Happy birthday, Jane',
+					'phone_number'     => '+15555550100',
+					'tax_id'           => 'DE123456789',
+					'reference_number' => 'Leave with Jane Doe',
+					'session_id'       => 'ordinary-session-token',
+					'customer_id'      => 'Jane Doe',
+					'subscription_id'  => array( 'nested' => 'value' ),
+				),
 			),
 			array( 'id' => 'evt_receipt_email' )
 		);
@@ -399,8 +408,11 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $received );
 		$intent = $logger->contexts[ $received[0] ]['body']['data']['object'];
 		$this->assertSame( '(redacted)', $intent['receipt_email'] );
-		$this->assertSame( '(redacted)', $intent['metadata']['gift_message'] );
-		$this->assertSame( (string) $order->get_id(), $intent['metadata']['order_id'] );
+		foreach ( array( 'gift_message', 'phone_number', 'tax_id', 'reference_number', 'session_id', 'customer_id', 'subscription_id' ) as $key ) {
+			$this->assertSame( '(redacted)', $intent['metadata'][ $key ], $key );
+		}
+		$this->assertSame( (string) $order->get_id(), $intent['metadata']['order_id'], 'The order reference support needs stays.' );
+		$this->assertSame( 'mobile_pos', $intent['metadata']['ipp_channel'] );
 	}
 
 	/**

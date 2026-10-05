@@ -87,16 +87,14 @@ class WooPaymentsOrderCardInfo implements RegisterHooksInterface {
 				return $card_info;
 			}
 
-			// Rendering an order must survive a failed fetch, as core's own fallback does (PaymentInfo::get_wcpay_card_info()).
-			// A failure answers with empty card fields, so that fallback does not fetch a second time.
+			// Rendering an order must survive a failed fetch, as core's own fallback does (PaymentInfo::get_wcpay_card_info()),
+			// with the same always-on 'payment-info' line for an Exception or a PHP Error (sweep row 220), but the failure's
+			// class, code and platform status instead of its message. A failure answers with empty card fields, so that
+			// fallback does not fetch a second time.
 			try {
-				$details = wc_get_container()->get( WooPaymentsPaymentMethodDetailsService::class )->get_payment_method_details( $payment_method_id );
+				$details = wc_get_container()->get( WooPaymentsPaymentMethodDetailsService::class )->fetch_payment_method_details( $payment_method_id );
 			} catch ( Throwable $exception ) {
-				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
-					'Error retrieving WooPayments card info for order ' . $order->get_id() . '.',
-					$exception,
-					array( 'payment_method_id' => $payment_method_id )
-				);
+				self::log_fetch_failure( $order, $payment_method_id, $exception );
 				$details = array();
 			}
 			if ( array() === $details ) {
@@ -137,6 +135,28 @@ class WooPaymentsOrderCardInfo implements RegisterHooksInterface {
 		}
 
 		return array_map( 'sanitize_text_field', $info );
+	}
+
+	/**
+	 * Write the always-on 'payment-info' line for a failed card info fetch; logging never stops the render.
+	 *
+	 * @param WC_Order  $order             Order being rendered.
+	 * @param mixed     $payment_method_id Payment method ID read from the order.
+	 * @param Throwable $exception         Fetch failure.
+	 */
+	private static function log_fetch_failure( WC_Order $order, $payment_method_id, Throwable $exception ): void {
+		try {
+			wc_get_logger()->error(
+				sprintf(
+					'WooPaymentsOrderCardInfo - retrieving info for payment method %1$s for order %2$d.',
+					is_scalar( $payment_method_id ) ? (string) $payment_method_id : gettype( $payment_method_id ),
+					$order->get_id()
+				),
+				array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => 'payment-info' ) )
+			);
+		} catch ( Throwable $logger_exception ) {
+			unset( $logger_exception );
+		}
 	}
 
 	/**

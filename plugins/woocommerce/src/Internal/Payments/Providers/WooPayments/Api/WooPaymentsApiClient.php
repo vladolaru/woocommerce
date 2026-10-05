@@ -123,6 +123,11 @@ class WooPaymentsApiClient {
 	);
 
 	/**
+	 * Metadata keys the transport log keeps (native-only): order and customer references and payment kind flags.
+	 */
+	private const METADATA_KEYS_TO_KEEP = array( 'order_id', 'order_number', 'customer_id', 'subscription_id', 'payment_type', 'gateway_type', 'ipp_channel', 'paid_on_woopay' );
+
+	/**
 	 * Key endings redacted like API_KEYS_TO_REDACT (native-only): any `*_secret` or `*_key` (monitor ruling 2026-10-05),
 	 * and any `*_email` or `*_phone`, such as a PaymentIntent's receipt_email or an invoice's customer_phone (Codex review 75).
 	 */
@@ -2998,8 +3003,9 @@ class WooPaymentsApiClient {
 	/**
 	 * Redact a platform object's metadata, which can hold any text a store or extension put there.
 	 *
-	 * Only scalar values under keys ending in `_id` or `_number` (order_id, order_number, customer_id) are kept, as
-	 * support needs them to find the order; every other value is replaced whole (native-only, Codex review 76).
+	 * Only the references support needs to find an order, and the payment kind flags, are kept (METADATA_KEYS_TO_KEEP,
+	 * none of them a key redacted elsewhere), and only when the value is a short token; every other value, or a kept key
+	 * with free text, is replaced whole (native-only, Codex reviews 76 and 77).
 	 *
 	 * @param array<int|string,mixed> $metadata Metadata.
 	 * @return array<int|string,mixed>
@@ -3007,9 +3013,11 @@ class WooPaymentsApiClient {
 	private static function redact_metadata( array $metadata ): array {
 		$result = array();
 		foreach ( $metadata as $key => $value ) {
-			$name           = is_string( $key ) ? strtolower( $key ) : '';
-			$is_reference   = '_id' === substr( $name, -3 ) || '_number' === substr( $name, -7 );
-			$result[ $key ] = $is_reference && is_scalar( $value ) ? self::redact_string( (string) $value ) : self::REDACTED;
+			$is_kept        = is_string( $key )
+				&& in_array( strtolower( $key ), self::METADATA_KEYS_TO_KEEP, true )
+				&& is_scalar( $value )
+				&& 1 === preg_match( '/^[A-Za-z0-9_.:-]{1,64}$/', (string) $value );
+			$result[ $key ] = $is_kept ? (string) $value : self::REDACTED;
 		}
 
 		return $result;
