@@ -131,6 +131,11 @@ class WooPaymentsApiClient {
 	private const REDACT_MAX_ARRAY_DEPTH = 10;
 
 	/**
+	 * Longest string value the transport log decodes as JSON text; a longer one that looks like JSON is redacted whole.
+	 */
+	private const REDACT_MAX_EMBEDDED_JSON_BYTES = 8192;
+
+	/**
 	 * Public WordPress.com API base preserved for compatibility filters.
 	 */
 	private const WPCOM_ENDPOINT_BASE = 'https://public-api.wordpress.com/wpcom/v2';
@@ -2768,7 +2773,7 @@ class WooPaymentsApiClient {
 		$this->maybe_rotate_fraud_prevention_token( $decline_code );
 		$this->maybe_rotate_fraud_prevention_token( $error_code );
 
-		$this->log_transport_error( "$error_message ($error_code)" );
+		$this->log_transport_error( $error_message, $error_code );
 
 		$message = $wrap_message
 			? sprintf(
@@ -2853,16 +2858,22 @@ class WooPaymentsApiClient {
 	}
 
 	/**
-	 * Log a transport error line when transport logging is enabled, cleaned by redact_string().
+	 * Log the platform error line, "<message> (<code>)" as the client writes it, when transport logging is enabled.
 	 *
-	 * @param string $message Log message.
+	 * The message and the code are redacted each on its own, so a message that is JSON text is read as such.
+	 *
+	 * @param string $error_message Platform error message.
+	 * @param string $error_code    Platform error code.
 	 */
-	private function log_transport_error( string $message ): void {
+	private function log_transport_error( string $error_message, string $error_code ): void {
 		if ( ! $this->can_log_transport() ) {
 			return;
 		}
 
-		wc_get_logger()->error( self::redact_string( $message ), array( 'source' => 'woopayments' ) );
+		wc_get_logger()->error(
+			sprintf( '%s (%s)', self::redact_string( $error_message ), self::redact_string( $error_code ) ),
+			array( 'source' => 'woopayments' )
+		);
 	}
 
 	/**
@@ -2958,19 +2969,110 @@ class WooPaymentsApiClient {
 	/**
 	 * Clean a logged string value, whatever key it sits under.
 	 *
-	 * A value holding a Stripe secret or restricted key (`sk_live_…`, `rk_test_…`) or a client secret
-	 * (`pi_…_secret_…`) is replaced whole; every URL in it loses its query string and fragment, which can carry
-	 * session keys and tokens.
+	 * A value is replaced whole when it holds a Stripe secret or restricted key (`sk_live_…`, `rk_test_…`) or a client
+	 * secret (`pi_…_secret_…`), or when its decoded form holds one, a URL with a query or a redacted key (see
+	 * is_redacted_whole()). Otherwise every URL in it loses its query string and fragment, which can carry session keys and
+	 * tokens.
 	 *
 	 * @param string $value Logged value.
 	 * @return string
 	 */
 	private static function redact_string( string $value ): string {
-		if ( preg_match( '/\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]+|\b[a-z]+_[A-Za-z0-9]+_secret_[A-Za-z0-9]+/', $value ) ) {
+		if ( self::is_redacted_whole( $value ) ) {
 			return self::REDACTED;
 		}
 
-		return (string) preg_replace( '#(\bhttps?://[^\s?\#"\'<>]*)[?\#][^\s"\'<>]*#i', '$1', $value );
+		return (string) preg_replace( '#(https?://[^\s?\#"\'<>]*+)[?\#][^\s"\'<>]*+#i', '$1', $value );
+	}
+
+	/**
+	 * Tell whether a logged string value is replaced whole rather than cleaned.
+	 *
+	 * It is when it holds a secret, or when its decoded form holds a secret or a URL with a query: percent-decoded once with
+	 * JSON's escaped slashes restored, or, for text starting with `{` or `[`, decoded once as JSON (a redacted key counts
+	 * too). Encoded text cannot be cleaned in place, and JSON text too long or too deep to decode is replaced whole.
+	 *
+	 * @param string $value Logged value.
+	 * @return bool
+	 */
+	private static function is_redacted_whole( string $value ): bool {
+		if ( self::holds_secret( $value ) ) {
+			return true;
+		}
+
+		$decoded = self::decode_text( $value );
+		if ( $decoded !== $value && self::holds_redacted_text( $decoded ) ) {
+			return true;
+		}
+
+		foreach ( array( trim( $value ), trim( $decoded ) ) as $json ) {
+			if ( '' === $json || ( '{' !== $json[0] && '[' !== $json[0] ) ) {
+				continue;
+			}
+
+			if ( strlen( $json ) > self::REDACT_MAX_EMBEDDED_JSON_BYTES ) {
+				return true;
+			}
+
+			$data = json_decode( $json, true, self::REDACT_MAX_ARRAY_DEPTH );
+			if ( JSON_ERROR_DEPTH === json_last_error() ) {
+				return true;
+			}
+
+			return is_array( $data ) && self::holds_redacted_data( $data );
+		}
+
+		return false;
+	}
+
+	/**
+	 * Tell whether decoded JSON data holds a redacted key, or a string that holds_redacted_text() finds, at any depth.
+	 *
+	 * @param array<mixed> $data Decoded JSON data.
+	 * @return bool
+	 */
+	private static function holds_redacted_data( array $data ): bool {
+		foreach ( $data as $key => $item ) {
+			if ( self::is_key_to_redact( $key, self::API_KEYS_TO_REDACT ) ) {
+				return true;
+			}
+
+			if ( is_array( $item ) ? self::holds_redacted_data( $item ) : ( is_string( $item ) && self::holds_redacted_text( self::decode_text( $item ) ) ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Tell whether decoded text holds a secret (holds_secret()) or a URL with a query or fragment.
+	 *
+	 * @param string $text Decoded text.
+	 * @return bool
+	 */
+	private static function holds_redacted_text( string $text ): bool {
+		return self::holds_secret( $text ) || 1 === preg_match( '#https?://[^\s?\#"\'<>]*+[?\#]#i', $text );
+	}
+
+	/**
+	 * Tell whether text holds a Stripe secret or restricted key or a client secret, anywhere, not only after a word boundary.
+	 *
+	 * @param string $text Text.
+	 * @return bool
+	 */
+	private static function holds_secret( string $text ): bool {
+		return 1 === preg_match( '/[sr]k_(?:live|test)_[A-Za-z0-9]|[a-z]_[A-Za-z0-9]++_secret_[A-Za-z0-9]/', $text );
+	}
+
+	/**
+	 * Decode text once for redaction: percent-decoded, with JSON's escaped slashes restored.
+	 *
+	 * @param string $text Text.
+	 * @return string
+	 */
+	private static function decode_text( string $text ): string {
+		return str_replace( '\/', '/', rawurldecode( $text ) );
 	}
 
 	/**

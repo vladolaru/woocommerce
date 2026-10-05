@@ -1551,7 +1551,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'Contact via https://pay.example.test/r' ), $body['notes'] );
 		$this->assertSame( array( '(redacted)', '(redacted)', '(redacted)' ), array( $body['live'], $body['test'], $body['unrelated'] ) );
 		$errors = array_values( array_filter( $logger->entries, static fn( array $entry ): bool => 'error' === $entry['level'] ) );
-		$this->assertSame( array( '(redacted)' ), array_column( $errors, 'message' ), 'An error line holding a client secret is replaced whole.' );
+		$this->assertSame( array( '(redacted) (resource_missing)' ), array_column( $errors, 'message' ), 'An error message holding a client secret is replaced whole.' );
 		$this->assertStringNotContainsString( 'eak', (string) wp_json_encode( $logger->entries ) );
 	}
 
@@ -1635,14 +1635,93 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Send one POST through the API client with the gated transport log on, answered with the given body.
+	 * @testdox The gated transport log redacts $_dataName in request bodies, response bodies, GET parameters and the error line.
+	 *
+	 * Each value sits under a key no list names. The error envelope is the one client 11.1.0 parses
+	 * (class-wc-payments-api-client.php:2852-2871: error.code, error.message, error.type) and logs as "<message> (<code>)"
+	 * (:2912); its message carries the value as defensive input, since the client logs whatever text the platform answers
+	 * (:2780-2784). The GET answer is synthetic transport-only input.
+	 *
+	 * @dataProvider provide_encoded_and_embedded_credentials
+	 *
+	 * @param string $value  Value sent and answered.
+	 * @param string $logged What the log may show in its place.
+	 */
+	public function test_transport_log_redacts_encoded_and_embedded_credentials( string $value, string $logged ): void {
+		$post_logger = $this->log_transport_request(
+			array( 'note' => $value ),
+			array(
+				'error' => array(
+					'code'    => 'resource_missing',
+					'message' => $value,
+					'type'    => 'invalid_request_error',
+				),
+			),
+			404
+		);
+		$get_logger  = $this->log_transport_request( array( 'note' => $value ), array( 'data' => array() ), 200, 'GET' );
+
+		$this->assertSame( $logged, $this->get_transport_entry( $post_logger, 'API REQUEST (' )['context']['body']['note'] ?? null, 'Request body.' );
+		$this->assertSame( $logged, $this->get_transport_entry( $post_logger, 'API RESPONSE (' )['context']['body']['error']['message'] ?? null, 'Response body.' );
+		$errors = array_values( array_filter( $post_logger->entries, static fn( array $entry ): bool => 'error' === $entry['level'] ) );
+		$this->assertSame( array( "$logged (resource_missing)" ), array_column( $errors, 'message' ), 'Error line.' );
+		$this->assertStringEndsWith( '&' . http_build_query( array( 'note' => $logged ) ), $this->get_transport_entry( $get_logger, 'API REQUEST (' )['message'], 'GET parameter, after the test_mode flag every request carries.' );
+		$this->assertDoesNotMatchRegularExpression( '/leak/i', (string) wp_json_encode( array( $post_logger->entries, $get_logger->entries ) ) );
+	}
+
+	/**
+	 * Encoded and embedded credentials, each with what the log may show in its place.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function provide_encoded_and_embedded_credentials(): array {
+		return array(
+			'JSON text with sensitive keys'             => array( '{"session":"leak-json-session","Authorization":"Bearer leak-json-bearer"}', '(redacted)' ),
+			'a JSON list with a mixed-case key suffix'  => array( '[{"Session_Key":"leak-json-list"}]', '(redacted)' ),
+			'JSON text with an escaped URL query'       => array( '{"return":"https:\/\/shop.example.test\/?key=leak-escaped-json"}', '(redacted)' ),
+			'a JSON fragment with an escaped URL query' => array( '"return":"https:\/\/shop.example.test\/?key=leak-escaped-fragment"', '(redacted)' ),
+			'percent-encoded JSON with a session key'   => array( '%7B%22session%22%3A%22leak-encoded-json%22%7D', '(redacted)' ),
+			'a percent-encoded secret key'              => array( 'sk%5Flive%5FLeakEncoded', '(redacted)' ),
+			'a percent-encoded URL with a query'        => array( 'https%3A%2F%2Fshop.example.test%2F%3Fkey%3Dleak-encoded-url', '(redacted)' ),
+			'a secret key glued to a prefix'            => array( 'prefixsk_live_LeakGlued', '(redacted)' ),
+			'a client secret glued to a prefix'         => array( 'ref7pi_3LeakGlued_secret_LeakGlued', '(redacted)' ),
+			'a URL glued to a prefix'                   => array( 'seehttps://shop.example.test/?key=leak-glued-url', 'seehttps://shop.example.test/' ),
+			'JSON text with a unicode-escaped secret'   => array( '{"note":"sk\u005flive\u005fLeakUnicode"}', '(redacted)' ),
+			'JSON text nested too deep to decode'       => array( str_repeat( '{"a":', 10 ) . '{"session":"leak-deep-json"}' . str_repeat( '}', 10 ), '(redacted)' ),
+		);
+	}
+
+	/**
+	 * @testdox The gated transport log decodes JSON text of up to 8192 bytes and replaces longer JSON text whole, without decoding it.
+	 *
+	 * The response body is synthetic transport-only input.
+	 */
+	public function test_transport_log_decodes_json_text_only_up_to_its_size_bound(): void {
+		$padding = static fn( int $length ): string => str_repeat( 'a', $length );
+		$params  = array(
+			'clean_at_bound'     => '{"note":"' . $padding( 8192 - 11 ) . '"}',
+			'session_at_bound'   => '{"session":"' . $padding( 8192 - 14 ) . '"}',
+			'clean_beyond_bound' => '{"note":"' . $padding( 8192 - 10 ) . '"}',
+		);
+		$this->assertSame( array( 8192, 8192, 8193 ), array_map( 'strlen', array_values( $params ) ) );
+
+		$body = $this->get_transport_entry( $this->log_transport_request( $params, array( 'data' => array() ) ), 'API REQUEST (' )['context']['body'];
+
+		$this->assertSame( $params['clean_at_bound'], $body['clean_at_bound'], 'JSON text within the bound is decoded and kept when nothing in it is redacted.' );
+		$this->assertSame( '(redacted)', $body['session_at_bound'], 'JSON text within the bound is decoded and its keys are checked.' );
+		$this->assertSame( '(redacted)', $body['clean_beyond_bound'], 'Longer JSON text is replaced whole without being decoded, so a large value cannot slow the log down.' );
+	}
+
+	/**
+	 * Send one request through the API client with the gated transport log on, answered with the given body.
 	 *
 	 * @param array<string,mixed> $params        Request params.
 	 * @param array<string,mixed> $response_body Decoded response body.
 	 * @param int                 $status        HTTP status.
+	 * @param string              $method        HTTP method.
 	 * @return object Recording logger.
 	 */
-	private function log_transport_request( array $params, array $response_body, int $status = 200 ): object {
+	private function log_transport_request( array $params, array $response_body, int $status = 200, string $method = 'POST' ): object {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
 		$logger = $this->install_recording_logger();
 
@@ -1657,7 +1736,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$sut->init( $http_client, $this->create_account_service( false ) );
 
 		try {
-			$sut->send_site_request( $params, 'subscriptions', 'POST' );
+			$sut->send_site_request( $params, 'subscriptions', $method );
 		} catch ( WooPaymentsApiException $exception ) {
 			unset( $exception );
 		} finally {
