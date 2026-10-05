@@ -52,11 +52,20 @@ class WooPaymentsChargeAmbiguityService {
 	private const LIST_LIMIT = 100;
 
 	/**
-	 * Seconds before the recorded failure that a full page must reach back to before it can prove the order has no intent.
+	 * Seconds before the recorded failure that a full page of the customer's intents must reach back to before it can
+	 * prove the order has no intent.
 	 *
 	 * The earlier request was sent at most one request timeout plus its transport retries before the failure was recorded.
 	 */
 	private const LOOKBACK_SECONDS = 300;
+
+	/**
+	 * Seconds before the recorded failure from which the account's intents are listed.
+	 *
+	 * Stripe filters `created` by its own clock and the failure time comes from the store's, so the window is wider than
+	 * the request timing alone needs. A wider window can only turn a charge into "cannot check", never the reverse.
+	 */
+	private const ACCOUNT_LOOKBACK_SECONDS = 3600;
 
 	/**
 	 * Native API client.
@@ -103,7 +112,7 @@ class WooPaymentsChargeAmbiguityService {
 				: $this->find_order_intents_created_since_failure( $order, $failed_at );
 		}
 
-		$order_intents = $this->get_order_intents_from_list( $list, $order, $failed_at );
+		$order_intents = $this->get_order_intents_from_list( $list, $order, $failed_at - self::LOOKBACK_SECONDS );
 
 		return null === $order_intents ? self::lookup( self::LOOKUP_FAILED ) : self::lookup( self::LOOKUP_DONE, $order_intents );
 	}
@@ -111,21 +120,22 @@ class WooPaymentsChargeAmbiguityService {
 	/**
 	 * List the order's PaymentIntents among the account's intents created since shortly before the recorded failure.
 	 *
-	 * A definitive refusal, or a page that cannot be proven complete, cannot change on a later attempt: the window only
-	 * grows, so a full page can never reach back past it.
+	 * A definitive refusal, or a page that cannot be proven complete, cannot change on a later attempt: every listed intent
+	 * is inside the window and the window only grows, so a full page can never reach back past it.
 	 *
 	 * @param WC_Order $order     Order whose earlier charge is looked up.
-	 * @param int      $failed_at Unix time the earlier charge failure was recorded.
+	 * @param int      $failed_at Unix time the first earlier charge failure was recorded.
 	 * @return array{status:string,intents:array<int,array<string,mixed>>}
 	 */
 	private function find_order_intents_created_since_failure( WC_Order $order, int $failed_at ): array {
+		$created_since = $failed_at - self::ACCOUNT_LOOKBACK_SECONDS;
 		try {
-			$list = $this->api_client->list_payment_intentions_created_since( $failed_at - self::LOOKBACK_SECONDS, self::LIST_LIMIT );
+			$list = $this->api_client->list_payment_intentions_created_since( $created_since, self::LIST_LIMIT );
 		} catch ( WooPaymentsApiException $exception ) {
 			return self::lookup( $this->api_client->is_ambiguous_request_failure( $exception ) ? self::LOOKUP_FAILED : self::LOOKUP_CANNOT_CHECK );
 		}
 
-		$order_intents = $this->get_order_intents_from_list( $list, $order, $failed_at );
+		$order_intents = $this->get_order_intents_from_list( $list, $order, $created_since );
 
 		return null === $order_intents ? self::lookup( self::LOOKUP_CANNOT_CHECK ) : self::lookup( self::LOOKUP_DONE, $order_intents );
 	}
@@ -150,13 +160,13 @@ class WooPaymentsChargeAmbiguityService {
 	 * An intent belongs to the order when its metadata carries both the order's id and its order key. A list also holds
 	 * intents created elsewhere (other orders, Stripe Billing invoices), so both must match.
 	 *
-	 * @param array<string,mixed> $page      The list page.
-	 * @param WC_Order            $order     Order whose earlier charge is looked up.
-	 * @param int                 $failed_at Unix time the earlier charge failure was recorded.
+	 * @param array<string,mixed> $page         The list page.
+	 * @param WC_Order            $order        Order whose earlier charge is looked up.
+	 * @param int                 $window_start Unix time a full page must reach back past to prove the order has no intent.
 	 * @return array<int,array<string,mixed>>|null The order's intents, newest first, possibly none; null when the answer
 	 *                                             has no list or the page cannot be proven complete.
 	 */
-	private function get_order_intents_from_list( array $page, WC_Order $order, int $failed_at ): ?array {
+	private function get_order_intents_from_list( array $page, WC_Order $order, int $window_start ): ?array {
 		if ( ! isset( $page['data'] ) || ! is_array( $page['data'] ) ) {
 			return null;
 		}
@@ -178,7 +188,7 @@ class WooPaymentsChargeAmbiguityService {
 		// A full page with no match that does not reach back before the earlier request may have left its intent for the next page.
 		if ( array() === $order_intents && ! empty( $page['has_more'] ) ) {
 			$oldest_created = is_array( $oldest ) && is_numeric( $oldest['created'] ?? null ) ? (int) $oldest['created'] : PHP_INT_MAX;
-			if ( $oldest_created >= $failed_at - self::LOOKBACK_SECONDS ) {
+			if ( $oldest_created >= $window_start ) {
 				return null;
 			}
 		}

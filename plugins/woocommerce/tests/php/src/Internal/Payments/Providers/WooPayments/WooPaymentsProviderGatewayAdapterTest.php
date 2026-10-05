@@ -1702,7 +1702,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox When the customer's intents cannot be listed for good, the account's intents since the failure settle it: the earlier payment pays the order.
 	 *
-	 * A deleted customer keeps its PaymentIntents, so the account's list, filtered to intents created from 300 s before
+	 * A deleted customer keeps its PaymentIntents, so the account's list, filtered to intents created from 3600 s before
 	 * the recorded failure and matched on the order id and key, still shows the earlier request's intent (monitor ruling
 	 * B). The platform forwards `created` to Stripe's list unchanged (wpcom `wcpay/class-intentions-controller.php:198-210`).
 	 */
@@ -2197,11 +2197,14 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	/**
 	 * The account-wide intents list request, as request_trail() prints it.
 	 *
-	 * @param int $failed_at Unix time of the recorded ambiguous failure.
+	 * The window starts 3600 s before the recorded failure: the store's clock and Stripe's `created` may disagree, and a
+	 * wider window only turns a charge into "cannot check" (review 45 F2). The customer list keeps its 300 s window.
+	 *
+	 * @param int $failed_at Unix time of the first recorded ambiguous failure.
 	 * @return string
 	 */
 	private static function account_list_trail( int $failed_at ): string {
-		return 'GET intentions?test_mode=0&created%5Bgte%5D=' . ( $failed_at - 300 ) . '&limit=100';
+		return 'GET intentions?test_mode=0&created%5Bgte%5D=' . ( $failed_at - 3600 ) . '&limit=100';
 	}
 
 	/**
