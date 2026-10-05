@@ -41,6 +41,8 @@
 
 	var GENERIC_PAYMENT_ERROR_MESSAGE =
 		'Unable to process this payment, please try again.';
+	// Marks the error notices setError() adds, so a later wallet error replaces them and no other error.
+	var WALLET_ERROR_ATTRIBUTE = 'data-woopayments-wallet-error';
 	var ERRORS_BEFORE_PERSISTENCE = [
 		'woocommerce_rest_invalid_billing_email',
 		'woocommerce_rest_invalid_order',
@@ -949,9 +951,10 @@
 	}
 
 	/**
-	 * Client 11.1.0 abortPayment() (shortcode-buttons-express/index.js:186-206): earlier errors go, the new one goes
-	 * into the first notices wrapper and the page scrolls to it. The notice uses core's error markup
-	 * (templates/notices/error.php), whose role="alert" has screen readers announce it.
+	 * Client 11.1.0 abortPayment() (shortcode-buttons-express/index.js:186-206): the new error goes into the first
+	 * notices wrapper and the page scrolls to it. The notice uses core's error markup (templates/notices/error.php),
+	 * whose role="alert" has screen readers announce it. Unlike the client, which removes every error on the page
+	 * first (index.js:189), only earlier wallet errors go, and nothing is removed when there is no notices wrapper.
 	 *
 	 * @param {string} message Error message.
 	 */
@@ -964,24 +967,25 @@
 			return;
 		}
 
-		message =
-			getErrorMessageFromNotice( message ) ||
-			GENERIC_PAYMENT_ERROR_MESSAGE;
-
-		document
-			.querySelectorAll( '.woocommerce-error' )
-			.forEach( function ( notice ) {
-				notice.remove();
-			} );
-
 		notices = document.querySelector( '.woocommerce-notices-wrapper' );
 		if ( ! notices ) {
 			return;
 		}
 
+		message =
+			getErrorMessageFromNotice( message ) ||
+			GENERIC_PAYMENT_ERROR_MESSAGE;
+
+		document
+			.querySelectorAll( '.woocommerce-error[' + WALLET_ERROR_ATTRIBUTE + ']' )
+			.forEach( function ( notice ) {
+				notice.remove();
+			} );
+
 		error = document.createElement( 'ul' );
 		error.className = 'woocommerce-error';
 		error.setAttribute( 'role', 'alert' );
+		error.setAttribute( WALLET_ERROR_ATTRIBUTE, '' );
 		item = document.createElement( 'li' );
 		item.textContent = message;
 		error.appendChild( item );

@@ -4782,11 +4782,11 @@ describe( 'WooPayments express checkout', () => {
 		} );
 	} );
 
-	// Client 11.1.0 abortPayment() (shortcode-buttons-express/index.js:186-206) removes every earlier
-	// `.woocommerce-error`, appends the new one to the first notices wrapper and scrolls to it; native uses core's
-	// error notice markup (templates/notices/error.php: `<ul class="woocommerce-error" role="alert"><li>`) so screen
-	// readers announce it.
-	describe( 'a wallet error replaces earlier errors and is announced', () => {
+	// Client 11.1.0 abortPayment() (shortcode-buttons-express/index.js:186-206) appends the new error to the first
+	// notices wrapper and scrolls to it; native uses core's error notice markup (templates/notices/error.php:
+	// `<ul class="woocommerce-error" role="alert"><li>`) so screen readers announce it. The client first removes every
+	// `.woocommerce-error` on the page (index.js:189); native removes only its own earlier wallet errors.
+	describe( 'a wallet error replaces earlier wallet errors and is announced', () => {
 		function setCheckoutWithEarlierErrors() {
 			document.body.innerHTML =
 				'<div class="woocommerce-notices-wrapper">' +
@@ -4794,14 +4794,41 @@ describe( 'WooPayments express checkout', () => {
 				'</div>' +
 				'<form class="checkout"><div class="woocommerce-NoticeGroup">' +
 				'<ul class="woocommerce-error"><li>Checkout error</li></ul>' +
-				'</div></form>' +
+				'</div>' +
+				'<div class="extension-field"><ul class="woocommerce-error"><li>Extension error</li></ul></div>' +
+				'</form>' +
 				'<div class="woocommerce-notices-wrapper"></div>' +
 				'<div class="wcpay-express-checkout-wrapper">' +
 				'<div id="wcpay-express-checkout-element"></div>' +
 				'</div>';
 		}
 
-		test( 'shows a failed payment as the only error, announced and scrolled into view', async () => {
+		function getErrorTexts() {
+			return Array.from(
+				document.querySelectorAll( '.woocommerce-error' ),
+				( error ) => error.textContent
+			);
+		}
+
+		// A wallet click and confirm (https://docs.stripe.com/js.md, "expressCheckoutElement.on('click' / 'confirm',
+		// handler)") whose checkout fails with a Store API payment error (src/StoreApi/Utilities/CheckoutTrait.php:135,
+		// status 400; shape from AbstractRoute::error_to_response(): code, message, data.status).
+		async function failWalletPayment( message ) {
+			window.wp.apiFetch.mockRejectedValueOnce( {
+				code: 'woocommerce_rest_checkout_process_payment_error',
+				message,
+				data: { status: 400 },
+			} );
+			await expressHandlers.click( { resolve: jest.fn() } );
+			await expressHandlers.confirm( {
+				billingDetails: {
+					email: 'shopper@example.test',
+					name: 'Ada Lovelace',
+				},
+			} );
+		}
+
+		test( 'shows a failed payment in the first notices wrapper, announced and scrolled into view', async () => {
 			setCheckoutWithEarlierErrors();
 			window.wp.apiFetch
 				.mockResolvedValueOnce( getCartResponse() )
@@ -4827,20 +4854,42 @@ describe( 'WooPayments express checkout', () => {
 				},
 			} );
 
-			const errors = document.querySelectorAll( '.woocommerce-error' );
-			expect( errors ).toHaveLength( 1 );
-			expect( errors[ 0 ].parentElement ).toBe(
-				document.querySelector( '.woocommerce-notices-wrapper' )
-			);
-			expect( errors[ 0 ].getAttribute( 'role' ) ).toBe( 'alert' );
-			expect( errors[ 0 ].tagName ).toBe( 'UL' );
-			expect( errors[ 0 ].querySelector( 'li' ).textContent ).toBe(
+			const error = document.querySelector(
+				'.woocommerce-notices-wrapper'
+			).lastElementChild;
+			expect( error.className ).toBe( 'woocommerce-error' );
+			expect( error.getAttribute( 'role' ) ).toBe( 'alert' );
+			expect( error.tagName ).toBe( 'UL' );
+			expect( error.querySelector( 'li' ).textContent ).toBe(
 				'Your card was declined.'
 			);
-			expect( errors[ 0 ].scrollIntoView ).toHaveBeenCalledTimes( 1 );
-			expect(
-				errors[ 0 ].scrollIntoView.mock.contexts[ 0 ]
-			).toBe( errors[ 0 ] );
+			expect( error.scrollIntoView ).toHaveBeenCalledTimes( 1 );
+			expect( error.scrollIntoView.mock.contexts[ 0 ] ).toBe( error );
+		} );
+
+		// The other errors on the page are WooCommerce's or an extension's: a wallet failure does not resolve them.
+		test( 'keeps the errors it did not add, and a second wallet error replaces the first', async () => {
+			setCheckoutWithEarlierErrors();
+			window.wp.apiFetch.mockResolvedValueOnce( getCartResponse() );
+			require( '../woopayments-express-checkout' );
+			await bodyEventHandlers.updated_checkout();
+			await flushPromises();
+
+			await failWalletPayment( 'Your card was declined.' );
+			expect( getErrorTexts() ).toEqual( [
+				'Earlier error',
+				'Your card was declined.',
+				'Checkout error',
+				'Extension error',
+			] );
+
+			await failWalletPayment( 'Your card has insufficient funds.' );
+			expect( getErrorTexts() ).toEqual( [
+				'Earlier error',
+				'Your card has insufficient funds.',
+				'Checkout error',
+				'Extension error',
+			] );
 		} );
 
 		// Client 11.1.0 getErrorMessageFromNotice() (express-checkout/utils/error-messages.ts:7-13) shows the text of a
@@ -4923,12 +4972,14 @@ describe( 'WooPayments express checkout', () => {
 			} );
 			await flushPromises();
 
-			const error = document.querySelector( '.woocommerce-error' );
+			const error = document.querySelector(
+				'.woocommerce-notices-wrapper'
+			).lastElementChild;
 			expect( error.textContent ).toBe( expected );
 			expect( error.querySelector( 'strong, a, em, img, b' ) ).toBeNull();
 		} );
 
-		test( 'removes earlier errors even when the page has no notices wrapper', async () => {
+		test( 'keeps every earlier error and adds none when the page has no notices wrapper', async () => {
 			setCheckoutWithEarlierErrors();
 			document
 				.querySelectorAll( '.woocommerce-notices-wrapper' )
@@ -4955,7 +5006,10 @@ describe( 'WooPayments express checkout', () => {
 				},
 			} );
 
-			expect( document.querySelectorAll( '.woocommerce-error' ) ).toHaveLength( 0 );
+			expect( getErrorTexts() ).toEqual( [
+				'Checkout error',
+				'Extension error',
+			] );
 		} );
 	} );
 
