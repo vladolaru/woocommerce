@@ -78,7 +78,7 @@ class CompleteOnClickEndpoint extends RestEndpoint {
 	 * Processes the POST request to mark a specific todo as completed,
 	 * updating the stored settings accordingly.
 	 *
-	 * @param WP_REST_Request $request The incoming REST request object.
+	 * @param WP_REST_Request<array<string, mixed>> $request The incoming REST request object.
 	 * @return WP_REST_Response The REST response indicating success or failure.
 	 */
 	public function complete_onclick( WP_REST_Request $request ): WP_REST_Response {

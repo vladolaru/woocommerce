@@ -173,7 +173,7 @@ class AuthenticationRestEndpoint extends RestEndpoint {
 	 * This is the "Manual Login" logic, when a merchant already knows their
 	 * API credentials.
 	 *
-	 * @param WP_REST_Request $request Full data about the request.
+	 * @param WP_REST_Request<array<string, mixed>> $request Full data about the request.
 	 */
 	public function connect_direct( WP_REST_Request $request ): WP_REST_Response {
 		$client_id     = $request->get_param( 'clientId' );
@@ -207,7 +207,7 @@ class AuthenticationRestEndpoint extends RestEndpoint {
 	 * This is the final step in the UI-driven login via the OAuth popup, which
 	 * is triggered by the LoginLinkRestEndpoint URL.
 	 *
-	 * @param WP_REST_Request $request Full data about the request.
+	 * @param WP_REST_Request<array<string, mixed>> $request Full data about the request.
 	 */
 	public function connect_oauth( WP_REST_Request $request ): WP_REST_Response {
 		$shared_id   = $request->get_param( 'sharedId' );
@@ -222,7 +222,7 @@ class AuthenticationRestEndpoint extends RestEndpoint {
 	/**
 	 * Disconnect the merchant and clear the authentication details.
 	 *
-	 * @param WP_REST_Request $request Full data about the request.
+	 * @param WP_REST_Request<array<string, mixed>> $request Full data about the request.
 	 *
 	 * @return WP_REST_Response
 	 */

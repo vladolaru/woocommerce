@@ -171,7 +171,7 @@ class TodosRestEndpoint extends RestEndpoint {
 	/**
 	 * Updates the todos with provided data.
 	 *
-	 * @param WP_REST_Request $request The request instance containing todo updates.
+	 * @param WP_REST_Request<array<string, mixed>> $request The request instance containing todo updates.
 	 * @return WP_REST_Response The response containing updated todos or error details.
 	 */
 	public function update_todos( WP_REST_Request $request ): WP_REST_Response {
@@ -194,7 +194,7 @@ class TodosRestEndpoint extends RestEndpoint {
 	/**
 	 * Handles the completion of a todo item via click.
 	 *
-	 * @param WP_REST_Request $request The request instance.
+	 * @param WP_REST_Request<array<string, mixed>> $request The request instance.
 	 * @return WP_REST_Response The response containing completion status.
 	 */
 	public function complete_onclick( WP_REST_Request $request ): WP_REST_Response {
@@ -226,7 +226,7 @@ class TodosRestEndpoint extends RestEndpoint {
 	/**
 	 * Resets all dismissed todos.
 	 *
-	 * @param WP_REST_Request $request The request instance.
+	 * @param WP_REST_Request<array<string, mixed>> $request The request instance.
 	 * @return WP_REST_Response The response containing reset status.
 	 */
 	public function reset_dismissed_todos( WP_REST_Request $request ): WP_REST_Response {

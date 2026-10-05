@@ -71,6 +71,11 @@ class PayLaterMessagingSettings extends AbstractDataModel {
 		return $this->data['cart'];
 	}
 
+	/**
+	 * Sets the cart messaging styles.
+	 *
+	 * @param mixed $styles The messaging styles to sanitize and store.
+	 */
 	public function set_cart( $styles ): void {
 		$this->data['cart'] = $this->sanitize_paylater_messaging( $styles, 'cart' );
 	}
@@ -79,6 +84,11 @@ class PayLaterMessagingSettings extends AbstractDataModel {
 		return $this->data['checkout'];
 	}
 
+	/**
+	 * Sets the checkout messaging styles.
+	 *
+	 * @param mixed $styles The messaging styles to sanitize and store.
+	 */
 	public function set_checkout( $styles ): void {
 		$this->data['checkout'] = $this->sanitize_paylater_messaging( $styles, 'checkout' );
 	}
@@ -87,6 +97,11 @@ class PayLaterMessagingSettings extends AbstractDataModel {
 		return $this->data['product'];
 	}
 
+	/**
+	 * Sets the product messaging styles.
+	 *
+	 * @param mixed $styles The messaging styles to sanitize and store.
+	 */
 	public function set_product( $styles ): void {
 		$this->data['product'] = $this->sanitize_paylater_messaging( $styles, 'product' );
 	}
@@ -95,6 +110,11 @@ class PayLaterMessagingSettings extends AbstractDataModel {
 		return $this->data['shop'];
 	}
 
+	/**
+	 * Sets the shop messaging styles.
+	 *
+	 * @param mixed $styles The messaging styles to sanitize and store.
+	 */
 	public function set_shop( $styles ): void {
 		$this->data['shop'] = $this->sanitize_paylater_messaging( $styles, 'shop' );
 	}
@@ -103,6 +123,11 @@ class PayLaterMessagingSettings extends AbstractDataModel {
 		return $this->data['home'];
 	}
 
+	/**
+	 * Sets the home messaging styles.
+	 *
+	 * @param mixed $styles The messaging styles to sanitize and store.
+	 */
 	public function set_home( $styles ): void {
 		$this->data['home'] = $this->sanitize_paylater_messaging( $styles, 'home' );
 	}
@@ -111,6 +136,11 @@ class PayLaterMessagingSettings extends AbstractDataModel {
 		return $this->data['custom_placement'];
 	}
 
+	/**
+	 * Sets the custom placement messaging styles.
+	 *
+	 * @param mixed $styles The messaging styles to sanitize and store.
+	 */
 	public function set_custom_placement( $styles ): void {
 		$this->data['custom_placement'] = $this->sanitize_paylater_messaging( $styles, 'custom_placement' );
 	}

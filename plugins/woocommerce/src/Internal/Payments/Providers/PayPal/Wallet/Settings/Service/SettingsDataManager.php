@@ -206,7 +206,7 @@ class SettingsDataManager {
 			 * Allow plugins to modify apm payment gateway states before saving.
 			 *
 			 * @param PaymentSettings $payment_methods The payment methods object.
-			 * @param PaymentSettings $methods_apm List of APM methods.
+			 * @param array $methods_apm List of APM methods.
 			 * @param ConfigurationFlagsDTO $flags Configuration flags that determine which gateways to enable.
 			 */
 			do_action( 'woocommerce_paypal_payments_toggle_payment_gateways_apms', $this->payment_methods, $methods_apm, $flags );

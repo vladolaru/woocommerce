@@ -335,7 +335,7 @@ class SettingsModule implements ServiceModule, ExecutableModule {
 			'woocommerce_admin_field_payment_gateways',
 			function () use ( $container ): void {
 				$all_gateway_ids  = $container->get( 'settings.config.all-gateway-ids' );
-				$payment_gateways = WC()->payment_gateways->payment_gateways;
+				$payment_gateways = WC()->payment_gateways()->payment_gateways;
 
 				foreach ( $payment_gateways as $index => $payment_gateway ) {
 					$payment_gateway_id = $payment_gateway->id;
@@ -348,7 +348,7 @@ class SettingsModule implements ServiceModule, ExecutableModule {
 						continue;
 					}
 
-					unset( WC()->payment_gateways->payment_gateways[ $index ] );
+					unset( WC()->payment_gateways()->payment_gateways[ $index ] );
 				}
 			},
 			5

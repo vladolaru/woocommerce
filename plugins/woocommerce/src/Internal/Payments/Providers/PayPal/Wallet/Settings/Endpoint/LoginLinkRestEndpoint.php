@@ -93,7 +93,7 @@ class LoginLinkRestEndpoint extends RestEndpoint {
 	/**
 	 * Returns the full login URL for the requested environment and products.
 	 *
-	 * @param WP_REST_Request $request The request object.
+	 * @param WP_REST_Request<array<string, mixed>> $request The request object.
 	 *
 	 * @return WP_REST_Response The login URL or an error response.
 	 */

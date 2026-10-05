@@ -31,16 +31,16 @@ class Webhook {
 	/**
 	 * The event types.
 	 *
-	 * @var object[]
+	 * @var \stdClass[]
 	 */
 	private $event_types;
 
 	/**
 	 * Webhook constructor.
 	 *
-	 * @param string   $url The URL of the webhook.
-	 * @param object[] $event_types The associated event types.
-	 * @param string   $id The id of the webhook.
+	 * @param string       $url         The URL of the webhook.
+	 * @param \stdClass[]  $event_types The associated event types.
+	 * @param string       $id          The id of the webhook.
 	 */
 	public function __construct( string $url, array $event_types, string $id = '' ) {
 		$this->url         = $url;
@@ -71,7 +71,7 @@ class Webhook {
 	/**
 	 * Returns the event types.
 	 *
-	 * @return object[]
+	 * @return \stdClass[]
 	 */
 	public function event_types(): array {
 

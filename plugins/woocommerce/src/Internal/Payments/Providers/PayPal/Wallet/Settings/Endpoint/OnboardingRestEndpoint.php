@@ -171,7 +171,7 @@ class OnboardingRestEndpoint extends RestEndpoint {
 	/**
 	 * Updates onboarding details based on the request.
 	 *
-	 * @param WP_REST_Request $request Full data about the request.
+	 * @param WP_REST_Request<array<string, mixed>> $request Full data about the request.
 	 *
 	 * @return WP_REST_Response The updated state of the onboarding wizard.
 	 */

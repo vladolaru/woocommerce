@@ -98,7 +98,7 @@ class RefreshFeatureStatusEndpoint extends RestEndpoint {
 	/**
 	 * Handles the refresh status request.
 	 *
-	 * @param WP_REST_Request $request Full data about the request.
+	 * @param WP_REST_Request<array<string, mixed>> $request Full data about the request.
 	 * @return WP_REST_Response
 	 */
 	public function refresh_status( WP_REST_Request $request ): WP_REST_Response {

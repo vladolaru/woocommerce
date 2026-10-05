@@ -32,7 +32,7 @@ class PaymentMethodsDefinition {
 	 *
 	 * @var GeneralSettings
 	 */
-	private GeneralSettings $general_settings;
+	private GeneralSettings $general_settings; // @phpstan-ignore property.onlyWritten (set by the constructor and never read; kept as it is in the extension)
 
 	/**
 	 * List of WooCommerce payment gateways.

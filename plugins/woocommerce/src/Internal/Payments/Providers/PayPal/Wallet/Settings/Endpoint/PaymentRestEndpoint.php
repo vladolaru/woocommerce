@@ -187,7 +187,7 @@ class PaymentRestEndpoint extends RestEndpoint {
 	/**
 	 * Updates payment methods details based on the request.
 	 *
-	 * @param WP_REST_Request $request Full data about the request.
+	 * @param WP_REST_Request<array<string, mixed>> $request Full data about the request.
 	 *
 	 * @return WP_REST_Response The updated payment methods details.
 	 */
