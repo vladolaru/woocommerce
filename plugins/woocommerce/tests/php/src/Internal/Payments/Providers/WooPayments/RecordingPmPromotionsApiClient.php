@@ -32,6 +32,20 @@ class RecordingPmPromotionsApiClient extends WooPaymentsApiClient {
 	public int $get_pm_promotions_calls = 0;
 
 	/**
+	 * Exception the promotions fetch throws, when set.
+	 *
+	 * @var \Throwable|null
+	 */
+	public ?\Throwable $promotions_exception = null;
+
+	/**
+	 * Exception the activation throws, when set.
+	 *
+	 * @var \Throwable|null
+	 */
+	public ?\Throwable $activation_exception = null;
+
+	/**
 	 * Retrieve PM promotions.
 	 *
 	 * @param array<string,mixed> $store_context Store context.
@@ -39,6 +53,9 @@ class RecordingPmPromotionsApiClient extends WooPaymentsApiClient {
 	 */
 	public function get_pm_promotions( array $store_context ): array {
 		++$this->get_pm_promotions_calls;
+		if ( null !== $this->promotions_exception ) {
+			throw $this->promotions_exception;
+		}
 
 		return $this->promotions_response;
 	}
@@ -50,6 +67,10 @@ class RecordingPmPromotionsApiClient extends WooPaymentsApiClient {
 	 * @return array<string,mixed>
 	 */
 	public function activate_pm_promotion( string $promotion_id ): array {
+		if ( null !== $this->activation_exception ) {
+			throw $this->activation_exception;
+		}
+
 		$this->activated_promotion_ids[] = $promotion_id;
 
 		return array( 'success' => true );

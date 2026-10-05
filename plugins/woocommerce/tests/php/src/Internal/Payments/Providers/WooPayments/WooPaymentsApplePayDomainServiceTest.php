@@ -14,6 +14,8 @@ use WC_Unit_Test_Case;
  */
 class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 
+	use ProviderTextLogAssertions;
+
 	/**
 	 * Option name for native WooPayments gateway settings.
 	 */
@@ -164,6 +166,29 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( $error_message, get_option( self::ERROR_OPTION ) );
 		$this->assertCount( 1, $this->scheduler->scheduled_jobs );
 		$this->assertSame( self::RETRY_ACTION, $this->scheduler->scheduled_jobs[0]['hook'] );
+	}
+
+	/**
+	 * @testdox A platform error registering the domain is logged with its status and code, never its message.
+	 *
+	 * Client 11.1.0 logs the error text; the stored error stays for the merchant's Apple Pay notice, as on the client.
+	 */
+	public function test_register_domain_failure_log_leaves_out_platform_text(): void {
+		$this->api_client->exception = self::make_provider_error();
+		$this->service               = $this->create_service();
+		$this->set_gateway_settings(
+			array(
+				'enabled'                           => 'yes',
+				'express_checkout_checkout_methods' => array( 'payment_request' ),
+			)
+		);
+		$logger = RecordingWcLogger::install();
+
+		$this->service->register_domain();
+
+		$context = $this->get_logged_context( $logger, 'Error registering domain with Apple.' );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
 	/**

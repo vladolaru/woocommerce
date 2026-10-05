@@ -330,7 +330,7 @@ class WooPaymentsPmPromotionsService {
 				new \WP_Error( $e->get_error_code(), $e->getMessage(), $e->get_http_code() ),
 				6 * HOUR_IN_SECONDS
 			);
-			$this->log_promotion_error( 'Unable to fetch payment method promotions: ' . $e->getMessage() );
+			$this->log_promotion_error( 'Unable to fetch payment method promotions.', WooPaymentsLogger::get_failure_context( $e ) );
 			$this->promotions_memo = array();
 
 			return $this->promotions_memo;
@@ -622,7 +622,7 @@ class WooPaymentsPmPromotionsService {
 		try {
 			$this->get_api_client()->activate_pm_promotion( $id );
 		} catch ( WooPaymentsApiException $e ) {
-			$this->handle_promotion_activation_failure( $payment_method_id, $promotion, $e->getMessage() );
+			$this->handle_promotion_activation_failure( $payment_method_id, $promotion, 'Platform error.', WooPaymentsLogger::get_failure_context( $e ) );
 			return false;
 		}
 
@@ -822,13 +822,14 @@ class WooPaymentsPmPromotionsService {
 	/**
 	 * Handle promotion activation failures.
 	 *
-	 * @param string              $payment_method_id Payment method ID.
-	 * @param array<string,mixed> $promotion         Promotion data.
-	 * @param string              $error_message     Error message.
+	 * @param string                   $payment_method_id Payment method ID.
+	 * @param array<string,mixed>      $promotion         Promotion data.
+	 * @param string                   $error_message     Error message, written here (never the platform's text).
+	 * @param array<string,int|string> $log_context       Log context, such as a platform error's status and code.
 	 * @return void
 	 */
-	private function handle_promotion_activation_failure( string $payment_method_id, array $promotion, string $error_message ): void {
-		$this->log_promotion_error( sprintf( 'Failed to activate promotion for payment method %1$s: %2$s', $payment_method_id, $error_message ) );
+	private function handle_promotion_activation_failure( string $payment_method_id, array $promotion, string $error_message, array $log_context = array() ): void {
+		$this->log_promotion_error( sprintf( 'Failed to activate promotion for payment method %1$s: %2$s', $payment_method_id, $error_message ), $log_context );
 		$this->record_tracks_event(
 			'wcpay_payment_method_promotion_activation_failed',
 			array(
@@ -854,12 +855,15 @@ class WooPaymentsPmPromotionsService {
 	/**
 	 * Log a promotion service error.
 	 *
-	 * @param string $message Log message.
+	 * A platform error is logged by its class, code, trace, status and platform code, never its message.
+	 *
+	 * @param string                   $message Log message, written here.
+	 * @param array<string,int|string> $context Log context.
 	 * @return void
 	 */
-	private function log_promotion_error( string $message ): void {
+	private function log_promotion_error( string $message, array $context = array() ): void {
 		if ( function_exists( 'wc_get_logger' ) ) {
-			wc_get_logger()->warning( $message, array( 'source' => 'woocommerce-woopayments-promotions' ) );
+			wc_get_logger()->warning( $message, array_merge( $context, array( 'source' => 'woocommerce-woopayments-promotions' ) ) );
 		}
 	}
 

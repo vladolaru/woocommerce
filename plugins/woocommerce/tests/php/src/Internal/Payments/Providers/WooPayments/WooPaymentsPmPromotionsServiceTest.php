@@ -11,6 +11,8 @@ use WC_Unit_Test_Case;
  */
 class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 
+	use ProviderTextLogAssertions;
+
 	/**
 	 * System under test.
 	 *
@@ -216,6 +218,45 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'card', 'klarna' ), $settings['upe_enabled_payment_method_ids'] );
 		$this->assertFalse( get_transient( WooPaymentsPmPromotionsService::PROMOTIONS_CACHE_KEY ) );
 		$this->assertSame( 1, $this->account_service->clear_cache_calls );
+	}
+
+	/**
+	 * @testdox A platform error fetching promotions is logged with its status and code, never its message.
+	 */
+	public function test_promotions_fetch_failure_log_leaves_out_platform_text(): void {
+		$this->account_service->cached_account_data = array( 'fees' => array( 'klarna' => array() ) );
+		$this->api_client->promotions_exception     = self::make_provider_error();
+		$logger                                     = RecordingWcLogger::install();
+
+		$this->sut->get_visible_promotions();
+
+		$context = $this->get_logged_context( $logger, 'Unable to fetch payment method promotions.' );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
+	 * @testdox A platform error activating a promotion is logged with its status and code, never its message.
+	 */
+	public function test_promotion_activation_failure_log_leaves_out_platform_text(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
+		$this->account_service->cached_account_data = array(
+			'fees' => array(
+				'card'   => array(),
+				'klarna' => array(),
+			),
+		);
+		$this->api_client->promotions_response      = array(
+			$this->promotion_fixture( 'klarna-promo__spotlight', 'klarna-promo', 'klarna', 'spotlight' ),
+		);
+		$this->api_client->activation_exception     = self::make_provider_error();
+		$logger                                     = RecordingWcLogger::install();
+
+		$this->assertFalse( $this->sut->activate_promotion( 'klarna-promo__spotlight' ) );
+
+		$context = $this->get_logged_context( $logger, 'Failed to activate promotion for payment method klarna: Platform error.' );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
 	/**

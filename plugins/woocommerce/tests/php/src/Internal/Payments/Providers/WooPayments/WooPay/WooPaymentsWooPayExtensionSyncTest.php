@@ -6,6 +6,8 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\W
 use ActionScheduler_Store;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayExtensionSync;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
 use WC_Unit_Test_Case;
 
@@ -13,6 +15,8 @@ use WC_Unit_Test_Case;
  * Tests for the WooPaymentsWooPayExtensionSync class.
  */
 class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
+
+	use ProviderTextLogAssertions;
 
 	/**
 	 * Created sync instances whose hooks must be removed after each test.
@@ -159,6 +163,26 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'woocommerce-points-and-rewards', 'woocommerce-gift-cards' ), get_option( 'woopay_adapted_extensions' ) );
 		$this->assertSame( array( 'woocommerce-points-and-rewards' ), get_option( 'woopay_enabled_adapted_extensions' ) );
 		$this->assertSame( '["US","BR"]', get_option( 'woocommerce_woocommerce_payments_woopay_available_countries' ) );
+	}
+
+	/**
+	 * @testdox A platform error fetching WooPay compatibility data is logged with its status and code, never its message.
+	 */
+	public function test_compatibility_fetch_failure_log_leaves_out_platform_text(): void {
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_woopay_compatibility' ) )
+			->getMock();
+		$api_client->method( 'get_woopay_compatibility' )->willThrowException( self::make_provider_error() );
+		$sync = new WooPaymentsWooPayExtensionSync();
+		$sync->init( new StaticNativeRuntimeArbiter( true ), $api_client );
+		$logger = RecordingWcLogger::install();
+
+		$sync->update_compatibility_and_maybe_show_incompatibility_warning();
+
+		$context = $this->get_logged_context( $logger, 'Failed to update WooPay compatibility data.' );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
 	/**

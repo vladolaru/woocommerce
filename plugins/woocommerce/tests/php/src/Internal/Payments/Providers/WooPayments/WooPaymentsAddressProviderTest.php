@@ -18,6 +18,8 @@ use WP_Error;
  */
 class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 
+	use ProviderTextLogAssertions;
+
 	/**
 	 * Providers created during tests.
 	 *
@@ -138,6 +140,31 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'address.jwt.token', $provider->get_address_service_jwt() );
 		$this->assertSame( 1, $api_client->request_count );
+	}
+
+	/**
+	 * @testdox A platform error fetching the address token is logged with its status and code, never its message.
+	 */
+	public function test_address_token_failure_log_leaves_out_platform_text(): void {
+		self::enable_woopayments_debug_logging();
+		$api_client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Fail the token request as the platform does.
+			 *
+			 * @throws \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException Always.
+			 */
+			public function get_address_autocomplete_token(): array {
+				throw WooPaymentsAddressProviderTest::make_provider_error();
+			}
+		};
+		$provider   = $this->create_provider( true, true, true, false, false, $api_client );
+		$logger     = RecordingWcLogger::install();
+
+		$provider->get_address_service_jwt();
+
+		$context = $this->get_logged_context( $logger, 'Unexpected error getting address service JWT.' );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
 	/**

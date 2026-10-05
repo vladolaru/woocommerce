@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 
@@ -179,9 +180,10 @@ class WooPaymentsWooPayExtensionSync implements RegisterHooksInterface {
 			$this->update_enabled_adapted_extensions( $active_plugins, $adapted_extensions );
 			$this->update_available_countries( $available_countries );
 		} catch ( Throwable $e ) {
+			// The client appends the platform's message; native logs its status and code.
 			wc_get_logger()->error(
-				'Failed to update WooPay compatibility data. ' . $e->getMessage(),
-				array( 'source' => 'woocommerce-woopayments' )
+				'Failed to update WooPay compatibility data.',
+				array_merge( WooPaymentsLogger::get_failure_context( $e ), array( 'source' => 'woocommerce-woopayments' ) )
 			);
 		}
 	}

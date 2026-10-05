@@ -228,7 +228,8 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 			return false;
 		}
 
-		$error = '';
+		$error         = '';
+		$error_context = array();
 
 		try {
 			$response = $this->api_client->register_apple_pay_domain( $domain );
@@ -253,7 +254,8 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 
 			$error = $this->get_registration_error_message( $response );
 		} catch ( WooPaymentsApiException $exception ) {
-			$error = $exception->getMessage();
+			$error         = $exception->getMessage();
+			$error_context = WooPaymentsLogger::get_api_error_context( $exception );
 		}
 
 		if ( '' === $error ) {
@@ -268,7 +270,9 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 		);
 		update_option( self::ERROR_OPTION, $error );
 		$this->schedule_retry();
-		$this->log( 'Error registering domain with Apple: ' . $error, 'error' );
+		// The client logs the error text, which Apple or the platform writes; native logs the platform's status and code. The
+		// stored error option is shown to the merchant in the Apple Pay settings, as on the client.
+		$this->log( 'Error registering domain with Apple.', 'error', $error_context );
 		$this->record_registration_event(
 			'apple_pay_domain_registration_failure',
 			array(
@@ -621,14 +625,15 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	/**
 	 * Log a domain-registration message.
 	 *
-	 * @param string $message Log message.
-	 * @param string $level   Log level.
+	 * @param string               $message Log message.
+	 * @param string               $level   Log level.
+	 * @param array<string,scalar> $context Log context.
 	 */
-	private function log( string $message, string $level = 'info' ): void {
+	private function log( string $message, string $level = 'info', array $context = array() ): void {
 		if ( ! function_exists( 'wc_get_logger' ) ) {
 			return;
 		}
 
-		wc_get_logger()->log( $level, $message, array( 'source' => 'woocommerce-payments' ) );
+		wc_get_logger()->log( $level, $message, array_merge( $context, array( 'source' => 'woocommerce-payments' ) ) );
 	}
 }

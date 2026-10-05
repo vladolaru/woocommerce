@@ -1471,6 +1471,9 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	/**
 	 * Log an operational queue exception without fataling the request.
 	 *
+	 * The exception's message is left out: most of these jobs call the platform, whose errors carry its text. The class,
+	 * code, trace and, for a platform error, its status and code are logged instead.
+	 *
 	 * @param string              $message   Log message.
 	 * @param Throwable           $exception Exception thrown.
 	 * @param array<string,mixed> $context   Optional correlation context (e.g. order_id, intent_id, action)
@@ -1482,8 +1485,8 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 		}
 
 		wc_get_logger()->error(
-			$message . ' ' . $exception->getMessage(),
-			array_merge( $context, array( 'source' => 'woopayments' ) )
+			$message,
+			array_merge( $context, WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => 'woopayments' ) )
 		);
 	}
 }

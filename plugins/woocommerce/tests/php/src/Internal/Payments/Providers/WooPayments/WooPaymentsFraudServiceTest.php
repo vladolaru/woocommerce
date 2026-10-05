@@ -490,13 +490,16 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 		$this->make_link_sut( $http_client )->link_session_if_user_just_logged_in();
 
 		$this->assertGreaterThanOrEqual( 1, $http_client->request_count );
-		$lines = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], '[Tracking] Error when linking session with user:' ) ) );
+		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => '[Tracking] Error when linking session with user.' === $line[1] ) );
 		if ( ! $expected ) {
 			$this->assertSame( array(), $lines );
 			return;
 		}
 		$this->assertCount( 1, $lines );
-		$this->assertSame( array( 'info', 'woopayments' ), array( $lines[0][0], $lines[0][2] ) );
+		$this->assertSame( array( 'info', 'woopayments' ), array( $logger->lines[ $lines[0] ][0], $logger->lines[ $lines[0] ][2] ) );
+		// The platform's message stays off this line; its status and code (not a listed one here) go in.
+		$this->assertSame( array( 500, 'unknown_error' ), array( $logger->contexts[ $lines[0] ]['http_status'], $logger->contexts[ $lines[0] ]['error_code'] ) );
+		$this->assertStringNotContainsString( 'Link failed', (string) wp_json_encode( $logger->contexts[ $lines[0] ] ) );
 	}
 
 	/** @return array<string,array{string,bool}> */

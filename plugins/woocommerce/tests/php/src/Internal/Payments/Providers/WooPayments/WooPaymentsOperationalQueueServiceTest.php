@@ -33,6 +33,8 @@ use WC_Unit_Test_Case;
  */
 class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 
+	use ProviderTextLogAssertions;
+
 	/**
 	 * Created services whose hooks must be removed after each test.
 	 *
@@ -909,7 +911,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$order->save();
 
 		$api_client = $this->create_api_client( array( 'get_timeline' ) );
-		$api_client->method( 'get_timeline' )->willThrowException( new \RuntimeException( 'timeline boom' ) );
+		$api_client->method( 'get_timeline' )->willThrowException( self::make_provider_error() );
 
 		$fake_logger = $this->create_fake_logger();
 		add_filter(
@@ -929,6 +931,67 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( $order->get_id(), $context['order_id'] );
 		$this->assertSame( 'pi_123', $context['intent_id'] );
 		$this->assertSame( 'wcpay_add_fee_breakdown_to_order_notes', $context['action'] );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
+		foreach ( self::$provider_leak_fragments as $fragment ) {
+			$this->assertStringNotContainsString( $fragment, (string) wp_json_encode( $fake_logger->error_calls ) );
+		}
+	}
+
+	/**
+	 * @testdox A platform error in the $job job is logged with its status and code, never its message.
+	 * @testWith ["site language"]
+	 *           ["store setup sync"]
+	 *           ["compatibility data update"]
+	 *           ["saved payment method update"]
+	 *
+	 * Client 11.1.0 appends the platform's message to these lines. The fee-breakdown job is covered above.
+	 *
+	 * @param string $job Operational job whose platform call fails.
+	 */
+	public function test_job_platform_error_log_leaves_out_platform_text( string $job ): void {
+		$methods    = array(
+			'site language'               => array( 'update_account' ),
+			'store setup sync'            => array( 'is_available', 'send_store_setup' ),
+			'compatibility data update'   => array( 'update_compatibility_data' ),
+			'saved payment method update' => array( 'update_payment_method' ),
+		);
+		$api_client = $this->create_api_client( $methods[ $job ] );
+		if ( 'store setup sync' === $job ) {
+			$api_client->method( 'is_available' )->willReturn( true );
+		}
+		$api_client->method( end( $methods[ $job ] ) )->willThrowException( self::make_provider_error() );
+		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( array( 'account_id' => 'acct_native_test' ) ) );
+		$logger  = RecordingWcLogger::install();
+
+		switch ( $job ) {
+			case 'site language':
+				$service->handle_site_language_update( 'WPLANG', '', 'de_DE' );
+				$expected = 'Failed to propagate the site language to the WooPayments account locale.';
+				break;
+			case 'store setup sync':
+				$service->handle_wcpay_store_setup_sync();
+				$expected = null;
+				break;
+			case 'compatibility data update':
+				$service->handle_wcpay_update_compatibility_data();
+				$expected = null;
+				break;
+			default:
+				$order = wc_create_order();
+				$order->set_billing_email( 'ada@example.com' );
+				$order->set_billing_first_name( 'Ada' );
+				$order->save();
+				$service->handle_wcpay_update_saved_payment_method( 'pm_123', $order->get_id(), false );
+				$expected = null;
+		}
+
+		$errors = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'error' === $line[0] && 'woopayments' === $line[2] ) );
+		$this->assertCount( 1, $errors );
+		if ( null !== $expected ) {
+			$this->assertSame( $expected, $logger->lines[ $errors[0] ][1] );
+		}
+		$this->assertSame( array( 404, 'resource_missing' ), array( $logger->contexts[ $errors[0] ]['http_status'], $logger->contexts[ $errors[0] ]['error_code'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
 	/**
