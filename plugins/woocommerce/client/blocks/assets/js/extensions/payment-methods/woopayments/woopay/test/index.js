@@ -82,11 +82,21 @@ const getMockPaymentMethodSettings = () =>
 	globalThis.__wooPayPaymentMethodSettings;
 
 const originalFetch = window.fetch;
+// jsdom defines `contentWindow` as an accessor on HTMLIFrameElement.prototype; tests that stub it put jsdom's back.
+const nativeContentWindow = Object.getOwnPropertyDescriptor(
+	window.HTMLIFrameElement.prototype,
+	'contentWindow'
+);
 let navigate;
 let getComputedStyleSpy;
 
 describe( 'wc-payment-method-woopayments-woopay', () => {
 	afterEach( () => {
+		Object.defineProperty(
+			window.HTMLIFrameElement.prototype,
+			'contentWindow',
+			nativeContentWindow
+		);
 		// Close any OTP iframe left open so its window listeners go away.
 		window.dispatchEvent(
 			new window.MessageEvent( 'message', {
@@ -451,8 +461,6 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 				'https://pay.woo.test/checkout/session'
 			);
 		} );
-
-		delete window.HTMLIFrameElement.prototype.contentWindow;
 	} );
 
 	it( 'falls back to the WooPay OTP flow when first-party Connect rejects the session', async () => {
@@ -533,8 +541,6 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 				document.querySelector( '.woopay-otp-iframe' )
 			).not.toBeNull();
 		} );
-
-		delete window.HTMLIFrameElement.prototype.contentWindow;
 	} );
 
 	it( 'renders the cached preferred WooPay card on the express button', () => {
@@ -651,7 +657,6 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 			screen.getByRole( 'button', { name: 'WooPay' } )
 		).toBeVisible();
 
-		delete window.HTMLIFrameElement.prototype.contentWindow;
 		rectSpy.mockRestore();
 	} );
 
@@ -854,7 +859,6 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 			delete window.wcSettings;
 			document.cookie =
 				'tk_ai=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC';
-			delete window.HTMLIFrameElement.prototype.contentWindow;
 		} );
 
 		it( 'opens the platform OTP iframe with the client query instead of the direct-checkout redirect', async () => {

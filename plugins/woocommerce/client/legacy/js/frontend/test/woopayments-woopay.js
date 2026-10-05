@@ -3,6 +3,20 @@
  */
 
 describe( 'WooPayments WooPay checkout', () => {
+	// jsdom defines `contentWindow` as an accessor on HTMLIFrameElement.prototype; tests that stub it put jsdom's back.
+	const nativeContentWindow = Object.getOwnPropertyDescriptor(
+		window.HTMLIFrameElement.prototype,
+		'contentWindow'
+	);
+
+	afterEach( () => {
+		Object.defineProperty(
+			window.HTMLIFrameElement.prototype,
+			'contentWindow',
+			nativeContentWindow
+		);
+	} );
+
 	let bodyEventHandlers;
 	const originalFetch = window.fetch;
 
@@ -420,7 +434,6 @@ describe( 'WooPayments WooPay checkout', () => {
 				'https://pay.woo.test/checkout/session'
 			);
 
-			delete window.HTMLIFrameElement.prototype.contentWindow;
 		} );
 
 		test( 'falls back to the WooPay OTP flow when first-party Connect rejects the session', async () => {
@@ -480,7 +493,6 @@ describe( 'WooPayments WooPay checkout', () => {
 				document.querySelector( '.woopay-otp-iframe' )
 			).not.toBeNull();
 
-			delete window.HTMLIFrameElement.prototype.contentWindow;
 		} );
 
 		test( 'renders the cached preferred WooPay card on the express button', () => {
@@ -607,7 +619,6 @@ describe( 'WooPayments WooPay checkout', () => {
 					.getAttribute( 'aria-label' )
 			).toBe( 'WooPay' );
 
-			delete window.HTMLIFrameElement.prototype.contentWindow;
 			rectSpy.mockRestore();
 		} );
 
@@ -1070,9 +1081,6 @@ describe( 'WooPayments WooPay checkout', () => {
 			await flushPromises();
 		}
 
-		afterEach( () => {
-			delete window.HTMLIFrameElement.prototype.contentWindow;
-		} );
 
 		test( 'logged-in cart handoff sends encrypted identity and store session without payment dispatch', async () => {
 			// Oracle: WooPayments 11.1.0 direct-checkout/woopay-direct-checkout.js:20,98-108,138-172,433-441.
@@ -1580,7 +1588,6 @@ describe( 'WooPayments WooPay checkout', () => {
 			sendWooPayMessage( { action: 'close_modal' } );
 			document.cookie =
 				'tk_ai=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC';
-			delete window.HTMLIFrameElement.prototype.contentWindow;
 		} );
 
 		test( 'opens the platform OTP iframe with the client query instead of the direct-checkout redirect', async () => {
@@ -2114,7 +2121,6 @@ describe( 'WooPayments WooPay checkout', () => {
 
 		afterEach( () => {
 			sendWooPayMessage( { action: 'close_modal' } );
-			delete window.HTMLIFrameElement.prototype.contentWindow;
 		} );
 
 		async function openOtpIframe() {
