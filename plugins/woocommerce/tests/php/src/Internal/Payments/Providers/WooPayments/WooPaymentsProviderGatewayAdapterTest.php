@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
@@ -14,6 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsChargeAmbiguityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsErrorMessages;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
@@ -5850,6 +5852,168 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'A valid shipping address is required for Afterpay payments.' ), array_column( wc_get_notices( 'error' ), 'notice' ) );
 		$notes = array_map( static fn( $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 		$this->assertContains( 'A payment of ' . wc_price( 80.00, array( 'currency' => 'USD' ) ) . ' <strong>failed</strong> to complete with the following message: <code>A valid shipping address is required for Afterpay payments</code>.', $notes );
+	}
+
+	/**
+	 * @testdox A checkout of an order whose attached payment is disputed is refused with the shopper notice, keeps the order pending and charges nothing.
+	 *
+	 * The gateway runs with the real duplicate-payment guard and the real provider over one recording transport. The guard
+	 * refuses a disputed attached intent with ERROR_DISPUTED_INTENT; the gateway shows the refusal and fails the order only
+	 * for an amount mismatch (NativeWooPaymentsGateway::process_order_payment()).
+	 */
+	public function test_checkout_of_an_order_whose_attached_payment_is_disputed_charges_nothing(): void {
+		$order           = $this->create_order_left_by_a_completed_challenge();
+		$disputed_charge = array(
+			'disputed' => true,
+			'dispute'  => 'dp_1UJjK4BzWlxcwgpPDisputed',
+		);
+
+		$http_client              = new FakeWooPaymentsHttpClient();
+		$http_client->responses[] = self::http_json( 200, $this->attached_intent_given_back( $order, $disputed_charge ) );
+		$gateway                  = $this->create_gateway_with_real_duplicate_guard( $http_client );
+
+		$_POST['wcpay-payment-method'] = 'pm_card_visa';
+
+		try {
+			$result = $gateway->process_payment( $order->get_id() );
+		} finally {
+			unset( $_POST['wcpay-payment-method'] );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'failure', $result['result'] ?? '' );
+		$this->assertSame( array( "This order's payment is under review. Please contact the store." ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+		$this->assertSame( 'pending', $order->get_status(), 'A disputed attached payment must not fail the order.' );
+		$this->assertSame( array( 'GET intentions/' . self::CHALLENGE_COMPLETED_INTENT_ID ), self::platform_calls( $http_client ), 'Only the attached intent may be read; nothing may be charged.' );
+		$notes = array_map( static fn( $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertSame( array(), array_values( array_filter( $notes, static fn( string $note ): bool => str_contains( $note, 'to Failed' ) ) ), 'No failed status change may be noted.' );
+	}
+
+	/**
+	 * @testdox A checkout of a payable order whose attached payment was fully refunded charges the shopper again and pays the order with the new intent.
+	 *
+	 * The old intent keeps `succeeded` after the refund. The new create-and-confirm is answered with the recorded successful
+	 * card payment (`Fixtures/rec-t3-basic-card.json`, pair `basic_card_usd_create_and_confirm`, POST intentions).
+	 */
+	public function test_checkout_of_a_payable_order_whose_attached_payment_was_refunded_charges_again(): void {
+		$order           = $this->create_order_left_by_a_completed_challenge();
+		$new_charge      = $this->load_recorded_intent_entry( 'rec-t3-basic-card.json', 'basic_card_usd_create_and_confirm' );
+		$refunded_charge = array(
+			'refunded'        => true,
+			'amount_refunded' => 1099,
+		);
+
+		$http_client              = new FakeWooPaymentsHttpClient();
+		$http_client->responses[] = self::http_json( 200, $this->attached_intent_given_back( $order, $refunded_charge ) );
+		$http_client->responses[] = self::http_json( $new_charge['http_status'], $new_charge['body'] );
+		$gateway                  = $this->create_gateway_with_real_duplicate_guard( $http_client );
+
+		$_POST['wcpay-payment-method'] = 'pm_card_visa';
+
+		try {
+			$result = $gateway->process_payment( $order->get_id() );
+		} finally {
+			unset( $_POST['wcpay-payment-method'] );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'success', $result['result'] ?? '' );
+		$this->assertSame( array( 'GET intentions/' . self::CHALLENGE_COMPLETED_INTENT_ID, 'POST intentions' ), self::platform_calls( $http_client ), 'The refunded payment must be followed by one new charge.' );
+		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertSame( 'pi_3UJhO2BzWlxcwgpP1BndTguC', $order->get_meta( '_intent_id', true ), 'The order must be paid by the new intent.' );
+		$this->assertSame( array(), array_column( wc_get_notices( 'error' ), 'notice' ) );
+	}
+
+	/**
+	 * PaymentIntent of the recorded 3DS checkout whose challenge the shopper completed (`Fixtures/rec-t3-3ds-manual.json`).
+	 */
+	private const CHALLENGE_COMPLETED_INTENT_ID = 'pi_3UJjK4BzWlxcwgpP0xWpBE77';
+
+	/**
+	 * Create the order a 3DS checkout leaves when the shopper completed the challenge but the return never reached the store.
+	 *
+	 * Still pending, holding the intent and the `requires_action` status the checkout answer recorded, for the recorded
+	 * USD 10.99 charge.
+	 *
+	 * @return WC_Order
+	 */
+	private function create_order_left_by_a_completed_challenge(): WC_Order {
+		$order = $this->create_woopayments_order( '10.99' );
+		$order->set_currency( 'USD' );
+		$order->add_product( \WC_Helper_Product::create_simple_product(), 1 );
+		$order->set_total( '10.99' );
+		$order->update_meta_data( '_intent_id', self::CHALLENGE_COMPLETED_INTENT_ID );
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * The platform's GET intentions/{id} answer for the order's attached intent after its charge was given back.
+	 *
+	 * The recorded answer for the completed challenge (`Fixtures/rec-t3-3ds-manual.json`, pair
+	 * `classic_checkout_challenge_completed`: status `succeeded`, one charge in `charges.data`), its metadata pointed at this
+	 * order, with the charge fields Stripe sets on a dispute (`disputed`, `dispute`) or a full refund (`refunded`,
+	 * `amount_refunded`; Stripe API reference, "The Charge object"). The intent keeps `succeeded` either way.
+	 *
+	 * @param WC_Order            $order         Order the intent is attached to.
+	 * @param array<string,mixed> $charge_fields Charge fields after the money was given back.
+	 * @return array<string,mixed>
+	 */
+	private function attached_intent_given_back( WC_Order $order, array $charge_fields ): array {
+		$intent                             = $this->load_recorded_intent_entry( 'rec-t3-3ds-manual.json', 'classic_checkout_challenge_completed' )['body'];
+		$intent['metadata']['order_id']     = (string) $order->get_id();
+		$intent['metadata']['order_number'] = (string) $order->get_order_number();
+		$intent['charges']['data'][0]       = array_merge( $intent['charges']['data'][0], $charge_fields );
+		$this->assertSame( self::CHALLENGE_COMPLETED_INTENT_ID, $intent['id'] );
+		$this->assertSame( 'succeeded', $intent['status'] );
+
+		return $intent;
+	}
+
+	/**
+	 * Build the card gateway with the real duplicate-payment guard, the real processing service and the real provider, all
+	 * sending their platform requests through one recording transport.
+	 *
+	 * @param FakeWooPaymentsHttpClient $http_client Recording transport.
+	 * @return NativeWooPaymentsGateway
+	 */
+	private function create_gateway_with_real_duplicate_guard( FakeWooPaymentsHttpClient $http_client ): NativeWooPaymentsGateway {
+		$account_service  = $this->create_account_service( false );
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_UsIeTbmGHPc9jY' );
+		$provider   = $this->create_provider_over_fake_transport( $http_client, $account_service, $customer_service );
+		$api_client = new WooPaymentsApiClient();
+		$api_client->init( $http_client, $account_service );
+		$guard = new WooPaymentsDuplicatePaymentPreventionService();
+		$guard->init(
+			$api_client,
+			wc_get_container()->get( OrderPaymentLifecycleService::class ),
+			new WooPaymentsOrderDataService(),
+			null,
+			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
+		);
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider, null, null, null, null, null, null, null, $guard );
+
+		return $gateway;
+	}
+
+	/**
+	 * Get the platform requests as "METHOD path", the path relative to the site's WooPayments root, without its query.
+	 *
+	 * @param FakeWooPaymentsHttpClient $http_client Recording transport.
+	 * @return string[]
+	 */
+	private static function platform_calls( FakeWooPaymentsHttpClient $http_client ): array {
+		return array_map(
+			static fn( array $request ): string => $request['method'] . ' ' . preg_replace( '#^/sites/\d+/wcpay/|\?.*$#', '', (string) $request['path'] ),
+			$http_client->requests
+		);
 	}
 
 	/**
