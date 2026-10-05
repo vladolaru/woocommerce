@@ -5,7 +5,7 @@
 # --appendix defaults to src/Internal/Payments/Providers/PayPal/contract-appendix.md in this plugin.
 #
 # A commit is marked **contract** when an added or removed line of its diff on the mapped path mentions a name from
-# contract-appendix.md, or when it touches one of the ALWAYS_CONTRACT paths: the three DTO files core keeps
+# the list items of contract-appendix.md, or when it touches one of the ALWAYS_CONTRACT paths: the three DTO files core keeps
 # byte-identical to the extension's (the stored class names are part of the data format, and the Jetpack manifest can
 # serve core's copy while the extension runs), so any upstream change to them must be mirrored into core's
 # SerializedClasses shim in the same release.
@@ -45,8 +45,9 @@ for ref in "$SINCE" "$UNTIL"; do
   git -C "$EXT" rev-parse --verify -q "$ref^{commit}" > /dev/null || { echo "unknown ref in $EXT: $ref" >&2; exit 1; }
 done
 NAMES="$(mktemp)"; DROPPED="$(mktemp)"; SHOWN="$(mktemp)"; trap 'rm -f "$NAMES" "$DROPPED" "$SHOWN"' EXIT
-# Contract names: every backticked token in the appendix.
-grep -oE '`[^`]+`' "$CONTRACT" | tr -d '`' | sort -u > "$NAMES"
+# Contract names: the first backticked token of each list item in the appendix ("- `name`"). Prose, the section notes and the
+# extra backticked tokens in an item's trailing note are not names.
+{ grep -E '^- `' "$CONTRACT" || [ $? -eq 1 ]; } | sed -E 's/^- `([^`]+)`.*/\1/' | sort -u > "$NAMES"
 emit_commits() {
   echo "(extension: \`$from\`)"
   echo

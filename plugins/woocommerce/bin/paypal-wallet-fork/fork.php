@@ -7,6 +7,7 @@
  * Copies the kept modules and the plugin root, rewrites namespaces and the text domain, lays the PHP out
  * PSR-4 under core's Wallet directory and the JS under core's client package, deletes the vendored tree,
  * and writes path-map.json plus an audit of what a rename cannot prove safe. Run once; keep as the record.
+ * With --dry-run it only counts and audits: it writes no file, including audit.txt and path-map.json.
  *
  * @package WooCommerce\Tools
  */
@@ -240,8 +241,10 @@ if ( ! $dry_run && is_dir( $vendored_dir ) ) {
 // 4. Outputs.
 ksort( $path_map );
 sort( $audit );
-if ( ! $dry_run ) {
+if ( $dry_run ) {
+	printf( "Dry run: %d PHP, %d JS, %d other files; %d audit lines (nothing written)\n", $counts['php'], $counts['js'], $counts['other'], count( $audit ) ); // phpcs:ignore WordPress.Security.EscapeOutput -- Command-line output.
+} else {
 	file_put_contents( __DIR__ . '/path-map.json', json_encode( $path_map, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) . "\n" );
+	file_put_contents( __DIR__ . '/audit.txt', implode( "\n", $audit ) . "\n" );
+	printf( "Forked: %d PHP, %d JS, %d other files; %d audit lines in audit.txt\n", $counts['php'], $counts['js'], $counts['other'], count( $audit ) ); // phpcs:ignore WordPress.Security.EscapeOutput -- Command-line output.
 }
-file_put_contents( __DIR__ . '/audit.txt', implode( "\n", $audit ) . "\n" );
-printf( "%s: %d PHP, %d JS, %d other files; %d audit lines in audit.txt\n", $dry_run ? 'Dry run' : 'Forked', $counts['php'], $counts['js'], $counts['other'], count( $audit ) ); // phpcs:ignore WordPress.Security.EscapeOutput -- Command-line output.
