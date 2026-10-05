@@ -483,6 +483,37 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 		$this->assertFalse( get_option( 'wcpay_styles_cache_version' ), 'The stored appearance version must be dropped so checkout recomputes it.' );
 	}
 
+	/**
+	 * @testdox A plugin (de)activated over REST on a $state store refreshes the WooPay incompatible-extension warning and adapted extensions.
+	 * @dataProvider set_up_states
+	 *
+	 * @param string $state Stored native tier.
+	 */
+	public function test_plugin_activation_over_rest_refreshes_the_woopay_extension_state( string $state ): void {
+		// The platform-synced lists the daily compatibility check stores (option names shared with the WooPayments plugin).
+		update_option( 'woopay_incompatible_extensions', array( 'incompatible-extension' ) );
+		update_option( 'woopay_adapted_extensions', array( 'adapted-extension' ) );
+		delete_option( 'woopay_invalid_extension_found' );
+		delete_option( 'woopay_enabled_adapted_extensions' );
+		// Only the native listener is under test; core's own callbacks on these hooks write unrelated state.
+		remove_all_actions( 'activated_plugin' );
+		remove_all_actions( 'deactivated_plugin' );
+		$this->arrange_native_owner( $state );
+		$this->arrange_request( 'rest' );
+		$this->run_bootstrap( '__return_true' );
+
+		update_option( 'active_plugins', array( 'incompatible-extension/incompatible-extension.php', 'adapted-extension/adapted-extension.php' ) );
+		do_action( 'activated_plugin', 'incompatible-extension/incompatible-extension.php' ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fires the core hook activate_plugin() fires.
+
+		// Client 11.1.0 hooks these on every request (`includes/class-wc-payments.php:597`, `includes/woopay/class-woopay-scheduler.php:45-52`).
+		$this->assertTrue( (bool) get_option( 'woopay_invalid_extension_found' ), 'Activating an incompatible extension must raise the WooPay warning.' );
+		$this->assertSame( array( 'adapted-extension' ), get_option( 'woopay_enabled_adapted_extensions' ) );
+
+		do_action( 'deactivated_plugin', 'incompatible-extension/incompatible-extension.php' ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fires the core hook deactivate_plugins() fires.
+
+		$this->assertFalse( get_option( 'woopay_invalid_extension_found' ), 'Deactivating the last incompatible extension must clear the warning.' );
+	}
+
 	/** @return array<string,array{string,string,string,string}> */
 	public static function style_change_requests(): array {
 		return array(

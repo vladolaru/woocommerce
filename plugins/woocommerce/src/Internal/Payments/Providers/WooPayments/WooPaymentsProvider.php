@@ -166,6 +166,9 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 				WooPaymentsCustomerService::class,
 				WooPaymentsOrderAdminActionsController::class,
 				WooPaymentsWooPayOrderStatusSync::class,
+				// Plugins are also (de)activated over REST (wp/v2/plugins); the client hooks the WooPay extension sync on every
+				// request (client 11.1.0 `includes/class-wc-payments.php:597`, `includes/woopay/class-woopay-scheduler.php:45-52`).
+				WooPaymentsWooPayExtensionSync::class,
 				WooPaymentsApplePayDomainService::class,
 			),
 			array_slice( $connected_rest_controllers, 1 ),
