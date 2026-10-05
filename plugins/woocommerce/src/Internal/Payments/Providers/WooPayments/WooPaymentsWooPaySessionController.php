@@ -927,6 +927,12 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_supported_frontend_surface(): bool {
+		// Core renders the classic checkout form on order-pay even under a Checkout block page (Blocks Checkout::render()).
+		// Client 11.1.0 loads no WooPay on the change-payment page (class-wc-payments-woopay-button-handler.php:124-126).
+		if ( $this->is_order_pay_surface() ) {
+			return ! isset( $_GET['change_payment_method'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only page flag.
+		}
+
 		if ( $this->is_block_cart_or_checkout_surface() ) {
 			return false;
 		}

@@ -828,6 +828,51 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Offers WooPay for the order on order-pay when the checkout page holds the Checkout block.
+	 *
+	 * Core renders the classic checkout form there (src/Blocks/BlockTypes/Checkout.php render() on the order-pay endpoint);
+	 * client 11.1.0 shows WooPay on that form whatever the checkout page holds (class-wc-payments-woopay-button-handler.php:245-322).
+	 */
+	public function test_order_pay_under_a_checkout_block_page_offers_woopay_for_the_order(): void {
+		$owner_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$order    = \WC_Helper_Order::create_order( $owner_id );
+		wp_set_current_user( $owner_id );
+		$this->sut = $this->create_controller( true, true );
+		$this->set_order_pay_page( $order->get_id(), $order->get_order_key(), '<!-- wp:woocommerce/checkout --><div class="wp-block-woocommerce-checkout"></div><!-- /wp:woocommerce/checkout -->' );
+
+		$this->assertStringContainsString( 'id="wcpay-woopay-button"', $this->sut->get_express_checkout_button_html() );
+		$this->sut->enqueue_frontend_assets();
+		$this->assertTrue( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
+		$config = $this->get_localized_woopay_config();
+		$this->assertSame( (string) $order->get_id(), $config['order_id'] );
+		$this->assertSame( $order->get_order_key(), $config['key'] );
+
+		unset( $GLOBALS['wp']->query_vars['order-pay'] );
+		$this->assertSame( '', $this->sut->get_express_checkout_button_html(), 'The Checkout block page itself stays with the Blocks button.' );
+	}
+
+	/**
+	 * @testdox Offers no WooPay on the Subscriptions change-payment page, as client 11.1.0 (class-wc-payments-woopay-button-handler.php:124-126).
+	 *
+	 * @testWith ["[woocommerce_checkout]"]
+	 *           ["<!-- wp:woocommerce/checkout --><div class=\"wp-block-woocommerce-checkout\"></div><!-- /wp:woocommerce/checkout -->"]
+	 *
+	 * @param string $page_content Checkout page content.
+	 */
+	public function test_change_payment_page_offers_no_woopay( string $page_content ): void {
+		$owner_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$order    = \WC_Helper_Order::create_order( $owner_id );
+		wp_set_current_user( $owner_id );
+		$this->sut = $this->create_controller( true, true );
+		$this->set_order_pay_page( $order->get_id(), $order->get_order_key(), $page_content );
+		$_GET['change_payment_method'] = (string) $order->get_id();
+
+		$this->assertSame( '', $this->sut->get_express_checkout_button_html() );
+		$this->sut->enqueue_frontend_assets();
+		$this->assertFalse( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
+	}
+
+	/**
 	 * @testdox Should require WooPay user agent and a signed request.
 	 */
 	public function test_woopay_rest_route_requires_woopay_user_agent_and_signed_request(): void {
@@ -1733,13 +1778,16 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * Set the current request to the order-pay endpoint of a classic checkout page.
+	 * Set the current request to the order-pay endpoint of the checkout page.
 	 *
-	 * @param int    $order_id Order ID.
-	 * @param string $key      Order key in the pay link.
+	 * @param int    $order_id     Order ID.
+	 * @param string $key          Order key in the pay link.
+	 * @param string $page_content Checkout page content: the classic shortcode by default.
 	 */
-	private function set_order_pay_page( int $order_id, string $key ): void {
-		$this->set_checkout_shortcode_page();
+	private function set_order_pay_page( int $order_id, string $key, string $page_content = '[woocommerce_checkout]' ): void {
+		$this->reset_frontend_surface_state();
+		update_option( 'woocommerce_checkout_page_id', $this->set_current_page_with_content( $page_content ) );
+		$this->reset_cart_checkout_page_cache();
 		$GLOBALS['wp']->query_vars['order-pay'] = (string) $order_id;
 		$_GET['pay_for_order']                  = 'true';
 		$_GET['key']                            = $key;
