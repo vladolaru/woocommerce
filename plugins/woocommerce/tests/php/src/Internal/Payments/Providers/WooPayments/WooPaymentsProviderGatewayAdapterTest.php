@@ -1966,15 +1966,15 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 *
 	 * @dataProvider provide_customer_lists_that_fall_back
 	 *
-	 * @param array<string,mixed> $customer_answer Transport answer to the customer's intents list.
+	 * @param callable $build_customer_answer Builds the transport answer to the customer's intents list.
 	 */
-	public function test_customer_list_refused_falls_back_to_the_account_list( array $customer_answer ): void {
+	public function test_customer_list_refused_falls_back_to_the_account_list( callable $build_customer_answer ): void {
 		$order                  = $this->create_woopayments_order();
 		$http_client            = new FakeWooPaymentsHttpClient();
 		$http_client->responses = array(
 			self::platform_bad_gateway(),
 			self::stripe_idempotency_error( 'key_first' ),
-			$customer_answer,
+			$build_customer_answer(),
 			self::intent_list(
 				array(
 					self::order_intent( $this->create_woopayments_order(), 'pi_other_order', 'succeeded' ),
@@ -2004,14 +2004,17 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	/**
 	 * Customer-list answers that send the lookup to the account's list.
 	 *
-	 * @return array<string,array{0:array<string,mixed>}>
+	 * Each answer is built when the test runs: PHPUnit runs data providers when it builds the suite, minutes before a late
+	 * test in a whole-plugin run, so a `created` time stamped there can be older than the 300 s window when the test runs.
+	 *
+	 * @return array<string,array{0:callable():array<string,mixed>}>
 	 */
 	public function provide_customer_lists_that_fall_back(): array {
 		return array(
-			'a deleted customer'     => array( self::stripe_no_such_customer() ),
-			'an answer with no list' => array( self::list_answer_without_data() ),
+			'a deleted customer'     => array( static fn(): array => self::stripe_no_such_customer() ),
+			'an answer with no list' => array( static fn(): array => self::list_answer_without_data() ),
 			'a full page of newer intents with more to read' => array(
-				self::intent_list(
+				static fn(): array => self::intent_list(
 					array(
 						array(
 							'id'       => 'pi_newer',
@@ -2073,11 +2076,12 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 *
 	 * @dataProvider provide_account_lists_that_cannot_settle
 	 *
-	 * @param array<string,mixed> $account_answer Transport answer to the account's intents list.
+	 * @param callable $build_account_answer Builds the transport answer to the account's intents list.
 	 */
-	public function test_lookup_that_cannot_check_refuses_every_attempt_with_one_note( array $account_answer ): void {
+	public function test_lookup_that_cannot_check_refuses_every_attempt_with_one_note( callable $build_account_answer ): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
 		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$account_answer         = $build_account_answer();
 		$order                  = $this->create_woopayments_order();
 		$http_client            = new FakeWooPaymentsHttpClient();
 		$http_client->responses = array(
@@ -2120,13 +2124,16 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	/**
 	 * Account-list answers that cannot settle the earlier request.
 	 *
-	 * @return array<string,array{0:array<string,mixed>}>
+	 * Each answer is built when the test runs, so the full page's intent is created inside the window around the failure
+	 * however long after the suite was built the test runs.
+	 *
+	 * @return array<string,array{0:callable():array<string,mixed>}>
 	 */
 	public function provide_account_lists_that_cannot_settle(): array {
 		return array(
-			'the account answer has no list'        => array( self::list_answer_without_data() ),
+			'the account answer has no list'        => array( static fn(): array => self::list_answer_without_data() ),
 			'the account list refused'              => array(
-				self::http_json(
+				static fn(): array => self::http_json(
 					400,
 					array(
 						'error' => array(
@@ -2139,7 +2146,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 				),
 			),
 			'a full account page without the order' => array(
-				self::intent_list(
+				static fn(): array => self::intent_list(
 					array(
 						array(
 							'id'       => 'pi_other_shopper',
