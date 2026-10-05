@@ -230,7 +230,7 @@ export class FunnelTrackingService {
 
 	/**
 	 * Get common properties for all tracking events.
-	 * @param {Object} [metadata={}] - Additional metadata.
+	 * @param {Object} [_metadata={}] - Additional metadata.
 	 * @return {Object} Common properties object.
 	 */
 	getCommonProperties( _metadata = {} ) {

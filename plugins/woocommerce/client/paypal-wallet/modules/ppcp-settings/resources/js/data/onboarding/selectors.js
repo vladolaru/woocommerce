@@ -35,7 +35,7 @@ export const flags = ( state ) => {
  *
  * @param {{}}      state
  * @param {boolean} ownBrandOnly
- * @param {string}  storeCountry
+ * @param {string}  _storeCountry
  * @return {{products:string[], options:{}}} The ISU products, based on choices made in the onboarding wizard.
  */
 export const determineProductsAndCaps = (
