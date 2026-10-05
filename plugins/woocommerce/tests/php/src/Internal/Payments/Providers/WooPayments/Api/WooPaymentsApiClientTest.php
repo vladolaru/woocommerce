@@ -1635,7 +1635,8 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	 *
 	 * The request goes through the real WooPaymentsHttpClient and Jetpack's Client::remote_request(), which signs it with
 	 * the blog token (`token-key.blog-secret` in the jetpack_options store, the format Jetpack's Tokens class reads);
-	 * pre_http_request answers in WP_Http::request()'s array shape.
+	 * pre_http_request answers in WP_Http::request()'s array shape. Its body is synthetic transport-only input, not a
+	 * platform answer: the client logs whatever body the platform answers (class-wc-payments-api-client.php:2780-2784).
 	 */
 	public function test_transport_log_never_carries_the_signed_headers(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
@@ -1695,6 +1696,9 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox The gated transport log keeps none of a key-bearing URL's query, a signature two levels down and a client secret under an unknown key.
+	 *
+	 * The response body is synthetic transport-only input, not a platform answer: the client logs whatever body the platform
+	 * answers (class-wc-payments-api-client.php:2780-2784).
 	 */
 	public function test_transport_log_redacts_a_combined_body(): void {
 		$logger = $this->log_transport_request(
