@@ -274,7 +274,7 @@ class PaymentsEndpoint {
 
 		$status_code = (int) wp_remote_retrieve_response_code( $response );
 		/** @var \stdClass|null $json */
-		$json        = json_decode( $response['body'] );
+		$json = json_decode( $response['body'] );
 		if ( 201 !== $status_code || ! is_object( $json ) ) {
 			throw new PayPalApiException(
 				$json,
