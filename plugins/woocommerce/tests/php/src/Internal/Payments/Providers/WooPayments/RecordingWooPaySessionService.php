@@ -96,6 +96,20 @@ class RecordingWooPaySessionService extends WooPaymentsWooPaySessionService {
 	public bool $appearance_stored = true;
 
 	/**
+	 * Whether WooPay global theme support is enabled.
+	 *
+	 * @var bool
+	 */
+	public bool $global_theme_support_enabled = true;
+
+	/**
+	 * Number of appearance writes.
+	 *
+	 * @var int
+	 */
+	public int $appearance_writes = 0;
+
+	/**
 	 * Tell whether WooPay is enabled.
 	 *
 	 * @return bool
@@ -273,6 +287,7 @@ class RecordingWooPaySessionService extends WooPaymentsWooPaySessionService {
 	 */
 	public function save_woopay_appearance( array $appearance, array $font_rules = array() ): void {
 		unset( $font_rules );
+		++$this->appearance_writes;
 		$this->last_appearance = $appearance;
 	}
 
@@ -285,9 +300,19 @@ class RecordingWooPaySessionService extends WooPaymentsWooPaySessionService {
 	 */
 	public function maybe_save_woopay_appearance( array $appearance, array $font_rules = array() ): bool {
 		unset( $font_rules );
+		++$this->appearance_writes;
 		$this->last_appearance = $appearance;
 
 		return $this->appearance_stored;
+	}
+
+	/**
+	 * Tell whether WooPay global theme support is enabled.
+	 *
+	 * @return bool
+	 */
+	public function is_woopay_global_theme_support_enabled(): bool {
+		return $this->global_theme_support_enabled;
 	}
 
 	/**

@@ -984,6 +984,52 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The $label appearance write is refused and writes nothing while WooPay global theme support is off.
+	 * @dataProvider appearance_write_hooks
+	 *
+	 * Client 11.1.0 class-woopay-session.php:1219-1224 (admin) and :1273-1278 (shopper).
+	 *
+	 * @param string $label        Case label.
+	 * @param string $hook         AJAX hook.
+	 * @param string $nonce_action Nonce action the handler checks.
+	 */
+	public function test_appearance_write_needs_global_theme_support( string $label, string $hook, string $nonce_action ): void {
+		unset( $label );
+		$service   = new RecordingWooPaySessionService();
+		$this->sut = $this->create_controller( true, true, $service );
+		$this->sut->register();
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+
+		$service->global_theme_support_enabled = false;
+		$this->post_appearance_request( $nonce_action );
+		$off = $this->dispatch_ajax_hook( $hook );
+
+		$this->assertSame(
+			array(
+				'success' => false,
+				'data'    => 'This action is not available.',
+			),
+			$off['body']
+		);
+		$this->assertSame( 0, $service->appearance_writes );
+
+		$service->global_theme_support_enabled = true;
+		$this->post_appearance_request( $nonce_action );
+		$on = $this->dispatch_ajax_hook( $hook );
+
+		$this->assertTrue( $on['body']['success'] ?? false );
+		$this->assertSame( 1, $service->appearance_writes );
+	}
+
+	/** @return array<string,array{string,string,string}> */
+	public function appearance_write_hooks(): array {
+		return array(
+			'admin'   => array( 'admin', 'wp_ajax_wcpay_admin_set_woopay_appearance', 'wcpay_admin_woopay_appearance_nonce' ),
+			'shopper' => array( 'shopper', 'wc_ajax_wcpay_shopper_set_woopay_appearance', 'woopay_session_nonce' ),
+		);
+	}
+
+	/**
 	 * @testdox Should report false when shopper appearance was already stored.
 	 */
 	public function test_shopper_appearance_response_reports_when_appearance_slot_is_filled(): void {
@@ -1375,6 +1421,62 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertStringContainsString( '"woopayMinimumSessionData":{"encrypted":"minimum"}', $localized_data );
 		$this->assertStringContainsString( '"wcAjaxUrl":', $localized_data );
 		$this->assertStringNotContainsString( 'shouldShowWooPayButton', $localized_data );
+	}
+
+	/**
+	 * Post a valid appearance write with the given nonce.
+	 *
+	 * @param string $nonce_action Nonce action.
+	 */
+	private function post_appearance_request( string $nonce_action ): void {
+		$_POST    = array( // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			'_ajax_nonce' => wp_create_nonce( $nonce_action ),
+			'appearance'  => $this->get_valid_appearance(),
+		);
+		$_REQUEST = $_POST; // phpcs:ignore WordPress.Security.NonceVerification.Missing
+	}
+
+	/**
+	 * Fire an AJAX hook the controller registered and capture the decoded body, and the status of a wp_die() answer.
+	 *
+	 * wp_send_json() sets the status only while no header was sent, which PHPUnit's own output already did, so a JSON
+	 * answer's status cannot be read here; its body tells the outcome.
+	 *
+	 * @param string $hook AJAX hook name.
+	 * @return array{status:int|null,body:mixed}
+	 */
+	private function dispatch_ajax_hook( string $hook ): array {
+		$status      = null;
+		$message     = '';
+		$die_handler = static function () use ( &$status ) {
+			return static function ( $die_message, $title = '', $args = array() ) use ( &$status ): void {
+				unset( $title );
+				if ( is_array( $args ) && ! empty( $args['response'] ) ) {
+					$status = (int) $args['response'];
+				}
+				throw new WPAjaxDieContinueException( is_scalar( $die_message ) ? (string) $die_message : '' ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Test-only carrier of the wp_die() message.
+			};
+		};
+		add_filter( 'wp_doing_ajax', '__return_true' );
+		add_filter( 'wp_die_ajax_handler', $die_handler );
+
+		ob_start();
+		try {
+			do_action( $hook ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fires the AJAX hook WordPress or WooCommerce fires for the request.
+		} catch ( WPAjaxDieContinueException $e ) {
+			$message = $e->getMessage();
+		} finally {
+			$body = (string) ob_get_clean();
+			remove_filter( 'wp_doing_ajax', '__return_true' );
+			remove_filter( 'wp_die_ajax_handler', $die_handler );
+		}
+
+		$decoded = json_decode( $body, true );
+
+		return array(
+			'status' => $status,
+			'body'   => null !== $decoded ? $decoded : ( '' !== $body ? $body : $message ),
+		);
 	}
 
 	/**

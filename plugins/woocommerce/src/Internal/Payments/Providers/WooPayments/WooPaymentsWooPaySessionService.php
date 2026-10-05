@@ -1941,9 +1941,11 @@ class WooPaymentsWooPaySessionService {
 	/**
 	 * Tell whether WooPay global theme support is enabled.
 	 *
+	 * @since 11.2.0
+	 *
 	 * @return bool
 	 */
-	private function is_woopay_global_theme_support_enabled(): bool {
+	public function is_woopay_global_theme_support_enabled(): bool {
 		$account_data = $this->get_account_service()->get_cached_account_data();
 
 		return ! empty( $account_data['platform_global_theme_support_enabled'] ) &&

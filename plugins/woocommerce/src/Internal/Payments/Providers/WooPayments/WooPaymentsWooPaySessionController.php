@@ -371,6 +371,8 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			wp_send_json_error( array( 'result' => 'failure' ), 403 );
 		}
 
+		$this->reject_appearance_write_without_global_theme_support();
+
 		$request = wp_unslash( $_POST ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
 		if ( ! $this->is_valid_appearance_request( $request ) ) {
 			wp_send_json_error( array( 'result' => 'failure' ), 400 );
@@ -388,6 +390,8 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 		if ( ! $this->is_ajax_nonce_valid( 'woopay_session_nonce' ) ) {
 			wp_send_json_error( array( 'result' => 'failure' ), 403 );
 		}
+
+		$this->reject_appearance_write_without_global_theme_support();
 
 		$request = wp_unslash( $_POST ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
 		if ( ! $this->is_valid_appearance_request( $request ) ) {
@@ -765,6 +769,16 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 */
 	public function get_appearance_response( array $request ): array {
 		return $this->get_admin_appearance_response( $request );
+	}
+
+	/**
+	 * Answer an appearance write with 403 while WooPay global theme support is off, as client 11.1.0 does
+	 * (class-woopay-session.php:1219-1224, :1273-1278), so nothing fills the slot WooPay would serve once it is turned on.
+	 */
+	private function reject_appearance_write_without_global_theme_support(): void {
+		if ( ! $this->session_service->is_woopay_global_theme_support_enabled() ) {
+			wp_send_json_error( __( 'This action is not available.', 'woocommerce' ), 403 );
+		}
 	}
 
 	/**
