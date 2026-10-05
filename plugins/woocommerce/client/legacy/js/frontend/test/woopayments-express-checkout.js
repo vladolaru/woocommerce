@@ -4,6 +4,7 @@
 
 describe( 'WooPayments express checkout', () => {
 	let bodyEventHandlers;
+	let containerJQuery;
 	let elements;
 	let expressElement;
 	let expressHandlers;
@@ -51,6 +52,10 @@ describe( 'WooPayments express checkout', () => {
 
 			if ( selectorOrCallback === document.body ) {
 				return bodyResult;
+			}
+
+			if ( selectorOrCallback === '#wcpay-express-checkout-element' ) {
+				return containerJQuery;
 			}
 
 			return defaultResult;
@@ -239,6 +244,13 @@ describe( 'WooPayments express checkout', () => {
 			'<p id="wcpay-express-checkout-button-separator">OR</p>' +
 			'</div>';
 
+		containerJQuery = {
+			length: 1,
+			block: jest.fn(),
+			unblock: jest.fn(),
+			data: jest.fn(),
+		};
+		window.alert = jest.fn();
 		const jQueryMock = createJQueryMock();
 		global.jQuery = jQueryMock;
 		global.$ = jQueryMock;
@@ -282,6 +294,7 @@ describe( 'WooPayments express checkout', () => {
 		delete window.Stripe;
 		delete window.wcpayFraudPreventionToken;
 		delete window.wcpayAsyncCurrency;
+		delete window.wc_add_to_cart_variation_params;
 		window.fetch = originalFetch;
 		delete window.wcpayExpressCheckoutParams;
 		document.body.innerHTML = '';
@@ -2825,6 +2838,338 @@ describe( 'WooPayments express checkout', () => {
 			expect( elements.update ).toHaveBeenCalledWith(
 				expect.objectContaining( { amount: 4500 } )
 			);
+		} );
+	} );
+
+	// Client 11.1.0 shortcode-buttons-express/compatibility/wc-product-page.js and the update-button-data action
+	// (shortcode-buttons-express/index.js:597-674) it fires.
+	describe( 'classic product form changes re-price the wallet', () => {
+		function setClassicProductForm( options ) {
+			options = options || {};
+			document.body.innerHTML =
+				'<div class="woocommerce-notices-wrapper"><div class="woocommerce-error">Earlier error</div></div>' +
+				( options.variable
+					? '<form class="variations_form cart">' +
+						'<table class="variations"><tbody><tr><td class="value">' +
+						'<select name="attribute_pa_size" data-attribute_name="attribute_pa_size">' +
+						'<option value="">Choose an option</option>' +
+						'<option value="small"' +
+						( options.size === 'small' ? ' selected' : '' ) +
+						'>Small</option>' +
+						'<option value="large"' +
+						( options.size === 'large' ? ' selected' : '' ) +
+						'>Large</option>' +
+						'</select></td></tr></tbody></table>' +
+						'<div class="single_variation_wrap"><div class="woocommerce-variation-add-to-cart">' +
+						'<div class="quantity"><input type="number" name="quantity" class="input-text qty text" value="1" /></div>' +
+						'<button type="submit" class="single_add_to_cart_button button alt ' +
+						( options.buttonClasses || '' ) +
+						'">Add to cart</button>' +
+						'<input type="hidden" name="add-to-cart" value="123" />' +
+						'<input type="hidden" name="product_id" value="123" />' +
+						'<input type="hidden" name="variation_id" class="variation_id" value="' +
+						( options.variationId || '' ) +
+						'" />' +
+						'</div></div></form>'
+					: '<form class="cart">' +
+						'<div class="quantity"><input type="number" name="quantity" class="input-text qty text" value="1" /></div>' +
+						'<button type="submit" name="add-to-cart" value="123" class="single_add_to_cart_button">' +
+						'Add to cart</button>' +
+						'</form>' ) +
+				'<div class="wcpay-express-checkout-wrapper">' +
+				'<div id="wcpay-express-checkout-element"></div>' +
+				'<p id="wcpay-express-checkout-button-separator">OR</p>' +
+				'</div>';
+			window.wcpayExpressCheckoutParams.button_context = 'product';
+			window.wcpayExpressCheckoutParams.product = {
+				displayItems: [ { label: 'Express Widget', amount: 2500 } ],
+				total: { label: 'Express Widget', amount: 2500, pending: true },
+				needs_shipping: false,
+				currency: 'usd',
+				country_code: 'US',
+				product_type: options.variable ? 'variable' : 'simple',
+			};
+		}
+
+		// A product with nothing to ship: no shipping address event ever corrects the sheet.
+		function getVirtualCart( total, quantity ) {
+			return {
+				needs_shipping: false,
+				totals: {
+					total_price: String( total ),
+					total_refund: '0',
+					total_tax: '0',
+					total_shipping: '0',
+					currency_code: 'USD',
+					currency_minor_unit: 2,
+				},
+				items: [
+					{
+						key: 'item-key',
+						name: 'Express Widget',
+						quantity,
+						totals: {
+							line_subtotal: String( total ),
+							line_subtotal_tax: '0',
+							currency_minor_unit: 2,
+						},
+					},
+				],
+			};
+		}
+
+		async function mountReadyWallet() {
+			require( '../woopayments-express-checkout' );
+			await flushMicrotasks();
+			expressHandlers.ready( {
+				availablePaymentMethods: { applePay: true },
+			} );
+		}
+
+		function typeQuantity( value ) {
+			const input = document.querySelector( '.quantity .qty' );
+			input.value = value;
+			input.dispatchEvent( new window.Event( 'input', { bubbles: true } ) );
+		}
+
+		test( 'blocks the button on quantity input and re-prices it 250ms after the last input', async () => {
+			jest.useFakeTimers();
+			setClassicProductForm();
+			window.wp.apiFetch.mockResolvedValue( getVirtualCart( 7500, 3 ) );
+			await mountReadyWallet();
+
+			typeQuantity( '2' );
+			expect( containerJQuery.block ).toHaveBeenCalledWith( {
+				message: null,
+			} );
+			jest.advanceTimersByTime( 200 );
+			typeQuantity( '3' );
+			jest.advanceTimersByTime( 249 );
+			expect( window.wp.apiFetch ).not.toHaveBeenCalled();
+
+			jest.advanceTimersByTime( 1 );
+			await flushMicrotasks();
+
+			expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 1 );
+			expect( window.wp.apiFetch ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					method: 'POST',
+					path: '/wc/store/v1/cart/add-item?currency=USD',
+					headers: expect.objectContaining( {
+						'X-WooPayments-Tokenized-Cart-Is-Ephemeral-Cart': '1',
+					} ),
+					data: { id: 123, quantity: 3, variation: [] },
+				} )
+			);
+			expect( elements.update ).toHaveBeenCalledWith(
+				expect.objectContaining( { amount: 7500 } )
+			);
+			expect( containerJQuery.unblock ).toHaveBeenCalled();
+			expect(
+				document.querySelector( '.woocommerce-error' )
+			).toBeNull();
+		} );
+
+		test( 'opens the sheet of a product with nothing to ship at the re-priced quantity', async () => {
+			const resolveClick = jest.fn();
+			jest.useFakeTimers();
+			setClassicProductForm();
+			window.wp.apiFetch.mockResolvedValue( getVirtualCart( 7500, 3 ) );
+			await mountReadyWallet();
+
+			typeQuantity( '3' );
+			jest.advanceTimersByTime( 250 );
+			await flushMicrotasks();
+			await expressHandlers.click( { resolve: resolveClick } );
+
+			expect( resolveClick ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					shippingAddressRequired: false,
+					lineItems: [
+						{ amount: 7500, name: 'Express Widget (x3)' },
+					],
+				} )
+			);
+		} );
+
+		test( 're-prices the wallet for a newly chosen classic variation', async () => {
+			setClassicProductForm( {
+				variable: true,
+				size: 'large',
+				variationId: '125',
+			} );
+			window.wp.apiFetch.mockResolvedValue( getVirtualCart( 3000, 1 ) );
+			await mountReadyWallet();
+
+			bodyEventHandlers.woocommerce_variation_has_changed();
+			expect( containerJQuery.block ).toHaveBeenCalled();
+			await flushMicrotasks();
+
+			expect( window.wp.apiFetch ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					path: '/wc/store/v1/cart/add-item?currency=USD',
+					data: {
+						id: 125,
+						quantity: 1,
+						variation: [
+							{ attribute: 'attribute_pa_size', value: 'large' },
+						],
+					},
+				} )
+			);
+			expect( elements.update ).toHaveBeenCalledWith(
+				expect.objectContaining( { amount: 3000 } )
+			);
+			expect( containerJQuery.unblock ).toHaveBeenCalled();
+		} );
+
+		test( 'keeps the button unblocked and unpriced while the classic variation is cleared', async () => {
+			const resolveClick = jest.fn();
+			setClassicProductForm( {
+				variable: true,
+				buttonClasses: 'disabled wc-variation-selection-needed',
+			} );
+			await mountReadyWallet();
+
+			bodyEventHandlers.woocommerce_variation_has_changed();
+			await flushMicrotasks();
+
+			expect( window.wp.apiFetch ).not.toHaveBeenCalled();
+			expect( containerJQuery.block ).not.toHaveBeenCalled();
+			expect( containerJQuery.unblock ).toHaveBeenCalled();
+			expect(
+				document
+					.getElementById( 'wcpay-express-checkout-element' )
+					.classList.contains( 'is-ready' )
+			).toBe( true );
+
+			await expressHandlers.click( { resolve: resolveClick } );
+
+			expect( window.alert ).toHaveBeenCalledWith(
+				'Please select your product options before proceeding.'
+			);
+			expect( resolveClick ).not.toHaveBeenCalled();
+			expect( window.wp.apiFetch ).not.toHaveBeenCalled();
+		} );
+
+		test( 'tells the shopper an unavailable classic variation cannot be bought', async () => {
+			const resolveClick = jest.fn();
+			window.wc_add_to_cart_variation_params = {
+				i18n_unavailable_text: 'Sorry, this product is unavailable.',
+			};
+			setClassicProductForm( {
+				variable: true,
+				size: 'small',
+				variationId: '124',
+				buttonClasses: 'disabled wc-variation-is-unavailable',
+			} );
+			await mountReadyWallet();
+
+			await expressHandlers.click( { resolve: resolveClick } );
+
+			expect( window.alert ).toHaveBeenCalledWith(
+				'Sorry, this product is unavailable.'
+			);
+			expect( resolveClick ).not.toHaveBeenCalled();
+			expect( window.wp.apiFetch ).not.toHaveBeenCalled();
+		} );
+
+		test( 'hides the wallet when the re-priced cart is not eligible', async () => {
+			setClassicProductForm( {
+				variable: true,
+				size: 'small',
+				variationId: '124',
+			} );
+			window.wp.apiFetch.mockResolvedValue( getVirtualCart( 0, 1 ) );
+			await mountReadyWallet();
+
+			bodyEventHandlers.woocommerce_variation_has_changed();
+			await flushMicrotasks();
+
+			expect(
+				document
+					.getElementById( 'wcpay-express-checkout-element' )
+					.classList.contains( 'is-ready' )
+			).toBe( false );
+			expect(
+				document.getElementById(
+					'wcpay-express-checkout-button-separator'
+				).hidden
+			).toBe( true );
+		} );
+
+		test( 'shows the wallet again when a later re-priced cart is eligible', async () => {
+			const container = () =>
+				document.getElementById( 'wcpay-express-checkout-element' );
+			setClassicProductForm( {
+				variable: true,
+				size: 'small',
+				variationId: '124',
+			} );
+			window.wp.apiFetch
+				.mockResolvedValueOnce( getVirtualCart( 0, 1 ) )
+				.mockResolvedValueOnce( getVirtualCart( 3000, 1 ) );
+			await mountReadyWallet();
+
+			bodyEventHandlers.woocommerce_variation_has_changed();
+			await flushMicrotasks();
+			expect( container().classList.contains( 'is-ready' ) ).toBe( false );
+
+			bodyEventHandlers.woocommerce_variation_has_changed();
+			await flushMicrotasks();
+
+			expect( container().classList.contains( 'is-ready' ) ).toBe( true );
+			expect(
+				document.getElementById(
+					'wcpay-express-checkout-button-separator'
+				).hidden
+			).toBe( false );
+		} );
+
+		test( 'leaves no empty button area after a re-price in a browser without a wallet', async () => {
+			jest.useFakeTimers();
+			setClassicProductForm();
+			window.wp.apiFetch.mockResolvedValue( getVirtualCart( 7500, 3 ) );
+			require( '../woopayments-express-checkout' );
+			await flushMicrotasks();
+			expressHandlers.ready( {} );
+
+			typeQuantity( '3' );
+			jest.advanceTimersByTime( 250 );
+			await flushMicrotasks();
+
+			expect( elements.update ).toHaveBeenCalledWith(
+				expect.objectContaining( { amount: 7500 } )
+			);
+			expect(
+				document
+					.getElementById( 'wcpay-express-checkout-element' )
+					.classList.contains( 'is-ready' )
+			).toBe( false );
+			expect(
+				document.getElementById(
+					'wcpay-express-checkout-button-separator'
+				).hidden
+			).toBe( true );
+		} );
+
+		test( 'hides the wallet when the re-priced cart cannot be fetched', async () => {
+			setClassicProductForm( {
+				variable: true,
+				size: 'small',
+				variationId: '124',
+			} );
+			window.wp.apiFetch.mockRejectedValue( new Error( 'Out of stock' ) );
+			await mountReadyWallet();
+
+			bodyEventHandlers.woocommerce_variation_has_changed();
+			await flushMicrotasks();
+
+			expect(
+				document
+					.getElementById( 'wcpay-express-checkout-element' )
+					.classList.contains( 'is-ready' )
+			).toBe( false );
 		} );
 	} );
 

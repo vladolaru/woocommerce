@@ -21,6 +21,7 @@
 	var iapiLastSelection = null;
 	var iapiSelectionRefreshTimer = null;
 	var iapiObserverInstalled = false;
+	var expressButtonAvailable = false;
 	var navigate = function ( url ) {
 		window.location.href = url;
 	};
@@ -1451,6 +1452,24 @@
 			: requestPreview();
 	}
 
+	function applyProductPreview( cartData ) {
+		if (
+			! elements &&
+			resolvedProductCurrency !== getLocalizedProductCurrency() &&
+			! applyProductPreviewMethods( cartData )
+		) {
+			hideExpressButton();
+			return Promise.resolve();
+		}
+
+		if ( ! elements ) {
+			return initializeExpressCheckout( cartData );
+		}
+
+		cachedCartData = cartData;
+		return updateElementsForCart( cartData );
+	}
+
 	function refreshIapiProductPreview() {
 		var selectedProduct = getSelectedProduct();
 		var product = filterSelectedProduct( selectedProduct );
@@ -1474,21 +1493,7 @@
 					return refreshIapiProductPreview();
 				}
 
-				if (
-					! elements &&
-					resolvedProductCurrency !== getLocalizedProductCurrency() &&
-					! applyProductPreviewMethods( cartData )
-				) {
-					hideExpressButton();
-					return;
-				}
-
-				if ( ! elements ) {
-					return initializeExpressCheckout( cartData );
-				}
-
-				cachedCartData = cartData;
-				return updateElementsForCart( cartData );
+				return applyProductPreview( cartData );
 			},
 			function () {
 				if ( requestId !== iapiPreviewRequestId ) {
@@ -1552,6 +1557,187 @@
 				attributes: true,
 			} );
 		} );
+	}
+
+	/**
+	 * Port of the client 11.1.0 `debounce()` (shortcode-buttons-express/debounce.js:13-32) without its unused
+	 * `immediate` mode: run `func` once, `wait` ms after the last call.
+	 *
+	 * @param {number}   wait Milliseconds to wait after the last call.
+	 * @param {Function} func Function to run.
+	 * @return {Function} Debounced function.
+	 */
+	function debounce( wait, func ) {
+		var timeout;
+
+		return function () {
+			var context = this;
+			var args = arguments;
+
+			window.clearTimeout( timeout );
+			timeout = window.setTimeout( function () {
+				timeout = null;
+				func.apply( context, args );
+			}, wait );
+		};
+	}
+
+	// Client 11.1.0 utils/wc-product-page-selectors.js:19-26.
+	function getAddToCartButtonElement() {
+		return (
+			document.querySelector( '.single_add_to_cart_button' ) ||
+			document.querySelector(
+				'.wp-block-add-to-cart-with-options button[type="submit"]'
+			)
+		);
+	}
+
+	// Client 11.1.0 utils/wc-product-page-selectors.js:79-81.
+	function isIapiBlock() {
+		return Boolean(
+			document.querySelector( '.wp-block-add-to-cart-with-options' )
+		);
+	}
+
+	/**
+	 * Tell whether the product form cannot add the product to the cart yet (no variation chosen, an unavailable
+	 * combination, an invalid block form). Client 11.1.0 utils/wc-product-page-selectors.js:232-242.
+	 *
+	 * @return {boolean} Whether add to cart is blocked.
+	 */
+	function isAddToCartBlocked() {
+		var form;
+		var button;
+
+		if ( isIapiBlock() ) {
+			form = document.querySelector( '.wp-block-add-to-cart-with-options' );
+			return Boolean( form && form.classList.contains( 'is-invalid' ) );
+		}
+
+		button = getAddToCartButtonElement();
+		return Boolean( button && button.classList.contains( 'disabled' ) );
+	}
+
+	// Client 11.1.0 utils/wc-product-page-selectors.js:253-262.
+	function isVariationUnavailable() {
+		var button;
+
+		if ( isIapiBlock() ) {
+			return false;
+		}
+
+		button = getAddToCartButtonElement();
+		return Boolean(
+			button && button.classList.contains( 'wc-variation-is-unavailable' )
+		);
+	}
+
+	/**
+	 * Cover the wallet button while its amount is being refreshed. Client 11.1.0 shortcode-buttons-express/button-ui.js:18-26;
+	 * blockUI comes with WooCommerce's product-page scripts, which the client relies on in the same way.
+	 */
+	function blockExpressButton() {
+		var $container = $( '#wcpay-express-checkout-element' );
+
+		if (
+			typeof $container.block !== 'function' ||
+			$container.data( 'blockUI.isBlocked' )
+		) {
+			return;
+		}
+
+		$container.block( { message: null } );
+	}
+
+	/**
+	 * Client 11.1.0 shortcode-buttons-express/button-ui.js:28-31, which also shows the container. Native shows it only
+	 * once the wallet reported a payment method, so a browser without one gets no empty button area.
+	 */
+	function unblockExpressButton() {
+		var container = document.getElementById(
+			'wcpay-express-checkout-element'
+		);
+		var $container = $( '#wcpay-express-checkout-element' );
+
+		if ( container && expressButtonAvailable ) {
+			container.classList.add( 'is-ready' );
+		}
+
+		if ( typeof $container.unblock === 'function' ) {
+			$container.unblock();
+		}
+	}
+
+	/**
+	 * Re-price the product-page wallet from an ephemeral cart of the current form selection.
+	 *
+	 * Port of the client 11.1.0 `wcpay.express-checkout.update-button-data` action (shortcode-buttons-express/index.js:597-674):
+	 * a product the form cannot add yet leaves the button unblocked and unchanged; otherwise the button stays blocked
+	 * until the new amount reaches Elements, and a cart that cannot be priced or is not eligible hides it.
+	 *
+	 * @return {Promise} Settles once the wallet reflects the selection.
+	 */
+	function updateButtonData() {
+		var selectedProduct;
+		var product;
+		var requestId;
+
+		if ( isAddToCartBlocked() ) {
+			unblockExpressButton();
+			return Promise.resolve();
+		}
+
+		document
+			.querySelectorAll( '.woocommerce-error' )
+			.forEach( function ( notice ) {
+				notice.remove();
+			} );
+		blockExpressButton();
+
+		selectedProduct = getSelectedProduct();
+		product = filterSelectedProduct( selectedProduct );
+		requestId = ++iapiPreviewRequestId;
+		iapiLastSelection = JSON.stringify( selectedProduct );
+
+		if ( ! product ) {
+			hideExpressButton();
+			return Promise.resolve();
+		}
+
+		return requestIapiProductPreview( product )
+			.then( function ( cartData ) {
+				var wasMounted = Boolean( elements );
+
+				if ( requestId !== iapiPreviewRequestId ) {
+					return;
+				}
+
+				unblockExpressButton();
+
+				return applyProductPreview( cartData ).then( function () {
+					// A first mount decides eligibility itself.
+					if ( ! wasMounted ) {
+						return;
+					}
+
+					if (
+						! applyWpFilters(
+							'wcpay.express-checkout.is-cart-eligible',
+							getTotalAmount( cartData ) > 0,
+							cartData
+						)
+					) {
+						hideExpressButton();
+					} else if ( expressButtonAvailable ) {
+						showExpressButton();
+					}
+				} );
+			} )
+			.catch( function () {
+				if ( requestId === iapiPreviewRequestId ) {
+					hideExpressButton();
+				}
+			} );
 	}
 
 	function getAddressLine( address, index ) {
@@ -2718,6 +2904,7 @@
 			expressElement.unmount();
 		}
 
+		expressButtonAvailable = false;
 		elements = stripe.elements(
 			getStripeElementsOptions( cachedCartData )
 		);
@@ -2728,6 +2915,7 @@
 
 		expressElement.on( 'ready', function ( event ) {
 			if ( event && event.availablePaymentMethods ) {
+				expressButtonAvailable = true;
 				showExpressButton();
 				recordExpressCheckoutLoadEvents(
 					event.availablePaymentMethods
@@ -2740,6 +2928,20 @@
 			// confirmation dialog instead of opening the wallet sheet.
 			if ( config.login_confirmation ) {
 				displayLoginConfirmation( event && event.expressPaymentType );
+				return;
+			}
+
+			// Client 11.1.0 shortcode-buttons-express/index.js:291-309: the sheet does not open for a product the form
+			// cannot add yet.
+			if ( isProduct() && isAddToCartBlocked() ) {
+				window.alert(
+					isVariationUnavailable()
+						? ( window.wc_add_to_cart_variation_params &&
+								window.wc_add_to_cart_variation_params
+									.i18n_unavailable_text ) ||
+								'Sorry, this product is unavailable. Please choose a different combination.'
+						: 'Please select your product options before proceeding.'
+				);
 				return;
 			}
 
@@ -2838,6 +3040,8 @@
 	registerExtensionCompatibility();
 
 	$( function () {
+		var debouncedUpdateButtonData;
+
 		if ( isBlockSurface() ) {
 			return;
 		}
@@ -2845,16 +3049,39 @@
 		hideExpressButton();
 		initOrderAttribution();
 
-		// A changed WooCommerce Deposits choice re-prices the wallet from the
-		// ephemeral product cart (client wc-deposits.js:7-14, update-button-data).
 		if ( isProduct() ) {
+			// A changed WooCommerce Deposits choice re-prices the wallet (client wc-deposits.js:7-14).
 			document
 				.querySelectorAll(
 					'input[name=wc_deposit_option],input[name=wc_deposit_payment_plan]'
 				)
 				.forEach( function ( input ) {
 					input.addEventListener( 'change', function () {
-						refreshIapiProductPreview();
+						updateButtonData();
+					} );
+				} );
+
+			// A classic variation change re-prices the wallet (client wc-product-page.js:21-24).
+			$( document.body ).on(
+				'woocommerce_variation_has_changed',
+				function () {
+					updateButtonData();
+				}
+			);
+
+			// Every quantity input blocks the button at once, so it cannot be clicked at a stale amount, and the
+			// wallet is re-priced 250ms after the last one (client wc-product-page.js:64-83).
+			debouncedUpdateButtonData = debounce( 250, updateButtonData );
+			document
+				.querySelectorAll( '.quantity' )
+				.forEach( function ( quantity ) {
+					quantity.addEventListener( 'input', function ( event ) {
+						if ( ! event.target.matches( '.qty' ) ) {
+							return;
+						}
+
+						blockExpressButton();
+						debouncedUpdateButtonData();
 					} );
 				} );
 		}
