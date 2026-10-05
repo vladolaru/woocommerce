@@ -1083,6 +1083,18 @@
 
 			document.body.style.overflow = '';
 
+			// updated_checkout renders the WooPay button again (renderWooPayExpressButton()), so the button that opened
+			// the dialog may have been replaced while it was open; the new one gets focus.
+			if (
+				previouslyFocused &&
+				! previouslyFocused.isConnected &&
+				previouslyFocused.classList &&
+				previouslyFocused.classList.contains( 'woopay-express-button' )
+			) {
+				previouslyFocused = document.querySelector(
+					'#wcpay-woopay-button .woopay-express-button'
+				);
+			}
 			if ( previouslyFocused && previouslyFocused.focus ) {
 				previouslyFocused.focus();
 			}
@@ -1545,6 +1557,7 @@
 		var measuredWidth;
 		var widthType;
 		var displayedCard;
+		var hadFocus;
 
 		// The Blocks express button renders and owns its own wrapper.
 		if (
@@ -1572,8 +1585,14 @@
 		button.style.borderRadius = ( settings.radius || '4' ) + 'px';
 		button.addEventListener( 'click', initWooPay );
 
+		hadFocus = container.contains( document.activeElement );
 		container.innerHTML = '';
 		container.appendChild( button );
+		// updated_checkout renders the button again; a shopper on the old one stays on the new one. Client 11.1.0
+		// mounts a new button the same way and focus drops to the page (express-button/index.js:39-62).
+		if ( hadFocus ) {
+			button.focus();
+		}
 
 		// Client 11.1.0 measures the rendered button and only shows the
 		// preferred card once it is at least 220px wide

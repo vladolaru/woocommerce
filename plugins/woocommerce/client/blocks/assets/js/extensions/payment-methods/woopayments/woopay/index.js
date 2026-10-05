@@ -573,6 +573,12 @@ const WooPayButtonContent = ( { buttonSettings, preferredCard } ) => {
 	);
 };
 
+// The WooPay button on the page now. The Checkout block shows a skeleton in place of the express buttons while it
+// recalculates (cart-checkout-shared/payment-methods/express-payment/checkout-express-payment.tsx), so the button that
+// opened the OTP dialog may have been replaced by the time the dialog closes.
+const getWooPayButton = () =>
+	document.querySelector( '#wcpay-woopay-button .woopay-express-button' );
+
 const WooPayExpressContent = () => {
 	const buttonSettings = settings.woopayButton || {};
 	const buttonType = buttonSettings.type || 'default';
@@ -601,7 +607,7 @@ const WooPayExpressContent = () => {
 			eventSource,
 			'#email',
 			navigate,
-			buttonRef.current
+			getWooPayButton
 		);
 
 	const continueWooPayFirstPartyAuth = async () => {

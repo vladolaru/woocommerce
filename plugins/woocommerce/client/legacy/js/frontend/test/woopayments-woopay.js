@@ -1910,6 +1910,62 @@ describe( 'WooPayments WooPay checkout', () => {
 				}
 			);
 
+			// The same re-render while the dialog is closed (the checkout's first update_checkout can answer right after the
+			// shopper pressed the button): focus on the old button moves to the new one, and focus elsewhere stays.
+			test.each( [
+				[ 'the WooPay button', '#wcpay-woopay-button button', true ],
+				[ 'the email field', '#billing_email', false ],
+			] )(
+				'keeps focus where it was when updated_checkout renders the WooPay button again while %s has focus',
+				( label, selector, movesToNewButton ) => {
+					const { __test__ } = require( '../woopayments-woopay' );
+					__test__.setNavigate( navigate );
+					const focused = document.querySelector( selector );
+					focused.focus();
+
+					bodyEventHandlers.updated_checkout();
+
+					const replacement = document.querySelector(
+						'#wcpay-woopay-button button'
+					);
+					expect( focused.isConnected ).toBe( ! movesToNewButton );
+					expect( document.activeElement ).toBe(
+						movesToNewButton ? replacement : focused
+					);
+				}
+			);
+
+			// updated_checkout renders the WooPay button again (renderWooPayExpressButton() empties its container), so the
+			// button that opened the dialog can be gone by the time the dialog closes.
+			test.each( [
+				[
+					// The classic suite has no user-event: Enter or Space on a focused button makes the browser click it.
+					'its Close button',
+					() => document.querySelector( '.woopay-otp-iframe-close' ).click(),
+				],
+				[
+					'the close_modal message',
+					() => sendWooPayMessage( { action: 'close_modal' } ),
+				],
+			] )(
+				'gives focus to the WooPay button updated_checkout put in place while it was open, when closed by %s',
+				async ( label, close ) => {
+					const opener = await openFromFocusedButton();
+
+					bodyEventHandlers.updated_checkout();
+					const replacement = document.querySelector(
+						'#wcpay-woopay-button button'
+					);
+					expect( replacement ).not.toBe( opener );
+					expect( opener.isConnected ).toBe( false );
+
+					close();
+
+					expect( document.querySelector( '[role="dialog"]' ) ).toBeNull();
+					expect( document.activeElement ).toBe( replacement );
+				}
+			);
+
 			// The iframe here never fires `load` and never posts a message: the state of an OTP page that failed to load,
 			// where WooPay's own close control and Escape bridge do not exist.
 			describe( 'when the iframe never loads', () => {

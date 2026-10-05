@@ -1245,6 +1245,74 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 				);
 			} );
 
+			// The Checkout block shows a skeleton in place of the express buttons while it recalculates and mounts them
+			// again after (cart-checkout-shared/payment-methods/express-payment/checkout-express-payment.tsx,
+			// `showSkeleton`), so the WooPay button can be a new element by the time the dialog closes. Seen in Chromium
+			// when a draft-order update answered while the dialog was open. Unmounting and rendering the button again is
+			// that swap.
+			describe( 'when the Checkout block replaces the WooPay button while the dialog is open', () => {
+				it.each( [
+					[
+						// The keys as a browser delivers them: keydown and keypress on the Close button, whose Enter
+						// activation clicks it, then keyup on the element focused by then.
+						'Enter on the Close button',
+						async ( user ) => {
+							screen
+								.getByRole( 'button', { name: 'Close' } )
+								.focus();
+							await user.keyboard( '{Enter}' );
+						},
+					],
+					[
+						'Escape',
+						async () =>
+							fireEvent.keyUp( document, { key: 'Escape' } ),
+					],
+					[
+						'the close_modal message',
+						() => sendWooPayMessage( { action: 'close_modal' } ),
+					],
+				] )(
+					'gives focus to the new WooPay button when closed by %s',
+					async ( label, close ) => {
+						const user = userEvent.setup();
+						registerWooPay();
+						const expressRegistration =
+							registerExpressPaymentMethod.mock.calls[ 0 ][ 0 ];
+						const { unmount } = render(
+							createElement( expressRegistration.content.type )
+						);
+						const opener = screen.getByRole( 'button', {
+							name: 'WooPay',
+						} );
+						opener.focus();
+						fireEvent.click( opener );
+						await waitFor( () => {
+							expect(
+								document.querySelector( '.woopay-otp-iframe' )
+							).not.toBeNull();
+						} );
+						await waitFor( () => {
+							expect( opener ).not.toBeDisabled();
+						} );
+
+						unmount();
+						render(
+							createElement( expressRegistration.content.type )
+						);
+						const replacement = screen.getByRole( 'button', {
+							name: 'WooPay',
+						} );
+						expect( replacement ).not.toBe( opener );
+
+						await close( user );
+
+						expect( screen.queryByRole( 'dialog' ) ).toBeNull();
+						expect( replacement ).toHaveFocus();
+					}
+				);
+			} );
+
 			// The iframe here never fires `load` and never posts a message: the state of an OTP page that failed to load,
 			// where WooPay's own close control and Escape bridge do not exist.
 			describe( 'when the iframe never loads', () => {
@@ -1306,6 +1374,38 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 						expect( button ).toHaveFocus();
 					}
 				);
+			} );
+
+			// A rejected init_woopay closes the dialog again through the unavailable notice (no check that it is still
+			// open, recorded decision C11); only the close that ends an open dialog moves focus.
+			it( 'leaves focus where the shopper moved it when init_woopay fails after the dialog closed', async () => {
+				let rejectInit;
+				window.fetch = jest.fn( ( url ) =>
+					url === '/?wc-ajax=wcpay_init_woopay'
+						? new Promise( ( resolve, reject ) => {
+								rejectInit = reject;
+						  } )
+						: Promise.resolve( {
+								json: () => Promise.resolve( {} ),
+						  } )
+				);
+				const button = await openFromFocusedButton();
+				await sendWooPayMessage( {
+					action: 'redirect_to_woopay',
+					platformCheckoutUserSession: 'platform-session-1',
+				} );
+				await sendWooPayMessage( { action: 'close_modal' } );
+				expect( button ).toHaveFocus();
+				const email = document.getElementById( 'email' );
+				email.focus();
+
+				// A fetch() that cannot reach the server rejects with a TypeError
+				// (https://developer.mozilla.org/docs/Web/API/Window/fetch#exceptions).
+				await act( async () => {
+					rejectInit( new TypeError( 'Failed to fetch' ) );
+				} );
+
+				expect( email ).toHaveFocus();
 			} );
 
 			it( 'sends focus that leaves the dialog back to the iframe while it is open', async () => {

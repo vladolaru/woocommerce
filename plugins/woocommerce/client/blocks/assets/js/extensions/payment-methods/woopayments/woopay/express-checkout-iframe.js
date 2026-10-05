@@ -74,13 +74,14 @@ const showErrorMessage = ( paymentSettings, context, message ) => {
 /**
  * Open the WooPay OTP iframe for the express button.
  *
- * @param {Object}       paymentSettings Payment method settings.
- * @param {string}       context         The button context (checkout, cart, product).
- * @param {string}       emailSelector   Selector of the email field to prefill from.
- * @param {Function}     navigate        Navigates the page to a URL.
- * @param {Element|null} opener          The control that opened the dialog, which gets focus back on close. The express
- *                                       button passes itself: it is disabled while it loads, which takes focus away
- *                                       from it before the dialog opens.
+ * @param {Object}                paymentSettings Payment method settings.
+ * @param {string}                context         The button context (checkout, cart, product).
+ * @param {string}                emailSelector   Selector of the email field to prefill from.
+ * @param {Function}              navigate        Navigates the page to a URL.
+ * @param {Element|Function|null} opener          The control that gets focus back on close, or a function that returns
+ *                                                it when the dialog closes. The express button passes one: it is
+ *                                                disabled while it loads, which takes focus away from it before the
+ *                                                dialog opens, and Blocks may replace it while the dialog is open.
  */
 export const expressCheckoutIframe = async (
 	paymentSettings,
@@ -110,8 +111,10 @@ export const expressCheckoutIframe = async (
 	}
 
 	// Where focus was when the dialog opened; closing gives it back, as the email-lookup iframe gives it back to the
-	// email field (email-input-iframe.js closeIframe()).
+	// email field (email-input-iframe.js closeIframe()), unless the opener names the control to give it to.
 	let previouslyFocused = null;
+	const getOpener = () =>
+		typeof opener === 'function' ? opener() : opener;
 
 	// Tracks the iframe header state; the default must match the platform's.
 	let iframeHeaderValue = true;
@@ -204,7 +207,11 @@ export const expressCheckoutIframe = async (
 
 		document.body.style.overflow = '';
 
-		previouslyFocused?.focus?.();
+		// Only the close that ends an open dialog gives focus back. The opener is read now, not at open: the Checkout
+		// block swaps its express buttons for a skeleton while it recalculates, which puts a new button in place.
+		if ( previouslyFocused ) {
+			( getOpener() || previouslyFocused ).focus?.();
+		}
 		previouslyFocused = null;
 	};
 
@@ -326,7 +333,7 @@ export const expressCheckoutIframe = async (
 			return;
 		}
 
-		previouslyFocused = opener || iframe.ownerDocument.activeElement;
+		previouslyFocused = iframe.ownerDocument.activeElement;
 		window.addEventListener( 'pageshow', onPageShow );
 		window.addEventListener( 'message', onMessage );
 		document.addEventListener( 'keyup', onKeyUp );
