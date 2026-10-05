@@ -916,10 +916,12 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	/**
 	 * Get the order-pay params for this request, decided once so the button rendered in the pay form follows the config.
 	 *
-	 * Empty unless the pay link lets the visitor pay the order and the order is in the active currency: the WooPay session
-	 * preloads the Store API order, which states its totals in the active currency (CurrencyFormatter), while the payment
-	 * charges the order's. Multi-currency switches the active currency to the order's only inside the pay form
-	 * (before_woocommerce_pay), after the config is built at wp_enqueue_scripts; the session request sees the shopper's.
+	 * Empty unless the pay link lets the visitor pay the order, the order is in the active currency and that currency uses
+	 * two price decimals: the WooPay session preloads the Store API order, which labels its totals with the active currency
+	 * and decimals (CurrencyFormatter) but writes the amounts with two decimals (AbstractSchema::prepare_money_response()),
+	 * while the payment charges the order's currency and total. Multi-currency switches the active currency to the order's
+	 * only inside the pay form (before_woocommerce_pay), after the config is built at wp_enqueue_scripts; the session request
+	 * sees the shopper's.
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -930,7 +932,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 
 		$params = WooPaymentsOrderPayAccess::get_pay_for_order_page_params();
 		$order  = array() === $params ? false : wc_get_order( $params['order_id'] );
-		if ( ! $order instanceof \WC_Order || strtoupper( $order->get_currency() ) !== strtoupper( get_woocommerce_currency() ) ) {
+		if ( ! $order instanceof \WC_Order || strtoupper( $order->get_currency() ) !== strtoupper( get_woocommerce_currency() ) || 2 !== wc_get_price_decimals() ) {
 			$params = array();
 		} elseif ( ! WooPaymentsOrderPayAccess::may_put_shopper_email_in_page() ) {
 			$params['billing_email'] = '';

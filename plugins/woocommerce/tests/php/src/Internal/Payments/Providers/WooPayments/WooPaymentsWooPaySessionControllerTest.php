@@ -68,6 +68,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		remove_all_filters( 'wp_die_ajax_handler' );
 		remove_all_filters( 'wp_doing_ajax' );
 		remove_all_filters( 'woocommerce_currency' );
+		remove_all_filters( 'wc_get_price_decimals' );
 		delete_option( 'woocommerce_currency' );
 		if ( function_exists( 'WC' ) && WC() && WC()->cart ) {
 			WC()->cart->empty_cart();
@@ -902,6 +903,54 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 			$this->assertSame( '1', $config['shouldShowWooPayButton'] );
 			$this->assertSame( (string) $order->get_id(), $config['order_id'] );
 			$this->assertSame( $order->get_order_key(), $config['key'] );
+			$this->assertStringContainsString( 'id="wcpay-woopay-button"', $html );
+
+			return;
+		}
+
+		$this->assertSame( '', $config['shouldShowWooPayButton'] );
+		$this->assertArrayNotHasKey( 'order_id', $config );
+		$this->assertArrayNotHasKey( 'key', $config );
+		$this->assertArrayNotHasKey( 'billing_email', $config );
+		$this->assertSame( '', $html );
+	}
+
+	/**
+	 * @testdox Order-pay offers WooPay for a $currency order in the active $currency only when that currency uses two price decimals ($decimals).
+	 *
+	 * The Store API order the WooPay session preloads writes its amounts with two decimals (OrderSchema::get_totals() calls
+	 * AbstractSchema::prepare_money_response(), whose decimals default to 2) and labels them with the active decimals
+	 * (CurrencyFormatter::format(), currency_minor_unit from wc_get_price_decimals()), so a ¥1,000 order at 0 decimals would
+	 * read as ¥100,000. Native multi-currency sets the active decimals through the wc_get_price_decimals filter at priority 900
+	 * (MultiCurrencyFrontendCurrenciesController); the filters here stand in for a shopper who selected $currency.
+	 *
+	 * @testWith ["JPY", 0, false]
+	 *           ["BHD", 3, false]
+	 *           ["JPY", 2, true]
+	 *
+	 * @param string $currency Order currency, also the active currency.
+	 * @param int    $decimals Active price decimals.
+	 * @param bool   $offered  Whether WooPay is offered for the order.
+	 */
+	public function test_order_pay_offers_woopay_only_with_two_price_decimals( string $currency, int $decimals, bool $offered ): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		$owner_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$order    = \WC_Helper_Order::create_order( $owner_id );
+		$order->set_currency( $currency );
+		$order->save();
+		wp_set_current_user( $owner_id );
+		add_filter( 'woocommerce_currency', static fn() => $currency, 900 );
+		add_filter( 'wc_get_price_decimals', static fn() => $decimals, 900 );
+		$this->sut = $this->create_controller( true, true );
+		$this->set_order_pay_page( $order->get_id(), $order->get_order_key() );
+
+		$this->sut->enqueue_frontend_assets();
+		$config = $this->get_localized_woopay_config();
+		$html   = $this->sut->get_express_checkout_button_html();
+
+		if ( $offered ) {
+			$this->assertSame( '1', $config['shouldShowWooPayButton'] );
+			$this->assertSame( (string) $order->get_id(), $config['order_id'] );
 			$this->assertStringContainsString( 'id="wcpay-woopay-button"', $html );
 
 			return;
