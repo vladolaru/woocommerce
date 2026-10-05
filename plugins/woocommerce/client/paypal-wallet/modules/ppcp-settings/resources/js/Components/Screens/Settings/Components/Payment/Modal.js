@@ -55,7 +55,7 @@ const Modal = ( { method, setModalIsVisible, onSave } ) => {
 				const value = settings[ key ];
 				return typeof value === 'string'
 					? value.trim() !== ''
-					: value != null;
+					: value !== null && value !== undefined;
 			}
 		);
 	};

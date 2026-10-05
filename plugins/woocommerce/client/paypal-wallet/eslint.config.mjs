@@ -27,7 +27,6 @@ export default [
 			'jsdoc/require-returns-description': 'warn',
 			'jsdoc/check-param-names': 'warn',
 			radix: 'warn',
-			eqeqeq: 'warn',
 			'no-alert': 'warn',
 			'no-useless-constructor': 'warn',
 			'@wordpress/no-unused-vars-before-return': 'warn',
