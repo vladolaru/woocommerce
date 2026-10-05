@@ -1304,6 +1304,33 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A WooPay order credits the AutomateWoo advocate WooPay sends back, and only on WooPay requests.
+	 *
+	 * Client 11.1.0 class-woopay-session.php:67, :273-289: on a WooPay Store API request the advocate is the
+	 * automatewoo_referral_id query parameter, or none; other requests keep AutomateWoo's own value.
+	 */
+	public function test_woopay_order_credits_the_automatewoo_advocate_from_the_woopay_request(): void {
+		$this->register_controller( $this->create_service() );
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- AutomateWoo Refer a Friend filter; its argument is the advocate ID it found.
+		$this->assertSame( 7, apply_filters( 'automatewoo/referrals/referred_order_advocate', 7 ), 'A store request keeps AutomateWoo\'s advocate.' );
+
+		$request_uri = $_SERVER['REQUEST_URI'] ?? null; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- Saved to restore it unchanged.
+		$this->simulate_woopay_store_api_request();
+		$_GET['automatewoo_referral_id'] = '42';
+		try {
+			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- AutomateWoo Refer a Friend filter.
+			$this->assertSame( 42, apply_filters( 'automatewoo/referrals/referred_order_advocate', 7 ) );
+			unset( $_GET['automatewoo_referral_id'] );
+			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- AutomateWoo Refer a Friend filter.
+			$this->assertFalse( apply_filters( 'automatewoo/referrals/referred_order_advocate', 7 ), 'A WooPay order without a referral credits nobody.' );
+		} finally {
+			unset( $_GET['automatewoo_referral_id'] );
+			$_SERVER['REQUEST_URI'] = $request_uri;
+		}
+	}
+
+	/**
 	 * @testdox Should prefer a sanitized email from a valid encrypted identity envelope.
 	 */
 	public function test_encrypted_session_data_uses_valid_encrypted_identity_email(): void {

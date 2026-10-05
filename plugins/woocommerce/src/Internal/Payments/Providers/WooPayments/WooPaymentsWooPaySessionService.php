@@ -409,6 +409,32 @@ class WooPaymentsWooPaySessionService {
 	}
 
 	/**
+	 * Credit an AutomateWoo Refer a Friend link referral on a WooPay order.
+	 *
+	 * The WooPay checkout runs without the shopper's cookies, so AutomateWoo cannot find the advocate it stores there;
+	 * WooPay returns the advocate this store sent it as the `automatewoo_referral_id` query parameter. Ported from client
+	 * 11.1.0 `WooPay_Session::automatewoo_refer_a_friend_referral_from_parameter()` (class-woopay-session.php:273-289).
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param mixed $advocate_id Advocate ID AutomateWoo resolved.
+	 * @return mixed The advocate ID, false when a WooPay order carries none.
+	 */
+	public function automatewoo_refer_a_friend_referral_from_parameter( $advocate_id ) {
+		if ( ! $this->is_request_from_woopay() || ! $this->is_store_api_request() || ! $this->is_woopay_enabled() ) {
+			return $advocate_id;
+		}
+
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Signed WooPay server request; the parameter is only an advocate ID.
+		if ( empty( $_GET['automatewoo_referral_id'] ) || ! is_scalar( $_GET['automatewoo_referral_id'] ) ) {
+			return false;
+		}
+
+		return (int) wc_clean( wp_unslash( (string) $_GET['automatewoo_referral_id'] ) );
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+	}
+
+	/**
 	 * Restore the customer id a verified-email WooPay order was detached from.
 	 *
 	 * @param int|mixed $order_id Order ID from the woopay_restore_order_customer_id event.
