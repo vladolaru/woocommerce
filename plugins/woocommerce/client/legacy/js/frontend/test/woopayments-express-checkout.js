@@ -3351,6 +3351,123 @@ describe( 'WooPayments express checkout', () => {
 			).toBe( false );
 		} );
 
+		// Client 11.1.0 cancel (shortcode-buttons-express/index.js:432-446, event-handlers.js:320-326) empties the
+		// ephemeral cart and unblocks the page; the button stays as it was (t62/captures-2b/report.md, F10: client
+		// `is-ready`, opacity 1 after cancel). The cancel event fires when the shopper dismisses the sheet, with no
+		// payload the handler reads (https://docs.stripe.com/js/custom_checkout, "element.on(event, handler)").
+		test( 'keeps the wallet shown after the shopper cancels the sheet', async () => {
+			const container = () =>
+				document.getElementById( 'wcpay-express-checkout-element' );
+			setClassicProductForm();
+			window.wp.apiFetch.mockResolvedValue(
+				getStoreApiResponse( getVirtualCart( 2500, 1 ), {
+					'X-WooPayments-Tokenized-Cart-Session': 'cart-session-token',
+				} )
+			);
+			await mountReadyWallet();
+
+			await expressHandlers.click( { resolve: jest.fn() } );
+			await flushMicrotasks();
+			expressHandlers.cancel();
+			await flushMicrotasks();
+
+			expect( container().classList.contains( 'is-ready' ) ).toBe( true );
+			expect( container().style.display ).not.toBe( 'none' );
+		} );
+
+		// The client empties the cart only once its add-to-cart promise settled (index.js:438-442), so a product added
+		// after the cancel is not left in the tokenized cart.
+		test( 'empties the product cart only after the click\'s add-item answered', async () => {
+			const addItem = createDeferred();
+			setClassicProductForm();
+			window.wp.apiFetch
+				.mockReturnValueOnce( addItem.promise )
+				.mockResolvedValue( getStoreApiResponse( { items: [] }, {} ) );
+			await mountReadyWallet();
+
+			await expressHandlers.click( { resolve: jest.fn() } );
+			expressHandlers.cancel();
+			await flushMicrotasks();
+			expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 1 );
+
+			addItem.resolve(
+				getStoreApiResponse( getVirtualCart( 2500, 1 ), {
+					'X-WooPayments-Tokenized-Cart-Session': 'cart-session-token',
+				} )
+			);
+			await flushMicrotasks();
+
+			expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 2 );
+			expect( window.wp.apiFetch ).toHaveBeenLastCalledWith(
+				expect.objectContaining( {
+					method: 'GET',
+					headers: expect.objectContaining( {
+						'X-WooPayments-Tokenized-Cart-Session': 'cart-session-token',
+						'X-WooPayments-Tokenized-Cart-Is-Ephemeral-Cart': '1',
+					} ),
+				} )
+			);
+		} );
+
+		// The client's second open repeats the first (report F10: same payload, shipping required); its click and
+		// cancel never touch the button's cart data (index.js:57, :321, :432-446).
+		test( 'opens the sheet again after a cancel with the payload of the first open', async () => {
+			const firstOpen = jest.fn();
+			const secondOpen = jest.fn();
+			// Store API cart for the re-priced selection (cart.md "Cart Response").
+			const repricedCart = Object.assign( getVirtualCart( 3000, 1 ), {
+				needs_shipping: true,
+				shipping_rates: [
+					{
+						shipping_rates: [
+							{
+								rate_id: 'flat_rate:1',
+								name: 'Flat rate',
+								price: '0',
+								taxes: '0',
+								selected: true,
+								meta_data: [],
+							},
+						],
+					},
+				],
+			} );
+			setClassicProductForm( {
+				variable: true,
+				size: 'large',
+				variationId: '125',
+			} );
+			window.wp.apiFetch
+				.mockResolvedValueOnce( repricedCart )
+				.mockResolvedValue(
+					getStoreApiResponse(
+						Object.assign( getVirtualCart( 5000, 1 ), {
+							needs_shipping: true,
+						} ),
+						{ 'X-WooPayments-Tokenized-Cart-Session': 'cart-session-token' }
+					)
+				);
+			await mountReadyWallet();
+			bodyEventHandlers.woocommerce_variation_has_changed();
+			await flushMicrotasks();
+
+			await expressHandlers.click( { resolve: firstOpen } );
+			await flushMicrotasks();
+			expressHandlers.cancel();
+			await flushMicrotasks();
+			await expressHandlers.click( { resolve: secondOpen } );
+
+			expect( firstOpen ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					shippingAddressRequired: true,
+					lineItems: [ { amount: 3000, name: 'Express Widget' } ],
+				} )
+			);
+			expect( secondOpen.mock.calls[ 0 ][ 0 ] ).toEqual(
+				firstOpen.mock.calls[ 0 ][ 0 ]
+			);
+		} );
+
 		test( 'keeps the button unblocked and unpriced while the classic variation is cleared', async () => {
 			const resolveClick = jest.fn();
 			setClassicProductForm( {

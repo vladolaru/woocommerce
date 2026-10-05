@@ -12,6 +12,9 @@
 	var elementCurrency = null;
 	var productAddToCartPromise = Promise.resolve();
 	var productAddToCartErrorMessage = '';
+	// What the product-page button was priced from when the sheet opened; the click puts the sheet's working cart
+	// in `cachedCartData`, and closing the sheet brings this back.
+	var productPricedCartData = null;
 	var resolvedProductCurrency = '';
 	var productCurrencyResolutionPromise = null;
 	var productEnabledMethodCeiling = Array.isArray( config.enabled_methods )
@@ -2618,6 +2621,7 @@
 
 		iapiPreviewRequestId++;
 		productAddToCartErrorMessage = '';
+		productPricedCartData = cachedCartData;
 
 		if ( ! product ) {
 			productAddToCartErrorMessage =
@@ -2748,11 +2752,11 @@
 		} )
 			.then( function () {
 				tokenizedCartSession = null;
-				cachedCartData = null;
+				cachedCartData = productPricedCartData;
 			} )
 			.catch( function () {
 				tokenizedCartSession = null;
-				cachedCartData = null;
+				cachedCartData = productPricedCartData;
 			} );
 	}
 
@@ -3030,9 +3034,12 @@
 			}
 		} );
 
+		// Client 11.1.0 (shortcode-buttons-express/index.js:432-446): once the product reached the cart, empty it; the
+		// button stays as it is.
 		expressElement.on( 'cancel', function () {
-			emptyProductCart();
-			hideExpressButton();
+			productAddToCartPromise
+				.catch( function () {} )
+				.then( emptyProductCart );
 		} );
 
 		expressElement.mount( '#wcpay-express-checkout-element' );
