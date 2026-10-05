@@ -378,7 +378,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			wp_send_json_error( array( 'result' => 'failure' ), 400 );
 		}
 
-		$this->get_admin_appearance_response( $request );
+		$this->save_admin_appearance( $request );
 
 		wp_send_json_success();
 	}
@@ -398,7 +398,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			wp_send_json_error( array( 'result' => 'failure' ), 400 );
 		}
 
-		wp_send_json_success( $this->get_shopper_appearance_response( $request ) );
+		wp_send_json_success( $this->maybe_save_shopper_appearance( $request ) );
 	}
 
 	/**
@@ -734,41 +734,28 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Build the admin appearance response.
+	 * Store the appearance an admin posted, replacing any stored one.
 	 *
 	 * @param array<string,mixed> $request Request data.
-	 * @return array<string,string>
 	 */
-	public function get_admin_appearance_response( array $request ): array {
+	private function save_admin_appearance( array $request ): void {
 		$payload = $this->get_appearance_payload( $request );
 
 		$this->session_service->save_woopay_appearance( $payload['appearance'], $payload['font_rules'] );
-
-		return array( 'result' => 'success' );
 	}
 
 	/**
-	 * Build the shopper appearance response.
+	 * Store the appearance a shopper page posted when none is stored for the current styles version.
 	 *
 	 * @param array<string,mixed> $request Request data.
-	 * @return array<string,bool>
+	 * @return array{stored:bool} Whether it was stored.
 	 */
-	public function get_shopper_appearance_response( array $request ): array {
+	private function maybe_save_shopper_appearance( array $request ): array {
 		$payload = $this->get_appearance_payload( $request );
 
 		return array(
 			'stored' => $this->session_service->maybe_save_woopay_appearance( $payload['appearance'], $payload['font_rules'] ),
 		);
-	}
-
-	/**
-	 * Build the appearance response.
-	 *
-	 * @param array<string,mixed> $request Request data.
-	 * @return array<string,string>
-	 */
-	public function get_appearance_response( array $request ): array {
-		return $this->get_admin_appearance_response( $request );
 	}
 
 	/**

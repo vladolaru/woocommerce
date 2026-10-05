@@ -933,9 +933,32 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( array( 'result' => 'success' ), $this->sut->get_phone_session_response( array( 'phone_number' => '+15555550123' ) ) );
 		$this->assertSame( array( 'signature' => 'signed' ), $this->sut->get_signature_response( array() ) );
 		$this->assertSame( array( 'encrypted' => 'minimum' ), $this->sut->get_minimum_session_response( array() ) );
-		$this->assertSame( array( 'result' => 'success' ), $this->sut->get_admin_appearance_response( array( 'appearance' => $this->get_valid_appearance() ) ) );
-		$this->assertSame( array( 'stored' => true ), $this->sut->get_shopper_appearance_response( array( 'appearance' => $this->get_valid_appearance() ) ) );
 		$this->assertSame( '+15555550123', $service->last_phone_request['phone_number'] );
+	}
+
+	/**
+	 * @testdox The admin and shopper appearance writes store the posted appearance.
+	 */
+	public function test_appearance_writes_store_the_posted_appearance(): void {
+		$service   = new RecordingWooPaySessionService();
+		$this->sut = $this->create_controller( true, true, $service );
+		$this->sut->register();
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+
+		$this->post_appearance_request( 'wcpay_admin_woopay_appearance_nonce' );
+		$admin = $this->dispatch_ajax_hook( 'wp_ajax_wcpay_admin_set_woopay_appearance' );
+		$this->post_appearance_request( 'woopay_session_nonce' );
+		$shopper = $this->dispatch_ajax_hook( 'wc_ajax_wcpay_shopper_set_woopay_appearance' );
+
+		$this->assertSame( array( 'success' => true ), $admin['body'] );
+		$this->assertSame(
+			array(
+				'success' => true,
+				'data'    => array( 'stored' => true ),
+			),
+			$shopper['body']
+		);
+		$this->assertSame( 2, $service->appearance_writes );
 		$this->assertSame( $this->get_valid_appearance(), $service->last_appearance );
 	}
 
@@ -1036,10 +1059,12 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$service                    = new RecordingWooPaySessionService();
 		$service->appearance_stored = false;
 		$this->sut                  = $this->create_controller( true, true, $service );
+		$this->sut->register();
+		$this->post_appearance_request( 'woopay_session_nonce' );
 
-		$response = $this->sut->get_shopper_appearance_response( array( 'appearance' => $this->get_valid_appearance() ) );
+		$response = $this->dispatch_ajax_hook( 'wc_ajax_wcpay_shopper_set_woopay_appearance' );
 
-		$this->assertSame( array( 'stored' => false ), $response );
+		$this->assertSame( array( 'stored' => false ), $response['body']['data'] ?? null );
 	}
 
 	/**
