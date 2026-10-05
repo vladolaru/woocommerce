@@ -154,7 +154,7 @@ class IncomingWebhookEndpoint {
 	/**
 	 * Verifies the current request.
 	 *
-	 * @param \WP_REST_Request $request The request.
+	 * @param \WP_REST_Request<array<string, mixed>> $request The request.
 	 *
 	 * @return bool
 	 */
@@ -212,7 +212,7 @@ class IncomingWebhookEndpoint {
 	/**
 	 * Handles the request.
 	 *
-	 * @param \WP_REST_Request $request The request.
+	 * @param \WP_REST_Request<array<string, mixed>> $request The request.
 	 *
 	 * @return \WP_REST_Response
 	 */
@@ -243,7 +243,7 @@ class IncomingWebhookEndpoint {
 	 * Processes the request. Split out from handle_request() so the latter
 	 * can wrap it in a single catch-all try/catch.
 	 *
-	 * @param \WP_REST_Request $request The request.
+	 * @param \WP_REST_Request<array<string, mixed>> $request The request.
 	 *
 	 * @return \WP_REST_Response
 	 */
@@ -339,7 +339,7 @@ class IncomingWebhookEndpoint {
 	/**
 	 * Creates WebhookEvent from request data.
 	 *
-	 * @param \WP_REST_Request $request The request with event data.
+	 * @param \WP_REST_Request<array<string, mixed>> $request The request with event data.
 	 *
 	 * @return WebhookEvent
 	 * @throws RuntimeException When failed to create.

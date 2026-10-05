@@ -63,7 +63,7 @@ class PaymentSaleRefunded implements RequestHandler {
 	/**
 	 * Whether a handler is responsible for a given request or not.
 	 *
-	 * @param WP_REST_Request $request The request.
+	 * @param WP_REST_Request<array<string, mixed>> $request The request.
 	 *
 	 * @return bool
 	 */
@@ -74,7 +74,7 @@ class PaymentSaleRefunded implements RequestHandler {
 	/**
 	 * Responsible for handling the request.
 	 *
-	 * @param WP_REST_Request $request The request.
+	 * @param WP_REST_Request<array<string, mixed>> $request The request.
 	 *
 	 * @return WP_REST_Response
 	 */

@@ -19,7 +19,7 @@ trait RequestHandlerTrait {
 	/**
 	 * Get available custom ids from the given request
 	 *
-	 * @param WP_REST_Request $request The request.
+	 * @param WP_REST_Request<array<string, mixed>> $request The request.
 	 * @return string[]
 	 */
 	protected function get_custom_ids_from_request( WP_REST_Request $request ): array {
@@ -53,7 +53,7 @@ trait RequestHandlerTrait {
 	/**
 	 * Get available WC order ids from the given request.
 	 *
-	 * @param WP_REST_Request $request The request.
+	 * @param WP_REST_Request<array<string, mixed>> $request The request.
 	 * @return string[]
 	 */
 	protected function get_wc_order_ids_from_request( WP_REST_Request $request ): array {
@@ -72,7 +72,7 @@ trait RequestHandlerTrait {
 	/**
 	 * Get available WC customer ids from the given request.
 	 *
-	 * @param WP_REST_Request $request The request.
+	 * @param WP_REST_Request<array<string, mixed>> $request The request.
 	 * @return string[]
 	 */
 	protected function get_wc_customer_ids_from_request( WP_REST_Request $request ): array {
@@ -114,7 +114,7 @@ trait RequestHandlerTrait {
 	/**
 	 * Logs and returns response for no custom ids found in request.
 	 *
-	 * @param WP_REST_Request $request The request.
+	 * @param WP_REST_Request<array<string, mixed>> $request The request.
 	 * @return WP_REST_Response
 	 */
 	protected function no_custom_ids_response( WP_REST_Request $request ): WP_REST_Response {
@@ -131,7 +131,7 @@ trait RequestHandlerTrait {
 	/**
 	 * Logs and returns response for no WC orders found via custom ids.
 	 *
-	 * @param WP_REST_Request $request The request.
+	 * @param WP_REST_Request<array<string, mixed>> $request The request.
 	 * @return WP_REST_Response
 	 */
 	protected function no_wc_orders_response( WP_REST_Request $request ): WP_REST_Response {
