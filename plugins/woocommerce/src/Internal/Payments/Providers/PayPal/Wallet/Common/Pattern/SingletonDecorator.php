@@ -4,6 +4,8 @@
  * It executes the callable once, on subsequent calls returns the same result.
  */
 
+declare(strict_types=1);
+
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Common\Pattern;
 
 /**
@@ -37,20 +39,20 @@ class SingletonDecorator {
 	/**
 	 * SingletonDecorator constructor.
 	 *
-	 * @param callable $callable
+	 * @param callable $callback The callable with the executing code.
 	 */
-	public function __construct( callable $callable ) {
-		$this->callable = $callable;
+	public function __construct( callable $callback ) {
+		$this->callable = $callback;
 	}
 
 	/**
 	 * The make constructor.
 	 *
-	 * @param callable $callable
+	 * @param callable $callback The callable with the executing code.
 	 * @return self
 	 */
-	public static function make( callable $callable ): self {
-		return new static( $callable );
+	public static function make( callable $callback ): self {
+		return new static( $callback );
 	}
 
 	/**
