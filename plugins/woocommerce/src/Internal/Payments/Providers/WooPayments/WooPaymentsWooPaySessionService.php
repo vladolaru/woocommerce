@@ -1440,6 +1440,34 @@ class WooPaymentsWooPaySessionService {
 	}
 
 	/**
+	 * Tell whether WooPay direct checkout runs for the current shopper.
+	 *
+	 * Client 11.1.0 loads its direct-checkout script only while the feature is enabled and the guest rule passes
+	 * (class-wc-payments-woopay-direct-checkout.php:87-94), so a guest whose cart needs an account keeps the store checkout.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return bool
+	 */
+	public function should_run_woopay_direct_checkout(): bool {
+		return $this->is_woopay_direct_checkout_enabled() && $this->should_enable_woopay_on_guest_checkout();
+	}
+
+	/**
+	 * Tell whether WooPay applies to the current shopper's guest status, like client 11.1.0
+	 * `WooPay_Utilities::should_enable_woopay_on_guest_checkout()` (class-woopay-utilities.php:46-62).
+	 *
+	 * @return bool False for a logged-out shopper with a subscription in the cart, or when guest checkout is off.
+	 */
+	private function should_enable_woopay_on_guest_checkout(): bool {
+		if ( is_user_logged_in() ) {
+			return true;
+		}
+
+		return ! $this->woopay_cart_contains_subscription() && $this->is_woopay_guest_checkout_enabled();
+	}
+
+	/**
 	 * Tell whether WooPay is available for the connected account country.
 	 *
 	 * @return bool

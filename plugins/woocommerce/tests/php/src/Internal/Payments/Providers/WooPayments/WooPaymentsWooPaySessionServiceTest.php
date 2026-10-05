@@ -1112,6 +1112,46 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Direct checkout runs for $label.
+	 * @dataProvider direct_checkout_guest_rule_provider
+	 *
+	 * Client 11.1.0 loads its direct-checkout script only when WooPay_Utilities::should_enable_woopay_on_guest_checkout()
+	 * passes (class-wc-payments-woopay-direct-checkout.php:92-94, class-woopay-utilities.php:46-62).
+	 *
+	 * @param string $label              Case label.
+	 * @param bool   $logged_in          Whether the shopper is logged in.
+	 * @param bool   $has_subscription   Whether the cart contains a subscription.
+	 * @param string $guest_checkout     The guest checkout setting.
+	 * @param bool   $expected           Whether direct checkout runs.
+	 */
+	public function test_direct_checkout_applies_the_guest_rule( string $label, bool $logged_in, bool $has_subscription, string $guest_checkout, bool $expected ): void {
+		unset( $label );
+		update_option( 'woocommerce_enable_guest_checkout', $guest_checkout );
+		if ( $logged_in ) {
+			wp_set_current_user( self::factory()->user->create( array( 'role' => 'customer' ) ) );
+		}
+		$sut                             = $this->create_service( array(), array( 'platform_direct_checkout_eligible' => true ) );
+		$sut->cart_contains_subscription = $has_subscription;
+
+		$this->assertTrue( $sut->is_woopay_direct_checkout_enabled(), 'The store-level direct checkout flag stays shopper-independent.' );
+		$this->assertSame( $expected, $sut->should_run_woopay_direct_checkout() );
+	}
+
+	/**
+	 * Provide the client's guest-rule cases.
+	 *
+	 * @return array<string,array{string,bool,bool,string,bool}>
+	 */
+	public function direct_checkout_guest_rule_provider(): array {
+		return array(
+			'a guest with a plain cart'                    => array( 'a guest with a plain cart', false, false, 'yes', true ),
+			'not a guest with a subscription in the cart'  => array( 'not a guest with a subscription in the cart', false, true, 'yes', false ),
+			'not a guest when guest checkout is off'       => array( 'not a guest when guest checkout is off', false, false, 'no', false ),
+			'a logged-in shopper with a subscription cart' => array( 'a logged-in shopper with a subscription cart', true, true, 'no', true ),
+		);
+	}
+
+	/**
 	 * @testdox Should prefer a sanitized email from a valid encrypted identity envelope.
 	 */
 	public function test_encrypted_session_data_uses_valid_encrypted_identity_email(): void {

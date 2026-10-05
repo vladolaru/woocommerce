@@ -40,6 +40,13 @@ class RecordingWooPaySessionService extends WooPaymentsWooPaySessionService {
 	public bool $direct_checkout_enabled = false;
 
 	/**
+	 * Whether the shopper passes the WooPay guest rule.
+	 *
+	 * @var bool
+	 */
+	public bool $guest_rule_passes = true;
+
+	/**
 	 * Number of frontend config builds.
 	 *
 	 * @var int
@@ -128,6 +135,15 @@ class RecordingWooPaySessionService extends WooPaymentsWooPaySessionService {
 	 */
 	public function is_woopay_direct_checkout_enabled(): bool {
 		return $this->direct_checkout_enabled;
+	}
+
+	/**
+	 * Tell whether WooPay direct checkout runs for the current shopper.
+	 *
+	 * @return bool
+	 */
+	public function should_run_woopay_direct_checkout(): bool {
+		return $this->direct_checkout_enabled && $this->guest_rule_passes;
 	}
 
 	/**

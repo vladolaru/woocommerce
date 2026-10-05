@@ -338,6 +338,63 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A mini-cart page loads no direct checkout for a guest whose cart needs an account.
+	 *
+	 * Client 11.1.0 class-wc-payments-woopay-direct-checkout.php:92-94 enqueues nothing when the guest rule fails.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_mini_cart_page_loads_no_direct_checkout_when_the_guest_rule_fails(): void {
+		$service                                      = new RecordingWooPaySessionService();
+		$service->should_show_woopay_button           = false;
+		$service->should_load_woopay_save_user_assets = false;
+		$service->direct_checkout_enabled             = true;
+		$service->guest_rule_passes                   = false;
+		$this->sut                                    = $this->create_controller( true, true, $service );
+		$this->sut->register();
+		if ( ! wp_script_is( 'wc-cart-fragments', 'registered' ) ) {
+			wp_register_script( 'wc-cart-fragments', 'https://example.com/cart-fragments.js', array(), '1.0', true );
+		}
+		wp_enqueue_script( 'wc-cart-fragments' );
+
+		$this->sut->enqueue_frontend_assets();
+
+		$this->assertFalse( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
+	}
+
+	/**
+	 * @testdox A product page with a mini-cart keeps the WooPay button but not direct checkout for a guest the guest rule keeps out.
+	 *
+	 * On a product page the client's button checks the product, not the cart (client 11.1.0
+	 * class-wc-payments-woopay-button-handler.php:300-316), while its direct-checkout script stays unloaded
+	 * (class-wc-payments-woopay-direct-checkout.php:92-94).
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_product_page_turns_direct_checkout_off_when_the_guest_rule_fails(): void {
+		$service                                      = new RecordingWooPaySessionService();
+		$service->should_show_woopay_button           = true;
+		$service->should_load_woopay_save_user_assets = false;
+		$service->direct_checkout_enabled             = true;
+		$service->guest_rule_passes                   = false;
+		$this->sut                                    = $this->create_controller( true, true, $service );
+		$this->set_current_product();
+		if ( ! wp_script_is( 'wc-cart-fragments', 'registered' ) ) {
+			wp_register_script( 'wc-cart-fragments', 'https://example.com/cart-fragments.js', array(), '1.0', true );
+		}
+		wp_enqueue_script( 'wc-cart-fragments' );
+
+		$this->sut->enqueue_frontend_assets();
+
+		$this->assertTrue( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ), 'The product button still loads the script.' );
+		$localized_data = wp_scripts()->get_data( 'wc-woopayments-woopay', 'data' );
+		$this->assertIsString( $localized_data );
+		$this->assertStringContainsString( '"isWooPayDirectCheckoutEnabled":""', $localized_data );
+	}
+
+	/**
 	 * @testdox Should not build the WooPay config for a mini-cart page when direct checkout is off.
 	 *
 	 * @runInSeparateProcess

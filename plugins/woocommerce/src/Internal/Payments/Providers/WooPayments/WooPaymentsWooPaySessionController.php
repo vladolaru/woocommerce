@@ -385,20 +385,28 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 
 		$supported_frontend_surface = $this->is_supported_frontend_surface();
 		$direct_checkout_surface    = $this->is_supported_direct_checkout_surface();
-		if ( ! $supported_frontend_surface && ( ! $direct_checkout_surface || ! $this->session_service->is_woopay_direct_checkout_enabled() ) ) {
+		if ( ! $supported_frontend_surface && ! $direct_checkout_surface ) {
 			return;
 		}
 
-		$context                 = $this->get_current_button_context();
-		$config                  = $this->session_service->get_woopay_frontend_config( $context );
-		$direct_checkout_enabled = $direct_checkout_surface && ! empty( $config['isWooPayDirectCheckoutEnabled'] );
+		$direct_checkout_runs = $this->session_service->should_run_woopay_direct_checkout();
+		if ( ! $supported_frontend_surface && ! $direct_checkout_runs ) {
+			return;
+		}
+
+		$context = $this->get_current_button_context();
+		$config  = $this->session_service->get_woopay_frontend_config( $context );
 		if (
 			empty( $config['shouldShowWooPayButton'] ) &&
 			! $this->session_service->should_load_woopay_save_user_assets( $context ) &&
-			! $direct_checkout_enabled
+			! ( $direct_checkout_surface && $direct_checkout_runs )
 		) {
 			return;
 		}
+
+		// The classic script runs direct checkout on this flag; client 11.1.0 does not load its direct-checkout script for a
+		// shopper the guest rule keeps out (class-wc-payments-woopay-direct-checkout.php:92-94).
+		$config['isWooPayDirectCheckoutEnabled'] = $direct_checkout_runs;
 
 		$this->register_classic_woopay_assets();
 		wp_localize_script( self::CLASSIC_WOOPAY_SCRIPT_HANDLE, 'wcpay_core_woopay_config', $this->get_classic_woopay_config( $config ) );
