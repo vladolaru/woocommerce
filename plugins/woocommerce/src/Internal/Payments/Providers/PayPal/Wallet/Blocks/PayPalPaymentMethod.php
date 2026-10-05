@@ -161,7 +161,7 @@ class PayPalPaymentMethod extends AbstractPaymentMethodType {
 	/**
 	 * {@inheritDoc}
 	 */
-	public function initialize() {  }
+	public function initialize(): void {  }
 
 	/**
 	 * {@inheritDoc}

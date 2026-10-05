@@ -57,7 +57,7 @@ class ProductPayLaterMessagesRenderer {
 		$html      = '<div id="' . esc_attr( $attributes['ppcpId'] ?? '' ) . '" class="ppcp-messages" data-partner-attribution-id="' . esc_attr( $bn_code ) . '"></div>';
 		$processor = new \WP_HTML_Tag_Processor( $html );
 
-		if ( $processor->next_tag( 'div' ) ) {
+		if ( $processor->next_tag( array( 'tag_name' => 'div' ) ) ) {
 			// v6 styles text only. Coerced, not migrated, so flag-off restores the banner.
 			// The flex branch omits `data-pp-style-logo-type`, which v6 keys on.
 			$layout = ProductBlocks::v6_owns_current_page( $c )

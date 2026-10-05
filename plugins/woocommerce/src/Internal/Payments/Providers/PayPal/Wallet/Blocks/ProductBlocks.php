@@ -280,6 +280,7 @@ class ProductBlocks {
 			return false;
 		}
 
+		// @phpstan-ignore constant.notFound (WPINC is a WordPress constant that the WordPress stubs do not declare)
 		return wp_normalize_path( $template ) !== wp_normalize_path( ABSPATH . WPINC . '/template-canvas.php' );
 	}
 
