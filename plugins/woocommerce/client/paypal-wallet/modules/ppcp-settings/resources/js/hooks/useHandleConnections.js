@@ -62,10 +62,11 @@ export const setClickedEnvironment = ( environment ) => {
 };
 
 export const useHandleOnboardingButton = ( isSandbox ) => {
-	const { onboardingUrl } = isSandbox
-		? CommonHooks.useSandbox()
-		: CommonHooks.useProduction();
-	const { isSandboxMode } = CommonHooks.useSandbox();
+	// Both hooks always run so the hook order stays the same on every render.
+	const sandbox = CommonHooks.useSandbox();
+	const production = CommonHooks.useProduction();
+	const { onboardingUrl } = isSandbox ? sandbox : production;
+	const { isSandboxMode } = sandbox;
 
 	/**
 	 * partner.js only wires up a single button and derives its environment from
