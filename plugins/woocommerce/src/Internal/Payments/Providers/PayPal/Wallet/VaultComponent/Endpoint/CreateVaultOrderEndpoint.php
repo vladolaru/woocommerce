@@ -15,16 +15,57 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoi
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcPaymentTokens\PaymentTokenPayPal;
 
+/**
+ * Creates the PayPal order for the vault component's change-payment-method flow.
+ */
 class CreateVaultOrderEndpoint implements EndpointInterface {
 
 	const ENDPOINT = 'ppc-vault-create-order';
 
+	/**
+	 * The request data.
+	 *
+	 * @var RequestData
+	 */
 	private RequestData $request_data;
+
+	/**
+	 * The order endpoint.
+	 *
+	 * @var OrderEndpoint
+	 */
 	private OrderEndpoint $order_endpoint;
+
+	/**
+	 * The purchase unit factory.
+	 *
+	 * @var PurchaseUnitFactory
+	 */
 	private PurchaseUnitFactory $purchase_unit_factory;
+
+	/**
+	 * The shipping preference factory.
+	 *
+	 * @var ShippingPreferenceFactory
+	 */
 	private ShippingPreferenceFactory $shipping_preference_factory;
+
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	private LoggerInterface $logger;
 
+	/**
+	 * CreateVaultOrderEndpoint constructor.
+	 *
+	 * @param RequestData               $request_data                The request data.
+	 * @param OrderEndpoint             $order_endpoint              The order endpoint.
+	 * @param PurchaseUnitFactory       $purchase_unit_factory       The purchase unit factory.
+	 * @param ShippingPreferenceFactory $shipping_preference_factory The shipping preference factory.
+	 * @param LoggerInterface           $logger                      The logger.
+	 */
 	public function __construct(
 		RequestData $request_data,
 		OrderEndpoint $order_endpoint,
@@ -39,6 +80,9 @@ class CreateVaultOrderEndpoint implements EndpointInterface {
 		$this->logger                      = $logger;
 	}
 
+	/**
+	 * Returns the nonce action of the endpoint.
+	 */
 	public static function nonce(): string {
 		return self::ENDPOINT;
 	}
@@ -91,6 +135,9 @@ class CreateVaultOrderEndpoint implements EndpointInterface {
 		);
 	}
 
+	/**
+	 * Handles the request.
+	 */
 	public function handle_request(): void {
 		try {
 			$this->request_data->read_request( $this->nonce() );

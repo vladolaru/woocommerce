@@ -17,13 +17,24 @@ use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Helper\FreeTrialSubscriptionHelper;
 
+/**
+ * Module for the vault component, which shows the buyer's saved PayPal account.
+ */
 class VaultComponentModule implements ServiceModule, ExecutableModule {
 	use ModuleClassNameIdTrait;
 
+	/**
+	 * {@inheritDoc}
+	 */
 	public function services(): array {
 		return require __DIR__ . '/services.php';
 	}
 
+	/**
+	 * {@inheritDoc}
+	 *
+	 * @param ContainerInterface $c The service container.
+	 */
 	public function run( ContainerInterface $c ): bool {
 		// The eligibility check performs a (cached) PayPal API call, so it must be
 		// evaluated lazily at request time inside each callback, never during boot.

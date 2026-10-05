@@ -27,9 +27,26 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcPaymentTo
  */
 class VaultComponentData {
 
+	/**
+	 * The vault client token service.
+	 *
+	 * @var VaultClientToken
+	 */
 	private VaultClientToken $client_token;
+
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	private LoggerInterface $logger;
 
+	/**
+	 * VaultComponentData constructor.
+	 *
+	 * @param VaultClientToken $client_token The vault client token service.
+	 * @param LoggerInterface  $logger       The logger.
+	 */
 	public function __construct(
 		VaultClientToken $client_token,
 		LoggerInterface $logger

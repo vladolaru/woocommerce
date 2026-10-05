@@ -26,9 +26,32 @@ class VaultClientToken {
 
 	const CACHE_KEY_PREFIX = 'vault-client-token-key:';
 
+	/**
+	 * The host.
+	 *
+	 * @var string
+	 */
 	private string $host;
+
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	private LoggerInterface $logger;
+
+	/**
+	 * The client credentials.
+	 *
+	 * @var ClientCredentials
+	 */
 	private ClientCredentials $client_credentials;
+
+	/**
+	 * The cache.
+	 *
+	 * @var Cache
+	 */
 	private Cache $cache;
 
 	/**
@@ -87,7 +110,7 @@ class VaultClientToken {
 		$response = $this->request( $url, $args );
 		if ( $response instanceof WP_Error ) {
 			$this->logger->error( 'Vault client_token request failed: ' . $response->get_error_message() );
-			throw new RuntimeException( $response->get_error_message() );
+			throw new RuntimeException( $response->get_error_message() ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The transport error message is only logged by VaultComponentData::add_localized_data(), never output; escaping would alter the logged text.
 		}
 
 		$json        = json_decode( $response['body'] );
@@ -101,7 +124,7 @@ class VaultClientToken {
 		}
 
 		if ( 200 !== $status_code ) {
-			throw new PayPalApiException( $json, $status_code );
+			throw new PayPalApiException( $json, $status_code ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Carries the decoded PayPal response and status code, only logged by VaultComponentData::add_localized_data(), never output; escaping would alter them.
 		}
 
 		$access_token = (string) ( $json->access_token ?? '' );

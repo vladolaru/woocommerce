@@ -45,7 +45,7 @@ return array(
 			$reference_transaction_status
 		);
 	},
-	'vault-component.auth.client-token-cache'         => static function ( ContainerInterface $container ): Cache {
+	'vault-component.auth.client-token-cache'         => static function ( ContainerInterface $container ): Cache { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new Cache( 'ppcp-vault-client-token-cache' );
 	},
 	'vault-component.auth.client-token'               => static function ( ContainerInterface $container ): VaultClientToken {

@@ -5,11 +5,31 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Vault
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\ReferenceTransactionStatus;
 
+/**
+ * Decides whether the vault component applies to the merchant and their country.
+ */
 class VaultComponentApplies {
 
+	/**
+	 * The merchant country.
+	 *
+	 * @var string
+	 */
 	private string $country;
+
+	/**
+	 * The reference transaction status helper.
+	 *
+	 * @var ReferenceTransactionStatus
+	 */
 	private ReferenceTransactionStatus $reference_transaction_status;
 
+	/**
+	 * VaultComponentApplies constructor.
+	 *
+	 * @param string                     $country                      The merchant country.
+	 * @param ReferenceTransactionStatus $reference_transaction_status The reference transaction status helper.
+	 */
 	public function __construct(
 		string $country,
 		ReferenceTransactionStatus $reference_transaction_status
@@ -18,6 +38,9 @@ class VaultComponentApplies {
 		$this->reference_transaction_status = $reference_transaction_status;
 	}
 
+	/**
+	 * Whether the vault component is supported in the merchant country.
+	 */
 	public function for_country(): bool {
 		return in_array( $this->country, $this->supported_countries(), true );
 	}
@@ -28,6 +51,13 @@ class VaultComponentApplies {
 	 * @return string[]
 	 */
 	private function supported_countries(): array {
+		/**
+		 * Filters the countries where the vault component is supported.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param string[] $countries The supported country codes.
+		 */
 		return apply_filters(
 			'woocommerce_paypal_payments_vault_component_supported_countries',
 			array( 'US' )
