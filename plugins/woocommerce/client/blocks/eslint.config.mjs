@@ -311,7 +311,6 @@ export default [
 				PcpVoidButton: 'readonly',
 				React: 'readonly',
 				ReactDOM: 'readonly',
-				lodash: 'readonly',
 				paypal: 'readonly',
 				ppcpBlocksPaypalExpressButtons: 'readonly',
 				wc: 'readonly',

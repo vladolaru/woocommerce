@@ -375,7 +375,7 @@ class PayLaterWCBlocksModule implements ServiceModule, ExecutableModule {
 					wp_register_script(
 						$handle,
 						$path,
-						array( 'wp-blocks', 'wp-data', 'wp-element' ),
+						array( 'lodash', 'wp-blocks', 'wp-data', 'wp-element' ),
 						$c->get( 'ppcp.asset-version' ),
 						true
 					);
