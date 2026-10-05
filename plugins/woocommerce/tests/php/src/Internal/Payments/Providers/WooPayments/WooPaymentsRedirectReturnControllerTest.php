@@ -1056,6 +1056,70 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The intent error's log line checks each code field on its own: $_dataName.
+	 *
+	 * Stripe's `last_payment_error` carries `type`, `code`, `decline_code` and `message` (API reference, PaymentIntent
+	 * object); client 11.1.0 logs its message (gw:2376-2378). Native logs the two codes, each only when listed, so a
+	 * free-text value in either field is logged as unknown_error.
+	 *
+	 * @dataProvider intent_error_code_fields
+	 *
+	 * @param string $code                  The error's `code`.
+	 * @param string $decline_code          The error's `decline_code`.
+	 * @param string $expected_code         Expected logged error_code.
+	 * @param string $expected_decline_code Expected logged decline_code.
+	 */
+	public function test_intent_error_log_line_filters_each_code_field( string $code, string $decline_code, string $expected_code, string $expected_decline_code ): void {
+		$order                      = $this->create_order();
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = array(
+			'id'                 => 'pi_return_failed',
+			'status'             => 'requires_payment_method',
+			'currency'           => 'usd',
+			'amount'             => 5000,
+			'customer'           => 'cus_return',
+			'payment_method'     => null,
+			'metadata'           => array( 'order_id' => $order->get_id() ),
+			'last_payment_error' => array(
+				'type'         => 'card_error',
+				'code'         => $code,
+				'decline_code' => $decline_code,
+				'message'      => 'Your card was declined.',
+			),
+		);
+		$this->sut                  = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_return_failed' );
+		self::enable_woopayments_debug_logging();
+		$logger = new RedirectReturnRecordingLogger();
+		add_filter( 'woocommerce_logging_class', static fn() => $logger );
+
+		$this->handle_wp_expecting_redirect();
+
+		$lines = array_values( array_filter( $logger->info_calls, static fn( array $call ): bool => 'Error when processing payment.' === $call['message'] ) );
+		$this->assertCount( 1, $lines );
+		$this->assertSame( $expected_code, $lines[0]['context']['error_code'] ?? '' );
+		$this->assertSame( $expected_decline_code, $lines[0]['context']['decline_code'] ?? '' );
+		$logged = (string) wp_json_encode( $logger );
+		foreach ( self::$provider_leak_fragments as $fragment ) {
+			$this->assertStringNotContainsString( $fragment, $logged );
+		}
+	}
+
+	/**
+	 * A free-text value in one code field, next to a listed value in the other.
+	 *
+	 * @return array<string,array{string,string,string,string}>
+	 */
+	public function intent_error_code_fields(): array {
+		$free_text = "No such customer: 'cus_123'; ask shopper@example.com, see https://pay.example.test/r?key=sk_test_leak123";
+
+		return array(
+			'free text in code'         => array( $free_text, 'insufficient_funds', 'unknown_error', 'insufficient_funds' ),
+			'free text in decline_code' => array( 'card_declined', $free_text, 'card_declined', 'unknown_error' ),
+		);
+	}
+
+	/**
 	 * @testdox A positive-total return whose PaymentIntent carries a payment error fails the order, adds the client notice and redirects to checkout with the cart kept.
 	 *
 	 * Client 11.1.0 process_redirect_payment(): a non-empty last_payment_error (gw:2351, 2376-2382) throws "We're not
