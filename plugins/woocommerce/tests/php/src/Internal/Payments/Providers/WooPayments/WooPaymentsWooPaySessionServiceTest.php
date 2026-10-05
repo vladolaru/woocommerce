@@ -559,7 +559,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 			}
 		);
 
-		$this->assertFalse( $this->create_service()->should_show_woopay_button( 'pay_for_order' ) );
+		$this->assertFalse( $this->create_service()->should_show_woopay_button( 'order_received' ) );
 		$this->assertSame( 1, $enabled_filter_calls );
 	}
 
@@ -617,12 +617,36 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should reject WooPay button contexts outside product, cart, and checkout.
+	 * @testdox Should reject WooPay button contexts outside product, cart, checkout and order-pay.
 	 */
 	public function test_woopay_button_rejects_unsupported_context(): void {
 		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
 
-		$this->assertFalse( $this->create_service()->should_show_woopay_button( 'pay_for_order' ) );
+		$this->assertFalse( $this->create_service()->should_show_woopay_button( 'order_received' ) );
+	}
+
+	/**
+	 * @testdox The order-pay WooPay button follows the checkout location setting and reports the pay_for_order context.
+	 *
+	 * Client 11.1.0: is_checkout() holds on order-pay (class-wc-payments-woopay-button-handler.php:273), and the button
+	 * settings carry get_button_context(), which is pay_for_order there (class-wc-payments-express-checkout-button-helper.php:459-461).
+	 */
+	public function test_order_pay_woopay_button_follows_the_checkout_location(): void {
+		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
+
+		$config = $this->create_service()->get_woopay_frontend_config( 'pay_for_order' );
+
+		$this->assertTrue( $config['shouldShowWooPayButton'] );
+		$this->assertTrue( $config['isWoopayExpressCheckoutEnabled'] );
+		$this->assertSame( 'pay_for_order', $config['woopayButton']['context'] );
+		$this->assertFalse(
+			$this->create_service( array( 'express_checkout_checkout_methods' => array() ) )->should_show_woopay_button( 'pay_for_order' ),
+			'The checkout location setting turns the order-pay button off.'
+		);
+		$this->assertTrue(
+			$this->create_service( array( 'express_checkout_cart_methods' => array() ) )->should_show_woopay_button( 'pay_for_order' ),
+			'Only the checkout location applies on order-pay.'
+		);
 	}
 
 	/**
@@ -986,6 +1010,39 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( $order->get_checkout_payment_url(), $result['store_data']['blog_checkout_url'] );
 		$this->assertSame( $order->get_checkout_payment_url(), $result['store_data']['return_url'] );
 		$this->assertSame( array( 'order_id' => $order->get_id() ), $result['preloaded_requests']['checkout'] );
+	}
+
+	/**
+	 * @testdox WooPay session for an order's pay link carries that order's total, not the shopper's cart, for the owner and for a guest who verified the order email.
+	 *
+	 * The preload is the Store API order response (src/StoreApi/Schemas/V1/OrderSchema.php: id, totals.total_price in minor
+	 * units, totals.currency_code), as client 11.1.0 preloads it (class-woopay-session.php:389-394).
+	 *
+	 * @testWith ["owner"]
+	 *           ["verified guest"]
+	 *
+	 * @param string $visitor Who opens the pay link.
+	 */
+	public function test_init_session_request_for_an_order_pay_link_carries_the_order_not_the_cart( string $visitor ): void {
+		$owner_id = 'owner' === $visitor ? self::factory()->user->create( array( 'role' => 'customer' ) ) : 0;
+		$order    = \WC_Helper_Order::create_order( $owner_id );
+		$order->set_currency( get_woocommerce_currency() );
+		$order->save();
+		wp_set_current_user( $owner_id );
+		$cart_product = \WC_Helper_Product::create_simple_product( true, array( 'regular_price' => '999' ) );
+		wc_empty_cart();
+		WC()->cart->add_to_cart( $cart_product->get_id(), 1 );
+
+		$result  = $this->create_service()->get_init_session_request( null, null, null, $order->get_id(), $order->get_order_key(), $order->get_billing_email() );
+		$preload = $result['preloaded_requests'];
+
+		$this->assertSame( $order->get_checkout_payment_url(), $result['store_data']['blog_checkout_url'] );
+		$this->assertSame( $order->get_id(), $preload['cart']['id'] );
+		$totals = (array) $preload['cart']['totals'];
+		$this->assertSame( (string) round( (float) $order->get_total() * 100 ), $totals['total_price'] );
+		$this->assertSame( $order->get_currency(), $totals['currency_code'] );
+		$this->assertSame( array( 'order_id' => $order->get_id() ), $preload['checkout'] );
+		$this->assertSame( 1, WC()->cart->get_cart_contents_count(), "The shopper's cart is left alone." );
 	}
 
 	/**

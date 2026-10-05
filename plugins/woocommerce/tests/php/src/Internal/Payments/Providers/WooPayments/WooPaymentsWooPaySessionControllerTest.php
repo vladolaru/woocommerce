@@ -75,6 +75,9 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		wp_deregister_style( 'wc-woopayments-woopay' );
 		wp_reset_postdata();
 		delete_option( 'woocommerce_enable_guest_checkout' );
+		unset( $GLOBALS['wp']->query_vars['order-pay'] );
+		wp_set_current_user( 0 );
+		$_GET     = array();
 		$_POST    = array();
 		$_REQUEST = array();
 		parent::tearDown();
@@ -748,6 +751,80 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->assertStringContainsString( 'id="wcpay-woopay-button"', $output );
 		$this->assertSame( 1, $enabled_filter_calls );
+	}
+
+	/**
+	 * @testdox On an order's pay page the WooPay config carries the order, its key and billing email, so WooPay pays that order.
+	 *
+	 * Client 11.1.0 add_pay_for_order_params_to_js_config() (class-wc-payments-express-checkout-button-display-handler.php:184-222).
+	 */
+	public function test_order_pay_config_carries_the_order_for_its_owner(): void {
+		$owner_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$order    = \WC_Helper_Order::create_order( $owner_id );
+		wp_set_current_user( $owner_id );
+		$this->sut = $this->create_controller( true, true );
+		$this->set_order_pay_page( $order->get_id(), $order->get_order_key() );
+
+		$this->sut->enqueue_frontend_assets();
+		$config = $this->get_localized_woopay_config();
+
+		$this->assertSame( (string) $order->get_id(), $config['order_id'] );
+		$this->assertSame( 'true', $config['pay_for_order'] );
+		$this->assertSame( $order->get_order_key(), $config['key'] );
+		$this->assertSame( $order->get_billing_email(), $config['billing_email'] );
+		$this->assertSame( 'pay_for_order', $config['woopayButton']['context'] );
+		$this->assertSame( '1', $config['shouldShowWooPayButton'] );
+		$this->assertStringContainsString( 'id="wcpay-woopay-button"', $this->sut->get_express_checkout_button_html() );
+	}
+
+	/**
+	 * @testdox A guest paying a guest order gets the order and key but only the email they gave, never the order's.
+	 */
+	public function test_order_pay_config_gives_a_guest_only_their_own_email(): void {
+		$order     = \WC_Helper_Order::create_order( 0 );
+		$this->sut = $this->create_controller( true, true );
+		$this->set_order_pay_page( $order->get_id(), $order->get_order_key() );
+
+		$this->sut->enqueue_frontend_assets();
+		$config = $this->get_localized_woopay_config();
+
+		$this->assertSame( (string) $order->get_id(), $config['order_id'] );
+		$this->assertSame( $order->get_order_key(), $config['key'] );
+		$this->assertSame( '', $config['billing_email'] );
+	}
+
+	/**
+	 * @testdox An order's pay page offers no WooPay, and no order data, when its pay link does not let the visitor pay the order.
+	 *
+	 * Without the order WooPay would start a cart session from the order's pay page.
+	 *
+	 * @testWith ["wrong key"]
+	 *           ["no key"]
+	 *           ["no pay_for_order flag"]
+	 *           ["another customer's order"]
+	 *
+	 * @param string $scenario Case to exercise.
+	 */
+	public function test_order_pay_without_a_payable_order_shows_no_woopay( string $scenario ): void {
+		$owner_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$order    = \WC_Helper_Order::create_order( $owner_id );
+		wp_set_current_user( "another customer's order" === $scenario ? self::factory()->user->create( array( 'role' => 'customer' ) ) : $owner_id );
+		$this->sut = $this->create_controller( true, true );
+		$this->set_order_pay_page( $order->get_id(), 'wrong key' === $scenario ? 'wc_order_not_the_key' : $order->get_order_key() );
+		if ( 'no key' === $scenario ) {
+			unset( $_GET['key'] );
+		}
+		if ( 'no pay_for_order flag' === $scenario ) {
+			unset( $_GET['pay_for_order'] );
+		}
+
+		$this->assertSame( '', $this->sut->get_express_checkout_button_html() );
+		$this->sut->enqueue_frontend_assets();
+		$config = $this->get_localized_woopay_config();
+		$this->assertSame( '', $config['shouldShowWooPayButton'] );
+		$this->assertArrayNotHasKey( 'order_id', $config );
+		$this->assertArrayNotHasKey( 'key', $config );
+		$this->assertArrayNotHasKey( 'billing_email', $config );
 	}
 
 	/**
@@ -1653,6 +1730,32 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		delete_option( 'woocommerce_cart_page_id' );
 
 		update_option( 'woocommerce_checkout_page_id', $this->set_current_page_with_content( '[woocommerce_checkout]' ) );
+	}
+
+	/**
+	 * Set the current request to the order-pay endpoint of a classic checkout page.
+	 *
+	 * @param int    $order_id Order ID.
+	 * @param string $key      Order key in the pay link.
+	 */
+	private function set_order_pay_page( int $order_id, string $key ): void {
+		$this->set_checkout_shortcode_page();
+		$GLOBALS['wp']->query_vars['order-pay'] = (string) $order_id;
+		$_GET['pay_for_order']                  = 'true';
+		$_GET['key']                            = $key;
+	}
+
+	/**
+	 * Read the localized classic WooPay config.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_localized_woopay_config(): array {
+		$localized_data = wp_scripts()->get_data( 'wc-woopayments-woopay', 'data' );
+		$this->assertIsString( $localized_data );
+		$this->assertSame( 1, preg_match( '/var wcpay_core_woopay_config = (\{.*\});/s', $localized_data, $matches ) );
+
+		return json_decode( $matches[1], true );
 	}
 
 	/**

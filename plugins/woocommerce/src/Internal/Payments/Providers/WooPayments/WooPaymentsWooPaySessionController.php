@@ -430,7 +430,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 		}
 
 		$context = $this->get_current_button_context();
-		$config  = $this->session_service->get_woopay_frontend_config( $context );
+		$config  = $this->get_woopay_frontend_config( $context );
 		if (
 			empty( $config['shouldShowWooPayButton'] ) &&
 			! $this->session_service->should_load_woopay_save_user_assets( $context ) &&
@@ -479,7 +479,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 		}
 
 		$context = $this->get_current_button_context();
-		$config  = $this->session_service->get_woopay_frontend_config( $context );
+		$config  = $this->get_woopay_frontend_config( $context );
 		if ( empty( $config['shouldShowWooPayButton'] ) ) {
 			return '';
 		}
@@ -880,6 +880,31 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Get the WooPay frontend config for a context; on an order's pay page it carries the order, its key and billing email.
+	 *
+	 * WooPay then pays that order (client 11.1.0 class-wc-payments-express-checkout-button-display-handler.php:184-222). Without
+	 * them the button stays off, so an order's pay page never starts a cart session.
+	 *
+	 * @param string $context WooPay button context.
+	 * @return array<string,mixed>
+	 */
+	private function get_woopay_frontend_config( string $context ): array {
+		$config = $this->session_service->get_woopay_frontend_config( $context );
+		if ( 'pay_for_order' !== $context ) {
+			return $config;
+		}
+
+		$pay_for_order_params = WooPaymentsOrderPayAccess::get_pay_for_order_page_params();
+		if ( array() === $pay_for_order_params ) {
+			$config['shouldShowWooPayButton'] = false;
+
+			return $config;
+		}
+
+		return array_merge( $config, $pay_for_order_params );
+	}
+
+	/**
 	 * Get localized classic WooPay config.
 	 *
 	 * @param array<string,mixed> $config WooPay frontend config.
@@ -981,11 +1006,25 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			return 'product';
 		}
 
+		// Client 11.1.0 get_button_context() (class-wc-payments-express-checkout-button-helper.php:450-468).
+		if ( $this->is_order_pay_surface() ) {
+			return 'pay_for_order';
+		}
+
 		if ( function_exists( 'is_checkout' ) && is_checkout() ) {
 			return 'checkout';
 		}
 
 		return function_exists( 'is_cart' ) && is_cart() ? 'cart' : 'checkout';
+	}
+
+	/**
+	 * Tell whether the current request is the checkout page's order-pay endpoint.
+	 *
+	 * @return bool
+	 */
+	private function is_order_pay_surface(): bool {
+		return function_exists( 'is_checkout' ) && is_checkout() && is_wc_endpoint_url( 'order-pay' );
 	}
 
 	/**

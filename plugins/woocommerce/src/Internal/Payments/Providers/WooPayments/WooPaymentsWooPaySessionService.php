@@ -1298,7 +1298,7 @@ class WooPaymentsWooPaySessionService {
 		}
 
 		$context = sanitize_key( $context );
-		if ( ! in_array( $context, array( 'product', 'cart', 'checkout' ), true ) ) {
+		if ( ! in_array( $context, array( 'product', 'cart', 'checkout', 'pay_for_order' ), true ) ) {
 			return false;
 		}
 
@@ -1348,7 +1348,7 @@ class WooPaymentsWooPaySessionService {
 	 * @return bool
 	 */
 	public function should_load_woopay_save_user_assets( string $context = 'checkout' ): bool {
-		return 'checkout' === $this->normalize_button_context( $context ) &&
+		return 'checkout' === $this->get_button_location( $context ) &&
 			$this->is_woopay_enabled() &&
 			$this->is_woopay_country_available() &&
 			( $this->get_account_service()->is_network_saved_cards_enabled() || $this->should_use_stripe_platform_on_checkout_page() );
@@ -1750,7 +1750,7 @@ class WooPaymentsWooPaySessionService {
 	 */
 	private function is_woopay_express_checkout_configured_at( string $context ): bool {
 
-		$setting_key = 'express_checkout_' . $this->normalize_button_context( $context ) . '_methods';
+		$setting_key = 'express_checkout_' . $this->get_button_location( $context ) . '_methods';
 		$methods     = $this->get_account_service()->get_gateway_setting( $setting_key );
 
 		if ( is_array( $methods ) ) {
@@ -2077,7 +2077,22 @@ class WooPaymentsWooPaySessionService {
 	private function normalize_button_context( string $context ): string {
 		$context = sanitize_key( $context );
 
-		return in_array( $context, array( 'product', 'cart', 'checkout' ), true ) ? $context : 'checkout';
+		return in_array( $context, array( 'product', 'cart', 'checkout', 'pay_for_order' ), true ) ? $context : 'checkout';
+	}
+
+	/**
+	 * Get the express checkout location whose settings apply to a context.
+	 *
+	 * The order-pay page is a checkout page for the location settings, as in client 11.1.0, where is_checkout() holds there
+	 * (class-wc-payments-woopay-button-handler.php:273, class-wc-payments-express-checkout-button-helper.php:284-286).
+	 *
+	 * @param string $context Context.
+	 * @return string
+	 */
+	private function get_button_location( string $context ): string {
+		$context = $this->normalize_button_context( $context );
+
+		return 'pay_for_order' === $context ? 'checkout' : $context;
 	}
 
 	/**
