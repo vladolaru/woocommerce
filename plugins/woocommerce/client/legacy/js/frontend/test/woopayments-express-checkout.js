@@ -946,7 +946,8 @@ describe( 'WooPayments express checkout', () => {
 
 	// The Store API checkout response for a payment that needs a next action:
 	// esc_url_raw() empties the bare hash in redirect_url (PaymentResult), and
-	// the raw gateway result stays in payment_details (Legacy::process_payment).
+	// the raw gateway result stays in payment_details (StoreApi\Legacy::process_legacy_payment(),
+	// src/StoreApi/Legacy.php:79-81).
 	function getConfirmationCheckoutResponse( orderId ) {
 		return {
 			order_id: orderId,
@@ -3288,7 +3289,7 @@ describe( 'WooPayments express checkout', () => {
 
 		// Client 11.1.0 shortcode-buttons-express/index.js:323-342: when the product cannot be added after a click, the
 		// wallet is unmounted and hidden with its separator; the next form change runs update-button-data, which mounts a
-		// new one because Elements is gone (index.js:635-637).
+		// new one because Elements is gone (index.js:648-650).
 		test( 'takes the wallet away when the product cannot be added on a click, and mounts a new one on the next change', async () => {
 			jest.useFakeTimers();
 			setClassicProductForm();
@@ -4435,8 +4436,9 @@ describe( 'WooPayments express checkout', () => {
 		test( 'unlocks the page when the wallet payment fails', async () => {
 			window.wp.apiFetch
 				.mockResolvedValueOnce( getCartResponse() )
-				// Store API checkout error (docs/apis/store-api/resources-endpoints/checkout.md, error response:
-				// code, message, data.status).
+				// Store API checkout error as Checkout::get_response() sends it (src/StoreApi/Routes/V1/Checkout.php:170-178)
+				// through AbstractRoute::error_to_response() (AbstractRoute.php:135-157): code, message, data.status. A
+				// payment failure is woocommerce_rest_checkout_process_payment_error, status 400 (CheckoutTrait.php:135).
 				.mockRejectedValueOnce( {
 					code: 'woocommerce_rest_checkout_process_payment_error',
 					message: 'Your card was declined.',
@@ -4537,7 +4539,7 @@ describe( 'WooPayments express checkout', () => {
 		test.each( [
 			[
 				'straight to the order page',
-				// Store API checkout success (checkout.md "Process Order and Payment": payment_result.redirect_url).
+				// Store API checkout success: payment_result.redirect_url (src/StoreApi/Schemas/V1/CheckoutSchema.php:187-191).
 				() => ( {
 					payment_result: {
 						payment_status: 'success',
@@ -4803,8 +4805,9 @@ describe( 'WooPayments express checkout', () => {
 			setCheckoutWithEarlierErrors();
 			window.wp.apiFetch
 				.mockResolvedValueOnce( getCartResponse() )
-				// Store API checkout error (docs/apis/store-api/resources-endpoints/checkout.md, error response:
-				// code, message, data.status).
+				// Store API checkout error as Checkout::get_response() sends it (src/StoreApi/Routes/V1/Checkout.php:170-178)
+				// through AbstractRoute::error_to_response() (AbstractRoute.php:135-157): code, message, data.status. A
+				// payment failure is woocommerce_rest_checkout_process_payment_error, status 400 (CheckoutTrait.php:135).
 				.mockRejectedValueOnce( {
 					code: 'woocommerce_rest_checkout_process_payment_error',
 					message: 'Your card was declined.',
@@ -4846,21 +4849,24 @@ describe( 'WooPayments express checkout', () => {
 			[
 				'a Store API error with notice markup',
 				() =>
-					// Store API checkout error (docs/apis/store-api/resources-endpoints/checkout.md, error response); the
-					// message carries the notice HTML WooCommerce added (wc_add_notice() accepts markup).
+					// Store API checkout error with an unescaped message: Checkout::get_response() sends any other
+					// \Exception's message as is under woocommerce_rest_unknown_server_error, status 500
+					// (src/StoreApi/Routes/V1/Checkout.php:176-177; shape from AbstractRoute::error_to_response()).
 					Promise.reject( {
-						code: 'woocommerce_rest_checkout_process_payment_error',
+						code: 'woocommerce_rest_unknown_server_error',
 						message:
 							'\n\t<strong>Error:</strong> Your card was declined. <a href="https://example.test/help">Get help</a>\n',
-						data: { status: 400 },
+						data: { status: 500 },
 					} ),
 				'Error: Your card was declined. Get help',
 			],
 			[
 				'a failed payment result with markup in errorMessage',
 				() =>
-					// Store API checkout response (checkout.md "Process Order and Payment": payment_result.payment_status,
-					// payment_details[] of key/value).
+					// Store API checkout response: payment_result.payment_status and payment_details[] of { key, value }
+					// (src/StoreApi/Schemas/V1/CheckoutSchema.php:166-186), the gateway result merged in by
+					// StoreApi\Legacy::process_legacy_payment() (src/StoreApi/Legacy.php:79-81). The client gateway sets
+					// errorMessage (client 11.1.0 includes/class-wc-payment-gateway-wcpay.php:1526).
 					Promise.resolve( {
 						payment_result: {
 							payment_status: 'failure',
@@ -4878,13 +4884,14 @@ describe( 'WooPayments express checkout', () => {
 			[
 				'an escaped message whose text has angle brackets',
 				() =>
-					// Store API checkout error (docs/apis/store-api/resources-endpoints/checkout.md, error response).
+					// Store API payment error: CheckoutTrait::process_payment() escapes the message with esc_html()
+					// (src/StoreApi/Utilities/CheckoutTrait.php:135); shape from AbstractRoute::error_to_response().
 					Promise.reject( {
-						code: 'woocommerce_rest_invalid_coupon',
-						message: 'Coupon &lt;b&gt;SAVE10&lt;/b&gt; is not valid.',
+						code: 'woocommerce_rest_checkout_process_payment_error',
+						message: 'Card &lt;b&gt;4242&lt;/b&gt; was declined.',
 						data: { status: 400 },
 					} ),
-				'Coupon <b>SAVE10</b> is not valid.',
+				'Card <b>4242</b> was declined.',
 			],
 		] )( 'shows the text of %s, never its markup', async ( label, checkoutAnswer, expected ) => {
 			setCheckoutWithEarlierErrors();
@@ -4917,7 +4924,8 @@ describe( 'WooPayments express checkout', () => {
 				.forEach( ( wrapper ) => wrapper.remove() );
 			window.wp.apiFetch
 				.mockResolvedValueOnce( getCartResponse() )
-				// Store API checkout error (docs/apis/store-api/resources-endpoints/checkout.md, error response).
+				// Store API payment error (src/StoreApi/Utilities/CheckoutTrait.php:135, status 400; shape from
+				// AbstractRoute::error_to_response(): code, message, data.status).
 				.mockRejectedValueOnce( {
 					code: 'woocommerce_rest_checkout_process_payment_error',
 					message: 'Your card was declined.',

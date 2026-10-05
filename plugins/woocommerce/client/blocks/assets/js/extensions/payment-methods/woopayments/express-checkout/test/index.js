@@ -2232,8 +2232,8 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 
 		// The Store API checkout response for a payment that needs a next
 		// action: PaymentResult::set_redirect_url() runs esc_url_raw(), which
-		// empties the bare hash, and Legacy::process_payment() keeps the raw
-		// gateway result in payment_details.
+		// empties the bare hash, and StoreApi\Legacy::process_legacy_payment()
+		// keeps the raw gateway result in payment_details (src/StoreApi/Legacy.php:79-81).
 		const confirmationResponse = {
 			order_id: 77,
 			status: 'pending',
@@ -2419,8 +2419,8 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				'',
 				'/checkout/?step=pay#wallet'
 			);
-			// Store API checkout success (docs/apis/store-api/resources-endpoints/checkout.md, "Process Order and
-			// Payment": payment_result.payment_status, payment_details, redirect_url) with no redirect.
+			// Store API checkout success (payment_result schema: src/StoreApi/Schemas/V1/CheckoutSchema.php:160-193,
+			// payment_details as { key, value }) with no redirect.
 			apiFetch.mockResolvedValueOnce( {
 				order_id: 77,
 				payment_result: {
@@ -2438,8 +2438,9 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			);
 		} );
 
-		// The `redirect` payment detail is the gateway's raw result (Legacy::process_payment()), not run through
-		// esc_url_raw() as redirect_url is (PaymentResult::set_redirect_url()); only an http(s) page is followed.
+		// The `redirect` payment detail is the gateway's raw result (StoreApi\Legacy::process_legacy_payment(),
+		// src/StoreApi/Legacy.php:79-81), not run through esc_url_raw() as redirect_url is
+		// (PaymentResult::set_redirect_url()); only an http(s) page is followed.
 		it.each( [
 			[ 'a javascript: URL', 'javascript:alert(1)', 'http://localhost/' ],
 			[ 'an invalid URL', 'http://', 'http://localhost/' ],
@@ -2451,8 +2452,8 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		] )(
 			'follows a fallback redirect that is %s only when it is an http(s) page',
 			async ( label, redirect, expected ) => {
-				// Store API checkout success (checkout.md "Process Order and Payment") whose redirect_url is empty and
-				// whose payment_details carry the raw redirect.
+				// Store API checkout success (src/StoreApi/Schemas/V1/CheckoutSchema.php:160-193) whose redirect_url is
+				// empty and whose payment_details carry the raw redirect.
 				apiFetch.mockResolvedValueOnce( {
 					order_id: 77,
 					payment_result: {
