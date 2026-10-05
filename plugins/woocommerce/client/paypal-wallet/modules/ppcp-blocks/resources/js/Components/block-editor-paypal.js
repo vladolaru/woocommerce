@@ -14,7 +14,7 @@ export const BlockEditorPayPalComponent = ( {
 			dataNamespace: 'ppcp-blocks-editor-paypal-buttons',
 			components: 'buttons',
 		} ),
-		[]
+		[ config.scriptData.url_params ]
 	);
 
 	const style = useMemo( () => {
@@ -36,7 +36,7 @@ export const BlockEditorPayPalComponent = ( {
 		}
 
 		return configStyle;
-	}, [ fundingSource, buttonAttributes ] );
+	}, [ fundingSource, buttonAttributes, config.scriptData.button.style ] );
 
 	return (
 		<PayPalScriptProvider options={ urlParams }>

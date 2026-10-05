@@ -68,7 +68,7 @@ export default function Edit( { attributes, clientId, setAttributes } ) {
 		if ( ! id ) {
 			setAttributes( { id: `ppcp-${ clientId }` } );
 		}
-	}, [ id, clientId ] );
+	}, [ id, clientId, setAttributes ] );
 
 	if ( ! PcpPayLaterBlock.placementEnabled ) {
 		return (

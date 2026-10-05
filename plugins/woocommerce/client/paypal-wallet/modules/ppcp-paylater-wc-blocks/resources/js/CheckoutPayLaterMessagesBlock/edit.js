@@ -122,7 +122,7 @@ export default function Edit( { attributes, clientId, setAttributes } ) {
 		if ( ! ppcpId ) {
 			setAttributes( { ppcpId: 'ppcp-' + clientId } );
 		}
-	}, [ ppcpId, clientId ] );
+	}, [ ppcpId, clientId, setAttributes ] );
 
 	if ( ! PcpCheckoutPayLaterBlock.placementEnabled ) {
 		return (

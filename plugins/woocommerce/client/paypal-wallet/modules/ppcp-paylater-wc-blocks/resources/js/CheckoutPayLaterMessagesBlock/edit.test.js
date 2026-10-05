@@ -132,7 +132,7 @@ test( 'does not show placeholder when PayPalMessages renders within 10 seconds',
 
 	const { PayPalMessages } = require( '@paypal/react-paypal-js' );
 	PayPalMessages.mockImplementation( ( { onRender } ) => {
-		useEffect( () => onRender(), [] );
+		useEffect( () => onRender(), [ onRender ] );
 		return null;
 	} );
 
