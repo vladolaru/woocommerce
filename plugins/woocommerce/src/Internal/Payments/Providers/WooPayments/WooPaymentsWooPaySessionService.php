@@ -1147,8 +1147,11 @@ class WooPaymentsWooPaySessionService {
 			'isWoopayExpressCheckoutEnabled'    => $woopay_express_available,
 			'isWoopayFirstPartyAuthEnabled'     => $woopay_first_party_auth_available,
 			// Client 11.1.0 keeps the WooPay email lookup from shoppers the guest rule excludes by ANDing the rule into its checkout
-			// config's isWooPayEnabled (class-wc-payments-checkout.php:198), which only its email input reads. Native's isWooPayEnabled
-			// also gates the save-user section, which the client does not exclude, so the rule goes on the email input flag.
+			// config's isWooPayEnabled (class-wc-payments-checkout.php:198), read by its email inputs and the Blocks button
+			// registration (client/checkout/blocks/index.js:123-134), which carries the rule through shouldShowWooPayButton on
+			// both sides (class-wc-payments-woopay-button-handler.php:300-320; should_show_woopay_button_for_enabled_state()).
+			// Native's isWooPayEnabled also gates the save-user section, which the client does not exclude, so the rule goes on
+			// the email input flag.
 			'isWooPayEmailInputEnabled'         => $this->is_woopay_email_input_enabled() && $this->should_enable_woopay_on_guest_checkout(),
 			'isWooPayDirectCheckoutEnabled'     => $this->is_woopay_direct_checkout_enabled(),
 			'isWooPayGlobalThemeSupportEnabled' => $is_global_theme_enabled,
