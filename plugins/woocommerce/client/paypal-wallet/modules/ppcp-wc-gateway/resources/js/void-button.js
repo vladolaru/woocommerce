@@ -16,6 +16,7 @@ document.addEventListener( 'DOMContentLoaded', function () {
 	const voidButton = document.querySelector( '#pcpVoid' );
 
 	voidButton.addEventListener( 'click', async () => {
+		// eslint-disable-next-line no-alert -- Native confirmation, as WooCommerce's own order screen script uses; no notice or modal helper is loaded on this page.
 		if ( ! window.confirm( PcpVoidButton.popup_text ) ) {
 			return;
 		}
@@ -40,6 +41,7 @@ document.addEventListener( 'DOMContentLoaded', function () {
 			hide( voidButton );
 			show( refundButton );
 
+			// eslint-disable-next-line no-alert -- Native alert, as WooCommerce's own order screen script uses; no notice helper is loaded on this page.
 			alert( PcpVoidButton.error_text );
 
 			throw Error( data.data.message );
