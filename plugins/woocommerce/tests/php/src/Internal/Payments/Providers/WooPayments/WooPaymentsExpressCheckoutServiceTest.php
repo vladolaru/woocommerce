@@ -1332,6 +1332,32 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should pass the store currency, never an empty one, to the enabled-methods filter on the button path.
+	 *
+	 * The charge path passes the order currency (`WooPaymentsIntentRequestBuilder`), so a callback keyed on the currency
+	 * must see a real currency on the button path too, or it shows a method the charge then refuses (review 46 F1).
+	 */
+	public function test_enabled_methods_filter_gets_the_store_currency_on_the_button_path(): void {
+		update_option( 'woocommerce_currency', 'EUR' );
+		$this->set_up_virtual_product_context( 'checkout' );
+		$seen = array();
+		add_filter(
+			'woocommerce_woopayments_express_checkout_enabled_methods',
+			static function ( array $methods, string $context, string $currency ) use ( &$seen ): array {
+				unset( $context );
+				$seen[] = $currency;
+
+				return 'EUR' === $currency ? $methods : array();
+			},
+			10,
+			3
+		);
+
+		$this->assertTrue( $this->create_service()->should_show_payment_request_button( 'checkout' ) );
+		$this->assertSame( array( 'EUR' ), array_values( array_unique( $seen ) ) );
+	}
+
+	/**
 	 * @testdox Should expose server-authoritative Stripe payment method types for enabled express methods.
 	 */
 	public function test_allowed_payment_method_types_include_eligible_amazon_pay(): void {

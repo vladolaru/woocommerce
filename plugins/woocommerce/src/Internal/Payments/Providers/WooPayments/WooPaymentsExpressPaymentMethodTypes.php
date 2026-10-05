@@ -93,6 +93,8 @@ class WooPaymentsExpressPaymentMethodTypes {
 	public static function get_enabled_methods_for_context( WooPaymentsAccountService $account_service, string $context = 'checkout', string $currency = '' ): array {
 		$context = self::normalize_context( $context );
 		$methods = self::get_configured_methods_for_context( $account_service, $context );
+		// The buttons pass no currency and the charge passes the order's, so the filter always gets a real one to key on.
+		$currency = '' === $currency ? get_woocommerce_currency() : $currency;
 
 		/**
 		 * Filters native WooPayments platform express checkout methods for a context.
@@ -101,7 +103,7 @@ class WooPaymentsExpressPaymentMethodTypes {
 		 *
 		 * @param array<int,string> $methods  Enabled method IDs.
 		 * @param string            $context  Express checkout context.
-		 * @param string            $currency Order or cart currency; empty for the store currency.
+		 * @param string            $currency Order or cart currency; the store currency when none is given.
 		 *
 		 * @since 11.0.0
 		 */
