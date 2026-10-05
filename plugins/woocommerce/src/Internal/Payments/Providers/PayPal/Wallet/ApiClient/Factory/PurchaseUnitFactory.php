@@ -152,6 +152,7 @@ class PurchaseUnitFactory {
 	 */
 	public function from_wc_cart( ?\WC_Cart $cart = null, bool $with_shipping_options = false ): PurchaseUnit {
 		if ( ! $cart ) {
+			// @phpstan-ignore nullCoalesce.property (WC()->cart is null outside the front end, though WooCommerce documents it as always set)
 			$cart = WC()->cart ?? new \WC_Cart();
 		}
 

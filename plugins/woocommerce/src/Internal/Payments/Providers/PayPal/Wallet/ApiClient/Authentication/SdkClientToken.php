@@ -31,9 +31,11 @@ class SdkClientToken {
 	private string $host;
 
 	/**
-	 * @phpstan-ignore property.onlyWritten (Read by RequestTrait.)
+	 * The logger, read by RequestTrait.
+	 *
+	 * @var LoggerInterface
 	 */
-	private LoggerInterface $logger;
+	protected LoggerInterface $logger;
 
 	private ClientCredentials $client_credentials;
 

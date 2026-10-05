@@ -24,7 +24,7 @@ class PartnerReferralsData {
 	private DccApplies $dcc_applies;
 
 	public function __construct( DccApplies $dcc_applies ) {
-		$this->dcc_applies = $dcc_applies; // @phpstan-ignore property.deprecated
+		$this->dcc_applies = $dcc_applies;
 	}
 
 	/**
@@ -45,7 +45,7 @@ class PartnerReferralsData {
 		bool $use_card_payments = true,
 		string $seller_nonce = ''
 	): array {
-		$in_acdc_country = $this->dcc_applies->for_country_currency(); // @phpstan-ignore property.deprecated
+		$in_acdc_country = $this->dcc_applies->for_country_currency();
 
 		if ( ! $products ) {
 			$products = array(

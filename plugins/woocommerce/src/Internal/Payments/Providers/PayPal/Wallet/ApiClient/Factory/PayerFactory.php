@@ -54,7 +54,7 @@ class PayerFactory {
 			// make sure the phone number contains only numbers and is max 14. chars long.
 			$national_number = $wc_order->get_billing_phone();
 			$national_number = preg_replace( '/[^0-9]/', '', $national_number );
-			$national_number = substr( $national_number, 0, 14 );
+			$national_number = substr( (string) $national_number, 0, 14 );
 
 			if ( $national_number ) {
 				$phone = new PhoneWithType(
@@ -92,7 +92,7 @@ class PayerFactory {
 			// make sure the phone number contains only numbers and is max 14. chars long.
 			$national_number = $customer->get_billing_phone();
 			$national_number = preg_replace( '/[^0-9]/', '', $national_number );
-			$national_number = substr( $national_number, 0, 14 );
+			$national_number = substr( (string) $national_number, 0, 14 );
 
 			if ( $national_number ) {
 				$phone = new PhoneWithType(
@@ -148,6 +148,7 @@ class PayerFactory {
 			isset( $data->email_address ) ? $data->email_address : '',
 			( isset( $data->payer_id ) ) ? $data->payer_id : '',
 			$address,
+			// @phpstan-ignore argument.type (a birth date that is not Y-m-d makes createFromFormat() return false, which Payer rejects; as in the extension)
 			$birth_date,
 			$phone,
 			$tax_info

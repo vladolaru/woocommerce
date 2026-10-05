@@ -110,7 +110,7 @@ class ApiModule implements ServiceModule, FactoryModule, ExecutableModule {
 				}
 			},
 			10,
-			2
+			0
 		);
 
 		/**

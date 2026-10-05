@@ -26,7 +26,7 @@ class Token {
 	/**
 	 * The Token data.
 	 *
-	 * @var object
+	 * @var \stdClass
 	 */
 	private $json;
 
@@ -35,12 +35,12 @@ class Token {
 	 *
 	 * @var int
 	 */
-	private $created;
+	private $created; // @phpstan-ignore property.unused (never read or written, kept as it is in the extension)
 
 	/**
 	 * Token constructor.
 	 *
-	 * @param object $json The JSON object.
+	 * @param \stdClass $json The JSON object.
 	 * @throws RuntimeException When The JSON object is not valid.
 	 */
 	public function __construct( $json ) {
@@ -87,7 +87,7 @@ class Token {
 	 * @return string
 	 */
 	public function as_json(): string {
-		return wp_json_encode( $this->json );
+		return (string) wp_json_encode( $this->json );
 	}
 
 	/**
@@ -96,6 +96,7 @@ class Token {
 	 * @param string $json The JSON string.
 	 */
 	public static function from_json( string $json ): Token {
+		/** @var \stdClass $json */
 		$json = (object) json_decode( $json );
 		if ( isset( $json->access_token ) || isset( $json->client_token ) ) {
 			$json->token = $json->access_token ?? $json->client_token;
@@ -107,7 +108,7 @@ class Token {
 	/**
 	 * Validates whether a JSON object can be transformed to a Token object.
 	 *
-	 * @param object $json The JSON object.
+	 * @param \stdClass $json The JSON object.
 	 *
 	 * @return bool
 	 */

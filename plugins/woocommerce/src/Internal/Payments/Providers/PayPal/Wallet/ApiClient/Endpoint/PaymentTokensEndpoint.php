@@ -133,6 +133,7 @@ class PaymentTokensEndpoint {
 				$tokens[] = array(
 					'id'             => $payment_token->id,
 					'payment_source' => new PaymentSource(
+						// @phpstan-ignore argument.type (a numeric key in the payment source would be an int here, as in the extension)
 						$name,
 						$payment_token->payment_source->$name
 					),

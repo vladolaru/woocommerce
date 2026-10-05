@@ -15,8 +15,6 @@ parameters:
 			# Matches the prior test implementation; GeoIP relies on data files.
 			- includes/class-wc-geo-ip.php
 			- includes/react-admin/feature-config.php (?)
-		analyse:
-			- src/Internal/Payments/Providers/PayPal/Wallet
 	bootstrapFiles:
 		- vendor/autoload.php
 	scanDirectories:

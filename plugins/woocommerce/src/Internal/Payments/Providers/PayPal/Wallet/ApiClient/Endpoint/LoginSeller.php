@@ -101,6 +101,7 @@ class LoginSeller {
 			);
 			throw $error;
 		}
+		/** @var \stdClass|null $json */
 		$json        = json_decode( $response['body'] );
 		$status_code = (int) wp_remote_retrieve_response_code( $response );
 		if ( ! isset( $json->client_id ) || ! isset( $json->client_secret ) ) {
@@ -171,6 +172,7 @@ class LoginSeller {
 			throw $error;
 		}
 
+		/** @var \stdClass|null $json */
 		$json        = json_decode( $response['body'] );
 		$status_code = (int) wp_remote_retrieve_response_code( $response );
 		if ( ! isset( $json->access_token ) ) {

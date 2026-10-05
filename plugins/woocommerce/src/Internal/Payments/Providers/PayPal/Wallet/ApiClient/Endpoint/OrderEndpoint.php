@@ -338,6 +338,7 @@ class OrderEndpoint {
 
 		$order = $this->order_factory->from_paypal_response( $json );
 
+		// @phpstan-ignore method.nonObject (an order whose purchase unit has no payments fails here, as it did in the extension)
 		$first_capture  = $order->purchase_units()[0]->payments()->captures()[0] ?? null;
 		$capture_status = $first_capture ? $first_capture->status() : null;
 		if ( $capture_status && $capture_status->is( CaptureStatus::DECLINED ) ) {
@@ -415,6 +416,7 @@ class OrderEndpoint {
 		}
 		$order = $this->order_factory->from_paypal_response( $json );
 
+		// @phpstan-ignore method.nonObject (an order whose purchase unit has no payments fails here, as it did in the extension)
 		$authorization_status = $order->purchase_units()[0]->payments()->authorizations()[0]->status() ?? null;
 		if ( $authorization_status && $authorization_status->is( AuthorizationStatus::DENIED ) ) {
 			throw new RuntimeException( __( 'Payment provider declined the payment, please use a different payment method.', 'woocommerce' ) );

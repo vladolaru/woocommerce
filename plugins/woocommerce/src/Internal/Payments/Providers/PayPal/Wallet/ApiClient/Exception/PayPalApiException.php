@@ -71,6 +71,7 @@ class PayPalApiException extends RuntimeException {
 		if ( $response->name ) {
 			$message = '[' . $response->name . '] ' . $message;
 		}
+		/** @var \stdClass $link */
 		foreach ( $response->links as $link ) {
 			if ( isset( $link->rel ) && 'information_link' === $link->rel ) {
 				$message .= ' ' . $link->href;

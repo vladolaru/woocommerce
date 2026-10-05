@@ -230,6 +230,7 @@ class PaymentsEndpoint {
 			throw new RuntimeException( 'Could not reauthorize authorized payment.' );
 		}
 
+		/** @var \stdClass|null $json */
 		$json = json_decode( $response['body'] );
 
 		$status_code = (int) wp_remote_retrieve_response_code( $response );
@@ -272,6 +273,7 @@ class PaymentsEndpoint {
 		}
 
 		$status_code = (int) wp_remote_retrieve_response_code( $response );
+		/** @var \stdClass|null $json */
 		$json        = json_decode( $response['body'] );
 		if ( 201 !== $status_code || ! is_object( $json ) ) {
 			throw new PayPalApiException(

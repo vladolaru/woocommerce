@@ -357,7 +357,7 @@ class WebhookEndpoint {
 			throw $error;
 		}
 
-		$request_body = json_decode( file_get_contents( 'php://input' ) );
+		$request_body = json_decode( (string) file_get_contents( 'php://input' ) );
 		return $this->verify_event(
 			$expected_headers['PAYPAL-AUTH-ALGO'],
 			$expected_headers['PAYPAL-CERT-URL'],
