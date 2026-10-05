@@ -55,8 +55,6 @@
 	}
 
 	&:hover {
-		cursor: pointer;
-
 		.ppcp-r-todo-item__inner {
 			.ppcp-r-todo-item__description {
 				color: $color-text-text;
@@ -101,6 +99,36 @@
 		transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 	}
 
+	// The row's own action: a real button holding the icon and the text.
+	&__action {
+		display: flex;
+		flex: 1;
+		align-items: center;
+		gap: 18px;
+		min-width: 0;
+		margin: 0;
+		padding: 0;
+		background: none;
+		border: 0;
+		color: inherit;
+		font: inherit;
+		text-align: start;
+		cursor: pointer;
+
+		// `.ppcp-r-todo-item__inner` clips its overflow, so an outline drawn
+		// outside the button would be cut off. Draw the focus ring inside it.
+		&:focus-visible {
+			outline: 2px solid $color-blueberry;
+			outline-offset: -2px;
+		}
+
+		.ppcp-r-todo-item__content,
+		.ppcp-r-todo-item__description,
+		.ppcp-r-todo-item__secondary-description {
+			display: block;
+		}
+	}
+
 	&__dismiss {
 		position: absolute;
 		right: 2px;
@@ -118,6 +146,12 @@
 		align-items: center;
 		justify-content: center;
 		opacity: 1;
+
+		// Same reason as the action button: keep the focus ring inside the clipped row.
+		&:focus-visible {
+			outline: 2px solid $color-blueberry;
+			outline-offset: -2px;
+		}
 
 		&:hover {
 			background-color: $color-gray-100;

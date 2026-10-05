@@ -11,45 +11,36 @@ const TodoItem = ( {
 	onClick,
 	onDismiss,
 } ) => {
-	const handleKeyDown = ( event ) => {
-		// Keys pressed on the dismiss button inside the row belong to that button.
-		if ( event.target !== event.currentTarget ) {
-			return;
-		}
-
-		if ( event.key === 'Enter' || event.key === ' ' ) {
-			event.preventDefault();
-			onClick();
-		}
-	};
-
 	return (
 		<div
 			className={ `ppcp-r-todo-item ${
 				isCompleted ? 'is-completed' : ''
 			} ${ isDismissing ? 'is-dismissing' : '' }` }
-			role="button"
-			onClick={ onClick }
-			onKeyDown={ handleKeyDown }
-			tabIndex={ 0 }
 		>
 			<div className="ppcp-r-todo-item__inner">
-				<div className="ppcp-r-todo-item__icon">
-					{ isCompleted && (
-						<span className="dashicons dashicons-yes"></span>
-					) }
-				</div>
-				<div className="ppcp-r-todo-item__content">
-					<div className="ppcp-r-todo-item__description">
-						{ title }
-					</div>
-					{ description && (
-						<div className="ppcp-r-todo-item__secondary-description">
-							{ description }
-						</div>
-					) }
-				</div>
 				<button
+					type="button"
+					className="ppcp-r-todo-item__action"
+					onClick={ onClick }
+				>
+					<span className="ppcp-r-todo-item__icon">
+						{ isCompleted && (
+							<span className="dashicons dashicons-yes"></span>
+						) }
+					</span>
+					<span className="ppcp-r-todo-item__content">
+						<span className="ppcp-r-todo-item__description">
+							{ title }
+						</span>
+						{ description && (
+							<span className="ppcp-r-todo-item__secondary-description">
+								{ description }
+							</span>
+						) }
+					</span>
+				</button>
+				<button
+					type="button"
 					className="ppcp-r-todo-item__dismiss"
 					onClick={ onDismiss }
 					aria-label="Dismiss todo item"
@@ -93,7 +84,6 @@ const TodoSettingsBlock = ( {
 
 	const handleDismiss = ( todoId, e ) => {
 		e.preventDefault();
-		e.stopPropagation();
 		setDismissingIds( ( prev ) => new Set( [ ...prev, todoId ] ) );
 
 		setTimeout( () => {
