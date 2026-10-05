@@ -246,7 +246,7 @@ class WooPaymentsTokenizedCartSessionHandlerTest extends WC_Unit_Test_Case {
 		$this->assertSame( $token_session_id, $this->init_handler()->get_customer_id() );
 
 		// The shopper's next normal request: core's handler, with the browser cookie and the new account logged in, migrates
-		// the browser guest session to the account and deletes the guest row (class-wc-session-handler.php:186-189, :218-246).
+		// the browser guest session to the account and deletes the guest row (class-wc-session-handler.php:190-191, :218-246).
 		$browser = new \WC_Session_Handler();
 		$browser->init();
 		remove_action( 'shutdown', array( $browser, 'save_data' ), 20 );
