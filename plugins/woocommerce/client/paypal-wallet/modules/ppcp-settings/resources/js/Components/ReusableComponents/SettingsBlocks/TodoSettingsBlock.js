@@ -114,6 +114,7 @@ const TodoItem = ( {
 			className={ `ppcp-r-todo-item ${
 				isCompleted ? 'is-completed' : ''
 			} ${ isDismissing ? 'is-dismissing' : '' }` }
+			role="button"
 			onClick={ onClick }
 			onKeyDown={ handleKeyDown }
 			tabIndex={ 0 }

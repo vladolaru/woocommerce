@@ -15,10 +15,5 @@ export default [
 				ppcpSettings: 'readonly',
 			},
 		},
-		rules: {
-			// Forked from the extension at 0083204e7 with its own lint rules; every rule the WooCommerce config
-			// turns into an error is a warning here until the inherited code is cleaned up.
-			'jsx-a11y/no-static-element-interactions': 'warn',
-		},
 	},
 ];

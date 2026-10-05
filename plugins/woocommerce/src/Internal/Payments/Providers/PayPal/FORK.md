@@ -62,7 +62,6 @@ Known residue: the Jetpack autoloader's manifest still lists the three classes (
 
 These are deliberate departures from core's usual rules. Plan C, the next pass over the fork, removes them one by one.
 
-- **JS lint demotions.** The JS package's ESLint keeps inherited code under `modules/` at warning level for 20 rules, listed in the package's `eslint.config.mjs`.
 - **The stored-class shim.** `Wallet/SerializedClasses/` keeps three classes under the extension's names so that objects stored in shared options still load (see "Stored class names" above).
 - **Fired-but-empty group filters.** The card and local payment method groups of the payment methods definition are empty. Their hooks, `woocommerce_paypal_payments_gateway_group_cards` and `woocommerce_paypal_payments_gateway_group_apm`, still fire over an empty array, so third-party callbacks stay valid. The shell adds no settings filters of its own.
 - **Dormant mode.** When the store has no connected PayPal account (the connection options of the extension's settings say so), the wallet is not built and none of its hooks, scripts or routes load, except on its own admin pages (the settings route and the old `section=ppcp-gateway` URL) and its REST routes (`/wc/v3/wc_paypal` and `/paypal/v1`), where it boots so a merchant can connect. The Payments settings list shows a placeholder "PayPal Wallet" row (`DormantPayPalGateway`, which shares the wallet gateway's ID and only reads its settings) with a setup button that opens the wallet's settings route. The placeholder never writes an option.
