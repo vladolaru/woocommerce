@@ -934,8 +934,9 @@
 
 	/**
 	 * The text of an error that may carry notice markup, as client 11.1.0 getErrorMessageFromNotice()
-	 * (express-checkout/utils/error-messages.ts:7-13) gets it. DOMParser builds an inert document, so no script runs
-	 * and no image loads, and the whole text is kept where the client keeps only the first node's.
+	 * (express-checkout/utils/error-messages.ts:7-13) gets it, keeping the whole text where the client keeps only the
+	 * first node's. DOMParser builds an inert document: no script runs and no inline handler fires, though the browser
+	 * may still fetch an image or iframe it names. Only the text reaches the page.
 	 *
 	 * @param {string} notice Error message or notice HTML.
 	 * @return {string} Plain text.
