@@ -35,6 +35,22 @@ final class WooPaymentsOrderPayAccess {
 	}
 
 	/**
+	 * Tell whether the Store API order route states the order's total in the order's currency and amount.
+	 *
+	 * The route labels its totals with the active currency and price decimals (CurrencyFormatter.php:44-46) but writes them
+	 * with two decimals (OrderSchema.php:341-358, AbstractSchema.php:396-403), while the payment charges the order's total.
+	 * Order-pay wallets built on that route are offered only when both agree.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param \WC_Order $order Order being paid.
+	 * @return bool
+	 */
+	public static function store_api_states_order_total( \WC_Order $order ): bool {
+		return strtoupper( $order->get_currency() ) === strtoupper( get_woocommerce_currency() ) && 2 === wc_get_price_decimals();
+	}
+
+	/**
 	 * Get the order-pay params for the current order's pay page, when its pay link lets the current user pay the order.
 	 *
 	 * Client 11.1.0 add_pay_for_order_params_to_js_config() (class-wc-payments-express-checkout-button-display-handler.php:184-222)

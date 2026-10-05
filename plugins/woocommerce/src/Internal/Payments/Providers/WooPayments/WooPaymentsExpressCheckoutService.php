@@ -53,6 +53,13 @@ class WooPaymentsExpressCheckoutService {
 	private ?\WC_Product $product_page_shortcode_product = null;
 
 	/**
+	 * Whether the current order-pay surface can show ECE, decided once per request, or null before the first decision.
+	 *
+	 * @var bool|null
+	 */
+	private ?bool $pay_for_order_supported = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -320,15 +327,23 @@ class WooPaymentsExpressCheckoutService {
 	/**
 	 * Tell whether the current order-pay surface can show ECE.
 	 *
+	 * The sheet's amount and currency come from the Store API order, so the order must be stated there as it is charged
+	 * (WooPaymentsOrderPayAccess::store_api_states_order_total()). Decided once per request: multi-currency switches the
+	 * active currency to the order's inside the pay form, after the config is built, and the button there follows it.
+	 *
 	 * @return bool
 	 */
 	private function is_pay_for_order_supported(): bool {
-		$order = $this->get_pay_for_order_order();
-		if ( ! $order instanceof \WC_Order || ! $order->needs_payment() ) {
-			return false;
+		if ( null === $this->pay_for_order_supported ) {
+			$order = $this->get_pay_for_order_order();
+
+			$this->pay_for_order_supported = $order instanceof \WC_Order
+				&& $order->needs_payment()
+				&& WooPaymentsOrderPayAccess::can_pay_with_key( $order, $this->get_pay_for_order_key() )
+				&& WooPaymentsOrderPayAccess::store_api_states_order_total( $order );
 		}
 
-		return WooPaymentsOrderPayAccess::can_pay_with_key( $order, $this->get_pay_for_order_key() );
+		return $this->pay_for_order_supported;
 	}
 
 	/**

@@ -46,6 +46,8 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'woocommerce_is_checkout' );
 		remove_all_filters( 'woocommerce_is_cart' );
 		remove_all_filters( 'woocommerce_is_product' );
+		remove_all_filters( 'woocommerce_currency', 900 );
+		remove_all_filters( 'wc_get_price_decimals', 900 );
 		$this->set_order_pay_query_var( 0 );
 		unset(
 			$GLOBALS['product'],
@@ -1926,6 +1928,79 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$this->set_order_pay_query_var( $order->get_id() );
 
 		$this->assertTrue( $this->create_service()->should_show_payment_request_button( 'pay_for_order' ) );
+	}
+
+	/**
+	 * @testdox Order-pay offers the express buttons only when the Store API order states the order's total (store $store_currency, active $active_currency at $decimals decimals, order $order_currency).
+	 *
+	 * On order-pay the classic script builds the sheet from GET /wc/store/v1/order/{id} (woopayments-express-checkout.js
+	 * requestOrder()), whose totals carry the active currency and decimals as labels (CurrencyFormatter::format()) but are
+	 * written with two decimals (OrderSchema::get_totals() through AbstractSchema::prepare_money_response()), while the
+	 * payment charges the order's currency and total. Native multi-currency sets the active currency and decimals through
+	 * the woocommerce_currency and wc_get_price_decimals filters at priority 900 (MultiCurrencyFrontendCurrenciesController);
+	 * the filters here stand in for a shopper who selected $active_currency.
+	 *
+	 * @testWith ["USD", "", 2, "EUR", false]
+	 *           ["USD", "EUR", 2, "USD", false]
+	 *           ["USD", "EUR", 2, "EUR", true]
+	 *           ["JPY", "", 0, "JPY", false]
+	 *           ["BHD", "", 3, "BHD", false]
+	 *           ["JPY", "", 2, "JPY", true]
+	 *
+	 * @param string $store_currency  Store currency option.
+	 * @param string $active_currency Currency the woocommerce_currency filter returns, or empty for none.
+	 * @param int    $decimals        Active price decimals.
+	 * @param string $order_currency  Order currency.
+	 * @param bool   $offered         Whether the express buttons are offered for the order.
+	 */
+	public function test_order_pay_offers_express_only_when_the_store_api_order_states_its_total( string $store_currency, string $active_currency, int $decimals, string $order_currency, bool $offered ): void {
+		update_option( 'woocommerce_currency', $store_currency );
+		if ( '' !== $active_currency ) {
+			add_filter( 'woocommerce_currency', static fn() => $active_currency, 900 );
+		}
+		add_filter( 'wc_get_price_decimals', static fn() => $decimals, 900 );
+		$order = wc_create_order();
+		$order->set_total( '24.00' );
+		$order->set_currency( $order_currency );
+		$order->save();
+		$_GET['pay_for_order'] = 'true';
+		$_GET['key']           = $order->get_order_key();
+		$this->set_order_pay_query_var( $order->get_id() );
+
+		$this->assertSame( $offered, $this->create_service()->should_show_payment_request_button( 'pay_for_order' ) );
+	}
+
+	/**
+	 * @testdox The express buttons in the pay form follow the first decision even after multi-currency switches to the order's currency there.
+	 *
+	 * Native multi-currency returns the order's currency only once the pay form runs before_woocommerce_pay
+	 * (MultiCurrencyFrontendCurrenciesController::init_order_currency_from_query_vars()), after the config is decided at
+	 * wp_enqueue_scripts (WooPaymentsExpressCheckoutController::enqueue_frontend_assets()); the render in the form asks again
+	 * (display_express_checkout_buttons()), and the sheet still reads the Store API order in the shopper's currency.
+	 */
+	public function test_order_pay_express_buttons_follow_the_first_decision_when_the_pay_form_switches_currency(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		$active_currency = 'EUR';
+		add_filter(
+			'woocommerce_currency',
+			static function () use ( &$active_currency ) {
+				return $active_currency;
+			},
+			900
+		);
+		$order = wc_create_order();
+		$order->set_total( '24.00' );
+		$order->set_currency( 'USD' );
+		$order->save();
+		$_GET['pay_for_order'] = 'true';
+		$_GET['key']           = $order->get_order_key();
+		$this->set_order_pay_query_var( $order->get_id() );
+		$sut = $this->create_service();
+
+		$this->assertFalse( $sut->should_show_payment_request_button( 'pay_for_order' ) );
+		$active_currency = 'USD';
+
+		$this->assertFalse( $sut->should_show_payment_request_button( 'pay_for_order' ) );
 	}
 
 	/**
