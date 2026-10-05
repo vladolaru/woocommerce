@@ -913,6 +913,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 * Get the client's order-pay keys for a pay-for-order link opened by someone allowed to pay the order.
 	 *
 	 * Client 11.1.0 `add_pay_for_order_params_to_js_config()` (class-wc-payments-express-checkout-button-display-handler.php:183-224).
+	 * The visitor's email goes into the page only when WooPaymentsOrderPayAccess::may_put_shopper_email_in_page() allows it.
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -934,7 +935,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			'order_id'      => $order->get_id(),
 			'pay_for_order' => sanitize_text_field( wp_unslash( $_GET['pay_for_order'] ) ),
 			'key'           => sanitize_text_field( wp_unslash( $_GET['key'] ) ),
-			'billing_email' => WooPaymentsOrderPayAccess::get_billing_email_for_current_visitor( $order ),
+			'billing_email' => WooPaymentsOrderPayAccess::may_put_shopper_email_in_page() ? WooPaymentsOrderPayAccess::get_billing_email_for_current_visitor( $order ) : '',
 		);
 		// phpcs:enable WordPress.Security.NonceVerification
 

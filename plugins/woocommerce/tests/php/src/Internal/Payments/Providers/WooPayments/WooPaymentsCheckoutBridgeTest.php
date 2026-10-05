@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
@@ -2254,6 +2255,9 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Blocks data gives a shopper who cannot see the order the email they typed, not the order's.
+	 *
+	 * On the configured checkout page, where core defines DONOTCACHEPAGE (WC_Cache_Helper::prevent_caching()); the constant
+	 * is set here because an earlier test in the process may have defined it either way.
 	 */
 	public function test_blocks_data_order_pay_email_hides_the_order_email_from_other_payers(): void {
 		$order = \WC_Helper_Order::create_order( 0 );
@@ -2261,11 +2265,61 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$order->save();
 		$this->go_to_pay_for_order_link( $order );
 		$_POST['email'] = 'typed@example.com';
+		Constants::set_constant( 'DONOTCACHEPAGE', true );
 
-		$data = $this->create_bridge_for_express_handlers()->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+		try {
+			$data = $this->create_bridge_for_express_handlers()->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+		} finally {
+			Constants::clear_single_constant( 'DONOTCACHEPAGE' );
+		}
 
 		$this->assertSame( $order->get_id(), $data['order_id'] );
 		$this->assertSame( 'typed@example.com', $data['billing_email'] );
+	}
+
+	/**
+	 * @testdox Blocks data keeps a guest's $source email out of the order-pay keys on another page carrying the checkout shortcode.
+	 *
+	 * Core defines DONOTCACHEPAGE only on the configured cart, checkout and My Account pages (WC_Cache_Helper::prevent_caching()),
+	 * so a page cache could serve this page's HTML to the next visitor. The constant is set to what that page gets, because an
+	 * earlier test in the process may have defined it.
+	 *
+	 * @testWith ["session"]
+	 *           ["posted"]
+	 *
+	 * @param string $source Where the visitor's email comes from.
+	 */
+	public function test_blocks_data_keeps_a_guest_email_off_a_page_core_does_not_protect( string $source ): void {
+		$order = \WC_Helper_Order::create_order( 0 );
+		$order->set_billing_email( 'order@example.com' );
+		$order->save();
+		$page_id = self::factory()->post->create(
+			array(
+				'post_type'    => 'page',
+				'post_status'  => 'publish',
+				'post_content' => '[woocommerce_checkout]',
+			)
+		);
+		$this->go_to( get_permalink( $page_id ) );
+		$this->go_to_pay_for_order_link( $order );
+		$session          = WC()->session;
+		$session_customer = $session->get( 'customer' );
+		$session->set( 'customer', 'session' === $source ? array( 'email' => 'session@example.com' ) : null );
+		if ( 'posted' === $source ) {
+			$_POST['email'] = 'typed@example.com';
+		}
+		Constants::set_constant( 'DONOTCACHEPAGE', false );
+
+		try {
+			$data = $this->create_bridge_for_express_handlers()->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+		} finally {
+			Constants::clear_single_constant( 'DONOTCACHEPAGE' );
+			$session->set( 'customer', $session_customer );
+		}
+
+		$this->assertSame( $order->get_id(), $data['order_id'] );
+		$this->assertSame( $order->get_order_key(), $data['key'] );
+		$this->assertSame( '', $data['billing_email'] );
 	}
 
 	/**
