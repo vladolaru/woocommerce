@@ -463,6 +463,7 @@ class WooCommerceOrderCreator {
 	 */
 	protected function configure_taxes( WC_Product $product, WC_Order_Item_Product $item, $subtotal ): void {
 		$tax_rates = WC_Tax::get_rates( $product->get_tax_class() );
+		// @phpstan-ignore argument.type (WC_Tax::calc_tax() documents a float; $subtotal can be a numeric string, as in the extension)
 		$taxes     = WC_Tax::calc_tax( $subtotal, $tax_rates, true );
 
 		$item->set_tax_class( $product->get_tax_class() );

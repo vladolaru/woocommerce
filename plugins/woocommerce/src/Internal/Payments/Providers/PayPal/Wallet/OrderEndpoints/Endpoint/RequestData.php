@@ -19,14 +19,14 @@ class RequestData {
 	/**
 	 * Enqueues the nonce fix hook.
 	 */
-	public function enqueue_nonce_fix() {
+	public function enqueue_nonce_fix(): void {
 		add_filter( 'nonce_user_logged_out', array( $this, 'nonce_fix' ), 100 );
 	}
 
 	/**
 	 * Dequeues the nonce fix hook.
 	 */
-	public function dequeue_nonce_fix() {
+	public function dequeue_nonce_fix(): void {
 		remove_filter( 'nonce_user_logged_out', array( $this, 'nonce_fix' ), 100 );
 	}
 
@@ -40,7 +40,7 @@ class RequestData {
 	 */
 	public function read_request( string $nonce ): array {
 		$stream = file_get_contents( 'php://input' );
-		$json   = json_decode( $stream, true );
+		$json   = json_decode( (string) $stream, true );
 		$this->enqueue_nonce_fix();
 		if (
 			! isset( $json['nonce'] )

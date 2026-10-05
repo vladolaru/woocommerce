@@ -609,6 +609,7 @@ class CreateOrderEndpoint implements EndpointInterface {
 	 */
 	private function payer( array $data, ?WC_Order $wc_order = null ) {
 		if ( 'pay-now' === $data['context'] ) {
+			// @phpstan-ignore argument.type (a pay-now request always carries its order; the null default is inherited from the extension)
 			$payer = $this->payer_factory->from_wc_order( $wc_order );
 			return $payer;
 		}
@@ -626,7 +627,7 @@ class CreateOrderEndpoint implements EndpointInterface {
 				}
 			}
 
-			$payer = $this->payer_factory->from_paypal_response( json_decode( wp_json_encode( $data['payer'] ) ) );
+			$payer = $this->payer_factory->from_paypal_response( json_decode( (string) wp_json_encode( $data['payer'] ) ) );
 		}
 
 		if ( ! $payer && $this->form ) {
@@ -643,7 +644,7 @@ class CreateOrderEndpoint implements EndpointInterface {
 	 *
 	 * @param array $data The request data.
 	 */
-	private function set_bn_code( array $data ) {
+	private function set_bn_code( array $data ): void {
 		$bn_code = isset( $data['bn_code'] ) ? (string) $data['bn_code'] : '';
 		if ( ! $bn_code ) {
 			return;
