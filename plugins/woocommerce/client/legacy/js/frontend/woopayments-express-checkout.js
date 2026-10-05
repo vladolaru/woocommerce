@@ -2164,6 +2164,26 @@
 	 *
 	 * @return {boolean} Whether the localized product data can seed the wallet amount.
 	 */
+	/**
+	 * Tell whether the server product data prices what the form would add: the server prices one unit
+	 * (WooPaymentsExpressCheckoutService::get_product_data()), while the quantity field can start above one (a minimum
+	 * quantity, a failed add-to-cart, a browser form restore). Native departure from client 11.1.0, whose first open
+	 * keeps the one-unit payload (shortcode-buttons-express/index.js:87-92, :110-127, :504-512).
+	 *
+	 * @return {boolean} Whether the button can be priced from the server product data.
+	 */
+	function serverProductDataPricesForm() {
+		var selectedProduct = getSelectedProduct();
+
+		// A form that cannot add the product yet opens no sheet; choosing the variation re-prices at the live quantity.
+		return (
+			hasServerProductData() &&
+			( ! selectedProduct ||
+				selectedProduct.quantity === 1 ||
+				isAddToCartBlocked() )
+		);
+	}
+
 	function hasServerProductData() {
 		return Boolean(
 			config.product &&
@@ -3052,7 +3072,7 @@
 				if ( ! ready || typeof ready.then !== 'function' ) {
 					resolvedProductCurrency = localizedProductCurrency;
 					productCurrencyResolutionPromise = null;
-					if ( ! hasServerProductData() ) {
+					if ( ! serverProductDataPricesForm() ) {
 						return refreshIapiProductPreview();
 					}
 					cachedCartData = config.product;
@@ -3076,7 +3096,7 @@
 
 					if (
 						resolvedProductCurrency !== localizedProductCurrency ||
-						! hasServerProductData()
+						! serverProductDataPricesForm()
 					) {
 						return refreshIapiProductPreview();
 					}
@@ -3330,10 +3350,15 @@
 			// priced (the page-load value, or the last change) is skipped, so typing and then leaving the field re-prices once.
 			debouncedUpdateButtonData = debounce( 250, updateButtonData );
 			pricedQuantities = new WeakMap();
+			// What the button is priced at when the page loads: the server's one unit, or the form's quantity priced by the
+			// first mount.
+			document
+				.querySelectorAll( '.quantity .qty' )
+				.forEach( function ( field ) {
+					pricedQuantities.set( field, field.value );
+				} );
 			$( '.quantity' ).on( 'input change', '.qty', function () {
-				var pricedQuantity = pricedQuantities.has( this )
-					? pricedQuantities.get( this )
-					: this.defaultValue;
+				var pricedQuantity = pricedQuantities.get( this );
 
 				if ( this.value === pricedQuantity ) {
 					return;

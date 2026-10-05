@@ -3323,6 +3323,84 @@ describe( 'WooPayments express checkout', () => {
 
 		// The click adds the form's current selection, so the newest re-price must win whatever order the answers
 		// arrive in. The client keeps the last answer to arrive (shortcode-buttons-express/index.js:614-618).
+		// The server prices the product page at one unit (WooPaymentsExpressCheckoutService::get_product_data(); client
+		// 11.1.0 likewise, button-helper.php:759-, and its first open uses that payload as is, index.js:87-92, :110-127,
+		// :504-512). Native prices the form's quantity before the first open when the field starts above one (a
+		// minimum quantity, a failed add-to-cart, a browser form restore). Store API add-item answer: cart.md
+		// "Add Item" (items[].quantity, totals.total_price).
+		test.each( [
+			[ 'without', undefined ],
+			// `window.wcpayAsyncCurrency.ready` resolves with the lower-case currency code the page settles on
+			// (multi-currency-async-renderer.js); here the localized one.
+			[ 'after the multi-currency check of', () => ( { ready: Promise.resolve( 'usd' ) } ) ],
+		] )( 'opens the first sheet at the quantity the form starts with, %s the page currency', async ( label, asyncCurrency ) => {
+			const resolveClick = jest.fn();
+			setClassicProductForm();
+			document.querySelector( '.quantity .qty' ).setAttribute( 'value', '3' );
+			if ( asyncCurrency ) {
+				window.wcpayAsyncCurrency = asyncCurrency();
+			}
+			window.wp.apiFetch.mockResolvedValue( getVirtualCart( 7500, 3 ) );
+
+			await mountReadyWallet();
+			await flushPromises();
+			await flushMicrotasks();
+
+			expect( window.wp.apiFetch ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					path: '/wc/store/v1/cart/add-item?currency=USD',
+					data: expect.objectContaining( { id: 123, quantity: 3 } ),
+				} )
+			);
+			expect( stripe.elements ).toHaveBeenCalledWith(
+				expect.objectContaining( { amount: 7500 } )
+			);
+
+			await expressHandlers.click( { resolve: resolveClick } );
+
+			expect( resolveClick ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					lineItems: [ { name: 'Express Widget (x3)', amount: 7500 } ],
+				} )
+			);
+		} );
+
+		test( 'mounts from the server data while the variation form cannot add the product yet', async () => {
+			setClassicProductForm( { variable: true, buttonClasses: 'disabled' } );
+			document.querySelector( '.quantity .qty' ).setAttribute( 'value', '3' );
+
+			await mountReadyWallet();
+			await flushMicrotasks();
+
+			expect( window.wp.apiFetch ).not.toHaveBeenCalled();
+			expect( stripe.elements ).toHaveBeenCalledWith(
+				expect.objectContaining( { amount: 2500 } )
+			);
+		} );
+
+		test( 're-prices a quantity changed back to one after the form was restored at three', async () => {
+			jest.useFakeTimers();
+			setClassicProductForm();
+			// A browser form restore changes the value, not the `value` attribute (defaultValue stays 1).
+			document.querySelector( '.quantity .qty' ).value = '3';
+			window.wp.apiFetch
+				.mockResolvedValueOnce( getVirtualCart( 7500, 3 ) )
+				.mockResolvedValueOnce( getVirtualCart( 2500, 1 ) );
+			await mountReadyWallet();
+			await flushMicrotasks();
+
+			typeQuantity( '1' );
+			jest.advanceTimersByTime( 250 );
+			await flushMicrotasks();
+
+			expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 2 );
+			expect( window.wp.apiFetch ).toHaveBeenLastCalledWith(
+				expect.objectContaining( {
+					data: expect.objectContaining( { quantity: 1 } ),
+				} )
+			);
+		} );
+
 		test( 'keeps the newest quantity when an older re-price answers last', async () => {
 			const resolveClick = jest.fn();
 			const twoUnits = createDeferred();
