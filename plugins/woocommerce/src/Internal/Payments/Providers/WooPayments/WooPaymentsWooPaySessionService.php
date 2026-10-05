@@ -1005,13 +1005,14 @@ class WooPaymentsWooPaySessionService {
 	 * @return array<string,mixed>
 	 */
 	public function get_woopay_frontend_config( string $context = 'checkout' ): array {
+		// woopaySessionEmail follows the client's OTP pre-fill chain (WooPay_Session::get_user_email(), class-woopay-session.php:433-472).
 		$is_woopay_enabled                 = $this->is_woopay_enabled();
 		$is_country_available              = $is_woopay_enabled && $this->is_woopay_country_available();
 		$is_global_theme_enabled           = $this->is_woopay_global_theme_support_enabled();
 		$should_show_woopay                = $this->should_show_woopay_button_for_enabled_state( $context, $is_woopay_enabled ) && $this->is_woopay_gateway_available();
 		$woopay_appearance                 = $is_global_theme_enabled ? $this->get_woopay_appearance() : null;
 		$woopay_font_rules                 = $is_global_theme_enabled ? $this->get_woopay_font_rules() : array();
-		$woopay_session_email              = $this->get_current_shopper_email();
+		$woopay_session_email              = $this->resolve_session_email( null );
 		$woopay_minimum_session            = $is_woopay_enabled ? $this->get_encrypted_minimum_session_data() : array();
 		$woopay_express_available          = $is_woopay_enabled && $this->is_woopay_express_checkout_configured_at( $context );
 		$woopay_first_party_auth_available = $woopay_express_available && $is_country_available;
@@ -2007,17 +2008,6 @@ class WooPaymentsWooPaySessionService {
 		$country = strtoupper( $country );
 
 		return '' !== $country ? $country : 'US';
-	}
-
-	/**
-	 * Get the current shopper email when available.
-	 *
-	 * @return string
-	 */
-	private function get_current_shopper_email(): string {
-		$user = wp_get_current_user();
-
-		return $user instanceof \WP_User && is_email( $user->user_email ) ? sanitize_email( $user->user_email ) : '';
 	}
 
 	/**

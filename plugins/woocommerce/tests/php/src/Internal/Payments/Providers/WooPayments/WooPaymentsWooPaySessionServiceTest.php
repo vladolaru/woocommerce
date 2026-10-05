@@ -1331,6 +1331,26 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The WooPay OTP pre-fill uses the email a guest already gave the store.
+	 *
+	 * Client 11.1.0 class-wc-payments-woopay-button-handler.php:151 uses WooPay_Session::get_user_email()
+	 * (class-woopay-session.php:433-472), which reads the WooCommerce customer's billing email for a guest.
+	 */
+	public function test_frontend_config_prefills_the_guest_email_from_the_customer(): void {
+		$customer      = WC()->customer;
+		WC()->customer = new \WC_Customer( 0, true );
+		WC()->customer->set_billing_email( 'guest@example.com' );
+
+		try {
+			$config = $this->create_service()->get_woopay_frontend_config( 'checkout' );
+		} finally {
+			WC()->customer = $customer;
+		}
+
+		$this->assertSame( 'guest@example.com', $config['woopaySessionEmail'] );
+	}
+
+	/**
 	 * @testdox Should prefer a sanitized email from a valid encrypted identity envelope.
 	 */
 	public function test_encrypted_session_data_uses_valid_encrypted_identity_email(): void {
