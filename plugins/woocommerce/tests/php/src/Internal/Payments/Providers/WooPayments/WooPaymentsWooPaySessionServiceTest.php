@@ -3296,6 +3296,49 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should not resolve a WooPay-verified email when $_dataName.
+	 *
+	 * @dataProvider unmatched_verified_email_provider
+	 *
+	 * @param string   $session_email The email the cart-token session holds.
+	 * @param string   $header_email  The X-WooPay-Verified-Email-Address value.
+	 * @param string[] $accounts      Emails of the store accounts that exist.
+	 */
+	public function test_determine_current_user_ignores_an_unmatched_verified_email( string $session_email, string $header_email, array $accounts ): void {
+		$this->simulate_woopay_store_api_request();
+		$this->force_real_blog_token_signed();
+
+		foreach ( $accounts as $account_email ) {
+			$this->factory->user->create( array( 'user_email' => $account_email ) );
+		}
+		update_option( 'woopay_enabled_adapted_extensions', array( 'woocommerce-gift-cards' ) );
+		$this->insert_store_api_session(
+			't_guesthash',
+			array(
+				'id'    => '0',
+				'email' => $session_email,
+			)
+		);
+		$_SERVER['HTTP_CART_TOKEN'] = \Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils::get_cart_token( 't_guesthash' );
+		// The header WooPay sends with the email it verified (client 11.1.0 reads it at class-woopay-session.php:872-875).
+		$_SERVER['HTTP_X_WOOPAY_VERIFIED_EMAIL_ADDRESS'] = $header_email;
+
+		$this->assertFalse( $this->create_service()->determine_current_user_for_woopay( false ) );
+	}
+
+	/**
+	 * Verified emails that must not log the WooPay request in.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string[]}>
+	 */
+	public function unmatched_verified_email_provider(): array {
+		return array(
+			'the header names another account than the session' => array( 'shopper-a@example.com', 'shopper-b@example.com', array( 'shopper-a@example.com', 'shopper-b@example.com' ) ),
+			'no account owns the header email' => array( 'guest-shopper@example.com', 'guest-shopper@example.com', array( 'shopper-a@example.com' ) ),
+		);
+	}
+
+	/**
 	 * @testdox Should detach the customer id from a verified-email guest order and schedule its restoration.
 	 */
 	public function test_payment_status_change_detaches_customer_id_for_verified_email_guest_order(): void {
