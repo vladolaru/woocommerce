@@ -588,4 +588,115 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'lost_or_stolen_card', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] );
 		$this->assertSame( 'lost_or_stolen_card', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
 	}
+
+	/**
+	 * @testdox An intent whose charges are $_dataName: fully refunded $fully_refunded, disputed $disputed.
+	 *
+	 * A PaymentIntent can make several charge attempts, and listing its charges shows "both successful and unsuccessful
+	 * attempts", at most one of them succeeded (Stripe docs, "The Payment Intents API", Identifying charges on a
+	 * PaymentIntent). Stripe lists newest first (API reference, Pagination), so the succeeded charge usually comes before
+	 * earlier declines; both orders are covered.
+	 *
+	 * @dataProvider charge_attempt_lists
+	 *
+	 * @param array<int,array<string,mixed>> $charges        The intent's `charges.data`.
+	 * @param bool                           $fully_refunded Expected is_fully_refunded().
+	 * @param bool                           $disputed       Expected is_disputed().
+	 */
+	public function test_refund_and_dispute_checks_read_every_charge_attempt( array $charges, bool $fully_refunded, bool $disputed ): void {
+		$intent = array(
+			'id'      => 'pi_attempts',
+			'object'  => 'payment_intent',
+			'status'  => 'succeeded',
+			'amount'  => 1200,
+			// The PaymentIntent `charges` list as the platform returns it on Stripe-Version 2020-08-27.
+			'charges' => array(
+				'object'      => 'list',
+				'data'        => $charges,
+				'has_more'    => false,
+				'total_count' => count( $charges ),
+				'url'         => '/v1/charges?payment_intent=pi_attempts',
+			),
+		);
+
+		$this->assertSame( $fully_refunded, WooPaymentsIntentCodec::is_fully_refunded( $intent ), 'is_fully_refunded()' );
+		$this->assertSame( $disputed, WooPaymentsIntentCodec::is_disputed( $intent ), 'is_disputed()' );
+		$this->assertSame( $fully_refunded || $disputed, WooPaymentsIntentCodec::has_given_money_back( $intent ), 'has_given_money_back()' );
+	}
+
+	/**
+	 * Charge attempt lists of one PaymentIntent.
+	 *
+	 * @return array<string,array{0:array<int,array<string,mixed>>,1:bool,2:bool}>
+	 */
+	public function charge_attempt_lists(): array {
+		$declined_first  = self::failed_charge_attempt( 'ch_declined_1' );
+		$declined_second = self::failed_charge_attempt( 'ch_declined_2' );
+		$fully_refunded  = self::succeeded_charge(
+			array(
+				'refunded'        => true,
+				'amount_refunded' => 1200,
+			)
+		);
+
+		return array(
+			'refunded after two declines, newest first' => array( array( $fully_refunded, $declined_second, $declined_first ), true, false ),
+			'refunded after two declines, oldest first' => array( array( $declined_first, $declined_second, $fully_refunded ), true, false ),
+			'refunded up to its amount after a decline' => array( array( self::succeeded_charge( array( 'amount_refunded' => 1200 ) ), $declined_first ), true, false ),
+			'disputed after a decline, newest first'    => array( array( self::succeeded_charge( array( 'disputed' => true ) ), $declined_first ), false, true ),
+			'disputed after a decline, oldest first'    => array( array( $declined_first, self::succeeded_charge( array( 'disputed' => true ) ) ), false, true ),
+			'partly refunded after a decline'           => array( array( $declined_first, self::succeeded_charge( array( 'amount_refunded' => 500 ) ) ), false, false ),
+			'declines only'                             => array( array( $declined_second, $declined_first ), false, false ),
+		);
+	}
+
+	/**
+	 * A succeeded charge, reduced to the fields the checks read (Stripe API reference, "The Charge object": `refunded` is
+	 * true only once the charge is fully refunded, a partial refund leaves it false and raises `amount_refunded`).
+	 *
+	 * @param array<string,mixed> $fields Fields to change.
+	 * @return array<string,mixed>
+	 */
+	private static function succeeded_charge( array $fields = array() ): array {
+		return array_merge(
+			array(
+				'id'              => 'ch_succeeded',
+				'object'          => 'charge',
+				'amount'          => 1200,
+				'amount_captured' => 1200,
+				'amount_refunded' => 0,
+				'captured'        => true,
+				'disputed'        => false,
+				'paid'            => true,
+				'payment_intent'  => 'pi_attempts',
+				'refunded'        => false,
+				'status'          => 'succeeded',
+			),
+			$fields
+		);
+	}
+
+	/**
+	 * A declined charge attempt of the same intent (Stripe API reference, "The Charge object": a failed charge is not
+	 * paid, captured, refunded or disputed and names its failure_code).
+	 *
+	 * @param string $id Charge ID.
+	 * @return array<string,mixed>
+	 */
+	private static function failed_charge_attempt( string $id ): array {
+		return array(
+			'id'              => $id,
+			'object'          => 'charge',
+			'amount'          => 1200,
+			'amount_captured' => 0,
+			'amount_refunded' => 0,
+			'captured'        => false,
+			'disputed'        => false,
+			'failure_code'    => 'card_declined',
+			'paid'            => false,
+			'payment_intent'  => 'pi_attempts',
+			'refunded'        => false,
+			'status'          => 'failed',
+		);
+	}
 }
