@@ -963,6 +963,87 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The $label handler refuses a request without its nonce or capability and changes nothing.
+	 * @dataProvider guarded_ajax_requests
+	 *
+	 * Client 11.1.0 checks the same nonces (class-woopay-session.php ajax_* handlers, class-wc-payments-woopay-button-handler.php
+	 * show_error_notice) and manage_woocommerce for the admin appearance write (class-woopay-session.php:1211-1217).
+	 *
+	 * @param string              $label           Case label.
+	 * @param string              $hook            AJAX hook the controller registers.
+	 * @param string              $role            Role of the requesting user.
+	 * @param string|null         $nonce_action    Nonce posted, or null for a wrong one.
+	 * @param array<string,mixed> $post            Other posted fields.
+	 * @param mixed               $expected_body   Decoded answer.
+	 * @param int|null            $expected_status Status of a wp_die() answer.
+	 */
+	public function test_ajax_handler_guard_refuses_the_request( string $label, string $hook, string $role, ?string $nonce_action, array $post, $expected_body, ?int $expected_status ): void {
+		unset( $label );
+		$service   = new RecordingWooPaySessionService();
+		$this->sut = $this->create_controller( true, true, $service );
+		$this->sut->register();
+		wp_set_current_user( self::factory()->user->create( array( 'role' => $role ) ) );
+		$nonce    = null === $nonce_action ? 'not-a-valid-nonce' : wp_create_nonce( $nonce_action );
+		$_POST    = array_merge( // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			$post,
+			array(
+				'_ajax_nonce' => $nonce,
+				'security'    => $nonce,
+			)
+		);
+		$_REQUEST = $_POST; // phpcs:ignore WordPress.Security.NonceVerification.Missing
+
+		$response = $this->dispatch_ajax_hook( $hook );
+
+		$this->assertSame( $expected_body, $response['body'] );
+		if ( null !== $expected_status ) {
+			$this->assertSame( $expected_status, $response['status'] );
+		}
+		$this->assertSame( array(), $service->last_phone_request );
+		$this->assertSame( 0, $service->appearance_writes );
+		$this->assertSame( 0, wc_notice_count() );
+		$this->assertTrue( WC()->cart->is_empty() );
+	}
+
+	/** @return array<string,array{string,string,string,string|null,array<string,mixed>,mixed,int|null}> */
+	public function guarded_ajax_requests(): array {
+		$failure     = array( 'result' => 'failure' );
+		$error       = array(
+			'success' => false,
+			'data'    => $failure,
+		);
+		$appearance  = array(
+			'appearance' => array(
+				'theme'     => 'stripe',
+				'variables' => array( 'colorText' => '#111111' ),
+			),
+		);
+		$product_id  = array(
+			'product_id' => '1',
+			'quantity'   => '1',
+		);
+		$notice      = array( 'message' => 'WooPay is unavailable.' );
+		$not_allowed = array(
+			'success' => false,
+			'data'    => 'You aren’t authorized to do that.',
+		);
+
+		return array(
+			'init WooPay'                 => array( 'init WooPay', 'wc_ajax_wcpay_init_woopay', 'customer', null, array( 'email' => 'shopper@example.com' ), $failure, null ),
+			'WooPay session'              => array( 'WooPay session', 'wc_ajax_wcpay_get_woopay_session', 'customer', null, array( 'email' => 'shopper@example.com' ), $failure, null ),
+			'WooPay phone'                => array( 'WooPay phone', 'wc_ajax_wcpay_set_woopay_phone_number', 'customer', null, array( 'phone_number' => '+15555550123' ), $failure, null ),
+			'WooPay signature'            => array( 'WooPay signature', 'wc_ajax_wcpay_get_woopay_signature', 'customer', null, array(), $error, null ),
+			'minimum session'             => array( 'minimum session', 'wc_ajax_wcpay_get_woopay_minimum_session_data', 'customer', null, array(), $failure, null ),
+			'admin appearance, no nonce'  => array( 'admin appearance, no nonce', 'wp_ajax_wcpay_admin_set_woopay_appearance', 'administrator', null, $appearance, $error, null ),
+			'admin appearance, a shopper' => array( 'admin appearance, a shopper', 'wp_ajax_wcpay_admin_set_woopay_appearance', 'customer', 'wcpay_admin_woopay_appearance_nonce', $appearance, $error, null ),
+			'shopper appearance'          => array( 'shopper appearance', 'wc_ajax_wcpay_shopper_set_woopay_appearance', 'customer', null, $appearance, $error, null ),
+			'product add-to-cart'         => array( 'product add-to-cart', 'wc_ajax_wcpay_add_to_cart', 'customer', null, $product_id, '-1', 403 ),
+			'error notice'                => array( 'error notice', 'wp_ajax_woopay_express_checkout_button_show_error_notice', 'customer', null, $notice, $not_allowed, null ),
+			'error notice, logged out'    => array( 'error notice, logged out', 'wp_ajax_nopriv_woopay_express_checkout_button_show_error_notice', 'customer', null, $notice, $not_allowed, null ),
+		);
+	}
+
+	/**
 	 * @testdox Should return the preserved WooPay signature AJAX success envelope.
 	 */
 	public function test_signature_ajax_handler_returns_success_envelope(): void {
