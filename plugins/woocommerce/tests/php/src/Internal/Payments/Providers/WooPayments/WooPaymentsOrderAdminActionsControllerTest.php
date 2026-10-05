@@ -170,14 +170,30 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a WooPayments order with a payment method title.
+	 * @testdox In admin, another gateway's wallet order leaves the WooPayments title alone in the payment method select.
+	 *
+	 * Core lists every enabled gateway's title in the select (class-wc-meta-box-order-data.php:617-619); client 11.1.0 does
+	 * not check the order's gateway, so this is a corrective departure.
+	 */
+	public function test_admin_gateway_title_ignores_another_gateways_wallet_order(): void {
+		$this->sut = $this->create_controller( true );
+		set_current_screen( 'woocommerce_page_wc-orders' );
+		global $theorder;
+		$theorder = $this->create_order_with_payment_method_title( 'Apple Pay (Stripe)', 'stripe' );
+
+		$this->assertSame( 'Credit card / debit card', $this->sut->handle_woocommerce_gateway_title( 'Credit card / debit card', OrderPaymentStore::GATEWAY_ID ) );
+	}
+
+	/**
+	 * Create an order with a payment method title, paid with WooPayments unless another gateway is given.
 	 *
 	 * @param string $method_title Payment method title.
+	 * @param string $gateway_id   Payment gateway ID.
 	 * @return WC_Order
 	 */
-	private function create_order_with_payment_method_title( string $method_title ): WC_Order {
+	private function create_order_with_payment_method_title( string $method_title, string $gateway_id = OrderPaymentStore::GATEWAY_ID ): WC_Order {
 		$order = wc_create_order();
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( $gateway_id );
 		$order->set_payment_method_title( $method_title );
 		$order->save();
 

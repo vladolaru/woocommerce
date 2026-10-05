@@ -94,6 +94,8 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 * The order screen's "Payment via" line and payment method select read the gateway title, so a wallet order would read
 	 * as a card order. Ported from client 11.1.0 `filter_gateway_title()` (class-wc-payments-express-checkout-button-handler.php:415-437),
 	 * with the order found as its `get_current_order()` does (class-wc-payments-express-checkout-button-helper.php:520-533).
+	 * Unlike the client, only a WooPayments order's title is used: the select lists every gateway, so another gateway's
+	 * Apple Pay order would relabel the WooPayments option.
 	 *
 	 * @internal
 	 *
@@ -108,7 +110,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 
 		global $theorder, $post;
 		$order = $theorder instanceof WC_Order ? $theorder : ( $post instanceof \WP_Post ? wc_get_order( $post->ID ) : null );
-		if ( ! $order instanceof WC_Order ) {
+		if ( ! $order instanceof WC_Order || OrderPaymentStore::GATEWAY_ID !== $order->get_payment_method() ) {
 			return $title;
 		}
 
