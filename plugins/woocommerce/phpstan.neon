@@ -26,6 +26,9 @@ parameters:
 	scanFiles:
 		- php-stubs/wc-admin-feature-config.php
 		- php-stubs/wc-constants.php
+		- php-stubs/wc-subscriptions.php
+		- php-stubs/paypal-wallet-serialized-dtos.php
+		- php-stubs/paypal-wallet-constants.php
 	treatPhpDocTypesAsCertain: false
 	dynamicConstantNames:
 		# WC_TAX_ROUNDING_MODE can be 1, 2 (ints) or 'auto' (string in tests).
