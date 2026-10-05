@@ -18,7 +18,7 @@ use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
 
 return array(
 
-	'compat.ppec.mock-gateway'                             => static function ( $container ) {
+	'compat.ppec.mock-gateway'                      => static function ( $container ) {
 		$settings = $container->get( 'settings.settings-provider' );
 		assert( $settings instanceof SettingsProvider );
 
@@ -31,7 +31,7 @@ return array(
 		return new PPEC\MockGateway( $title );
 	},
 
-	'compat.ppec.billing-agreement-converter'              => static function ( ContainerInterface $container ) {
+	'compat.ppec.billing-agreement-converter'       => static function ( ContainerInterface $container ) {
 		return new PPEC\BillingAgreementTokenConverter(
 			$container->get( 'api.endpoint.payment-method-tokens' ),
 			$container->get( 'api.repository.customer' ),
@@ -39,7 +39,7 @@ return array(
 		);
 	},
 
-	'compat.ppec.subscriptions-handler'                    => static function ( ContainerInterface $container ) {
+	'compat.ppec.subscriptions-handler'             => static function ( ContainerInterface $container ) {
 		return new PPEC\SubscriptionsHandler(
 			$container->get( 'wc-subscriptions.renewal-handler' ),
 			$container->get( 'compat.ppec.mock-gateway' ),
@@ -48,7 +48,7 @@ return array(
 		);
 	},
 
-	'compat.plugin-script-names'                           => static function ( ContainerInterface $container ): array {
+	'compat.plugin-script-names'                    => static function ( ContainerInterface $container ): array {
 		return array(
 			'ppcp-smart-button',
 			'ppcp-wc-payment-tokens-myaccount-payments',
@@ -58,7 +58,7 @@ return array(
 		);
 	},
 
-	'compat.plugin-script-file-names'                      => static function ( ContainerInterface $container ): array {
+	'compat.plugin-script-file-names'               => static function ( ContainerInterface $container ): array {
 		return array(
 			'button.js',
 			'gateway-settings.js',
@@ -66,20 +66,20 @@ return array(
 		);
 	},
 
-	'compat.nyp.is_supported_plugin_version_active'        => function (): bool {
+	'compat.nyp.is_supported_plugin_version_active' => function (): bool {
 		return function_exists( 'wc_nyp_init' );
 	},
 	'compat.wc_bookings.is_supported_plugin_version_active' => function (): bool {
 		return class_exists( 'WC_Bookings' );
 	},
 
-	'compat.blueprint.is_available'                        => function (): bool {
+	'compat.blueprint.is_available'                 => function (): bool {
 		return interface_exists( 'Automattic\WooCommerce\Blueprint\Exporters\StepExporter' );
 	},
-	'compat.blueprint.connection_data_sanitizer'           => static function (): ConnectionDataSanitizer {
+	'compat.blueprint.connection_data_sanitizer'    => static function (): ConnectionDataSanitizer {
 		return new ConnectionDataSanitizer();
 	},
-	'compat.blueprint.paypal_settings_exporter'            => static function ( ContainerInterface $container ): PayPalSettingsExporter {
+	'compat.blueprint.paypal_settings_exporter'     => static function ( ContainerInterface $container ): PayPalSettingsExporter {
 		return new PayPalSettingsExporter(
 			$container->get( 'compat.blueprint.connection_data_sanitizer' ),
 			false
@@ -91,12 +91,12 @@ return array(
 			true
 		);
 	},
-	'compat.blueprint.paypal_settings_importer'            => static function ( ContainerInterface $container ): PayPalSettingsImporter {
+	'compat.blueprint.paypal_settings_importer'     => static function ( ContainerInterface $container ): PayPalSettingsImporter {
 		return new PayPalSettingsImporter(
 			$container->get( 'settings.service.sanitizer' )
 		);
 	},
-	'compat.blueprint.bootstrap'                           => static function ( ContainerInterface $container ): PayPalBlueprintBootstrap {
+	'compat.blueprint.bootstrap'                    => static function ( ContainerInterface $container ): PayPalBlueprintBootstrap {
 		return new PayPalBlueprintBootstrap(
 			$container->get( 'compat.blueprint.paypal_settings_exporter' ),
 			$container->get( 'compat.blueprint.paypal_settings_exporter_with_connection' ),
