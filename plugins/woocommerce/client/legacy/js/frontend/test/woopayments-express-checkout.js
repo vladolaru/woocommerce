@@ -3558,8 +3558,9 @@ describe( 'WooPayments express checkout', () => {
 
 		// Client 11.1.0 cancel (shortcode-buttons-express/index.js:432-446, event-handlers.js:320-326) empties the
 		// ephemeral cart and unblocks the page; the button stays as it was (t62/captures-2b/report.md, F10: client
-		// `is-ready`, opacity 1 after cancel). The cancel event fires when the shopper dismisses the sheet, with no
-		// payload the handler reads (https://docs.stripe.com/js/custom_checkout, "element.on(event, handler)").
+		// `is-ready`, opacity 1 after cancel). The Express Checkout Element `cancel` event fires when the payment
+		// interface is dismissed, with no payload the handler reads
+		// (https://docs.stripe.com/js/elements_object/express_checkout_element_cancel_event).
 		test( 'keeps the wallet shown after the shopper cancels the sheet', async () => {
 			const container = () =>
 				document.getElementById( 'wcpay-express-checkout-element' );
@@ -4091,8 +4092,8 @@ describe( 'WooPayments express checkout', () => {
 	// unblocked on abort (onAbortPaymentHandler: failed add-to-cart, currency drift, failed confirm) and on cancel
 	// (onCancelHandler); a completed payment blocks it again before leaving (onCompletePaymentHandler). Event shapes
 	// (https://docs.stripe.com/js.md): `click` carries expressPaymentType and resolve ("expressCheckoutElement.on('click',
-	// handler)"); `cancel` takes no payload and fires when the customer dismisses the payment interface
-	// ("element.on('cancel', handler)").
+	// handler)"); `cancel` fires when the payment interface is dismissed, with no payload the handler reads
+	// (https://docs.stripe.com/js/elements_object/express_checkout_element_cancel_event).
 	describe( 'the page is locked while the wallet sheet is open', () => {
 		const PAGE_LOCK_OPTIONS = {
 			message: null,
