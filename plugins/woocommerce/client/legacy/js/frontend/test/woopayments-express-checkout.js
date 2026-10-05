@@ -4893,6 +4893,17 @@ describe( 'WooPayments express checkout', () => {
 					} ),
 				'Card <b>4242</b> was declined.',
 			],
+			[
+				'a message that is only markup (the generic error)',
+				() =>
+					// Store API checkout error with an unescaped message (src/StoreApi/Routes/V1/Checkout.php:176-177).
+					Promise.reject( {
+						code: 'woocommerce_rest_unknown_server_error',
+						message: '<img src="https://example.test/x.png" alt=""><br>',
+						data: { status: 500 },
+					} ),
+				'Unable to process this payment, please try again.',
+			],
 		] )( 'shows the text of %s, never its markup', async ( label, checkoutAnswer, expected ) => {
 			setCheckoutWithEarlierErrors();
 			window.wp.apiFetch
