@@ -5,12 +5,14 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Enums\OrderStatus;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPayVerifiedEmailRestoreService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAdaptedExtensions;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionController;
@@ -1337,6 +1339,11 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( $draft->get_id(), $order_id );
 		$this->assertSame( OrderStatus::PENDING, wc_get_order( $order_id )->get_status() );
 		$this->assertNull( WC()->session->get( 'store_api_draft_order' ) );
+		// The takeover released the order payment lock, so the checkout that follows can pay the order.
+		$store = wc_get_container()->get( OrderPaymentStore::class );
+		$token = $store->claim_order_payment_lock_for_operation( $draft, new WooPaymentsPersistenceProfile(), 'attempt-key', 'checkout' );
+		$this->assertIsString( $token );
+		$store->release_order_payment_lock( $draft, new WooPaymentsPersistenceProfile(), $token );
 	}
 
 	/**
@@ -1345,11 +1352,10 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * WC_Order::payment_complete() and the unpaid-order cancellation write false to order_awaiting_payment
 	 * (class-wc-order.php:147, class-wc-form-handler.php:918), and WC_Session::__isset() reports a stored false as set, so
 	 * core reads that key with get() and treats a falsy value as no order (class-wc-cart.php:886-891). Client 11.1.0 uses
-	 * isset() (class-wc-payments-woopay-direct-checkout.php:62) and skips the draft here. The Store API keeps a pending or
-	 * failed order (a failed WooPay payment) under the draft key for a retry (DraftOrderTrait::is_valid_draft_order()).
+	 * isset() (class-wc-payments-woopay-direct-checkout.php:62) and skips the draft here. The Store API keeps a failed order
+	 * (a failed WooPay payment) under the draft key for a retry (DraftOrderTrait::is_valid_draft_order()).
 	 *
 	 * @testWith ["checkout-draft"]
-	 *           ["pending"]
 	 *           ["failed"]
 	 *
 	 * @param string $status Status of the order the Store API draft key names.
@@ -1416,6 +1422,116 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertIsInt( $order_id );
 		$this->assertNotSame( $paid->get_id(), $order_id, 'A new order is placed.' );
 		$this->assertSame( OrderStatus::PROCESSING, wc_get_order( $paid->get_id() )->get_status() );
+	}
+
+	/**
+	 * @testdox A classic checkout never resumes a pending WooPay order, which WooPay may be paying; it places a new order.
+	 *
+	 * The Store API checkout sets the order to pending just before it calls the gateway (Routes/V1/Checkout.php, "Set initial
+	 * status to 'pending'"), and the payment holds the order payment lock only from there on. Client 11.1.0 resumes it
+	 * (class-wc-payments-woopay-direct-checkout.php:71-73); core's Store API resumes a pending order only while the cart is
+	 * unchanged (DraftOrderTrait::is_valid_draft_order()). An abandoned pending order is left to core's unpaid-order cleanup.
+	 */
+	public function test_classic_checkout_never_resumes_a_pending_woopay_order(): void {
+		$sut = $this->create_service( array(), array( 'platform_direct_checkout_eligible' => true ) );
+		$this->register_controller( $sut );
+		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 1 );
+		WC()->cart->calculate_totals();
+		$pending = new \WC_Order();
+		$pending->set_status( OrderStatus::PENDING );
+		$pending->set_cart_hash( WC()->cart->get_cart_hash() );
+		$pending->save();
+		WC()->session->set( 'store_api_draft_order', $pending->get_id() );
+		WC()->session->set( 'order_awaiting_payment', null );
+
+		$order_id = $this->create_classic_checkout_order();
+
+		$this->assertIsInt( $order_id );
+		$this->assertNotSame( $pending->get_id(), $order_id, 'A new order is placed.' );
+		$this->assertSame( OrderStatus::PENDING, wc_get_order( $pending->get_id() )->get_status() );
+		$this->assertSame( $pending->get_id(), WC()->session->get( 'store_api_draft_order' ) );
+		$this->assertNull( WC()->session->get( 'order_awaiting_payment' ) );
+	}
+
+	/**
+	 * @testdox A classic checkout leaves the WooPay draft alone while another request holds its payment lock.
+	 *
+	 * Native checkout holds the order payment lock across the platform charge, with its attempt key as the lock value
+	 * (PaymentProcessingService::process_checkout_outcome()). Client 11.1.0 takes the draft over without any lock
+	 * (class-wc-payments-woopay-direct-checkout.php:56-79).
+	 */
+	public function test_classic_checkout_leaves_the_woopay_draft_while_its_payment_lock_is_held(): void {
+		$sut = $this->create_service( array(), array( 'platform_direct_checkout_eligible' => true ) );
+		$this->register_controller( $sut );
+		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 1 );
+		WC()->cart->calculate_totals();
+		$draft = new \WC_Order();
+		$draft->set_status( OrderStatus::CHECKOUT_DRAFT );
+		$draft->set_cart_hash( WC()->cart->get_cart_hash() );
+		$draft->save();
+		WC()->session->set( 'store_api_draft_order', $draft->get_id() );
+		WC()->session->set( 'order_awaiting_payment', null );
+		$store   = wc_get_container()->get( OrderPaymentStore::class );
+		$profile = new WooPaymentsPersistenceProfile();
+		$token   = $store->claim_order_payment_lock_for_operation( $draft, $profile, 'attempt-key-of-another-request', 'checkout' );
+		$this->assertIsString( $token );
+
+		try {
+			$order_id = $this->create_classic_checkout_order();
+		} finally {
+			$store->release_order_payment_lock( $draft, $profile, $token );
+		}
+
+		$this->assertIsInt( $order_id );
+		$this->assertNotSame( $draft->get_id(), $order_id, 'A new order is placed.' );
+		$this->assertSame( OrderStatus::CHECKOUT_DRAFT, wc_get_order( $draft->get_id() )->get_status() );
+		$this->assertSame( $draft->get_id(), WC()->session->get( 'store_api_draft_order' ) );
+	}
+
+	/**
+	 * @testdox A classic checkout reads the WooPay draft again under the payment lock and leaves it alone once it was paid.
+	 *
+	 * Another request pays the failed draft after this checkout read it and before the takeover claims the lock. The core
+	 * `query` filter (wpdb::query()) runs before each statement, so the payment is written right before the claim's
+	 * INSERT IGNORE of the lock row (TransientRowLock::claim()).
+	 */
+	public function test_classic_checkout_leaves_a_woopay_draft_paid_before_the_takeover(): void {
+		$sut = $this->create_service( array(), array( 'platform_direct_checkout_eligible' => true ) );
+		$this->register_controller( $sut );
+		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 1 );
+		WC()->cart->calculate_totals();
+		$draft = new \WC_Order();
+		$draft->set_status( OrderStatus::FAILED );
+		$draft->set_cart_hash( WC()->cart->get_cart_hash() );
+		$draft->save();
+		$draft_id = $draft->get_id();
+		WC()->session->set( 'store_api_draft_order', $draft_id );
+		WC()->session->set( 'order_awaiting_payment', null );
+		$lock_row = '_transient_' . WooPaymentsPersistenceProfile::LOCK_TRANSIENT_PREFIX . $draft_id;
+		$paid     = false;
+		$pay      = static function ( $query ) use ( $lock_row, $draft_id, &$paid ) {
+			if ( ! $paid && is_string( $query ) && false !== strpos( $query, 'INSERT IGNORE' ) && false !== strpos( $query, "'" . $lock_row . "'" ) ) {
+				$paid  = true;
+				$order = wc_get_order( $draft_id );
+				$order->set_status( OrderStatus::PROCESSING );
+				$order->save();
+			}
+
+			return $query;
+		};
+		add_filter( 'query', $pay );
+
+		try {
+			$order_id = $this->create_classic_checkout_order();
+		} finally {
+			remove_filter( 'query', $pay );
+		}
+
+		$this->assertTrue( $paid, 'The payment landed before the claim.' );
+		$this->assertIsInt( $order_id );
+		$this->assertNotSame( $draft_id, $order_id, 'A new order is placed.' );
+		$this->assertSame( OrderStatus::PROCESSING, wc_get_order( $draft_id )->get_status() );
+		$this->assertSame( $draft_id, WC()->session->get( 'store_api_draft_order' ) );
 	}
 
 	/**
@@ -3292,6 +3408,26 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $session );
 
 		return $session;
+	}
+
+	/**
+	 * Place an order through the classic checkout's WC_Checkout::create_order(), as a checkout request does.
+	 *
+	 * @return int|\WP_Error The order ID.
+	 */
+	private function create_classic_checkout_order() {
+		Constants::set_constant( 'WOOCOMMERCE_CHECKOUT', true );
+
+		try {
+			return WC()->checkout()->create_order(
+				array(
+					'payment_method' => 'bacs',
+					'billing_email'  => 'guest@example.com',
+				)
+			);
+		} finally {
+			Constants::clear_single_constant( 'WOOCOMMERCE_CHECKOUT' );
+		}
 	}
 
 	/**

@@ -11,6 +11,8 @@ use Automattic\Jetpack\Connection\Client as Jetpack_Connection_Client;
 use Automattic\Jetpack\Constants;
 use Automattic\Jetpack\Connection\Rest_Authentication;
 use Automattic\WooCommerce\Enums\OrderStatus;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAdaptedExtensions;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayBlocksDataExtractor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayThemeAppearance;
@@ -70,6 +72,11 @@ class WooPaymentsWooPaySessionService {
 	 * Default WooPay country list when the platform has not synced one; matches the plugin.
 	 */
 	private const AVAILABLE_COUNTRIES_DEFAULT = '["US"]';
+
+	/**
+	 * Operation name the WooPay draft-order takeover holds the order payment lock under.
+	 */
+	private const DRAFT_REUSE_OPERATION = 'WooPay draft reuse';
 
 	/**
 	 * WooPayments account service.
@@ -1656,7 +1663,9 @@ class WooPaymentsWooPaySessionService {
 	 * client 11.1.0 `WC_Payments_WooPay_Direct_Checkout::maybe_use_store_api_draft_order_id()`
 	 * (class-wc-payments-woopay-direct-checkout.php:56-79): the draft becomes the pending order core resumes. Unlike the client,
 	 * a stored `false` counts as no order awaiting payment (WC_Session::__isset() reports it as set; core writes it after a
-	 * payment or a cancellation), and only a draft, pending or failed order is resumed, as core's own resume rules allow.
+	 * payment or a cancellation), and only a draft or failed order is resumed: pending is the status WooPay's Store API
+	 * checkout sets before it pays, so a pending order may be paying right now. The takeover holds the order payment lock and
+	 * reads the order again under it, so it never changes an order another request is paying.
 	 *
 	 * @since 11.2.0
 	 *
@@ -1671,17 +1680,48 @@ class WooPaymentsWooPaySessionService {
 
 		$draft_order_id = absint( $session->get( 'store_api_draft_order' ) );
 		$draft_order    = $draft_order_id ? wc_get_order( $draft_order_id ) : false;
-		if ( ! $draft_order instanceof WC_Order || ! $draft_order->has_status( array( OrderStatus::CHECKOUT_DRAFT, OrderStatus::PENDING, OrderStatus::FAILED ) ) ) {
+		if ( ! $draft_order instanceof WC_Order || ! $this->is_resumable_woopay_draft_order( $draft_order ) ) {
 			return $order_id;
 		}
 
-		$draft_order->set_status( OrderStatus::PENDING );
-		$draft_order->save();
+		$persistence_profile = new WooPaymentsPersistenceProfile();
+		$order_payment_store = wc_get_container()->get( OrderPaymentStore::class );
+		$lock_token          = $order_payment_store->claim_order_payment_lock_for_operation( $draft_order, $persistence_profile, null, self::DRAFT_REUSE_OPERATION );
+		if ( null === $lock_token ) {
+			$order_payment_store->log_order_payment_lock_refusal( $draft_order, $persistence_profile, self::DRAFT_REUSE_OPERATION );
 
-		$session->set( 'store_api_draft_order', null );
-		$session->set( 'order_awaiting_payment', $draft_order_id );
+			return $order_id;
+		}
+
+		try {
+			$draft_order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $draft_order );
+			if ( ! $this->is_resumable_woopay_draft_order( $draft_order ) ) {
+				return $order_id;
+			}
+
+			$draft_order->set_status( OrderStatus::PENDING );
+			$draft_order->save();
+
+			$session->set( 'store_api_draft_order', null );
+			$session->set( 'order_awaiting_payment', $draft_order_id );
+		} finally {
+			$order_payment_store->release_order_payment_lock( $draft_order, $persistence_profile, $lock_token );
+		}
 
 		return $order_id;
+	}
+
+	/**
+	 * Tell whether the classic checkout may resume an order WooPay's Store API checkout left in the session.
+	 *
+	 * A checkout draft, or a failed payment the shopper may retry. Never pending: the Store API checkout route sets that
+	 * status just before it calls the gateway.
+	 *
+	 * @param WC_Order $order Order the session's store_api_draft_order names.
+	 * @return bool
+	 */
+	private function is_resumable_woopay_draft_order( WC_Order $order ): bool {
+		return $order->has_status( array( OrderStatus::CHECKOUT_DRAFT, OrderStatus::FAILED ) );
 	}
 
 	/**
