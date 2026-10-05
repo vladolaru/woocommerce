@@ -163,8 +163,8 @@ class SingleProductBootstrap {
 			.filter( ( val ) => val !== null && val !== undefined )
 			.sort( ( a, b ) => {
 				if (
-					parseInt( a.replace( /\D/g, '' ) ) <
-					parseInt( b.replace( /\D/g, '' ) )
+					parseInt( a.replace( /\D/g, '' ), 10 ) <
+					parseInt( b.replace( /\D/g, '' ), 10 )
 				) {
 					return 1;
 				}

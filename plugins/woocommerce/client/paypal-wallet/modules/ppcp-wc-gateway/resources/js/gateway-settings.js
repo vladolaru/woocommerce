@@ -227,7 +227,7 @@ document.addEventListener( 'DOMContentLoaded', () => {
 			layout,
 		};
 		if ( 'height' in fields ) {
-			style.height = parseInt( jQuery( fields.height ).val() );
+			style.height = parseInt( jQuery( fields.height ).val(), 10 );
 		}
 		if ( 'poweredby_tagline' in fields ) {
 			style.layout = jQuery( fields.poweredby_tagline ).is( ':checked' )

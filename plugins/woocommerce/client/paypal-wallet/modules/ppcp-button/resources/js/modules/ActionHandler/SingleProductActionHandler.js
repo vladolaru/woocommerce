@@ -75,8 +75,8 @@ class SingleProductActionHandler {
 					if ( elementName.length !== 2 ) {
 						return;
 					}
-					const id = parseInt( elementName[ 1 ] );
-					const quantity = parseInt( element.value );
+					const id = parseInt( elementName[ 1 ], 10 );
+					const quantity = parseInt( element.value, 10 );
 					products.push(
 						new Product( id, quantity, null, this.extraFields() )
 					);

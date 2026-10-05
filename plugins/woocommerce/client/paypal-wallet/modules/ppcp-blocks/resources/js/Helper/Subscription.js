@@ -27,7 +27,7 @@ export const paypalPaymentMethodAllowed = ( scriptData, cartData ) => {
 		return true;
 	}
 
-	return parseInt( cartData?.cartTotals?.total_price ) > 0;
+	return parseInt( cartData?.cartTotals?.total_price, 10 ) > 0;
 };
 
 /**
