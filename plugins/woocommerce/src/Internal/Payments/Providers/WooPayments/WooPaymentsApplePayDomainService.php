@@ -32,6 +32,26 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	private const RETRY_DELAY_SECONDS = HOUR_IN_SECONDS;
 
 	/**
+	 * Failure reason logged when the platform answered with a domain whose Apple Pay status is not active.
+	 */
+	private const FAILURE_DOMAIN_NOT_ACTIVE = 'domain_not_active';
+
+	/**
+	 * Failure reason logged when the platform's answer is not a payment method domain with an Apple Pay status.
+	 */
+	private const FAILURE_UNEXPECTED_RESPONSE = 'unexpected_response';
+
+	/**
+	 * Failure reason logged when the registration request failed with a platform error.
+	 */
+	private const FAILURE_PLATFORM_ERROR = 'platform_error';
+
+	/**
+	 * Apple Pay statuses Stripe documents for a payment method domain (API reference, PaymentMethodDomain `apple_pay.status`).
+	 */
+	private const APPLE_PAY_STATUSES = array( 'active', 'inactive' );
+
+	/**
 	 * Runtime owner arbiter.
 	 *
 	 * @var NativePaymentsRuntimeArbiter
@@ -228,9 +248,6 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 			return false;
 		}
 
-		$error         = '';
-		$error_context = array();
-
 		try {
 			$response = $this->api_client->register_apple_pay_domain( $domain );
 			if ( $this->is_successful_registration_response( $response ) ) {
@@ -252,10 +269,11 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 				return true;
 			}
 
-			$error = $this->get_registration_error_message( $response );
+			$error         = $this->get_registration_error_message( $response );
+			$error_context = $this->get_registration_failure_log_context( $response );
 		} catch ( WooPaymentsApiException $exception ) {
 			$error         = $exception->getMessage();
-			$error_context = WooPaymentsLogger::get_api_error_context( $exception );
+			$error_context = array( 'reason' => self::FAILURE_PLATFORM_ERROR ) + WooPaymentsLogger::get_api_error_context( $exception );
 		}
 
 		if ( '' === $error ) {
@@ -270,8 +288,9 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 		);
 		update_option( self::ERROR_OPTION, $error );
 		$this->schedule_retry();
-		// The client logs the error text, which Apple or the platform writes; native logs the platform's status and code. The
-		// stored error option is shown to the merchant in the Apple Pay settings, as on the client.
+		// The client logs the error text, which Apple or the platform writes; native logs why the registration failed, with
+		// Stripe's documented status or the platform's status and code. The stored error option is shown to the merchant in
+		// the Apple Pay settings, as on the client.
 		$this->log( 'Error registering domain with Apple.', 'error', $error_context );
 		$this->record_registration_event(
 			'apple_pay_domain_registration_failure',
@@ -533,6 +552,26 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 			&& isset( $response['apple_pay'] )
 			&& is_array( $response['apple_pay'] )
 			&& 'active' === ( $response['apple_pay']['status'] ?? null );
+	}
+
+	/**
+	 * Get why an answered registration failed, for its log line: the domain is not active, with its Apple Pay status when
+	 * Stripe documents it, or the answer is not a payment method domain.
+	 *
+	 * @param array<string,mixed> $response API response.
+	 * @return array<string,string>
+	 */
+	private function get_registration_failure_log_context( array $response ): array {
+		$apple_pay = is_array( $response['apple_pay'] ?? null ) ? $response['apple_pay'] : array();
+		$status    = $apple_pay['status'] ?? null;
+		if ( ! isset( $response['id'] ) || ! is_string( $status ) ) {
+			return array( 'reason' => self::FAILURE_UNEXPECTED_RESPONSE );
+		}
+
+		return array(
+			'reason'           => self::FAILURE_DOMAIN_NOT_ACTIVE,
+			'apple_pay_status' => in_array( $status, self::APPLE_PAY_STATUSES, true ) ? $status : 'unknown',
+		);
 	}
 
 	/**

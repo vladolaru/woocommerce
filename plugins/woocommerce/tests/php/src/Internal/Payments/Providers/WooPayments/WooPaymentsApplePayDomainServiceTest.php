@@ -187,8 +187,87 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 		$this->service->register_domain();
 
 		$context = $this->get_logged_context( $logger, 'Error registering domain with Apple.' );
-		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
+		$this->assertSame( array( 'platform_error', 404, 'resource_missing' ), array( $context['reason'], $context['http_status'], $context['error_code'] ) );
 		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
+	 * @testdox A registration answered with $_dataName logs a native reason and Stripe's documented status, never the answer's text.
+	 *
+	 * The stored error keeps the answer's text for the merchant's Apple Pay notice, as on the client.
+	 *
+	 * @dataProvider unsuccessful_registration_answers
+	 *
+	 * @param array<string,mixed> $response         Platform answer.
+	 * @param array<string,mixed> $expected_context Expected reason and status in the log context.
+	 */
+	public function test_unsuccessful_registration_log_names_a_reason_without_the_answers_text( array $response, array $expected_context ): void {
+		$this->api_client->response = $response;
+		$this->service              = $this->create_service();
+		$this->set_gateway_settings(
+			array(
+				'enabled'                           => 'yes',
+				'express_checkout_checkout_methods' => array( 'payment_request' ),
+			)
+		);
+		$logger = RecordingWcLogger::install();
+
+		$this->service->register_domain();
+
+		$context = $this->get_logged_context( $logger, 'Error registering domain with Apple.' );
+		$this->assertSame( $expected_context, array_intersect_key( $context, $expected_context ) );
+		$this->assertArrayNotHasKey( 'http_status', $context, 'No HTTP status is known on this path.' );
+		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
+	 * Unsuccessful registration answers.
+	 *
+	 * @return array<string,array{0:array<string,mixed>,1:array<string,mixed>}>
+	 */
+	public function unsuccessful_registration_answers(): array {
+		$leaking_text = "No such customer: 'cus_123'; ask shopper@example.com, see https://pay.example.test/r?key=sk_test_leak123";
+
+		return array(
+			// Stripe API reference, PaymentMethodDomain object: `apple_pay.status` is `active` or `inactive`, and
+			// `apple_pay.status_details.error_message` says why an inactive one failed; client 11.1.0 reads that message
+			// (class-wc-payments-apple-pay-registration.php:184-185).
+			'an inactive domain'                     => array(
+				array(
+					'id'        => 'pmd_1Leak',
+					'object'    => 'payment_method_domain',
+					'apple_pay' => array(
+						'status'         => 'inactive',
+						'status_details' => array( 'error_message' => $leaking_text ),
+					),
+				),
+				array(
+					'reason'           => 'domain_not_active',
+					'apple_pay_status' => 'inactive',
+				),
+			),
+			// The client's own fixture status (tests/unit/test-class-wc-payments-apple-pay-registration.php:211-214),
+			// which Stripe does not document.
+			'a status Stripe does not document'      => array(
+				array(
+					'id'        => 'domain_123',
+					'apple_pay' => array(
+						'status'         => 'failed',
+						'status_details' => array( 'error_message' => $leaking_text ),
+					),
+				),
+				array(
+					'reason'           => 'domain_not_active',
+					'apple_pay_status' => 'unknown',
+				),
+			),
+			// Defensive input, not a platform shape: an answer without the Apple Pay status, which the client's isset()
+			// checks (class-wc-payments-apple-pay-registration.php:170, :184) also treat as a failure.
+			'an answer without the Apple Pay status' => array(
+				array( 'error' => array( 'message' => $leaking_text ) ),
+				array( 'reason' => 'unexpected_response' ),
+			),
+		);
 	}
 
 	/**
