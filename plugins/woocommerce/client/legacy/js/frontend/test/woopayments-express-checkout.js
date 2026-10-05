@@ -3164,7 +3164,10 @@ describe( 'WooPayments express checkout', () => {
 		function setClassicProductForm( options ) {
 			options = options || {};
 			document.body.innerHTML =
-				'<div class="woocommerce-notices-wrapper"><div class="woocommerce-error">Earlier error</div></div>' +
+				// An error an earlier wallet attempt left (setError() marks every error it adds).
+				'<div class="woocommerce-notices-wrapper">' +
+				'<ul class="woocommerce-error" role="alert" data-woopayments-wallet-error><li>Earlier wallet error</li></ul>' +
+				'</div>' +
 				( options.variable
 					? '<form class="variations_form cart">' +
 						'<table class="variations"><tbody><tr><td class="value">' +
@@ -3647,6 +3650,34 @@ describe( 'WooPayments express checkout', () => {
 				expect.objectContaining( { amount: 3000 } )
 			);
 			expect( containerJQuery.unblock ).toHaveBeenCalled();
+		} );
+
+		// Client 11.1.0 removes every `.woocommerce-error` on a product form change (shortcode-buttons-express/index.js:613);
+		// native removes only the wallet's own, as its setError() does.
+		test( 'keeps the errors the wallet did not add when the product changes', async () => {
+			setClassicProductForm( {
+				variable: true,
+				size: 'large',
+				variationId: '125',
+			} );
+			document
+				.querySelector( 'form.variations_form' )
+				.insertAdjacentHTML(
+					'afterbegin',
+					'<ul class="woocommerce-error"><li>Extension error</li></ul>'
+				);
+			window.wp.apiFetch.mockResolvedValue( getVirtualCart( 3000, 1 ) );
+			await mountReadyWallet();
+
+			bodyEventHandlers.woocommerce_variation_has_changed();
+			await flushMicrotasks();
+
+			expect(
+				Array.from(
+					document.querySelectorAll( '.woocommerce-error' ),
+					( error ) => error.textContent
+				)
+			).toEqual( [ 'Extension error' ] );
 		} );
 
 		// Stripe.js v3 `elements.update()` returns nothing (default mock above); the client awaits it

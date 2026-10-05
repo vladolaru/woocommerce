@@ -1904,8 +1904,11 @@
 			return Promise.resolve();
 		}
 
+		// Earlier wallet errors go when the product changes. Client 11.1.0 removes every error on the page here
+		// (shortcode-buttons-express/index.js:613), WooCommerce's and extensions' included; as in setError(), native removes
+		// only the errors the wallet added.
 		document
-			.querySelectorAll( '.woocommerce-error' )
+			.querySelectorAll( '.woocommerce-error[' + WALLET_ERROR_ATTRIBUTE + ']' )
 			.forEach( function ( notice ) {
 				notice.remove();
 			} );
