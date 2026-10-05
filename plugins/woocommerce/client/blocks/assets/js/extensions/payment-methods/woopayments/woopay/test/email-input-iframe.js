@@ -37,9 +37,8 @@ const baseSettings = {
 	woopayUnavailableMessage: 'WooPay is unavailable at this time.',
 };
 
-const flushPromises = () =>
-	new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
-const wait = ( ms ) => new Promise( ( resolve ) => setTimeout( resolve, ms ) );
+// The tests run on Jest's fake timers: a tick of 0 ms settles the pending promise chains without waiting.
+const flushPromises = () => jest.advanceTimersByTimeAsync( 0 );
 
 describe( 'WooPay email input (blocks)', () => {
 	const nativeHistoryReplaceState = window.history.replaceState;
@@ -83,7 +82,8 @@ describe( 'WooPay email input (blocks)', () => {
 	const typeEmail = async ( input, email ) => {
 		input.value = email;
 		input.dispatchEvent( new window.Event( 'input', { bubbles: true } ) );
-		await wait( 550 );
+		// Runs the input debounce timer, whatever its length, and the lookup it starts.
+		await jest.runOnlyPendingTimersAsync();
 		await flushPromises();
 	};
 
@@ -163,9 +163,11 @@ describe( 'WooPay email input (blocks)', () => {
 		window.history.replaceState = jest.fn();
 		navigate = jest.fn();
 		__test__.setNavigate( navigate );
+		jest.useFakeTimers();
 	} );
 
 	afterEach( () => {
+		jest.useRealTimers();
 		windowListeners.forEach( ( [ type, listener, options ] ) =>
 			window.removeEventListener( type, listener, options )
 		);
@@ -814,7 +816,9 @@ describe( 'WooPay email input (blocks)', () => {
 			null,
 			'/checkout/?foo=bar'
 		);
-		await wait( 2100 );
+		// The return is announced only once the page has settled, on a timer.
+		expect( userCheckEvents ).toEqual( [] );
+		await jest.runOnlyPendingTimersAsync();
 		expect( userCheckEvents ).toEqual( [ true ] );
 	} );
 
