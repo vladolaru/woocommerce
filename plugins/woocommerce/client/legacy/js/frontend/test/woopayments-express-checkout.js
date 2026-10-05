@@ -183,6 +183,12 @@ describe( 'WooPayments express checkout', () => {
 		};
 	}
 
+	// Store API cart response (docs/apis/store-api/resources-endpoints/cart.md, "Cart Response";
+	// src/StoreApi/Schemas/V1/CartSchema.php), read through `wp.apiFetch` from /wc/store/v1/cart. Reduced to what these
+	// tests drive: items, coupons, fees, shipping_rates, needs_payment, payment_requirements, has_calculated_shipping,
+	// items_count, items_weight, cross_sells, errors, payment_methods and extensions are left out, and totals keep only
+	// total_price and currency_code (the other totals and the currency format fields are left out). Addresses omit
+	// company, address_2 and phone.
 	function getCartResponse() {
 		return {
 			needs_shipping: true,
@@ -359,6 +365,9 @@ describe( 'WooPayments express checkout', () => {
 		};
 		elements = {
 			create: jest.fn( () => expressElement ),
+			// `elements.submit()` resolves `{ selectedPaymentMethod }` on success and `{ error }` when the wallet details
+			// fail validation (https://docs.stripe.com/js/elements/submit); the script reads only `error`, so the success
+			// answer is reduced to `{}`.
 			submit: jest.fn().mockResolvedValue( {} ),
 			// The pages load https://js.stripe.com/v3/, whose `elements.update()` returns nothing: "Starting in
 			// Stripe.js dahlia, this method returns a Promise" (https://docs.stripe.com/js/elements_object/update),
@@ -368,6 +377,9 @@ describe( 'WooPayments express checkout', () => {
 		};
 		stripe = {
 			elements: jest.fn( () => elements ),
+			// `stripe.createConfirmationToken()` resolves `{ confirmationToken }` or `{ error }`
+			// (https://docs.stripe.com/js/confirmation_tokens/create_confirmation_token); the ConfirmationToken object
+			// (https://docs.stripe.com/api/confirmation_tokens/object) is reduced to its `id`, the only field the script sends.
 			createConfirmationToken: jest.fn().mockResolvedValue( {
 				confirmationToken: {
 					id: 'ctoken_123',
