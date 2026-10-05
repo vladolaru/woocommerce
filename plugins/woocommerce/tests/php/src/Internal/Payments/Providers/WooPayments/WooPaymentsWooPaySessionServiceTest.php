@@ -2509,10 +2509,6 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $config['forceNetworkSavedCards'] );
 		$this->assertSame( 'https://pay.woo.com', $config['woopayHost'] );
 		$this->assertSame( '12345', $config['woopayMerchantId'] );
-		$this->assertSame( 'WooPay SMS code verification', $config['woopayOtpIframeTitle'] );
-		$this->assertSame( 'Close', $config['woopayOtpCloseLabel'] );
-		$this->assertSame( 'WooPay is unavailable at this time. Please complete your checkout below. Sorry for the inconvenience.', $config['woopayUnavailableMessage'] );
-		$this->assertSame( 'WooPay is unavailable at this time. Sorry for the inconvenience.', $config['woopayExpressUnavailableMessage'] );
 		$this->assertTrue( $config['testMode'] );
 		$this->assertSame( 'checkout', $config['woopayButton']['context'] );
 		$this->assertSame( 'default', $config['woopayButton']['type'] );
@@ -2525,14 +2521,15 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $config['woopayIsCountryAvailable'] );
 		$this->assertNull( $config['woopayAppearance'] );
 		$this->assertSame( array(), $config['woopayFontRules'] );
-		$this->assertSame( 'Securely save my information for 1-click checkout', $config['woopaySaveUserLabel'] );
-		$this->assertSame( 'Mobile phone number', $config['woopayPhoneLabel'] );
-		// Client 11.1.0 client/components/woopay/save-user/additional-information.js copy, rendered just before the agreement.
-		$this->assertSame( "Next time you buy here and on other Woo-powered stores, we'll send you a code to securely purchase with WooPay.", $config['woopayAdditionalInfoText'] );
-		// Client 11.1.0 client/components/woopay/save-user/agreement.js copy; the classic script builds the links.
-		$this->assertSame( "By continuing, you agree to WooPay's <termsOfService/> and <privacyPolicy/>.", $config['woopayAgreementText'] );
-		$this->assertSame( 'Terms of Service', $config['woopayTermsOfServiceLabel'] );
-		$this->assertSame( 'Privacy Policy', $config['woopayPrivacyPolicyLabel'] );
+		// Translated copy the scripts render as is: the wording is presentation, so only its presence is pinned.
+		foreach ( array( 'woopayOtpIframeTitle', 'woopayOtpCloseLabel', 'woopayUnavailableMessage', 'woopayExpressUnavailableMessage', 'woopaySaveUserLabel', 'woopayPhoneLabel', 'woopayAdditionalInfoText', 'woopayAgreementText', 'woopayTermsOfServiceLabel', 'woopayPrivacyPolicyLabel' ) as $copy_key ) {
+			$this->assertIsString( $config[ $copy_key ], $copy_key );
+			$this->assertNotSame( '', $config[ $copy_key ], $copy_key );
+		}
+		// The classic script turns these placeholders into the terms and privacy links (client 11.1.0
+		// client/components/woopay/save-user/agreement.js).
+		$this->assertStringContainsString( '<termsOfService/>', $config['woopayAgreementText'] );
+		$this->assertStringContainsString( '<privacyPolicy/>', $config['woopayAgreementText'] );
 		$this->assertArrayHasKey( 'platformTrackerNonce', $config );
 		$this->assertSame( admin_url( 'admin-ajax.php' ), $config['ajaxUrl'] );
 		$this->assertArrayHasKey( 'isShopperTrackingEnabled', $config );

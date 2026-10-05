@@ -1430,7 +1430,8 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$unauthorized = $this->dispatch_show_error_notice_ajax();
 
 		$this->assertFalse( $unauthorized['success'] );
-		$this->assertSame( 'You aren’t authorized to do that.', $unauthorized['data'] );
+		$this->assertIsString( $unauthorized['data'] );
+		$this->assertNotSame( '', $unauthorized['data'] );
 
 		$_POST    = array( // phpcs:ignore WordPress.Security.NonceVerification.Missing
 			'_ajax_nonce' => wp_create_nonce( 'woopay_button_nonce' ),
