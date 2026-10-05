@@ -848,21 +848,21 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 
 		$this->request_data->enqueue_nonce_fix();
 		$localize = array(
-			'url'                                     => add_query_arg( $url_params, 'https://www.paypal.com/sdk/js' ),
-			'url_params'                              => $url_params,
-			'script_attributes'                       => $this->attributes(),
-			'client_id'                               => $this->client_id,
-			'currency'                                => $this->currency->get(),
-			'data_client_id'                          => array(
+			'url'                                  => add_query_arg( $url_params, 'https://www.paypal.com/sdk/js' ),
+			'url_params'                           => $url_params,
+			'script_attributes'                    => $this->attributes(),
+			'client_id'                            => $this->client_id,
+			'currency'                             => $this->currency->get(),
+			'data_client_id'                       => array(
 				'set_attribute'     => $this->can_save_vault_token(),
 				'endpoint'          => \WC_AJAX::get_endpoint( DataClientIdEndpoint::ENDPOINT ),
 				'nonce'             => wp_create_nonce( DataClientIdEndpoint::nonce() ),
 				'user'              => get_current_user_id(),
 				'has_subscriptions' => $this->has_subscriptions(),
 			),
-			'redirect'                                => wc_get_checkout_url(),
-			'context'                                 => $current_context,
-			'ajax'                                    => array(
+			'redirect'                             => wc_get_checkout_url(),
+			'context'                              => $current_context,
+			'ajax'                                 => array(
 				'simulate_cart'                  => array(
 					'endpoint' => \WC_AJAX::get_endpoint( SimulateCartEndpoint::ENDPOINT ),
 					'nonce'    => wp_create_nonce( SimulateCartEndpoint::nonce() ),
@@ -926,16 +926,16 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 					'update_shipping_method' => \WC_AJAX::get_endpoint( 'update_shipping_method' ),
 				),
 			),
-			'cart_contains_subscription'              => $this->subscription_helper->cart_contains_subscription(),
-			'subscription_button_allowed'             => $this->subscription_button_allowed(),
-			'locations_with_subscription_product'     => $this->subscription_helper->locations_with_subscription_product(),
-			'subscriptions_accept_manual_renewals'    => $this->subscription_helper->accept_manual_renewals(),
-			'enforce_vault'                           => $this->has_subscriptions(),
-			'can_save_vault_token'                    => $this->can_save_vault_token(),
-			'is_free_trial_cart'                      => $is_free_trial_cart,
-			'bn_codes'                                => $this->bn_codes(),
-			'payer'                                   => $this->payerData(),
-			'button'                                  => array(
+			'cart_contains_subscription'           => $this->subscription_helper->cart_contains_subscription(),
+			'subscription_button_allowed'          => $this->subscription_button_allowed(),
+			'locations_with_subscription_product'  => $this->subscription_helper->locations_with_subscription_product(),
+			'subscriptions_accept_manual_renewals' => $this->subscription_helper->accept_manual_renewals(),
+			'enforce_vault'                        => $this->has_subscriptions(),
+			'can_save_vault_token'                 => $this->can_save_vault_token(),
+			'is_free_trial_cart'                   => $is_free_trial_cart,
+			'bn_codes'                             => $this->bn_codes(),
+			'payer'                                => $this->payerData(),
+			'button'                               => array(
 				'wrapper'               => '#ppc-button-' . PayPalGateway::ID,
 				'is_disabled'           => $this->is_button_disabled(),
 				'mini_cart_wrapper'     => '#ppc-button-minicart',
@@ -964,8 +964,8 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 					)
 				),
 			),
-			'messages'                                => $this->message_values(),
-			'labels'                                  => array(
+			'messages'                             => $this->message_values(),
+			'labels'                               => array(
 				'error'          => array(
 					'generic'  => __(
 						'Something went wrong. Please try again or choose another payment source.',
@@ -992,32 +992,32 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 				// phpcs:ignore WordPress.WP.I18n
 				'shipping_field' => _x( 'Shipping %s', 'checkout-validation', 'woocommerce' ),
 			),
-			'simulate_cart'                           => array(
+			'simulate_cart'                        => array(
 				'enabled'    => apply_filters( 'woocommerce_paypal_payments_simulate_cart_enabled', true ),
 				'throttling' => apply_filters( 'woocommerce_paypal_payments_simulate_cart_throttling', 5000 ),
 			),
-			'order_id'                                => 'pay-now' === $current_context ? $this->get_order_pay_id() : 0,
-			'order_key'                               => 'pay-now' === $current_context ? $this->get_order_pay_key() : '',
-			'single_product_buttons_enabled'          => $this->settings_status->is_smart_button_enabled_for_location( 'product' ),
-			'mini_cart_buttons_enabled'               => $this->settings_status->is_smart_button_enabled_for_location( 'mini-cart' ),
-			'basic_checkout_validation_enabled'       => $this->basic_checkout_validation_enabled,
-			'early_checkout_validation_enabled'       => $this->early_validation_enabled,
-			'funding_sources_without_redirect'        => $this->funding_sources_without_redirect,
-			'user'                                    => array(
+			'order_id'                             => 'pay-now' === $current_context ? $this->get_order_pay_id() : 0,
+			'order_key'                            => 'pay-now' === $current_context ? $this->get_order_pay_key() : '',
+			'single_product_buttons_enabled'       => $this->settings_status->is_smart_button_enabled_for_location( 'product' ),
+			'mini_cart_buttons_enabled'            => $this->settings_status->is_smart_button_enabled_for_location( 'mini-cart' ),
+			'basic_checkout_validation_enabled'    => $this->basic_checkout_validation_enabled,
+			'early_checkout_validation_enabled'    => $this->early_validation_enabled,
+			'funding_sources_without_redirect'     => $this->funding_sources_without_redirect,
+			'user'                                 => array(
 				'is_logged' => is_user_logged_in(),
 			),
-			'should_handle_shipping_in_paypal'        => $this->should_handle_shipping_in_paypal && ! $this->context->is_checkout(),
-			'server_side_shipping_callback'           => array(
+			'should_handle_shipping_in_paypal'     => $this->should_handle_shipping_in_paypal && ! $this->context->is_checkout(),
+			'server_side_shipping_callback'        => array(
 				'enabled' => $this->server_side_shipping_callback_enabled,
 			),
-			'appswitch'                               => array(
+			'appswitch'                            => array(
 				'enabled' => $this->appswitch_enabled,
 			),
-			'needShipping'                            => $this->need_shipping(),
-			'vaultingEnabled'                         => $this->settings_provider->save_paypal_and_venmo(),
-			'productType'                             => null,
-			'manualRenewalEnabled'                    => $this->subscription_helper->accept_manual_renewals(),
-			'final_review_enabled'                    => $this->final_review_enabled,
+			'needShipping'                         => $this->need_shipping(),
+			'vaultingEnabled'                      => $this->settings_provider->save_paypal_and_venmo(),
+			'productType'                          => null,
+			'manualRenewalEnabled'                 => $this->subscription_helper->accept_manual_renewals(),
+			'final_review_enabled'                 => $this->final_review_enabled,
 		);
 
 		if ( is_product() ) {
