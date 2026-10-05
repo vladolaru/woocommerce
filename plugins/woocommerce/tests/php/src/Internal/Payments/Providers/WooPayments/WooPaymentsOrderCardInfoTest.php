@@ -47,7 +47,7 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 		$client = $this->create_recording_payment_method_client( array() );
 		$this->register_card_info_service( $client );
 		$order = $this->create_card_info_order( 'pm_stored' );
-		// A charge's payment_method_details, as native order effects store them (WooPaymentsOrderEffects::get_payment_method_details()).
+		// A charge's payment_method_details, as native order effects store them (WooPaymentsOrderEffects::compose_payment_method_display_effects()).
 		$order->update_meta_data(
 			'_wcpay_payment_method_details',
 			wp_json_encode(
@@ -95,21 +95,23 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A terminal card shows its network when the client does ($network over $brand), with the network's icon.
-	 * @testWith ["eftpos_au", "visa"]
-	 *           ["cartes_bancaires", "mastercard"]
+	 * @testdox A $type terminal card shows its network when the client does ($network over $brand), with the network's icon.
+	 * @testWith ["eftpos_au", "visa", "card_present"]
+	 *           ["cartes_bancaires", "mastercard", "card_present"]
+	 *           ["eftpos_au", "visa", "interac_present"]
 	 *
 	 * @param string $network Card network.
 	 * @param string $brand   Card brand.
+	 * @param string $type    Terminal payment method type.
 	 */
-	public function test_card_info_shows_the_terminal_network_and_its_icon( string $network, string $brand ): void {
+	public function test_card_info_shows_the_terminal_network_and_its_icon( string $network, string $brand, string $type ): void {
 		$this->register_card_info_service( $this->create_recording_payment_method_client( array() ) );
 		$order = $this->create_card_info_order( 'pm_terminal' );
 		// card_present details as a terminal charge carries them; the client reads brand, network, last4 and receipt
 		// (class-wc-payments-payment-method-service.php:108-118, WC_Payments_Utils::get_terminal_card_display_brand()).
 		$details = array(
-			'type'         => 'card_present',
-			'card_present' => array(
+			'type' => $type,
+			$type  => array(
 				'brand'   => $brand,
 				'network' => $network,
 				'last4'   => '0005',
@@ -132,6 +134,98 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'Visa Credit', $info['app_name'] );
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- The icon is the base64 SVG core ships.
 		$this->assertSame( base64_encode( file_get_contents( WC()->plugin_path() . "/assets/images/payment-methods/{$network}-color.svg" ) ), $info['icon'] );
+	}
+
+	/**
+	 * @testdox A fetch that fails with a PHP Error still renders the order, with no card shown and no second fetch by core's fallback.
+	 */
+	public function test_card_info_survives_a_failing_fetch_without_a_second_one(): void {
+		$client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Payment method IDs the test double was asked for.
+			 *
+			 * @var string[]
+			 */
+			public array $requested_ids = array();
+
+			/**
+			 * Fail as a broken transport can, with a PHP Error.
+			 *
+			 * @param string $payment_method_id Payment method ID.
+			 * @return array<string,mixed>
+			 * @throws \TypeError For every payment method ID.
+			 */
+			public function get_payment_method( string $payment_method_id ): array {
+				$this->requested_ids[] = $payment_method_id;
+				if ( '' !== $payment_method_id ) {
+					throw new \TypeError( 'Transport failure.' );
+				}
+
+				return array();
+			}
+		};
+		$this->register_card_info_service( $client );
+		$order = $this->create_card_info_order( 'pm_failing' );
+
+		$info = PaymentInfo::get_card_info( $order );
+
+		$this->assertSame( '', $info['brand'] );
+		$this->assertSame( '', $info['last4'] );
+		$this->assertSame( array( 'pm_failing' ), $client->requested_ids, 'Core\'s fallback must not fetch again.' );
+	}
+
+	/**
+	 * @testdox A filtered order meta value that is not a string is ignored rather than breaking the render.
+	 */
+	public function test_card_info_ignores_non_string_filtered_meta(): void {
+		$this->register_card_info_service( $this->create_recording_payment_method_client( array() ) );
+		$order    = $this->create_card_info_order( 'pm_filtered' );
+		$filtered = static fn() => new \stdClass();
+		add_filter( 'woocommerce_order_get__payment_method_id', $filtered );
+		add_filter( 'woocommerce_order_get__wcpay_payment_method_details', $filtered );
+
+		try {
+			$info = PaymentInfo::get_card_info( $order );
+		} finally {
+			remove_filter( 'woocommerce_order_get__payment_method_id', $filtered );
+			remove_filter( 'woocommerce_order_get__wcpay_payment_method_details', $filtered );
+		}
+
+		$this->assertSame( '', $info['last4'] );
+	}
+
+	/**
+	 * @testdox Card info values are sanitized as text, as the client returns them.
+	 */
+	public function test_card_info_values_are_sanitized(): void {
+		$this->register_card_info_service( $this->create_recording_payment_method_client( array() ) );
+		$order   = $this->create_card_info_order( 'pm_markup' );
+		$details = array(
+			'type' => 'card',
+			'card' => array(
+				'brand' => '<b>visa</b>',
+				'last4' => '4242<script>',
+			),
+		);
+		$order->update_meta_data( '_wcpay_payment_method_details', wp_json_encode( $details ) );
+		$order->save();
+
+		$info = PaymentInfo::get_card_info( $order );
+
+		$this->assertSame( 'visa', $info['brand'] );
+		$this->assertSame( '4242', $info['last4'] );
+	}
+
+	/**
+	 * @testdox Nothing is registered while the WooPayments plugin owns the runtime.
+	 */
+	public function test_card_info_provider_registers_nothing_when_the_plugin_owns_the_runtime(): void {
+		$card_info = new WooPaymentsOrderCardInfo();
+		$card_info->init( new StaticNativeRuntimeArbiter( false ) );
+
+		$card_info->register();
+
+		$this->assertFalse( has_filter( 'wc_order_payment_card_info', array( $card_info, 'handle_order_payment_card_info' ) ) );
 	}
 
 	/**

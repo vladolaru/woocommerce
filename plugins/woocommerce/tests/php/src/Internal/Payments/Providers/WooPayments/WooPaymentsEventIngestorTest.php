@@ -328,12 +328,24 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			array(
 				'customer_phone'   => '+15555550100',
 				'customer_email'   => 'shopper@example.com',
+				// An invoice's customer_tax_ids entries are {type, value} (Stripe API Invoice object, customer_tax_ids).
 				'customer_tax_ids' => array(
 					array(
 						'type'  => 'eu_vat',
 						'value' => 'DE123456789',
 					),
 				),
+				'metadata'         => array(
+					'order_id'              => '123',
+					'delivery_instructions' => 'Leave with Jane Doe, call +15555550100',
+				),
+				'custom_fields'    => array(
+					array(
+						'name'  => 'Contact',
+						'value' => 'Jane Doe',
+					),
+				),
+				'footer'           => 'Thanks, Jane Doe',
 				'description'      => 'Renewal for Jane Doe, 1 Main Street',
 				'customer_address' => array(
 					'line1'       => '1 Main Street',
@@ -357,6 +369,38 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		}
 		$this->assertSame( '(redacted)', $invoice['customer_address']['line1'] );
 		$this->assertSame( '(redacted)', $invoice['customer_address']['postal_code'] );
+		$this->assertSame( '(redacted)', $invoice['custom_fields'] );
+		$this->assertSame( '(redacted)', $invoice['footer'] );
+		$this->assertSame( '(redacted)', $invoice['metadata']['delivery_instructions'] );
+		$this->assertSame( '123', $invoice['metadata']['order_id'], 'The order reference support needs stays.' );
+	}
+
+	/**
+	 * @testdox The received line redacts a PaymentIntent's receipt email and free-text metadata, and keeps its order reference.
+	 */
+	public function test_received_line_redacts_a_payment_intent_receipt_email(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		$logger = RecordingWcLogger::install();
+		$order  = $this->create_woopayments_order();
+		// receipt_email is a PaymentIntent field (Stripe API PaymentIntent object).
+		$event = $this->create_payment_intent_event(
+			'payment_intent.succeeded',
+			$order,
+			array(
+				'receipt_email' => 'shopper@example.com',
+				'metadata'      => array( 'gift_message' => 'Happy birthday, Jane' ),
+			),
+			array( 'id' => 'evt_receipt_email' )
+		);
+
+		$this->sut->process( $event );
+
+		$received = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'WEBHOOK RECEIVED: payment_intent.succeeded evt_receipt_email' === $line[1] ) );
+		$this->assertCount( 1, $received );
+		$intent = $logger->contexts[ $received[0] ]['body']['data']['object'];
+		$this->assertSame( '(redacted)', $intent['receipt_email'] );
+		$this->assertSame( '(redacted)', $intent['metadata']['gift_message'] );
+		$this->assertSame( (string) $order->get_id(), $intent['metadata']['order_id'] );
 	}
 
 	/**
@@ -5342,9 +5386,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 *
 	 * The envelope (id, type, data.object) and the PaymentIntent fields are the ones client 11.1.0 reads:
 	 * class-wc-payments-webhook-processing-service.php:145-160 (envelope), :494-519 (id, currency, amount,
-	 * payment_method, charges.data[0] with its payment_method_details.card.mandate and application_fee_amount) and
-	 * :968-1002 (metadata.order_id and order_key for the order lookup); status is the PaymentIntent's own field
-	 * (Stripe API PaymentIntent object).
+	 * payment_method, charges.data[0] with its payment_method_details.card.mandate), :542 (application_fee_amount),
+	 * :574-577 (metadata.ipp_channel) and :968-1002 (metadata.order_id and order_key for the order lookup); status is
+	 * the PaymentIntent's own field (Stripe API PaymentIntent object).
 	 *
 	 * @param string              $type      Event type.
 	 * @param WC_Order            $order     Order object.

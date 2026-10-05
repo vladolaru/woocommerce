@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Throwable;
 use WC_Order;
 
 /**
@@ -25,6 +26,14 @@ use WC_Order;
  * @internal Transitional internal component for the native payments runtime.
  */
 class WooPaymentsOrderCardInfo implements RegisterHooksInterface {
+
+	/**
+	 * Card info answered when the payment method could not be fetched: no card shown, and no second fetch by core.
+	 */
+	private const NO_CARD_INFO = array(
+		'brand' => '',
+		'last4' => '',
+	);
 
 	/**
 	 * Runtime owner arbiter.
@@ -69,16 +78,29 @@ class WooPaymentsOrderCardInfo implements RegisterHooksInterface {
 			return $card_info;
 		}
 
-		$details = json_decode( (string) $order->get_meta( '_wcpay_payment_method_details', true ), true );
+		// Meta reads are filtered, so neither value is trusted to be a string; a non-string ID fails the fetch below, which is contained.
+		$stored_details = $order->get_meta( '_wcpay_payment_method_details', true );
+		$details        = is_string( $stored_details ) ? json_decode( $stored_details, true ) : null;
 		if ( ! is_array( $details ) || array() === $details ) {
-			$payment_method_id = (string) $order->get_meta( '_payment_method_id', true );
+			$payment_method_id = $order->get_meta( '_payment_method_id', true );
 			if ( '' === $payment_method_id ) {
 				return $card_info;
 			}
 
-			$details = wc_get_container()->get( WooPaymentsPaymentMethodDetailsService::class )->get_payment_method_details( $payment_method_id );
+			// Rendering an order must survive a failed fetch, as core's own fallback does (PaymentInfo::get_wcpay_card_info()).
+			// A failure answers with empty card fields, so that fallback does not fetch a second time.
+			try {
+				$details = wc_get_container()->get( WooPaymentsPaymentMethodDetailsService::class )->get_payment_method_details( $payment_method_id );
+			} catch ( Throwable $exception ) {
+				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
+					'Error retrieving WooPayments card info for order ' . $order->get_id() . '.',
+					$exception,
+					array( 'payment_method_id' => $payment_method_id )
+				);
+				$details = array();
+			}
 			if ( array() === $details ) {
-				return $card_info;
+				return self::NO_CARD_INFO;
 			}
 
 			$encoded_details = wp_json_encode( $details );

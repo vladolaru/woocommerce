@@ -118,6 +118,8 @@ class WooPaymentsApiClient {
 		// descriptions can carry personal data; the *_email and *_phone endings below cover receipt_email and customer_phone.
 		'customer_tax_ids',
 		'description',
+		'custom_fields',
+		'footer',
 	);
 
 	/**
@@ -2985,7 +2987,29 @@ class WooPaymentsApiClient {
 				continue;
 			}
 
-			$result[ $key ] = self::redact_array( $value, $keys_to_redact, $level + 1 );
+			$result[ $key ] = is_string( $key ) && 'metadata' === strtolower( $key ) && is_array( $value )
+				? self::redact_metadata( $value )
+				: self::redact_array( $value, $keys_to_redact, $level + 1 );
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Redact a platform object's metadata, which can hold any text a store or extension put there.
+	 *
+	 * Only scalar values under keys ending in `_id` or `_number` (order_id, order_number, customer_id) are kept, as
+	 * support needs them to find the order; every other value is replaced whole (native-only, Codex review 76).
+	 *
+	 * @param array<int|string,mixed> $metadata Metadata.
+	 * @return array<int|string,mixed>
+	 */
+	private static function redact_metadata( array $metadata ): array {
+		$result = array();
+		foreach ( $metadata as $key => $value ) {
+			$name           = is_string( $key ) ? strtolower( $key ) : '';
+			$is_reference   = '_id' === substr( $name, -3 ) || '_number' === substr( $name, -7 );
+			$result[ $key ] = $is_reference && is_scalar( $value ) ? self::redact_string( (string) $value ) : self::REDACTED;
 		}
 
 		return $result;
