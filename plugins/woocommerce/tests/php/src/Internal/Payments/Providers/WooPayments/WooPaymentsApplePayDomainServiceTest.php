@@ -262,7 +262,7 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 				),
 			),
 			// Defensive input, not a platform shape: an answer without the Apple Pay status, which the client's isset()
-			// checks (class-wc-payments-apple-pay-registration.php:170, :184) also treat as a failure.
+			// checks (class-wc-payments-apple-pay-registration.php:169, :184) also treat as a failure.
 			'an answer without the Apple Pay status' => array(
 				array( 'error' => array( 'message' => $leaking_text ) ),
 				array( 'reason' => 'unexpected_response' ),
