@@ -33,8 +33,9 @@ class WooPaymentsProviderGatewayAdapter {
 	/**
 	 * Order meta key recording the ambiguous charge failure that kept the order's charge idempotency key.
 	 *
-	 * An array with the order ID, the customer the failed request was sent with and the time of the failure. It lives and
-	 * dies with the kept key, and lets a refused resubmit look up what the failed request did.
+	 * An array with the order ID, every customer a failed request under the key was sent with, the time of the first
+	 * failure and whether the merchant was told the payment cannot be checked. It lives and dies with the kept key, and
+	 * lets a refused resubmit look up what the failed requests did.
 	 *
 	 * @var string
 	 * @since 11.2.0
@@ -543,21 +544,72 @@ class WooPaymentsProviderGatewayAdapter {
 	}
 
 	/**
-	 * Get this order's record of the ambiguous charge failure that kept its charge key.
+	 * Get this order's record of the ambiguous charge failures that kept its charge key.
 	 *
 	 * @param WC_Order $order Order being charged.
-	 * @return array{customer:string,failed_at:int}|null Null when the order has no complete record of its own.
+	 * @return array{customers:array<int,string>,failed_at:int}|null Null when the order has no record of its own, or the
+	 *                                                               record names no customer to look up.
 	 */
 	private function get_charge_ambiguity_record( WC_Order $order ): ?array {
-		$record = $order->get_meta( self::CHARGE_AMBIGUITY_META, true );
-		if ( ! is_array( $record ) || (int) ( $record['order_id'] ?? 0 ) !== $order->get_id() || ! is_string( $record['customer'] ?? null ) || '' === $record['customer'] ) {
+		$record = $this->read_charge_ambiguity_record( $order );
+		if ( null === $record || array() === array_filter( $record['customers'], static fn( string $customer ): bool => '' !== $customer ) ) {
 			return null;
 		}
 
 		return array(
-			'customer'  => $record['customer'],
-			'failed_at' => (int) ( $record['failed_at'] ?? 0 ),
+			'customers' => $record['customers'],
+			'failed_at' => $record['failed_at'],
 		);
+	}
+
+	/**
+	 * Read the ambiguity record when it names this order.
+	 *
+	 * A record written with a single `customer` is read as a list of one.
+	 *
+	 * @param WC_Order $order Order being charged.
+	 * @return array{order_id:int,customers:array<int,string>,failed_at:int,cannot_check_noted:bool}|null
+	 */
+	private function read_charge_ambiguity_record( WC_Order $order ): ?array {
+		$record = $order->get_meta( self::CHARGE_AMBIGUITY_META, true );
+		if ( ! is_array( $record ) || (int) ( $record['order_id'] ?? 0 ) !== $order->get_id() ) {
+			return null;
+		}
+
+		$customers = $record['customers'] ?? array( $record['customer'] ?? '' );
+
+		return array(
+			'order_id'           => $order->get_id(),
+			'customers'          => array_values( array_filter( is_array( $customers ) ? $customers : array(), 'is_string' ) ),
+			'failed_at'          => (int) ( $record['failed_at'] ?? 0 ),
+			'cannot_check_noted' => ! empty( $record['cannot_check_noted'] ),
+		);
+	}
+
+	/**
+	 * Record an ambiguous charge failure under the order's kept key.
+	 *
+	 * A later ambiguous answer under the same key merges into the order's record instead of replacing it: the earlier
+	 * request may have taken the money under the first customer, inside the window from the first failure, so both stay
+	 * in view, and a merchant already told the payment cannot be checked is not told again. A request sent with no
+	 * customer is recorded as an empty entry.
+	 *
+	 * @param WC_Order $order       Order being charged.
+	 * @param string   $customer_id Customer the request was sent with.
+	 */
+	private function record_charge_ambiguity( WC_Order $order, string $customer_id ): void {
+		$record = $this->read_charge_ambiguity_record( $order ) ?? array(
+			'order_id'           => $order->get_id(),
+			'customers'          => array(),
+			'failed_at'          => time(),
+			'cannot_check_noted' => false,
+		);
+		if ( ! in_array( $customer_id, $record['customers'], true ) ) {
+			$record['customers'][] = $customer_id;
+		}
+
+		$order->update_meta_data( self::CHARGE_AMBIGUITY_META, $record );
+		$order->save_meta_data();
 	}
 
 	/**
@@ -580,10 +632,10 @@ class WooPaymentsProviderGatewayAdapter {
 	private function settle_earlier_charge( PaymentContext $context, array &$request_data, string $attempt_key, string $sent_key ) {
 		$order  = $context->get_order();
 		$record = $this->get_charge_ambiguity_record( $order ) ?? array(
-			'customer'  => '',
+			'customers' => array( '' ),
 			'failed_at' => 0,
 		);
-		$lookup = $this->ambiguity_service->find_order_intents( $order, $record['customer'], $record['failed_at'] );
+		$lookup = $this->ambiguity_service->find_order_intents( $order, $record['customers'], $record['failed_at'] );
 		if ( WooPaymentsChargeAmbiguityService::LOOKUP_CANNOT_CHECK === $lookup['status'] ) {
 			$this->ambiguity_service->log_lookup_cannot_check( $order, $sent_key );
 			$this->add_charge_cannot_be_checked_note_once( $order );
@@ -603,7 +655,7 @@ class WooPaymentsProviderGatewayAdapter {
 		if ( null !== $paid_intent ) {
 			$this->ambiguity_service->log_earlier_payment_found( $order, $sent_key, (string) ( $paid_intent['id'] ?? '' ) );
 
-			return $this->earlier_payment_outcome( $order, $paid_intent, $record['customer'] );
+			return $this->earlier_payment_outcome( $order, $paid_intent, $record['customers'][0] );
 		}
 
 		$this->ambiguity_service->log_charging_after_no_earlier_payment( $order, $sent_key, count( $intents ) );
@@ -627,7 +679,8 @@ class WooPaymentsProviderGatewayAdapter {
 	 *
 	 * @param WC_Order            $order       Order being charged.
 	 * @param array<string,mixed> $intent      The order's PaymentIntent that took the payment.
-	 * @param string              $customer_id Customer the earlier request was sent with.
+	 * @param string              $customer_id Customer the first request under the key was sent with, used when the
+	 *                                         intent names none.
 	 * @return PaymentOutcome
 	 */
 	private function earlier_payment_outcome( WC_Order $order, array $intent, string $customer_id ): PaymentOutcome {
@@ -683,8 +736,8 @@ class WooPaymentsProviderGatewayAdapter {
 	 * @param WC_Order $order Order being charged.
 	 */
 	private function add_charge_cannot_be_checked_note_once( WC_Order $order ): void {
-		$record = $order->get_meta( self::CHARGE_AMBIGUITY_META, true );
-		if ( ! is_array( $record ) || ! empty( $record['cannot_check_noted'] ) ) {
+		$record = $this->read_charge_ambiguity_record( $order );
+		if ( null === $record || $record['cannot_check_noted'] ) {
 			return;
 		}
 
@@ -865,7 +918,7 @@ class WooPaymentsProviderGatewayAdapter {
 	 * marks the fraud meta box allow because fraud checks passed.
 	 *
 	 * A PaymentIntent dispatch failure decides the order's kept charge key. An ambiguous one keeps it and records the
-	 * failure for a later lookup. A definitive one retires both, except that while this order's record exists only a card
+	 * failure for a later lookup, merged into the order's record when one exists. A definitive one retires both, except that while this order's record exists only a card
 	 * error does: any other refusal (the platform's own, a Stripe rate limit, a validation error) says nothing about the
 	 * earlier request under the key, so both stay for the next attempt's lookup.
 	 *
@@ -880,15 +933,7 @@ class WooPaymentsProviderGatewayAdapter {
 		$outcome = WooPaymentsIntentCodec::failed_transport_outcome( 'charge', $exception );
 		$data    = $outcome->get_data();
 		if ( $is_payment_intent_dispatch && $this->api_client->is_ambiguous_request_failure( $exception ) ) {
-			$order->update_meta_data(
-				self::CHARGE_AMBIGUITY_META,
-				array(
-					'order_id'  => $order->get_id(),
-					'customer'  => $customer_id,
-					'failed_at' => time(),
-				)
-			);
-			$order->save_meta_data();
+			$this->record_charge_ambiguity( $order, $customer_id );
 		} elseif ( $is_payment_intent_dispatch && ! $this->is_unsettling_answer_under_kept_ambiguous_key( $order, $exception, $is_scheduled_renewal ) ) {
 			$data[ self::DEFINITIVE_CHARGE_FAILURE_DATA_KEY ] = true;
 			// Retired now rather than only after the lifecycle: a local failure applying this outcome must not leave the

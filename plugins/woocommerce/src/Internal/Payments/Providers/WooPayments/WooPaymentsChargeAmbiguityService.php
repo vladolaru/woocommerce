@@ -79,19 +79,24 @@ class WooPaymentsChargeAmbiguityService {
 	/**
 	 * List the PaymentIntents created for an order.
 	 *
-	 * Lists the customer the earlier request was sent with. When Stripe or the platform refuses that list for good (a
-	 * deleted customer, for example), lists the account's intents created since shortly before the failure instead. A
-	 * transport failure or a server error leaves the lookup failed, since a later attempt may read the list.
+	 * Lists the customer the earlier requests were sent with. When they were sent with more than one customer, or Stripe
+	 * or the platform refuses the customer's list for good (a deleted customer, for example), lists the account's intents
+	 * created since shortly before the first failure instead, which match on the order whatever the customer. A transport
+	 * failure or a server error leaves the lookup failed, since a later attempt may read the list.
 	 *
-	 * @param WC_Order $order       Order whose earlier charge is looked up.
-	 * @param string   $customer_id Customer the earlier charge request was sent with.
-	 * @param int      $failed_at   Unix time the earlier charge failure was recorded.
+	 * @param WC_Order          $order        Order whose earlier charge is looked up.
+	 * @param array<int,string> $customer_ids Customers the earlier charge requests under the key were sent with.
+	 * @param int               $failed_at    Unix time the first earlier charge failure was recorded.
 	 * @return array{status:string,intents:array<int,array<string,mixed>>} One of the LOOKUP_* answers, with the order's
 	 *                                                                    intents, newest first, when it is LOOKUP_DONE.
 	 */
-	public function find_order_intents( WC_Order $order, string $customer_id, int $failed_at ): array {
+	public function find_order_intents( WC_Order $order, array $customer_ids, int $failed_at ): array {
+		if ( 1 !== count( $customer_ids ) ) {
+			return $this->find_order_intents_created_since_failure( $order, $failed_at );
+		}
+
 		try {
-			$list = $this->api_client->list_payment_intentions( $customer_id, self::LIST_LIMIT );
+			$list = $this->api_client->list_payment_intentions( (string) reset( $customer_ids ), self::LIST_LIMIT );
 		} catch ( WooPaymentsApiException $exception ) {
 			return $this->api_client->is_ambiguous_request_failure( $exception )
 				? self::lookup( self::LOOKUP_FAILED )

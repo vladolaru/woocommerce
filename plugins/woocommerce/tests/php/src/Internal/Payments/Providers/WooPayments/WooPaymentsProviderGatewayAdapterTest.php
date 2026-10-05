@@ -991,7 +991,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'key_first', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
 		$this->assertIsArray( $record );
 		$this->assertSame( $order->get_id(), $record['order_id'] );
-		$this->assertSame( 'cus_sent', $record['customer'] );
+		$this->assertSame( array( 'cus_sent' ), $record['customers'] );
 		$this->assertGreaterThanOrEqual( $before, $record['failed_at'] );
 
 		$other = $this->create_woopayments_order();
@@ -1000,6 +1000,81 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( '', $other->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true ), 'A definitive failure must leave no record.' );
 		$this->assertSame( '', $other->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+	}
+
+	/**
+	 * @testdox A later ambiguous answer under the kept key merges into the record: every customer sent, the earliest failure time and the note flag stay.
+	 *
+	 * Replacing the record would point the lookup at the later customer and move the account window past the earlier
+	 * intent (review 45 F1). A record in the earlier single-customer shape is read as a list of one.
+	 */
+	public function test_later_ambiguous_answer_merges_into_the_record(): void {
+		$order    = $this->create_woopayments_order();
+		$earliest = time() - 1000;
+		$order->update_meta_data( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, 'key_first' );
+		$order->update_meta_data(
+			WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META,
+			array(
+				'order_id'           => $order->get_id(),
+				'customer'           => 'cus_a',
+				'failed_at'          => $earliest,
+				'cannot_check_noted' => true,
+			)
+		);
+		$order->save_meta_data();
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array( self::platform_bad_gateway(), self::platform_bad_gateway() );
+		$sut                    = $this->create_timeout_adapter( $http_client, 'cus_b' );
+
+		$this->charge_attempt( $sut, $order, 'pm_new', 'key_second' );
+		$this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_other', 'key_third' );
+		$record = wc_get_order( $order->get_id() )->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true );
+
+		$this->assertSame( array( 'POST intentions key_first', 'POST intentions key_first' ), self::request_trail( $http_client ) );
+		$this->assertIsArray( $record );
+		$this->assertSame( $order->get_id(), $record['order_id'] ?? null );
+		$this->assertSame( array( 'cus_a', 'cus_b' ), $record['customers'] ?? null, 'Every customer sent under the key, each once.' );
+		$this->assertSame( $earliest, $record['failed_at'] ?? null, 'The earliest failure time stays.' );
+		$this->assertTrue( $record['cannot_check_noted'] ?? false, 'The merchant was already told; the flag stays.' );
+	}
+
+	/**
+	 * @testdox When the kept key was sent with more than one customer, the lookup reads the account's intents from the first failure, so the earlier payment pays the order and the new card is not charged.
+	 *
+	 * Native recreates a deleted customer before every charge (`WooPaymentsCustomerService::update_customer_for_order()`),
+	 * so a resubmit under the kept key can go out with a new customer and fail ambiguously again. The earlier request's
+	 * intent belongs to the first customer, so the new customer's complete list proves nothing about it (review 45 F1).
+	 */
+	public function test_kept_key_sent_with_two_customers_looks_up_the_account_list_from_the_first_failure(): void {
+		$order                  = $this->create_woopayments_order();
+		$http_client            = self::create_routed_http_client(
+			array(
+				'customer=cus_b'   => self::intent_list( array() ),
+				'created%5Bgte%5D' => self::intent_list( array( self::order_intent( $order, 'pi_earlier', 'succeeded', 1000, array( 'customer' => 'cus_a' ) ) ) ),
+			)
+		);
+		$http_client->responses = array(
+			self::platform_bad_gateway(),
+			self::platform_bad_gateway(),
+			self::stripe_idempotency_error( 'key_first' ),
+			self::succeeded_charge( 'pi_new_card', 'pm_new' ),
+		);
+		$customer_service       = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturnOnConsecutiveCalls( 'cus_a', 'cus_b', 'cus_b' );
+		$sut = $this->create_timeout_adapter( $http_client, '', $customer_service );
+		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
+		$failed_at = (int) wc_get_order( $order->get_id() )->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['failed_at'];
+		$this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_second', 'key_second' );
+
+		$outcome = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_third' );
+
+		$this->assertSame( 'pi_earlier', $outcome->get_provider_payment_id(), 'The earlier payment pays the order.' );
+		$this->assertSame( 'cus_a', $outcome->get_customer_id() );
+		$this->assertSame(
+			array( 'POST intentions key_first', 'POST intentions key_first', 'POST intentions key_first', self::account_list_trail( $failed_at ) ),
+			self::request_trail( $http_client ),
+			'The new card must not be charged.'
+		);
 	}
 
 	/**
@@ -1131,7 +1206,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'POST intentions key_first', 'POST intentions key_first' ), self::request_trail( $http_client ) );
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( 'key_first', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
-		$this->assertSame( 'cus_sent', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['customer'] ?? null );
+		$this->assertSame( array( 'cus_sent' ), $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['customers'] ?? null );
 	}
 
 	/**
@@ -1173,7 +1248,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'POST intentions key_first', 'POST intentions key_first' ), self::request_trail( $http_client ), 'No intents list may be read while the earlier request may still run.' );
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( 'key_first', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
-		$this->assertSame( 'cus_sent', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['customer'] ?? null );
+		$this->assertSame( array( 'cus_sent' ), $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['customers'] ?? null );
 		$this->assertSame( array(), self::warning_lines( $logger ) );
 	}
 
@@ -1267,7 +1342,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'duplicate_payment_amount_mismatch', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
 		$this->assertStringContainsString( 'so we prevented an overpayment', (string) ( $outcome->get_data()[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? '' ) );
 		$this->assertSame( 'key_first', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
-		$this->assertSame( 'cus_sent', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['customer'] ?? null );
+		$this->assertSame( array( 'cus_sent' ), $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['customers'] ?? null );
 	}
 
 	/**
@@ -1297,7 +1372,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'duplicate_payment_amount_mismatch', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
 		$this->assertStringContainsString( '&euro;', (string) ( $outcome->get_data()[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? '' ), 'The paid amount shows in the intent\'s currency.' );
 		$this->assertSame( 'key_first', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
-		$this->assertSame( 'cus_sent', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['customer'] ?? null );
+		$this->assertSame( array( 'cus_sent' ), $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['customers'] ?? null );
 	}
 
 	/**
@@ -1566,7 +1641,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE, $refused->get_data() );
 		$this->assertNull( $refused->get_effect_plan() );
 		$this->assertSame( 'key_first', $kept->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
-		$this->assertSame( 'cus_sent', $kept->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['customer'] ?? null );
+		$this->assertSame( array( 'cus_sent' ), $kept->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['customers'] ?? null );
 		$this->assertSame( array(), self::note_texts_containing( $kept, 'could not be checked' ), 'A lookup that may pass adds no merchant note.' );
 		$this->assertSame(
 			array( 'The charge idempotency key key_first kept on order #' . $order->get_id() . ' was refused because the new payment request differs from the earlier one, and the PaymentIntents of the order could not be listed to learn whether the earlier request took the payment. This payment attempt is refused without a charge; the key is kept and the next attempt looks again.' ),
@@ -1707,7 +1782,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			$this->assertNull( $refused->get_effect_plan() );
 		}
 		$this->assertSame( 'key_first', $kept->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
-		$this->assertSame( 'cus_sent', $kept->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['customer'] ?? null );
+		$this->assertSame( array( 'cus_sent' ), $kept->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['customers'] ?? null );
 		$this->assertSame(
 			array( "The earlier payment attempt for this order could not be checked, so the customer's new payment was not taken. Please check for this payment in WooPayments before the customer tries again." ),
 			self::note_texts_containing( $kept, 'could not be checked' ),
@@ -1786,7 +1861,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $blocked->get_status() );
 		$this->assertSame( 'wcpay_blocked_by_fraud_rule', $blocked->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
 		$this->assertSame( 'key_first', $kept->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
-		$this->assertSame( 'cus_sent', $kept->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['customer'] ?? null );
+		$this->assertSame( array( 'cus_sent' ), $kept->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['customers'] ?? null );
 
 		$paid = $this->charge_attempt( $sut, $kept, 'pm_other', 'key_third' );
 
@@ -1832,7 +1907,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'POST intentions key_first', 'POST intentions key_first' ), self::request_trail( $http_client ), 'The new card must not be charged under a recovery key.' );
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( 'key_first', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
-		$this->assertSame( 'cus_sent', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['customer'] ?? null );
+		$this->assertSame( array( 'cus_sent' ), $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['customers'] ?? null );
 	}
 
 	/**
@@ -1887,7 +1962,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$record = $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true );
 
 		$this->assertSame( $retires ? '' : 'key_first', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
-		$this->assertSame( $retires ? '' : 'cus_sent', is_array( $record ) ? $record['customer'] : $record );
+		$this->assertSame( $retires ? '' : array( 'cus_sent' ), is_array( $record ) ? $record['customers'] : $record );
 	}
 
 	/**
@@ -1974,6 +2049,50 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$sut->finalize_charge_idempotency_key( $order, $outcome );
 
 		return $outcome;
+	}
+
+	/**
+	 * Build a fake platform that answers a request whose path contains a route's needle with that route's answer, and any
+	 * other request from the queue.
+	 *
+	 * @param array<string,array<string,mixed>> $routes Answers by path needle.
+	 * @return FakeWooPaymentsHttpClient
+	 */
+	private static function create_routed_http_client( array $routes ): FakeWooPaymentsHttpClient {
+		$http_client         = new class() extends FakeWooPaymentsHttpClient {
+			/**
+			 * Answers by path needle.
+			 *
+			 * @var array<string,array<string,mixed>>
+			 */
+			public array $routes = array();
+
+			/**
+			 * Answer a routed path from its route, any other from the queue.
+			 *
+			 * @param string      $method         HTTP method.
+			 * @param string      $path           WPCOM path.
+			 * @param string[]    $headers        Request headers.
+			 * @param string|null $body           Request body.
+			 * @param int         $timeout        Request timeout.
+			 * @param bool        $use_user_token Whether to sign with the connection-owner user token.
+			 * @param bool        $blocking       Whether the request should block for the response.
+			 * @return mixed
+			 */
+			public function request( string $method, string $path, array $headers = array(), ?string $body = null, int $timeout = 70, bool $use_user_token = false, bool $blocking = true ) {
+				foreach ( $this->routes as $needle => $answer ) {
+					if ( false !== strpos( $path, $needle ) ) {
+						array_unshift( $this->responses, $answer );
+						break;
+					}
+				}
+
+				return parent::request( $method, $path, $headers, $body, $timeout, $use_user_token, $blocking );
+			}
+		};
+		$http_client->routes = $routes;
+
+		return $http_client;
 	}
 
 	/**
