@@ -364,7 +364,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 *
 	 * The note is secondary to the refusal: a failure taking the lock, reading the order, writing the note or releasing the
 	 * lock is logged, and the submit is still refused. Otherwise the gateway's catch would answer as paid for a succeeded
-	 * intent, or fail the order.
+	 * intent, or fail the order. Logging that failure is best-effort too, since a logger or log filter can throw.
 	 *
 	 * @param WC_Order $order     Order being paid.
 	 * @param string   $intent_id The attached PaymentIntent.
@@ -373,14 +373,18 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		try {
 			$this->write_disputed_intent_note_once( $order, $intent_id );
 		} catch ( Throwable $failure ) {
-			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
-				'Failed to note the disputed payment attached to the order.',
-				$failure,
-				array(
-					'order_id'  => $order->get_id(),
-					'intent_id' => $intent_id,
-				)
-			);
+			try {
+				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
+					'Failed to note the disputed payment attached to the order.',
+					$failure,
+					array(
+						'order_id'  => $order->get_id(),
+						'intent_id' => $intent_id,
+					)
+				);
+			} catch ( Throwable $log_failure ) {
+				unset( $log_failure );
+			}
 		}
 	}
 

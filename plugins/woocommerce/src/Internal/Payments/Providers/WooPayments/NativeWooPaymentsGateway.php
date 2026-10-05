@@ -3227,6 +3227,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @param string   $status_note Note attached to the failed status transition.
 	 * @param bool     $keep_succeeded_intent_order Whether an order whose intent already succeeded is kept and answered as paid.
 	 * @return array<string,string>
+	 * @throws Throwable When the refusal's log line fails and the refusal does not stand for a succeeded intent.
 	 */
 	private function refuse_checkout( WC_Order $order, string $message, string $code, bool $fail_order = true, string $note = '', string $status_note = '', bool $keep_succeeded_intent_order = true ): array {
 		if ( $keep_succeeded_intent_order && $this->has_succeeded_intent( $order ) ) {
@@ -3234,13 +3235,21 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		// The refusal's code names it; the message is not logged, because a payment method error's message is Stripe.js text.
-		$this->get_logger()->error(
-			'Error occurred during the payment process.',
-			array(
-				'order_id'  => $order->get_id(),
-				'exception' => $code,
-			)
-		);
+		try {
+			$this->get_logger()->error(
+				'Error occurred during the payment process.',
+				array(
+					'order_id'  => $order->get_id(),
+					'exception' => $code,
+				)
+			);
+		} catch ( Throwable $log_failure ) {
+			// A refusal that stands whatever the intent status (a disputed attached payment) outlives a failing logger or log
+			// filter; the gateway's catch would answer as paid for a succeeded intent, or fail the order. Others keep that catch.
+			if ( $keep_succeeded_intent_order ) {
+				throw $log_failure;
+			}
+		}
 
 		if ( $fail_order ) {
 			$order->update_status( OrderStatus::FAILED, $status_note );

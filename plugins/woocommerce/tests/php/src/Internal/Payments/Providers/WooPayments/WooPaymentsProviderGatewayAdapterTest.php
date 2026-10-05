@@ -5968,6 +5968,100 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A checkout of an order whose attached payment is disputed is still refused, and charges nothing, when $_dataName.
+	 *
+	 * The logger is WooCommerce's own, so each line runs the woocommerce_logger_log_message filter (WC_Logger::log()); the
+	 * filter throws on one line here. The refusal must still reach the shopper rather than the gateway's catch, which
+	 * answers as paid for a succeeded intent and fails the order otherwise.
+	 *
+	 * @dataProvider provide_dispute_refusal_log_failures
+	 *
+	 * @param string $intention_status The order's `_intention_status`.
+	 * @param string $failing_line     The log line whose filter throws.
+	 * @param string $thrown           Class the filter throws.
+	 */
+	public function test_checkout_keeps_the_dispute_refusal_when_its_logging_fails( string $intention_status, string $failing_line, string $thrown ): void {
+		$order = $this->create_order_left_by_a_completed_challenge();
+		$order->update_meta_data( '_intention_status', $intention_status );
+		$order->save();
+		$disputed_charge = array(
+			'disputed' => true,
+			'dispute'  => 'dp_1UJjK4BzWlxcwgpPDisputed',
+		);
+		$failing_reads   = null;
+		if ( 'Failed to note the disputed payment attached to the order.' === $failing_line ) {
+			$failing_reads = new class() extends OrderPaymentLifecycleService {
+				/**
+				 * Fail the order read the dispute note makes, so its failure is logged.
+				 *
+				 * @param WC_Order $order Order.
+				 * @throws \RuntimeException Always.
+				 */
+				public function get_fresh_order_from_data_store( WC_Order $order ): WC_Order {
+					unset( $order );
+					throw new \RuntimeException( 'Order read failed.' );
+				}
+			};
+		}
+
+		$http_client              = new FakeWooPaymentsHttpClient();
+		$http_client->responses[] = self::http_json( 200, $this->attached_intent_given_back( $order, $disputed_charge ) );
+		$gateway                  = $this->create_gateway_with_real_duplicate_guard( $http_client, $failing_reads );
+		self::enable_woopayments_debug_logging();
+		$throws = 0;
+		add_filter(
+			'woocommerce_logger_log_message',
+			static function ( $message ) use ( $failing_line, $thrown, &$throws ) {
+				if ( $failing_line === $message ) {
+					++$throws;
+					throw new $thrown( 'Log write failed.' );
+				}
+
+				return null;
+			}
+		);
+
+		$_POST['wcpay-payment-method'] = 'pm_card_visa';
+
+		try {
+			$result = $gateway->process_payment( $order->get_id() );
+		} finally {
+			unset( $_POST['wcpay-payment-method'] );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 1, $throws, 'The failing line was written once.' );
+		$this->assertSame( 'failure', $result['result'] ?? '' );
+		$this->assertSame( array( "This order's payment is under review. Please contact the store." ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+		$this->assertSame( 'pending', $order->get_status(), 'The order status must not change.' );
+		$this->assertSame( array( 'GET intentions/' . self::CHALLENGE_COMPLETED_INTENT_ID ), self::platform_calls( $http_client ), 'Only the attached intent may be read; nothing may be charged.' );
+	}
+
+	/**
+	 * Each dispute-path log line whose filter throws, with an Exception and a PHP Error, for both stored intent statuses.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string}>
+	 */
+	public function provide_dispute_refusal_log_failures(): array {
+		$cases = array();
+		foreach ( array( 'requires_action', 'succeeded' ) as $status ) {
+			foreach (
+				array(
+					'the note failure' => 'Failed to note the disputed payment attached to the order.',
+					'the refusal'      => 'Error occurred during the payment process.',
+				) as $line_label => $line
+			) {
+				foreach ( array( \RuntimeException::class, \Error::class ) as $thrown ) {
+					$cases[ "logging $line_label throws $thrown and the intent status is $status" ] = array( $status, $line, $thrown );
+				}
+			}
+		}
+
+		return $cases;
+	}
+
+	/**
 	 * @testdox A checkout of a payable order whose attached payment was fully refunded charges the shopper again and pays the order with the new intent.
 	 *
 	 * The old intent keeps `succeeded` after the refund. The new create-and-confirm is answered with the recorded successful
