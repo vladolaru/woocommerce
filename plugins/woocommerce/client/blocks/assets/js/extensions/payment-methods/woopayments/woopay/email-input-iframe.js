@@ -474,8 +474,10 @@ export const handleWooPayEmailInput = async ( field, paymentSettings ) => {
 		getNoticeNode().insertBefore( errorMessage, null );
 	};
 
+	// Only while the OTP iframe is open: an Escape elsewhere on the page (closing a select or a suggestion list) must
+	// not pull focus to the email field. Client 11.1.0 closes on every Escape (email-input-iframe.js:300-304).
 	document.addEventListener( 'keyup', ( event ) => {
-		if ( event.key === 'Escape' ) {
+		if ( event.key === 'Escape' && iframeWrapper.isConnected ) {
 			closeIframe();
 		}
 	} );

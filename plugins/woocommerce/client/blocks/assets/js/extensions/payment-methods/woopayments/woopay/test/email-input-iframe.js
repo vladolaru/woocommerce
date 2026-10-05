@@ -671,6 +671,26 @@ describe( 'WooPay email input (blocks)', () => {
 		).toBeNull();
 	} );
 
+	test( 'leaves focus where it is on an Escape while the OTP iframe is closed', async () => {
+		const input = await setup();
+		document.body.insertAdjacentHTML(
+			'beforeend',
+			'<select id="shipping-country"><option>US</option></select>'
+		);
+		const select = document.getElementById( 'shipping-country' );
+		select.focus();
+
+		select.dispatchEvent(
+			new window.KeyboardEvent( 'keyup', {
+				key: 'Escape',
+				bubbles: true,
+			} )
+		);
+
+		expect( select ).toHaveFocus();
+		expect( input ).not.toHaveFocus();
+	} );
+
 	test( 'surfaces the unavailable notice when WooPay cannot be reached', async () => {
 		fetchResponses[
 			`${ WOOPAY_HOST }/wp-json/platform-checkout/v1/user/exists?`
