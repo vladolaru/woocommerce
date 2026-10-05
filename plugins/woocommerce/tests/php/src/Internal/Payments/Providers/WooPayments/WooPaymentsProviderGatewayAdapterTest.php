@@ -1740,6 +1740,43 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A complete account list without the order's intent proves the earlier request took nothing: the key and record are retired and the new card is charged once.
+	 *
+	 * The account list holds every intent created since the window start, newest first, and `has_more` is false only when
+	 * no other intent is left in the window (data/t62-ambiguous-timeout-hold.md, "created[gte] live check", calls B to D),
+	 * so a complete page without the order's id and key proves no intent exists (review 45 F3).
+	 */
+	public function test_complete_account_list_without_the_order_charges_the_new_card(): void {
+		$order                  = $this->create_woopayments_order();
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			self::platform_bad_gateway(),
+			self::stripe_idempotency_error( 'key_first' ),
+			self::stripe_no_such_customer(),
+			self::intent_list( array( self::order_intent( $this->create_woopayments_order(), 'pi_other_order', 'succeeded' ) ) ),
+			self::succeeded_charge( 'pi_new_card', 'pm_new' ),
+		);
+		$sut                    = $this->create_timeout_adapter( $http_client, 'cus_sent' );
+		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
+		$failed_at = (int) wc_get_order( $order->get_id() )->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['failed_at'];
+
+		$outcome = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_second' );
+		$fresh   = wc_get_order( $order->get_id() );
+		$body    = json_decode( (string) $http_client->requests[4]['body'], true );
+
+		$this->assertSame(
+			array( 'POST intentions key_first', 'POST intentions key_first', 'GET intentions?test_mode=0&customer=cus_sent&limit=100', self::account_list_trail( $failed_at ), 'POST intentions key_second' ),
+			self::request_trail( $http_client )
+		);
+		$this->assertSame( 'pm_new', $body['payment_method'] ?? null );
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( 'pi_new_card', $outcome->get_provider_payment_id() );
+		$this->assertSame( '', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$this->assertSame( '', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true ) );
+		$this->assertSame( array(), self::note_texts_containing( $fresh, 'could not be checked' ) );
+	}
+
+	/**
 	 * @testdox When neither list can settle the earlier request ($_dataName), every attempt is refused without a charge and the merchant gets one note.
 	 *
 	 * Monitor ruling B: the order is not charged while the earlier request cannot be checked. A definitive refusal, or an
