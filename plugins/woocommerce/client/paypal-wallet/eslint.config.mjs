@@ -24,7 +24,6 @@ export default [
 				{ allowedTextDomain: 'woocommerce' },
 			],
 			'no-alert': 'warn',
-			'no-useless-constructor': 'warn',
 			'@wordpress/no-unused-vars-before-return': 'warn',
 			'@typescript-eslint/no-this-alias': 'warn',
 			'jsdoc/check-alignment': 'warn',
