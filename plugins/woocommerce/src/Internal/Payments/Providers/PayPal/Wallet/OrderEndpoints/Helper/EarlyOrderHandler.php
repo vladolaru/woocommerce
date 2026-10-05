@@ -69,8 +69,6 @@ class EarlyOrderHandler {
 		return $this->is_connected;
 	}
 
-    //phpcs:disable WordPress.Security.NonceVerification.Recommended
-
 	/**
 	 * Tries to determine the current WC Order Id based on the PayPal order
 	 * and the current order in session.
@@ -81,7 +79,7 @@ class EarlyOrderHandler {
 	 */
 	public function determine_wc_order_id( ?int $value = null ) {
 
-		if ( ! isset( $_REQUEST['ppcp-resume-order'] ) ) {
+		if ( ! isset( $_REQUEST['ppcp-resume-order'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- No nonce applies in this path: the id is accepted only if it equals the order awaiting payment in the session and the session PayPal order's custom_id.
 			return $value;
 		}
 
@@ -94,7 +92,7 @@ class EarlyOrderHandler {
 
 		$order_id = false;
 		foreach ( $order->purchase_units() as $purchase_unit ) {
-			if ( $purchase_unit->custom_id() === sanitize_text_field( wp_unslash( $_REQUEST['ppcp-resume-order'] ) ) ) {
+			if ( $purchase_unit->custom_id() === sanitize_text_field( wp_unslash( $_REQUEST['ppcp-resume-order'] ) ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- No nonce applies in this path: the id is accepted only if it equals the order awaiting payment in the session and the session PayPal order's custom_id.
 				$order_id = (int) $purchase_unit->custom_id();
 			}
 		}
@@ -103,7 +101,6 @@ class EarlyOrderHandler {
 		}
 		return $value;
 	}
-    //phpcs:enable WordPress.Security.NonceVerification.Recommended
 
 	/**
 	 * Registers the necessary checkout actions for a given order.
@@ -152,7 +149,7 @@ class EarlyOrderHandler {
 
 		$wc_order = wc_get_order( $order_id );
 		if ( ! ( $wc_order instanceof \WC_Order ) ) {
-			throw new RuntimeException( "Invalid WC_Order id $order_id." );
+			throw new RuntimeException( esc_html( "Invalid WC_Order id $order_id." ) );
 		}
 		$wc_order->update_meta_data( PayPalGateway::ORDER_ID_META_KEY, $order->id() );
 		$wc_order->update_meta_data( PayPalGateway::INTENT_META_KEY, $order->intent() );
@@ -178,6 +175,14 @@ class EarlyOrderHandler {
 		 */
 		$order = $this->order_processor->patch_order( $wc_order, $order );
 
+		/**
+		 * Fires after the WooCommerce order was created and patched with the PayPal order.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param \WC_Order $wc_order The WooCommerce order.
+		 * @param Order     $order    The PayPal order.
+		 */
 		do_action( 'woocommerce_paypal_payments_woocommerce_order_created', $wc_order, $order );
 
 		return $order;

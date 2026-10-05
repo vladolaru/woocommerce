@@ -83,7 +83,7 @@ class RequestData {
 	private function sanitize( array $assoc_array ): array {
 		$data = array();
 		foreach ( (array) $assoc_array as $raw_key => $raw_value ) {
-			if ( $raw_key === 'form_encoded' ) {
+			if ( 'form_encoded' === $raw_key ) {
 				$data[ $raw_key ] = $raw_value;
 				continue;
 			}

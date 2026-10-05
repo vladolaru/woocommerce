@@ -214,6 +214,7 @@ class CartProductsHelper {
 		// @phpstan-ignore method.notFound
 		$variation_id = $this->product_data_store->find_matching_product_variation( $product, $variations );
 
+		// phpcs:ignore Generic.Commenting.Todo.TaskFound -- Existing follow-up note kept as written.
 		// ToDo: Check stock status for variation.
 		$cart_item_key = $this->cart->add_to_cart(
 			$product->get_id(),

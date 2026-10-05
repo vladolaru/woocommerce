@@ -62,12 +62,37 @@ class WooCommerceOrderCreator {
 	 */
 	protected $subscription_helper;
 
+	/**
+	 * The cart data factory.
+	 *
+	 * @var CartDataFactory
+	 */
 	protected CartDataFactory $cart_data_factory;
 
+	/**
+	 * The shipping factory.
+	 *
+	 * @var ShippingFactory
+	 */
 	protected ShippingFactory $shipping_factory;
 
+	/**
+	 * The payer factory.
+	 *
+	 * @var PayerFactory
+	 */
 	protected PayerFactory $payer_factory;
 
+	/**
+	 * WooCommerceOrderCreator constructor.
+	 *
+	 * @param FundingSourceRenderer $funding_source_renderer The funding source renderer.
+	 * @param SessionHandler        $session_handler         The session handler.
+	 * @param SubscriptionHelper    $subscription_helper     The subscription helper.
+	 * @param CartDataFactory       $cart_data_factory       The cart data factory.
+	 * @param ShippingFactory       $shipping_factory        The shipping factory.
+	 * @param PayerFactory          $payer_factory           The payer factory.
+	 */
 	public function __construct(
 		FundingSourceRenderer $funding_source_renderer,
 		SessionHandler $session_handler,
@@ -126,13 +151,21 @@ class WooCommerceOrderCreator {
 			$wc_order->save();
 		} catch ( Exception $exception ) {
 			$wc_order->delete( true );
-			throw new RuntimeException( 'Failed to create WooCommerce order: ' . $exception->getMessage() );
+			throw new RuntimeException( esc_html( 'Failed to create WooCommerce order: ' . $exception->getMessage() ) );
 		} catch ( Throwable $error ) {
 			// Keep PHP errors fatal so their internal message never reaches the buyer.
 			$wc_order->delete( true );
 			throw $error;
 		}
 
+		/**
+		 * Fires after a WooCommerce order was created from the cart for a PayPal order.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param \WC_Order $wc_order  The WooCommerce order.
+		 * @param CartData  $cart_data The cart data.
+		 */
 		do_action( 'woocommerce_paypal_payments_woocommerce_order_created_from_cart', $wc_order, $cart_data );
 
 		return $wc_order;
@@ -141,6 +174,10 @@ class WooCommerceOrderCreator {
 	/**
 	 * Configures the line items.
 	 *
+	 * @param WC_Order      $wc_order  The WooCommerce order.
+	 * @param CartData      $cart_data The cart data.
+	 * @param Payer|null    $payer     The payer.
+	 * @param Shipping|null $shipping  The shipping.
 	 * @psalm-suppress InvalidScalarArgument
 	 */
 	protected function configure_line_items( WC_Order $wc_order, CartData $cart_data, ?Payer $payer, ?Shipping $shipping ): void {
@@ -153,6 +190,8 @@ class WooCommerceOrderCreator {
 			/**
 			 * Filters the order line item object, mirroring WooCommerce Core so plugins
 			 * can swap the item class before it is populated.
+			 *
+			 * @since 11.3.0
 			 *
 			 * @param WC_Order_Item_Product $item          The order line item.
 			 * @param string                $cart_item_key The cart item hash key.
@@ -191,11 +230,19 @@ class WooCommerceOrderCreator {
 				$item->set_variation( $variation_attributes );
 			}
 
-			$product = wc_get_product( $variation_id ?: $product_id );
+			$product = wc_get_product( $variation_id ? $variation_id : $product_id );
 			if ( ! $product ) {
 				return;
 			}
 
+			/**
+			 * Filters the subtotal of a cart line item when an order is created from the cart.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param mixed $subtotal  The line item subtotal.
+			 * @param array $cart_item The cart item.
+			 */
 			$subtotal = apply_filters( 'woocommerce_paypal_payments_shipping_callback_cart_line_item_total', $cart_item['line_subtotal'], $cart_item );
 
 			$item->set_name( $product->get_name() );
@@ -235,6 +282,8 @@ class WooCommerceOrderCreator {
 			 * (e.g. Subscriptions, Gift Cards, Product Add-ons) can augment the order
 			 * item with data they stored on the cart item.
 			 *
+			 * @since 11.3.0
+			 *
 			 * @param WC_Order_Item_Product $item          The order line item.
 			 * @param string                $cart_item_key The cart item hash key.
 			 * @param array                 $cart_item     The cart item data.
@@ -252,6 +301,9 @@ class WooCommerceOrderCreator {
 	 * Without this the order is built from line items, shipping and coupons alone, so a
 	 * cart fee is dropped and the order total no longer matches the amount the buyer
 	 * approved: it is charged short by a surcharge, or over by a negative fee.
+	 *
+	 * @param WC_Order $wc_order  The WooCommerce order.
+	 * @param CartData $cart_data The cart data.
 	 */
 	protected function configure_fees( WC_Order $wc_order, CartData $cart_data ): void {
 		foreach ( $cart_data->fees() as $fee_key => $fee ) {
@@ -273,6 +325,8 @@ class WooCommerceOrderCreator {
 			 * Fires the standard WooCommerce fee item action so third-party plugins can
 			 * augment the item. The fee is passed as an object, as WooCommerce passes it.
 			 *
+			 * @since 11.3.0
+			 *
 			 * @param WC_Order_Item_Fee $item     The order fee item.
 			 * @param string|int        $fee_key  The fee key.
 			 * @param object            $fee      The cart fee.
@@ -287,6 +341,10 @@ class WooCommerceOrderCreator {
 	/**
 	 * Configures the shipping & billing addresses for WC order from given payer.
 	 *
+	 * @param WC_Order      $wc_order       The WooCommerce order.
+	 * @param Payer|null    $payer          The payer.
+	 * @param Shipping|null $shipping       The shipping.
+	 * @param bool          $needs_shipping Whether the order needs shipping.
 	 * @throws WC_Data_Exception|RuntimeException When failing to configure shipping.
 	 * @psalm-suppress RedundantConditionGivenDocblockType
 	 */
@@ -312,10 +370,10 @@ class WooCommerceOrderCreator {
 				$wc_email = $wc_customer->get_email();
 			}
 
-			$email = $wc_email ?: $payer->email_address();
+			$email = $wc_email ? $wc_email : $payer->email_address();
 
 			$billing_address = array(
-				'email'      => $email ?: '',
+				'email'      => $email ? $email : '',
 				'first_name' => $payer_name ? $payer_name->given_name() : '',
 				'last_name'  => $payer_name ? $payer_name->surname() : '',
 				'address_1'  => $address ? $address->address_line_1() : '',
@@ -339,8 +397,9 @@ class WooCommerceOrderCreator {
 			&& $wc_customer instanceof WC_Customer
 			&& $wc_customer->get_billing_address_1()
 		) {
-			$billing_address = array(
-				'email'      => ( $billing_address['email'] ?? '' ) ?: ( $wc_customer->get_billing_email() ?: '' ),
+			$customer_billing_email = $wc_customer->get_billing_email();
+			$billing_address        = array(
+				'email'      => ( $billing_address['email'] ?? '' ) ? $billing_address['email'] : ( $customer_billing_email ? $customer_billing_email : '' ),
 				'first_name' => $wc_customer->get_billing_first_name(),
 				'last_name'  => $wc_customer->get_billing_last_name(),
 				'address_1'  => $wc_customer->get_billing_address_1(),
@@ -380,7 +439,7 @@ class WooCommerceOrderCreator {
 		}
 
 		if ( $billing_address || $shipping_address ) {
-			$wc_order->set_billing_address( $billing_address ?: $shipping_address );
+			$wc_order->set_billing_address( $billing_address ? $billing_address : $shipping_address );
 		}
 
 		if ( $shipping_options ) {
@@ -421,18 +480,21 @@ class WooCommerceOrderCreator {
 
 	/**
 	 * Configures the customer ID.
+	 *
+	 * @param WC_Order $wc_order  The WooCommerce order.
+	 * @param CartData $cart_data The cart data.
 	 */
 	protected function configure_customer( WC_Order $wc_order, CartData $cart_data ): void {
 		$current_user = wp_get_current_user();
 
-		if ( $current_user->ID !== 0 ) {
+		if ( 0 !== $current_user->ID ) {
 			$wc_order->set_customer_id( $current_user->ID );
 
 			return;
 		}
 
 		$saved_user_id = $cart_data->user_id();
-		if ( $saved_user_id !== 0 ) {
+		if ( 0 !== $saved_user_id ) {
 			$wc_order->set_customer_id( $saved_user_id );
 		}
 	}
@@ -506,7 +568,7 @@ class WooCommerceOrderCreator {
 		);
 
 		if ( $subscription instanceof WP_Error ) {
-			throw new RuntimeException( $subscription->get_error_message() );
+			throw new RuntimeException( esc_html( $subscription->get_error_message() ) );
 		}
 
 		return $subscription;
@@ -524,7 +586,8 @@ class WooCommerceOrderCreator {
 	private function get_payer( Order $order, ?array $paypal_data = null ): ?Payer {
 		$payer = $order->payer();
 		if ( is_null( $payer ) && isset( $paypal_data['payer'] ) ) {
-			$payer_data = json_decode( wp_json_encode( $paypal_data['payer'] ) ?: '' );
+			$payer_json = wp_json_encode( $paypal_data['payer'] );
+			$payer_data = json_decode( $payer_json ? $payer_json : '' );
 			$payer      = $this->payer_factory->from_paypal_response( $payer_data );
 		}
 
@@ -550,10 +613,20 @@ class WooCommerceOrderCreator {
 				},
 				$shipping->options()
 			);
-			$shipping_address_data                      = json_decode( wp_json_encode( $paypal_data['shipping_address'] ) ?: '' );
+			$shipping_address_json                      = wp_json_encode( $paypal_data['shipping_address'] );
+			$shipping_address_data                      = json_decode( $shipping_address_json ? $shipping_address_json : '' );
 			$shipping                                   = $this->shipping_factory->from_paypal_response( $shipping_address_data );
 		}
 
+		/**
+		 * Filters the shipping information read from the PayPal order, with a fallback to the PayPal response data.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param Shipping|null $shipping    The shipping, or null if none is available.
+		 * @param Order         $order       The PayPal order.
+		 * @param array|null    $paypal_data The PayPal response data.
+		 */
 		return apply_filters(
 			'woocommerce_paypal_payments_order_creator_get_shipping',
 			$shipping,

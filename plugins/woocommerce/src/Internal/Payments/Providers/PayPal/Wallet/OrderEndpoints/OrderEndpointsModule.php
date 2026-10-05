@@ -19,13 +19,24 @@ use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ModuleClassNameIdTra
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ServiceModule;
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
 
+/**
+ * Module that registers the cart, order and shipping endpoints.
+ */
 class OrderEndpointsModule implements ServiceModule, ExecutableModule {
 	use ModuleClassNameIdTrait;
 
+	/**
+	 * {@inheritDoc}
+	 */
 	public function services(): array {
 		return require __DIR__ . '/services.php';
 	}
 
+	/**
+	 * {@inheritDoc}
+	 *
+	 * @param ContainerInterface $c The service container.
+	 */
 	public function run( ContainerInterface $c ): bool {
 		add_action(
 			'wc_ajax_' . ChangeCartEndpoint::ENDPOINT,

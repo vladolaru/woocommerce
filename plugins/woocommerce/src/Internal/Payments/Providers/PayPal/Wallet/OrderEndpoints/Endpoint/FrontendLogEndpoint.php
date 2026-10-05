@@ -14,6 +14,9 @@ use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Endpoint\EndpointInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Exception\NonceValidationException;
 
+/**
+ * Endpoint that writes front-end failure reports to the log.
+ */
 class FrontendLogEndpoint implements EndpointInterface {
 
 	public const  ENDPOINT = 'ppc-frontend-log';
@@ -22,14 +25,33 @@ class FrontendLogEndpoint implements EndpointInterface {
 
 	private const LEVELS = array( 'debug', 'info', 'warning', 'error' );
 
+	/**
+	 * The request data.
+	 *
+	 * @var RequestData
+	 */
 	private RequestData $request_data;
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	private LoggerInterface $logger;
 
+	/**
+	 * FrontendLogEndpoint constructor.
+	 *
+	 * @param RequestData     $request_data The request data.
+	 * @param LoggerInterface $logger       The logger.
+	 */
 	public function __construct( RequestData $request_data, LoggerInterface $logger ) {
 		$this->request_data = $request_data;
 		$this->logger       = $logger;
 	}
 
+	/**
+	 * Returns the nonce action of the endpoint.
+	 */
 	public static function nonce(): string {
 		return self::ENDPOINT;
 	}
@@ -43,6 +65,10 @@ class FrontendLogEndpoint implements EndpointInterface {
 
 			/**
 			 * Disable front-end logging without disabling logging completely.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param bool $enabled Whether the front-end log lines are written; true by default.
 			 */
 			if ( apply_filters( 'woocommerce_paypal_payments_frontend_log_enabled', true ) ) {
 				// The line reports what the browser saw, not the WC-AJAX
@@ -66,6 +92,11 @@ class FrontendLogEndpoint implements EndpointInterface {
 		}
 	}
 
+	/**
+	 * Returns the log level the front end asked for, or error if it is not a known one.
+	 *
+	 * @param array $data The request data.
+	 */
 	private function level( array $data ): string {
 		$level = $this->string_field( $data, 'level' );
 
@@ -78,8 +109,14 @@ class FrontendLogEndpoint implements EndpointInterface {
 	 * @param array<string, mixed> $data The request data.
 	 */
 	private function line( array $data ): string {
-		$tag    = $this->string_field( $data, 'tag' ) ?: 'frontend';
-		$event  = $this->string_field( $data, 'event' ) ?: 'unknown';
+		$tag = $this->string_field( $data, 'tag' );
+		if ( ! $tag ) {
+			$tag = 'frontend';
+		}
+		$event = $this->string_field( $data, 'event' );
+		if ( ! $event ) {
+			$event = 'unknown';
+		}
 		$detail = $this->string_field( $data, 'message' );
 
 		$line = sprintf( '[%1$s] %2$s', $tag, $event );

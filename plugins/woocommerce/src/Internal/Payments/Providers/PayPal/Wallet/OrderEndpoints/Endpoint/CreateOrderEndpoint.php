@@ -74,15 +74,24 @@ class CreateOrderEndpoint implements EndpointInterface {
 	 */
 	private $shipping_preference_factory;
 
+	/**
+	 * The return url factory.
+	 *
+	 * @var ReturnUrlFactory
+	 */
 	private ReturnUrlFactory $return_url_factory;
 
 	/**
 	 * The contact_preference factors.
+	 *
+	 * @var ContactPreferenceFactory
 	 */
 	private ContactPreferenceFactory $contact_preference_factory;
 
 	/**
 	 * The ExperienceContextBuilder.
+	 *
+	 * @var ExperienceContextBuilder
 	 */
 	private ExperienceContextBuilder $experience_context_builder;
 
@@ -107,6 +116,11 @@ class CreateOrderEndpoint implements EndpointInterface {
 	 */
 	private $session_handler;
 
+	/**
+	 * The settings provider.
+	 *
+	 * @var SettingsProvider
+	 */
 	private SettingsProvider $settings_provider;
 
 	/**
@@ -116,8 +130,18 @@ class CreateOrderEndpoint implements EndpointInterface {
 	 */
 	private $early_order_handler;
 
+	/**
+	 * The cart data factory.
+	 *
+	 * @var CartDataFactory
+	 */
 	protected CartDataFactory $cart_data_factory;
 
+	/**
+	 * The cart data transient storage.
+	 *
+	 * @var CartDataTransientStorage
+	 */
 	protected CartDataTransientStorage $cart_data_transient_storage;
 
 	/**
@@ -164,6 +188,8 @@ class CreateOrderEndpoint implements EndpointInterface {
 
 	/**
 	 * Whether the server-side shipping callback is enabled (feature flag).
+	 *
+	 * @var bool
 	 */
 	private bool $server_side_shipping_callback_enabled;
 
@@ -202,8 +228,8 @@ class CreateOrderEndpoint implements EndpointInterface {
 	 * @param SessionHandler            $session_handler The SessionHandler object.
 	 * @param SettingsProvider          $settings_provider The SettingsProvider object.
 	 * @param EarlyOrderHandler         $early_order_handler The EarlyOrderHandler object.
-	 * @param CartDataFactory           $cart_data_factory
-	 * @param CartDataTransientStorage  $cart_data_transient_storage
+	 * @param CartDataFactory           $cart_data_factory The cart data factory.
+	 * @param CartDataTransientStorage  $cart_data_transient_storage The cart data transient storage.
 	 * @param bool                      $registration_needed  Whether a new user must be registered during checkout.
 	 * @param bool                      $early_validation_enabled Whether to execute WC validation of the checkout form.
 	 * @param string[]                  $pay_now_contexts The contexts that should have the Pay Now button.
@@ -280,6 +306,13 @@ class CreateOrderEndpoint implements EndpointInterface {
 			$funding_source            = $data['funding_source'] ?? '';
 			$wc_order                  = null;
 
+			/**
+			 * Fires when a request to create a PayPal order starts.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param array $data The request data.
+			 */
 			do_action( 'woocommerce_paypal_payments_create_order_request_started', $data );
 
 			if ( 'pay-now' === $data['context'] ) {
@@ -388,13 +421,15 @@ class CreateOrderEndpoint implements EndpointInterface {
 			 * Unlike woocommerce_paypal_payments_paypal_order_created (fired for
 			 * every API order creation), this action also receives the request data.
 			 *
+			 * @since 11.3.0
+			 *
 			 * @param Order $order The created PayPal order.
 			 * @param array $data The request data.
 			 */
 			do_action( 'woocommerce_paypal_payments_create_order_endpoint_order_created', $order, $data );
 
 			if ( 'checkout' === $data['context'] ) {
-				if ( $payment_method === PayPalGateway::ID && ! in_array( $funding_source, $this->funding_sources_without_redirect, true ) ) {
+				if ( PayPalGateway::ID === $payment_method && ! in_array( $funding_source, $this->funding_sources_without_redirect, true ) ) {
 					$this->session_handler->replace_order( $order );
 					$this->session_handler->replace_funding_source( $funding_source );
 				}
@@ -429,6 +464,14 @@ class CreateOrderEndpoint implements EndpointInterface {
 
 				$wc_order->save_meta_data();
 
+				/**
+				 * Fires after the WooCommerce order was created and patched with the PayPal order.
+				 *
+				 * @since 11.3.0
+				 *
+				 * @param \WC_Order $wc_order The WooCommerce order.
+				 * @param Order     $order    The PayPal order.
+				 */
 				do_action( 'woocommerce_paypal_payments_woocommerce_order_created', $wc_order, $order );
 			}
 
@@ -473,10 +516,7 @@ class CreateOrderEndpoint implements EndpointInterface {
 	 *
 	 * @return Order Created PayPal order.
 	 *
-	 * @throws RuntimeException If create order request fails.
-	 * @throws PayPalApiException If create order request fails.
-	 *
-	 * phpcs:disable Squiz.Commenting.FunctionCommentThrowTag.WrongNumber
+	 * @throws RuntimeException|PayPalApiException If create order request fails.
 	 */
 	private function create_paypal_order( ?WC_Order $wc_order = null, string $payment_method = '', array $data = array() ): Order {
 		assert( $this->purchase_unit instanceof PurchaseUnit );
@@ -537,7 +577,7 @@ class CreateOrderEndpoint implements EndpointInterface {
 
 		if ( $this->should_handle_shipping_in_paypal( $funding_source )
 			&& $this->server_side_shipping_callback_enabled
-			&& $shipping_preference === ExperienceContext::SHIPPING_PREFERENCE_GET_FROM_FILE ) {
+			&& ExperienceContext::SHIPPING_PREFERENCE_GET_FROM_FILE === $shipping_preference ) {
 			$experience_context = $experience_context->with_shipping_callback();
 		}
 
@@ -680,7 +720,7 @@ class CreateOrderEndpoint implements EndpointInterface {
 	private function validate_paynow_form( array $form_fields ): void {
 		if ( isset( $form_fields['terms-field'] ) && ! isset( $form_fields['terms'] ) ) {
 			throw new ValidationException(
-				array( __( 'Please read and accept the terms and conditions to proceed with your order.', 'woocommerce' ) )
+				array( esc_html__( 'Please read and accept the terms and conditions to proceed with your order.', 'woocommerce' ) )
 			);
 		}
 	}
@@ -711,6 +751,6 @@ class CreateOrderEndpoint implements EndpointInterface {
 			return false;
 		}
 
-		return ! $is_vaulting_enabled || $funding_source !== 'venmo';
+		return ! $is_vaulting_enabled || 'venmo' !== $funding_source;
 	}
 }

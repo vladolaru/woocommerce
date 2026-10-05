@@ -20,16 +20,53 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Endp
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Exception\NonceValidationException;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Session\SessionHandler;
 
+/**
+ * Patches the PayPal order with the cart's current shipping methods.
+ */
 class UpdateShippingEndpoint implements EndpointInterface {
 	const ENDPOINT              = 'ppc-update-shipping';
 	const WC_STORE_API_ENDPOINT = '/wp-json/wc/store/v1/cart/';
 
+	/**
+	 * The request data.
+	 *
+	 * @var RequestData
+	 */
 	private RequestData $request_data;
+	/**
+	 * The order endpoint.
+	 *
+	 * @var OrderEndpoint
+	 */
 	private OrderEndpoint $order_endpoint;
+	/**
+	 * The purchase unit factory.
+	 *
+	 * @var PurchaseUnitFactory
+	 */
 	private PurchaseUnitFactory $purchase_unit_factory;
+	/**
+	 * The session handler.
+	 *
+	 * @var SessionHandler
+	 */
 	private SessionHandler $session_handler;
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	protected LoggerInterface $logger;
 
+	/**
+	 * UpdateShippingEndpoint constructor.
+	 *
+	 * @param RequestData         $request_data          The request data.
+	 * @param OrderEndpoint       $order_endpoint        The order endpoint.
+	 * @param PurchaseUnitFactory $purchase_unit_factory The purchase unit factory.
+	 * @param SessionHandler      $session_handler       The session handler.
+	 * @param LoggerInterface     $logger                The logger.
+	 */
 	public function __construct(
 		RequestData $request_data,
 		OrderEndpoint $order_endpoint,
@@ -73,6 +110,7 @@ class UpdateShippingEndpoint implements EndpointInterface {
 			$pu      = $this->purchase_unit_factory->from_wc_cart( null, true );
 			$pu_data = $pu->to_array();
 
+			// phpcs:ignore Generic.Commenting.Todo.TaskFound -- Existing follow-up note kept as written.
 			// TODO: maybe should patch only if methods changed.
 			// But it seems a bit difficult to detect,
 			// e.g. ->order($id) may not have Shipping because we drop it when address or name are missing.

@@ -63,8 +63,18 @@ class ApproveOrderEndpoint implements EndpointInterface {
 	 */
 	private $api_endpoint;
 
+	/**
+	 * The settings provider.
+	 *
+	 * @var SettingsProvider
+	 */
 	private SettingsProvider $settings_provider;
 
+	/**
+	 * The settings model.
+	 *
+	 * @var SettingsModel
+	 */
 	private SettingsModel $settings_model;
 
 	/**
@@ -115,6 +125,7 @@ class ApproveOrderEndpoint implements EndpointInterface {
 	 * @param PayPalGateway           $gateway              The WC gateway.
 	 * @param WooCommerceOrderCreator $wc_order_creator     The WooCommerce order creator.
 	 * @param LoggerInterface         $logger               The logger.
+	 * @param Context                 $context              The context.
 	 */
 	public function __construct(
 		RequestData $request_data,
@@ -164,6 +175,13 @@ class ApproveOrderEndpoint implements EndpointInterface {
 				throw new RuntimeException( 'No order id given' );
 			}
 
+			/**
+			 * Fires when a request to approve a PayPal order starts.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param array $data The request data.
+			 */
 			do_action( 'woocommerce_paypal_payments_approve_order_request_started', $data );
 
 			$order = $this->api_endpoint->order( $data['order_id'] );
@@ -210,6 +228,13 @@ class ApproveOrderEndpoint implements EndpointInterface {
 				WC()->session->set( 'chosen_payment_method', PayPalGateway::ID );
 			}
 
+			/**
+			 * Filters whether the final review setting is toggled after the order is approved.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param bool $toggle Whether to toggle the setting; false by default.
+			 */
 			if ( apply_filters( 'woocommerce_paypal_payments_toggle_final_review_checkbox', false ) ) {
 				$this->toggle_final_review_enabled_setting();
 			}

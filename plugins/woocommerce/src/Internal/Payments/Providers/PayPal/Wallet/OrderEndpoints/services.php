@@ -20,7 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoi
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
 
 return array(
-	'order-endpoints.request-data'                         => static function ( ContainerInterface $container ): RequestData {
+	'order-endpoints.request-data'                         => static function ( ContainerInterface $container ): RequestData { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new RequestData();
 	},
 	'order-endpoints.endpoint.change-cart'                 => static function ( ContainerInterface $container ): ChangeCartEndpoint {
@@ -110,21 +110,25 @@ return array(
 			$container->get( 'woocommerce.logger.woocommerce' )
 		);
 	},
-	'order-endpoints.is-logged-in'                         => static function ( ContainerInterface $container ): bool {
+	'order-endpoints.is-logged-in'                         => static function ( ContainerInterface $container ): bool { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return is_user_logged_in();
 	},
-	'order-endpoints.registration-required'                => static function ( ContainerInterface $container ): bool {
+	'order-endpoints.registration-required'                => static function ( ContainerInterface $container ): bool { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return WC()->checkout()->is_registration_required();
 	},
 	'order-endpoints.current-user-must-register'           => static function ( ContainerInterface $container ): bool {
 		return ! $container->get( 'order-endpoints.is-logged-in' ) &&
 			$container->get( 'order-endpoints.registration-required' );
 	},
-	'order-endpoints.early-wc-checkout-validation-enabled' => static function ( ContainerInterface $container ): bool {
+	'order-endpoints.early-wc-checkout-validation-enabled' => static function ( ContainerInterface $container ): bool { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		/**
 		 * The filter allowing to disable the WC validation of the checkout form
 		 * when the PayPal button is clicked.
 		 * The validation is triggered in a non-standard way and may cause issues on some sites.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $enabled Whether the WooCommerce checkout form is validated early; true by default.
 		 */
 		return (bool) apply_filters( 'woocommerce_paypal_payments_early_wc_checkout_validation_enabled', true );
 	},
@@ -145,7 +149,7 @@ return array(
 	'order-endpoints.handle-shipping-in-paypal'            => static function ( ContainerInterface $container ): bool {
 		return ! $container->get( 'blocks.settings.final_review_enabled' );
 	},
-	'order-endpoints.helper.cart-products'                 => static function ( ContainerInterface $container ): CartProductsHelper {
+	'order-endpoints.helper.cart-products'                 => static function ( ContainerInterface $container ): CartProductsHelper { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		$data_store = \WC_Data_Store::load( 'product' );
 		return new CartProductsHelper( $data_store );
 	},
