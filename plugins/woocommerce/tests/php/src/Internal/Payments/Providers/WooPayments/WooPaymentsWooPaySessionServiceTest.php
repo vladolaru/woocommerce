@@ -965,10 +965,19 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_woopayments_woopay_blog_id', static fn() => '12345' );
 		add_filter( 'woocommerce_woopayments_woopay_blog_token', static fn() => 'blog-token' );
 
-		$sut      = $this->create_service();
-		$expected = hash_hmac( 'sha512', '12345' . floor( time() / 30 ), 'blog-token' );
+		$sut = $this->create_service();
+		// The signature covers the current 30-second window; the call can cross into the next one.
+		$window_before = floor( time() / 30 );
+		$signature     = $sut->get_woopay_request_signature();
+		$window_after  = floor( time() / 30 );
 
-		$this->assertSame( $expected, $sut->get_woopay_request_signature() );
+		$this->assertContains(
+			$signature,
+			array(
+				hash_hmac( 'sha512', '12345' . $window_before, 'blog-token' ),
+				hash_hmac( 'sha512', '12345' . $window_after, 'blog-token' ),
+			)
+		);
 	}
 
 	/**
