@@ -930,17 +930,11 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			return array();
 		}
 
-		$session       = function_exists( 'WC' ) && WC() ? WC()->session : null;
-		$customer      = $session instanceof \WC_Session ? $session->get( 'customer' ) : null;
-		$session_email = is_array( $customer ) && isset( $customer['email'] ) ? (string) $customer['email'] : '';
-		$user_email    = isset( $_POST['email'] ) && is_string( $_POST['email'] ) ? sanitize_email( wp_unslash( $_POST['email'] ) ) : $session_email;
-		$can_see_order = current_user_can( 'read_private_shop_orders' ) || ( 0 !== get_current_user_id() && $order->get_customer_id() === get_current_user_id() );
-
 		$config = array(
 			'order_id'      => $order->get_id(),
 			'pay_for_order' => sanitize_text_field( wp_unslash( $_GET['pay_for_order'] ) ),
 			'key'           => sanitize_text_field( wp_unslash( $_GET['key'] ) ),
-			'billing_email' => $can_see_order ? $order->get_billing_email() : $user_email,
+			'billing_email' => WooPaymentsOrderPayAccess::get_billing_email_for_current_visitor( $order ),
 		);
 		// phpcs:enable WordPress.Security.NonceVerification
 

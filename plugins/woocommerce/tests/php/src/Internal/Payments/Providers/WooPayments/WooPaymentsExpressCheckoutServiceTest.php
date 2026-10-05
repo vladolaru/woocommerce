@@ -1383,13 +1383,16 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should build pay-for-order express checkout params from the current order.
+	 * @testdox Should build pay-for-order express checkout params from the current order for its logged-in owner.
 	 */
 	public function test_builds_pay_for_order_express_checkout_params(): void {
-		$order = wc_create_order();
+		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$order   = wc_create_order();
 		$order->set_total( '24.00' );
+		$order->set_customer_id( $user_id );
 		$order->set_billing_email( 'shopper@example.test' );
 		$order->save();
+		wp_set_current_user( $user_id );
 		$_GET['pay_for_order'] = 'true';
 		$_GET['key']           = $order->get_order_key();
 		$this->set_order_pay_query_var( $order->get_id() );
@@ -1403,6 +1406,48 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'shopper@example.test', $params['billing_email'] );
 		$this->assertSame( array( 'payment_request' ), $params['enabled_methods'] );
 		$this->assertSame( array( 'card' ), $params['payment_method_types'] );
+	}
+
+	/**
+	 * @testdox Pay-for-order params give a guest order's email only to a shop manager, and to anyone else the email they verified or their session email.
+	 *
+	 * @testWith ["logged-out visitor", ""]
+	 *           ["shop manager", "order@example.test"]
+	 *           ["visitor with a session email", "session@example.test"]
+	 *           ["visitor who posted the email check", "typed@example.test"]
+	 *
+	 * @param string $viewer   Who opens the pay link.
+	 * @param string $expected Expected billing email.
+	 */
+	public function test_pay_for_order_params_hide_a_guest_order_email_from_other_visitors( string $viewer, string $expected ): void {
+		$order = wc_create_order();
+		$order->set_total( '24.00' );
+		$order->set_billing_email( 'order@example.test' );
+		$order->save();
+		$_GET['pay_for_order'] = 'true';
+		$_GET['key']           = $order->get_order_key();
+		$this->set_order_pay_query_var( $order->get_id() );
+
+		$session          = WC()->session;
+		$session_customer = $session->get( 'customer' );
+		$session->set( 'customer', null );
+		if ( 'shop manager' === $viewer ) {
+			wp_set_current_user( self::factory()->user->create( array( 'role' => 'shop_manager' ) ) );
+		} elseif ( 'visitor with a session email' === $viewer ) {
+			$session->set( 'customer', array( 'email' => 'session@example.test' ) );
+		} elseif ( 'visitor who posted the email check' === $viewer ) {
+			$_POST['email'] = 'typed@example.test';
+		}
+
+		try {
+			$params = $this->create_service()->get_express_checkout_params( 'pay_for_order' );
+		} finally {
+			$session->set( 'customer', $session_customer );
+			unset( $_POST['email'] );
+		}
+
+		$this->assertSame( $order->get_id(), $params['order_id'] );
+		$this->assertSame( $expected, $params['billing_email'] );
 	}
 
 	/**

@@ -417,12 +417,7 @@ class WooPaymentsExpressCheckoutService {
 			return false;
 		}
 
-		$key = $this->get_pay_for_order_key();
-		if ( '' === $key || ! hash_equals( $order->get_order_key(), $key ) ) {
-			return false;
-		}
-
-		return current_user_can( 'pay_for_order', $order->get_id() );
+		return WooPaymentsOrderPayAccess::can_pay_with_key( $order, $this->get_pay_for_order_key() );
 	}
 
 	/**
@@ -985,6 +980,9 @@ class WooPaymentsExpressCheckoutService {
 	/**
 	 * Get pay-for-order params for the frontend.
 	 *
+	 * The billing email authorizes the Store API order requests, so only a visitor allowed to see the order gets the
+	 * order's own email (see WooPaymentsOrderPayAccess::get_billing_email_for_current_visitor()).
+	 *
 	 * @return array<string,mixed>
 	 */
 	private function get_pay_for_order_params(): array {
@@ -997,7 +995,7 @@ class WooPaymentsExpressCheckoutService {
 			'order_id'      => $order->get_id(),
 			'pay_for_order' => $this->get_pay_for_order_flag(),
 			'key'           => $this->get_pay_for_order_key(),
-			'billing_email' => $order->get_billing_email(),
+			'billing_email' => WooPaymentsOrderPayAccess::get_billing_email_for_current_visitor( $order ),
 		);
 	}
 
