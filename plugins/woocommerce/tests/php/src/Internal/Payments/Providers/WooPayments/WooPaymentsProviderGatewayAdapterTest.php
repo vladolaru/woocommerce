@@ -5855,14 +5855,24 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A checkout of an order whose attached payment is disputed is refused with the shopper notice, keeps the order pending and charges nothing.
+	 * @testdox A checkout of an order whose attached payment is disputed is refused with the shopper notice, keeps the order pending and charges nothing, when $_dataName.
 	 *
 	 * The gateway runs with the real duplicate-payment guard and the real provider over one recording transport. The guard
 	 * refuses a disputed attached intent with ERROR_DISPUTED_INTENT; the gateway shows the refusal and fails the order only
-	 * for an amount mismatch (NativeWooPaymentsGateway::process_order_payment()).
+	 * for an amount mismatch (NativeWooPaymentsGateway::process_order_payment()). An order whose intent status says
+	 * succeeded is not answered as paid: the order is unpaid and the shopper must see why.
+	 *
+	 * @testWith ["the payment was never applied to the order", "requires_action"]
+	 *           ["the merchant set the paid order back to pending", "succeeded"]
+	 *
+	 * @param string $label            Case description.
+	 * @param string $intention_status The order's `_intention_status`.
 	 */
-	public function test_checkout_of_an_order_whose_attached_payment_is_disputed_charges_nothing(): void {
-		$order           = $this->create_order_left_by_a_completed_challenge();
+	public function test_checkout_of_an_order_whose_attached_payment_is_disputed_charges_nothing( string $label, string $intention_status ): void {
+		unset( $label );
+		$order = $this->create_order_left_by_a_completed_challenge();
+		$order->update_meta_data( '_intention_status', $intention_status );
+		$order->save();
 		$disputed_charge = array(
 			'disputed' => true,
 			'dispute'  => 'dp_1UJjK4BzWlxcwgpPDisputed',
@@ -5888,6 +5898,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'GET intentions/' . self::CHALLENGE_COMPLETED_INTENT_ID ), self::platform_calls( $http_client ), 'Only the attached intent may be read; nothing may be charged.' );
 		$notes = array_map( static fn( $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 		$this->assertSame( array(), array_values( array_filter( $notes, static fn( string $note ): bool => str_contains( $note, 'to Failed' ) ) ), 'No failed status change may be noted.' );
+		$this->assertSame( array(), array_values( array_filter( $notes, static fn( string $note ): bool => str_starts_with( $note, 'Payment succeeded' ) ) ), 'No payment succeeded in this request.' );
 	}
 
 	/**

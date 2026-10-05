@@ -1819,7 +1819,8 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		if ( is_wp_error( $existing_intent_result ) ) {
 			// The plugin fails the order with the mismatch as the note (client 11.1.0 `gw:1324-1325`). A guard lookup that
 			// failed on a PHP Error leaves the order pending, as the client's fatal does (monitor ruling 2026-10-04 (1)). A
-			// disputed attached payment leaves the order as it is; the guard has written its note.
+			// disputed attached payment leaves the order as it is; the guard has written its note. Its refusal reaches the
+			// shopper even when the order's intent status says succeeded: no payment succeeded in this request.
 			$is_amount_mismatch = 'duplicate_payment_amount_mismatch' === $existing_intent_result->get_error_code();
 
 			return $this->refuse_checkout(
@@ -1828,7 +1829,8 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 				(string) $existing_intent_result->get_error_code(),
 				$is_amount_mismatch,
 				'',
-				$is_amount_mismatch ? $existing_intent_result->get_error_message() : ''
+				$is_amount_mismatch ? $existing_intent_result->get_error_message() : '',
+				WooPaymentsDuplicatePaymentPreventionService::ERROR_DISPUTED_INTENT !== $existing_intent_result->get_error_code()
 			);
 		}
 
@@ -3222,10 +3224,11 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @param bool     $fail_order  Whether the order moves to failed.
 	 * @param string   $note        The refusal's order note, or '' for none.
 	 * @param string   $status_note Note attached to the failed status transition.
+	 * @param bool     $keep_succeeded_intent_order Whether an order whose intent already succeeded is kept and answered as paid.
 	 * @return array<string,string>
 	 */
-	private function refuse_checkout( WC_Order $order, string $message, string $code, bool $fail_order = true, string $note = '', string $status_note = '' ): array {
-		if ( $this->has_succeeded_intent( $order ) ) {
+	private function refuse_checkout( WC_Order $order, string $message, string $code, bool $fail_order = true, string $note = '', string $status_note = '', bool $keep_succeeded_intent_order = true ): array {
+		if ( $keep_succeeded_intent_order && $this->has_succeeded_intent( $order ) ) {
 			return $this->keep_succeeded_intent_order( $order, $message, $code );
 		}
 
