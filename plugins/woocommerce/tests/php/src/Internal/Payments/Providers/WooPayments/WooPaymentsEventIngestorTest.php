@@ -140,9 +140,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_woopayments_nox_profile' );
 		delete_option( 'woocommerce_woopayments_nox_onboarding_locked' );
 		delete_option( 'wcpay_account_deletion_pending_id' );
-		foreach ( array( 'evt_dedup', 'evt_retry', 'evt_dispute_lost_1', 'evt_dispute_lost_2', 'evt_row_38_update_first', 'evt_row_38_update_second', 'evt_row_38_update_replay', 'evt_row_38_cache_first', 'evt_row_38_cache_replay', 'evt_row_38_missing_id', 'evt_row_38_lost_first', 'evt_row_38_lost_second', 'evt_row_38_lost_replay', 'evt_row_39_missing_id', 'evt_row_39_null_id', 'evt_row_39_non_scalar_id', 'evt_claimed', 'evt_claim_release', 'evt_early_warning_created', 'evt_early_warning_updated', 'evt_early_warning_hooks', 'evt_early_warning_mode_mismatch', 'evt_early_warning_retry', 'evt_invoice_without_module', 'evt_invoice_without_module_live' ) as $event_id ) {
+		foreach ( array( 'evt_dedup', 'evt_retry', 'evt_dispute_lost_1', 'evt_dispute_lost_2', 'evt_row_38_update_first', 'evt_row_38_update_second', 'evt_row_38_update_replay', 'evt_row_38_cache_first', 'evt_row_38_cache_replay', 'evt_row_38_missing_id', 'evt_row_38_lost_first', 'evt_row_38_lost_second', 'evt_row_38_lost_replay', 'evt_row_39_missing_id', 'evt_row_39_null_id', 'evt_row_39_non_scalar_id', 'evt_early_warning_created', 'evt_early_warning_updated', 'evt_early_warning_hooks', 'evt_early_warning_mode_mismatch', 'evt_early_warning_retry', 'evt_invoice_without_module', 'evt_invoice_without_module_live' ) as $event_id ) {
 			delete_transient( 'wcpay_processed_event_' . md5( $event_id ) );
-			wp_cache_delete( 'wcpay_claimed_event_' . md5( $event_id ), 'woopayments_events' );
 		}
 		foreach ( $this->original_multi_currency_options as $option_name => $option_value ) {
 			if ( null === $option_value ) {
@@ -2056,8 +2055,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		}
 		$this->assertInstanceOf( WooPaymentsApiException::class, $first_throw );
 
-		// The throw must leave no processed marker and release the in-flight
-		// claim: a redelivery of the same event re-enters the handler.
+		// The throw must leave no processed marker: a redelivery of the same
+		// event re-enters the handler.
 		$second_throw = null;
 		try {
 			$sut->process( $event );
@@ -2208,9 +2207,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		add_action( 'woocommerce_payments_after_webhook_delivery', $count_delivery );
 
 		$this->sut->process( $event );
-		// Evict the in-request claim, simulating a webhook retry arriving in a later request once
-		// the object-cache entry from the first delivery is gone.
-		wp_cache_delete( 'wcpay_claimed_event_' . md5( (string) $event['id'] ), 'woopayments_events' );
 		$this->sut->process( $event );
 
 		$order = wc_get_order( $order->get_id() );
@@ -4078,10 +4074,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$event   = $this->create_notification_event( 'evt_dedup', 'dedup-note-' . wp_generate_uuid4() );
 
 		$sut->process( $event );
-		wp_cache_delete( 'wcpay_claimed_event_' . md5( 'evt_dedup' ), 'woopayments_events' );
 		$sut->process( $event );
 
-		$this->assertCount( 1, $handler->processed_events, 'The same event ID must be handled only once, even once the in-request claim is gone.' );
+		$this->assertCount( 1, $handler->processed_events, 'The same event ID must be handled only once.' );
 	}
 
 	/**
@@ -4119,42 +4114,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $first_threw, 'The first delivery should surface the handler failure.' );
 		$this->assertCount( 2, $handler->processed_events, 'A failed event must be re-dispatched on the next delivery.' );
-	}
-
-	/**
-	 * @testdox A concurrent delivery whose in-flight claim is already held does not dispatch again before the durable mark.
-	 */
-	public function test_process_skips_event_with_an_already_held_in_flight_claim(): void {
-		$handler = $this->create_recording_notification_handler();
-		$sut     = $this->create_ingestor_with_notification_handler( $handler );
-		$event   = $this->create_notification_event( 'evt_claimed', 'claimed-note-' . wp_generate_uuid4() );
-
-		// Simulate a concurrent in-flight delivery that has claimed the event but not yet written the durable marker.
-		wp_cache_add( 'wcpay_claimed_event_' . md5( 'evt_claimed' ), 1, 'woopayments_events', HOUR_IN_SECONDS );
-
-		$sut->process( $event );
-
-		$this->assertCount( 0, $handler->processed_events, 'A delivery losing the atomic claim race must not dispatch.' );
-	}
-
-	/**
-	 * @testdox A delivery that throws releases its in-flight claim so a retry can re-claim it.
-	 */
-	public function test_process_releases_the_in_flight_claim_when_dispatch_throws(): void {
-		$handler = $this->create_recording_notification_handler( true );
-		$sut     = $this->create_ingestor_with_notification_handler( $handler );
-		$event   = $this->create_notification_event( 'evt_claim_release', 'claim-release-note-' . wp_generate_uuid4() );
-
-		try {
-			$sut->process( $event );
-		} catch ( RuntimeException $exception ) {
-			$this->assertSame( 'Recorded handler failure.', $exception->getMessage() );
-		}
-
-		$this->assertFalse(
-			wp_cache_get( 'wcpay_claimed_event_' . md5( 'evt_claim_release' ), 'woopayments_events' ),
-			'A thrown dispatch must release its in-flight claim so the event can be retried.'
-		);
 	}
 
 	/**
@@ -4601,7 +4560,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			$this->assertSame( 'Recorded early fraud warning failure.', $exception->getMessage() );
 		}
 		$this->assertFalse( get_transient( 'wcpay_processed_event_' . md5( 'evt_early_warning_retry' ) ) );
-		$this->assertFalse( wp_cache_get( 'wcpay_claimed_event_' . md5( 'evt_early_warning_retry' ), 'woopayments_events' ) );
 
 		$handler->should_throw = false;
 		$sut->process( $event );
