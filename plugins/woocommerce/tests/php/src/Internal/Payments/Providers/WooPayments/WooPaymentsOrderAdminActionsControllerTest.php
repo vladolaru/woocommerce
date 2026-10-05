@@ -58,10 +58,13 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			remove_action( 'woocommerce_order_action_cancel_authorization', array( $this->sut, 'handle_woocommerce_order_action_cancel_authorization' ) );
 			remove_action( 'woocommerce_order_status_completed', array( $this->sut, 'handle_woocommerce_order_status_completed' ) );
 			remove_action( 'woocommerce_order_status_cancelled', array( $this->sut, 'handle_woocommerce_order_status_cancelled' ) );
+			remove_filter( 'woocommerce_gateway_title', array( $this->sut, 'handle_woocommerce_gateway_title' ) );
 		}
 
-		global $theorder;
+		global $theorder, $post;
 		$theorder = null;
+		$post     = null; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
+		set_current_screen( 'front' );
 
 		parent::tearDown();
 	}
@@ -95,6 +98,90 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$this->assertFalse( has_action( 'woocommerce_order_action_cancel_authorization', array( $this->sut, 'handle_woocommerce_order_action_cancel_authorization' ) ) );
 		$this->assertFalse( has_action( 'woocommerce_order_status_completed', array( $this->sut, 'handle_woocommerce_order_status_completed' ) ) );
 		$this->assertFalse( has_action( 'woocommerce_order_status_cancelled', array( $this->sut, 'handle_woocommerce_order_status_cancelled' ) ) );
+	}
+
+	/**
+	 * @testdox Register should add the admin gateway title filter on admin requests only, as client 11.1.0 acts only there.
+	 */
+	public function test_registers_the_gateway_title_filter_in_admin_only(): void {
+		$this->sut = $this->create_controller( true );
+		$this->sut->register();
+		$this->assertFalse( has_filter( 'woocommerce_gateway_title', array( $this->sut, 'handle_woocommerce_gateway_title' ) ) );
+
+		set_current_screen( 'woocommerce_page_wc-orders' );
+		$this->sut->register();
+		$this->sut->register();
+
+		$this->assertSame( 10, has_filter( 'woocommerce_gateway_title', array( $this->sut, 'handle_woocommerce_gateway_title' ) ) );
+	}
+
+	/**
+	 * @testdox In admin, the card gateway's title for an order paid with "$method_title" is "$expected".
+	 *
+	 * Client 11.1.0 filter_gateway_title() (class-wc-payments-express-checkout-button-handler.php:415-437); core reads the
+	 * filtered title for "Payment via" and the payment method select (class-wc-meta-box-order-data.php:331, :619).
+	 *
+	 * @testWith ["Apple Pay (WooPayments)", "Apple Pay (WooPayments)"]
+	 *           ["Google Pay (WooPayments)", "Google Pay (WooPayments)"]
+	 *           ["Payment Request (WooPayments)", "Payment Request (WooPayments)"]
+	 *           ["Visa credit card", "Credit card / debit card"]
+	 *           ["", "Credit card / debit card"]
+	 *
+	 * @param string $method_title Order payment method title.
+	 * @param string $expected     Expected gateway title.
+	 */
+	public function test_admin_gateway_title_shows_the_wallet_order_title( string $method_title, string $expected ): void {
+		$this->sut = $this->create_controller( true );
+		set_current_screen( 'woocommerce_page_wc-orders' );
+		$this->sut->register();
+		global $theorder;
+		$theorder = $this->create_order_with_payment_method_title( $method_title );
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Core's hook (abstract-wc-payment-gateway.php:384).
+		$this->assertSame( $expected, apply_filters( 'woocommerce_gateway_title', 'Credit card / debit card', OrderPaymentStore::GATEWAY_ID ) );
+	}
+
+	/**
+	 * @testdox In admin without $theorder, the order comes from the global post, as client 11.1.0's get_current_order().
+	 */
+	public function test_admin_gateway_title_reads_the_order_from_the_global_post(): void {
+		$this->sut = $this->create_controller( true );
+		set_current_screen( 'edit-shop_order' );
+		$order = $this->create_order_with_payment_method_title( 'Google Pay (WooPayments)' );
+		global $post;
+		$post = new \WP_Post( (object) array( 'ID' => $order->get_id() ) ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
+
+		$this->assertSame( 'Google Pay (WooPayments)', $this->sut->handle_woocommerce_gateway_title( 'Credit card / debit card', OrderPaymentStore::GATEWAY_ID ) );
+	}
+
+	/**
+	 * @testdox The gateway title stays as it is for other gateways and outside admin.
+	 */
+	public function test_gateway_title_unchanged_for_other_gateways_and_outside_admin(): void {
+		$this->sut = $this->create_controller( true );
+		global $theorder;
+		$theorder = $this->create_order_with_payment_method_title( 'Apple Pay (WooPayments)' );
+
+		$this->assertSame( 'Credit card / debit card', $this->sut->handle_woocommerce_gateway_title( 'Credit card / debit card', OrderPaymentStore::GATEWAY_ID ), 'Front end.' );
+
+		set_current_screen( 'woocommerce_page_wc-orders' );
+		$this->assertSame( 'Direct bank transfer', $this->sut->handle_woocommerce_gateway_title( 'Direct bank transfer', 'bacs' ) );
+		$this->assertSame( 'iDEAL', $this->sut->handle_woocommerce_gateway_title( 'iDEAL', OrderPaymentStore::GATEWAY_ID . '_ideal' ) );
+	}
+
+	/**
+	 * Create a WooPayments order with a payment method title.
+	 *
+	 * @param string $method_title Payment method title.
+	 * @return WC_Order
+	 */
+	private function create_order_with_payment_method_title( string $method_title ): WC_Order {
+		$order = wc_create_order();
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method_title( $method_title );
+		$order->save();
+
+		return $order;
 	}
 
 	/**

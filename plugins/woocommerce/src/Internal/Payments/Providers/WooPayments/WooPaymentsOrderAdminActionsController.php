@@ -17,7 +17,7 @@ use Throwable;
 use WC_Order;
 
 /**
- * Restores WooPayments authorization actions in the WooCommerce order workflow.
+ * Restores WooPayments authorization actions and wallet payment titles in the WooCommerce order workflow.
  *
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
@@ -83,6 +83,44 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 		if ( false === has_action( 'woocommerce_order_status_cancelled', array( $this, 'handle_woocommerce_order_status_cancelled' ) ) ) {
 			add_action( 'woocommerce_order_status_cancelled', array( $this, 'handle_woocommerce_order_status_cancelled' ), 10, 3 );
 		}
+		if ( is_admin() && false === has_filter( 'woocommerce_gateway_title', array( $this, 'handle_woocommerce_gateway_title' ) ) ) {
+			add_filter( 'woocommerce_gateway_title', array( $this, 'handle_woocommerce_gateway_title' ), 10, 2 );
+		}
+	}
+
+	/**
+	 * Show an Apple Pay or Google Pay order's payment title in place of the card gateway's title in admin.
+	 *
+	 * The order screen's "Payment via" line and payment method select read the gateway title, so a wallet order would read
+	 * as a card order. Ported from client 11.1.0 `filter_gateway_title()` (class-wc-payments-express-checkout-button-handler.php:415-437),
+	 * with the order found as its `get_current_order()` does (class-wc-payments-express-checkout-button-helper.php:520-533).
+	 *
+	 * @internal
+	 *
+	 * @param mixed $title      Gateway title.
+	 * @param mixed $gateway_id Gateway ID.
+	 * @return mixed
+	 */
+	public function handle_woocommerce_gateway_title( $title, $gateway_id = '' ) {
+		if ( OrderPaymentStore::GATEWAY_ID !== $gateway_id || ! is_admin() ) {
+			return $title;
+		}
+
+		global $theorder, $post;
+		$order = $theorder instanceof WC_Order ? $theorder : ( $post instanceof \WP_Post ? wc_get_order( $post->ID ) : null );
+		if ( ! $order instanceof WC_Order ) {
+			return $title;
+		}
+
+		$method_title = $order->get_payment_method_title();
+		// "Payment Request" is the title of orders placed with the client's legacy payment request buttons.
+		foreach ( array( 'Apple Pay', 'Google Pay', 'Payment Request' ) as $wallet_title ) {
+			if ( 0 === strpos( $method_title, $wallet_title ) ) {
+				return $method_title;
+			}
+		}
+
+		return $title;
 	}
 
 	/**
