@@ -1098,16 +1098,24 @@ const confirmIntent = ( redirectUrl ) => {
 // One API object for every express method, as the client passes its WCPayAPI instance (client/checkout/blocks/index.js).
 const expressCheckoutApi = { confirmIntent };
 
+let navigate = ( url ) => {
+	window.location.href = url;
+};
+
 const redirectToOrder = async ( response, api ) => {
 	const redirectUrl = getRedirectUrl( response );
 
+	// Client 11.1.0 completePayment( '' ) (event-handlers.js:234-251, block-buttons/hooks/use-express-checkout.js:52-55):
+	// the payment went through but the answer names no page, so reload this one, which `''` resolves to.
 	if ( ! redirectUrl ) {
+		navigate( window.location.href.split( '#' )[ 0 ] );
 		return;
 	}
 
 	const confirmationRequest = api.confirmIntent( redirectUrl );
-	window.location.href =
-		confirmationRequest === true ? redirectUrl : await confirmationRequest;
+	navigate(
+		confirmationRequest === true ? redirectUrl : await confirmationRequest
+	);
 };
 
 const refreshBlocksCartData = () => {
@@ -1608,3 +1616,9 @@ registerSubscriptionsCompatibility();
 registerWooPaymentsExpressCheckout();
 
 export default registerWooPaymentsExpressCheckout;
+
+export const __test__ = {
+	setNavigate: ( callback ) => {
+		navigate = callback;
+	},
+};

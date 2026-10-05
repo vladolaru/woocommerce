@@ -1520,7 +1520,10 @@
 			paymentResult.redirect_url ||
 			getPaymentDetail( paymentResult, 'redirect' );
 
+		// Client 11.1.0 completePayment( '' ) (event-handlers.js:234-251, shortcode-buttons-express/index.js:214-217): the
+		// payment went through but the answer names no page, so reload this one, which `''` resolves to.
 		if ( ! redirectUrl ) {
+			completePayment( window.location.href.split( '#' )[ 0 ] );
 			return Promise.resolve();
 		}
 

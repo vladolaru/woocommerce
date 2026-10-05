@@ -532,6 +532,35 @@ describe( 'woopayments-express-checkout', () => {
 			);
 		} );
 
+		// Client 11.1.0: with no redirect, `api.confirmIntent( '' )` returns true and `completePayment( '' )` sets
+		// `window.location = ''` (event-handlers.js:234-251, shortcode-buttons-express/index.js:214-217), which
+		// resolves to the page URL without its fragment: the page reloads.
+		it( 'reloads the page, locked, when a successful payment names no page to go to', async () => {
+			const { redirectToOrder, navigate } = loadModule( baseParams() );
+			window.jQuery.blockUI = jest.fn();
+			window.history.replaceState( null, '', '/checkout/?step=pay#wallet' );
+
+			try {
+				// Store API checkout success (docs/apis/store-api/resources-endpoints/checkout.md, "Process Order and
+				// Payment": payment_result.payment_status, payment_details, redirect_url) with no redirect.
+				await redirectToOrder( {
+					payment_result: {
+						payment_status: 'success',
+						payment_details: [ { key: 'result', value: 'success' } ],
+						redirect_url: '',
+					},
+				} );
+
+				expect( navigate ).toHaveBeenCalledWith(
+					'http://localhost/checkout/?step=pay'
+				);
+				expect( window.jQuery.blockUI ).toHaveBeenCalledTimes( 1 );
+			} finally {
+				delete window.jQuery.blockUI;
+				window.history.replaceState( null, '', '/' );
+			}
+		} );
+
 		it( 'rejects with the payment error when the payment status is not success', async () => {
 			const { redirectToOrder, navigate } = loadModule( baseParams() );
 

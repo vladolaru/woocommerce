@@ -354,6 +354,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 	let expressElement;
 	let expressHandlers;
 	let registerExpressCheckout;
+	let setNavigate;
 	let stripe;
 	let elements;
 	let availablePaymentMethods;
@@ -365,7 +366,9 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		mockGetPaymentMethodData.mockReturnValue( {
 			expressCheckoutParams: baseExpressCheckoutParams,
 		} );
-		registerExpressCheckout = require( '../index' ).default;
+		const expressCheckoutModule = require( '../index' );
+		registerExpressCheckout = expressCheckoutModule.default;
+		setNavigate = expressCheckoutModule.__test__.setNavigate;
 	} );
 
 	beforeEach( () => {
@@ -2362,6 +2365,77 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				'Payment requires additional action.'
 			);
 			expect( window.location.href ).toBe( checkoutUrl );
+		} );
+	} );
+
+	describe( 'leaving checkout after a successful wallet payment', () => {
+		const pageUrl = window.location.href;
+		let navigate;
+
+		const confirmGooglePay = async ( props = {} ) => {
+			registerExpressCheckout();
+			renderExpressPaymentMethod(
+				getRegistration(
+					'woocommerce_payments_express_checkout_googlePay'
+				),
+				props
+			);
+
+			await waitFor( () => {
+				expect( expressHandlers.confirm ).toBeDefined();
+			} );
+
+			// Express Checkout Element `confirm` event with billingDetails (https://docs.stripe.com/js.md,
+			// "expressCheckoutElement.on('confirm', handler)").
+			await act( async () => {
+				await expressHandlers.confirm( {
+					paymentFailed: props.paymentFailed,
+					billingDetails: {
+						email: 'shopper@example.test',
+						name: 'Ada Lovelace',
+					},
+				} );
+			} );
+		};
+
+		beforeEach( () => {
+			navigate = jest.fn();
+			setNavigate( navigate );
+		} );
+
+		afterEach( () => {
+			setNavigate( ( url ) => {
+				window.location.href = url;
+			} );
+			window.history.replaceState( null, '', pageUrl );
+		} );
+
+		// Client 11.1.0: with no redirect, `api.confirmIntent( '' )` returns true and `completePayment( '' )` sets
+		// `window.location = ''` (event-handlers.js:234-251, block-buttons/hooks/use-express-checkout.js:52-55), which
+		// resolves to the page URL without its fragment: the page reloads.
+		it( 'reloads the page when the payment succeeded but names no page to go to', async () => {
+			window.history.replaceState(
+				null,
+				'',
+				'/checkout/?step=pay#wallet'
+			);
+			// Store API checkout success (docs/apis/store-api/resources-endpoints/checkout.md, "Process Order and
+			// Payment": payment_result.payment_status, payment_details, redirect_url) with no redirect.
+			apiFetch.mockResolvedValueOnce( {
+				order_id: 77,
+				payment_result: {
+					payment_status: 'success',
+					payment_details: [ { key: 'result', value: 'success' } ],
+					redirect_url: '',
+				},
+			} );
+
+			await confirmGooglePay();
+
+			expect( navigate ).toHaveBeenCalledTimes( 1 );
+			expect( navigate ).toHaveBeenCalledWith(
+				'http://localhost/checkout/?step=pay'
+			);
 		} );
 	} );
 
