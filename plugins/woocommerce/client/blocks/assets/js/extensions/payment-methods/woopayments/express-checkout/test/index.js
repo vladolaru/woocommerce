@@ -121,10 +121,11 @@ const billing = {
 	},
 };
 
+// The Blocks cart store data, which mirrors the Store API cart response (src/StoreApi/Schemas/V1/CartSchema.php totals;
+// total_refund is an order field, OrderSchema.php, and is not part of a cart).
 const blocksCart = {
 	cartTotals: {
 		total_price: '5000',
-		total_refund: '0',
 		total_shipping: '700',
 		total_shipping_tax: '0',
 		total_discount: '0',
@@ -137,7 +138,6 @@ const blocksCart = {
 	},
 	totals: {
 		total_price: '5000',
-		total_refund: '0',
 		total_shipping: '700',
 		total_shipping_tax: '0',
 		total_discount: '0',
