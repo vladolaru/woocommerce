@@ -1213,7 +1213,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should log and return an error when WooPay session assembly throws.
+	 * @testdox Should log the exception's class, code and trace, never its message, and return an error when WooPay session assembly throws.
 	 */
 	public function test_get_session_logs_and_returns_error_when_assembly_throws(): void {
 		$service                 = new ThrowingWooPaySessionService();
@@ -1246,17 +1246,27 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertInstanceOf( WP_Error::class, $result );
 		$this->assertSame( 'wcpay_server_error', $result->get_error_code() );
 
-		$matching = array_filter(
-			$logged,
-			static function ( $entry ) {
-				return 'error' === $entry['level']
-					&& isset( $entry['context']['source'] )
-					&& 'woopayments-woopay-session' === $entry['context']['source']
-					&& false !== strpos( (string) $entry['message'], 'kaboom' );
-			}
+		$matching = array_values(
+			array_filter(
+				$logged,
+				static function ( $entry ) {
+					return 'error' === $entry['level']
+						&& isset( $entry['context']['source'] )
+						&& 'woopayments-woopay-session' === $entry['context']['source'];
+				}
+			)
 		);
 
 		$this->assertNotEmpty( $matching, 'Expected a logged error for the swallowed WooPay session exception.' );
+		$this->assertSame( 'Unable to assemble WooPay session data.', $matching[0]['message'] );
+		$this->assertSame( \RuntimeException::class, $matching[0]['context']['exception'] );
+		$this->assertSame( 7, $matching[0]['context']['code'] );
+		$this->assertArrayHasKey( 'trace', $matching[0]['context'] );
+		foreach ( $logged as $entry ) {
+			$written = $entry['message'] . wp_json_encode( $entry['context'] );
+			$this->assertStringNotContainsString( 'shopper@example.com', $written );
+			$this->assertStringNotContainsString( 'tok_secret_123', $written );
+		}
 	}
 
 	/**

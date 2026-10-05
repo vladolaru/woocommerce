@@ -22,6 +22,6 @@ class ThrowingWooPaySessionService extends RecordingWooPaySessionService {
 	public function get_session_data( ?string $email = null, ?WP_REST_Request $woopay_request = null ): array {
 		unset( $email, $woopay_request );
 
-		throw new RuntimeException( 'kaboom' );
+		throw new RuntimeException( 'Session for shopper@example.com failed with token tok_secret_123', 7 );
 	}
 }

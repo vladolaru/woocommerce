@@ -3737,6 +3737,53 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should log a WooPay checkout fatal with its type and place, never its message.
+	 */
+	public function test_woopay_checkout_fatal_log_line_leaves_out_the_message(): void {
+		$_SERVER['HTTP_USER_AGENT'] = 'WooPay';
+		$order                      = wc_create_order();
+		$logged                     = array();
+		$record                     = static function ( $message, $level, $context ) use ( &$logged ) {
+			$logged[] = array(
+				'message' => (string) $message,
+				'level'   => (string) $level,
+				'context' => is_array( $context ) ? $context : array(),
+			);
+
+			return $message;
+		};
+		add_filter( 'woocommerce_logger_log_message', $record, 10, 3 );
+
+		$sut = $this->create_service();
+		$sut->catch_woopay_checkout_errors( $order );
+		try {
+			// The array error_get_last() returns, with its type, message, file and line keys (PHP manual, error_get_last).
+			$sut->maybe_record_woopay_checkout_fatal(
+				array(
+					'type'    => E_ERROR,
+					'message' => "Uncaught Exception: card for shopper@example.com declined\nStack trace: #0",
+					'file'    => 'checkout.php',
+					'line'    => 42,
+				)
+			);
+		} finally {
+			remove_filter( 'woocommerce_logger_log_message', $record, 10 );
+		}
+
+		$lines = array_values( array_filter( $logged, static fn( array $line ): bool => 'woopayments-woopay-session' === ( $line['context']['source'] ?? null ) ) );
+		$this->assertNotEmpty( $lines );
+		$this->assertSame( 'error', $lines[0]['level'] );
+		$this->assertSame( 'WooPay checkout fatal error.', $lines[0]['message'] );
+		$this->assertSame( E_ERROR, $lines[0]['context']['error_type'] );
+		$this->assertSame( 'checkout.php', $lines[0]['context']['file'] );
+		$this->assertSame( 42, $lines[0]['context']['line'] );
+		$this->assertSame( $order->get_id(), $lines[0]['context']['order_id'] );
+		foreach ( $logged as $line ) {
+			$this->assertStringNotContainsString( 'shopper@example.com', $line['message'] . wp_json_encode( $line['context'] ) );
+		}
+	}
+
+	/**
 	 * @testdox Should ignore non-fatal errors and non-WooPay requests when recording checkout fatals.
 	 */
 	public function test_woopay_checkout_fatal_capture_ignores_non_fatals_and_non_woopay_requests(): void {

@@ -709,14 +709,17 @@ class WooPaymentsWooPaySessionService {
 			return;
 		}
 
+		// Client 11.1.0 logs the fatal's message (class-woopay-session.php:1170-1178), free text that can hold any value; the
+		// line carries the error type and where it happened instead.
 		wc_get_logger()->error(
-			sprintf(
-				'WooPay checkout fatal error: %s in %s on line %d',
-				$error['message'],
-				$error['file'],
-				$error['line']
-			),
-			array( 'source' => 'woopayments-woopay-session' )
+			'WooPay checkout fatal error.',
+			array(
+				'error_type' => (int) $error['type'],
+				'file'       => (string) ( $error['file'] ?? '' ),
+				'line'       => (int) ( $error['line'] ?? 0 ),
+				'order_id'   => $this->checkout_error_order_id,
+				'source'     => 'woopayments-woopay-session',
+			)
 		);
 
 		$order = wc_get_order( $this->checkout_error_order_id );
