@@ -87,8 +87,8 @@ trait PaymentsStatusHandlingTrait {
 			// It is checked in the capture endpoint already, but there are other ways to capture,
 			// such as when paid via saved card.
 			case CaptureStatus::DECLINED:
-				$fraud        = $capture->fraud_processor_response();
-				$status_note  = ( $fraud && $fraud->response_code() )
+				$fraud       = $capture->fraud_processor_response();
+				$status_note = ( $fraud && $fraud->response_code() )
 					? sprintf(
 						/* translators: %s - processor response code and description */
 						__( 'Could not capture the payment. Processor response: %s', 'woocommerce' ),
