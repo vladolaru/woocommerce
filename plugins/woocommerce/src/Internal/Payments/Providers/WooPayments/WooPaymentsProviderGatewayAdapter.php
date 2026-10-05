@@ -487,7 +487,7 @@ class WooPaymentsProviderGatewayAdapter {
 			}
 
 			if ( ! $this->is_missing_customer_exception( $exception ) ) {
-				return $this->failed_charge_outcome( $order, $exception, true, (string) ( $request_data['customer'] ?? '' ) );
+				return $this->failed_charge_outcome( $order, $exception, true, (string) ( $request_data['customer'] ?? '' ), self::is_scheduled_renewal( $context ) );
 			}
 		}
 
@@ -501,7 +501,7 @@ class WooPaymentsProviderGatewayAdapter {
 		try {
 			return $this->api_client->create_and_confirm_payment_intention( $request_data, $recovery_key );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->failed_charge_outcome( $order, $exception, true, $customer_id );
+			return $this->failed_charge_outcome( $order, $exception, true, $customer_id, self::is_scheduled_renewal( $context ) );
 		}
 	}
 
@@ -523,7 +523,17 @@ class WooPaymentsProviderGatewayAdapter {
 		return $attempt_key !== $sent_key
 			&& $this->is_idempotency_key_conflict( $exception )
 			&& null !== $this->get_charge_ambiguity_record( $order )
-			&& true !== ( $context->get_provider_data()['scheduled_subscription_payment'] ?? false );
+			&& ! self::is_scheduled_renewal( $context );
+	}
+
+	/**
+	 * Tell whether the payment is a scheduled subscription renewal.
+	 *
+	 * @param PaymentContext $context Payment context.
+	 * @return bool
+	 */
+	private static function is_scheduled_renewal( PaymentContext $context ): bool {
+		return true === ( $context->get_provider_data()['scheduled_subscription_payment'] ?? false );
 	}
 
 	/**
@@ -680,20 +690,28 @@ class WooPaymentsProviderGatewayAdapter {
 	}
 
 	/**
-	 * Tell whether a definitive failure under a key kept after an ambiguous failure came from the platform, not from Stripe.
+	 * Tell whether a definitive failure under a key kept after an ambiguous failure leaves the earlier request unsettled.
 	 *
-	 * Stripe's answers reach the store unchanged as `{"error":{"type":…}}`, and Stripe's error object always has a type
-	 * (wpcom `wcpay/class-base-controller.php:476-490`). The platform's own refusals are WordPress REST errors with a
-	 * top-level code and no error object (wpcom `wcpay/core/exceptions/class-rest-exception.php:54-64`, for example
-	 * `wcpay_blocked_by_fraud_rule` from `class-fraud-rule-exception.php:27`), so the API client gives them no error type,
-	 * as it gives none to a request refused before it was sent.
+	 * Only a card error proves that Stripe ran this request fresh, so that nothing was stored under the key and the earlier
+	 * request took nothing. The platform's own refusals never reach Stripe: they come as WordPress REST errors with no
+	 * Stripe error object (wpcom `wcpay/core/exceptions/class-rest-exception.php:54-64`), so they have no error type,
+	 * while Stripe's answers always have one (`wcpay/class-base-controller.php:476-490`). Stripe answers a 429 or a
+	 * parameter-validation 400 before its idempotency layer and stores neither (https://docs.stripe.com/error-low-level).
+	 * A scheduled renewal stays out of the lookup, so there only a platform refusal keeps the key.
 	 *
-	 * @param WC_Order                $order     Order being charged.
-	 * @param WooPaymentsApiException $exception Definitive request failure.
+	 * @param WC_Order                $order                Order being charged.
+	 * @param WooPaymentsApiException $exception            Definitive request failure.
+	 * @param bool                    $is_scheduled_renewal Whether the payment is a scheduled subscription renewal.
 	 * @return bool
 	 */
-	private function is_platform_refusal_under_kept_ambiguous_key( WC_Order $order, WooPaymentsApiException $exception ): bool {
-		return '' === $exception->get_error_type() && null !== $this->get_charge_ambiguity_record( $order );
+	private function is_unsettling_answer_under_kept_ambiguous_key( WC_Order $order, WooPaymentsApiException $exception, bool $is_scheduled_renewal ): bool {
+		if ( null === $this->get_charge_ambiguity_record( $order ) ) {
+			return false;
+		}
+
+		$error_type = $exception->get_error_type();
+
+		return '' === $error_type || ( ! $is_scheduled_renewal && 'card_error' !== $error_type );
 	}
 
 	/**
@@ -808,17 +826,18 @@ class WooPaymentsProviderGatewayAdapter {
 	 * marks the fraud meta box allow because fraud checks passed.
 	 *
 	 * A PaymentIntent dispatch failure decides the order's kept charge key. An ambiguous one keeps it and records the
-	 * failure for a later lookup. A definitive one retires both, except that while this order's record exists a refusal
-	 * that did not come from Stripe keeps them: the platform's own pre-charge refusals (a fraud rule block, for example)
-	 * never reach Stripe, so they say nothing about the earlier request under the key.
+	 * failure for a later lookup. A definitive one retires both, except that while this order's record exists only a card
+	 * error does: any other refusal (the platform's own, a Stripe rate limit, a validation error) says nothing about the
+	 * earlier request under the key, so both stay for the next attempt's lookup.
 	 *
 	 * @param WC_Order                $order                       Order object.
 	 * @param WooPaymentsApiException $exception                   Transport exception.
 	 * @param bool                    $is_payment_intent_dispatch Whether the exception came from PaymentIntent dispatch.
 	 * @param string                  $customer_id                 Customer the PaymentIntent request was sent with.
+	 * @param bool                    $is_scheduled_renewal        Whether the payment is a scheduled subscription renewal.
 	 * @return PaymentOutcome
 	 */
-	private function failed_charge_outcome( WC_Order $order, WooPaymentsApiException $exception, bool $is_payment_intent_dispatch = false, string $customer_id = '' ): PaymentOutcome {
+	private function failed_charge_outcome( WC_Order $order, WooPaymentsApiException $exception, bool $is_payment_intent_dispatch = false, string $customer_id = '', bool $is_scheduled_renewal = false ): PaymentOutcome {
 		$outcome = WooPaymentsIntentCodec::failed_transport_outcome( 'charge', $exception );
 		$data    = $outcome->get_data();
 		if ( $is_payment_intent_dispatch && $this->api_client->is_ambiguous_request_failure( $exception ) ) {
@@ -831,7 +850,7 @@ class WooPaymentsProviderGatewayAdapter {
 				)
 			);
 			$order->save_meta_data();
-		} elseif ( $is_payment_intent_dispatch && ! $this->is_platform_refusal_under_kept_ambiguous_key( $order, $exception ) ) {
+		} elseif ( $is_payment_intent_dispatch && ! $this->is_unsettling_answer_under_kept_ambiguous_key( $order, $exception, $is_scheduled_renewal ) ) {
 			$data[ self::DEFINITIVE_CHARGE_FAILURE_DATA_KEY ] = true;
 			// Retired now rather than only after the lifecycle: a local failure applying this outcome must not leave the
 			// key for the next attempt, which would get the stored failure back.

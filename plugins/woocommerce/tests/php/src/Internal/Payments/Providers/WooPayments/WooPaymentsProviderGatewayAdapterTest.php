@@ -1454,33 +1454,23 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox While the ambiguity record exists, a Stripe card decline under the kept key still retires the key and the record.
+	 * @testdox While the ambiguity record exists, a Stripe $_dataName under the kept key retires the key and the record: $retires.
 	 *
-	 * A same-body resubmit (a saved card) gets the stored result of the earlier request back: a stored decline proves the
-	 * earlier request took nothing, so the next attempt charges under a fresh key.
+	 * Monitor ruling A (data/t62-ambiguous-timeout-hold.md, decision on the implementation): only a card error or a
+	 * success proves Stripe processed this request under the key, fresh or as the stored result of the earlier request,
+	 * so either settles what the earlier request did. Stripe answers a 429 and most parameter-validation 400s before its
+	 * idempotency layer and stores neither (https://docs.stripe.com/error-low-level), so they say nothing about the
+	 * earlier request: the key and the record stay for the next attempt's lookup.
+	 *
+	 * @dataProvider provide_stripe_answers_under_the_kept_key
+	 *
+	 * @param array<string,mixed> $answer  Stripe's answer, passed through by the platform.
+	 * @param bool                $retires Whether the key and the record are retired.
 	 */
-	public function test_stripe_decline_under_the_kept_key_retires_key_and_record(): void {
+	public function test_stripe_answer_under_the_kept_key_retires_only_a_settled_request( array $answer, bool $retires ): void {
 		$order                  = $this->create_woopayments_order();
 		$http_client            = new FakeWooPaymentsHttpClient();
-		$http_client->responses = array( self::platform_bad_gateway(), self::stripe_card_declined() );
-		$sut                    = $this->create_timeout_adapter( $http_client, 'cus_sent' );
-		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
-
-		$declined = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_first', 'key_second' );
-		$fresh    = wc_get_order( $order->get_id() );
-
-		$this->assertSame( 'card_declined', $declined->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
-		$this->assertSame( '', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
-		$this->assertSame( '', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true ) );
-	}
-
-	/**
-	 * @testdox A PaymentIntent answer under the kept key retires the key and the ambiguity record together.
-	 */
-	public function test_payment_intent_answer_under_the_kept_key_retires_key_and_record(): void {
-		$order                  = $this->create_woopayments_order();
-		$http_client            = new FakeWooPaymentsHttpClient();
-		$http_client->responses = array( self::platform_bad_gateway(), self::succeeded_charge( 'pi_replayed', 'pm_first' ) );
+		$http_client->responses = array( self::platform_bad_gateway(), $answer );
 		$sut                    = $this->create_timeout_adapter( $http_client, 'cus_sent' );
 		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
 
@@ -1488,8 +1478,49 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$fresh = wc_get_order( $order->get_id() );
 
 		$this->assertSame( array( 'POST intentions key_first', 'POST intentions key_first' ), self::request_trail( $http_client ) );
-		$this->assertSame( '', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
-		$this->assertSame( '', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true ) );
+		$record = $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true );
+
+		$this->assertSame( $retires ? '' : 'key_first', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$this->assertSame( $retires ? '' : 'cus_sent', is_array( $record ) ? $record['customer'] : $record );
+	}
+
+	/**
+	 * Stripe's answers to a charge sent under the kept key.
+	 *
+	 * @return array<string,array{0:array<string,mixed>,1:bool}>
+	 */
+	public function provide_stripe_answers_under_the_kept_key(): array {
+		return array(
+			'card decline'                     => array( self::stripe_card_declined(), true ),
+			'PaymentIntent answer'             => array( self::succeeded_charge( 'pi_replayed', 'pm_first' ), true ),
+			'rate limit (429)'                 => array(
+				self::http_json(
+					429,
+					array(
+						'error' => array(
+							'type'    => 'invalid_request_error',
+							'code'    => 'rate_limit',
+							'message' => 'Too many requests hit the API too quickly. We recommend an exponential backoff of your requests.',
+						),
+					)
+				),
+				false,
+			),
+			'parameter validation error (400)' => array(
+				self::http_json(
+					400,
+					array(
+						'error' => array(
+							'type'    => 'invalid_request_error',
+							'code'    => 'parameter_invalid_integer',
+							'param'   => 'amount',
+							'message' => 'Invalid integer: 10.5',
+						),
+					)
+				),
+				false,
+			),
+		);
 	}
 
 	/**
