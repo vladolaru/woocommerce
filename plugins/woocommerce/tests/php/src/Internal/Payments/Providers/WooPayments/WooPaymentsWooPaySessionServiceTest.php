@@ -3018,6 +3018,57 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A failed WooPay init request logs its own cURL error number, and none for a transport message of another form ($_dataName).
+	 *
+	 * Requests words a transport failure as "cURL error <number>: <curl_error()>" (wp-includes/Requests/src/Transport/Curl.php);
+	 * WP_Http::request() sets other messages under the same http_request_failed code (wp-includes/class-wp-http.php), such as
+	 * "A valid URL was not provided.".
+	 *
+	 * @dataProvider woopay_init_transport_failures
+	 *
+	 * @param string              $message  The WP_Error message.
+	 * @param array<string,mixed> $expected The logged context.
+	 */
+	public function test_logs_the_curl_error_number_of_a_failed_woopay_init( string $message, array $expected ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		$this->connect_woopay_blog();
+		add_filter( 'pre_http_request', static fn() => new \WP_Error( 'http_request_failed', $message ) );
+		$lines = $this->record_woopayments_log_lines();
+
+		$this->create_service()->init_woopay_session( array( 'email' => 'shopper@example.com' ) );
+
+		$this->assertContains( array( 'error', 'HTTP_REQUEST_ERROR: WooPay session init request failed.', $expected ), $lines->getArrayCopy() );
+	}
+
+	/**
+	 * Transport failures of a WooPay init request and the context logged for each.
+	 *
+	 * @return array<string,array{0:string,1:array<string,mixed>}>
+	 */
+	public function woopay_init_transport_failures(): array {
+		return array(
+			'a host that does not resolve'  => array(
+				'cURL error 6: Could not resolve host: pay.woo.com',
+				array(
+					'error_code' => 'http_request_failed',
+					'curl_error' => 6,
+				),
+			),
+			'a timeout'                     => array(
+				'cURL error 28: Operation timed out after 30001 milliseconds with 0 bytes received',
+				array(
+					'error_code' => 'http_request_failed',
+					'curl_error' => 28,
+				),
+			),
+			'a message that is not cURL\'s' => array(
+				'A valid URL was not provided.',
+				array( 'error_code' => 'http_request_failed' ),
+			),
+		);
+	}
+
+	/**
 	 * Error codes of a failed WooPay init request and what is logged for each.
 	 *
 	 * @return array<string,array{0:string,1:string}>
