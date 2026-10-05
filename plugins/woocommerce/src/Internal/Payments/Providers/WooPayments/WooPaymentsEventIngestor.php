@@ -1340,10 +1340,15 @@ class WooPaymentsEventIngestor {
 		} catch ( Throwable $exception ) {
 			$logger = $this->legacy_runtime->get_logger();
 			if ( is_object( $logger ) && is_callable( array( $logger, 'error' ) ) ) {
+				// A callback can let a platform error out, directly or wrapped, so its message is not logged.
 				$logger->error(
-					$exception->getMessage(),
-					array(
-						'source' => 'native-payments-webhook',
+					'A WooPayments webhook delivery hook callback failed.',
+					array_merge(
+						WooPaymentsLogger::get_failure_context( $exception ),
+						array(
+							'source' => 'native-payments-webhook',
+							'hook'   => $hook,
+						)
 					)
 				);
 			}

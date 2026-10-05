@@ -975,9 +975,10 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			);
 		} catch ( Throwable $exception ) {
 			// Client gw:1921 does not catch, so the scheduled action fails and the renewal stays pending
-			// (monitor ruling 2026-10-04 (2)); the line is written whatever the logging setting.
+			// (monitor ruling 2026-10-04 (2)); the line is written whatever the logging setting. A callback can let a
+			// platform error out, so the line carries its class and the platform's codes, not its message.
 			$this->get_logger()->log_throwable_always(
-				'Failed to run WooPayments subscription renewal authentication hooks: ' . $exception->getMessage(),
+				'Failed to run WooPayments subscription renewal authentication hooks.',
 				$exception,
 				array(
 					'order_id'  => $renewal_order->get_id(),

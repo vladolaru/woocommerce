@@ -3823,6 +3823,55 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A delivery hook callback that throws $_dataName is logged by the platform's status and code, never a message.
+	 *
+	 * A callback can call the platform and let its error out, directly or wrapped, so the message is not native text.
+	 *
+	 * @dataProvider delivery_hook_platform_failures
+	 *
+	 * @param bool $wrapped Whether the callback wraps the platform error in its own exception.
+	 */
+	public function test_delivery_hook_failure_log_leaves_out_platform_text( bool $wrapped ): void {
+		$platform_error = self::make_provider_error();
+		$thrown         = $wrapped ? new RuntimeException( 'Sync failed: ' . $platform_error->getMessage(), 0, $platform_error ) : $platform_error;
+		$hook_calls     = array();
+		add_action(
+			'woocommerce_payments_before_webhook_delivery',
+			static function ( string $event_type ) use ( $thrown, &$hook_calls ): void {
+				$hook_calls[] = array( 'before', $event_type );
+				throw $thrown;
+			}
+		);
+		add_action(
+			'woocommerce_payments_after_webhook_delivery',
+			static function ( string $event_type ) use ( &$hook_calls ): void {
+				$hook_calls[] = array( 'after', $event_type );
+			}
+		);
+		$logger = RecordingWcLogger::install();
+
+		$this->sut->process( $this->create_payment_intent_event( 'customer.created', $this->create_woopayments_order() ) );
+
+		$this->assertSame( array( array( 'before', 'customer.created' ), array( 'after', 'customer.created' ) ), $hook_calls, 'The failure stops neither the event nor the next hook.' );
+		$context = $this->get_logged_context( $logger, 'A WooPayments webhook delivery hook callback failed.' );
+		$this->assertSame( array( get_class( $thrown ), 404, 'resource_missing' ), array( $context['exception'], $context['http_status'], $context['error_code'] ) );
+		$this->assertSame( array( 'woocommerce_payments_before_webhook_delivery', 'native-payments-webhook' ), array( $context['hook'], $context['source'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
+	 * Platform errors a delivery hook callback can throw.
+	 *
+	 * @return array<string,array{bool}>
+	 */
+	public function delivery_hook_platform_failures(): array {
+		return array(
+			'a platform error'               => array( false ),
+			'its own exception wrapping one' => array( true ),
+		);
+	}
+
+	/**
 	 * @testdox Delivery hook errors are logged through the WooPayments runtime logger seam.
 	 */
 	public function test_delivery_hook_errors_are_logged_through_runtime_logger(): void {
@@ -3890,8 +3939,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$this->assertSame(
 			array(
-				'Delivery hook failed.:native-payments-webhook',
-				'Delivery hook failed.:native-payments-webhook',
+				'A WooPayments webhook delivery hook callback failed.:native-payments-webhook',
+				'A WooPayments webhook delivery hook callback failed.:native-payments-webhook',
 			),
 			$logger->messages
 		);

@@ -2066,9 +2066,79 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'pending', $order->get_status() );
-		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'Failed to run WooPayments subscription renewal authentication hooks: email callback failed' === $line[1] ) );
+		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'Failed to run WooPayments subscription renewal authentication hooks.' === $line[1] ) );
 		$this->assertCount( 1, $lines, 'The failure is logged whatever the logging setting.' );
 		$this->assertSame( $throwable_class, $logger->contexts[ $lines[0] ]['exception'] ?? '' );
+	}
+
+	/**
+	 * @testdox A customer-action hook callback that throws $_dataName is logged by the platform's status and code, never a message.
+	 *
+	 * A callback can call the platform and let its error out, directly or wrapped, so the message is not native text.
+	 *
+	 * @dataProvider hook_platform_failures
+	 *
+	 * @param bool $wrapped Whether the callback wraps the platform error in its own exception.
+	 */
+	public function test_requires_action_hook_failure_log_leaves_out_platform_text( bool $wrapped ): void {
+		$user_id = self::factory()->user->create();
+		$order   = $this->create_order();
+		$order->set_customer_id( $user_id );
+		$order->set_currency( 'USD' );
+		$order->add_payment_token( $this->create_card_token( $user_id, 'pm_requires_action' ) );
+		$order->save();
+
+		$service                   = new RecordingPaymentProcessingService();
+		$service->checkout_outcome = new PaymentOutcome(
+			PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION,
+			'pi_requires_action',
+			'#wcpay-confirm-pi:' . $order->get_id() . ':secret:nonce',
+			'pm_requires_action',
+			'cus_requires_action',
+			array(
+				'meta' => array(
+					'_charge_id' => 'ch_requires_action',
+				),
+			)
+		);
+
+		$platform_error = self::make_provider_error();
+		$thrown         = $wrapped ? new \RuntimeException( 'Reminder email failed: ' . $platform_error->getMessage(), 0, $platform_error ) : $platform_error;
+		add_action(
+			'woocommerce_woocommerce_payments_payment_requires_action',
+			static function () use ( $thrown ): void {
+				throw $thrown;
+			}
+		);
+		$logger = RecordingWcLogger::install();
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$caught = null;
+		try {
+			$gateway->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
+		} catch ( \Throwable $throwable ) {
+			$caught = $throwable;
+		}
+
+		$this->assertSame( $thrown, $caught, 'The hook failure still reaches the scheduled action.' );
+		$context = $this->get_logged_context( $logger, 'Failed to run WooPayments subscription renewal authentication hooks.' );
+		$this->assertSame( array( get_class( $thrown ), 404, 'resource_missing' ), array( $context['exception'], $context['http_status'], $context['error_code'] ) );
+		$this->assertSame( array( $order->get_id(), 'pi_requires_action' ), array( $context['order_id'], $context['intent_id'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
+	 * Platform errors a hook callback can throw.
+	 *
+	 * @return array<string,array{bool}>
+	 */
+	public function hook_platform_failures(): array {
+		return array(
+			'a platform error'               => array( false ),
+			'its own exception wrapping one' => array( true ),
+		);
 	}
 
 	/**
