@@ -1399,7 +1399,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $plan->should_apply_token_effects(), 'No token may be saved or attached for the new card.' );
 		$this->assertSame( '', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
 		$this->assertSame( '', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true ) );
-		$this->assertContains( "The earlier payment attempt for this order went through, so the customer's new payment was not taken.", self::note_texts( $order ) );
+		$this->assertContains( "The earlier payment attempt for this order went through, so WooPayments did not take payment from the customer's new payment method.", self::note_texts( $order ) );
 		$this->assertSame(
 			array( 'The charge idempotency key key_first kept on order #' . $order->get_id() . ' was refused because the new payment request differs from the earlier one. The earlier request created PaymentIntent pi_earlier, which took the payment, so the order is paid from it and the new payment method is not charged.' ),
 			self::warning_lines( $logger )
@@ -1925,7 +1925,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'key_first', $kept->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
 		$this->assertSame( array( 'cus_sent' ), $kept->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['customers'] ?? null );
 		$this->assertSame(
-			array( "The earlier payment attempt for this order could not be checked, so the customer's new payment was not taken. Please check for this payment in WooPayments before the customer tries again." ),
+			array( "The earlier payment attempt for this order could not be checked, so WooPayments did not take payment from the customer's new payment method. Please check for this payment in WooPayments before the customer tries again." ),
 			self::note_texts_containing( $kept, 'could not be checked' ),
 			'One note per order, not one per attempt.'
 		);

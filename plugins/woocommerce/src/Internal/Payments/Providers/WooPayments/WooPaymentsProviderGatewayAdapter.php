@@ -724,7 +724,7 @@ class WooPaymentsProviderGatewayAdapter {
 			$order->get_checkout_order_received_url()
 		);
 
-		$order->add_order_note( __( "The earlier payment attempt for this order went through, so the customer's new payment was not taken.", 'woocommerce' ) );
+		$order->add_order_note( __( "The earlier payment attempt for this order went through, so WooPayments did not take payment from the customer's new payment method.", 'woocommerce' ) );
 
 		$outcome = new PaymentOutcome(
 			$outcome->get_status(),
@@ -752,7 +752,7 @@ class WooPaymentsProviderGatewayAdapter {
 			return;
 		}
 
-		$order->add_order_note( __( "The earlier payment attempt for this order could not be checked, so the customer's new payment was not taken. Please check for this payment in WooPayments before the customer tries again.", 'woocommerce' ) );
+		$order->add_order_note( __( "The earlier payment attempt for this order could not be checked, so WooPayments did not take payment from the customer's new payment method. Please check for this payment in WooPayments before the customer tries again.", 'woocommerce' ) );
 		$record['cannot_check_noted'] = true;
 		$order->update_meta_data( self::CHARGE_AMBIGUITY_META, $record );
 		$order->save_meta_data();
