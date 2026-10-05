@@ -3093,6 +3093,12 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Init session request includes checkout block extension data and optional field status.
+	 *
+	 * A separate process: the extension class alias lives for the whole PHP process, and later WooPay tests must not see
+	 * the extension as active.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_init_session_request_includes_blocks_data_and_optional_fields_status(): void {
 		$this->register_fake_mailchimp_blocks_integration();
@@ -3116,6 +3122,12 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Init session request includes adapted extension data and guest email verification nonce.
+	 *
+	 * A separate process: the extension class alias lives for the whole PHP process, and later WooPay tests must not see
+	 * the extension as active.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_init_session_request_includes_points_and_rewards_adapted_extension_data(): void {
 		if ( ! class_exists( '\WC_Points_Rewards_Manager', false ) ) {

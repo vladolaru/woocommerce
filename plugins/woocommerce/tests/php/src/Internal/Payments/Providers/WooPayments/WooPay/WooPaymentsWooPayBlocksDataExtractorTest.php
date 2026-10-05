@@ -21,6 +21,12 @@ class WooPaymentsWooPayBlocksDataExtractorTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Blocks data extractor returns data from supported checkout block integrations.
+	 *
+	 * A separate process: the extension class alias lives for the whole PHP process, and later WooPay tests must not see
+	 * the extension as active.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_get_data_extracts_supported_checkout_block_script_data(): void {
 		$this->register_fake_mailchimp_blocks_integration();
