@@ -39,6 +39,8 @@ const ROOT_DIR = path.resolve( __dirname, '../../../../../' );
 // `assets/client/blocks/` so PHP can enqueue files from their final location
 // without an intermediate rsync step.
 const BUILD_DIR = path.resolve( __dirname, '../../../assets/client/blocks' );
+// The PayPal wallet's scripts, styles, images and block metadata.
+const PAYPAL_WALLET_BUILD_DIR = path.join( BUILD_DIR, 'paypal-wallet' );
 const BABEL_CACHE_DIR = path.join(
 	ROOT_DIR,
 	'node_modules/.cache/babel-loader'
@@ -54,6 +56,7 @@ const getSharedPlugins = ( {
 	checkCircularDeps = true,
 	dependencyRequestToExternal = requestToExternal,
 	dependencyRequestToHandle = requestToHandle,
+	injectPolyfill = true,
 } ) =>
 	[
 		CHECK_CIRCULAR_DEPS === 'true' && checkCircularDeps !== false
@@ -73,7 +76,7 @@ const getSharedPlugins = ( {
 				reportTitle: bundleAnalyzerReportTitle,
 			} ),
 		new DependencyExtractionWebpackPlugin( {
-			injectPolyfill: true,
+			injectPolyfill,
 			combineAssets: ASSET_CHECK,
 			outputFormat: ASSET_CHECK ? 'json' : 'php',
 			requestToExternal: dependencyRequestToExternal,
@@ -252,6 +255,21 @@ const getMainConfig = ( options = {} ) => {
 							const blockName = metadata.name
 								.split( '/' )
 								.at( 1 );
+
+							// The PayPal wallet's blocks go with the rest of its build output.
+							if (
+								absoluteFilename.includes(
+									path.join(
+										'assets',
+										'js',
+										'blocks',
+										'paypal-wallet',
+										path.sep
+									)
+								)
+							) {
+								return `./paypal-wallet/${ blockName }/block.json`;
+							}
 
 							if (
 								metadata.parent &&
@@ -451,6 +469,84 @@ const getPaymentsConfig = ( options = {} ) => {
 		resolve: {
 			...resolve,
 			extensions: [ '.js', '.ts', '.tsx' ],
+		},
+	};
+};
+
+/**
+ * Build config for the PayPal wallet's scripts and styles.
+ *
+ * Every entry is a standalone file PHP registers by name (no shared chunks), and each stylesheet is built with its
+ * right-to-left copy. The wallet's scripts never had wp-polyfill as a dependency, so none is injected. The output
+ * goes to its own subdirectory so that code scanning the top level of the blocks build never picks up wallet files.
+ *
+ * @param {Object} options Build options.
+ */
+const getPayPalWalletConfig = ( options = {} ) => {
+	const { alias, resolvePlugins = [] } = options;
+	const resolve = getResolve( { alias, resolvePlugins } );
+	return {
+		entry: getEntryConfig( 'paypalWallet', options.exclude || [] ),
+		output: {
+			devtoolNamespace: 'wc',
+			path: PAYPAL_WALLET_BUILD_DIR,
+			filename: '[name].js',
+			uniqueName: 'webpackWcBlocksPayPalWalletJsonp',
+		},
+		module: {
+			rules: [
+				{
+					test: /\.(j|t)sx?$/,
+					exclude: [ /[/\\](node_modules|build|docs|vendor)[/\\]/ ],
+					use: {
+						loader: 'babel-loader',
+						options: {
+							presets: [ '@wordpress/babel-preset-default' ],
+							cacheDirectory: BABEL_CACHE_DIR,
+							cacheCompression: false,
+						},
+					},
+				},
+				{
+					test: /\.s?css$/,
+					use: [
+						MiniCssExtractPlugin.loader,
+						'css-loader',
+						'postcss-loader',
+						'sass-loader',
+					],
+				},
+			],
+		},
+		optimization: {
+			...sharedOptimizationConfig,
+			splitChunks: false,
+		},
+		plugins: [
+			...getSharedPlugins( {
+				bundleAnalyzerReportTitle: 'PayPal Wallet',
+				injectPolyfill: false,
+			} ),
+			new ProgressBarPlugin(
+				getProgressBarPluginConfig( 'PayPal Wallet' )
+			),
+			new MiniCssExtractPlugin( {
+				filename: '[name].css',
+			} ),
+			new WebpackRTLPlugin(),
+			// The images PHP serves through AssetGetter::get_static_asset_url().
+			new CopyWebpackPlugin( {
+				patterns: [
+					{
+						from: './assets/js/extensions/payment-methods/paypal-wallet/images',
+						to: './static/ppcp-wc-gateway/images',
+					},
+				],
+			} ),
+		],
+		resolve: {
+			...resolve,
+			extensions: [ '.js', '.jsx', '.ts', '.tsx' ],
 		},
 	};
 };
@@ -893,6 +989,7 @@ module.exports = {
 	getFrontConfig,
 	getMainConfig,
 	getPaymentsConfig,
+	getPayPalWalletConfig,
 	getExtensionsConfig,
 	getSiteEditorConfig,
 	getStylingConfig,

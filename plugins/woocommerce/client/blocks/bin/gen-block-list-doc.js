@@ -204,11 +204,25 @@ ${ blockjson.description || '' }
 `;
 }
 
+/**
+ * Directories whose blocks are not listed.
+ *
+ * @type {string[]}
+ */
+const EXCLUDED_DIRS = [
+	// The PayPal wallet's blocks stay out of the public block reference while the wallet in core is a proof of concept.
+	path.resolve( BLOCK_LIBRARY_DIR, 'blocks/paypal-wallet' ),
+];
+
 function getFiles( dir, filesArray, fileExtension ) {
 	const files = fs.readdirSync( dir );
 
 	files.forEach( ( file ) => {
 		const filePath = path.join( dir, file );
+		if ( EXCLUDED_DIRS.includes( filePath ) ) {
+			return;
+		}
+
 		const fileStat = fs.statSync( filePath );
 
 		if ( fileStat.isDirectory() ) {

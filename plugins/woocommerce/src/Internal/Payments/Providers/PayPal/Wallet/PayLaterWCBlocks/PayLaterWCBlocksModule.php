@@ -277,10 +277,10 @@ class PayLaterWCBlocksModule implements ServiceModule, ExecutableModule {
 					return;
 				}
 
-				$path_to_module_js_folder = $c->get( 'ppcp.path-to-plugin-folder' ) . 'modules/ppcp-paylater-wc-blocks/resources/js/';
+				$blocks_path = $c->get( 'ppcp.path-to-plugin-folder' );
 
 				register_block_type(
-					$path_to_module_js_folder . 'CartPayLaterMessagesBlock',
+					$blocks_path . 'cart-paylater-messages',
 					array(
 						'render_callback' => function ( array $attributes ) use ( $c ) {
 							return PayLaterWCBlocksUtils::render_paylater_block(
@@ -294,7 +294,7 @@ class PayLaterWCBlocksModule implements ServiceModule, ExecutableModule {
 				);
 
 				register_block_type(
-					$path_to_module_js_folder . 'CheckoutPayLaterMessagesBlock',
+					$blocks_path . 'checkout-paylater-messages',
 					array(
 						'render_callback' => function ( array $attributes ) use ( $c ) {
 							return PayLaterWCBlocksUtils::render_paylater_block(

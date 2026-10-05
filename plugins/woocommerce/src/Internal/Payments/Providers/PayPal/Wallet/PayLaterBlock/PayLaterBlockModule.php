@@ -129,7 +129,7 @@ class PayLaterBlockModule implements ServiceModule, ExecutableModule {
 				);
 
 				register_block_type(
-					$c->get( 'ppcp.path-to-plugin-folder' ) . 'modules/ppcp-paylater-block/',
+					$c->get( 'ppcp.path-to-plugin-folder' ) . 'paylater-messages/',
 					array(
 						'render_callback' => function ( array $attributes ) use ( $c ) {
 							$renderer = $c->get( 'paylater-block.renderer' );

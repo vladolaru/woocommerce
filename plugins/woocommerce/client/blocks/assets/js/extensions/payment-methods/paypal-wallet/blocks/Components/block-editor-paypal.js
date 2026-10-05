@@ -1,0 +1,52 @@
+import { useMemo } from '@wordpress/element';
+import { PayPalButtons, PayPalScriptProvider } from '@paypal/react-paypal-js';
+import { normalizeStyleForFundingSource } from '../../button/modules/Helper/Style';
+
+export const BlockEditorPayPalComponent = ( {
+	config,
+	fundingSource,
+	buttonAttributes,
+} ) => {
+	const urlParams = useMemo(
+		() => ( {
+			clientId: 'test',
+			...config.scriptData.url_params,
+			dataNamespace: 'ppcp-blocks-editor-paypal-buttons',
+			components: 'buttons',
+		} ),
+		[ config.scriptData.url_params ]
+	);
+
+	const style = useMemo( () => {
+		const configStyle = normalizeStyleForFundingSource(
+			config.scriptData.button.style,
+			fundingSource
+		);
+
+		if ( buttonAttributes ) {
+			return {
+				...configStyle,
+				height: buttonAttributes.height
+					? Number( buttonAttributes.height )
+					: configStyle.height,
+				borderRadius: buttonAttributes.borderRadius
+					? Number( buttonAttributes.borderRadius )
+					: configStyle.borderRadius,
+			};
+		}
+
+		return configStyle;
+	}, [ fundingSource, buttonAttributes, config.scriptData.button.style ] );
+
+	return (
+		<PayPalScriptProvider options={ urlParams }>
+			<PayPalButtons
+				className={ `ppc-button-container-${ fundingSource }` }
+				fundingSource={ fundingSource }
+				style={ style }
+				forceReRender={ [ buttonAttributes || {} ] }
+				onClick={ () => false }
+			/>
+		</PayPalScriptProvider>
+	);
+};

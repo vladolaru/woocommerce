@@ -12,6 +12,7 @@ const {
 	getMainConfig,
 	getFrontConfig,
 	getPaymentsConfig,
+	getPayPalWalletConfig,
 	getExtensionsConfig,
 	getSiteEditorConfig,
 	getStylingConfig,
@@ -127,6 +128,15 @@ const PaymentsConfig = {
 };
 
 /**
+ * Config for the PayPal wallet's scripts and styles.
+ */
+const PayPalWalletConfig = {
+	...sharedConfig,
+	cache: getCacheConfig( 'paypal-wallet', [] ),
+	...getPayPalWalletConfig( { alias: getAlias() } ),
+};
+
+/**
  * Config to generate the CSS files.
  */
 const StylingConfig = {
@@ -177,6 +187,7 @@ module.exports = [
 	FrontendConfig,
 	ExtensionsConfig,
 	PaymentsConfig,
+	PayPalWalletConfig,
 	SiteEditorConfig,
 	StylingConfig,
 	UnifiedStylingConfig,

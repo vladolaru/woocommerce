@@ -336,6 +336,9 @@ const blockStylingEntries = getBlockEntries(
 	}
 );
 
+const paypalWalletDir = './assets/js/extensions/payment-methods/paypal-wallet';
+const paypalWalletBlocksDir = './assets/js/blocks/paypal-wallet';
+
 const entries = {
 	styling: {
 		// Package entry points included in the styling build.
@@ -394,6 +397,36 @@ const entries = {
 			'./assets/js/extensions/payment-methods/bacs/index.js',
 		'wc-payment-method-cod':
 			'./assets/js/extensions/payment-methods/cod/index.js',
+	},
+	// The PayPal wallet's storefront, block editor and admin-page scripts and styles. The admin-page scripts
+	// are built here with the button code that gateway-settings and void-button import.
+	// The entry names are the file names PHP enqueues (AssetGetter: "<module>-<type>-<path>"); keep them.
+	paypalWallet: {
+		'ppcp-blocks-js-checkout-block': `${ paypalWalletDir }/blocks/checkout-block.js`,
+		'ppcp-blocks-js-ProductPayLaterMessagesBlock-product-paylater-block': `${ paypalWalletBlocksDir }/product-pay-later-messages/index.js`,
+		'ppcp-blocks-js-ProductSmartButtonsBlock-product-smart-buttons-block': `${ paypalWalletBlocksDir }/product-smart-buttons/index.js`,
+		'ppcp-blocks-css-gateway': `${ paypalWalletDir }/blocks/css/gateway.scss`,
+		'ppcp-blocks-css-gateway-editor': `${ paypalWalletDir }/blocks/css/gateway-editor.scss`,
+		'ppcp-button-js-button': `${ paypalWalletDir }/button/button.js`,
+		'ppcp-button-css-gateway': `${ paypalWalletDir }/button/css/gateway.scss`,
+		'ppcp-paylater-block-js-paylater-block': `${ paypalWalletBlocksDir }/pay-later-messages/index.js`,
+		'ppcp-paylater-block-css-edit': `${ paypalWalletBlocksDir }/pay-later-messages/css/edit.scss`,
+		'ppcp-paylater-wc-blocks-js-CartPayLaterMessagesBlock-cart-paylater-block': `${ paypalWalletBlocksDir }/cart-pay-later-messages/index.js`,
+		'ppcp-paylater-wc-blocks-js-CartPayLaterMessagesBlock-cart-paylater-block-inserter': `${ paypalWalletBlocksDir }/cart-pay-later-messages/cart-paylater-block-inserter.js`,
+		'ppcp-paylater-wc-blocks-js-CheckoutPayLaterMessagesBlock-checkout-paylater-block': `${ paypalWalletBlocksDir }/checkout-pay-later-messages/index.js`,
+		'ppcp-save-payment-methods-js-add-payment-method': `${ paypalWalletDir }/save-payment-methods/add-payment-method.js`,
+		'ppcp-sdk-v6-js-boot': `${ paypalWalletDir }/sdk/boot.js`,
+		'ppcp-sdk-v6-js-checkout-block': `${ paypalWalletDir }/sdk/checkout-block.js`,
+		'ppcp-sdk-v6-js-boot-add-payment-method': `${ paypalWalletDir }/sdk/boot-add-payment-method.js`,
+		'ppcp-sdk-v6-css-gateway': `${ paypalWalletDir }/sdk/css/gateway.scss`,
+		'ppcp-sdk-v6-css-checkout-block': `${ paypalWalletDir }/sdk/css/checkout-block.scss`,
+		'ppcp-wc-gateway-js-common': `${ paypalWalletDir }/gateway/common.js`,
+		'ppcp-wc-gateway-js-gateway-settings': `${ paypalWalletDir }/gateway/gateway-settings.js`,
+		'ppcp-wc-gateway-js-fraudnet': `${ paypalWalletDir }/gateway/fraudnet.js`,
+		'ppcp-wc-gateway-js-void-button': `${ paypalWalletDir }/gateway/void-button.js`,
+		'ppcp-wc-gateway-css-gateway-settings': `${ paypalWalletDir }/gateway/css/gateway-settings.scss`,
+		'ppcp-wc-gateway-css-common': `${ paypalWalletDir }/gateway/css/common.scss`,
+		'ppcp-vault-component-js-checkout': `${ paypalWalletDir }/vault/checkout.js`,
 	},
 	extensions: {
 		'wc-blocks-google-analytics':

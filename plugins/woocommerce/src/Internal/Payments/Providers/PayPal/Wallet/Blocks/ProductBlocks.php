@@ -336,7 +336,7 @@ class ProductBlocks {
 		assert( $settings_status instanceof SettingsStatus );
 
 		$script_params_endpoint = \WC_AJAX::get_endpoint( CartScriptParamsEndpoint::ENDPOINT );
-		$blocks_js_path         = $c->get( 'ppcp.path-to-plugin-folder' ) . 'modules/ppcp-blocks/resources/js/';
+		$blocks_path            = $c->get( 'ppcp.path-to-plugin-folder' );
 		$settings_url           = admin_url( 'admin.php?page=wc-settings&tab=checkout&section=ppcp-gateway' );
 
 		// Smart Buttons block.
@@ -362,7 +362,7 @@ class ProductBlocks {
 		);
 
 		register_block_type(
-			$blocks_js_path . 'ProductSmartButtonsBlock',
+			$blocks_path . 'product-smart-buttons',
 			array(
 				'render_callback' => static function ( array $attributes ) use ( $c ): string {
 					$renderer = $c->get( 'blocks.product-buttons-renderer' );
@@ -410,7 +410,7 @@ class ProductBlocks {
 		);
 
 		register_block_type(
-			$blocks_js_path . 'ProductPayLaterMessagesBlock',
+			$blocks_path . 'product-paylater-messages',
 			array(
 				'render_callback' => static function ( array $attributes ) use ( $c ): string {
 					$renderer = $c->get( 'blocks.product-messaging-renderer' );

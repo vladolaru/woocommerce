@@ -293,6 +293,33 @@ export default [
 		},
 	},
 	{
+		// The PayPal wallet reads the data and SDK namespaces its PHP and the PayPal scripts put on the page.
+		files: [
+			'assets/js/extensions/payment-methods/paypal-wallet/**',
+			'assets/js/blocks/paypal-wallet/**',
+		],
+		languageOptions: {
+			globals: {
+				FraudNetConfig: 'readonly',
+				PayPalCommerceGateway: 'readonly',
+				PayPalCommerceGatewaySettings: 'readonly',
+				PcpCartPayLaterBlock: 'readonly',
+				PcpCheckoutPayLaterBlock: 'readonly',
+				PcpPayLaterBlock: 'readonly',
+				PcpProductPayLaterBlock: 'readonly',
+				PcpProductSmartButtonsBlock: 'readonly',
+				PcpVoidButton: 'readonly',
+				React: 'readonly',
+				ReactDOM: 'readonly',
+				lodash: 'readonly',
+				paypal: 'readonly',
+				ppcpBlocksPaypalExpressButtons: 'readonly',
+				wc: 'readonly',
+				wc_cart_fragments_params: 'readonly',
+			},
+		},
+	},
+	{
 		files: [ '**/tests/e2e-jest/**' ],
 		rules: {
 			'jest/no-disabled-tests': 'off',

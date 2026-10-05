@@ -8,7 +8,7 @@ The fork point is extension commit `0083204e7`. A real `fork.php` run writes its
 |------|--------------|
 | `drift-report.sh` | Lists extension commits since a ref that touch forked paths, grouped by core file, and marks the ones that touch a shared-contract name (the list items of the appendix). Files dropped in core come last. |
 | `contract-list.sh` | Regenerates the shared-contract appendix (hooks, options, REST routes, handles, gateway IDs, meta keys) from the extension clone. Line 1 names the extension commit and carries no timestamp, so regenerating at the same commit gives the same file. |
-| `path-map.json` | Maps every forked extension path to its core path. `null` marks a file dropped in core. |
+| `path-map.json` | Maps every forked extension path to its core path. `null` marks a file dropped in core. The JS rows point at the admin and blocks clients, where the JS lives since the transitional wallet package was folded into them; `fork.php` and `supplement.py` still name that package's directory because they record the original run. |
 | `module-map.json` | Maps each kept extension module to its segment under `Wallet/`. Read by `fork.php`. |
 | `fork.php` | The one-shot fork. Copies the kept modules, rewrites namespaces and the text domain, and writes `path-map.json`. Kept as the record; do not run it again on a forked tree: a re-run would overwrite `path-map.json` without the entries `supplement.py` added. `--dry-run` counts and audits without writing any file. |
 | `supplement.py` | Adds classes of dropped modules that kept code still reaches, and records them in `path-map.json`. Its lists are empty, so it adds nothing; it stays as the record of how those files got in. |

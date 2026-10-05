@@ -38,8 +38,8 @@ final class WalletProperties extends BaseProperties {
 	public static function new(): self {
 		return new self(
 			'woocommerce-paypal-payments',
-			WC_ABSPATH . 'assets/client/paypal-wallet/',
-			WC()->plugin_url() . '/assets/client/paypal-wallet/',
+			WC_ABSPATH . 'assets/client/blocks/paypal-wallet/',
+			WC()->plugin_url() . '/assets/client/blocks/paypal-wallet/',
 			array(
 				Properties::PROP_NAME         => 'PayPal Wallet',
 				Properties::PROP_VERSION      => self::EXTENSION_VERSION,

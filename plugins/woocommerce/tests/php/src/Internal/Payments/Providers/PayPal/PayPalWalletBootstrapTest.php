@@ -3,6 +3,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal;
 
+use Automattic\WooCommerce\Blocks\AssetsController;
+use Automattic\WooCommerce\Blocks\Package as BlocksPackage;
+use Automattic\WooCommerce\Internal\Features\BlockEditorUnifiedAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\DormantPayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletRuntimeArbiter;
@@ -491,6 +494,30 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 			apply_filters( 'woocommerce_payment_gateways', array() ) // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 		);
 		$this->assertNotContains( 'ppcp-gateway', $offered_ids, 'A dormant wallet registers no gateway on a front-end request' );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should leave no wallet script handle registered on a dormant admin request, counting the handles core's blocks asset registration derives from the built files.
+	 */
+	public function test_registers_no_wallet_handle_on_a_dormant_admin_request(): void {
+		delete_option( 'woocommerce-ppcp-data-common' );
+		// The deprecated-handle shim that scans the blocks build only runs with unified editor assets on.
+		update_option( BlockEditorUnifiedAssets::OPTION_NAME, 'yes' );
+		set_current_screen( 'woocommerce_page_wc-settings' ); // is_admin() is true on a WP_Screen of the admin.
+		$GLOBALS['wp_scripts'] = new \WP_Scripts(); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- A registry no earlier test has filled; tearDown restores the original.
+		$this->build_sut( true );
+
+		$this->sut->maybe_boot();
+		BlocksPackage::container()->get( AssetsController::class )->register_assets();
+
+		$this->assertTrue( $this->sut->is_dormant() );
+		$this->assertArrayHasKey( 'wc-blocks', wp_scripts()->registered, 'The blocks assets must have been registered' );
+		foreach ( array_keys( wp_scripts()->registered ) as $handle ) {
+			$this->assertStringStartsNotWith( 'ppcp-', $handle, "No wallet handle may be registered when dormant ($handle)" );
+			$this->assertStringStartsNotWith( 'wc-ppcp-', $handle, "No wallet handle may be registered when dormant ($handle)" );
+		}
 	}
 
 	/**

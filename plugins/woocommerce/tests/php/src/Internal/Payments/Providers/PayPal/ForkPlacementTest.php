@@ -54,6 +54,25 @@ class ForkPlacementTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should keep no source file in the retired client/paypal-wallet package; the wallet JS lives in the blocks and admin clients.
+	 */
+	public function test_no_file_under_the_retired_js_package(): void {
+		$package_dir = WC_ABSPATH . 'client/paypal-wallet';
+		$files       = array();
+		if ( is_dir( $package_dir ) ) {
+			$iterator = new \RecursiveIteratorIterator( new \RecursiveDirectoryIterator( $package_dir, \FilesystemIterator::SKIP_DOTS ) );
+			foreach ( $iterator as $file ) {
+				$relative = substr( $file->getPathname(), strlen( $package_dir ) + 1 );
+				// An old checkout can keep the package's installed dependencies; they are not source.
+				if ( 0 !== strpos( $relative, 'node_modules/' ) ) {
+					$files[] = $relative;
+				}
+			}
+		}
+		$this->assertSame( array(), $files );
+	}
+
+	/**
 	 * @testdox Should use core's text domain in the forked code, except the inbox note source and the shared base name.
 	 */
 	public function test_text_domain_is_core(): void {
