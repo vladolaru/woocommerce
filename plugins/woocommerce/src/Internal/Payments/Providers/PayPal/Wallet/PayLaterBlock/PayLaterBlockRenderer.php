@@ -38,7 +38,7 @@ class PayLaterBlockRenderer {
 
 			$processor = new \WP_HTML_Tag_Processor( $html );
 
-			if ( $processor->next_tag( 'div' ) ) {
+			if ( $processor->next_tag( array( 'tag_name' => 'div' ) ) ) {
 				$layout = $attributes['layout'] ?? 'text';
 
 				// Coerced, not migrated, so flag-off restores the banner. The flex
