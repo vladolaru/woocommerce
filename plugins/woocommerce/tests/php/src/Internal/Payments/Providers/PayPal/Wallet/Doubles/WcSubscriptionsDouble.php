@@ -104,7 +104,8 @@ final class WcSubscriptionsDouble {
 }
 // phpcs:enable SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName
 
-if ( ! class_exists( 'WC_Subscription' ) ) {
+// No autoload: the autoloader maps WC_Subscription to this file, so class_exists() would include it again and redeclare WcSubscriptionsDouble.
+if ( ! class_exists( 'WC_Subscription', false ) ) {
 	/**
 	 * A subscription: an order, as in WooCommerce Subscriptions, without the subscription behaviour.
 	 */

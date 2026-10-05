@@ -9,7 +9,7 @@ declare( strict_types = 1 );
 
 // phpcs:disable Squiz.Classes.ClassFileName.NoMatch, SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName, Squiz.Classes.ValidClassName.NotCamelCaps, Universal.Files.SeparateFunctionsFromOO.Mixed
 
-if ( ! class_exists( 'WC_Subscriptions_Product' ) ) {
+if ( ! class_exists( 'WC_Subscriptions_Product', false ) ) {
 	/**
 	 * Answers `is_subscription()` from a list of product IDs the test fills. Only this method exists: the wallet code
 	 * reads nothing else from the class on the paths these tests run. `WC_Subscriptions` itself stays undefined, so
