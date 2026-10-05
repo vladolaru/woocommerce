@@ -522,6 +522,32 @@ class WooPaymentsApiClient {
 	}
 
 	/**
+	 * List a customer's WooPayments PaymentIntents, newest first.
+	 *
+	 * The platform proxies Stripe's PaymentIntents list for the connected account, so the body is Stripe's list object:
+	 * `data` (the intents, with their metadata) and `has_more`.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string $customer_id Customer ID.
+	 * @param int    $limit       Most intents to return; Stripe allows up to 100.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the customer ID is invalid or the request fails.
+	 */
+	public function list_payment_intentions( string $customer_id, int $limit = 100 ): array {
+		$this->validate_route_customer_id( $customer_id );
+
+		return $this->request(
+			array(
+				'customer' => $customer_id,
+				'limit'    => $limit,
+			),
+			'intentions',
+			'GET'
+		);
+	}
+
+	/**
 	 * Retrieve a WooPayments PaymentIntent in an explicit account mode.
 	 *
 	 * Historical order readers use this instead of inheriting the store's current mode.

@@ -1939,6 +1939,64 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Listing a customer's payment intents reads the platform's intentions list with the customer and limit as query args.
+	 *
+	 * The shape is the one Step 0 recorded on wpcom-local (data/t62-ambiguous-timeout-hold.md, check 4): Stripe's list
+	 * object proxied as the connected account, newest first, each intent carrying the store's order metadata.
+	 */
+	public function test_list_payment_intentions_reads_the_customer_intentions_list(): void {
+		list( $sut, $http_client ) = $this->make_sut(
+			true,
+			array(
+				'object'   => 'list',
+				'data'     => array(
+					array(
+						'id'       => 'pi_listed',
+						'status'   => 'succeeded',
+						'metadata' => array( 'order_id' => '42' ),
+					),
+				),
+				'has_more' => false,
+			)
+		);
+
+		$result = $sut->list_payment_intentions( 'cus_listed', 100 );
+
+		$this->assertSame( 'pi_listed', $result['data'][0]['id'] );
+		$this->assertFalse( $result['has_more'] );
+		$this->assertSame( 'GET', $http_client->last_method );
+		$this->assertNull( $http_client->last_body );
+		$this->assertStringStartsWith( '/sites/123/wcpay/intentions?', $http_client->last_path );
+		$query = array();
+		wp_parse_str( (string) wp_parse_url( $http_client->last_path, PHP_URL_QUERY ), $query );
+		$this->assertSame(
+			array(
+				'test_mode' => '1',
+				'customer'  => 'cus_listed',
+				'limit'     => '100',
+			),
+			$query
+		);
+	}
+
+	/**
+	 * @testdox Listing payment intents refuses an invalid customer ID before sending anything.
+	 */
+	public function test_list_payment_intentions_rejects_invalid_customer_id(): void {
+		$http_client = new FakeWooPaymentsHttpClient();
+		$sut         = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ) );
+
+		try {
+			$sut->list_payment_intentions( 'cus&customer=cus_other' );
+			$this->fail( 'Expected an invalid customer ID to be rejected.' );
+		} catch ( WooPaymentsApiException $exception ) {
+			$this->assertSame( 'wcpay_route_validation_failure', $exception->get_error_code() );
+			$this->assertSame( 0, $http_client->request_count );
+		}
+	}
+
+	/**
 	 * @testdox Should reject invalid customer IDs before interpolating customer payment method requests.
 	 */
 	public function test_get_payment_methods_rejects_invalid_customer_id(): void {
