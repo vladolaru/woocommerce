@@ -2,16 +2,15 @@ import { useEffect, useMemo, useState } from '@wordpress/element';
 import classNames from 'classnames';
 
 import { OnboardingHooks, CommonHooks } from '@ppcp-settings/data';
+import { getQuery, cleanUrlQueryParams } from '@ppcp-settings/utils/navigation';
+import { ScrollHighlightProvider } from '@ppcp-settings/hooks/useScrollHighlight';
+import { initializeTracking } from '@ppcp-settings/services/tracking';
 import Notifications from './ReusableComponents/Notifications';
 import FlashNotices from './ReusableComponents/FlashNotices';
 import SpinnerOverlay from './ReusableComponents/SpinnerOverlay';
 import SendOnlyMessage from './Screens/SendOnlyMessage';
 import OnboardingScreen from './Screens/Onboarding';
 import SettingsScreen from './Screens/Settings';
-import { getQuery, cleanUrlQueryParams } from '@ppcp-settings/utils/navigation';
-import { ScrollHighlightProvider } from '@ppcp-settings/hooks/useScrollHighlight';
-
-import { initializeTracking } from '@ppcp-settings/services/tracking';
 
 const SettingsApp = () => {
 	const { isReady: onboardingIsReady, completed: onboardingCompleted } =

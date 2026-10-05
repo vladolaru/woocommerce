@@ -1,14 +1,14 @@
 import { __, sprintf } from '@wordpress/i18n';
 import { useState } from '@wordpress/element';
 import { useDispatch } from '@wordpress/data';
-import FeatureItem from './FeatureItem';
-import FeatureDescription from './FeatureDescription';
 import { ContentWrapper } from '@ppcp-settings/Components/ReusableComponents/Elements';
 import SettingsCard from '@ppcp-settings/Components/ReusableComponents/SettingsCard';
 import { useMerchantInfo } from '@ppcp-settings/data/common/hooks';
 import { STORE_NAME as COMMON_STORE_NAME } from '@ppcp-settings/data/common';
 import { useFeatures } from '@ppcp-settings/data/features/hooks';
 import useNotices from '@ppcp-settings/hooks/useNotices';
+import FeatureDescription from './FeatureDescription';
+import FeatureItem from './FeatureItem';
 
 const Features = () => {
 	const [ isRefreshing, setIsRefreshing ] = useState( false );

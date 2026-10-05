@@ -12,6 +12,8 @@
  * @package
  */
 
+import { setVisible } from '@ppcp-button/Helper/Hiding';
+import { debounce } from '@ppcp-blocks/Helper/debounce';
 import { loadSdkV6 } from './sdkLoader';
 import { checkEligibility } from './eligibility';
 import {
@@ -31,8 +33,6 @@ import { watchProductAmount } from './messages/productAmount';
 import { initProductButtonGate } from './utils/productButtonGate';
 import { setErrorLabels } from './utils/errorHandler';
 import { isFreeTrialCart } from './utils/freeTrial';
-import { setVisible } from '@ppcp-button/Helper/Hiding';
-import { debounce } from '@ppcp-blocks/Helper/debounce';
 import {
 	initMessages,
 	renderMessages,

@@ -1,7 +1,7 @@
 import { StylingHooks } from '@ppcp-settings/data';
+import SpinnerOverlay from '@ppcp-settings/Components/ReusableComponents/SpinnerOverlay';
 import PreviewPanel from '../Components/Styling/PreviewPanel';
 import SettingsPanel from '../Components/Styling/SettingsPanel';
-import SpinnerOverlay from '@ppcp-settings/Components/ReusableComponents/SpinnerOverlay';
 
 const TabStyling = () => {
 	const { isReady } = StylingHooks.useStore();

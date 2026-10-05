@@ -1,6 +1,6 @@
+import { cartPayerData } from '@ppcp-button/Helper/CartPayerData';
 import { paypalOrderToWcAddresses } from './Helper/Address';
 import { shouldEnableAppSwitch } from './Components/paypal';
-import { cartPayerData } from '@ppcp-button/Helper/CartPayerData';
 
 export const createOrder = async ( data, config, onError, onClose ) => {
 	try {

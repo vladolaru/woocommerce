@@ -1,6 +1,6 @@
 import { useMemo } from '@wordpress/element';
-import { normalizeStyleForFundingSource } from '../../../../ppcp-button/resources/js/modules/Helper/Style';
 import { PayPalButtons, PayPalScriptProvider } from '@paypal/react-paypal-js';
+import { normalizeStyleForFundingSource } from '../../../../ppcp-button/resources/js/modules/Helper/Style';
 
 export const BlockEditorPayPalComponent = ( {
 	config,

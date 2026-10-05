@@ -1,5 +1,5 @@
-import { getSteps } from './index';
 import { STEP_INFO } from '@ppcp-settings/services/tracking/funnels/onboarding';
+import { getSteps } from './index';
 
 // The step screens are not under test here, and loading them pulls in the data stores.
 jest.mock( './StepWelcome', () => () => null );

@@ -1,5 +1,5 @@
-import { Action } from '../Elements';
 import classNames from 'classnames';
+import { Action } from '../Elements';
 import CopyButton from '../Elements/CopyButton';
 
 const ControlStaticValue = ( {

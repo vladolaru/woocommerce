@@ -3,11 +3,11 @@ import classNames from 'classnames';
 
 import SettingsCard from '@ppcp-settings/Components/ReusableComponents/SettingsCard';
 import { CommonHooks } from '@ppcp-settings/data';
-import ConnectionStatusBadge from './Parts/ConnectionStatusBadge';
-import DisconnectButton from './Parts/DisconnectButton';
 import SettingsBlock from '@ppcp-settings/Components/ReusableComponents/SettingsBlock';
 import { ControlStaticValue } from '@ppcp-settings/Components/ReusableComponents/Controls';
 import { CardActions } from '@ppcp-settings/Components/ReusableComponents/Elements';
+import DisconnectButton from './Parts/DisconnectButton';
+import ConnectionStatusBadge from './Parts/ConnectionStatusBadge';
 
 const ConnectionStatus = () => {
 	const merchant = CommonHooks.useMerchant();

@@ -1,6 +1,6 @@
+import { paypalSubscriptionButtonAllowed } from '@ppcp-blocks/Helper/Subscription';
 import CartActionHandler from '../ActionHandler/CartActionHandler';
 import BootstrapHelper from '../Helper/BootstrapHelper';
-import { paypalSubscriptionButtonAllowed } from '@ppcp-blocks/Helper/Subscription';
 
 class CartBootstrap {
 	constructor( gateway, renderer, errorHandler ) {

@@ -1,7 +1,7 @@
 import classNames from 'classnames';
 
-import { Content } from './Elements';
 import { useScrollTarget } from '@ppcp-settings/hooks/useScrollHighlight';
+import { Content } from './Elements';
 
 /**
  * Renders a settings card.

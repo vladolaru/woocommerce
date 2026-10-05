@@ -9,9 +9,9 @@
 
 import { useDispatch, useSelect } from '@wordpress/data';
 
-import { STORE_NAME } from './constants';
 import { createHooksForStore } from '@ppcp-settings/data/utils';
 import { useMemo } from '@wordpress/element';
+import { STORE_NAME } from './constants';
 
 /**
  * Single source of truth for access Redux details.

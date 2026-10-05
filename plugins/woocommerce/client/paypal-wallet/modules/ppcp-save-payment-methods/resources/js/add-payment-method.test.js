@@ -33,16 +33,15 @@ jest.mock( '@ppcp-button/Helper/Hiding', () => ( {
 	setVisibleByClass: jest.fn(),
 } ) );
 
+import { getCurrentPaymentMethod } from '@ppcp-button/Helper/CheckoutMethodState';
+import { loadPayPalScript } from '@ppcp-button/Helper/PayPalScriptLoading';
+import ErrorHandler from '@ppcp-button/ErrorHandler';
+import { setVisible, setVisibleByClass } from '@ppcp-button/Helper/Hiding';
 import {
 	handlePaymentMethodChange,
 	setupPaymentMethodListeners,
 	initializeScript,
 } from './add-payment-method';
-
-import { getCurrentPaymentMethod } from '@ppcp-button/Helper/CheckoutMethodState';
-import { loadPayPalScript } from '@ppcp-button/Helper/PayPalScriptLoading';
-import ErrorHandler from '@ppcp-button/ErrorHandler';
-import { setVisible, setVisibleByClass } from '@ppcp-button/Helper/Hiding';
 
 describe( 'add-payment-method', () => {
 	let mockConfig;

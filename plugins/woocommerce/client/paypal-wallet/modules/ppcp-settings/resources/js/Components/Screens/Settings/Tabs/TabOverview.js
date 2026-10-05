@@ -1,9 +1,9 @@
 import { __ } from '@wordpress/i18n';
-import Todos from '../Components/Overview/Todos/Todos';
-import Features from '../Components/Overview/Features/Features';
 import { TodosHooks, CommonHooks, FeaturesHooks } from '@ppcp-settings/data';
 import SpinnerOverlay from '@ppcp-settings/Components/ReusableComponents/SpinnerOverlay';
 import usePaymentGatewaySync from '@ppcp-settings/hooks/usePaymentGatewaySync';
+import Features from '../Components/Overview/Features/Features';
+import Todos from '../Components/Overview/Todos/Todos';
 
 const TabOverview = () => {
 	const { isReady: areTodosReady } = TodosHooks.useTodos();

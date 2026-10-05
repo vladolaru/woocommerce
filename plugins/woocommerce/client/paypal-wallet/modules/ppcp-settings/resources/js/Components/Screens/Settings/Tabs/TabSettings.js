@@ -1,8 +1,8 @@
+import SpinnerOverlay from '@ppcp-settings/Components/ReusableComponents/SpinnerOverlay';
+import { CommonHooks, SettingsHooks } from '@ppcp-settings/data';
 import ConnectionStatus from '../Components/Settings/ConnectionStatus';
 import CommonSettings from '../Components/Settings/CommonSettings';
 import ExpertSettings from '../Components/Settings/ExpertSettings';
-import SpinnerOverlay from '@ppcp-settings/Components/ReusableComponents/SpinnerOverlay';
-import { CommonHooks, SettingsHooks } from '@ppcp-settings/data';
 
 const TabSettings = () => {
 	const { isReady } = SettingsHooks.useStore();

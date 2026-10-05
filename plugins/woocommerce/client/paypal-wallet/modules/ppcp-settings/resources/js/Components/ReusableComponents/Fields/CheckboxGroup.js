@@ -1,5 +1,5 @@
-import { PayPalCheckbox } from './index';
 import { useCallback } from '@wordpress/element';
+import { PayPalCheckbox } from './index';
 
 const CheckboxGroup = ( { name, options, value, onChange } ) => {
 	const handleChange = useCallback(

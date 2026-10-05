@@ -5,8 +5,8 @@ import {
 } from '@ppcp-button/Helper/CheckoutMethodState';
 import { loadPayPalScript } from '@ppcp-button/Helper/PayPalScriptLoading';
 import ErrorHandler from '@ppcp-button/ErrorHandler';
-import { buttonConfiguration } from './configuration';
 import { setVisible, setVisibleByClass } from '@ppcp-button/Helper/Hiding';
+import { buttonConfiguration } from './configuration';
 
 /**
  * Handles payment method change by updating visibility of buttons.

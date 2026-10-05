@@ -1,9 +1,9 @@
 import { ToggleControl, Icon, Button } from '@wordpress/components';
 import { cog } from '@wordpress/icons';
 
+import WarningMessages from '@ppcp-settings/Components/Screens/Settings/Components/Payment/WarningMessages';
 import SettingsBlock from '../SettingsBlock';
 import PaymentMethodIcon from '../PaymentMethodIcon';
-import WarningMessages from '@ppcp-settings/Components/Screens/Settings/Components/Payment/WarningMessages';
 
 const PaymentMethodItemBlock = ( {
 	paymentMethod,

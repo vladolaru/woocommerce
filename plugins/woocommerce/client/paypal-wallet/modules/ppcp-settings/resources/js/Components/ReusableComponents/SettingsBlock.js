@@ -1,6 +1,6 @@
 import classNames from 'classnames';
-import { Description, Header, Title, TitleExtra, Content } from './Elements';
 import { useScrollTarget } from '@ppcp-settings/hooks/useScrollHighlight';
+import { Description, Header, Title, TitleExtra, Content } from './Elements';
 
 const SettingsBlock = ( {
 	id,

@@ -1,7 +1,7 @@
-import CartActionHandler from '../ActionHandler/CartActionHandler';
-import BootstrapHelper from '../Helper/BootstrapHelper';
 import { paypalSubscriptionButtonAllowed } from '@ppcp-blocks/Helper/Subscription';
 import { debounce } from '@ppcp-blocks/Helper/debounce';
+import CartActionHandler from '../ActionHandler/CartActionHandler';
+import BootstrapHelper from '../Helper/BootstrapHelper';
 
 class MiniCartBootstrap {
 	constructor( gateway, renderer, errorHandler ) {

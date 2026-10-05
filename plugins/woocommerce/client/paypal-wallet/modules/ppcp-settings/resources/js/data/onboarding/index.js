@@ -1,14 +1,13 @@
 import { createReduxStore, register } from '@wordpress/data';
 
+import { addStoreToFunnel } from '@ppcp-settings/services/tracking';
+import { ONBOARDING_FUNNEL_ID } from '@ppcp-settings/services/tracking/init';
 import { STORE_NAME } from './constants';
 import reducer from './reducer';
 import * as selectors from './selectors';
 import * as actions from './actions';
 import * as hooks from './hooks';
 import * as resolvers from './resolvers';
-
-import { addStoreToFunnel } from '@ppcp-settings/services/tracking';
-import { ONBOARDING_FUNNEL_ID } from '@ppcp-settings/services/tracking/init';
 
 /**
  * Initializes and registers the settings store with WordPress data layer.

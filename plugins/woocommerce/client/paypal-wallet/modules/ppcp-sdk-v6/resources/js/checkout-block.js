@@ -21,6 +21,9 @@ import {
 import { createElement } from '@wordpress/element';
 import { useSelect } from '@wordpress/data';
 import { __, sprintf } from '@wordpress/i18n';
+import { PayPalSavedToken } from '@ppcp-blocks/Components/paypal-saved-token';
+import { PaypalLabel } from '@ppcp-blocks/Components/paypal-label';
+import { PayPalPlaceOrderContent } from '@ppcp-blocks/Components/paypal-place-order-content';
 import { loadSdkV6 } from './sdkLoader';
 import { checkEligibility } from './eligibility';
 import { V6ExpressComponent } from './blocks/V6ExpressComponent';
@@ -28,11 +31,8 @@ import { V6ContinuationComponent } from './blocks/V6ContinuationComponent';
 import { V6EditorPreview } from './blocks/V6EditorPreview';
 // Reused as-is from the blocks module: renders the saved-PayPal vault approval
 // into the selected saved-token row (its own namespaced SDK, no v6 clash).
-import { PayPalSavedToken } from '@ppcp-blocks/Components/paypal-saved-token';
 // Reused for the same reason, so the regular PayPal row cannot drift from the
 // v5 one it exists to match.
-import { PaypalLabel } from '@ppcp-blocks/Components/paypal-label';
-import { PayPalPlaceOrderContent } from '@ppcp-blocks/Components/paypal-place-order-content';
 import { FundingSources } from './utils/fundingSources';
 import { fundingSourceLabel } from './utils/fundingSourceLabel';
 import { amountFromCartTotals } from './utils/amount';

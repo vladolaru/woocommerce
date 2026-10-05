@@ -1,10 +1,10 @@
 import { loadScript } from '@paypal/paypal-js';
-import { debounce } from './helper/debounce';
 import Renderer from '@ppcp-button/Renderer/Renderer';
 import MessageRenderer from '@ppcp-button/Renderer/MessageRenderer';
 import { setVisibleByClass, isVisible } from '@ppcp-button/Helper/Hiding';
 import widgetBuilder from '@ppcp-button/Renderer/WidgetBuilder';
 import { PaymentContext } from '@ppcp-button/Helper/CheckoutMethodState';
+import { debounce } from './helper/debounce';
 
 document.addEventListener( 'DOMContentLoaded', () => {
 	function disableAll( nodeList ) {

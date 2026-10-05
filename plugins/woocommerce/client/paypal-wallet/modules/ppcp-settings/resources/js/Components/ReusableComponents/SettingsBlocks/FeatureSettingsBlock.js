@@ -1,8 +1,8 @@
 import { Button } from '@wordpress/components';
+import { CommonHooks } from '@ppcp-settings/data';
 import { Header, Title, Action, Description } from '../Elements';
 import SettingsBlock from '../SettingsBlock';
 import TitleBadge from '../TitleBadge';
-import { CommonHooks } from '@ppcp-settings/data';
 
 /**
  * Renders a feature settings block with title, description, and action buttons.

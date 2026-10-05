@@ -4,10 +4,10 @@ import { ControlToggleButton } from '@ppcp-settings/Components/ReusableComponent
 import SettingsBlock from '@ppcp-settings/Components/ReusableComponents/SettingsBlock';
 import Accordion from '@ppcp-settings/Components/ReusableComponents/AccordionSection';
 
+import { SettingsHooks } from '@ppcp-settings/data';
 import SimulationBlock from './SimulationBlock';
 import ResubscribeBlock from './ResubscribeBlock';
 import HooksListBlock from './HooksListBlock';
-import { SettingsHooks } from '@ppcp-settings/data';
 
 const Troubleshooting = () => {
 	const { logging, setLogging } = SettingsHooks.useSettings();

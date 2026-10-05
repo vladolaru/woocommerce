@@ -8,11 +8,11 @@ jest.mock( '@ppcp-button/Helper/CheckoutMethodState', () => ( {
 	},
 } ) );
 
+import { getCurrentPaymentMethod } from '@ppcp-button/Helper/CheckoutMethodState';
 import {
 	buttonConfiguration,
 	addPaymentMethodConfiguration,
 } from './configuration';
-import { getCurrentPaymentMethod } from '@ppcp-button/Helper/CheckoutMethodState';
 
 describe( 'Configuration', () => {
 	let mockErrorHandler;

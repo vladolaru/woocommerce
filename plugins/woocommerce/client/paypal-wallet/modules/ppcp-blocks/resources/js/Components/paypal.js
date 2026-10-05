@@ -1,4 +1,5 @@
 import { useEffect, useState } from '@wordpress/element';
+import { useRef } from 'react';
 import { loadPayPalScript } from '../../../../ppcp-button/resources/js/modules/Helper/PayPalScriptLoading';
 import {
 	mergeWcAddress,
@@ -15,7 +16,6 @@ import {
 	handleApprove,
 	onApproveSavePayment,
 } from '../paypal-config';
-import { useRef } from 'react';
 import Spinner from '../../../../ppcp-button/resources/js/modules/Helper/Spinner';
 
 const namespace = 'ppcpBlocksPaypalExpressButtons';

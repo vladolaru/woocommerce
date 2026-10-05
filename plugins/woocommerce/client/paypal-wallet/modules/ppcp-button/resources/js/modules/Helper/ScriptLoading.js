@@ -1,6 +1,6 @@
 import { loadScript } from '@paypal/paypal-js';
-import widgetBuilder from '../Renderer/WidgetBuilder';
 import merge from 'deepmerge';
+import widgetBuilder from '../Renderer/WidgetBuilder';
 import { keysToCamelCase } from './Utils';
 import { getUserIdToken } from './ConfigProcessor';
 

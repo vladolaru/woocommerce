@@ -1,5 +1,5 @@
-import { disable, enable, isDisabled } from './ButtonDisabler';
 import merge from 'deepmerge';
+import { disable, enable, isDisabled } from './ButtonDisabler';
 
 /**
  * Common Bootstrap methods to avoid code repetition.
