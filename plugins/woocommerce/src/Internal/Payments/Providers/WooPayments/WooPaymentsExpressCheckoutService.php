@@ -76,6 +76,11 @@ class WooPaymentsExpressCheckoutService {
 	public function should_show_payment_request_button( string $context = 'checkout' ): bool {
 		$context = $this->normalize_button_context( $context );
 
+		// Express methods listed among the checkout payment methods are not shown again as buttons (client 11.1.0 button helper :582-586).
+		if ( WooPaymentsExpressPaymentMethodTypes::is_express_checkout_in_payment_methods_enabled( $this->account_service ) ) {
+			return false;
+		}
+
 		if ( ! $this->provider->can_process_payments() ) {
 			return false;
 		}
@@ -303,10 +308,7 @@ class WooPaymentsExpressCheckoutService {
 	 * @return bool
 	 */
 	private function is_amazon_pay_button_available(): bool {
-		if (
-			WooPaymentsSettingsService::is_dynamic_checkout_place_order_button_enabled()
-			&& $this->is_truthy_gateway_setting( 'express_checkout_in_payment_methods' )
-		) {
+		if ( WooPaymentsExpressPaymentMethodTypes::is_express_checkout_in_payment_methods_enabled( $this->account_service ) ) {
 			return false;
 		}
 
@@ -435,27 +437,7 @@ class WooPaymentsExpressCheckoutService {
 			return false;
 		}
 
-		$supported_types = array(
-			'simple',
-			'variable',
-			'variation',
-			'subscription',
-			'variable-subscription',
-			'subscription_variation',
-			'booking',
-			'bundle',
-			'composite',
-			'mix-and-match',
-		);
-
-		/**
-		 * Filters WooPayments product types that can render product-page express checkout.
-		 *
-		 * @param array<int,string> $supported_types Product type IDs.
-		 *
-		 * @since 11.0.0
-		 */
-		$supported_types = apply_filters( 'wcpay_payment_request_supported_types', $supported_types );
+		$supported_types = $this->get_supported_product_types();
 
 		/**
 		 * Filters native WooPayments product types that can render product-page express checkout.
@@ -499,7 +481,41 @@ class WooPaymentsExpressCheckoutService {
 	}
 
 	/**
+	 * Get the product types express checkout supports.
+	 *
+	 * Client 11.1.0 `supported_product_types()` (button helper :686-709).
+	 *
+	 * @return mixed Product type IDs, as returned by the filter.
+	 */
+	private function get_supported_product_types() {
+		/**
+		 * Filters WooPayments product types that can use express checkout.
+		 *
+		 * @param array<int,string> $supported_types Product type IDs.
+		 *
+		 * @since 11.0.0
+		 */
+		return apply_filters(
+			'wcpay_payment_request_supported_types',
+			array(
+				'simple',
+				'variable',
+				'variation',
+				'subscription',
+				'variable-subscription',
+				'subscription_variation',
+				'booking',
+				'bundle',
+				'composite',
+				'mix-and-match',
+			)
+		);
+	}
+
+	/**
 	 * Tell whether every product in the current cart supports payment-request express checkout.
+	 *
+	 * Port of the client 11.1.0 `has_allowed_items_in_cart()` (button helper :716-751).
 	 *
 	 * @return bool
 	 */
@@ -507,6 +523,21 @@ class WooPaymentsExpressCheckoutService {
 		$woocommerce = function_exists( 'WC' ) ? WC() : null;
 		$cart        = is_object( $woocommerce ) ? $woocommerce->cart : null;
 		if ( ! $cart instanceof \WC_Cart ) {
+			return false;
+		}
+
+		// A pre-order charged upon release needs a saved method and a later charge the wallet flow does not set up.
+		if (
+			class_exists( '\WC_Pre_Orders_Cart' ) &&
+			class_exists( '\WC_Pre_Orders_Product' ) &&
+			\WC_Pre_Orders_Cart::cart_contains_pre_order() &&
+			\WC_Pre_Orders_Product::product_is_charged_upon_release( \WC_Pre_Orders_Cart::get_pre_order_product() )
+		) {
+			return false;
+		}
+
+		$supported_types = $this->get_supported_product_types();
+		if ( ! is_array( $supported_types ) ) {
 			return false;
 		}
 
@@ -518,7 +549,7 @@ class WooPaymentsExpressCheckoutService {
 
 			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- WooCommerce core hook.
 			$product = apply_filters( 'woocommerce_cart_item_product', $product, $cart_item, $cart_item_key );
-			if ( ! $product instanceof \WC_Product ) {
+			if ( ! $product instanceof \WC_Product || ! in_array( $product->get_type(), $supported_types, true ) ) {
 				return false;
 			}
 
@@ -535,7 +566,8 @@ class WooPaymentsExpressCheckoutService {
 			}
 		}
 
-		return true;
+		// The wallet sheet can only choose one shipping rate.
+		return count( $cart->get_shipping_packages() ) <= 1;
 	}
 
 	/**

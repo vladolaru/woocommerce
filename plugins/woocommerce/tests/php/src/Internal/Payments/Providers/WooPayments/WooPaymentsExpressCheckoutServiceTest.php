@@ -207,6 +207,91 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should not show the express buttons on $context while express methods sit in the payment-method list.
+	 *
+	 * Client 11.1.0 button helper :582-586 and its test :937-952.
+	 *
+	 * @testWith ["product", "yes", false]
+	 *           ["cart", "yes", false]
+	 *           ["checkout", "yes", false]
+	 *           ["checkout", "no", true]
+	 *
+	 * @param string $context  Express checkout context.
+	 * @param string $in_list  The express_checkout_in_payment_methods setting.
+	 * @param bool   $expected Whether the buttons show.
+	 */
+	public function test_express_buttons_follow_the_express_methods_in_payment_list_setting( string $context, string $in_list, bool $expected ): void {
+		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', '1' );
+		$this->set_up_virtual_product_context( $context );
+
+		$sut = $this->create_service( array( 'express_checkout_in_payment_methods' => $in_list ) );
+
+		$this->assertSame( $expected, $sut->should_show_payment_request_button( $context ) );
+	}
+
+	/**
+	 * @testdox Should refuse a cart holding a product type outside the supported list, unless the supported types filter adds it.
+	 *
+	 * Client 11.1.0 button helper :726-730, after `woocommerce_cart_item_product`.
+	 */
+	public function test_cart_requires_supported_product_types(): void {
+		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id() );
+		$external = $this->create_typed_product( 'external', '10.00' );
+		add_filter( 'woocommerce_cart_item_product', static fn() => $external );
+
+		$this->assertFalse( $this->create_service()->should_show_payment_request_button( 'cart' ) );
+
+		add_filter( 'wcpay_payment_request_supported_types', static fn( array $types ): array => array_merge( $types, array( 'external' ) ) );
+
+		$this->assertTrue( $this->create_service()->should_show_payment_request_button( 'cart' ) );
+	}
+
+	/**
+	 * @testdox Should refuse a cart with a WooCommerce Pre-Orders product charged $when, as the client does only for upon release.
+	 *
+	 * Client 11.1.0 button helper :717-722.
+	 *
+	 * @testWith ["upon_release", false]
+	 *           ["upfront", true]
+	 *
+	 * @param string $when     When the pre-order is charged.
+	 * @param bool   $expected Whether the buttons show.
+	 */
+	public function test_cart_refuses_pre_orders_charged_upon_release( string $when, bool $expected ): void {
+		ExpressCheckoutExtensionDoubles::load_pre_orders();
+		$product = \WC_Helper_Product::create_simple_product();
+		$product->update_meta_data( '_wc_pre_orders_enabled', 'yes' );
+		$product->update_meta_data( '_wc_pre_orders_when_to_charge', $when );
+		$product->save();
+		WC()->cart->add_to_cart( $product->get_id() );
+
+		$this->assertSame( $expected, $this->create_service()->should_show_payment_request_button( 'checkout' ) );
+	}
+
+	/**
+	 * @testdox Should refuse a cart split into $count shipping packages when there is more than one.
+	 *
+	 * Client 11.1.0 button helper :744-748: the wallet sheet can only pick one rate.
+	 *
+	 * @testWith [2, false]
+	 *           [1, true]
+	 *
+	 * @param int  $count    Number of shipping packages.
+	 * @param bool $expected Whether the buttons show.
+	 */
+	public function test_cart_refuses_more_than_one_shipping_package( int $count, bool $expected ): void {
+		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id() );
+		add_filter(
+			'woocommerce_cart_shipping_packages',
+			static function ( array $packages ) use ( $count ): array {
+				return array_fill( 0, $count, $packages[0] );
+			}
+		);
+
+		$this->assertSame( $expected, $this->create_service()->should_show_payment_request_button( 'cart' ) );
+	}
+
+	/**
 	 * @testdox Should let the legacy itemization filter remove product-page display items.
 	 */
 	public function test_hide_itemization_filter_removes_product_display_items(): void {

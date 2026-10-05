@@ -105,6 +105,19 @@ class WooPaymentsExpressPaymentMethodTypes {
 	}
 
 	/**
+	 * Tell whether express checkout methods are shown in the checkout payment-method list instead of as buttons.
+	 *
+	 * Client 11.1.0 `is_express_checkout_in_payment_methods_enabled()` (gateway :1020-1023).
+	 *
+	 * @param WooPaymentsAccountService $account_service WooPayments account service.
+	 * @return bool
+	 */
+	public static function is_express_checkout_in_payment_methods_enabled( WooPaymentsAccountService $account_service ): bool {
+		return WooPaymentsSettingsService::is_dynamic_checkout_place_order_button_enabled()
+			&& self::is_truthy_gateway_setting( $account_service, 'express_checkout_in_payment_methods' );
+	}
+
+	/**
 	 * Tell whether taxes are on and calculated from the shopper's billing address.
 	 *
 	 * Express wallet sheets only recalculate totals when the shipping address changes, so the billing address
