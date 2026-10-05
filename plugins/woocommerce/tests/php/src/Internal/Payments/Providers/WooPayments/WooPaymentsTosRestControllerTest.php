@@ -17,6 +17,8 @@ use WP_REST_Server;
  */
 class WooPaymentsTosRestControllerTest extends WC_REST_Unit_Test_Case {
 
+	use ProviderTextLogAssertions;
+
 	/**
 	 * The System Under Test.
 	 *
@@ -163,6 +165,22 @@ class WooPaymentsTosRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A platform error recording the agreement is logged with its status and code, never its message.
+	 */
+	public function test_tos_agreement_failure_log_leaves_out_platform_text(): void {
+		$this->sut = $this->create_controller( true );
+		$this->sut->register_routes();
+		$this->api_client->throw_on_agreement = true;
+		$logger                               = RecordingWcLogger::install();
+
+		$this->server->dispatch( $this->create_tos_request( array( 'accept' => true ) ) );
+
+		$context = $this->get_logged_context( $logger, 'Failed to handle WooPayments Terms of Service request.' );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
 	 * @testdox ToS route disables the gateway when terms are declined.
 	 */
 	public function test_tos_route_declines_terms(): void {
@@ -306,7 +324,7 @@ class RecordingTosApiClient extends WooPaymentsApiClient {
 	 */
 	public function add_account_tos_agreement( string $source, string $user_name ): array {
 		if ( $this->throw_on_agreement ) {
-			throw new RuntimeException( 'ToS agreement failed.' );
+			throw WooPaymentsTosRestControllerTest::make_provider_error();
 		}
 
 		$this->agreements[] = array(

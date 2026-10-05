@@ -219,15 +219,16 @@ class WooPaymentsTosRestController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Log a ToS route exception.
+	 * Log a ToS route exception with its class, code, trace and, for a platform error, its status and code; never its
+	 * message, which the platform writes when the agreement call fails.
 	 *
 	 * @param string    $message   Log message.
 	 * @param Throwable $exception Exception.
 	 */
 	private function log_exception( string $message, Throwable $exception ): void {
 		wc_get_logger()->error(
-			$message . ' ' . $exception->getMessage(),
-			array( 'source' => 'woopayments-tos' )
+			$message,
+			array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => 'woopayments-tos' ) )
 		);
 	}
 }

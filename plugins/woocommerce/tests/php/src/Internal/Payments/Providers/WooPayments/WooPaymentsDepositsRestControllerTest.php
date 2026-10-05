@@ -496,7 +496,8 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 				return $logger;
 			}
 		);
-		$this->api_client->exception = new WooPaymentsApiException( 'Ambiguous payout failure.', 'ambiguous_failure', 504 );
+		// A platform error code is free text to this store; one the logger does not list is logged as unknown_error.
+		$this->api_client->exception = new WooPaymentsApiException( 'Ambiguous payout failure.', 'https://pay.example.test/r?key=sk_test_leak123', 504 );
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/deposits' );
 		$request->set_body_params(
@@ -515,8 +516,9 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 'woopayments-payouts', $logger->entries[1]['context']['source'] );
 		$this->assertSame( 'instant', $logger->entries[1]['context']['type'] );
 		$this->assertSame( 'usd', $logger->entries[1]['context']['currency'] );
-		$this->assertSame( 'ambiguous_failure', $logger->entries[1]['context']['api_code'] );
+		$this->assertSame( 'unknown_error', $logger->entries[1]['context']['api_code'] );
 		$this->assertSame( 504, $logger->entries[1]['context']['http_status'] );
+		$this->assertStringNotContainsString( 'sk_test_leak123', (string) wp_json_encode( $logger->entries ) );
 	}
 
 	/**

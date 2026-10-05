@@ -259,8 +259,8 @@ class WooPaymentsCapitalRestController implements RegisterHooksInterface {
 			}
 		} catch ( WooPaymentsApiException $exception ) {
 			wc_get_logger()->error(
-				'Failed to build Capital loan offer redirect URL: ' . $exception->getMessage(),
-				array( 'source' => 'woopayments-capital' )
+				'Failed to build Capital loan offer redirect URL.',
+				array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => 'woopayments-capital' ) )
 			);
 		}
 

@@ -301,7 +301,7 @@ class WooPaymentsDepositsRestController implements RegisterHooksInterface {
 				array_merge(
 					$log_context,
 					array(
-						'api_code'    => '' !== $exception->get_error_code() ? $exception->get_error_code() : 'wcpay_api_error',
+						'api_code'    => '' !== $exception->get_error_code() ? WooPaymentsLogger::get_loggable_error_code( $exception->get_error_code() ) : 'wcpay_api_error',
 						'http_status' => $exception->get_http_code(),
 					)
 				)

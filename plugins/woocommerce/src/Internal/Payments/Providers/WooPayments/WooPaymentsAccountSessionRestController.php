@@ -148,9 +148,10 @@ class WooPaymentsAccountSessionRestController implements RegisterHooksInterface 
 		try {
 			return new WP_REST_Response( $this->session_service->create_session() );
 		} catch ( Throwable $exception ) {
+			// The session comes from the platform, whose errors carry its text; log the status and code instead.
 			wc_get_logger()->error(
-				'Failed to create embedded account session: ' . $exception->getMessage(),
-				array( 'source' => 'woopayments-account-session' )
+				'Failed to create embedded account session.',
+				array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => 'woopayments-account-session' ) )
 			);
 
 			return new WP_Error(

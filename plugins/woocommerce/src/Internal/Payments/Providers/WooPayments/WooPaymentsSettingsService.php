@@ -1855,7 +1855,7 @@ class WooPaymentsSettingsService {
 				$this->log_fraud_ruleset_refresh_warning(
 					'Native WooPayments fraud ruleset refresh failed.',
 					array(
-						'error_code'  => $e->get_error_code(),
+						'error_code'  => WooPaymentsLogger::get_loggable_error_code( $e->get_error_code() ),
 						'http_status' => $e->get_http_code(),
 					)
 				);
@@ -1875,7 +1875,7 @@ class WooPaymentsSettingsService {
 				$this->log_fraud_ruleset_refresh_warning(
 					'Native WooPayments fraud ruleset Basic initialization failed.',
 					array(
-						'error_code'  => $save_exception->get_error_code(),
+						'error_code'  => WooPaymentsLogger::get_loggable_error_code( $save_exception->get_error_code() ),
 						'http_status' => $save_exception->get_http_code(),
 					)
 				);

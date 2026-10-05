@@ -17,6 +17,8 @@ use WP_REST_Server;
  */
 class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case {
 
+	use ProviderTextLogAssertions;
+
 	/**
 	 * The System Under Test.
 	 *
@@ -239,7 +241,7 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 	 * @testdox Account session route logs the failure instead of silently discarding it, keeping the sanitized 500.
 	 */
 	public function test_route_logs_error_when_service_throws(): void {
-		$this->service->exception = new \RuntimeException( 'secret platform failure: sk_test_123' );
+		$this->service->exception = self::make_provider_error();
 		$logger                   = $this->create_recording_logger();
 		add_filter(
 			'woocommerce_logging_class',
@@ -257,7 +259,11 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 		$this->assertCount( 1, $logger->entries );
 		$this->assertSame( 'error', $logger->entries[0]['level'] );
 		$this->assertSame( 'woopayments-account-session', $logger->entries[0]['context']['source'] );
-		$this->assertStringContainsString( 'secret platform failure', $logger->entries[0]['message'] );
+		$this->assertSame( 'Failed to create embedded account session.', $logger->entries[0]['message'] );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $logger->entries[0]['context']['http_status'], $logger->entries[0]['context']['error_code'] ) );
+		foreach ( self::$provider_leak_fragments as $fragment ) {
+			$this->assertStringNotContainsString( $fragment, (string) wp_json_encode( $logger->entries ) );
+		}
 	}
 
 	/**

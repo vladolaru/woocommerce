@@ -19,6 +19,8 @@ use WP_REST_Request;
  */
 class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 
+	use ProviderTextLogAssertions;
+
 	/**
 	 * The System Under Test.
 	 *
@@ -2045,6 +2047,32 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'error', $result['advanced_fraud_protection_settings'] );
 		$this->assertFalse( get_transient( 'wcpay_fraud_protection_settings' ) );
 		$this->assertNull( $this->api_client->last_fraud_ruleset );
+	}
+
+	/**
+	 * @testdox A failed fraud ruleset $step logs a listed platform code, and any other code as unknown_error.
+	 * @testWith ["refresh"]
+	 *           ["Basic initialization"]
+	 *
+	 * @param string $step Platform call that fails.
+	 */
+	public function test_fraud_ruleset_failure_logs_only_a_listed_code( string $step ): void {
+		$this->set_connected_account_data();
+		update_option( 'current_protection_level', 'advanced' );
+		$free_text_code = new WooPaymentsApiException( 'Error: x', 'https://pay.example.test/r?key=sk_test_leak123', 500 );
+		if ( 'refresh' === $step ) {
+			$this->api_client->latest_fraud_ruleset_exception = $free_text_code;
+		} else {
+			$this->api_client->latest_fraud_ruleset_exception = new WooPaymentsApiException( 'Ruleset not found.', 'wcpay_fraud_ruleset_not_found', 404 );
+			$this->api_client->save_fraud_ruleset_exception   = $free_text_code;
+		}
+		$logger = RecordingWcLogger::install();
+
+		$this->sut->get_settings();
+
+		$context = $this->get_logged_context( $logger, 'refresh' === $step ? 'Native WooPayments fraud ruleset refresh failed.' : 'Native WooPayments fraud ruleset Basic initialization failed.' );
+		$this->assertSame( array( 'unknown_error', 500 ), array( $context['error_code'], $context['http_status'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
 	/**

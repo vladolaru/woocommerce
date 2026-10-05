@@ -513,7 +513,8 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 				return $logger;
 			}
 		);
-		$this->api_client->exception = new WooPaymentsApiException( 'Ambiguous dispute failure.', 'ambiguous_failure', 504 );
+		// A platform error code is free text to this store; one the logger does not list is logged as unknown_error.
+		$this->api_client->exception = new WooPaymentsApiException( 'Ambiguous dispute failure.', 'https://pay.example.test/r?key=sk_test_leak123', 504 );
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'POST', '/wc/v3/payments/disputes/dp_test/close' ) );
 
@@ -524,8 +525,38 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 'woopayments-disputes', $logger->entries[1]['context']['source'] );
 		$this->assertSame( 'close', $logger->entries[1]['context']['action'] );
 		$this->assertSame( 'dp_test', $logger->entries[1]['context']['dispute_id'] );
-		$this->assertSame( 'ambiguous_failure', $logger->entries[1]['context']['api_code'] );
+		$this->assertSame( 'unknown_error', $logger->entries[1]['context']['api_code'] );
 		$this->assertSame( 504, $logger->entries[1]['context']['http_status'] );
+		$this->assertStringNotContainsString( 'sk_test_leak123', (string) wp_json_encode( $logger->entries ) );
+	}
+
+	/**
+	 * @testdox Dispute update logs a listed platform code, and any other code as unknown_error.
+	 * @testWith ["resource_missing", "resource_missing"]
+	 *           ["https://pay.example.test/r?key=sk_test_leak123", "unknown_error"]
+	 *
+	 * @param string $code     Platform error code.
+	 * @param string $expected Logged api_code.
+	 */
+	public function test_dispute_update_failure_logs_only_a_listed_code( string $code, string $expected ): void {
+		$this->create_disputes_controller( true )->register_routes();
+		$logger = $this->create_recording_logger();
+		add_filter(
+			'woocommerce_logging_class',
+			static function () use ( $logger ): object {
+				return $logger;
+			}
+		);
+		$this->api_client->exception = new WooPaymentsApiException( 'Ambiguous dispute failure.', $code, 504 );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/disputes/dp_test' );
+		$request->set_body_params( array( 'submit' => 'false' ) );
+		$this->server->dispatch( $request );
+
+		$this->assertSame( 'error', $logger->entries[1]['level'] );
+		$this->assertSame( 'update', $logger->entries[1]['context']['action'] );
+		$this->assertSame( $expected, $logger->entries[1]['context']['api_code'] );
+		$this->assertStringNotContainsString( 'sk_test_leak123', (string) wp_json_encode( $logger->entries ) );
 	}
 
 	/**

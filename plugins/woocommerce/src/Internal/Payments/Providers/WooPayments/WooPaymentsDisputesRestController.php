@@ -203,7 +203,7 @@ class WooPaymentsDisputesRestController implements RegisterHooksInterface {
 				array_merge(
 					$log_context,
 					array(
-						'api_code'    => $exception->get_error_code(),
+						'api_code'    => WooPaymentsLogger::get_loggable_error_code( $exception->get_error_code() ),
 						'http_status' => $exception->get_http_code(),
 					)
 				)
@@ -240,7 +240,7 @@ class WooPaymentsDisputesRestController implements RegisterHooksInterface {
 				array_merge(
 					$log_context,
 					array(
-						'api_code'    => $exception->get_error_code(),
+						'api_code'    => WooPaymentsLogger::get_loggable_error_code( $exception->get_error_code() ),
 						'http_status' => $exception->get_http_code(),
 					)
 				)

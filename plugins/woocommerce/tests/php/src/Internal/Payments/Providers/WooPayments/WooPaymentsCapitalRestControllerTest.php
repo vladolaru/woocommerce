@@ -17,6 +17,8 @@ use WP_REST_Server;
  */
 class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 
+	use ProviderTextLogAssertions;
+
 	/**
 	 * The System Under Test.
 	 *
@@ -331,7 +333,7 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 				return $logger;
 			}
 		);
-		$this->api_client->exception = new WooPaymentsApiException( 'Capital unavailable.', 'capital_unavailable', 503 );
+		$this->api_client->exception = self::make_provider_error();
 		$this->sut->register_routes();
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/capital/loan_offer' ) );
@@ -341,8 +343,13 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertStringContainsString( 'wcpay-loan-offer-error=1', $location );
 		$this->assertCount( 1, $logger->entries );
 		$this->assertSame( 'error', $logger->entries[0]['level'] );
-		$this->assertStringContainsString( 'Capital unavailable.', $logger->entries[0]['message'] );
+		// The platform's message stays out of the log; its status and code go in.
+		$this->assertSame( 'Failed to build Capital loan offer redirect URL.', $logger->entries[0]['message'] );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $logger->entries[0]['context']['http_status'], $logger->entries[0]['context']['error_code'] ) );
 		$this->assertSame( 'woopayments-capital', $logger->entries[0]['context']['source'] );
+		foreach ( self::$provider_leak_fragments as $fragment ) {
+			$this->assertStringNotContainsString( $fragment, (string) wp_json_encode( $logger->entries ) );
+		}
 	}
 
 	/**
