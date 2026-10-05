@@ -144,7 +144,7 @@ class SavePaymentMethodsModule implements ServiceModule, ExecutableModule {
 						$key            = array_key_first( $payment_source );
 						if ( ! is_string( $key ) || empty( $key ) ) {
 							// Only PayPal gateway requests with a paypal or venmo funding source reach this point.
-							$key = $funding_source;
+							$key                    = $funding_source;
 							$payment_source[ $key ] = array();
 						}
 						$payment_source[ $key ]               = (array) $payment_source[ $key ];
