@@ -215,10 +215,11 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 			$this->event_ingestor->process( $event );
 		} catch ( \InvalidArgumentException $exception ) {
 			$this->failed_event_store->delete_event( $event_id );
-			// Client 11.1.0 `class-wc-payments-webhook-reliability-service.php:146-148`.
+			// Client 11.1.0 `class-wc-payments-webhook-reliability-service.php:146-148`. Every refusal's reason is a constant
+			// written here, except a Stripe Billing refusal that wraps a platform error: that one is logged by its codes instead.
 			wc_get_logger()->error(
-				sprintf( 'Failed processing event %1$s. Reason: %2$s', $event_id, $exception->getMessage() ),
-				array( 'source' => 'native-payments-webhook' )
+				sprintf( 'Failed processing event %1$s.%2$s', $event_id, WooPaymentsEventIngestor::get_refusal_reason_for_log( $exception ) ),
+				array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => 'native-payments-webhook' ) )
 			);
 			return;
 		} catch ( \Throwable $exception ) {
@@ -244,13 +245,12 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 			$this->failed_event_store->delete_event( $event_id );
 			wc_get_logger()->error(
 				sprintf(
-					'WooPayments webhook event %1$s (%2$s) could not be processed after %3$d retries and was dropped: %4$s',
+					'WooPayments webhook event %1$s (%2$s) could not be processed after %3$d retries and was dropped.',
 					$event_id,
 					isset( $event['type'] ) && is_string( $event['type'] ) ? $event['type'] : 'unknown type',
-					$attempts,
-					$exception->getMessage()
+					$attempts
 				),
-				array( 'source' => 'native-payments-webhook' )
+				array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => 'native-payments-webhook' ) )
 			);
 			return;
 		}

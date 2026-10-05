@@ -19,6 +19,8 @@ use WC_Unit_Test_Case;
  */
 class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 
+	use ProviderTextLogAssertions;
+
 	/**
 	 * Expected option key for the native failed-webhook fetch timestamp.
 	 *
@@ -363,6 +365,63 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$errors = array_values( array_filter( $logged, static fn( array $entry ): bool => 'error' === $entry[0] && false !== strpos( $entry[1], 'evt_exhausted' ) ) );
 		$this->assertNotEmpty( $errors, 'An error naming the dropped event must be logged.' );
 		$this->assertStringContainsString( 'payment_intent.succeeded', $errors[0][1] );
+	}
+
+	/**
+	 * @testdox A dropped event's line carries the platform error's status and code, never its message.
+	 */
+	public function test_dropped_event_log_leaves_out_platform_text(): void {
+		$store   = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$service = $this->create_service( new RecordingActionSchedulerService(), $store, new StaticFailedEventsProvider(), new ThrowingEventIngestor( self::make_provider_error() ) );
+		$store->set_event(
+			'evt_exhausted',
+			array(
+				'id'   => 'evt_exhausted',
+				'type' => 'payment_intent.succeeded',
+				WooPaymentsWebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => 3,
+			)
+		);
+		$logger = RecordingWcLogger::install();
+
+		try {
+			$service->process_event( 'evt_exhausted' );
+		} catch ( \RuntimeException $exception ) {
+			unset( $exception );
+		}
+
+		$context = $this->get_logged_context( $logger, 'WooPayments webhook event evt_exhausted (payment_intent.succeeded) could not be processed after 3 retries and was dropped.' );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
+	 * @testdox A refusal that wraps a platform error is logged by the platform's codes, without the refusal's message.
+	 *
+	 * The Stripe Billing handler passes on its module's refusal (StripeBillingEventHandler::handle_event()), which can carry
+	 * the platform's text; every other refusal's reason is a constant and stays on the line.
+	 */
+	public function test_refusal_wrapping_a_platform_error_leaves_out_its_text(): void {
+		$store   = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$service = $this->create_service(
+			new RecordingActionSchedulerService(),
+			$store,
+			new StaticFailedEventsProvider(),
+			new ThrowingEventIngestor( new \InvalidArgumentException( self::make_provider_error()->getMessage(), 0, self::make_provider_error() ) )
+		);
+		$store->set_event(
+			'evt_process',
+			array(
+				'id'   => 'evt_process',
+				'type' => 'invoice.paid',
+			)
+		);
+		$logger = RecordingWcLogger::install();
+
+		$service->process_event( 'evt_process' );
+
+		$context = $this->get_logged_context( $logger, 'Failed processing event evt_process.' );
+		$this->assertSame( array( \InvalidArgumentException::class, 404, 'resource_missing' ), array( $context['exception'], $context['http_status'], $context['error_code'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
 	/**

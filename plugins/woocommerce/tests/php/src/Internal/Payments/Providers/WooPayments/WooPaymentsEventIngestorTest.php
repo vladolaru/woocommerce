@@ -17,6 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIppReceiptEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsNotificationEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
@@ -34,6 +35,8 @@ use WC_Unit_Test_Case;
  * Tests for the WooPaymentsEventIngestor class.
  */
 class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
+
+	use ProviderTextLogAssertions;
 
 	use WooPaymentsEventHandlerTestTrait;
 
@@ -354,6 +357,69 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertContains( $new_token->get_id(), array_map( 'absint', $order->get_payment_tokens() ) );
 		$notes = implode( ' | ', array_map( static fn( $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) ) );
 		$this->assertStringContainsString( 'updated the subscription payment method token', $notes );
+	}
+
+	/**
+	 * @testdox A platform error saving a renewal's payment method from the webhook is logged with its status and code, never its message.
+	 */
+	public function test_webhook_token_save_failure_log_leaves_out_platform_text(): void {
+		$this->ensure_wcs_order_contains_renewal_double();
+		$customer_id = self::factory()->user->create();
+		$order       = $this->create_woopayments_order();
+		$order->set_customer_id( $customer_id );
+		$order->save();
+		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_active_token_for_order', 'get_or_create_token_for_user' ) )
+			->getMock();
+		$token_service->method( 'get_or_create_token_for_user' )->willThrowException( self::make_provider_error() );
+		wc_get_container()->replace( WooPaymentsTokenService::class, $token_service );
+		$logger = RecordingWcLogger::install();
+
+		$GLOBALS['wcpay_test_renewal_order_ids'] = array( $order->get_id() );
+		try {
+			$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order ) );
+		} finally {
+			unset( $GLOBALS['wcpay_test_renewal_order_ids'] );
+		}
+
+		$context = $this->get_logged_context( $logger, 'Error when saving payment method from webhook.' );
+		$this->assertSame( array( 404, 'resource_missing', $order->get_id() ), array( $context['http_status'], $context['error_code'], $context['order_id'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
+	 * @testdox A platform error fetching a lost dispute's summary is logged with its status and code, never its message.
+	 */
+	public function test_dispute_summary_fetch_failure_log_leaves_out_platform_text(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order = $this->create_woopayments_order();
+		$order->set_total( '50.00' );
+		$order->set_status( 'on-hold' );
+		$order->update_meta_data( '_charge_id', 'ch_3UJbTlBzWlxcwgpP0vNaexjT' );
+		$order->save();
+		$api_client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Fail the summary fetch as the platform does.
+			 *
+			 * @param string $dispute_id Dispute ID.
+			 * @throws \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException Always.
+			 */
+			public function get_dispute_summary( string $dispute_id ): array {
+				unset( $dispute_id );
+				throw WooPaymentsEventIngestorTest::make_provider_error();
+			}
+		};
+
+		$sut    = $this->create_ingestor( wc_get_container()->get( OrderPaymentLifecycleService::class ), new LegacyProxy(), wc_get_container()->get( WooPaymentsLegacyRuntime::class ), $api_client );
+		$logger = RecordingWcLogger::install();
+
+		$sut->process( $this->load_recorded_dispute_closed_event( 'accept_closed_lost' ) );
+
+		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'Failed to fetch dispute summary for dispute ' ) ) );
+		$this->assertCount( 1, $lines );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $logger->contexts[ $lines[0] ]['http_status'], $logger->contexts[ $lines[0] ]['error_code'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
 	/**

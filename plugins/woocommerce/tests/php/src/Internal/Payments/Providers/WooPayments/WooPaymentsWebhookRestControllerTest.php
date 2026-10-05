@@ -22,6 +22,8 @@ use WP_REST_Server;
  */
 class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 
+	use ProviderTextLogAssertions;
+
 	/**
 	 * Scheduler the controller's reliability service schedules retries on.
 	 *
@@ -203,7 +205,9 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( array( 'result' => 'error' ), $response->get_data() );
 		$this->assertCount( 1, $logger->entries );
 		$this->assertSame( 'native-payments-webhook', $logger->entries[0]['context']['source'] );
-		$this->assertStringContainsString( 'server failed', $logger->entries[0]['message'] );
+		// Processing calls the platform, so a failure's message is left out; its class names it.
+		$this->assertSame( 'Failed processing a WooPayments webhook event.', $logger->entries[0]['message'] );
+		$this->assertSame( RuntimeException::class, $logger->entries[0]['context']['exception'] );
 	}
 
 	/**
@@ -250,6 +254,33 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 500, $response->get_status() );
 		$this->assertNull( wc_get_container()->get( WooPaymentsFailedEventStore::class )->get_event( 'evt_refund_controller' ) );
 		$this->assertSame( array(), $this->scheduler->scheduled_jobs );
+	}
+
+	/**
+	 * @testdox A failed event is logged with the platform error's status and code, never its message; so is a refusal that wraps one.
+	 * @testWith [false, "Failed processing a WooPayments webhook event."]
+	 *           [true, "Failed processing event evt_platform_error."]
+	 *
+	 * @param bool   $refused  Whether the ingestor refuses the event (an InvalidArgumentException wrapping the platform error).
+	 * @param string $expected Expected line.
+	 */
+	public function test_processing_failure_log_leaves_out_platform_text( bool $refused, string $expected ): void {
+		$failure    = $refused ? new InvalidArgumentException( self::make_provider_error()->getMessage(), 0, self::make_provider_error() ) : self::make_provider_error();
+		$logger     = new RecordingWcLogger();
+		$controller = $this->create_controller_with_ingestor( new ThrowingEventIngestor( $failure ), $logger );
+
+		$controller->handle_webhook(
+			$this->create_post_request(
+				array(
+					'id'   => 'evt_platform_error',
+					'type' => 'payment_intent.succeeded',
+				)
+			)
+		);
+
+		$context = $this->get_logged_context( $logger, $expected );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
 	/**

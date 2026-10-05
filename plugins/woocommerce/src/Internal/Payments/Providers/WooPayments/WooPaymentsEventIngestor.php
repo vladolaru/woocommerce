@@ -1192,11 +1192,15 @@ class WooPaymentsEventIngestor {
 				$order->add_order_note( $note );
 			}
 		} catch ( Throwable $exception ) {
+			// The token save fetches the payment method from the platform; its error's message is the platform's text.
 			wc_get_logger()->error(
-				'Error when saving payment method from webhook: ' . $exception->getMessage(),
-				array(
-					'source'   => 'woopayments-subscriptions',
-					'order_id' => $order->get_id(),
+				'Error when saving payment method from webhook.',
+				array_merge(
+					WooPaymentsLogger::get_failure_context( $exception ),
+					array(
+						'source'   => 'woopayments-subscriptions',
+						'order_id' => $order->get_id(),
+					)
 				)
 			);
 			$order->add_order_note( __( 'Unable to save payment method for subscription. Please try again or use a different payment method.', 'woocommerce' ) );
@@ -1306,6 +1310,21 @@ class WooPaymentsEventIngestor {
 
 		// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
 		throw new InvalidArgumentException( $reason );
+	}
+
+	/**
+	 * Get a refused event's reason for its log line: " Reason: <message>", or '' when the refusal wraps a platform error.
+	 *
+	 * Every refusal (InvalidArgumentException) is thrown with a constant message, except the Stripe Billing handler's, which
+	 * passes on its module's refusal; that one can carry the platform's text, so it is logged by the platform's codes only.
+	 *
+	 * @internal
+	 *
+	 * @param Throwable $refusal Refusal.
+	 * @return string
+	 */
+	public static function get_refusal_reason_for_log( Throwable $refusal ): string {
+		return array() === WooPaymentsLogger::get_api_error_context( $refusal ) ? ' Reason: ' . $refusal->getMessage() : '';
 	}
 
 	/**

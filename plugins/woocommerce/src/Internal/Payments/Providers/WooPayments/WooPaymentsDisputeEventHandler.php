@@ -433,14 +433,11 @@ class WooPaymentsDisputeEventHandler {
 			if ( is_object( $logger ) && is_callable( array( $logger, 'error' ) ) ) {
 				$logger->error(
 					sprintf(
-						'Failed to fetch dispute summary for dispute %1$s (charge %2$s): %3$s',
+						'Failed to fetch dispute summary for dispute %1$s (charge %2$s).',
 						$dispute_id,
-						$charge_id,
-						$exception->getMessage()
+						$charge_id
 					),
-					array(
-						'source' => 'native-payments-webhook',
-					)
+					array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => 'native-payments-webhook' ) )
 				);
 			}
 		}

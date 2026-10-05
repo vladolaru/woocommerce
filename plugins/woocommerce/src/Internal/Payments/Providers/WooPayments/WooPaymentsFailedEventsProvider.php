@@ -60,9 +60,10 @@ class WooPaymentsFailedEventsProvider {
 			try {
 				$events = $this->api_client->get_failed_webhook_events();
 			} catch ( WooPaymentsApiException $exception ) {
+				// The client appends the platform's message; native logs its status and code.
 				wc_get_logger()->error(
-					'Can not fetch failed events from the server. Error: ' . $exception->getMessage(),
-					array( 'source' => 'wcpay-webhook-reliability' )
+					'Can not fetch failed events from the server.',
+					array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => 'wcpay-webhook-reliability' ) )
 				);
 			}
 		}
