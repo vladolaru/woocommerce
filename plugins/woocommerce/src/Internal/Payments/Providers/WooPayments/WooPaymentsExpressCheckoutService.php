@@ -189,29 +189,7 @@ class WooPaymentsExpressCheckoutService {
 	 * @return array<int,string>
 	 */
 	public function get_enabled_methods_for_context( string $context = 'checkout', string $currency = '' ): array {
-		$context = $this->normalize_button_context( $context );
-		$methods = $this->get_configured_methods_for_context( $context );
-
-		/**
-		 * Filters native WooPayments platform express checkout methods for a context.
-		 *
-		 * @param array<int,string>                 $methods Enabled method IDs.
-		 * @param string                            $context Express checkout context.
-		 * @param WooPaymentsExpressCheckoutService $service Native express checkout service.
-		 *
-		 * @since 11.0.0
-		 */
-		$filtered_methods = apply_filters( 'woocommerce_woopayments_express_checkout_enabled_methods', $methods, $context, $this );
-		$filtered_methods = is_array( $filtered_methods ) ? $this->normalize_method_list( $filtered_methods ) : $methods;
-
-		return array_values(
-			array_filter(
-				$filtered_methods,
-				function ( string $method ) use ( $context, $currency ): bool {
-					return WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_AMAZON_PAY !== $method || $this->is_amazon_pay_usable( $context, $currency );
-				}
-			)
-		);
+		return WooPaymentsExpressPaymentMethodTypes::get_enabled_methods_for_context( $this->account_service, $this->normalize_button_context( $context ), $currency );
 	}
 
 	/**
@@ -222,14 +200,7 @@ class WooPaymentsExpressCheckoutService {
 	 * @return array<int,string>
 	 */
 	public function get_allowed_payment_method_types_for_context( string $context = 'checkout', string $currency = '' ): array {
-		$context = $this->normalize_button_context( $context );
-
-		return WooPaymentsExpressPaymentMethodTypes::get_allowed_payment_method_types_for_methods(
-			$this->account_service,
-			$this->get_enabled_methods_for_context( $context, $currency ),
-			$context,
-			$currency
-		);
+		return WooPaymentsExpressPaymentMethodTypes::get_allowed_payment_method_types_for_context( $this->account_service, $this->normalize_button_context( $context ), $currency );
 	}
 
 	/**
@@ -271,15 +242,7 @@ class WooPaymentsExpressCheckoutService {
 	 * @return bool
 	 */
 	public function is_amazon_pay_usable( string $context = 'checkout', string $currency = '' ): bool {
-		if ( ! $this->is_amazon_pay_button_available() ) {
-			return false;
-		}
-
-		return in_array(
-			WooPaymentsExpressPaymentMethodTypes::STRIPE_TYPE_AMAZON_PAY,
-			WooPaymentsExpressPaymentMethodTypes::get_allowed_payment_method_types_for_methods( $this->account_service, array( WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_AMAZON_PAY ), $context, $currency ),
-			true
-		);
+		return WooPaymentsExpressPaymentMethodTypes::is_amazon_pay_usable( $this->account_service, $this->normalize_button_context( $context ), $currency );
 	}
 
 	/**
@@ -296,68 +259,6 @@ class WooPaymentsExpressCheckoutService {
 			&& $this->account_service->has_working_account()
 			// Client 11.1.0 class-wc-payments-express-checkout-button-handler.php:79 checks Amazon Pay whichever locations list it.
 			&& ( $this->is_payment_request_enabled() || $this->is_amazon_pay_usable() );
-	}
-
-	/**
-	 * Tell whether the client's button-only Amazon Pay guards hold.
-	 *
-	 * Mirrors WooPayments' `can_use_amazon_pay()`: no Amazon Pay button while express methods sit in the
-	 * payment-method list, and the base gateway availability (gateway enabled, HTTPS in live mode outside admin).
-	 * At payment time the gateway's own `is_available()` already enforces the latter two.
-	 *
-	 * @return bool
-	 */
-	private function is_amazon_pay_button_available(): bool {
-		if ( WooPaymentsExpressPaymentMethodTypes::is_express_checkout_in_payment_methods_enabled( $this->account_service ) ) {
-			return false;
-		}
-
-		if ( ! $this->account_service->is_gateway_enabled() ) {
-			return false;
-		}
-
-		return is_admin() || $this->account_service->is_test_mode_enabled() || wc_checkout_is_https();
-	}
-
-	/**
-	 * Get configured express checkout methods for a context.
-	 *
-	 * @param string $context Express checkout context.
-	 * @return array<int,string>
-	 */
-	private function get_configured_methods_for_context( string $context ): array {
-		$setting_context = 'pay_for_order' === $context ? 'checkout' : $context;
-		$setting_key     = 'express_checkout_' . $setting_context . '_methods';
-		$methods         = $this->account_service->get_gateway_setting( $setting_key, null );
-
-		if ( is_array( $methods ) ) {
-			return $this->normalize_method_list( $methods );
-		}
-
-		return $this->is_payment_request_enabled() ? array( WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_PAYMENT_REQUEST ) : array();
-	}
-
-	/**
-	 * Normalize express checkout method IDs.
-	 *
-	 * @param array<int,mixed> $methods Method IDs.
-	 * @return array<int,string>
-	 */
-	private function normalize_method_list( array $methods ): array {
-		$normalized = array();
-
-		foreach ( $methods as $method ) {
-			if ( ! is_scalar( $method ) ) {
-				continue;
-			}
-
-			$method = sanitize_key( (string) $method );
-			if ( '' !== $method ) {
-				$normalized[] = $method;
-			}
-		}
-
-		return array_values( array_unique( $normalized ) );
 	}
 
 	/**

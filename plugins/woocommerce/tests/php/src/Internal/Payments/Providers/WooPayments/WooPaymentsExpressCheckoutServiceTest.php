@@ -1380,6 +1380,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_payment_time_allowlist_rejects_amazon_pay_the_merchant_switched_off(): void {
 		$settings = array(
+			'enabled'                           => 'yes',
 			'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
 			'upe_available_payment_methods'     => array( 'card', 'amazon_pay' ),
 			'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
@@ -1389,8 +1390,8 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$enabled  = $this->create_account_service( $settings, $eligible );
 		$disabled = $this->create_account_service( array_merge( $settings, array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) ), $eligible );
 
-		$this->assertSame( array( 'card', 'amazon_pay' ), WooPaymentsExpressPaymentMethodTypes::get_allowed_payment_method_types_for_account( $enabled, 'checkout', 'USD' ) );
-		$this->assertSame( array( 'card' ), WooPaymentsExpressPaymentMethodTypes::get_allowed_payment_method_types_for_account( $disabled, 'checkout', 'USD' ) );
+		$this->assertSame( array( 'card', 'amazon_pay' ), WooPaymentsExpressPaymentMethodTypes::get_allowed_payment_method_types_for_context( $enabled, 'checkout', 'USD' ) );
+		$this->assertSame( array( 'card' ), WooPaymentsExpressPaymentMethodTypes::get_allowed_payment_method_types_for_context( $disabled, 'checkout', 'USD' ) );
 	}
 
 	/**

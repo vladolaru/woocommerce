@@ -80,28 +80,122 @@ class WooPaymentsExpressPaymentMethodTypes {
 	}
 
 	/**
-	 * Get allowed Stripe payment method types from account settings.
+	 * Get the express checkout methods offered in a context.
+	 *
+	 * The one resolver for the buttons and for the charge-time allowlist, so a method a shopper can start is a method
+	 * the charge accepts, and the reverse. Client 11.1.0 derives both from gateway enablement (gateway :5284-5315).
+	 *
+	 * @param WooPaymentsAccountService $account_service WooPayments account service.
+	 * @param string                    $context         Express checkout context.
+	 * @param string                    $currency        Optional order/cart currency; the store currency when empty.
+	 * @return array<int,string>
+	 */
+	public static function get_enabled_methods_for_context( WooPaymentsAccountService $account_service, string $context = 'checkout', string $currency = '' ): array {
+		$context = self::normalize_context( $context );
+		$methods = self::get_configured_methods_for_context( $account_service, $context );
+
+		/**
+		 * Filters native WooPayments platform express checkout methods for a context.
+		 *
+		 * Applies to the express buttons and to the payment types the charge accepts from them.
+		 *
+		 * @param array<int,string> $methods  Enabled method IDs.
+		 * @param string            $context  Express checkout context.
+		 * @param string            $currency Order or cart currency; empty for the store currency.
+		 *
+		 * @since 11.0.0
+		 */
+		$filtered_methods = apply_filters( 'woocommerce_woopayments_express_checkout_enabled_methods', $methods, $context, $currency );
+		$filtered_methods = is_array( $filtered_methods ) ? self::normalize_express_method_ids( $filtered_methods ) : $methods;
+
+		return array_values(
+			array_filter(
+				$filtered_methods,
+				static function ( string $method ) use ( $account_service, $context, $currency ): bool {
+					return self::EXPRESS_METHOD_AMAZON_PAY !== $method || self::is_amazon_pay_usable( $account_service, $context, $currency );
+				}
+			)
+		);
+	}
+
+	/**
+	 * Get the Stripe payment method types the express methods of a context use.
 	 *
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
 	 * @param string                    $context         Express checkout context.
 	 * @param string                    $currency        Optional order/cart currency.
 	 * @return array<int,string>
 	 */
-	public static function get_allowed_payment_method_types_for_account( WooPaymentsAccountService $account_service, string $context = 'checkout', string $currency = '' ): array {
-		$context         = self::normalize_context( $context );
+	public static function get_allowed_payment_method_types_for_context( WooPaymentsAccountService $account_service, string $context = 'checkout', string $currency = '' ): array {
+		return self::get_allowed_payment_method_types_for_methods(
+			$account_service,
+			self::get_enabled_methods_for_context( $account_service, $context, $currency ),
+			$context,
+			$currency
+		);
+	}
+
+	/**
+	 * Tell whether Amazon Pay is usable for express checkout, whichever locations list it.
+	 *
+	 * The client's `can_use_amazon_pay()` (11.1.0 class-wc-payments-express-checkout-button-helper.php:362-388).
+	 *
+	 * @param WooPaymentsAccountService $account_service WooPayments account service.
+	 * @param string                    $context         Express checkout context.
+	 * @param string                    $currency        Optional order/cart currency; the store currency when empty.
+	 * @return bool
+	 */
+	public static function is_amazon_pay_usable( WooPaymentsAccountService $account_service, string $context = 'checkout', string $currency = '' ): bool {
+		if ( ! self::is_amazon_pay_button_available( $account_service ) ) {
+			return false;
+		}
+
+		return in_array(
+			self::STRIPE_TYPE_AMAZON_PAY,
+			self::get_allowed_payment_method_types_for_methods( $account_service, array( self::EXPRESS_METHOD_AMAZON_PAY ), $context, $currency ),
+			true
+		);
+	}
+
+	/**
+	 * Tell whether the client's button-only Amazon Pay guards hold.
+	 *
+	 * Mirrors WooPayments' `can_use_amazon_pay()`: no Amazon Pay button while express methods sit in the
+	 * payment-method list, and the base gateway availability (gateway enabled, HTTPS in live mode outside admin).
+	 *
+	 * @param WooPaymentsAccountService $account_service WooPayments account service.
+	 * @return bool
+	 */
+	private static function is_amazon_pay_button_available( WooPaymentsAccountService $account_service ): bool {
+		if ( self::is_express_checkout_in_payment_methods_enabled( $account_service ) ) {
+			return false;
+		}
+
+		if ( ! $account_service->is_gateway_enabled() ) {
+			return false;
+		}
+
+		return is_admin() || $account_service->is_test_mode_enabled() || wc_checkout_is_https();
+	}
+
+	/**
+	 * Get the express checkout methods configured for a context.
+	 *
+	 * The location setting, or Apple Pay / Google Pay alone while the legacy switch is on and no location setting exists.
+	 *
+	 * @param WooPaymentsAccountService $account_service WooPayments account service.
+	 * @param string                    $context         Express checkout context.
+	 * @return array<int,string>
+	 */
+	private static function get_configured_methods_for_context( WooPaymentsAccountService $account_service, string $context ): array {
 		$setting_context = 'pay_for_order' === $context ? 'checkout' : $context;
-		$enabled_methods = array();
 		$methods         = $account_service->get_gateway_setting( 'express_checkout_' . $setting_context . '_methods', null );
 
 		if ( is_array( $methods ) ) {
-			$enabled_methods = self::normalize_express_method_ids( $methods );
+			return self::normalize_express_method_ids( $methods );
 		}
 
-		if ( empty( $enabled_methods ) && self::is_truthy_gateway_setting( $account_service, self::EXPRESS_METHOD_PAYMENT_REQUEST ) ) {
-			$enabled_methods[] = self::EXPRESS_METHOD_PAYMENT_REQUEST;
-		}
-
-		return self::get_allowed_payment_method_types_for_methods( $account_service, array_values( array_unique( $enabled_methods ) ), $context, $currency );
+		return $account_service->is_payment_request_enabled() ? array( self::EXPRESS_METHOD_PAYMENT_REQUEST ) : array();
 	}
 
 	/**
