@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEarlyFraudWarningEventHandler;
@@ -309,7 +310,8 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 		$handler->init( $store, $profile );
 
 		try {
-			$this->expectException( \RuntimeException::class );
+			// The reliability service retries this exception for every event type.
+			$this->expectException( OrderPaymentLockRefusedException::class );
 			$handler->process(
 				'radar.early_fraud_warning.created',
 				array(

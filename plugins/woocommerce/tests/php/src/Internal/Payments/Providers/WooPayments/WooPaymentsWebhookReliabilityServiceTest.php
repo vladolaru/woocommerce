@@ -6,11 +6,14 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use ActionScheduler;
 use ActionScheduler_Store;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFailedEventStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFailedEventsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookReliabilityService;
 use WC_Unit_Test_Case;
 
@@ -365,6 +368,209 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$errors = array_values( array_filter( $logged, static fn( array $entry ): bool => 'error' === $entry[0] && false !== strpos( $entry[1], 'evt_exhausted' ) ) );
 		$this->assertNotEmpty( $errors, 'An error naming the dropped event must be logged.' );
 		$this->assertStringContainsString( 'payment_intent.succeeded', $errors[0][1] );
+	}
+
+	/**
+	 * @testdox A payment_intent.succeeded refused by a dead checkout's order payment lock is retried past the lock TTL, then marks the order paid once.
+	 */
+	public function test_lock_refused_succeeded_event_is_retried_past_the_lock_ttl_and_then_applies(): void {
+		$order = wc_create_order();
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_total( '10.00' );
+		$order->save();
+		$payment_store = wc_get_container()->get( OrderPaymentStore::class );
+		$profile       = new WooPaymentsPersistenceProfile();
+		// A checkout that died after the platform captured keeps the lock until its TTL runs out.
+		$payment_store->lock_order_payment( $order, $profile, 'pi_lock_ttl' );
+		// Shape read by client 11.1.0 class-wc-payments-webhook-processing-service.php:494-519 (object id, status,
+		// currency, amount, payment_method, metadata.order_id, charges.data[0]).
+		$event     = array(
+			'id'   => 'evt_lock_ttl',
+			'type' => 'payment_intent.succeeded',
+			'data' => array(
+				'object' => array(
+					'id'             => 'pi_lock_ttl',
+					'status'         => 'succeeded',
+					'currency'       => 'usd',
+					'amount'         => 1000,
+					'payment_method' => 'pm_lock_ttl',
+					'metadata'       => array(
+						'order_id'  => (string) $order->get_id(),
+						'order_key' => $order->get_order_key(),
+					),
+					'charges'        => array(
+						'data' => array(
+							array(
+								'id'             => 'ch_lock_ttl',
+								'payment_method' => 'pm_lock_ttl',
+							),
+						),
+					),
+				),
+			),
+		);
+		$ingestor  = wc_get_container()->get( WooPaymentsEventIngestor::class );
+		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$scheduler = new RecordingActionSchedulerService();
+		$service   = $this->create_service( $scheduler, $store, new StaticFailedEventsProvider(), $ingestor );
+
+		try {
+			// The webhook route hands the failed delivery to the reliability service.
+			try {
+				$ingestor->process( $event );
+				$this->fail( 'A delivery refused by the lock must fail instead of being acknowledged.' );
+			} catch ( OrderPaymentLockRefusedException $refusal ) {
+				$service->retry_failed_event( $event, $refusal );
+			}
+			$this->assertSame( $event, $store->get_event( 'evt_lock_ttl' ) );
+
+			$waited = 0;
+			while ( $waited <= OrderPaymentStore::LOCK_TTL_SECONDS ) {
+				$scheduler->scheduled_jobs = array();
+				try {
+					$service->process_event( 'evt_lock_ttl' );
+					$this->fail( 'Each attempt while the lock is held must be refused.' );
+				} catch ( OrderPaymentLockRefusedException $exception ) {
+					unset( $exception );
+				}
+				$this->assertCount( 1, $scheduler->scheduled_jobs, 'Every refused attempt must schedule the next one until the lock has expired.' );
+				$waited += $scheduler->scheduled_jobs[0]['timestamp'] - time();
+			}
+		} finally {
+			// The holder's TTL has run out by the time this attempt is due.
+			$payment_store->unlock_order_payment( $order, $profile );
+		}
+
+		$scheduler->scheduled_jobs = array();
+		$service->process_event( 'evt_lock_ttl' );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertFalse( $order->needs_payment(), 'The retry after the lock expired must record the payment.' );
+		$this->assertSame( 'pi_lock_ttl', $order->get_transaction_id() );
+		$charge_notes = array_filter(
+			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+			static fn( $note ): bool => false !== strpos( $note->content, 'successfully charged' )
+		);
+		$this->assertCount( 1, $charge_notes, 'The payment is recorded once.' );
+		$this->assertNull( $store->get_event( 'evt_lock_ttl' ) );
+		$this->assertSame( array(), $scheduler->scheduled_jobs );
+	}
+
+	/**
+	 * @testdox A $event_type delivery refused by the order payment lock is kept and retried, although the type gets one attempt after other failures.
+	 * @dataProvider event_types_off_the_retried_list
+	 *
+	 * @param string $event_type Event type that is not retried after a failure past the lock.
+	 */
+	public function test_lock_refusal_is_retried_for_an_event_type_off_the_retried_list( string $event_type ): void {
+		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$scheduler = new RecordingActionSchedulerService();
+		$event     = array(
+			'id'   => 'evt_process',
+			'type' => $event_type,
+		);
+		$refusal   = new OrderPaymentLockRefusedException( 123, 'refund webhook' );
+		$service   = $this->create_service( $scheduler, $store, new StaticFailedEventsProvider(), new ThrowingEventIngestor( $refusal ) );
+
+		$service->retry_failed_event( $event, new \RuntimeException( 'failed after a write' ) );
+		$this->assertNull( $store->get_event( 'evt_process' ), 'Another failure of this type keeps its one attempt.' );
+
+		$service->retry_failed_event( $event, $refusal );
+		$this->assertSame( $event, $store->get_event( 'evt_process' ) );
+
+		$scheduler->scheduled_jobs = array();
+		$before                    = time();
+		try {
+			$service->process_event( 'evt_process' );
+			$this->fail( 'The refusal must still reach Action Scheduler.' );
+		} catch ( OrderPaymentLockRefusedException $exception ) {
+			unset( $exception );
+		}
+
+		$this->assertSame( $event + array( WooPaymentsWebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => 1 ), $store->get_event( 'evt_process' ) );
+		$this->assertCount( 1, $scheduler->scheduled_jobs );
+		$this->assertGreaterThanOrEqual( $before + MINUTE_IN_SECONDS, $scheduler->scheduled_jobs[0]['timestamp'] );
+	}
+
+	/** @return array<string,array{string}> */
+	public static function event_types_off_the_retried_list(): array {
+		return array(
+			'refund'              => array( 'charge.refunded' ),
+			'dispute'             => array( 'charge.dispute.created' ),
+			'early fraud warning' => array( 'radar.early_fraud_warning.created' ),
+			'capture expiry'      => array( 'charge.expired' ),
+		);
+	}
+
+	/**
+	 * @testdox An event the order payment lock refused on every attempt via the $path path is dropped with an error line and a note on its order.
+	 * @dataProvider delivery_paths
+	 *
+	 * @param string $path How the event reached the store: 'webhook' or 'pull'.
+	 */
+	public function test_lock_refusal_on_every_attempt_drops_the_event_with_an_order_note( string $path ): void {
+		$order     = wc_create_order();
+		$event_id  = 'evt_lock_exhausted_' . $path;
+		$event     = array(
+			'id'   => $event_id,
+			'type' => 'charge.dispute.created',
+		);
+		$refusal   = new OrderPaymentLockRefusedException( $order->get_id(), 'dispute webhook' );
+		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$scheduler = new RecordingActionSchedulerService();
+		$provider  = new StaticFailedEventsProvider(
+			array(
+				'data'     => 'pull' === $path ? array( $event ) : array(),
+				'has_more' => false,
+			)
+		);
+		$service   = $this->create_service( $scheduler, $store, $provider, new ThrowingEventIngestor( $refusal ) );
+		$logged    = array();
+		$logger    = function ( $message, $level ) use ( &$logged ) {
+			$logged[] = array( $level, $message );
+			return $message;
+		};
+		add_filter( 'woocommerce_logger_log_message', $logger, 10, 2 );
+
+		try {
+			if ( 'webhook' === $path ) {
+				$service->retry_failed_event( $event, $refusal );
+			} else {
+				$service->fetch_events_and_schedule_processing_jobs();
+			}
+			$attempts = 1 + count( WooPaymentsWebhookReliabilityService::RETRY_DELAYS_SECONDS );
+			for ( $attempt = 1; $attempt <= $attempts; $attempt++ ) {
+				$this->assertNotNull( $store->get_event( $event_id ), 'The event is kept until its last attempt.' );
+				try {
+					$service->process_event( $event_id );
+				} catch ( OrderPaymentLockRefusedException $exception ) {
+					unset( $exception );
+				}
+			}
+		} finally {
+			remove_filter( 'woocommerce_logger_log_message', $logger, 10 );
+		}
+
+		$this->assertNull( $store->get_event( $event_id ) );
+		$retries = array_filter( $scheduler->scheduled_jobs, static fn( array $job ): bool => isset( $job['timestamp'] ) );
+		$this->assertCount( count( WooPaymentsWebhookReliabilityService::RETRY_DELAYS_SECONDS ), $retries, 'No attempt is scheduled after the last one.' );
+		// The message filter runs once per log handler, so a line is counted once.
+		$errors = array_values( array_unique( array_column( array_filter( $logged, static fn( array $entry ): bool => 'error' === $entry[0] && false !== strpos( $entry[1], $event_id ) ), 1 ) ) );
+		$this->assertCount( 1, $errors, 'One error line names the dropped event.' );
+		$this->assertStringContainsString( 'charge.dispute.created', $errors[0] );
+		$notes = array_filter(
+			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+			static fn( $note ): bool => false !== strpos( $note->content, $event_id ) && false !== strpos( $note->content, 'kept the order locked' )
+		);
+		$this->assertCount( 1, $notes, 'The merchant sees that the update did not reach the order.' );
+	}
+
+	/** @return array<string,array{string}> */
+	public static function delivery_paths(): array {
+		return array(
+			'webhook' => array( 'webhook' ),
+			'pull'    => array( 'pull' ),
+		);
 	}
 
 	/**

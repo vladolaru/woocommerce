@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use InvalidArgumentException;
 use RuntimeException;
@@ -84,6 +85,7 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 	 * @param string              $event_type   Provider event type.
 	 * @param array<string,mixed> $event_object Provider early fraud warning object.
 	 * @throws InvalidArgumentException|RuntimeException When the provider object is malformed or the matching order cannot be updated safely.
+	 * @throws OrderPaymentLockRefusedException When another operation holds the order payment lock; nothing has been written.
 	 */
 	public function process( string $event_type, array $event_object ): void {
 		if ( ! $this->is_supported_event( $event_type ) ) {
@@ -99,7 +101,8 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 		$lock_token = $this->get_order_payment_store()->claim_order_payment_lock_for_operation( $order, $this->get_persistence_profile(), 'early_fraud_warning_' . $warning['id'], 'early fraud warning webhook' );
 		if ( null === $lock_token ) {
 			$this->get_order_payment_store()->log_order_payment_lock_refusal( $order, $this->get_persistence_profile(), 'early fraud warning webhook' );
-			throw new RuntimeException( esc_html( sprintf( 'Could not lock the WooPayments order for early fraud warning ID: %s', $warning['id'] ) ) );
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is built in the exception from an order ID and a fixed operation name, not HTML output.
+			throw new OrderPaymentLockRefusedException( $order->get_id(), 'early fraud warning webhook' );
 		}
 
 		try {

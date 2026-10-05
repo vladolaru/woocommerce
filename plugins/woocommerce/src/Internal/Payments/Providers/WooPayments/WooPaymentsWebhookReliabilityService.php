@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -173,15 +174,17 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Keep an event whose processing failed for a passing reason, and schedule a job to process it again, when its type is retried.
+	 * Keep an event whose processing failed for a passing reason, and schedule a job to process it again, when it is retried.
 	 *
 	 * The platform counts the store's error reply as delivered and never sends the event again, so the store retries
-	 * it itself. Client 11.1.0 loses such an event; event types that are not retried get one attempt, as on the client.
+	 * it itself. Client 11.1.0 loses such an event; event types that are not retried get one attempt, as on the client,
+	 * unless the order payment lock refused them before any write.
 	 *
-	 * @param array<string,mixed> $event Event payload.
+	 * @param array<string,mixed> $event   Event payload.
+	 * @param \Throwable|null     $failure Failure of the delivery, when known.
 	 */
-	public function retry_failed_event( array $event ): void {
-		if ( empty( $event['id'] ) || ! is_string( $event['id'] ) || ! $this->event_ingestor->is_retried_event( $event ) ) {
+	public function retry_failed_event( array $event, ?\Throwable $failure = null ): void {
+		if ( empty( $event['id'] ) || ! is_string( $event['id'] ) || ! $this->is_retried_failure( $event, $failure ) ) {
 			return;
 		}
 
@@ -223,7 +226,7 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 			);
 			return;
 		} catch ( \Throwable $exception ) {
-			if ( $this->event_ingestor->is_retried_event( $event ) ) {
+			if ( $this->is_retried_failure( $event, $exception ) ) {
 				$this->schedule_retry_or_give_up( $event_id, $event, $attempts, $exception );
 			}
 			throw $exception;
@@ -233,7 +236,28 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Tell whether a failed delivery is processed again later.
+	 *
+	 * Retried event types are, after any passing failure. Every event type is when the order payment lock refused it:
+	 * the refusal comes before any write, so a later run cannot duplicate a refund, and the holder's lock expires after
+	 * its TTL. The delays outlast that TTL (OrderPaymentStore::LOCK_TTL_SECONDS): an attempt runs 11 minutes after the
+	 * first refusal, and another an hour after that.
+	 *
+	 * @param array<string,mixed> $event   Event payload.
+	 * @param \Throwable|null     $failure Failure of the delivery, when known.
+	 * @return bool
+	 */
+	private function is_retried_failure( array $event, ?\Throwable $failure ): bool {
+		return $failure instanceof OrderPaymentLockRefusedException || $this->event_ingestor->is_retried_event( $event );
+	}
+
+	/**
 	 * Schedule the next attempt for a failed event, or drop it and log an error when no attempt is left.
+	 *
+	 * An event the order payment lock refused on every attempt also leaves a note on its order, so the merchant sees
+	 * that a payment update did not reach it. As on the client, the dropped event is not kept: the platform marks a
+	 * listed event as fetched and the failed-event store is a one-day transient nothing else reads, so the note and the
+	 * error line naming the event are the trail.
 	 *
 	 * @param string              $event_id  Event ID.
 	 * @param array<string,mixed> $event     Event payload.
@@ -252,6 +276,9 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 				),
 				array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => 'native-payments-webhook' ) )
 			);
+			if ( $exception instanceof OrderPaymentLockRefusedException ) {
+				$this->add_lock_refusal_note( $exception->get_order_id(), $event_id );
+			}
 			return;
 		}
 
@@ -261,6 +288,27 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 			self::WEBHOOK_PROCESS_EVENT_ACTION,
 			array( 'event_id' => $event_id ),
 			time() + self::RETRY_DELAYS_SECONDS[ $attempts ]
+		);
+	}
+
+	/**
+	 * Note on an order that a payment platform event could not be applied because its payment lock stayed held.
+	 *
+	 * @param int    $order_id Order the event belongs to.
+	 * @param string $event_id Dropped event ID.
+	 */
+	private function add_lock_refusal_note( int $order_id, string $event_id ): void {
+		$order = wc_get_order( $order_id );
+		if ( ! $order instanceof \WC_Order ) {
+			return;
+		}
+
+		$order->add_order_note(
+			sprintf(
+				/* translators: %s: Payment platform event ID. */
+				__( 'A WooPayments update for this order (event %s) could not be applied, because another payment operation kept the order locked. Check the payment in your WooPayments dashboard.', 'woocommerce' ),
+				$event_id
+			)
 		);
 	}
 }

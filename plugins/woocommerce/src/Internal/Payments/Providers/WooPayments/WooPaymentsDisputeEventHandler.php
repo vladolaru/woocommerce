@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use RuntimeException;
@@ -711,13 +712,14 @@ class WooPaymentsDisputeEventHandler {
 	 * @param WC_Order $order      Order object.
 	 * @param string   $dispute_id Provider dispute ID.
 	 * @return string Claim token to release the lock with.
-	 * @throws RuntimeException When the order payment lock cannot be claimed.
+	 * @throws OrderPaymentLockRefusedException When the order payment lock cannot be claimed; nothing has been written.
 	 */
 	private function claim_dispute_lock( WC_Order $order, string $dispute_id ): string {
 		$lock_token = $this->get_order_payment_store()->claim_order_payment_lock_for_operation( $order, $this->get_persistence_profile(), 'dispute_webhook_' . $dispute_id, 'dispute webhook' );
 		if ( null === $lock_token ) {
 			$this->get_order_payment_store()->log_order_payment_lock_refusal( $order, $this->get_persistence_profile(), 'dispute webhook' );
-			throw new RuntimeException( esc_html( sprintf( 'Could not claim WooPayments dispute webhook lock for order %1$d and dispute %2$s.', $order->get_id(), $dispute_id ) ) );
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is built in the exception from an order ID and a fixed operation name, not HTML output.
+			throw new OrderPaymentLockRefusedException( $order->get_id(), 'dispute webhook' );
 		}
 
 		return $lock_token;

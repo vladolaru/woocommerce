@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
 use RuntimeException;
@@ -524,13 +525,14 @@ class WooPaymentsRefundEventHandler {
 	 * @param WC_Order $order     Order object.
 	 * @param string   $refund_id Provider refund ID.
 	 * @return string Claim token to release the lock with.
-	 * @throws RuntimeException When the order payment lock cannot be claimed.
+	 * @throws OrderPaymentLockRefusedException When the order payment lock cannot be claimed; nothing has been written.
 	 */
 	private function claim_refund_lock( WC_Order $order, string $refund_id ): string {
 		$lock_token = $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $this->persistence_profile, 'refund_webhook_' . $refund_id, 'refund webhook' );
 		if ( null === $lock_token ) {
 			$this->order_payment_store->log_order_payment_lock_refusal( $order, $this->persistence_profile, 'refund webhook' );
-			throw new RuntimeException( esc_html( sprintf( 'Could not claim WooPayments refund webhook lock for order %1$d and refund %2$s.', $order->get_id(), $refund_id ) ) );
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is built in the exception from an order ID and a fixed operation name, not HTML output.
+			throw new OrderPaymentLockRefusedException( $order->get_id(), 'refund webhook' );
 		}
 
 		return $lock_token;

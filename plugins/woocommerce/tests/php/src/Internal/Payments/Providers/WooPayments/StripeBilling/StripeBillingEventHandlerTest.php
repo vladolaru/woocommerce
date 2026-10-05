@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestC
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
@@ -489,7 +490,8 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 			$this->sut->handle_event( $this->get_event( 'invoice_paid_renewal' ) );
 			$this->fail( 'The unpaid renewal order must fail the event.' );
 		} catch ( RuntimeException $exception ) {
-			$this->assertSame( RuntimeException::class, get_class( $exception ), 'Neither malformed data nor a Stripe Billing refusal.' );
+			// Neither malformed data nor a Stripe Billing refusal: the lock refusal is retried for every event type.
+			$this->assertInstanceOf( OrderPaymentLockRefusedException::class, $exception );
 		}
 
 		$this->assertTrue( wc_get_order( $order->get_id() )->needs_payment() );

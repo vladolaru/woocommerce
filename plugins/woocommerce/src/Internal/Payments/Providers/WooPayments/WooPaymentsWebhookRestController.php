@@ -89,12 +89,11 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 	 * which gates the same `wc/v3/payments/webhook` route on `current_user_can( 'manage_woocommerce' )`
 	 * (see WC_REST_Payments_Webhook_Controller / WC_Payments_REST_Controller::check_permission()).
 	 *
-	 * Authoritative ingestion path: native platform event ingestion flows through
-	 * {@see WooPaymentsWebhookReliabilityService}, the authenticated pull path that fetches
-	 * failed/missed events from the platform via the API client and replays them through the
-	 * ingestor on Action Scheduler jobs. There is no shared webhook signing secret available to
-	 * the store, so this route cannot (and must not) verify a signature; loosening the capability
-	 * gate would turn it into an unverified event-injection surface. Keep the gate as-is.
+	 * The platform pushes each event to this route as a Jetpack-signed request made as the connection
+	 * owner, so the request runs as an administrator. An event whose push fails in transport is kept
+	 * by the platform and pulled later by {@see WooPaymentsWebhookReliabilityService}. There is no
+	 * shared webhook signing secret, so this route cannot verify a payload signature; the capability
+	 * gate is the trust boundary, and loosening it would open an unverified event-injection surface.
 	 */
 	public function register_routes(): void {
 		register_rest_route(
@@ -103,9 +102,8 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( $this, 'handle_webhook' ),
-				// Intentionally gated on `manage_woocommerce` (parity with the WooPayments plugin).
-				// Real platform events arrive via the authenticated WooPaymentsWebhookReliabilityService
-				// pull path; do not loosen this gate. See the method doc-block for the full rationale.
+				// Intentionally gated on `manage_woocommerce` (parity with the WooPayments plugin): platform
+				// pushes arrive signed as the connection owner. Do not loosen this gate; see the method doc-block.
 				'permission_callback' => function () {
 					return current_user_can( 'manage_woocommerce' );
 				},
@@ -118,8 +116,8 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 	 *
 	 * Reached only after the `manage_woocommerce` permission gate in {@see self::register_routes()}.
 	 * The payload is not signature-verified because no shared signing secret exists for this route;
-	 * the capability gate is the trust boundary, and the authenticated pull path
-	 * ({@see WooPaymentsWebhookReliabilityService}) remains the authoritative ingestion route.
+	 * the capability gate is the trust boundary. The platform takes any reply in the expected envelope,
+	 * including an error, as delivered, so a failed event that is retried is queued here by the store.
 	 *
 	 * @param WP_REST_Request $request REST request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
@@ -143,7 +141,7 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 		} catch ( Throwable $exception ) {
 			$this->log_webhook_exception( $exception );
 			// The platform counts this reply as delivered, so the store retries the event itself.
-			$this->reliability_service->retry_failed_event( $payload );
+			$this->reliability_service->retry_failed_event( $payload, $exception );
 			return new WP_REST_Response( array( 'result' => 'error' ), 500 );
 		}
 	}

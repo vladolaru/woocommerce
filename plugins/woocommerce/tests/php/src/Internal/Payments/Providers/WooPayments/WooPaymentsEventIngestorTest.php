@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -180,6 +181,58 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( '1.23', $order->get_meta( '_wcpay_transaction_fee', true ) );
 		$this->assertSame( '11.11', $order->get_meta( '_wcpay_net', true ) );
 		$this->assertSame( 'mobile_pos', $order->get_meta( '_wcpay_ipp_channel', true ) );
+	}
+
+	/**
+	 * @testdox A $event_type delivery refused by a held order payment lock fails, is not marked processed, and applies once the lock is free.
+	 * @dataProvider lock_refused_lifecycle_events
+	 *
+	 * @param string $event_type      Payment intent event type.
+	 * @param string $expected_status Order status once the event applies.
+	 */
+	public function test_lifecycle_event_refused_by_the_order_payment_lock_is_not_acknowledged( string $event_type, string $expected_status ): void {
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_payment_method_id', 'pm_123' );
+		$order->save();
+		$store   = wc_get_container()->get( OrderPaymentStore::class );
+		$profile = new WooPaymentsPersistenceProfile();
+		// A checkout that died after the platform captured keeps the lock until its TTL runs out.
+		$store->lock_order_payment( $order, $profile, 'pi_123' );
+		$failed_overrides = array(
+			'status'             => 'requires_payment_method',
+			'last_payment_error' => array(
+				'payment_method' => array(
+					'id'   => 'pm_123',
+					'type' => 'card',
+				),
+			),
+		);
+		$event            = $this->create_payment_intent_event( $event_type, $order, 'payment_intent.payment_failed' === $event_type ? $failed_overrides : array(), array( 'id' => 'evt_lock_refused_' . $event_type ) );
+
+		$refusal = null;
+		try {
+			$this->sut->process( $event );
+		} catch ( OrderPaymentLockRefusedException $exception ) {
+			$refusal = $exception;
+		} finally {
+			$store->unlock_order_payment( $order, $profile );
+		}
+
+		$this->assertInstanceOf( OrderPaymentLockRefusedException::class, $refusal, 'A refused delivery must fail, so the store retries it instead of acknowledging it.' );
+		$this->assertSame( $order->get_id(), $refusal->get_order_id() );
+		$this->assertSame( 'pending', wc_get_order( $order->get_id() )->get_status() );
+
+		$this->sut->process( $event );
+
+		$this->assertSame( $expected_status, wc_get_order( $order->get_id() )->get_status(), 'The refused event must not be marked processed, so a later delivery applies it.' );
+	}
+
+	/** @return array<string,array{string,string}> */
+	public static function lock_refused_lifecycle_events(): array {
+		return array(
+			'succeeded'      => array( 'payment_intent.succeeded', 'completed' ),
+			'payment failed' => array( 'payment_intent.payment_failed', 'failed' ),
+		);
 	}
 
 	/**
@@ -3439,8 +3492,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		try {
 			$this->sut->process( $this->create_charge_refunded_event( $order, 1000, 400, 'succeeded' ) );
 			$this->fail( 'Expected locked order refund webhook to fail closed.' );
-		} catch ( RuntimeException $exception ) {
-			$this->assertStringContainsString( 'Could not claim WooPayments refund webhook lock', $exception->getMessage() );
+		} catch ( OrderPaymentLockRefusedException $exception ) {
+			$this->assertSame( $order->get_id(), $exception->get_order_id() );
 		} finally {
 			$store->unlock_order_payment( $order, $profile );
 		}
@@ -3607,8 +3660,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 				)
 			);
 			$this->fail( 'Expected locked order refund update webhook to fail closed.' );
-		} catch ( RuntimeException $exception ) {
-			$this->assertStringContainsString( 'Could not claim WooPayments refund webhook lock', $exception->getMessage() );
+		} catch ( OrderPaymentLockRefusedException $exception ) {
+			$this->assertSame( $order->get_id(), $exception->get_order_id() );
 		} finally {
 			$store->unlock_order_payment( $order, $profile );
 		}

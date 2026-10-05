@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeCacheService;
@@ -541,9 +542,9 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A dispute created webhook retries after a lifecycle event releases the order payment lock.
+	 * @testdox A dispute created webhook refused by a held order payment lock writes nothing, and a second delivery after the lock is released applies it.
 	 */
-	public function test_created_webhook_retries_after_order_payment_lock_contention(): void {
+	public function test_created_webhook_refused_by_the_order_payment_lock_applies_on_a_second_delivery(): void {
 		$order = $this->create_disputable_order();
 		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
 		$order->update_meta_data( '_charge_id', 'ch_lock_contention' );
@@ -560,8 +561,9 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 			try {
 				$this->sut->process( 'charge.dispute.created', $event );
 				$this->fail( 'A dispute webhook must fail for retry while a lifecycle event holds the order payment lock.' );
-			} catch ( RuntimeException $exception ) {
-				$this->assertStringContainsString( 'Could not claim WooPayments dispute webhook lock', $exception->getMessage() );
+			} catch ( OrderPaymentLockRefusedException $exception ) {
+				// The reliability service retries this exception for every event type (WooPaymentsWebhookReliabilityServiceTest).
+				$this->assertSame( $order->get_id(), $exception->get_order_id() );
 			}
 		} finally {
 			$payment_store->unlock_order_payment( $order, $profile );

@@ -50,13 +50,18 @@ class OrderPaymentLifecycleService {
 	/**
 	 * Apply a payment lifecycle event to an order.
 	 *
+	 * An event with a payment reference runs under the order payment lock. When another operation holds the lock,
+	 * the event is skipped with a warning and nothing is written; a caller that can deliver the event again, such as
+	 * the webhook path, uses the return value to retry it instead of treating it as handled.
+	 *
 	 * @since 11.0.0
 	 *
 	 * @param WC_Order                      $order               Order object.
 	 * @param PaymentLifecycleEvent         $event               Lifecycle event.
 	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
+	 * @return bool False when the order payment lock refused the event, true otherwise.
 	 */
-	public function apply( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabulary $persistence_profile ): void {
+	public function apply( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabulary $persistence_profile ): bool {
 		$payment_reference = $event->get_payment_reference();
 		$lock_token        = null;
 
@@ -64,7 +69,7 @@ class OrderPaymentLifecycleService {
 			$lock_token = $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $persistence_profile, $payment_reference, 'payment status update' );
 			if ( null === $lock_token ) {
 				$this->log_skipped_locked_event( $order, $event, $payment_reference, $persistence_profile );
-				return;
+				return false;
 			}
 		}
 
@@ -75,6 +80,8 @@ class OrderPaymentLifecycleService {
 				$this->order_payment_store->release_order_payment_lock( $order, $persistence_profile, $lock_token );
 			}
 		}
+
+		return true;
 	}
 
 	/**
@@ -129,9 +136,8 @@ class OrderPaymentLifecycleService {
 	 * Log a warning when a lifecycle event is skipped because the order payment lock is contested.
 	 *
 	 * Webhook-triggered lifecycle events can arrive while a checkout or capture is mid-flight and
-	 * already holds the order payment lock. Skipping is the correct behavior, but a silent drop
-	 * leaves the order in a stale state with no diagnostic trail until the reliability service
-	 * recovers it. Emit a structured warning so the skip is observable.
+	 * already holds the order payment lock. The event is skipped, and the webhook path delivers it
+	 * again later; the warning makes each skip observable.
 	 *
 	 * @param WC_Order                      $order               Order object.
 	 * @param PaymentLifecycleEvent         $event               Lifecycle event being skipped.

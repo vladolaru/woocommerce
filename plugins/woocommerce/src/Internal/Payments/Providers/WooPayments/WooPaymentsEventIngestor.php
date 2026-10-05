@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -85,8 +86,9 @@ class WooPaymentsEventIngestor {
 	/**
 	 * Event types retried after a processing failure, whose handlers are safe to run again and to run late.
 	 *
-	 * Other types get one attempt, as on the client: running the refund, dispute or fraud warning handlers again can
-	 * duplicate a refund or apply an older event over a newer one.
+	 * Other types get one attempt, as on the client: running the refund, dispute or fraud warning handlers again after
+	 * they wrote can duplicate a refund or apply an older event over a newer one. A refusal by the order payment lock
+	 * ({@see OrderPaymentLockRefusedException}) is retried for every type, since it comes before any write.
 	 *
 	 * @var string[]
 	 */
@@ -398,11 +400,10 @@ class WooPaymentsEventIngestor {
 			return;
 		}
 
-		$this->lifecycle_service->apply( $order, $lifecycle_event, new WooPaymentsPersistenceProfile() );
+		$this->apply_lifecycle_event( $order, $lifecycle_event );
 
 		// Expiries change what the uncaptured-transactions badge counts; the plugin
-		// invalidates after the order effects land, and a failed apply re-runs the
-		// whole delivery anyway.
+		// invalidates after the order effects land.
 		if ( 'charge.expired' === $event_type ) {
 			$this->get_admin_menu_badge_service()->invalidate_authorization_summary_caches();
 		}
@@ -435,6 +436,24 @@ class WooPaymentsEventIngestor {
 	}
 
 	/**
+	 * Apply a lifecycle event to its order, failing the delivery when the order payment lock refuses it.
+	 *
+	 * A refused event has written nothing under the lock, so failing lets the webhook path deliver it again once the
+	 * holder's lock is gone, instead of acknowledging an event that was never applied. Owner decision O15 keeps the lock
+	 * itself, and its warning line, as they are.
+	 *
+	 * @param WC_Order              $order           WooPayments order the event belongs to.
+	 * @param PaymentLifecycleEvent $lifecycle_event Lifecycle event to apply.
+	 * @throws OrderPaymentLockRefusedException When another operation holds the order payment lock.
+	 */
+	private function apply_lifecycle_event( WC_Order $order, PaymentLifecycleEvent $lifecycle_event ): void {
+		if ( ! $this->lifecycle_service->apply( $order, $lifecycle_event, new WooPaymentsPersistenceProfile() ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is built in the exception from an order ID and a fixed operation name, not HTML output.
+			throw new OrderPaymentLockRefusedException( $order->get_id(), 'payment status update' );
+		}
+	}
+
+	/**
 	 * Record a succeeded payment intent on its order: payment method title, payment meta, status and notes.
 	 *
 	 * The `payment_intent.succeeded` webhook uses it, and so does any provider code that learns of a succeeded intent another way.
@@ -443,13 +462,14 @@ class WooPaymentsEventIngestor {
 	 *
 	 * @param WC_Order            $order          WooPayments order the intent belongs to.
 	 * @param array<string,mixed> $payment_intent Provider payment intent object.
+	 * @throws OrderPaymentLockRefusedException When another operation holds the order payment lock; nothing is recorded under it.
 	 */
 	public function record_succeeded_payment_intent( WC_Order $order, array $payment_intent ): void {
 		$this->write_succeeded_payment_intent_meta( $order, $payment_intent );
 		$this->apply_completed_payment_method_display_title( $order, $payment_intent );
 		$lifecycle_event = $this->build_succeeded_lifecycle_event( $payment_intent, $order );
 		$this->repair_recurring_order_token( $order, $payment_intent );
-		$this->lifecycle_service->apply( $order, $lifecycle_event, new WooPaymentsPersistenceProfile() );
+		$this->apply_lifecycle_event( $order, $lifecycle_event );
 		$this->maybe_send_ipp_receipt_email( $order, $payment_intent );
 
 		// Captures change what the uncaptured-transactions badge counts; the plugin
@@ -811,8 +831,9 @@ class WooPaymentsEventIngestor {
 				// The stored intention status still says requires_capture; only the live
 				// intent knows its post-expiry status (canceled), and leaving the stale
 				// value keeps capture/cancel actions offered against a dead intent. The
-				// fetch is load-bearing: on failure the exception propagates so the
-				// platform redelivers the event, matching the plugin.
+				// fetch is load-bearing: on failure the exception propagates and the
+				// delivery fails, as in the plugin. charge.expired is not a retried type,
+				// so the event gets that one attempt.
 				$expired_intent = $this->api_client->get_payment_intention( $intent_id );
 
 				$meta = array(
