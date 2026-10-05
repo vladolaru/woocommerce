@@ -31,14 +31,25 @@ use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
 class SdkV6Module implements ServiceModule, ExtendingModule, ExecutableModule {
 	use ModuleClassNameIdTrait;
 
+	/**
+	 * {@inheritDoc}
+	 */
 	public function services(): array {
 		return require __DIR__ . '/services.php';
 	}
 
+	/**
+	 * {@inheritDoc}
+	 */
 	public function extensions(): array {
 		return require __DIR__ . '/extensions.php';
 	}
 
+	/**
+	 * {@inheritDoc}
+	 *
+	 * @param ContainerInterface $c The service container.
+	 */
 	public function run( ContainerInterface $c ): bool {
 		add_action(
 			'wc_ajax_' . ClientTokenEndpoint::ENDPOINT,
@@ -211,6 +222,8 @@ class SdkV6Module implements ServiceModule, ExtendingModule, ExecutableModule {
 
 	/**
 	 * Registers the hook that outputs the Pay Later message wrapper.
+	 *
+	 * @param SdkV6Manager $manager The manager.
 	 */
 	private function register_message_hooks( SdkV6Manager $manager ): void {
 		if ( ! $manager->should_load_on_current_page() || ! $manager->messages_enabled() ) {
@@ -257,6 +270,10 @@ class SdkV6Module implements ServiceModule, ExtendingModule, ExecutableModule {
 		/**
 		 * The filter returning true if Pay Later messages should be displayed before payment methods
 		 * on the pay for order page, like in checkout.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $before Whether the messages go before the payment methods; true by default.
 		 */
 		if ( ! apply_filters( 'woocommerce_paypal_payments_put_pay_order_messages_before_payment_methods', true ) ) {
 			return;
@@ -278,6 +295,8 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 	 *
 	 * Uses the same theme hooks as the v5 SmartButton so v6 buttons appear
 	 * in the same locations.
+	 *
+	 * @param SdkV6Manager $manager The manager.
 	 */
 	private function register_render_hooks( SdkV6Manager $manager ): void {
 		$places = $manager->determine_render_places();
@@ -286,6 +305,10 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 			/**
 			 * The action name that the PayPal buttons use for rendering on the single product page.
 			 * Shared with the v5 SmartButton so a single override relocates both stacks.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param string $hook The action name; woocommerce_single_product_summary by default.
 			 */
 			$hook = (string) apply_filters(
 				'woocommerce_paypal_payments_single_product_renderer_hook',
@@ -298,6 +321,10 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 			/**
 			 * The action name that the PayPal buttons use for rendering next to the cart's Proceed to Checkout button.
 			 * Shared with the v5 SmartButton so a single override relocates both stacks.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param string $hook The action name; woocommerce_proceed_to_checkout by default.
 			 */
 			$hook = (string) apply_filters(
 				'woocommerce_paypal_payments_proceed_to_checkout_button_renderer_hook',
@@ -319,6 +346,10 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 			/**
 			 * The action name that the PayPal buttons use for rendering on the checkout page.
 			 * Shared with the v5 SmartButton so a single override relocates both stacks.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param string $hook The action name; woocommerce_review_order_after_payment by default.
 			 */
 			$hook = (string) apply_filters(
 				'woocommerce_paypal_payments_checkout_button_renderer_hook',
@@ -336,6 +367,10 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 			/**
 			 * The action name that the PayPal buttons use for rendering on the pay-for-order page.
 			 * Shared with the v5 SmartButton so a single override relocates both stacks.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param string $hook The action name; woocommerce_pay_order_after_submit by default.
 			 */
 			$hook = (string) apply_filters(
 				'woocommerce_paypal_payments_pay_order_renderer_hook',
@@ -354,6 +389,10 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 			/**
 			 * The action name that the PayPal buttons use for rendering in the mini-cart widget.
 			 * Shared with the v5 SmartButton so a single override relocates both stacks.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param string $hook The action name; woocommerce_widget_shopping_cart_after_buttons by default.
 			 */
 			$hook = (string) apply_filters(
 				'woocommerce_paypal_payments_mini_cart_button_renderer_hook',

@@ -19,11 +19,39 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscript
  */
 class MessagesEligibility {
 
+	/**
+	 * The settings provider.
+	 *
+	 * @var SettingsProvider
+	 */
 	private SettingsProvider $settings_provider;
+	/**
+	 * The settings status.
+	 *
+	 * @var SettingsStatus
+	 */
 	private SettingsStatus $settings_status;
+	/**
+	 * The messages apply.
+	 *
+	 * @var MessagesApply
+	 */
 	private MessagesApply $messages_apply;
+	/**
+	 * The free trial helper.
+	 *
+	 * @var FreeTrialSubscriptionHelper
+	 */
 	private FreeTrialSubscriptionHelper $free_trial_helper;
 
+	/**
+	 * MessagesEligibility constructor.
+	 *
+	 * @param SettingsProvider            $settings_provider The settings provider.
+	 * @param SettingsStatus              $settings_status   The settings status.
+	 * @param MessagesApply               $messages_apply    The messages apply.
+	 * @param FreeTrialSubscriptionHelper $free_trial_helper The free trial helper.
+	 */
 	public function __construct(
 		SettingsProvider $settings_provider,
 		SettingsStatus $settings_status,
@@ -52,6 +80,10 @@ class MessagesEligibility {
 		/**
 		 * The filter returning whether Pay Later messaging should render at all.
 		 * Shared with the v5 SmartButton.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $render Whether to render Pay Later messaging; true by default.
 		 */
 		if ( ! apply_filters( 'woocommerce_paypal_payments_should_render_pay_later_messaging', true ) ) {
 			return false;
@@ -87,6 +119,11 @@ class MessagesEligibility {
 			/**
 			 * Allows to decide if Pay Later should be disabled for a given product.
 			 * Shared with the v5 SmartButton.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param bool  $disabled Whether the Pay Later button or message is disabled for the product; false by default.
+			 * @param array $context  The product context data.
 			 */
 			return (bool) apply_filters(
 				'woocommerce_paypal_payments_product_buttons_paylater_disabled',
@@ -98,6 +135,11 @@ class MessagesEligibility {
 		/**
 		 * Allows to decide if Pay Later should be disabled on a given context.
 		 * Shared with the v5 SmartButton.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool   $disabled Whether the Pay Later button or message is disabled in the location; false by default.
+		 * @param string $context  The location, such as cart or checkout.
 		 */
 		return (bool) apply_filters(
 			'woocommerce_paypal_payments_buttons_paylater_disabled',

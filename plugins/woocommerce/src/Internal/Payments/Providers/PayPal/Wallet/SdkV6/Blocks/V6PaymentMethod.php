@@ -23,16 +23,43 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\G
  */
 class V6PaymentMethod extends AbstractPaymentMethodType {
 
+	/**
+	 * The name.
+	 *
+	 * @var string
+	 */
 	protected $name = 'ppcp-sdk-v6';
 
+	/**
+	 * The manager.
+	 *
+	 * @var SdkV6Manager
+	 */
 	private SdkV6Manager $manager;
+	/**
+	 * The asset getter.
+	 *
+	 * @var AssetGetter
+	 */
 	private AssetGetter $asset_getter;
+	/**
+	 * The version.
+	 *
+	 * @var string
+	 */
 	private string $version;
+	/**
+	 * The gateway.
+	 *
+	 * @var PayPalGateway
+	 */
 	private PayPalGateway $gateway;
 
 	/**
 	 * The saved-PayPal vault-component data provider, or null when the
 	 * ppcp-vault-component module is not loaded (its own feature flag).
+	 *
+	 * @var VaultComponentData|null
 	 */
 	private ?VaultComponentData $vault_data;
 
@@ -44,6 +71,11 @@ class V6PaymentMethod extends AbstractPaymentMethodType {
 	 */
 	private $vault_eligibility;
 
+	/**
+	 * The vault client ID.
+	 *
+	 * @var string
+	 */
 	private string $vault_client_id;
 
 	/**
@@ -54,6 +86,18 @@ class V6PaymentMethod extends AbstractPaymentMethodType {
 	 */
 	private $place_order_enabled;
 
+	/**
+	 * V6PaymentMethod constructor.
+	 *
+	 * @param SdkV6Manager            $manager             The manager.
+	 * @param AssetGetter             $asset_getter        The asset getter.
+	 * @param string                  $version             The version.
+	 * @param PayPalGateway           $gateway             The gateway.
+	 * @param VaultComponentData|null $vault_data          The vault data.
+	 * @param callable|null           $vault_eligibility   The vault eligibility.
+	 * @param string                  $vault_client_id     The vault client ID.
+	 * @param callable|null           $place_order_enabled Callback returning whether the Place order method is enabled.
+	 */
 	public function __construct(
 		SdkV6Manager $manager,
 		AssetGetter $asset_getter,
@@ -75,17 +119,25 @@ class V6PaymentMethod extends AbstractPaymentMethodType {
 	}
 
 	/**
+	 * Registers the style enqueue for the express buttons.
+	 *
 	 * @return void
 	 */
 	public function initialize() {
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_style' ) );
 	}
 
+	/**
+	 * Whether the SDK v6 payment method is active on the current page.
+	 */
 	public function is_active() {
 		return $this->manager->should_load_on_current_page()
 			&& $this->manager->is_block_context();
 	}
 
+	/**
+	 * Registers the checkout block script and returns its handle.
+	 */
 	public function get_payment_method_script_handles() {
 		$script_url = $this->asset_getter->get_asset_url( 'checkout-block.js' );
 		if ( ! $script_url ) {
@@ -137,6 +189,9 @@ class V6PaymentMethod extends AbstractPaymentMethodType {
 		wp_enqueue_style( $handle );
 	}
 
+	/**
+	 * Returns the data handed to the checkout block.
+	 */
 	public function get_payment_method_data(): array {
 		/*
 		 * - id: the WC gateway that processes the order. The block methods
@@ -184,6 +239,8 @@ class V6PaymentMethod extends AbstractPaymentMethodType {
 				 * component's own SDK load (e.g. a `sdkBaseUrl` override for
 				 * staging), mirroring the v5 script_attributes.
 				 *
+				 * @since 11.3.0
+				 *
 				 * @param array $attributes The SDK script attributes.
 				 */
 				$data['script_attributes'] = (object) apply_filters(
@@ -199,6 +256,8 @@ class V6PaymentMethod extends AbstractPaymentMethodType {
 		 * The place order button label and its description are WooCommerce's, so the
 		 * plugin no longer sets them. Add `placeOrderButtonLabel` here to rename the
 		 * button, or `placeOrderButtonDescription` to render text beneath it.
+		 *
+		 * @since 11.3.0
 		 *
 		 * @param array $data The payment method data.
 		 */

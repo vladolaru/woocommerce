@@ -23,16 +23,53 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SavePayment
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Endpoint\ClientTokenEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\Environment;
 
+/**
+ * Enqueues the SDK v6 assets of the Add Payment Method page.
+ */
 class AddPaymentMethodManager {
 
 	public const WRAPPER_ID = 'ppc-button-ppcp-gateway-save-payment-method';
 
+	/**
+	 * The asset getter.
+	 *
+	 * @var AssetGetter
+	 */
 	private AssetGetter $asset_getter;
+	/**
+	 * The version.
+	 *
+	 * @var string
+	 */
 	private string $version;
+	/**
+	 * The environment.
+	 *
+	 * @var Environment
+	 */
 	private Environment $environment;
+	/**
+	 * The context.
+	 *
+	 * @var Context
+	 */
 	private Context $context;
+	/**
+	 * Whether PayPal vaulting is enabled.
+	 *
+	 * @var bool
+	 */
 	private bool $paypal_vaulting_enabled;
 
+	/**
+	 * AddPaymentMethodManager constructor.
+	 *
+	 * @param AssetGetter $asset_getter            The asset getter.
+	 * @param string      $version                 The version.
+	 * @param Environment $environment             The environment.
+	 * @param Context     $context                 The context.
+	 * @param bool        $paypal_vaulting_enabled Whether PayPal vaulting is enabled.
+	 */
 	public function __construct(
 		AssetGetter $asset_getter,
 		string $version,

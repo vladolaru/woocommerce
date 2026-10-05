@@ -17,14 +17,39 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Endp
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint\RequestData;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Exception\NonceValidationException;
 
+/**
+ * Returns an SDK client token to the SDK v6 front end.
+ */
 class ClientTokenEndpoint implements EndpointInterface {
 
 	public const ENDPOINT = 'ppc-sdk-v6-client-token';
 
+	/**
+	 * The request data.
+	 *
+	 * @var RequestData
+	 */
 	private RequestData $request_data;
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	private LoggerInterface $logger;
+	/**
+	 * The sdk client token.
+	 *
+	 * @var SdkClientToken
+	 */
 	private SdkClientToken $sdk_client_token;
 
+	/**
+	 * ClientTokenEndpoint constructor.
+	 *
+	 * @param RequestData     $request_data     The request data.
+	 * @param LoggerInterface $logger           The logger.
+	 * @param SdkClientToken  $sdk_client_token The sdk client token.
+	 */
 	public function __construct(
 		RequestData $request_data,
 		LoggerInterface $logger,
@@ -35,6 +60,9 @@ class ClientTokenEndpoint implements EndpointInterface {
 		$this->sdk_client_token = $sdk_client_token;
 	}
 
+	/**
+	 * Handles the request for an SDK client token.
+	 */
 	public function handle_request(): void {
 		try {
 			$this->request_data->read_request( self::nonce() );
@@ -59,6 +87,9 @@ class ClientTokenEndpoint implements EndpointInterface {
 		}
 	}
 
+	/**
+	 * Returns the nonce action of the endpoint.
+	 */
 	public static function nonce(): string {
 		return self::ENDPOINT;
 	}

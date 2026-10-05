@@ -23,12 +23,28 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoi
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint\RequestData;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Helper\CartProductsHelper;
 
+/**
+ * Prices a product through the SDK v6 endpoint, without touching the shopper's cart.
+ */
 class SimulateCartEndpoint extends AbstractCartEndpoint {
 
 	const ENDPOINT = 'ppc-sdk-v6-simulate-cart';
 
+	/**
+	 * The cart simulator.
+	 *
+	 * @var IsolatedCartSimulator
+	 */
 	private IsolatedCartSimulator $cart_simulator;
 
+	/**
+	 * SimulateCartEndpoint constructor.
+	 *
+	 * @param RequestData           $request_data   The request data.
+	 * @param CartProductsHelper    $cart_products  The cart products.
+	 * @param IsolatedCartSimulator $cart_simulator The cart simulator.
+	 * @param LoggerInterface       $logger         The logger.
+	 */
 	public function __construct(
 		RequestData $request_data,
 		CartProductsHelper $cart_products,
@@ -52,6 +68,10 @@ class SimulateCartEndpoint extends AbstractCartEndpoint {
 		/**
 		 * The filter that switches cart simulation off, honoured here too so a
 		 * merchant who disabled it does not get it back through this endpoint.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $enabled Whether cart simulation is enabled; true by default.
 		 */
 		if ( ! apply_filters( 'woocommerce_paypal_payments_simulate_cart_enabled', true ) ) {
 			wp_send_json_error(

@@ -11,6 +11,9 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
 
+/**
+ * Maps the saved button styling to the SDK v6 button styles.
+ */
 class ButtonStyleMapper {
 
 	/**
@@ -32,8 +35,18 @@ class ButtonStyleMapper {
 		'rect' => '4px',
 	);
 
+	/**
+	 * The settings provider.
+	 *
+	 * @var SettingsProvider
+	 */
 	private SettingsProvider $settings_provider;
 
+	/**
+	 * ButtonStyleMapper constructor.
+	 *
+	 * @param SettingsProvider $settings_provider The settings provider.
+	 */
 	public function __construct( SettingsProvider $settings_provider ) {
 		$this->settings_provider = $settings_provider;
 	}
@@ -51,8 +64,8 @@ class ButtonStyleMapper {
 	 */
 	public function styles_for_context( string $context ): array {
 		$styling = $this->settings_provider->button_styling( $context );
-		$color   = $styling->color ?: 'gold';
-		$shape   = $styling->shape ?: 'pill';
+		$color   = $styling->color ? $styling->color : 'gold';
+		$shape   = $styling->shape ? $styling->shape : 'pill';
 
 		return array(
 			'colorClass'   => self::COLOR_MAP[ $color ] ?? 'paypal-gold',

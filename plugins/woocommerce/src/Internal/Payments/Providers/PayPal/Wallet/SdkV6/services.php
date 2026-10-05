@@ -140,6 +140,8 @@ return array(
 			/**
 			 * Whether to offer the non-express PayPal method.
 			 *
+			 * @since 11.3.0
+			 *
 			 * @param bool $add_place_order_method Whether to offer the method.
 			 */
 			$offer_method = (bool) apply_filters(

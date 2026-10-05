@@ -52,8 +52,18 @@ class MessageStyleMapper {
 	private const FONT_SIZE_MIN = 10;
 	private const FONT_SIZE_MAX = 16;
 
+	/**
+	 * The settings provider.
+	 *
+	 * @var SettingsProvider
+	 */
 	private SettingsProvider $settings_provider;
 
+	/**
+	 * MessageStyleMapper constructor.
+	 *
+	 * @param SettingsProvider $settings_provider The settings provider.
+	 */
 	public function __construct( SettingsProvider $settings_provider ) {
 		$this->settings_provider = $settings_provider;
 	}

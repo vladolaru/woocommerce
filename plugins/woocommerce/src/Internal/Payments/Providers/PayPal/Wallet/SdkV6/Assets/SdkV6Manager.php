@@ -35,6 +35,9 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscript
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Helper\FreeTrialSubscriptionHelper;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Helper\SubscriptionHelper;
 
+/**
+ * Decides where the SDK v6 assets load and enqueues them with their data.
+ */
 class SdkV6Manager {
 	use FreeTrialHandlerTrait;
 
@@ -61,20 +64,90 @@ class SdkV6Manager {
 	// after the submit button and is relocated by SdkV6Module.
 	public const PAY_ORDER_MESSAGE_HOOK = 'woocommerce_pay_order_before_submit';
 
+	/**
+	 * The asset getter.
+	 *
+	 * @var AssetGetter
+	 */
 	private AssetGetter $asset_getter;
+	/**
+	 * The version.
+	 *
+	 * @var string
+	 */
 	private string $version;
+	/**
+	 * The environment.
+	 *
+	 * @var Environment
+	 */
 	private Environment $environment;
+	/**
+	 * The style mapper.
+	 *
+	 * @var ButtonStyleMapper
+	 */
 	private ButtonStyleMapper $style_mapper;
+	/**
+	 * The settings status.
+	 *
+	 * @var SettingsStatus
+	 */
 	private SettingsStatus $settings_status;
+	/**
+	 * The context.
+	 *
+	 * @var Context
+	 */
 	private Context $context;
+	/**
+	 * The session handler.
+	 *
+	 * @var SessionHandler
+	 */
 	private SessionHandler $session_handler;
+	/**
+	 * The cancel view.
+	 *
+	 * @var CancelView
+	 */
 	private CancelView $cancel_view;
+	/**
+	 * Whether the final review is enabled.
+	 *
+	 * @var bool
+	 */
 	private bool $final_review_enabled;
+	/**
+	 * Whether vaulting is enabled.
+	 *
+	 * @var bool
+	 */
 	private bool $vaulting_enabled;
+	/**
+	 * The subscription helper.
+	 *
+	 * @var SubscriptionHelper
+	 */
 	private SubscriptionHelper $subscription_helper;
+	/**
+	 * The free trial helper.
+	 *
+	 * @var FreeTrialSubscriptionHelper
+	 */
 	private FreeTrialSubscriptionHelper $free_trial_helper;
 
+	/**
+	 * The message style mapper.
+	 *
+	 * @var MessageStyleMapper
+	 */
 	private MessageStyleMapper $message_style_mapper;
+	/**
+	 * The messages eligibility.
+	 *
+	 * @var MessagesEligibility
+	 */
 	private MessagesEligibility $messages_eligibility;
 
 	/**
@@ -92,6 +165,24 @@ class SdkV6Manager {
 	 */
 	private ?bool $has_paylater_block = null;
 
+	/**
+	 * SdkV6Manager constructor.
+	 *
+	 * @param AssetGetter                 $asset_getter         The asset getter.
+	 * @param string                      $version              The version.
+	 * @param Environment                 $environment          The environment.
+	 * @param ButtonStyleMapper           $style_mapper         The style mapper.
+	 * @param SettingsStatus              $settings_status      The settings status.
+	 * @param Context                     $context              The context.
+	 * @param SessionHandler              $session_handler      The session handler.
+	 * @param CancelView                  $cancel_view          The cancel view.
+	 * @param bool                        $final_review_enabled Whether the final review is enabled.
+	 * @param bool                        $vaulting_enabled     Whether vaulting is enabled.
+	 * @param SubscriptionHelper          $subscription_helper  The subscription helper.
+	 * @param FreeTrialSubscriptionHelper $free_trial_helper    The free trial helper.
+	 * @param MessageStyleMapper          $message_style_mapper The message style mapper.
+	 * @param MessagesEligibility         $messages_eligibility The messages eligibility.
+	 */
 	public function __construct(
 		AssetGetter $asset_getter,
 		string $version,
@@ -345,6 +436,8 @@ class SdkV6Manager {
 		/**
 		 * Allows disabling the subscription mode.
 		 *
+		 * @since 11.3.0
+		 *
 		 * @see \Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\Helper\SubscriptionHelper::resolve_subscription_mode()
 		 *
 		 * @param bool $subscription_mode_disabled True to disable the subscription mode. Default false.
@@ -469,6 +562,8 @@ class SdkV6Manager {
 		 * Filters whether Pay Later messaging prices a product page through the
 		 * cart-simulation endpoint rather than from the product form.
 		 *
+		 * @since 11.3.0
+		 *
 		 * @param bool $use_cart_simulation Whether to use the endpoint.
 		 */
 		return (bool) apply_filters(
@@ -566,6 +661,10 @@ class SdkV6Manager {
 			case 'cart':
 				/**
 				 * The action name that the PayPal buttons use for rendering next to the cart's Proceed to Checkout button.
+				 *
+				 * @since 11.3.0
+				 *
+				 * @param string $hook The action name; woocommerce_proceed_to_checkout by default.
 				 */
 				$cart_hook = (string) apply_filters(
 					'woocommerce_paypal_payments_proceed_to_checkout_button_renderer_hook',
@@ -576,6 +675,10 @@ class SdkV6Manager {
 			case 'product':
 				/**
 				 * The action name that the PayPal buttons use for rendering on the single product page.
+				 *
+				 * @since 11.3.0
+				 *
+				 * @param string $hook The action name; woocommerce_single_product_summary by default.
 				 */
 				$product_hook = (string) apply_filters(
 					'woocommerce_paypal_payments_single_product_renderer_hook',
@@ -603,6 +706,10 @@ class SdkV6Manager {
 
 		/**
 		 * The filter returning the action name that will be used for rendering Pay Later messages.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param string $hook The default action name for the location.
 		 */
 		$name = (string) apply_filters(
 			"woocommerce_paypal_payments_{$location_hook}_messages_renderer_hook",
@@ -611,6 +718,10 @@ class SdkV6Manager {
 
 		/**
 		 * The filter returning the action priority that will be used for rendering Pay Later messages.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param int $priority The default action priority for the location.
 		 */
 		$priority = (int) apply_filters(
 			"woocommerce_paypal_payments_{$location_hook}_messages_renderer_priority",
@@ -637,6 +748,8 @@ class SdkV6Manager {
 
 		/**
 		 * A hook executed before rendering of the PCP Pay Later messages wrapper.
+		 *
+		 * @since 11.3.0
 		 */
 		do_action( "ppcp_before_{$location_hook}_message_wrapper" );
 
@@ -644,6 +757,8 @@ class SdkV6Manager {
 
 		/**
 		 * A hook executed after rendering of the PCP Pay Later messages wrapper.
+		 *
+		 * @since 11.3.0
 		 */
 		do_action( "ppcp_after_{$location_hook}_message_wrapper" );
 	}
@@ -664,6 +779,8 @@ class SdkV6Manager {
 
 	/**
 	 * The button height for a context.
+	 *
+	 * @param string $context The context.
 	 */
 	private function button_height( string $context ): string {
 		return 'mini-cart' === $context
@@ -696,6 +813,11 @@ class SdkV6Manager {
 		if ( 'product' === $location ) {
 			/**
 			 * Allows to decide if the button should be disabled for a given product.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param bool  $disabled Whether the Pay Later button or message is disabled for the product; false by default.
+			 * @param array $context  The product context data.
 			 */
 			return ! apply_filters(
 				'woocommerce_paypal_payments_product_buttons_paylater_disabled',
@@ -706,6 +828,11 @@ class SdkV6Manager {
 
 		/**
 		 * Allows to decide if the button should be disabled on a given context.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool   $disabled Whether the Pay Later button or message is disabled in the location; false by default.
+		 * @param string $context  The location, such as cart or checkout.
 		 */
 		return ! apply_filters(
 			'woocommerce_paypal_payments_buttons_paylater_disabled',
