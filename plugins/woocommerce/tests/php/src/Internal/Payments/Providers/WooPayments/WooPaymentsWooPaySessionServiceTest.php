@@ -2900,46 +2900,116 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A failed WooPay init request is logged with the failure body, and a response body is logged, while WooPayments logging is on.
+	 * @testdox WooPay init failures and responses are logged with the result, HTTP status and error code only, while WooPayments logging is on.
 	 *
-	 * Client 11.1.0 class-woopay-session.php:707-715.
+	 * Client 11.1.0 logs the whole WP_Error and every response body (class-woopay-session.php:707-715); the init answer's URL
+	 * carries the WooPay session key (client/checkout/woopay/direct-checkout/woopay-direct-checkout.js:162-170), so native logs
+	 * neither.
 	 */
 	public function test_logs_woopay_init_failures_and_responses_while_logging_is_on(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
 		$this->connect_woopay_blog();
-		// WP_Http::request() hands back the pre_http_request value; a transport timeout is a WP_Error with the
-		// http_request_failed code (wp-includes/class-wp-http.php, WP_Http_Curl).
-		add_filter( 'pre_http_request', static fn() => new \WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out after 30001 milliseconds' ) );
+		$request = array( 'email' => 'shopper@example.com' );
+		// WP_Http::request() hands back the pre_http_request value; a transport failure is a WP_Error with the http_request_failed
+		// code and Requests' "cURL error <number>: <curl_error()>" message (wp-includes/class-wp-http.php,
+		// wp-includes/Requests/src/Transport/Curl.php).
+		add_filter( 'pre_http_request', static fn() => new \WP_Error( 'http_request_failed', 'cURL error 6: Could not resolve host: pay.woo.com' ) );
 		$lines = $this->record_woopayments_log_lines();
 
-		$result = $this->create_service()->init_woopay_session( array( 'email' => 'shopper@example.com' ) );
+		$this->assertSame( array( 'result' => 'failure' ), $this->create_service()->init_woopay_session( $request ) );
+		$this->assertSame(
+			array(
+				array(
+					'error',
+					'HTTP_REQUEST_ERROR: WooPay session init request failed.',
+					array(
+						'error_code' => 'http_request_failed',
+						'curl_error' => 6,
+					),
+				),
+				array( 'info', 'WooPay session init response.', array( 'result' => 'failure' ) ),
+			),
+			array_values( array_unique( $lines->getArrayCopy(), SORT_REGULAR ) )
+		);
+		$this->assert_log_lines_leak_nothing( $lines );
 
-		$this->assertSame( array( 'result' => 'failure' ), $result );
-		$this->assertContains( array( 'error', 'HTTP_REQUEST_ERROR http_request_failed: cURL error 28: Operation timed out after 30001 milliseconds' ), $lines->getArrayCopy() );
-		$this->assertContains( array( 'info', '{"result":"failure"}' ), $lines->getArrayCopy() );
+		// WooPay's init answer: the result and the WooPay URL the shopper is sent to, which carries the session key (client
+		// 11.1.0 client/checkout/woopay/email-input-iframe.js:496-498 and client/components/woopay/index.tsx:47-48 read them).
+		$body = '{"result":"success","url":"https://pay.woo.com/woopay/?platform_checkout_key=session-key-abc123"}';
+		$this->answer_woopay_requests_with( 200, $body );
+		$lines->exchangeArray( array() );
 
+		$this->assertSame( json_decode( $body, true ), $this->create_service()->init_woopay_session( $request ) );
+		$this->assertSame(
+			array(
+				array(
+					'info',
+					'WooPay session init response.',
+					array(
+						'result'      => 'success',
+						'http_status' => 200,
+					),
+				),
+			),
+			array_values( array_unique( $lines->getArrayCopy(), SORT_REGULAR ) )
+		);
+		$this->assert_log_lines_leak_nothing( $lines );
+
+		// A WordPress REST error from WooPay's init route: core's {code, message, data: {status}} (wp-includes/rest-api.php
+		// rest_convert_error_to_response(); rest_forbidden is WP_REST_Server's permission refusal).
+		$this->answer_woopay_requests_with( 403, '{"code":"rest_forbidden","message":"Sorry, you are not allowed to do that.","data":{"status":403}}' );
+		$lines->exchangeArray( array() );
+
+		$this->create_service()->init_woopay_session( $request );
+		$this->assertSame(
+			array(
+				array(
+					'info',
+					'WooPay session init response.',
+					array(
+						'result'      => 'failure',
+						'http_status' => 403,
+					),
+				),
+			),
+			array_values( array_unique( $lines->getArrayCopy(), SORT_REGULAR ) )
+		);
+	}
+
+	/**
+	 * Assert that no recorded WooPayments log line carries the session key, the shopper's email, the blog token or a WooPay URL.
+	 *
+	 * @param \ArrayObject $lines Recorded lines: level, message and context.
+	 */
+	private function assert_log_lines_leak_nothing( \ArrayObject $lines ): void {
+		$this->assertNotSame( array(), $lines->getArrayCopy() );
+		$logged = (string) wp_json_encode( $lines->getArrayCopy(), JSON_UNESCAPED_SLASHES );
+		foreach ( array( 'session-key-abc123', 'platform_checkout_key', 'shopper@example.com', 'blog-token', 'pay.woo.com' ) as $secret ) {
+			$this->assertStringNotContainsString( $secret, $logged );
+		}
+	}
+
+	/**
+	 * Answer every outgoing request with a WooPay HTTP response, in WP_Http::request()'s array shape.
+	 *
+	 * @param int    $status HTTP status.
+	 * @param string $body   Response body.
+	 */
+	private function answer_woopay_requests_with( int $status, string $body ): void {
 		remove_all_filters( 'pre_http_request' );
-		// WooPay's init answer: the result and the WooPay URL the shopper is sent to (client 11.1.0
-		// client/checkout/woopay/email-input-iframe.js:496-498 and client/components/woopay/index.tsx:47-48 read them).
-		$body = '{"result":"success","url":"https://pay.woo.com/woopay/?platform_checkout_key=abc123"}';
 		add_filter(
 			'pre_http_request',
 			static fn() => array(
 				'headers'  => array(),
 				'body'     => $body,
 				'response' => array(
-					'code'    => 200,
-					'message' => 'OK',
+					'code'    => $status,
+					'message' => get_status_header_desc( $status ),
 				),
 				'cookies'  => array(),
 				'filename' => null,
 			)
 		);
-		$lines->exchangeArray( array() );
-
-		$this->create_service()->init_woopay_session( array( 'email' => 'shopper@example.com' ) );
-
-		$this->assertSame( array( array( 'info', $body ) ), array_values( array_unique( $lines->getArrayCopy(), SORT_REGULAR ) ) );
 	}
 
 	/**
@@ -2973,7 +3043,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$lines = $this->record_woopayments_log_lines();
 
 		$this->assertSame( array(), $this->create_service()->encrypt_and_sign_data( array( 'email' => 'shopper@example.com' ) ) );
-		$this->assertContains( array( 'info', $expected ), $lines->getArrayCopy() );
+		$this->assertContains( array( 'info', $expected, array() ), $lines->getArrayCopy() );
 	}
 
 	/**
@@ -2990,11 +3060,12 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Record the level and message of every line written under the WooPayments log source until the test ends.
+	 * Record the level, message and context (without the source) of every line written under the WooPayments log source
+	 * until the test ends.
 	 *
 	 * WC_Logger applies the message filter once per log handler, so a line can be recorded more than once.
 	 *
-	 * @return \ArrayObject<int,array{0:string,1:string}>
+	 * @return \ArrayObject<int,array{0:string,1:string,2:array<string,mixed>}>
 	 */
 	private function record_woopayments_log_lines(): \ArrayObject {
 		$lines = new \ArrayObject();
@@ -3002,7 +3073,8 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 			'woocommerce_logger_log_message',
 			static function ( $message, $level, $context ) use ( $lines ) {
 				if ( 'woopayments' === ( $context['source'] ?? '' ) ) {
-					$lines[] = array( (string) $level, (string) $message );
+					unset( $context['source'] );
+					$lines[] = array( (string) $level, (string) $message, $context );
 				}
 
 				return $message;

@@ -1019,18 +1019,49 @@ class WooPaymentsWooPaySessionService {
 			$body
 		);
 
-		// Client 11.1.0 logs a failed request and every response body (class-woopay-session.php:707-715).
+		// Client 11.1.0 logs the whole failed request and every response body (class-woopay-session.php:707-715). The init
+		// answer's URL carries the WooPay session key, so only the result, the HTTP status and the error code are logged.
 		if ( $response instanceof WP_Error || ! is_array( $response ) ) {
-			$this->get_logger()->error( 'HTTP_REQUEST_ERROR ' . ( $response instanceof WP_Error ? $response->get_error_code() . ': ' . $response->get_error_message() : gettype( $response ) ) );
-			$body = (string) wp_json_encode( array( 'result' => 'failure' ) );
-		} else {
-			$body = wp_remote_retrieve_body( $response );
+			$this->get_logger()->error( 'HTTP_REQUEST_ERROR: WooPay session init request failed.', $this->get_request_error_log_context( $response ) );
+			$this->get_logger()->log( 'WooPay session init response.', 'info', array( 'result' => 'failure' ) );
+
+			return array( 'result' => 'failure' );
 		}
 
-		$this->get_logger()->log( $body );
-		$data = json_decode( $body, true );
+		$data = json_decode( wp_remote_retrieve_body( $response ), true );
+		$data = is_array( $data ) ? $data : array( 'result' => 'failure' );
+		$this->get_logger()->log(
+			'WooPay session init response.',
+			'info',
+			array(
+				'result'      => 'success' === ( $data['result'] ?? null ) ? 'success' : 'failure',
+				'http_status' => (int) wp_remote_retrieve_response_code( $response ),
+			)
+		);
 
-		return is_array( $data ) ? $data : array( 'result' => 'failure' );
+		return $data;
+	}
+
+	/**
+	 * Get the log context for a failed WooPay request: the error code and, for a cURL failure, its number.
+	 *
+	 * The error message is left out: a transport message can name the host or the URL.
+	 *
+	 * @param mixed $response What the request returned instead of a response array.
+	 * @return array<string,int|string>
+	 */
+	private function get_request_error_log_context( $response ): array {
+		if ( ! $response instanceof WP_Error ) {
+			return array( 'response_type' => gettype( $response ) );
+		}
+
+		$context = array( 'error_code' => $response->get_error_code() );
+		// Requests words a transport failure as "cURL error <number>: <text>" (wp-includes/Requests/src/Transport/Curl.php).
+		if ( 1 === preg_match( '/^cURL error (\d+):/', $response->get_error_message(), $matches ) ) {
+			$context['curl_error'] = (int) $matches[1];
+		}
+
+		return $context;
 	}
 
 	/**
