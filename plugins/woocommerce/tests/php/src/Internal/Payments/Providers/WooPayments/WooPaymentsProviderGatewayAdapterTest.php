@@ -1375,6 +1375,71 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A full page without the order's intent whose oldest intent is $_dataName proves no intent: $proves_none.
+	 *
+	 * The list is newest first, so a full page (`has_more`) that reaches back past the earlier request's window holds every
+	 * intent created since; the earlier request was sent at most one request timeout plus its transport retries before the
+	 * failure was recorded, and the window is 300 s (review 44 F6). A page that stops inside the window may have left the
+	 * earlier intent for the next page, so it proves nothing and the attempt is refused.
+	 *
+	 * @dataProvider provide_full_pages_against_the_window
+	 *
+	 * @param int  $oldest_age  Seconds between the page's oldest intent and the recorded failure.
+	 * @param bool $proves_none Whether the page proves the order has no intent, so the new card is charged.
+	 */
+	public function test_full_page_proves_no_intent_only_when_it_reaches_back_past_the_window( int $oldest_age, bool $proves_none ): void {
+		$order                  = $this->create_woopayments_order();
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array( self::platform_bad_gateway() );
+		$sut                    = $this->create_timeout_adapter( $http_client, 'cus_sent' );
+		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
+		$failed_at              = (int) wc_get_order( $order->get_id() )->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['failed_at'];
+		$http_client->responses = array(
+			self::stripe_idempotency_error( 'key_first' ),
+			self::intent_list(
+				array(
+					self::order_intent( $order, 'pi_other_newer', 'succeeded', 1000, array( 'metadata' => array( 'order_id' => '987654' ) ) ),
+					self::order_intent(
+						$order,
+						'pi_other_oldest',
+						'succeeded',
+						1000,
+						array(
+							'metadata' => array( 'order_id' => '987655' ),
+							'created'  => $failed_at - $oldest_age,
+						)
+					),
+				),
+				true
+			),
+			self::succeeded_charge( 'pi_new_card', 'pm_new' ),
+		);
+
+		$outcome = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_second' );
+
+		if ( $proves_none ) {
+			$this->assertSame( 'pi_new_card', $outcome->get_provider_payment_id() );
+			$this->assertSame( 'POST intentions key_second', self::request_trail( $http_client )[3] ?? null );
+			return;
+		}
+		$this->assertSame( 'wcpay_charge_lookup_failed', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
+		$this->assertCount( 3, $http_client->requests, 'The new card must not be charged.' );
+	}
+
+	/**
+	 * Ages of a full page's oldest intent against the 300 s window.
+	 *
+	 * @return array<string,array{0:int,1:bool}>
+	 */
+	public function provide_full_pages_against_the_window(): array {
+		return array(
+			'301 s before the failure (past the window)' => array( 301, true ),
+			'300 s before the failure (the window edge)' => array( 300, false ),
+			'1 s before the failure'                     => array( 1, false ),
+		);
+	}
+
+	/**
 	 * @testdox An earlier succeeded intent whose charge was $_dataName holds money: $holds_money.
 	 *
 	 * A refunded or disputed PaymentIntent keeps its `succeeded` status, so a payment of the order that was given back (a

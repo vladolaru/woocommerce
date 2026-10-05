@@ -1835,6 +1835,73 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A webhook that pays the order between submissions stops the next submission under the lock before it sends anything.
+	 *
+	 * Design test 17 (data/t62-ambiguous-timeout-hold.md section 10). The first submission's charge gets a 502, so the
+	 * order keeps its key and the ambiguity record. The next submission loads the order; before it claims the lock, the
+	 * earlier request's `payment_intent.succeeded` arrives and the webhook finds the order by its metadata alone
+	 * (`WooPaymentsEventIngestor::get_order_from_event_object_metadata()`), so the order is paid. Under the lock the order
+	 * is read again, found paid, and nothing is sent: no charge under the kept key and no lookup.
+	 */
+	public function test_process_checkout_charges_nothing_when_a_webhook_paid_the_order_between_submissions(): void {
+		$order                  = $this->create_woopayments_order( '10.00' );
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			$this->json_transport_response(
+				502,
+				array(
+					'code'    => 'wcpay_request_failure',
+					'message' => 'Error: cURL error when connecting to Stripe (see error properties for details).',
+					'data'    => array( 'status' => 502 ),
+				)
+			),
+		);
+		$provider               = $this->timeout_transport_provider( $http_client );
+		$this->sut->process_checkout_outcome( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_first' ), $provider );
+		$resubmit = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $resubmit );
+		$this->assertNotSame( '', $resubmit->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+
+		wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor::class )->process(
+			array(
+				'id'   => 'evt_paid_between_submissions',
+				'type' => 'payment_intent.succeeded',
+				'data' => array(
+					'object' => array(
+						'id'             => 'pi_earlier',
+						'object'         => 'payment_intent',
+						'status'         => 'succeeded',
+						'amount'         => 1000,
+						'currency'       => 'usd',
+						'customer'       => 'cus_timeout',
+						'payment_method' => 'pm_first',
+						'metadata'       => array(
+							'order_id'  => (string) $order->get_id(),
+							'order_key' => $order->get_order_key(),
+						),
+						'charges'        => array(
+							'data' => array(
+								array(
+									'id'             => 'ch_earlier',
+									'payment_method' => 'pm_first',
+								),
+							),
+						),
+					),
+				),
+			)
+		);
+		$this->assertTrue( wc_get_order( $order->get_id() )->is_paid(), 'The webhook pays the order from its metadata.' );
+
+		$outcome = $this->sut->process_checkout_outcome( PaymentContext::for_checkout( $resubmit, OrderPaymentStore::GATEWAY_ID, 'pm_new' ), $provider );
+
+		$this->assertCount( 1, $http_client->requests, 'Nothing is sent after the webhook paid the order.' );
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertTrue( $outcome->get_data()[ PaymentOutcome::DATA_ORDER_PAID_BY_ANOTHER_REQUEST ] ?? false );
+		$this->assertSame( 'pi_earlier', wc_get_order( $order->get_id() )->get_meta( '_intent_id', true ) );
+	}
+
+	/**
 	 * @testdox A submission whose lookup fails is refused without a charge and leaves the order status, and the next submission charges the new card once.
 	 *
 	 * The order is pending again before the resubmit, as a Store API checkout leaves it, so a refusal that changed the
