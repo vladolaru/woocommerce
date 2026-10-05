@@ -15,10 +15,7 @@ const LocationSelector = ( { location, setLocation } ) => {
 
 	const activateCheckbox = {
 		value: 'active',
-		label: __(
-			'Enable payment methods in this location',
-			'woocommerce'
-		),
+		label: __( 'Enable payment methods in this location', 'woocommerce' ),
 	};
 
 	return (

@@ -129,10 +129,7 @@ export default function Edit( { attributes, clientId, setAttributes } ) {
 		<>
 			<InspectorControls>
 				<PanelBody
-					title={ __(
-						'Customize your messaging',
-						'woocommerce'
-					) }
+					title={ __( 'Customize your messaging', 'woocommerce' ) }
 				>
 					<p>
 						{ __(
@@ -145,10 +142,7 @@ export default function Edit( { attributes, clientId, setAttributes } ) {
 							type="button"
 							className="components-button is-primary"
 						>
-							{ __(
-								'PayPal Payments Settings',
-								'woocommerce'
-							) }
+							{ __( 'PayPal Payments Settings', 'woocommerce' ) }
 						</button>
 					</a>
 				</PanelBody>

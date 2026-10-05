@@ -13,10 +13,7 @@ const SendOnlyMessage = () => {
 			<SettingsNavigation canSave={ false } />
 			<Container page="settings">
 				<SettingsCard
-					title={ __(
-						'"Send-only" Country',
-						'woocommerce'
-					) }
+					title={ __( '"Send-only" Country', 'woocommerce' ) }
 					description={ __(
 						'Sellers in your country are unable to receive payments via PayPal',
 						'woocommerce'

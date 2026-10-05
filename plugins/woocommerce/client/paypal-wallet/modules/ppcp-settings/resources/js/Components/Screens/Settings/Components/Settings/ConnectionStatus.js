@@ -39,17 +39,13 @@ const ConnectionStatus = () => {
 			>
 				<ControlStaticValue value={ merchant.id } showCopy={ true } />
 			</SettingsBlock>
-			<SettingsBlock
-				title={ __( 'Email address', 'woocommerce' ) }
-			>
+			<SettingsBlock title={ __( 'Email address', 'woocommerce' ) }>
 				<ControlStaticValue
 					value={ merchant.email }
 					showCopy={ true }
 				/>
 			</SettingsBlock>
-			<SettingsBlock
-				title={ __( 'Client ID', 'woocommerce' ) }
-			>
+			<SettingsBlock title={ __( 'Client ID', 'woocommerce' ) }>
 				<ControlStaticValue
 					value={ merchant.clientId }
 					showCopy={ true }
@@ -64,10 +60,7 @@ export default ConnectionStatus;
 const ConnectionDescription = () => {
 	return (
 		<>
-			{ __(
-				'Your PayPal account connection details.',
-				'woocommerce'
-			) }
+			{ __( 'Your PayPal account connection details.', 'woocommerce' ) }
 			<CardActions isDimmed={ true }>
 				<DisconnectButton />
 			</CardActions>

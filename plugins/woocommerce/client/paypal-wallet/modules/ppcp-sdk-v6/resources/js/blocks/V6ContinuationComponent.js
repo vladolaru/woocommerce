@@ -45,10 +45,7 @@ export function V6ContinuationComponent( {
 		} ).catch( ( error ) => {
 			// Non-fatal: the buyer can still fill the form by hand.
 			// eslint-disable-next-line no-console
-			console.error(
-				'[ppcp-sdk-v6] continuation prefill failed',
-				error
-			);
+			console.error( '[ppcp-sdk-v6] continuation prefill failed', error );
 		} );
 	}, [ continuation, shippingData ] );
 
@@ -59,7 +56,8 @@ export function V6ContinuationComponent( {
 				meta: {
 					paymentMethodData: {
 						paypal_order_id: continuation?.order_id,
-						funding_source: continuation?.funding_source ||
+						funding_source:
+							continuation?.funding_source ||
 							FundingSources.PAYPAL,
 					},
 				},

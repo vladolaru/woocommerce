@@ -34,10 +34,7 @@ const Features = () => {
 			const featuresResult = await fetchFeatures();
 			if ( featuresResult.success ) {
 				createSuccessNotice(
-					__(
-						'Features refreshed successfully.',
-						'woocommerce'
-					)
+					__( 'Features refreshed successfully.', 'woocommerce' )
 				);
 			} else {
 				throw new Error(
@@ -49,8 +46,7 @@ const Features = () => {
 				sprintf(
 					/* translators: %s: error message */
 					__( 'Operation failed: %s', 'woocommerce' ),
-					error.message ||
-						__( 'Unknown error', 'woocommerce' )
+					error.message || __( 'Unknown error', 'woocommerce' )
 				)
 			);
 		} finally {

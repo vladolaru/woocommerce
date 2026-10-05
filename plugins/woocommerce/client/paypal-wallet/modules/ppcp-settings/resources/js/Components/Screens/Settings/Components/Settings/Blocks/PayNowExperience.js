@@ -11,10 +11,7 @@ const PayNowExperience = () => {
 	return (
 		<SettingsBlock className="ppcp--pay-now-experience">
 			<ControlToggleButton
-				label={ __(
-					'Pay Now Experience',
-					'woocommerce'
-				) }
+				label={ __( 'Pay Now Experience', 'woocommerce' ) }
 				description={ __(
 					'Let PayPal customers skip the Order Review page by selecting shipping options directly within PayPal.',
 					'woocommerce'

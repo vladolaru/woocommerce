@@ -113,9 +113,9 @@ describe( 'initProductButtonGate()', () => {
 
 				// No listeners were attached: toggling the button and firing
 				// the events the gate would otherwise react to changes nothing.
-				form
-					.querySelector( '.single_add_to_cart_button' )
-					.classList.remove( 'disabled' );
+				form.querySelector(
+					'.single_add_to_cart_button'
+				).classList.remove( 'disabled' );
 				form.dispatchEvent( new Event( 'change' ) );
 
 				expect(
@@ -131,9 +131,9 @@ describe( 'initProductButtonGate()', () => {
 
 			initProductButtonGate( baseConfig() );
 
-			expect(
-				wrapperEl().classList.contains( 'ppcp-disabled' )
-			).toBe( true );
+			expect( wrapperEl().classList.contains( 'ppcp-disabled' ) ).toBe(
+				true
+			);
 		} );
 
 		test( 'leaves the wrapper enabled when the add-to-cart button is not disabled', () => {
@@ -141,9 +141,9 @@ describe( 'initProductButtonGate()', () => {
 
 			initProductButtonGate( baseConfig() );
 
-			expect(
-				wrapperEl().classList.contains( 'ppcp-disabled' )
-			).toBe( false );
+			expect( wrapperEl().classList.contains( 'ppcp-disabled' ) ).toBe(
+				false
+			);
 		} );
 
 		test( 'leaves the wrapper enabled when the form has no classic add-to-cart button (simple product)', () => {
@@ -151,9 +151,9 @@ describe( 'initProductButtonGate()', () => {
 
 			initProductButtonGate( baseConfig() );
 
-			expect(
-				wrapperEl().classList.contains( 'ppcp-disabled' )
-			).toBe( false );
+			expect( wrapperEl().classList.contains( 'ppcp-disabled' ) ).toBe(
+				false
+			);
 		} );
 
 		test( 'does nothing when the page has no product form', () => {
@@ -161,14 +161,14 @@ describe( 'initProductButtonGate()', () => {
 
 			initProductButtonGate( baseConfig() );
 
-			expect(
-				wrapperEl().classList.contains( 'ppcp-disabled' )
-			).toBe( false );
+			expect( wrapperEl().classList.contains( 'ppcp-disabled' ) ).toBe(
+				false
+			);
 		} );
 	} );
 
 	describe( 'mouseup on a disabled wrapper', () => {
-		test( 'routes the click to the form\'s native submit', () => {
+		test( "routes the click to the form's native submit", () => {
 			const form = buildDom( { disabled: true } );
 			initProductButtonGate( baseConfig() );
 			const submitSpy = spyOnSubmit( form );
@@ -187,9 +187,7 @@ describe( 'initProductButtonGate()', () => {
 			const laterListener = jest.fn();
 			wrapper.addEventListener( 'mouseup', laterListener );
 
-			wrapper.dispatchEvent(
-				new Event( 'mouseup', { bubbles: true } )
-			);
+			wrapper.dispatchEvent( new Event( 'mouseup', { bubbles: true } ) );
 
 			expect( laterListener ).not.toHaveBeenCalled();
 		} );
@@ -216,9 +214,9 @@ describe( 'initProductButtonGate()', () => {
 		test( 'a burst of sync triggers while the button stays disabled still results in exactly one submit per click', () => {
 			const form = buildDom( { disabled: true } );
 			initProductButtonGate( baseConfig() );
-			expect(
-				wrapperEl().classList.contains( 'ppcp-disabled' )
-			).toBe( true );
+			expect( wrapperEl().classList.contains( 'ppcp-disabled' ) ).toBe(
+				true
+			);
 
 			form.dispatchEvent( new Event( 'change' ) );
 			form.dispatchEvent( new Event( 'change' ) );
@@ -237,9 +235,9 @@ describe( 'initProductButtonGate()', () => {
 			initProductButtonGate( baseConfig() );
 			initProductButtonGate( baseConfig() );
 
-			form
-				.querySelector( '.single_add_to_cart_button' )
-				.classList.add( 'disabled' );
+			form.querySelector( '.single_add_to_cart_button' ).classList.add(
+				'disabled'
+			);
 			form.dispatchEvent( new Event( 'change' ) );
 			form.dispatchEvent( new Event( 'change' ) );
 
@@ -256,18 +254,18 @@ describe( 'initProductButtonGate()', () => {
 		test( 'removes ppcp-disabled from the wrapper and stops routing clicks to the native submit', () => {
 			const form = buildDom( { disabled: true } );
 			initProductButtonGate( baseConfig() );
-			expect(
-				wrapperEl().classList.contains( 'ppcp-disabled' )
-			).toBe( true );
+			expect( wrapperEl().classList.contains( 'ppcp-disabled' ) ).toBe(
+				true
+			);
 
-			form
-				.querySelector( '.single_add_to_cart_button' )
-				.classList.remove( 'disabled' );
+			form.querySelector( '.single_add_to_cart_button' ).classList.remove(
+				'disabled'
+			);
 			form.dispatchEvent( new Event( 'change' ) );
 
-			expect(
-				wrapperEl().classList.contains( 'ppcp-disabled' )
-			).toBe( false );
+			expect( wrapperEl().classList.contains( 'ppcp-disabled' ) ).toBe(
+				false
+			);
 
 			const submitSpy = spyOnSubmit( form );
 			wrapperEl().dispatchEvent(
@@ -282,19 +280,19 @@ describe( 'initProductButtonGate()', () => {
 		test( 're-syncs the wrapper when WooCommerce toggles the disabled class', async () => {
 			const form = buildDom( { disabled: false } );
 			initProductButtonGate( baseConfig() );
-			expect(
-				wrapperEl().classList.contains( 'ppcp-disabled' )
-			).toBe( false );
+			expect( wrapperEl().classList.contains( 'ppcp-disabled' ) ).toBe(
+				false
+			);
 
-			form
-				.querySelector( '.single_add_to_cart_button' )
-				.classList.add( 'disabled' );
+			form.querySelector( '.single_add_to_cart_button' ).classList.add(
+				'disabled'
+			);
 			await Promise.resolve();
 			await Promise.resolve();
 
-			expect(
-				wrapperEl().classList.contains( 'ppcp-disabled' )
-			).toBe( true );
+			expect( wrapperEl().classList.contains( 'ppcp-disabled' ) ).toBe(
+				true
+			);
 		} );
 	} );
 
@@ -305,9 +303,9 @@ describe( 'initProductButtonGate()', () => {
 				const form = buildDom( { disabled: false } );
 				initProductButtonGate( baseConfig() );
 
-				form
-					.querySelector( '.single_add_to_cart_button' )
-					.classList.add( 'disabled' );
+				form.querySelector(
+					'.single_add_to_cart_button'
+				).classList.add( 'disabled' );
 				jQuery( form ).trigger( eventName );
 
 				expect(
@@ -321,14 +319,14 @@ describe( 'initProductButtonGate()', () => {
 			const form = buildDom( { disabled: false } );
 			initProductButtonGate( baseConfig() );
 
-			form
-				.querySelector( '.single_add_to_cart_button' )
-				.classList.add( 'disabled' );
+			form.querySelector( '.single_add_to_cart_button' ).classList.add(
+				'disabled'
+			);
 			jQuery( form ).trigger( 'found_variation' );
 
-			expect(
-				wrapperEl().classList.contains( 'ppcp-disabled' )
-			).toBe( false );
+			expect( wrapperEl().classList.contains( 'ppcp-disabled' ) ).toBe(
+				false
+			);
 		} );
 	} );
 } );

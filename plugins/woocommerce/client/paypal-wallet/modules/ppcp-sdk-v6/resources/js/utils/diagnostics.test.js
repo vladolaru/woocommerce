@@ -38,11 +38,7 @@ describe( 'logEvent()', () => {
 	test( 'posts the nonce, tag, event and detail as a message to the frontend log endpoint', async () => {
 		global.fetch = jest.fn().mockResolvedValue( {} );
 
-		await logEvent(
-			config(),
-			'approve-order-retried',
-			'Rate not found'
-		);
+		await logEvent( config(), 'approve-order-retried', 'Rate not found' );
 
 		const [ url, options ] = global.fetch.mock.calls[ 0 ];
 		expect( url ).toBe( '/wc-ajax/ppc-frontend-log' );
@@ -80,7 +76,9 @@ describe( 'logEvent()', () => {
 	} );
 
 	test( 'never rejects when fetch rejects', async () => {
-		global.fetch = jest.fn().mockRejectedValue( new Error( 'network down' ) );
+		global.fetch = jest
+			.fn()
+			.mockRejectedValue( new Error( 'network down' ) );
 
 		await expect(
 			logEvent( config(), 'event', 'detail' )

@@ -70,11 +70,7 @@ const baseConfig = ( overrides = {} ) => ( {
 function buildDom( { hasWrapper = true } = {} ) {
 	document.body.innerHTML = `
 		<button id="place_order" type="button">Place order</button>
-		${
-			hasWrapper
-				? `<div id="${ WRAPPER_SELECTOR.slice( 1 ) }"></div>`
-				: ''
-		}
+		${ hasWrapper ? `<div id="${ WRAPPER_SELECTOR.slice( 1 ) }"></div>` : '' }
 	`;
 }
 
@@ -117,10 +113,7 @@ describe( 'boot-add-payment-method', () => {
 			false,
 			'ppcp-hidden'
 		);
-		expect( mockSetVisible ).toHaveBeenCalledWith(
-			WRAPPER_SELECTOR,
-			true
-		);
+		expect( mockSetVisible ).toHaveBeenCalledWith( WRAPPER_SELECTOR, true );
 	} );
 
 	test( 'another method selected keeps the native submit visible and hides the wrapper', async () => {

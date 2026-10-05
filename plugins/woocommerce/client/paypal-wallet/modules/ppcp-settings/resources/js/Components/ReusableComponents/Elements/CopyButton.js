@@ -38,19 +38,13 @@ const CopyButton = ( { value, className, ariaLabel, ...props } ) => {
 		await copy( value );
 
 		if ( copied ) {
-			speak(
-				__( 'Copied to clipboard', 'woocommerce' ),
-				'assertive'
-			);
+			speak( __( 'Copied to clipboard', 'woocommerce' ), 'assertive' );
 			return;
 		}
 
 		if ( error ) {
 			speak(
-				__(
-					'Failed to copy to clipboard',
-					'woocommerce'
-				),
+				__( 'Failed to copy to clipboard', 'woocommerce' ),
 				'assertive'
 			);
 		}

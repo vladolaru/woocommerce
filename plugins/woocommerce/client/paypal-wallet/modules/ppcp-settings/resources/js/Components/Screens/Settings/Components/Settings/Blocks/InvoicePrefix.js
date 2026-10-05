@@ -42,10 +42,7 @@ const InvoicePrefix = () => {
 			className="ppcp--invoice-prefix"
 		>
 			<ControlTextInput
-				placeholder={ __(
-					'Input prefix',
-					'woocommerce'
-				) }
+				placeholder={ __( 'Input prefix', 'woocommerce' ) }
 				onChange={ handleChange }
 				onBlur={ handleBlur }
 				value={ invoicePrefix }

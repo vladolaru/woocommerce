@@ -82,8 +82,7 @@ import { handleError, setErrorLabels } from './utils/errorHandler';
 	 * the (now-suppressed) v5 script used to do.
 	 */
 	function syncVisibility() {
-		const isPayPal =
-			getCurrentPaymentMethod() === PaymentMethods.PAYPAL;
+		const isPayPal = getCurrentPaymentMethod() === PaymentMethods.PAYPAL;
 		// Only hand the submit role to the PayPal button when one actually
 		// rendered; otherwise (PayPal ineligible / no wrapper) the buyer must
 		// keep the native submit control instead of being left with nothing.
@@ -124,9 +123,7 @@ import { handleError, setErrorLabels } from './utils/errorHandler';
 		} );
 		document.body.addEventListener( 'click', ( event ) => {
 			if (
-				event.target?.matches?.(
-					'.payment_methods input.input-radio'
-				)
+				event.target?.matches?.( '.payment_methods input.input-radio' )
 			) {
 				syncVisibility();
 			}

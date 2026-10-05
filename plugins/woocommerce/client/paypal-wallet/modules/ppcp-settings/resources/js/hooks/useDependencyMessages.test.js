@@ -45,9 +45,7 @@ describe( 'useDependencyMessages()', () => {
 			useDependencyMessages( [ payLaterMethod() ], {}, {} )
 		);
 
-		expect( result.current[ 'pay-later' ].isMethodDisabled ).toBe(
-			false
-		);
+		expect( result.current[ 'pay-later' ].isMethodDisabled ).toBe( false );
 		expect( result.current[ 'pay-later' ].dependencyMessage ).toBeNull();
 	} );
 

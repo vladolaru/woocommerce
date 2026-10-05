@@ -168,12 +168,14 @@ describe( 'TabPayLaterMessaging', () => {
 	describe( 'onSave', () => {
 		test( 'skips shop and home setters when the saved config omits them (v6 shape)', () => {
 			const hooks = mockPayLaterMessaging( hydratedConfig );
-			PayLaterMessagingHooks.useStore.mockReturnValue( { isReady: true } );
+			PayLaterMessagingHooks.useStore.mockReturnValue( {
+				isReady: true,
+			} );
 
 			render( <TabPayLaterMessaging /> );
 
-			const { onSave } = window.merchantConfigurators.Messaging.mock
-				.calls[ 0 ][ 0 ];
+			const { onSave } =
+				window.merchantConfigurators.Messaging.mock.calls[ 0 ][ 0 ];
 			onSave( { config: savedV6Config } );
 
 			expect( hooks.setCart ).toHaveBeenCalledWith( savedV6Config.cart );
@@ -192,12 +194,14 @@ describe( 'TabPayLaterMessaging', () => {
 
 		test( 'applies shop and home setters when the saved config includes them (v5 shape)', () => {
 			const hooks = mockPayLaterMessaging( hydratedConfig );
-			PayLaterMessagingHooks.useStore.mockReturnValue( { isReady: true } );
+			PayLaterMessagingHooks.useStore.mockReturnValue( {
+				isReady: true,
+			} );
 
 			render( <TabPayLaterMessaging /> );
 
-			const { onSave } = window.merchantConfigurators.Messaging.mock
-				.calls[ 0 ][ 0 ];
+			const { onSave } =
+				window.merchantConfigurators.Messaging.mock.calls[ 0 ][ 0 ];
 			onSave( { config: savedV5Config } );
 
 			expect( hooks.setShop ).toHaveBeenCalledWith( savedV5Config.shop );

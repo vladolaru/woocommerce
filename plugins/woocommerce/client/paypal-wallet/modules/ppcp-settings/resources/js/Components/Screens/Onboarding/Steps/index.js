@@ -33,10 +33,7 @@ const ALL_STEPS = [
 	},
 	{
 		id: 'complete',
-		title: __(
-			'Connect your PayPal account',
-			'woocommerce'
-		),
+		title: __( 'Connect your PayPal account', 'woocommerce' ),
 		StepComponent: StepCompleteSetup,
 		canProceed: () => true,
 	},

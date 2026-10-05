@@ -14,14 +14,8 @@ import { OnboardingHooks } from '@ppcp-settings/data';
 import { useManualConnection } from '@ppcp-settings/data/common/hooks';
 
 const FORM_ERRORS = {
-	noClientId: __(
-		'Please enter your Client ID',
-		'woocommerce'
-	),
-	noClientSecret: __(
-		'Please enter your Secret Key',
-		'woocommerce'
-	),
+	noClientId: __( 'Please enter your Client ID', 'woocommerce' ),
+	noClientSecret: __( 'Please enter your Secret Key', 'woocommerce' ),
 };
 
 const ManualConnectionForm = () => {
@@ -125,10 +119,7 @@ const ManualConnectionForm = () => {
 			} ) }
 		>
 			<SettingsToggleBlock
-				label={ __(
-					'Manually Connect',
-					'woocommerce'
-				) }
+				label={ __( 'Manually Connect', 'woocommerce' ) }
 				description={ advancedUsersDescription }
 				isToggled={ !! isManualConnectionMode }
 				setToggled={ handleToggle }

@@ -18,7 +18,6 @@ import {
 import { useRef } from 'react';
 import Spinner from '../../../../ppcp-button/resources/js/modules/Helper/Spinner';
 
-
 const namespace = 'ppcpBlocksPaypalExpressButtons';
 let registeredContext = false;
 let paypalScriptPromise = null;

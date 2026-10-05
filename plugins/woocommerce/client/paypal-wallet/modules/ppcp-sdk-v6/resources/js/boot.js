@@ -207,7 +207,12 @@ const ELIGIBILITY_REFRESH_DEBOUNCE_MS = 300;
 				fundingSource === FundingSources.PAYPAL
 					? // Free trial starts the save session with a setup token.
 					  () => createVaultSetupToken( config )
-					: () => createOrder( config, target.context, fundingSource ),
+					: () =>
+							createOrder(
+								config,
+								target.context,
+								fundingSource
+							),
 			payLaterDetails,
 			payLaterEnabled: Boolean(
 				config.pay_later_button?.[ target.context ]
@@ -320,8 +325,8 @@ const ELIGIBILITY_REFRESH_DEBOUNCE_MS = 300;
 	 * Serialises refreshEligibility() passes, same chain idiom as render().
 	 *
 	 * It is needed because the debounce coalesces events but cannot stop one pass
-     * starting while another awaits the network, and overlapping passes may leave the
-     * buttons on the older result.
+	 * starting while another awaits the network, and overlapping passes may leave the
+	 * buttons on the older result.
 	 *
 	 * @return {Promise<void>} Resolves once this pass is done.
 	 */

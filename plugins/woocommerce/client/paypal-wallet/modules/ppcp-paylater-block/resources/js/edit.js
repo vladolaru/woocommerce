@@ -104,10 +104,7 @@ export default function Edit( { attributes, clientId, setAttributes } ) {
 								type="button"
 								className="components-button is-secondary"
 							>
-								{ __(
-									'Remove Block',
-									'woocommerce'
-								) }
+								{ __( 'Remove Block', 'woocommerce' ) }
 							</button>
 						</span>
 					</div>
@@ -137,28 +134,17 @@ export default function Edit( { attributes, clientId, setAttributes } ) {
 	return (
 		<>
 			<InspectorControls>
-				<PanelBody
-					title={ __( 'Settings', 'woocommerce' ) }
-				>
+				<PanelBody title={ __( 'Settings', 'woocommerce' ) }>
 					{ ! isSdkV6Active && (
 						<SelectControl
-							label={ __(
-								'Layout',
-								'woocommerce'
-							) }
+							label={ __( 'Layout', 'woocommerce' ) }
 							options={ [
 								{
-									label: __(
-										'Text',
-										'woocommerce'
-									),
+									label: __( 'Text', 'woocommerce' ),
 									value: 'text',
 								},
 								{
-									label: __(
-										'Banner',
-										'woocommerce'
-									),
+									label: __( 'Banner', 'woocommerce' ),
 									value: 'flex',
 								},
 							] }
@@ -170,37 +156,22 @@ export default function Edit( { attributes, clientId, setAttributes } ) {
 					) }
 					{ ! isFlex && (
 						<SelectControl
-							label={ __(
-								'Logo',
-								'woocommerce'
-							) }
+							label={ __( 'Logo', 'woocommerce' ) }
 							options={ [
 								{
-									label: __(
-										'Full logo',
-										'woocommerce'
-									),
+									label: __( 'Full logo', 'woocommerce' ),
 									value: 'primary',
 								},
 								{
-									label: __(
-										'Monogram',
-										'woocommerce'
-									),
+									label: __( 'Monogram', 'woocommerce' ),
 									value: 'alternative',
 								},
 								{
-									label: __(
-										'Inline',
-										'woocommerce'
-									),
+									label: __( 'Inline', 'woocommerce' ),
 									value: 'inline',
 								},
 								{
-									label: __(
-										'Message only',
-										'woocommerce'
-									),
+									label: __( 'Message only', 'woocommerce' ),
 									value: 'none',
 								},
 							] }
@@ -212,30 +183,18 @@ export default function Edit( { attributes, clientId, setAttributes } ) {
 					) }
 					{ ! isFlex && logo === 'primary' && (
 						<SelectControl
-							label={ __(
-								'Logo Position',
-								'woocommerce'
-							) }
+							label={ __( 'Logo Position', 'woocommerce' ) }
 							options={ [
 								{
-									label: __(
-										'Left',
-										'woocommerce'
-									),
+									label: __( 'Left', 'woocommerce' ),
 									value: 'left',
 								},
 								{
-									label: __(
-										'Right',
-										'woocommerce'
-									),
+									label: __( 'Right', 'woocommerce' ),
 									value: 'right',
 								},
 								{
-									label: __(
-										'Top',
-										'woocommerce'
-									),
+									label: __( 'Top', 'woocommerce' ),
 									value: 'top',
 								},
 							] }
@@ -247,10 +206,7 @@ export default function Edit( { attributes, clientId, setAttributes } ) {
 					) }
 					{ ! isFlex && (
 						<SelectControl
-							label={ __(
-								'Text Color',
-								'woocommerce'
-							) }
+							label={ __( 'Text Color', 'woocommerce' ) }
 							options={ [
 								{
 									label: __(
@@ -267,10 +223,7 @@ export default function Edit( { attributes, clientId, setAttributes } ) {
 									value: 'white',
 								},
 								{
-									label: __(
-										'Monochrome',
-										'woocommerce'
-									),
+									label: __( 'Monochrome', 'woocommerce' ),
 									value: 'monochrome',
 								},
 								{
@@ -289,30 +242,18 @@ export default function Edit( { attributes, clientId, setAttributes } ) {
 					) }
 					{ ! isFlex && (
 						<SelectControl
-							label={ __(
-								'Text Size',
-								'woocommerce'
-							) }
+							label={ __( 'Text Size', 'woocommerce' ) }
 							options={ [
 								{
-									label: __(
-										'Small',
-										'woocommerce'
-									),
+									label: __( 'Small', 'woocommerce' ),
 									value: '12',
 								},
 								{
-									label: __(
-										'Medium',
-										'woocommerce'
-									),
+									label: __( 'Medium', 'woocommerce' ),
 									value: '14',
 								},
 								{
-									label: __(
-										'Large',
-										'woocommerce'
-									),
+									label: __( 'Large', 'woocommerce' ),
 									value: '16',
 								},
 							] }
@@ -324,30 +265,18 @@ export default function Edit( { attributes, clientId, setAttributes } ) {
 					) }
 					{ isFlex && (
 						<SelectControl
-							label={ __(
-								'Color',
-								'woocommerce'
-							) }
+							label={ __( 'Color', 'woocommerce' ) }
 							options={ [
 								{
-									label: __(
-										'Blue',
-										'woocommerce'
-									),
+									label: __( 'Blue', 'woocommerce' ),
 									value: 'blue',
 								},
 								{
-									label: __(
-										'Black',
-										'woocommerce'
-									),
+									label: __( 'Black', 'woocommerce' ),
 									value: 'black',
 								},
 								{
-									label: __(
-										'White',
-										'woocommerce'
-									),
+									label: __( 'White', 'woocommerce' ),
 									value: 'white',
 								},
 								{
@@ -366,23 +295,14 @@ export default function Edit( { attributes, clientId, setAttributes } ) {
 					) }
 					{ isFlex && (
 						<SelectControl
-							label={ __(
-								'Ratio',
-								'woocommerce'
-							) }
+							label={ __( 'Ratio', 'woocommerce' ) }
 							options={ [
 								{
-									label: __(
-										'8x1',
-										'woocommerce'
-									),
+									label: __( '8x1', 'woocommerce' ),
 									value: '8x1',
 								},
 								{
-									label: __(
-										'20x1',
-										'woocommerce'
-									),
+									label: __( '20x1', 'woocommerce' ),
 									value: '20x1',
 								},
 							] }
@@ -393,10 +313,7 @@ export default function Edit( { attributes, clientId, setAttributes } ) {
 						/>
 					) }
 					<SelectControl
-						label={ __(
-							'Placement page',
-							'woocommerce'
-						) }
+						label={ __( 'Placement page', 'woocommerce' ) }
 						help={ __(
 							'Used for the analytics dashboard in the merchant account.',
 							'woocommerce'
@@ -410,38 +327,23 @@ export default function Edit( { attributes, clientId, setAttributes } ) {
 								value: 'auto',
 							},
 							{
-								label: __(
-									'Product Page',
-									'woocommerce'
-								),
+								label: __( 'Product Page', 'woocommerce' ),
 								value: 'product',
 							},
 							{
-								label: __(
-									'Cart',
-									'woocommerce'
-								),
+								label: __( 'Cart', 'woocommerce' ),
 								value: 'cart',
 							},
 							{
-								label: __(
-									'Checkout',
-									'woocommerce'
-								),
+								label: __( 'Checkout', 'woocommerce' ),
 								value: 'checkout',
 							},
 							{
-								label: __(
-									'Home',
-									'woocommerce'
-								),
+								label: __( 'Home', 'woocommerce' ),
 								value: 'home',
 							},
 							{
-								label: __(
-									'Shop',
-									'woocommerce'
-								),
+								label: __( 'Shop', 'woocommerce' ),
 								value: 'shop',
 							},
 						] }

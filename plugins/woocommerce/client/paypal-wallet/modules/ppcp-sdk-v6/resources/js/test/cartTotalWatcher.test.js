@@ -25,8 +25,14 @@ beforeEach( () => {
 describe( 'watchBlockCartTotal()', () => {
 	test( 'fires the callback with the decimal total when it changes', () => {
 		mockGetCartTotals
-			.mockReturnValueOnce( { total_price: '1000', currency_minor_unit: 2 } )
-			.mockReturnValueOnce( { total_price: '1500', currency_minor_unit: 2 } );
+			.mockReturnValueOnce( {
+				total_price: '1000',
+				currency_minor_unit: 2,
+			} )
+			.mockReturnValueOnce( {
+				total_price: '1500',
+				currency_minor_unit: 2,
+			} );
 
 		const onChange = jest.fn();
 		watchBlockCartTotal( onChange );

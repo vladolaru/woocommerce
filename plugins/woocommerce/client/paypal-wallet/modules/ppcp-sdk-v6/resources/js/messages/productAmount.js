@@ -14,8 +14,8 @@
  * @package
  */
 
-import { productForm } from "../endpointsAdapter";
-import { hasJQuery } from "../utils/api";
+import { productForm } from '../endpointsAdapter';
+import { hasJQuery } from '../utils/api';
 
 /**
  * How long to coalesce form changes before re-pricing.
@@ -31,10 +31,13 @@ const REPRICE_DEBOUNCE_MS = 150;
  * @param {HTMLElement} form - The product form.
  * @return {number} The quantity; 1 when the field is absent or unusable.
  */
-function quantityIn(form) {
-    const raw = parseInt(form.querySelector('[name="quantity"]')?.value, 10);
+function quantityIn( form ) {
+	const raw = parseInt(
+		form.querySelector( '[name="quantity"]' )?.value,
+		10
+	);
 
-    return isNaN(raw) || raw < 1 ? 1 : raw;
+	return isNaN( raw ) || raw < 1 ? 1 : raw;
 }
 
 /**
@@ -44,12 +47,12 @@ function quantityIn(form) {
  * @param {number} quantity - The quantity.
  * @return {string} The total as a decimal string, or '' when not priceable.
  */
-function total(unit, quantity) {
-    if (!isFinite(unit) || unit <= 0) {
-        return "";
-    }
+function total( unit, quantity ) {
+	if ( ! isFinite( unit ) || unit <= 0 ) {
+		return '';
+	}
 
-    return (unit * quantity).toFixed(2);
+	return ( unit * quantity ).toFixed( 2 );
 }
 
 /**
@@ -63,56 +66,56 @@ function total(unit, quantity) {
  * @param {(amount: string) => void} onChange - Called with each new amount.
  * @return {Function} Stops watching.
  */
-export function watchProductAmount(config, onChange) {
-    const form = productForm();
-    if (!form) {
-        return () => {};
-    }
+export function watchProductAmount( config, onChange ) {
+	const form = productForm();
+	if ( ! form ) {
+		return () => {};
+	}
 
-    const seed = parseFloat(config.messages?.amount);
-    let unit = seed;
-    let timer = null;
-    let last = "";
+	const seed = parseFloat( config.messages?.amount );
+	let unit = seed;
+	let timer = null;
+	let last = '';
 
-    const reprice = () => {
-        const amount = total(unit, quantityIn(form));
+	const reprice = () => {
+		const amount = total( unit, quantityIn( form ) );
 
-        if (amount && amount !== last) {
-            last = amount;
-            onChange(amount);
-        }
-    };
+		if ( amount && amount !== last ) {
+			last = amount;
+			onChange( amount );
+		}
+	};
 
-    const schedule = () => {
-        clearTimeout(timer);
-        timer = setTimeout(reprice, REPRICE_DEBOUNCE_MS);
-    };
+	const schedule = () => {
+		clearTimeout( timer );
+		timer = setTimeout( reprice, REPRICE_DEBOUNCE_MS );
+	};
 
-    form.addEventListener("change", schedule);
-    form.addEventListener("input", schedule);
+	form.addEventListener( 'change', schedule );
+	form.addEventListener( 'input', schedule );
 
-    if (hasJQuery()) {
-        jQuery(form).on("found_variation", (event, variation) => {
-            // Added to the variation server-side. Falling back to the seed
-            // rather than display_price keeps the tax basis consistent.
-            const price = parseFloat(variation?.ppcp_message_amount);
-            unit = isNaN(price) ? seed : price;
-            schedule();
-        });
+	if ( hasJQuery() ) {
+		jQuery( form ).on( 'found_variation', ( event, variation ) => {
+			// Added to the variation server-side. Falling back to the seed
+			// rather than display_price keeps the tax basis consistent.
+			const price = parseFloat( variation?.ppcp_message_amount );
+			unit = isNaN( price ) ? seed : price;
+			schedule();
+		} );
 
-        jQuery(form).on("reset_data", () => {
-            unit = seed;
-            schedule();
-        });
-    }
+		jQuery( form ).on( 'reset_data', () => {
+			unit = seed;
+			schedule();
+		} );
+	}
 
-    return () => {
-        clearTimeout(timer);
-        form.removeEventListener("change", schedule);
-        form.removeEventListener("input", schedule);
+	return () => {
+		clearTimeout( timer );
+		form.removeEventListener( 'change', schedule );
+		form.removeEventListener( 'input', schedule );
 
-        if (hasJQuery()) {
-            jQuery(form).off("found_variation reset_data");
-        }
-    };
+		if ( hasJQuery() ) {
+			jQuery( form ).off( 'found_variation reset_data' );
+		}
+	};
 }

@@ -83,10 +83,7 @@ export const useBlueprintExport = () => {
 			downloadBlob( filename, blob, 'application/json' );
 
 			createSuccessNotice(
-				__(
-					'Blueprint exported successfully.',
-					'woocommerce'
-				),
+				__( 'Blueprint exported successfully.', 'woocommerce' ),
 				{ type: 'snackbar' }
 			);
 		} catch {

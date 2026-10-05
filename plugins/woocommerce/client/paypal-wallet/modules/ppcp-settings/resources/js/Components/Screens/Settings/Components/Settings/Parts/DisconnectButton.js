@@ -26,10 +26,7 @@ const DisconnectButton = () => {
 		goToPluginSettings();
 	}, [ disconnectMerchant, resetFlag ] );
 
-	const confirmationTitle = __(
-		'Disconnect from PayPal?',
-		'woocommerce'
-	);
+	const confirmationTitle = __( 'Disconnect from PayPal?', 'woocommerce' );
 
 	return (
 		<>
@@ -53,10 +50,7 @@ const DisconnectButton = () => {
 						className: 'ppcp--toggle-danger',
 						checked: resetFlag,
 						onChange: setResetFlag,
-						label: __(
-							'Start over',
-							'woocommerce'
-						),
+						label: __( 'Start over', 'woocommerce' ),
 						help: resetFlag
 							? __(
 									'Attention: The plugin is reset to its initial state!',
@@ -67,10 +61,7 @@ const DisconnectButton = () => {
 									'woocommerce'
 							  ),
 					} }
-					confirmLabel={ __(
-						'Disconnect',
-						'woocommerce'
-					) }
+					confirmLabel={ __( 'Disconnect', 'woocommerce' ) }
 					isDestructive={ resetFlag }
 					onConfirm={ handleConfirm }
 					onCancel={ handleCancel }

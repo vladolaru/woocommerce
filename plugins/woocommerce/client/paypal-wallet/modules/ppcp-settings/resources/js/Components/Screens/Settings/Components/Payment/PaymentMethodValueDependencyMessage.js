@@ -21,14 +21,8 @@ const PaymentMethodValueDependencyMessage = ( {
 
 	// Determine appropriate message template based on the required value
 	const template = requiredValue
-		? __(
-				'Enable <methodLink /> to use this method.',
-				'woocommerce'
-		  )
-		: __(
-				'Disable <methodLink /> to use this method.',
-				'woocommerce'
-		  );
+		? __( 'Enable <methodLink /> to use this method.', 'woocommerce' )
+		: __( 'Disable <methodLink /> to use this method.', 'woocommerce' );
 
 	return createInterpolateElement( template, {
 		methodLink: (

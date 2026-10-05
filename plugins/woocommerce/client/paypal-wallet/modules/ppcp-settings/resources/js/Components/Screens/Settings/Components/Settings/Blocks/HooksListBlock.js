@@ -23,9 +23,7 @@ const HooksListBlock = () => {
 const WebhookUrl = ( { url } ) => {
 	return (
 		<div>
-			<Title>
-				{ __( 'Notification URL', 'woocommerce' ) }
-			</Title>
+			<Title>{ __( 'Notification URL', 'woocommerce' ) }</Title>
 			<p>{ url }</p>
 		</div>
 	);
@@ -34,9 +32,7 @@ const WebhookUrl = ( { url } ) => {
 const WebhookEvents = ( { events } ) => {
 	return (
 		<div>
-			<Title>
-				{ __( 'Subscribed Events', 'woocommerce' ) }
-			</Title>
+			<Title>{ __( 'Subscribed Events', 'woocommerce' ) }</Title>
 			<ul className="ppcp--webhook-list">
 				{ events.map( ( event, index ) => (
 					<li key={ index }>{ event }</li>

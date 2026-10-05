@@ -50,10 +50,7 @@ import { watchBlockCartTotal } from './messages/cartTotalWatcher';
 function expressDescription( label ) {
 	return sprintf(
 		// translators: %s is the payment method name, e.g. Venmo.
-		__(
-			'Eligible users will see the %s button.',
-			'woocommerce'
-		),
+		__( 'Eligible users will see the %s button.', 'woocommerce' ),
 		label
 	);
 }

@@ -52,11 +52,7 @@ const joinLabels = ( labels ) => {
 		return labels.join(
 			' ' +
 				/* translators: joins two items, e.g. "Brand name and Logo URL" */
-				_x(
-					'and',
-					'joining two items',
-					'woocommerce'
-				) +
+				_x( 'and', 'joining two items', 'woocommerce' ) +
 				' '
 		);
 	}

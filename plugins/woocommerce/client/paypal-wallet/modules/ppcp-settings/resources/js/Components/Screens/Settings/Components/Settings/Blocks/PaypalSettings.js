@@ -42,10 +42,7 @@ const PaypalSettings = ( { hasContactModule } ) => {
 			) }
 		>
 			<SettingsBlock
-				title={ __(
-					'Subtotal mismatch fallback',
-					'woocommerce'
-				) }
+				title={ __( 'Subtotal mismatch fallback', 'woocommerce' ) }
 				description={ __(
 					'Due to differences in how WooCommerce and PayPal calculates taxes, some transactions may fail due to a rounding error. This settings determines the fallback behavior.',
 					'woocommerce'
@@ -60,10 +57,7 @@ const PaypalSettings = ( { hasContactModule } ) => {
 
 			<SettingsBlock>
 				<ControlToggleButton
-					label={ __(
-						'Instant payments only',
-						'woocommerce'
-					) }
+					label={ __( 'Instant payments only', 'woocommerce' ) }
 					description={ __(
 						'If enabled, PayPal will not allow buyers to use funding sources that take additional time to complete, such as eChecks.',
 						'woocommerce'
@@ -99,8 +93,7 @@ const PaypalSettings = ( { hasContactModule } ) => {
 					value={ brandName }
 					onChange={ setBrandName }
 					placeholder={
-						siteTitle ||
-						__( 'Brand name', 'woocommerce' )
+						siteTitle || __( 'Brand name', 'woocommerce' )
 					}
 				/>
 			</SettingsBlock>
@@ -115,18 +108,12 @@ const PaypalSettings = ( { hasContactModule } ) => {
 				<SoftDescriptorInput
 					value={ softDescriptor }
 					onChange={ setSoftDescriptor }
-					placeholder={ __(
-						'Soft Descriptor',
-						'woocommerce'
-					) }
+					placeholder={ __( 'Soft Descriptor', 'woocommerce' ) }
 				/>
 			</SettingsBlock>
 
 			<SettingsBlock
-				title={ __(
-					'PayPal landing page',
-					'woocommerce'
-				) }
+				title={ __( 'PayPal landing page', 'woocommerce' ) }
 				description={ __(
 					'Determine which experience a buyer sees when they click the PayPal button.',
 					'woocommerce'
@@ -150,10 +137,7 @@ const PaypalSettings = ( { hasContactModule } ) => {
 					options={ buttonLanguageChoices }
 					value={ buttonLanguage }
 					onChange={ setButtonLanguage }
-					placeholder={ __(
-						'Browser language',
-						'woocommerce'
-					) }
+					placeholder={ __( 'Browser language', 'woocommerce' ) }
 				/>
 			</SettingsBlock>
 		</Accordion>

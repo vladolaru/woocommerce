@@ -30,19 +30,13 @@ const ResubscribeBlock = () => {
 
 		setResubscribing( false );
 		createSuccessNotice(
-			__(
-				'Webhooks were successfully re-subscribed.',
-				'woocommerce'
-			)
+			__( 'Webhooks were successfully re-subscribed.', 'woocommerce' )
 		);
 	};
 
 	return (
 		<SettingsBlock
-			title={ __(
-				'Resubscribe webhooks',
-				'woocommerce'
-			) }
+			title={ __( 'Resubscribe webhooks', 'woocommerce' ) }
 			description={ __(
 				'Click to remove the current webhook subscription and subscribe again, for example, if the website domain or URL structure changed.',
 				'woocommerce'
@@ -54,10 +48,7 @@ const ResubscribeBlock = () => {
 				type={ 'secondary' }
 				isBusy={ resubscribing }
 				onClick={ () => startResubscribingWebhooks() }
-				buttonLabel={ __(
-					'Resubscribe webhooks',
-					'woocommerce'
-				) }
+				buttonLabel={ __( 'Resubscribe webhooks', 'woocommerce' ) }
 			/>
 		</SettingsBlock>
 	);

@@ -15,10 +15,7 @@ const SandboxConnectionForm = () => {
 	return (
 		<BusyStateWrapper>
 			<SettingsToggleBlock
-				label={ __(
-					'Enable Sandbox Mode',
-					'woocommerce'
-				) }
+				label={ __( 'Enable Sandbox Mode', 'woocommerce' ) }
 				description={ __(
 					'Activate Sandbox mode to safely test PayPal with sample data. Once your store is ready to go live, you can easily switch to your production account.',
 					'woocommerce'
@@ -27,10 +24,7 @@ const SandboxConnectionForm = () => {
 				setToggled={ handleToggle }
 			>
 				<ConnectionButton
-					title={ __(
-						'Connect Account',
-						'woocommerce'
-					) }
+					title={ __( 'Connect Account', 'woocommerce' ) }
 					showIcon={ false }
 					variant="secondary"
 					className="small-button"

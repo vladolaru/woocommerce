@@ -56,10 +56,7 @@ const StepBusiness = () => {
 	return (
 		<div className="ppcp-r-page-business">
 			<OnboardingHeader
-				title={ __(
-					'Choose your account type',
-					'woocommerce'
-				) }
+				title={ __( 'Choose your account type', 'woocommerce' ) }
 			/>
 			<div className="ppcp-r-inner-container">
 				<OptionSelector

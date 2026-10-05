@@ -9,7 +9,11 @@
  * @package
  */
 
-import { disable, enable, isDisabled } from '@ppcp-button/Helper/ButtonDisabler';
+import {
+	disable,
+	enable,
+	isDisabled,
+} from '@ppcp-button/Helper/ButtonDisabler';
 import { productForm } from '../endpointsAdapter';
 import { hasJQuery } from './api';
 

@@ -23,10 +23,7 @@ const SimulationBlock = () => {
 		const webhookInfoNoticeId = 'paypal-webhook-simulation-info-notice';
 		const triggerWebhookInfoNotice = () => {
 			createInfoNotice(
-				__(
-					'Waiting for the webhook to arrive…',
-					'woocommerce'
-				),
+				__( 'Waiting for the webhook to arrive…', 'woocommerce' ),
 				{
 					id: webhookInfoNoticeId,
 				}
@@ -108,10 +105,7 @@ const SimulationBlock = () => {
 				type={ 'secondary' }
 				isBusy={ simulating }
 				onClick={ () => startSimulation( 30 ) }
-				buttonLabel={ __(
-					'Simulate webhooks',
-					'woocommerce'
-				) }
+				buttonLabel={ __( 'Simulate webhooks', 'woocommerce' ) }
 			/>
 		</SettingsBlock>
 	);

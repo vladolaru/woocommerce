@@ -83,7 +83,9 @@ describe( 'watchProductAmount()', () => {
 		const onChange = jest.fn();
 		watchProductAmount( config( '25.00' ), onChange );
 
-		jQuery( form ).trigger( 'found_variation', [ { ppcp_message_amount: 40 } ] );
+		jQuery( form ).trigger( 'found_variation', [
+			{ ppcp_message_amount: 40 },
+		] );
 		jest.advanceTimersByTime( DEBOUNCE_MS );
 
 		expect( onChange ).toHaveBeenCalledWith( '80.00' );
@@ -102,24 +104,32 @@ describe( 'watchProductAmount()', () => {
 
 	test.each( [
 		[ 'ppcp_message_amount is absent', {} ],
-		[ 'ppcp_message_amount is not a number', { ppcp_message_amount: 'not-a-price' } ],
-	] )( 'found_variation falls back to the seed when %s', ( _label, variation ) => {
-		const form = renderProductForm( 2 );
-		const onChange = jest.fn();
-		watchProductAmount( config( '25.00' ), onChange );
+		[
+			'ppcp_message_amount is not a number',
+			{ ppcp_message_amount: 'not-a-price' },
+		],
+	] )(
+		'found_variation falls back to the seed when %s',
+		( _label, variation ) => {
+			const form = renderProductForm( 2 );
+			const onChange = jest.fn();
+			watchProductAmount( config( '25.00' ), onChange );
 
-		jQuery( form ).trigger( 'found_variation', [ variation ] );
-		jest.advanceTimersByTime( DEBOUNCE_MS );
+			jQuery( form ).trigger( 'found_variation', [ variation ] );
+			jest.advanceTimersByTime( DEBOUNCE_MS );
 
-		expect( onChange ).toHaveBeenCalledWith( '50.00' );
-	} );
+			expect( onChange ).toHaveBeenCalledWith( '50.00' );
+		}
+	);
 
 	test( 'reset_data reverts the unit price to the seed', () => {
 		const form = renderProductForm( 2 );
 		const onChange = jest.fn();
 		watchProductAmount( config( '25.00' ), onChange );
 
-		jQuery( form ).trigger( 'found_variation', [ { ppcp_message_amount: 40 } ] );
+		jQuery( form ).trigger( 'found_variation', [
+			{ ppcp_message_amount: 40 },
+		] );
 		jest.advanceTimersByTime( DEBOUNCE_MS );
 		onChange.mockClear();
 
@@ -149,16 +159,19 @@ describe( 'watchProductAmount()', () => {
 		[ 'the quantity field is not a number', 'abc' ],
 		[ 'the quantity field is zero', '0' ],
 		[ 'the quantity field is negative', '-5' ],
-	] )( 'a missing or invalid quantity is treated as 1 when %s', ( _label, quantity ) => {
-		const form = renderProductForm( quantity );
-		const onChange = jest.fn();
-		watchProductAmount( config( '25.00' ), onChange );
+	] )(
+		'a missing or invalid quantity is treated as 1 when %s',
+		( _label, quantity ) => {
+			const form = renderProductForm( quantity );
+			const onChange = jest.fn();
+			watchProductAmount( config( '25.00' ), onChange );
 
-		form.dispatchEvent( new Event( 'input' ) );
-		jest.advanceTimersByTime( DEBOUNCE_MS );
+			form.dispatchEvent( new Event( 'input' ) );
+			jest.advanceTimersByTime( DEBOUNCE_MS );
 
-		expect( onChange ).toHaveBeenCalledWith( '25.00' );
-	} );
+			expect( onChange ).toHaveBeenCalledWith( '25.00' );
+		}
+	);
 
 	test.each( [
 		[ 'the seed is absent', undefined ],
@@ -187,7 +200,9 @@ describe( 'watchProductAmount()', () => {
 
 		form.querySelector( '[name="quantity"]' ).value = '9';
 		form.dispatchEvent( new Event( 'input' ) );
-		jQuery( form ).trigger( 'found_variation', [ { ppcp_message_amount: 99 } ] );
+		jQuery( form ).trigger( 'found_variation', [
+			{ ppcp_message_amount: 99 },
+		] );
 		jest.advanceTimersByTime( DEBOUNCE_MS );
 
 		expect( onChange ).toHaveBeenCalledTimes( 1 );

@@ -27,10 +27,7 @@ const SettingsNavigation = ( {
 
 	const handleSave = () => {
 		setIsSaving( true );
-		speak(
-			__( 'Saving settings…', 'woocommerce' ),
-			'assertive'
-		);
+		speak( __( 'Saving settings…', 'woocommerce' ), 'assertive' );
 		persistAll();
 	};
 
@@ -98,10 +95,7 @@ const SaveStateMessage = ( { setIsSaving, isSaving } ) => {
 				setTimeout( () => setIsAnimating( true ), 50 );
 
 				speak(
-					__(
-						'Settings saved successfully.',
-						'woocommerce'
-					),
+					__( 'Settings saved successfully.', 'woocommerce' ),
 					'assertive'
 				);
 

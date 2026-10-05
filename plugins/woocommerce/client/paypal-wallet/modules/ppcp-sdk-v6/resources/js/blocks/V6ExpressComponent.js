@@ -216,7 +216,8 @@ export function V6ExpressComponent( {
 		if ( isFreeTrial ) {
 			setSession(
 				createFreeTrialPayPalSession( sdk, config, {
-					onComplete: () => callbacksRef.current.onFreeTrialComplete(),
+					onComplete: () =>
+						callbacksRef.current.onFreeTrialComplete(),
 					onError: ( error ) => callbacksRef.current.onError( error ),
 				} )
 			);

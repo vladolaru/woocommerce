@@ -13,10 +13,7 @@ const SectionTagline = ( { location } ) => {
 
 	const checkbox = {
 		value: 'active',
-		label: __(
-			'Show tagline below buttons',
-			'woocommerce'
-		),
+		label: __( 'Show tagline below buttons', 'woocommerce' ),
 	};
 
 	return (

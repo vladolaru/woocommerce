@@ -155,8 +155,7 @@ class CheckoutBootstrap {
 		const isPaypal = currentPaymentMethod === PaymentMethods.PAYPAL;
 		const isNotOurGateway = ! isPaypal;
 		const isFreeTrial = PayPalCommerceGateway.is_free_trial_cart;
-		const hasVaultedPaypal =
-			!! PayPalCommerceGateway.vaulted_paypal_email;
+		const hasVaultedPaypal = !! PayPalCommerceGateway.vaulted_paypal_email;
 		const useSmartButtons = this.renderer.useSmartButtons ?? true;
 		// A zero-total subscription cart (free trial or 100% coupon) must use the
 		// save-without-purchase flow. The Vault Component is order-based and would
@@ -251,12 +250,17 @@ class CheckoutBootstrap {
 				}
 
 				const fresh = result.data?.is_free_trial_cart === true;
-				if ( fresh === ( PayPalCommerceGateway.is_free_trial_cart === true ) ) {
+				if (
+					fresh ===
+					( PayPalCommerceGateway.is_free_trial_cart === true )
+				) {
 					return;
 				}
 
 				PayPalCommerceGateway.is_free_trial_cart = fresh;
-				this.renderer.resetRenderedButtons( this.gateway.button.wrapper );
+				this.renderer.resetRenderedButtons(
+					this.gateway.button.wrapper
+				);
 				this.render();
 				this.updateUi();
 			} )
@@ -268,9 +272,7 @@ class CheckoutBootstrap {
 			'input[name="wc-ppcp-gateway-payment-token"]:checked'
 		);
 		return (
-			checkedRadio &&
-			checkedRadio.value &&
-			checkedRadio.value !== 'new'
+			checkedRadio && checkedRadio.value && checkedRadio.value !== 'new'
 		);
 	}
 
@@ -330,9 +332,7 @@ class CheckoutBootstrap {
 	}
 
 	removeVaultOrderIdInput() {
-		const input = document.querySelector(
-			'input[name="paypal_order_id"]'
-		);
+		const input = document.querySelector( 'input[name="paypal_order_id"]' );
 		if ( input ) {
 			input.remove();
 		}

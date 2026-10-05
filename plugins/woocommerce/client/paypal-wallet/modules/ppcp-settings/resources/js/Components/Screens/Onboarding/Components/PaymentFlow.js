@@ -44,10 +44,7 @@ const DefaultMethodsSection = ( {
 				description={ paypalCheckoutDescription }
 			/>
 			<BadgeBox
-				title={ __(
-					'Included in PayPal Checkout',
-					'woocommerce'
-				) }
+				title={ __( 'Included in PayPal Checkout', 'woocommerce' ) }
 			/>
 			<PaymentMethodsGroup
 				methods={ methods }

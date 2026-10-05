@@ -17,10 +17,7 @@ const HelpSection = () => {
 			<ContentWrapper>
 				<Content>
 					<FeatureSettingsBlock
-						title={ __(
-							'Documentation',
-							'woocommerce'
-						) }
+						title={ __( 'Documentation', 'woocommerce' ) }
 						description={ __(
 							'Find detailed guides and resources to help you set up, manage, and optimize your PayPal integration.',
 							'woocommerce'

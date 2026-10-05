@@ -1,15 +1,12 @@
 /* global describe, test, expect, jest, beforeEach, afterEach */
 import '@testing-library/jest-dom';
 
-jest.mock(
-	'@ppcp-button/Helper/CheckoutMethodState',
-	() => ( {
-		getCurrentPaymentMethod: jest.fn(),
-		PaymentMethods: {
-			PAYPAL: 'ppcp-gateway',
-		},
-	} )
-);
+jest.mock( '@ppcp-button/Helper/CheckoutMethodState', () => ( {
+	getCurrentPaymentMethod: jest.fn(),
+	PaymentMethods: {
+		PAYPAL: 'ppcp-gateway',
+	},
+} ) );
 
 import {
 	buttonConfiguration,

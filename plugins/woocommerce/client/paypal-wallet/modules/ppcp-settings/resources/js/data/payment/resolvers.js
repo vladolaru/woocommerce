@@ -27,10 +27,7 @@ export function persistentData() {
 			await registry
 				.dispatch( 'core/notices' )
 				.createErrorNotice(
-					__(
-						'Error retrieving payment details.',
-						'woocommerce'
-					)
+					__( 'Error retrieving payment details.', 'woocommerce' )
 				);
 		}
 	};

@@ -24,10 +24,7 @@ export function persistentData() {
 			await registry
 				.dispatch( 'core/notices' )
 				.createErrorNotice(
-					__(
-						'Error retrieving onboarding details.',
-						'woocommerce'
-					)
+					__( 'Error retrieving onboarding details.', 'woocommerce' )
 				);
 		}
 	};

@@ -65,7 +65,9 @@ function loadCheckoutBlock( config ) {
 	window.wc = {
 		wcSettings: {
 			getSetting: ( key ) =>
-				key === 'paymentMethodData' ? { 'ppcp-sdk-v6': config } : undefined,
+				key === 'paymentMethodData'
+					? { 'ppcp-sdk-v6': config }
+					: undefined,
 		},
 		blocksCheckout: {
 			registerCheckoutFilters: ( ...args ) =>
@@ -152,7 +154,9 @@ describe( 'checkout-block', () => {
 		 * checkout POST goes out with no payment_method.
 		 */
 		test( 'ppcp_continuation is present even when the gateway declares no supported_features of its own', () => {
-			loadCheckoutBlock( baseConfig( { supported_features: undefined } ) );
+			loadCheckoutBlock(
+				baseConfig( { supported_features: undefined } )
+			);
 
 			const { supports } = expressCallFor( 'ppcp-gateway-paypal' );
 
@@ -320,9 +324,7 @@ describe( 'checkout-block', () => {
 						} )
 					);
 
-					const { canMakePayment } = regularCallFor(
-						'ppcp-gateway'
-					);
+					const { canMakePayment } = regularCallFor( 'ppcp-gateway' );
 
 					expect(
 						canMakePayment( {
@@ -414,9 +416,7 @@ describe( 'checkout-block', () => {
 			)?.[ 1 ];
 
 		test( 'leaves the label alone when no override is filtered in', () => {
-			loadCheckoutBlock(
-				baseConfig( { place_order_enabled: true } )
-			);
+			loadCheckoutBlock( baseConfig( { place_order_enabled: true } ) );
 
 			expect( regularCallFor( 'ppcp-gateway' ) ).not.toHaveProperty(
 				'placeOrderButtonLabel'
@@ -498,9 +498,9 @@ describe( 'checkout-block', () => {
 					'ppcp-gateway-paypal'
 				);
 
-				await expect(
-					canMakePayment( { cartTotals } )
-				).resolves.toBe( expected );
+				await expect( canMakePayment( { cartTotals } ) ).resolves.toBe(
+					expected
+				);
 				expect( mockCheckEligibility ).toHaveBeenCalled();
 			}
 		);

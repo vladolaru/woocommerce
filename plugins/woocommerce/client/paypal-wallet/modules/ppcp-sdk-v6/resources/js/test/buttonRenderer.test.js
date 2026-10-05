@@ -2,7 +2,10 @@
 // resolve; the button click path is not exercised here.
 jest.mock( '../utils/errorHandler', () => ( { handleError: jest.fn() } ) );
 
-import { createMethodButton, renderButtons } from '../components/buttonRenderer';
+import {
+	createMethodButton,
+	renderButtons,
+} from '../components/buttonRenderer';
 
 const noop = () => {};
 
@@ -111,9 +114,7 @@ describe( 'renderButtons', () => {
 			payLaterDetails: { productCode: 'PAYLATER' },
 		} );
 
-		expect(
-			wrapper.querySelector( 'paypal-pay-later-button' )
-		).toBeNull();
+		expect( wrapper.querySelector( 'paypal-pay-later-button' ) ).toBeNull();
 		expect(
 			rendered.some( ( el ) => el.tagName === 'PAYPAL-PAY-LATER-BUTTON' )
 		).toBe( false );

@@ -30,10 +30,7 @@ const StepWelcome = ( { onNext } ) => {
 	return (
 		<div className="ppcp-r-page-welcome">
 			<OnboardingHeader
-				title={ __(
-					'Welcome to PayPal Wallet',
-					'woocommerce'
-				) }
+				title={ __( 'Welcome to PayPal Wallet', 'woocommerce' ) }
 				description={ onboardingHeaderDescription }
 			/>
 			<div className="ppcp-r-inner-container">
@@ -51,10 +48,7 @@ const StepWelcome = ( { onNext } ) => {
 						variant="primary"
 						onClick={ onNext }
 					>
-						{ __(
-							'Activate PayPal Wallet',
-							'woocommerce'
-						) }
+						{ __( 'Activate PayPal Wallet', 'woocommerce' ) }
 					</Button>
 				</BusyStateWrapper>
 			</div>
@@ -66,10 +60,7 @@ const StepWelcome = ( { onNext } ) => {
 			/>
 			<Separator text={ __( 'or', 'woocommerce' ) } />
 			<Accordion
-				title={ __(
-					'See advanced options',
-					'woocommerce'
-				) }
+				title={ __( 'See advanced options', 'woocommerce' ) }
 				className="onboarding-advanced-options"
 				noCaps={ true }
 				id="advanced-options"
@@ -89,23 +80,11 @@ const WelcomeFeatures = () => {
 				<p>{ __( 'Instant', 'woocommerce' ) }</p>
 			</div>
 			<div className="ppcp-r-welcome-features__col">
-				<span>
-					{ __( 'Payment Capture', 'woocommerce' ) }
-				</span>
-				<p>
-					{ __(
-						'Authorize only or Capture',
-						'woocommerce'
-					) }
-				</p>
+				<span>{ __( 'Payment Capture', 'woocommerce' ) }</span>
+				<p>{ __( 'Authorize only or Capture', 'woocommerce' ) }</p>
 			</div>
 			<div className="ppcp-r-welcome-features__col">
-				<span>
-					{ __(
-						'Recurring payments',
-						'woocommerce'
-					) }
-				</span>
+				<span>{ __( 'Recurring payments', 'woocommerce' ) }</span>
 				<p>{ __( 'Supported', 'woocommerce' ) }</p>
 			</div>
 		</div>

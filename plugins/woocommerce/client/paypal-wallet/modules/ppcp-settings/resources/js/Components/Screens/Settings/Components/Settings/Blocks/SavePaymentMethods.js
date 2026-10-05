@@ -17,10 +17,7 @@ const SavePaymentMethods = () => {
 
 	return (
 		<SettingsBlock
-			title={ __(
-				'Save payment methods',
-				'woocommerce'
-			) }
+			title={ __( 'Save payment methods', 'woocommerce' ) }
 			description={ __(
 				"Securely store customers' payment methods for future payments and subscriptions, simplifying checkout and enabling recurring transactions.",
 				'woocommerce'
@@ -29,10 +26,7 @@ const SavePaymentMethods = () => {
 		>
 			<ControlToggleButton
 				id="ppcp-save-paypal-and-venmo"
-				label={ __(
-					'Save PayPal and Venmo',
-					'woocommerce'
-				) }
+				label={ __( 'Save PayPal and Venmo', 'woocommerce' ) }
 				description={ __(
 					"Securely store your customers' PayPal accounts for a seamless checkout experience.",
 					'woocommerce'

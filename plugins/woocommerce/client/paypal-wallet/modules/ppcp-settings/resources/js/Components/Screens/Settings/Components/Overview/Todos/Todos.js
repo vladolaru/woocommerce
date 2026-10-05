@@ -28,10 +28,7 @@ const Todos = () => {
 			await resetDismissedTodos();
 
 			createSuccessNotice(
-				__(
-					'Dismissed items restored successfully.',
-					'woocommerce'
-				)
+				__( 'Dismissed items restored successfully.', 'woocommerce' )
 			);
 		} finally {
 			setIsResetting( false );

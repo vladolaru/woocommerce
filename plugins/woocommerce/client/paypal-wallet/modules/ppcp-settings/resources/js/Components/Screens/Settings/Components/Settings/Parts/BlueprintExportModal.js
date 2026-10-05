@@ -74,10 +74,7 @@ const BlueprintExportModal = ( { onExport, onCancel } ) => {
 				className: 'ppcp--toggle-warning',
 				checked: includeConnection,
 				onChange: setIncludeConnection,
-				label: __(
-					'Include connection credentials',
-					'woocommerce'
-				),
+				label: __( 'Include connection credentials', 'woocommerce' ),
 				help: outcomeDescription( includeConnection, isSandbox ),
 			} }
 			confirmLabel={ __( 'Export', 'woocommerce' ) }

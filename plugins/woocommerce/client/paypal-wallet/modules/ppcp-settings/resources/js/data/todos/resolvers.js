@@ -30,10 +30,7 @@ export function getTodos() {
 			await registry
 				.dispatch( 'core/notices' )
 				.createErrorNotice(
-					__(
-						'Error retrieving todos.',
-						'woocommerce'
-					)
+					__( 'Error retrieving todos.', 'woocommerce' )
 				);
 		}
 	};

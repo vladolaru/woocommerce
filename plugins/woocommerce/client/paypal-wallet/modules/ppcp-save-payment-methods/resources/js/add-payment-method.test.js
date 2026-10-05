@@ -1,23 +1,17 @@
 /* global describe, test, expect, jest, beforeEach, afterEach */
 import '@testing-library/jest-dom';
 
-jest.mock(
-	'@ppcp-button/Helper/CheckoutMethodState',
-	() => ( {
-		getCurrentPaymentMethod: jest.fn(),
-		ORDER_BUTTON_SELECTOR: '#place_order',
-		PaymentMethods: {
-			PAYPAL: 'ppcp-gateway',
-		},
-	} )
-);
+jest.mock( '@ppcp-button/Helper/CheckoutMethodState', () => ( {
+	getCurrentPaymentMethod: jest.fn(),
+	ORDER_BUTTON_SELECTOR: '#place_order',
+	PaymentMethods: {
+		PAYPAL: 'ppcp-gateway',
+	},
+} ) );
 
-jest.mock(
-	'@ppcp-button/Helper/PayPalScriptLoading',
-	() => ( {
-		loadPayPalScript: jest.fn(),
-	} )
-);
+jest.mock( '@ppcp-button/Helper/PayPalScriptLoading', () => ( {
+	loadPayPalScript: jest.fn(),
+} ) );
 
 jest.mock( '@ppcp-button/ErrorHandler', () => {
 	return jest.fn().mockImplementation( () => ( {
@@ -48,10 +42,7 @@ import {
 import { getCurrentPaymentMethod } from '@ppcp-button/Helper/CheckoutMethodState';
 import { loadPayPalScript } from '@ppcp-button/Helper/PayPalScriptLoading';
 import ErrorHandler from '@ppcp-button/ErrorHandler';
-import {
-	setVisible,
-	setVisibleByClass,
-} from '@ppcp-button/Helper/Hiding';
+import { setVisible, setVisibleByClass } from '@ppcp-button/Helper/Hiding';
 
 describe( 'add-payment-method', () => {
 	let mockConfig;

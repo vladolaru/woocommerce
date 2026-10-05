@@ -80,13 +80,13 @@ export function resetMessages() {
  * @return {Promise<number>} How many messages the initial pass rendered.
  */
 export async function initMessages( config, sdkPageType ) {
-    if ( ! config?.messages?.enabled || config.messages.is_hidden ) {
-        return 0;
-    }
+	if ( ! config?.messages?.enabled || config.messages.is_hidden ) {
+		return 0;
+	}
 
-    watchForWrappers( config, sdkPageType );
+	watchForWrappers( config, sdkPageType );
 
-    return renderMessages( config, sdkPageType );
+	return renderMessages( config, sdkPageType );
 }
 
 /**

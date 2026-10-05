@@ -34,10 +34,7 @@ export function persistentData() {
 			await registry
 				.dispatch( 'core/notices' )
 				.createErrorNotice(
-					__(
-						'Error retrieving plugin details.',
-						'woocommerce'
-					)
+					__( 'Error retrieving plugin details.', 'woocommerce' )
 				);
 		}
 	};

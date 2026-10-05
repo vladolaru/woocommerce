@@ -35,10 +35,7 @@ const OrderIntent = () => {
 			/>
 
 			<ControlToggleButton
-				label={ __(
-					'Capture Virtual-Only Orders',
-					'woocommerce'
-				) }
+				label={ __( 'Capture Virtual-Only Orders', 'woocommerce' ) }
 				onChange={ setCaptureVirtualOnlyOrders }
 				value={ captureVirtualOnlyOrders }
 				disabled={ ! authorizeOnly }

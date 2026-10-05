@@ -39,7 +39,8 @@ export async function prefillFromPayPalOrder(
 	{ needsShipping = false, reflectInUi = false } = {}
 ) {
 	const paypal = paypalOrderToWcAddresses( order );
-	const current = wp.data.select( 'wc/store/cart' )?.getCustomerData?.() || {};
+	const current =
+		wp.data.select( 'wc/store/cart' )?.getCustomerData?.() || {};
 
 	const billingAddress = mergeAddress(
 		current.billingAddress,

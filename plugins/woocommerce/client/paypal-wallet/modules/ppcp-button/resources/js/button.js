@@ -49,7 +49,6 @@ const bootstrap = () => {
 		PayPalCommerceGateway.ajax.save_checkout_form.nonce
 	);
 
-
 	new MultistepCheckoutHelper( checkoutFormSelector );
 
 	jQuery( 'form.woocommerce-checkout input' ).on( 'keydown', ( e ) => {

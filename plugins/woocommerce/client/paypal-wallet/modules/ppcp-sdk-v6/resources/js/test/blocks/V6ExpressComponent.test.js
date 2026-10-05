@@ -46,12 +46,10 @@ jest.mock( '../../blocks/blocksShippingHandlers', () => ( {
 } ) );
 
 let capturedSaveSessionHandlers = null;
-const mockCreateFreeTrialPayPalSession = jest.fn(
-	( sdk, config, handlers ) => {
-		capturedSaveSessionHandlers = handlers;
-		return { fake: 'save-session' };
-	}
-);
+const mockCreateFreeTrialPayPalSession = jest.fn( ( sdk, config, handlers ) => {
+	capturedSaveSessionHandlers = handlers;
+	return { fake: 'save-session' };
+} );
 const mockCreateVaultSetupToken = jest.fn();
 jest.mock( '../../sessions/freeTrialSave', () => ( {
 	createFreeTrialPayPalSession: ( ...args ) =>
@@ -629,7 +627,10 @@ describe( 'V6ExpressComponent', () => {
 				responseTypes: { SUCCESS: 'success', ERROR: 'error' },
 			},
 			activePaymentMethod: 'ppcp-gateway-paypal',
-			shippingData: { needsShipping: true, setShippingAddress: jest.fn() },
+			shippingData: {
+				needsShipping: true,
+				setShippingAddress: jest.fn(),
+			},
 		};
 
 		const { rerender } = render(
@@ -750,7 +751,9 @@ describe( 'V6ExpressComponent', () => {
 				expect( mockCreateFreeTrialPayPalSession ).toHaveBeenCalled()
 			);
 
-			capturedSaveSessionHandlers.onError( new Error( 'exchange failed' ) );
+			capturedSaveSessionHandlers.onError(
+				new Error( 'exchange failed' )
+			);
 
 			expect( onError ).toHaveBeenCalledWith( 'exchange failed' );
 			expect( onClose ).toHaveBeenCalledTimes( 1 );
@@ -768,7 +771,9 @@ describe( 'V6ExpressComponent', () => {
 				activePaymentMethod: 'ppcp-gateway-venmo',
 			} );
 
-			await waitFor( () => expect( mockCreateSession ).toHaveBeenCalled() );
+			await waitFor( () =>
+				expect( mockCreateSession ).toHaveBeenCalled()
+			);
 
 			expect( mockCreateFreeTrialPayPalSession ).not.toHaveBeenCalled();
 		} );
@@ -776,7 +781,9 @@ describe( 'V6ExpressComponent', () => {
 		test( 'creates the ordinary one-time session when the cart is not a free trial', async () => {
 			renderComponent();
 
-			await waitFor( () => expect( mockCreateSession ).toHaveBeenCalled() );
+			await waitFor( () =>
+				expect( mockCreateSession ).toHaveBeenCalled()
+			);
 
 			expect( mockCreateFreeTrialPayPalSession ).not.toHaveBeenCalled();
 			const props = mockButtonContainer.mock.calls.at( -1 )[ 0 ];

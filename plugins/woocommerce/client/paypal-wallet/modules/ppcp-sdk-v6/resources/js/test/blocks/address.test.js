@@ -20,9 +20,8 @@ const shippingOnlyOrder = {
 
 describe( 'paypalOrderToWcAddresses', () => {
 	test( 'maps the Orders v2 shipping block to WC fields', () => {
-		const { shippingAddress } = paypalOrderToWcAddresses(
-			shippingOnlyOrder
-		);
+		const { shippingAddress } =
+			paypalOrderToWcAddresses( shippingOnlyOrder );
 
 		expect( shippingAddress.address_1 ).toBe( 'WooVille 12' );
 		expect( shippingAddress.state ).toBe( 'IA' );
@@ -32,9 +31,8 @@ describe( 'paypalOrderToWcAddresses', () => {
 	} );
 
 	test( 'splits the shipping full name into WC first and last name fields', () => {
-		const { shippingAddress } = paypalOrderToWcAddresses(
-			shippingOnlyOrder
-		);
+		const { shippingAddress } =
+			paypalOrderToWcAddresses( shippingOnlyOrder );
 
 		// 'Van Doe' is a multi-token surname that the last-token rule
 		// misidentifies; accepted trade-off, see utils/name.test.js.

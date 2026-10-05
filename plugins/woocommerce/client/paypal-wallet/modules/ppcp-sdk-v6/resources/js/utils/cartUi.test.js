@@ -34,7 +34,9 @@ describe( 'refreshCartUi()', () => {
 			refreshCartUi( context );
 
 			expect( mockDispatch ).toHaveBeenCalledWith( 'wc/store/cart' );
-			expect( mockInvalidateResolutionForStore ).toHaveBeenCalledTimes( 1 );
+			expect( mockInvalidateResolutionForStore ).toHaveBeenCalledTimes(
+				1
+			);
 			expect( mockJQueryTrigger ).not.toHaveBeenCalled();
 		}
 	);
@@ -42,7 +44,9 @@ describe( 'refreshCartUi()', () => {
 	test( 'triggers a jQuery fragment refresh on the product context', () => {
 		refreshCartUi( 'product' );
 
-		expect( mockJQueryTrigger ).toHaveBeenCalledWith( 'wc_fragment_refresh' );
+		expect( mockJQueryTrigger ).toHaveBeenCalledWith(
+			'wc_fragment_refresh'
+		);
 		expect( mockDispatch ).not.toHaveBeenCalled();
 	} );
 

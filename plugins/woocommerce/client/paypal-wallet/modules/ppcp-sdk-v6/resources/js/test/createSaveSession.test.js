@@ -64,7 +64,9 @@ describe( 'createSavePayPalSession', () => {
 
 	test( 'onApprove routes to the error handler and does not redirect when the exchange fails', async () => {
 		const sdk = fakeSdk();
-		mockPostJson.mockRejectedValueOnce( new Error( 'token exchange failed' ) );
+		mockPostJson.mockRejectedValueOnce(
+			new Error( 'token exchange failed' )
+		);
 		const assign = jest
 			.spyOn( navigation, 'assign' )
 			.mockImplementation( () => {} );
@@ -72,9 +74,7 @@ describe( 'createSavePayPalSession', () => {
 		createSavePayPalSession( sdk, config );
 		await sdk.capture.config.onApprove( { vaultSetupToken: 'SETUP1' } );
 
-		expect( mockHandleError ).toHaveBeenCalledWith(
-			expect.any( Error )
-		);
+		expect( mockHandleError ).toHaveBeenCalledWith( expect.any( Error ) );
 		expect( assign ).not.toHaveBeenCalled();
 	} );
 

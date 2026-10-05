@@ -26,10 +26,7 @@ const StepProducts = () => {
 			{
 				value: PRODUCT_TYPES.PHYSICAL,
 				title: __( 'Physical Goods', 'woocommerce' ),
-				description: __(
-					'Items require shipping.',
-					'woocommerce'
-				),
+				description: __( 'Items require shipping.', 'woocommerce' ),
 				contents: <DetailsPhysical />,
 			},
 			{

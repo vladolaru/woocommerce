@@ -27,10 +27,7 @@ export function persistentData() {
 			await registry
 				.dispatch( 'core/notices' )
 				.createErrorNotice(
-					__(
-						'Error retrieving Styling details.',
-						'woocommerce'
-					)
+					__( 'Error retrieving Styling details.', 'woocommerce' )
 				);
 		}
 	};

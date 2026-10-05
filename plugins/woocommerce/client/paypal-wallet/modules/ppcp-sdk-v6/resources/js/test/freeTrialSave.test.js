@@ -132,7 +132,9 @@ describe( 'createFreeTrialPayPalSession', () => {
 
 	test( 'onApprove falls back to the shared error handler when no onError is provided', async () => {
 		const sdk = fakeSdk();
-		mockPostJson.mockRejectedValueOnce( new Error( 'token exchange failed' ) );
+		mockPostJson.mockRejectedValueOnce(
+			new Error( 'token exchange failed' )
+		);
 
 		createFreeTrialPayPalSession( sdk, baseConfig() );
 		await sdk.capture.config.onApprove( { vaultSetupToken: 'SETUP1' } );

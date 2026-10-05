@@ -100,12 +100,10 @@ function createFakeJQuery() {
 
 	const fakeJQuery = () => ( {
 		on: ( eventNames, handler ) => {
-			eventNames
-				.split( /\s+/ )
-				.forEach( ( name ) => {
-					handlers[ name ] = handlers[ name ] || [];
-					handlers[ name ].push( handler );
-				} );
+			eventNames.split( /\s+/ ).forEach( ( name ) => {
+				handlers[ name ] = handlers[ name ] || [];
+				handlers[ name ].push( handler );
+			} );
 		},
 	} );
 
@@ -276,7 +274,9 @@ describe( 'boot', () => {
 			await flush();
 			expect( mockCheckEligibility ).toHaveBeenCalledTimes( 1 );
 
-			mockFetchCartTotal.mockRejectedValueOnce( new Error( 'network failure' ) );
+			mockFetchCartTotal.mockRejectedValueOnce(
+				new Error( 'network failure' )
+			);
 			global.jQuery.trigger( 'updated_checkout' );
 			await jest.advanceTimersByTimeAsync( 300 );
 

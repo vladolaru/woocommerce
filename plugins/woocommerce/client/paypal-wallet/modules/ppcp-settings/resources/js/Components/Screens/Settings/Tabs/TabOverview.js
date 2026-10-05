@@ -17,10 +17,7 @@ const TabOverview = () => {
 		return (
 			<SpinnerOverlay
 				asModal={ true }
-				ariaLabel={ __(
-					'Loading PayPal settings',
-					'woocommerce'
-				) }
+				ariaLabel={ __( 'Loading PayPal settings', 'woocommerce' ) }
 			/>
 		);
 	}
@@ -29,10 +26,7 @@ const TabOverview = () => {
 		<div
 			className="ppcp-r-tab-overview"
 			role="region"
-			aria-label={ __(
-				'PayPal Overview',
-				'woocommerce'
-			) }
+			aria-label={ __( 'PayPal Overview', 'woocommerce' ) }
 		>
 			<Todos />
 			<Features />
