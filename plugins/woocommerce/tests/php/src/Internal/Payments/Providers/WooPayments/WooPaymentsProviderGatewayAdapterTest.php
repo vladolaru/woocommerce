@@ -27,6 +27,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentType;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
@@ -51,6 +52,8 @@ use WP_Error;
  * Tests for the WooPaymentsProviderGatewayAdapter class.
  */
 class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
+
+	use ProviderTextLogAssertions;
 
 	/**
 	 * Original store currency.
@@ -5902,6 +5905,69 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A checkout of an order whose attached payment is disputed is still refused, and charges nothing, when the dispute note fails and $_dataName.
+	 *
+	 * The note is told apart from the refusal: re-reading the order for it throws here, and the refusal must still reach the
+	 * shopper rather than the gateway's catch, which answers as paid for a succeeded intent and fails the order otherwise.
+	 *
+	 * @testWith ["the payment was never applied to the order", "requires_action"]
+	 *           ["the merchant set the paid order back to pending", "succeeded"]
+	 *
+	 * @param string $label            Case description.
+	 * @param string $intention_status The order's `_intention_status`.
+	 */
+	public function test_checkout_keeps_the_dispute_refusal_when_its_note_fails( string $label, string $intention_status ): void {
+		unset( $label );
+		$order = $this->create_order_left_by_a_completed_challenge();
+		$order->update_meta_data( '_intention_status', $intention_status );
+		$order->save();
+		$disputed_charge = array(
+			'disputed' => true,
+			'dispute'  => 'dp_1UJjK4BzWlxcwgpPDisputed',
+		);
+		$failing_reads   = new class() extends OrderPaymentLifecycleService {
+			/**
+			 * Fail the order read the dispute note makes.
+			 *
+			 * @param WC_Order $order Order.
+			 * @throws \RuntimeException Always.
+			 */
+			public function get_fresh_order_from_data_store( WC_Order $order ): WC_Order {
+				unset( $order );
+				throw new \RuntimeException( 'Order read failed.' );
+			}
+		};
+
+		$http_client              = new FakeWooPaymentsHttpClient();
+		$http_client->responses[] = self::http_json( 200, $this->attached_intent_given_back( $order, $disputed_charge ) );
+		$gateway                  = $this->create_gateway_with_real_duplicate_guard( $http_client, $failing_reads );
+		self::enable_woopayments_debug_logging();
+		$logger = RecordingWcLogger::install();
+
+		$_POST['wcpay-payment-method'] = 'pm_card_visa';
+
+		try {
+			$result = $gateway->process_payment( $order->get_id() );
+		} finally {
+			unset( $_POST['wcpay-payment-method'] );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'failure', $result['result'] ?? '' );
+		$this->assertSame( array( "This order's payment is under review. Please contact the store." ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+		$this->assertSame( 'pending', $order->get_status(), 'The order status must not change.' );
+		$this->assertSame( array( 'GET intentions/' . self::CHALLENGE_COMPLETED_INTENT_ID ), self::platform_calls( $http_client ), 'Only the attached intent may be read; nothing may be charged.' );
+		$context = $this->get_logged_context( $logger, 'Failed to note the disputed payment attached to the order.' );
+		$this->assertSame( array( $order->get_id(), self::CHALLENGE_COMPLETED_INTENT_ID, \RuntimeException::class ), array( $context['order_id'], $context['intent_id'], $context['exception'] ) );
+		$store   = wc_get_container()->get( OrderPaymentStore::class );
+		$profile = wc_get_container()->get( WooPaymentsPersistenceProfile::class );
+		$token   = $store->claim_order_payment_lock_for_operation( $order, $profile, 'refund_key', 'refund' );
+		$this->assertIsString( $token, 'The note must release the order payment lock it took.' );
+		$store->release_order_payment_lock( $order, $profile, $token );
+	}
+
+	/**
 	 * @testdox A checkout of a payable order whose attached payment was fully refunded charges the shopper again and pays the order with the new intent.
 	 *
 	 * The old intent keeps `succeeded` after the refund. The new create-and-confirm is answered with the recorded successful
@@ -5989,10 +6055,11 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * Build the card gateway with the real duplicate-payment guard, the real processing service and the real provider, all
 	 * sending their platform requests through one recording transport.
 	 *
-	 * @param FakeWooPaymentsHttpClient $http_client Recording transport.
+	 * @param FakeWooPaymentsHttpClient         $http_client     Recording transport.
+	 * @param OrderPaymentLifecycleService|null $guard_lifecycle The guard's lifecycle service; the container's when null.
 	 * @return NativeWooPaymentsGateway
 	 */
-	private function create_gateway_with_real_duplicate_guard( FakeWooPaymentsHttpClient $http_client ): NativeWooPaymentsGateway {
+	private function create_gateway_with_real_duplicate_guard( FakeWooPaymentsHttpClient $http_client, ?OrderPaymentLifecycleService $guard_lifecycle = null ): NativeWooPaymentsGateway {
 		$account_service  = $this->create_account_service( false );
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_UsIeTbmGHPc9jY' );
@@ -6002,7 +6069,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$guard = new WooPaymentsDuplicatePaymentPreventionService();
 		$guard->init(
 			$api_client,
-			wc_get_container()->get( OrderPaymentLifecycleService::class ),
+			$guard_lifecycle ?? wc_get_container()->get( OrderPaymentLifecycleService::class ),
 			new WooPaymentsOrderDataService(),
 			null,
 			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )

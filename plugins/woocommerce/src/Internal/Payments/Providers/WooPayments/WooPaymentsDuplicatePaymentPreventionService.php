@@ -360,7 +360,32 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	}
 
 	/**
-	 * Tell the merchant, once for each intent, that the order's attached payment is disputed.
+	 * Tell the merchant, once for each intent, that the order's attached payment is disputed, without ever failing the refusal.
+	 *
+	 * The note is secondary to the refusal: a failure taking the lock, reading the order, writing the note or releasing the
+	 * lock is logged, and the submit is still refused. Otherwise the gateway's catch would answer as paid for a succeeded
+	 * intent, or fail the order.
+	 *
+	 * @param WC_Order $order     Order being paid.
+	 * @param string   $intent_id The attached PaymentIntent.
+	 */
+	private function add_disputed_intent_note_once( WC_Order $order, string $intent_id ): void {
+		try {
+			$this->write_disputed_intent_note_once( $order, $intent_id );
+		} catch ( Throwable $failure ) {
+			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
+				'Failed to note the disputed payment attached to the order.',
+				$failure,
+				array(
+					'order_id'  => $order->get_id(),
+					'intent_id' => $intent_id,
+				)
+			);
+		}
+	}
+
+	/**
+	 * Write the disputed payment note once for each intent.
 	 *
 	 * Every submit for the order is refused while the dispute stands. Overlapping submits each loaded the order before this
 	 * runs, so the marker is read again from storage under the order payment lock, as the dispute webhook does for its note
@@ -370,7 +395,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 * @param WC_Order $order     Order being paid.
 	 * @param string   $intent_id The attached PaymentIntent.
 	 */
-	private function add_disputed_intent_note_once( WC_Order $order, string $intent_id ): void {
+	private function write_disputed_intent_note_once( WC_Order $order, string $intent_id ): void {
 		$store      = wc_get_container()->get( OrderPaymentStore::class );
 		$profile    = wc_get_container()->get( WooPaymentsPersistenceProfile::class );
 		$lock_token = $store->claim_order_payment_lock_for_operation( $order, $profile, 'disputed_intent_note_' . $intent_id, 'disputed intent note' );
