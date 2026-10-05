@@ -14,6 +14,7 @@ class CartDataFactory {
 	/**
 	 * Creates CartData from the WC cart.
 	 *
+	 * @param WC_Cart|null $cart The cart.
 	 * @throws Exception If WC cart is missing.
 	 */
 	public function from_current_cart( ?WC_Cart $cart = null ): CartData {
@@ -43,6 +44,7 @@ class CartDataFactory {
 	/**
 	 * The cart fees as plain arrays, so the snapshot survives being stored and read back.
 	 *
+	 * @param WC_Cart $cart The cart.
 	 * @return array<string, array<string, mixed>>
 	 */
 	protected function fees( WC_Cart $cart ): array {

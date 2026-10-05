@@ -12,14 +12,36 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Help
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint\RequestData;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint\AbstractCartEndpoint;
 
+/**
+ * Class SimulateCartEndpoint.
+ */
 class SimulateCartEndpoint extends AbstractCartEndpoint {
 
 	const ENDPOINT = 'ppc-simulate-cart';
 
+	/**
+	 * The smart button.
+	 *
+	 * @var SmartButtonInterface
+	 */
 	private SmartButtonInterface $smart_button;
 
+	/**
+	 * The cart simulator.
+	 *
+	 * @var IsolatedCartSimulator
+	 */
 	private IsolatedCartSimulator $cart_simulator;
 
+	/**
+	 * SimulateCartEndpoint constructor.
+	 *
+	 * @param SmartButtonInterface  $smart_button   The smart button.
+	 * @param RequestData           $request_data   The request data.
+	 * @param CartProductsHelper    $cart_products  The cart products.
+	 * @param IsolatedCartSimulator $cart_simulator The cart simulator.
+	 * @param LoggerInterface       $logger         The logger.
+	 */
 	public function __construct(
 		SmartButtonInterface $smart_button,
 		RequestData $request_data,
@@ -37,9 +59,18 @@ class SimulateCartEndpoint extends AbstractCartEndpoint {
 	}
 
 	/**
+	 * Handles the simulate cart request.
+	 *
 	 * @throws Exception On error.
 	 */
 	protected function handle_data(): void {
+		/**
+		 * Filters whether the cart simulation is enabled.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $enabled Whether the cart simulation is enabled; true by default.
+		 */
 		if ( ! apply_filters( 'woocommerce_paypal_payments_simulate_cart_enabled', true ) ) {
 			wp_send_json_error(
 				array(
@@ -112,6 +143,11 @@ class SimulateCartEndpoint extends AbstractCartEndpoint {
 	}
 
 	// phpcs:disable Generic.CodeAnalysis.UselessOverridingMethod.Found
+	/**
+	 * Handles an error of the simulation.
+	 *
+	 * @param bool $send_response Whether send response.
+	 */
 	protected function handle_error( bool $send_response = false ): void {
 		parent::handle_error( $send_response );
 	}

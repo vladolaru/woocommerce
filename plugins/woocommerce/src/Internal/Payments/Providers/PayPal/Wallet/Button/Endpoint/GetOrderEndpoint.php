@@ -25,12 +25,40 @@ class GetOrderEndpoint implements EndpointInterface {
 
 	public const ENDPOINT = 'ppc-get-order';
 
+	/**
+	 * The request data.
+	 *
+	 * @var RequestData
+	 */
 	private RequestData $request_data;
 
+	/**
+	 * The PayPal order API endpoint.
+	 *
+	 * @var OrderEndpoint
+	 */
 	private OrderEndpoint $api_endpoint;
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	private LoggerInterface $logger;
+	/**
+	 * The cart data storage.
+	 *
+	 * @var CartDataTransientStorage
+	 */
 	private CartDataTransientStorage $cart_data_storage;
 
+	/**
+	 * GetOrderEndpoint constructor.
+	 *
+	 * @param RequestData              $request_data      The request data.
+	 * @param OrderEndpoint            $order_endpoint    The order endpoint.
+	 * @param LoggerInterface          $logger            The logger.
+	 * @param CartDataTransientStorage $cart_data_storage The cart data storage.
+	 */
 	public function __construct(
 		RequestData $request_data,
 		OrderEndpoint $order_endpoint,
@@ -43,9 +71,15 @@ class GetOrderEndpoint implements EndpointInterface {
 		$this->cart_data_storage = $cart_data_storage;
 	}
 
+	/**
+	 * Returns the nonce action of the endpoint.
+	 */
 	public static function nonce(): string {
 		return self::ENDPOINT;
 	}
+	/**
+	 * Handles the request.
+	 */
 	public function handle_request(): void {
 		try {
 			$data     = $this->request_data->read_request( $this->nonce() );
@@ -80,12 +114,12 @@ class GetOrderEndpoint implements EndpointInterface {
 			$current_user_id = get_current_user_id();
 
 			$authorized = false;
-			if ( $stored_user_id !== 0 && $current_user_id === $stored_user_id ) {
+			if ( 0 !== $stored_user_id && $current_user_id === $stored_user_id ) {
 				$authorized = true;
-			} elseif ( $stored_user_id === 0 && $current_user_id === 0 ) {
+			} elseif ( 0 === $stored_user_id && 0 === $current_user_id ) {
 				$stored_session  = $cart_data->session_customer_id();
 				$current_session = WC()->session ? (string) WC()->session->get_customer_id() : null;
-				if ( $stored_session !== null && $current_session === $stored_session ) {
+				if ( null !== $stored_session && $current_session === $stored_session ) {
 					$authorized = true;
 				}
 			}

@@ -54,6 +54,13 @@ class CheckoutFormValidator extends WC_Checkout {
 		}
 
 		if (
+			/**
+			 * Filters whether the early checkout validation also checks the account fields of a new customer.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param bool $enabled Whether the account fields are validated; true by default.
+			 */
 			apply_filters( 'woocommerce_paypal_payments_early_wc_checkout_account_creation_validation_enabled', true ) &&
 			! is_user_logged_in() && ( $this->is_registration_required() || ! empty( $data['createaccount'] ) )
 		) {
@@ -63,6 +70,16 @@ class CheckoutFormValidator extends WC_Checkout {
 			if ( email_exists( $email ) || ( $username && username_exists( sanitize_user( $username ) ) ) ) {
 				$errors->add(
 					'registration-error-account-exists',
+					/**
+					 * Filters the notice shown when a customer tries to register with an existing email address.
+					 *
+					 * WooCommerce's own filter (since 3.3.0), applied again here for the early checkout validation.
+					 *
+					 * @since 3.3.0
+					 *
+					 * @param string $message The notice.
+					 * @param string $email   The email address.
+					 */
 					apply_filters(
 						'woocommerce_registration_error_email_exists',
 						// phpcs:ignore WordPress.WP.I18n.TextDomainMismatch
@@ -86,6 +103,7 @@ class CheckoutFormValidator extends WC_Checkout {
 
 		// Some plugins call wc_add_notice directly.
 		// We should retrieve such notices, and also clear them to avoid duplicates later.
+		// phpcs:ignore Generic.Commenting.Todo.TaskFound -- Existing follow-up note kept as written.
 		// TODO: Normally WC converts the messages from validate_checkout into notices,
 		// maybe we should do the same for consistency, but it requires lots of changes in the way we handle/output errors.
 		$messages = array_merge(
@@ -103,7 +121,7 @@ class CheckoutFormValidator extends WC_Checkout {
 		}
 
 		if ( $messages ) {
-			throw new ValidationException( $messages );
+			throw new ValidationException( $messages ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- WooCommerce notice HTML and WP_Error messages, passed through unchanged; the checkout script writes them as notice markup, so escaping would turn their links into text.
 		}
 	}
 }

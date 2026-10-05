@@ -8,14 +8,23 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Butto
  * Contains a snapshot of the WC cart data, e.g. for saving it and creating an order later.
  */
 class CartData {
+	/**
+	 * The key.
+	 *
+	 * @var string|null
+	 */
 	protected ?string $key = null;
 
 	/**
+	 * The cart items, keyed by cart item key.
+	 *
 	 * @var array<string, array<string, mixed>>
 	 */
 	protected array $items;
 
 	/**
+	 * The applied coupon codes.
+	 *
 	 * @var string[]
 	 */
 	protected array $coupons;
@@ -27,22 +36,49 @@ class CartData {
 	 */
 	protected array $fees = array();
 
+	/**
+	 * Whether the cart needs shipping.
+	 *
+	 * @var bool
+	 */
 	protected bool $needs_shipping;
 
+	/**
+	 * The customer user ID.
+	 *
+	 * @var int
+	 */
 	protected int $user_id;
 
+	/**
+	 * The cart hash.
+	 *
+	 * @var string
+	 */
 	protected string $cart_hash;
 
+	/**
+	 * The PayPal order ID.
+	 *
+	 * @var string|null
+	 */
 	protected ?string $paypal_order_id = null;
 
+	/**
+	 * The session customer ID.
+	 *
+	 * @var string|null
+	 */
 	protected ?string $session_customer_id = null;
 
 	/**
+	 * CartData constructor.
+	 *
 	 * @param array<string, array<string, mixed>> $items The cart items like in $cart->get_cart_for_session() or $cart->get_cart().
-	 * @param string[]                            $coupons
-	 * @param bool                                $needs_shipping
-	 * @param int                                 $user_id
-	 * @param string                              $cart_hash
+	 * @param string[]                            $coupons Applied coupon codes.
+	 * @param bool                                $needs_shipping Whether the cart needs shipping.
+	 * @param int                                 $user_id The customer user ID.
+	 * @param string                              $cart_hash The cart hash.
 	 * @param array<string, array<string, mixed>> $fees Optional.
 	 */
 	public function __construct(
@@ -85,6 +121,8 @@ class CartData {
 	}
 
 	/**
+	 * Returns the applied coupon codes.
+	 *
 	 * @return string[]
 	 */
 	public function coupons(): array {
@@ -100,34 +138,62 @@ class CartData {
 		return $this->fees;
 	}
 
+	/**
+	 * Returns whether the cart needs shipping.
+	 */
 	public function needs_shipping(): bool {
 		return $this->needs_shipping;
 	}
 
+	/**
+	 * Returns the customer user ID.
+	 */
 	public function user_id(): int {
 		return $this->user_id;
 	}
 
+	/**
+	 * Returns the cart hash.
+	 */
 	public function cart_hash(): string {
 		return $this->cart_hash;
 	}
 
+	/**
+	 * Sets the PayPal order ID.
+	 *
+	 * @param string|null $paypal_order_id The paypal order id.
+	 */
 	public function set_paypal_order_id( ?string $paypal_order_id ): void {
 		$this->paypal_order_id = $paypal_order_id;
 	}
 
+	/**
+	 * Returns the PayPal order ID.
+	 */
 	public function paypal_order_id(): ?string {
 		return $this->paypal_order_id;
 	}
 
+	/**
+	 * Sets the session customer ID.
+	 *
+	 * @param string|null $session_customer_id The session customer id.
+	 */
 	public function set_session_customer_id( ?string $session_customer_id ): void {
 		$this->session_customer_id = $session_customer_id;
 	}
 
+	/**
+	 * Returns the session customer ID.
+	 */
 	public function session_customer_id(): ?string {
 		return $this->session_customer_id;
 	}
 
+	/**
+	 * Returns the cart data as an array.
+	 */
 	public function to_array(): array {
 		return array(
 			'items'               => $this->items,
@@ -141,6 +207,12 @@ class CartData {
 		);
 	}
 
+	/**
+	 * Creates the cart data from an array.
+	 *
+	 * @param array       $data The data.
+	 * @param string|null $key  The key.
+	 */
 	public static function from_array( array $data, ?string $key = null ): CartData {
 		$cart_data                      = new CartData(
 			$data['items'] ?? array(),

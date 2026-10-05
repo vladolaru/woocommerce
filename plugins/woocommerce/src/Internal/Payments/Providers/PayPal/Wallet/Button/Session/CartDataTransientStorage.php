@@ -10,9 +10,17 @@ use Exception;
  * Handles saving of CartData into WP transients.
  */
 class CartDataTransientStorage {
+	/**
+	 * The expiration of the stored data, in seconds.
+	 *
+	 * @var int
+	 */
 	protected int $expiration = 2 * HOUR_IN_SECONDS;
 
 	/**
+	 * Saves the cart data to a transient.
+	 *
+	 * @param CartData $cart_data The cart data.
 	 * @throws Exception If saving failed.
 	 */
 	public function save( CartData $cart_data ): void {
@@ -38,6 +46,11 @@ class CartDataTransientStorage {
 		}
 	}
 
+	/**
+	 * Returns the cart data stored under a key.
+	 *
+	 * @param string $key The key.
+	 */
 	public function get( string $key ): ?CartData {
 		$data = get_transient( $key );
 		if ( ! is_array( $data ) ) {
@@ -63,6 +76,11 @@ class CartDataTransientStorage {
 		return $this->get( $cart_key );
 	}
 
+	/**
+	 * Deletes the stored cart data.
+	 *
+	 * @param CartData $cart_data The cart data.
+	 */
 	public function remove( CartData $cart_data ): void {
 		$key = $cart_data->key();
 		if ( ! empty( $key ) ) {

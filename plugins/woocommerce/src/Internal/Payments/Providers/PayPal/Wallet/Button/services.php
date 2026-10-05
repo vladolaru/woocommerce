@@ -262,17 +262,21 @@ return array(
 		return $container->get( 'order-endpoints.current-user-must-register' );
 	},
 
-	'button.basic-checkout-validation-enabled'    => static function ( ContainerInterface $container ): bool {
+	'button.basic-checkout-validation-enabled'    => static function ( ContainerInterface $container ): bool { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		/**
 		 * The filter allowing to disable the basic client-side validation of the checkout form
 		 * when the PayPal button is clicked.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $enabled Whether the basic validation is enabled; false by default.
 		 */
 		return (bool) apply_filters( 'woocommerce_paypal_payments_basic_checkout_validation_enabled', false );
 	},
 	'button.early-wc-checkout-validation-enabled' => static function ( ContainerInterface $container ): bool {
 		return $container->get( 'order-endpoints.early-wc-checkout-validation-enabled' );
 	},
-	'button.validation.wc-checkout-validator'     => static function ( ContainerInterface $container ): CheckoutFormValidator {
+	'button.validation.wc-checkout-validator'     => static function ( ContainerInterface $container ): CheckoutFormValidator { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new CheckoutFormValidator();
 	},
 	'button.subscriptions-mode'                   => static function ( ContainerInterface $container ): callable {
@@ -294,10 +298,10 @@ return array(
 		return $container->get( 'order-endpoints.helper.wc-order-creator' );
 	},
 
-	'button.session.factory.card-data'            => static function ( ContainerInterface $container ): CartDataFactory {
+	'button.session.factory.card-data'            => static function ( ContainerInterface $container ): CartDataFactory { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new CartDataFactory();
 	},
-	'button.session.storage.card-data.transient'  => static function ( ContainerInterface $container ): CartDataTransientStorage {
+	'button.session.storage.card-data.transient'  => static function ( ContainerInterface $container ): CartDataTransientStorage { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new CartDataTransientStorage();
 	},
 );

@@ -69,6 +69,11 @@ class SmartButton implements SmartButtonInterface {
 	 */
 	protected Context $context;
 
+	/**
+	 * The asset getter.
+	 *
+	 * @var AssetGetter
+	 */
 	private AssetGetter $asset_getter;
 
 	/**
@@ -78,6 +83,11 @@ class SmartButton implements SmartButtonInterface {
 	 */
 	private $version;
 
+	/**
+	 * The settings provider.
+	 *
+	 * @var SettingsProvider
+	 */
 	private SettingsProvider $settings_provider;
 
 	/**
@@ -108,7 +118,11 @@ class SmartButton implements SmartButtonInterface {
 	 */
 	private $subscription_helper;
 
-	/** @var callable */
+	/**
+	 * Callback that returns the subscriptions mode.
+	 *
+	 * @var callable
+	 */
 	private $get_subscriptions_mode;
 
 	/**
@@ -190,19 +204,53 @@ class SmartButton implements SmartButtonInterface {
 
 	/**
 	 * Whether the server-side shipping callback is enabled (feature flag).
+	 *
+	 * @var bool
 	 */
 	private bool $server_side_shipping_callback_enabled;
 
 	/**
 	 * Whether the AppSwitch is enabled (feature flag).
+	 *
+	 * @var bool
 	 */
 	private bool $appswitch_enabled;
 
 	/**
 	 * Whether the final review is enabled in blocks settings.
+	 *
+	 * @var bool
 	 */
 	private bool $final_review_enabled;
 
+	/**
+	 * SmartButton constructor.
+	 *
+	 * @param AssetGetter            $asset_getter                          The asset getter.
+	 * @param string                 $version                               The version.
+	 * @param SessionHandler         $session_handler                       The session handler.
+	 * @param SettingsProvider       $settings_provider                     The settings provider.
+	 * @param PayerFactory           $payer_factory                         The payer factory.
+	 * @param string                 $client_id                             The client id.
+	 * @param RequestData            $request_data                          The request data.
+	 * @param SubscriptionHelper     $subscription_helper                   The subscription helper.
+	 * @param callable               $get_subscriptions_mode                The get subscriptions mode.
+	 * @param MessagesApply          $messages_apply                        The messages apply.
+	 * @param Environment            $environment                           The environment.
+	 * @param SettingsStatus         $settings_status                       The settings status.
+	 * @param CurrencyGetter         $currency                              The currency.
+	 * @param bool                   $basic_checkout_validation_enabled     Whether basic checkout validation is enabled.
+	 * @param bool                   $early_validation_enabled              Whether early validation is enabled.
+	 * @param array                  $pay_now_contexts                      The pay now contexts.
+	 * @param array                  $funding_sources_without_redirect      The funding sources without redirect.
+	 * @param bool                   $should_handle_shipping_in_paypal      Whether should handle shipping in paypal.
+	 * @param bool                   $server_side_shipping_callback_enabled Whether server side shipping callback is enabled.
+	 * @param bool                   $appswitch_enabled                     Whether appswitch is enabled.
+	 * @param DisabledFundingSources $disabled_funding_sources              The disabled funding sources.
+	 * @param PartnerAttribution     $partner_attribution                   The partner attribution.
+	 * @param bool                   $final_review_enabled                  Whether final review is enabled.
+	 * @param Context                $context                               The context.
+	 */
 	public function __construct(
 		AssetGetter $asset_getter,
 		string $version,
@@ -268,6 +316,11 @@ class SmartButton implements SmartButtonInterface {
 			$this->render_message_wrapper_registrar();
 		}
 
+		/**
+		 * Fires after the PayPal button and Pay Later message hooks are registered.
+		 *
+		 * @since 11.3.0
+		 */
 		do_action( 'woocommerce_paypal_payments_smart_button_render_wrapper' );
 
 		$this->sanitize_woocommerce_filters();
@@ -281,6 +334,13 @@ class SmartButton implements SmartButtonInterface {
 	 * @return bool
 	 */
 	private function render_message_wrapper_registrar(): bool {
+		/**
+		 * Filters whether the Pay Later messaging hooks are registered.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $should_render Whether to register the messaging hooks; true by default.
+		 */
 		if ( ! apply_filters( 'woocommerce_paypal_payments_should_render_pay_later_messaging', true ) ) {
 			return false;
 		}
@@ -299,6 +359,10 @@ class SmartButton implements SmartButtonInterface {
 
 		/**
 		 * The filter returning if the current theme is a block theme or not.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $is_block_theme Whether the current theme is a block theme.
 		 */
 		$is_block_theme = (bool) apply_filters(
 			'woocommerce_paypal_payments_messages_renderer_is_block',
@@ -360,10 +424,14 @@ class SmartButton implements SmartButtonInterface {
 		}
 
 		// Looks like there are no hooks like woocommerce_review_order_before_payment on the pay for order page, so have to move using JS.
-		if ( $location === 'pay-now' && $hook['name'] === $default_pay_order_hook &&
+		if ( 'pay-now' === $location && $hook['name'] === $default_pay_order_hook &&
 			/**
 			 * The filter returning true if Pay Later messages should be displayed before payment methods
 			 * on the pay for order page, like in checkout.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param bool $before Whether the messages go before the payment methods; true by default.
 			 */
 			apply_filters(
 				'woocommerce_paypal_payments_put_pay_order_messages_before_payment_methods',
@@ -394,6 +462,7 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 		if (
 			( is_product() || wc_post_content_has_shortcode( 'product_page' ) )
 			&& $this->settings_status->is_smart_button_enabled_for_location( 'product' )
+			// phpcs:ignore Generic.Commenting.Todo.TaskFound -- Existing follow-up note kept as written.
 			// TODO: it seems like there is no easy way to properly handle vaulted PayPal free trial,
 			// so disable the buttons for now everywhere except checkout for free trial.
 			&& ! $this->is_free_trial_product()
@@ -431,6 +500,11 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 
 					echo '<p class="woocommerce-mini-cart__buttons buttons">';
 					echo '<span id="ppc-button-minicart"></span>';
+					/**
+					 * Fires in the mini cart button container, after the PayPal button placeholder.
+					 *
+					 * @since 11.3.0
+					 */
 					do_action( 'woocommerce_paypal_payments_minicart_button_render' );
 					echo '</p>';
 				},
@@ -598,6 +672,8 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 		 * A hook executed after rendering of the opening tag for the PCP wrapper (before the inner wrapper for the buttons).
 		 *
 		 * For the PayPal gateway the hook name is ppcp_start_button_wrapper_ppcp_gateway.
+		 *
+		 * @since 11.3.0
 		 */
 		do_action( 'ppcp_start_button_wrapper_' . $hook_gateway_id );
 
@@ -607,10 +683,21 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 		 * A hook executed before rendering of the closing tag for the PCP wrapper (before the inner wrapper for the buttons).
 		 *
 		 * For the PayPal gateway the hook name is ppcp_end_button_wrapper_ppcp_gateway.
+		 *
+		 * @since 11.3.0
 		 */
 		do_action( 'ppcp_end_button_wrapper_' . $hook_gateway_id );
 
 		if ( null !== $action_name ) {
+			/**
+			 * Fires after the PCP button wrapper content, with the action name given by the caller.
+			 *
+			 * The names in use are woocommerce_paypal_payments_single_product_button_render,
+			 * woocommerce_paypal_payments_payorder_button_render, woocommerce_paypal_payments_checkout_button_render
+			 * and woocommerce_paypal_payments_cart_button_render.
+			 *
+			 * @since 11.3.0
+			 */
 			do_action( $action_name );
 		}
 
@@ -630,7 +717,7 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 		$location_hook = $this->location_to_hook( $location );
 
 		if (
-			$location === 'product' && $product instanceof WC_Product
+			'product' === $location && $product instanceof WC_Product
 			/**
 			 * The filter returning true if PayPal buttons can be rendered, or false otherwise.
 			 */
@@ -641,6 +728,8 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 
 		/**
 		 * A hook executed before rendering of the PCP Pay Later messages wrapper.
+		 *
+		 * @since 11.3.0
 		 */
 		do_action( "ppcp_before_{$location_hook}_message_wrapper" );
 
@@ -659,6 +748,8 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 
 		/**
 		 * A hook executed after rendering of the PCP Pay Later messages wrapper.
+		 *
+		 * @since 11.3.0
 		 */
 		do_action( "ppcp_after_{$location_hook}_message_wrapper" );
 	}
@@ -993,7 +1084,21 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 				'shipping_field' => _x( 'Shipping %s', 'checkout-validation', 'woocommerce' ),
 			),
 			'simulate_cart'                        => array(
+				/**
+				 * Filters whether the cart simulation is enabled.
+				 *
+				 * @since 11.3.0
+				 *
+				 * @param bool $enabled Whether the cart simulation is enabled; true by default.
+				 */
 				'enabled'    => apply_filters( 'woocommerce_paypal_payments_simulate_cart_enabled', true ),
+				/**
+				 * Filters the minimum time between two cart simulations on the product page.
+				 *
+				 * @since 11.3.0
+				 *
+				 * @param int $throttling The throttling interval in milliseconds; 5000 by default.
+				 */
 				'throttling' => apply_filters( 'woocommerce_paypal_payments_simulate_cart_throttling', 5000 ),
 			),
 			'order_id'                             => 'pay-now' === $current_context ? $this->get_order_pay_id() : 0,
@@ -1033,7 +1138,7 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 
 		if ( $this->context->is_paypal_continuation() ) {
 			$order = $this->session_handler->order();
-			assert( $order !== null );
+			assert( null !== $order );
 
 			$localize['continuation'] = array(
 				'order_id' => $order->id(),
@@ -1042,6 +1147,13 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 
 		$this->request_data->dequeue_nonce_fix();
 
+		/**
+		 * Filters the data localized to the smart button script as PayPalCommerceGateway.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param array $localize The script data.
+		 */
 		return apply_filters( 'woocommerce_paypal_payments_localized_script_data', $localize );
 	}
 
@@ -1116,7 +1228,14 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 		}
 
 		if (
-			$subscription_mode === 'vaulting_api'
+			'vaulting_api' === $subscription_mode
+			/**
+			 * Filters whether the Save Payment Methods (Vault V3) flow applies, which removes the vault parameter from the SDK URL.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param bool $eligible Whether the flow applies; false by default.
+			 */
 			&& apply_filters( 'woocommerce_paypal_payments_save_payment_methods_eligible', false )
 		) {
 			// Remove vault parameter to allow for Venmo with Save Payment Methods (Vault V3).
@@ -1173,6 +1292,13 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 		}
 
 		$locale = $this->settings_provider->button_language();
+		/**
+		 * Filters the locale of the smart buttons.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param string $locale The locale from the button language setting.
+		 */
 		$locale = (string) apply_filters( 'woocommerce_paypal_payments_smart_buttons_locale', $locale );
 
 		if ( $locale ) {
@@ -1274,15 +1400,17 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 			$components[] = 'messages';
 		}
 
-		/**
-		 * Filter to add further components from the extensions.
-		 *
-		 * Lets third parties add SDK components.
-		 *
-		 * @param array  $components The array of components already registered.
-		 * @param string $context    The SmartButton context.
-		 */
 		return array_unique(
+			/**
+			 * Filter to add further components from the extensions.
+			 *
+			 * Lets third parties add SDK components.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param array  $components The array of components already registered.
+			 * @param string $context    The SmartButton context.
+			 */
 			(array) apply_filters(
 				'woocommerce_paypal_payments_sdk_components_hook',
 				$components,
@@ -1296,15 +1424,15 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 	 *
 	 * @param string $style The name of the style property.
 	 * @param string $context The context.
-	 * @param ?mixed $default The default value.
+	 * @param ?mixed $default_value The default value.
 	 *
 	 * @return string|int
 	 */
-	private function style_for_context( string $style, string $context, $default = null ) {
-		if ( $context === 'checkout-block' ) {
+	private function style_for_context( string $style, string $context, $default_value = null ) {
+		if ( 'checkout-block' === $context ) {
 			$context = 'checkout-block-express';
 		}
-		if ( $context === 'pay-now' ) {
+		if ( 'pay-now' === $context ) {
 			$context = CartCheckoutDetector::has_block_checkout() ? 'checkout-block-express' : 'checkout';
 		}
 
@@ -1319,7 +1447,7 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 
 		return $this->get_style_value( "button_{$context}_{$style}" )
 			?? $this->get_style_value( "button_{$style}" )
-			?? ( $default ? $this->normalize_style_value( $default ) : null )
+			?? ( $default_value ? $this->normalize_style_value( $default_value ) : null )
 			?? $this->normalize_style_value( $defaults[ $style ] ?? '' );
 	}
 
@@ -1353,7 +1481,7 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 
 		$value = $location_styling->$property ?? null;
 
-		return $value !== null ? $this->normalize_style_value( $value ) : null;
+		return null !== $value ? $this->normalize_style_value( $value ) : null;
 	}
 
 	/**
@@ -1430,7 +1558,7 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 	 * @return array
 	 */
 	private function normalize_style( array $style ): array {
-		if ( array_key_exists( 'tagline', $style ) && ( ! array_key_exists( 'layout', $style ) || $style['layout'] !== 'horizontal' ) ) {
+		if ( array_key_exists( 'tagline', $style ) && ( ! array_key_exists( 'layout', $style ) || 'horizontal' !== $style['layout'] ) ) {
 			$style['tagline'] = false;
 		}
 		if ( array_key_exists( 'height', $style ) && ! $style['height'] ) {
@@ -1467,6 +1595,10 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 	private function checkout_button_renderer_hook(): string {
 		/**
 		 * The filter returning the action name that PayPal button will use for rendering on the checkout page.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param string $hook The action name; woocommerce_review_order_after_payment by default.
 		 */
 		return (string) apply_filters( 'woocommerce_paypal_payments_checkout_button_renderer_hook', 'woocommerce_review_order_after_payment' );
 	}
@@ -1479,6 +1611,10 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 	private function pay_order_renderer_hook(): string {
 		/**
 		 * The filter returning the action name that PayPal button and Pay Later message will use for rendering on the pay-order page.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param string $hook The action name; woocommerce_pay_order_after_submit by default.
 		 */
 		return (string) apply_filters( 'woocommerce_paypal_payments_pay_order_dcc_renderer_hook', 'woocommerce_pay_order_after_submit' );
 	}
@@ -1496,6 +1632,10 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 
 		/**
 		 * The filter returning the action name that will be used for rendering Pay Later messages.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param string $hook The default action name for the location.
 		 */
 		$hook = (string) apply_filters(
 			"woocommerce_paypal_payments_{$location_hook}_messages_renderer_hook",
@@ -1503,6 +1643,10 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 		);
 		/**
 		 * The filter returning the action priority that will be used for rendering Pay Later messages.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param int $priority The default action priority for the location.
 		 */
 		$priority = (int) apply_filters(
 			"woocommerce_paypal_payments_{$location_hook}_messages_renderer_priority",
@@ -1527,6 +1671,10 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 
 		/**
 		 * The filter returning the action name that will be used for rendering Pay Later messages.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param string $block_name The default block name for the location.
 		 */
 		$block_name = (string) apply_filters(
 			"woocommerce_paypal_payments_{$location_hook}_messages_renderer_block",
@@ -1534,6 +1682,10 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 		);
 		/**
 		 * The filter returning the action priority that will be used for rendering Pay Later messages.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param int $priority The default priority of the render_block filter for the location.
 		 */
 		$priority = (int) apply_filters(
 			"woocommerce_paypal_payments_{$location_hook}_messages_renderer_block_priority",
@@ -1553,6 +1705,10 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 	private function proceed_to_checkout_button_renderer_hook(): string {
 		/**
 		 * The filter returning the action name that PayPal button will use for rendering next to Proceed to checkout button (normally displayed in cart).
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param string $hook The action name; woocommerce_proceed_to_checkout by default.
 		 */
 		return (string) apply_filters(
 			'woocommerce_paypal_payments_proceed_to_checkout_button_renderer_hook',
@@ -1568,6 +1724,10 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 	private function mini_cart_button_renderer_hook(): string {
 		/**
 		 * The filter returning the action name that PayPal button will use for rendering in the WC mini cart.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param string $hook The action name; woocommerce_widget_shopping_cart_after_buttons by default.
 		 */
 		return (string) apply_filters(
 			'woocommerce_paypal_payments_mini_cart_button_renderer_hook',
@@ -1583,6 +1743,10 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 	private function single_product_renderer_hook(): string {
 		/**
 		 * The filter returning the action name that PayPal button and Pay Later message will use for rendering on the single product page.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param string $hook The action name; woocommerce_single_product_summary by default.
 		 */
 		return (string) apply_filters( 'woocommerce_paypal_payments_single_product_renderer_hook', 'woocommerce_single_product_summary' );
 	}
@@ -1615,7 +1779,11 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 		if ( $product->is_type( 'variable' ) ) {
 			assert( $product instanceof WC_Product_Variable );
 
-			/** @var WC_Product_Variation[] $variations */
+			/**
+			 * The available variations of the product.
+			 *
+			 * @var WC_Product_Variation[] $variations
+			 */
 			$variations = $product->get_available_variations( 'objects' );
 			$in_stock   = $this->has_in_stock_variation( $variations );
 		}
@@ -1626,6 +1794,11 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 
 		/**
 		 * Allows to filter if PayPal buttons/messages can be rendered for the given product.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool        $enable_button Whether the product supports the buttons.
+		 * @param \WC_Product $product       The product.
 		 */
 		return apply_filters(
 			'woocommerce_paypal_payments_product_supports_payment_request_button',
@@ -1669,6 +1842,11 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 		if ( 'product' === $context ) {
 			/**
 			 * Allows to decide if the button should be disabled for a given product.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param bool  $disabled Whether the button is disabled for the product; false by default.
+			 * @param array $context  The product context data.
 			 */
 			return apply_filters(
 				'woocommerce_paypal_payments_product_buttons_disabled',
@@ -1679,6 +1857,11 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 
 		/**
 		 * Allows to decide if the button should be disabled globally or on a given context.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool   $disabled Whether the button is disabled; false by default.
+		 * @param string $context  The button context.
 		 */
 		return apply_filters(
 			'woocommerce_paypal_payments_buttons_disabled',
@@ -1699,6 +1882,11 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 		if ( 'product' === $location ) {
 			/**
 			 * Allows to decide if the button should be disabled for a given product.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param bool  $disabled Whether the Pay Later button or message is disabled for the product; false by default.
+			 * @param array $context  The product context data.
 			 */
 			return ! apply_filters(
 				'woocommerce_paypal_payments_product_buttons_paylater_disabled',
@@ -1709,6 +1897,11 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 
 		/**
 		 * Allows to decide if the button should be disabled on a given context.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool   $disabled Whether the Pay Later button or message is disabled in the location; false by default.
+		 * @param string $location The location, such as cart or checkout.
 		 */
 		return ! apply_filters(
 			'woocommerce_paypal_payments_buttons_paylater_disabled',
@@ -1765,6 +1958,13 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 	private function intent(): string {
 		$intent = $this->settings_provider->payment_intent();
 
+		/**
+		 * Filters the order intent used by the smart buttons.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param string $intent The payment intent from the settings.
+		 */
 		return strtolower( apply_filters( 'woocommerce_paypal_payments_order_intent', $intent ) );
 	}
 

@@ -44,6 +44,8 @@ class ButtonModule implements ServiceModule, ExecutableModule {
 
 	/**
 	 * {@inheritDoc}
+	 *
+	 * @param ContainerInterface $c The service container.
 	 */
 	public function run( ContainerInterface $c ): bool {
 
@@ -168,10 +170,20 @@ class ButtonModule implements ServiceModule, ExecutableModule {
 		);
 	}
 
+	/**
+	 * Returns whether the order was started with the AppSwitch cross-browser flow.
+	 *
+	 * @param WC_Order $wc_order The wc order.
+	 */
 	private static function is_cross_browser_order( WC_Order $wc_order ): bool {
 		return wc_string_to_bool( $wc_order->get_meta( PayPalGateway::CROSS_BROWSER_APPSWITCH_META_KEY ) );
 	}
 
+	/**
+	 * Registers the handler for the AppSwitch cross-browser flow.
+	 *
+	 * @param ContainerInterface $container The service container.
+	 */
 	private function register_appswitch_crossbrowser_handler( ContainerInterface $container ): void {
 		if ( ! $container->get( 'wcgateway.appswitch-enabled' ) ) {
 			return;

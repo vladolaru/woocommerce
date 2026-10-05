@@ -6,8 +6,16 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Butto
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Session\SessionHandler;
 
+/**
+ * Class Context.
+ */
 class Context {
 
+	/**
+	 * The session handler.
+	 *
+	 * @var SessionHandler
+	 */
 	protected SessionHandler $session_handler;
 
 	/**
@@ -25,6 +33,13 @@ class Context {
 	 * @return void
 	 */
 	public function init_context(): void {
+		/**
+		 * Filters whether the classic checkout shortcode block is treated as the checkout page.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $enabled Whether the compatibility is active; true by default.
+		 */
 		if ( ! apply_filters( 'woocommerce_paypal_payments_block_classic_compat', true ) ) {
 			return;
 		}
@@ -44,7 +59,7 @@ class Context {
 				if ( has_block( 'woocommerce/classic-shortcode' ) ) {
 					$classic_block = $this->find_classic_shortcode_block();
 					$type          = $classic_block['attrs']['shortcode'] ?? '';
-					return $type === 'checkout';
+					return 'checkout' === $type;
 				}
 
 				return $is_checkout;
@@ -56,7 +71,7 @@ class Context {
 			if ( has_block( 'woocommerce/classic-shortcode' ) ) {
 				$classic_block = $this->find_classic_shortcode_block();
 				$type          = $classic_block['attrs']['shortcode'] ?? '';
-				if ( $type !== 'checkout' ) { // There is no 'cart' type, the attribute is just missing.
+				if ( 'checkout' !== $type ) { // There is no 'cart' type, the attribute is just missing.
 					wc_maybe_define_constant( 'WOOCOMMERCE_CART', true );
 				}
 			}
@@ -77,7 +92,7 @@ class Context {
 
 		$blocks = parse_blocks( $post->post_content );
 		foreach ( $blocks as $block ) {
-			if ( $block['blockName'] === 'woocommerce/classic-shortcode' ) {
+			if ( 'woocommerce/classic-shortcode' === $block['blockName'] ) {
 				return $block;
 			}
 		}
@@ -106,6 +121,10 @@ class Context {
 	private function is_checkout_ajax(): bool {
 		/**
 		 * The filter returning whether to detect WC checkout ajax requests.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $check Whether to detect the requests; true by default.
 		 */
 		if ( ! apply_filters( 'ppcp_check_ajax_checkout', true ) ) {
 			return false;
@@ -135,7 +154,11 @@ class Context {
 	 */
 	private function is_cart_ajax(): bool {
 		/**
-		 * The filter returning whether to detect WC checkout ajax requests.
+		 * The filter returning whether to detect WC cart ajax requests.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $check Whether to detect the requests; true by default.
 		 */
 		if ( ! apply_filters( 'ppcp_check_ajax_cart', true ) ) {
 			return false;
@@ -215,6 +238,13 @@ class Context {
 				break;
 		}
 
+		/**
+		 * Filters the detected button context.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param string $context The context, such as product, cart, checkout or mini-cart.
+		 */
 		return apply_filters( 'woocommerce_paypal_payments_context', $context );
 	}
 
@@ -225,7 +255,7 @@ class Context {
 	 */
 	public function location(): string {
 		$context = $this->context();
-		if ( $context !== 'mini-cart' ) {
+		if ( 'mini-cart' !== $context ) {
 			return $context;
 		}
 
@@ -349,6 +379,6 @@ class Context {
 		$tab  = wc_clean( wp_unslash( $_GET['tab'] ?? '' ) );
 		// phpcs:enable WordPress.Security.NonceVerification
 
-		return $page === 'wc-settings' && $tab === 'checkout';
+		return 'wc-settings' === $page && 'checkout' === $tab;
 	}
 }

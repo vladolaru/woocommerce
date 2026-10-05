@@ -12,13 +12,32 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Butto
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions\FreeTrialHandlerTrait;
 
+/**
+ * Class DisabledFundingSources.
+ */
 class DisabledFundingSources {
 
 	use FreeTrialHandlerTrait;
 
+	/**
+	 * The settings provider.
+	 *
+	 * @var SettingsProvider
+	 */
 	private SettingsProvider $settings_provider;
+	/**
+	 * All funding sources.
+	 *
+	 * @var array
+	 */
 	private array $all_funding_sources;
 
+	/**
+	 * DisabledFundingSources constructor.
+	 *
+	 * @param SettingsProvider $settings_provider   The settings provider.
+	 * @param array            $all_funding_sources The all funding sources.
+	 */
 	public function __construct(
 		SettingsProvider $settings_provider,
 		array $all_funding_sources
@@ -62,6 +81,7 @@ class DisabledFundingSources {
 	/**
 	 * Gets disabled funding sources from settings.
 	 *
+	 * @param string $context The context.
 	 * @return array
 	 */
 	private function get_sources_from_settings( string $context ): array {
@@ -76,6 +96,10 @@ class DisabledFundingSources {
 		 * Filters the list of disabled funding methods.
 		 *
 		 * This filter allows merchants to programmatically disable funding sources.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param array $disabled_funding The disabled funding source IDs.
 		 */
 		return (array) apply_filters(
 			'woocommerce_paypal_payments_disabled_funding',
@@ -154,6 +178,8 @@ class DisabledFundingSources {
 		/**
 		 * Filters the final list of disabled funding sources.
 		 *
+		 * @since 11.3.0
+		 *
 		 * @param array $disable_funding The filter value, funding sources to be disabled.
 		 * @param array $flags           Decision flags to provide more context to filters.
 		 */
@@ -170,7 +196,7 @@ class DisabledFundingSources {
 		// Make sure "paypal" is never disabled in the funding-sources.
 		$disable_funding = array_filter(
 			$disable_funding,
-			static fn( string $funding_source ) => $funding_source !== 'paypal'
+			static fn( string $funding_source ) => 'paypal' !== $funding_source
 		);
 
 		return array_unique( $disable_funding );

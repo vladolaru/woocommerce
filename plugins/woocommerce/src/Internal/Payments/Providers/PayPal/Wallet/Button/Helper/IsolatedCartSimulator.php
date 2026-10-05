@@ -17,10 +17,26 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoi
  */
 class IsolatedCartSimulator {
 
+	/**
+	 * The cart products.
+	 *
+	 * @var CartProductsHelper
+	 */
 	private CartProductsHelper $cart_products;
 
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
 	private LoggerInterface $logger;
 
+	/**
+	 * IsolatedCartSimulator constructor.
+	 *
+	 * @param CartProductsHelper $cart_products The cart products.
+	 * @param LoggerInterface    $logger        The logger.
+	 */
 	public function __construct(
 		CartProductsHelper $cart_products,
 		LoggerInterface $logger
@@ -34,6 +50,7 @@ class IsolatedCartSimulator {
 	 * and returns the resulting total and shipping fee. The isolated cart is
 	 * discarded afterward; WC()->cart is never modified.
 	 *
+	 * @param array $products The products.
 	 * @return array{total: float, shipping_fee: float}
 	 * @throws Exception If simulation fails.
 	 */
@@ -85,6 +102,9 @@ class IsolatedCartSimulator {
 		}
 	}
 
+	/**
+	 * Creates the isolated cart.
+	 */
 	private function create_isolated_cart(): WC_Cart {
 		// Prevent the new cart's session from registering hooks (persistence, cookies, etc.).
 		$prevent_session = function () {
@@ -110,7 +130,12 @@ class IsolatedCartSimulator {
 		return $cart;
 	}
 
-	private function cleanup_cart( WC_Cart $cart ): void {
+	/**
+	 * Cleans up the simulated cart.
+	 *
+	 * @param WC_Cart $cart The cart.
+	 */
+	private function cleanup_cart( WC_Cart $cart ): void { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- Kept as in the extension: the cleanup goes through the cart products helper, not this cart.
 		try {
 			$this->cart_products->remove_cart_items();
 		} catch ( Exception $e ) {
