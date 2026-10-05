@@ -78,7 +78,7 @@ class SavePaymentMethodsModule implements ServiceModule, ExecutableModule {
 				$settings_provider = $c->get( 'settings.settings-provider' );
 				assert( $settings_provider instanceof SettingsProvider );
 				if ( ! $settings_provider->save_paypal_and_venmo() ) {
-					return true;
+					return;
 				}
 
 				add_filter(
@@ -143,10 +143,8 @@ class SavePaymentMethodsModule implements ServiceModule, ExecutableModule {
 						$payment_source = (array) ( $data['payment_source'] ?? array() );
 						$key            = array_key_first( $payment_source );
 						if ( ! is_string( $key ) || empty( $key ) ) {
-							$key = $payment_method;
-							if ( $payment_method === PayPalGateway::ID && $funding_source ) {
-								$key = $funding_source;
-							}
+							// Only PayPal gateway requests with a paypal or venmo funding source reach this point.
+							$key = $funding_source;
 							$payment_source[ $key ] = array();
 						}
 						$payment_source[ $key ]               = (array) $payment_source[ $key ];
