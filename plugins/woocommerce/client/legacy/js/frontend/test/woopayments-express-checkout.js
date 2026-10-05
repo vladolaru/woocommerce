@@ -5,6 +5,7 @@
 describe( 'WooPayments express checkout', () => {
 	let bodyEventHandlers;
 	let containerJQuery;
+	let delegatedQuantityHandlers;
 	let elements;
 	let expressElement;
 	let expressHandlers;
@@ -32,6 +33,51 @@ describe( 'WooPayments express checkout', () => {
 		return { promise, resolve, reject };
 	}
 
+	// `$( '.quantity' ).on( events, selector, handler )` as jQuery delegates it: a native event, or a jQuery
+	// `.trigger()`, on a matching field inside a wrapper calls the handler with the field as `this`.
+	function createQuantityJQuery() {
+		const wrappers = Array.from( document.querySelectorAll( '.quantity' ) );
+		const result = {
+			length: wrappers.length,
+			on: jest.fn( ( events, selector, handler ) => {
+				wrappers.forEach( ( wrapper ) => {
+					events.split( ' ' ).forEach( ( type ) => {
+						delegatedQuantityHandlers.push( {
+							wrapper,
+							type,
+							selector,
+							handler,
+						} );
+						wrapper.addEventListener( type, ( event ) => {
+							const field = event.target.closest( selector );
+
+							if ( field && wrapper.contains( field ) ) {
+								handler.call( field, event );
+							}
+						} );
+					} );
+				} );
+				return result;
+			} ),
+		};
+
+		return result;
+	}
+
+	// jQuery's `$( field ).trigger( type )` for an event the element has no native method for (`input`, `change`):
+	// only jQuery handlers run, no DOM event is dispatched.
+	function triggerThroughJQuery( field, type ) {
+		delegatedQuantityHandlers.forEach( ( entry ) => {
+			if (
+				entry.type === type &&
+				entry.wrapper.contains( field ) &&
+				field.matches( entry.selector )
+			) {
+				entry.handler.call( field, { type, target: field } );
+			}
+		} );
+	}
+
 	function createJQueryMock() {
 		const defaultResult = {
 			length: 0,
@@ -56,6 +102,10 @@ describe( 'WooPayments express checkout', () => {
 
 			if ( selectorOrCallback === '#wcpay-express-checkout-element' ) {
 				return containerJQuery;
+			}
+
+			if ( selectorOrCallback === '.quantity' ) {
+				return createQuantityJQuery();
 			}
 
 			return defaultResult;
@@ -236,6 +286,7 @@ describe( 'WooPayments express checkout', () => {
 	beforeEach( () => {
 		jest.resetModules();
 		bodyEventHandlers = {};
+		delegatedQuantityHandlers = [];
 		expressHandlers = {};
 		document.body.innerHTML =
 			'<div class="woocommerce-notices-wrapper"></div>' +
@@ -3063,6 +3114,110 @@ describe( 'WooPayments express checkout', () => {
 			expect( elements.update ).toHaveBeenLastCalledWith(
 				expect.objectContaining( { amount: 7500 } )
 			);
+		} );
+
+		// Native departure: the client listens to `input` only (compatibility/wc-product-page.js:66-83), while
+		// WooCommerce's quantity steppers dispatch only `change` (blocks add-to-cart-form/frontend.ts:74-78).
+		test( 're-prices the wallet when WooCommerce\'s quantity stepper changes the quantity', async () => {
+			const resolveClick = jest.fn();
+			const input = () => document.querySelector( '.quantity .qty' );
+			jest.useFakeTimers();
+			setClassicProductForm();
+			window.wp.apiFetch.mockResolvedValue( getVirtualCart( 7500, 3 ) );
+			await mountReadyWallet();
+
+			input().value = '3';
+			input().dispatchEvent(
+				new window.Event( 'change', { bubbles: true } )
+			);
+			expect( containerJQuery.block ).toHaveBeenCalledWith( {
+				message: null,
+			} );
+			jest.advanceTimersByTime( 250 );
+			await flushMicrotasks();
+
+			expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 1 );
+			expect( window.wp.apiFetch ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					path: '/wc/store/v1/cart/add-item?currency=USD',
+					data: { id: 123, quantity: 3, variation: [] },
+				} )
+			);
+
+			await expressHandlers.click( { resolve: resolveClick } );
+
+			expect( resolveClick ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					lineItems: [
+						{ amount: 7500, name: 'Express Widget (x3)' },
+					],
+				} )
+			);
+		} );
+
+		// The client catches a theme's jQuery-triggered `input` through jQuery delegation (wc-product-page.js:75-82).
+		test( 're-prices the wallet when a theme changes the quantity through jQuery', async () => {
+			const input = () => document.querySelector( '.quantity .qty' );
+			jest.useFakeTimers();
+			setClassicProductForm();
+			window.wp.apiFetch.mockResolvedValue( getVirtualCart( 7500, 3 ) );
+			await mountReadyWallet();
+
+			input().value = '3';
+			triggerThroughJQuery( input(), 'input' );
+			jest.advanceTimersByTime( 250 );
+			await flushMicrotasks();
+
+			expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 1 );
+			expect( window.wp.apiFetch ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					data: { id: 123, quantity: 3, variation: [] },
+				} )
+			);
+			expect( elements.update ).toHaveBeenCalledWith(
+				expect.objectContaining( { amount: 7500 } )
+			);
+		} );
+
+		test( 'prices a typed quantity once when the field then reports the committed change', async () => {
+			const input = () => document.querySelector( '.quantity .qty' );
+			jest.useFakeTimers();
+			setClassicProductForm();
+			window.wp.apiFetch.mockResolvedValue( getVirtualCart( 7500, 3 ) );
+			await mountReadyWallet();
+
+			typeQuantity( '3' );
+			jest.advanceTimersByTime( 250 );
+			await flushMicrotasks();
+			input().dispatchEvent(
+				new window.Event( 'change', { bubbles: true } )
+			);
+			jest.advanceTimersByTime( 250 );
+			await flushMicrotasks();
+
+			expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 1 );
+		} );
+
+		// WooCommerce's variation form re-sets the quantity and triggers `change` on every found variation, including
+		// its own init for a default variation (add-to-cart-variation.js:420-427).
+		test( 'does not re-price when the variation form re-sets the same quantity', async () => {
+			jest.useFakeTimers();
+			setClassicProductForm( {
+				variable: true,
+				size: 'large',
+				variationId: '125',
+			} );
+			await mountReadyWallet();
+
+			triggerThroughJQuery(
+				document.querySelector( '.quantity .qty' ),
+				'change'
+			);
+			jest.advanceTimersByTime( 250 );
+			await flushMicrotasks();
+
+			expect( window.wp.apiFetch ).not.toHaveBeenCalled();
+			expect( containerJQuery.block ).not.toHaveBeenCalled();
 		} );
 
 		test( 're-prices the wallet for a newly chosen classic variation', async () => {

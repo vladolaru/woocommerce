@@ -3042,6 +3042,7 @@
 
 	$( function () {
 		var debouncedUpdateButtonData;
+		var pricedQuantities;
 
 		if ( isBlockSurface() ) {
 			return;
@@ -3083,21 +3084,25 @@
 				updateButtonData();
 			} );
 
-			// Every quantity input blocks the button at once, so it cannot be clicked at a stale amount, and the
-			// wallet is re-priced 250ms after the last one (client wc-product-page.js:64-83).
+			// A quantity change blocks the button at once, so it cannot be clicked at a stale amount, and re-prices the
+			// wallet 250ms after the last one (client wc-product-page.js:64-83, delegated through jQuery). Native
+			// departure: also on `change`, the only event WooCommerce's quantity steppers fire. A quantity already
+			// priced (the page-load value, or the last change) is skipped, so typing and then leaving the field re-prices once.
 			debouncedUpdateButtonData = debounce( 250, updateButtonData );
-			document
-				.querySelectorAll( '.quantity' )
-				.forEach( function ( quantity ) {
-					quantity.addEventListener( 'input', function ( event ) {
-						if ( ! event.target.matches( '.qty' ) ) {
-							return;
-						}
+			pricedQuantities = new WeakMap();
+			$( '.quantity' ).on( 'input change', '.qty', function () {
+				var pricedQuantity = pricedQuantities.has( this )
+					? pricedQuantities.get( this )
+					: this.defaultValue;
 
-						blockExpressButton();
-						debouncedUpdateButtonData();
-					} );
-				} );
+				if ( this.value === pricedQuantity ) {
+					return;
+				}
+
+				pricedQuantities.set( this, this.value );
+				blockExpressButton();
+				debouncedUpdateButtonData();
+			} );
 		}
 
 		if (
