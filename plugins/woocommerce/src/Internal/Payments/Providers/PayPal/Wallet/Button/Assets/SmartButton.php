@@ -438,7 +438,7 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 			);
 		}
 
-		$available_gateways = WC()->payment_gateways->get_available_payment_gateways();
+		$available_gateways = WC()->payment_gateways()->get_available_payment_gateways();
 
 		if ( isset( $available_gateways['ppcp-gateway'] ) ) {
 			add_action(
@@ -581,9 +581,9 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 	 * @param string      $gateway_id The gateway ID, like 'ppcp-gateway'.
 	 * @param string|null $action_name The action name to be called.
 	 */
-	public function button_renderer( string $gateway_id, ?string $action_name = null ) {
+	public function button_renderer( string $gateway_id, ?string $action_name = null ): void {
 
-		$available_gateways = WC()->payment_gateways->get_available_payment_gateways();
+		$available_gateways = WC()->payment_gateways()->get_available_payment_gateways();
 
 		if ( ! isset( $available_gateways[ $gateway_id ] ) ) {
 			return;
@@ -737,7 +737,7 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 		$amount  = 0;
 		if ( $product instanceof WC_Product ) {
 			$amount = wc_get_price_including_tax( $product );
-		} elseif ( isset( WC()->cart ) ) {
+		} elseif ( null !== WC()->cart ) {
 			$amount = WC()->cart->get_total( 'raw' );
 		}
 
@@ -1111,7 +1111,7 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 			'intent'           => $intent,
 		);
 
-		if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) { // @phpstan-ignore booleanAnd.rightAlwaysFalse
+		if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
 			$params['debug'] = true;
 		}
 
@@ -1124,8 +1124,8 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 		}
 
 		if (
-			$this->environment->is_sandbox() // @phpstan-ignore-line
-			&& defined( 'WP_DEBUG' ) && \WP_DEBUG // @phpstan-ignore booleanAnd.rightAlwaysFalse
+			$this->environment->is_sandbox()
+			&& defined( 'WP_DEBUG' ) && \WP_DEBUG
 			&& WC()->customer instanceof \WC_Customer && WC()->customer->get_billing_country()
 			&& 2 === strlen( WC()->customer->get_billing_country() )
 		) {

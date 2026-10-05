@@ -130,7 +130,7 @@ class CartScriptParamsEndpoint implements EndpointInterface {
 	 * @return array
 	 */
 	private function append_shipping_data( array $response, string $currency_code ): array {
-		$calculated_packages = WC()->shipping->calculate_shipping(
+		$calculated_packages = WC()->shipping()->calculate_shipping(
 			WC()->cart->get_shipping_packages()
 		);
 
