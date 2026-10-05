@@ -445,6 +445,35 @@ class WooPaymentsWooPaySessionService {
 	}
 
 	/**
+	 * Make a WooPay $0 subscription order take a payment method.
+	 *
+	 * WooPay saves the payment method on the order the subscription renews from; WooCommerce Subscriptions may say a $0
+	 * order needs no payment (manual renewals, $0 recurring totals, or with its "$0 Initial Checkout" setting on, which
+	 * removes its own filter). Ported from client 11.1.0 `WooPay_Session::woopay_trial_subscriptions_handler()`
+	 * (class-woopay-session.php:298-316).
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param mixed $needs_payment                Whether the order needs payment.
+	 * @param mixed $order                        The order.
+	 * @param mixed $_unused_valid_order_statuses Statuses that need payment.
+	 * @return mixed
+	 */
+	public function woopay_trial_subscriptions_handler( $needs_payment, $order, $_unused_valid_order_statuses = array() ) {
+		unset( $_unused_valid_order_statuses );
+
+		if ( ! $this->is_request_from_woopay() || ! $this->is_store_api_request() || ! $this->is_woopay_enabled() ) {
+			return $needs_payment;
+		}
+
+		if ( ! $order instanceof \WC_Order || (float) $order->get_total() > 0 ) {
+			return $needs_payment;
+		}
+
+		return $this->woopay_cart_contains_subscription() ? true : $needs_payment;
+	}
+
+	/**
 	 * Drop the browser's cached copy of the session a WooPay Store API request just saved.
 	 *
 	 * WooPay's Cart-Token names the shopper's own session, and the Store API session handler saves that row without

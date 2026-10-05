@@ -1446,6 +1446,37 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A WooPay $0 subscription order needs payment even when WooCommerce Subscriptions says it does not.
+	 *
+	 * Client 11.1.0 class-woopay-session.php:62, :298-316: on a WooPay Store API request, a $0 order with a subscription in
+	 * the cart needs payment; other requests, other totals and carts keep the value.
+	 */
+	public function test_woopay_zero_total_subscription_order_needs_payment(): void {
+		$sut = $this->create_service();
+		$this->register_controller( $sut );
+		$sut->cart_contains_subscription = true;
+		$free_order                      = new \WC_Order();
+		$free_order->set_total( 0 );
+		$paid_order = new \WC_Order();
+		$paid_order->set_total( 10 );
+
+		// phpcs:disable WooCommerce.Commenting.CommentHooks.MissingHookComment -- Core filter WC_Order::needs_payment() applies.
+		$this->assertFalse( apply_filters( 'woocommerce_order_needs_payment', false, $free_order, array() ), 'A store request keeps the value.' );
+
+		$request_uri = $_SERVER['REQUEST_URI'] ?? null; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- Saved to restore it unchanged.
+		$this->simulate_woopay_store_api_request();
+		try {
+			$this->assertTrue( apply_filters( 'woocommerce_order_needs_payment', false, $free_order, array() ) );
+			$this->assertFalse( apply_filters( 'woocommerce_order_needs_payment', false, $paid_order, array() ), 'A paid order keeps the value.' );
+			$sut->cart_contains_subscription = false;
+			$this->assertFalse( apply_filters( 'woocommerce_order_needs_payment', false, $free_order, array() ), 'A cart without a subscription keeps the value.' );
+		} finally {
+			$_SERVER['REQUEST_URI'] = $request_uri;
+		}
+		// phpcs:enable WooCommerce.Commenting.CommentHooks.MissingHookComment
+	}
+
+	/**
 	 * @testdox Should prefer a sanitized email from a valid encrypted identity envelope.
 	 */
 	public function test_encrypted_session_data_uses_valid_encrypted_identity_email(): void {

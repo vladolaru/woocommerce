@@ -90,6 +90,10 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			add_filter( 'automatewoo/referrals/referred_order_advocate', array( $this->session_service, 'automatewoo_refer_a_friend_referral_from_parameter' ) );
 		}
 
+		if ( false === has_filter( 'woocommerce_order_needs_payment', array( $this->session_service, 'woopay_trial_subscriptions_handler' ) ) ) {
+			add_filter( 'woocommerce_order_needs_payment', array( $this->session_service, 'woopay_trial_subscriptions_handler' ), 20, 3 );
+		}
+
 		// After the Store API session handler saves the session on shutdown (priority 20, StoreApi\SessionHandler::init()).
 		if ( false === has_action( 'shutdown', array( $this->session_service, 'refresh_woopay_browser_session_cache' ) ) ) {
 			add_action( 'shutdown', array( $this->session_service, 'refresh_woopay_browser_session_cache' ), 21 );
