@@ -409,7 +409,10 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		elements = {
 			create: jest.fn( () => expressElement ),
 			submit: jest.fn().mockResolvedValue( {} ),
-			update: jest.fn().mockResolvedValue( {} ),
+			// The pages load https://js.stripe.com/v3/, whose `elements.update()` returns nothing: "Starting in Stripe.js
+			// dahlia, this method returns a Promise" (https://docs.stripe.com/js/elements_object/update). Tests that
+			// model dahlia's promise set it explicitly.
+			update: jest.fn(),
 		};
 		stripe = {
 			elements: jest.fn( () => elements ),
