@@ -321,7 +321,11 @@ describe( 'WooPayments express checkout', () => {
 		elements = {
 			create: jest.fn( () => expressElement ),
 			submit: jest.fn().mockResolvedValue( {} ),
-			update: jest.fn().mockResolvedValue( {} ),
+			// The pages load https://js.stripe.com/v3/, whose `elements.update()` returns nothing: "Starting in
+			// Stripe.js dahlia, this method returns a Promise" (https://docs.stripe.com/js/elements_object/update),
+			// and the :8889 capture recorded `undefined` (t62/captures-2b/report.md, headline 1). Tests that model
+			// dahlia's promise set it explicitly.
+			update: jest.fn(),
 		};
 		stripe = {
 			elements: jest.fn( () => elements ),
@@ -633,6 +637,98 @@ describe( 'WooPayments express checkout', () => {
 					] ),
 				} ),
 			} )
+		);
+	} );
+
+	// Store API cart shape: docs/apis/store-api/resources-endpoints/cart.md ("Cart Response": needs_shipping,
+	// shipping_rates[].shipping_rates[] with rate_id, price, selected; totals.total_price).
+	function getCartWithShippingRate( total ) {
+		return Object.assign( getCartResponse(), {
+			totals: {
+				total_price: String( total ),
+				total_refund: '0',
+				currency_code: 'USD',
+			},
+			items: [],
+			shipping_rates: [
+				{
+					shipping_rates: [
+						{
+							rate_id: 'flat_rate:1',
+							name: 'Flat rate',
+							price: '500',
+							taxes: '0',
+							selected: true,
+							meta_data: [],
+						},
+					],
+				},
+			],
+		} );
+	}
+
+	// Event payloads as Stripe documents them: `shippingaddresschange` carries name, address, resolve and reject
+	// (https://docs.stripe.com/js/elements_object/express_checkout_element_shippingaddresschange_event), and
+	// `shippingratechange` carries shippingRate, resolve and reject (https://docs.stripe.com/js.md, "Handle
+	// shippingratechange event"). The client
+	// awaits `elements.update()` in both handlers (event-handlers.js:122, :169), which accepts v3's `undefined`.
+	test( 'accepts a wallet address change on classic checkout when Stripe\'s update returns nothing', async () => {
+		const resolveShipping = jest.fn();
+		const rejectShipping = jest.fn();
+		window.wp.apiFetch
+			.mockResolvedValueOnce( getCartResponse() )
+			.mockResolvedValueOnce( getCartWithShippingRate( 5500 ) );
+		require( '../woopayments-express-checkout' );
+		await bodyEventHandlers.updated_checkout();
+		await flushPromises();
+
+		await expressHandlers.shippingaddresschange( {
+			name: 'Ada Lovelace',
+			address: {
+				city: 'San Francisco',
+				state: 'CA',
+				postal_code: '94107',
+				country: 'US',
+			},
+			resolve: resolveShipping,
+			reject: rejectShipping,
+		} );
+
+		expect( elements.update ).toHaveBeenCalledWith(
+			expect.objectContaining( { amount: 5500 } )
+		);
+		expect( rejectShipping ).not.toHaveBeenCalled();
+		expect( resolveShipping ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				shippingRates: [
+					expect.objectContaining( { id: 'flat_rate:1', amount: 500 } ),
+				],
+			} )
+		);
+	} );
+
+	test( 'accepts a wallet shipping rate change on classic checkout when Stripe\'s update returns nothing', async () => {
+		const resolveRate = jest.fn();
+		const rejectRate = jest.fn();
+		window.wp.apiFetch
+			.mockResolvedValueOnce( getCartResponse() )
+			.mockResolvedValueOnce( getCartWithShippingRate( 5500 ) );
+		require( '../woopayments-express-checkout' );
+		await bodyEventHandlers.updated_checkout();
+		await flushPromises();
+
+		await expressHandlers.shippingratechange( {
+			shippingRate: { id: 'flat_rate:1', amount: 500, displayName: 'Flat rate' },
+			resolve: resolveRate,
+			reject: rejectRate,
+		} );
+
+		expect( elements.update ).toHaveBeenCalledWith(
+			expect.objectContaining( { amount: 5500 } )
+		);
+		expect( rejectRate ).not.toHaveBeenCalled();
+		expect( resolveRate ).toHaveBeenCalledWith(
+			expect.objectContaining( { lineItems: expect.any( Array ) } )
 		);
 	} );
 
@@ -2344,6 +2440,7 @@ describe( 'WooPayments express checkout', () => {
 				)
 			)
 			.mockResolvedValueOnce( getStoreApiResponse( { items: [] }, {} ) );
+		// Stripe.js dahlia: `elements.update()` returns a promise (https://docs.stripe.com/js/elements_object/update).
 		elements.update.mockRejectedValue( new Error( 'update failed' ) );
 
 		require( '../woopayments-express-checkout' );
@@ -2513,6 +2610,7 @@ describe( 'WooPayments express checkout', () => {
 					}
 				)
 			);
+		// Stripe.js dahlia: `elements.update()` returns a promise (https://docs.stripe.com/js/elements_object/update).
 		elements.update.mockReturnValue( update.promise );
 
 		require( '../woopayments-express-checkout' );
@@ -2642,6 +2740,7 @@ describe( 'WooPayments express checkout', () => {
 					: defaultValue
 			),
 		};
+		// Stripe.js dahlia: `elements.update()` returns a promise (https://docs.stripe.com/js/elements_object/update).
 		elements.update
 			.mockResolvedValueOnce( {} )
 			.mockReturnValue( update.promise );
@@ -3249,6 +3348,33 @@ describe( 'WooPayments express checkout', () => {
 				expect.objectContaining( { amount: 3000 } )
 			);
 			expect( containerJQuery.unblock ).toHaveBeenCalled();
+		} );
+
+		// Stripe.js v3 `elements.update()` returns nothing (default mock above); the client awaits it
+		// (shortcode-buttons-express/index.js:653) and shows the wallet for an eligible cart (:666-668).
+		test( 'keeps the wallet shown after a successful re-price', async () => {
+			const container = () =>
+				document.getElementById( 'wcpay-express-checkout-element' );
+			setClassicProductForm( {
+				variable: true,
+				size: 'large',
+				variationId: '125',
+			} );
+			window.wp.apiFetch.mockResolvedValue( getVirtualCart( 3000, 1 ) );
+			await mountReadyWallet();
+
+			bodyEventHandlers.woocommerce_variation_has_changed();
+			await flushMicrotasks();
+
+			expect( elements.update ).toHaveBeenCalledWith(
+				expect.objectContaining( { amount: 3000 } )
+			);
+			expect( container().classList.contains( 'is-ready' ) ).toBe( true );
+			expect(
+				document.getElementById(
+					'wcpay-express-checkout-button-separator'
+				).hidden
+			).toBe( false );
 		} );
 
 		test( 'keeps the button unblocked and unpriced while the classic variation is cleared', async () => {

@@ -1991,8 +1991,11 @@
 			updateOptions.amount = amount;
 		}
 
+		// `elements.update()` returns nothing on js.stripe.com/v3 and a promise from Stripe.js dahlia on
+		// (https://docs.stripe.com/js/elements_object/update); callers chain on the result either way, as the
+		// client's `await elements.update()` does (shortcode-buttons-express/index.js:653, event-handlers.js:122).
 		if ( elements && typeof elements.update === 'function' ) {
-			return elements.update( updateOptions );
+			return Promise.resolve( elements.update( updateOptions ) );
 		}
 
 		return Promise.resolve();
