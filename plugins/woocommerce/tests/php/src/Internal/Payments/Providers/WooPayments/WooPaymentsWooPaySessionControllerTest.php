@@ -67,6 +67,8 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		remove_all_filters( 'wcpay_woopay_enabled' );
 		remove_all_filters( 'wp_die_ajax_handler' );
 		remove_all_filters( 'wp_doing_ajax' );
+		remove_all_filters( 'woocommerce_currency' );
+		delete_option( 'woocommerce_currency' );
 		if ( function_exists( 'WC' ) && WC() && WC()->cart ) {
 			WC()->cart->empty_cart();
 		}
@@ -859,6 +861,88 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertArrayNotHasKey( 'order_id', $config );
 		$this->assertArrayNotHasKey( 'key', $config );
 		$this->assertArrayNotHasKey( 'billing_email', $config );
+	}
+
+	/**
+	 * @testdox Order-pay offers WooPay only when the order is in the active currency (store $store_currency, active $active_currency, order $order_currency).
+	 *
+	 * The WooPay session preloads the Store API order, whose totals carry the active currency (CurrencyFormatter::format()),
+	 * while the payment charges the order's currency. Native multi-currency sets the active currency through the
+	 * woocommerce_currency filter (MultiCurrencyFrontendCurrenciesController::get_woocommerce_currency()); the filter here
+	 * stands in for a shopper whose selected currency is $active_currency.
+	 *
+	 * @testWith ["USD", "", "EUR", false]
+	 *           ["USD", "EUR", "USD", false]
+	 *           ["USD", "EUR", "EUR", true]
+	 *           ["EUR", "", "EUR", true]
+	 *
+	 * @param string $store_currency  Store currency option.
+	 * @param string $active_currency Currency the woocommerce_currency filter returns, or empty for none.
+	 * @param string $order_currency  Order currency.
+	 * @param bool   $offered         Whether WooPay is offered for the order.
+	 */
+	public function test_order_pay_offers_woopay_only_in_the_order_currency( string $store_currency, string $active_currency, string $order_currency, bool $offered ): void {
+		update_option( 'woocommerce_currency', $store_currency );
+		$owner_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$order    = \WC_Helper_Order::create_order( $owner_id );
+		$order->set_currency( $order_currency );
+		$order->save();
+		wp_set_current_user( $owner_id );
+		if ( '' !== $active_currency ) {
+			add_filter( 'woocommerce_currency', static fn() => $active_currency, 900 );
+		}
+		$this->sut = $this->create_controller( true, true );
+		$this->set_order_pay_page( $order->get_id(), $order->get_order_key() );
+
+		$this->sut->enqueue_frontend_assets();
+		$config = $this->get_localized_woopay_config();
+		$html   = $this->sut->get_express_checkout_button_html();
+
+		if ( $offered ) {
+			$this->assertSame( '1', $config['shouldShowWooPayButton'] );
+			$this->assertSame( (string) $order->get_id(), $config['order_id'] );
+			$this->assertSame( $order->get_order_key(), $config['key'] );
+			$this->assertStringContainsString( 'id="wcpay-woopay-button"', $html );
+
+			return;
+		}
+
+		$this->assertSame( '', $config['shouldShowWooPayButton'] );
+		$this->assertArrayNotHasKey( 'order_id', $config );
+		$this->assertArrayNotHasKey( 'key', $config );
+		$this->assertArrayNotHasKey( 'billing_email', $config );
+		$this->assertSame( '', $html );
+	}
+
+	/**
+	 * @testdox The WooPay button in the pay form follows the config even after multi-currency switches to the order's currency there.
+	 *
+	 * Native multi-currency returns the order's currency only once the pay form runs before_woocommerce_pay
+	 * (MultiCurrencyFrontendCurrenciesController::init_order_currency_from_query_vars()), after the config is localized at
+	 * wp_enqueue_scripts; the session request later formats the order in the shopper's currency.
+	 */
+	public function test_order_pay_button_follows_the_config_when_the_pay_form_switches_currency(): void {
+		$owner_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$order    = \WC_Helper_Order::create_order( $owner_id );
+		$order->set_currency( 'USD' );
+		$order->save();
+		wp_set_current_user( $owner_id );
+		$active_currency = 'EUR';
+		add_filter(
+			'woocommerce_currency',
+			static function () use ( &$active_currency ) {
+				return $active_currency;
+			},
+			900
+		);
+		$this->sut = $this->create_controller( true, true );
+		$this->set_order_pay_page( $order->get_id(), $order->get_order_key() );
+
+		$this->sut->enqueue_frontend_assets();
+		$this->assertSame( '', $this->get_localized_woopay_config()['shouldShowWooPayButton'] );
+		$active_currency = 'USD';
+
+		$this->assertSame( '', $this->sut->get_express_checkout_button_html() );
 	}
 
 	/**

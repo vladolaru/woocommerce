@@ -51,6 +51,13 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	private bool $has_enqueued_frontend_assets = false;
 
 	/**
+	 * The order-pay params decided for this request, or null before the first decision.
+	 *
+	 * @var array<string,mixed>|null
+	 */
+	private ?array $pay_for_order_params = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -884,7 +891,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 *
 	 * WooPay then pays that order (client 11.1.0 class-wc-payments-express-checkout-button-display-handler.php:184-222). Without
 	 * them the button stays off, so an order's pay page never starts a cart session. The billing email is left empty on a page
-	 * that a page cache could serve to another visitor (may_put_shopper_email_in_page()).
+	 * that a page cache could serve to another visitor (may_put_shopper_email_in_page()). See get_pay_for_order_params().
 	 *
 	 * @param string $context WooPay button context.
 	 * @return array<string,mixed>
@@ -895,18 +902,42 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			return $config;
 		}
 
-		$pay_for_order_params = WooPaymentsOrderPayAccess::get_pay_for_order_page_params();
+		$pay_for_order_params = $this->get_pay_for_order_params();
 		if ( array() === $pay_for_order_params ) {
 			$config['shouldShowWooPayButton'] = false;
 
 			return $config;
 		}
 
-		if ( ! $this->session_service->may_put_shopper_email_in_page() ) {
-			$pay_for_order_params['billing_email'] = '';
+		return array_merge( $config, $pay_for_order_params );
+	}
+
+	/**
+	 * Get the order-pay params for this request, decided once so the button rendered in the pay form follows the config.
+	 *
+	 * Empty unless the pay link lets the visitor pay the order and the order is in the active currency: the WooPay session
+	 * preloads the Store API order, which states its totals in the active currency (CurrencyFormatter), while the payment
+	 * charges the order's. Multi-currency switches the active currency to the order's only inside the pay form
+	 * (before_woocommerce_pay), after the config is built at wp_enqueue_scripts; the session request sees the shopper's.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_pay_for_order_params(): array {
+		if ( null !== $this->pay_for_order_params ) {
+			return $this->pay_for_order_params;
 		}
 
-		return array_merge( $config, $pay_for_order_params );
+		$params = WooPaymentsOrderPayAccess::get_pay_for_order_page_params();
+		$order  = array() === $params ? false : wc_get_order( $params['order_id'] );
+		if ( ! $order instanceof \WC_Order || strtoupper( $order->get_currency() ) !== strtoupper( get_woocommerce_currency() ) ) {
+			$params = array();
+		} elseif ( ! $this->session_service->may_put_shopper_email_in_page() ) {
+			$params['billing_email'] = '';
+		}
+
+		$this->pay_for_order_params = $params;
+
+		return $params;
 	}
 
 	/**
