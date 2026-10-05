@@ -59,10 +59,10 @@ class WcPaymentTokensModule implements ServiceModule, ExecutableModule {
 			 * @psalm-suppress MissingClosureParamType
 			 */
 			function ( $type ) {
-				if ( $type === 'WC_Payment_Token_PayPal' ) {
+				if ( 'WC_Payment_Token_PayPal' === $type ) {
 					return PaymentTokenPayPal::class;
 				}
-				if ( $type === 'WC_Payment_Token_Venmo' ) {
+				if ( 'WC_Payment_Token_Venmo' === $type ) {
 					return PaymentTokenVenmo::class;
 				}
 
@@ -89,7 +89,7 @@ class WcPaymentTokensModule implements ServiceModule, ExecutableModule {
 					return $tokens;
 				}
 
-				$is_post = isset( $_SERVER['REQUEST_METHOD'] ) && $_SERVER['REQUEST_METHOD'] === 'POST';
+				$is_post = isset( $_SERVER['REQUEST_METHOD'] ) && 'POST' === $_SERVER['REQUEST_METHOD'];
 
 				$context = $container->get( 'button.helper.context' );
 				if ( is_checkout() && ! $is_post && $context->is_paypal_continuation() ) {
@@ -113,7 +113,7 @@ class WcPaymentTokensModule implements ServiceModule, ExecutableModule {
 			 * raw gateway id. Passing the account email as last4 buys the readable
 			 * branch.
 			 *
-			 * TODO: drop this once WooCommerce lets a token supply its own label.
+			 * Drop this once WooCommerce lets a token supply its own label.
 			 *
 			 * Param types removed to avoid third-party issues.
 			 *
@@ -205,6 +205,13 @@ class WcPaymentTokensModule implements ServiceModule, ExecutableModule {
 				}
 
 				try {
+					/**
+					 * Fires before a PayPal or Venmo payment token is deleted at PayPal.
+					 *
+					 * @since 11.3.0
+					 *
+					 * @param string $token The vaulted payment token ID.
+					 */
 					do_action( 'woocommerce_paypal_payments_before_delete_payment_token', $token->get_token() );
 
 					$payment_tokens_endpoint = $container->get( 'api.endpoint.payment-tokens' );
@@ -233,6 +240,13 @@ class WcPaymentTokensModule implements ServiceModule, ExecutableModule {
 
 				if (
 					isset( $wp->query_vars['add-payment-method'] )
+					/**
+					 * Filters whether PayPal is hidden from the add payment method page.
+					 *
+					 * @since 11.3.0
+					 *
+					 * @param bool $disable Whether to remove the PayPal gateway there; true by default.
+					 */
 					&& apply_filters( 'woocommerce_paypal_payments_disable_add_payment_method', true )
 				) {
 					unset( $methods[ PayPalGateway::ID ] );

@@ -64,7 +64,7 @@ class WooCommercePaymentTokens {
 		string $email
 	): int {
 
-		if ( $customer_id === 0 ) {
+		if ( 0 === $customer_id ) {
 			return 0;
 		}
 
@@ -116,7 +116,7 @@ class WooCommercePaymentTokens {
 		string $email
 	): int {
 
-		if ( $customer_id === 0 ) {
+		if ( 0 === $customer_id ) {
 			return 0;
 		}
 
@@ -248,7 +248,11 @@ class WooCommercePaymentTokens {
 	private function first_token_of_type( array $wc_tokens, string $class_name ): ?WC_Payment_Token {
 		foreach ( $wc_tokens as $wc_token ) {
 			if ( $wc_token instanceof $class_name ) {
-				/** @var WC_Payment_Token $wc_token */
+				/**
+				 * The instanceof check above matches a class name held in a variable, so static analysis needs the type.
+				 *
+				 * @var WC_Payment_Token $wc_token
+				 */
 				return $wc_token;
 			}
 		}
