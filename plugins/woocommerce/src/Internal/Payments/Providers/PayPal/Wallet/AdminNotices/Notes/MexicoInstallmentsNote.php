@@ -61,7 +61,7 @@ class MexicoInstallmentsNote {
 	 *
 	 * @return Note
 	 */
-	public static function get_note(): Note {
+	public static function get_note() {
 		$note = new Note();
 		$note->set_name( self::NOTE_NAME );
 		$note->set_type( Note::E_WC_ADMIN_NOTE_INFORMATIONAL );
@@ -94,6 +94,15 @@ class MexicoInstallmentsNote {
 		);
 
 		return $note;
+	}
+
+	/**
+	 * Whether the note applies; the note applies everywhere, as the NoteTraits default does.
+	 *
+	 * @return bool
+	 */
+	public static function is_applicable(): bool {
+		return true;
 	}
 
 	/**
