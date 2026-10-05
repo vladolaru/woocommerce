@@ -823,8 +823,8 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 				'redirect' => apply_filters( 'wcpay_get_add_payment_method_redirect_url', wc_get_endpoint_url( 'payment-methods' ) ),
 			);
 		} catch ( WooPaymentsApiException $exception ) {
-			// Client 11.1.0 gw:4471 logs this at info level.
-			$this->get_logger()->log_throwable( 'Error when adding payment method: ' . $exception->getMessage(), $exception, array(), 'info' );
+			// Client 11.1.0 gw:4471 logs this at info level, with the platform's message; native logs its status and code instead.
+			$this->get_logger()->log_throwable( 'Error when adding payment method.', $exception, array(), 'info' );
 
 			// Client 11.1.0 gw:4467-4468 filters API errors through get_filtered_error_message().
 			return $this->add_payment_method_error(
@@ -910,7 +910,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			$failure = $exception->get_failure();
 			$outcome = $exception->get_outcome();
 			$this->get_logger()->log_throwable(
-				'Error applying the WooPayments subscription renewal payment: ' . $exception->getMessage(),
+				'Error applying the WooPayments subscription renewal payment.',
 				$failure,
 				array( 'order_id' => $renewal_order->get_id() )
 			);
@@ -1167,7 +1167,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return $token;
 		} catch ( Throwable $exception ) {
 			$this->get_logger()->log_throwable(
-				'Error repairing subscription renewal payment token for order #' . $renewal_order->get_id() . ': ' . $exception->getMessage(),
+				'Error repairing subscription renewal payment token for order #' . $renewal_order->get_id() . '.',
 				$exception,
 				array( 'order_id' => $renewal_order->get_id() )
 			);
@@ -2006,12 +2006,14 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			$note          = $note_service->format_refund_failure_note( $order, $amount, $currency, $error->get_error_message() );
 			$tracks_reason = $note;
 
+			// Client 11.1.0 logs the note (gw:2994), which carries the platform's message; native logs the listed code instead.
 			if ( function_exists( 'wc_get_logger' ) ) {
 				wc_get_logger()->error(
-					$note,
+					'A WooPayments refund failed to complete.',
 					array(
-						'source'   => 'woopayments-payments',
-						'order_id' => $order->get_id(),
+						'source'     => 'woopayments-payments',
+						'order_id'   => $order->get_id(),
+						'error_code' => WooPaymentsLogger::get_loggable_error_code( (string) $error->get_error_code() ),
 					)
 				);
 			}
@@ -2056,7 +2058,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		try {
 			$recommended_pms = $this->get_api_client()->get_recommended_payment_methods( $country_code, $locale );
 		} catch ( Throwable $exception ) {
-			$this->get_logger()->log_throwable( 'Failed to fetch the WooPayments recommended payment methods: ' . $exception->getMessage(), $exception );
+			$this->get_logger()->log_throwable( 'Failed to fetch the WooPayments recommended payment methods.', $exception );
 
 			return array();
 		}
@@ -3106,14 +3108,17 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Log a failure raised while paying at checkout, as client 11.1.0 `Logger::exception()` does (gw:1274).
+	 * Log a failure raised while paying at checkout, as client 11.1.0 `Logger::exception()` does (gw:1274), without its message.
+	 *
+	 * The failure can be the platform's error or wrap it, so its message is not logged; the class, code, trace and the
+	 * platform's status and code are.
 	 *
 	 * @param WC_Order  $order   Order being paid.
 	 * @param Throwable $failure Failure raised while processing the payment.
 	 */
 	private function log_checkout_payment_failure( WC_Order $order, Throwable $failure ): void {
 		$this->get_logger()->log_throwable(
-			'Error occurred during the payment process. Exception: ' . $failure->getMessage(),
+			'Error occurred during the payment process.',
 			$failure,
 			array( 'order_id' => $order->get_id() )
 		);
@@ -3224,8 +3229,9 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return $this->keep_succeeded_intent_order( $order, $message, $code );
 		}
 
+		// The refusal's code names it; the message is not logged, because a payment method error's message is Stripe.js text.
 		$this->get_logger()->error(
-			'Error occurred during the payment process. Exception: ' . $message,
+			'Error occurred during the payment process.',
 			array(
 				'order_id'  => $order->get_id(),
 				'exception' => $code,

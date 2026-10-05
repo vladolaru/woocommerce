@@ -47,6 +47,7 @@ use Automattic\WooCommerce\StoreApi\Payments\PaymentContext as StoreApiPaymentCo
 use Automattic\WooCommerce\StoreApi\Payments\PaymentResult as StoreApiPaymentResult;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPublicFraudServices;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\LegacyRuntimeProxy;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Order;
@@ -57,6 +58,8 @@ use WC_Unit_Test_Case;
  * Tests for the NativeWooPaymentsGateway class.
  */
 class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
+
+	use ProviderTextLogAssertions;
 
 	/**
 	 * Make core Multi-Currency own the runtime, or not.
@@ -2564,7 +2567,32 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array( 'result' => 'error' ), $gateway->add_payment_method() );
 		$this->assertSame( $expected, wc_get_notices( 'error' )[0]['notice'] ?? '' );
-		$this->assertContains( array( 'info', 'Error when adding payment method: ' . $exception->getMessage(), 'woopayments' ), $logger->lines );
+		$this->assertContains( array( 'info', 'Error when adding payment method.', 'woopayments' ), $logger->lines );
+	}
+
+	/**
+	 * @testdox A platform error while adding a payment method is logged with its status and code, never its message.
+	 */
+	public function test_add_payment_method_log_leaves_out_platform_text(): void {
+		wc_clear_notices();
+		$user_id = self::factory()->user->create();
+		wp_set_current_user( $user_id );
+		$_POST['wcpay-setup-intent'] = 'seti_native';
+		$api_client                  = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_setup_intention' ) )
+			->getMock();
+		$api_client->method( 'get_setup_intention' )->willThrowException( self::make_provider_error() );
+		$this->enable_debug_logging();
+		$logger  = RecordingWcLogger::install();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, null, $this->create_customer_service_for_user( $user_id, 'cus_me' ) );
+
+		$gateway->add_payment_method();
+
+		$context = $this->get_logged_context( $logger, 'Error when adding payment method.' );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
 	/**
@@ -2772,7 +2800,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'Your card number is invalid' ) ), 'The status change must not carry the raw message as a second note.' );
 		$this->assertSame( array( 'Your card number is invalid.' ), array_column( wc_get_notices( 'error' ), 'notice' ) );
 		$error_messages = array_column( array_filter( $logger->entries, static fn( array $entry ): bool => 'error' === $entry['level'] ), 'message' );
-		$this->assertContains( 'Error occurred during the payment process. Exception: Your card number is invalid.', $error_messages );
+		$this->assertContains( 'Error occurred during the payment process.', $error_messages );
+		// The message is Stripe.js text the browser posted; only the refusal's code is logged.
+		$this->assertStringNotContainsString( 'Your card number is invalid', (string) wp_json_encode( $logger->entries ) );
 	}
 
 	/**
@@ -3823,7 +3853,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'completed', wc_get_order( $order->get_id() )->get_status() );
 		$warnings = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] && str_starts_with( $line[1], 'Payment intent already succeeded' ) ) );
 		$this->assertCount( 1, $warnings, 'The succeeded-intent warning is written whatever the setting.' );
-		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'Error occurred during the payment process. Exception: Downstream step failed' === $line[1] ) );
+		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'Error occurred during the payment process.' === $line[1] ) );
 		if ( ! $written ) {
 			$this->assertSame( array(), $lines );
 			return;
@@ -3995,7 +4025,30 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'Genuine payment failure' ), array_column( wc_get_notices( 'error' ), 'notice' ) );
 		$this->assertSame( array(), $logger->warning_messages() );
 		$error_messages = array_column( array_filter( $logger->entries, static fn( array $entry ): bool => 'error' === $entry['level'] ), 'message' );
-		$this->assertContains( 'Error occurred during the payment process. Exception: Genuine payment failure', $error_messages );
+		$this->assertContains( 'Error occurred during the payment process.', $error_messages );
+	}
+
+	/**
+	 * @testdox A platform error that ends checkout is logged with its status and code, never its message.
+	 */
+	public function test_process_payment_failure_log_leaves_out_platform_text(): void {
+		self::enable_woopayments_debug_logging();
+		$order    = $this->create_order();
+		$provider = $this->create_provider_failing_after_charge(
+			new PaymentOutcome( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, 'pi_platform_error', '', 'pm_card_visa' ),
+			'post_lifecycle_effects',
+			self::make_provider_error()
+		);
+		$gateway  = new NativeWooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
+		$_POST['wcpay-payment-method'] = 'pm_card_visa';
+		$logger                        = RecordingWcLogger::install();
+
+		$gateway->process_payment( $order->get_id() );
+
+		$context = $this->get_logged_context( $logger, 'Error occurred during the payment process.' );
+		$this->assertSame( array( 404, 'resource_missing', $order->get_id() ), array( $context['http_status'], $context['error_code'], $context['order_id'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
 	/**
@@ -4256,7 +4309,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( $expected_status, $order->get_status() );
 		$this->assertSame( array( WooPaymentsErrorMessages::get_generic_message() ), array_column( wc_get_notices( 'error' ), 'notice' ) );
-		$type_error_lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'woopayments' === $line[2] && str_contains( $line[1], 'Argument #1 must be of type array' ) ) );
+		$type_error_lines = array_keys( array_filter( $logger->contexts, static fn( array $context ): bool => 'woopayments' === ( $context['source'] ?? '' ) && 'TypeError' === ( $context['exception'] ?? '' ) ) );
 		$this->assertNotSame( array(), $type_error_lines, 'The PHP error is logged whatever the logging setting.' );
 		$this->assertSame( 'TypeError', $logger->contexts[ $type_error_lines[0] ]['exception'] ?? '' );
 		if ( 'failed' !== $expected_status ) {
@@ -6505,6 +6558,131 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A platform error applying a renewal payment is logged with its status and code, never its message.
+	 */
+	public function test_renewal_apply_failure_log_leaves_out_platform_text(): void {
+		self::enable_woopayments_debug_logging();
+		$user_id = self::factory()->user->create();
+		$order   = $this->create_order();
+		$token   = $this->create_card_token( $user_id, 'pm_renewal_card' );
+		$order->set_customer_id( $user_id );
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->add_payment_token( $token );
+		$order->save();
+		$provider = $this->create_provider_failing_after_charge(
+			new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_renewal_platform_error', '', 'pm_renewal_card' ),
+			'post_lifecycle_effects',
+			self::make_provider_error()
+		);
+		$gateway  = new NativeWooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
+		$logger = RecordingWcLogger::install();
+
+		$gateway->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
+
+		$context = $this->get_logged_context( $logger, 'Error applying the WooPayments subscription renewal payment.' );
+		$this->assertSame( array( 404, 'resource_missing', $order->get_id() ), array( $context['http_status'], $context['error_code'], $context['order_id'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
+	 * @testdox A platform error during the renewal token repair is logged with its status and code, never its message.
+	 */
+	public function test_renewal_token_repair_log_leaves_out_platform_text(): void {
+		$this->ensure_wcs_renewal_subscriptions_double();
+		self::enable_woopayments_debug_logging();
+		$customer_id = self::factory()->user->create();
+		$parent      = wc_create_order();
+		$parent->set_customer_id( $customer_id );
+		$parent->update_meta_data( '_payment_method_id', 'pm_repair_123' );
+		$parent->save();
+		$subscription = wc_create_order();
+		$subscription->set_parent_id( $parent->get_id() );
+		$subscription->set_customer_id( $customer_id );
+		$subscription->save();
+		$renewal = wc_create_order();
+		$renewal->set_customer_id( $customer_id );
+		$renewal->set_payment_method( 'woocommerce_payments' );
+		$renewal->save();
+		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_token_for_user' ) )
+			->getMock();
+		$token_service->method( 'get_or_create_token_for_user' )->willThrowException( self::make_provider_error() );
+		wc_get_container()->replace( WooPaymentsTokenService::class, $token_service );
+		$logger  = RecordingWcLogger::install();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider() );
+
+		$GLOBALS['wcpay_test_renewal_subscription_ids'] = array( $renewal->get_id() => array( $subscription->get_id() ) );
+		try {
+			$gateway->scheduled_subscription_payment( 10.00, $renewal );
+		} finally {
+			unset( $GLOBALS['wcpay_test_renewal_subscription_ids'] );
+		}
+
+		$context = $this->get_logged_context( $logger, 'Error repairing subscription renewal payment token for order #' . $renewal->get_id() . '.' );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
+	 * @testdox A failed synchronous refund is logged with a listed error code, never the platform's message.
+	 *
+	 * Client 11.1.0 logs the failure note (gw:2994), which carries the platform's message; the note itself is unchanged.
+	 */
+	public function test_process_refund_failure_log_leaves_out_platform_text(): void {
+		$order = $this->create_order();
+		$order->update_meta_data( '_charge_id', 'ch_test' );
+		$order->save();
+		$service = new class() extends RecordingPaymentProcessingService {
+			/**
+			 * Fail the refund with the platform's code and message, as the processing service hands them back.
+			 *
+			 * @param PaymentContext   $context  Payment context.
+			 * @param ProviderContract $provider Provider.
+			 * @return bool|\WP_Error
+			 */
+			public function process_refund( PaymentContext $context, ProviderContract $provider ) {
+				parent::process_refund( $context, $provider );
+
+				return new \WP_Error( 'https://pay.example.test/code', "Error: No such customer: 'cus_123'; ask shopper@example.com, see https://pay.example.test/r?key=sk_test_leak123" );
+			}
+		};
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+		$logger = RecordingWcLogger::install();
+
+		$gateway->process_refund( $order->get_id(), 4.25, 'Adjustment' );
+
+		$context = $this->get_logged_context( $logger, 'A WooPayments refund failed to complete.' );
+		$this->assertSame( array( $order->get_id(), 'unknown_error' ), array( $context['order_id'], $context['error_code'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
+	 * @testdox A platform error fetching the recommended payment methods is logged with its status and code, never its message.
+	 */
+	public function test_recommended_payment_methods_fetch_log_leaves_out_platform_text(): void {
+		delete_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' );
+		self::enable_woopayments_debug_logging();
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_recommended_payment_methods' ) )
+			->getMock();
+		$api_client->method( 'get_recommended_payment_methods' )->willThrowException( self::make_provider_error() );
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client );
+		$logger = RecordingWcLogger::install();
+
+		$this->assertSame( array(), $gateway->get_recommended_payment_methods( 'GB' ) );
+
+		$context = $this->get_logged_context( $logger, 'Failed to fetch the WooPayments recommended payment methods.' );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
 	 * Create a WooPayments provider whose charge returns a fixed outcome and whose effects can throw.
 	 *
 	 * @param PaymentOutcome $outcome Outcome the charge returns.
@@ -7254,9 +7432,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pending', wc_get_order( $renewal->get_id() )->get_status() );
 		$notes = array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $renewal->get_id() ) ) );
 		$this->assertNotContains( 'Subscription renewal failed: No saved payment method found.', $notes );
-		$error_lines = array_values( array_filter( $logger->lines, static fn( array $line ): bool => str_contains( $line[1], 'Return value must be of type array, null returned' ) ) );
+		$error_lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => str_starts_with( $line[1], 'Error repairing subscription renewal payment token' ) ) );
 		$this->assertCount( 1, $error_lines, 'The PHP error is logged once.' );
-		$this->assertStringStartsWith( 'Error repairing subscription renewal payment token', $error_lines[0][1] );
+		$this->assertSame( \TypeError::class, $logger->contexts[ $error_lines[0] ]['exception'] );
 	}
 
 	/**
