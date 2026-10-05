@@ -173,6 +173,9 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 			$this->clean_up_cot_setup();
 			$this->toggle_cot_authoritative( $this->original_hpos_enabled );
 			remove_all_filters( 'wc_allow_changing_orders_storage_while_sync_is_pending' );
+			remove_all_filters( 'woocommerce_logger_log_message' );
+			remove_all_filters( 'wcpay_dev_mode' );
+			delete_option( 'woocommerce_woocommerce_payments_settings' );
 			$this->reset_legacy_proxy_mocks();
 		} finally {
 			parent::tearDown();
@@ -929,6 +932,154 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 
 		$this->assert_order_state( $order_id, $customer_id, false );
 		$this->assertFalse( wp_next_scheduled( self::RESTORE_HOOK, array( $order_id ) ) );
+	}
+
+	/**
+	 * @testdox A restore that throws ($throwable_class $where) is logged with the order, whatever the logging setting, and the cron event ends cleanly.
+	 *
+	 * Client 11.1.0 catches nothing in its restore callback (class-woopay-session.php:228-237), so any failure, an Exception
+	 * included, is a fatal that core always logs.
+	 *
+	 * @testWith ["Error", "while the order saves"]
+	 *           ["TypeError", "while the order saves"]
+	 *           ["RuntimeException", "while the marker is read"]
+	 *
+	 * @param string $throwable_class Throwable class.
+	 * @param string $where           Where it is thrown.
+	 */
+	public function test_restore_failure_is_always_logged( string $throwable_class, string $where ): void {
+		$lines = $this->turn_woopayments_logging_off_and_record_lines();
+		$this->sut->register();
+		$customer_id = self::factory()->user->create();
+		$order_id    = $this->create_order( 0, $customer_id, true, false );
+		$throw       = static function ( $value, $order = null ) use ( $order_id, $throwable_class ) {
+			if ( $order instanceof WC_Order && $order_id === $order->get_id() ) {
+				throw new $throwable_class( 'Order write failed.' );
+			}
+			return $value;
+		};
+		// WC_Data::get_meta() filters a 'view' read through woocommerce_order_get_{key} (abstract-wc-data.php).
+		$hook     = 'while the order saves' === $where ? 'woocommerce_before_order_object_save' : 'woocommerce_order_get_' . self::MARKER_META;
+		$callback = 'while the order saves' === $where ? static fn( $order ) => $throw( null, $order ) : $throw;
+		add_filter( $hook, $callback, 10, 2 );
+
+		try {
+			do_action( self::RESTORE_HOOK, $order_id );
+		} finally {
+			remove_filter( $hook, $callback, 10 );
+		}
+
+		$this->assert_order_state( $order_id, 0, true, $customer_id );
+		$line = $this->find_log_line( $lines, 'WooPay verified-email restore failed; the order may still be detached from its customer.' );
+		$this->assertSame( 'error', $line['level'] );
+		$this->assertSame( $order_id, $line['context']['order_id'] ?? null );
+		$this->assertSame( 'while the order saves' === $where ? $customer_id : null, $line['context']['customer_id'] ?? null );
+		$this->assertSame( $throwable_class, $line['context']['exception'] ?? null );
+	}
+
+	/**
+	 * @testdox A restore whose save core swallows is logged whatever the logging setting, and the order keeps its marker.
+	 *
+	 * WC_Abstract_Order::save() catches an Exception from the save and only logs it under its own source
+	 * (abstract-wc-order.php:278-309).
+	 */
+	public function test_restore_that_does_not_save_is_always_logged(): void {
+		$lines = $this->turn_woopayments_logging_off_and_record_lines();
+		$this->sut->register();
+		$customer_id = self::factory()->user->create();
+		$order_id    = $this->create_order( 0, $customer_id, true, false );
+		$throw       = static function ( $order ) use ( $order_id ): void {
+			if ( $order instanceof WC_Order && $order_id === $order->get_id() ) {
+				throw new \Exception( 'Order write failed.' );
+			}
+		};
+		add_action( 'woocommerce_before_order_object_save', $throw );
+
+		try {
+			do_action( self::RESTORE_HOOK, $order_id );
+		} finally {
+			remove_action( 'woocommerce_before_order_object_save', $throw );
+		}
+
+		$this->assert_order_state( $order_id, 0, true, $customer_id );
+		$line = $this->find_log_line( $lines, 'WooPay verified-email restore did not save; the order may still be detached from its customer.' );
+		$this->assertSame( 'error', $line['level'] );
+		$this->assertSame( $order_id, $line['context']['order_id'] ?? null );
+		$this->assertSame( $customer_id, $line['context']['customer_id'] ?? null );
+	}
+
+	/**
+	 * @testdox A drain whose order query throws is logged whatever the logging setting.
+	 */
+	public function test_drain_query_failure_is_always_logged(): void {
+		$lines = $this->turn_woopayments_logging_off_and_record_lines();
+		$this->sut->register();
+		$customer_id = self::factory()->user->create();
+		$order_id    = $this->create_order( 0, $customer_id, true, false );
+		$throw       = static function ( array $query_args ): array {
+			if ( self::MARKER_META === ( $query_args['meta_key'] ?? null ) ) {
+				throw new \RuntimeException( 'Order query failed.' );
+			}
+			return $query_args;
+		};
+		add_filter( 'woocommerce_order_query_args', $throw );
+
+		try {
+			$this->sut->drain_current_blog();
+		} finally {
+			remove_filter( 'woocommerce_order_query_args', $throw );
+		}
+
+		$this->assert_order_state( $order_id, 0, true, $customer_id );
+		$line = $this->find_log_line( $lines, 'WooPay verified-email restore could not list the detached orders.' );
+		$this->assertSame( 'error', $line['level'] );
+		$this->assertSame( 'RuntimeException', $line['context']['exception'] ?? null );
+	}
+
+	/**
+	 * Turn WooPayments logging and dev mode off and record every line written under the WooPayments source.
+	 *
+	 * @return \ArrayObject<int,array{level:string,message:string,context:array<string,mixed>}>
+	 */
+	private function turn_woopayments_logging_off_and_record_lines(): \ArrayObject {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$lines = new \ArrayObject();
+		add_filter(
+			'woocommerce_logger_log_message',
+			static function ( $message, $level, $context ) use ( $lines ) {
+				if ( is_array( $context ) && 'woopayments' === ( $context['source'] ?? '' ) ) {
+					$lines[] = array(
+						'level'   => (string) $level,
+						'message' => (string) $message,
+						'context' => $context,
+					);
+				}
+
+				return $message;
+			},
+			10,
+			3
+		);
+
+		return $lines;
+	}
+
+	/**
+	 * Find the first recorded log line with a message.
+	 *
+	 * @param \ArrayObject $lines   Recorded lines.
+	 * @param string       $message Message.
+	 * @return array{level:string,message:string,context:array<string,mixed>}
+	 */
+	private function find_log_line( \ArrayObject $lines, string $message ): array {
+		foreach ( $lines as $line ) {
+			if ( $message === $line['message'] ) {
+				return $line;
+			}
+		}
+
+		$this->fail( 'Expected the log line: ' . $message );
 	}
 
 	/**

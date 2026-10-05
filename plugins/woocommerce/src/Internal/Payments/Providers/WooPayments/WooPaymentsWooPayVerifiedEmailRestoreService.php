@@ -160,6 +160,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreService implements RegisterHooksInter
 					)
 				);
 			} catch ( Throwable $throwable ) {
+				$this->get_logger()->log_throwable_always( 'WooPay verified-email restore could not list the detached orders.', $throwable );
 				break;
 			}
 			if ( ! is_array( $order_ids ) ) {
@@ -197,10 +198,14 @@ class WooPaymentsWooPayVerifiedEmailRestoreService implements RegisterHooksInter
 	/**
 	 * Restore one order from its durable marker.
 	 *
+	 * A failed restore is logged whatever the logging setting, with the IDs needed to restore the order by hand: client 11.1.0
+	 * catches nothing here, so its failure is a fatal that core always logs (class-woopay-session.php:228-237). No retry.
+	 *
 	 * @param int $order_id Order ID.
 	 * @return bool True when a marker was consumed.
 	 */
 	private function restore_order( int $order_id ): bool {
+		$customer_id = null;
 		try {
 			$order = wc_get_order( $order_id );
 			if ( ! $order instanceof WC_Order || ! $order->meta_exists( self::MERCHANT_CUSTOMER_ID_META ) ) {
@@ -216,10 +221,39 @@ class WooPaymentsWooPayVerifiedEmailRestoreService implements RegisterHooksInter
 			$order->save();
 
 			$fresh_order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
-			return ! $fresh_order->meta_exists( self::MERCHANT_CUSTOMER_ID_META );
+			if ( $fresh_order->meta_exists( self::MERCHANT_CUSTOMER_ID_META ) ) {
+				$this->get_logger()->log_always(
+					'WooPay verified-email restore did not save; the order may still be detached from its customer.',
+					'error',
+					array(
+						'order_id'    => $order_id,
+						'customer_id' => $customer_id,
+					)
+				);
+				return false;
+			}
+
+			return true;
 		} catch ( Throwable $throwable ) {
+			$this->get_logger()->log_throwable_always(
+				'WooPay verified-email restore failed; the order may still be detached from its customer.',
+				$throwable,
+				array(
+					'order_id'    => $order_id,
+					'customer_id' => $customer_id,
+				)
+			);
 			return false;
 		}
+	}
+
+	/**
+	 * Get the WooPayments logger.
+	 *
+	 * @return WooPaymentsLogger
+	 */
+	private function get_logger(): WooPaymentsLogger {
+		return wc_get_container()->get( WooPaymentsLogger::class );
 	}
 
 	/**
