@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
@@ -1789,6 +1790,9 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Pay-for-order params give a guest order's email only to a shop manager, and to anyone else the email they verified or their session email.
 	 *
+	 * On the configured checkout page, where core defines DONOTCACHEPAGE (WC_Cache_Helper::prevent_caching()); the constant
+	 * is set here because an earlier test in the process may have defined it either way.
+	 *
 	 * @testWith ["logged-out visitor", ""]
 	 *           ["shop manager", "order@example.test"]
 	 *           ["visitor with a session email", "session@example.test"]
@@ -1816,16 +1820,68 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		} elseif ( 'visitor who posted the email check' === $viewer ) {
 			$_POST['email'] = 'typed@example.test';
 		}
+		Constants::set_constant( 'DONOTCACHEPAGE', true );
 
 		try {
 			$params = $this->create_service()->get_express_checkout_params( 'pay_for_order' );
 		} finally {
+			Constants::clear_single_constant( 'DONOTCACHEPAGE' );
 			$session->set( 'customer', $session_customer );
 			unset( $_POST['email'] );
 		}
 
 		$this->assertSame( $order->get_id(), $params['order_id'] );
 		$this->assertSame( $expected, $params['billing_email'] );
+	}
+
+	/**
+	 * @testdox A guest's $source email stays out of the pay-for-order params on another page carrying the checkout shortcode.
+	 *
+	 * Core defines DONOTCACHEPAGE only on the configured cart, checkout and My Account pages (WC_Cache_Helper::prevent_caching()),
+	 * so a page cache could serve this page's HTML to the next visitor. The constant is set to what that page gets, because an
+	 * earlier test in the process may have defined it.
+	 *
+	 * @testWith ["session"]
+	 *           ["posted"]
+	 *
+	 * @param string $source Where the visitor's email comes from.
+	 */
+	public function test_pay_for_order_params_keep_a_guest_email_off_a_page_core_does_not_protect( string $source ): void {
+		$order = wc_create_order();
+		$order->set_total( '24.00' );
+		$order->set_billing_email( 'order@example.test' );
+		$order->save();
+		$page_id = self::factory()->post->create(
+			array(
+				'post_type'    => 'page',
+				'post_status'  => 'publish',
+				'post_content' => '[woocommerce_checkout]',
+			)
+		);
+		$this->go_to( get_permalink( $page_id ) );
+		$_GET['pay_for_order'] = 'true';
+		$_GET['key']           = $order->get_order_key();
+		$this->set_order_pay_query_var( $order->get_id() );
+
+		$session          = WC()->session;
+		$session_customer = $session->get( 'customer' );
+		$session->set( 'customer', 'session' === $source ? array( 'email' => 'session@example.test' ) : null );
+		if ( 'posted' === $source ) {
+			$_POST['email'] = 'typed@example.test';
+		}
+		Constants::set_constant( 'DONOTCACHEPAGE', false );
+
+		try {
+			$params = $this->create_service()->get_express_checkout_params( 'pay_for_order' );
+		} finally {
+			Constants::clear_single_constant( 'DONOTCACHEPAGE' );
+			$session->set( 'customer', $session_customer );
+			unset( $_POST['email'] );
+		}
+
+		$this->assertSame( $order->get_id(), $params['order_id'] );
+		$this->assertSame( $order->get_order_key(), $params['key'] );
+		$this->assertSame( '', $params['billing_email'] );
 	}
 
 	/**

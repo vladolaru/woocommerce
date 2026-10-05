@@ -891,7 +891,8 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 *
 	 * WooPay then pays that order (client 11.1.0 class-wc-payments-express-checkout-button-display-handler.php:184-222). Without
 	 * them the button stays off, so an order's pay page never starts a cart session. The billing email is left empty on a page
-	 * that a page cache could serve to another visitor (may_put_shopper_email_in_page()). See get_pay_for_order_params().
+	 * that a page cache could serve to another visitor (WooPaymentsOrderPayAccess::may_put_shopper_email_in_page()). See
+	 * get_pay_for_order_params().
 	 *
 	 * @param string $context WooPay button context.
 	 * @return array<string,mixed>
@@ -931,7 +932,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 		$order  = array() === $params ? false : wc_get_order( $params['order_id'] );
 		if ( ! $order instanceof \WC_Order || strtoupper( $order->get_currency() ) !== strtoupper( get_woocommerce_currency() ) ) {
 			$params = array();
-		} elseif ( ! $this->session_service->may_put_shopper_email_in_page() ) {
+		} elseif ( ! WooPaymentsOrderPayAccess::may_put_shopper_email_in_page() ) {
 			$params['billing_email'] = '';
 		}
 

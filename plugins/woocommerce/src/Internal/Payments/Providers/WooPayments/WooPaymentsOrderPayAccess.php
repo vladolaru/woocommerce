@@ -7,8 +7,10 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\Jetpack\Constants;
+
 /**
- * Who may use an order's pay link, and which billing email the page may hand to the visitor.
+ * Who may use an order's pay link, and which shopper email a page may hand to the visitor.
  *
  * Shared by the order-pay checkout config, the classic express checkout and WooPay sessions so they apply one rule.
  *
@@ -64,6 +66,21 @@ final class WooPaymentsOrderPayAccess {
 			'key'           => $order->get_order_key(),
 			'billing_email' => self::get_billing_email_for_current_visitor( $order ),
 		);
+	}
+
+	/**
+	 * Tell whether the page being built may carry the shopper's email in its HTML.
+	 *
+	 * Only when no page cache serves the HTML to another visitor: the shopper is logged in, or the page defined DONOTCACHEPAGE,
+	 * as WC_Cache_Helper::prevent_caching() does on the configured cart, checkout and My Account pages before any page config
+	 * is built. Cart and checkout predicates are not enough: they also match other pages carrying the cart or checkout shortcode.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return bool
+	 */
+	public static function may_put_shopper_email_in_page(): bool {
+		return is_user_logged_in() || Constants::is_true( 'DONOTCACHEPAGE' );
 	}
 
 	/**

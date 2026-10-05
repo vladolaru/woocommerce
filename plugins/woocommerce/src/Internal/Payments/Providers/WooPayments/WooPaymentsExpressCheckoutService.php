@@ -1020,7 +1020,8 @@ class WooPaymentsExpressCheckoutService {
 	 * Get pay-for-order params for the frontend.
 	 *
 	 * The billing email authorizes the Store API order requests, so only a visitor allowed to see the order gets the
-	 * order's own email (see WooPaymentsOrderPayAccess::get_billing_email_for_current_visitor()).
+	 * order's own email (see WooPaymentsOrderPayAccess::get_billing_email_for_current_visitor()), and only on a page that
+	 * no page cache serves to another visitor (WooPaymentsOrderPayAccess::may_put_shopper_email_in_page()).
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -1034,7 +1035,7 @@ class WooPaymentsExpressCheckoutService {
 			'order_id'      => $order->get_id(),
 			'pay_for_order' => $this->get_pay_for_order_flag(),
 			'key'           => $this->get_pay_for_order_key(),
-			'billing_email' => WooPaymentsOrderPayAccess::get_billing_email_for_current_visitor( $order ),
+			'billing_email' => WooPaymentsOrderPayAccess::may_put_shopper_email_in_page() ? WooPaymentsOrderPayAccess::get_billing_email_for_current_visitor( $order ) : '',
 		);
 	}
 
