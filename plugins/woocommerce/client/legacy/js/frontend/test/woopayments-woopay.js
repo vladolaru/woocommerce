@@ -2041,7 +2041,8 @@ describe( 'WooPayments WooPay checkout', () => {
 		test( 'sends the order with the first-party session and to the WooPay redirect', async () => {
 			window.wcpay_core_woopay_config.isWoopayFirstPartyAuthEnabled = true;
 			// get_woopay_session answers with the encrypted session: { blog_id, data: { session, iv, hash } }
-			// (client woopay-express-checkout-button.js:306-308, native encrypt_and_sign_data()).
+			// (client includes/woopay/class-woopay-utilities.php:308-335, encrypt_and_sign_data(); read at
+			// woopay-express-checkout-button.js:306-308).
 			global.jQuery.post = jest.fn( () => ( {
 				done: jest.fn( ( callback ) => {
 					callback( {
