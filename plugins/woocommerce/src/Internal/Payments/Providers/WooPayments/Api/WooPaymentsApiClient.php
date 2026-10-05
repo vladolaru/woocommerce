@@ -2901,6 +2901,8 @@ class WooPaymentsApiClient {
 	 * Called only when that log is written: redaction looks at every string value, so a store with logging off does none of
 	 * this work.
 	 *
+	 * @since 11.2.0
+	 *
 	 * @param mixed $input Params, body, message or code.
 	 * @return mixed
 	 */
