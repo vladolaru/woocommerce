@@ -2828,6 +2828,176 @@ describe( 'WooPayments express checkout', () => {
 		} );
 	} );
 
+	describe( 'a WooCommerce Subscriptions free trial with nothing to pay today', () => {
+		function getFreeTrialCart( overrides = {} ) {
+			return Object.assign(
+				{
+					needs_shipping: false,
+					items: [
+						{
+							name: 'Premium Plan',
+							quantity: 1,
+							totals: {
+								line_subtotal: '0',
+								line_subtotal_tax: '0',
+								line_total: '0',
+								currency_minor_unit: 2,
+							},
+							extensions: {
+								subscriptions: {
+									billing_period: 'month',
+									billing_interval: 1,
+									trial_length: 14,
+									sign_up_fees: '0',
+								},
+							},
+						},
+					],
+					totals: {
+						total_price: '0',
+						total_refund: '0',
+						total_items: '0',
+						total_tax: '0',
+						total_shipping: '0',
+						total_shipping_tax: '0',
+						currency_code: 'USD',
+						currency_minor_unit: 2,
+						tax_lines: [],
+					},
+					shipping_rates: [],
+					extensions: {
+						subscriptions: [
+							{
+								billing_period: 'month',
+								billing_interval: 1,
+								next_payment_date: '2026-03-19',
+								totals: {
+									total_price: '1999',
+									total_items: '1999',
+									total_tax: '0',
+									total_shipping: '0',
+									total_shipping_tax: '0',
+									currency_minor_unit: 2,
+									currency_prefix: '$',
+									currency_suffix: '',
+									currency_decimal_separator: '.',
+									currency_thousand_separator: ',',
+									tax_lines: [],
+								},
+							},
+						],
+					},
+				},
+				overrides
+			);
+		}
+
+		beforeEach( () => {
+			window.wp.hooks = createWpHooks();
+		} );
+
+		test( 'mounts the wallet for the recurring total and shows it in the line items', async () => {
+			const resolveClick = jest.fn();
+			window.wp.apiFetch.mockResolvedValue( getFreeTrialCart() );
+
+			require( '../woopayments-express-checkout' );
+			await bodyEventHandlers.updated_checkout();
+			await flushPromises();
+			await expressHandlers.click( { resolve: resolveClick } );
+
+			expect( stripe.elements ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					mode: 'payment',
+					amount: 1999,
+					setupFutureUsage: 'off_session',
+				} )
+			);
+			expect( resolveClick ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					lineItems: [
+						{
+							name: 'Premium Plan (recurring) - Recurring total: $19.99 / month on 2026-03-19',
+							amount: 1999,
+						},
+					],
+				} )
+			);
+		} );
+
+		test( 'lets an extension make a $0 cart eligible through the is-cart-eligible filter', async () => {
+			window.wp.apiFetch.mockResolvedValue(
+				getFreeTrialCart( {
+					items: [],
+					extensions: {},
+				} )
+			);
+			window.wp.hooks.addFilter(
+				'wcpay.express-checkout.is-cart-eligible',
+				'test/extension',
+				() => true
+			);
+
+			require( '../woopayments-express-checkout' );
+			await bodyEventHandlers.updated_checkout();
+			await flushPromises();
+
+			expect( expressElement.mount ).toHaveBeenCalledWith(
+				'#wcpay-express-checkout-element'
+			);
+		} );
+
+		test( 'offers the shipping rates the subscription holds for a physical free trial', async () => {
+			const resolveClick = jest.fn();
+			const cart = getFreeTrialCart( { needs_shipping: true } );
+			cart.extensions.subscriptions[ 0 ].shipping_rates = [
+				{
+					package_id: 'sub_month_0',
+					shipping_rates: [
+						{
+							rate_id: 'flat_rate:3',
+							name: 'Subscription shipping',
+							price: '500',
+							taxes: '0',
+							selected: true,
+							currency_minor_unit: 2,
+							meta_data: [],
+						},
+					],
+				},
+			];
+			window.wp.apiFetch.mockResolvedValue( cart );
+
+			require( '../woopayments-express-checkout' );
+			await bodyEventHandlers.updated_checkout();
+			await flushPromises();
+			await expressHandlers.click( { resolve: resolveClick } );
+			await expressHandlers.shippingratechange( {
+				shippingRate: { id: 'flat_rate:3' },
+				resolve: jest.fn(),
+				reject: jest.fn(),
+			} );
+
+			expect( resolveClick ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					shippingRates: [
+						{
+							id: 'flat_rate:3',
+							displayName: 'Subscription shipping',
+							amount: 500,
+							deliveryEstimate: '',
+						},
+					],
+				} )
+			);
+			expect( window.wp.apiFetch ).toHaveBeenLastCalledWith(
+				expect.objectContaining( {
+					path: '/wc/store/v1/cart/select-shipping-rate?currency=USD',
+					data: { package_id: 'sub_month_0', rate_id: 'flat_rate:3' },
+				} )
+			);
+		} );
+	} );
+
 	test( 'does not initialize classic ECE on block checkout surfaces', async () => {
 		window.wcpayExpressCheckoutParams.has_block = true;
 

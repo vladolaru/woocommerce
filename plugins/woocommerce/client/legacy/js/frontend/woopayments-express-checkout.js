@@ -1875,6 +1875,8 @@
 			}
 		);
 
+		registerSubscriptionsCompatibility( hooks );
+
 		// Product Bundles: items bundled by another item are part of its price
 		// (client shortcode-buttons-express/compatibility/wc-product-bundles.js:6-19).
 		hooks.addFilter(
@@ -1895,6 +1897,479 @@
 					} ),
 				} );
 			}
+		);
+	}
+
+	/**
+	 * Tell whether a Store API cart item is a subscription with a free trial.
+	 *
+	 * @param {Object} item Store API cart item.
+	 * @return {boolean} Whether the item has a trial.
+	 */
+	function isTrialSubscriptionItem( item ) {
+		var subscriptionData =
+			item && item.extensions && item.extensions.subscriptions;
+
+		return Boolean( subscriptionData ) && subscriptionData.trial_length > 0;
+	}
+
+	function getSubscriptionSchedules( cartData ) {
+		var subscriptions =
+			cartData && cartData.extensions
+				? cartData.extensions.subscriptions
+				: null;
+
+		return Array.isArray( subscriptions ) ? subscriptions : null;
+	}
+
+	function hasTrialSubscriptionItems( cartData ) {
+		if (
+			! cartData ||
+			! cartData.items ||
+			! cartData.extensions ||
+			! cartData.extensions.subscriptions
+		) {
+			return false;
+		}
+
+		return cartData.items.some( isTrialSubscriptionItem );
+	}
+
+	function getSubscriptionShippingRates( cartData ) {
+		var subscriptions = getSubscriptionSchedules( cartData );
+		var index;
+		var rates;
+
+		if ( ! subscriptions ) {
+			return null;
+		}
+
+		for ( index = 0; index < subscriptions.length; index++ ) {
+			rates =
+				subscriptions[ index ].shipping_rates &&
+				subscriptions[ index ].shipping_rates[ 0 ] &&
+				subscriptions[ index ].shipping_rates[ 0 ].shipping_rates;
+
+			if ( rates && rates.length > 0 ) {
+				return rates;
+			}
+		}
+
+		return null;
+	}
+
+	function hasTrialSubscriptionWithDeferredShipping( cartData ) {
+		var mainRates =
+			cartData &&
+			cartData.shipping_rates &&
+			cartData.shipping_rates[ 0 ] &&
+			cartData.shipping_rates[ 0 ].shipping_rates;
+
+		if ( ! hasTrialSubscriptionItems( cartData ) ) {
+			return false;
+		}
+
+		// Free trials move the rates from the cart to the subscription extension.
+		if ( mainRates && mainRates.length > 0 ) {
+			return false;
+		}
+
+		return getSubscriptionShippingRates( cartData ) !== null;
+	}
+
+	function isZeroTotalTrialCart( cartData ) {
+		return (
+			hasTrialSubscriptionItems( cartData ) &&
+			parseInt(
+				( cartData.totals && cartData.totals.total_price ) || '0',
+				10
+			) === 0
+		);
+	}
+
+	/**
+	 * Sum the recurring totals of every subscription schedule in the cart.
+	 *
+	 * @param {Object} cartData Store API cart.
+	 * @return {Object|null} `{ amount, totals }`, or null without a recurring total.
+	 */
+	function getRecurringCartTotal( cartData ) {
+		var subscriptions = getSubscriptionSchedules( cartData );
+		var totalRecurring = 0;
+		var totalItems = 0;
+		var totalTax = 0;
+		var totalShipping = 0;
+		var totalShippingTax = 0;
+		var currencyMinorUnit = 2;
+		var taxLines = [];
+
+		if ( ! subscriptions ) {
+			return null;
+		}
+
+		subscriptions.forEach( function ( subscription ) {
+			var totals = subscription.totals;
+			var selectedRate;
+
+			if ( ! totals || ! totals.total_price ) {
+				return;
+			}
+
+			totalRecurring += parseInt( totals.total_price, 10 );
+			totalItems += parseInt( totals.total_items || '0', 10 );
+			totalTax += parseInt( totals.total_tax || '0', 10 );
+
+			// During free trials the totals may leave out a selected shipping
+			// rate, because shipping is deferred: read the rate instead.
+			selectedRate =
+				subscription.shipping_rates &&
+				subscription.shipping_rates[ 0 ] &&
+				Array.isArray( subscription.shipping_rates[ 0 ].shipping_rates )
+					? subscription.shipping_rates[ 0 ].shipping_rates.find(
+							function ( rate ) {
+								return rate.selected;
+							}
+					  )
+					: undefined;
+			if ( selectedRate ) {
+				totalShipping += parseInt( selectedRate.price || '0', 10 );
+				totalShippingTax += parseInt( selectedRate.taxes || '0', 10 );
+			} else {
+				totalShipping += parseInt( totals.total_shipping || '0', 10 );
+				totalShippingTax += parseInt(
+					totals.total_shipping_tax || '0',
+					10
+				);
+			}
+
+			currencyMinorUnit = valueOr(
+				totals.currency_minor_unit,
+				currencyMinorUnit
+			);
+
+			if ( totals.tax_lines ) {
+				taxLines.push.apply( taxLines, totals.tax_lines );
+			}
+		} );
+
+		if ( totalRecurring === 0 ) {
+			return null;
+		}
+
+		return {
+			amount: totalRecurring,
+			currencyMinorUnit: currencyMinorUnit,
+			totals: Object.assign(
+				{},
+				( subscriptions[ 0 ] && subscriptions[ 0 ].totals ) ||
+					cartData.totals,
+				{
+					total_price: String( totalRecurring ),
+					total_items: String( totalItems ),
+					total_tax: String( totalTax ),
+					total_shipping: String( totalShipping ),
+					total_shipping_tax: String( totalShippingTax ),
+					tax_lines: taxLines,
+				}
+			),
+		};
+	}
+
+	function getLocalizedBillingPeriod( period, interval ) {
+		var plurals = {
+			day: 'days',
+			week: 'weeks',
+			month: 'months',
+			year: 'years',
+		};
+
+		if ( interval > 1 ) {
+			return interval + ' ' + ( plurals[ period ] || period + 's' );
+		}
+
+		return period;
+	}
+
+	// What `??` does; this script keeps to the syntax it already uses.
+	function valueOr( value, fallback ) {
+		return value === undefined || value === null ? fallback : value;
+	}
+
+	function formatRecurringTotal( subscription ) {
+		var totals = subscription.totals;
+		var amount = parseInt( totals.total_price, 10 );
+		var minorUnit = valueOr( totals.currency_minor_unit, 2 );
+		var parts = ( amount / Math.pow( 10, minorUnit ) )
+			.toFixed( minorUnit )
+			.split( '.' );
+		var whole = parts[ 0 ].replace(
+			/\B(?=(\d{3})+(?!\d))/g,
+			valueOr( totals.currency_thousand_separator, ',' )
+		);
+		var formatted = parts[ 1 ]
+			? whole +
+			  valueOr( totals.currency_decimal_separator, '.' ) +
+			  parts[ 1 ]
+			: whole;
+
+		return (
+			valueOr( totals.currency_prefix, '' ) +
+			formatted +
+			valueOr( totals.currency_suffix, '' ) +
+			' / ' +
+			getLocalizedBillingPeriod(
+				subscription.billing_period,
+				valueOr( subscription.billing_interval, 1 )
+			)
+		);
+	}
+
+	/**
+	 * Show the recurring price and its first payment date on free-trial items, and the
+	 * recurring amounts for a $0 cart (client wc-subscriptions.js:413-541).
+	 *
+	 * @param {Object} cartData Store API cart.
+	 * @return {Object} Cart with subscription line items.
+	 */
+	function mapSubscriptionLineItems( cartData ) {
+		var subscriptions = getSubscriptionSchedules( cartData );
+		var recurringTotalLabel = 'Recurring total';
+		var isZeroTotalCart;
+		var modifiedItems;
+		var recurringTotal;
+
+		if ( ! hasTrialSubscriptionItems( cartData ) || ! subscriptions ) {
+			return cartData;
+		}
+
+		isZeroTotalCart =
+			parseInt(
+				( cartData.totals && cartData.totals.total_price ) || '0',
+				10
+			) === 0;
+		modifiedItems = cartData.items.slice();
+
+		subscriptions.forEach( function ( subscription ) {
+			var matchingItemsCount = cartData.items.filter( function ( item ) {
+				return (
+					item.extensions &&
+					item.extensions.subscriptions &&
+					item.extensions.subscriptions.billing_period ===
+						subscription.billing_period
+				);
+			} ).length;
+			var itemRecurringPrice;
+
+			if ( matchingItemsCount === 0 ) {
+				return;
+			}
+
+			itemRecurringPrice = Math.round(
+				parseInt(
+					( subscription.totals && subscription.totals.total_items ) ||
+						'0',
+					10
+				) / matchingItemsCount
+			);
+
+			modifiedItems.forEach( function ( item, index ) {
+				var itemSubscription =
+					item.extensions && item.extensions.subscriptions;
+
+				if (
+					! itemSubscription ||
+					! ( itemSubscription.trial_length > 0 ) ||
+					itemSubscription.billing_period !==
+						subscription.billing_period
+				) {
+					return;
+				}
+
+				// Each item is handled once, whether schedules share a billing
+				// period or the filter runs again on its own output.
+				if (
+					( item.item_data || [] ).some( function ( data ) {
+						return data.name === recurringTotalLabel;
+					} )
+				) {
+					return;
+				}
+
+				modifiedItems[ index ] = Object.assign(
+					{},
+					item,
+					{
+						name: item.name + ' (recurring)',
+						item_data: ( item.item_data || [] ).concat( [
+							{
+								name: recurringTotalLabel,
+								value:
+									formatRecurringTotal( subscription ) +
+									' on ' +
+									subscription.next_payment_date,
+							},
+						] ),
+					},
+					// Only a $0 cart (a pure free trial) shows recurring prices;
+					// with a sign-up fee the items show what is paid today.
+					isZeroTotalCart
+						? {
+								totals: Object.assign( {}, item.totals, {
+									line_subtotal: String( itemRecurringPrice ),
+									line_total: String( itemRecurringPrice ),
+								} ),
+						  }
+						: {}
+				);
+			} );
+		} );
+
+		recurringTotal = isZeroTotalCart
+			? getRecurringCartTotal( cartData )
+			: null;
+		if ( ! recurringTotal ) {
+			return Object.assign( {}, cartData, { items: modifiedItems } );
+		}
+
+		return Object.assign( {}, cartData, {
+			items: modifiedItems,
+			totals: Object.assign( {}, cartData.totals, {
+				total_price: String( recurringTotal.amount ),
+				total_items: recurringTotal.totals.total_items || '0',
+				total_tax: recurringTotal.totals.total_tax || '0',
+				total_shipping: recurringTotal.totals.total_shipping || '0',
+				total_shipping_tax:
+					recurringTotal.totals.total_shipping_tax || '0',
+				tax_lines: recurringTotal.totals.tax_lines || [],
+			} ),
+		} );
+	}
+
+	/**
+	 * Register the WooCommerce Subscriptions filters of client 11.1.0
+	 * (client/express-checkout/compatibility/wc-subscriptions.js:289-541), which the
+	 * Blocks express checkout imports from its compatibility module.
+	 *
+	 * @param {Object} hooks The wp.hooks API.
+	 */
+	function registerSubscriptionsCompatibility( hooks ) {
+		var namespace = 'automattic/wcpay/express-checkout/wc-subscriptions';
+
+		// A free trial with nothing to pay today shows the recurring total.
+		hooks.addFilter(
+			'wcpay.express-checkout.total-amount',
+			namespace,
+			function ( total, cartData ) {
+				var recurringTotal;
+
+				if ( ! isZeroTotalTrialCart( cartData ) ) {
+					return total;
+				}
+
+				recurringTotal = getRecurringCartTotal( cartData );
+
+				return recurringTotal
+					? transformPrice(
+							recurringTotal.amount,
+							recurringTotal.totals
+					  )
+					: total;
+			}
+		);
+
+		// The shopper still authorizes the recurring payment of a $0 free trial.
+		hooks.addFilter(
+			'wcpay.express-checkout.is-cart-eligible',
+			namespace,
+			function ( isEligible, cartData ) {
+				var recurringTotal;
+
+				if ( isEligible ) {
+					return true;
+				}
+
+				if ( isZeroTotalTrialCart( cartData ) ) {
+					recurringTotal = getRecurringCartTotal( cartData );
+
+					return recurringTotal !== null && recurringTotal.amount > 0;
+				}
+
+				return isEligible;
+			}
+		);
+
+		hooks.addFilter(
+			'wcpay.express-checkout.shipping-rates',
+			namespace,
+			function ( shippingRates, cartData ) {
+				if ( shippingRates && shippingRates.length > 0 ) {
+					return shippingRates;
+				}
+
+				if ( ! hasTrialSubscriptionWithDeferredShipping( cartData ) ) {
+					return shippingRates;
+				}
+
+				return getSubscriptionShippingRates( cartData ) || shippingRates;
+			}
+		);
+
+		hooks.addFilter(
+			'wcpay.express-checkout.shipping-package-id',
+			namespace,
+			function ( packageId, cartData, rateId ) {
+				var subscriptions = getSubscriptionSchedules( cartData );
+				var subscriptionIndex;
+				var packageIndex;
+				var packages;
+				var shippingPackage;
+
+				if (
+					! hasTrialSubscriptionWithDeferredShipping( cartData ) ||
+					! subscriptions
+				) {
+					return packageId;
+				}
+
+				for (
+					subscriptionIndex = 0;
+					subscriptionIndex < subscriptions.length;
+					subscriptionIndex++
+				) {
+					packages = subscriptions[ subscriptionIndex ].shipping_rates;
+					if ( ! Array.isArray( packages ) ) {
+						continue;
+					}
+
+					for (
+						packageIndex = 0;
+						packageIndex < packages.length;
+						packageIndex++
+					) {
+						shippingPackage = packages[ packageIndex ];
+						if (
+							shippingPackage &&
+							Array.isArray( shippingPackage.shipping_rates ) &&
+							shippingPackage.shipping_rates.some(
+								function ( rate ) {
+									return rate.rate_id === rateId;
+								}
+							) &&
+							shippingPackage.package_id
+						) {
+							return shippingPackage.package_id;
+						}
+					}
+				}
+
+				return packageId;
+			}
+		);
+
+		hooks.addFilter(
+			'wcpay.express-checkout.map-line-items',
+			namespace,
+			mapSubscriptionLineItems
 		);
 	}
 
@@ -2218,7 +2693,15 @@
 		}
 
 		total = getTotalAmount( cachedCartData );
-		if ( total <= 0 ) {
+		// Extensions may make a $0 cart eligible, as WooCommerce Subscriptions does
+		// for a free trial (client shortcode-buttons-express/index.js:519-525).
+		if (
+			! applyWpFilters(
+				'wcpay.express-checkout.is-cart-eligible',
+				total > 0,
+				cachedCartData
+			)
+		) {
 			hideExpressButton();
 			return;
 		}

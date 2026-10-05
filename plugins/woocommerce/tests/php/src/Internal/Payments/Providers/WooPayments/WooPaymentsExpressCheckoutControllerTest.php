@@ -118,7 +118,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		$this->assertIsString( $localized_data );
 		$this->assertStringContainsString( 'var wcpayExpressCheckoutParams', $localized_data );
 		$this->assertStringContainsString( '"enabled_methods":["payment_request"]', $localized_data );
-		$this->assertNotContains( 'wp-hooks', wp_scripts()->registered['wc-woopayments-express-checkout']->deps );
+		$this->assertContains( 'wp-hooks', wp_scripts()->registered['wc-woopayments-express-checkout']->deps, 'The extension compatibility filters need wp-hooks on checkout too.' );
 	}
 
 	/**

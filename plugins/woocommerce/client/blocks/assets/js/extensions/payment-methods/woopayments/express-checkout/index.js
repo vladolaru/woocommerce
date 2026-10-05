@@ -18,6 +18,8 @@ import { addQueryArgs } from '@wordpress/url';
  */
 import { recordWooPaymentsUserEvent } from '../tracks';
 import { getBlocksCheckoutAppearance } from '../upe-styles';
+import { transformPrice } from './transform-price';
+import { registerSubscriptionsCompatibility } from './compatibility/wc-subscriptions';
 
 const PAYMENT_METHOD_NAME = 'woocommerce_payments';
 const EXPRESS_CHECKOUT_PAYMENT_METHOD_NAME =
@@ -241,32 +243,6 @@ const parseMinorUnitAmount = ( value ) => {
 	const amount = Number.parseInt( value, 10 );
 
 	return Number.isFinite( amount ) ? amount : 0;
-};
-
-const toFiniteNumber = ( value, fallback ) => {
-	const number = Number( value );
-
-	return Number.isFinite( number ) ? number : fallback;
-};
-
-const transformPrice = ( price, priceObject = {} ) => {
-	const sourceMinorUnit = toFiniteNumber(
-		priceObject.currency_minor_unit ?? params?.checkout?.currency_decimals,
-		2
-	);
-	const stripeMinorUnit = toFiniteNumber(
-		params?.checkout?.stripe_minor_unit,
-		sourceMinorUnit
-	);
-	const converted = price * 10 ** ( stripeMinorUnit - sourceMinorUnit );
-
-	if ( ! Number.isFinite( converted ) ) {
-		return 0;
-	}
-
-	return stripeMinorUnit < sourceMinorUnit
-		? Math.round( converted )
-		: converted;
 };
 
 const getCartTotalPrice = ( cart ) => {
@@ -1637,6 +1613,7 @@ const registerWooPaymentsExpressCheckout = () => {
 	}
 };
 
+registerSubscriptionsCompatibility();
 registerWooPaymentsExpressCheckout();
 
 export default registerWooPaymentsExpressCheckout;

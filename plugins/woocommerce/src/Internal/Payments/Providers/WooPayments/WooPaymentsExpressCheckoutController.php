@@ -183,9 +183,6 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 		$this->register_classic_express_checkout_assets();
 		wp_localize_script( self::CLASSIC_EXPRESS_CHECKOUT_SCRIPT_HANDLE, 'wcpayExpressCheckoutParams', $this->express_checkout_service->get_express_checkout_params( $context ) );
 		wp_enqueue_style( self::CLASSIC_EXPRESS_CHECKOUT_STYLE_HANDLE );
-		if ( 'product' === $context ) {
-			wp_enqueue_script( 'wp-hooks' );
-		}
 		wp_enqueue_script( self::CLASSIC_EXPRESS_CHECKOUT_SCRIPT_HANDLE );
 		// Wallet payments started from product and cart pages must carry the
 		// card-testing prevention token; only checkout surfaces exposed it
@@ -276,7 +273,9 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 			wp_register_script(
 				self::CLASSIC_EXPRESS_CHECKOUT_SCRIPT_HANDLE,
 				WC()->plugin_url() . '/assets/js/frontend/woopayments-express-checkout' . $suffix . '.js',
-				array( 'jquery', self::STRIPE_SCRIPT_HANDLE, 'wp-api-fetch' ),
+				// wp-hooks on every surface: the extension filters (WooCommerce Subscriptions, Deposits, Product Bundles) run
+				// through it, as the client 11.1.0 bundle that imports @wordpress/hooks does.
+				array( 'jquery', self::STRIPE_SCRIPT_HANDLE, 'wp-api-fetch', 'wp-hooks' ),
 				defined( 'WC_VERSION' ) ? WC_VERSION : '',
 				true
 			);

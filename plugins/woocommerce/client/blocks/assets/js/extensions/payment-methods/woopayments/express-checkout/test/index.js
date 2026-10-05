@@ -5,7 +5,6 @@ import { act, render, waitFor } from '@testing-library/react';
 import { createElement } from '@wordpress/element';
 import { registerExpressPaymentMethod } from '@woocommerce/blocks-registry';
 import apiFetch from '@wordpress/api-fetch';
-import { addFilter, removeAllFilters } from '@wordpress/hooks';
 
 jest.mock( '@woocommerce/blocks-registry', () => ( {
 	registerExpressPaymentMethod: jest.fn(),
@@ -250,6 +249,76 @@ const cartWithSubscriptionSchedule = (
 		},
 	} );
 
+// A WooCommerce Subscriptions free trial, shaped like the client 11.1.0 compatibility tests' fixtures.
+const trialSubscriptionItem = {
+	name: 'Premium Plan',
+	quantity: 1,
+	totals: {
+		line_subtotal: '0',
+		line_subtotal_tax: '0',
+		line_total: '0',
+		currency_minor_unit: 2,
+	},
+	variation: [],
+	item_data: [],
+	extensions: {
+		subscriptions: {
+			billing_period: 'month',
+			billing_interval: 1,
+			trial_length: 14,
+			sign_up_fees: '0',
+		},
+	},
+};
+
+const trialSubscriptionSchedule = {
+	billing_period: 'month',
+	billing_interval: 1,
+	next_payment_date: '2026-03-19',
+	totals: {
+		total_price: '1999',
+		total_items: '1999',
+		total_tax: '0',
+		total_shipping: '0',
+		total_shipping_tax: '0',
+		currency_minor_unit: 2,
+		currency_prefix: '$',
+		currency_suffix: '',
+		currency_decimal_separator: '.',
+		currency_thousand_separator: ',',
+		tax_lines: [],
+	},
+};
+
+const freeTrialCart = cartWithExpressMethods( [ 'payment_request' ], {
+	items: [ trialSubscriptionItem ],
+	cartItems: [ trialSubscriptionItem ],
+	totals: {
+		...blocksCart.totals,
+		total_price: '0',
+		total_shipping: '0',
+		total_tax: '0',
+	},
+	cartTotals: {
+		...blocksCart.cartTotals,
+		total_price: '0',
+		total_shipping: '0',
+		total_tax: '0',
+	},
+	extensions: {
+		subscriptions: [ trialSubscriptionSchedule ],
+	},
+} );
+
+const freeTrialBilling = {
+	...billing,
+	cartTotal: { value: 0 },
+	cartTotalItems: [
+		{ key: 'total_items', value: 0, valueWithTax: 0 },
+		{ key: 'total_tax', value: 0, valueWithTax: 0 },
+	],
+};
+
 const shippingData = {
 	needsShipping: true,
 	shippingAddress: {
@@ -359,8 +428,6 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 	} );
 
 	afterEach( () => {
-		removeAllFilters( 'wcpay.express-checkout.shipping-rates' );
-		removeAllFilters( 'wcpay.express-checkout.shipping-package-id' );
 		delete window.Stripe;
 		delete window.wcpayFraudPreventionToken;
 		window.fetch = originalFetch;
@@ -1748,6 +1815,80 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		} );
 	} );
 
+	describe( 'a WooCommerce Subscriptions free trial with nothing to pay today', () => {
+		it( 'mounts the wallet for the recurring total', async () => {
+			registerExpressCheckout();
+
+			renderExpressPaymentMethod(
+				getRegistration(
+					'woocommerce_payments_express_checkout_applePay'
+				),
+				{
+					billing: freeTrialBilling,
+					...getPaymentMethodInterfaceProps( freeTrialCart ),
+				}
+			);
+
+			await waitFor( () => {
+				expect( expressElement.mount ).toHaveBeenCalled();
+			} );
+			expect( stripe.elements ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					mode: 'payment',
+					amount: 1999,
+					setupFutureUsage: 'off_session',
+				} )
+			);
+		} );
+
+		it( 'probes wallet availability with the recurring total', async () => {
+			availablePaymentMethods = { applePay: true };
+			registerExpressCheckout();
+
+			await expect(
+				getRegistration(
+					'woocommerce_payments_express_checkout_applePay'
+				).canMakePayment( { cart: freeTrialCart } )
+			).resolves.toBe( true );
+			expect( stripe.elements ).toHaveBeenCalledWith(
+				expect.objectContaining( { mode: 'payment', amount: 1999 } )
+			);
+		} );
+
+		it( 'shows the recurring price and date in the wallet line items', async () => {
+			const resolve = jest.fn();
+			registerExpressCheckout();
+
+			renderExpressPaymentMethod(
+				getRegistration(
+					'woocommerce_payments_express_checkout_applePay'
+				),
+				{
+					billing: freeTrialBilling,
+					...getPaymentMethodInterfaceProps( freeTrialCart ),
+				}
+			);
+			await waitFor( () => {
+				expect( expressHandlers.click ).toBeDefined();
+			} );
+
+			act( () => {
+				expressHandlers.click( { resolve } );
+			} );
+
+			expect( resolve ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					lineItems: [
+						{
+							name: 'Premium Plan (recurring) - Recurring total: $19.99 / month on 2026-03-19',
+							amount: 1999,
+						},
+					],
+				} )
+			);
+		} );
+	} );
+
 	it( 'keeps setupFutureUsage out of Elements updates when confirmation tokens are disabled', async () => {
 		baseExpressCheckoutParams.flags = {
 			isEceUsingConfirmationTokens: false,
@@ -1893,7 +2034,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		expect( event.reject ).not.toHaveBeenCalled();
 	} );
 
-	it( 'selects the filtered subscription package when the wallet shipping rate comes from subscription extension data', async () => {
+	it( 'selects the subscription package when a free trial defers its shipping rates to the subscription', async () => {
 		const subscriptionShippingRates = [
 			{
 				package_id: 'sub_month_0',
@@ -1913,6 +2054,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		const subscriptionCart = cartWithExpressMethods(
 			[ 'payment_request' ],
 			{
+				items: [ trialSubscriptionItem ],
 				shipping_rates: [
 					{
 						package_id: 0,
@@ -1922,6 +2064,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				extensions: {
 					subscriptions: [
 						{
+							...trialSubscriptionSchedule,
 							shipping_rates: subscriptionShippingRates,
 						},
 					],
@@ -1931,21 +2074,6 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		const updatedCart = cartWithExpressMethods( [ 'payment_request' ], {
 			shipping_rates: subscriptionShippingRates,
 		} );
-		addFilter(
-			'wcpay.express-checkout.shipping-rates',
-			'woocommerce/native-woopayments/test-subscription-rates',
-			( rates, cart ) =>
-				rates.length
-					? rates
-					: cart.extensions.subscriptions[ 0 ].shipping_rates[ 0 ]
-							.shipping_rates
-		);
-		addFilter(
-			'wcpay.express-checkout.shipping-package-id',
-			'woocommerce/native-woopayments/test-subscription-package',
-			( packageId, cart, rateId ) =>
-				rateId === 'subscription_rate:1' ? 'sub_month_0' : packageId
-		);
 		apiFetch.mockResolvedValueOnce( updatedCart );
 		registerExpressCheckout();
 		const googlePayRegistration = getRegistration(
