@@ -10,6 +10,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsGetPmPromotionsRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDocumentsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsReportingBalanceSummaryRequest;
@@ -78,11 +79,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			'local readiness failure'       => array( 'wcpay_wpcom_not_connected', 409, '', false ),
 		);
 	}
-
-	/**
-	 * Preserved WooPayments V1 client capability user agent.
-	 */
-	private const EXPECTED_USER_AGENT = 'WooCommerce Payments/11.1.0';
 
 	/**
 	 * @testdox Should create account links through the site-scoped user-token endpoint.
@@ -334,7 +330,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertSame( '/sites/123/wcpay/refunds', $http_client->last_path );
 		$this->assertSame( 'POST', $http_client->last_method );
 		$this->assertSame( 'application/json; charset=utf-8', $http_client->last_headers['Content-Type'] );
-		$this->assertSame( self::EXPECTED_USER_AGENT, $http_client->last_headers['User-Agent'] );
+		$this->assertSame( WooPaymentsClientVersion::get_user_agent(), $http_client->last_headers['User-Agent'] );
 		$this->assertSame( 'idem_test', $http_client->last_headers['Idempotency-Key'] );
 		$this->assertArrayHasKey( 'X-Request-Initiated', $http_client->last_headers );
 
@@ -573,7 +569,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertStringNotContainsString( '/transact/', $http_client->last_path );
 		$this->assertSame( 'POST', $http_client->last_method );
 		$this->assertSame( 'application/json; charset=utf-8', $http_client->last_headers['Content-Type'] );
-		$this->assertSame( self::EXPECTED_USER_AGENT, $http_client->last_headers['User-Agent'] );
+		$this->assertSame( WooPaymentsClientVersion::get_user_agent(), $http_client->last_headers['User-Agent'] );
 		$this->assertNotEmpty( $http_client->last_headers['Idempotency-Key'] ?? '' );
 		$this->assertNotEmpty( $http_client->last_headers['X-Request-Initiated'] ?? '' );
 
@@ -2349,9 +2345,41 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertStringStartsWith( 'https://public-api.wordpress.com/wpcom/v2/wcpay/payment_methods/recommended?', $captured_url );
 		$this->assertStringContainsString( 'country_code=GB', $captured_url );
 		$this->assertStringContainsString( 'locale=en_US', $captured_url );
-		$this->assertSame( self::EXPECTED_USER_AGENT, $captured_args['user-agent'] );
+		$this->assertSame( WooPaymentsClientVersion::get_user_agent(), $captured_args['user-agent'] );
 		$this->assertSame( 70, $captured_args['timeout'] );
 		$this->assertTrue( $captured_args['sslverify'] );
+	}
+
+	/**
+	 * The body is the recorded platform response in Fixtures/rec-t63-public-fraud-services.json.
+	 *
+	 * @testdox Should send the native client identity on the public fraud services request.
+	 */
+	public function test_fetch_public_fraud_services_config_sends_the_client_identity(): void {
+		$captured_url  = '';
+		$captured_args = array();
+		$filter        = static function ( $preempt, array $parsed_args, string $url ) use ( &$captured_url, &$captured_args ) {
+			$captured_url  = $url;
+			$captured_args = $parsed_args;
+
+			return array(
+				'response' => array( 'code' => 200 ),
+				'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
+				'body'     => '{"stripe":[]}',
+			);
+		};
+
+		add_filter( 'pre_http_request', $filter, 10, 3 );
+
+		try {
+			$result = ( new WooPaymentsApiClient() )->fetch_public_fraud_services_config();
+		} finally {
+			remove_filter( 'pre_http_request', $filter, 10 );
+		}
+
+		$this->assertSame( array( 'stripe' => array() ), $result );
+		$this->assertStringEndsWith( '/wpcom/v2/wcpay/accounts/fraud_services', $captured_url );
+		$this->assertSame( WooPaymentsClientVersion::get_user_agent(), $captured_args['user-agent'] );
 	}
 
 	/**

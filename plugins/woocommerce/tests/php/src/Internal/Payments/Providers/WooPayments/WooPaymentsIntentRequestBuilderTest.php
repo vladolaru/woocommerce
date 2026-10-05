@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
@@ -27,6 +28,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		remove_all_filters( 'wcpay_metadata_from_order' );
+		Constants::clear_single_constant( 'WC_VERSION' );
 		parent::tearDown();
 	}
 
@@ -131,9 +133,13 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Redirect and mandate runtime values match the WooPayments 11.1 request shape.
+	 * Client 11.1.0 sends its transport user agent and the site URL as the mandate user agent
+	 * (class-wc-payment-gateway-wcpay.php:2596-2604); native sends its own transport identity there.
+	 *
+	 * @testdox Redirect and mandate runtime values match the WooPayments 11.1 request shape, with native's user agent.
 	 */
 	public function test_redirect_and_mandate_runtime_values_match_11_1_request_shape(): void {
+		Constants::set_constant( 'WC_VERSION', '10.4.0-rc.1' );
 		$order = wc_create_order();
 		$order->set_currency( 'EUR' );
 		$order->set_total( '25.00' );
@@ -166,7 +172,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 					'type'   => 'online',
 					'online' => array(
 						'ip_address' => \WC_Geolocation::get_ip_address(),
-						'user_agent' => 'WooCommerce Payments/11.1.0; ' . get_bloginfo( 'url' ),
+						'user_agent' => 'WooCommerce Payments/11.1.0-native-woocommerce/10.4.0-rc.1; ' . get_bloginfo( 'url' ),
 					),
 				),
 			),

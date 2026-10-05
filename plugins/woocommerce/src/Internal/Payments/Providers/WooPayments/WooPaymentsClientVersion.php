@@ -7,6 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\Jetpack\Constants;
+
 /**
  * The WooPayments client version the native runtime declares to the platform.
  *
@@ -16,6 +18,12 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
  * standalone plugin reports its live release number; the native runtime instead declares the
  * plugin version whose platform behavior it was verified against, so the platform serves the
  * exact response contract the native port implements.
+ *
+ * The user agent carries two parts. `WooCommerce Payments/<VERSION>` is the pinned platform-behavior
+ * version: the platform's parser reads only this version, and every gate compares against it. The
+ * suffix `-native-woocommerce/<WooCommerce version>` is the real runtime identity: the parser ignores
+ * any `-` suffix after the version, so it tells native stores and their WooCommerce release apart
+ * without changing what the platform serves. Client 11.1.0 sends its plugin version alone.
  *
  * Bump policy: this constant must NOT track WooCommerce releases automatically. Before
  * bumping, review every platform-side gate between the current value and the target version
@@ -40,13 +48,28 @@ final class WooPaymentsClientVersion {
 	/**
 	 * Build the client identity string reported to the platform.
 	 *
-	 * Used as the transport `User-Agent` header and inside mandate customer-acceptance
-	 * records; must keep the `WooCommerce Payments/<version>` shape the platform's
-	 * client-version parser expects.
+	 * Used as the transport `User-Agent` header and inside mandate customer-acceptance records.
+	 * The suffix must start with `-` right after the version, or the platform's parser rejects
+	 * the whole string and every client-version gate fails.
 	 *
 	 * @return string
 	 */
 	public static function get_user_agent(): string {
-		return 'WooCommerce Payments/' . self::VERSION;
+		return 'WooCommerce Payments/' . self::VERSION . '-native-woocommerce/' . self::get_woocommerce_version();
+	}
+
+	/**
+	 * The running WooCommerce version, without the `-dev` tag of a trunk build.
+	 *
+	 * Beta and release candidate tags stay: they name published builds. Only characters valid in a
+	 * version and in a header value are kept, since `WC_VERSION` can be defined outside core.
+	 *
+	 * @return string
+	 */
+	private static function get_woocommerce_version(): string {
+		$version = Constants::get_constant( 'WC_VERSION' );
+		$version = preg_replace( '/-dev$/', '', is_string( $version ) ? $version : '' );
+
+		return (string) preg_replace( '/[^0-9A-Za-z.+-]/', '', (string) $version );
 	}
 }
