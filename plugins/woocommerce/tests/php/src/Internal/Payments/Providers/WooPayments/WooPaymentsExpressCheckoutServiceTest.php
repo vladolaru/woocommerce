@@ -63,6 +63,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should require native provider readiness before exposing payment-request express checkout.
 	 */
 	public function test_payment_request_requires_provider_readiness(): void {
+		$this->set_up_virtual_product_context( 'checkout' );
 		$sut = $this->create_service( array(), false );
 
 		$this->assertFalse( $sut->should_show_payment_request_button( 'checkout' ) );
@@ -178,6 +179,57 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$this->set_up_virtual_product_context( $context );
 
 		$this->assertTrue( $this->create_service()->should_show_payment_request_button( $context ) );
+	}
+
+	/**
+	 * @testdox Should hide the express buttons on $context at page load when the cart total is zero.
+	 *
+	 * Client 11.1.0 button helper :652-660 and its test :981-1010. A free product, or a free-trial subscription with no
+	 * sign-up fee, leaves nothing for the wallet sheet to charge now.
+	 *
+	 * @testWith ["cart"]
+	 *           ["checkout"]
+	 *
+	 * @param string $context Express checkout context.
+	 */
+	public function test_hides_express_buttons_for_a_zero_cart_total( string $context ): void {
+		$product = \WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'regular_price' => '0',
+				'price'         => '0',
+				'virtual'       => true,
+			)
+		);
+		WC()->cart->add_to_cart( $product->get_id() );
+		WC()->cart->calculate_totals();
+
+		$this->assertFalse( $this->create_service()->should_show_payment_request_button( $context ) );
+	}
+
+	/**
+	 * @testdox Should hide the product-page express button for a zero price even when a filter marks the product supported.
+	 *
+	 * Client 11.1.0 checks the raw price after `wcpay_payment_request_is_product_supported` (button helper :652-660,
+	 * filter at :993), so the filter cannot bring the button back for a free product.
+	 */
+	public function test_hides_product_express_button_for_a_zero_price_whatever_the_support_filter_says(): void {
+		$product = \WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'regular_price' => '0',
+				'price'         => '0',
+				'virtual'       => true,
+			)
+		);
+		$this->set_current_product( $product );
+		add_filter( 'wcpay_payment_request_is_product_supported', '__return_true' );
+
+		try {
+			$this->assertFalse( $this->create_service()->should_show_payment_request_button( 'product' ) );
+		} finally {
+			remove_filter( 'wcpay_payment_request_is_product_supported', '__return_true' );
+		}
 	}
 
 	/**
@@ -1131,6 +1183,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should use location-centric payment-request settings when the migrated legacy switch is absent.
 	 */
 	public function test_payment_request_uses_location_settings_without_legacy_switch(): void {
+		$this->set_up_virtual_product_context( 'checkout' );
 		$sut = $this->create_service(
 			array(
 				'express_checkout_product_methods'  => array(),
@@ -1149,6 +1202,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should fall back to the legacy payment-request switch when per-context settings are absent.
 	 */
 	public function test_payment_request_uses_legacy_switch_when_context_settings_are_absent(): void {
+		$this->set_up_virtual_product_context( 'checkout' );
 		$sut = $this->create_service(
 			array(
 				'payment_request' => 'yes',

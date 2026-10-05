@@ -101,6 +101,10 @@ class WooPaymentsExpressCheckoutService {
 			return false;
 		}
 
+		if ( 'pay_for_order' !== $context && $this->is_zero_amount( $context ) ) {
+			return false;
+		}
+
 		return ! empty( $this->get_allowed_payment_method_types_for_context( $context, $this->get_context_currency( $context ) ) );
 	}
 
@@ -495,6 +499,28 @@ class WooPaymentsExpressCheckoutService {
 		$cart        = is_object( $woocommerce ) ? $woocommerce->cart : null;
 
 		return $cart instanceof \WC_Cart && ! $cart->needs_shipping();
+	}
+
+	/**
+	 * Tell whether the page has nothing to charge: a zero cart total, or a zero raw product price on the product page.
+	 *
+	 * Checked after the product support filters, so they cannot bring the button back for a free product. A cart that
+	 * becomes free after the page loads is handled in the browser. Client 11.1.0 button helper :652-660.
+	 *
+	 * @param string $context Express checkout context: product, cart or checkout.
+	 * @return bool
+	 */
+	private function is_zero_amount( string $context ): bool {
+		if ( 'product' === $context ) {
+			$product = $this->get_product_for_product_page();
+
+			return $product instanceof \WC_Product && 0.0 === (float) $product->get_price();
+		}
+
+		$woocommerce = function_exists( 'WC' ) ? WC() : null;
+		$cart        = is_object( $woocommerce ) ? $woocommerce->cart : null;
+
+		return $cart instanceof \WC_Cart && 0.0 === (float) $cart->get_total( 'edit' );
 	}
 
 	/**
