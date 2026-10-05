@@ -918,9 +918,10 @@ class WooPaymentsProviderGatewayAdapter {
 	 * marks the fraud meta box allow because fraud checks passed.
 	 *
 	 * A PaymentIntent dispatch failure decides the order's kept charge key. An ambiguous one keeps it and records the
-	 * failure for a later lookup, merged into the order's record when one exists. A definitive one retires both, except that while this order's record exists only a card
-	 * error does: any other refusal (the platform's own, a Stripe rate limit, a validation error) says nothing about the
-	 * earlier request under the key, so both stay for the next attempt's lookup.
+	 * failure for a later lookup, merged into the order's record when one exists. A definitive one retires both, except
+	 * that while this order's record exists only a card error does: any other refusal (the platform's own, a Stripe rate
+	 * limit, a validation error) says nothing about the earlier request under the key, so both stay for the next attempt's
+	 * lookup.
 	 *
 	 * @param WC_Order                $order                       Order object.
 	 * @param WooPaymentsApiException $exception                   Transport exception.
