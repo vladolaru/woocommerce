@@ -139,7 +139,7 @@ class FeaturesDefinition {
 		$paylater_docs_country_location = in_array( $store_country, $paylater_documentation_supported_countries, true ) ? strtolower( $store_country ) : 'us';
 
 		$feature_items = array(
-			self::FEATURE_SAVE_PAYPAL_AND_VENMO           => array(
+			self::FEATURE_SAVE_PAYPAL_AND_VENMO => array(
 				'title'       => __( 'Save PayPal and Venmo', 'woocommerce' ),
 				'description' => __( 'Securely save PayPal and Venmo payment methods for subscriptions or return buyers.', 'woocommerce' ),
 				'enabled'     => $this->merchant_capabilities[ self::FEATURE_SAVE_PAYPAL_AND_VENMO ],
@@ -173,7 +173,7 @@ class FeaturesDefinition {
 					),
 				),
 			),
-			self::FEATURE_PAY_LATER_MESSAGING             => array(
+			self::FEATURE_PAY_LATER_MESSAGING   => array(
 				'title'       => __( 'Pay Later Messaging', 'woocommerce' ),
 				'description' => __(
 					'Help grow sales with Pay Later messaging. Let customers know they have flexible payment options as they browse, shop, and check out.',
@@ -199,7 +199,7 @@ class FeaturesDefinition {
 					),
 				),
 			),
-			self::FEATURE_INSTALLMENTS                    => array(
+			self::FEATURE_INSTALLMENTS          => array(
 				'title'       => __( 'Installments', 'woocommerce' ),
 				'description' =>
 					__( 'Allow your customers to pay in installments without interest while you receive the full payment.*', 'woocommerce' ) .

@@ -39,13 +39,13 @@ class OnboardingProfile extends AbstractDataModel {
 	/**
 	 * Constructor.
 	 *
-	 * @param bool     $can_use_casual_selling Whether casual selling is enabled in the store's country.
-	 * @param bool     $can_use_vaulting       Whether vaulting is enabled in the store's country.
-	 * @param bool     $can_use_card_payments  Whether credit card payments are possible.
-	 * @param bool     $can_use_digital_wallets Whether digital wallets are possible.
-	 * @param bool     $can_use_subscriptions  Whether WC Subscriptions plugin is active.
-	 * @param bool     $should_skip_payment_methods  Whether it should skip payment methods screen.
-	 * @param bool     $can_use_pay_later  Whether it can use Pay Later or not.
+	 * @param bool $can_use_casual_selling Whether casual selling is enabled in the store's country.
+	 * @param bool $can_use_vaulting       Whether vaulting is enabled in the store's country.
+	 * @param bool $can_use_card_payments  Whether credit card payments are possible.
+	 * @param bool $can_use_digital_wallets Whether digital wallets are possible.
+	 * @param bool $can_use_subscriptions  Whether WC Subscriptions plugin is active.
+	 * @param bool $should_skip_payment_methods  Whether it should skip payment methods screen.
+	 * @param bool $can_use_pay_later  Whether it can use Pay Later or not.
 	 *
 	 * @throws RuntimeException If the OPTION_KEY is not defined in the child class.
 	 */

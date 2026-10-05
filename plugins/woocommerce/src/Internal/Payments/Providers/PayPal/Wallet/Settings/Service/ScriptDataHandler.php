@@ -39,14 +39,14 @@ class ScriptDataHandler {
 		SettingsProvider $settings_provider,
 		bool $is_sdk_v6_active = false
 	) {
-		$this->asset_getter                    = $asset_getter;
-		$this->paylater_is_available           = $paylater_is_available;
-		$this->store_country                   = $store_country;
-		$this->merchant_id                     = $merchant_id;
-		$this->button_language_choices         = $button_language_choices;
-		$this->partner_attribution             = $partner_attribution;
-		$this->settings_provider               = $settings_provider;
-		$this->is_sdk_v6_active                = $is_sdk_v6_active;
+		$this->asset_getter            = $asset_getter;
+		$this->paylater_is_available   = $paylater_is_available;
+		$this->store_country           = $store_country;
+		$this->merchant_id             = $merchant_id;
+		$this->button_language_choices = $button_language_choices;
+		$this->partner_attribution     = $partner_attribution;
+		$this->settings_provider       = $settings_provider;
+		$this->is_sdk_v6_active        = $is_sdk_v6_active;
 	}
 
 	/**
@@ -114,17 +114,17 @@ class ScriptDataHandler {
 		);
 
 		$script_data = array(
-			'assets'                              => array(
+			'assets'                          => array(
 				'imagesUrl' => $this->asset_getter->get_static_asset_url( 'images/' ),
 			),
-			'wcPaymentsTabUrl'                    => admin_url( 'admin.php?page=wc-settings&tab=checkout' ),
-			'pluginSettingsUrl'                   => admin_url( 'admin.php?page=wc-settings&tab=checkout&path=/paypal-wallet' ),
-			'debug'                               => defined( 'WP_DEBUG' ) && WP_DEBUG,
-			'isPayLaterConfiguratorAvailable'     => $is_pay_later_configurator_available,
-			'storeCountry'                        => $this->store_country,
-			'storePostcode'                       => get_option( 'woocommerce_store_postcode', '' ),
-			'buttonLanguageChoices'               => $transformed_button_choices,
-			'blueprint'                           => array(
+			'wcPaymentsTabUrl'                => admin_url( 'admin.php?page=wc-settings&tab=checkout' ),
+			'pluginSettingsUrl'               => admin_url( 'admin.php?page=wc-settings&tab=checkout&path=/paypal-wallet' ),
+			'debug'                           => defined( 'WP_DEBUG' ) && WP_DEBUG,
+			'isPayLaterConfiguratorAvailable' => $is_pay_later_configurator_available,
+			'storeCountry'                    => $this->store_country,
+			'storePostcode'                   => get_option( 'woocommerce_store_postcode', '' ),
+			'buttonLanguageChoices'           => $transformed_button_choices,
+			'blueprint'                       => array(
 				'isActive'  => 'yes' === get_option( 'woocommerce_feature_blueprint_enabled', 'no' ),
 				'importUrl' => admin_url( 'admin.php?page=wc-settings&tab=advanced&section=blueprint' ),
 			),

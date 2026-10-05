@@ -57,7 +57,7 @@ class PaymentRestEndpoint extends RestEndpoint {
 	 * @var array
 	 */
 	private array $field_map = array(
-		'paypal_show_logo'                  => array(
+		'paypal_show_logo' => array(
 			'js_name'  => 'paypalShowLogo',
 			'sanitize' => 'to_boolean',
 		),

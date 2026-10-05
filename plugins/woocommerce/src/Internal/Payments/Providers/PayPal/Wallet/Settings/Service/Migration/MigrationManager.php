@@ -37,12 +37,12 @@ class MigrationManager implements SettingsMigrationInterface {
 		OnboardingProfile $onboarding_profile,
 		LoggerInterface $logger
 	) {
-		$this->general_settings_migration  = $general_settings_migration;
-		$this->settings_tab_migration      = $settings_tab_migration;
-		$this->styling_settings_migration  = $styling_settings_migration;
-		$this->payment_settings_migration  = $payment_settings_migration;
-		$this->onboarding_profile          = $onboarding_profile;
-		$this->logger                      = $logger;
+		$this->general_settings_migration = $general_settings_migration;
+		$this->settings_tab_migration     = $settings_tab_migration;
+		$this->styling_settings_migration = $styling_settings_migration;
+		$this->payment_settings_migration = $payment_settings_migration;
+		$this->onboarding_profile         = $onboarding_profile;
+		$this->logger                     = $logger;
 	}
 
 	public function migrate(): void {

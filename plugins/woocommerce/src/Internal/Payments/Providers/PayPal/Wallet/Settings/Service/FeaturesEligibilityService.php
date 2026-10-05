@@ -42,9 +42,9 @@ class FeaturesEligibilityService {
 	/**
 	 * Constructor.
 	 *
-	 * @param bool     $is_save_paypal_eligible If saving PayPal and Venmo is eligible.
-	 * @param bool     $is_pay_later_eligible If Pay Later is eligible.
-	 * @param bool     $is_installments_eligible If Installments is eligible.
+	 * @param bool $is_save_paypal_eligible If saving PayPal and Venmo is eligible.
+	 * @param bool $is_pay_later_eligible If Pay Later is eligible.
+	 * @param bool $is_installments_eligible If Installments is eligible.
 	 */
 	public function __construct(
 		bool $is_save_paypal_eligible,
@@ -65,7 +65,7 @@ class FeaturesEligibilityService {
 		return array(
 			FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO => fn() => $this->is_save_paypal_eligible,
 			FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING => fn() => $this->is_pay_later_eligible,
-			FeaturesDefinition::FEATURE_INSTALLMENTS     => fn() => $this->is_installments_eligible,
+			FeaturesDefinition::FEATURE_INSTALLMENTS => fn() => $this->is_installments_eligible,
 		);
 	}
 }
