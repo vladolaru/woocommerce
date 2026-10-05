@@ -2232,19 +2232,10 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A replayed charge.dispute.created delivered in a later request still runs the handler only once.
+	 * @testdox A replayed charge.dispute.created delivered after the first finished runs the handler only once.
 	 *
-	 * Mutation-review finding M09 (`task-2-mutation-review.md`): the recorded replay test previously
-	 * covered only an in-request replay, where `wp_cache_add()`'s own claim blocks the second
-	 * `process()` call regardless of whether the durable `is_event_already_processed()` transient
-	 * check runs at all — so disabling that durable check left the class-level suite green. A real
-	 * webhook retry is a *later* request, where the in-request object-cache claim from the first
-	 * delivery is gone and only the durable transient stands between the handler and a second run.
-	 * This test evicts the claim key the same way a later request would (`wp_cache_delete()`, the
-	 * pattern this file's own `tearDown()` already uses for cleanup) between the two `process()`
-	 * calls, then counts `woocommerce_payments_after_webhook_delivery` — fired once per real
-	 * `dispatch()` call, independent of the dispute-note's own content-based dedupe — to prove the
-	 * handler itself ran exactly once, not just that the note happened to render identically twice.
+	 * The durable processed marker stops the second delivery. The test counts `woocommerce_payments_after_webhook_delivery`,
+	 * fired once per dispatch, so the dispute note's own dedupe cannot hide a second run.
 	 */
 	public function test_dispute_created_replay_in_a_later_request_runs_the_handler_once(): void {
 		$order = $this->create_woopayments_order();
@@ -2267,7 +2258,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$order = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 1, $delivery_count, 'A replay in a later request must still run the handler only once (the durable processed-event marker, not just the in-request claim).' );
+		$this->assertSame( 1, $delivery_count, 'A replay after the first delivery finished must run the handler only once (the durable processed-event marker).' );
 		$this->assertSame( 'on-hold', $order->get_status(), 'A replayed created webhook must keep the order on-hold, not toggle it again.' );
 		$this->assertCount(
 			1,
@@ -4116,12 +4107,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An event with the same ID is processed at most once within the marker TTL, including a replay after the in-request claim is gone.
-	 *
-	 * Mutation-review finding M09 (`task-2-mutation-review.md`): evicts the in-request claim cache
-	 * between the two `process()` calls, so this proves durable (cross-request) dedup via
-	 * `is_event_already_processed()`'s transient, not merely the in-request `wp_cache_add()` claim
-	 * that a same-request double-delivery would already block on its own.
+	 * @testdox An event with the same ID is not processed again within the marker TTL once its first delivery finished.
 	 */
 	public function test_process_deduplicates_events_with_the_same_id(): void {
 		$handler = $this->create_recording_notification_handler();
@@ -4593,9 +4579,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should release a failed early warning claim, retry it, mark success, and short-circuit its replay.
+	 * @testdox Should leave a failed early warning unmarked, retry it, mark success, and short-circuit its replay.
 	 */
-	public function test_early_fraud_warning_failure_releases_claim_and_remains_retryable(): void {
+	public function test_early_fraud_warning_failure_remains_retryable(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		$sequence = array();
 		$handler  = $this->create_recording_early_fraud_warning_handler( $sequence, true );

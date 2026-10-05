@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
 use InvalidArgumentException;
 use RuntimeException;
 use WC_Order;
@@ -79,6 +80,13 @@ class StripeBillingEventHandler {
 	private WooPaymentsLogger $logger;
 
 	/**
+	 * Lock held in the database rows of a transient, keeping two deliveries of one invoice from each creating a renewal order.
+	 *
+	 * @var TransientRowLock
+	 */
+	private TransientRowLock $row_lock;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -89,14 +97,16 @@ class StripeBillingEventHandler {
 	 * @param WooPaymentsEventIngestor         $event_ingestor       Event ingestor.
 	 * @param WooPaymentsAccountService        $account_service      Account service.
 	 * @param WooPaymentsLogger                $logger               Module logger.
+	 * @param TransientRowLock                 $row_lock             Lock held in the database rows of a transient.
 	 */
-	final public function init( StripeBillingInvoiceService $invoice_service, StripeBillingSubscriptionService $subscription_service, WooPaymentsApiClient $api_client, WooPaymentsEventIngestor $event_ingestor, WooPaymentsAccountService $account_service, WooPaymentsLogger $logger ): void {
+	final public function init( StripeBillingInvoiceService $invoice_service, StripeBillingSubscriptionService $subscription_service, WooPaymentsApiClient $api_client, WooPaymentsEventIngestor $event_ingestor, WooPaymentsAccountService $account_service, WooPaymentsLogger $logger, TransientRowLock $row_lock ): void {
 		$this->invoice_service      = $invoice_service;
 		$this->subscription_service = $subscription_service;
 		$this->api_client           = $api_client;
 		$this->event_ingestor       = $event_ingestor;
 		$this->account_service      = $account_service;
 		$this->logger               = $logger;
+		$this->row_lock             = $row_lock;
 	}
 
 	/**
@@ -374,28 +384,46 @@ class StripeBillingEventHandler {
 	/**
 	 * Get the renewal order an invoice paid, or create it.
 	 *
+	 * Two deliveries of one invoice can overlap (a slow first delivery the platform counts as failed and lists again,
+	 * or a duplicate push). The lookup, the creation and the invoice link run under a lock on the invoice, so the
+	 * second delivery either finds the linked order or fails to be retried; it never creates a second renewal order
+	 * for the same payment. The lock expires after a minute, so a delivery that died cannot block the next one.
+	 * Client 11.1.0 looks up and creates without a lock (class-wc-payments-subscriptions-event-handler.php:146-175).
+	 *
 	 * @param WC_Order $subscription  Subscription.
 	 * @param string   $invoice_id    Invoice ID.
 	 * @param string   $error_message Message when the renewal order cannot be created.
 	 * @return WC_Order
 	 * @throws StripeBillingException When the renewal order cannot be created.
+	 * @throws RuntimeException When another delivery of the invoice is creating its renewal order.
 	 */
 	private function get_or_create_renewal_order( WC_Order $subscription, string $invoice_id, string $error_message ): WC_Order {
-		$order = wc_get_order( $this->invoice_service->get_order_id_by_invoice_id( $invoice_id ) );
-		if ( $order instanceof WC_Order ) {
-			return $order;
-		}
-
-		$order = function_exists( 'wcs_create_renewal_order' ) ? wcs_create_renewal_order( $subscription ) : null;
-		if ( ! $order instanceof WC_Order ) {
+		$lock_key   = 'wcpay_stripe_billing_renewal_' . md5( $invoice_id );
+		$lock_token = wp_generate_uuid4();
+		if ( ! $this->row_lock->claim( $lock_key, $lock_token, MINUTE_IN_SECONDS ) ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
-			throw new StripeBillingException( $error_message, StripeBillingException::INVALID_EVENT_DATA );
+			throw new RuntimeException( sprintf( 'Another delivery of invoice %s is creating its renewal order.', $invoice_id ) );
 		}
 
-		$order->set_payment_method( WooPaymentsPersistenceProfile::GATEWAY_ID );
-		$this->invoice_service->set_order_invoice_id( $order, $invoice_id );
+		try {
+			$order = wc_get_order( $this->invoice_service->get_order_id_by_invoice_id( $invoice_id ) );
+			if ( $order instanceof WC_Order ) {
+				return $order;
+			}
 
-		return $order;
+			$order = function_exists( 'wcs_create_renewal_order' ) ? wcs_create_renewal_order( $subscription ) : null;
+			if ( ! $order instanceof WC_Order ) {
+				// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+				throw new StripeBillingException( $error_message, StripeBillingException::INVALID_EVENT_DATA );
+			}
+
+			$order->set_payment_method( WooPaymentsPersistenceProfile::GATEWAY_ID );
+			$this->invoice_service->set_order_invoice_id( $order, $invoice_id );
+
+			return $order;
+		} finally {
+			$this->row_lock->release( $lock_key, $lock_token );
+		}
 	}
 
 	/**

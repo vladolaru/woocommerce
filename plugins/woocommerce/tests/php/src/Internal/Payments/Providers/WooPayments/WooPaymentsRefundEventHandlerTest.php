@@ -682,6 +682,9 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	 * @return array<string,mixed>
 	 */
 	private function get_successful_refund_charge(): array {
+		// A Stripe Charge with its refunds list, as charge.refunded carries it. Client 11.1.0 reads status, captured, amount,
+		// currency and refunds.data[0] (id, amount, reason, status, balance_transaction as an ID) at
+		// class-wc-payments-webhook-processing-service.php:1079-1143.
 		return array(
 			'id'       => 'ch_123',
 			'status'   => 'succeeded',
@@ -695,7 +698,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 						'amount'              => 400,
 						'reason'              => 'Requested by customer',
 						'status'              => 'succeeded',
-						'balance_transaction' => array( 'id' => 'txn_123' ),
+						'balance_transaction' => 'txn_123',
 					),
 				),
 			),

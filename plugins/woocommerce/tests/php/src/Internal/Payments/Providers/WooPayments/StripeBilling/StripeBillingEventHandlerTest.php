@@ -32,6 +32,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
@@ -167,7 +168,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( StripeBillingSubscriptionService::class, $this->subscription_service );
 
 		$this->sut = new StripeBillingEventHandler();
-		$this->sut->init( $invoice_service, $this->subscription_service, $api_client, wc_get_container()->get( WooPaymentsEventIngestor::class ), $account_service, $logger );
+		$this->sut->init( $invoice_service, $this->subscription_service, $api_client, wc_get_container()->get( WooPaymentsEventIngestor::class ), $account_service, $logger, wc_get_container()->get( TransientRowLock::class ) );
 
 		add_action( 'woocommerce_subscription_status_on-hold', array( $this->subscription_service, 'handle_subscription_status_on_hold' ) );
 		add_action( 'woocommerce_subscription_status_on-hold_to_active', array( $this->subscription_service, 'reactivate_subscription' ) );
@@ -414,6 +415,41 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertSame( self::RENEWAL_INTENT_ID, $orders[0]->get_transaction_id() );
 		$this->assertCount( 1, $this->get_notes_containing( $orders[0], 'A test payment of' ) );
 		$this->assertSame( 1, did_action( 'woocommerce_payment_complete' ) - $payments_completed, 'The renewal is paid once, so its emails go once.' );
+	}
+
+	/**
+	 * @testdox A second delivery of a paid invoice that arrives while the first is creating its renewal order is refused for a retry and creates no second renewal order.
+	 */
+	public function test_overlapping_paid_invoice_deliveries_create_one_renewal_order(): void {
+		$this->create_subscription( self::CLOCK_SUBSCRIPTION_ID );
+		// Platform answers for two complete deliveries, so a store that let both through would run both to the end.
+		for ( $delivery = 1; $delivery <= 2; $delivery++ ) {
+			$this->queue_response( 200, $this->get_renewal_intent() );
+			$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+		}
+		$event         = $this->get_event( 'invoice_paid_renewal' );
+		$inner_refusal = null;
+		$overlap       = function () use ( $event, &$inner_refusal, &$overlap ): void {
+			// The overlapping delivery runs once, while the first delivery has created the renewal order but not yet linked it to the invoice.
+			remove_action( 'woocommerce_new_order', $overlap );
+			try {
+				$this->sut->handle_event( $event );
+			} catch ( RuntimeException $exception ) {
+				$inner_refusal = $exception;
+			}
+		};
+		add_action( 'woocommerce_new_order', $overlap );
+
+		try {
+			$this->sut->handle_event( $event );
+		} finally {
+			remove_action( 'woocommerce_new_order', $overlap );
+		}
+
+		$this->assertInstanceOf( RuntimeException::class, $inner_refusal, 'The overlapping delivery fails, so invoice.paid is retried.' );
+		$orders = $this->get_renewal_orders( self::RENEWAL_INVOICE_ID );
+		$this->assertCount( 1, $orders );
+		$this->assertSame( self::RENEWAL_INTENT_ID, $orders[0]->get_transaction_id() );
 	}
 
 	/**
