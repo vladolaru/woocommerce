@@ -121,7 +121,7 @@ class WooPaymentsApiClient {
 	private const API_KEY_SUFFIXES_TO_REDACT = array( '_secret', '_key' );
 
 	/**
-	 * Logged in place of a redacted key's value, or of a value shaped like a Stripe secret.
+	 * Logged in place of a redacted key's value, a value shaped like a Stripe secret, or everything after a URL's host.
 	 */
 	private const REDACTED = '(redacted)';
 
@@ -2986,8 +2986,9 @@ class WooPaymentsApiClient {
 	 *
 	 * A value is replaced whole when it is longer than REDACT_MAX_STRING_BYTES, holds a percent-encoded sequence or a JSON
 	 * escaped slash, starts with `{` or `[`, or holds a Stripe secret or restricted key (`sk_live_…`, `rk_test_…`) or a
-	 * client secret (`pi_…_secret_…`): encoded or embedded text cannot be cleaned in place. Otherwise every URL in it loses
-	 * its query string and fragment, which can carry session keys and tokens.
+	 * client secret (`pi_…_secret_…`): encoded or embedded text cannot be cleaned in place. Otherwise every URL in it keeps
+	 * only its scheme and host, followed by `/(redacted)`: Stripe login and onboarding links carry their credential in the
+	 * path, and queries and fragments can carry session keys and tokens.
 	 *
 	 * @param string $value Logged value.
 	 * @return string
@@ -3006,7 +3007,7 @@ class WooPaymentsApiClient {
 			return self::REDACTED;
 		}
 
-		return (string) preg_replace( '#(https?://[^\s?\#"\'<>]*+)[?\#][^\s"\'<>]*+#i', '$1', $value );
+		return (string) preg_replace( '#(https?://)(?:[^\s/?\#"\'<>@]*+@)?([^\s/?\#"\'<>@:]*+)[^\s"\'<>]*+#i', '$1$2/' . self::REDACTED, $value );
 	}
 
 	/**

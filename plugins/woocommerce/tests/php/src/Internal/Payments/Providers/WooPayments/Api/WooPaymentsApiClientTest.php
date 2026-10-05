@@ -1596,12 +1596,12 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The gated transport log strips the query from any URL value and replaces Stripe secret, restricted key and client secret values whole, whatever their key.
+	 * @testdox The gated transport log keeps only the scheme and host of any URL value and replaces Stripe secret, restricted key and client secret values whole, whatever their key.
 	 *
 	 * The error line reads the envelope client 11.1.0 parses (class-wc-payments-api-client.php:2852-2871: error.code,
 	 * error.message, error.type) and logs "<message> (<code>)" (:2912).
 	 */
-	public function test_transport_log_redacts_url_queries_and_secret_shaped_values(): void {
+	public function test_transport_log_redacts_urls_and_secret_shaped_values(): void {
 		$params = array(
 			'return_to' => 'https://shop.example.test/checkout/?key=wc_order_leak&session=leak',
 			'notes'     => array( 'Contact via https://pay.example.test/r#access_token=leak' ),
@@ -1622,8 +1622,8 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$body = $this->get_transport_entry( $logger, 'API REQUEST (' )['context']['body'];
-		$this->assertSame( 'https://shop.example.test/checkout/', $body['return_to'] );
-		$this->assertSame( array( 'Contact via https://pay.example.test/r' ), $body['notes'] );
+		$this->assertSame( 'https://shop.example.test/(redacted)', $body['return_to'] );
+		$this->assertSame( array( 'Contact via https://pay.example.test/(redacted)' ), $body['notes'] );
 		$this->assertSame( array( '(redacted)', '(redacted)', '(redacted)' ), array( $body['live'], $body['test'], $body['unrelated'] ) );
 		$errors = array_values( array_filter( $logger->entries, static fn( array $entry ): bool => 'error' === $entry['level'] ) );
 		$this->assertSame( array( '(redacted) (resource_missing)' ), array_column( $errors, 'message' ), 'An error message holding a client secret is replaced whole.' );
@@ -1714,6 +1714,44 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The gated transport log keeps only the host of a dashboard login link, and the caller still gets the whole link.
+	 *
+	 * The answer is Stripe's documented Login Link object (https://docs.stripe.com/api/accounts/login_link/create), which
+	 * the platform's accounts/login_links route returns; LegacyAdminLinkHandler::handle_login_request() reaches this call.
+	 */
+	public function test_transport_log_keeps_only_the_host_of_a_login_link(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		$logger                = $this->install_recording_logger();
+		$link                  = 'https://connect.stripe.com/express/acct_1032D82eZvKYlo2C/F44eiGHh5sEV';
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode(
+				array(
+					'object'  => 'login_link',
+					'created' => 1686084879,
+					'url'     => $link,
+				)
+			),
+		);
+		$sut                   = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( true, false ) );
+
+		try {
+			$result = $sut->create_login_link( home_url( '/overview' ) );
+		} finally {
+			remove_all_filters( 'woocommerce_logging_class' );
+			delete_option( 'woocommerce_woocommerce_payments_settings' );
+		}
+
+		$this->assertSame( $link, $result['url'] );
+		$this->assertSame( 'https://connect.stripe.com/(redacted)', $this->get_transport_entry( $logger, 'API RESPONSE (' )['context']['body']['url'] ?? null );
+		$this->assertStringNotContainsString( 'F44eiGHh5sEV', (string) wp_json_encode( $logger->entries ) );
+	}
+
+	/**
 	 * @testdox The gated transport log redacts $_dataName in request bodies, response bodies, GET parameters and the error line.
 	 *
 	 * Each value sits under a key no list names. The error envelope is the one client 11.1.0 parses
@@ -1764,12 +1802,17 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			'a percent-encoded URL with a query'        => array( 'https%3A%2F%2Fshop.example.test%2F%3Fkey%3Dleak-encoded-url', '(redacted)' ),
 			'a secret key glued to a prefix'            => array( 'prefixsk_live_LeakGlued', '(redacted)' ),
 			'a client secret glued to a prefix'         => array( 'ref7pi_3LeakGlued_secret_LeakGlued', '(redacted)' ),
-			'a URL glued to a prefix'                   => array( 'seehttps://shop.example.test/?key=leak-glued-url', 'seehttps://shop.example.test/' ),
+			'a URL glued to a prefix'                   => array( 'seehttps://shop.example.test/?key=leak-glued-url', 'seehttps://shop.example.test/(redacted)' ),
 			'JSON text with a unicode-escaped secret'   => array( '{"note":"sk\u005flive\u005fLeakUnicode"}', '(redacted)' ),
 			'JSON text after leading whitespace'        => array( ' {"session":"leak-padded-json"}', '(redacted)' ),
 			'deeply nested JSON text'                   => array( str_repeat( '{"a":', 10 ) . '{"session":"leak-deep-json"}' . str_repeat( '}', 10 ), '(redacted)' ),
 			'JSON text with a percent-encoded key'      => array( '{"%73ession":"leak-encoded-key"}', '(redacted)' ),
 			'JSON text with percent-encoded quotes'     => array( '{%22session%22:%22leak-encoded-quotes%22}', '(redacted)' ),
+			// Stripe's documented shapes (https://docs.stripe.com/api/accounts/login_link/create, https://docs.stripe.com/api/account_links/object): the credential is the path.
+			'a Stripe login link'                       => array( 'https://connect.stripe.com/express/acct_1032D82eZvKYlo2C/F44eiGHh5sEV', 'https://connect.stripe.com/(redacted)' ),
+			'a Stripe account onboarding link in text'  => array( 'Continue at https://connect.stripe.com/setup/c/acct_1Mt0CORHFI4mz9Rw/TqckGNUHg2mG today', 'Continue at https://connect.stripe.com/(redacted) today' ),
+			'a plain URL'                               => array( 'https://shop.example.test/leak-path', 'https://shop.example.test/(redacted)' ),
+			'a URL with credentials and a port'         => array( 'https://user:leak-password@shop.example.test:8443/a', 'https://shop.example.test/(redacted)' ),
 		);
 	}
 
