@@ -138,7 +138,7 @@ return array(
 	 * Whether the current request renders the PayPal Payments settings page.
 	 */
 	'wcgateway.is-plugin-settings-page'                    => static function (): bool {
-		if ( defined( 'DOING_AJAX' ) && DOING_AJAX ) { // @phpstan-ignore booleanAnd.rightAlwaysTrue
+		if ( defined( 'DOING_AJAX' ) && DOING_AJAX ) { // @phpstan-ignore phpstanWP.wpConstant.fetch (reads the constant as the extension does; wp_doing_ajax() would also run the wp_doing_ajax filter)
 			return false;
 		}
 		if ( ! is_admin() ) {

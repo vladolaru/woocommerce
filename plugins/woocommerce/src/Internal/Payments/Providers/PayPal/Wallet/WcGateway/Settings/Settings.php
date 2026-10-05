@@ -113,15 +113,17 @@ class Settings implements ContainerInterface {
 	 * @param string $id    The value identifier.
 	 * @param mixed  $value The value.
 	 */
-	public function set( $id, $value ) {
+	public function set( $id, $value ): void {
 		$this->load();
 		$this->settings[ $id ] = $value;
 	}
 
 	/**
 	 * Stores the settings to the database.
+	 *
+	 * @return bool
 	 */
-	public function persist() {
+	public function persist(): bool {
 		return update_option( self::KEY, $this->settings );
 	}
 

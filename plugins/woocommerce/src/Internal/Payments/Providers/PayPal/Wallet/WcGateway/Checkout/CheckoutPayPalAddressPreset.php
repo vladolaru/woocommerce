@@ -118,7 +118,10 @@ class CheckoutPayPalAddressPreset {
 		}
 
 		if ( array_key_exists( $field_id, $payer_name_map ) && $payer ) {
-			return $payer->name()->{$payer_name_map[ $field_id ]}() ? $payer->name()->{$payer_name_map[ $field_id ]}() : null;
+			$payer_name = $payer->name();
+			// @phpstan-ignore method.nonObject, method.nonObject (a payer without a name fails here, as it did in the extension)
+			$name_part = $payer_name->{$payer_name_map[ $field_id ]}();
+			return $name_part ? $name_part : null;
 		}
 
 		if ( array_key_exists( $field_id, $payer_map ) && $payer ) {

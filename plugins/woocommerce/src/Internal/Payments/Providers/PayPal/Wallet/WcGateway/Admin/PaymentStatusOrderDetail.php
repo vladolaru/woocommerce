@@ -38,7 +38,7 @@ class PaymentStatusOrderDetail {
 	 *
 	 * @param int $wc_order_id The WooCommerce order id.
 	 */
-	public function render( int $wc_order_id ) {
+	public function render( int $wc_order_id ): void {
 		$wc_order = wc_get_order( $wc_order_id );
 		if ( ! $wc_order instanceof WC_Order ) {
 			return;

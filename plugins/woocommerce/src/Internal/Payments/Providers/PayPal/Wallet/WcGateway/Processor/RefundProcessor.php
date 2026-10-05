@@ -132,6 +132,7 @@ class RefundProcessor {
 
 			switch ( $mode ) {
 				case self::REFUND_MODE_REFUND:
+					// @phpstan-ignore argument.type (a null amount reaches refund() as a TypeError, as in the extension; WooCommerce always passes one)
 					$refund_id = $this->refund( $order, $wc_order, $amount, $reason );
 
 					$this->add_refund_to_meta( $wc_order, $refund_id );

@@ -87,6 +87,7 @@ class DisableGateways {
 	 * @return bool
 	 */
 	private function disable_all_gateways(): bool {
+		// @phpstan-ignore property.notFound (the property is a dynamic one that WooCommerce serves through __get)
 		if ( is_null( WC()->payment_gateways ) ) {
 			return false;
 		}

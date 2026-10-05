@@ -61,7 +61,7 @@ class OrderTablePaymentStatusColumn {
 	 * @param string $column The column.
 	 * @param int    $wc_order_id The id or the WooCommerce order.
 	 */
-	public function render( string $column, int $wc_order_id ) {
+	public function render( string $column, int $wc_order_id ): void {
 		if ( $this->settings_provider->payment_intent() !== self::INTENT ) {
 			return;
 		}
@@ -116,7 +116,7 @@ class OrderTablePaymentStatusColumn {
 	/**
 	 * Renders the captured status.
 	 */
-	private function render_completed_status() {
+	private function render_completed_status(): void {
 		printf(
 			'<span class="dashicons dashicons-yes">
                         <span class="screen-reader-text">%s</span>
@@ -128,7 +128,7 @@ class OrderTablePaymentStatusColumn {
 	/**
 	 * Renders the "not captured" status.
 	 */
-	private function render_incomplete_status() {
+	private function render_incomplete_status(): void {
 		printf(
 			'<mark class="onbackorder">%s</mark>',
 			esc_html__( 'Not captured', 'woocommerce' )

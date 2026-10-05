@@ -463,7 +463,7 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 	 *
 	 * @param ContainerInterface $container The container.
 	 */
-	private function register_payment_gateways( ContainerInterface $container ) {
+	private function register_payment_gateways( ContainerInterface $container ): void {
 
 		add_filter(
 			'woocommerce_payment_gateways',
@@ -497,7 +497,7 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 	 *
 	 * @param ContainerInterface $container The container.
 	 */
-	private function register_order_functionality( ContainerInterface $container ) {
+	private function register_order_functionality( ContainerInterface $container ): void {
 		add_filter(
 			'woocommerce_order_actions',
 			static function ( $order_actions ) use ( $container ): array {
@@ -568,7 +568,7 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 	 *
 	 * @param ContainerInterface $container The container.
 	 */
-	private function register_columns( ContainerInterface $container ) {
+	private function register_columns( ContainerInterface $container ): void {
 		add_action(
 			'woocommerce_order_actions_start',
 			static function ( $wc_order_id ) use ( $container ) {
@@ -617,7 +617,7 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 	 *
 	 * @param ContainerInterface $container The container.
 	 */
-	private function register_checkout_paypal_address_preset( ContainerInterface $container ) {
+	private function register_checkout_paypal_address_preset( ContainerInterface $container ): void {
 		add_filter(
 			'woocommerce_checkout_get_value',
 			static function ( ...$args ) use ( $container ) {
@@ -861,7 +861,7 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 					return;
 				}
 
-				$available = WC()->payment_gateways->get_available_payment_gateways();
+				$available = WC()->payment_gateways()->get_available_payment_gateways();
 				if ( ! isset( $available[ PayPalGateway::ID ] ) ) {
 					return;
 				}

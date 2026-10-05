@@ -35,7 +35,7 @@ class GatewayRepository {
 	 * @return array
 	 */
 	public function get_enabled_ppcp_gateway_ids(): array {
-		$available_gateways = WC()->payment_gateways->get_available_payment_gateways();
+		$available_gateways = WC()->payment_gateways()->get_available_payment_gateways();
 
 		return array_filter(
 			$this->ppcp_gateway_ids,

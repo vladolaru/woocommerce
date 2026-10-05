@@ -103,7 +103,7 @@ class AuthorizeOrderActionNotice {
 	 *
 	 * @param int $message_code The message code.
 	 */
-	public function display_message( int $message_code ) {
+	public function display_message( int $message_code ): void {
 		add_filter(
 			'redirect_post_location',
 			static function ( $location ) use ( $message_code ) {

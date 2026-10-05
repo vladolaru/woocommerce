@@ -64,6 +64,12 @@ class ShippingCallbackEndpoint {
 		);
 	}
 
+	/**
+	 * Checks that the request belongs to a stored cart and PayPal order.
+	 *
+	 * @param \WP_REST_Request<array<string, mixed>> $request The request.
+	 * @return bool
+	 */
 	public function verify_request( \WP_REST_Request $request ): bool {
 		$cart_token      = (string) $request->get_param( 'cart_token' );
 		$paypal_order_id = (string) $request->get_param( 'id' );
@@ -75,6 +81,12 @@ class ShippingCallbackEndpoint {
 		return $this->cart_data_storage->get_by_paypal_order_id( $paypal_order_id ) !== null;
 	}
 
+	/**
+	 * Handles the shipping callback request.
+	 *
+	 * @param \WP_REST_Request<array<string, mixed>> $request The request.
+	 * @return WP_REST_Response
+	 */
 	public function handle_request( \WP_REST_Request $request ): WP_REST_Response {
 		$cart_token = (string) $request->get_param( 'cart_token' );
 

@@ -118,6 +118,7 @@ class FeesRenderer {
 				<td class="' . trim( 'total ' . $html_class ) . '">
 					' .
 			( $negative ? ' - ' : '' ) .
+			// @phpstan-ignore argument.type (wc_price() documents a float; the fee value can be a numeric string, as in the extension)
 			wc_price( $value, array( 'currency' => $currency ) ) . '
 				</td>
 			</tr>';

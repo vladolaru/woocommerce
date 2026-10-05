@@ -280,6 +280,7 @@ class PayPalGateway extends \WC_Payment_Gateway {
 		$this->init_form_fields();
 		$this->init_settings();
 
+		// @phpstan-ignore return.void (WC_Settings_API::process_admin_options() returns a bool, as WooCommerce core registers it)
 		add_action(
 			'woocommerce_update_options_payment_gateways_' . $this->id,
 			array(
@@ -429,6 +430,7 @@ class PayPalGateway extends \WC_Payment_Gateway {
 		$funding_source = wc_clean( wp_unslash( $_POST['ppcp-funding-source'] ?? ( $_POST['funding_source'] ?? '' ) ) );
 
 		if ( $funding_source ) {
+			// @phpstan-ignore argument.type (wc_clean() keeps an array when the posted value is one; render_name() then throws a TypeError, as in the extension)
 			$wc_order->set_payment_method_title( $this->funding_source_renderer->render_name( $funding_source ) );
 			$wc_order->save();
 		}
@@ -508,6 +510,7 @@ class PayPalGateway extends \WC_Payment_Gateway {
 			&& $this->is_free_trial_order( $wc_order )
 			&& ! $this->subscription_helper->paypal_subscription_id()
 		) {
+			/** @var \stdClass|null $ppcp_guest_payment_for_free_trial */
 			$ppcp_guest_payment_for_free_trial = WC()->session->get( 'ppcp_guest_payment_for_free_trial' ) ?? null;
 			if ( is_object( $ppcp_guest_payment_for_free_trial ) ) {
 				$customer_id = $ppcp_guest_payment_for_free_trial->customer->id ?? '';
