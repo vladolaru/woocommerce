@@ -13,6 +13,7 @@ use Automattic\Jetpack\Connection\Rest_Authentication;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAdaptedExtensions;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayBlocksDataExtractor;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayThemeAppearance;
 use Automattic\WooCommerce\StoreApi\SessionHandler;
 use Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils;
 use WC_Order;
@@ -109,6 +110,13 @@ class WooPaymentsWooPaySessionService {
 	 * @var WooPaymentsCustomerService|null
 	 */
 	private ?WooPaymentsCustomerService $customer_service = null;
+
+	/**
+	 * Block-theme WooPay appearance calculator.
+	 *
+	 * @var WooPaymentsWooPayThemeAppearance|null
+	 */
+	private ?WooPaymentsWooPayThemeAppearance $theme_appearance = null;
 
 	/**
 	 * Order ID an in-flight WooPay Store API checkout is processing, for fatal capture.
@@ -1356,9 +1364,35 @@ class WooPaymentsWooPaySessionService {
 	/**
 	 * Get WooPay appearance data.
 	 *
+	 * On a block theme with no appearance stored for the current styles version, the appearance is computed from the
+	 * theme's global styles and stored with its font rules, as client 11.1.0 `WC_Payments_Styles_Cache::get_woopay_appearance()`
+	 * does (class-wc-payments-styles-cache.php:69-88).
+	 *
 	 * @return array<string,mixed>
 	 */
 	public function get_woopay_appearance(): array {
+		$appearance = $this->get_stored_woopay_appearance();
+		if ( array() !== $appearance || ! wp_is_block_theme() ) {
+			return $appearance;
+		}
+
+		$theme_appearance = $this->get_theme_appearance();
+		$computed         = $theme_appearance->compute_from_theme();
+		if ( ! $this->validate_appearance_schema( $computed ) ) {
+			return array();
+		}
+
+		$this->save_woopay_appearance( $computed, $theme_appearance->get_font_rules_from_registered_styles() );
+
+		return $this->get_stored_woopay_appearance();
+	}
+
+	/**
+	 * Get the WooPay appearance stored for the current styles version.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_stored_woopay_appearance(): array {
 		$stored = get_option( self::APPEARANCE_OPTION, array() );
 
 		if ( isset( $stored['appearance'] ) && is_array( $stored['appearance'] ) ) {
@@ -1366,6 +1400,19 @@ class WooPaymentsWooPaySessionService {
 		}
 
 		return is_array( $stored ) ? $stored : array();
+	}
+
+	/**
+	 * Get the block-theme WooPay appearance calculator.
+	 *
+	 * @return WooPaymentsWooPayThemeAppearance
+	 */
+	private function get_theme_appearance(): WooPaymentsWooPayThemeAppearance {
+		if ( null === $this->theme_appearance ) {
+			$this->theme_appearance = wc_get_container()->get( WooPaymentsWooPayThemeAppearance::class );
+		}
+
+		return $this->theme_appearance;
 	}
 
 	/**

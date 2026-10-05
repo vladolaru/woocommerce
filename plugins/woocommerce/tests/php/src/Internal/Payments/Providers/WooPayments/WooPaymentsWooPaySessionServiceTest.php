@@ -1384,6 +1384,57 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox On a block theme with nothing stored, WooPay gets an appearance computed from the theme, and it is stored.
+	 *
+	 * Client 11.1.0 class-wc-payments-styles-cache.php:69-88 computes and stores the appearance for block themes, read
+	 * behind global theme support (class-wc-payments-woopay-button-handler.php:153-158).
+	 */
+	public function test_block_theme_gives_woopay_an_appearance_computed_from_the_theme(): void {
+		$original_theme = get_stylesheet();
+		$sut            = $this->create_service(
+			array( 'is_woopay_global_theme_support_enabled' => 'yes' ),
+			array( 'platform_global_theme_support_enabled' => true )
+		);
+
+		try {
+			switch_theme( 'twentytwentyfive' );
+			$theme_background = wp_get_global_styles( array( 'color', 'background' ), array( 'transforms' => array( 'resolve-variables' ) ) );
+			$config           = $sut->get_woopay_frontend_config( 'checkout' );
+			$stored           = get_option( 'wcpay_woopay_checkout_appearance' );
+		} finally {
+			switch_theme( $original_theme );
+		}
+
+		$this->assertIsArray( $config['woopayAppearance'] );
+		$this->assertNotEmpty( $config['woopayAppearance'], 'WooPay gets the theme\'s appearance.' );
+		$this->assertTrue( $sut->validate_appearance_schema( $config['woopayAppearance'] ) );
+		$this->assertSame( $theme_background, $config['woopayAppearance']['variables']['colorBackground'] ?? null );
+		$this->assertIsArray( $stored, 'The computed appearance is stored.' );
+		$this->assertSame( $config['woopayAppearance'], $stored['appearance'] ?? null );
+	}
+
+	/**
+	 * @testdox On a classic theme with nothing stored, WooPay gets no appearance.
+	 */
+	public function test_classic_theme_gives_woopay_no_computed_appearance(): void {
+		$original_theme = get_stylesheet();
+		$sut            = $this->create_service(
+			array( 'is_woopay_global_theme_support_enabled' => 'yes' ),
+			array( 'platform_global_theme_support_enabled' => true )
+		);
+
+		try {
+			switch_theme( 'storefront' );
+			$appearance = $sut->get_woopay_appearance();
+		} finally {
+			switch_theme( $original_theme );
+		}
+
+		$this->assertSame( array(), $appearance );
+		$this->assertFalse( get_option( 'wcpay_woopay_checkout_appearance' ) );
+	}
+
+	/**
 	 * @testdox Should prefer a sanitized email from a valid encrypted identity envelope.
 	 */
 	public function test_encrypted_session_data_uses_valid_encrypted_identity_email(): void {
