@@ -735,7 +735,7 @@ class WooPaymentsWooPaySessionService {
 	 * @param string|null                     $email           Shopper email.
 	 * @param string|null                     $user_session    WooPay user session.
 	 * @param WP_REST_Request|null            $woopay_request  WooPay REST request.
-	 * @param int|null                        $order_id        Pay-for-order order ID.
+	 * @param int|null                        $order_id        Pay-for-order order ID; ignored unless `$key` lets the current user pay that order.
 	 * @param string|null                     $key             Pay-for-order key.
 	 * @param string|null                     $billing_email   Pay-for-order billing email.
 	 * @param array<string,mixed>|null        $appearance      WooPay appearance payload.
@@ -753,6 +753,12 @@ class WooPaymentsWooPaySessionService {
 		?array $appearance = null,
 		array $font_rules = array()
 	): array {
+		// The session carries the order's key-bearing pay URL, so a posted order ID needs its key; client 11.1.0 trusts it (class-woopay-session.php:499-500).
+		$order = null !== $order_id ? wc_get_order( $order_id ) : false;
+		if ( ! $order instanceof \WC_Order || ! WooPaymentsOrderPayAccess::can_pay_with_key( $order, (string) $key ) ) {
+			$order_id = null;
+		}
+
 		$is_pay_for_order = null !== $order_id;
 		$email            = $this->resolve_session_email( $email );
 

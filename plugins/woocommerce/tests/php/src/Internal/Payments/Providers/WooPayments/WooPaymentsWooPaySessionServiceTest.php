@@ -962,6 +962,45 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox WooPay session for an order-pay link carries the order's pay URL and order preload when the key lets the visitor pay it.
+	 */
+	public function test_init_session_request_uses_the_order_pay_url_with_the_order_key(): void {
+		$order = \WC_Helper_Order::create_order( 0 );
+
+		$result = $this->create_service()->get_init_session_request( null, null, null, $order->get_id(), $order->get_order_key(), $order->get_billing_email() );
+
+		$this->assertSame( $order->get_checkout_payment_url(), $result['store_data']['blog_checkout_url'] );
+		$this->assertSame( $order->get_checkout_payment_url(), $result['store_data']['return_url'] );
+		$this->assertSame( array( 'order_id' => $order->get_id() ), $result['preloaded_requests']['checkout'] );
+	}
+
+	/**
+	 * @testdox WooPay session leaves out a posted order's pay URL when the key is wrong or missing, or the visitor cannot pay the order.
+	 *
+	 * @testWith ["wrong key"]
+	 *           ["missing key"]
+	 *           ["another customer's order"]
+	 *
+	 * @param string $scenario Case to exercise.
+	 */
+	public function test_init_session_request_ignores_an_order_the_key_does_not_unlock( string $scenario ): void {
+		$owner_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$order    = \WC_Helper_Order::create_order( "another customer's order" === $scenario ? $owner_id : 0 );
+		$key      = array(
+			'wrong key'                => 'wc_order_not_the_key',
+			'missing key'              => null,
+			"another customer's order" => $order->get_order_key(),
+		)[ $scenario ];
+
+		$result = $this->create_service()->get_init_session_request( null, null, null, $order->get_id(), $key, $order->get_billing_email() );
+
+		$this->assertStringNotContainsString( $order->get_order_key(), (string) wp_json_encode( $result['store_data'] ) );
+		$this->assertSame( wc_get_checkout_url(), $result['store_data']['blog_checkout_url'] );
+		$this->assertSame( wc_get_cart_url(), $result['store_data']['return_url'] );
+		$this->assertArrayHasKey( 'billing_address', $result['preloaded_requests']['checkout'], 'Falls back to the cart session preload.' );
+	}
+
+	/**
 	 * @testdox Should forward WooPay Cart-Token to Store API preload subrequests.
 	 */
 	public function test_forwards_woopay_cart_token_to_store_api_preload_subrequests(): void {
