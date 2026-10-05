@@ -47,6 +47,8 @@ class HookedBlocksRegistrar {
 	private $insertions;
 
 	/**
+	 * HookedBlocksRegistrar constructor.
+	 *
 	 * @param array<string, array{anchor:string|array<int, string>, position:string, enabled:callable, anchor_filter?:callable}> $insertions The insertions to register.
 	 */
 	public function __construct( array $insertions ) {
@@ -76,7 +78,7 @@ class HookedBlocksRegistrar {
 	 * @param mixed $context             The template, part or pattern being rendered (unused).
 	 * @return array<int, string> The block types to insert at this position.
 	 */
-	public function add_hooked_block_types( $hooked_block_types, $relative_position, $anchor_block_type, $context ): array {
+	public function add_hooked_block_types( $hooked_block_types, $relative_position, $anchor_block_type, $context ): array { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- The service filter callback signature is fixed.
 		// The value travels through a public filter, so a third-party callback
 		// earlier in the chain may have replaced it with a non-array.
 		$hooked_block_types = is_array( $hooked_block_types ) ? $hooked_block_types : array();

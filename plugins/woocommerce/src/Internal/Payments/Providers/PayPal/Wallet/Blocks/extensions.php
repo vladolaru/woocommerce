@@ -12,7 +12,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Block
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
 
 return array(
-	'wcgateway.button.locations'                       => function ( array $locations, ContainerInterface $container ): array {
+	'wcgateway.button.locations'                       => function ( array $locations, ContainerInterface $container ): array { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- The service filter callback signature is fixed.
 		return array_merge(
 			$locations,
 			array(
@@ -21,7 +21,7 @@ return array(
 			)
 		);
 	},
-	'wcgateway.settings.pay-later.messaging-locations' => function ( array $locations, ContainerInterface $container ): array {
+	'wcgateway.settings.pay-later.messaging-locations' => function ( array $locations, ContainerInterface $container ): array { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- The service filter callback signature is fixed.
 		unset( $locations['checkout-block-express'] );
 		unset( $locations['cart-block'] );
 

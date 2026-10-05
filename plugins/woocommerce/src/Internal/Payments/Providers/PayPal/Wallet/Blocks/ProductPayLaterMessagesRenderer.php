@@ -31,6 +31,8 @@ class ProductPayLaterMessagesRenderer {
 	private $config;
 
 	/**
+	 * ProductPayLaterMessagesRenderer constructor.
+	 *
 	 * @param array<string, string> $config The messaging style pulled from the product placement settings.
 	 */
 	public function __construct( array $config ) {

@@ -123,6 +123,8 @@ class ProductBlocks {
 		 * Filters where the Pay Later messaging block is auto-inserted into block-theme
 		 * Single Product templates.
 		 *
+		 * @since 11.3.0
+		 *
 		 * @param array $placement {
 		 *     @type string|string[] $anchor   The block type(s) to insert the messaging block next to.
 		 *     @type string          $position One of before, after, first_child or last_child.
@@ -303,6 +305,11 @@ class ProductBlocks {
 		add_action(
 			self::$neutralized_from,
 			static function () {
+				/**
+				 * Fires the classic render callbacks that were parked on a no-op hook while the blocks rendered.
+				 *
+				 * @since 11.3.0
+				 */
 				do_action( self::NEUTRALIZED_RENDER_HOOK );
 			},
 			30
@@ -458,7 +465,7 @@ class ProductBlocks {
 			return null;
 		}
 
-		$templates = (array) apply_filters(
+		$templates = (array) apply_filters( // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- WordPress core filter, documented in wp-includes/template.php.
 			'single_template_hierarchy',
 			array(
 				'single-' . $product_post->post_type . '-' . $product_post->post_name . '.php',

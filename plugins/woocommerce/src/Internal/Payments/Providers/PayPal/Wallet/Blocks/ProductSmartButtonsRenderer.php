@@ -63,9 +63,24 @@ class ProductSmartButtonsRenderer {
 		// id is the SDK mount target. The actions mirror SmartButton::button_renderer()
 		// so third-party integrations that hook them keep working.
 		echo '<div class="ppc-button-wrapper">';
+		/**
+		 * Fires at the start of the Smart Buttons wrapper, so integrations can add markup before the buttons.
+		 *
+		 * @since 11.3.0
+		 */
 		do_action( 'ppcp_start_button_wrapper_ppcp_gateway' );
 		echo '<div id="' . esc_attr( $wrapper_id ) . '"></div>';
+		/**
+		 * Fires at the end of the Smart Buttons wrapper, so integrations can add markup after the buttons.
+		 *
+		 * @since 11.3.0
+		 */
 		do_action( 'ppcp_end_button_wrapper_ppcp_gateway' );
+		/**
+		 * Fires when the Smart Buttons render on the single product page.
+		 *
+		 * @since 11.3.0
+		 */
 		do_action( 'woocommerce_paypal_payments_single_product_button_render' );
 		echo '</div>';
 		$inner = (string) ob_get_clean();

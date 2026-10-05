@@ -26,6 +26,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscript
  * Class PayPalPaymentMethod
  */
 class PayPalPaymentMethod extends AbstractPaymentMethodType {
+	/**
+	 * The asset getter.
+	 *
+	 * @var AssetGetter
+	 */
 	private AssetGetter $asset_getter;
 
 	/**
@@ -113,7 +118,9 @@ class PayPalPaymentMethod extends AbstractPaymentMethodType {
 	private $all_funding_sources;
 
 	/**
-	 * @param AssetGetter                   $asset_getter
+	 * PayPalPaymentMethod constructor.
+	 *
+	 * @param AssetGetter                   $asset_getter The asset getter.
 	 * @param string                        $version    The assets version.
 	 * @param SmartButtonInterface|callable $smart_button The smart button script loading handler.
 	 * @param SettingsProvider              $plugin_settings The settings provider.
@@ -206,7 +213,7 @@ class PayPalPaymentMethod extends AbstractPaymentMethodType {
 
 		$funding_sources = array();
 		if ( ! $this->is_editing() ) {
-			$disabled_funding_sources = explode( ',', $script_data['url_params']['disable-funding'] ?? '' ) ?: array();
+			$disabled_funding_sources = explode( ',', $script_data['url_params']['disable-funding'] ?? '' );
 			$funding_sources          = array_values(
 				array_diff(
 					array_keys( $this->all_funding_sources ),
@@ -271,6 +278,8 @@ class PayPalPaymentMethod extends AbstractPaymentMethodType {
 		 * The place order button label and its description are WooCommerce's, so the
 		 * plugin no longer sets them. Add `placeOrderButtonLabel` here to rename the
 		 * button, or `placeOrderButtonDescription` to render text beneath it.
+		 *
+		 * @since 11.3.0
 		 *
 		 * @param array $data The payment method data.
 		 */

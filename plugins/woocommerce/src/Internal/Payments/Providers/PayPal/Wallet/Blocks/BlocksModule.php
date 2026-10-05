@@ -40,6 +40,8 @@ class BlocksModule implements ServiceModule, ExtendingModule, ExecutableModule {
 
 	/**
 	 * {@inheritDoc}
+	 *
+	 * @param ContainerInterface $c The service container.
 	 */
 	public function run( ContainerInterface $c ): bool {
 		// The Single Product PayPal buttons & Pay Later messaging blocks do not depend on the

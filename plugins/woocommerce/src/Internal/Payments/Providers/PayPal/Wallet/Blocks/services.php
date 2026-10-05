@@ -56,9 +56,13 @@ return array(
 		return $container->get( 'order-endpoints.endpoint.update-shipping' );
 	},
 
-	'blocks.add-place-order-method'          => function ( ContainerInterface $container ): bool {
+	'blocks.add-place-order-method'          => function ( ContainerInterface $container ): bool { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		/**
-		 * Whether to create a non-express method with the standard "Place order" button redirecting to PayPal.
+		 * Filters whether to create a non-express method with the standard "Place order" button redirecting to PayPal.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param bool $add Whether to add the method; true by default.
 		 */
 		return apply_filters(
 			'woocommerce_paypal_payments_blocks_add_place_order_method',
@@ -85,7 +89,7 @@ return array(
 		);
 	},
 
-	'blocks.product-buttons-renderer'        => static function ( ContainerInterface $container ): ProductSmartButtonsRenderer {
+	'blocks.product-buttons-renderer'        => static function ( ContainerInterface $container ): ProductSmartButtonsRenderer { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new ProductSmartButtonsRenderer();
 	},
 
