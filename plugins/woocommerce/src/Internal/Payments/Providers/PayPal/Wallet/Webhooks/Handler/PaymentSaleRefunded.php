@@ -90,7 +90,7 @@ class PaymentSaleRefunded implements RequestHandler {
 			return $this->failure_response();
 		}
 
-		$args = array(
+		$args      = array(
 			'transaction_id' => $transaction_id,
 		);
 		$wc_orders = wc_get_orders( $args );
