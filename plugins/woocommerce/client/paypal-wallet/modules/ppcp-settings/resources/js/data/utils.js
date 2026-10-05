@@ -27,10 +27,6 @@ const updateObject = ( oldObject, newValues, allowedKeys = {} ) => ( {
 	...Object.keys( newValues ).reduce( ( acc, key ) => {
 		if ( key in allowedKeys ) {
 			acc[ key ] = newValues[ key ];
-		} else {
-			console.warn(
-				`Ignoring unknown key "${ key }" - to use it, add it to the initial store properties in the reducer.`
-			);
 		}
 		return acc;
 	}, {} ),
@@ -125,11 +121,6 @@ export const createHooksForStore = ( storeName ) => {
 					);
 				}
 				const selectorResult = store[ selector ]();
-				if ( undefined === selectorResult?.[ key ] ) {
-					console.error(
-						`Warning: ${ selector }()[${ key }] is undefined in store "${ storeName }". This may indicate a bug.`
-					);
-				}
 				return selectorResult?.[ key ];
 			},
 			[ key ]
@@ -154,11 +145,8 @@ export const createHooksForStore = ( storeName ) => {
 					}
 
 					actions[ dispatcher ]( key, newValue );
-				} catch ( error ) {
-					console.error(
-						`Error updating ${ key } in ${ storeName }:`,
-						error
-					);
+				} catch {
+					// A failed update leaves the store unchanged.
 				}
 			},
 			[ actions, key, trackingActions ]

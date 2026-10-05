@@ -87,10 +87,6 @@
 				anchorBlockName,
 				attempts + 1
 			);
-		} else {
-			console.log(
-				'Failed to find target block after several attempts.'
-			);
 		}
 	}
 

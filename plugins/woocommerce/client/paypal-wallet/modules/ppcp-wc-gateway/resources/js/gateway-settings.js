@@ -121,8 +121,8 @@ document.addEventListener( 'DOMContentLoaded', () => {
 					'ppcp_paypal_render_preview',
 					previewSettings
 				);
-			} catch ( err ) {
-				console.error( err );
+			} catch {
+				// A failed preview render leaves the preview as it was.
 			}
 		};
 
@@ -203,12 +203,9 @@ document.addEventListener( 'DOMContentLoaded', () => {
 
 				onLoaded( paypal );
 			} )
-			.catch( ( error ) =>
-				console.error(
-					'failed to load the PayPal JS SDK script',
-					error
-				)
-			);
+			.catch( () => {
+				// The preview stays empty when the PayPal script fails to load.
+			} );
 	}
 
 	function getButtonSettings( wrapperSelector, fields ) {
@@ -259,8 +256,8 @@ document.addEventListener( 'DOMContentLoaded', () => {
 
 			try {
 				messageRenderer.renderWithAmount( settings.amount );
-			} catch ( err ) {
-				console.error( err );
+			} catch {
+				// A failed preview render leaves the preview as it was.
 			}
 		};
 

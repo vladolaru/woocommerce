@@ -26,17 +26,9 @@ const stores = [
 
 stores.forEach( ( store ) => {
 	try {
-		if ( store.initStore() === false ) {
-			console.error(
-				`Store initialization failed for ${ store.STORE_NAME }`
-			);
-		}
-	} catch ( e ) {
-		console.error(
-			'Error during store initialization:',
-			store.STORE_NAME,
-			e
-		);
+		store.initStore();
+	} catch {
+		// A store that fails to initialize must not stop the others.
 	}
 } );
 

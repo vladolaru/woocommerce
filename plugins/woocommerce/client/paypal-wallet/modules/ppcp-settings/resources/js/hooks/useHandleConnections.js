@@ -96,8 +96,6 @@ export const useHandleOnboardingButton = ( isSandbox ) => {
 			if ( res.success && res.data ) {
 				setOnboardingUrl( res.data );
 			} else {
-				console.error( 'Failed to fetch onboarding URL', res );
-
 				// Stable id so a re-fetch replaces the notice instead of stacking.
 				createErrorNotice(
 					res?.message ?? MESSAGES.ONBOARDING_URL_ERROR,
@@ -226,7 +224,6 @@ const useConnectionBase = () => {
 
 	return {
 		handleFailed: ( res, genericMessage ) => {
-			console.error( 'Connection error', res );
 			createErrorNotice( res?.message ?? genericMessage );
 		},
 		handleCompleted: async () => {

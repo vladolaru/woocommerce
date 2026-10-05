@@ -131,7 +131,6 @@ export const resetMerchant = () => ( { type: ACTION_TYPES.RESET_MERCHANT } );
  */
 export const startActivity = ( id, description = null ) => {
 	if ( ! id || typeof id !== 'string' ) {
-		console.warn( 'Activity ID must be a non-empty string' );
 		return null;
 	}
 

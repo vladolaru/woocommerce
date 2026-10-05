@@ -59,9 +59,6 @@ class VaultRenderer {
 
 		const paypal = window[ VAULT_NAMESPACE ];
 		if ( ! paypal?.SavedPaymentMethods ) {
-			console.error(
-				'PayPal SavedPaymentMethods SDK component not available.'
-			);
 			return;
 		}
 
@@ -101,19 +98,18 @@ class VaultRenderer {
 				onCancel: () => {
 					onCancelCallback?.();
 				},
-				onError: ( error ) => {
-					console.error( 'Vault Component error:', error );
+				onError: () => {
+					// Errors from the vault component are not reported here.
 				},
 			} );
 
-			this.vaultInstance.render( container ).catch( ( error ) => {
-				console.error( 'Vault Component render failed:', error );
+			this.vaultInstance.render( container ).catch( () => {
 				this.rendered = false;
 			} );
 
 			this.rendered = true;
-		} catch ( error ) {
-			console.error( 'Vault Component init failed:', error );
+		} catch {
+			// A failed render leaves the vault component unrendered.
 		}
 	}
 

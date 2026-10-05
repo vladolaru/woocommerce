@@ -13,8 +13,7 @@ export const useScriptParams = ( requestConfig ) => {
 				} else {
 					setData( false );
 				}
-			} catch ( e ) {
-				console.error( e );
+			} catch {
 				setData( false );
 			}
 		} )();

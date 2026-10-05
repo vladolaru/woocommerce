@@ -259,8 +259,8 @@ class Renderer {
 
 		try {
 			this.buttonsOptions[ wrapper ].actions.disable();
-		} catch ( err ) {
-			console.warn( 'Failed to disable buttons: ' + err );
+		} catch {
+			// Ignore a failure to disable the buttons.
 		}
 	}
 
@@ -271,8 +271,8 @@ class Renderer {
 
 		try {
 			this.buttonsOptions[ wrapper ].actions.enable();
-		} catch ( err ) {
-			console.warn( 'Failed to enable buttons: ' + err );
+		} catch {
+			// Ignore a failure to enable the buttons.
 		}
 	}
 }

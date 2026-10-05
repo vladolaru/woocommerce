@@ -25,8 +25,7 @@ export const useCopyToClipboard = ( options = {} ) => {
 				() => setCopied( false ),
 				successDuration
 			);
-		} catch ( err ) {
-			console.error( 'Copy failed:', err );
+		} catch {
 			setError( true );
 			setCopied( false );
 		}

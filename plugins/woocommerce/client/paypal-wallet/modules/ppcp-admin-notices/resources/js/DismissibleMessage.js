@@ -14,13 +14,11 @@ export default class DismissibleMessage {
 
 		// Quick sanitation.
 		if ( ! this.#muteConfig?.endpoint || ! this.#muteConfig?.nonce ) {
-			console.error( 'Ajax config (Mute):', this.#muteConfig );
 			throw new Error(
 				'Invalid ajax configuration for DismissibleMessage. Nonce/Endpoint missing'
 			);
 		}
 		if ( ! this.#msgId ) {
-			console.error( 'Notice Element:', this.#notice );
 			throw new Error(
 				'Invalid notice element passed to DismissibleMessage. No MsgId defined'
 			);

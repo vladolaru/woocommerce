@@ -26,7 +26,6 @@ export const formatPrice = ( value, currency ) => {
 	const amount = value.toFixed( 2 );
 
 	if ( ! currencyInfo ) {
-		console.error( `Unsupported currency: ${ currency }` );
 		return amount;
 	}
 

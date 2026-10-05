@@ -39,7 +39,6 @@ class CartActionHandler {
 				} )
 				.then( function ( data ) {
 					if ( ! data.success ) {
-						console.error( data );
 						errorHandler.clear();
 						errorHandler.message( data.data.message );
 						throw { type: 'create-order-error' };

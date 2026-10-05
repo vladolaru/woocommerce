@@ -101,6 +101,7 @@ export const addDebugTools = ( context, modules ) => {
 				// eslint-disable-next-line no-console
 				console.log( `Done: Store '${ storeName }' reset` );
 			} catch {
+				// eslint-disable-next-line no-console -- Debug tool output; these helpers exist to print to the console.
 				console.error(
 					`Failed: Could not reset store '${ storeName }'`
 				);
@@ -140,6 +141,7 @@ export const addDebugTools = ( context, modules ) => {
 					`Done: Store '${ storeName }' refreshed from REST`
 				);
 			} catch {
+				// eslint-disable-next-line no-console -- Debug tool output; these helpers exist to print to the console.
 				console.error(
 					`Failed: Could not refresh store '${ storeName }' from REST`
 				);

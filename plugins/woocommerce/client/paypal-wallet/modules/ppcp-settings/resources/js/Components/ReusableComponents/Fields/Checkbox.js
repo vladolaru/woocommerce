@@ -15,9 +15,6 @@ const Checkbox = ( {
 		if ( onChange ) {
 			onChange( value, isChecked );
 		} else if ( changeCallback ) {
-			console.warn(
-				'Deprecated prop, use "onChange" instead of "changeCallback"'
-			);
 			changeCallback( value, isChecked );
 		}
 	};

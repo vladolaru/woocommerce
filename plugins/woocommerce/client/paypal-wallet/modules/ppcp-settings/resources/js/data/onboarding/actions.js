@@ -81,9 +81,8 @@ export function persist() {
 				method: 'POST',
 				data: select.persistentData(),
 			} );
-		} catch ( e ) {
+		} catch {
 			// We catch errors here, as the onboarding module is not handled by the persistAll hook.
-			console.error( 'Error saving progress.', e );
 		}
 	};
 }

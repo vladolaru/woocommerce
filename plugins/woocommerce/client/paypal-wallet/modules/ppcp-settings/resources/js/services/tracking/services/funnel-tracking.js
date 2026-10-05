@@ -191,11 +191,8 @@ export class FunnelTrackingService {
 			// Use funnel-specific translation.
 			try {
 				translationFn( oldValue, newValue, metadata, this );
-			} catch ( error ) {
-				console.error(
-					`[Funnel Tracking] Error in translation for ${ fieldName }:`,
-					error
-				);
+			} catch {
+				// A failing funnel translation must not break the settings screen.
 			}
 		} else {
 			// Fallback to generic tracking.
@@ -245,16 +242,12 @@ export class FunnelTrackingService {
 	sendToAdapters( eventName, properties ) {
 		this.eventCount++;
 
-		this.adapters.forEach( ( adapter, index ) => {
+		this.adapters.forEach( ( adapter ) => {
 			try {
 				// Send only the essential properties.
 				adapter.track( eventName, properties );
-			} catch ( error ) {
-				console.error(
-					`[Funnel Tracking] Adapter ${ index } error:`,
-					error,
-					adapter.getInfo?.() || 'unknown adapter'
-				);
+			} catch {
+				// A failing adapter must not stop the others.
 			}
 		} );
 	}

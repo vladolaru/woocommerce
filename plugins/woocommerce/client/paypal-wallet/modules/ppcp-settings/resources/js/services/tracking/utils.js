@@ -37,7 +37,6 @@ export function getFieldValue( select, storeName, fieldConfig ) {
 		} else if ( dataType === 'transient' ) {
 			data = store.transientData?.();
 		} else {
-			console.warn( `[FIELD VALUE] Unknown data type: ${ dataType }` );
 			return undefined;
 		}
 
@@ -57,11 +56,7 @@ export function getFieldValue( select, storeName, fieldConfig ) {
 		}
 
 		return value;
-	} catch ( error ) {
-		console.error(
-			`[FIELD VALUE] Error getting value for ${ fieldConfig.fieldName }:`,
-			error
-		);
+	} catch {
 		return undefined;
 	}
 }

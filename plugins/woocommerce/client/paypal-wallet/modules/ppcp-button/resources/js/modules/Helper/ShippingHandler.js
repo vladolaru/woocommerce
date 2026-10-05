@@ -60,9 +60,7 @@ export const handleShippingOptionsChange = async ( data, actions, config ) => {
 				throw new Error( json.data.message );
 			}
 		}
-	} catch ( e ) {
-		console.error( e );
-
+	} catch {
 		actions.reject();
 	}
 };
@@ -142,9 +140,7 @@ export const handleShippingAddressChange = async ( data, actions, config ) => {
 		if ( ! json.success ) {
 			throw new Error( json.data.message );
 		}
-	} catch ( e ) {
-		console.error( e );
-
+	} catch {
 		actions.reject();
 	}
 };

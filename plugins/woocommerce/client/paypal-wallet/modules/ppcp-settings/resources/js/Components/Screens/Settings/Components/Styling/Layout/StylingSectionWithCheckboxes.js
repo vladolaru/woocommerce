@@ -17,13 +17,6 @@ const StylingSectionWithCheckboxes = ( {
 } ) => {
 	className = classNames( 'ppcp--has-checkboxes', name, className );
 
-	if ( ! name ) {
-		console.error(
-			'Checkbox sections need a unique name! No name given to:',
-			title
-		);
-	}
-
 	return (
 		<StylingSection
 			title={ title }

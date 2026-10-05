@@ -14,28 +14,23 @@ const CONTEXTS = {
  * @throws {Error} If the request fails
  */
 async function makeApiRequest( endpoint, nonce, additionalData = {} ) {
-	try {
-		const response = await fetch( endpoint, {
-			method: 'POST',
-			credentials: 'same-origin',
-			headers: {
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify( {
-				nonce,
-				...additionalData,
-			} ),
-		} );
+	const response = await fetch( endpoint, {
+		method: 'POST',
+		credentials: 'same-origin',
+		headers: {
+			'Content-Type': 'application/json',
+		},
+		body: JSON.stringify( {
+			nonce,
+			...additionalData,
+		} ),
+	} );
 
-		if ( ! response.ok ) {
-			throw new Error( `HTTP error status: ${ response.status }` );
-		}
-
-		return await response.json();
-	} catch ( error ) {
-		console.error( 'API request failed:', error );
-		throw error;
+	if ( ! response.ok ) {
+		throw new Error( `HTTP error status: ${ response.status }` );
 	}
+
+	return response.json();
 }
 
 /**
@@ -73,8 +68,7 @@ async function handleSubscriptionPaymentChange(
 		}
 
 		return false;
-	} catch ( error ) {
-		console.error( 'Subscription payment change failed:', error );
+	} catch {
 		return false;
 	}
 }
@@ -97,8 +91,6 @@ function submitCheckoutForm() {
 	const placeOrderButton = document.querySelector( '#place_order' );
 	if ( placeOrderButton ) {
 		placeOrderButton.click();
-	} else {
-		console.error( 'Place order button (#place_order) not found in DOM' );
 	}
 }
 
@@ -132,8 +124,7 @@ async function createVaultSetupToken( config, errorHandler, options = {} ) {
 		}
 
 		throw new Error( 'Setup token ID not found in response' );
-	} catch ( error ) {
-		console.error( 'Create vault setup token failed:', error );
+	} catch {
 		errorHandler?.message( config.error_message );
 		return undefined;
 	}
@@ -212,8 +203,7 @@ async function handleApproval(
 
 		// Default: redirect to payment methods page
 		redirectToPaymentMethods( config.payment_methods_page );
-	} catch ( error ) {
-		console.error( 'Approval handling failed:', error );
+	} catch {
 		errorHandler?.message( config.error_message );
 	}
 }
@@ -241,20 +231,18 @@ async function handleGuestApproval( config, vaultSetupToken ) {
 		}
 
 		throw new Error( 'Guest payment token creation failed' );
-	} catch ( error ) {
-		console.error( 'Guest approval failed:', error );
+	} catch {
+		// A failed guest approval leaves the page unchanged.
 	}
 }
 
 /**
  * Generic error handler for PayPal button events
  *
- * @param {Error}  error        - Error object
  * @param {Object} errorHandler - Error handler object
  * @param {string} errorMessage - Error message to display
  */
-function handleError( error, errorHandler, errorMessage ) {
-	console.error( error );
+function handleError( errorHandler, errorMessage ) {
 	errorHandler?.message( errorMessage );
 }
 
@@ -280,12 +268,8 @@ export function buttonConfiguration( addPaymentMethodConfig, errorHandler ) {
 				vaultSetupToken
 			);
 		},
-		onError: ( error ) => {
-			handleError(
-				error,
-				errorHandler,
-				addPaymentMethodConfig.error_message
-			);
+		onError: () => {
+			handleError( errorHandler, addPaymentMethodConfig.error_message );
 		},
 	};
 }
@@ -313,8 +297,7 @@ export function addPaymentMethodConfiguration( addPaymentMethodConfig ) {
 				}
 
 				throw new Error( 'Setup token ID not found in response' );
-			} catch ( error ) {
-				console.error( 'Create setup token failed:', error );
+			} catch {
 				return undefined;
 			}
 		},
@@ -324,8 +307,8 @@ export function addPaymentMethodConfiguration( addPaymentMethodConfig ) {
 				vaultSetupToken
 			);
 		},
-		onError: ( error ) => {
-			console.error( error );
+		onError: () => {
+			// Errors from the button are not reported here.
 		},
 	};
 }

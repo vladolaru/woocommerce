@@ -19,12 +19,6 @@ describe( 'formatPrice', () => {
 	);
 
 	it( 'should handle when currency is not supported', () => {
-		const spy = jest
-			.spyOn( console, 'error' )
-			.mockImplementation( () => {} );
 		expect( formatPrice( 100.0, 'XYZ' ) ).toBe( '100.00' );
-
-		expect( spy ).toHaveBeenCalledWith( 'Unsupported currency: XYZ' );
-		spy.mockRestore();
 	} );
 } );

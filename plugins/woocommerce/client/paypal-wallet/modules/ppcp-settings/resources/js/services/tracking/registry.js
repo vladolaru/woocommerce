@@ -37,19 +37,6 @@ export function registerFunnel( funnelId, config ) {
 		funnelId,
 	};
 
-	// Validate tracking condition if provided.
-	if ( fullConfig.trackingCondition ) {
-		const validation = validateTrackingCondition(
-			fullConfig.trackingCondition
-		);
-		if ( ! validation.valid ) {
-			console.error(
-				`[REGISTRY] Invalid tracking condition for funnel ${ funnelId }:`,
-				validation.errors
-			);
-		}
-	}
-
 	// Store the funnel registration.
 	trackingRegistry.funnels[ funnelId ] = {
 		funnelId,
@@ -72,7 +59,6 @@ export function registerFunnel( funnelId, config ) {
 export function addStoreToFunnel( storeName, funnelId ) {
 	// Check if funnel exists.
 	if ( ! trackingRegistry.funnels[ funnelId ] ) {
-		console.error( `[REGISTRY] Funnel ${ funnelId } does not exist` );
 		return false;
 	}
 
@@ -122,7 +108,6 @@ export function initializeTracking() {
 function initializeTrackingFunnel( funnelId ) {
 	const funnel = trackingRegistry.funnels[ funnelId ];
 	if ( ! funnel ) {
-		console.error( `[REGISTRY] Funnel ${ funnelId } not found` );
 		return null;
 	}
 
@@ -130,9 +115,6 @@ function initializeTrackingFunnel( funnelId ) {
 
 	// Skip if no stores are registered for this funnel.
 	if ( stores.length === 0 ) {
-		console.warn(
-			`[REGISTRY] No stores registered for funnel ${ funnelId }`
-		);
 		return null;
 	}
 
@@ -165,9 +147,6 @@ function initializeTrackingFunnel( funnelId ) {
 	stores.forEach( ( storeName ) => {
 		// Check if WordPress data store exists.
 		if ( ! wp.data || ! wp.data.select( storeName ) ) {
-			console.warn(
-				`[REGISTRY] Store ${ storeName } not available for funnel ${ funnelId }`
-			);
 			return;
 		}
 

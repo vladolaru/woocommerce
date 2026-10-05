@@ -211,7 +211,6 @@ describe( 'Configuration', () => {
 			expect( mockErrorHandler.message ).toHaveBeenCalledWith(
 				'Payment failed. Please try again.'
 			);
-			expect( console ).toHaveErrored();
 		} );
 
 		test( 'should handle HTTP error responses', async () => {
@@ -229,7 +228,6 @@ describe( 'Configuration', () => {
 
 			expect( result ).toBeUndefined();
 			expect( mockErrorHandler.message ).toHaveBeenCalled();
-			expect( console ).toHaveErrored();
 		} );
 
 		test( 'onError should call error handler with message', () => {
@@ -242,7 +240,6 @@ describe( 'Configuration', () => {
 			expect( mockErrorHandler.message ).toHaveBeenCalledWith(
 				'Payment failed. Please try again.'
 			);
-			expect( console ).toHaveErrored();
 		} );
 
 		test( 'createVaultSetupToken returns token ID on success', async () => {

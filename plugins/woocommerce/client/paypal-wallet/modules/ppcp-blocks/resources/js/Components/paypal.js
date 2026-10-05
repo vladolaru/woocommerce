@@ -112,9 +112,8 @@ export const PayPalComponent = ( {
 					.dispatch( 'wc/store/cart' )
 					.setShippingAddress( addresses.shippingAddress );
 			}
-		} catch ( err ) {
+		} catch {
 			// sometimes the PayPal address is missing, skip in this case.
-			console.error( err );
 		}
 
 		// this useEffect should run only once, but adding this in case of some kind of full re-rendering
@@ -223,9 +222,7 @@ export const PayPalComponent = ( {
 				if ( ! json.success ) {
 					throw new Error( json.data.message );
 				}
-			} catch ( e ) {
-				console.error( e );
-
+			} catch {
 				actions.reject();
 			}
 		};
@@ -256,9 +253,7 @@ export const PayPalComponent = ( {
 				if ( ! json.success ) {
 					throw new Error( json.data.message );
 				}
-			} catch ( e ) {
-				console.error( e );
-
+			} catch {
 				actions.reject();
 			}
 		};
@@ -326,8 +321,7 @@ export const PayPalComponent = ( {
 		if ( activePaymentMethod !== methodId ) {
 			return;
 		}
-		const unsubscribe = onCheckoutFail( ( { processingResponse } ) => {
-			console.error( processingResponse );
+		const unsubscribe = onCheckoutFail( () => {
 			if ( onClose ) {
 				onClose();
 			}

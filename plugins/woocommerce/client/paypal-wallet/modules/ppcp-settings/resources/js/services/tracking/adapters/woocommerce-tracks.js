@@ -49,11 +49,11 @@ export class WooCommerceTracksAdapter {
 		// Debug which tracking system we're using.
 		if ( isAvailable && this.debug ) {
 			if ( window.wc?.tracks?.recordEvent ) {
-				console.log(
+				this.debugLog(
 					'[WC Tracks] Using wc.tracks.recordEvent (real system)'
 				);
 			} else if ( window.wcTracks?.recordEvent ) {
-				console.log(
+				this.debugLog(
 					'[WC Tracks] Using wcTracks.recordEvent (fallback)'
 				);
 			}
@@ -88,6 +88,7 @@ export class WooCommerceTracksAdapter {
 	 */
 	debugLog( ...args ) {
 		if ( this.debug ) {
+			// eslint-disable-next-line no-console -- Debug output, only when debug mode is on.
 			console.log( ...args );
 		}
 	}
@@ -138,7 +139,7 @@ export class WooCommerceTracksAdapter {
 
 		// Validate event name follows WooCommerce pattern.
 		if ( ! this.isValidEventName( fullEventName ) ) {
-			console.error( '[WC Tracks] Invalid event name:', fullEventName );
+			this.debugLog( '[WC Tracks] Invalid event name:', fullEventName );
 			return false;
 		}
 
@@ -147,7 +148,7 @@ export class WooCommerceTracksAdapter {
 			const trackingFunction = this.getTrackingFunction();
 
 			if ( ! trackingFunction ) {
-				console.error( '[WC Tracks] No tracking function available' );
+				this.debugLog( '[WC Tracks] No tracking function available' );
 				return false;
 			}
 
@@ -164,7 +165,7 @@ export class WooCommerceTracksAdapter {
 			);
 			return true;
 		} catch ( error ) {
-			console.error( '[WC Tracks] Error sending event:', error );
+			this.debugLog( '[WC Tracks] Error sending event:', error );
 			return false;
 		}
 	}

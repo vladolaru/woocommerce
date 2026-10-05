@@ -6,6 +6,7 @@ class DisplayManager {
 		this.ruleStatus = {}; // The current status for each rule. Maybe not necessary, for now just for logging.
 
 		document.ppcpDisplayManagerLog = () => {
+			// eslint-disable-next-line no-console -- Debug helper, run by hand from the browser console.
 			console.log( 'DisplayManager', this );
 		};
 	}

@@ -24,6 +24,18 @@ export class SubscriptionManager {
 	}
 
 	/**
+	 * Log to the console when debug mode is on.
+	 * @param {...any} args - Arguments to pass to console.log.
+	 * @return {void}
+	 */
+	debugLog( ...args ) {
+		if ( this.debugMode ) {
+			// eslint-disable-next-line no-console -- Debug output, only when debug mode is on.
+			console.log( ...args );
+		}
+	}
+
+	/**
 	 * Register a funnel's interest in tracking a store.
 	 * @param {string}      storeName         - Name of the store.
 	 * @param {string}      funnelId          - ID of the funnel.
@@ -87,12 +99,10 @@ export class SubscriptionManager {
 		// Create or update the unified subscription for this store.
 		this.ensureStoreSubscription( storeName );
 
-		if ( this.debugMode ) {
-			console.log(
-				`[SubscriptionManager] Registered funnel ${ funnelId } for store ${ storeName }. ` +
-					`Total funnels for this store: ${ this.storeRegistrations[ storeName ].length }`
-			);
-		}
+		this.debugLog(
+			`[SubscriptionManager] Registered funnel ${ funnelId } for store ${ storeName }. ` +
+				`Total funnels for this store: ${ this.storeRegistrations[ storeName ].length }`
+		);
 
 		return registration;
 	}
@@ -117,11 +127,9 @@ export class SubscriptionManager {
 			isActive: true,
 		};
 
-		if ( this.debugMode ) {
-			console.log(
-				`[SubscriptionManager] Created unified subscription for store ${ storeName }`
-			);
-		}
+		this.debugLog(
+			`[SubscriptionManager] Created unified subscription for store ${ storeName }`
+		);
 	}
 
 	/**
@@ -150,14 +158,14 @@ export class SubscriptionManager {
 						store
 					);
 				} catch ( error ) {
-					console.error(
+					this.debugLog(
 						`[SubscriptionManager] Error processing funnel ${ registration.funnelId } for store ${ storeName }:`,
 						error
 					);
 				}
 			} );
 		} catch ( error ) {
-			console.error(
+			this.debugLog(
 				`[SubscriptionManager] Error handling store change for ${ storeName }:`,
 				error
 			);
@@ -307,7 +315,7 @@ export class SubscriptionManager {
 				registration.previousValues[ fieldConfig.fieldName ] =
 					currentValue;
 			} catch ( error ) {
-				console.error(
+				this.debugLog(
 					`[SubscriptionManager] Error processing field ${ fieldConfig.fieldName } for funnel ${ registration.funnelId }:`,
 					error
 				);
@@ -441,7 +449,7 @@ export class SubscriptionManager {
 				);
 				previousValues[ fieldConfig.fieldName ] = currentValue;
 			} catch ( error ) {
-				console.error(
+				this.debugLog(
 					`[SubscriptionManager] Error initializing ${ fieldConfig.fieldName }:`,
 					error
 				);
@@ -480,7 +488,7 @@ export class SubscriptionManager {
 				} );
 			}
 		} catch ( error ) {
-			console.error(
+			this.debugLog(
 				`[SubscriptionManager] Error tracking page load for ${ storeName }:`,
 				error
 			);
@@ -596,7 +604,7 @@ export class SubscriptionManager {
 					}
 					metadata.contributingStores.push( storeName );
 				} catch ( error ) {
-					console.warn(
+					this.debugLog(
 						`[SubscriptionManager] Error getting metadata from store ${ storeName }:`,
 						error
 					);
@@ -608,7 +616,7 @@ export class SubscriptionManager {
 
 			return metadata;
 		} catch ( error ) {
-			console.error(
+			this.debugLog(
 				`[SubscriptionManager] Error creating funnel metadata for ${ registration.funnelId }:`,
 				error
 			);
@@ -650,7 +658,7 @@ export class SubscriptionManager {
 				metadata.currentStep = null;
 			}
 		} catch ( error ) {
-			console.warn(
+			this.debugLog(
 				`[SubscriptionManager] Error enhancing metadata with step info:`,
 				error
 			);
@@ -712,12 +720,10 @@ export class SubscriptionManager {
 		if ( index >= 0 ) {
 			registrations.splice( index, 1 );
 
-			if ( this.debugMode ) {
-				console.log(
-					`[SubscriptionManager] Unregistered funnel ${ funnelId } from store ${ storeName }. ` +
-						`Remaining funnels: ${ registrations.length }`
-				);
-			}
+			this.debugLog(
+				`[SubscriptionManager] Unregistered funnel ${ funnelId } from store ${ storeName }. ` +
+					`Remaining funnels: ${ registrations.length }`
+			);
 
 			// If no more funnels for this store, clean up subscription.
 			if ( registrations.length === 0 ) {
@@ -737,11 +743,9 @@ export class SubscriptionManager {
 			delete this.storeSubscriptions[ storeName ];
 			delete this.storeRegistrations[ storeName ];
 
-			if ( this.debugMode ) {
-				console.log(
-					`[SubscriptionManager] Cleaned up subscription for store ${ storeName }`
-				);
-			}
+			this.debugLog(
+				`[SubscriptionManager] Cleaned up subscription for store ${ storeName }`
+			);
 		}
 	}
 

@@ -13,9 +13,6 @@ const RadioButton = ( {
 		if ( onChange ) {
 			onChange( value );
 		} else if ( handleRdbState ) {
-			console.warn(
-				'Deprecated prop, use "onChange" instead of "handleRdbState"'
-			);
 			handleRdbState( value );
 		}
 	}, [ handleRdbState, onChange, value ] );

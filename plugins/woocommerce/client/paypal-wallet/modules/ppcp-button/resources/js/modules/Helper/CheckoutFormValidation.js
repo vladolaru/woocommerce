@@ -45,8 +45,7 @@ const validateCheckoutForm = function ( config ) {
 						resolve();
 					}
 				} );
-		} catch ( error ) {
-			console.error( error );
+		} catch {
 			reject();
 		}
 	} );

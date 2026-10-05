@@ -72,11 +72,10 @@ export function useV6MessagePreview( { sdkV6, amount, pageType, style } ) {
 
 				container.appendChild( element );
 			} )
-			.catch( ( error ) => {
+			.catch( () => {
 				if ( cancelled ) {
 					return;
 				}
-				console.error( '[ppcp] Pay Later preview', error );
 				setFailed( true );
 			} );
 

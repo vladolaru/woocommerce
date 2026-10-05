@@ -125,8 +125,7 @@ export async function initializeScript( addPaymentMethodConfig ) {
 					`#ppc-button-${ PaymentMethods.PAYPAL }-save-payment-method`
 				);
 		}
-	} catch ( error ) {
-		console.error( 'Failed to load PayPal script:', error );
+	} catch {
 		errorHandler.message(
 			addPaymentMethodConfig.labels.error.generic ||
 				'Failed to load PayPal. Please refresh the page.'

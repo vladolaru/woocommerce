@@ -39,11 +39,6 @@ beforeEach( () => {
 	jest.clearAllMocks();
 	MockResizeObserver.instances = [];
 	window.ResizeObserver = MockResizeObserver;
-	jest.spyOn( console, 'error' ).mockImplementation( () => {} );
-} );
-
-afterEach( () => {
-	console.error.mockRestore();
 } );
 
 function attachContainer( result ) {
@@ -113,7 +108,7 @@ describe( 'useV6MessagePreview()', () => {
 		expect( result.current.loaded ).toBe( false );
 	} );
 
-	test( 'marks failed and logs when loading the editor messages rejects', async () => {
+	test( 'marks failed when loading the editor messages rejects', async () => {
 		mockLoadEditorMessages.mockRejectedValue( new Error( 'sdk failed' ) );
 		const { result } = renderHook( () =>
 			useV6MessagePreview( baseProps() )
@@ -126,7 +121,6 @@ describe( 'useV6MessagePreview()', () => {
 		} );
 
 		expect( result.current.failed ).toBe( true );
-		expect( console.error ).toHaveBeenCalled();
 	} );
 
 	test( 'removes the message element and disconnects the observer on cleanup', async () => {

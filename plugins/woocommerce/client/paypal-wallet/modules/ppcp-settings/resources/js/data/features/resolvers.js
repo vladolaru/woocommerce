@@ -27,8 +27,8 @@ export function getFeatures() {
 				dispatch.setFeatures( response.features );
 				dispatch.setIsReady( true );
 			}
-		} catch ( error ) {
-			console.error( 'Error fetching features:', error );
+		} catch {
+			// The features keep their defaults when the request fails.
 		}
 	};
 }

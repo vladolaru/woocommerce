@@ -61,9 +61,6 @@ const useHooks = () => {
 	const getLocationProp = useCallback(
 		( locationId, prop ) => {
 			if ( undefined === persistentData[ locationId ]?.[ prop ] ) {
-				console.error(
-					`Trying to access non-existent style property: ${ locationId }.${ prop }. Possibly wrong style name - review the reducer.`
-				);
 				return null;
 			}
 			return persistentData[ locationId ][ prop ];

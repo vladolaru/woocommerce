@@ -33,7 +33,6 @@ export function registerAllFunnels() {
 export function registerFunnelById( funnelId ) {
 	const funnel = FUNNELS[ funnelId ];
 	if ( ! funnel ) {
-		console.error( `[Tracking] Funnel ${ funnelId } not found` );
 		return null;
 	}
 

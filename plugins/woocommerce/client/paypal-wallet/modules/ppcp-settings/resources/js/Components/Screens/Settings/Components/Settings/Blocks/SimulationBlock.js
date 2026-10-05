@@ -41,8 +41,7 @@ const SimulationBlock = () => {
 
 		try {
 			await startWebhookSimulation();
-		} catch ( error ) {
-			console.error( error );
+		} catch {
 			setSimulating( false );
 			createErrorNotice(
 				__(
@@ -59,10 +58,6 @@ const SimulationBlock = () => {
 			const simulationStateResponse = await checkWebhookSimulationState();
 			try {
 				if ( ! simulationStateResponse.success ) {
-					console.error(
-						'Simulation state query failed: ' +
-							simulationStateResponse?.data
-					);
 					continue;
 				}
 
@@ -78,8 +73,8 @@ const SimulationBlock = () => {
 				}
 				removeNotice( webhookInfoNoticeId );
 				triggerWebhookInfoNotice();
-			} catch ( error ) {
-				console.error( error );
+			} catch {
+				// Ignore a failed check and poll again on the next pass.
 			}
 		}
 		stopSimulation();

@@ -33,8 +33,10 @@ export class ConsoleLoggerAdapter {
 		const hasProperties = Object.keys( properties ).length > 0;
 
 		if ( hasProperties ) {
+			// eslint-disable-next-line no-console -- This adapter exists to print tracking events to the console.
 			console.log( `${ this.prefix } ${ eventName }`, properties );
 		} else {
+			// eslint-disable-next-line no-console -- This adapter exists to print tracking events to the console.
 			console.log( `${ this.prefix } ${ eventName }` );
 		}
 

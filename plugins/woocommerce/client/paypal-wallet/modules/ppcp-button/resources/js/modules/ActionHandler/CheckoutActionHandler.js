@@ -126,7 +126,6 @@ class CheckoutActionHandler {
 				);
 			},
 			onError: ( err ) => {
-				console.error( err );
 				spinner.unblock();
 
 				if ( err && err.type === 'create-order-error' ) {

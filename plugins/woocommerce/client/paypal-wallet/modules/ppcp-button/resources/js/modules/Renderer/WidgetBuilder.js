@@ -11,6 +11,7 @@ class WidgetBuilder {
 		this.renderEventName = 'ppcp-render';
 
 		document.ppcpWidgetBuilderStatus = () => {
+			// eslint-disable-next-line no-console -- Debug helper, run by hand from the browser console.
 			console.log( {
 				buttons: this.buttons,
 				messages: this.messages,

@@ -44,8 +44,6 @@ export const createOrder = async ( data, config, onError, onClose ) => {
 
 		return json.data.id;
 	} catch ( err ) {
-		console.error( err );
-
 		onError( err.message );
 
 		onClose();
@@ -171,8 +169,6 @@ export const handleApprove = async (
 			onSubmit();
 		}
 	} catch ( err ) {
-		console.error( err );
-
 		setIsFullPageSpinnerActive( false );
 
 		onError( err.message );
@@ -198,8 +194,8 @@ export const createVaultSetupToken = async ( config ) => {
 		.then( ( result ) => {
 			return result.data.id;
 		} )
-		.catch( ( err ) => {
-			console.error( err );
+		.catch( () => {
+			// A failed request leaves the caller without a token to continue with.
 		} );
 };
 
@@ -238,6 +234,4 @@ export const onApproveSavePayment = async (
 	if ( result.success === true ) {
 		onSubmit();
 	}
-
-	console.error( result );
 };

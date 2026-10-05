@@ -41,8 +41,7 @@ export const VaultComponent = ( { config, onApproveOrder, onRenderError } ) => {
 
 		vaultSdkPromise
 			.then( () => setSdkReady( true ) )
-			.catch( ( error ) => {
-				console.error( 'Failed to load PayPal SDK for Vault:', error );
+			.catch( () => {
 				vaultSdkPromise = null;
 				setRenderFailed( true );
 				onRenderError?.();
@@ -61,9 +60,6 @@ export const VaultComponent = ( { config, onApproveOrder, onRenderError } ) => {
 
 		const paypal = window[ VAULT_NAMESPACE ];
 		if ( ! paypal?.SavedPaymentMethods ) {
-			console.error(
-				'PayPal SavedPaymentMethods SDK component not available.'
-			);
 			setRenderFailed( true );
 			onRenderError?.();
 			return;
@@ -103,20 +99,18 @@ export const VaultComponent = ( { config, onApproveOrder, onRenderError } ) => {
 				onCancel: () => {
 					// No changes, component remains unchanged.
 				},
-				onError: ( error ) => {
-					console.error( 'Vault Component error:', error );
+				onError: () => {
+					// Errors from the vault component are not reported here.
 				},
 			} );
 
 			vaultInstanceRef.current
 				.render( containerRef.current )
-				.catch( ( error ) => {
-					console.error( 'Vault Component render failed:', error );
+				.catch( () => {
 					setRenderFailed( true );
 					onRenderError?.();
 				} );
-		} catch ( error ) {
-			console.error( 'Vault Component init failed:', error );
+		} catch {
 			setRenderFailed( true );
 			onRenderError?.();
 		}

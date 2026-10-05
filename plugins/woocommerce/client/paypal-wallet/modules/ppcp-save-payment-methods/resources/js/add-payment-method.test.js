@@ -160,16 +160,11 @@ describe( 'add-payment-method', () => {
 				new Error( 'Script loading failed' )
 			);
 
-			// Suppress expected console.error
-			jest.spyOn( console, 'error' ).mockImplementation( () => {} );
-
 			await initializeScript( mockConfig );
 
 			expect( mockErrorHandler.message ).toHaveBeenCalledWith(
 				'Generic error message'
 			);
-
-			console.error.mockRestore();
 		} );
 	} );
 } );

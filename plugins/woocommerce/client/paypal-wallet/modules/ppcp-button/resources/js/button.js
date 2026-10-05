@@ -165,8 +165,8 @@ const bootstrap = () => {
 		if ( context === 'checkout' ) {
 			try {
 				await formSaver.save( form );
-			} catch ( error ) {
-				console.error( error );
+			} catch {
+				// Saving the form is best effort; the payment flow continues.
 			}
 		}
 	};

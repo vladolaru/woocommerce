@@ -11,14 +11,10 @@ export const loadPayPalScript = async ( namespace, config ) => {
 	}
 
 	if ( loadedScripts.has( namespace ) ) {
-		console.log( `Script already loaded for namespace: ${ namespace }` );
 		return loadedScripts.get( namespace );
 	}
 
 	if ( scriptPromises.has( namespace ) ) {
-		console.log(
-			`Script loading in progress for namespace: ${ namespace }`
-		);
 		return scriptPromises.get( namespace );
 	}
 
@@ -32,14 +28,9 @@ export const loadPayPalScript = async ( namespace, config ) => {
 			.then( ( script ) => {
 				widgetBuilder.setPaypal( script );
 				loadedScripts.set( namespace, script );
-				console.log( `Script loaded for namespace: ${ namespace }` );
 				resolve( script );
 			} )
 			.catch( ( error ) => {
-				console.error(
-					`Failed to load script for namespace: ${ namespace }`,
-					error
-				);
 				reject( error );
 			} )
 			.finally( () => {

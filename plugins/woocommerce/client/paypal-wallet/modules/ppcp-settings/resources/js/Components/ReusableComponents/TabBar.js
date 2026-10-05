@@ -13,8 +13,6 @@ const TabBar = ( { tabs, activePanel, setActivePanel } ) => {
 		( tabName ) => {
 			if ( isValidTab( tabs, tabName ) ) {
 				setActivePanel( tabName );
-			} else {
-				console.warn( `Invalid tab name: ${ tabName }` );
 			}
 		},
 		[ tabs, setActivePanel ]
