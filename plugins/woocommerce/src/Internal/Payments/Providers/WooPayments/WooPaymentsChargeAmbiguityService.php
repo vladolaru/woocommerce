@@ -89,9 +89,10 @@ class WooPaymentsChargeAmbiguityService {
 	 * List the PaymentIntents created for an order.
 	 *
 	 * Lists the customer the earlier requests were sent with. When they were sent with more than one customer, or Stripe
-	 * or the platform refuses the customer's list for good (a deleted customer, for example), lists the account's intents
-	 * created since shortly before the first failure instead, which match on the order whatever the customer. A transport
-	 * failure or a server error leaves the lookup failed, since a later attempt may read the list.
+	 * or the platform refuses the customer's list for good (a deleted customer, for example) or answers without a list,
+	 * lists the account's intents created since shortly before the first failure instead, which match on the order
+	 * whatever the customer. A transport failure or a server error leaves the lookup failed, since a later attempt may
+	 * read the list.
 	 *
 	 * @param WC_Order          $order        Order whose earlier charge is looked up.
 	 * @param array<int,string> $customer_ids Customers the earlier charge requests under the key were sent with.
@@ -110,6 +111,10 @@ class WooPaymentsChargeAmbiguityService {
 			return $this->api_client->is_ambiguous_request_failure( $exception )
 				? self::lookup( self::LOOKUP_FAILED )
 				: $this->find_order_intents_created_since_failure( $order, $failed_at );
+		}
+
+		if ( ! isset( $list['data'] ) || ! is_array( $list['data'] ) ) {
+			return $this->find_order_intents_created_since_failure( $order, $failed_at );
 		}
 
 		$order_intents = $this->get_order_intents_from_list( $list, $order, $failed_at - self::LOOKBACK_SECONDS );

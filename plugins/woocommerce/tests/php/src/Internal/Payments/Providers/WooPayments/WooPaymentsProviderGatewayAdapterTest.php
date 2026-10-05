@@ -1674,7 +1674,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		return array(
 			'transport error'                   => array( array( new WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out' ) ) ),
 			'server error on the customer list' => array( array( self::stripe_api_error( 500 ) ) ),
-			'no list in the answer'             => array( array( self::http_json( 200, array( 'object' => 'list' ) ) ) ),
 			'a full page of newer intents with more to read' => array(
 				array(
 					self::intent_list(
@@ -1700,19 +1699,25 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox When the customer's intents cannot be listed for good, the account's intents since the failure settle it: the earlier payment pays the order.
+	 * @testdox When the customer's intents cannot be listed ($_dataName), the account's intents since the failure settle it: the earlier payment pays the order.
 	 *
 	 * A deleted customer keeps its PaymentIntents, so the account's list, filtered to intents created from 3600 s before
 	 * the recorded failure and matched on the order id and key, still shows the earlier request's intent (monitor ruling
 	 * B). The platform forwards `created` to Stripe's list unchanged (wpcom `wcpay/class-intentions-controller.php:198-210`).
+	 * An answer without a list falls back too, so a changed answer shape cannot refuse every attempt without the merchant
+	 * note (review 45 F5).
+	 *
+	 * @dataProvider provide_customer_lists_that_fall_back
+	 *
+	 * @param array<string,mixed> $customer_answer Transport answer to the customer's intents list.
 	 */
-	public function test_customer_list_refused_falls_back_to_the_account_list(): void {
+	public function test_customer_list_refused_falls_back_to_the_account_list( array $customer_answer ): void {
 		$order                  = $this->create_woopayments_order();
 		$http_client            = new FakeWooPaymentsHttpClient();
 		$http_client->responses = array(
 			self::platform_bad_gateway(),
 			self::stripe_idempotency_error( 'key_first' ),
-			self::stripe_no_such_customer(),
+			$customer_answer,
 			self::intent_list(
 				array(
 					self::order_intent( $this->create_woopayments_order(), 'pi_other_order', 'succeeded' ),
@@ -1737,6 +1742,18 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'wcpay_previous_successful_intent=yes', (string) ( $outcome->get_data()[ PaymentOutcome::DATA_CHECKOUT_REDIRECT ] ?? '' ) );
 		$this->assertSame( '', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
 		$this->assertSame( '', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true ) );
+	}
+
+	/**
+	 * Customer-list answers that send the lookup to the account's list.
+	 *
+	 * @return array<string,array{0:array<string,mixed>}>
+	 */
+	public function provide_customer_lists_that_fall_back(): array {
+		return array(
+			'a deleted customer'     => array( self::stripe_no_such_customer() ),
+			'an answer with no list' => array( self::http_json( 200, array( 'object' => 'list' ) ) ),
+		);
 	}
 
 	/**
@@ -1836,6 +1853,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function provide_account_lists_that_cannot_settle(): array {
 		return array(
+			'the account answer has no list'        => array( self::http_json( 200, array( 'object' => 'list' ) ) ),
 			'the account list refused'              => array(
 				self::http_json(
 					400,
