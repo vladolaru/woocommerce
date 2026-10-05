@@ -1041,6 +1041,38 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A later ambiguous answer never moves the latest failure time backwards, even when the store clock stepped back.
+	 *
+	 * The latest failure time ends the account lookup window; lowering it could leave out the intent of the request it
+	 * recorded (review 49 F7).
+	 */
+	public function test_later_ambiguous_answer_keeps_a_later_recorded_failure_time(): void {
+		$order          = $this->create_woopayments_order();
+		$last_failed_at = time() + 5000;
+		$order->update_meta_data( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, 'key_first' );
+		$order->update_meta_data(
+			WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META,
+			array(
+				'order_id'           => $order->get_id(),
+				'customers'          => array( 'cus_a' ),
+				'failed_at'          => time() - 1000,
+				'last_failed_at'     => $last_failed_at,
+				'cannot_check_noted' => false,
+			)
+		);
+		$order->save_meta_data();
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array( self::platform_bad_gateway() );
+		$sut                    = $this->create_timeout_adapter( $http_client, 'cus_a' );
+
+		$this->charge_attempt( $sut, $order, 'pm_new', 'key_second' );
+		$record = wc_get_order( $order->get_id() )->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true );
+
+		$this->assertSame( array( 'POST intentions key_first' ), self::request_trail( $http_client ) );
+		$this->assertSame( $last_failed_at, $record['last_failed_at'] ?? null );
+	}
+
+	/**
 	 * @testdox When the kept key was sent with more than one customer, the lookup reads the account's intents from the first failure, so the earlier payment pays the order and the new card is not charged.
 	 *
 	 * Native recreates a deleted customer before every charge (`WooPaymentsCustomerService::update_customer_for_order()`),

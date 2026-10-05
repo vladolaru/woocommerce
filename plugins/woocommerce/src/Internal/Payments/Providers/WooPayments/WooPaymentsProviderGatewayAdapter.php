@@ -612,7 +612,8 @@ class WooPaymentsProviderGatewayAdapter {
 			'cannot_check_noted' => false,
 		);
 
-		$record['last_failed_at'] = $now;
+		// A clock stepped back never lowers the end of the account lookup window.
+		$record['last_failed_at'] = max( (int) ( $record['last_failed_at'] ?? 0 ), $now );
 		if ( ! in_array( $customer_id, $record['customers'], true ) ) {
 			$record['customers'][] = $customer_id;
 		}
