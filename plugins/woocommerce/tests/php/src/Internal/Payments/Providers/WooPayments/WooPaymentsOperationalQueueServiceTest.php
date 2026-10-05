@@ -1143,14 +1143,17 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$scheduler = new RecordingActionSchedulerService();
 		$service   = $this->create_service( new StaticNativeRuntimeArbiter( true ), $scheduler );
 
-		// Persist the gate row to mirror a concurrent caller that already inserted it,
-		// while hiding it from get_option() to recreate the TOCTOU read window.
+		// A concurrent caller already inserted the gate row, while this request's cache still records the option as
+		// missing, as it would if it read just before that insert committed. add_option() then skips its own existence
+		// check and runs INSERT ... ON DUPLICATE KEY UPDATE, which affects no row for the same value and returns false.
 		update_option( 'wcpay_post_kyc_activation_emails_scheduled', '1', false );
-		add_filter( 'option_wcpay_post_kyc_activation_emails_scheduled', '__return_empty_string' );
+		wp_cache_delete( 'wcpay_post_kyc_activation_emails_scheduled', 'options' );
+		$notoptions = wp_cache_get( 'notoptions', 'options' );
+		$notoptions = is_array( $notoptions ) ? $notoptions : array();
+		$notoptions['wcpay_post_kyc_activation_emails_scheduled'] = true;
+		wp_cache_set( 'notoptions', $notoptions, 'options' );
 
 		$service->handle_add_option_wcpay_kyc_completion_date( 'wcpay_kyc_completion_date', time() );
-
-		remove_filter( 'option_wcpay_post_kyc_activation_emails_scheduled', '__return_empty_string' );
 
 		$this->assertSame(
 			array(),

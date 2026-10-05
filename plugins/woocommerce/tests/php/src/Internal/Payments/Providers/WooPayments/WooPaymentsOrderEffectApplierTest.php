@@ -853,57 +853,35 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Critical recurring token effects complete before fallible note rendering runs.
+	 * @testdox Critical recurring token effects are stored even when the success note fails to render afterwards.
 	 */
-	public function test_recurring_token_effects_run_before_note_rendering(): void {
+	public function test_recurring_token_effects_are_stored_when_note_rendering_fails(): void {
 		$user_id = $this->factory()->user->create();
 		$order   = $this->create_woopayments_order();
 		$order->set_customer_id( $user_id );
 		$order->save();
 
-		$sequence      = array();
-		$token         = new WC_Payment_Token_CC();
+		$token = new WC_Payment_Token_CC();
+		$token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$token->set_token( 'pm_ordered' );
+		$token->set_user_id( $user_id );
+		$token->set_card_type( 'visa' );
+		$token->set_last4( '4242' );
+		$token->set_expiry_month( '12' );
+		$token->set_expiry_year( '2030' );
+		$token->save();
 		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_or_create_token_for_user', 'attach_token_to_order', 'sync_related_subscriptions_payment_token' ) )
+			->onlyMethods( array( 'get_or_create_token_for_user', 'sync_related_subscriptions_payment_token' ) )
 			->getMock();
-		$token_service->expects( $this->once() )
-			->method( 'get_or_create_token_for_user' )
-			->with( 'pm_ordered', $user_id )
-			->willReturnCallback(
-				static function () use ( &$sequence, $token ): WC_Payment_Token_CC {
-					$sequence[] = 'token';
-					return $token;
-				}
-			);
-		$token_service->expects( $this->once() )
-			->method( 'attach_token_to_order' )
-			->with( $order, $token )
-			->willReturnCallback(
-				static function () use ( &$sequence ): bool {
-					$sequence[] = 'attach';
-					return true;
-				}
-			);
+		$token_service->method( 'get_or_create_token_for_user' )->willReturn( $token );
 		$token_service->expects( $this->once() )
 			->method( 'sync_related_subscriptions_payment_token' )
-			->with( $order, $token, 'pm_ordered', 'cus_ordered' )
-			->willReturnCallback(
-				static function () use ( &$sequence ): void {
-					$sequence[] = 'sync';
-				}
-			);
+			->with( $this->isInstanceOf( WC_Order::class ), $token, 'pm_ordered', 'cus_ordered' );
 		$note_service = $this->getMockBuilder( WooPaymentsOrderNoteService::class )
 			->onlyMethods( array( 'format_payment_success_note_candidates' ) )
 			->getMock();
-		$note_service->expects( $this->once() )
-			->method( 'format_payment_success_note_candidates' )
-			->willReturnCallback(
-				static function () use ( &$sequence ): array {
-					$sequence[] = 'render';
-					throw new RuntimeException( 'Note rendering failed.' );
-				}
-			);
+		$note_service->method( 'format_payment_success_note_candidates' )->willThrowException( new RuntimeException( 'Note rendering failed.' ) );
 		$outcome = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_ordered', '', 'pm_ordered', 'cus_ordered' );
 		$plan    = WooPaymentsOrderEffectPlan::for_payment_intent(
 			array(
@@ -925,7 +903,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			$this->assertSame( 'Note rendering failed.', $exception->getMessage() );
 		}
 
-		$this->assertSame( array( 'token', 'attach', 'sync', 'render' ), $sequence );
+		$this->assertContains( $token->get_id(), array_map( 'intval', wc_get_order( $order->get_id() )->get_payment_tokens() ), 'The token is attached to the order before the note renders.' );
 	}
 
 	/**
@@ -1209,7 +1187,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A same-payment-method SetupIntent replay clears stale card identity after a display lookup failure.
 	 */
-	public function test_setup_intent_replay_with_empty_display_data_preserves_existing_card_identity(): void {
+	public function test_setup_intent_replay_with_empty_display_data_clears_stale_card_identity(): void {
 		$order = $this->create_woopayments_order( '0.00' );
 		$order->set_payment_method_title( 'Visa credit card' );
 		$order->update_meta_data( 'last4', '4242' );
@@ -1525,11 +1503,10 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$data = $result->get_data();
 		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_EXPIRED, $data[ PaymentOutcome::DATA_NOTE_TYPE ] );
 		$this->assertSame( 'canceled', $data[ PaymentOutcome::DATA_META ]['_intention_status'] );
-		$this->assertSame(
-			( new WooPaymentsOrderNoteService() )->format_capture_expired_note_candidates( 'pi_capture_expired', 'ch_capture_expired' ),
-			$data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ]
-		);
-		$this->assertStringContainsString( 'expired', strtolower( wp_strip_all_tags( (string) $data[ PaymentOutcome::DATA_NOTE ] ) ) );
+		// Client 11.1.0 class-wc-payments-order-service.php:2296.
+		$this->assertStringStartsWith( 'Payment authorization has <strong>expired</strong> (', (string) $data[ PaymentOutcome::DATA_NOTE ] );
+		$this->assertStringContainsString( '>pi_capture_expired</a>).', (string) $data[ PaymentOutcome::DATA_NOTE ] );
+		$this->assertContains( $data[ PaymentOutcome::DATA_NOTE ], $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] );
 	}
 
 	/**
@@ -1606,10 +1583,9 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertNotSame( $outcome, $result );
-		$this->assertSame(
-			( new WooPaymentsOrderNoteService() )->format_capture_cancelled_note( 'pi_cancel_effects', 'ch_cancel_effects' ),
-			$result->get_data()[ PaymentOutcome::DATA_NOTE ]
-		);
+		// Client 11.1.0 class-wc-payments-order-service.php:2321.
+		$this->assertStringStartsWith( 'Payment authorization was successfully <strong>cancelled</strong> (', (string) $result->get_data()[ PaymentOutcome::DATA_NOTE ] );
+		$this->assertStringContainsString( '>pi_cancel_effects</a>).', (string) $result->get_data()[ PaymentOutcome::DATA_NOTE ] );
 		$this->assertSame( 'capture_canceled', $result->get_data()[ PaymentOutcome::DATA_NOTE_TYPE ] );
 		$this->assertArrayHasKey( PaymentOutcome::DATA_NOTE_EQUIVALENTS, $result->get_data() );
 		$this->assertContains(
@@ -1703,11 +1679,8 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 
 		$data = $result->get_data();
 		$this->assertSame( array( '_intention_status' => 'requires_capture' ), $data[ PaymentOutcome::DATA_META ], 'The status the provider still reports must be recorded, as the plugin does.' );
-		$this->assertSame(
-			( new WooPaymentsOrderNoteService() )->format_cancel_failed_note_candidates( 'Cancellation rejected.' )[0],
-			$data[ PaymentOutcome::DATA_NOTE ]
-		);
-		$this->assertStringContainsString( '<code>Cancellation rejected.</code>', $data[ PaymentOutcome::DATA_NOTE ] );
+		// Client 11.1.0 class-wc-payment-gateway-wcpay.php:4109.
+		$this->assertSame( 'Canceling authorization <strong>failed</strong> to complete with the following message: <code>Cancellation rejected.</code>.', $data[ PaymentOutcome::DATA_NOTE ] );
 		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_FAILED, $data[ PaymentOutcome::DATA_NOTE_TYPE ] );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META_TO_DELETE, $data );
 		$this->assertSame( '1.25', $order->get_meta( '_wcpay_transaction_fee', true ) );
@@ -1768,10 +1741,11 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Refund effects use the injected note service after retaining provider identity.
+	 * @testdox Refund effects use the injected note service, and a note-rendering failure reaches the caller with nothing written to the order.
 	 */
-	public function test_refund_uses_injected_note_service_and_retains_provider_identity_when_rendering_throws(): void {
+	public function test_refund_uses_injected_note_service_and_writes_nothing_when_rendering_throws(): void {
 		$order        = $this->create_woopayments_order();
+		$notes_before = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 		$result       = array(
 			'id'     => 're_retained',
 			'status' => 'succeeded',
@@ -1795,8 +1769,9 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 				$plan
 			);
 		} finally {
-			$this->assertSame( 're_retained', $outcome->get_provider_payment_id() );
-			$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+			$stored = wc_get_order( $order->get_id() );
+			$this->assertSame( '', $stored->get_meta( '_wcpay_refund_status', true ), 'No refund status is written before the note renders.' );
+			$this->assertCount( $notes_before, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'No note is added.' );
 		}
 	}
 

@@ -126,31 +126,31 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_success_response_matches_woopayments_envelope(): void {
 		$payload    = array( 'type' => 'customer.created' );
-		$controller = $this->create_controller_with_ingestor(
-			new class() extends WooPaymentsEventIngestor {
+		$ingestor   = new class() extends WooPaymentsEventIngestor {
 				/**
 				 * Processed payloads.
 				 *
 				 * @var array<int,array<string,mixed>>
 				 */
-				public array $processed_payloads = array();
+			public array $processed_payloads = array();
 
 				/**
 				 * Process a payload.
 				 *
 				 * @param array<string,mixed> $event Event payload.
 				 */
-				public function process( array $event ): void {
-					$this->processed_payloads[] = $event;
-				}
+			public function process( array $event ): void {
+				$this->processed_payloads[] = $event;
 			}
-		);
+		};
+		$controller = $this->create_controller_with_ingestor( $ingestor );
 		$request    = $this->create_post_request( $payload );
 		$response   = $controller->handle_webhook( $request );
 
 		$this->assertInstanceOf( WP_REST_Response::class, $response );
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( array( 'result' => 'success' ), $response->get_data() );
+		$this->assertSame( array( $payload ), $ingestor->processed_payloads, 'The delivered payload reaches the ingestor once.' );
 	}
 
 	/**

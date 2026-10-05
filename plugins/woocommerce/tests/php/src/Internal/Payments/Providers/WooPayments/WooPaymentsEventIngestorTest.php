@@ -140,9 +140,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_woopayments_nox_profile' );
 		delete_option( 'woocommerce_woopayments_nox_onboarding_locked' );
 		delete_option( 'wcpay_account_deletion_pending_id' );
-		foreach ( array( 'evt_dedup', 'evt_retry', 'evt_dispute_lost_1', 'evt_dispute_lost_2', 'evt_row_38_update_first', 'evt_row_38_update_second', 'evt_row_38_update_replay', 'evt_row_38_cache_first', 'evt_row_38_cache_replay', 'evt_row_38_missing_id', 'evt_row_38_lost_first', 'evt_row_38_lost_second', 'evt_row_38_lost_replay', 'evt_row_39_missing_id', 'evt_row_39_null_id', 'evt_row_39_non_scalar_id', 'evt_early_warning_created', 'evt_early_warning_updated', 'evt_early_warning_hooks', 'evt_early_warning_mode_mismatch', 'evt_early_warning_retry', 'evt_invoice_without_module', 'evt_invoice_without_module_live' ) as $event_id ) {
-			delete_transient( 'wcpay_processed_event_' . md5( $event_id ) );
-		}
 		foreach ( $this->original_multi_currency_options as $option_name => $option_value ) {
 			if ( null === $option_value ) {
 				delete_option( $option_name );
