@@ -173,6 +173,29 @@ class RecordingWooPaySessionService extends WooPaymentsWooPaySessionService {
 	}
 
 	/**
+	 * Number of light direct-checkout config builds.
+	 *
+	 * @var int
+	 */
+	public int $direct_checkout_config_calls = 0;
+
+	/**
+	 * Get the light direct-checkout config.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public function get_woopay_direct_checkout_config(): array {
+		++$this->direct_checkout_config_calls;
+
+		return array(
+			'woopayHost'                    => 'https://pay.woo.com',
+			'isWooPayDirectCheckoutEnabled' => $this->direct_checkout_enabled,
+			'woopaySessionNonce'            => 'woopay-session-nonce',
+			'woopayMinimumSessionData'      => array( 'encrypted' => 'minimum' ),
+		);
+	}
+
+	/**
 	 * Get WooPay save-user checkout data.
 	 *
 	 * @return array<string,bool>

@@ -288,6 +288,40 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A page carrying the Cart Block keeps the full WooPay config even when it is not the store's cart page.
+	 *
+	 * Client 11.1.0 counts any page with the Cart Block as a cart page (class-wc-payments-woopay-direct-checkout.php:141-143)
+	 * and gives only other pages the light common config.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_cart_block_page_keeps_the_full_config(): void {
+		$service                                      = new RecordingWooPaySessionService();
+		$service->should_show_woopay_button           = false;
+		$service->should_load_woopay_save_user_assets = false;
+		$service->direct_checkout_enabled             = true;
+		$this->sut                                    = $this->create_controller( true, true, $service );
+		$page_id                                      = self::factory()->post->create(
+			array(
+				'post_type'    => 'page',
+				'post_status'  => 'publish',
+				'post_content' => '<!-- wp:woocommerce/cart --><div class="wp-block-woocommerce-cart"></div><!-- /wp:woocommerce/cart -->',
+			)
+		);
+
+		global $post;
+		$post = get_post( $page_id ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
+		setup_postdata( $post );
+
+		$this->sut->enqueue_frontend_assets();
+
+		$this->assertTrue( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
+		$this->assertSame( 1, $service->frontend_config_calls );
+		$this->assertSame( 0, $service->direct_checkout_config_calls );
+	}
+
+	/**
 	 * @testdox Should enqueue direct checkout assets for a block mini-cart on an ordinary page at footer time.
 	 *
 	 * @runInSeparateProcess
@@ -305,12 +339,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		do_action( 'woocommerce_blocks_cart_enqueue_data' );
 		$this->sut->enqueue_frontend_assets();
 
-		$this->assertTrue( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
-		$this->assertTrue( wp_style_is( 'wc-woopayments-woopay', 'enqueued' ) );
-		ob_start();
-		print_late_styles();
-		$late_styles = (string) ob_get_clean();
-		$this->assertStringContainsString( 'woopayments-woopay.css', $late_styles );
+		$this->assert_light_direct_checkout_assets( $service );
 	}
 
 	/**
@@ -333,8 +362,43 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->sut->enqueue_frontend_assets();
 
+		$this->assert_light_direct_checkout_assets( $service );
+	}
+
+	/**
+	 * @testdox A mini-cart page in live mode loads direct checkout without geolocating the shopper.
+	 *
+	 * Client 11.1.0 geolocates only where its button handler runs (product, cart, checkout); a mini-cart page gets the
+	 * common config (class-wc-payments.php:1797-1835).
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_mini_cart_page_does_not_geolocate_the_shopper(): void {
+		$geolocations = 0;
+		add_filter(
+			'woocommerce_geolocate_ip',
+			static function () use ( &$geolocations ) {
+				++$geolocations;
+				return 'US';
+			}
+		);
+		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
+		$this->make_base_gateway_available();
+		$this->sut = $this->create_controller( true, true, $this->create_real_enabled_session_service( false ) );
+		$this->sut->register();
+		if ( ! wp_script_is( 'wc-cart-fragments', 'registered' ) ) {
+			wp_register_script( 'wc-cart-fragments', 'https://example.com/cart-fragments.js', array(), '1.0', true );
+		}
+		wp_enqueue_script( 'wc-cart-fragments' );
+
+		$this->sut->enqueue_frontend_assets();
+
 		$this->assertTrue( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
-		$this->assertTrue( wp_style_is( 'wc-woopayments-woopay', 'enqueued' ) );
+		$localized_data = wp_scripts()->get_data( 'wc-woopayments-woopay', 'data' );
+		$this->assertIsString( $localized_data );
+		$this->assertStringContainsString( '"isWooPayDirectCheckoutEnabled":"1"', $localized_data );
+		$this->assertSame( 0, $geolocations );
 	}
 
 	/**
@@ -1079,10 +1143,12 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * Create a real enabled session service for controller integration tests.
 	 *
+	 * @param bool $test_mode Whether the account reports test mode.
 	 * @return WooPaymentsWooPaySessionService
 	 */
-	private function create_real_enabled_session_service(): WooPaymentsWooPaySessionService {
+	private function create_real_enabled_session_service( bool $test_mode = true ): WooPaymentsWooPaySessionService {
 		$settings = array(
+			'enabled'                           => 'yes',
 			'platform_checkout'                 => 'yes',
 			'express_checkout_product_methods'  => array( 'woopay' ),
 			'express_checkout_cart_methods'     => array( 'woopay' ),
@@ -1097,14 +1163,15 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$account_service->method( 'get_publishable_key' )->willReturn( 'pk_test_123' );
 		$account_service->method( 'get_cached_account_data' )->willReturn(
 			array(
-				'account_id'                 => 'acct_123',
-				'details_submitted'          => true,
-				'capabilities'               => array( 'card_payments' => 'active' ),
-				'country'                    => 'US',
-				'platform_checkout_eligible' => true,
+				'account_id'                        => 'acct_123',
+				'details_submitted'                 => true,
+				'capabilities'                      => array( 'card_payments' => 'active' ),
+				'country'                           => 'US',
+				'platform_checkout_eligible'        => true,
+				'platform_direct_checkout_eligible' => true,
 			)
 		);
-		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
 		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
 			static fn( string $key, $fallback = null ) => array_key_exists( $key, $settings ) ? $settings[ $key ] : $fallback
 		);
@@ -1291,6 +1358,23 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertIsArray( $decoded, 'WooPay add-to-cart AJAX should emit a JSON object.' );
 
 		return $decoded;
+	}
+
+	/**
+	 * Assert the classic script loaded with the light direct-checkout config only.
+	 *
+	 * @param RecordingWooPaySessionService $service The session service double.
+	 */
+	private function assert_light_direct_checkout_assets( RecordingWooPaySessionService $service ): void {
+		$this->assertTrue( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
+		$this->assertFalse( wp_style_is( 'wc-woopayments-woopay', 'enqueued' ), 'Client 11.1.0 loads no WooPay stylesheet for direct checkout.' );
+		$this->assertSame( 0, $service->frontend_config_calls, 'The full WooPay config is not built on a mini-cart page.' );
+		$localized_data = wp_scripts()->get_data( 'wc-woopayments-woopay', 'data' );
+		$this->assertIsString( $localized_data );
+		$this->assertStringContainsString( '"isWooPayDirectCheckoutEnabled":"1"', $localized_data );
+		$this->assertStringContainsString( '"woopayMinimumSessionData":{"encrypted":"minimum"}', $localized_data );
+		$this->assertStringContainsString( '"wcAjaxUrl":', $localized_data );
+		$this->assertStringNotContainsString( 'shouldShowWooPayButton', $localized_data );
 	}
 
 	/**

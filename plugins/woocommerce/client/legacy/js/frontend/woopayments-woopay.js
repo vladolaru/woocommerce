@@ -1706,7 +1706,11 @@
 	$( function () {
 		renderWooPayExpressButton();
 		renderWooPaySaveUserFields();
-		fetchPreferredCardFromWooPay();
+		// Client 11.1.0 fetches the preferred card from its express-button bundle, which loads only where the button shows
+		// (class-wc-payments-woopay-button-handler.php:166-170, express-button/index.js:115-120).
+		if ( config.isWooPayEnabled && config.shouldShowWooPayButton ) {
+			fetchPreferredCardFromWooPay();
+		}
 		initializeDirectCheckout();
 	} );
 

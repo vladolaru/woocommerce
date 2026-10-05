@@ -1081,6 +1081,44 @@ describe( 'WooPayments WooPay checkout', () => {
 			);
 		} );
 
+		test( 'runs direct checkout from the light mini-cart config without asking Connect for a preferred card', async () => {
+			// Client 11.1.0 gives a mini-cart page only the common config (class-wc-payments.php:1797-1835) and fetches the
+			// preferred card only from its express-button bundle (express-button/index.js:115-120).
+			document.body.innerHTML =
+				'<div class="widget_shopping_cart"><a class="button checkout" href="https://store.test/checkout/">Checkout</a></div>';
+			window.wcpay_core_woopay_config = {
+				wcAjaxUrl: '/?wc-ajax=%%endpoint%%',
+				woopayHost: 'https://pay.woo.test',
+				testMode: true,
+				woopaySessionNonce: 'session-nonce',
+				woopayMerchantId: '12345',
+				isWooPayDirectCheckoutEnabled: true,
+				platformTrackerNonce: 'tracks-nonce',
+				ajaxUrl: 'https://example.test/admin-ajax.php',
+				woopayMinimumSessionData: storeSession,
+			};
+			const postMessage = installConnect();
+			const { __test__ } = require( '../woopayments-woopay' );
+			const navigate = jest.fn();
+			__test__.setNavigate( navigate );
+			await initializeDirectCheckout( false );
+
+			document.querySelector( 'a' ).click();
+			await flushPromises();
+			emitConnectMessage( 'get_is_woopay_reachable_success', true );
+			await flushPromises();
+
+			expect( navigate ).toHaveBeenCalledWith(
+				'https://pay.woo.test/woopay/?checkout_redirect=1' +
+					'&blog_id=12345&session=store-session' +
+					'&iv=store-iv&hash=store-hash'
+			);
+			expect( postMessage ).not.toHaveBeenCalledWith(
+				{ action: 'getPreferredPaymentMethod' },
+				expect.anything()
+			);
+		} );
+
 		test( 'not-logged-in flow probes reachability before using the minimum session', async () => {
 			// Oracle: WooPayments 11.1.0 session-connect.js:168-177 and direct-checkout/woopay-direct-checkout.js:200-228,398-412.
 			configureDirectCheckout(
@@ -1281,7 +1319,8 @@ describe( 'WooPayments WooPay checkout', () => {
 
 			expect( ordinaryClick.defaultPrevented ).toBe( false );
 			expect( submitClick.defaultPrevented ).toBe( false );
-			expect( postMessage ).toHaveBeenCalledTimes( 3 );
+			// getIsUserLoggedIn, then isWooPayReachable; no preferred-card query without a WooPay button.
+			expect( postMessage ).toHaveBeenCalledTimes( 2 );
 			expect( postMessage ).toHaveBeenLastCalledWith(
 				{ action: 'isWooPayReachable' },
 				'https://pay.woo.test'

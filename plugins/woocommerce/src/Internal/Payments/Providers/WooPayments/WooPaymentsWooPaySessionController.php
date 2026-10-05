@@ -390,8 +390,17 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 		}
 
 		$direct_checkout_runs = $this->session_service->should_run_woopay_direct_checkout();
-		if ( ! $supported_frontend_surface && ! $direct_checkout_runs ) {
-			return;
+		if ( ! $supported_frontend_surface ) {
+			if ( ! $direct_checkout_runs ) {
+				return;
+			}
+
+			// A page that only carries a mini-cart gets the light direct-checkout config, like client 11.1.0
+			// (class-wc-payments-woopay-direct-checkout.php:96-116): no button config, no shopper geolocation, no stylesheet.
+			if ( ! $this->is_cart_surface() ) {
+				$this->enqueue_direct_checkout_assets();
+				return;
+			}
 		}
 
 		$context = $this->get_current_button_context();
@@ -411,6 +420,23 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 		$this->register_classic_woopay_assets();
 		wp_localize_script( self::CLASSIC_WOOPAY_SCRIPT_HANDLE, 'wcpay_core_woopay_config', $this->get_classic_woopay_config( $config ) );
 		wp_enqueue_style( self::CLASSIC_WOOPAY_STYLE_HANDLE );
+		wp_enqueue_script( self::CLASSIC_WOOPAY_SCRIPT_HANDLE );
+		$this->has_enqueued_frontend_assets = true;
+	}
+
+	/**
+	 * Enqueue the classic WooPay script with the light direct-checkout config only.
+	 */
+	private function enqueue_direct_checkout_assets(): void {
+		$this->register_classic_woopay_assets();
+		wp_localize_script(
+			self::CLASSIC_WOOPAY_SCRIPT_HANDLE,
+			'wcpay_core_woopay_config',
+			array_merge(
+				array( 'wcAjaxUrl' => \WC_AJAX::get_endpoint( '%%endpoint%%' ) ),
+				$this->session_service->get_woopay_direct_checkout_config()
+			)
+		);
 		wp_enqueue_script( self::CLASSIC_WOOPAY_SCRIPT_HANDLE );
 		$this->has_enqueued_frontend_assets = true;
 	}
@@ -877,6 +903,15 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			$this->current_surface_has_block( 'woocommerce/cart' ) ||
 			0 < did_action( 'woocommerce_blocks_cart_enqueue_data' ) ||
 			wp_script_is( 'wc-cart-fragments', 'enqueued' );
+	}
+
+	/**
+	 * Tell whether the current request is a classic or Blocks cart page.
+	 *
+	 * @return bool
+	 */
+	private function is_cart_surface(): bool {
+		return ( function_exists( 'is_cart' ) && is_cart() ) || $this->current_surface_has_block( 'woocommerce/cart' );
 	}
 
 	/**

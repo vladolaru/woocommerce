@@ -1049,6 +1049,29 @@ class WooPaymentsWooPaySessionService {
 	}
 
 	/**
+	 * Get the light config the classic script needs for direct checkout on pages that only carry a mini-cart.
+	 *
+	 * Mirrors client 11.1.0 `WC_Payments::enqueue_woopay_common_config_script()` (class-wc-payments.php:1797-1835): no button
+	 * settings and no shopper geolocation.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return array<string,mixed>
+	 */
+	public function get_woopay_direct_checkout_config(): array {
+		return array(
+			'woopayHost'                    => $this->get_woopay_url(),
+			'testMode'                      => $this->get_account_service()->is_test_mode_enabled(),
+			'woopaySessionNonce'            => wp_create_nonce( 'woopay_session_nonce' ),
+			'woopayMerchantId'              => $this->get_woopay_merchant_id(),
+			'isWooPayDirectCheckoutEnabled' => $this->is_woopay_direct_checkout_enabled(),
+			'platformTrackerNonce'          => wp_create_nonce( 'platform_tracks_nonce' ),
+			'ajaxUrl'                       => admin_url( 'admin-ajax.php' ),
+			'woopayMinimumSessionData'      => $this->get_encrypted_minimum_session_data(),
+		);
+	}
+
+	/**
 	 * Tell whether the WooPay email-input hooks (user lookup + OTP prompt) should run on checkout.
 	 *
 	 * This does not affect the appearance of the email input, only whether the
