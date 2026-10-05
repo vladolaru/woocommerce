@@ -3664,6 +3664,38 @@ describe( 'WooPayments express checkout', () => {
 			expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 1 );
 		} );
 
+		// Client 11.1.0 button-ui.js:39-45: hiding removes `is-ready` and sets `display: none` (jQuery `.hide()`), so a
+		// hidden wallet takes no space and no click (t62/captures-2b/report.md, F4); showing reverses both. The first
+		// mount happens in the stylesheet's initial state, without `display: none`.
+		test( 'takes a hidden wallet out of the layout and puts it back when shown', async () => {
+			const container = () =>
+				document.getElementById( 'wcpay-express-checkout-element' );
+			setClassicProductForm( {
+				variable: true,
+				size: 'small',
+				variationId: '124',
+			} );
+			window.wp.apiFetch
+				.mockRejectedValueOnce( new Error( 'Out of stock' ) )
+				.mockResolvedValueOnce( getVirtualCart( 3000, 1 ) );
+			require( '../woopayments-express-checkout' );
+			await flushMicrotasks();
+			expect( container().style.display ).toBe( '' );
+			expressHandlers.ready( {
+				availablePaymentMethods: { applePay: true },
+			} );
+
+			bodyEventHandlers.woocommerce_variation_has_changed();
+			await flushMicrotasks();
+			expect( container().style.display ).toBe( 'none' );
+			expect( container().classList.contains( 'is-ready' ) ).toBe( false );
+
+			bodyEventHandlers.woocommerce_variation_has_changed();
+			await flushMicrotasks();
+			expect( container().style.display ).toBe( '' );
+			expect( container().classList.contains( 'is-ready' ) ).toBe( true );
+		} );
+
 		test( 'hides the wallet when the re-priced cart cannot be fetched', async () => {
 			setClassicProductForm( {
 				variable: true,

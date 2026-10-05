@@ -744,38 +744,49 @@
 		}
 	}
 
-	function showExpressButton() {
+	// Client 11.1.0 shortcode-buttons-express/button-ui.js:43-45 (`addClass( 'is-ready' ).show()`).
+	function showExpressContainer() {
 		var container = document.getElementById(
 			'wcpay-express-checkout-element'
-		);
-		var separator = document.getElementById(
-			'wcpay-express-checkout-button-separator'
 		);
 
 		if ( container ) {
+			container.style.display = '';
 			container.classList.add( 'is-ready' );
-		}
-
-		if ( separator ) {
-			separator.hidden = false;
 		}
 	}
 
-	function hideExpressButton() {
+	// Client 11.1.0 shortcode-buttons-express/button-ui.js:39-41 (`removeClass( 'is-ready' ).hide()`): a hidden
+	// wallet takes no space and no click.
+	function hideExpressContainer() {
 		var container = document.getElementById(
 			'wcpay-express-checkout-element'
-		);
-		var separator = document.getElementById(
-			'wcpay-express-checkout-button-separator'
 		);
 
 		if ( container ) {
 			container.classList.remove( 'is-ready' );
+			container.style.display = 'none';
 		}
+	}
+
+	function setSeparatorHidden( hidden ) {
+		var separator = document.getElementById(
+			'wcpay-express-checkout-button-separator'
+		);
 
 		if ( separator ) {
-			separator.hidden = true;
+			separator.hidden = hidden;
 		}
+	}
+
+	function showExpressButton() {
+		showExpressContainer();
+		setSeparatorHidden( false );
+	}
+
+	function hideExpressButton() {
+		hideExpressContainer();
+		setSeparatorHidden( true );
 	}
 
 	function setError( message ) {
@@ -1658,13 +1669,10 @@
 	 * once the wallet reported a payment method, so a browser without one gets no empty button area.
 	 */
 	function unblockExpressButton() {
-		var container = document.getElementById(
-			'wcpay-express-checkout-element'
-		);
 		var $container = $( '#wcpay-express-checkout-element' );
 
-		if ( container && expressButtonAvailable ) {
-			container.classList.add( 'is-ready' );
+		if ( expressButtonAvailable ) {
+			showExpressContainer();
 		}
 
 		if ( typeof $container.unblock === 'function' ) {
@@ -3068,7 +3076,9 @@
 			return;
 		}
 
-		hideExpressButton();
+		// The container starts in the stylesheet's hidden state (no `is-ready`), as on the client, so the first mount
+		// is not inside a `display: none` element.
+		setSeparatorHidden( true );
 		initOrderAttribution();
 
 		if ( isProduct() ) {
