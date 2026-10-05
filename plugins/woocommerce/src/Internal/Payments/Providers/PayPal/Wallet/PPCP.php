@@ -40,9 +40,11 @@ class PPCP {
 	/**
 	 * Init the data.
 	 *
+	 * @internal
+	 *
 	 * @param ContainerInterface $container The app container.
 	 */
-	public static function init( ContainerInterface $container ): void {
+	final public static function init( ContainerInterface $container ): void {
 		self::$container = $container;
 	}
 }

@@ -51,10 +51,15 @@ return static function (): array {
 		new BlocksModule(),
 		new SettingsModule(),
 	);
-	// phpcs:disable WordPress.NamingConventions.ValidHookName.UseUnderscores -- The extension's flag names are part of the shared contract.
 
-	/** This filter is documented in the extension's modules.php. */
-	if ( apply_filters( 'woocommerce.feature-flags.woocommerce_paypal_payments.save_payment_methods_enabled', getenv( 'PCP_SAVE_PAYMENT_METHODS' ) !== '0' ) ) {
+	/**
+	 * Filters whether the Save Payment Methods module is loaded.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @param bool $enabled Whether the module is enabled; false only when the PCP_SAVE_PAYMENT_METHODS environment variable is "0".
+	 */
+	if ( apply_filters( 'woocommerce.feature-flags.woocommerce_paypal_payments.save_payment_methods_enabled', getenv( 'PCP_SAVE_PAYMENT_METHODS' ) !== '0' ) ) { // phpcs:ignore WordPress.NamingConventions.ValidHookName.UseUnderscores -- The extension's flag name is part of the shared contract.
 		$modules[] = new SavePaymentMethodsModule();
 	}
 
@@ -70,16 +75,27 @@ return static function (): array {
 		}
 	}
 
-	/** This filter is documented in the extension's modules.php. */
-	if ( apply_filters( 'woocommerce.feature-flags.woocommerce_paypal_payments.vault_component_enabled', getenv( 'PCP_VAULT_COMPONENT_ENABLED' ) !== '0' ) ) {
+	/**
+	 * Filters whether the Vault Component module is loaded.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @param bool $enabled Whether the module is enabled; false only when the PCP_VAULT_COMPONENT_ENABLED environment variable is "0".
+	 */
+	if ( apply_filters( 'woocommerce.feature-flags.woocommerce_paypal_payments.vault_component_enabled', getenv( 'PCP_VAULT_COMPONENT_ENABLED' ) !== '0' ) ) { // phpcs:ignore WordPress.NamingConventions.ValidHookName.UseUnderscores -- The extension's flag name is part of the shared contract.
 		$modules[] = new VaultComponentModule();
 	}
 
-	/** This filter is documented in the extension's modules.php. */
-	if ( apply_filters( 'woocommerce.feature-flags.woocommerce_paypal_payments.sdk_v6_enabled', getenv( 'PCP_SDK_V6_ENABLED' ) === '1' || 'no' !== get_option( 'woocommerce-ppcp-sdk-v6-eligible' ) ) ) {
+	/**
+	 * Filters whether the SDK v6 module is loaded.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @param bool $enabled Whether the module is enabled; true when the PCP_SDK_V6_ENABLED environment variable is "1" or the store is not flagged as ineligible.
+	 */
+	if ( apply_filters( 'woocommerce.feature-flags.woocommerce_paypal_payments.sdk_v6_enabled', getenv( 'PCP_SDK_V6_ENABLED' ) === '1' || 'no' !== get_option( 'woocommerce-ppcp-sdk-v6-eligible' ) ) ) { // phpcs:ignore WordPress.NamingConventions.ValidHookName.UseUnderscores -- The extension's flag name is part of the shared contract.
 		$modules[] = new SdkV6Module();
 	}
-	// phpcs:enable WordPress.NamingConventions.ValidHookName.UseUnderscores
 
 	return $modules;
 };

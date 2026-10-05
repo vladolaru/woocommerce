@@ -31,23 +31,35 @@ return array(
 		);
 	},
 
-	'http.redirector'             => function ( ContainerInterface $container ): RedirectorInterface {
+	'http.redirector'             => function ( ContainerInterface $container ): RedirectorInterface { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
 		return new WpRedirector();
 	},
 	'ppcp.plugin-version'         => function ( ContainerInterface $container ): string {
-		/** @var Properties $properties */
+		/**
+		 * The plugin properties.
+		 *
+		 * @var Properties $properties
+		 */
 		$properties = $container->get( Package::PROPERTIES );
 
 		return $properties->version();
 	},
 	'ppcp.base-name'              => function ( ContainerInterface $container ): string {
-		/** @var Properties $properties */
+		/**
+		 * The plugin properties.
+		 *
+		 * @var Properties $properties
+		 */
 		$properties = $container->get( Package::PROPERTIES );
 
 		return $properties->baseName();
 	},
 	'ppcp.path-to-plugin-folder'  => function ( ContainerInterface $container ): string {
-		/** @var Properties $properties */
+		/**
+		 * The plugin properties.
+		 *
+		 * @var Properties $properties
+		 */
 		$properties = $container->get( Package::PROPERTIES );
 
 		return $properties->basePath();
