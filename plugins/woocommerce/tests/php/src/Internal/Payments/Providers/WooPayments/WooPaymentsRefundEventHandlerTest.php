@@ -597,6 +597,8 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 					);
 					$refund->update_meta_data( '_wcpay_refund_id', 're_123' );
 					$refund->save();
+					// The webhook's request cached the order's refund IDs before the admin refund existed.
+					wp_cache_set( \WC_Cache_Helper::get_cache_prefix( 'orders' ) . 'refund_ids' . $order->get_id(), array(), 'orders' );
 				}
 
 				return 'test_lock_token';
@@ -622,6 +624,37 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 		$refunds = wc_get_order( $order->get_id() )->get_refunds();
 		$this->assertCount( 1, $refunds, 'One platform refund keeps one local refund row.' );
 		$this->assertSame( 're_123', $refunds[0]->get_meta( '_wcpay_refund_id', true ) );
+	}
+
+	/**
+	 * @testdox A succeeded charge.refund.updated finds the linked refund even when the request cached the order's refund IDs before it was linked.
+	 */
+	public function test_succeeded_refund_update_is_not_hidden_by_refund_ids_cached_earlier(): void {
+		$refund_object = $this->load_recorded_refund_updated_event( 'afterpay_clearpay_refund_updated_succeeded' );
+		$order         = wc_create_order();
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_currency( strtoupper( (string) $refund_object['currency'] ) );
+		$order->set_total( sprintf( '%.2f', ( (int) $refund_object['amount'] ) / 100 ) );
+		$order->set_status( 'processing' );
+		$order->update_meta_data( '_charge_id', (string) $refund_object['charge'] );
+		$order->save();
+		// An earlier action of the same request read the order's refunds before the refund was linked.
+		$this->assertSame( array(), $order->get_refunds() );
+		$refund = wc_create_refund(
+			array(
+				'amount'   => sprintf( '%.2f', ( (int) $refund_object['amount'] ) / 100 ),
+				'order_id' => $order->get_id(),
+			)
+		);
+		$refund->update_meta_data( '_wcpay_refund_id', (string) $refund_object['id'] );
+		$refund->save();
+		$order->update_meta_data( '_wcpay_refund_status', 'pending' );
+		$order->save();
+		wp_cache_set( \WC_Cache_Helper::get_cache_prefix( 'orders' ) . 'refund_ids' . $order->get_id(), array(), 'orders' );
+
+		$this->sut->process( 'charge.refund.updated', $refund_object );
+
+		$this->assertSame( 'successful', wc_get_order( $order->get_id() )->get_meta( '_wcpay_refund_status', true ) );
 	}
 
 	/**

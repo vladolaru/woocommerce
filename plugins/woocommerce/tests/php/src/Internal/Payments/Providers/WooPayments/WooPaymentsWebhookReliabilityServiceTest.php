@@ -382,8 +382,9 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$profile       = new WooPaymentsPersistenceProfile();
 		// A checkout that died after the platform captured keeps the lock until its TTL runs out.
 		$payment_store->lock_order_payment( $order, $profile, 'pi_lock_ttl' );
-		// Shape read by client 11.1.0 class-wc-payments-webhook-processing-service.php:494-519 (object id, status,
-		// currency, amount, payment_method, charges.data[0]) and :968-1002 (metadata.order_id for the order lookup).
+		// Shape read by client 11.1.0 class-wc-payments-webhook-processing-service.php:494-519 (object id, currency,
+		// amount, payment_method, charges.data[0]) and :968-1002 (metadata.order_id for the order lookup); status is
+		// the PaymentIntent's own field (Stripe API PaymentIntent object).
 		$event     = array(
 			'id'   => 'evt_lock_ttl',
 			'type' => 'payment_intent.succeeded',
@@ -519,11 +520,14 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$service   = $this->create_service( $scheduler, $store, new StaticFailedEventsProvider(), new ThrowingEventIngestor( $refusal ) );
 		$store->set_event( 'evt_process', $event );
 
-		try {
-			$service->process_event( 'evt_process' );
-			$this->fail( 'The refusal must still reach Action Scheduler.' );
-		} catch ( OrderPaymentLockRefusedException $exception ) {
-			unset( $exception );
+		// The failed action runs twice (Action Scheduler retried it, or someone ran it again by hand).
+		for ( $run = 1; $run <= 2; $run++ ) {
+			try {
+				$service->process_event( 'evt_process' );
+				$this->fail( 'The refusal must still reach Action Scheduler.' );
+			} catch ( OrderPaymentLockRefusedException $exception ) {
+				unset( $exception );
+			}
 		}
 
 		$this->assertSame( array(), $scheduler->scheduled_jobs );

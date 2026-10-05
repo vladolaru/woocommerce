@@ -321,17 +321,32 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	 * @param string $event_id Dropped event ID.
 	 */
 	private function add_lock_refusal_note( int $order_id, string $event_id ): void {
-		$order = wc_get_order( $order_id );
-		if ( ! $order instanceof \WC_Order ) {
-			return;
-		}
+		// The note is a diagnostic: a failure writing it must not replace the refusal the caller is handling.
+		try {
+			$order = wc_get_order( $order_id );
+			if ( ! $order instanceof \WC_Order ) {
+				return;
+			}
 
-		$order->add_order_note(
-			sprintf(
-				/* translators: %s: Payment platform event ID. */
-				__( 'A WooPayments update for this order (event %s) could not be applied, because another payment operation kept the order locked. Check the payment in your WooPayments dashboard.', 'woocommerce' ),
-				$event_id
-			)
-		);
+			// One note per event, however often the same refused event is delivered or run again.
+			wc_get_container()->get( WooPaymentsOrderNoteService::class )->add_note_once(
+				$order,
+				sprintf(
+					/* translators: %s: Payment platform event ID. */
+					__( 'A WooPayments update for this order (event %s) could not be applied, because another payment operation kept the order locked. Check the payment in your WooPayments dashboard.', 'woocommerce' ),
+					$event_id
+				),
+				'woopayments_lock_refused_event:' . $event_id
+			);
+		} catch ( \Throwable $exception ) {
+			try {
+				wc_get_logger()->error(
+					sprintf( 'Could not note the lock-refused WooPayments webhook event %s on its order.', $event_id ),
+					array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => 'native-payments-webhook' ) )
+				);
+			} catch ( \Throwable $logger_exception ) {
+				unset( $logger_exception );
+			}
+		}
 	}
 }

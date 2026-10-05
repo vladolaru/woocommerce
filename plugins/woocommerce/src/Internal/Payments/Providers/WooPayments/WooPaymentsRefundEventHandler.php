@@ -196,8 +196,9 @@ class WooPaymentsRefundEventHandler {
 				}
 				return;
 			case 'succeeded':
-				// Only a refund this store already has gets the success note; one it does not have needs no lock.
-				if ( ! $this->get_refund_by_provider_refund_id( $order, $refund_id ) instanceof WC_Order_Refund ) {
+				// Only a refund this store already has gets the success note; one it does not have needs no lock. The check
+				// reads the order again too, so refund IDs cached earlier in the request cannot hide a linked refund.
+				if ( ! $this->get_refund_by_provider_refund_id( $this->get_fresh_order( $order ), $refund_id ) instanceof WC_Order_Refund ) {
 					return;
 				}
 

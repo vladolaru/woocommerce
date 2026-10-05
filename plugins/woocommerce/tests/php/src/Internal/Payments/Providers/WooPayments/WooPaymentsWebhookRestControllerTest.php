@@ -296,11 +296,53 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 500, $response->get_status() );
 		$this->assertNull( wc_get_container()->get( WooPaymentsFailedEventStore::class )->get_event( 'evt_dispute_lock_controller' ) );
 		$this->assertSame( array(), $this->scheduler->scheduled_jobs );
+
+		// The same refused push again adds no second note.
+		$controller->handle_webhook(
+			$this->create_post_request(
+				array(
+					'id'   => 'evt_dispute_lock_controller',
+					'type' => 'charge.dispute.created',
+				)
+			)
+		);
 		$notes = array_filter(
 			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
 			static fn( $note ): bool => false !== strpos( $note->content, 'evt_dispute_lock_controller' ) && false !== strpos( $note->content, 'kept the order locked' )
 		);
 		$this->assertCount( 1, $notes );
+	}
+
+	/**
+	 * @testdox A failure writing the lock-refusal note through $hook leaves the refused push's error reply unchanged.
+	 * @testWith ["woocommerce_new_order_note_data"]
+	 *           ["woocommerce_order_note_added"]
+	 *
+	 * @param string $hook Order note hook a third-party callback throws from.
+	 */
+	public function test_failing_lock_refusal_note_keeps_the_error_reply( string $hook ): void {
+		$order      = wc_create_order();
+		$controller = $this->create_controller_with_ingestor( new ThrowingEventIngestor( new OrderPaymentLockRefusedException( $order->get_id(), 'dispute webhook' ) ) );
+		$throwing   = static function () {
+			throw new RuntimeException( 'Order note extension failure.' );
+		};
+		add_filter( $hook, $throwing );
+
+		try {
+			$response = $controller->handle_webhook(
+				$this->create_post_request(
+					array(
+						'id'   => 'evt_dispute_note_failure',
+						'type' => 'charge.dispute.created',
+					)
+				)
+			);
+		} finally {
+			remove_filter( $hook, $throwing );
+		}
+
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertSame( array( 'result' => 'error' ), $response->get_data() );
 	}
 
 	/**
