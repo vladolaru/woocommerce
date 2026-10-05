@@ -23,6 +23,11 @@ class WooPaymentsTokenizedCartSessionHandler extends \WC_Session_Handler {
 	private const TOKEN_ISSUER = 'woopayments/product-page';
 
 	/**
+	 * Session key holding the customer the tokenized session belongs to: the user ID, or 0 for a guest.
+	 */
+	private const TOKEN_CUSTOMER_KEY = 'token_customer_id';
+
+	/**
 	 * Init tokenized session data without binding the request to the shopper's normal WooCommerce session cookie.
 	 *
 	 * @internal
@@ -61,6 +66,18 @@ class WooPaymentsTokenizedCartSessionHandler extends \WC_Session_Handler {
 	public function set_customer_session_cookie( $set ): void {}
 
 	/**
+	 * Keep the tokenized session when the Store API checkout logs in the account it just created.
+	 *
+	 * Core's wc_set_customer_auth_cookie() calls this; the parent method would load the shopper's browser session and migrate it to
+	 * the new user, so the payment would run on that session. Keep the tokenized session, as core's Cart-Token session does
+	 * (it has no such method), and bind it to the new user. Core migrates the browser session on the shopper's next request.
+	 */
+	public function init_session_cookie(): void {
+		$this->_data[ self::TOKEN_CUSTOMER_KEY ] = self::get_current_customer_id();
+		$this->_dirty                            = true;
+	}
+
+	/**
 	 * Forget tokenized session data without clearing the shopper's normal browser cookie.
 	 */
 	public function forget_session(): void {
@@ -88,7 +105,11 @@ class WooPaymentsTokenizedCartSessionHandler extends \WC_Session_Handler {
 	/**
 	 * Initialize this request from the incoming tokenized cart session header or a new guest session.
 	 *
-	 * @throws RuntimeException When persisted tokenized session data belongs to a different tokenized customer.
+	 * The session belongs to the customer who started it, a user or a guest, and is refused for anyone else, like client 11.1.0
+	 * (class-wc-payments-payment-request-session-handler.php:50-66). Any guest may use a guest's token, as with core's
+	 * Cart-Token: this handler never reads or sets the shopper's browser session cookie, so there is nothing else to bind to.
+	 *
+	 * @throws RuntimeException When the tokenized session belongs to another customer.
 	 */
 	private function init_tokenized_session(): void {
 		$session_id = $this->get_session_id_from_header();
@@ -99,12 +120,30 @@ class WooPaymentsTokenizedCartSessionHandler extends \WC_Session_Handler {
 
 		$this->_customer_id = $session_id;
 		$this->_data        = (array) $this->get_session( $session_id, array() );
+		$customer_id        = self::get_current_customer_id();
 
-		if ( isset( $this->_data['token_customer_id'] ) && $this->_data['token_customer_id'] !== $session_id ) {
+		if ( isset( $this->_data[ self::TOKEN_CUSTOMER_KEY ] ) && $this->_data[ self::TOKEN_CUSTOMER_KEY ] !== $customer_id ) {
+			wc_get_container()->get( WooPaymentsLogger::class )->error(
+				'Tokenized cart session customer mismatch.',
+				array(
+					'session_customer_id' => $this->_data[ self::TOKEN_CUSTOMER_KEY ],
+					'customer_id'         => $customer_id,
+				)
+			);
+
 			throw new RuntimeException( 'Tokenized cart session customer mismatch.' );
 		}
 
-		$this->_data['token_customer_id'] = $session_id;
+		$this->_data[ self::TOKEN_CUSTOMER_KEY ] = $customer_id;
+	}
+
+	/**
+	 * Get the current customer the tokenized session is bound to.
+	 *
+	 * @return string The user ID, or '0' for a guest.
+	 */
+	private static function get_current_customer_id(): string {
+		return (string) get_current_user_id();
 	}
 
 	/**
