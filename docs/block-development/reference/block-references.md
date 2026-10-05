@@ -1017,6 +1017,53 @@ Display icons for available payment methods.
 - **Supports:** spacing (margin, padding)
 - **Attributes:** numberOfIcons
 
+## Cart - PayPal Pay Later messaging - woocommerce-paypal-payments/cart-paylater-messages
+
+PayPal Pay Later messaging will be displayed for eligible customers. Customers automatically see the most relevant Pay Later offering.
+
+- **Name:** woocommerce-paypal-payments/cart-paylater-messages
+- **Category:** woocommerce
+- **Parent:** woocommerce/cart-totals-block
+- **Supports:** ~~html~~, ~~inserter~~, ~~multiple~~
+- **Attributes:** blockId, lock, ppcpId
+
+## Checkout - PayPal Pay Later messaging - woocommerce-paypal-payments/checkout-paylater-messages
+
+PayPal Pay Later messaging will be displayed for eligible customers. Customers automatically see the most relevant Pay Later offering.
+
+- **Name:** woocommerce-paypal-payments/checkout-paylater-messages
+- **Category:** woocommerce
+- **Parent:** woocommerce/checkout-totals-block
+- **Supports:** ~~html~~, ~~inserter~~, ~~multiple~~
+- **Attributes:** blockId, lock, ppcpId
+
+## PayPal Pay Later messaging - woocommerce-paypal-payments/paylater-messages
+
+PayPal Pay Later messaging will be displayed for eligible customers. Customers automatically see the most relevant Pay Later offering.
+
+- **Name:** woocommerce-paypal-payments/paylater-messages
+- **Category:** woocommerce
+- **Supports:** ~~html~~, ~~multiple~~
+- **Attributes:** color, flexColor, flexRatio, id, layout, logo, placement, position, size
+
+## Single Product - PayPal Pay Later messaging - woocommerce-paypal-payments/product-paylater-messages
+
+PayPal Pay Later messaging shown on the single product page. Customers automatically see the most relevant Pay Later offering.
+
+- **Name:** woocommerce-paypal-payments/product-paylater-messages
+- **Category:** woocommerce
+- **Supports:** ~~html~~, ~~inserter~~, ~~multiple~~
+- **Attributes:** blockId, lock, ppcpId
+
+## Single Product - PayPal buttons - woocommerce-paypal-payments/product-smart-buttons
+
+PayPal Smart Buttons shown on the single product page so eligible customers can check out directly.
+
+- **Name:** woocommerce-paypal-payments/product-smart-buttons
+- **Category:** woocommerce
+- **Supports:** ~~html~~, ~~inserter~~, ~~multiple~~
+- **Attributes:** blockId, lock
+
 ## Filter by Price Controls - woocommerce/price-filter
 
 Enable customers to filter the product grid by choosing a price range.
