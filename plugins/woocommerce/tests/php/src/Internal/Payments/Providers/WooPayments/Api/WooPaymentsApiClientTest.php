@@ -5191,7 +5191,10 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$http_client->blog_id  = 123;
 		$http_client->response = array(
 			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
+			'headers'  => array(
+				'content-type' => 'application/json',
+				'cache-for'    => '3600',
+			),
 			'body'     => wp_json_encode(
 				array(
 					array(
@@ -5221,7 +5224,8 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$query  = array();
 		parse_str( (string) wp_parse_url( $http_client->last_path, PHP_URL_QUERY ), $query );
 
-		$this->assertSame( 'klarna-promo__spotlight', $result[0]['id'] );
+		$this->assertSame( 'klarna-promo__spotlight', $result['promotions'][0]['id'] );
+		$this->assertSame( '3600', $result['cache_for'], 'The platform cache-for header comes back with the promotions.' );
 		$this->assertSame( '/sites/123/wcpay/payment_method_promotions', strtok( $http_client->last_path, '?' ) );
 		$this->assertSame( 'GET', $http_client->last_method );
 		$this->assertSame( '0', $query['test_mode'] );

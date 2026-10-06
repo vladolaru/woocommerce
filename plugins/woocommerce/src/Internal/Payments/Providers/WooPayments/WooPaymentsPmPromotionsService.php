@@ -336,7 +336,19 @@ class WooPaymentsPmPromotionsService {
 			return $this->promotions_memo;
 		}
 
-		$this->promotions_memo = $this->sanitize_raw_promotions_list( $response );
+		$this->promotions_memo = $this->sanitize_raw_promotions_list( $response['promotions'] );
+
+		// The platform's cache-for header sets the cache lifetime; 0 means do not cache, as in the client
+		// (client 11.1.0 `includes/class-wc-payments-pm-promotions-service.php:224-254`).
+		if ( '0' === $response['cache_for'] ) {
+			if ( false !== $cache ) {
+				delete_transient( self::PROMOTIONS_CACHE_KEY );
+			}
+
+			return $this->promotions_memo;
+		}
+
+		$cache_lifetime = (int) $response['cache_for'];
 		set_transient(
 			self::PROMOTIONS_CACHE_KEY,
 			array(
@@ -344,7 +356,7 @@ class WooPaymentsPmPromotionsService {
 				'context_hash' => $store_context_hash,
 				'timestamp'    => time(),
 			),
-			DAY_IN_SECONDS
+			$cache_lifetime > 0 ? $cache_lifetime : DAY_IN_SECONDS
 		);
 
 		return $this->promotions_memo;

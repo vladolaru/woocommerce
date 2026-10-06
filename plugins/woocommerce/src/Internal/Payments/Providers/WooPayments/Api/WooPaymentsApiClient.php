@@ -756,16 +756,28 @@ class WooPaymentsApiClient {
 	/**
 	 * Retrieve visible WooPayments payment method promotions for the current store context.
 	 *
+	 * Returns the promotions with the platform's `cache-for` header, which sets how long they may be cached, as the client
+	 * reads it from the raw response (client 11.1.0 `includes/class-wc-payments-pm-promotions-service.php:224-254`).
+	 *
 	 * @param array<string,mixed> $store_context Store context parameters.
-	 * @return array<string,mixed>
+	 * @return array{promotions:array<int|string,mixed>,cache_for:string}
 	 * @throws WooPaymentsApiException When the request fails.
 	 */
 	public function get_pm_promotions( array $store_context ): array {
-		$request = WooPaymentsGetPmPromotionsRequest::from_store_context( $store_context );
-
-		return $this->request_with_legacy_request_filter(
+		$request  = WooPaymentsGetPmPromotionsRequest::from_store_context( $store_context );
+		$response = $this->request_with_legacy_request_filter(
 			$request,
-			'wcpay_get_pm_promotions_request'
+			'wcpay_get_pm_promotions_request',
+			false,
+			true
+		);
+
+		$body      = 200 === (int) wp_remote_retrieve_response_code( $response ) ? json_decode( wp_remote_retrieve_body( $response ), true ) : null;
+		$cache_for = wp_remote_retrieve_header( $response, 'cache-for' );
+
+		return array(
+			'promotions' => is_array( $body ) ? $body : array(),
+			'cache_for'  => is_string( $cache_for ) ? $cache_for : '',
 		);
 	}
 

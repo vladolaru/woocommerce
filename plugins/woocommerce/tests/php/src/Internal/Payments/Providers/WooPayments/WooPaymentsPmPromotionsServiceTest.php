@@ -109,6 +109,38 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The platform's cache-for header sets the promotions cache lifetime, and 0 drops the cache, as in client 11.1.0
+	 * (includes/class-wc-payments-pm-promotions-service.php:224-254).
+	 *
+	 * @testdox Should cache promotions for the platform's cache-for lifetime and drop the cache when it is 0.
+	 * @testWith ["0", null]
+	 *           ["600", 600]
+	 *           ["", 86400]
+	 *
+	 * @param string   $cache_for Platform cache-for header.
+	 * @param int|null $lifetime  Expected transient lifetime in seconds, or null when nothing is cached.
+	 */
+	public function test_promotions_cache_follows_the_cache_for_header( string $cache_for, ?int $lifetime ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
+		$this->account_service->cached_account_data = array( 'fees' => array( 'klarna' => array() ) );
+		set_transient( WooPaymentsPmPromotionsService::PROMOTIONS_CACHE_KEY, array( 'context_hash' => 'stale' ), DAY_IN_SECONDS );
+		$this->api_client->promotions_response = array( $this->promotion_fixture( 'klarna-promo__spotlight', 'klarna-promo', 'klarna', 'spotlight' ) );
+		$this->api_client->cache_for           = $cache_for;
+		$before                                = time();
+
+		$promotions = $this->sut->get_visible_promotions();
+
+		$this->assertSame( array( 'klarna-promo__spotlight' ), array_column( (array) $promotions, 'id' ) );
+		$timeout = (int) get_option( '_transient_timeout_' . WooPaymentsPmPromotionsService::PROMOTIONS_CACHE_KEY, 0 );
+		if ( null === $lifetime ) {
+			$this->assertFalse( get_transient( WooPaymentsPmPromotionsService::PROMOTIONS_CACHE_KEY ), 'A 0 lifetime leaves nothing cached, not even the older entry.' );
+		} else {
+			$this->assertGreaterThanOrEqual( $before + $lifetime, $timeout );
+			$this->assertLessThanOrEqual( time() + $lifetime, $timeout );
+		}
+	}
+
+	/**
 	 * @testdox Should normalize titles, CTA labels, terms labels, badge type, URLs, and light HTML.
 	 */
 	public function test_get_visible_promotions_normalizes_titles_cta_terms_badge_type_and_html(): void {

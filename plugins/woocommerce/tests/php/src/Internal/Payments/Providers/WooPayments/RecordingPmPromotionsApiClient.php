@@ -18,6 +18,13 @@ class RecordingPmPromotionsApiClient extends WooPaymentsApiClient {
 	public array $promotions_response = array();
 
 	/**
+	 * Platform cache-for header sent with the promotions.
+	 *
+	 * @var string
+	 */
+	public string $cache_for = '';
+
+	/**
 	 * Activated promotion IDs.
 	 *
 	 * @var string[]
@@ -49,7 +56,7 @@ class RecordingPmPromotionsApiClient extends WooPaymentsApiClient {
 	 * Retrieve PM promotions.
 	 *
 	 * @param array<string,mixed> $store_context Store context.
-	 * @return array<string,mixed>
+	 * @return array{promotions:array<int|string,mixed>,cache_for:string}
 	 */
 	public function get_pm_promotions( array $store_context ): array {
 		++$this->get_pm_promotions_calls;
@@ -57,7 +64,10 @@ class RecordingPmPromotionsApiClient extends WooPaymentsApiClient {
 			throw $this->promotions_exception;
 		}
 
-		return $this->promotions_response;
+		return array(
+			'promotions' => $this->promotions_response,
+			'cache_for'  => $this->cache_for,
+		);
 	}
 
 	/**
