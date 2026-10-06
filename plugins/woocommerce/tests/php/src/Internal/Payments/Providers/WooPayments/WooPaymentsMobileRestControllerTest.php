@@ -1400,6 +1400,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertNotEmpty( $note );
 		$this->assertStringContainsString( '&lt;a href=', $note, 'Provider markup must be encoded inert, matching the reference esc_html().' );
 		$this->assertStringNotContainsString( '<a href="https://evil.example">', $note );
+		$this->assertStringNotContainsString( '<a href=', $response->get_error_message(), 'The answer escapes the provider message as the client does.' );
 	}
 
 	/**
@@ -1418,6 +1419,9 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$order    = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WP_Error::class, $response );
+		// Client 11.1.0 lets the intent read's exception reach its Throwable catch (class-wc-rest-payments-orders-controller.php:289-291).
+		$this->assertSame( 'wcpay_server_error', $response->get_error_code() );
+		$this->assertSame( 500, $response->get_error_data()['status'] );
 		$this->assertSame( 'on-hold', $order->get_status() );
 		$this->assertSame( '', $order->get_meta( '_intention_status', true ), 'A pre-check failure must not stamp capture-failure state on the order.' );
 		$this->assertSame( '', $this->get_order_note_containing( $order, 'capture' ), 'A pre-check failure must not leave a capture note on the order.' );
@@ -1629,7 +1633,8 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 				'status' => 'requires_capture',
 			),
 		);
-		$this->api_client->captured_intention_exception     = new WooPaymentsApiException( 'The card was declined at capture.', 'wcpay_capture_error', 402 );
+		// The platform's capture error envelope: code, message and HTTP status (client class-wc-payments-api-client.php:2852-2871, :2906-2909).
+		$this->api_client->captured_intention_exception = new WooPaymentsApiException( 'The card was declined at capture.', 'card_declined', 402 );
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
 		$request->set_param( 'order_id', $order->get_id() );
@@ -1639,6 +1644,10 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$order    = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WP_Error::class, $response );
+		// Client 11.1.0 answers every failed capture with its own code and prefixed message (class-wc-rest-payments-orders-controller.php:228-252).
+		$this->assertSame( 'wcpay_capture_error', $response->get_error_code() );
+		$this->assertSame( 'Payment capture failed to complete with the following message: The card was declined at capture.', $response->get_error_message() );
+		$this->assertSame( 402, $response->get_error_data()['status'] );
 		$this->assertSame( 'on-hold', $order->get_status(), 'A plain capture failure must leave the original authorization active.' );
 		$this->assertNotEmpty( $this->get_order_note_containing( $order, 'The card was declined at capture.' ) );
 	}

@@ -567,7 +567,6 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 	 * @param WC_Order $order     Order, read again under the lock.
 	 * @param string   $intent_id Intent ID.
 	 * @return WP_REST_Response|WP_Error
-	 * @throws WooPaymentsApiException When the capture call fails; rethrown to the enclosing catch after the order is marked.
 	 */
 	private function capture_terminal_payment_under_lock( WC_Order $order, string $intent_id ) {
 		if ( 0 < count( $order->get_refunds() ) ) {
@@ -618,7 +617,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 				// Only a failed capture call marks the order; pre-check failures must not.
 				$this->reconcile_failed_terminal_capture( $order, $intent_id, $this->get_capture_failure_note_message( $capture_exception ) );
 
-				throw $capture_exception;
+				return $this->get_terminal_capture_error( $this->get_capture_exception_result( $capture_exception ) );
 			}
 
 			if ( 'succeeded' !== (string) ( $result['status'] ?? '' ) ) {
@@ -638,25 +637,8 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 					'id'     => isset( $result['id'] ) ? (string) $result['id'] : $intent_id,
 				)
 			);
-		} catch ( WooPaymentsApiException $exception ) {
-			$error_data = $exception->get_error_data();
-			if ( 'amount_too_small' === $exception->get_error_code() && isset( $error_data['minimum_amount'], $error_data['currency'] ) && is_numeric( $error_data['minimum_amount'] ) && is_string( $error_data['currency'] ) ) {
-				// The mobile app parses this payload to prompt for a higher capture amount.
-				return $this->get_terminal_capture_error(
-					array(
-						'error_code'    => 'amount_too_small',
-						'message'       => $exception->getMessage(),
-						'http_code'     => 0 < $exception->get_http_code() ? $exception->get_http_code() : 400,
-						'extra_details' => array(
-							'minimum_amount'          => (int) $error_data['minimum_amount'],
-							'minimum_amount_currency' => strtoupper( $error_data['currency'] ),
-						),
-					)
-				);
-			}
-
-			return $this->api_exception_to_wp_error( $exception );
 		} catch ( Throwable $exception ) {
+			// A platform error before the capture call, such as the intent read, lands here too, as on the client.
 			$context = array(
 				'order_id'  => $order->get_id(),
 				'intent_id' => $intent_id,
@@ -1113,6 +1095,32 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		}
 
 		return new WP_Error( $error_code, $message, array( 'status' => $http_code ) );
+	}
+
+	/**
+	 * Build the capture result the client's capture_charge() returns for a failed capture call.
+	 *
+	 * Client 11.1.0 keeps the exception's HTTP status and code, escapes its message and, for amount_too_small, adds the
+	 * minimum amount the mobile app parses to prompt for a higher amount (class-wc-payment-gateway-wcpay.php:3991-4061).
+	 *
+	 * @param WooPaymentsApiException $exception Capture exception.
+	 * @return array<string,mixed>
+	 */
+	private function get_capture_exception_result( WooPaymentsApiException $exception ): array {
+		$result     = array(
+			'error_code' => $exception->get_error_code(),
+			'message'    => esc_html( $exception->getMessage() ),
+			'http_code'  => 0 < $exception->get_http_code() ? $exception->get_http_code() : 502,
+		);
+		$error_data = $exception->get_error_data();
+		if ( 'amount_too_small' === $exception->get_error_code() && isset( $error_data['minimum_amount'], $error_data['currency'] ) && is_numeric( $error_data['minimum_amount'] ) && is_string( $error_data['currency'] ) ) {
+			$result['extra_details'] = array(
+				'minimum_amount'          => (int) $error_data['minimum_amount'],
+				'minimum_amount_currency' => strtoupper( $error_data['currency'] ),
+			);
+		}
+
+		return $result;
 	}
 
 	/**
