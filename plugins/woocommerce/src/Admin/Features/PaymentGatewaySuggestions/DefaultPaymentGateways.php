@@ -1082,25 +1082,42 @@ class DefaultPaymentGateways {
 	/**
 	 * Get default rules for WooPayments being active.
 	 *
+	 * WooPayments is active when the WooPayments plugin is active, or when the native runtime is enabled and its kill
+	 * switch is off. Rules read stored options only, so a site that enables native payments through the
+	 * woocommerce_native_payments_enabled filter alone reads as inactive here.
+	 *
 	 * @param bool $should_be Whether WooPayments should be activated.
 	 *
 	 * @return object Rules to match.
 	 */
 	public static function get_rules_for_wcpay_activated( $should_be ) {
-		if ( Constants::is_true( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' ) ) {
-			$active_rule = (object) array(
-				'type'    => 'plugins_activated',
-				'plugins' => array( 'woocommerce-payments' ),
-			);
-		} else {
-			$active_rule = (object) array(
-				'type'        => 'option',
-				'option_name' => 'woocommerce_native_payments_enabled',
-				'operation'   => '=',
-				'value'       => 'yes',
-				'default'     => 'no',
-			);
-		}
+		$active_rule = (object) array(
+			'type'     => 'or',
+			'operands' => array(
+				array(
+					(object) array(
+						'type'    => 'plugins_activated',
+						'plugins' => array( 'woocommerce-payments' ),
+					),
+				),
+				array(
+					(object) array(
+						'type'        => 'option',
+						'option_name' => 'woocommerce_native_payments_enabled',
+						'operation'   => '=',
+						'value'       => 'yes',
+						'default'     => 'no',
+					),
+					(object) array(
+						'type'        => 'option',
+						'option_name' => 'woocommerce_native_payments_killswitch',
+						'operation'   => '!in',
+						'value'       => array( '1', 'yes', 'true', 'on' ),
+						'default'     => '0',
+					),
+				),
+			),
+		);
 
 		if ( $should_be ) {
 			return $active_rule;

@@ -4,6 +4,7 @@ namespace Automattic\WooCommerce\Tests\Admin\API;
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\DefaultPaymentGateways;
+use Automattic\WooCommerce\Admin\RemoteSpecs\RuleProcessors\RuleEvaluator;
 use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\EvaluateSuggestion;
 use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\Init;
 use Automattic\WooCommerce\Admin\Marketing\MarketingCampaign;
@@ -142,36 +143,43 @@ class PaymentGatewaySuggestionsTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should use native enablement instead of WooPayments plugin activation in native builds.
+	 * @testdox WooPayments reads as active when native payments are enabled and the kill switch is off, and as inactive otherwise.
+	 * @testWith ["yes", "0", true]
+	 *           ["yes", "yes", false]
+	 *           ["yes", "1", false]
+	 *           ["no", "0", false]
+	 *
+	 * @param string $native_enabled Stored native payments enablement.
+	 * @param string $kill_switch    Stored native payments kill switch.
+	 * @param bool   $expected       Whether WooPayments should read as active.
 	 */
-	public function test_woopayments_activation_rules_use_the_native_enablement_option() {
-		$active_rule = DefaultPaymentGateways::get_rules_for_wcpay_activated( true );
+	public function test_woopayments_activation_rules_follow_native_enablement_and_kill_switch( string $native_enabled, string $kill_switch, bool $expected ) {
+		update_option( 'woocommerce_native_payments_enabled', $native_enabled );
+		update_option( 'woocommerce_native_payments_killswitch', $kill_switch );
+		$evaluator = new RuleEvaluator();
 
-		$this->assertSame( 'option', $active_rule->type );
-		$this->assertSame( 'woocommerce_native_payments_enabled', $active_rule->option_name );
-		$this->assertSame( '=', $active_rule->operation );
-		$this->assertSame( 'yes', $active_rule->value );
-		$this->assertSame( 'no', $active_rule->default );
-
-		$inactive_rule = DefaultPaymentGateways::get_rules_for_wcpay_activated( false );
-		$this->assertSame( 'not', $inactive_rule->type );
-		$this->assertEquals( $active_rule, $inactive_rule->operand[0] );
+		$this->assertSame( $expected, $evaluator->evaluate( DefaultPaymentGateways::get_rules_for_wcpay_activated( true ) ) );
+		$this->assertSame( ! $expected, $evaluator->evaluate( DefaultPaymentGateways::get_rules_for_wcpay_activated( false ) ) );
 	}
 
 	/**
-	 * @testdox Should retain WooPayments plugin activation rules for merged feature development.
+	 * The WooPayments plugin cannot be activated in unit tests, so its operand is checked by shape.
+	 *
+	 * @testdox WooPayments also reads as active while the WooPayments plugin is active.
 	 */
-	public function test_woopayments_activation_rules_use_the_plugin_in_merged_feature_development() {
-		Constants::set_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS', true );
+	public function test_woopayments_activation_rules_count_the_active_plugin() {
+		$active_rule = DefaultPaymentGateways::get_rules_for_wcpay_activated( true );
 
-		try {
-			$active_rule = DefaultPaymentGateways::get_rules_for_wcpay_activated( true );
-
-			$this->assertSame( 'plugins_activated', $active_rule->type );
-			$this->assertSame( array( 'woocommerce-payments' ), $active_rule->plugins );
-		} finally {
-			Constants::clear_single_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' );
-		}
+		$this->assertSame( 'or', $active_rule->type );
+		$this->assertEquals(
+			array(
+				(object) array(
+					'type'    => 'plugins_activated',
+					'plugins' => array( 'woocommerce-payments' ),
+				),
+			),
+			$active_rule->operands[0]
+		);
 	}
 
 	/**
