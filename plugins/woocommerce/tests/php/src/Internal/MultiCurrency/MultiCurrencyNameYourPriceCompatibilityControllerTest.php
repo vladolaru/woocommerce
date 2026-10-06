@@ -210,6 +210,8 @@ class MultiCurrencyNameYourPriceCompatibilityControllerTest extends WC_Unit_Test
 
 		// Client 11.1.0 converts with get_raw_conversion(), which throws for a disabled source currency
 		// (includes/multi-currency/MultiCurrency.php:983-997) and nothing catches it while the cart loads.
+		// The nyp_original and nyp_currency keys are the ones Name Your Price stores on the cart item
+		// (includes/multi-currency/Compatibility/WooCommerceNameYourPrice.php:66-69).
 		$remove = $sut->remove_unconvertible_cart_item(
 			false,
 			'cart-item-key',
