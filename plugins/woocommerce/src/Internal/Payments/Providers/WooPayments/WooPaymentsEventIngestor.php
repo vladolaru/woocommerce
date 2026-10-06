@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
@@ -750,7 +751,7 @@ class WooPaymentsEventIngestor {
 					$charge,
 					$settlement_meta,
 					false,
-					$order->has_status( 'on-hold' )
+					$order->has_status( OrderStatus::ON_HOLD )
 				),
 				WooPaymentsOrderEffects::completed_charge_payment_method_backfill_meta(
 					$charge,

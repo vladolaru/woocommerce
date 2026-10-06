@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\DataStore as NotesDataStore;
 use Automattic\WooCommerce\Admin\Notes\Notes;
+use Automattic\WooCommerce\Enums\OrderInternalStatus;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
@@ -1037,7 +1038,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 				'payment_method' => OrderPaymentStore::GATEWAY_ID,
 				'limit'          => 1,
 				'return'         => 'ids',
-				'status'         => array( 'wc-completed', 'wc-processing' ),
+				'status'         => array( OrderInternalStatus::COMPLETED, OrderInternalStatus::PROCESSING ),
 				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
 				'meta_key'       => '_wcpay_mode',
 				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value

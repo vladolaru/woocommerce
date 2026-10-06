@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
@@ -315,7 +316,7 @@ class WooPaymentsOrderEffectApplier {
 			(string) $order->get_currency(),
 			$order_mode,
 			$settlement_meta,
-			$order->has_status( 'on-hold' ) || 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ),
+			$order->has_status( OrderStatus::ON_HOLD ) || 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ),
 			$include_fee_meta
 		);
 		if ( ! empty( $display_effects ) ) {

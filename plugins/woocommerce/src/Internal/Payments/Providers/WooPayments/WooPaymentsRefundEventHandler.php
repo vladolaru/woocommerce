@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
@@ -316,7 +317,7 @@ class WooPaymentsRefundEventHandler {
 		}
 
 		if ( 'refunded' === $order->get_status() ) {
-			$order->update_status( 'failed' );
+			$order->update_status( OrderStatus::FAILED );
 		}
 
 		$order->update_meta_data( '_wcpay_refund_status', 'failed' );

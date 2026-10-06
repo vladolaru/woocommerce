@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
@@ -212,7 +213,7 @@ class WooPaymentsDisputeEventHandler {
 					$note_type,
 					function () use ( $order, $dispute_id ): void {
 						$this->add_open_dispute_id( $order, $dispute_id );
-						$order->update_status( 'on-hold' );
+						$order->update_status( OrderStatus::ON_HOLD );
 					},
 					// Plugin versions predating the dispute-ID suffix wrote the bare note;
 					// on a cutover store the replayed webhook must still match it.
@@ -299,15 +300,15 @@ class WooPaymentsDisputeEventHandler {
 						// Promoting a fully refunded order to completed would make Analytics
 						// count it as revenue again. It still has to leave the dispute hold,
 						// though: no other webhook will arrive to move it off on-hold.
-						if ( ! $order->has_status( 'refunded' ) ) {
-							$order->update_status( 'refunded' );
+						if ( ! $order->has_status( OrderStatus::REFUNDED ) ) {
+							$order->update_status( OrderStatus::REFUNDED );
 						}
 
 						$order->add_order_note(
 							__( 'The order was not marked as completed because it has already been fully refunded.', 'woocommerce' )
 						);
 					} else {
-						$order->update_status( 'completed' );
+						$order->update_status( OrderStatus::COMPLETED );
 					}
 				} finally {
 					remove_filter( 'woocommerce_email_enabled_customer_completed_order', $disable_email );
@@ -818,7 +819,7 @@ class WooPaymentsDisputeEventHandler {
 	 * @return bool
 	 */
 	private function is_order_fully_refunded( WC_Order $order ): bool {
-		return $order->has_status( 'refunded' )
+		return $order->has_status( OrderStatus::REFUNDED )
 			|| ( (float) $order->get_total() > 0 && (float) $order->get_remaining_refund_amount() <= 0 );
 	}
 
