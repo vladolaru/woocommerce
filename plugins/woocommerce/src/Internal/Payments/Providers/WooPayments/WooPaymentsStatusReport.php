@@ -364,7 +364,10 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			$native_rows[] = $this->status_row( $fields[ $field_id ]['label'], $fields[ $field_id ]['label'], '', $fields[ $field_id ]['value'] );
 		}
 
-		$this->render_status_table( 'WooPayments', $this->get_client_status_rows() );
+		// While the plugin owns payments it renders this section itself (client 11.1.0 `includes/class-wc-payments-status.php:55-56`).
+		if ( ! $this->arbiter->is_plugin_runtime_active() ) {
+			$this->render_status_table( 'WooPayments', $this->get_client_status_rows() );
+		}
 		$this->render_status_table( 'WooPayments native runtime', $native_rows );
 	}
 

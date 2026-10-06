@@ -629,6 +629,23 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox While the plugin owns payments the report leaves the WooPayments section to the plugin and reads no fraud settings.
+	 */
+	public function test_status_report_leaves_the_client_section_to_the_plugin_while_it_owns_payments(): void {
+		$this->fake_plugin( true );
+		$this->set_native_state( NativePaymentsState::AVAILABLE );
+		$api_client = $this->createMock( WooPaymentsApiClient::class );
+		$api_client->expects( $this->never() )->method( 'get_latest_fraud_ruleset' );
+		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
+
+		ob_start();
+		$this->get_sut()->render_status_report_section();
+		$html = (string) ob_get_clean();
+
+		$this->assertSame( array( 'WooPayments native runtime' ), array_keys( $this->get_status_tables( $html ) ) );
+	}
+
+	/**
 	 * @testdox Dev mode triggers follow the wcpay_dev_mode filter, which can turn dev mode on or off, as in the client.
 	 *
 	 * Client 11.1.0 `includes/core/class-mode.php:72-111`.
