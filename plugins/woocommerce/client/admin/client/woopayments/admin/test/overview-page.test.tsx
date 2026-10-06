@@ -773,6 +773,7 @@ describe( 'WooPaymentsOverviewPage', () => {
 	// Client 11.1.0 `data/deposits/actions.js:87-142`: only the payout POST decides whether the payout failed; the reads are
 	// invalidated afterwards, and their own resolvers report a read failure (`data/deposits/resolvers.js:61-71`, `:130-136`).
 	describe( 'instant payout outcome', () => {
+		// Overview balances per client 11.1.0 `types/account-overview.d.ts:34-38` (Balance) and `:54-60` (InstantBalance).
 		const instantOverview = {
 			balance: {
 				available: [ { amount: 1000, currency: 'usd' } ],
@@ -812,13 +813,19 @@ describe( 'WooPaymentsOverviewPage', () => {
 			);
 		};
 
-		it( 'reports a successful payout as successful when the refresh after it fails', async () => {
+		it( 'reports a successful payout as successful when the refresh after it fails, and offers no second payout', async () => {
+			let rejectRefresh: ( error: Error ) => void = () => undefined;
 			mockGetOverview
 				.mockResolvedValueOnce( instantOverview )
-				.mockRejectedValueOnce( new Error( 'Refresh failed' ) );
+				.mockReturnValueOnce(
+					new Promise( ( _resolve, reject ) => {
+						rejectRefresh = reject;
+					} )
+				);
 			mockGetRecent
 				.mockResolvedValueOnce( { data: [], total_count: 0 } )
 				.mockRejectedValueOnce( new Error( 'Refresh failed' ) );
+			// The instant payout POST answers with a payout (client 11.1.0 `types/account-overview.d.ts:40-52`); the client reads its amount and id (`data/deposits/actions.js:118`, `:127`).
 			mockSubmitInstantPayout.mockResolvedValue( {
 				id: 'po_instant',
 				date: 1781740800000,
@@ -839,6 +846,21 @@ describe( 'WooPaymentsOverviewPage', () => {
 			await waitFor( () =>
 				expect( mockGetOverview ).toHaveBeenCalledTimes( 2 )
 			);
+			// The paid-out balance is never offered again, while the refresh runs or after it fails.
+			expect(
+				screen.queryByRole( 'button', { name: 'Get $9.00 now' } )
+			).not.toBeInTheDocument();
+
+			rejectRefresh( new Error( 'Refresh failed' ) );
+
+			await waitFor( () =>
+				expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+					"Error retrieving all payouts' overviews."
+				)
+			);
+			expect(
+				screen.queryByRole( 'button', { name: 'Get $9.00 now' } )
+			).not.toBeInTheDocument();
 			expect( mockSubmitInstantPayout ).toHaveBeenCalledTimes( 1 );
 			expect( mockCreateErrorNotice ).not.toHaveBeenCalledWith(
 				'Error creating instant payout.'
