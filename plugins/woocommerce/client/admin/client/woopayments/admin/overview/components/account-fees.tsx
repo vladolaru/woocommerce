@@ -153,13 +153,7 @@ const ExpirationBar = ( { fee }: { fee: FeeRate } ) => {
 	const progress = ( fee.current_volume ?? 0 ) / fee.volume_allowance;
 
 	return (
-		<div
-			className="woocommerce-woopayments-account-fees__progress"
-			role="progressbar"
-			aria-valuemin={ 0 }
-			aria-valuemax={ 100 }
-			aria-valuenow={ Math.round( progress * 100 ) }
-		>
+		<div className="woocommerce-woopayments-account-fees__progress">
 			<div className="woocommerce-woopayments-account-fees__progress-track">
 				<div
 					className="woocommerce-woopayments-account-fees__progress-fill"

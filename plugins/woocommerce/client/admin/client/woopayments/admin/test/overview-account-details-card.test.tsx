@@ -268,7 +268,7 @@ describe( 'AccountDetailsCard', () => {
 		} );
 
 		it( 'strikes the base fee when the discount entry carries no currency, like the client', () => {
-			renderFees( [
+			const { container } = renderFees( [
 				cardFee( [
 					{
 						end_time: null,
@@ -285,7 +285,9 @@ describe( 'AccountDetailsCard', () => {
 				screen.getByText( '2.9% + $0.30 per transaction' ).tagName
 			).toBe( 'S' );
 			expect(
-				screen.queryByRole( 'progressbar' )
+				container.querySelector(
+					'.woocommerce-woopayments-account-fees__progress'
+				)
 			).not.toBeInTheDocument();
 			expect(
 				screen.queryByText( /Discounted base fee expires/ )
@@ -320,9 +322,12 @@ describe( 'AccountDetailsCard', () => {
 			expect(
 				screen.getByText( /\) 2% \+ \$0\.20 per transaction$/ )
 			).toBeInTheDocument();
-			expect( screen.getByRole( 'progressbar' ) ).toHaveTextContent(
-				'$12,345.56$1,000,000.00'
-			);
+			// Client 11.1.0 `components/progress-bar/index.tsx` has no progressbar role, so the amounts read as text.
+			expect(
+				screen.queryByRole( 'progressbar' )
+			).not.toBeInTheDocument();
+			expect( screen.getByText( '$12,345.56' ) ).toBeInTheDocument();
+			expect( screen.getByText( '$1,000,000.00' ) ).toBeInTheDocument();
 			expect(
 				screen.getByText(
 					'Discounted base fee expires after the first $1,000,000.00 of total payment volume.'
@@ -331,7 +336,7 @@ describe( 'AccountDetailsCard', () => {
 		} );
 
 		it( 'renders a percentage discount with its end date', () => {
-			renderFees( [
+			const { container } = renderFees( [
 				cardFee( [
 					{
 						discount: 0.3,
@@ -347,7 +352,9 @@ describe( 'AccountDetailsCard', () => {
 				)
 			).toBeInTheDocument();
 			expect(
-				screen.queryByRole( 'progressbar' )
+				container.querySelector(
+					'.woocommerce-woopayments-account-fees__progress'
+				)
 			).not.toBeInTheDocument();
 			expect(
 				screen.getByText(
@@ -377,7 +384,7 @@ describe( 'AccountDetailsCard', () => {
 		} );
 
 		it( 'shows only the first of several stacked discounts', () => {
-			renderFees( [
+			const { container } = renderFees( [
 				cardFee( [
 					{ discount: 0.2, volume_currency: 'usd' },
 					{
@@ -396,7 +403,9 @@ describe( 'AccountDetailsCard', () => {
 				screen.queryByText( /\(30% discount\)/ )
 			).not.toBeInTheDocument();
 			expect(
-				screen.queryByRole( 'progressbar' )
+				container.querySelector(
+					'.woocommerce-woopayments-account-fees__progress'
+				)
 			).not.toBeInTheDocument();
 		} );
 
