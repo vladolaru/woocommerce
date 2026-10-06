@@ -34,6 +34,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		parent::set_up();
 		delete_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
+		delete_option( '_wcpay_feature_customer_multi_currency' );
 		delete_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT );
 		$this->previous_user_id = get_current_user_id();
 		$this->sut              = new MultiCurrencyFeatureController();
@@ -46,6 +47,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 	public function tear_down(): void {
 		delete_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
+		delete_option( '_wcpay_feature_customer_multi_currency' );
 		delete_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT );
 		wp_set_current_user( $this->previous_user_id );
 		$_GET = array();
@@ -68,6 +70,27 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		MultiCurrencyFeatureController::seed_from_prior_use();
 		$this->assertSame( 'no', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ), 'A Features-screen choice wins over prior use.' );
+	}
+
+	/**
+	 * @testdox Should hand the plugin's Multi-Currency state over at the cutover, over whatever the option held before.
+	 */
+	public function test_hand_over_plugin_state_mirrors_the_plugin(): void {
+		$option = MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION;
+
+		// Before the cutover the option has no effect while the plugin owns payments, so a stored value carries no merchant intent.
+		update_option( $option, 'yes' );
+		MultiCurrencyFeatureController::hand_over_plugin_state();
+		$this->assertSame( 'no', get_option( $option ), 'Without plugin use, Multi-Currency stays off after the cutover.' );
+
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		MultiCurrencyFeatureController::hand_over_plugin_state();
+		$this->assertSame( 'yes', get_option( $option ), 'Plugin use turns the feature on even after a Features page save stored "no".' );
+
+		// The plugin's own feature flag, which the merchant can turn off (client 11.1.0 `includes/class-wc-payments-features.php:67-69`).
+		update_option( '_wcpay_feature_customer_multi_currency', '0' );
+		MultiCurrencyFeatureController::hand_over_plugin_state();
+		$this->assertSame( 'no', get_option( $option ), 'Multi-Currency turned off in the plugin stays off.' );
 	}
 
 	/**

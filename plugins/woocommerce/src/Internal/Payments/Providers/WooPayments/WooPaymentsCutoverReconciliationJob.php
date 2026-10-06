@@ -1324,7 +1324,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				$claimed = $seeded_claim;
 			}
 			try {
-				MultiCurrencyFeatureController::seed_from_prior_use();
+				MultiCurrencyFeatureController::hand_over_plugin_state();
 				/**
 				 * Fires before WooPayments plugin deactivation so feature owners can seed native settings.
 				 *

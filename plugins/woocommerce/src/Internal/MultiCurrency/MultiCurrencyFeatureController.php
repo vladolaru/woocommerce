@@ -46,20 +46,41 @@ class MultiCurrencyFeatureController {
 	/**
 	 * Turn the feature on for a store that used the WooPayments plugin's Multi-Currency, unless a choice is already stored.
 	 *
-	 * Runs at upgrade and again at the WooPayments cutover, so currencies set up in the plugin in between carry over.
-	 * Without prior use the option stays unset, so the feature stays off and a later cutover can still turn it on.
+	 * Runs at upgrade. Without prior use the option stays unset, so the feature stays off; the WooPayments cutover later
+	 * hands the plugin's state over with hand_over_plugin_state().
 	 *
 	 * @since 11.2.0
 	 */
 	public static function seed_from_prior_use(): void {
+		if ( self::is_plugin_multi_currency_in_use() ) {
+			add_option( self::FEATURE_ENABLE_OPTION, 'yes', '', true );
+		}
+	}
+
+	/**
+	 * Hand the plugin's Multi-Currency state over to the feature option at the cutover, in both directions.
+	 *
+	 * While the plugin owns payments the option has no effect, so whatever it held before (a Features page save stores "no")
+	 * carries no merchant intent. From the cutover on the option is live and the merchant's Features choice stands.
+	 *
+	 * @since 11.2.0
+	 */
+	public static function hand_over_plugin_state(): void {
+		update_option( self::FEATURE_ENABLE_OPTION, self::is_plugin_multi_currency_in_use() ? 'yes' : 'no', true );
+	}
+
+	/**
+	 * Tell whether the plugin runs Multi-Currency: it was set up and the plugin's own feature flag is on.
+	 *
+	 * @return bool
+	 */
+	private static function is_plugin_multi_currency_in_use(): bool {
 		$enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies', array() );
 		$has_prior_use      = ( is_array( $enabled_currencies ) && ! empty( $enabled_currencies ) )
 			|| filter_var( get_option( 'wcpay_multi_currency_setup_completed', false ), FILTER_VALIDATE_BOOLEAN );
 
 		// The plugin's own feature flag, on unless the merchant turned it off (client 11.1.0 `includes/class-wc-payments-features.php:67-69`).
-		if ( $has_prior_use && '1' === (string) get_option( '_wcpay_feature_customer_multi_currency', '1' ) ) {
-			add_option( self::FEATURE_ENABLE_OPTION, 'yes', '', true );
-		}
+		return $has_prior_use && '1' === (string) get_option( '_wcpay_feature_customer_multi_currency', '1' );
 	}
 
 	/**

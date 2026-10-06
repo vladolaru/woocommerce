@@ -335,9 +335,10 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		};
 		add_action( 'woocommerce_woopayments_cutover_seed_features', $seed_features );
 		// Multi-Currency set up in the plugin after the upgrade seed left the feature unset; the plugin stores a list of currency codes
-		// (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`).
+		// (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`). A save of the Features page before the cutover then stored
+		// the "no" its radio shows for an unset option.
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
-		delete_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		try {
 			$this->assertTrue( $sut->enqueue( 'merchant' ) );
 			$pending = $this->require_state_store()->get_record();
@@ -354,7 +355,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $verification );
 		$this->assertSame( 1, $normalization->get_run_count() );
 		$this->assertSame( 1, $seeded );
-		$this->assertSame( 'yes', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ), 'The cutover carries plugin-side Multi-Currency use over to core.' );
+		$this->assertSame( 'yes', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ), 'The cutover carries plugin-side Multi-Currency use over to core, over a pre-cutover Features page save.' );
 		$this->assertSame( 1, $preflight->get_deactivation_calls() );
 		$this->assertSame( WooPaymentsCutoverState::PENDING, $verification['state'] );
 		$this->assertSame( 'verify_native_ownership', $verification['current_step'] );
