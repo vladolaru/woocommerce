@@ -105,6 +105,7 @@ class WooPaymentsDisputeReadinessRestControllerTest extends WC_REST_Unit_Test_Ca
 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( 'get_overview_payload', $this->service->last_call );
+		$this->assertSame( $this->service->get_overview_payload(), $response->get_data() );
 	}
 
 	/**
@@ -118,6 +119,7 @@ class WooPaymentsDisputeReadinessRestControllerTest extends WC_REST_Unit_Test_Ca
 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( 'get_overview_payload', $this->service->last_call );
+		$this->assertSame( $this->service->get_overview_payload(), $response->get_data() );
 	}
 
 	/**
@@ -131,6 +133,7 @@ class WooPaymentsDisputeReadinessRestControllerTest extends WC_REST_Unit_Test_Ca
 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( 'get_disabled_overview_payload', $this->service->last_call );
+		$this->assertSame( $this->service->get_disabled_overview_payload(), $response->get_data() );
 	}
 
 	/**
@@ -161,6 +164,7 @@ class WooPaymentsDisputeReadinessRestControllerTest extends WC_REST_Unit_Test_Ca
 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( 'dismiss_overview_card', $this->service->last_call );
+		$this->assertSame( $this->service->dismiss_overview_card(), $response->get_data() );
 	}
 
 	/**
@@ -174,6 +178,7 @@ class WooPaymentsDisputeReadinessRestControllerTest extends WC_REST_Unit_Test_Ca
 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( 'confirm_statement_descriptor', $this->service->last_call );
+		$this->assertSame( $this->service->confirm_statement_descriptor(), $response->get_data() );
 	}
 
 	/**

@@ -381,6 +381,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->create_disputes_controller( true )->register_routes();
 		update_option( 'wcpay_dispute_status_counts_cache', array( 'data' => array( 'needs_response' => 1 ) ) );
 		update_option( 'wcpay_active_dispute_cache', array( 'id' => 'dp_test' ) );
+		// A pass-through sentinel for the updated dispute the platform returns; the test reads only the caches.
 		$this->api_client->response = array(
 			'id'     => 'dp_test',
 			'status' => 'under_review',
