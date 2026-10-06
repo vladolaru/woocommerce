@@ -71,18 +71,6 @@ class WooPaymentsDisputesListRequest extends WooPaymentsPaginatedListRequest {
 	}
 
 	/**
-	 * Catch reference filter setters without normalizing platform-facing names.
-	 *
-	 * @param string           $name Method name.
-	 * @param array<int,mixed> $arguments Method arguments.
-	 */
-	public function __call( string $name, array $arguments ): void {
-		if ( 0 === strpos( $name, 'set_' ) && array_key_exists( 0, $arguments ) ) {
-			$this->set_param( substr( $name, 4 ), $arguments[0] );
-		}
-	}
-
-	/**
 	 * Add local order context and wrap the response like the legacy request.
 	 *
 	 * @param array<mixed> $response Transport response.

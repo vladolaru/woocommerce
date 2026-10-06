@@ -23,14 +23,6 @@ class WooPaymentsAuthorizationsListRequest extends WooPaymentsPaginatedListReque
 	 */
 	protected $hook = 'wcpay_list_authorizations_request';
 
-	protected const DEFAULT_PARAMS = array(
-		'page'      => 0,
-		'pagesize'  => 25,
-		'sort'      => 'created',
-		'direction' => 'desc',
-		'limit'     => 100,
-	);
-
 	/**
 	 * Register the legacy request FQCN as an alias when the WooPayments extension is absent.
 	 */
@@ -93,17 +85,5 @@ class WooPaymentsAuthorizationsListRequest extends WooPaymentsPaginatedListReque
 	 */
 	public function get_api(): string {
 		return 'authorizations';
-	}
-
-	/**
-	 * Catch reference filter setters without normalizing platform-facing names.
-	 *
-	 * @param string           $name      Method name.
-	 * @param array<int,mixed> $arguments Method arguments.
-	 */
-	public function __call( string $name, array $arguments ): void {
-		if ( 0 === strpos( $name, 'set_' ) && array_key_exists( 0, $arguments ) ) {
-			$this->set_param( substr( $name, 4 ), $arguments[0] );
-		}
 	}
 }

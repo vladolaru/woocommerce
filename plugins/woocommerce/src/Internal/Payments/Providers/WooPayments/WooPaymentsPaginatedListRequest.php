@@ -288,6 +288,19 @@ abstract class WooPaymentsPaginatedListRequest {
 	}
 
 	/**
+	 * Catch filter setters the request does not declare, as extensions call them on the legacy request objects, and set
+	 * the parameter under the name after `set_`, without normalizing it. Declared setters still win.
+	 *
+	 * @param string           $name      Method name.
+	 * @param array<int,mixed> $arguments Method arguments.
+	 */
+	public function __call( string $name, array $arguments ): void {
+		if ( 0 === strpos( $name, 'set_' ) && array_key_exists( 0, $arguments ) ) {
+			$this->set_param( substr( $name, 4 ), $arguments[0] );
+		}
+	}
+
+	/**
 	 * Get the WordPress filter applied when the request is sent.
 	 *
 	 * @return string
