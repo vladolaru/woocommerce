@@ -417,6 +417,8 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 		$user_id = self::factory()->user->create();
 		wp_set_current_user( $user_id );
 		update_user_meta( $user_id, 'wcpay_currency', 'GBP' );
+		// The plugin stores the enabled list and per-currency rate settings as these options
+		// (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`, `:1757-1770`).
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP', 'EUR' ) );
 		foreach ( array(
 			'gbp' => '0.8',
