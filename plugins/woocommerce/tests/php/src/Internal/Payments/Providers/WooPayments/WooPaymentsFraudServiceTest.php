@@ -107,6 +107,28 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should print the filtered Sift values as JSON strings and load the Sift script once.
+	 */
+	public function test_prints_the_filtered_sift_values_and_loads_the_script(): void {
+		add_filter(
+			'woocommerce_woopayments_fraud_service_config',
+			static function ( $config ) {
+				$config['beacon_key'] = '</script><script>alert("x")</script>';
+				$config['session_id'] = 'sess_known';
+				return $config;
+			}
+		);
+
+		$output = $this->render_admin_footer( array( 'page' => 'wc-admin' ) );
+
+		$this->assertSame( 1, substr_count( $output, '</script>' ), 'A filtered value cannot close the script tag.' );
+		$this->assertStringContainsString( '_sift.push( [ \'_setAccount\', "<\/script><script>alert(\"x\")<\/script>" ] );', $output );
+		$this->assertStringContainsString( '_sift.push( [ \'_setSessionId\', "sess_known" ] );', $output );
+		$this->assertStringContainsString( 'script.async = true;', $output );
+		$this->assertStringContainsString( 'document.body.appendChild( script );', $output );
+	}
+
+	/**
 	 * @testdox Should print no Sift tracker when a filter returns a field that is not a string.
 	 * @testWith ["beacon_key"]
 	 *           ["user_id"]
