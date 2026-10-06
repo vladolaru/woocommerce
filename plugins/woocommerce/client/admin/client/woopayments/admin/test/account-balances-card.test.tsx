@@ -433,6 +433,64 @@ describe( 'AccountBalancesCard', () => {
 			).not.toBeInTheDocument();
 			expect( submitInstantPayout ).toHaveBeenCalledTimes( 1 );
 		} );
+
+		it( 'moves focus to the balance heading when the payout button goes away after a payout', async () => {
+			const submitInstantPayout = jest.fn().mockResolvedValue( deposit );
+			const { rerender } = render(
+				<AccountBalancesCard
+					isLoading={ false }
+					overview={ instantOverview() }
+					selectedCurrency="usd"
+					onCurrencyChange={ jest.fn() }
+					onInstantPayoutSubmit={ submitInstantPayout }
+				/>
+			);
+
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Get $9.00 now' } )
+			);
+			await act( async () => {
+				await userEvent.click(
+					screen.getByRole( 'button', { name: 'Pay out $8.86 now' } )
+				);
+				// The page reloads the balance once the payout settles, so the payout button unmounts.
+				rerender(
+					<AccountBalancesCard
+						isLoading
+						overview={ null }
+						selectedCurrency="usd"
+						onCurrencyChange={ jest.fn() }
+						onInstantPayoutSubmit={ submitInstantPayout }
+					/>
+				);
+			} );
+
+			await waitFor( () =>
+				expect(
+					screen.getByRole( 'heading', { name: 'Balance' } )
+				).toHaveFocus()
+			);
+		} );
+
+		it( 'moves focus to the payout button when the instant payout offer is dismissed', async () => {
+			render(
+				<AccountBalancesCard
+					isLoading={ false }
+					overview={ instantOverview() }
+					selectedCurrency="usd"
+					onCurrencyChange={ jest.fn() }
+					onInstantPayoutSubmit={ jest.fn() }
+				/>
+			);
+
+			await userEvent.click(
+				screen.getByRole( 'button', { name: /Close|Dismiss/ } )
+			);
+
+			expect(
+				screen.getByRole( 'button', { name: 'Get $9.00 now' } )
+			).toHaveFocus();
+		} );
 	} );
 
 	// Client 11.1.0 `components/account-balances/index.tsx:31-46, 157-222`.

@@ -11,7 +11,12 @@ import {
 	Notice,
 } from '@wordpress/components';
 import { dispatch } from '@wordpress/data';
-import { createInterpolateElement, useState } from '@wordpress/element';
+import {
+	createInterpolateElement,
+	useEffect,
+	useRef,
+	useState,
+} from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { recordEvent } from '@woocommerce/tracks';
 import type { ReactNode } from 'react';
@@ -233,9 +238,27 @@ export const AccountBalancesCard = ( {
 	);
 	const [ isInstantPayoutSubmitting, setIsInstantPayoutSubmitting ] =
 		useState( false );
+	// Where focus goes once the dialog or the dismissed offer is gone: the balance heading after a payout (the
+	// balance reloads and the payout button can disappear), the payout button after the offer is dismissed.
+	const [ focusTarget, setFocusTarget ] = useState<
+		'heading' | 'payout-button' | null
+	>( null );
+	const payoutButtonRef = useRef< HTMLButtonElement >( null );
 	const headingId = 'woocommerce-woopayments-balance-heading';
 	const isInstantPayoutModalShown =
 		isInstantPayoutModalOpen || isInstantPayoutSubmitting;
+	useEffect( () => {
+		if ( ! focusTarget || isInstantPayoutModalShown ) {
+			return;
+		}
+
+		if ( focusTarget === 'payout-button' ) {
+			payoutButtonRef.current?.focus();
+		} else {
+			document.getElementById( headingId )?.focus();
+		}
+		setFocusTarget( null );
+	}, [ focusTarget, isInstantPayoutModalShown ] );
 	const currencySelectId = 'woocommerce-woopayments-balance-currency';
 	if ( ! isLoading && ! hasError && ! overview ) {
 		return null;
@@ -278,6 +301,7 @@ export const AccountBalancesCard = ( {
 				deposit.currency || instantBalance.currency
 			);
 
+			setFocusTarget( 'heading' );
 			dispatch( 'core/notices' ).createSuccessNotice(
 				sprintf(
 					/* translators: %s: Instant payout amount. */
@@ -447,6 +471,7 @@ export const AccountBalancesCard = ( {
 									status="info"
 									onRemove={ () => {
 										setInstantNoticeDismissed( true );
+										setFocusTarget( 'payout-button' );
 										void saveOption(
 											'wcpay_instant_deposit_notice_dismissed',
 											true
@@ -469,6 +494,7 @@ export const AccountBalancesCard = ( {
 							) }
 							<div className="woocommerce-woopayments-overview__instant-payout-actions">
 								<Button
+									ref={ payoutButtonRef }
 									variant="primary"
 									onClick={ () =>
 										setIsInstantPayoutModalOpen( true )
