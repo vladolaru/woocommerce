@@ -154,17 +154,52 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Documents routes require manage_woocommerce before calling the platform API.
+	 * @testdox Every Documents and VAT route refuses visitors and customers before calling the platform API.
+	 *
+	 * @dataProvider provide_document_route_requests
+	 *
+	 * @param string              $method HTTP method.
+	 * @param string              $path   Route path.
+	 * @param array<string,mixed> $params Body arguments.
 	 */
-	public function test_routes_require_manage_woocommerce(): void {
+	public function test_routes_require_manage_woocommerce( string $method, string $path, array $params = array() ): void {
 		$this->sut->register_routes();
-		wp_set_current_user( 0 );
 
-		$request  = new WP_REST_Request( 'GET', '/wc/v3/payments/documents' );
-		$response = $this->server->dispatch( $request );
+		foreach ( array( 0, $this->factory->user->create( array( 'role' => 'customer' ) ) ) as $user_id ) {
+			wp_set_current_user( $user_id );
+			$request = new WP_REST_Request( $method, $path );
+			$request->set_body_params( $params );
+			$response = $this->server->dispatch( $request );
 
-		$this->assertSame( rest_authorization_required_code(), $response->get_status() );
+			$this->assertSame( rest_authorization_required_code(), $response->get_status(), "User {$user_id} on {$method} {$path}." );
+		}
 		$this->assertNull( $this->api_client->last_documents_query );
+		$this->assertNull( $this->api_client->last_document_id );
+		$this->assertNull( $this->api_client->last_documents_summary_query );
+		$this->assertNull( $this->api_client->last_vat_number );
+		$this->assertNull( $this->api_client->last_saved_vat_details );
+	}
+
+	/**
+	 * One request per Documents and VAT route, with the required arguments WordPress validates before the permission check.
+	 *
+	 * @return array<string,array<int,mixed>>
+	 */
+	public function provide_document_route_requests(): array {
+		return array(
+			'list'         => array( 'GET', '/wc/v3/payments/documents' ),
+			'summary'      => array( 'GET', '/wc/v3/payments/documents/summary' ),
+			'download'     => array( 'GET', '/wc/v3/payments/documents/vat_invoice-123' ),
+			'validate VAT' => array( 'GET', '/wc/v3/payments/vat/RO123456' ),
+			'save VAT'     => array(
+				'POST',
+				'/wc/v3/payments/vat',
+				array(
+					'name'    => 'ACME SRL',
+					'address' => '1 Market Street',
+				),
+			),
+		);
 	}
 
 	/**
