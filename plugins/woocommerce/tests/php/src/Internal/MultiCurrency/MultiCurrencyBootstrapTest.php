@@ -619,9 +619,13 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An Analytics import run inside a classic checkout request, as with woocommerce_analytics_disable_action_scheduling, converts the order.
+	 * @testdox An Analytics import run inside a $request request, as with woocommerce_analytics_disable_action_scheduling, converts the order.
+	 * @testWith ["front"]
+	 *           ["cli"]
+	 *
+	 * @param string $request Request class: front for ?wc-ajax=checkout, cli for an order import.
 	 */
-	public function test_synchronous_analytics_import_in_a_checkout_request_converts_the_order(): void {
+	public function test_synchronous_analytics_import_in_a_checkout_request_converts_the_order( string $request ): void {
 		global $wpdb;
 		add_filter( 'pre_http_request', static fn() => new \WP_Error( 'blocked', 'Outbound HTTP is blocked in this test.' ) );
 		update_option( 'woocommerce_currency', 'USD' );
@@ -641,7 +645,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 
 		// ?wc-ajax=checkout is classified as a front request: WooCommerce defines DOING_AJAX for it only on init.
 		$sut = new MultiCurrencyBootstrap( static fn(): array => array() );
-		$this->register_as( $sut, wc_get_container(), 'front', static fn() => OrdersScheduler::import( $order_id ) );
+		$this->register_as( $sut, wc_get_container(), $request, static fn() => OrdersScheduler::import( $order_id ) );
 
 		// The client converts order stats on every request, last (client 11.1.0 `includes/multi-currency/Analytics.php:26,79-80`).
 		$this->assertSame( 99999, has_filter( 'woocommerce_analytics_update_order_stats_data', array( $sut, 'handle_woocommerce_analytics_update_order_stats_data' ) ) );

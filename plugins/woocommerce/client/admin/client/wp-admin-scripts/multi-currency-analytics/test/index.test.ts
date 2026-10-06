@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { applyFilters, removeAllFilters } from '@wordpress/hooks';
+import { applyFilters, removeAllFilters, removeFilter } from '@wordpress/hooks';
 
 /**
  * Internal dependencies
@@ -117,5 +117,23 @@ describe( 'multi-currency-analytics', () => {
 				currency: 'JPY',
 			} )
 		).toBe( config );
+	} );
+
+	it( 'keeps the plugin namespace, so code that removes the plugin callbacks still can', () => {
+		// The client registers under 'woocommerce-payments' (includes/multi-currency/client/analytics/index.js:18).
+		removeFilter(
+			'woocommerce_admin_report_table',
+			'woocommerce-payments'
+		);
+		const table = {
+			endpoint: 'orders',
+			headers: [],
+			rows: [ [] ],
+			items: { data: [ { order_currency: 'EUR' } ] },
+		};
+
+		expect( applyFilters( 'woocommerce_admin_report_table', table ) ).toBe(
+			table
+		);
 	} );
 } );
