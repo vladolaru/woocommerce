@@ -104,6 +104,16 @@ const paymentGatewaySuggestionsWithoutWCPay = paymentGatewaySuggestions.filter(
 );
 
 describe( 'PaymentGatewaySuggestions', () => {
+	const originalLocation = window.location;
+
+	afterEach( () => {
+		// Several tests replace window.location to observe redirects; later tests need the real one.
+		Object.defineProperty( global.window, 'location', {
+			value: originalLocation,
+			configurable: true,
+		} );
+	} );
+
 	test( 'should render all payment gateways, including WCPay', () => {
 		const onComplete = jest.fn();
 		const query = {};
