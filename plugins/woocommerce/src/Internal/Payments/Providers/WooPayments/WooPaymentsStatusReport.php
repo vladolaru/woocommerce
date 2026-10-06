@@ -491,7 +491,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 				'WooPay',
 				__( 'WooPay Express Checkout', 'woocommerce' ),
 				__( 'Whether the new WooPay Express Checkout is enabled or not.', 'woocommerce' ),
-				$this->format_client_express_checkout_status( $this->is_setting_enabled( 'platform_checkout' ), $this->get_express_checkout_method_locations( 'woopay' ) )
+				$this->format_client_express_checkout_status( 'yes' === $account_service->get_gateway_setting( 'platform_checkout' ), $this->get_express_checkout_method_locations( 'woopay' ) )
 			);
 			$rows[] = $this->status_row(
 				'WooPay Incompatible Extensions',
@@ -533,7 +533,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			'Auth and Capture',
 			__( 'Auth and Capture', 'woocommerce' ),
 			__( 'Whether the store has the Auth & Capture feature enabled or not.', 'woocommerce' ),
-			$this->format_enabled( $this->is_setting_enabled( 'manual_capture' ) )
+			$this->format_enabled( 'yes' === $account_service->get_gateway_setting( 'manual_capture' ) )
 		);
 		$rows[] = $this->status_row(
 			'Support Phone',

@@ -566,6 +566,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	 *
 	 * @testWith ["yes", "Enabled"]
 	 *           ["no", "Disabled"]
+	 *           ["1", "Disabled"]
 	 *
 	 * @param string $manual_capture The manual_capture gateway setting.
 	 * @param string $expected       The Auth and Capture value.
