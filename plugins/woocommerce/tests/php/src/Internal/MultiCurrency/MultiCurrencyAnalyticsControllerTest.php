@@ -66,7 +66,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 
 		$sut->register();
 
-		$this->assertFalse( has_filter( 'woocommerce_analytics_update_order_stats_data', array( $sut, 'handle_woocommerce_analytics_update_order_stats_data' ) ) );
+		$this->assertFalse( has_filter( 'woocommerce_analytics_orders_query_args', array( $sut, 'handle_woocommerce_analytics_orders_query_args' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_analytics_clauses_select', array( $sut, 'handle_woocommerce_analytics_clauses_select' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_analytics_report_should_use_cache', array( $sut, 'handle_woocommerce_analytics_report_should_use_cache' ) ) );
 	}
@@ -81,7 +81,6 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		$sut->register();
 		$sut->register();
 
-		$this->assertSame( 99999, has_filter( 'woocommerce_analytics_update_order_stats_data', array( $sut, 'handle_woocommerce_analytics_update_order_stats_data' ) ) );
 		$this->assertSame( 10, has_filter( 'woocommerce_analytics_orders_query_args', array( $sut, 'handle_woocommerce_analytics_orders_query_args' ) ) );
 		$this->assertSame( 10, has_filter( 'woocommerce_analytics_orders_stats_query_args', array( $sut, 'handle_woocommerce_analytics_orders_query_args' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_analytics_clauses_select', array( $sut, 'handle_woocommerce_analytics_clauses_select' ) ) );
@@ -187,7 +186,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 			$wpdb->suppress_errors( $suppress_errors );
 		}
 
-		$this->assertSame( 99999, has_filter( 'woocommerce_analytics_update_order_stats_data', array( $sut, 'handle_woocommerce_analytics_update_order_stats_data' ) ) );
+		$this->assertSame( 10, has_filter( 'woocommerce_analytics_orders_query_args', array( $sut, 'handle_woocommerce_analytics_orders_query_args' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_analytics_clauses_select', array( $sut, 'handle_woocommerce_analytics_clauses_select' ) ) );
 	}
 
@@ -298,7 +297,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 			new MultiCurrencyAnalyticsProjectionService( $this->create_state_builder() )
 		);
 
-		$result = $sut->handle_woocommerce_analytics_update_order_stats_data(
+		$result = $sut->convert_order_stats_data(
 			array(
 				'net_total'      => 10.0,
 				'shipping_total' => 4.0,
@@ -328,7 +327,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 			new MultiCurrencyAnalyticsProjectionService( $this->create_state_builder() )
 		);
 
-		$result = $sut->handle_woocommerce_analytics_update_order_stats_data(
+		$result = $sut->convert_order_stats_data(
 			array(
 				'net_total'      => -10.0,
 				'shipping_total' => -4.0,

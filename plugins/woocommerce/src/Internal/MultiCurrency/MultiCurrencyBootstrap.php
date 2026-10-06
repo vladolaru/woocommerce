@@ -169,11 +169,13 @@ final class MultiCurrencyBootstrap {
 		}
 
 		$this->order_container = $container;
-		// The client copies the order's exchange rates to refunds and records the customer currency on every request
-		// (client 11.1.0 `includes/multi-currency/MultiCurrency.php:371`, `:384`).
+		// The client copies the order's exchange rates to refunds, records the customer currency and converts Analytics order stats
+		// on every request (client 11.1.0 `includes/multi-currency/MultiCurrency.php:371`, `:384`, `Analytics.php:79-80`), so an
+		// order created or imported on any request is handled, including a synchronous Analytics import on ?wc-ajax=checkout.
 		if ( false === has_action( 'woocommerce_order_refunded', array( $this, 'handle_woocommerce_order_refunded' ) ) ) {
 			add_action( 'woocommerce_order_refunded', array( $this, 'handle_woocommerce_order_refunded' ), 50, 2 );
 			add_action( 'woocommerce_order_status_changed', array( $this, 'handle_woocommerce_order_status_changed' ) );
+			add_filter( 'woocommerce_analytics_update_order_stats_data', array( $this, 'handle_woocommerce_analytics_update_order_stats_data' ), 99999, 2 );
 		}
 
 		$request = self::classify_request( $is_rest_api_request );
@@ -286,6 +288,30 @@ final class MultiCurrencyBootstrap {
 		 */
 		$controller = $this->order_container->get( MultiCurrencyAnalyticsController::class );
 		$controller->record_customer_currency( $order_id );
+	}
+
+	/**
+	 * Convert an Analytics order-stats row to the store currency.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $args  Order stats row.
+	 * @param mixed $order Order or refund.
+	 * @return mixed
+	 */
+	public function handle_woocommerce_analytics_update_order_stats_data( $args, $order ) {
+		if ( null === $this->order_container || ! is_array( $args ) ) {
+			return $args;
+		}
+
+		/**
+		 * Native Multi-Currency Analytics controller.
+		 *
+		 * @var MultiCurrencyAnalyticsController $controller
+		 */
+		$controller = $this->order_container->get( MultiCurrencyAnalyticsController::class );
+
+		return $controller->convert_order_stats_data( $args, $order );
 	}
 
 	/**

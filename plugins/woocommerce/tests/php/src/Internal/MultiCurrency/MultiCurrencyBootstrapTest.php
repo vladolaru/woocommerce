@@ -605,6 +605,36 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'USD', 'EUR' ), get_option( 'wcpay_multi_currency_stored_customer_currencies' ) );
 	}
 
+	/**
+	 * @testdox An Analytics import run inside a classic checkout request, as with woocommerce_analytics_disable_action_scheduling, converts the order.
+	 */
+	public function test_synchronous_analytics_import_in_a_checkout_request_converts_the_order(): void {
+		global $wpdb;
+		add_filter( 'pre_http_request', static fn() => new \WP_Error( 'blocked', 'Outbound HTTP is blocked in this test.' ) );
+		update_option( 'woocommerce_currency', 'USD' );
+		$order = WC_Helper_Order::create_order();
+		$order->set_currency( 'EUR' );
+		$order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_EXCHANGE_RATE, '0.5' );
+		$order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
+		$order->save();
+		$order_id  = $order->get_id();
+		$net_total = static function () use ( $wpdb, $order_id ): float {
+			return (float) $wpdb->get_var( $wpdb->prepare( "SELECT net_total FROM {$wpdb->prefix}wc_order_stats WHERE order_id = %d", $order_id ) );
+		};
+		OrdersScheduler::import( $order_id );
+		$unconverted = $net_total();
+		$this->assertGreaterThan( 0.0, $unconverted, 'The order must have an Analytics row before the case.' );
+		$this->enable_core_multi_currency( true );
+
+		// ?wc-ajax=checkout is classified as a front request: WooCommerce defines DOING_AJAX for it only on init.
+		$sut = new MultiCurrencyBootstrap( static fn(): array => array() );
+		$this->register_as( $sut, wc_get_container(), 'front', static fn() => OrdersScheduler::import( $order_id ) );
+
+		// The client converts order stats on every request, last (client 11.1.0 `includes/multi-currency/Analytics.php:26,79-80`).
+		$this->assertSame( 99999, has_filter( 'woocommerce_analytics_update_order_stats_data', array( $sut, 'handle_woocommerce_analytics_update_order_stats_data' ) ) );
+		$this->assertEqualsWithDelta( $unconverted * 2, $net_total(), 0.001 );
+	}
+
 	/** @testdox Leaves a refund of a store-currency order without exchange-rate meta. */
 	public function test_refund_of_a_store_currency_order_gets_no_exchange_rate_meta(): void {
 		add_filter( 'pre_http_request', static fn() => new \WP_Error( 'blocked', 'Outbound HTTP is blocked in this test.' ) );
@@ -645,6 +675,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 
 			$this->assertFalse( has_action( 'woocommerce_order_refunded', array( $sut, 'handle_woocommerce_order_refunded' ) ), $owner );
 			$this->assertFalse( has_action( 'woocommerce_order_status_changed', array( $sut, 'handle_woocommerce_order_status_changed' ) ), $owner );
+			$this->assertFalse( has_filter( 'woocommerce_analytics_update_order_stats_data', array( $sut, 'handle_woocommerce_analytics_update_order_stats_data' ) ), $owner );
 		}
 	}
 

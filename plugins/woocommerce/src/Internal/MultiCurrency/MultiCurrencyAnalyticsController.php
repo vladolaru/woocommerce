@@ -234,7 +234,6 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 
 		$this->add_filter_once( 'woocommerce_new_order', array( $this->usage_detector, 'invalidate_foreign_currency_orders_cache' ) );
 
-		$this->add_filter_once( 'woocommerce_analytics_update_order_stats_data', array( $this, 'handle_woocommerce_analytics_update_order_stats_data' ), 99999, 2 );
 		$this->add_filter_once( 'woocommerce_analytics_orders_query_args', array( $this, 'handle_woocommerce_analytics_orders_query_args' ) );
 		$this->add_filter_once( 'woocommerce_analytics_orders_stats_query_args', array( $this, 'handle_woocommerce_analytics_orders_query_args' ) );
 
@@ -331,7 +330,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	 * @param mixed               $order Order.
 	 * @return array<string,mixed>
 	 */
-	public function handle_woocommerce_analytics_update_order_stats_data( array $args, $order ): array {
+	public function convert_order_stats_data( array $args, $order ): array {
 		if ( ! $order instanceof \WC_Abstract_Order ) {
 			return $args;
 		}
