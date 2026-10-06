@@ -275,8 +275,9 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	 * @param bool $test_mode Whether test mode is enabled.
 	 * @param bool $dev_mode  Whether development mode is enabled.
 	 * @param int  $age_days  Days since enabling test mode.
+	 * @param bool $test_drive Whether the account is a test-drive account.
 	 */
-	public function test_test_to_live_cheap_guards_skip_order_query( bool $logged_in, bool $working, bool $test_mode, bool $dev_mode, int $age_days ): void {
+	public function test_test_to_live_cheap_guards_skip_order_query( bool $logged_in, bool $working, bool $test_mode, bool $dev_mode, int $age_days, bool $test_drive ): void {
 		$now = 1700000000;
 		wp_set_current_user( $logged_in ? self::factory()->user->create( array( 'role' => 'administrator' ) ) : 0 );
 		update_option( 'wcpay_test_mode_enabled_date', $now - $age_days * DAY_IN_SECONDS, false );
@@ -285,6 +286,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$account->method( 'has_working_account' )->willReturn( $working );
 		$account->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
 		$account->method( 'is_dev_mode_enabled' )->willReturn( $dev_mode );
+		$account->method( 'has_test_account' )->willReturn( $test_drive );
 		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
 		$sut->init( $account );
 		$queries      = 0;
@@ -307,15 +309,19 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Cheap conditions that must suppress notice queries.
 	 *
-	 * @return array<string,array{bool,bool,bool,bool,int}>
+	 * The test-drive case follows client 11.1.0 `includes/admin/attach-rate/class-wc-payments-abstract-admin-notice.php:293-305`,
+	 * which every notice's eligibility opens with (`class-wc-payments-test-to-live-notice.php:119-121`).
+	 *
+	 * @return array<string,array{bool,bool,bool,bool,int,bool}>
 	 */
 	public static function provide_test_to_live_cheap_guards(): array {
 		return array(
-			'anonymous'          => array( false, true, true, false, 7 ),
-			'no working account' => array( true, false, true, false, 7 ),
-			'live mode'          => array( true, true, false, false, 7 ),
-			'development mode'   => array( true, true, true, true, 7 ),
-			'before seven days'  => array( true, true, true, false, 6 ),
+			'anonymous'          => array( false, true, true, false, 7, false ),
+			'no working account' => array( true, false, true, false, 7, false ),
+			'live mode'          => array( true, true, false, false, 7, false ),
+			'development mode'   => array( true, true, true, true, 7, false ),
+			'before seven days'  => array( true, true, true, false, 6, false ),
+			'test-drive account' => array( true, true, true, false, 7, true ),
 		);
 	}
 

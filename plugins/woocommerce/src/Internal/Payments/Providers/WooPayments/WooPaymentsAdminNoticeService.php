@@ -135,7 +135,8 @@ class WooPaymentsAdminNoticeService {
 			return null;
 		}
 		Notes::delete_notes_with_name( self::TEST_TO_LIVE_NOTE_NAME );
-		if ( ! $this->account_service->has_working_account() ) {
+		// Client 11.1.0 has_active_payments_account() opens every notice's eligibility and rules out test-drive accounts.
+		if ( ! $this->account_service->has_working_account() || $this->account_service->has_test_account() ) {
 			return null;
 		}
 
