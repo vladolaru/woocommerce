@@ -543,18 +543,26 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$this->enable_core_multi_currency( $configured );
 		$sut = new MultiCurrencyBootstrap( static fn(): array => array() );
 
-		$this->register_as( $sut, wc_get_container(), $request );
-		// Client 11.1.0 registers the copy at priority 50 on every request (`includes/multi-currency/MultiCurrency.php:371`).
-		$this->assertSame( 50, has_action( 'woocommerce_order_refunded', array( $sut, 'handle_woocommerce_order_refunded' ) ) );
+		$refund_id = 0;
 
-		$refund = wc_get_order(
-			wc_create_refund(
-				array(
-					'order_id' => $order->get_id(),
-					'amount'   => 1,
-				)
-			)->get_id()
+		// The refund is created while the request signals are set, as an admin-ajax or REST refund runs.
+		$this->register_as(
+			$sut,
+			wc_get_container(),
+			$request,
+			function () use ( $sut, $order, &$refund_id ): void {
+				// Client 11.1.0 registers the copy at priority 50 on every request (`includes/multi-currency/MultiCurrency.php:371`).
+				$this->assertSame( 50, has_action( 'woocommerce_order_refunded', array( $sut, 'handle_woocommerce_order_refunded' ) ) );
+				$refund_id = wc_create_refund(
+					array(
+						'order_id' => $order->get_id(),
+						'amount'   => 1,
+					)
+				)->get_id();
+			}
 		);
+
+		$refund = wc_get_order( $refund_id );
 		$this->assertSame( '0.5', $refund->get_meta( MultiCurrencyPriceProjectionService::META_KEY_ORDER_EXCHANGE_RATE ) );
 		$this->assertSame( 'USD', $refund->get_meta( MultiCurrencyPriceProjectionService::META_KEY_ORDER_DEFAULT_CURRENCY ) );
 		$this->assertSame( '0.49', $refund->get_meta( MultiCurrencyPriceProjectionService::META_KEY_STRIPE_EXCHANGE_RATE ) );
@@ -579,18 +587,27 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_http_request', static fn() => new \WP_Error( 'blocked', 'Outbound HTTP is blocked in this test.' ) );
 		update_option( 'woocommerce_currency', 'USD' );
 		$order = WC_Helper_Order::create_order();
+		$order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_EXCHANGE_RATE, '0.5' );
+		$order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
+		$order->save();
 		$this->enable_core_multi_currency( true );
-		$sut = new MultiCurrencyBootstrap( static fn(): array => array() );
+		$sut       = new MultiCurrencyBootstrap( static fn(): array => array() );
+		$refund_id = 0;
 
-		$this->register_as( $sut, wc_get_container(), 'ajax' );
-		$refund = wc_get_order(
-			wc_create_refund(
-				array(
-					'order_id' => $order->get_id(),
-					'amount'   => 1,
-				)
-			)->get_id()
+		$this->register_as(
+			$sut,
+			wc_get_container(),
+			'ajax',
+			static function () use ( $order, &$refund_id ): void {
+				$refund_id = wc_create_refund(
+					array(
+						'order_id' => $order->get_id(),
+						'amount'   => 1,
+					)
+				)->get_id();
+			}
 		);
+		$refund = wc_get_order( $refund_id );
 
 		$this->assertSame( '', $refund->get_meta( MultiCurrencyPriceProjectionService::META_KEY_ORDER_EXCHANGE_RATE ) );
 		$this->assertSame( '', $refund->get_meta( MultiCurrencyPriceProjectionService::META_KEY_ORDER_DEFAULT_CURRENCY ) );
@@ -670,8 +687,9 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 * @param MultiCurrencyBootstrap                             $sut       Bootstrap under test.
 	 * @param \Automattic\WooCommerce\Container|RuntimeContainer $container Recording or real container.
 	 * @param string                                             $request   Request class: front, ajax, rest, admin, cron or cli.
+	 * @param callable|null                                      $then      Work to run while the request signals are still set.
 	 */
-	private function register_as( MultiCurrencyBootstrap $sut, $container, string $request ): void {
+	private function register_as( MultiCurrencyBootstrap $sut, $container, string $request, ?callable $then = null ): void {
 		$filter = array(
 			'ajax' => 'wp_doing_ajax',
 			'cron' => 'wp_doing_cron',
@@ -688,6 +706,9 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 
 		try {
 			$sut->register( $container, 'rest' === $request ? '__return_true' : '__return_false' );
+			if ( null !== $then ) {
+				$then();
+			}
 		} finally {
 			if ( null !== $filter ) {
 				remove_filter( $filter, '__return_true' );
