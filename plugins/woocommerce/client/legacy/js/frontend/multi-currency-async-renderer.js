@@ -12,14 +12,80 @@
 			: undefined;
 	}
 
-	function toNumber( value ) {
-		var number = Number( value );
-		return Number.isFinite( number ) ? number : 0;
+	// Prices are worked out on exact decimals, as the client's decimal.js-light renderer and the server's PHP do, so a half cent
+	// or a rounding step lands on the same value as the cart. A decimal is a BigInt of units and a scale: 12.345 is 12345n at 3.
+	function toDecimal( value ) {
+		var match = /^\s*([+-]?)(\d*)(?:\.(\d*))?(?:e([+-]?\d+))?\s*$/i.exec( String( value ) );
+		if ( ! match || ( '' === match[ 2 ] && ! match[ 3 ] ) ) {
+			return { units: BigInt( 0 ), scale: 0 };
+		}
+
+		var fraction = match[ 3 ] || '';
+		var digits = match[ 2 ] + fraction;
+		var scale = fraction.length - parseInt( match[ 4 ] || '0', 10 );
+		if ( scale < 0 ) {
+			digits += '0'.repeat( -scale );
+			scale = 0;
+		}
+
+		var units = BigInt( digits );
+		return { units: '-' === match[ 1 ] ? -units : units, scale: scale };
 	}
 
-	function roundHalfUp( value, decimals ) {
-		var factor = Math.pow( 10, decimals );
-		return Math.round( ( value + Number.EPSILON ) * factor ) / factor;
+	function pow10( exponent ) {
+		return BigInt( '1' + '0'.repeat( exponent ) );
+	}
+
+	function rescale( decimal, scale ) {
+		return { units: decimal.units * pow10( scale - decimal.scale ), scale: scale };
+	}
+
+	function multiply( a, b ) {
+		return { units: a.units * b.units, scale: a.scale + b.scale };
+	}
+
+	function add( a, b ) {
+		var scale = Math.max( a.scale, b.scale );
+		return { units: rescale( a, scale ).units + rescale( b, scale ).units, scale: scale };
+	}
+
+	// Round to a number of decimals, half away from zero (decimal.js ROUND_HALF_UP).
+	function roundHalfUp( decimal, decimals ) {
+		if ( decimal.scale <= decimals ) {
+			return rescale( decimal, decimals );
+		}
+
+		var divisor = pow10( decimal.scale - decimals );
+		var quotient = decimal.units / divisor;
+		var remainder = decimal.units % divisor;
+		var negative = remainder < BigInt( 0 );
+		if ( ( negative ? -remainder : remainder ) * BigInt( 2 ) >= divisor ) {
+			quotient += negative ? BigInt( -1 ) : BigInt( 1 );
+		}
+
+		return { units: quotient, scale: decimals };
+	}
+
+	// Round up to the next multiple of a positive step, such as 0.50 (decimal.js ROUND_CEIL on the step count).
+	function ceilToStep( decimal, step ) {
+		var scale = Math.max( decimal.scale, step.scale );
+		var numerator = rescale( decimal, scale ).units;
+		var denominator = rescale( step, scale ).units;
+		var count = numerator / denominator;
+		if ( numerator % denominator > BigInt( 0 ) ) {
+			count += BigInt( 1 );
+		}
+
+		return { units: count * step.units, scale: step.scale };
+	}
+
+	function toFixed( decimal, decimals ) {
+		var rounded = roundHalfUp( decimal, decimals );
+		var negative = rounded.units < BigInt( 0 );
+		var digits = ( negative ? -rounded.units : rounded.units ).toString().padStart( decimals + 1, '0' );
+		var integerPart = digits.slice( 0, digits.length - decimals );
+
+		return ( negative ? '-' : '' ) + integerPart + ( decimals > 0 ? '.' + digits.slice( digits.length - decimals ) : '' );
 	}
 
 	function forEachElement( elements, callback ) {
@@ -160,30 +226,29 @@
 			var selectedCode = this.config.selected_currency;
 			var currency = this.config.currencies[ selectedCode ];
 			var effectiveCurrency = currency || this.config.currencies[ this.config.default_currency ];
-			var amount = toNumber( price );
-			var converted = amount;
+			var converted = toDecimal( price );
 
 			if ( currency && selectedCode !== this.config.default_currency ) {
-				converted = amount * toNumber( currency.rate );
+				converted = multiply( converted, toDecimal( currency.rate ) );
 
 				if ( 'product' === type || 'shipping' === type ) {
-					var rounding = toNumber( currency.rounding );
-					if ( rounding > 0 ) {
-						converted = Math.ceil( converted / rounding ) * rounding;
-					} else {
-						converted = roundHalfUp( converted, currency.decimals );
-					}
+					var rounding = toDecimal( currency.rounding );
+					converted = rounding.units > BigInt( 0 )
+						? ceilToStep( converted, rounding )
+						: roundHalfUp( converted, currency.decimals );
 
 					var charmOnlyProducts = false !== this.config.charm_only_products;
 					if ( 'product' === type || ( 'shipping' === type && ! charmOnlyProducts ) ) {
-						converted += toNumber( currency.charm );
+						converted = add( converted, toDecimal( currency.charm ) );
 					}
 				} else {
 					converted = roundHalfUp( converted, currency.decimals );
 				}
 			}
 
-			converted = Math.max( 0, converted );
+			if ( converted.units < BigInt( 0 ) ) {
+				converted = toDecimal( 0 );
+			}
 
 			var formatted = this.formatPrice( converted, effectiveCurrency );
 			this.setCacheEntry( cacheKey, formatted );
@@ -202,7 +267,7 @@
 		}
 
 		formatPrice( price, currency ) {
-			var fixed = toNumber( price ).toFixed( currency.decimals );
+			var fixed = toFixed( price, currency.decimals );
 			var parts = fixed.split( '.' );
 			var integerPart = parts[ 0 ];
 			var decimalPart = parts[ 1 ] || '';
@@ -447,7 +512,7 @@
 
 					if ( defaultCurrency && null !== rawPrice ) {
 						try {
-							var formatted = this.formatPrice( toNumber( rawPrice ), defaultCurrency );
+							var formatted = this.formatPrice( toDecimal( rawPrice ), defaultCurrency );
 							var placeholder = el.querySelector( '.wcpay-price-placeholder' );
 
 							if ( skeleton ) {

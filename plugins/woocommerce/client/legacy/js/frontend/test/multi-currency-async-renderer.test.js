@@ -154,6 +154,41 @@ describe( 'MultiCurrencyAsyncPriceRenderer', () => {
 		);
 	} );
 
+	// Expected values are the client renderer's output for the same input (client 11.1.0
+	// includes/multi-currency/client/async-renderer/index.ts:233-301, decimal.js-light arithmetic).
+	const currency = ( code, rate, decimals, rounding, charm ) => ( {
+		code,
+		symbol: code,
+		rate,
+		decimals,
+		decimal_sep: '.',
+		thousand_sep: ',',
+		symbol_pos: 'left',
+		rounding,
+		charm,
+	} );
+
+	test.each( [
+		[ 'product, rounding 1, charm -0.01', currency( 'EUR', 0.85, 2, 1, -0.01 ), '10.00', 'product', true, '8.99' ],
+		[ 'half cent, rounding 0', currency( 'GBP', 0.5, 2, 0, 0 ), '20.15', 'product', true, '10.08' ],
+		[ 'step crossing, rounding 0.10', currency( 'GBP', 0.1, 2, 0.1, 0 ), '3.00', 'product', true, '0.30' ],
+		[ 'shipping, charm on products only', currency( 'GBP', 0.82, 2, 0.5, -0.1 ), '10.00', 'shipping', true, '8.50' ],
+		[ 'shipping, charm on shipping too', currency( 'GBP', 0.82, 2, 0.5, -0.1 ), '10.00', 'shipping', false, '8.40' ],
+		[ 'coupon, half cent', currency( 'GBP', 0.5, 2, 0.5, -0.1 ), '20.15', 'coupon', true, '10.08' ],
+		[ 'zero-decimal currency', currency( 'JPY', 151, 0, 0, 0 ), '10.50', 'product', true, '1,586' ],
+		[ 'charm below zero clamps to zero', currency( 'GBP', 0.5, 2, 0, -1 ), '1.00', 'product', true, '0.00' ],
+		[ 'store currency selected, half cent', mockConfig.currencies.USD, '10.075', 'product', true, '10.08' ],
+	] )( 'converts %s as the client does', ( label, selected, price, type, charmOnlyProducts, expected ) => {
+		renderer.config = {
+			default_currency: 'USD',
+			selected_currency: selected.code,
+			charm_only_products: charmOnlyProducts,
+			currencies: { USD: mockConfig.currencies.USD, [ selected.code ]: selected },
+		};
+
+		expect( renderer.convertPrice( price, type ) ).toBe( expected );
+	} );
+
 	test( 'publishes the selected currency after its single async renderer initialization', async () => {
 		const originalFetch = window.fetch;
 		jest.resetModules();
