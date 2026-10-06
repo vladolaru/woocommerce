@@ -6439,103 +6439,8 @@ describe( 'WooPayments money movement pages', () => {
 		expect( lostOutcome.closest( '[tabindex="-1"]' ) ).toHaveFocus();
 	} );
 
-	it( 'does not steal focus after accepting a dispute when the modal was dismissed while pending', async () => {
-		let resolveCloseDispute: ( value: {
-			id: string;
-			status: string;
-			reason: string;
-		} ) => void = () => {};
-		mockGetPaymentIntent.mockResolvedValue( {
-			id: 'pi_test',
-			status: 'succeeded',
-			amount: 5000,
-			currency: 'usd',
-			created: 1781712000,
-			charge: {
-				id: 'ch_test',
-				balance_transaction: 'txn_test',
-				type: 'charge',
-				amount: 5000,
-				currency: 'usd',
-				created: 1781712000,
-				payment_intent: 'pi_test',
-				dispute: {
-					id: 'dp_test',
-					status: 'needs_response',
-					reason: 'fraudulent',
-					amount: 5000,
-					currency: 'usd',
-				},
-			},
-		} );
-		mockGetTimeline.mockResolvedValue( { data: [] } );
-		mockCloseDispute.mockReturnValue(
-			new Promise( ( resolve ) => {
-				resolveCloseDispute = resolve;
-			} )
-		);
-
-		render(
-			<>
-				<button type="button">Outside focus target</button>
-				<MemoryRouter
-					initialEntries={ [
-						'/woopayments/transactions/details?id=pi_test&transaction_id=txn_test',
-					] }
-				>
-					<WooPaymentsTransactionDetailsPage />
-				</MemoryRouter>
-			</>
-		);
-
-		const acceptButton = await screen.findByRole( 'button', {
-			name: 'Accept dispute',
-		} );
-
-		await act( async () => {
-			await userEvent.click( acceptButton );
-		} );
-		const acceptDialog = screen.getByRole( 'dialog' );
-		await act( async () => {
-			await userEvent.click(
-				within( acceptDialog ).getByRole( 'button', {
-					name: 'Accept dispute',
-				} )
-			);
-		} );
-		await waitFor( () =>
-			expect( mockCloseDispute ).toHaveBeenCalledWith( 'dp_test' )
-		);
-
-		await act( async () => {
-			await userEvent.click(
-				within( acceptDialog ).getByRole( 'button', {
-					name: 'Cancel',
-				} )
-			);
-		} );
-		const outsideFocusTarget = screen.getByRole( 'button', {
-			name: 'Outside focus target',
-		} );
-		outsideFocusTarget.focus();
-		expect( outsideFocusTarget ).toHaveFocus();
-
-		await act( async () => {
-			resolveCloseDispute( {
-				id: 'dp_test',
-				status: 'lost',
-				reason: 'fraudulent',
-			} );
-			await Promise.resolve();
-		} );
-
-		expect(
-			await screen.findByText( /^This dispute was lost on/ )
-		).toBeInTheDocument();
-		expect( outsideFocusTarget ).toHaveFocus();
-	} );
-
-	it( 'restores focus after accepting a dispute when the pending modal dismiss leaves focus unstable', async () => {
+	// Client 11.1.0 `dispute-awaiting-response-details.tsx:243-249`, `:394-401`: the modal cannot close while the accept runs.
+	it( 'keeps the accept modal open while the accept request runs', async () => {
 		let resolveCloseDispute: ( value: {
 			id: string;
 			status: string;
@@ -6584,7 +6489,6 @@ describe( 'WooPayments money movement pages', () => {
 		const acceptButton = await screen.findByRole( 'button', {
 			name: 'Accept dispute',
 		} );
-
 		await act( async () => {
 			await userEvent.click( acceptButton );
 		} );
@@ -6600,13 +6504,15 @@ describe( 'WooPayments money movement pages', () => {
 			expect( mockCloseDispute ).toHaveBeenCalledWith( 'dp_test' )
 		);
 
-		await act( async () => {
-			await userEvent.click(
-				within( acceptDialog ).getByRole( 'button', {
-					name: 'Cancel',
-				} )
-			);
+		const cancel = within( acceptDialog ).getByRole( 'button', {
+			name: 'Cancel',
 		} );
+		expect( cancel ).toHaveAttribute( 'aria-disabled', 'true' );
+		await act( async () => {
+			await userEvent.click( cancel );
+			await userEvent.keyboard( '{Escape}' );
+		} );
+		expect( screen.getByRole( 'dialog' ) ).toBeInTheDocument();
 
 		await act( async () => {
 			resolveCloseDispute( {
@@ -6617,10 +6523,10 @@ describe( 'WooPayments money movement pages', () => {
 			await Promise.resolve();
 		} );
 
-		// Client 11.1.0 dispute-resolution-footer.tsx: the pane turns into the lost footer, which takes focus.
 		const lostOutcome = await screen.findByText(
 			/^This dispute was lost on/
 		);
+		expect( screen.queryByRole( 'dialog' ) ).not.toBeInTheDocument();
 		expect( lostOutcome.closest( '[tabindex="-1"]' ) ).toHaveFocus();
 	} );
 

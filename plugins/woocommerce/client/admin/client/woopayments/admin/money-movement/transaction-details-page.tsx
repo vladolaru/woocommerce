@@ -504,7 +504,12 @@ const RefundModal = ( {
 			</p>
 		) }
 		<div className="woocommerce-woopayments-money-movement__refund-modal-actions">
-			<Button variant="tertiary" onClick={ onClose }>
+			<Button
+				variant="tertiary"
+				disabled={ isRefundPending }
+				accessibleWhenDisabled
+				onClick={ onClose }
+			>
 				{ __( 'Cancel', 'woocommerce' ) }
 			</Button>
 			<Button

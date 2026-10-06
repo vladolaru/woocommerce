@@ -1054,9 +1054,7 @@ export const WooPaymentsTransactionDisputeDetails = ( {
 	const [ shouldFocusDisputeDetails, setShouldFocusDisputeDetails ] =
 		useState( false );
 	const disputeHeadingRef = useRef< HTMLHeadingElement | null >( null );
-	const disputeResponseRef = useRef< HTMLDivElement | null >( null );
 	const disputeOutcomeRef = useRef< HTMLDivElement | null >( null );
-	const shouldRestoreFocusAfterAcceptRef = useRef( false );
 
 	useEffect( () => {
 		setCurrentDispute( dispute );
@@ -1088,24 +1086,11 @@ export const WooPaymentsTransactionDisputeDetails = ( {
 		currentDispute.status
 	);
 	const closeAcceptModal = () => {
-		shouldRestoreFocusAfterAcceptRef.current = false;
-		setIsAcceptModalOpen( false );
-	};
-	const shouldRestoreFocusAfterAccept = () => {
-		if ( shouldRestoreFocusAfterAcceptRef.current ) {
-			return true;
+		// Client 11.1.0 `dispute-awaiting-response-details.tsx:243-249`: no closing while the accept request runs.
+		if ( isAccepting ) {
+			return;
 		}
-
-		const ownerDocument =
-			disputeResponseRef.current?.ownerDocument ||
-			disputeHeadingRef.current?.ownerDocument;
-		const activeElement = ownerDocument?.activeElement;
-
-		return (
-			! activeElement ||
-			activeElement === ownerDocument?.body ||
-			!! disputeResponseRef.current?.contains( activeElement )
-		);
+		setIsAcceptModalOpen( false );
 	};
 	const handleAcceptDispute = async () => {
 		recordEvent( 'wcpay_dispute_accept_click', {
@@ -1114,21 +1099,17 @@ export const WooPaymentsTransactionDisputeDetails = ( {
 			dispute_reason: currentDispute.reason,
 			on_page: 'transaction_details',
 		} );
-		shouldRestoreFocusAfterAcceptRef.current = true;
 		setIsAccepting( true );
 
 		try {
 			const closedDispute = await closeWooPaymentsDispute( disputeId );
-			const shouldRestoreFocus = shouldRestoreFocusAfterAccept();
-			shouldRestoreFocusAfterAcceptRef.current = false;
 			setCurrentDispute( {
 				...currentDispute,
 				...closedDispute,
 			} );
 			setIsAcceptModalOpen( false );
-			if ( shouldRestoreFocus ) {
-				setShouldFocusDisputeDetails( true );
-			}
+			// The modal stays open until the request ends, so focus moves to the outcome that replaces the pane.
+			setShouldFocusDisputeDetails( true );
 			dispatch( 'core/notices' ).createSuccessNotice(
 				__( 'Dispute accepted.', 'woocommerce' )
 			);
@@ -1145,7 +1126,6 @@ export const WooPaymentsTransactionDisputeDetails = ( {
 					)
 				)
 			);
-			shouldRestoreFocusAfterAcceptRef.current = false;
 		} finally {
 			setIsAccepting( false );
 		}
@@ -1178,10 +1158,7 @@ export const WooPaymentsTransactionDisputeDetails = ( {
 					>
 						{ __( 'Dispute details', 'woocommerce' ) }
 					</h2>
-					<div
-						ref={ disputeResponseRef }
-						className="woocommerce-woopayments-money-movement__dispute-response"
-					>
+					<div className="woocommerce-woopayments-money-movement__dispute-response">
 						<RespondToDisputeActions
 							dispute={ currentDispute }
 							isAccepting={ isAccepting }
@@ -1247,7 +1224,12 @@ export const WooPaymentsTransactionDisputeDetails = ( {
 						</li>
 					</ul>
 					<div className="woocommerce-woopayments-money-movement__dispute-modal-actions">
-						<Button variant="tertiary" onClick={ closeAcceptModal }>
+						<Button
+							variant="tertiary"
+							disabled={ isAccepting }
+							accessibleWhenDisabled
+							onClick={ closeAcceptModal }
+						>
 							{ __( 'Cancel', 'woocommerce' ) }
 						</Button>
 						<Button
