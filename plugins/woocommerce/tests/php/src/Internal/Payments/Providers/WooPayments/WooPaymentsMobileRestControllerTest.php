@@ -113,16 +113,66 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Mobile and IPP routes require manage_woocommerce.
+	 * @testdox Every mobile and IPP route refuses visitors and customers before reaching the platform.
+	 *
+	 * @dataProvider provide_mobile_route_requests
+	 *
+	 * @param string              $method HTTP method.
+	 * @param string              $path   Route path.
+	 * @param array<string,mixed> $params Required route arguments, which WordPress validates before the permission check.
 	 */
-	public function test_routes_require_manage_woocommerce(): void {
+	public function test_routes_require_manage_woocommerce( string $method, string $path, array $params = array() ): void {
 		$this->sut->register_routes();
-		wp_set_current_user( 0 );
+		$order = $this->create_order( 12.34, 'USD' );
+		$path  = str_replace( '{order_id}', (string) $order->get_id(), $path );
 
-		$request  = new WP_REST_Request( 'POST', '/wc/v3/payments/connection_tokens' );
-		$response = $this->server->dispatch( $request );
+		foreach ( array( 0, $this->factory->user->create( array( 'role' => 'customer' ) ) ) as $user_id ) {
+			wp_set_current_user( $user_id );
+			$request = new WP_REST_Request( $method, $path );
+			$request->set_body_params( $params );
+			$response = $this->server->dispatch( $request );
 
-		$this->assertSame( rest_authorization_required_code(), $response->get_status() );
+			$this->assertSame( rest_authorization_required_code(), $response->get_status(), "User {$user_id} on {$method} {$path}." );
+		}
+		$this->assertSame( array(), $this->api_client->captures );
+		$this->assertSame( array(), $this->api_client->prepared_terminal_payments );
+		$this->assertSame( array(), $this->api_client->last_terminal_intent_payload );
+	}
+
+	/**
+	 * One request per mobile and IPP route and method.
+	 *
+	 * @return array<string,array<int,mixed>>
+	 */
+	public function provide_mobile_route_requests(): array {
+		$intent   = array( 'payment_intent_id' => 'pi_terminal' );
+		$reader   = array(
+			'location'          => 'tml_1',
+			'registration_code' => 'simulated-wpe',
+		);
+		$location = array(
+			'display_name' => 'Store',
+			'address'      => array( 'country' => 'US' ),
+		);
+
+		return array(
+			'connection token' => array( 'POST', '/wc/v3/payments/connection_tokens' ),
+			'capture'          => array( 'POST', '/wc/v3/payments/orders/{order_id}/capture_terminal_payment', $intent ),
+			'prepare'          => array( 'POST', '/wc/v3/payments/orders/{order_id}/prepare_terminal_payment', $intent ),
+			'terminal intent'  => array( 'POST', '/wc/v3/payments/orders/{order_id}/create_terminal_intent' ),
+			'customer'         => array( 'POST', '/wc/v3/payments/orders/{order_id}/create_customer' ),
+			'readers list'     => array( 'GET', '/wc/v3/payments/readers' ),
+			'reader register'  => array( 'POST', '/wc/v3/payments/readers', $reader ),
+			'reader charges'   => array( 'GET', '/wc/v3/payments/readers/charges/txn_1' ),
+			'receipt preview'  => array( 'POST', '/wc/v3/payments/readers/receipts/preview' ),
+			'receipt'          => array( 'GET', '/wc/v3/payments/readers/receipts/pi_terminal' ),
+			'store location'   => array( 'GET', '/wc/v3/payments/terminal/locations/store' ),
+			'locations list'   => array( 'GET', '/wc/v3/payments/terminal/locations' ),
+			'location create'  => array( 'POST', '/wc/v3/payments/terminal/locations', $location ),
+			'location read'    => array( 'GET', '/wc/v3/payments/terminal/locations/tml_1' ),
+			'location update'  => array( 'POST', '/wc/v3/payments/terminal/locations/tml_1' ),
+			'location delete'  => array( 'DELETE', '/wc/v3/payments/terminal/locations/tml_1' ),
+		);
 	}
 
 	/**
@@ -2054,6 +2104,44 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 				),
 			),
 			$this->api_client->prepared_terminal_payments
+		);
+	}
+
+	/**
+	 * @testdox Terminal capture sends the platform the intent and the order total in the currency's minor units.
+	 *
+	 * @dataProvider provide_capture_amounts
+	 *
+	 * @param float  $total    Order total.
+	 * @param string $currency Order currency.
+	 * @param int    $amount   Expected amount in minor units.
+	 */
+	public function test_capture_terminal_payment_captures_the_order_total( float $total, string $currency, int $amount ): void {
+		$order = $this->create_order( $total, $currency );
+		$this->set_capturable_terminal_intent( $order );
+
+		$this->sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+
+		$this->assertSame(
+			array(
+				array(
+					'intent_id' => 'pi_terminal',
+					'amount'    => $amount,
+				),
+			),
+			$this->api_client->captures
+		);
+	}
+
+	/**
+	 * Order totals and their minor-unit amounts.
+	 *
+	 * @return array<string,array{0:float,1:string,2:int}>
+	 */
+	public function provide_capture_amounts(): array {
+		return array(
+			'USD, two decimals' => array( 12.34, 'USD', 1234 ),
+			'JPY, zero decimal' => array( 1234.0, 'JPY', 1234 ),
 		);
 	}
 
