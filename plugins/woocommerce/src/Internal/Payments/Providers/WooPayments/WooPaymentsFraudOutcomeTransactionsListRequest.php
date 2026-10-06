@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use WP_REST_Request;
 
 /**
@@ -61,7 +62,14 @@ class WooPaymentsFraudOutcomeTransactionsListRequest extends WooPaymentsPaginate
 	 * @return string
 	 */
 	public function get_api(): string {
-		return 'fraud_outcomes/status/' . (string) $this->get_param( 'status' );
+		$status = $this->get_param( 'status' );
+		// The client refuses any other status before a request is built (class-list-fraud-outcome-transactions.php:40-45).
+		if ( ! in_array( $status, array( 'allow', 'block', 'review' ), true ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+			throw new WooPaymentsApiException( __( 'Invalid fraud outcome status provided.', 'woocommerce' ), 'invalid_fraud_outcome_status', 400 );
+		}
+
+		return 'fraud_outcomes/status/' . $status;
 	}
 
 	/**

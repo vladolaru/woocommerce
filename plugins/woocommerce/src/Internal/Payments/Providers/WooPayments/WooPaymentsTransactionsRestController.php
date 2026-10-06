@@ -402,6 +402,8 @@ class WooPaymentsTransactionsRestController implements RegisterHooksInterface {
 	private function get_fraud_outcome_params( WP_REST_Request $request, string $hook ): array {
 		WooPaymentsFraudOutcomeTransactionsListRequest::register_legacy_alias();
 		$fraud_outcome_request = WooPaymentsFraudOutcomeTransactionsListRequest::from_rest_request( $request );
+		// A callback may send() the request it receives, which needs the hook it was filtered under.
+		$fraud_outcome_request->assign_hook( $hook );
 
 		/**
 		 * Allows the WooPayments fraud outcome request to be modified before it is sent to the platform.

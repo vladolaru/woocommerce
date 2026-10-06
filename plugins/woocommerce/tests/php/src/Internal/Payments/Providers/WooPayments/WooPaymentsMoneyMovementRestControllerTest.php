@@ -1064,6 +1064,36 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
+	 * @testdox A fraud outcome request handed to a filter carries its hook, so a callback can send it, and refuses an unknown status.
+	 *
+	 * Client 11.1.0 requests are sent under their assigned hook, and get_api() rejects any status but allow, block and review
+	 * (class-list-fraud-outcome-transactions.php:40-45).
+	 */
+	public function test_fraud_outcome_request_carries_its_hook_and_refuses_unknown_status(): void {
+		$this->create_transactions_controller( true )->register_routes();
+		$filtered = null;
+		add_filter(
+			'wcpay_list_fraud_outcome_transactions_request',
+			static function ( $request ) use ( &$filtered ) {
+				$filtered = $request;
+
+				return $request;
+			}
+		);
+		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/transactions/fraud-outcomes' );
+		$request->set_query_params( array( 'status' => 'review' ) );
+		$this->server->dispatch( $request );
+
+		$this->assertInstanceOf( WooPaymentsFraudOutcomeTransactionsListRequest::class, $filtered );
+		$this->assertSame( 'wcpay_list_fraud_outcome_transactions_request', $filtered->get_hook() );
+		$this->assertSame( 'fraud_outcomes/status/review', $filtered->get_api() );
+
+		$filtered->set_status( 'review/../../accounts' );
+		$this->expectException( WooPaymentsApiException::class );
+		$filtered->get_api();
+	}
+
+	/**
 	 * @testdox Fraud outcome routes enrich every platform row, like client 11.1.0 List_Fraud_Outcome_Transactions::format_response().
 	 */
 	public function test_fraud_outcome_routes_enrich_every_platform_row(): void {
