@@ -337,9 +337,11 @@ class WooPaymentsEventIngestor {
 		}
 
 		// The plugin's canceled/amount_capturable_updated handlers are nothing but
-		// this cache invalidation and never resolve an order, so it runs up front.
+		// this cache invalidation and never resolve an order.
 		if ( in_array( $event_type, array( 'payment_intent.canceled', 'payment_intent.amount_capturable_updated' ), true ) ) {
 			$this->get_admin_menu_badge_service()->invalidate_authorization_summary_caches();
+			$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
+			return;
 		}
 
 		$order = $this->get_order_for_event_object( $event_type, $event_object );
@@ -810,10 +812,6 @@ class WooPaymentsEventIngestor {
 					PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED,
 					$note_candidates
 				);
-
-			case 'payment_intent.canceled':
-			case 'payment_intent.amount_capturable_updated':
-				return null;
 
 			case 'charge.expired':
 				$charge_id       = $this->get_object_id( $event_object );
