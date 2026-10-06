@@ -44,6 +44,15 @@ interface WooPaymentsPaymentMethodDefinition {
 	public function get_account_capability_key(): string;
 
 	/**
+	 * Tell whether this method is retired: no longer offered to new accounts, still processed for accounts that hold it.
+	 *
+	 * A retired method is listed and offered only while the account's capability for it is active.
+	 *
+	 * @return bool
+	 */
+	public function is_legacy(): bool;
+
+	/**
 	 * Tell whether this definition should publish a WooCommerce payment gateway.
 	 *
 	 * Internal method definitions may still have a gateway instance for processing and settings.

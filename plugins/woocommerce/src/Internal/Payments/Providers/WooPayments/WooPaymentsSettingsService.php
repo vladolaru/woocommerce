@@ -927,11 +927,26 @@ class WooPaymentsSettingsService {
 			}
 
 			$available_ids = $this->apply_payment_method_feature_policy( array_values( array_unique( $available_ids ) ) );
+			$available_ids = array_filter( $available_ids, fn( string $payment_method_id ): bool => $this->is_listable_payment_method( $payment_method_id ) );
 		}
 
 		return array_values(
 			array_intersect( $filtered_catalog, $available_ids )
 		);
+	}
+
+	/**
+	 * Tell whether a payment method with account fees may be listed: a retired method only while its capability is active.
+	 *
+	 * @param string $payment_method_id Payment method ID.
+	 * @return bool
+	 */
+	private function is_listable_payment_method( string $payment_method_id ): bool {
+		$definition = $this->get_payment_method_registry()->get( $payment_method_id );
+
+		return null === $definition
+			|| ! $definition->is_legacy()
+			|| $this->account_service->is_capability_active( $definition->get_account_capability_key() );
 	}
 
 	/**

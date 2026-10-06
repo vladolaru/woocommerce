@@ -515,6 +515,48 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * P24 is retired: the platform no longer offers it to new accounts. Fees and capability statuses use the platform's
+	 * account shape (client 11.1.0 `includes/class-wc-payment-gateway-wcpay.php:4696-4717`; fee keys are payment method IDs).
+	 *
+	 * @testdox Should list a retired payment method only while its capability is active, and others by their fees alone.
+	 * @testWith ["active", true]
+	 *           ["unrequested", false]
+	 *           ["inactive", false]
+	 *
+	 * @param string $p24_status Platform status of the p24_payments capability.
+	 * @param bool   $listed     Whether P24 should be listed.
+	 */
+	public function test_get_settings_lists_a_retired_method_only_while_its_capability_is_active( string $p24_status, bool $listed ): void {
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => array(
+					'account_id'   => 'acct_native_test',
+					'is_live'      => true,
+					'capabilities' => array(
+						'card_payments'       => 'active',
+						'p24_payments'        => $p24_status,
+						'sepa_debit_payments' => 'unrequested',
+					),
+					'fees'         => array(
+						'card'       => array(),
+						'p24'        => array(),
+						'sepa_debit' => array(),
+					),
+				),
+				'fetched' => time(),
+				'errored' => false,
+			)
+		);
+
+		$available = $this->sut->get_settings()['available_payment_method_ids'];
+
+		$this->assertSame( $listed, in_array( 'p24', $available, true ) );
+		$this->assertContains( 'sepa_debit', $available, 'A method that is not retired is listed by its fee, whatever its status.' );
+		$this->assertContains( 'card', $available );
+	}
+
+	/**
 	 * @testdox Public settings filters the registry catalog before deriving fee-backed availability.
 	 */
 	public function test_get_settings_filters_catalog_before_reading_fee_backed_availability(): void {

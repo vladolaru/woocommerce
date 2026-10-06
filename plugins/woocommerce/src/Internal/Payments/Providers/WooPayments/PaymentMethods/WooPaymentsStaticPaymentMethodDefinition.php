@@ -74,6 +74,15 @@ class WooPaymentsStaticPaymentMethodDefinition implements WooPaymentsPaymentMeth
 	}
 
 	/**
+	 * Tell whether this method is retired: no longer offered to new accounts, still processed for accounts that hold it.
+	 *
+	 * @return bool
+	 */
+	public function is_legacy(): bool {
+		return true === ( $this->config['legacy'] ?? false );
+	}
+
+	/**
 	 * Tell whether this definition should publish a WooCommerce payment gateway.
 	 *
 	 * @return bool
