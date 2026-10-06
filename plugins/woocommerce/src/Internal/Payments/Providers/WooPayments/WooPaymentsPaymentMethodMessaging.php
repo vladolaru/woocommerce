@@ -559,7 +559,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 				continue;
 			}
 
-			if ( ! $this->is_capability_active( $definition->get_stripe_id() ) ) {
+			if ( ! $this->account_service->is_capability_active( $definition->get_account_capability_key() ) ) {
 				continue;
 			}
 
@@ -569,24 +569,6 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 		$this->active_bnpl_payment_method_ids = array_values( array_unique( $active_bnpl_methods ) );
 
 		return $this->active_bnpl_payment_method_ids;
-	}
-
-	/**
-	 * Tell whether the cached account capability is active.
-	 *
-	 * @param string $capability_key Stripe capability key.
-	 * @return bool
-	 */
-	private function is_capability_active( string $capability_key ): bool {
-		$account_data = $this->account_service->get_cached_account_data();
-		$capabilities = isset( $account_data['capabilities'] ) && is_array( $account_data['capabilities'] ) ? $account_data['capabilities'] : array();
-		$status       = $capabilities[ $capability_key ] ?? null;
-
-		if ( is_array( $status ) ) {
-			$status = $status['status'] ?? null;
-		}
-
-		return 'active' === $status;
 	}
 
 	/**

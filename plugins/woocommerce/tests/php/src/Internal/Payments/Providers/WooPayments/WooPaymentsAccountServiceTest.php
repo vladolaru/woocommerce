@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use RuntimeException;
@@ -764,6 +765,43 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertFalse( $sut->is_account_rejected() );
 		$this->assertTrue( $sut->is_account_under_review() );
+	}
+
+	/**
+	 * Capability statuses are the platform's vocabulary (client 11.1.0 `includes/class-wc-payment-gateway-wcpay.php:908-913`
+	 * offers a method only on `active`); with none reported, card payments count as active (`:4696-4717`).
+	 *
+	 * @testdox Should report a capability active only when the platform says active, and card payments before any are reported.
+	 */
+	public function test_is_capability_active_reads_the_reported_status(): void {
+		$capabilities = array(
+			'card_payments'       => 'active',
+			'link_payments'       => 'pending',
+			'klarna_payments'     => 'inactive',
+			'sepa_debit_payments' => 'disabled',
+		);
+		update_option( 'wcpay_account_data', array( 'data' => $this->get_valid_live_account_payload( array( 'capabilities' => $capabilities ) ) ) );
+		$sut = $this->create_service();
+
+		$this->assertTrue( $sut->is_capability_active( 'card_payments' ) );
+		foreach ( array( 'link_payments', 'klarna_payments', 'sepa_debit_payments', 'affirm_payments' ) as $capability_key ) {
+			$this->assertFalse( $sut->is_capability_active( $capability_key ), $capability_key );
+		}
+
+		update_option( 'wcpay_account_data', array( 'data' => $this->get_valid_live_account_payload() ) );
+		$sut      = $this->create_service();
+		$registry = new WooPaymentsPaymentMethodRegistry();
+
+		// Before capabilities are reported, the methods backed by card payments stay active and the others do not.
+		$expectations = array(
+			'card'       => true,
+			'apple_pay'  => true,
+			'google_pay' => true,
+			'bancontact' => false,
+		);
+		foreach ( $expectations as $payment_method_id => $expected ) {
+			$this->assertSame( $expected, $sut->is_capability_active( $registry->get( $payment_method_id )->get_account_capability_key() ), $payment_method_id );
+		}
 	}
 
 	/**

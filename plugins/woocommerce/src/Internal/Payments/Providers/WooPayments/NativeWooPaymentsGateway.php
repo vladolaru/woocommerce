@@ -554,7 +554,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		if ( 'card' !== $this->get_payment_method_id() && ! $this->get_account_service()->is_gateway_enabled() ) {
 			return false;
 		}
-		if ( ! $this->get_provider()->can_process_payments() || ! $this->is_account_capability_active() ) {
+		if ( ! $this->get_provider()->can_process_payments() || ! $this->get_account_service()->is_capability_active( $this->payment_method_definition->get_account_capability_key() ) ) {
 			return false;
 		}
 
@@ -1521,29 +1521,6 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		return '' !== $country ? $country : 'US';
-	}
-
-	/**
-	 * Tell whether the connected account has this payment method's capability active.
-	 *
-	 * An empty capability map is the pre-onboarding fallback used by WooPayments: the reference
-	 * client synthesizes an active card_payments capability, so every method backed by it
-	 * (card, Apple Pay, Google Pay) stays available while other methods require an explicit
-	 * active capability.
-	 *
-	 * @return bool
-	 */
-	private function is_account_capability_active(): bool {
-		$account_data = $this->get_account_service()->get_cached_account_data();
-		$capabilities = is_array( $account_data['capabilities'] ?? null ) ? $account_data['capabilities'] : array();
-
-		if ( array() === $capabilities ) {
-			return 'card_payments' === $this->payment_method_definition->get_account_capability_key();
-		}
-
-		$capability_key = $this->payment_method_definition->get_account_capability_key();
-
-		return 'active' === ( $capabilities[ $capability_key ] ?? null );
 	}
 
 	/**

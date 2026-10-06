@@ -112,8 +112,8 @@ class WooPaymentsSetUpLinkNote {
 		}
 
 		// The client drops Link from the enabled methods when card is not enabled, so only card-without-Link qualifies.
-		return $this->is_enabled_at_checkout( self::CARD, $account_data, $fee_ids )
-			&& ! $this->is_enabled_at_checkout( self::LINK, $account_data, $fee_ids );
+		return $this->is_enabled_at_checkout( self::CARD, $fee_ids )
+			&& ! $this->is_enabled_at_checkout( self::LINK, $fee_ids );
 	}
 
 	/**
@@ -148,12 +148,11 @@ class WooPaymentsSetUpLinkNote {
 	 * (an empty capability map counts as an active card capability). Manual capture keeps card and Link, and neither
 	 * has amount limits or country restrictions, so those checks cannot change the result.
 	 *
-	 * @param string              $payment_method_id Payment method ID.
-	 * @param array<string,mixed> $account_data      Cached account data.
-	 * @param string[]            $fee_ids           Payment method IDs with account fees.
+	 * @param string   $payment_method_id Payment method ID.
+	 * @param string[] $fee_ids           Payment method IDs with account fees.
 	 * @return bool
 	 */
-	private function is_enabled_at_checkout( string $payment_method_id, array $account_data, array $fee_ids ): bool {
+	private function is_enabled_at_checkout( string $payment_method_id, array $fee_ids ): bool {
 		$enabled_ids = $this->account_service->get_gateway_setting( 'upe_enabled_payment_method_ids' );
 		if ( ! is_array( $enabled_ids ) || ! in_array( $payment_method_id, $enabled_ids, true ) || ! in_array( $payment_method_id, $fee_ids, true ) ) {
 			return false;
@@ -164,11 +163,6 @@ class WooPaymentsSetUpLinkNote {
 			return false;
 		}
 
-		$capabilities = is_array( $account_data['capabilities'] ?? null ) ? $account_data['capabilities'] : array();
-		if ( array() === $capabilities ) {
-			$capabilities = array( 'card_payments' => 'active' );
-		}
-
-		return 'active' === ( $capabilities[ $definition->get_account_capability_key() ] ?? null );
+		return $this->account_service->is_capability_active( $definition->get_account_capability_key() );
 	}
 }

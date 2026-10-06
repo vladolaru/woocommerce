@@ -1205,6 +1205,35 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Apple Pay and Google Pay run on the card_payments capability; the client offers a method only while it is `active`
+	 * (client 11.1.0 `includes/class-wc-payment-gateway-wcpay.php:908-913`).
+	 *
+	 * @testdox Should leave the payment-list wallets out while card payments are reported but not active.
+	 */
+	public function test_get_payment_fields_js_config_omits_payment_list_wallets_without_active_card_payments(): void {
+		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', '1' );
+		$account_service = $this->create_account_service_for_bridge(
+			true,
+			array(
+				'country'      => 'US',
+				'capabilities' => array( 'card_payments' => 'pending' ),
+			),
+			array(
+				'express_checkout_in_payment_methods' => 'yes',
+				'payment_request_method_ids'          => array( 'apple_pay', 'google_pay' ),
+				'upe_enabled_payment_method_ids'      => array( 'card' ),
+			)
+		);
+		$sut             = new WooPaymentsCheckoutBridge();
+		$sut->init( $this->create_legacy_runtime_for_bridge(), $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+
+		$config = $sut->get_payment_fields_js_config( self::CARD_SUPPORTS );
+
+		$this->assertTrue( $config['isExpressCheckoutInPaymentMethodsEnabled'] );
+		$this->assertEmpty( $config['paymentListWalletsConfig'] ?? array() );
+	}
+
+	/**
 	 * @testdox Should not fold Link into card when Link does not support the checkout currency.
 	 */
 	public function test_get_payment_fields_js_config_excludes_link_for_unsupported_currency(): void {
@@ -2964,37 +2993,6 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$service->method( 'get_styles_cache_version' )->willReturn( 'styles-v1' );
 
 		return $service;
-	}
-
-	/**
-	 * @testdox Should keep card_payments-backed methods active in the bridge on an empty capabilities payload
-	 */
-	public function test_bridge_capability_check_falls_back_to_card_payments_on_empty_capabilities(): void {
-		$sut = new WooPaymentsCheckoutBridge();
-		$sut->init(
-			$this->create_legacy_runtime_for_bridge(),
-			$this->create_account_service_for_bridge( true ),
-			$this->create_woopay_session_service_for_bridge( false ),
-			$this->create_frontend_styles_service_for_bridge(),
-			$this->create_frontend_tracking_controller_for_bridge()
-		);
-
-		$registry = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry();
-		$method   = new \ReflectionMethod( WooPaymentsCheckoutBridge::class, 'is_payment_method_capability_active' );
-		$method->setAccessible( true );
-
-		$expectations = array(
-			'card'       => true,
-			'apple_pay'  => true,
-			'google_pay' => true,
-			'bancontact' => false,
-		);
-
-		foreach ( $expectations as $payment_method_id => $expected ) {
-			$definition = $registry->get( $payment_method_id );
-			$this->assertNotNull( $definition );
-			$this->assertSame( $expected, $method->invoke( $sut, $definition ), "Empty-capabilities fallback for {$payment_method_id}" );
-		}
 	}
 
 	/**

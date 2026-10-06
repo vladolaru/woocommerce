@@ -1264,7 +1264,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			if (
 				null === $definition
 				|| ! $this->get_account_service()->is_payment_request_method_enabled( $payment_method_id )
-				|| ! $this->is_payment_method_capability_active( $definition )
+				|| ! $this->get_account_service()->is_capability_active( $definition->get_account_capability_key() )
 				|| ! $definition->is_available_for( $currency, $this->get_account_country() )
 			) {
 				continue;
@@ -1314,25 +1314,6 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		}
 
 		return WC()->plugin_url() . '/' . ltrim( $asset_path, '/' );
-	}
-
-	/**
-	 * Tell whether one definition's account capability is active.
-	 *
-	 * @param WooPaymentsPaymentMethodDefinition $definition Payment method definition.
-	 * @return bool
-	 */
-	private function is_payment_method_capability_active( WooPaymentsPaymentMethodDefinition $definition ): bool {
-		$account_data = $this->get_account_service()->get_cached_account_data();
-		$capabilities = is_array( $account_data['capabilities'] ?? null ) ? $account_data['capabilities'] : array();
-
-		if ( array() === $capabilities ) {
-			// Pre-onboarding fallback: the reference client synthesizes an active
-			// card_payments capability when the map is empty.
-			return 'card_payments' === $definition->get_account_capability_key();
-		}
-
-		return 'active' === ( $capabilities[ $definition->get_account_capability_key() ] ?? null );
 	}
 
 	/**

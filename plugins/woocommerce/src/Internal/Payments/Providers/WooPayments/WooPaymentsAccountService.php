@@ -1173,6 +1173,27 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Tell whether the platform reports an account capability as active.
+	 *
+	 * Only `active` counts; every other status the platform reports (pending, inactive, rejected, disabled and the rest) does
+	 * not. With no capabilities reported, card payments count as active, as the client assumes before onboarding
+	 * (client 11.1.0 `includes/class-wc-payment-gateway-wcpay.php:4696-4717`).
+	 *
+	 * @param string $capability_key Capability key, such as `card_payments` or `link_payments`.
+	 * @return bool
+	 */
+	public function is_capability_active( string $capability_key ): bool {
+		$account_data = $this->get_cached_account_data();
+		$capabilities = is_array( $account_data['capabilities'] ?? null ) ? $account_data['capabilities'] : array();
+
+		if ( array() === $capabilities ) {
+			return 'card_payments' === $capability_key;
+		}
+
+		return 'active' === ( $capabilities[ $capability_key ] ?? null );
+	}
+
+	/**
 	 * Tell whether WooPayments has an account cache entry.
 	 *
 	 * @return bool

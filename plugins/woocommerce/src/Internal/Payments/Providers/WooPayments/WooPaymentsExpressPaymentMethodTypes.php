@@ -410,12 +410,10 @@ class WooPaymentsExpressPaymentMethodTypes {
 			return false;
 		}
 
-		$capabilities = $account_data['capabilities'] ?? array();
-		$fees         = $account_data['fees'] ?? array();
+		$fees = $account_data['fees'] ?? array();
 
-		return is_array( $capabilities )
-			&& is_array( $fees )
-			&& 'active' === ( $capabilities['amazon_pay_payments'] ?? null )
+		return is_array( $fees )
+			&& $account_service->is_capability_active( 'amazon_pay_payments' )
 			&& is_array( $fees[ self::STRIPE_TYPE_AMAZON_PAY ] ?? null );
 	}
 

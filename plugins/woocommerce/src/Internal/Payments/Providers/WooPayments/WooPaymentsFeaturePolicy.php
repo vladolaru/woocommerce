@@ -172,9 +172,8 @@ final class WooPaymentsFeaturePolicy {
 		}
 
 		$account_data = $account_service->get_cached_account_data();
-		$capabilities = is_array( $account_data['capabilities'] ?? null ) ? $account_data['capabilities'] : array();
 		$fees         = is_array( $account_data['fees'] ?? null ) ? $account_data['fees'] : array();
 
-		return 'active' === ( $capabilities['link_payments'] ?? null ) && array_key_exists( 'link', $fees );
+		return $account_service->is_capability_active( $link_definition->get_account_capability_key() ) && array_key_exists( 'link', $fees );
 	}
 }
