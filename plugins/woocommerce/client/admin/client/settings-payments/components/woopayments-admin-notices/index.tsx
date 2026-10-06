@@ -98,11 +98,12 @@ export const WooPaymentsAdminNotices = ( {
 	] );
 
 	const finish = () => {
-		// Move focus only when it is still on the notice; a user who moved on during the request keeps their place.
-		const activeElement = noticeRef.current?.ownerDocument.activeElement;
+		// Move focus only when it is still on the notice, or was lost with it; a user who moved on keeps their place.
+		const ownerDocument = focusTargetRef.current?.ownerDocument ?? document;
+		const activeElement = ownerDocument.activeElement;
 		if (
 			! activeElement ||
-			activeElement === activeElement.ownerDocument.body ||
+			activeElement === ownerDocument.body ||
 			noticeRef.current?.contains( activeElement )
 		) {
 			focusTargetRef.current?.focus();

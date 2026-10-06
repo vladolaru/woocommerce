@@ -241,6 +241,48 @@ describe( 'WooPaymentsAdminNotices', () => {
 		}
 	} );
 
+	it( 'leaves focus where the user moved it when the notice was removed while its action ran', async () => {
+		const currentNotice = { ...notice };
+		let finishSnooze: ( value: { success: boolean } ) => void = () => {};
+		( apiFetch as jest.Mock ).mockImplementation( ( { url } ) => {
+			if ( url === currentNotice._links.snooze?.href ) {
+				return new Promise( ( resolve ) => {
+					finishSnooze = resolve;
+				} );
+			}
+			return Promise.resolve( { success: true } );
+		} );
+		const onDismiss = jest.fn();
+		const elsewhere = document.createElement( 'button' );
+		document.body.appendChild( elsewhere );
+		const { unmount } = render(
+			<WooPaymentsAdminNotices
+				notice={ currentNotice }
+				focusTargetRef={ { current: focusTarget } }
+				onDismiss={ onDismiss }
+			/>
+		);
+
+		try {
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Maybe later' } )
+			);
+			// A provider refresh removes the notice while the settings page stays.
+			unmount();
+			elsewhere.focus();
+			await act( async () => {
+				finishSnooze( { success: true } );
+			} );
+			await waitFor( () =>
+				expect( onDismiss ).toHaveBeenCalledTimes( 1 )
+			);
+
+			expect( elsewhere ).toHaveFocus();
+		} finally {
+			elsewhere.remove();
+		}
+	} );
+
 	it( 'retains the notice and announces an action failure', async () => {
 		let rejectRequest: ( error: Error ) => void = () => {};
 		( apiFetch as jest.Mock ).mockImplementation( ( { url } ) => {
