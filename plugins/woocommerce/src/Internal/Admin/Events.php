@@ -213,7 +213,13 @@ class Events {
 	 * Deletes notes whose surfaces were removed from core.
 	 */
 	protected function possibly_delete_deprecated_notes(): void {
-		Notes::delete_notes_with_name( 'wc-admin-woocommerce-payments' );
+		Notes::delete_notes_with_name(
+			array(
+				'wc-admin-woocommerce-payments',
+				'wc-admin-payments-remind-me-later',
+				'wc-admin-payments-more-info-needed',
+			)
+		);
 	}
 
 	/**
