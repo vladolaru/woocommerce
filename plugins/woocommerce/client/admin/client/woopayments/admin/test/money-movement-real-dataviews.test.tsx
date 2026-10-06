@@ -119,6 +119,7 @@ beforeEach( () => {
 			},
 		},
 	} as typeof window.wcSettings;
+	// Empty answers are test sentinels: the lists read `data` and the totals `count`; the tests read only the requests.
 	( getWooPaymentsTransactions as jest.Mock ).mockResolvedValue( {
 		data: [],
 	} );

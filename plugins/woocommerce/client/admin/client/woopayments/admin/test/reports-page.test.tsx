@@ -811,6 +811,87 @@ describe( 'WooPaymentsReportsPage', () => {
 		).not.toBeInTheDocument();
 	} );
 
+	it( 'keeps the Fees rows of the current query when an earlier request fails last', async () => {
+		let rejectEarlier: ( error: Error ) => void = () => {};
+		renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
+		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Apply detailed fees view' } )
+		);
+		const feesDateRange = screen.getByLabelText( 'Date range' );
+
+		mockGetFees
+			.mockImplementationOnce(
+				() =>
+					new Promise( ( resolve, reject ) => {
+						rejectEarlier = reject;
+					} )
+			)
+			.mockImplementation( async () => [
+				{ ...feeRow, transaction_id: 'txn_new' },
+			] );
+		fireEvent.change( feesDateRange, {
+			target: { value: 'last_month' },
+		} );
+		fireEvent.change( feesDateRange, {
+			target: { value: 'last_year' },
+		} );
+		await screen.findByRole( 'link', { name: 'txn_new' } );
+
+		await act( async () => {
+			rejectEarlier( new Error( 'Earlier request failed.' ) );
+			await waitForNextTick();
+		} );
+
+		expect(
+			screen.getByRole( 'link', { name: 'txn_new' } )
+		).toBeInTheDocument();
+		expect(
+			screen.queryByText( 'Fees report could not be loaded.' )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'keeps the Balance totals of the current query when an earlier request answers last', async () => {
+		let resolveEarlier: (
+			summary: typeof balanceSummary
+		) => void = () => {};
+		renderReportsPage();
+		await waitFor( () =>
+			expect( mockGetBalanceSummary ).toHaveBeenCalledTimes( 1 )
+		);
+		const balanceDateRange = await screen.findByLabelText( 'Date range' );
+
+		mockGetBalanceSummary
+			.mockImplementationOnce(
+				() =>
+					new Promise( ( resolve ) => {
+						resolveEarlier = resolve;
+					} )
+			)
+			.mockImplementation( async () => ( {
+				...balanceSummary,
+				ending_balance: { amount: 222222 },
+			} ) );
+		fireEvent.change( balanceDateRange, {
+			target: { value: 'last_year' },
+		} );
+		fireEvent.change( balanceDateRange, {
+			target: { value: 'last_month' },
+		} );
+		await screen.findByText( /2,222\.22/ );
+
+		await act( async () => {
+			resolveEarlier( {
+				...balanceSummary,
+				ending_balance: { amount: 111111 },
+			} );
+			await waitForNextTick();
+		} );
+
+		expect( screen.getByText( /2,222\.22/ ) ).toBeInTheDocument();
+		expect( screen.queryByText( /1,111\.11/ ) ).not.toBeInTheDocument();
+	} );
+
 	it( 'applies previous-period presets to Balance and Fees using the stable report clock', async () => {
 		renderReportsPage();
 
