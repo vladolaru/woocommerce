@@ -42,14 +42,23 @@ class WooPaymentsEmbeddedAccountSessionService {
 	 * @return array<string,mixed>
 	 */
 	public function create_session(): array {
+		// Like the client, a failure answers an empty session (client 11.1.0 `includes/class-wc-payments-account.php:3248-3258`);
+		// native also logs it, since the merchant only sees the embedded component fail to load.
 		try {
 			$session = $this->api_client->create_embedded_account_session();
 		} catch ( WooPaymentsApiException $exception ) {
-			unset( $exception );
+			wc_get_logger()->error(
+				'Native WooPayments could not create an embedded account session.',
+				array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => 'woopayments-account-session' ) )
+			);
 			return array();
 		}
 
 		if ( ! $this->is_valid_session( $session ) ) {
+			wc_get_logger()->error(
+				'Native WooPayments received an embedded account session without the fields the page needs.',
+				array( 'source' => 'woopayments-account-session' )
+			);
 			return array();
 		}
 

@@ -74,10 +74,12 @@ class WooPaymentsEmbeddedAccountSessionServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_create_session_returns_empty_array_for_malformed_payloads( array $payload ): void {
 		$this->api_client->response = $payload;
+		$logger                     = RecordingWcLogger::install();
 
 		$session = $this->sut->create_session();
 
 		$this->assertSame( array(), $session, 'Malformed account-session payloads should not be exposed.' );
+		$this->assertCount( 1, $logger->get_errors(), 'A rejected session payload is logged.' );
 	}
 
 	/**
@@ -85,10 +87,14 @@ class WooPaymentsEmbeddedAccountSessionServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_create_session_returns_empty_array_when_api_request_fails(): void {
 		$this->api_client->exception = new WooPaymentsApiException( 'Disconnected.', 'wcpay_wpcom_not_connected', 409 );
+		$logger                      = RecordingWcLogger::install();
 
 		$session = $this->sut->create_session();
 
 		$this->assertSame( array(), $session, 'Disconnected account-session requests should fail closed.' );
+		$this->assertCount( 1, $logger->get_errors(), 'The platform failure is logged.' );
+		$this->assertSame( array( 409, 'wcpay_wpcom_not_connected' ), array( $logger->contexts[0]['http_status'], $logger->contexts[0]['error_code'] ) );
+		$this->assertStringNotContainsString( 'Disconnected.', (string) wp_json_encode( $logger->lines ) );
 	}
 
 	/**
