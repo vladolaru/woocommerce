@@ -46,6 +46,18 @@ class MultiCurrencyPriceCalculatorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should round an amount already in the currency to its decimals and add the charm, for the store currency too.
+	 */
+	public function test_adjusts_an_amount_already_in_the_currency(): void {
+		$calculator = new MultiCurrencyPriceCalculator( $this->create_localization() );
+
+		// Zero rounding rounds to the currency's decimals before the charm (client 11.1.0 `includes/multi-currency/MultiCurrency.php:1657-1683`).
+		$this->assertEqualsWithDelta( 8.11, $calculator->get_adjusted_amount( '8.214', $this->create_currency( 'GBP', 0.82, false, '0', -0.10 ) ), 0.000001 );
+		$this->assertSame( 10.21, $calculator->get_adjusted_amount( '10.214', $this->create_currency( 'USD', 1.0, true ) ) );
+		$this->assertSame( 1235.0, $calculator->get_adjusted_amount( '1234.6', $this->create_currency( 'JPY', 150.0, false ) ) );
+	}
+
+	/**
 	 * @testdox Should apply shipping charm only when configured.
 	 */
 	public function test_applies_shipping_charm_only_when_configured(): void {
