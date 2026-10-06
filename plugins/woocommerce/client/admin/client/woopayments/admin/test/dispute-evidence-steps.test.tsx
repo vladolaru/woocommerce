@@ -33,7 +33,8 @@ const mockUpdateDispute = updateWooPaymentsDispute as jest.MockedFunction<
 	typeof updateWooPaymentsDispute
 >;
 
-// A digital product dispute, so the form has two steps: Purchase info and Review.
+// The platform's disputes/:id answer, a Stripe dispute with its charge expanded (wpcom class-disputes-controller.php:293-305),
+// reduced to the fields the form reads. A digital product, so the form has two steps: Purchase info and Review.
 const makeDispute = (
 	overrides: Partial< WooPaymentsDispute > = {}
 ): WooPaymentsDispute => ( {

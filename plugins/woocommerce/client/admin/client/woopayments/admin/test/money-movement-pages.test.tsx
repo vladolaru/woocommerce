@@ -5246,6 +5246,8 @@ describe( 'WooPayments money movement pages', () => {
 	} );
 
 	it( 'requests the timeline while the authorization is still loading', async () => {
+		// Shape: the native payment_intents route (WooPaymentsPaymentDetailsRestController::get_payment_intent), the
+		// platform intent with its charge (wpcom class-intentions-controller.php:755-777) plus the order; fields the page reads.
 		mockGetPaymentIntent.mockResolvedValue( {
 			id: 'pi_auth',
 			status: 'requires_capture',
@@ -6439,7 +6441,7 @@ describe( 'WooPayments money movement pages', () => {
 		expect( lostOutcome.closest( '[tabindex="-1"]' ) ).toHaveFocus();
 	} );
 
-	// Client 11.1.0 `dispute-awaiting-response-details.tsx:243-249`, `:394-401`: the modal cannot close while the accept runs.
+	// Client 11.1.0 `dispute-awaiting-response-details.tsx:243-249`, `:508-517`: the modal cannot close while the accept runs.
 	it( 'keeps the accept modal open while the accept request runs', async () => {
 		let resolveCloseDispute: ( value: {
 			id: string;
