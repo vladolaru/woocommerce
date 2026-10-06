@@ -53,7 +53,8 @@ class WooPaymentsNativeApiClientAdapterTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_currency', 'USD' );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
 		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'automatic' );
-		// A good fetch two days ago, past the storefront's 12-hour lifetime.
+		// A good fetch two days ago, past the storefront's 12-hour lifetime. Shape: the client's cache entry around its generator's result
+		// (client 11.1.0 `includes/class-database-cache.php:364-382`, `includes/multi-currency/MultiCurrency.php:504-508`).
 		update_option(
 			MultiCurrencyCacheInterface::CURRENCIES_KEY,
 			array(
