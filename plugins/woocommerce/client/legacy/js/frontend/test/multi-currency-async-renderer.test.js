@@ -178,6 +178,7 @@ describe( 'MultiCurrencyAsyncPriceRenderer', () => {
 		[ 'zero-decimal currency', currency( 'JPY', 151, 0, 0, 0 ), '10.50', 'product', true, '1,586' ],
 		[ 'charm below zero clamps to zero', currency( 'GBP', 0.5, 2, 0, -1 ), '1.00', 'product', true, '0.00' ],
 		[ 'store currency selected, half cent', mockConfig.currencies.USD, '10.075', 'product', true, '10.08' ],
+		[ 'rate written with an exponent', currency( 'BTC', 1e-7, 2, 0, 0 ), '123456789', 'product', true, '12.35' ],
 	] )( 'converts %s as the client does', ( label, selected, price, type, charmOnlyProducts, expected ) => {
 		renderer.config = {
 			default_currency: 'USD',
