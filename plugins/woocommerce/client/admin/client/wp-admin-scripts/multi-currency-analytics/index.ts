@@ -137,24 +137,25 @@ export const applyReportCurrencySymbol = (
 	return symbol ? { ...config, symbol } : config;
 };
 
+// The plugin's namespace, kept so code that removes these callbacks by namespace still can (client 11.1.0 `analytics/index.js:18`).
 addFilter(
 	'woocommerce_admin_orders_report_advanced_filters',
-	'woocommerce/multi-currency',
+	'woocommerce-payments',
 	addCustomerCurrencyAdvancedFilter
 );
 addFilter(
 	'woocommerce_admin_report_table',
-	'woocommerce/multi-currency',
+	'woocommerce-payments',
 	addCustomerCurrencyColumn
 );
 addFilter(
 	'woocommerce_admin_orders_report_filters',
-	'woocommerce/multi-currency',
+	'woocommerce-payments',
 	addCustomerCurrencyReportFilter
 );
 // Show the selected currency's symbol in the report totals.
 addFilter(
 	'woocommerce_admin_report_currency',
-	'woocommerce/multi-currency',
+	'woocommerce-payments',
 	applyReportCurrencySymbol
 );

@@ -106,13 +106,6 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	private $default_currency_resolver = null;
 
 	/**
-	 * Registers the Analytics script data and script; tests replace it.
-	 *
-	 * @var callable|null
-	 */
-	private $admin_asset_registrar = null;
-
-	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -180,17 +173,6 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	 */
 	public function set_default_currency_resolver( callable $resolver ): void {
 		$this->default_currency_resolver = $resolver;
-	}
-
-	/**
-	 * Set the registrar for the Analytics script data and script.
-	 *
-	 * @internal Used by tests.
-	 *
-	 * @param callable $registrar Receives the lazy data callbacks keyed by wcSettings name.
-	 */
-	public function set_admin_asset_registrar( callable $registrar ): void {
-		$this->admin_asset_registrar = $registrar;
 	}
 
 	/**
@@ -272,25 +254,17 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 			return;
 		}
 
-		$projection = $this->get_analytics_projection_service();
-		$data       = array(
-			'customerCurrencies'      => array( $projection, 'get_customer_currency_options' ),
-			'customerCurrencySymbols' => array( $projection, 'get_customer_currency_symbols' ),
-		);
-
-		if ( null !== $this->admin_asset_registrar ) {
-			( $this->admin_asset_registrar )( $data );
-			return;
-		}
-
+		// Concrete values, as the client registers them, so a key another plugin already registered, even lazily, is kept.
 		$registry = Package::container()->get( AssetDataRegistry::class );
-		foreach ( $data as $key => $callback ) {
-			if ( ! $registry->exists( $key ) ) {
-				$registry->add( $key, $callback );
-			}
+		if ( ! $registry->exists( 'customerCurrencies' ) ) {
+			$projection = $this->get_analytics_projection_service();
+			$registry->add( 'customerCurrencies', $projection->get_customer_currency_options() );
+			$registry->add( 'customerCurrencySymbols', $projection->get_currency_symbols() );
 		}
 
 		WCAdminAssets::register_script( 'wp-admin-scripts', 'multi-currency-analytics', true );
+		// The plugin's handle, kept as an alias for scripts that list it as a dependency (client 11.1.0 `Analytics.php:27`).
+		wp_register_script( 'WCPAY_MULTI_CURRENCY_ANALYTICS', false, array( 'wc-admin-multi-currency-analytics' ), WC_VERSION, true );
 	}
 
 	/**

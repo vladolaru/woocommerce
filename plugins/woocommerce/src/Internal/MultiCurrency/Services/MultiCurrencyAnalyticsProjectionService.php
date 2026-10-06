@@ -92,23 +92,22 @@ class MultiCurrencyAnalyticsProjectionService {
 	}
 
 	/**
-	 * Project the symbol of each customer currency for the Analytics report currency.
+	 * Project currency symbols for the Analytics report currency.
 	 *
-	 * Taken as the client's currencyData gives it: the short symbol of the first country using the currency, else WooCommerce's
-	 * symbol (client 11.1.0 `includes/admin/class-wc-payments-admin.php:1047`, `client/analytics/index.js:142-155`).
+	 * Built as the client's currencyData: for each currency, the short symbol of the first country using it, else WooCommerce's
+	 * symbol (client 11.1.0 `includes/admin/class-wc-payments-admin.php:943-954`, `includes/multi-currency/client/analytics/index.js:142-155`).
 	 *
 	 * @return array<string,string> Symbols keyed by currency code.
 	 */
-	public function get_customer_currency_symbols(): array {
-		$codes            = array_column( $this->get_customer_currency_options(), 'value' );
+	public function get_currency_symbols(): array {
 		$locale_info_path = WC()->plugin_path() . '/i18n/locale-info.php';
 		$locale_info      = file_exists( $locale_info_path ) ? include $locale_info_path : array();
 		$wc_symbols       = get_woocommerce_currency_symbols();
 		$symbols          = array();
 
 		foreach ( is_array( $locale_info ) ? $locale_info : array() as $country ) {
-			$code = $country['currency_code'] ?? '';
-			if ( in_array( $code, $codes, true ) && ! isset( $symbols[ $code ] ) ) {
+			$code = (string) ( $country['currency_code'] ?? '' );
+			if ( '' !== $code && ! isset( $symbols[ $code ] ) ) {
 				$symbols[ $code ] = (string) ( $country['short_symbol'] ?? $wc_symbols[ $code ] ?? '' );
 			}
 		}

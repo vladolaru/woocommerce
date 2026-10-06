@@ -3,6 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
+use Automattic\WooCommerce\Blocks\Assets\AssetDataRegistry;
+use Automattic\WooCommerce\Blocks\Package;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAnalyticsController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
@@ -44,6 +46,47 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	);
 
 	/**
+	 * Shared asset data registry.
+	 *
+	 * @var AssetDataRegistry
+	 */
+	private $registry;
+
+	/**
+	 * Registry values before the test.
+	 *
+	 * @var array<string,mixed>
+	 */
+	private array $registry_state = array();
+
+	/**
+	 * Asset file this test created because the admin build is absent, if any.
+	 *
+	 * @var string|null
+	 */
+	private ?string $created_asset_file = null;
+
+	/**
+	 * Snapshot the shared registry and make sure the Analytics script's asset file exists.
+	 */
+	public function set_up(): void {
+		parent::set_up();
+		$this->registry = Package::container()->get( AssetDataRegistry::class );
+		foreach ( array( 'data', 'lazy_data' ) as $property ) {
+			$reflection = new \ReflectionProperty( AssetDataRegistry::class, $property );
+			$reflection->setAccessible( true );
+			$this->registry_state[ $property ] = $reflection->getValue( $this->registry );
+		}
+
+		// CI runs PHP tests without the admin build; WCAdminAssetsTest writes into the dist folder the same way.
+		$asset_file = WC_ADMIN_ABSPATH . WC_ADMIN_DIST_JS_FOLDER . 'wp-admin-scripts/multi-currency-analytics.asset.php';
+		if ( ! file_exists( $asset_file ) && wp_is_writable( dirname( $asset_file ) ) ) {
+			file_put_contents( $asset_file, "<?php return array( 'dependencies' => array(), 'version' => 'test' );" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+			$this->created_asset_file = $asset_file;
+		}
+	}
+
+	/**
 	 * Tear down test fixtures.
 	 */
 	public function tear_down(): void {
@@ -52,6 +95,19 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		}
 
 		delete_transient( 'wc_mc_has_orders' );
+		foreach ( $this->registry_state as $property => $value ) {
+			$reflection = new \ReflectionProperty( AssetDataRegistry::class, $property );
+			$reflection->setAccessible( true );
+			$reflection->setValue( $this->registry, $value );
+		}
+		if ( null !== $this->created_asset_file ) {
+			wp_delete_file( $this->created_asset_file );
+		}
+		unset( $_GET['page'] );
+		set_current_screen( 'front' );
+		wp_dequeue_script( 'wc-admin-multi-currency-analytics' );
+		wp_deregister_script( 'wc-admin-multi-currency-analytics' );
+		wp_deregister_script( 'WCPAY_MULTI_CURRENCY_ANALYTICS' );
 
 		parent::tear_down();
 	}
@@ -426,18 +482,13 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_loads_the_customer_currency_filter_on_wc_admin_pages_for_store_managers(): void {
 		update_option( 'woocommerce_currency', 'USD' );
-		// The plugin stores the customer currency list as currency codes (client 11.1.0 `includes/multi-currency/MultiCurrency.php:700-717`).
+		// The plugin stores the customer currency list as currency codes and the enabled list and manual rates as these options
+		// (client 11.1.0 `includes/multi-currency/MultiCurrency.php:700-717`, `:767-783`, `:1757-1770`).
 		update_option( 'wcpay_multi_currency_stored_customer_currencies', array( 'EUR' ) );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
 		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
-		$registered = array();
-		$sut        = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
-		$sut->set_admin_asset_registrar(
-			static function ( array $data ) use ( &$registered ): void {
-				$registered = array_map( static fn( $callback ) => $callback(), $data );
-			}
-		);
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
 		set_current_screen( 'woocommerce_page_wc-admin' );
 		$sut->register();
 		$this->assertSame( 10, has_action( 'admin_enqueue_scripts', array( $sut, 'handle_admin_enqueue_scripts' ) ) );
@@ -445,14 +496,13 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		$_GET['page'] = 'wc-admin';
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'subscriber' ) ) );
 		$sut->handle_admin_enqueue_scripts();
-		$this->assertSame( array(), $registered, 'Users who cannot manage WooCommerce get no filter.' );
+		$this->assertFalse( $this->registry->exists( 'customerCurrencies' ), 'Users who cannot manage WooCommerce get no filter.' );
+		$this->assertFalse( wp_script_is( 'wc-admin-multi-currency-analytics', 'enqueued' ) );
 
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'shop_manager' ) ) );
 		$sut->handle_admin_enqueue_scripts();
-		unset( $_GET['page'] );
-		set_current_screen( 'front' );
 
-		// Labels and symbols as the client's AssetDataRegistry entry and currencyData give them (client `Analytics.php:116-148`, `class-wc-payments-admin.php:1047`).
+		// Labels as the client's AssetDataRegistry entry (client `includes/multi-currency/Analytics.php:125-154`).
 		$this->assertSame(
 			array(
 				array(
@@ -464,15 +514,60 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 					'value' => 'USD',
 				),
 			),
-			$registered['customerCurrencies']
+			$this->get_registry_data()['customerCurrencies']
 		);
+		// Every currency's symbol, as the client's currencyData (client `includes/admin/class-wc-payments-admin.php:943-954`).
+		$symbols = $this->get_registry_data()['customerCurrencySymbols'];
+		$this->assertSame( '€', $symbols['EUR'] );
+		$this->assertSame( '$', $symbols['USD'] );
+		$this->assertSame( '¥', $symbols['JPY'] );
+		$this->assertTrue( wp_script_is( 'wc-admin-multi-currency-analytics', 'enqueued' ) );
+		$this->assertSame( array( 'wc-admin-multi-currency-analytics' ), wp_scripts()->registered['WCPAY_MULTI_CURRENCY_ANALYTICS']->deps );
+	}
+
+	/**
+	 * @testdox Should keep customer currencies another plugin registered, even lazily.
+	 */
+	public function test_keeps_customer_currencies_another_plugin_registered(): void {
+		$sut          = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$_GET['page'] = 'wc-admin';
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'shop_manager' ) ) );
+		$this->registry->add(
+			'customerCurrencies',
+			static fn(): array => array(
+				array(
+					'label' => 'Theirs',
+					'value' => 'XTS',
+				),
+			)
+		);
+
+		$sut->handle_admin_enqueue_scripts();
+		$lazy = new \ReflectionMethod( AssetDataRegistry::class, 'execute_lazy_data' );
+		$lazy->setAccessible( true );
+		$lazy->invoke( $this->registry );
+
 		$this->assertSame(
 			array(
-				'EUR' => '€',
-				'USD' => '$',
+				array(
+					'label' => 'Theirs',
+					'value' => 'XTS',
+				),
 			),
-			$registered['customerCurrencySymbols']
+			$this->get_registry_data()['customerCurrencies']
 		);
+	}
+
+	/**
+	 * Read the asset data registry's registered values.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_registry_data(): array {
+		$data = new \ReflectionProperty( AssetDataRegistry::class, 'data' );
+		$data->setAccessible( true );
+
+		return $data->getValue( $this->registry );
 	}
 
 	/**
