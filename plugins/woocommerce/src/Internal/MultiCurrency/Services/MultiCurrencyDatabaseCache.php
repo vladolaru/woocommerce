@@ -21,13 +21,6 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheI
 class MultiCurrencyDatabaseCache implements MultiCurrencyCacheInterface {
 
 	/**
-	 * In-request cache for option payloads.
-	 *
-	 * @var array<string,mixed>
-	 */
-	private array $in_memory_cache = array();
-
-	/**
 	 * Request context used for TTL resolution.
 	 *
 	 * @var MultiCurrencyRequestContext
@@ -110,8 +103,6 @@ class MultiCurrencyDatabaseCache implements MultiCurrencyCacheInterface {
 	 * @param string $key Cache key.
 	 */
 	public function delete( string $key ): void {
-		unset( $this->in_memory_cache[ $key ] );
-
 		delete_option( $key );
 		wp_cache_delete( $key, 'options' );
 	}
@@ -168,14 +159,8 @@ class MultiCurrencyDatabaseCache implements MultiCurrencyCacheInterface {
 	 * @return mixed
 	 */
 	private function get_from_cache( string $key ) {
-		if ( array_key_exists( $key, $this->in_memory_cache ) ) {
-			return $this->in_memory_cache[ $key ];
-		}
-
-		$data                          = get_option( $key );
-		$this->in_memory_cache[ $key ] = $data;
-
-		return $data;
+		// WordPress keeps the option for the rest of the request and drops it when any instance updates or deletes it.
+		return get_option( $key );
 	}
 
 	/**
@@ -202,8 +187,6 @@ class MultiCurrencyDatabaseCache implements MultiCurrencyCacheInterface {
 			'errored'            => $errored,
 			'consecutive_errors' => $consecutive_errors,
 		);
-
-		$this->in_memory_cache[ $key ] = $cache_contents;
 
 		if ( false !== update_option( $key, $cache_contents, false ) ) {
 			wp_cache_delete( $key, 'options' );

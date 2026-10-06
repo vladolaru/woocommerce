@@ -348,6 +348,24 @@ class MultiCurrencyDatabaseCacheTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should see rates another cache instance deleted or replaced, as after a store currency change.
+	 */
+	public function test_sees_rates_another_instance_changed(): void {
+		$generator = static fn() => array(
+			'currencies' => array( 'eur' => 1.2 ),
+			'updated'    => 123,
+		);
+		$validate  = static fn( $data ) => isset( $data['currencies'], $data['updated'] );
+		$shared    = new MultiCurrencyDatabaseCache();
+		$shared->get_or_add( $this->cache_key, $generator, $validate );
+
+		// The store currency lifecycle clears the rates through its own instance (client 11.1.0 `MultiCurrency.php:321-331`).
+		( new MultiCurrencyDatabaseCache() )->delete( $this->cache_key );
+
+		$this->assertNull( $shared->get( $this->cache_key ) );
+	}
+
+	/**
 	 * @testdox Should delete option and in-memory cache data.
 	 */
 	public function test_delete_removes_option_and_memory_cache(): void {

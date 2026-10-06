@@ -172,7 +172,7 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 	public function test_shares_one_builder_per_request(): void {
 		$factory = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class );
 
-		// The client keeps one Multi-Currency instance per request (client 11.1.0 `includes/multi-currency/MultiCurrency.php:750-756`).
+		// The client keeps one Multi-Currency instance per request (client 11.1.0 `includes/compat/multi-currency/wc-payments-multi-currency.php:35-50`).
 		$shared = $factory->create();
 		$this->assertSame( $shared, $factory->create() );
 
@@ -208,6 +208,47 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 
 		update_option( 'woocommerce_currency', 'EUR' );
 		$this->assertSame( 'EUR', $builder->build()->get_default_currency()->get_code() );
+	}
+
+	/**
+	 * @testdox Should rebuild the shared state after another cache instance clears the rates, as the store currency lifecycle does.
+	 */
+	public function test_shared_builder_rebuilds_after_the_rate_cache_changes(): void {
+		$builder = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->create();
+		$state   = $builder->build();
+
+		// The client clears its rate cache before rebuilding after a store currency change (client 11.1.0 `MultiCurrency.php:321-331`);
+		// here another instance stores fresh rates in the shape MultiCurrencyDatabaseCache writes.
+		update_option(
+			MultiCurrencyCacheInterface::CURRENCIES_KEY,
+			array(
+				'data'               => array(
+					'currencies' => array( 'gbp' => 0.81 ),
+					'updated'    => 123,
+				),
+				'fetched'            => time(),
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			),
+			false
+		);
+
+		$this->assertNotSame( $state, $builder->build() );
+	}
+
+	/**
+	 * @testdox Should restore any one of its invalidation listeners that a hook reset removed.
+	 */
+	public function test_restores_each_missing_invalidation_listener(): void {
+		$factory = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class );
+		$factory->create();
+		remove_all_actions( 'set_current_user' );
+		remove_all_actions( 'deleted_option' );
+
+		$factory->create();
+
+		$this->assertNotFalse( has_action( 'set_current_user' ) );
+		$this->assertSame( 10, has_action( 'deleted_option', array( $factory, 'handle_option_change' ) ) );
 	}
 
 	/**

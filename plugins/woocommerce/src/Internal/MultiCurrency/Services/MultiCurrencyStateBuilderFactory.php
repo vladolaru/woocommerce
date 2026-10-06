@@ -63,9 +63,9 @@ class MultiCurrencyStateBuilderFactory {
 	/**
 	 * Get the request's shared state builder, or a separate one when boundaries are supplied.
 	 *
-	 * Every consumer shares one builder, so the state is built once per request as the client keeps one Multi-Currency
-	 * instance (client 11.1.0 `includes/multi-currency/MultiCurrency.php:750-756`). It rebuilds after reset() and when its
-	 * stored inputs change: a Multi-Currency option, the store currency or the current user.
+	 * Consumers without boundaries of their own share one builder, so the state is built once per request as the client keeps
+	 * one Multi-Currency instance (client 11.1.0 `includes/compat/multi-currency/wc-payments-multi-currency.php:35-50`). It
+	 * rebuilds after reset() and when its stored inputs change: a Multi-Currency option, the store currency or the user.
 	 *
 	 * @param MultiCurrencyLocalizationInterface|null $localization_service Optional localization boundary.
 	 * @param MultiCurrencyCacheInterface|null        $cache                Optional cache boundary.
@@ -83,11 +83,20 @@ class MultiCurrencyStateBuilderFactory {
 				$this->shared_builder_registrars = $registrars;
 			}
 
-			if ( false === has_action( 'updated_option', array( $this, 'handle_option_change' ) ) ) {
-				add_action( 'added_option', array( $this, 'handle_option_change' ) );
-				add_action( 'updated_option', array( $this, 'handle_option_change' ) );
-				add_action( 'deleted_option', array( $this, 'handle_option_change' ) );
+			// A listener that is missing (first call, or removed by a hook reset) may have missed a change, so rebuild too.
+			$missed_changes = false;
+			foreach ( array( 'added_option', 'updated_option', 'deleted_option' ) as $hook ) {
+				if ( false === has_action( $hook, array( $this, 'handle_option_change' ) ) ) {
+					add_action( $hook, array( $this, 'handle_option_change' ) );
+					$missed_changes = true;
+				}
+			}
+			if ( false === has_action( 'set_current_user', array( $this->state_invalidator, 'invalidate' ) ) ) {
 				add_action( 'set_current_user', array( $this->state_invalidator, 'invalidate' ) );
+				$missed_changes = true;
+			}
+			if ( $missed_changes ) {
+				$this->state_invalidator->invalidate();
 			}
 
 			return $this->shared_builder;
@@ -104,7 +113,9 @@ class MultiCurrencyStateBuilderFactory {
 	 * @param mixed $option Option name.
 	 */
 	public function handle_option_change( $option ): void {
-		if ( ! is_string( $option ) || MultiCurrencyCacheInterface::CURRENCIES_KEY === $option ) {
+		// The rate cache counts too: the store currency lifecycle clears it through its own cache instance. The builder's own
+		// refresh writing it costs one more build after a refresh.
+		if ( ! is_string( $option ) ) {
 			return;
 		}
 
