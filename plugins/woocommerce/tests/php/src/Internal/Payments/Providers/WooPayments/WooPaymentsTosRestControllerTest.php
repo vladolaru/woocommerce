@@ -197,6 +197,33 @@ class WooPaymentsTosRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0 enables the gateway first, then records the agreement and refreshes the account, and answers any
+	 * failure with 500 `{"result":"error"}` (includes/admin/class-wc-rest-payments-tos-controller.php:116-127, :135-148).
+	 *
+	 * @testdox A failure to $failing_step after accepting answers 500 with an error result and leaves the gateway enabled.
+	 * @testWith ["record the agreement"]
+	 *           ["refresh the account"]
+	 *
+	 * @param string $failing_step Step that fails.
+	 */
+	public function test_tos_accept_failure_answers_error_and_keeps_the_gateway_enabled( string $failing_step ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'no' ) );
+		$this->sut = $this->create_controller( true );
+		$this->sut->register_routes();
+		if ( 'record the agreement' === $failing_step ) {
+			$this->api_client->throw_on_agreement = true;
+		} else {
+			$this->account_service->throw_on_refresh = true;
+		}
+
+		$response = $this->server->dispatch( $this->create_tos_request( array( 'accept' => true ) ) );
+
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertSame( array( 'result' => 'error' ), $response->get_data() );
+		$this->assertSame( 'yes', $this->get_gateway_enabled_setting() );
+	}
+
+	/**
 	 * @testdox ToS route disables the gateway when terms are declined.
 	 */
 	public function test_tos_route_declines_terms(): void {
