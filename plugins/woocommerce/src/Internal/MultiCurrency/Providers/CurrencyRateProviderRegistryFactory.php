@@ -34,6 +34,15 @@ class CurrencyRateProviderRegistryFactory {
 	}
 
 	/**
+	 * Get the provider registrars, so a cached registry can tell when they changed.
+	 *
+	 * @return array<int,CurrencyRateProviderRegistrarInterface>
+	 */
+	public function get_provider_registrars(): array {
+		return $this->provider_registrars;
+	}
+
+	/**
 	 * Create a fresh rate provider registry.
 	 *
 	 * @return CurrencyRateProviderRegistry

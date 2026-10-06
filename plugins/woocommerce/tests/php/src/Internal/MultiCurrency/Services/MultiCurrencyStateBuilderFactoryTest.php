@@ -167,6 +167,50 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should hand every consumer the same builder, so a page of order totals builds the state once.
+	 */
+	public function test_shares_one_builder_per_request(): void {
+		$factory = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class );
+
+		// The client keeps one Multi-Currency instance per request (client 11.1.0 `includes/multi-currency/MultiCurrency.php:750-756`).
+		$shared = $factory->create();
+		$this->assertSame( $shared, $factory->create() );
+
+		// A provider registered after the first build gets a builder that knows it.
+		$registry_factory = wc_get_container()->get( CurrencyRateProviderRegistryFactory::class );
+		$registrars       = $registry_factory->get_provider_registrars();
+		$registry_factory->set_provider_registrars( array_merge( $registrars, array( $this->createMock( CurrencyRateProviderRegistrarInterface::class ) ) ) );
+		try {
+			$this->assertNotSame( $shared, $factory->create() );
+		} finally {
+			$registry_factory->set_provider_registrars( $registrars );
+		}
+	}
+
+	/**
+	 * @testdox Should rebuild the shared state after a Multi-Currency option, the store currency or the user changes.
+	 */
+	public function test_shared_builder_rebuilds_after_its_inputs_change(): void {
+		$builder = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->create();
+		update_option( 'wcpay_multi_currency_enabled_currencies', array() );
+		$this->assertSame( array( 'USD' ), array_keys( $builder->build()->get_enabled_currencies() ) );
+
+		// The plugin stores the enabled list and manual rates as these options (client 11.1.0 `MultiCurrency.php:767-783`, `:1757-1770`).
+		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_gbp', '0.80' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
+		$this->assertSame( array( 'USD', 'GBP' ), array_keys( $builder->build()->get_enabled_currencies() ) );
+
+		$user_id = $this->factory()->user->create();
+		update_user_meta( $user_id, 'wcpay_currency', 'GBP' );
+		wp_set_current_user( $user_id );
+		$this->assertSame( 'GBP', $builder->build()->get_selected_currency()->get_code() );
+
+		update_option( 'woocommerce_currency', 'EUR' );
+		$this->assertSame( 'EUR', $builder->build()->get_default_currency()->get_code() );
+	}
+
+	/**
 	 * @testdox Resetting one factory-built state invalidates every request-local projection snapshot.
 	 */
 	public function test_factory_built_states_share_invalidation(): void {

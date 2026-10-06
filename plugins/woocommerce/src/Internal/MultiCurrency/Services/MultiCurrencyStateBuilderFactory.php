@@ -34,6 +34,20 @@ class MultiCurrencyStateBuilderFactory {
 	private MultiCurrencyStateInvalidator $state_invalidator;
 
 	/**
+	 * Builder shared by every consumer that does not bring its own boundaries.
+	 *
+	 * @var MultiCurrencyStateBuilder|null
+	 */
+	private ?MultiCurrencyStateBuilder $shared_builder = null;
+
+	/**
+	 * Provider registrars the shared builder's rate registry was built from.
+	 *
+	 * @var array<int,mixed>
+	 */
+	private array $shared_builder_registrars = array();
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -47,7 +61,11 @@ class MultiCurrencyStateBuilderFactory {
 	}
 
 	/**
-	 * Create a state builder.
+	 * Get the request's shared state builder, or a separate one when boundaries are supplied.
+	 *
+	 * Every consumer shares one builder, so the state is built once per request as the client keeps one Multi-Currency
+	 * instance (client 11.1.0 `includes/multi-currency/MultiCurrency.php:750-756`). It rebuilds after reset() and when its
+	 * stored inputs change: a Multi-Currency option, the store currency or the current user.
 	 *
 	 * @param MultiCurrencyLocalizationInterface|null $localization_service Optional localization boundary.
 	 * @param MultiCurrencyCacheInterface|null        $cache                Optional cache boundary.
@@ -57,9 +75,52 @@ class MultiCurrencyStateBuilderFactory {
 		?MultiCurrencyLocalizationInterface $localization_service = null,
 		?MultiCurrencyCacheInterface $cache = null
 	): MultiCurrencyStateBuilder {
-		$localization_service = $localization_service ?? new MultiCurrencyLocalizationService();
-		$cache                = $cache ?? new MultiCurrencyDatabaseCache();
+		if ( null === $localization_service && null === $cache ) {
+			// The rate registry is taken from the registrars once, so a builder made before a provider registered is replaced.
+			$registrars = $this->provider_registry_factory->get_provider_registrars();
+			if ( null === $this->shared_builder || $registrars !== $this->shared_builder_registrars ) {
+				$this->shared_builder            = $this->build_state_builder( new MultiCurrencyLocalizationService(), new MultiCurrencyDatabaseCache() );
+				$this->shared_builder_registrars = $registrars;
+			}
 
+			if ( false === has_action( 'updated_option', array( $this, 'handle_option_change' ) ) ) {
+				add_action( 'added_option', array( $this, 'handle_option_change' ) );
+				add_action( 'updated_option', array( $this, 'handle_option_change' ) );
+				add_action( 'deleted_option', array( $this, 'handle_option_change' ) );
+				add_action( 'set_current_user', array( $this->state_invalidator, 'invalidate' ) );
+			}
+
+			return $this->shared_builder;
+		}
+
+		return $this->build_state_builder( $localization_service ?? new MultiCurrencyLocalizationService(), $cache ?? new MultiCurrencyDatabaseCache() );
+	}
+
+	/**
+	 * Drop the shared state when an option it reads changes.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $option Option name.
+	 */
+	public function handle_option_change( $option ): void {
+		if ( ! is_string( $option ) || MultiCurrencyCacheInterface::CURRENCIES_KEY === $option ) {
+			return;
+		}
+
+		if ( 'woocommerce_currency' === $option || 0 === strpos( $option, 'wcpay_multi_currency_' ) ) {
+			$this->state_invalidator->invalidate();
+		}
+	}
+
+	/**
+	 * Build a state builder over the given boundaries.
+	 *
+	 * @param MultiCurrencyLocalizationInterface $localization_service Localization boundary.
+	 * @param MultiCurrencyCacheInterface        $cache                Cache boundary.
+	 * @return MultiCurrencyStateBuilder
+	 */
+	private function build_state_builder( MultiCurrencyLocalizationInterface $localization_service, MultiCurrencyCacheInterface $cache ): MultiCurrencyStateBuilder {
 		return new MultiCurrencyStateBuilder(
 			$localization_service,
 			new MultiCurrencyRateService( $this->provider_registry_factory->create() ),
