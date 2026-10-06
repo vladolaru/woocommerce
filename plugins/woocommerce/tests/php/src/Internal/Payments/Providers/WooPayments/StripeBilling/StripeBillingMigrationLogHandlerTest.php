@@ -31,10 +31,12 @@ class StripeBillingMigrationLogHandlerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Give the handler and the expectations one clock, so a run that crosses midnight UTC still sees one date.
+	 *
+	 * The clock is a day behind, so a handler that reads the real date instead of the proxied one fails every run.
 	 */
 	public function setUp(): void {
 		parent::setUp();
-		$this->now = time();
+		$this->now = time() - DAY_IN_SECONDS;
 		$now       = $this->now;
 		$this->register_legacy_proxy_function_mocks(
 			array(
