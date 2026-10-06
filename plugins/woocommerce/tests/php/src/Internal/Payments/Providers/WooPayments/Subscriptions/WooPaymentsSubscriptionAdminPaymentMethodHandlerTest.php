@@ -49,31 +49,6 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	}
 
 	/**
-	 * Tear down test fixtures.
-	 */
-	public function tearDown(): void {
-		remove_all_filters( 'woocommerce_subscription_payment_meta' );
-		remove_all_actions( 'woocommerce_subscription_validate_payment_meta' );
-		remove_all_actions( 'wcs_save_other_payment_meta' );
-		remove_all_filters( 'wcs_copy_payment_meta_to_order' );
-		remove_all_filters( 'woocommerce_my_subscriptions_payment_method' );
-		remove_all_filters( 'woocommerce_subscription_payment_method_to_display' );
-		remove_all_filters( 'wcs_view_subscription_actions' );
-		remove_all_filters( 'user_has_cap' );
-		remove_all_filters( 'woocommerce_subscription_note_old_payment_method_title' );
-		remove_all_filters( 'woocommerce_subscription_note_new_payment_method_title' );
-		remove_all_actions( 'woocommerce_admin_order_data_after_billing_address' );
-		remove_all_filters( 'woocommerce_subscriptions_update_subscription_token' );
-		remove_all_filters( 'woocommerce_subscriptions_update_payment_via_pay_shortcode' );
-		remove_all_actions( 'wp_ajax_wcpay_get_user_payment_tokens' );
-		remove_all_actions( 'woocommerce_subscription_payment_meta_input_' . OrderPaymentStore::GATEWAY_ID . '_wc_order_tokens_token' );
-		remove_all_actions( 'woocommerce_subscription_payment_meta_input_' . self::AMAZON_PAY_GATEWAY_ID . '_wc_order_tokens_token' );
-		remove_filter( 'woocommerce_payment_token_class', array( $this->token_class_map, 'handle_woocommerce_payment_token_class' ), 10 );
-		$_POST = array();
-		parent::tearDown();
-	}
-
-	/**
 	 * @testdox Should register the WCS admin payment-method hooks for native WooPayments.
 	 */
 	public function test_register_hooks_registers_subscription_admin_callbacks(): void {

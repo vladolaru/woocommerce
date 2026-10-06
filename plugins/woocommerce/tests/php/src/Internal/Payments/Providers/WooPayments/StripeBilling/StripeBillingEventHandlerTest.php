@@ -190,6 +190,8 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		try {
+			// setUp() and the multi-currency case replace container services that production code resolves.
+			$this->reset_container_replacements();
 			if ( null !== $this->format_controller ) {
 				foreach ( array( 'woocommerce_currency', 'wc_get_price_decimals', 'wc_get_price_decimal_separator', 'wc_get_price_thousand_separator', 'woocommerce_price_format', 'option_woocommerce_currency_pos', 'woocommerce_order_get_total', 'woocommerce_get_formatted_order_total', 'woocommerce_thankyou_order_id', 'woocommerce_cart_hash', 'woocommerce_shipping_method_add_rate_args', 'before_woocommerce_pay', 'woocommerce_account_view-order_endpoint' ) as $hook ) {
 					remove_all_filters( $hook, 900 );
