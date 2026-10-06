@@ -35,10 +35,10 @@ class MultiCurrencyAnalyticsProjectionService {
 	 * Project order stats data in the store default currency.
 	 *
 	 * @param array<string,mixed> $args  Order stats args.
-	 * @param \WC_Order           $order Order.
+	 * @param \WC_Abstract_Order  $order Order or refund.
 	 * @return array<string,mixed>
 	 */
-	public function update_order_stats_data( array $args, \WC_Order $order ): array {
+	public function update_order_stats_data( array $args, \WC_Abstract_Order $order ): array {
 		$default_currency_code = $this->state_builder->build()->get_default_currency()->get_code();
 
 		if ( ! $this->should_convert_order_stats( $order, $default_currency_code ) ) {
@@ -125,11 +125,11 @@ class MultiCurrencyAnalyticsProjectionService {
 	/**
 	 * Tell whether order stats should be converted.
 	 *
-	 * @param \WC_Order $order                 Order.
-	 * @param string    $default_currency_code Default currency code.
+	 * @param \WC_Abstract_Order $order                 Order or refund.
+	 * @param string             $default_currency_code Default currency code.
 	 * @return bool
 	 */
-	private function should_convert_order_stats( \WC_Order $order, string $default_currency_code ): bool {
+	private function should_convert_order_stats( \WC_Abstract_Order $order, string $default_currency_code ): bool {
 		return $order->get_currency() !== $default_currency_code
 			&& (bool) $order->get_meta( MultiCurrencyPriceProjectionService::META_KEY_ORDER_EXCHANGE_RATE, true )
 			&& $order->get_meta( MultiCurrencyPriceProjectionService::META_KEY_ORDER_DEFAULT_CURRENCY, true ) === $default_currency_code;

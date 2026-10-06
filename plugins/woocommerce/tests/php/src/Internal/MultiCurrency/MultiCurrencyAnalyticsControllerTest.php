@@ -313,6 +313,36 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should convert a refund's order stats with the exchange rate copied from its order.
+	 */
+	public function test_converts_refund_order_stats_data(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		// WooCommerce Analytics passes refunds to this filter too (`Automattic\WooCommerce\Admin\API\Reports\Orders\Stats\DataStore::update()`).
+		$refund = new \WC_Order_Refund();
+		$refund->set_currency( 'EUR' );
+		$refund->update_meta_data( '_wcpay_multi_currency_order_exchange_rate', 2 );
+		$refund->update_meta_data( '_wcpay_multi_currency_order_default_currency', 'USD' );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut->set_analytics_projection_service(
+			new MultiCurrencyAnalyticsProjectionService( $this->create_state_builder() )
+		);
+
+		$result = $sut->handle_woocommerce_analytics_update_order_stats_data(
+			array(
+				'net_total'      => -10.0,
+				'shipping_total' => -4.0,
+				'tax_total'      => -2.0,
+			),
+			$refund
+		);
+
+		$this->assertSame( -5.0, $result['net_total'] );
+		$this->assertSame( -2.0, $result['shipping_total'] );
+		$this->assertSame( -1.0, $result['tax_total'] );
+		$this->assertSame( -8.0, $result['total_sales'] );
+	}
+
+	/**
 	 * @testdox Should respect SQL clause disable and extension filters.
 	 */
 	public function test_respects_sql_clause_disable_and_extension_filters(): void {

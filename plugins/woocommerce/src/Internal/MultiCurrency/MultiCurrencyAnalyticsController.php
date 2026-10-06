@@ -255,7 +255,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	 * @return array<string,mixed>
 	 */
 	public function handle_woocommerce_analytics_update_order_stats_data( array $args, $order ): array {
-		if ( ! $order instanceof \WC_Order ) {
+		if ( ! $order instanceof \WC_Abstract_Order ) {
 			return $args;
 		}
 
