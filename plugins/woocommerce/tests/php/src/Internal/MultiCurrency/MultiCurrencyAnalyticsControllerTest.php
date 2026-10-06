@@ -45,9 +45,6 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		'admin_enqueue_scripts',
 	);
 
-	/** Asset file contents this test writes when the admin build is absent. */
-	private const ASSET_FIXTURE = "<?php return array( 'dependencies' => array(), 'version' => 'multi-currency-analytics-test' );";
-
 	/**
 	 * Shared asset data registry.
 	 *
@@ -63,14 +60,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	private array $registry_state = array();
 
 	/**
-	 * Asset file this test created because the admin build is absent, if any.
-	 *
-	 * @var string|null
-	 */
-	private ?string $created_asset_file = null;
-
-	/**
-	 * Snapshot the shared registry and make sure the Analytics script's asset file exists.
+	 * Snapshot the shared asset data registry.
 	 */
 	public function set_up(): void {
 		parent::set_up();
@@ -79,18 +69,6 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 			$reflection = new \ReflectionProperty( AssetDataRegistry::class, $property );
 			$reflection->setAccessible( true );
 			$this->registry_state[ $property ] = $reflection->getValue( $this->registry );
-		}
-
-		// CI runs PHP tests without the admin build; WCAdminAssetsTest writes into the dist folder the same way. The file is created
-		// only if absent ('x' mode) and removed only while it still holds this fixture, so a real build is never touched.
-		$asset_file = WC_ADMIN_ABSPATH . WC_ADMIN_DIST_JS_FOLDER . 'wp-admin-scripts/multi-currency-analytics.asset.php';
-		if ( wp_is_writable( dirname( $asset_file ) ) ) {
-			$handle = @fopen( $asset_file, 'x' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Fails quietly when the build already wrote it.
-			if ( false !== $handle ) {
-				fwrite( $handle, self::ASSET_FIXTURE ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite
-				fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose
-				$this->created_asset_file = $asset_file;
-			}
 		}
 	}
 
@@ -107,9 +85,6 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 			$reflection = new \ReflectionProperty( AssetDataRegistry::class, $property );
 			$reflection->setAccessible( true );
 			$reflection->setValue( $this->registry, $value );
-		}
-		if ( null !== $this->created_asset_file && self::ASSET_FIXTURE === file_get_contents( $this->created_asset_file ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
-			wp_delete_file( $this->created_asset_file );
 		}
 		unset( $_GET['page'] );
 		set_current_screen( 'front' );
@@ -532,8 +507,12 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( '€', $symbols['EUR'] );
 		$this->assertSame( '$', $symbols['USD'] );
 		$this->assertSame( '¥', $symbols['JPY'] );
-		$this->assertTrue( wp_script_is( 'wc-admin-multi-currency-analytics', 'enqueued' ) );
-		$this->assertSame( array( 'wc-admin-multi-currency-analytics' ), wp_scripts()->registered['WCPAY_MULTI_CURRENCY_ANALYTICS']->deps );
+
+		// The script exists only in an admin build; CI's PHP job runs without one, local runs and the release package have it.
+		if ( file_exists( WC_ADMIN_ABSPATH . WC_ADMIN_DIST_JS_FOLDER . 'wp-admin-scripts/multi-currency-analytics.asset.php' ) ) {
+			$this->assertTrue( wp_script_is( 'wc-admin-multi-currency-analytics', 'enqueued' ) );
+			$this->assertSame( array( 'wc-admin-multi-currency-analytics' ), wp_scripts()->registered['WCPAY_MULTI_CURRENCY_ANALYTICS']->deps );
+		}
 	}
 
 	/**
