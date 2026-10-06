@@ -1821,6 +1821,59 @@ class WooPaymentsSettingsService {
 	}
 
 	/**
+	 * Rebuild the advanced ruleset's international IP rule from the current selling locations.
+	 *
+	 * Ports the plugin's update_fraud_rules_based_on_general_options() (client 11.1.0
+	 * `includes/class-wc-payment-gateway-wcpay.php:3818-3853`): only an advanced ruleset carries the
+	 * merchant's country check, and the platform is called only when that check changed.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return void
+	 */
+	public function update_fraud_rules_for_selling_locations(): void {
+		if ( 'advanced' !== $this->get_current_protection_level() ) {
+			return;
+		}
+
+		$ruleset = $this->get_advanced_fraud_protection_settings();
+		if ( ! is_array( $ruleset ) || ! $this->is_valid_fraud_ruleset( $ruleset ) ) {
+			return;
+		}
+
+		$needs_update = false;
+		foreach ( $ruleset as &$rule ) {
+			if ( ! is_array( $rule ) || 'international_ip_address' !== ( $rule['key'] ?? null ) ) {
+				continue;
+			}
+
+			$new_rule = $this->get_international_ip_address_rule( $this->get_reviewable_fraud_outcome() );
+			if ( isset( $rule['check'] ) && wp_json_encode( $rule['check'] ) !== wp_json_encode( $new_rule['check'] ) ) {
+				$rule         = $new_rule;
+				$needs_update = true;
+			}
+		}
+		unset( $rule );
+
+		if ( ! $needs_update ) {
+			return;
+		}
+
+		try {
+			$this->api_client->save_fraud_ruleset( $ruleset );
+			set_transient( 'wcpay_fraud_protection_settings', $ruleset, DAY_IN_SECONDS );
+		} catch ( WooPaymentsApiException $e ) {
+			$this->log_fraud_ruleset_refresh_warning(
+				'Native WooPayments fraud ruleset update for new selling locations failed.',
+				array(
+					'error_code'  => WooPaymentsLogger::get_loggable_error_code( $e->get_error_code() ),
+					'http_status' => $e->get_http_code(),
+				)
+			);
+		}
+	}
+
+	/**
 	 * Refresh cached fraud protection settings from the platform when local cache is missing.
 	 *
 	 * @return void

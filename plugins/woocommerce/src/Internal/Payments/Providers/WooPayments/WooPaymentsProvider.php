@@ -322,6 +322,11 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 				if ( 'front' === $request || 'admin' === $request ) {
 					$matrix[ $state ][ $request ][] = WooPaymentsFraudService::class;
 				}
+				// Selling locations are written by the general settings form, the REST settings API, WP-CLI and scheduled
+				// imports; the client only watches the form save (client 11.1.0 `includes/class-wc-payment-gateway-wcpay.php:582`).
+				if ( 'front' !== $request && 'ajax' !== $request ) {
+					$matrix[ $state ][ $request ][] = WooPaymentsSellingLocationsFraudSync::class;
+				}
 			}
 		}
 

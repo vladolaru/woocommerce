@@ -55,6 +55,13 @@ class RecordingSettingsApiClient extends WooPaymentsApiClient {
 	public ?WooPaymentsApiException $update_account_exception = null;
 
 	/**
+	 * Fraud ruleset save count.
+	 *
+	 * @var int
+	 */
+	public int $fraud_ruleset_saves = 0;
+
+	/**
 	 * Latest fraud ruleset request count.
 	 *
 	 * @var int
@@ -174,6 +181,7 @@ class RecordingSettingsApiClient extends WooPaymentsApiClient {
 			throw $this->save_fraud_ruleset_exception;
 		}
 
+		++$this->fraud_ruleset_saves;
 		$this->last_fraud_ruleset = $ruleset_config;
 
 		return array( 'success' => true );

@@ -238,6 +238,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 					self::WCPAY . 'WooPaymentsCanceledAuthorizationFeeRemediationService',
 					self::WCPAY . 'WooPaymentsLoanApprovedNote',
 					self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
+					self::WCPAY . 'WooPaymentsSellingLocationsFraudSync',
 				),
 			),
 			'active admin'    => array(
