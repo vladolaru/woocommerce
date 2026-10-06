@@ -175,8 +175,8 @@ class StripeBillingEventHandler {
 		if ( 0 === $this->get_time( $subscription, 'next_payment' ) ) {
 			if ( ! $subscription->has_status( 'on-hold' ) && 0 !== $this->get_time( $subscription, 'end' ) ) {
 				$this->subscription_service->cancel_subscription( $subscription );
-			} else {
-				$this->subscription_service->suspend_subscription( $subscription );
+			} elseif ( $this->subscription_service->suspend_subscription( $subscription ) ) {
+				// A failed pause leaves its own note and log line (StripeBillingSubscriptionService::suspend_subscription()).
 				$subscription->add_order_note( __( 'Suspended WooPayments Subscription in invoice.upcoming webhook handler because subscription next_payment date is 0.', 'woocommerce' ) );
 				$this->logger->log(
 					sprintf(

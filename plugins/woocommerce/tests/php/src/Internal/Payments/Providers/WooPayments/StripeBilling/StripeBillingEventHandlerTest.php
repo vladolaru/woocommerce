@@ -1005,6 +1005,21 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An upcoming invoice whose pause fails at Stripe notes the failure, not a suspension.
+	 */
+	public function test_upcoming_invoice_with_a_failed_pause_does_not_note_a_suspension(): void {
+		$subscription = $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID, array(), 'on-hold' );
+		$this->queue_billing( 'get_subscription' );
+		$this->queue_platform_error();
+
+		$this->sut->handle_event( $this->get_event( 'invoice_upcoming' ) );
+
+		$subscription = wc_get_order( $subscription->get_id() );
+		$this->assertSame( array(), $this->get_notes_containing( $subscription, 'Suspended WooPayments Subscription in invoice.upcoming webhook handler' ) );
+		$this->assertCount( 1, $this->get_notes_containing( $subscription, 'WooPayments could not pause this subscription at Stripe' ) );
+	}
+
+	/**
 	 * @testdox An upcoming invoice whose Stripe subscription cannot be read fails for a retry before changing anything.
 	 *
 	 * The client goes on with no Stripe subscription and fails with a type error after noting a wrong date (event handler :82, :102-104).
