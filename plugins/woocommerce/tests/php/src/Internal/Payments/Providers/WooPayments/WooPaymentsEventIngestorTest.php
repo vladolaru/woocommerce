@@ -374,6 +374,40 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The received line redacts a dispute's evidence, which carries the shopper's addresses, email and purchase IP.
+	 *
+	 * REC-5b R-e `winning_evidence_closed_won` (`Fixtures/rec-5b-dispute-events.json`) is the exact dispute event body local
+	 * WPCOM forwarded; its `evidence` object holds billing_address, customer_email_address and customer_purchase_ip.
+	 */
+	public function test_received_line_redacts_dispute_evidence(): void {
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enable_logging' => 'yes',
+				'test_mode'      => 'yes',
+			)
+		);
+		$logger = RecordingWcLogger::install();
+		$event  = $this->load_recorded_dispute_closed_event( 'winning_evidence_closed_won' );
+		$this->assertNotEmpty( $event['data']['object']['evidence']['billing_address'], 'The recording carries evidence to redact.' );
+		// The recorded charge had no Woo order, so the order here is a fixture matched to the recorded charge ID.
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_charge_id', $event['data']['object']['charge'] );
+		$order->save();
+
+		$this->sut->process( $event );
+
+		$received = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'WEBHOOK RECEIVED: charge.dispute.closed ' ) ) );
+		$this->assertCount( 1, $received );
+		$dispute = $logger->contexts[ $received[0] ]['body']['data']['object'];
+		$this->assertSame( '(redacted)', $dispute['evidence'] );
+		$this->assertSame( $event['data']['object']['id'], $dispute['id'], 'The dispute ID support needs stays.' );
+		$this->assertSame( $event['data']['object']['amount'], $dispute['amount'] );
+		$this->assertSame( $event['data']['object']['status'], $dispute['status'] );
+		$this->assertSame( $event['data']['object']['evidence_details'], $dispute['evidence_details'], 'The due date and counts stay.' );
+	}
+
+	/**
 	 * @testdox The received line redacts a PaymentIntent's receipt email and every metadata value but the listed references and flags with token values.
 	 */
 	public function test_received_line_redacts_a_payment_intent_receipt_email(): void {
