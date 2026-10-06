@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyException;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyNameYourPriceCompatibilityController;
@@ -32,6 +33,7 @@ class MultiCurrencyNameYourPriceCompatibilityControllerTest extends WC_Unit_Test
 		'wc_nyp_raw_suggested_price',
 		'woocommerce_add_cart_item_data',
 		'woocommerce_get_cart_item_from_session',
+		'woocommerce_pre_remove_cart_item_from_session',
 		'wcpay_multi_currency_should_convert_product_price',
 		'wc_nyp_edit_in_cart_args',
 		'wc_nyp_get_initial_price',
@@ -79,6 +81,7 @@ class MultiCurrencyNameYourPriceCompatibilityControllerTest extends WC_Unit_Test
 		$this->assertSame( 10, has_filter( 'wc_nyp_raw_suggested_price', array( $sut, 'get_nyp_prices' ) ) );
 		$this->assertSame( 20, has_action( 'woocommerce_add_cart_item_data', array( $sut, 'add_initial_currency' ) ) );
 		$this->assertSame( 20, has_filter( 'woocommerce_get_cart_item_from_session', array( $sut, 'convert_cart_currency' ) ) );
+		$this->assertSame( 10, has_filter( 'woocommerce_pre_remove_cart_item_from_session', array( $sut, 'remove_unconvertible_cart_item' ) ) );
 		$this->assertSame( 50, has_filter( 'wcpay_multi_currency_should_convert_product_price', array( $sut, 'should_convert_product_price' ) ) );
 		$this->assertSame( 10, has_filter( 'wc_nyp_edit_in_cart_args', array( $sut, 'edit_in_cart_args' ) ) );
 		$this->assertSame( 10, has_filter( 'wc_nyp_get_initial_price', array( $sut, 'get_initial_price' ) ) );
@@ -197,24 +200,76 @@ class MultiCurrencyNameYourPriceCompatibilityControllerTest extends WC_Unit_Test
 	}
 
 	/**
-	 * @testdox Should keep a cart item entered in a currency the store no longer offers, instead of failing the cart.
+	 * @testdox Should remove a cart item whose price was entered in a currency the store no longer offers.
 	 */
-	public function test_keeps_the_nyp_amount_when_its_currency_is_no_longer_enabled(): void {
+	public function test_removes_a_nyp_item_entered_in_a_currency_the_store_no_longer_offers(): void {
 		$sut     = $this->create_controller();
-		$product = $this->create_product();
+		$product = \WC_Helper_Product::create_simple_product();
+		wc_clear_notices();
 
-		// The client loads no Name Your Price conversion when its base is unknown (client 11.1.0 `includes/multi-currency/MultiCurrency.php:302-319`).
-		$cart_item = $sut->convert_cart_currency(
+		// Client 11.1.0 converts with get_raw_conversion(), which throws for a disabled source currency
+		// (includes/multi-currency/MultiCurrency.php:983-997) and nothing catches it while the cart loads.
+		$remove = $sut->remove_unconvertible_cart_item(
+			false,
+			'cart-item-key',
 			array(
-				'data'         => $product,
+				'nyp'          => '99.00',
+				'nyp_original' => '10.00',
+				'nyp_currency' => 'CAD',
+			),
+			$product
+		);
+
+		$this->assertTrue( $remove );
+		$notices = wc_get_notices( 'notice' );
+		$this->assertCount( 1, $notices );
+		$this->assertStringContainsString( $product->get_name(), $notices[0]['notice'] );
+		wc_clear_notices();
+	}
+
+	/**
+	 * @testdox Should keep cart items whose price can still be converted, and leave other items alone.
+	 */
+	public function test_keeps_nyp_items_that_can_still_be_converted(): void {
+		$sut     = $this->create_controller();
+		$product = \WC_Helper_Product::create_simple_product();
+
+		foreach ( array( 'USD', 'GBP' ) as $currency ) {
+			$this->assertFalse(
+				$sut->remove_unconvertible_cart_item(
+					false,
+					'cart-item-key',
+					array(
+						'nyp'          => '10.00',
+						'nyp_original' => '10.00',
+						'nyp_currency' => $currency,
+					),
+					$product
+				),
+				$currency . ' is enabled, so the item converts.'
+			);
+		}
+		$this->assertFalse( $sut->remove_unconvertible_cart_item( false, 'cart-item-key', array( 'quantity' => 1 ), $product ) );
+		$this->assertTrue( $sut->remove_unconvertible_cart_item( true, 'cart-item-key', array( 'quantity' => 1 ), $product ), 'An earlier removal decision stands.' );
+	}
+
+	/**
+	 * @testdox Should not swallow a failed conversion of a NYP amount.
+	 */
+	public function test_does_not_swallow_a_failed_nyp_conversion(): void {
+		$sut = $this->create_controller();
+
+		$this->expectException( InvalidCurrencyException::class );
+
+		$sut->convert_cart_currency(
+			array(
+				'data'         => $this->create_product(),
 				'nyp'          => '99.00',
 				'nyp_original' => '10.00',
 				'nyp_currency' => 'CAD',
 			),
 			array()
 		);
-
-		$this->assertSame( '99.00', $cart_item['nyp'] );
 	}
 
 	/**

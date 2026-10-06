@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyException;
+use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyRateException;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyNameYourPriceCompatibilityProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
@@ -215,19 +216,60 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 		if ( $cart_item['nyp_currency'] === $selected_currency_code ) {
 			$cart_item['nyp'] = $cart_item['nyp_original'];
 		} else {
-			try {
-				$cart_item['nyp'] = $this->get_price_projection_service()->get_raw_conversion(
-					(float) $cart_item['nyp_original'],
-					$selected_currency_code,
-					(string) $cart_item['nyp_currency']
-				);
-			} catch ( InvalidCurrencyException $e ) {
-				// The amount was entered in a currency the store no longer offers: keep the item as it is rather than fail the cart.
-				return $cart_item;
-			}
+			$cart_item['nyp'] = $this->get_price_projection_service()->get_raw_conversion(
+				(float) $cart_item['nyp_original'],
+				$selected_currency_code,
+				(string) $cart_item['nyp_currency']
+			);
 		}
 
 		return $this->set_name_your_price_cart_item( $cart_item );
+	}
+
+	/**
+	 * Remove a NYP cart item whose price was entered in a currency that can no longer be converted, before the cart loads it.
+	 *
+	 * The client lets the conversion exception escape while the cart loads; removing the item with a notice, as core does
+	 * for modified products, keeps the cart usable and never charges the entered amount in another currency.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $remove  Whether an earlier callback already removes the item.
+	 * @param mixed $key     Cart item key.
+	 * @param mixed $values  Cart item session values.
+	 * @param mixed $product Cart item product.
+	 * @return mixed
+	 */
+	public function remove_unconvertible_cart_item( $remove, $key, $values, $product ) {
+		unset( $key );
+
+		if ( $remove || ! is_array( $values ) || ! isset( $values['nyp_original'], $values['nyp_currency'] ) || ! $this->is_name_your_price_function_available() ) {
+			return $remove;
+		}
+
+		$selected_currency_code = $this->get_selected_currency_code();
+		if ( $values['nyp_currency'] === $selected_currency_code ) {
+			return $remove;
+		}
+
+		try {
+			$this->get_price_projection_service()->get_raw_conversion( (float) $values['nyp_original'], $selected_currency_code, (string) $values['nyp_currency'] );
+			return $remove;
+		} catch ( InvalidCurrencyException | InvalidCurrencyRateException $e ) {
+			if ( $product instanceof \WC_Product && function_exists( 'wc_add_notice' ) ) {
+				wc_add_notice(
+					sprintf(
+						/* translators: %1$s: product name. %2$s: product permalink. */
+						__( '%1$s has been removed from your cart because its price was entered in a currency this store no longer accepts. You can add it back to your cart <a href="%2$s">here</a>.', 'woocommerce' ),
+						esc_html( $product->get_name() ),
+						esc_url( $product->get_permalink() )
+					),
+					'notice'
+				);
+			}
+
+			return true;
+		}
 	}
 
 	/**

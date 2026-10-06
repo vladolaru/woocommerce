@@ -34,6 +34,7 @@ class MultiCurrencyNameYourPriceCompatibilityProjectionService {
 				self::hook_entry( self::filter_name( 'should_convert_product_price' ), 'should_convert_product_price', 50, 2 ),
 				self::hook_entry( 'wc_nyp_edit_in_cart_args', 'edit_in_cart_args', 10, 2 ),
 				self::hook_entry( 'wc_nyp_get_initial_price', 'get_initial_price', 10, 3 ),
+				self::hook_entry( 'woocommerce_pre_remove_cart_item_from_session', 'remove_unconvertible_cart_item', 10, 4 ),
 			),
 			'actions' => array(
 				self::hook_entry( 'woocommerce_add_cart_item_data', 'add_initial_currency', 20, 3 ),

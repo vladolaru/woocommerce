@@ -26,6 +26,7 @@ class MultiCurrencyNameYourPriceCompatibilityProjectionServiceTest extends WC_Un
 				'wcpay_multi_currency_should_convert_product_price',
 				'wc_nyp_edit_in_cart_args',
 				'wc_nyp_get_initial_price',
+				'woocommerce_pre_remove_cart_item_from_session',
 			),
 			array_column( $manifest['filters'], 'hook' )
 		);
@@ -42,6 +43,8 @@ class MultiCurrencyNameYourPriceCompatibilityProjectionServiceTest extends WC_Un
 		$this->assertSame( 50, $manifest['filters'][4]['priority'] );
 		$this->assertSame( 2, $manifest['filters'][4]['accepted_args'] );
 		$this->assertSame( 3, $manifest['filters'][6]['accepted_args'] );
+		$this->assertSame( 'remove_unconvertible_cart_item', $manifest['filters'][7]['callback'] );
+		$this->assertSame( 4, $manifest['filters'][7]['accepted_args'] );
 	}
 
 	/**
