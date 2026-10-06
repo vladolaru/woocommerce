@@ -110,13 +110,13 @@ class WooPaymentsReportsRestController implements RegisterHooksInterface {
 	 */
 	public function register_routes(): void {
 		register_rest_route( self::NAMESPACE, '/payments/reports/balance', $this->get_readable_route( 'get_balance_summary', $this->get_balance_args() ) );
-		register_rest_route( self::NAMESPACE, '/payments/reports/fees', $this->get_readable_route( 'get_fees' ) );
-		register_rest_route( self::NAMESPACE, '/payments/reports/fees/summary', $this->get_readable_route( 'get_fees_summary' ) );
+		register_rest_route( self::NAMESPACE, '/payments/reports/fees', $this->get_readable_route( 'get_fees', $this->get_fees_collection_args() ) );
+		register_rest_route( self::NAMESPACE, '/payments/reports/fees/summary', $this->get_readable_route( 'get_fees_summary', $this->get_fees_collection_args() ) );
 		register_rest_route( self::NAMESPACE, '/payments/reports/fees/download', $this->get_creatable_route( 'get_fees_export' ) );
 		register_rest_route( self::NAMESPACE, '/payments/reports/fees/download/(?P<export_id>[^/\\\\%]+)', $this->get_readable_route( 'get_export_url' ) );
-		register_rest_route( self::NAMESPACE, '/payments/reports/transactions', $this->get_readable_route( 'get_report_transactions' ) );
+		register_rest_route( self::NAMESPACE, '/payments/reports/transactions', $this->get_readable_route( 'get_report_transactions', $this->get_collection_args( 'date' ) ) );
 		register_rest_route( self::NAMESPACE, '/payments/reports/transactions/(?P<id>\w+)', $this->get_readable_route( 'get_report_transaction' ) );
-		register_rest_route( self::NAMESPACE, '/payments/reports/authorizations', $this->get_readable_route( 'get_report_authorizations' ) );
+		register_rest_route( self::NAMESPACE, '/payments/reports/authorizations', $this->get_readable_route( 'get_report_authorizations', $this->get_collection_args( 'created' ) ) );
 		register_rest_route( self::NAMESPACE, '/payments/reports/authorizations/(?P<id>\w+)', $this->get_readable_route( 'get_report_authorization' ) );
 	}
 
@@ -358,6 +358,104 @@ class WooPaymentsReportsRestController implements RegisterHooksInterface {
 			'callback'            => array( $this, $callback ),
 			'permission_callback' => array( $this, 'check_permission' ),
 		);
+	}
+
+	/**
+	 * Get the report collection route args, as client 11.1.0 declares them for transactions and authorizations.
+	 *
+	 * Client includes/reports/class-wc-rest-payments-reports-transactions-controller.php:161-254 (authorizations: :168-261,
+	 * default sort `created`). WordPress rejects a malformed date, a non-integer order ID or a page size over 100.
+	 *
+	 * @param string $default_sort Default sort field.
+	 * @return array<string,array<string,mixed>>
+	 */
+	private function get_collection_args( string $default_sort ): array {
+		$string_filter = array(
+			'type'              => 'string',
+			'required'          => false,
+			'validate_callback' => 'rest_validate_request_arg',
+		);
+
+		return array(
+			'date_before'         => array(
+				'type'     => 'string',
+				'format'   => 'date-time',
+				'required' => false,
+			),
+			'date_after'          => array(
+				'type'     => 'string',
+				'format'   => 'date-time',
+				'required' => false,
+			),
+			'date_between'        => array( 'type' => 'array' ),
+			'order_id'            => array(
+				'type'              => 'integer',
+				'required'          => false,
+				'sanitize_callback' => 'absint',
+				'validate_callback' => 'rest_validate_request_arg',
+			),
+			'deposit_id'          => $string_filter,
+			'customer_email'      => $string_filter,
+			'payment_method_type' => $string_filter,
+			'type'                => $string_filter,
+			'match'               => array(
+				'type'     => 'string',
+				'required' => false,
+			),
+			'user_timezone'       => array(
+				'type'     => 'string',
+				'required' => false,
+			),
+			'page'                => array(
+				'type'     => 'integer',
+				'required' => false,
+				'default'  => 1,
+				'minimum'  => 1,
+			),
+			'per_page'            => array(
+				'type'     => 'integer',
+				'required' => false,
+				'default'  => 25,
+				'minimum'  => 1,
+				'maximum'  => 100,
+			),
+			'sort'                => array(
+				'type'     => 'string',
+				'required' => false,
+				'default'  => $default_sort,
+			),
+			'direction'           => array(
+				'type'     => 'string',
+				'required' => false,
+				'default'  => 'desc',
+			),
+		);
+	}
+
+	/**
+	 * Get the Fees collection route args: the transactions args without the customer email, with search and type lists.
+	 *
+	 * Client 11.1.0 class-wc-rest-payments-reports-fees-controller.php:233-269: the Fees report strips customer data, so
+	 * it does not take the customer email filter either.
+	 *
+	 * @return array<string,array<string,mixed>>
+	 */
+	private function get_fees_collection_args(): array {
+		$args = $this->get_collection_args( 'date' );
+		unset( $args['customer_email'] );
+		$string_list    = array(
+			'type'              => 'array',
+			'required'          => false,
+			'items'             => array( 'type' => 'string' ),
+			'sanitize_callback' => function ( $value ): array {
+				return $this->normalize_string_list( $value ) ?? array();
+			},
+			'validate_callback' => 'rest_validate_request_arg',
+		);
+		$args['search'] = $string_list;
+		$args['type']   = $string_list;
+
+		return $args;
 	}
 
 	/**

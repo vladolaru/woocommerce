@@ -195,6 +195,43 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Report collection routes reject malformed input before calling the platform, as the client's argument schema does.
+	 *
+	 * Client 11.1.0 class-wc-rest-payments-reports-transactions-controller.php:161-254 and the Fees variant :233-269.
+	 *
+	 * @dataProvider provide_rejected_report_queries
+	 *
+	 * @param string              $route Route.
+	 * @param array<string,mixed> $query Query.
+	 */
+	public function test_report_collections_reject_malformed_input( string $route, array $query ): void {
+		$this->create_controller( true, true )->register_routes();
+
+		$request = new WP_REST_Request( 'GET', $route );
+		$request->set_query_params( $query );
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( 'rest_invalid_param', $response->get_data()['code'] );
+		$this->assertSame( array(), $this->api_client->last_call );
+	}
+
+	/**
+	 * Malformed report queries, one per input class.
+	 *
+	 * @return array<string,array{0:string,1:array<string,mixed>}>
+	 */
+	public function provide_rejected_report_queries(): array {
+		return array(
+			'page size over 100'       => array( '/wc/v3/payments/reports/transactions', array( 'per_page' => 101 ) ),
+			'order ID not an integer'  => array( '/wc/v3/payments/reports/authorizations', array( 'order_id' => 'abc' ) ),
+			'malformed date'           => array( '/wc/v3/payments/reports/transactions', array( 'date_after' => 'yesterday' ) ),
+			'fees page below one'      => array( '/wc/v3/payments/reports/fees', array( 'page' => 0 ) ),
+			'fees summary type object' => array( '/wc/v3/payments/reports/fees/summary', array( 'type' => array( array( 'nested' ) ) ) ),
+		);
+	}
+
+	/**
 	 * @testdox Fees list maps Reports filters to transaction filters and strips customer data from rows.
 	 */
 	public function test_fees_list_maps_filters_and_strips_customer_data(): void {
