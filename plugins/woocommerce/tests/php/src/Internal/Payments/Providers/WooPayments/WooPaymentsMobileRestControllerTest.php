@@ -1908,6 +1908,37 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Terminal preparation logs an unexpected PHP error and answers the client's generic error.
+	 *
+	 * Client 11.1.0 logs it before answering wcpay_server_error (class-wc-rest-payments-orders-controller.php:355-356).
+	 */
+	public function test_prepare_terminal_payment_logs_an_unexpected_error(): void {
+		$logger = RecordingWcLogger::install();
+		$order  = $this->create_order( 12.34, 'USD' );
+		$this->api_client->prepare_terminal_payment_exception = new \Error( 'unexpected' );
+
+		$response = $this->sut->prepare_terminal_payment( $this->make_prepare_request( $order ) );
+
+		$this->assertSame( 'wcpay_server_error', $response->get_error_code() );
+		$this->assertSame( 500, $response->get_error_data()['status'] );
+		$this->assertSame( array( array( 'error', 'Failed to prepare a terminal payment via the REST API.', 'woopayments' ) ), $logger->get_errors() );
+	}
+
+	/**
+	 * @testdox Terminal preparation answers the client's fallback code and status for a platform error that carries neither.
+	 */
+	public function test_prepare_terminal_payment_falls_back_to_the_client_error_code(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		// A platform error envelope without a code or HTTP status (client class-wc-rest-payments-orders-controller.php:346-353).
+		$this->api_client->prepare_terminal_payment_exception = new WooPaymentsApiException( 'Prepare failed.', '', 0 );
+
+		$response = $this->sut->prepare_terminal_payment( $this->make_prepare_request( $order ) );
+
+		$this->assertSame( 'wcpay_prepare_terminal_payment_failed', $response->get_error_code() );
+		$this->assertSame( 500, $response->get_error_data()['status'] );
+	}
+
+	/**
 	 * Mobile routes whose unexpected errors are logged, with the expected log line.
 	 *
 	 * @return array<string,array{0:string,1:string}>
@@ -1946,6 +1977,20 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 			'status'   => 'succeeded',
 			'currency' => 'usd',
 		);
+	}
+
+	/**
+	 * Build a prepare request for an order and the pi_terminal intent.
+	 *
+	 * @param \WC_Order $order Order.
+	 * @return WP_REST_Request
+	 */
+	private function make_prepare_request( \WC_Order $order ): WP_REST_Request {
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/prepare_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		return $request;
 	}
 
 	/**

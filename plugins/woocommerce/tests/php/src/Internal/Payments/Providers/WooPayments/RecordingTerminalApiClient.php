@@ -130,6 +130,13 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	public $captured_intention_exception = null;
 
 	/**
+	 * Throwable thrown by prepare_terminal_payment when set.
+	 *
+	 * @var \Throwable|null
+	 */
+	public $prepare_terminal_payment_exception = null;
+
+	/**
 	 * Each capture_intention call as intent id and amount, in call order.
 	 *
 	 * @var array<int,array{intent_id:string,amount:int}>
@@ -239,6 +246,10 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 			'intent_id' => $intent_id,
 			'order_id'  => $order_id,
 		);
+
+		if ( null !== $this->prepare_terminal_payment_exception ) {
+			throw $this->prepare_terminal_payment_exception;
+		}
 
 		return array( 'status' => 'collecting_payment_method' );
 	}

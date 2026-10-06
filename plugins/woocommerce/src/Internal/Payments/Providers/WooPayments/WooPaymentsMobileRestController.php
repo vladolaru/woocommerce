@@ -483,7 +483,17 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		try {
 			return new WP_REST_Response( $this->api_client->prepare_terminal_payment( $intent_id, $order->get_id() ) );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			// The client's fallback code when the platform sends none (class-wc-rest-payments-orders-controller.php:346-353).
+			return new WP_Error(
+				'' !== $exception->get_error_code() ? $exception->get_error_code() : 'wcpay_prepare_terminal_payment_failed',
+				$exception->getMessage(),
+				array( 'status' => 0 !== $exception->get_http_code() ? $exception->get_http_code() : 500 )
+			);
+		} catch ( Throwable $exception ) {
+			// The client logs before its generic answer (class-wc-rest-payments-orders-controller.php:355-356).
+			$this->get_logger()->log_throwable( 'Failed to prepare a terminal payment via the REST API.', $exception, array( 'order_id' => $order->get_id() ) );
+
+			return $this->server_error();
 		}
 	}
 
