@@ -59,7 +59,8 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		MultiCurrencyFeatureController::seed_from_prior_use();
 		$this->assertFalse( get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ), 'A store that never used the plugin feature keeps the option unset, so new stores stay off.' );
 
-		// The merchant set up currencies in the plugin after upgrading; the cutover runs the seed again.
+		// The merchant set up currencies in the plugin after upgrading; the cutover runs the seed again. The plugin stores a list of
+		// currency codes (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`).
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 		MultiCurrencyFeatureController::seed_from_prior_use();
 		$this->assertSame( 'yes', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );

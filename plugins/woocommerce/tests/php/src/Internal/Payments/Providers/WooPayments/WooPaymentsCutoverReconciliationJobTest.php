@@ -334,7 +334,8 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			++$seeded;
 		};
 		add_action( 'woocommerce_woopayments_cutover_seed_features', $seed_features );
-		// Multi-Currency set up in the plugin after the upgrade seed left the feature unset.
+		// Multi-Currency set up in the plugin after the upgrade seed left the feature unset; the plugin stores a list of currency codes
+		// (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`).
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 		delete_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
 		try {
