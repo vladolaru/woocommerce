@@ -353,13 +353,21 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			return $args;
 		};
 
+		$lifetimes       = array();
+		$record_lifetime = static function ( $value, int $expiration ) use ( &$lifetimes ): void {
+			$lifetimes[] = $expiration;
+		};
+		add_action( 'set_transient_wcpay_test_to_live_eligible', $record_lifetime, 10, 2 );
+
 		try {
 			$this->assertNull( $sut->get_notice_for_current_user() );
 			$this->assertSame( '0', get_transient( 'wcpay_test_to_live_eligible' ) );
+			$this->assertSame( array( HOUR_IN_SECONDS ), $lifetimes );
 			add_filter( 'woocommerce_order_query_args', $record_query );
 			$this->assertNull( $sut->get_notice_for_current_user() );
 			$this->assertSame( 0, $queries );
 		} finally {
+			remove_action( 'set_transient_wcpay_test_to_live_eligible', $record_lifetime, 10 );
 			remove_filter( 'woocommerce_order_query_args', $record_query );
 			delete_option( 'wcpay_test_mode_enabled_date' );
 			delete_transient( 'wcpay_test_to_live_eligible' );
