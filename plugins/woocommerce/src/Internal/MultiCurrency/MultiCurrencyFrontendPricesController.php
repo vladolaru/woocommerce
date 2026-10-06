@@ -11,7 +11,6 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPricePro
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -63,13 +62,6 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	private ?MultiCurrencyRequestContext $request_context = null;
 
 	/**
-	 * Persisted usage detector, whose cached order-history answer is cleared when an order gets an exchange rate.
-	 *
-	 * @var MultiCurrencyUsageDetector
-	 */
-	private MultiCurrencyUsageDetector $usage_detector;
-
-	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -77,18 +69,15 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	 * @param MultiCurrencyRuntimeArbiter           $arbiter                    Runtime owner arbiter.
 	 * @param MultiCurrencyProjectionServiceFactory $projection_service_factory Projection service factory.
 	 * @param MultiCurrencyRuntimeServiceFactory    $runtime_service_factory    Runtime service factory.
-	 * @param MultiCurrencyUsageDetector            $usage_detector             Persisted usage detector.
 	 */
 	final public function init(
 		MultiCurrencyRuntimeArbiter $arbiter,
 		MultiCurrencyProjectionServiceFactory $projection_service_factory,
-		MultiCurrencyRuntimeServiceFactory $runtime_service_factory,
-		MultiCurrencyUsageDetector $usage_detector
+		MultiCurrencyRuntimeServiceFactory $runtime_service_factory
 	): void {
 		$this->arbiter                    = $arbiter;
 		$this->projection_service_factory = $projection_service_factory;
 		$this->runtime_service_factory    = $runtime_service_factory;
-		$this->usage_detector             = $usage_detector;
 	}
 
 	/**
@@ -314,8 +303,6 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 		}
 
 		$order->save_meta_data();
-		// Analytics may have cached that no order has an exchange rate yet (client 11.1.0 asks the database instead, `Analytics.php:565-590`).
-		$this->usage_detector->invalidate_foreign_currency_orders_cache();
 	}
 
 	/**

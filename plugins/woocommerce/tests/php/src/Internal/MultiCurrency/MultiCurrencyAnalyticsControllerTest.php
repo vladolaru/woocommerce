@@ -460,19 +460,24 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should cache the resolved multi-currency orders flag in a transient.
+	 * @testdox Should not remember "no foreign-currency orders", so an order imported with an exchange rate counts on the next request.
 	 */
-	public function test_caches_multi_currency_orders_result_in_transient(): void {
+	public function test_counts_an_imported_foreign_currency_order_on_the_next_request(): void {
 		delete_transient( 'wc_mc_has_orders' );
-		$sut = $this->create_controller_without_orders_resolver( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$this->create_controller_without_orders_resolver( MultiCurrencyRuntimeArbiter::OWNER_CORE )->register();
+		$this->assertFalse( get_transient( 'wc_mc_has_orders' ), 'A negative answer is not cached.' );
 
+		// An import writes the rate through the order CRUD API, without the price controller (meta key: client 11.1.0 `includes/multi-currency/FrontendPrices.php:373`).
+		$order = \WC_Helper_Order::create_order();
+		$order->set_currency( 'EUR' );
+		$order->update_meta_data( '_wcpay_multi_currency_order_exchange_rate', '0.5' );
+		$order->save();
+		$sut = $this->create_controller_without_orders_resolver( MultiCurrencyRuntimeArbiter::OWNER_CORE );
 		$sut->register();
 
-		$this->assertSame(
-			'0',
-			get_transient( 'wc_mc_has_orders' ),
-			'Resolving the existence query should write the result to the transient for subsequent requests.'
-		);
+		// The client asks on every Analytics request (client `includes/multi-currency/Analytics.php:565-590`).
+		$this->assertSame( 20, has_filter( 'woocommerce_analytics_clauses_select', array( $sut, 'handle_woocommerce_analytics_clauses_select' ) ) );
+		$this->assertSame( '1', get_transient( 'wc_mc_has_orders' ), 'A positive answer is cached; order meta only accumulates.' );
 	}
 
 	/**

@@ -173,27 +173,6 @@ class MultiCurrencyUsageDetectorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should invalidate cached foreign order detection after the first multi-currency order.
-	 */
-	public function test_invalidate_foreign_currency_orders_cache_clears_request_and_transient_cache(): void {
-		$queries      = array();
-		$query_filter = $this->add_existence_query_filter( $queries );
-		$detector     = new MultiCurrencyUsageDetector();
-		$detector->set_hpos_enabled_resolver( static fn(): bool => false );
-
-		try {
-			$detector->has_foreign_currency_orders();
-			$detector->invalidate_foreign_currency_orders_cache();
-
-			$this->assertFalse( get_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT ) );
-			$this->assertTrue( $detector->has_foreign_currency_orders() );
-			$this->assertSame( 2, count( $queries ), 'Invalidation must also clear the request memo.' );
-		} finally {
-			remove_filter( 'query', $query_filter );
-		}
-	}
-
-	/**
 	 * @testdox Should throw when the foreign order existence query fails.
 	 */
 	public function test_has_foreign_currency_orders_throws_for_database_errors(): void {

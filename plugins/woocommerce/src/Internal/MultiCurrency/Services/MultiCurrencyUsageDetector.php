@@ -77,13 +77,12 @@ final class MultiCurrencyUsageDetector {
 			return $this->has_foreign_currency_orders_memo;
 		}
 
-		if ( ! $fresh ) {
-			$cached = get_transient( self::HAS_MC_ORDERS_TRANSIENT );
-			if ( false !== $cached ) {
-				$this->has_foreign_currency_orders_memo = ( '1' === $cached );
+		// Only "yes" is cached: order meta only accumulates, while a cached "no" would hide orders imported or created by any other
+		// writer until it expired. The client asks on every Analytics request (client 11.1.0 `includes/multi-currency/Analytics.php:565-590`).
+		if ( ! $fresh && '1' === get_transient( self::HAS_MC_ORDERS_TRANSIENT ) ) {
+			$this->has_foreign_currency_orders_memo = true;
 
-				return $this->has_foreign_currency_orders_memo;
-			}
+			return true;
 		}
 
 		global $wpdb;
@@ -113,19 +112,11 @@ final class MultiCurrencyUsageDetector {
 		}
 
 		$this->has_foreign_currency_orders_memo = ( 1 === (int) $result );
-		set_transient( self::HAS_MC_ORDERS_TRANSIENT, $this->has_foreign_currency_orders_memo ? '1' : '0', HOUR_IN_SECONDS );
+		if ( $this->has_foreign_currency_orders_memo ) {
+			set_transient( self::HAS_MC_ORDERS_TRANSIENT, '1', HOUR_IN_SECONDS );
+		}
 
 		return $this->has_foreign_currency_orders_memo;
-	}
-
-	/**
-	 * Invalidate cached Multi-Currency order detection.
-	 *
-	 * @since 11.2.0
-	 */
-	public function invalidate_foreign_currency_orders_cache(): void {
-		$this->has_foreign_currency_orders_memo = null;
-		delete_transient( self::HAS_MC_ORDERS_TRANSIENT );
 	}
 
 	/**
