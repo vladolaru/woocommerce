@@ -308,16 +308,6 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	}
 
 	/**
-	 * Set Apple Pay and Google Pay enabled state while preserving split-only settings.
-	 *
-	 * @param bool $enabled Whether payment-request wallets are enabled.
-	 * @return string[] Updated split option names.
-	 */
-	public function set_payment_request_enabled( bool $enabled ): array {
-		return $this->synchronize_payment_request_settings( $enabled )['updated_options'];
-	}
-
-	/**
 	 * Set split wallet enabled state and return its verified persistence outcome.
 	 *
 	 * @param bool $enabled Whether payment-request wallets are enabled.

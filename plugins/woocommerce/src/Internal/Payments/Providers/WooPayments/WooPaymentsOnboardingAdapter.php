@@ -84,19 +84,6 @@ class WooPaymentsOnboardingAdapter {
 	}
 
 	/**
-	 * Tell whether the native WooPayments provider can process operations.
-	 *
-	 * @return bool
-	 */
-	public function is_native_provider_available(): bool {
-		try {
-			return $this->get_provider()->can_process_payments();
-		} catch ( Throwable $e ) {
-			return false;
-		}
-	}
-
-	/**
 	 * Tell whether any WooPayments runtime can support onboarding/admin state.
 	 *
 	 * @return bool

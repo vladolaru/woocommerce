@@ -208,10 +208,6 @@ export const getIsWCPaySubscriptionsEligible = ( state: SettingsRootState ) => {
 	return getSettings( state ).is_wcpay_subscriptions_eligible || false;
 };
 
-export const getIsSubscriptionsPluginActive = ( state: SettingsRootState ) => {
-	return getSettings( state ).is_subscriptions_plugin_active || false;
-};
-
 export const getIsStripeBillingEnabled = ( state: SettingsRootState ) => {
 	return getSettings( state ).is_stripe_billing_enabled || false;
 };
