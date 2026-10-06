@@ -1356,6 +1356,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			'false'                 => array( 'false', false, 'Link' ),
 			'null'                  => array( 'null', null, 'Link' ),
 			'empty string'          => array( 'an empty string', '', 'Link' ),
+			'number'                => array( 'a number', 5, 'Link (5)' ),
 		);
 	}
 
@@ -4313,6 +4314,10 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 * Build the expanded completed Link PaymentIntent returned by the provider for title-suffix lifecycle tests.
 	 *
 	 * @return array<string,mixed>
+	 *
+	 * A Link PaymentIntent with its latest charge expanded, reduced to the fields the effect plan reads: client 11.1.0
+	 * class-wc-payment-gateway-wcpay.php:2700-2745 (payment method title and express wallet type) and the Stripe API
+	 * PaymentIntent and Charge objects for the rest; other fields are omitted on purpose.
 	 */
 	private function completed_link_payment_intent_result(): array {
 		return array(

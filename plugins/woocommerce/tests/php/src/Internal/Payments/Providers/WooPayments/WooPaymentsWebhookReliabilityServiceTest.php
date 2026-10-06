@@ -179,6 +179,50 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A fetch that succeeds after a failed one records its time again.
+	 */
+	public function test_fetch_after_a_failure_records_its_time(): void {
+		update_option( self::EXPECTED_LAST_FETCH_OPTION, 1700000000, false );
+		$client   = new class() extends WooPaymentsApiClient {
+			/**
+			 * Calls made so far.
+			 *
+			 * @var int
+			 */
+			public int $calls = 0;
+
+			/**
+			 * Fail on the first call, as during a platform outage, then answer with an empty page.
+			 *
+			 * @return array<string,mixed>
+			 * @throws WooPaymentsApiException On the first call.
+			 */
+			public function get_failed_webhook_events(): array {
+				++$this->calls;
+				if ( 1 === $this->calls ) {
+					throw new WooPaymentsApiException( 'Service unavailable.', 'wcpay_server_error', 503 );
+				}
+
+				// Page shape of the platform's failed-events list (wpcom class-webhook-controller.php:346-357).
+				return array(
+					'object'   => 'list',
+					'data'     => array(),
+					'has_more' => false,
+				);
+			}
+		};
+		$provider = new WooPaymentsFailedEventsProvider();
+		$provider->init( $client );
+		$service = $this->create_service( new RecordingActionSchedulerService(), wc_get_container()->get( WooPaymentsFailedEventStore::class ), $provider, new RecordingEventIngestor() );
+
+		$service->fetch_events_and_schedule_processing_jobs();
+		$before = time();
+		$service->fetch_events_and_schedule_processing_jobs();
+
+		$this->assertGreaterThanOrEqual( $before, (int) get_option( self::EXPECTED_LAST_FETCH_OPTION ) );
+	}
+
+	/**
 	 * @testdox A failed fetch from the platform leaves the last fetch time alone, so the status report does not show a healthy fetch.
 	 */
 	public function test_failed_fetch_does_not_record_a_fetch_time(): void {

@@ -93,7 +93,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A warning whose fields arrive as other scalar types is stored with the client's casts, not refused.
 	 *
-	 * Client 11.1.0 casts actionable, fraud_type and created as it stores them (class-wc-payments-webhook-processing-service.php:899).
+	 * Client 11.1.0 casts actionable, fraud_type and created as it stores them (class-wc-payments-webhook-processing-service.php:900).
 	 */
 	public function test_casts_scalar_fields_of_another_type_as_the_client_does(): void {
 		$order   = $this->create_woopayments_order();
@@ -107,13 +107,14 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 				'id'         => 'efw_cast',
 				'actionable' => 1,
 				'created'    => '1700000000',
-				'fraud_type' => 'made_with_stolen_card',
+				'fraud_type' => 7,
 			)
 		);
 
 		$warning = wc_get_order( $order->get_id() )->get_meta( '_wcpay_early_fraud_warning', true );
 		$this->assertTrue( $warning['efw_actionable'] );
 		$this->assertSame( 1700000000, $warning['created'] );
+		$this->assertSame( '7', $warning['efw_type'] );
 	}
 
 	/**

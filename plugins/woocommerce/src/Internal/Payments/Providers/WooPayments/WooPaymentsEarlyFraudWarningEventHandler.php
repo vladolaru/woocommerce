@@ -159,8 +159,9 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 		$created    = $event_object['created'] ?? null;
 		$fraud_type = $event_object['fraud_type'] ?? '';
 
-		// The client requires charge, id, actionable and created and casts what it reads
-		// (class-wc-payments-webhook-processing-service.php:867-899); a scalar of another type is coerced the same way.
+		// The client requires charge, id, actionable and created (class-wc-payments-webhook-processing-service.php:867-874)
+		// and casts what it stores (:900); a scalar of another type is cast the same way. Stricter than the client: a
+		// created time that is not numeric, or is negative, is refused rather than cast to a meaningless timestamp.
 		if ( ! is_string( $charge ) || '' === $charge || ! is_string( $warning_id ) || '' === $warning_id || ! is_scalar( $actionable ) || ! is_numeric( $created ) || 0 > (int) $created || ! is_scalar( $fraud_type ) ) {
 			throw new InvalidArgumentException( 'WooPayments early fraud warning event is malformed.' );
 		}

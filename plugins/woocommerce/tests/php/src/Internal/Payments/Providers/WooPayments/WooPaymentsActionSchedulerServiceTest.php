@@ -71,6 +71,7 @@ class WooPaymentsActionSchedulerServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertSame( 0, $this->count_pending_actions( $this->hook, array( 'event_id' => 'evt_deferred' ) ), 'Nothing is scheduled before Action Scheduler initializes.' );
+		$this->assertSame( 10, has_action( 'action_scheduler_init', array( $sut, 'handle_action_scheduler_init' ) ), 'Deferral registers the callback.' );
 		// Run the service's own callback, not Action Scheduler's initialization.
 		$sut->handle_action_scheduler_init();
 
@@ -93,7 +94,7 @@ class WooPaymentsActionSchedulerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A job asked for before Action Scheduler initializes, on another blog of a network, is scheduled for that blog.
+	 * @testdox The same job asked for before Action Scheduler initializes on two blogs of a network is scheduled on each.
 	 * @group multisite
 	 */
 	public function test_deferred_job_is_scheduled_on_the_blog_it_was_asked_for(): void {
@@ -105,6 +106,8 @@ class WooPaymentsActionSchedulerServiceTest extends WC_Unit_Test_Case {
 		$blog_id = self::factory()->blog->create();
 		$this->while_action_scheduler_is_not_initialized(
 			function () use ( $sut, $blog_id ): void {
+				// The same job for two stores of the network: each must be kept.
+				$sut->schedule_job( $this->hook, array( 'event_id' => 'evt_blog' ) );
 				switch_to_blog( $blog_id );
 				try {
 					$sut->schedule_job( $this->hook, array( 'event_id' => 'evt_blog' ) );
@@ -131,7 +134,8 @@ class WooPaymentsActionSchedulerServiceTest extends WC_Unit_Test_Case {
 			remove_filter( 'pre_as_schedule_single_action', $record, 10 );
 		}
 
-		$this->assertSame( array( $blog_id ), $scheduled_on );
+		sort( $scheduled_on );
+		$this->assertSame( array( get_main_site_id(), $blog_id ), $scheduled_on );
 		$this->assertSame( get_main_site_id(), get_current_blog_id(), 'The blog is restored after scheduling.' );
 	}
 
