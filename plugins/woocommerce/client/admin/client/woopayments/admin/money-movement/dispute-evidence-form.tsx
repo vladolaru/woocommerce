@@ -861,15 +861,10 @@ export const DisputeEvidenceForm = ( {
 		}
 	};
 
-	const handleContinue = async () => {
-		const nextStep = getNextStep( currentStep, includeShippingStep );
-
-		if ( ! nextStep ) {
-			return;
-		}
-
+	// Client 11.1.0 `disputes/new-evidence/index.tsx:812-821`: Next and the step labels save the draft before changing step.
+	const goToStep = async ( step: EvidenceStep ) => {
 		if ( readOnly ) {
-			setCurrentStep( nextStep );
+			setCurrentStep( step );
 			return;
 		}
 
@@ -880,7 +875,15 @@ export const DisputeEvidenceForm = ( {
 		} );
 
 		if ( updatedDispute ) {
-			setCurrentStep( nextStep );
+			setCurrentStep( step );
+		}
+	};
+
+	const handleContinue = async () => {
+		const nextStep = getNextStep( currentStep, includeShippingStep );
+
+		if ( nextStep ) {
+			await goToStep( nextStep );
 		}
 	};
 
@@ -1174,6 +1177,7 @@ export const DisputeEvidenceForm = ( {
 								label: getStepTabLabel( step ),
 								description: '',
 								content: null,
+								onClick: () => goToStep( step ),
 							} ) ) }
 						/>
 					) }
