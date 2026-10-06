@@ -357,6 +357,7 @@ describe( 'AccountBalancesCard', () => {
 	} );
 
 	describe( 'instant payout while the request runs', () => {
+		// Overview balances per client 11.1.0 `types/account-overview.d.ts:34-38` (Balance) and `:54-60` (InstantBalance).
 		const instantOverview = () =>
 			createOverview( {
 				balance: {
@@ -373,6 +374,7 @@ describe( 'AccountBalancesCard', () => {
 					],
 				},
 			} );
+		// The instant payout POST answers with a payout (client 11.1.0 `types/account-overview.d.ts:40-52`); the client reads its amount and id (`data/deposits/actions.js:118`, `:127`).
 		const deposit = {
 			id: 'po_instant',
 			date: 1781740800000,
@@ -449,21 +451,19 @@ describe( 'AccountBalancesCard', () => {
 			await userEvent.click(
 				screen.getByRole( 'button', { name: 'Get $9.00 now' } )
 			);
-			await act( async () => {
-				await userEvent.click(
-					screen.getByRole( 'button', { name: 'Pay out $8.86 now' } )
-				);
-				// The page reloads the balance once the payout settles, so the payout button unmounts.
-				rerender(
-					<AccountBalancesCard
-						isLoading
-						overview={ null }
-						selectedCurrency="usd"
-						onCurrencyChange={ jest.fn() }
-						onInstantPayoutSubmit={ submitInstantPayout }
-					/>
-				);
-			} );
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Pay out $8.86 now' } )
+			);
+			// The page reloads the balance once the payout settles, so the payout button unmounts.
+			rerender(
+				<AccountBalancesCard
+					isLoading
+					overview={ null }
+					selectedCurrency="usd"
+					onCurrencyChange={ jest.fn() }
+					onInstantPayoutSubmit={ submitInstantPayout }
+				/>
+			);
 
 			await waitFor( () =>
 				expect(

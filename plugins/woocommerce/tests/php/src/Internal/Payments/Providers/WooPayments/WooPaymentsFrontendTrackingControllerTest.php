@@ -118,6 +118,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 			static function ( $preempt, $parsed_args, $url ) use ( &$captured_url ) {
 				$captured_url = $url;
 
+				// The response array WP_Http::request() returns (wp-includes/class-wp-http.php).
 				return array(
 					'headers'  => array(),
 					'body'     => '',
@@ -172,6 +173,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 			static function ( $preempt, $parsed_args, $url ) use ( &$captured_url ) {
 				$captured_url = $url;
 
+				// The response array WP_Http::request() returns (wp-includes/class-wp-http.php).
 				return array(
 					'headers'  => array(),
 					'body'     => '',
@@ -216,9 +218,10 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should still record the event when a property filter returns a non-array, as the client's untyped builder does.
+	 * @testdox Should still record the event when a property filter returns null, as the client does.
 	 *
-	 * Client 11.1.0 `includes/class-woopay-tracker.php:400` merges `(array) $properties`.
+	 * Client 11.1.0 `includes/class-woopay-tracker.php:372-380` adds its properties to the null result, which PHP turns into
+	 * an array, and `:400` merges `(array) $properties`.
 	 */
 	public function test_property_filter_returning_null_does_not_break_recording(): void {
 		$captured_url = '';
@@ -230,6 +233,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 			static function ( $preempt, $parsed_args, $url ) use ( &$captured_url ) {
 				$captured_url = $url;
 
+				// The response array WP_Http::request() returns (wp-includes/class-wp-http.php).
 				return array(
 					'headers'  => array(),
 					'body'     => '',
