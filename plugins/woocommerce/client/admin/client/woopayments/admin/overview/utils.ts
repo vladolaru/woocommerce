@@ -159,25 +159,6 @@ export const getMonthlyAnchorLabel = ( anchor: number ) => {
 	);
 };
 
-export const formatPayoutDate = ( deposit: WooPaymentsDeposit ) => {
-	const rawDate = deposit.date || deposit.created || '';
-	const timestamp =
-		typeof rawDate === 'number' && rawDate < 10000000000
-			? rawDate * 1000
-			: rawDate;
-	const date = new Date( timestamp );
-
-	if ( Number.isNaN( date.getTime() ) ) {
-		return '-';
-	}
-
-	return date.toLocaleDateString( undefined, {
-		year: 'numeric',
-		month: 'short',
-		day: 'numeric',
-	} );
-};
-
 /**
  * The payout date in the site date format, read as UTC, as client 11.1.0 `utils/date-time.ts` `formatDateTimeFromString()` shows it.
  *
