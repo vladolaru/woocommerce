@@ -146,7 +146,10 @@ class PaymentGatewaySuggestionsTest extends WC_REST_Unit_Test_Case {
 	 * @testdox WooPayments reads as active when native payments are enabled and the kill switch is off, and as inactive otherwise.
 	 * @testWith ["yes", "0", true]
 	 *           ["yes", "yes", false]
+	 *           ["yes", "YES", false]
 	 *           ["yes", "1", false]
+	 *           ["yes", "true", false]
+	 *           ["yes", "on", true]
 	 *           ["no", "0", false]
 	 *
 	 * @param string $native_enabled Stored native payments enablement.
