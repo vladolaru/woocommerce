@@ -118,6 +118,11 @@ class WooPaymentsMultiCurrencyProviderBootstrap implements RegisterHooksInterfac
 	 * @since 11.0.0
 	 */
 	public function register(): void {
+		// The Blocks totals show the currency code while Multi-Currency runs (client 11.1.0 `includes/multi-currency/MultiCurrency.php:290`).
+		if ( false === has_filter( 'wcpay_payment_fields_js_config', array( $this, 'add_multi_currency_config' ) ) ) {
+			add_filter( 'wcpay_payment_fields_js_config', array( $this, 'add_multi_currency_config' ) );
+		}
+
 		if ( $this->arbiter->should_native_register() ) {
 			$this->register_adapters( $this->native_account_adapter, $this->native_api_client_adapter );
 			return;
@@ -128,6 +133,24 @@ class WooPaymentsMultiCurrencyProviderBootstrap implements RegisterHooksInterfac
 		}
 
 		$this->register_adapters( $this->legacy_account_adapter, $this->legacy_api_client_adapter );
+	}
+
+	/**
+	 * Tell the payment fields that Multi-Currency is on (client 11.1.0 `includes/multi-currency/MultiCurrency.php:478-480`).
+	 *
+	 * @internal
+	 *
+	 * @param mixed $config Payment fields JS config.
+	 * @return mixed
+	 */
+	public function add_multi_currency_config( $config ) {
+		if ( ! is_array( $config ) ) {
+			return $config;
+		}
+
+		$config['isMultiCurrencyEnabled'] = true;
+
+		return $config;
 	}
 
 	/**

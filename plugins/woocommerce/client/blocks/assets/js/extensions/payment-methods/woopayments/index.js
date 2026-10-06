@@ -24,6 +24,7 @@ import {
 	getFontRulesFromPage,
 } from './upe-styles';
 import { recordWooPaymentsUserEvent } from './tracks';
+import { registerMultiCurrencyTotalValue } from './multi-currency-totals';
 import {
 	handleWooPayEmailInput,
 	shouldHandleWooPayEmailInput,
@@ -1408,6 +1409,7 @@ const registerWooPayments = () => {
 };
 
 registerWooPayments();
+registerMultiCurrencyTotalValue( defaultSettings );
 
 // The WooPay email lookup runs on the checkout block only, mirroring the
 // WooPayments plugin's blocks entry point.

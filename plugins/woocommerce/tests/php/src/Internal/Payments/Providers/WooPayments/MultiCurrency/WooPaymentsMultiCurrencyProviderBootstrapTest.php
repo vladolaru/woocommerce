@@ -72,6 +72,25 @@ class WooPaymentsMultiCurrencyProviderBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should tell the payment fields that Multi-Currency is on, so the Blocks totals show the currency code.
+	 */
+	public function test_marks_multi_currency_on_in_the_payment_fields_config(): void {
+		$context = $this->create_bootstrap_context( true, false );
+
+		$context['bootstrap']->register();
+
+		// Client 11.1.0 adds this key whenever Multi-Currency runs (`includes/multi-currency/MultiCurrency.php:290`, `:478-480`).
+		$config = apply_filters( 'wcpay_payment_fields_js_config', array( 'publishableKey' => 'pk_test_123' ) );
+		$this->assertSame(
+			array(
+				'publishableKey'         => 'pk_test_123',
+				'isMultiCurrencyEnabled' => true,
+			),
+			$config
+		);
+	}
+
+	/**
 	 * Create a bootstrap test context.
 	 *
 	 * @param bool $native_owner Whether native owns runtime.
