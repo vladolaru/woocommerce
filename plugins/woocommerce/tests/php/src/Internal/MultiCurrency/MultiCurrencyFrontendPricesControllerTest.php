@@ -53,6 +53,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		foreach ( $this->hooks as $hook ) {
 			remove_all_filters( $hook );
 		}
+		remove_all_filters( 'wcpay_multi_currency_override_selected_currency' );
 
 		parent::tearDown();
 	}
@@ -130,9 +131,9 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should convert product variation shipping and coupon prices through the projection service.
+	 * @testdox Should pass each price to the projection service with its price type.
 	 */
-	public function test_converts_prices_through_projection_service(): void {
+	public function test_passes_each_price_to_the_projection_service_with_its_type(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
 
 		$this->assertSame( '20', $sut->get_product_price_string( '10.00', (object) array() ) );
@@ -168,6 +169,56 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		);
 		$this->assertSame( 20.0, $sut->get_coupon_amount( '5.00', $this->create_coupon() ) );
 		$this->assertSame( 20.0, $sut->get_coupon_min_max_amount( '10.00' ) );
+	}
+
+	/**
+	 * @testdox Should convert a real product, flat shipping rate and coupons with the client's rounding.
+	 */
+	public function test_converts_real_prices_with_the_client_rounding(): void {
+		// EUR at 0.91 with a 0.50 rounding step and a -0.01 charm, as the settings page saves them.
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.91' );
+		update_option( 'wcpay_multi_currency_price_rounding_eur', '0.50' );
+		update_option( 'wcpay_multi_currency_price_charm_eur', '-0.01' );
+		add_filter( 'wcpay_multi_currency_override_selected_currency', fn() => 'EUR' );
+
+		$sut = new MultiCurrencyFrontendPricesController();
+		$sut->init(
+			$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_CORE ),
+			wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class ),
+			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class )
+		);
+		$sut->register();
+
+		$product = \WC_Helper_Product::create_simple_product( true, array( 'regular_price' => '10.00' ) );
+
+		$shipping_method = new \WC_Shipping_Flat_Rate( 0 );
+		$shipping_method->add_rate(
+			array(
+				'id'    => 'flat_rate',
+				'label' => 'Flat rate',
+				'cost'  => '5.00',
+			)
+		);
+
+		$fixed_coupon = new \WC_Coupon();
+		$fixed_coupon->set_discount_type( 'fixed_cart' );
+		$fixed_coupon->set_amount( '3.00' );
+		$fixed_coupon->set_minimum_amount( '20.00' );
+
+		$percent_coupon = new \WC_Coupon();
+		$percent_coupon->set_discount_type( 'percent' );
+		$percent_coupon->set_amount( '10' );
+
+		// Client 11.1.0 MultiCurrency::get_price() and get_adjusted_price() (includes/multi-currency/MultiCurrency.php:941-967, 1657-1684):
+		// products and shipping ceil to the rounding step, only products take the charm, fixed coupons round to the currency decimals.
+		$this->assertSame( '9.49', $product->get_price(), '10.00 x 0.91 = 9.10, ceiled to 9.50, minus the 0.01 charm.' );
+		$this->assertEquals( 5.0, $shipping_method->rates['flat_rate']->get_cost(), '5.00 x 0.91 = 4.55, ceiled to 5.00, no charm on shipping.' );
+		$this->assertEquals( 2.73, $fixed_coupon->get_amount(), '3.00 x 0.91 = 2.73, rounded to two decimals.' );
+		$this->assertEquals( 18.49, $fixed_coupon->get_minimum_amount(), 'A coupon minimum is treated as a product price (client FrontendPrices.php:329-337).' );
+		$this->assertEquals( 10, $percent_coupon->get_amount(), 'A percent coupon keeps its percentage.' );
 	}
 
 	/**
