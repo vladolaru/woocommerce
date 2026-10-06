@@ -134,10 +134,8 @@ class WooPaymentsReportsRestController implements RegisterHooksInterface {
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public function get_balance_summary( WP_REST_Request $request ) {
-		$currency = strtolower( $this->get_scalar_param( $request, 'currency' ) );
-		if ( ! WooPaymentsReportingBalanceSummaryRequest::is_valid_currency_code( $currency ) ) {
-			return new WP_Error( 'rest_invalid_param', __( 'Currency must be an ISO 4217 three-letter code.', 'woocommerce' ), array( 'status' => 400 ) );
-		}
+		// The route args validate and lowercase the currency before this runs.
+		$currency = $this->get_scalar_param( $request, 'currency' );
 
 		try {
 			return new WP_REST_Response(
