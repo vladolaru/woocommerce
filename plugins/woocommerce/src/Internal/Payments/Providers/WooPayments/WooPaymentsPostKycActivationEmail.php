@@ -61,7 +61,7 @@ class WooPaymentsPostKycActivationEmail extends WC_Email {
 	 * @return string
 	 */
 	public function get_default_heading(): string {
-		return __( "Your store is ready - let's make your first sale", 'woocommerce' );
+		return __( 'Your store is ready — let’s make your first sale', 'woocommerce' );
 	}
 
 	/**

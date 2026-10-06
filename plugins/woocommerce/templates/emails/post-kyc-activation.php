@@ -22,16 +22,16 @@ defined( 'ABSPATH' ) || exit;
 
 $stage_copy = array(
 	7  => array(
-		'heading' => __( "Your store is ready - let's make your first sale", 'woocommerce' ),
-		'body'    => __( "Your WooPayments account is approved and ready to accept payments. Now it's about getting eyes on your store - share your link, tell your network, and make your first sale.", 'woocommerce' ),
+		'heading' => __( 'Your store is ready — let’s make your first sale', 'woocommerce' ),
+		'body'    => __( 'Your WooPayments account is approved and ready to accept payments. Now it’s about getting eyes on your store — share your link, tell your network, and make your first sale.', 'woocommerce' ),
 	),
 	14 => array(
-		'heading' => __( 'Two weeks in - have you shared your store yet?', 'woocommerce' ),
+		'heading' => __( 'Two weeks in — have you shared your store yet?', 'woocommerce' ),
 		'body'    => __( 'Your account is fully approved and accepting payments. Share your store with your first potential customers to get that first sale.', 'woocommerce' ),
 	),
 	30 => array(
-		'heading' => __( 'Your payments are ready - your first sale can be too', 'woocommerce' ),
-		'body'    => __( 'Everything on the payments side is ready. The next step is getting your first customer through the door - share your store link and start spreading the word.', 'woocommerce' ),
+		'heading' => __( 'Your payments are ready — your first sale can be too', 'woocommerce' ),
+		'body'    => __( 'Everything on the payments side is ready. The next step is getting your first customer through the door — share your store link and start spreading the word.', 'woocommerce' ),
 	),
 );
 
