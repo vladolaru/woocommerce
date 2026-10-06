@@ -1971,6 +1971,16 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @testdox Authorization-summary caches are invalidated by the four capture-affecting webhook events.
 	 */
 	public function test_webhook_events_invalidate_authorization_summary_caches(): void {
+		$delivered = array();
+		add_action(
+			'woocommerce_payments_after_webhook_delivery',
+			function ( string $event_type, array $event_body ) use ( &$delivered ): void {
+				$delivered[] = array( $event_type, $event_body['id'] );
+			},
+			10,
+			2
+		);
+
 		// payment_intent.canceled invalidates even when no order resolves, like the plugin.
 		$this->seed_authorization_summary_caches();
 		$this->sut->process(
@@ -1986,6 +1996,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			)
 		);
 		$this->assertAuthorizationSummaryCachesCleared( 'payment_intent.canceled' );
+		$this->assertSame( array( array( 'payment_intent.canceled', 'evt_cache_canceled' ) ), $delivered, 'The cache-only event completes its delivery.' );
 
 		// payment_intent.amount_capturable_updated does the same.
 		$this->seed_authorization_summary_caches();
@@ -2002,6 +2013,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			)
 		);
 		$this->assertAuthorizationSummaryCachesCleared( 'payment_intent.amount_capturable_updated' );
+		$this->assertSame( array( 'payment_intent.amount_capturable_updated', 'evt_cache_acu' ), $delivered[1] ?? null, 'The cache-only event completes its delivery.' );
 
 		// payment_intent.succeeded invalidates after the order effects apply.
 		$order = $this->create_woopayments_order();
