@@ -37,11 +37,11 @@ final class MultiCurrencyBootstrap {
 	private $on_demand_container = null;
 
 	/**
-	 * Container the refund listener resolves the price controller from.
+	 * Container the order listeners resolve their controllers from.
 	 *
 	 * @var Container|RuntimeContainer|null
 	 */
-	private $refund_container = null;
+	private $order_container = null;
 
 	/**
 	 * Roots this request registered when WooCommerce loaded.
@@ -168,10 +168,12 @@ final class MultiCurrencyBootstrap {
 			return;
 		}
 
-		$this->refund_container = $container;
-		// The client copies the order's exchange rates to refunds on every request (client 11.1.0 `includes/multi-currency/MultiCurrency.php:371`).
+		$this->order_container = $container;
+		// The client copies the order's exchange rates to refunds and records the customer currency on every request
+		// (client 11.1.0 `includes/multi-currency/MultiCurrency.php:371`, `:384`).
 		if ( false === has_action( 'woocommerce_order_refunded', array( $this, 'handle_woocommerce_order_refunded' ) ) ) {
 			add_action( 'woocommerce_order_refunded', array( $this, 'handle_woocommerce_order_refunded' ), 50, 2 );
+			add_action( 'woocommerce_order_status_changed', array( $this, 'handle_woocommerce_order_status_changed' ) );
 		}
 
 		$request = self::classify_request( $is_rest_api_request );
@@ -252,7 +254,7 @@ final class MultiCurrencyBootstrap {
 	 * @param mixed $refund_id Refund ID.
 	 */
 	public function handle_woocommerce_order_refunded( $order_id, $refund_id ): void {
-		if ( null === $this->refund_container ) {
+		if ( null === $this->order_container ) {
 			return;
 		}
 
@@ -261,8 +263,29 @@ final class MultiCurrencyBootstrap {
 		 *
 		 * @var MultiCurrencyFrontendPricesController $controller
 		 */
-		$controller = $this->refund_container->get( MultiCurrencyFrontendPricesController::class );
+		$controller = $this->order_container->get( MultiCurrencyFrontendPricesController::class );
 		$controller->add_refund_meta( $order_id, $refund_id );
+	}
+
+	/**
+	 * Add the order's currency to the currencies customers have used.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $order_id Order ID.
+	 */
+	public function handle_woocommerce_order_status_changed( $order_id ): void {
+		if ( null === $this->order_container ) {
+			return;
+		}
+
+		/**
+		 * Native Multi-Currency Analytics controller.
+		 *
+		 * @var MultiCurrencyAnalyticsController $controller
+		 */
+		$controller = $this->order_container->get( MultiCurrencyAnalyticsController::class );
+		$controller->record_customer_currency( $order_id );
 	}
 
 	/**

@@ -234,6 +234,22 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Add an order's currency to the currencies customers have used (client 11.1.0 `includes/multi-currency/MultiCurrency.php:700-717`).
+	 *
+	 * @internal
+	 *
+	 * @param mixed $order_id Order ID.
+	 */
+	public function record_customer_currency( $order_id ): void {
+		$order = wc_get_order( absint( $order_id ) );
+		if ( ! $order instanceof \WC_Abstract_Order ) {
+			return;
+		}
+
+		$this->get_analytics_projection_service()->add_customer_currency( strtoupper( $order->get_currency() ) );
+	}
+
+	/**
 	 * Disable analytics report caching for multi-currency dev mode.
 	 *
 	 * @internal

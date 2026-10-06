@@ -92,6 +92,21 @@ class MultiCurrencyAnalyticsProjectionService {
 	}
 
 	/**
+	 * Add a currency to the stored currencies customers have used, if it is not there yet.
+	 *
+	 * @param string $currency_code Currency code.
+	 */
+	public function add_customer_currency( string $currency_code ): void {
+		$currencies = $this->state_builder->build()->get_customer_currencies();
+		if ( in_array( $currency_code, $currencies, true ) ) {
+			return;
+		}
+
+		$currencies[] = $currency_code;
+		update_option( MultiCurrencyStateBuilder::CUSTOMER_CURRENCIES_KEY, $currencies );
+	}
+
+	/**
 	 * Project customer currency selector options.
 	 *
 	 * @return array<int,array{label:string,value:string}>

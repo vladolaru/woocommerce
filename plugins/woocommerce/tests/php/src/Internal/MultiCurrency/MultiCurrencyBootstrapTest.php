@@ -582,6 +582,29 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		);
 	}
 
+	/**
+	 * @testdox $request: an order status change adds the order's currency to the stored customer currencies.
+	 * @testWith ["front"]
+	 *           ["cron"]
+	 *
+	 * @param string $request Request class.
+	 */
+	public function test_order_status_change_records_the_customer_currency( string $request ): void {
+		add_filter( 'pre_http_request', static fn() => new \WP_Error( 'blocked', 'Outbound HTTP is blocked in this test.' ) );
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_stored_customer_currencies', array( 'USD' ) );
+		$order = WC_Helper_Order::create_order();
+		$order->set_currency( 'EUR' );
+		$order->save();
+		$this->enable_core_multi_currency( false );
+		$sut = new MultiCurrencyBootstrap( static fn(): array => array() );
+
+		// Client 11.1.0 registers this on every request (`includes/multi-currency/MultiCurrency.php:384`, `:700-717`).
+		$this->register_as( $sut, wc_get_container(), $request, static fn() => $order->update_status( 'completed' ) );
+
+		$this->assertSame( array( 'USD', 'EUR' ), get_option( 'wcpay_multi_currency_stored_customer_currencies' ) );
+	}
+
 	/** @testdox Leaves a refund of a store-currency order without exchange-rate meta. */
 	public function test_refund_of_a_store_currency_order_gets_no_exchange_rate_meta(): void {
 		add_filter( 'pre_http_request', static fn() => new \WP_Error( 'blocked', 'Outbound HTTP is blocked in this test.' ) );
@@ -613,7 +636,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertSame( '', $refund->get_meta( MultiCurrencyPriceProjectionService::META_KEY_ORDER_DEFAULT_CURRENCY ) );
 	}
 
-	/** @testdox Adds no refund listener when the plugin or nobody owns Multi-Currency. */
+	/** @testdox Adds no order listeners when the plugin or nobody owns Multi-Currency. */
 	public function test_adds_no_refund_listener_without_core_ownership(): void {
 		foreach ( array( MultiCurrencyRuntimeArbiter::OWNER_NONE, MultiCurrencyRuntimeArbiter::OWNER_PLUGIN ) as $owner ) {
 			$sut = new MultiCurrencyBootstrap( static fn(): array => array() );
@@ -621,6 +644,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 			$this->register_as( $sut, $this->make_container( $owner, true, false ), 'admin' );
 
 			$this->assertFalse( has_action( 'woocommerce_order_refunded', array( $sut, 'handle_woocommerce_order_refunded' ) ), $owner );
+			$this->assertFalse( has_action( 'woocommerce_order_status_changed', array( $sut, 'handle_woocommerce_order_status_changed' ) ), $owner );
 		}
 	}
 
