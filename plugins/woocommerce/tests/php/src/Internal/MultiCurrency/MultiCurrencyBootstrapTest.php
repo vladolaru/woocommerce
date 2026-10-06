@@ -523,6 +523,91 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox $label: a refund copies the order's exchange-rate meta at the client's priority.
+	 * @dataProvider refund_request_classes
+	 *
+	 * @param string $label      Case label.
+	 * @param bool   $configured Whether an additional currency is configured; otherwise the store only has order history.
+	 * @param string $request    Request class: front, ajax, rest, admin, cron or cli.
+	 */
+	public function test_refund_copies_order_exchange_rate_meta_on_every_request_class( string $label, bool $configured, string $request ): void {
+		unset( $label );
+		add_filter( 'pre_http_request', static fn() => new \WP_Error( 'blocked', 'Outbound HTTP is blocked in this test.' ) );
+		update_option( 'woocommerce_currency', 'USD' );
+		$order = WC_Helper_Order::create_order();
+		$order->set_currency( 'EUR' );
+		$order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_EXCHANGE_RATE, '0.5' );
+		$order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
+		$order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_STRIPE_EXCHANGE_RATE, '0.49' );
+		$order->save();
+		$this->enable_core_multi_currency( $configured );
+		$sut = new MultiCurrencyBootstrap( static fn(): array => array() );
+
+		$this->register_as( $sut, wc_get_container(), $request );
+		// Client 11.1.0 registers the copy at priority 50 on every request (`includes/multi-currency/MultiCurrency.php:371`).
+		$this->assertSame( 50, has_action( 'woocommerce_order_refunded', array( $sut, 'handle_woocommerce_order_refunded' ) ) );
+
+		$refund = wc_get_order(
+			wc_create_refund(
+				array(
+					'order_id' => $order->get_id(),
+					'amount'   => 1,
+				)
+			)->get_id()
+		);
+		$this->assertSame( '0.5', $refund->get_meta( MultiCurrencyPriceProjectionService::META_KEY_ORDER_EXCHANGE_RATE ) );
+		$this->assertSame( 'USD', $refund->get_meta( MultiCurrencyPriceProjectionService::META_KEY_ORDER_DEFAULT_CURRENCY ) );
+		$this->assertSame( '0.49', $refund->get_meta( MultiCurrencyPriceProjectionService::META_KEY_STRIPE_EXCHANGE_RATE ) );
+	}
+
+	/** @return array<string,array{string,bool,string}> */
+	public static function refund_request_classes(): array {
+		return array(
+			'configured front'     => array( 'configured front', true, 'front' ),
+			'configured admin'     => array( 'configured admin', true, 'admin' ),
+			'order history, ajax'  => array( 'order history, ajax', false, 'ajax' ),
+			'order history, admin' => array( 'order history, admin', false, 'admin' ),
+			'order history, rest'  => array( 'order history, rest', false, 'rest' ),
+			'order history, cron'  => array( 'order history, cron', false, 'cron' ),
+			'order history, cli'   => array( 'order history, cli', false, 'cli' ),
+			'order history, front' => array( 'order history, front', false, 'front' ),
+		);
+	}
+
+	/** @testdox Leaves a refund of a store-currency order without exchange-rate meta. */
+	public function test_refund_of_a_store_currency_order_gets_no_exchange_rate_meta(): void {
+		add_filter( 'pre_http_request', static fn() => new \WP_Error( 'blocked', 'Outbound HTTP is blocked in this test.' ) );
+		update_option( 'woocommerce_currency', 'USD' );
+		$order = WC_Helper_Order::create_order();
+		$this->enable_core_multi_currency( true );
+		$sut = new MultiCurrencyBootstrap( static fn(): array => array() );
+
+		$this->register_as( $sut, wc_get_container(), 'ajax' );
+		$refund = wc_get_order(
+			wc_create_refund(
+				array(
+					'order_id' => $order->get_id(),
+					'amount'   => 1,
+				)
+			)->get_id()
+		);
+
+		$this->assertSame( '', $refund->get_meta( MultiCurrencyPriceProjectionService::META_KEY_ORDER_EXCHANGE_RATE ) );
+		$this->assertSame( '', $refund->get_meta( MultiCurrencyPriceProjectionService::META_KEY_ORDER_DEFAULT_CURRENCY ) );
+	}
+
+	/** @testdox Adds no refund listener when the plugin or nobody owns Multi-Currency. */
+	public function test_adds_no_refund_listener_without_core_ownership(): void {
+		foreach ( array( MultiCurrencyRuntimeArbiter::OWNER_NONE, MultiCurrencyRuntimeArbiter::OWNER_PLUGIN ) as $owner ) {
+			$sut = new MultiCurrencyBootstrap( static fn(): array => array() );
+
+			$this->register_as( $sut, $this->make_container( $owner, true, false ), 'admin' );
+
+			$this->assertFalse( has_action( 'woocommerce_order_refunded', array( $sut, 'handle_woocommerce_order_refunded' ) ), $owner );
+		}
+	}
+
+	/**
 	 * @testdox $label: the Analytics import that Action Scheduler runs inside a page request converts a foreign-currency order to the store currency.
 	 * @dataProvider page_request_import_runs
 	 *
@@ -582,11 +667,11 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	/**
 	 * Run the bootstrap as WooCommerce loads it in one request class.
 	 *
-	 * @param MultiCurrencyBootstrap $sut       Bootstrap under test.
-	 * @param RuntimeContainer       $container Recording container.
-	 * @param string                 $request   Request class: front, ajax, rest, admin, cron or cli.
+	 * @param MultiCurrencyBootstrap                             $sut       Bootstrap under test.
+	 * @param \Automattic\WooCommerce\Container|RuntimeContainer $container Recording or real container.
+	 * @param string                                             $request   Request class: front, ajax, rest, admin, cron or cli.
 	 */
-	private function register_as( MultiCurrencyBootstrap $sut, RuntimeContainer $container, string $request ): void {
+	private function register_as( MultiCurrencyBootstrap $sut, $container, string $request ): void {
 		$filter = array(
 			'ajax' => 'wp_doing_ajax',
 			'cron' => 'wp_doing_cron',
@@ -610,6 +695,20 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 			Constants::clear_single_constant( 'WP_CLI' );
 			set_current_screen( 'front' );
 		}
+	}
+
+	/**
+	 * Hand Multi-Currency to core with the real container, as an upgraded store with native payments has it.
+	 *
+	 * @param bool $configured Whether an additional currency is configured.
+	 */
+	private function enable_core_multi_currency( bool $configured ): void {
+		update_option( 'wcpay_multi_currency_enabled_currencies', $configured ? array( 'USD', 'EUR' ) : array() );
+		delete_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT );
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		update_option( 'active_plugins', array_values( array_diff( (array) get_option( 'active_plugins', array() ), array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) ) ) );
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		wc_get_container()->reset_all_resolved();
 	}
 
 	/**

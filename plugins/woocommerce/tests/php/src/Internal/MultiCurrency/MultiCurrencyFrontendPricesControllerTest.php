@@ -106,7 +106,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 99, has_filter( 'woocommerce_coupon_get_minimum_amount', array( $sut, 'get_coupon_min_max_amount' ) ) );
 		$this->assertSame( 99, has_filter( 'woocommerce_coupon_get_maximum_amount', array( $sut, 'get_coupon_min_max_amount' ) ) );
 		$this->assertSame( 99, has_filter( 'woocommerce_new_order', array( $sut, 'add_order_meta' ) ) );
-		$this->assertSame( 99, has_action( 'woocommerce_order_refunded', array( $sut, 'add_refund_meta' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_order_refunded', array( $sut, 'add_refund_meta' ) ), 'The bootstrap registers the refund meta copy on every request.' );
 		$this->assertSame( 10, has_filter( 'rest_post_dispatch', array( $sut, 'maybe_modify_price_ranges_rest_response' ) ) );
 		$this->assertSame( 10, has_filter( 'query_loop_block_query_vars', array( $sut, 'maybe_modify_price_ranges_query_var' ) ) );
 	}

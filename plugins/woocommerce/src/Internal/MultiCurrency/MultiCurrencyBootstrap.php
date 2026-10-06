@@ -37,6 +37,13 @@ final class MultiCurrencyBootstrap {
 	private $on_demand_container = null;
 
 	/**
+	 * Container the refund listener resolves the price controller from.
+	 *
+	 * @var Container|RuntimeContainer|null
+	 */
+	private $refund_container = null;
+
+	/**
 	 * Roots this request registered when WooCommerce loaded.
 	 *
 	 * @var array<int,class-string>
@@ -161,6 +168,12 @@ final class MultiCurrencyBootstrap {
 			return;
 		}
 
+		$this->refund_container = $container;
+		// The client copies the order's exchange rates to refunds on every request (client 11.1.0 `includes/multi-currency/MultiCurrency.php:371`).
+		if ( false === has_action( 'woocommerce_order_refunded', array( $this, 'handle_woocommerce_order_refunded' ) ) ) {
+			add_action( 'woocommerce_order_refunded', array( $this, 'handle_woocommerce_order_refunded' ), 50, 2 );
+		}
+
 		$request = self::classify_request( $is_rest_api_request );
 		$roots   = $this->get_core_roots( $container, $request );
 		if ( ! empty( $roots ) ) {
@@ -228,6 +241,28 @@ final class MultiCurrencyBootstrap {
 		}
 
 		$this->register_roots( $container, array_values( array_diff( array_merge( $this->get_provider_roots(), $cron ), $this->registered_roots ) ) );
+	}
+
+	/**
+	 * Copy the order's exchange-rate meta to a new refund.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $order_id  Order ID.
+	 * @param mixed $refund_id Refund ID.
+	 */
+	public function handle_woocommerce_order_refunded( $order_id, $refund_id ): void {
+		if ( null === $this->refund_container ) {
+			return;
+		}
+
+		/**
+		 * Native Multi-Currency price controller.
+		 *
+		 * @var MultiCurrencyFrontendPricesController $controller
+		 */
+		$controller = $this->refund_container->get( MultiCurrencyFrontendPricesController::class );
+		$controller->add_refund_meta( $order_id, $refund_id );
 	}
 
 	/**
