@@ -9,7 +9,6 @@ import path from 'path';
  * Internal dependencies
  */
 import {
-	getWooPaymentsAuthorizations,
 	getWooPaymentsDisputes,
 	getWooPaymentsFraudOutcomeTransactions,
 	getWooPaymentsTransactions,
@@ -68,9 +67,6 @@ describe( 'WooPayments money movement array query contract', () => {
 				),
 				disputes: await recordPath( () =>
 					getWooPaymentsDisputes( ARRAY_FILTERS )
-				),
-				authorizations: await recordPath( () =>
-					getWooPaymentsAuthorizations( ARRAY_FILTERS )
 				),
 			};
 			const fixture = {

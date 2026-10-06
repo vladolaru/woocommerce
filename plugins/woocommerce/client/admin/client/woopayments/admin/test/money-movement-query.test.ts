@@ -120,24 +120,7 @@ describe( 'WooPayments money movement query helpers', () => {
 		expect( params.has( 'wc_admin_page' ) ).toBe( false );
 	} );
 
-	it( 'serializes authorizations array filters as PHP arrays', () => {
-		const queryString =
-			moneyMovementQuery.serializeWooPaymentsAuthorizationsQuery( {
-				search: [ 'Ada', 'Grace' ],
-				date_between: [ '2026-06-01', '2026-06-19' ],
-			} );
-		const params = new URLSearchParams( queryString );
-
-		// Repeated bare keys collapse to the last value in PHP.
-		expect( params.getAll( 'search[]' ) ).toEqual( [ 'Ada', 'Grace' ] );
-		expect( params.getAll( 'date_between[]' ) ).toEqual( [
-			'2026-06-01',
-			'2026-06-19',
-		] );
-		expect( params.getAll( 'search' ) ).toEqual( [] );
-	} );
-
-	it( 'serializes authorizations query state without transaction-only filters', () => {
+	it( 'serializes only paging and sorting for authorizations, like the client', () => {
 		const queryHelpers = moneyMovementQuery as unknown as Record<
 			string,
 			( query: Record< string, unknown > ) => string
@@ -167,8 +150,9 @@ describe( 'WooPayments money movement query helpers', () => {
 		expect( params.get( 'pagesize' ) ).toBe( '25' );
 		expect( params.get( 'sort' ) ).toBe( 'created' );
 		expect( params.get( 'direction' ) ).toBe( 'desc' );
-		expect( params.get( 'search' ) ).toBe( 'Ada' );
-		expect( params.get( 'date_after' ) ).toBe( '2026-06-01' );
+		// Client 11.1.0 `data/authorizations/hooks.ts:31-37`.
+		expect( params.has( 'search' ) ).toBe( false );
+		expect( params.has( 'date_after' ) ).toBe( false );
 		expect( params.has( 'loan_id_is' ) ).toBe( false );
 		expect( params.has( 'deposit_id' ) ).toBe( false );
 		expect( params.has( 'store_currency_is' ) ).toBe( false );

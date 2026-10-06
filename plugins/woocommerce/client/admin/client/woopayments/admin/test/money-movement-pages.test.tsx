@@ -2439,7 +2439,8 @@ describe( 'WooPayments money movement pages', () => {
 			</MemoryRouter>
 		);
 
-		// The client's uncaptured card has no search box; a `search` in the URL still applies.
+		// Client 11.1.0 `data/authorizations/hooks.ts:31-37`: the uncaptured card has no search box and its list sends
+		// only paging and sorting, so a `search` in the URL does not narrow it.
 		await screen.findByText( 'Uncaptured transactions loaded.' );
 		expect(
 			screen.queryByRole( 'searchbox', {
@@ -2447,7 +2448,7 @@ describe( 'WooPayments money movement pages', () => {
 			} )
 		).not.toBeInTheDocument();
 
-		expect( mockGetAuthorizations ).toHaveBeenCalledWith(
+		expect( mockGetAuthorizations ).not.toHaveBeenCalledWith(
 			expect.objectContaining( {
 				search: 'Ada',
 			} )

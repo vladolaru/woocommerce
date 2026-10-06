@@ -59,20 +59,13 @@ const SORT_URL_PARAMS = {
 	direction: 'order',
 } as const;
 
+// Client 11.1.0 `data/authorizations/hooks.ts:31-37`: the uncaptured list sends only paging and sorting, which keeps
+// its store-wide summary (count and total) in step with the rows.
 const AUTHORIZATION_QUERY_PARAM_ORDER = [
 	'page',
 	'pagesize',
 	'sort',
 	'direction',
-	'search',
-	'date_after',
-	'date_before',
-	'date_between',
-	'order_id_is',
-	'customer_email_is',
-	'customer_country_is',
-	'risk_level_is',
-	'source_is',
 ] as const;
 
 const FILTER_FIELD_ALIASES: Record<

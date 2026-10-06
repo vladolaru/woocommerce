@@ -3,11 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAuthorizationsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeCacheService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputesRestController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTransactionsRestController;
 use WC_REST_Unit_Test_Case;
 use WP_REST_Request;
@@ -93,21 +90,6 @@ class WooPaymentsMoneyMovementArrayQueryContractTest extends WC_REST_Unit_Test_C
 		$this->assertSame( $this->fixture['filters']['search'], $filters['search'] );
 		$this->assertSame( $this->fixture['filters']['status_is'], $filters['status_is'] );
 		$this->assertSame( $this->fixture['filters']['date_between'], $filters['created_between'] );
-	}
-
-	/**
-	 * @testdox Uncaptured authorization array filters reach the platform request whole.
-	 */
-	public function test_authorization_array_filters_reach_the_platform(): void {
-		$controller = new WooPaymentsAuthorizationsRestController();
-		$controller->init( $this->create_arbiter( true ), $this->api_client, new PaymentProcessingService(), new WooPaymentsProvider() );
-		$controller->register_routes();
-
-		$this->dispatch_fixture_request( 'authorizations' );
-
-		$this->assertSame( 'get_authorizations', $this->api_client->last_call['method'] );
-		$this->assertSame( $this->fixture['filters']['search'], $this->api_client->last_call['query']['search'] );
-		$this->assertSame( $this->fixture['filters']['date_between'], $this->api_client->last_call['query']['date_between'] );
 	}
 
 	/**

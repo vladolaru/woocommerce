@@ -265,7 +265,7 @@ describe( 'WooPayments money movement data helpers', () => {
 		await dataHelpers.cancelWooPaymentsAuthorization( 123, 'pi_test' );
 
 		expect( mockApiFetch ).toHaveBeenNthCalledWith( 1, {
-			path: '/wc/v3/payments/authorizations?page=2&pagesize=25&sort=created&direction=desc&search=Ada',
+			path: '/wc/v3/payments/authorizations?page=2&pagesize=25&sort=created&direction=desc',
 			method: 'GET',
 		} );
 		expect( mockApiFetch ).toHaveBeenNthCalledWith( 2, {
