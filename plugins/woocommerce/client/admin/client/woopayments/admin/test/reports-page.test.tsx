@@ -765,6 +765,21 @@ describe( 'WooPaymentsReportsPage', () => {
 		);
 	} );
 
+	it( 'requests the Balance summary in USD when a settings filter left a malformed currency', async () => {
+		(
+			window.wcSettings.admin as {
+				woopaymentsSettings: Record< string, unknown >;
+			}
+		 ).woopaymentsSettings.accountDefaultCurrency = 42;
+		renderReportsPage();
+
+		await waitFor( () =>
+			expect( mockGetBalanceSummary ).toHaveBeenLastCalledWith(
+				expect.objectContaining( { currency: 'usd' } )
+			)
+		);
+	} );
+
 	// Client 11.1.0 `class-wc-payments-admin.php:1072-1073`: WooCommerce's date format and the site's time format.
 	it( "shows Fees dates in WooCommerce's date format and the site's time format", async () => {
 		mockSiteTimeFormat = 'G:i';

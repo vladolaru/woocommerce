@@ -113,7 +113,7 @@ type GlobalSettings = typeof globalThis & {
 		dateFormat?: string;
 		admin?: {
 			woopaymentsSettings?: {
-				accountDefaultCurrency?: string;
+				accountDefaultCurrency?: unknown;
 				balanceReportIdentity?: {
 					businessName?: string;
 					accountId?: string;
@@ -878,9 +878,15 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 	const location = useLocation();
 	const navigate = useNavigate();
 	// Client 11.1.0 `reports/balance/index.tsx:177`: the account's default currency, which the server preloads.
-	const currency =
+	const configuredCurrency =
 		getGlobalSettings().wcSettings?.admin?.woopaymentsSettings
-			?.accountDefaultCurrency || 'usd';
+			?.accountDefaultCurrency;
+	// The preload passes through settings filters, so check the value before it reaches the query.
+	const currency =
+		typeof configuredCurrency === 'string' &&
+		/^[a-z]{3}$/i.test( configuredCurrency )
+			? configuredCurrency
+			: 'usd';
 	const dateFilter = useMemo(
 		() => getBalanceDateFilterFromSearch( location.search, now ),
 		[ location.search, now ]
