@@ -1395,7 +1395,12 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_update_option_' . $option_name, $reject_update, 10, 2 );
 
 		try {
-			$result = $this->sut->update_settings( array( 'is_wcpay_enabled' => true ) );
+			$result = $this->sut->update_settings(
+				array(
+					'is_wcpay_enabled'     => true,
+					'merchant@example.com' => 'a key an integration sent by mistake',
+				)
+			);
 		} finally {
 			remove_filter( 'pre_update_option_' . $option_name, $reject_update, 10 );
 		}
@@ -1405,6 +1410,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 500, $result->get_error_data()['status'] );
 		$this->assertCount( 1, $logger->get_errors(), 'The failed local save is logged.' );
 		$this->assertSame( array( $option_name ), $logger->contexts[0]['failed_options'] );
+		$this->assertStringNotContainsString( 'merchant@example.com', (string) wp_json_encode( $logger->contexts ), 'Request keys stay out of the always-on line.' );
 		$this->assertSame( $original_settings, get_option( $option_name ) );
 		$this->assertSame( $store_setup_sync_count, did_action( 'wcpay_store_setup_sync' ) );
 	}

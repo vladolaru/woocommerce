@@ -1055,8 +1055,9 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Link folds into card only while `link_payments` is exactly `active` and the account has a `link` fee entry. Statuses
-	 * are the platform's capability vocabulary (`unrequested`, `pending`, `inactive`, `active`, `disabled`, ...).
+	 * Link folds into card only while `link_payments` is exactly `active` and the account has a `link` fee entry. The account
+	 * reports capability statuses keyed by capability (client 11.1.0 `includes/class-wc-payment-gateway-wcpay.php:4696-4717`)
+	 * and fees keyed by payment method ID (`:4867`, `includes/class-wc-payments-account.php:639`).
 	 *
 	 * @testdox Should not fold Link into card when its capability is $link_status or its fee entry is missing.
 	 * @testWith ["inactive", true]

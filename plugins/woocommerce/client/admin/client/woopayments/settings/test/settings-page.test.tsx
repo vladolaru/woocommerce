@@ -2807,6 +2807,8 @@ describe( 'WooPaymentsSettingsPage', () => {
 		);
 	} );
 
+	// Statuses arrive as the settings response's payment_method_statuses, built from the account capabilities
+	// (client 11.1.0 includes/class-wc-payment-gateway-wcpay.php:4696-4717).
 	it( 'renders a payment method the platform reports disabled as unavailable with a locked toggle', () => {
 		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
 			'card',

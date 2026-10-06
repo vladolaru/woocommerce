@@ -1638,7 +1638,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Amazon Pay is offered only while `amazon_pay_payments` is exactly `active` and the account has an `amazon_pay` fee
-	 * entry, the platform's capability vocabulary and fee list as in the fixture of create_account_service().
+	 * entry; the account shape is the one create_account_service() cites.
 	 *
 	 * @testdox Should leave Amazon Pay out when its capability is $amazon_pay_status or its fee entry is missing.
 	 * @testWith ["inactive", true]
@@ -2154,6 +2154,8 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsAccountService
 	 */
 	private function create_account_service( array $settings, array $account_data = array(), bool $test_mode = true ): WooPaymentsAccountService {
+		// Account data as the client reads it: capability statuses keyed by capability (client 11.1.0
+		// `includes/class-wc-payment-gateway-wcpay.php:4696-4717`) and fees keyed by payment method ID (`:4867`).
 		$account_data = array_merge(
 			array(
 				'country'          => 'US',

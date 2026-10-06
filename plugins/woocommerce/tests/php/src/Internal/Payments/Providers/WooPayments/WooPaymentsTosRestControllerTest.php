@@ -216,11 +216,14 @@ class WooPaymentsTosRestControllerTest extends WC_REST_Unit_Test_Case {
 			$this->account_service->throw_on_refresh = true;
 		}
 
+		$logger = RecordingWcLogger::install();
+
 		$response = $this->server->dispatch( $this->create_tos_request( array( 'accept' => true ) ) );
 
 		$this->assertSame( 500, $response->get_status() );
 		$this->assertSame( array( 'result' => 'error' ), $response->get_data() );
 		$this->assertSame( 'yes', $this->get_gateway_enabled_setting() );
+		$this->assertSame( array(), $logger->lines, 'With debug logging off, the failure is not logged, as on the client.' );
 	}
 
 	/**
