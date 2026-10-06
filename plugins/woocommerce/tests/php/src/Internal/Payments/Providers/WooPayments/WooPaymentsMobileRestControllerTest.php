@@ -1484,6 +1484,8 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Terminal capture rejects intents without matching order metadata.
 	 */
 	public function test_capture_terminal_payment_rejects_intent_without_order_metadata(): void {
+		$logger = RecordingWcLogger::install();
+		$this->enable_terminal_debug_logging();
 		$order                                        = $this->create_order( 12.34, 'USD' );
 		$this->api_client->payment_intention_response = array(
 			'id'       => 'pi_terminal',
@@ -1502,6 +1504,8 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertInstanceOf( WP_Error::class, $response );
 		$this->assertSame( 'wcpay_intent_order_mismatch', $response->get_error_code() );
 		$this->assertSame( 409, $response->get_error_data()['status'] );
+		// Client 11.1.0 logs the rejection (class-wc-rest-payments-orders-controller.php:204-205).
+		$this->assertSame( array( array( 'error', 'Payment capture rejected due to failed validation: order id on intent is incorrect or missing.', 'woopayments' ) ), $logger->get_errors() );
 		$this->assertNotSame( OrderPaymentStore::GATEWAY_ID, $order->get_payment_method() );
 		$this->assertSame( '', $order->get_meta( '_intent_id', true ) );
 	}
@@ -1817,6 +1821,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( $order->get_id(), $context['order_id'] );
 		$this->assertSame( 'pi_terminal', $context['intent_id'] );
 		$this->assertSame( 'RuntimeException', $context['exception'] );
+		$this->assertNotNull( wc_get_container()->get( OrderPaymentStore::class )->claim_order_payment_lock_for_operation( $order, new WooPaymentsPersistenceProfile(), 'pi_terminal', 'payment status update' ), 'A failed capture releases the lock.' );
 	}
 
 	/**
@@ -1835,6 +1840,14 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 			static function () {
 				throw new \Error( 'save failed' );
 			}
+		);
+
+		$response = $this->sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+
+		$this->assertSame( 'wcpay_server_error', $response->get_error_code() );
+		$this->assertSame( array( array( 'error', 'Terminal payment captured, but recording it on the order failed.', 'woopayments' ) ), $logger->get_errors() );
+		$this->assertSame( array(), $this->api_client->captures );
+	}
 
 	/**
 	 * @testdox A failure before a terminal capture reaches the platform is logged when logging is on.
@@ -1904,10 +1917,19 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 			}
 		);
 
+		$claims_during_capture        = array();
+		$claim                        = static function () use ( $store, $order, $profile, &$claims_during_capture ): void {
+			$claims_during_capture[] = $store->claim_order_payment_lock_for_operation( $order, $profile, 'pi_other', 'competing operation' );
+		};
+		$this->api_client->on_capture = $claim;
+		add_action( 'woocommerce_order_status_completed', $claim );
+
 		$response = $sut->capture_terminal_payment( $this->make_capture_request( $order ) );
 
 		$this->assertInstanceOf( WP_REST_Response::class, $response );
 		$this->assertSame( 'succeeded', $response->get_data()['status'] );
+		$this->assertSame( array( null, null ), $claims_during_capture, 'The lock is held through the platform capture and the completion.' );
+		$this->assertSame( array( 'pi_terminal' ), $this->api_client->payment_intention_requests );
 		$this->assertSame( 2, $sut->waits );
 		$this->assertSame(
 			array(
@@ -2098,6 +2120,30 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 'Terminal payments cannot be prepared for partially or fully refunded orders.', $prepare->get_error_message() );
 		$this->assertSame( array(), $this->api_client->captures );
 		$this->assertSame( array(), $this->api_client->prepared_terminal_payments );
+	}
+
+	/**
+	 * @testdox A zero-amount refund row does not stop terminal capture or preparation, as the client checks the refunded total.
+	 *
+	 * Client 11.1.0 class-wc-rest-payments-orders-controller.php:173 and :322 read get_total_refunded().
+	 */
+	public function test_terminal_routes_ignore_a_zero_amount_refund(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		$this->set_capturable_terminal_intent( $order );
+		wc_create_refund(
+			array(
+				'order_id' => $order->get_id(),
+				'amount'   => 0,
+			)
+		);
+		$this->assertCount( 1, wc_get_order( $order->get_id() )->get_refunds() );
+
+		$prepare = $this->sut->prepare_terminal_payment( $this->make_prepare_request( $order ) );
+		$capture = $this->sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $prepare );
+		$this->assertInstanceOf( WP_REST_Response::class, $capture );
+		$this->assertCount( 1, $this->api_client->captures );
 	}
 
 	/**

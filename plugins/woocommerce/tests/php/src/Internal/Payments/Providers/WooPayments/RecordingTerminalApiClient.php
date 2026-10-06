@@ -137,6 +137,20 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	public $prepare_terminal_payment_exception = null;
 
 	/**
+	 * Callback run inside capture_intention, before it answers.
+	 *
+	 * @var callable|null
+	 */
+	public $on_capture = null;
+
+	/**
+	 * Intent ids passed to get_payment_intention, in call order.
+	 *
+	 * @var string[]
+	 */
+	public array $payment_intention_requests = array();
+
+	/**
 	 * Each capture_intention call as intent id and amount, in call order.
 	 *
 	 * @var array<int,array{intent_id:string,amount:int}>
@@ -371,7 +385,7 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	 * @return array<string,mixed>
 	 */
 	public function get_payment_intention( string $intent_id ): array {
-		unset( $intent_id );
+		$this->payment_intention_requests[] = $intent_id;
 
 		if ( null !== $this->payment_intention_exception ) {
 			throw $this->payment_intention_exception;
@@ -412,6 +426,9 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 			'amount'    => $amount_to_capture,
 		);
 		$this->last_capture_metadata = $metadata;
+		if ( null !== $this->on_capture ) {
+			( $this->on_capture )();
+		}
 
 		if ( null !== $this->captured_intention_exception ) {
 			throw $this->captured_intention_exception;
