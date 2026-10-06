@@ -147,7 +147,7 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 	}
 
 	/**
-	 * Convert calculated booking costs for the selected currency.
+	 * Round and charm a calculated booking cost, whose parts get_price() already converted to the selected currency.
 	 *
 	 * @param mixed $costs Calculated booking costs.
 	 * @return mixed
@@ -161,7 +161,7 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 			return $costs;
 		}
 
-		return $this->get_price_projection_service()->get_price( $costs, 'product' );
+		return $this->get_price_projection_service()->adjust_amount_for_selected_currency( $costs );
 	}
 
 	/**

@@ -108,12 +108,15 @@ class MultiCurrencyBookingsCompatibilityControllerTest extends WC_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox Should convert calculated booking costs outside cart add-to-cart.
+	 * @testdox Should round and charm calculated booking costs, already in the selected currency, outside cart add-to-cart.
 	 */
-	public function test_converts_calculated_booking_costs_outside_cart_add_to_cart(): void {
+	public function test_adjusts_calculated_booking_costs_outside_cart_add_to_cart(): void {
 		$sut = $this->create_controller();
 
-		$this->assertSame( 8.4, $sut->adjust_amount_for_calculated_booking_cost( '10.00' ) );
+		// Bookings sums costs that get_price() already converted, so the client only rounds up to 0.50 and adds the -0.10 charm
+		// (client 11.1.0 `includes/multi-currency/Compatibility/WooCommerceBookings.php:66-77`, `MultiCurrency.php:1632,1657-1683`).
+		$this->assertSame( 8.4, $sut->adjust_amount_for_calculated_booking_cost( '8.21' ) );
+		$this->assertSame( 9.9, $sut->adjust_amount_for_calculated_booking_cost( '10.00' ) );
 
 		$sut->set_backtrace_calls( array( 'WC_Cart->add_to_cart' ) );
 

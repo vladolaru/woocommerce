@@ -66,6 +66,17 @@ class MultiCurrencyPriceCalculator {
 	}
 
 	/**
+	 * Round an amount already in the given currency and add its charm, as the client's adjusted price.
+	 *
+	 * @param mixed                 $amount   Amount in the currency.
+	 * @param MultiCurrencyCurrency $currency Currency whose rounding and charm apply.
+	 * @return float
+	 */
+	public function get_adjusted_amount( $amount, MultiCurrencyCurrency $currency ): float {
+		return $this->get_adjusted_price( (float) $amount, true, $currency );
+	}
+
+	/**
 	 * Convert an amount between enabled currencies.
 	 *
 	 * @param float                               $amount             Amount to convert.

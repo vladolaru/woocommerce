@@ -58,6 +58,16 @@ class MultiCurrencyPriceProjectionService {
 	}
 
 	/**
+	 * Round an amount already in the selected currency and add its charm (client 11.1.0 `MultiCurrency::adjust_amount_for_selected_currency()`).
+	 *
+	 * @param mixed $amount Amount in the selected currency.
+	 * @return float
+	 */
+	public function adjust_amount_for_selected_currency( $amount ): float {
+		return $this->price_calculator->get_adjusted_amount( $amount, $this->state_builder->build()->get_selected_currency() );
+	}
+
+	/**
 	 * Project a raw conversion between enabled currencies.
 	 *
 	 * @param float  $amount        Amount.
