@@ -91,21 +91,23 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should print the Sift page tracker on the Payments settings page, which is not a WooPayments route.
+	 * @testdox Should print the Sift page tracker on the Payments settings pages, the WooPayments routes included.
+	 *
+	 * The client's dashboard pages load Sift through their own JS (client 11.1.0 `client/components/page/index.tsx:36-40`,
+	 * `client/fraud-scripts/sift.js`), so the client covers them too; native has no JS loader and prints the tracker there.
+	 * @testWith [{"page": "wc-settings", "tab": "checkout"}]
+	 *           [{"page": "wc-settings", "tab": "checkout", "path": "/woopayments/overview"}]
+	 *
+	 * @param array<string,string> $query Admin page query.
 	 */
-	public function test_prints_the_sift_tracker_on_the_payments_settings_page(): void {
-		$output = $this->render_admin_footer(
-			array(
-				'page' => 'wc-settings',
-				'tab'  => 'checkout',
-			)
-		);
+	public function test_prints_the_sift_tracker_on_the_payments_settings_pages( array $query ): void {
+		$output = $this->render_admin_footer( $query );
 
 		$this->assertStringContainsString( '_sift.push( [ \'_setAccount\', "prod_beacon" ] );', $output );
 	}
 
 	/**
-	 * @testdox Should not print the Sift tracker on the WooPayments routes, other admin pages, without Sift, or without a beacon key.
+	 * @testdox Should not print the Sift tracker on other admin pages, without Sift, or without a beacon key.
 	 * @dataProvider provide_pages_without_the_admin_sift_tracker
 	 *
 	 * @param array<string,string> $query          Admin page query.
@@ -125,15 +127,6 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 		$sift = array( 'sift' => array( 'beacon_key' => 'prod_beacon' ) );
 
 		return array(
-			'WooPayments route'                      => array(
-				array(
-					'page' => 'wc-settings',
-					'tab'  => 'checkout',
-					'path' => '/woopayments/overview',
-				),
-				$sift,
-				'no',
-			),
 			'not a WooCommerce page'                 => array( array(), $sift, 'no' ),
 			'Sift not configured'                    => array( array( 'page' => 'wc-admin' ), array( 'stripe' => array() ), 'no' ),
 			'test mode without a sandbox beacon key' => array( array( 'page' => 'wc-admin' ), $sift, 'yes' ),

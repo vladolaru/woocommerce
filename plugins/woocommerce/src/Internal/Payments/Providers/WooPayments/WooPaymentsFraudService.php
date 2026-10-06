@@ -118,16 +118,15 @@ class WooPaymentsFraudService implements RegisterHooksInterface {
 	/**
 	 * Print the Sift page tracker on WooCommerce admin pages, with the merchant's account as the Sift user.
 	 *
-	 * Same pages and script as client 11.1.0 (`includes/class-wc-payments-fraud-service.php:83`, `:207-243`): every
-	 * WooCommerce admin page except the WooPayments routes, only when Sift is configured. A test-mode store without a sandbox
-	 * beacon key gets no tracker, so test traffic never reaches the production Sift account.
+	 * Same script as client 11.1.0 (`includes/class-wc-payments-fraud-service.php:83`, `:207-243`), only when Sift is
+	 * configured. The client skips its own dashboard pages here because their JS loads Sift; native has no such loader, so
+	 * every WooCommerce admin page prints it. A test-mode store without a sandbox beacon key gets no tracker, so test
+	 * traffic never reaches the production Sift account.
 	 *
 	 * @internal
 	 */
 	public function handle_admin_print_footer_scripts(): void {
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only page check.
-		$path = isset( $_GET['path'] ) && is_string( $_GET['path'] ) ? sanitize_text_field( wp_unslash( $_GET['path'] ) ) : '';
-		if ( 0 === strpos( $path, '/woopayments/' ) || ! PageController::is_admin_or_embed_page() ) {
+		if ( ! PageController::is_admin_or_embed_page() ) {
 			return;
 		}
 
