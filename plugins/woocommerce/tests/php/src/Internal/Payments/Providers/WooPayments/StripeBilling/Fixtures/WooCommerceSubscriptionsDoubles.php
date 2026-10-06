@@ -80,6 +80,11 @@ final class WooCommerceSubscriptionsDoubles {
 	public const CART_CONTAINS_SWITCHES = 'wcpay_test_cart_contains_switches';
 
 	/**
+	 * Global flag `wcs_is_manual_renewal_required()` returns, set when the store turns off automatic payments.
+	 */
+	public const MANUAL_RENEWAL_REQUIRED = 'wcpay_test_manual_renewal_required';
+
+	/**
 	 * Define the doubles that are not defined yet, and load registered subscriptions as `SubscriptionDouble` until the test ends.
 	 */
 	public static function load(): void {
@@ -145,6 +150,24 @@ final class WooCommerceSubscriptionsDoubles {
 		if ( ! function_exists( 'wcs_is_subscription' ) ) {
 			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Same double as the other native tests define, reading the same registry.
 			eval( 'namespace { function wcs_is_subscription( $subscription_id ) { $subscription_id = is_object( $subscription_id ) && method_exists( $subscription_id, "get_id" ) ? $subscription_id->get_id() : $subscription_id; return in_array( absint( $subscription_id ), $GLOBALS["' . self::SUBSCRIPTION_IDS . '"] ?? array(), true ); } }' );
+		}
+	}
+
+	/**
+	 * Define `wcs_order_contains_subscription()` and `wcs_is_manual_renewal_required()`.
+	 *
+	 * An order contains a subscription when `ORDER_SUBSCRIPTIONS` relates one to it as parent, resubscribe or switch (the
+	 * real function's default types), or when its ID is in `SUBSCRIPTION_IDS`, the shortcut the gateway adapter tests use.
+	 */
+	public static function load_order_detector(): void {
+		if ( ! function_exists( 'wcs_order_contains_subscription' ) ) {
+			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public order detector.
+			eval( 'namespace { function wcs_order_contains_subscription( $order, $order_type = array( "parent", "resubscribe", "switch" ) ) { $order_id = is_object( $order ) && method_exists( $order, "get_id" ) ? $order->get_id() : absint( $order ); if ( in_array( $order_id, $GLOBALS["' . self::SUBSCRIPTION_IDS . '"] ?? array(), true ) ) { return true; } $relationships = $GLOBALS["' . self::ORDER_SUBSCRIPTIONS . '"][ $order_id ] ?? array(); $order_types = in_array( "any", (array) $order_type, true ) ? array_keys( $relationships ) : (array) $order_type; foreach ( $order_types as $type ) { if ( ! empty( $relationships[ $type ] ) ) { return true; } } return false; } }' );
+		}
+
+		if ( ! function_exists( 'wcs_is_manual_renewal_required' ) ) {
+			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its store renewal setting.
+			eval( 'namespace { function wcs_is_manual_renewal_required() { return ! empty( $GLOBALS["' . self::MANUAL_RENEWAL_REQUIRED . '"] ); } }' );
 		}
 	}
 

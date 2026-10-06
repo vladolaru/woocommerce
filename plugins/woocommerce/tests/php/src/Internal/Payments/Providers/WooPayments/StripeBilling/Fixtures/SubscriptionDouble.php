@@ -28,10 +28,12 @@ class SubscriptionDouble extends \WC_Order {
 	/**
 	 * Set whether the subscription renews manually.
 	 *
+	 * Stored as the strings WooCommerce Subscriptions writes (includes/core/data-stores/class-wcs-subscription-data-store-cpt.php:255-257).
+	 *
 	 * @param bool $is_manual Whether it renews manually.
 	 */
 	public function set_requires_manual_renewal( bool $is_manual ): void {
-		$this->update_meta_data( '_requires_manual_renewal', wc_bool_to_string( $is_manual ) );
+		$this->update_meta_data( '_requires_manual_renewal', $is_manual ? 'true' : 'false' );
 	}
 
 	/**

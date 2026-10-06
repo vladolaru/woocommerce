@@ -8937,12 +8937,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * Ensure a minimal WooCommerce Subscriptions order detector exists.
 	 */
 	private function ensure_wcs_order_subscription_detector_double(): void {
-		if ( function_exists( 'wcs_order_contains_subscription' ) ) {
-			return;
-		}
-
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public order detector.
-		eval( 'namespace { function wcs_order_contains_subscription( $order, $order_type = array() ) { $order_id = is_object( $order ) && method_exists( $order, "get_id" ) ? $order->get_id() : absint( $order ); return in_array( $order_id, $GLOBALS["wcpay_test_subscription_ids"] ?? array(), true ); } }' );
+		\Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles::load_order_detector();
 	}
 
 	/**
