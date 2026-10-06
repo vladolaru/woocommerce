@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling;
 
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
@@ -696,17 +697,51 @@ class StripeBillingSubscriptionService {
 		$order_id = $this->invoice_service->get_order_id_by_invoice_id( $wcpay_invoice_id );
 		$order    = $order_id ? wc_get_order( $order_id ) : false;
 
-		if ( $order instanceof WC_Order && $order->needs_payment() && class_exists( 'WC_Subscriptions_Change_Payment_Gateway' ) ) {
-			// While this flag is set, WooCommerce Subscriptions does not activate the subscription when the order is paid.
-			$is_change_payment_request = \WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment;
-			\WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment = false;
+		if ( ! $order instanceof WC_Order || ! $order->needs_payment() || ! class_exists( 'WC_Subscriptions_Change_Payment_Gateway' ) ) {
+			return;
+		}
 
+		// Charging the invoice also sends invoice.paid, whose webhook records the payment under the order payment lock.
+		// Completing the order here takes the same lock and reads the order again, so the two cannot both complete it;
+		// when the webhook holds the lock, it completes the order. Client 11.1.0 completes inline with no lock (:677-690).
+		$profile       = new WooPaymentsPersistenceProfile();
+		$payment_store = wc_get_container()->get( OrderPaymentStore::class );
+		$lock_token    = $payment_store->claim_order_payment_lock_for_operation( $order, $profile, $wcpay_invoice_id, 'payment method change payment' );
+		if ( null === $lock_token ) {
+			$payment_store->log_order_payment_lock_refusal( $order, $profile, 'payment method change payment' );
+		} else {
+			try {
+				$this->complete_renewal_order_with_token( $order->get_id(), $token );
+			} finally {
+				$payment_store->release_order_payment_lock( $order, $profile, $lock_token );
+			}
+		}
+
+		wc_add_notice( __( "We've successfully collected payment for your subscription using your new payment method.", 'woocommerce' ) );
+	}
+
+	/**
+	 * Complete a renewal order the new payment method paid, if it still needs payment, with that payment method's token.
+	 *
+	 * @param int              $order_id Renewal order ID.
+	 * @param WC_Payment_Token $token    The new payment token.
+	 */
+	private function complete_renewal_order_with_token( int $order_id, WC_Payment_Token $token ): void {
+		$order = wc_get_order( $order_id );
+		if ( ! $order instanceof WC_Order || ! $order->needs_payment() || ! class_exists( 'WC_Subscriptions_Change_Payment_Gateway' ) ) {
+			return;
+		}
+
+		// While this flag is set, WooCommerce Subscriptions does not activate the subscription when the order is paid.
+		$is_change_payment_request = \WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment;
+		\WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment = false;
+
+		try {
 			// Without the new token on the order, WooCommerce Subscriptions copies the failing one back to the subscription.
 			$order->add_payment_token( $token );
 			$order->payment_complete();
-
+		} finally {
 			\WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment = $is_change_payment_request;
-			wc_add_notice( __( "We've successfully collected payment for your subscription using your new payment method.", 'woocommerce' ) );
 		}
 	}
 
