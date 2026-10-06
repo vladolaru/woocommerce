@@ -24,16 +24,33 @@ class WooPaymentsPlatformConnectionService {
 	 * @return array<int,string> Failure codes.
 	 */
 	public function get_cutover_preflight_failures(): array {
-		$failures = $this->get_connection_readiness_failures( true );
+		$failures = array();
+		$manager  = $this->get_connection_manager();
 
-		return array_values(
-			array_unique(
-				array_filter(
-					array_map( 'strval', $failures ),
-					static fn( string $failure ): bool => '' !== $failure
-				)
-			)
-		);
+		if ( null === $manager ) {
+			return array( 'wpcom_connection_unavailable' );
+		}
+
+		try {
+			if ( ! $manager->is_connected() ) {
+				$failures[] = 'wpcom_connection_unavailable';
+			}
+		} catch ( \Throwable $e ) {
+			$failures[] = 'wpcom_connection_unavailable';
+		}
+
+		if ( null === $this->get_blog_id() ) {
+			$failures[] = 'wpcom_blog_id_unavailable';
+		}
+
+		$connection_owner = $this->get_cutover_connection_owner_user_token_status();
+		if ( $connection_owner['owner_id'] <= 0 ) {
+			$failures[] = 'wpcom_connection_owner_unavailable';
+		} elseif ( ! $connection_owner['owner_exists'] || ! $connection_owner['user_token_available'] ) {
+			$failures[] = 'wpcom_connection_owner_user_token_unavailable';
+		}
+
+		return array_values( array_unique( $failures ) );
 	}
 
 	/**
@@ -58,42 +75,6 @@ class WooPaymentsPlatformConnectionService {
 			'owner_exists'         => $owner_exists,
 			'user_token_available' => $owner_exists && null !== $manager && $this->is_user_connected( $manager, $owner_id ),
 		);
-	}
-
-	/**
-	 * Get local WPCOM/Jetpack connection readiness failures.
-	 *
-	 * @param bool $require_user_token Whether connection-owner user-token readiness is required.
-	 * @return array<int,string> Failure codes.
-	 */
-	protected function get_connection_readiness_failures( bool $require_user_token = false ): array {
-		$failures = array();
-		$manager  = $this->get_connection_manager();
-
-		if ( null === $manager ) {
-			return array( 'wpcom_connection_unavailable' );
-		}
-
-		try {
-			if ( ! $manager->is_connected() ) {
-				$failures[] = 'wpcom_connection_unavailable';
-			}
-		} catch ( \Throwable $e ) {
-			$failures[] = 'wpcom_connection_unavailable';
-		}
-
-		if ( null === $this->get_blog_id() ) {
-			$failures[] = 'wpcom_blog_id_unavailable';
-		}
-
-		$connection_owner = $this->get_cutover_connection_owner_user_token_status();
-		if ( $connection_owner['owner_id'] <= 0 ) {
-			$failures[] = 'wpcom_connection_owner_unavailable';
-		} elseif ( $require_user_token && ( ! $connection_owner['owner_exists'] || ! $connection_owner['user_token_available'] ) ) {
-			$failures[] = 'wpcom_connection_owner_user_token_unavailable';
-		}
-
-		return array_values( array_unique( $failures ) );
 	}
 
 	/**
