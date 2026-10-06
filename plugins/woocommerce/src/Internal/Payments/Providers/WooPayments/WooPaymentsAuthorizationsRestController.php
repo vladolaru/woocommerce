@@ -152,8 +152,11 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public function get_authorizations_summary( WP_REST_Request $request ) {
+		unset( $request );
+
 		try {
-			return new WP_REST_Response( $this->api_client->get_authorizations_summary( $this->get_filtered_list_params( $request ) ) );
+			// The client asks for the store-wide totals: no query and no list filter (class-wc-rest-payments-authorizations-controller.php:88-92).
+			return new WP_REST_Response( $this->api_client->get_authorizations_summary() );
 		} catch ( WooPaymentsApiException $exception ) {
 			return $this->api_exception_to_wp_error( $exception );
 		}

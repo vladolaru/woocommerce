@@ -251,6 +251,37 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	}
 
 	/**
+	 * @testdox The authorizations summary asks the platform for the store-wide totals, whatever the tab's filters.
+	 *
+	 * Client 11.1.0 sends the summary request with no query and no list filter (class-wc-rest-payments-authorizations-controller.php:88-92).
+	 */
+	public function test_authorizations_summary_ignores_the_list_filters(): void {
+		$this->create_authorizations_controller( true )->register_routes();
+		$list_filter_calls = 0;
+		add_filter(
+			'wcpay_list_authorizations_request',
+			static function ( $request ) use ( &$list_filter_calls ) {
+				++$list_filter_calls;
+
+				return $request;
+			}
+		);
+
+		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/authorizations/summary' );
+		$request->set_query_params(
+			array(
+				'customer_email_is' => 'buyer@example.com',
+				'date_after'        => '2026-01-01',
+			)
+		);
+		$this->server->dispatch( $request );
+
+		$this->assertSame( 'get_authorizations_summary', $this->api_client->last_call['method'] );
+		$this->assertSame( array(), $this->api_client->last_call['query'] );
+		$this->assertSame( 0, $list_filter_calls );
+	}
+
+	/**
 	 * @testdox Authorization actions validate order state before delegating to native payment processing.
 	 */
 	public function test_authorization_actions_validate_order_state_before_processing(): void {
