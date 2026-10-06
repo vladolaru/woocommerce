@@ -87,6 +87,14 @@ jest.mock( '@woocommerce/navigation', () => ( {
 	} ),
 } ) );
 
+const mockDownloadCSVFile = jest.fn();
+
+// The real CSV builder, so a test reads what the merchant downloads; only the browser download is replaced.
+jest.mock( '@woocommerce/csv-export', () => ( {
+	...jest.requireActual( '@woocommerce/csv-export' ),
+	downloadCSVFile: ( ...args: unknown[] ) => mockDownloadCSVFile( ...args ),
+} ) );
+
 jest.mock( '@woocommerce/tracks', () => ( {
 	recordEvent: jest.fn(),
 } ) );
@@ -3217,19 +3225,19 @@ describe( 'WooPayments money movement pages', () => {
 	} );
 
 	it( 'renders card reader fee details from the reader charge summary route', async () => {
-		mockGetReaderChargeSummary.mockResolvedValue( {
-			data: [
-				{
-					reader_id: 'tmr_reader_1',
-					status: 'active',
-					transactions: 3,
-					fee: {
-						amount: 1234,
-						currency: 'usd',
-					},
+		// The platform's rows, as wpcom service/class-charge-authorization-service.php
+		// get_reader_charges_summary_from_readers_transactions_count() builds them.
+		mockGetReaderChargeSummary.mockResolvedValue( [
+			{
+				reader_id: 'tmr_reader_1',
+				status: 'active',
+				count: 3,
+				fee: {
+					amount: 1234,
+					currency: 'usd',
 				},
-			],
-		} );
+			},
+		] );
 
 		render(
 			<MemoryRouter
@@ -3277,6 +3285,37 @@ describe( 'WooPayments money movement pages', () => {
 		expect( mockGetTransaction ).not.toHaveBeenCalled();
 	} );
 
+	// Client 11.1.0 `payment-details/readers/index.js:121-131`: the CSV is WooCommerce's, with the fee as a major-unit number.
+	it( 'downloads the card reader fees as the client does, with formula-leading cells neutralized', async () => {
+		mockDownloadCSVFile.mockReset();
+		mockGetReaderChargeSummary.mockResolvedValue( [
+			{
+				reader_id: '=HYPERLINK("x")',
+				status: 'active',
+				count: 3,
+				fee: { amount: 1234, currency: 'usd' },
+			},
+		] );
+
+		render(
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/transactions/details?id=ch_reader_fee_123&transaction_id=txn_reader_fee_123&transaction_type=card_reader_fee',
+				] }
+			>
+				<WooPaymentsTransactionDetailsPage />
+			</MemoryRouter>
+		);
+		await userEvent.click(
+			await screen.findByRole( 'button', { name: 'Download' } )
+		);
+
+		const [ fileName, content ] = mockDownloadCSVFile.mock.calls[ 0 ];
+		expect( fileName ).toMatch( /^card-readers_/ );
+		expect( content ).toContain( '"Reader id",Status,Transactions,Fee' );
+		expect( content ).toContain( `"'=HYPERLINK("x")",active,3,12.34` );
+	} );
+
 	it( 'shows reader details errors from the card reader fee route', async () => {
 		mockGetReaderChargeSummary.mockRejectedValue(
 			new Error( 'Reader provider failed.' )
@@ -3304,9 +3343,7 @@ describe( 'WooPayments money movement pages', () => {
 	} );
 
 	it( 'shows an empty state for card reader fee routes without rows', async () => {
-		mockGetReaderChargeSummary.mockResolvedValue( {
-			data: [],
-		} );
+		mockGetReaderChargeSummary.mockResolvedValue( [] );
 
 		render(
 			<MemoryRouter

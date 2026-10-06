@@ -318,20 +318,12 @@ export interface WooPaymentsTimelineResponse {
 
 export interface WooPaymentsReaderChargeSummaryRow {
 	reader_id?: string;
-	readerId?: string;
 	status?: string;
-	transactions?: number | string;
-	transaction_count?: number | string;
-	fee?:
-		| number
-		| {
-				amount?: number;
-				currency?: string;
-				[ key: string ]: unknown;
-		  };
-	amount?: number;
-	currency?: string;
-	[ key: string ]: unknown;
+	count?: number;
+	fee?: {
+		amount?: number;
+		currency?: string;
+	};
 }
 
 export type WooPaymentsReaderChargeSummaryResponse =

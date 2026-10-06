@@ -2,6 +2,11 @@
  * External dependencies
  */
 import { Button } from '@wordpress/components';
+import {
+	downloadCSVFile,
+	generateCSVDataFromTable,
+	generateCSVFileName,
+} from '@woocommerce/csv-export';
 import { useEffect, useState } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 
@@ -13,12 +18,8 @@ import type {
 	WooPaymentsReaderChargeSummaryResponse,
 	WooPaymentsReaderChargeSummaryRow,
 } from './types';
-import {
-	formatAmount,
-	formatExplicitCurrency,
-	formatLabel,
-	getErrorMessage,
-} from './utils';
+import { formatExplicitCurrency, formatLabel, getErrorMessage } from './utils';
+import { isZeroDecimalCurrency } from '../currency-format';
 import { LiveStatusMessage, StatusMessage } from './table';
 
 const READER_CHARGE_SUMMARY_TIMEOUT_MS = 15000;
@@ -33,68 +34,61 @@ const getRows = (
 	return response.data || response.rows || [];
 };
 
-const getReaderId = ( row: WooPaymentsReaderChargeSummaryRow ) =>
-	row.reader_id || row.readerId || '';
+// The platform's row is { reader_id, count, status, fee: { amount, currency } } (wpcom
+// service/class-charge-authorization-service.php get_reader_charges_summary_from_readers_transactions_count()), which
+// client 11.1.0 reads as is (payment-details/readers/index.js:62-120).
+const getFeeAmount = ( row: WooPaymentsReaderChargeSummaryRow ) =>
+	row.fee?.amount;
 
-const getTransactionCount = ( row: WooPaymentsReaderChargeSummaryRow ) =>
-	row.transactions ?? row.transaction_count ?? '';
+const getFeeCurrency = ( row: WooPaymentsReaderChargeSummaryRow ) =>
+	row.fee?.currency;
 
-const getFeeAmount = ( row: WooPaymentsReaderChargeSummaryRow ) => {
-	if ( typeof row.fee === 'number' ) {
-		return row.fee;
+/**
+ * The fee as the client's CSV holds it: a number in the currency's major unit (`formatExportAmount()`).
+ *
+ * @param row The reader row.
+ */
+const getExportFee = ( row: WooPaymentsReaderChargeSummaryRow ) => {
+	const amount = getFeeAmount( row );
+	const currency = getFeeCurrency( row );
+
+	if ( typeof amount !== 'number' || ! currency ) {
+		return 0;
 	}
 
-	if ( row.fee && typeof row.fee === 'object' ) {
-		return row.fee.amount;
-	}
-
-	return row.amount;
+	return isZeroDecimalCurrency( currency ) ? amount : amount / 100;
 };
 
-const getFeeCurrency = ( row: WooPaymentsReaderChargeSummaryRow ) => {
-	if ( row.fee && typeof row.fee === 'object' && row.fee.currency ) {
-		return row.fee.currency;
-	}
-
-	return row.currency;
-};
-
-const escapeCsvValue = ( value: string ) =>
-	`"${ value.replace( /"/g, '""' ) }"`;
-
-const buildCsv = ( rows: WooPaymentsReaderChargeSummaryRow[] ) => {
+/**
+ * Download the rows as the client does, through WooCommerce's CSV export, which neutralizes formula-leading cells.
+ *
+ * Client 11.1.0 `payment-details/readers/index.js:121-131`.
+ *
+ * @param rows The reader rows.
+ */
+const downloadCsv = ( rows: WooPaymentsReaderChargeSummaryRow[] ) => {
 	const headers = [
-		__( 'Reader id', 'woocommerce' ),
-		__( 'Status', 'woocommerce' ),
-		__( 'Transactions', 'woocommerce' ),
-		__( 'Fee', 'woocommerce' ),
+		{ key: 'reader_id', label: __( 'Reader id', 'woocommerce' ) },
+		{ key: 'status', label: __( 'Status', 'woocommerce' ) },
+		{ key: 'count', label: __( 'Transactions', 'woocommerce' ) },
+		{ key: 'fee', label: __( 'Fee', 'woocommerce' ) },
 	];
-	const body = rows.map( ( row ) =>
-		[
-			getReaderId( row ),
-			row.status ? formatLabel( row.status ) : '',
-			String( getTransactionCount( row ) ),
-			formatAmount( getFeeAmount( row ), getFeeCurrency( row ) ),
-		]
-			.map( escapeCsvValue )
-			.join( ',' )
+	const csvRows = rows.map( ( row ) => [
+		{ value: row.reader_id ?? '', display: row.reader_id ?? '' },
+		{ value: row.status ?? '', display: row.status ?? '' },
+		{ value: row.count ?? '', display: String( row.count ?? '' ) },
+		{ value: getExportFee( row ), display: '' },
+	] );
+	const params = Object.fromEntries(
+		Array.from(
+			new URLSearchParams( window.location.search ).entries()
+		).filter( ( [ key ] ) => ! [ 'page', 'path', 'tab' ].includes( key ) )
 	);
 
-	return [ headers.map( escapeCsvValue ).join( ',' ), ...body ].join( '\n' );
-};
-
-const downloadCsv = ( rows: WooPaymentsReaderChargeSummaryRow[] ) => {
-	const blob = new Blob( [ buildCsv( rows ) ], {
-		type: 'text/csv;charset=utf-8',
-	} );
-	const url = window.URL.createObjectURL( blob );
-	const anchor = document.createElement( 'a' );
-	anchor.href = url;
-	anchor.download = 'card-readers.csv';
-	document.body.appendChild( anchor );
-	anchor.click();
-	anchor.remove();
-	window.URL.revokeObjectURL( url );
+	downloadCSVFile(
+		generateCSVFileName( 'Card Readers', params ),
+		generateCSVDataFromTable( headers, csvRows )
+	);
 };
 
 export const WooPaymentsCardReaderFeeDetails = ( {
@@ -252,16 +246,16 @@ export const WooPaymentsCardReaderFeeDetails = ( {
 						{ rows.map( ( row, index ) => (
 							<tr
 								key={ `${
-									getReaderId( row ) || 'reader'
+									row.reader_id || 'reader'
 								}-${ index }` }
 							>
-								<td>{ getReaderId( row ) || '-' }</td>
+								<td>{ row.reader_id || '-' }</td>
 								<td>
 									{ row.status
 										? formatLabel( row.status )
 										: '-' }
 								</td>
-								<td>{ getTransactionCount( row ) || '-' }</td>
+								<td>{ row.count ?? '-' }</td>
 								<td>
 									{ formatExplicitCurrency(
 										getFeeAmount( row ),
