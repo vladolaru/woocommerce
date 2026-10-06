@@ -7,6 +7,10 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
+use Automattic\WooCommerce\Admin\PageController;
+use Automattic\WooCommerce\Blocks\Assets\AssetDataRegistry;
+use Automattic\WooCommerce\Blocks\Package;
+use Automattic\WooCommerce\Internal\Admin\WCAdminAssets;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsSqlProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
@@ -102,6 +106,13 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	private $default_currency_resolver = null;
 
 	/**
+	 * Registers the Analytics script data and script; tests replace it.
+	 *
+	 * @var callable|null
+	 */
+	private $admin_asset_registrar = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -172,6 +183,17 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Set the registrar for the Analytics script data and script.
+	 *
+	 * @internal Used by tests.
+	 *
+	 * @param callable $registrar Receives the lazy data callbacks keyed by wcSettings name.
+	 */
+	public function set_admin_asset_registrar( callable $registrar ): void {
+		$this->admin_asset_registrar = $registrar;
+	}
+
+	/**
 	 * Set the analytics projection service.
 	 *
 	 * @internal Used by tests and future explicit bootstrap definitions.
@@ -199,6 +221,11 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	public function register() {
 		if ( ! $this->arbiter->should_core_register() ) {
 			return;
+		}
+
+		// The client adds the Analytics filter on admin requests (client 11.1.0 `includes/multi-currency/Analytics.php:69-72`).
+		if ( is_admin() ) {
+			$this->add_filter_once( 'admin_enqueue_scripts', array( $this, 'handle_admin_enqueue_scripts' ) );
 		}
 
 		if ( $this->is_dev_mode() ) {
@@ -231,6 +258,40 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 
 		$this->add_filter_once( 'woocommerce_analytics_clauses_select_orders_subquery', array( $this, 'handle_woocommerce_analytics_clauses_select_orders' ) );
 		$this->add_filter_once( 'woocommerce_analytics_clauses_select_orders_stats_total', array( $this, 'handle_woocommerce_analytics_clauses_select_orders' ) );
+	}
+
+	/**
+	 * Load the customer currency filter, column and report currency on wc-admin pages for store managers.
+	 *
+	 * The client loads them on every admin page (client 11.1.0 `includes/multi-currency/Analytics.php:69-72`, `:116-166`);
+	 * Analytics only runs inside wc-admin, so other admin pages are left alone.
+	 *
+	 * @internal
+	 */
+	public function handle_admin_enqueue_scripts(): void {
+		if ( ! PageController::is_admin_page() || ! current_user_can( 'manage_woocommerce' ) ) {
+			return;
+		}
+
+		$projection = $this->get_analytics_projection_service();
+		$data       = array(
+			'customerCurrencies'      => array( $projection, 'get_customer_currency_options' ),
+			'customerCurrencySymbols' => array( $projection, 'get_customer_currency_symbols' ),
+		);
+
+		if ( null !== $this->admin_asset_registrar ) {
+			( $this->admin_asset_registrar )( $data );
+			return;
+		}
+
+		$registry = Package::container()->get( AssetDataRegistry::class );
+		foreach ( $data as $key => $callback ) {
+			if ( ! $registry->exists( $key ) ) {
+				$registry->add( $key, $callback );
+			}
+		}
+
+		WCAdminAssets::register_script( 'wp-admin-scripts', 'multi-currency-analytics', true );
 	}
 
 	/**

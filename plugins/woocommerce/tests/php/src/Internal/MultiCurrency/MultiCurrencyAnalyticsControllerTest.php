@@ -40,6 +40,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		'woocommerce_new_order',
 		'wcpay_multi_currency_disable_filter_select_clauses',
 		'wcpay_multi_currency_filter_select_clauses',
+		'admin_enqueue_scripts',
 	);
 
 	/**
@@ -418,6 +419,60 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		$this->assertFalse(
 			get_transient( 'wc_mc_has_orders' ),
 			'Creating an order should clear the cached multi-currency orders flag.'
+		);
+	}
+
+	/**
+	 * @testdox Should load the customer currency filter on wc-admin pages for store managers, with currency names and symbols.
+	 */
+	public function test_loads_the_customer_currency_filter_on_wc_admin_pages_for_store_managers(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		// The plugin stores the customer currency list as currency codes (client 11.1.0 `includes/multi-currency/MultiCurrency.php:700-717`).
+		update_option( 'wcpay_multi_currency_stored_customer_currencies', array( 'EUR' ) );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
+		$registered = array();
+		$sut        = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut->set_admin_asset_registrar(
+			static function ( array $data ) use ( &$registered ): void {
+				$registered = array_map( static fn( $callback ) => $callback(), $data );
+			}
+		);
+		set_current_screen( 'woocommerce_page_wc-admin' );
+		$sut->register();
+		$this->assertSame( 10, has_action( 'admin_enqueue_scripts', array( $sut, 'handle_admin_enqueue_scripts' ) ) );
+
+		$_GET['page'] = 'wc-admin';
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'subscriber' ) ) );
+		$sut->handle_admin_enqueue_scripts();
+		$this->assertSame( array(), $registered, 'Users who cannot manage WooCommerce get no filter.' );
+
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'shop_manager' ) ) );
+		$sut->handle_admin_enqueue_scripts();
+		unset( $_GET['page'] );
+		set_current_screen( 'front' );
+
+		// Labels and symbols as the client's AssetDataRegistry entry and currencyData give them (client `Analytics.php:116-148`, `class-wc-payments-admin.php:1047`).
+		$this->assertSame(
+			array(
+				array(
+					'label' => 'Euro',
+					'value' => 'EUR',
+				),
+				array(
+					'label' => 'United States (US) dollar',
+					'value' => 'USD',
+				),
+			),
+			$registered['customerCurrencies']
+		);
+		$this->assertSame(
+			array(
+				'EUR' => '€',
+				'USD' => '$',
+			),
+			$registered['customerCurrencySymbols']
 		);
 	}
 
