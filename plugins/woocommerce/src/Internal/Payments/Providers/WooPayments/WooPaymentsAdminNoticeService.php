@@ -162,7 +162,8 @@ class WooPaymentsAdminNoticeService {
 			return null;
 		}
 
-		if ( false === get_transient( self::TEST_TO_LIVE_ELIGIBLE_TRANSIENT ) ) {
+		$has_test_sale = get_transient( self::TEST_TO_LIVE_ELIGIBLE_TRANSIENT );
+		if ( false === $has_test_sale ) {
 			$orders = wc_get_orders(
 				array(
 					'payment_method' => OrderPaymentStore::GATEWAY_ID,
@@ -176,10 +177,11 @@ class WooPaymentsAdminNoticeService {
 					'meta_value'     => WooPaymentsOrderMode::TEST,
 				)
 			);
-			if ( empty( $orders ) ) {
-				return null;
-			}
-			set_transient( self::TEST_TO_LIVE_ELIGIBLE_TRANSIENT, '1', HOUR_IN_SECONDS );
+			$has_test_sale = empty( $orders ) ? '0' : '1';
+			set_transient( self::TEST_TO_LIVE_ELIGIBLE_TRANSIENT, $has_test_sale, HOUR_IN_SECONDS );
+		}
+		if ( '1' !== $has_test_sale ) {
+			return null;
 		}
 
 		$can_go_live = $this->account_service->has_live_account();

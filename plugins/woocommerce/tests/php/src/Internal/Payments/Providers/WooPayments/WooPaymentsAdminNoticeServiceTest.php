@@ -326,7 +326,9 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A store without a completed or processing test sale should not show test-to-live.
+	 * @testdox A store without a completed or processing test sale should not show test-to-live, and should not query again within the hour.
+	 *
+	 * Client 11.1.0 `includes/admin/attach-rate/class-wc-payments-abstract-admin-notice.php:366-374` caches both outcomes.
 	 */
 	public function test_test_to_live_requires_test_sale(): void {
 		$now = 1700000000;
@@ -345,10 +347,20 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
 		$sut->init( $account );
 
+		$queries      = 0;
+		$record_query = static function ( array $args ) use ( &$queries ): array {
+			++$queries;
+			return $args;
+		};
+
 		try {
 			$this->assertNull( $sut->get_notice_for_current_user() );
-			$this->assertFalse( get_transient( 'wcpay_test_to_live_eligible' ) );
+			$this->assertSame( '0', get_transient( 'wcpay_test_to_live_eligible' ) );
+			add_filter( 'woocommerce_order_query_args', $record_query );
+			$this->assertNull( $sut->get_notice_for_current_user() );
+			$this->assertSame( 0, $queries );
 		} finally {
+			remove_filter( 'woocommerce_order_query_args', $record_query );
 			delete_option( 'wcpay_test_mode_enabled_date' );
 			delete_transient( 'wcpay_test_to_live_eligible' );
 		}
