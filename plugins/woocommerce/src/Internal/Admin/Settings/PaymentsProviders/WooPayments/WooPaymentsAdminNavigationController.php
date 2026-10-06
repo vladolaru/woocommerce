@@ -458,6 +458,8 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		$settings['woopaymentsSettings']['devMode']  = $this->account_service->is_dev_mode_enabled();
 		// Plugin 11.1.0 localizes `accountStatus.country`; the payment method icons pick the Afterpay brand by it.
 		$settings['woopaymentsSettings']['accountCountry'] = $this->account_service->get_account_country();
+		// Plugin 11.1.0 `class-wc-payments-admin.php:1053` localizes this; the Balance report requests it (`reports/balance/index.tsx:177`).
+		$settings['woopaymentsSettings']['accountDefaultCurrency'] = $this->account_service->get_account_default_currency();
 		// Plugin 11.1.0 `WC_Payments_Admin` localizes this for `maybeTrackStripeConnected()`.
 		$track_stripe_connected                                  = get_option( '_wcpay_onboarding_stripe_connected' );
 		$settings['woopaymentsSettings']['trackStripeConnected'] = $track_stripe_connected ? $track_stripe_connected : '';

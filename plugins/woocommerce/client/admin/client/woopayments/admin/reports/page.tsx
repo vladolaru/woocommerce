@@ -109,7 +109,6 @@ type DataViewsFilter = {
 
 type GlobalSettings = typeof globalThis & {
 	wcpaySettings?: {
-		accountDefaultCurrency?: string;
 		dateFormat?: string;
 		timeFormat?: string;
 	};
@@ -118,6 +117,7 @@ type GlobalSettings = typeof globalThis & {
 		dateFormat?: string;
 		admin?: {
 			woopaymentsSettings?: {
+				accountDefaultCurrency?: string;
 				balanceReportIdentity?: {
 					businessName?: string;
 					accountId?: string;
@@ -881,8 +881,10 @@ const getTypeLabel = ( value?: string ) => {
 const BalanceReport = ( { now }: { now: Date } ) => {
 	const location = useLocation();
 	const navigate = useNavigate();
+	// Client 11.1.0 `reports/balance/index.tsx:177`: the account's default currency, which the server preloads.
 	const currency =
-		getGlobalSettings().wcpaySettings?.accountDefaultCurrency || 'USD';
+		getGlobalSettings().wcSettings?.admin?.woopaymentsSettings
+			?.accountDefaultCurrency || 'usd';
 	const dateFilter = useMemo(
 		() => getBalanceDateFilterFromSearch( location.search, now ),
 		[ location.search, now ]

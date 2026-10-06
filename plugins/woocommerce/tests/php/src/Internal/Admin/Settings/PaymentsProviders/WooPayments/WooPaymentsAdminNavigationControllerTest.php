@@ -312,6 +312,31 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should preload the account's default currency, which the Balance report requests.
+	 *
+	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:1053` (`accountDefaultCurrency` in `wcpaySettings`), read by
+	 * `client/reports/balance/index.tsx:177`. The cached account's `store_currencies.default` follows the platform account
+	 * payload (wpcom `class-accounts-controller.php:1151-1153`).
+	 */
+	public function test_preloads_account_default_currency_for_the_balance_report(): void {
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		$sut          = $this->create_controller(
+			true,
+			array(
+				'get_cached_account_data' => array(
+					'store_currencies' => array(
+						'default'   => 'PLN',
+						'supported' => array( 'pln' ),
+					),
+				),
+			)
+		);
+
+		$this->assertSame( 'pln', $sut->preload_shared_settings( array() )['woopaymentsSettings']['accountDefaultCurrency'] );
+	}
+
+	/**
 	 * @testdox Should preload the email the list exports are sent to: the current user's, else the site admin email.
 	 *
 	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:930-935,1046` (`currentUserEmail`), which the

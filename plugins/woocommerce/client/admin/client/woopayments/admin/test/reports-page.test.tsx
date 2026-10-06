@@ -376,6 +376,8 @@ describe( 'WooPaymentsReportsPage', () => {
 			},
 			admin: {
 				woopaymentsSettings: {
+					// The server preloads the account's default currency in lower case (WooPaymentsAccountService::get_account_default_currency()).
+					accountDefaultCurrency: 'usd',
 					balanceReportIdentity: {
 						businessName: 'Native Merchant LLC',
 						accountId: 'acct_native_123',
@@ -388,7 +390,6 @@ describe( 'WooPaymentsReportsPage', () => {
 				wcpaySettings?: Record< string, unknown >;
 			}
 		 ).wcpaySettings = {
-			accountDefaultCurrency: 'USD',
 			currentUserEmail: 'merchant@example.com',
 			dateFormat: 'F j, Y',
 			timeFormat: 'g:i a',
@@ -491,7 +492,7 @@ describe( 'WooPaymentsReportsPage', () => {
 		expect( mockGetBalanceSummary ).toHaveBeenCalledWith( {
 			date_start: '2026-05-01T00:00:00.000Z',
 			date_end: '2026-05-31T23:59:59.999Z',
-			currency: 'USD',
+			currency: 'usd',
 		} );
 		expect(
 			screen.getByRole( 'button', { name: 'Print' } )
@@ -748,6 +749,23 @@ describe( 'WooPaymentsReportsPage', () => {
 		expect( speak ).not.toHaveBeenCalled();
 	} );
 
+	// Client 11.1.0 `reports/balance/index.tsx:177` requests the account's default currency (`wcpaySettings.accountDefaultCurrency`);
+	// native preloads it in woopaymentsSettings. A PLN account must not be asked for USD, which the platform refuses.
+	it( "requests the Balance summary in the account's default currency", async () => {
+		(
+			window.wcSettings.admin as {
+				woopaymentsSettings: Record< string, unknown >;
+			}
+		 ).woopaymentsSettings.accountDefaultCurrency = 'pln';
+		renderReportsPage();
+
+		await waitFor( () =>
+			expect( mockGetBalanceSummary ).toHaveBeenLastCalledWith(
+				expect.objectContaining( { currency: 'pln' } )
+			)
+		);
+	} );
+
 	it( 'lets merchants change the Balance period through the Date range selector', async () => {
 		renderReportsPage();
 
@@ -763,7 +781,7 @@ describe( 'WooPaymentsReportsPage', () => {
 			expect( mockGetBalanceSummary ).toHaveBeenLastCalledWith( {
 				date_start: '2026-01-01T00:00:00.000Z',
 				date_end: '2026-06-18T23:59:59.999Z',
-				currency: 'USD',
+				currency: 'usd',
 			} )
 		);
 		expect( screen.getByTestId( 'location' ) ).toHaveTextContent(
@@ -931,7 +949,7 @@ describe( 'WooPaymentsReportsPage', () => {
 			expect( mockGetBalanceSummary ).toHaveBeenLastCalledWith( {
 				date_start: '2026-05-01T00:00:00.000Z',
 				date_end: '2026-05-31T23:59:59.999Z',
-				currency: 'USD',
+				currency: 'usd',
 			} )
 		);
 
@@ -941,7 +959,7 @@ describe( 'WooPaymentsReportsPage', () => {
 			expect( mockGetBalanceSummary ).toHaveBeenLastCalledWith( {
 				date_start: '2025-01-01T00:00:00.000Z',
 				date_end: '2025-12-31T23:59:59.999Z',
-				currency: 'USD',
+				currency: 'usd',
 			} )
 		);
 
@@ -1005,7 +1023,7 @@ describe( 'WooPaymentsReportsPage', () => {
 			expect( mockGetBalanceSummary ).toHaveBeenLastCalledWith( {
 				date_start: '2026-04-01T00:00:00.000Z',
 				date_end: '2026-04-30T23:59:59.999Z',
-				currency: 'USD',
+				currency: 'usd',
 			} )
 		);
 		expect( screen.getByTestId( 'location' ) ).toHaveTextContent(
