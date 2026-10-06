@@ -226,7 +226,9 @@ class WooPaymentsMultiCurrencyPaymentMethodsMapTest extends WC_Unit_Test_Case {
 			}
 
 			/**
-			 * Get the cached account data, in the shape the platform account endpoint returns.
+			 * Get the cached account data: the one key of the platform account payload this test needs.
+			 *
+			 * The client reads the account country from the same key (client 11.1.0 includes/class-wc-payments-account.php:2731-2734).
 			 *
 			 * @param bool $force_refresh Unused.
 			 * @return array<string,mixed>
