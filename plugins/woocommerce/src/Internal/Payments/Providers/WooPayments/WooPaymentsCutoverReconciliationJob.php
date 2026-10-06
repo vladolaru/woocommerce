@@ -361,14 +361,12 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		$awaiting_generation   = 0;
 		$has_completed_cutover = false;
 		try {
-			foreach ( $site_ids as $site_id ) {
-				if ( get_current_blog_id() !== $site_id ) {
-					switch_to_blog( $site_id );
-				}
-				try {
+			$this->run_on_sites(
+				$site_ids,
+				function () use ( &$maximum_generation, &$awaiting_generation, &$has_completed_cutover ): void {
 					$record = $this->state_store->get_record();
 					if ( ! is_array( $record ) || true !== ( $record['network_cutover'] ?? false ) ) {
-						continue;
+						return;
 					}
 					$maximum_generation = max( $maximum_generation, $record['generation'] );
 					if ( WooPaymentsCutoverState::DONE === $record['state'] ) {
@@ -377,12 +375,8 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 					if ( WooPaymentsCutoverState::PENDING === $record['state'] && 'awaiting_merchant_start' === $record['current_step'] ) {
 						$awaiting_generation = max( $awaiting_generation, $record['generation'] );
 					}
-				} finally {
-					if ( get_current_blog_id() !== $current_blog_id ) {
-						restore_current_blog();
-					}
 				}
-			}
+			);
 			if ( ! $has_completed_cutover && 0 === $awaiting_generation ) {
 				return false;
 			}
@@ -776,6 +770,27 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		);
 
 		return array_values( array_map( 'intval', $site_ids ) );
+	}
+	/**
+	 * Run a callback with each given site current, then restore the site the request started on.
+	 *
+	 * @param int[]    $site_ids Site IDs.
+	 * @param callable $callback Called with the site ID while that site is current.
+	 */
+	private function run_on_sites( array $site_ids, callable $callback ): void {
+		$current_blog_id = get_current_blog_id();
+		foreach ( $site_ids as $site_id ) {
+			if ( get_current_blog_id() !== $site_id ) {
+				switch_to_blog( $site_id );
+			}
+			try {
+				$callback( $site_id );
+			} finally {
+				if ( get_current_blog_id() !== $current_blog_id ) {
+					restore_current_blog();
+				}
+			}
+		}
 	}
 
 	/**
