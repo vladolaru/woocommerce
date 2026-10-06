@@ -572,38 +572,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	 * @param string $expected       The Auth and Capture value.
 	 */
 	public function test_status_report_renders_the_client_section_for_a_connected_store( string $manual_capture, string $expected ): void {
-		$this->fake_plugin( false );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
-		$connected_api_client->method( 'is_available' )->willReturn( true );
-		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
-		$http_client = $this->createMock( WooPaymentsHttpClient::class );
-		$http_client->method( 'is_connected' )->willReturn( true );
-		$http_client->method( 'get_blog_id' )->willReturn( 12345 );
-		wc_get_container()->replace( WooPaymentsHttpClient::class, $http_client );
-		$this->seed_connected_store();
-		// Account fields per the platform account response the client reads (client 11.1.0 `includes/class-wc-payments-account.php:489-492`, features `:217-220`).
-		wc_get_container()->get( WooPaymentsAccountService::class )->cache_account_data(
-			array(
-				'account_id'           => 'acct_native_test',
-				'status'               => 'complete',
-				'is_live'              => true,
-				'payments_enabled'     => true,
-				'details_submitted'    => true,
-				'is_documents_enabled' => true,
-				'business_profile'     => array( 'support_phone' => '+15555550123' ),
-			)
-		);
-		$settings                   = get_option( 'woocommerce_woocommerce_payments_settings' );
-		$settings['manual_capture'] = $manual_capture;
-		update_option( 'woocommerce_woocommerce_payments_settings', $settings );
-		set_transient( 'wcpay_fraud_protection_settings', array(), HOUR_IN_SECONDS );
-		update_option( 'current_protection_level', 'basic' );
-		add_filter( 'wcpay_dev_mode', '__return_false' );
-
-		ob_start();
-		$this->get_sut()->render_status_report_section();
-		$html = (string) ob_get_clean();
+		$html = $this->render_report_for_connected_store( array(), array( 'manual_capture' => $manual_capture ) );
 
 		$tables = $this->get_status_tables( $html );
 		$this->assertSame( array( 'WooPayments', 'WooPayments native runtime' ), array_keys( $tables ) );
@@ -615,18 +584,82 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'Enabled', $client['Payment Gateway'] );
 		$this->assertSame( 'Enabled', $client['Test Mode'] );
 		$this->assertSame( 'card,link', $client['Enabled APMs'] );
+		$this->assertSame( 'Not eligible', $client['WooPay'] );
+		$this->assertArrayNotHasKey( 'WooPay Incompatible Extensions', $client );
 		$this->assertSame( 'Enabled (product,checkout)', $client['Apple Pay / Google Pay'] );
 		$this->assertSame( 'basic', $client['Fraud Protection Level'] );
+		$this->assertArrayNotHasKey( 'Enabled Fraud Filters', $client );
 		$this->assertSame( 'Enabled', $client['Multi-currency'] );
 		$this->assertSame( $expected, $client['Auth and Capture'] );
 		$this->assertSame( '+15555550123', $client['Support Phone'] );
 		$this->assertSame( 'Enabled', $client['Documents'] );
 		$this->assertSame( 'Disabled', $client['Dev Mode'] );
 		$this->assertSame( 'Disabled', $client['Logging'] );
+		$this->assertSame(
+			array(
+				'label' => 'Auth and Capture:',
+				'help'  => 'Whether the store has the Auth & Capture feature enabled or not.',
+			),
+			array_intersect_key( $this->get_status_cells( $html, 'WooPayments', 'Auth and Capture' ), array_flip( array( 'label', 'help' ) ) )
+		);
 		$this->assertSame( 'native', $tables['WooPayments native runtime']['Runtime owner'] );
 		$this->assertArrayNotHasKey( 'Account ID', $tables['WooPayments native runtime'] );
-		$this->assertStringNotContainsString( 'sk_', $html );
-		$this->assertStringNotContainsString( 'pk_', $html );
+		$this->assertStringNotContainsString( 'SENTINEL', $html, 'Keys in the account data never reach the report.' );
+	}
+
+	/**
+	 * @testdox The status report shows the client's enabled WooPay rows for a WooPay-eligible account.
+	 *
+	 * Client 11.1.0 `includes/class-wc-payments-status.php:507-535`.
+	 */
+	public function test_status_report_shows_the_enabled_woopay_rows_for_an_eligible_account(): void {
+		update_option( 'woopay_invalid_extension_found', true );
+
+		$html = $this->render_report_for_connected_store( array( 'platform_checkout_eligible' => true ) );
+
+		$client = $this->get_status_tables( $html )['WooPayments'];
+		delete_option( 'woopay_invalid_extension_found' );
+		$this->assertSame( 'Enabled (cart,checkout)', $client['WooPay'] );
+		$this->assertSame( 'Yes', $client['WooPay Incompatible Extensions'] );
+		$woopay = $this->get_status_cells( $html, 'WooPayments', 'WooPay' );
+		$this->assertSame( 'WooPay Express Checkout:', $woopay['label'] );
+		$this->assertSame( 'Whether the new WooPay Express Checkout is enabled or not.', $woopay['help'] );
+	}
+
+	/**
+	 * @testdox The status report names the advanced fraud filters in force, as the client does.
+	 *
+	 * Client 11.1.0 `includes/class-wc-payments-status.php:554-594`.
+	 */
+	public function test_status_report_names_the_advanced_fraud_filters(): void {
+		$html = $this->render_report_for_connected_store(
+			array(),
+			array(),
+			'advanced',
+			// Ruleset rules carry a key, as the platform's fraud ruleset does (client `includes/fraud-prevention/models/class-rule.php`).
+			array( array( 'key' => 'avs_verification' ), array( 'key' => 'address_mismatch' ), array( 'key' => 'unknown_rule' ) )
+		);
+
+		$client = $this->get_status_tables( $html )['WooPayments'];
+		$this->assertSame( 'advanced', $client['Fraud Protection Level'] );
+		$this->assertSame( 'AVS Verification,Address Mismatch', $client['Enabled Fraud Filters'] );
+	}
+
+	/**
+	 * @testdox The status report marks the account as not connected when WPCOM is connected but there is no account.
+	 */
+	public function test_status_report_marks_a_missing_account_as_not_connected(): void {
+		$http_client = $this->createMock( WooPaymentsHttpClient::class );
+		$http_client->method( 'is_connected' )->willReturn( true );
+		$http_client->method( 'get_blog_id' )->willReturn( 12345 );
+		wc_get_container()->replace( WooPaymentsHttpClient::class, $http_client );
+		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
+
+		$rows = $this->get_sut()->get_client_status_rows();
+
+		$this->assertSame( array( 'Version', 'Connected to WPCOM', 'WPCOM Blog ID', 'Account ID', 'Logging' ), array_column( $rows, 'export_label' ) );
+		$this->assertSame( 'Not connected', $rows[3]['value'] );
+		$this->assertTrue( $rows[3]['warning'] );
 	}
 
 	/**
@@ -662,6 +695,9 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 
 		$this->assertNotEmpty( $triggers );
 		$this->assertTrue( $account_service->is_dev_mode_enabled() );
+		foreach ( $triggers as $trigger ) {
+			$this->assertMatchesRegularExpression( '/^(WCPAY_DEV_MODE|WP_ENVIRONMENT_TYPE=\\w+|WP_DEVELOPMENT_MODE=\\w+|wcpay_dev_mode filter)$/', $trigger );
+		}
 	}
 
 	/**
@@ -677,6 +713,91 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'Version', 'Connected to WPCOM', 'Logging' ), array_column( $rows, 'export_label' ) );
 		$this->assertSame( 'No', $rows[1]['value'] );
 		$this->assertTrue( $rows[1]['warning'] );
+	}
+
+	/**
+	 * Render the report for a WPCOM-connected store with a connected account.
+	 *
+	 * @param array<string,mixed> $account_extra    Account data to add.
+	 * @param array<string,mixed> $settings_extra   Gateway settings to add.
+	 * @param string              $protection_level Fraud protection level.
+	 * @param array<int,mixed>    $fraud_ruleset    Cached advanced fraud ruleset.
+	 * @return string Rendered HTML.
+	 */
+	private function render_report_for_connected_store( array $account_extra = array(), array $settings_extra = array(), string $protection_level = 'basic', array $fraud_ruleset = array() ): string {
+		$this->fake_plugin( false );
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client->method( 'is_available' )->willReturn( true );
+		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
+		$http_client = $this->createMock( WooPaymentsHttpClient::class );
+		$http_client->method( 'is_connected' )->willReturn( true );
+		$http_client->method( 'get_blog_id' )->willReturn( 12345 );
+		wc_get_container()->replace( WooPaymentsHttpClient::class, $http_client );
+		$this->seed_connected_store();
+		// Account fields per the platform account response the client reads (client 11.1.0 `includes/class-wc-payments-account.php:489-492`,
+		// `includes/class-wc-payments-features.php:193-220`); the keys are sentinels the report must never print.
+		wc_get_container()->get( WooPaymentsAccountService::class )->cache_account_data(
+			array_merge(
+				array(
+					'account_id'           => 'acct_native_test',
+					'status'               => 'complete',
+					'is_live'              => true,
+					'payments_enabled'     => true,
+					'details_submitted'    => true,
+					'is_documents_enabled' => true,
+					'business_profile'     => array( 'support_phone' => '+15555550123' ),
+					'live_publishable_key' => 'pk_live_SENTINEL',
+					'test_publishable_key' => 'pk_test_SENTINEL',
+				),
+				$account_extra
+			)
+		);
+		update_option( 'woocommerce_woocommerce_payments_settings', array_merge( get_option( 'woocommerce_woocommerce_payments_settings' ), $settings_extra ) );
+		set_transient( 'wcpay_fraud_protection_settings', $fraud_ruleset, HOUR_IN_SECONDS );
+		update_option( 'current_protection_level', $protection_level );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+
+		ob_start();
+		$this->get_sut()->render_status_report_section();
+
+		return (string) ob_get_clean();
+	}
+
+	/**
+	 * Read one rendered row's label, help tip and value.
+	 *
+	 * @param string $html         Rendered status report section.
+	 * @param string $table_title  Table export label.
+	 * @param string $export_label Row export label.
+	 * @return array{label:string,help:string,value:string}
+	 */
+	private function get_status_cells( string $html, string $table_title, string $export_label ): array {
+		$document = new \DOMDocument();
+		libxml_use_internal_errors( true );
+		$document->loadHTML( '<?xml encoding="utf-8"?><body>' . $html . '</body>' );
+		libxml_clear_errors();
+
+		foreach ( $document->getElementsByTagName( 'table' ) as $table ) {
+			if ( $table_title !== $table->getElementsByTagName( 'th' )->item( 0 )->getAttribute( 'data-export-label' ) ) {
+				continue;
+			}
+			foreach ( $table->getElementsByTagName( 'tbody' )->item( 0 )->getElementsByTagName( 'tr' ) as $row ) {
+				$cells = $row->getElementsByTagName( 'td' );
+				if ( $export_label !== $cells->item( 0 )->getAttribute( 'data-export-label' ) ) {
+					continue;
+				}
+				$tip = $cells->item( 1 )->getElementsByTagName( 'span' )->item( 0 );
+
+				return array(
+					'label' => trim( $cells->item( 0 )->textContent ),
+					'help'  => $tip ? $tip->getAttribute( 'data-tip' ) : '',
+					'value' => trim( $cells->item( 2 )->textContent ),
+				);
+			}
+		}
+
+		$this->fail( "No {$export_label} row in the {$table_title} table." );
 	}
 
 	/**
