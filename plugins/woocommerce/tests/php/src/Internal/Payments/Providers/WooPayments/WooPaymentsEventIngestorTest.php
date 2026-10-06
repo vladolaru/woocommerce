@@ -393,7 +393,11 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 					'reference_number' => 'Leave with Jane Doe',
 					'session_id'       => 'ordinary-session-token',
 					'customer_id'      => 'Jane Doe',
+					// Malformed on purpose: metadata values are strings, so a nested array must not get through.
 					'subscription_id'  => array( 'nested' => 'value' ),
+					// Secret-shaped tokens under kept keys are still redacted as any logged string is.
+					'order_number'     => 'sk_live_123456789',
+					'payment_type'     => 'pi_123_secret_abc',
 				),
 			),
 			array( 'id' => 'evt_receipt_email' )
@@ -405,7 +409,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $received );
 		$intent = $logger->contexts[ $received[0] ]['body']['data']['object'];
 		$this->assertSame( '(redacted)', $intent['receipt_email'] );
-		foreach ( array( 'gift_message', 'phone_number', 'tax_id', 'reference_number', 'session_id', 'customer_id', 'subscription_id' ) as $key ) {
+		foreach ( array( 'gift_message', 'phone_number', 'tax_id', 'reference_number', 'session_id', 'customer_id', 'subscription_id', 'order_number', 'payment_type' ) as $key ) {
 			$this->assertSame( '(redacted)', $intent['metadata'][ $key ], $key );
 		}
 		$this->assertSame( (string) $order->get_id(), $intent['metadata']['order_id'], 'The order reference support needs stays.' );

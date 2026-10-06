@@ -3013,11 +3013,12 @@ class WooPaymentsApiClient {
 	private static function redact_metadata( array $metadata ): array {
 		$result = array();
 		foreach ( $metadata as $key => $value ) {
-			$is_kept        = is_string( $key )
+			$is_kept = is_string( $key )
 				&& in_array( strtolower( $key ), self::METADATA_KEYS_TO_KEEP, true )
 				&& is_scalar( $value )
 				&& 1 === preg_match( '/^[A-Za-z0-9_.:-]{1,64}$/', (string) $value );
-			$result[ $key ] = $is_kept ? (string) $value : self::REDACTED;
+			// A kept value is still cleaned like any logged string, so a secret-shaped token under a kept key is redacted.
+			$result[ $key ] = $is_kept ? self::redact_string( (string) $value ) : self::REDACTED;
 		}
 
 		return $result;
