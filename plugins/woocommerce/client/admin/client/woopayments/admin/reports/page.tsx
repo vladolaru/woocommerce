@@ -3,7 +3,7 @@
  */
 import { Button } from '@wordpress/components';
 import { speak } from '@wordpress/a11y';
-import { dateI18n } from '@wordpress/date';
+import { dateI18n, getSettings as getDateSettings } from '@wordpress/date';
 import { __, sprintf } from '@wordpress/i18n';
 import {
 	type KeyboardEvent,
@@ -108,13 +108,8 @@ type DataViewsFilter = {
 };
 
 type GlobalSettings = typeof globalThis & {
-	wcpaySettings?: {
-		dateFormat?: string;
-		timeFormat?: string;
-	};
 	wcSettings?: {
 		adminUrl?: string;
-		dateFormat?: string;
 		admin?: {
 			woopaymentsSettings?: {
 				accountDefaultCurrency?: string;
@@ -212,13 +207,11 @@ const getBalanceReportIdentity = () => {
 	};
 };
 
-const getDateFormat = () =>
-	getGlobalSettings().wcpaySettings?.dateFormat ||
-	getGlobalSettings().wcSettings?.dateFormat ||
-	'F j, Y';
+// Client 11.1.0 localizes the site's date_format and time_format as wcpaySettings.dateFormat and timeFormat; WordPress gives
+// native the same two options through `@wordpress/date`, as the other money-movement pages read them.
+const getDateFormat = () => getDateSettings().formats.date;
 
-const getTimeFormat = () =>
-	getGlobalSettings().wcpaySettings?.timeFormat || 'g:i a';
+const getTimeFormat = () => getDateSettings().formats.time;
 
 const getDateTimeIso = ( value?: string | null ) => {
 	if ( ! value ) {

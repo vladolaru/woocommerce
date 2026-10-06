@@ -58,8 +58,10 @@ jest.mock( '@wordpress/a11y', () => ( {
 	speak: jest.fn(),
 } ) );
 
+// The site's formats as WordPress gives them to `@wordpress/date`; a 24-hour time shows the site's format is used, not a default.
 jest.mock( '@wordpress/date', () => ( {
 	dateI18n: jest.fn( ( format, date ) => `${ format }|${ date }` ),
+	getSettings: () => ( { formats: { date: 'F j, Y', time: 'H:i' } } ),
 } ) );
 
 jest.mock( '@woocommerce/csv-export', () => ( {
@@ -384,15 +386,6 @@ describe( 'WooPaymentsReportsPage', () => {
 					},
 				},
 			},
-		};
-		(
-			window as typeof window & {
-				wcpaySettings?: Record< string, unknown >;
-			}
-		 ).wcpaySettings = {
-			currentUserEmail: 'merchant@example.com',
-			dateFormat: 'F j, Y',
-			timeFormat: 'g:i a',
 		};
 		printSpy = jest.spyOn( window, 'print' ).mockImplementation();
 		mockDataViews.mockClear();
@@ -1169,7 +1162,7 @@ describe( 'WooPaymentsReportsPage', () => {
 		expect( screen.getByText( 'Gross amount' ) ).toBeInTheDocument();
 		expect( screen.getByText( 'Fees total' ) ).toBeInTheDocument();
 		expect(
-			screen.getByText( 'F j, Y / g:i a|2026-06-18T10:11:12Z' )
+			screen.getByText( 'F j, Y / H:i|2026-06-18T10:11:12Z' )
 		).toBeInTheDocument();
 		expect(
 			screen.getByRole( 'link', { name: 'txn_123' } )
