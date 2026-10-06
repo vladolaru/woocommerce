@@ -772,17 +772,17 @@ class WooPaymentsApiClient {
 			true
 		);
 
-		$body = null;
-		if ( 200 === (int) wp_remote_retrieve_response_code( $response ) ) {
-			$raw_body     = wp_remote_retrieve_body( $response );
-			$body         = json_decode( $raw_body, true );
-			$content_type = wp_remote_retrieve_header( $response, 'content-type' );
-			// An undecodable JSON body is an error, as on the client's request path (client 11.1.0
-			// `includes/wc-payment-api/class-wc-payments-api-client.php:2826-2834`).
-			if ( null === $body && false !== strpos( strtolower( is_array( $content_type ) ? implode( ',', $content_type ) : (string) $content_type ), 'application/json' ) ) {
-				// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
-				throw new WooPaymentsApiException( __( 'Unable to decode response from WooPayments.', 'woocommerce' ), 'wcpay_unparseable_or_null_body', 200 );
-			}
+		$response_code = (int) wp_remote_retrieve_response_code( $response );
+		$body          = json_decode( wp_remote_retrieve_body( $response ), true );
+		$content_type  = wp_remote_retrieve_header( $response, 'content-type' );
+		// An undecodable JSON body is an error whatever the status, as on the client's request path (client 11.1.0
+		// `includes/wc-payment-api/class-wc-payments-api-client.php:2826-2834`); only a 200 carries promotions.
+		if ( null === $body && false !== strpos( strtolower( is_array( $content_type ) ? implode( ',', $content_type ) : (string) $content_type ), 'application/json' ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+			throw new WooPaymentsApiException( __( 'Unable to decode response from WooPayments.', 'woocommerce' ), 'wcpay_unparseable_or_null_body', $response_code );
+		}
+		if ( 200 !== $response_code ) {
+			$body = null;
 		}
 		$cache_for = wp_remote_retrieve_header( $response, 'cache-for' );
 

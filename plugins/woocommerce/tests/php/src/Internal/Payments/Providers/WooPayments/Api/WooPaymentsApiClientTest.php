@@ -5243,13 +5243,17 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	 * for six hours instead of an empty list (client 11.1.0 `includes/wc-payment-api/class-wc-payments-api-client.php:2826-2834`,
 	 * `includes/class-wc-payments-pm-promotions-service.php:202-221`).
 	 *
-	 * @testdox Should reject a promotions response whose JSON body cannot be decoded.
+	 * @testdox Should reject a promotions response with status $status whose JSON body cannot be decoded.
+	 * @testWith [200]
+	 *           [201]
+	 *
+	 * @param int $status HTTP status of the response.
 	 */
-	public function test_get_pm_promotions_rejects_an_undecodable_json_body(): void {
+	public function test_get_pm_promotions_rejects_an_undecodable_json_body( int $status ): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
 		$http_client->blog_id  = 123;
 		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
+			'response' => array( 'code' => $status ),
 			'headers'  => array( 'content-type' => 'application/json' ),
 			'body'     => '{"promotions":',
 		);
