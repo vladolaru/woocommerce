@@ -337,20 +337,20 @@ async function deleteRunPost(
 }
 
 /**
- * The ID WordPress gave the post the editor opened.
+ * The ID WordPress gave the post the editor opened, read once the editor
+ * store has set the post up.
  *
  * @param page Editor page.
  * @return The post ID.
  */
 async function readEditorPostId( page: Page ): Promise< number > {
-	const postId = await page.evaluate( () =>
-		window.wp.data.select( 'core/editor' ).getCurrentPostId()
-	);
-	expect(
-		Number.isSafeInteger( postId ) && postId > 0,
-		'the editor must have created the post'
-	).toBe( true );
-	return Number( postId );
+	const handle = await page.waitForFunction( () => {
+		const postId = window.wp?.data
+			?.select( 'core/editor' )
+			?.getCurrentPostId?.();
+		return Number.isSafeInteger( postId ) && postId > 0 ? postId : false;
+	} );
+	return Number( await handle.jsonValue() );
 }
 
 /**
