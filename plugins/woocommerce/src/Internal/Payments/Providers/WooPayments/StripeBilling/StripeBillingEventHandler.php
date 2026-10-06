@@ -473,8 +473,22 @@ class StripeBillingEventHandler {
 			return;
 		}
 
-		if ( ! $order->has_status( OrderStatus::FAILED ) ) {
-			$order->update_status( OrderStatus::FAILED );
+		// WooCommerce Subscriptions' renewal-order listener calls payment_failed() when a last renewal fails, which would
+		// fail the last order after all; WCS takes it off around its own failure the same way (class-wc-subscription.php
+		// payment_failed(), 7.8.2 :2044-2046).
+		$listener = 'WC_Subscriptions_Renewal_Order::maybe_record_subscription_payment';
+		$priority = has_filter( 'woocommerce_order_status_changed', $listener );
+		if ( false !== $priority ) {
+			remove_filter( 'woocommerce_order_status_changed', $listener, $priority );
+		}
+		try {
+			if ( ! $order->has_status( OrderStatus::FAILED ) ) {
+				$order->update_status( OrderStatus::FAILED );
+			}
+		} finally {
+			if ( false !== $priority && is_callable( $listener ) ) {
+				add_filter( 'woocommerce_order_status_changed', $listener, $priority, 3 );
+			}
 		}
 		/* translators: %d: renewal order ID. */
 		$subscription->add_order_note( sprintf( __( 'Related order #%d failed.', 'woocommerce' ), $order->get_id() ) );

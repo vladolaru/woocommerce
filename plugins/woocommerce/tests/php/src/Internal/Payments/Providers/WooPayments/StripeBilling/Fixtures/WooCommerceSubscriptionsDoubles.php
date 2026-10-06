@@ -515,6 +515,22 @@ final class WooCommerceSubscriptionsDoubles {
 	}
 
 	/**
+	 * Define WooCommerce Subscriptions' renewal-order listener, which fails a subscription when its last renewal fails.
+	 *
+	 * WooCommerce Subscriptions 7.8.2 `WC_Subscriptions_Renewal_Order::maybe_record_subscription_payment()`
+	 * (includes/core/class-wc-subscriptions-renewal-order.php:86-128): a renewal moving to failed calls the subscription's
+	 * `payment_failed()`. The double treats every registered renewal as the last one. The test hooks it.
+	 */
+	public static function load_renewal_order_listener(): void {
+		if ( class_exists( 'WC_Subscriptions_Renewal_Order' ) ) {
+			return;
+		}
+
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; the test needs its renewal-order listener.
+		eval( 'class WC_Subscriptions_Renewal_Order { public static function maybe_record_subscription_payment( $order_id, $old_status, $new_status ) { if ( "failed" !== $new_status ) { return; } foreach ( $GLOBALS["' . self::RENEWAL_SUBSCRIPTIONS . '"][ absint( $order_id ) ] ?? array() as $subscription_id ) { $subscription = wcs_get_subscription( $subscription_id ); if ( $subscription && method_exists( $subscription, "payment_failed" ) ) { $subscription->payment_failed(); } } } }' );
+	}
+
+	/**
 	 * Load the orders registered as subscriptions as `SubscriptionDouble`.
 	 *
 	 * @param mixed $class_name Order class name.

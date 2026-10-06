@@ -104,21 +104,26 @@ class SubscriptionDouble extends \WC_Order {
 
 	/**
 	 * Record a failed renewal payment as WooCommerce Subscriptions before 7.9.0 does: the subscription's last order fails,
-	 * whichever invoice it belongs to, and the subscription moves to the given status, on hold unless told otherwise.
+	 * whichever invoice it belongs to, with the renewal-order listener off, and the subscription moves to the given
+	 * status, on hold unless told otherwise.
 	 *
-	 * WooCommerce Subscriptions `WC_Subscription::payment_failed()` and `payment_failed_for_related_order()`
-	 * (includes/core/class-wc-subscription.php:2094-2160).
+	 * WooCommerce Subscriptions 7.8.2 `WC_Subscription::payment_failed()` (includes/core/class-wc-subscription.php:2035-2074).
 	 *
 	 * @param string $new_status Status after the failure.
 	 */
 	public function payment_failed( string $new_status = 'on-hold' ): void {
 		$last_order = $this->get_last_order( 'all', 'any' );
-		if ( $last_order instanceof \WC_Order ) {
-			if ( ! $last_order->has_status( 'failed' ) ) {
-				$last_order->update_status( 'failed' );
+		if ( $last_order instanceof \WC_Order && ! $last_order->has_status( 'failed' ) ) {
+			// WCS always has the listener; here it is on only when the test hooked it.
+			$listener  = 'WC_Subscriptions_Renewal_Order::maybe_record_subscription_payment';
+			$listening = false !== has_filter( 'woocommerce_order_status_changed', $listener );
+			remove_filter( 'woocommerce_order_status_changed', $listener );
+			$last_order->update_status( 'failed' );
+			if ( $listening ) {
+				add_filter( 'woocommerce_order_status_changed', $listener, 10, 3 );
 			}
-			$this->add_order_note( sprintf( 'Related order #%d failed.', $last_order->get_id() ) );
 		}
+		$this->add_order_note( 'Payment failed.' );
 		$this->update_status( $new_status );
 	}
 

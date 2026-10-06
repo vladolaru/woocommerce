@@ -602,7 +602,43 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$order = $this->get_renewal_orders( self::FAILED_INVOICE_ID )[0];
 		$this->assertSame( 'failed', $order->get_status() );
 		$this->assertSame( 'on-hold', wc_get_order( $subscription->get_id() )->get_status() );
-		$this->assertCount( 1, $this->get_notes_containing( wc_get_order( $subscription->get_id() ), 'Related order #' . $order->get_id() . ' failed.' ) );
+		$this->assertCount( 1, $this->get_notes_containing( wc_get_order( $subscription->get_id() ), 'Payment failed.' ), 'WooCommerce Subscriptions 7.8.2 notes the failure.' );
+	}
+
+	/**
+	 * @testdox On WooCommerce Subscriptions before 7.9.0, failing the invoice's renewal does not let WCS's renewal listener fail a newer switch order or suspend the subscription.
+	 *
+	 * WCS 7.8.2's renewal-order listener calls payment_failed() when a last renewal fails (class-wc-subscriptions-renewal-order.php:86-128),
+	 * and payment_failed() fails the last order of any relation, switches included (class-wc-subscription.php:2035-2074, :2313-2345).
+	 */
+	public function test_failed_invoice_update_before_wcs_7_9_does_not_let_wcs_fail_a_newer_switch_order(): void {
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::BEFORE_RELATED_ORDER_FAILURE ] = true;
+		WooCommerceSubscriptionsDoubles::load_renewal_order_listener();
+		$subscription = $this->create_subscription( self::FAILING_SUBSCRIPTION_ID );
+		$renewal      = WooCommerceSubscriptionsDoubles::create_renewal_order( $subscription );
+		$renewal->set_payment_method( 'woocommerce_payments' );
+		$renewal->update_meta_data( '_wcpay_billing_invoice_id', self::FAILED_INVOICE_ID );
+		$renewal->save();
+		$switch = wc_create_order();
+		$switch->set_status( 'completed' );
+		$switch->save();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ][ $switch->get_id() ]['switch'][] = $subscription->get_id();
+		$this->queue_response( 200, $this->get_declined_charge() );
+		$this->queue_billing( 'update_invoice' );
+		$listener = 'WC_Subscriptions_Renewal_Order::maybe_record_subscription_payment';
+		add_filter( 'woocommerce_order_status_changed', $listener, 10, 3 );
+
+		try {
+			$this->sut->handle_event( $this->get_event( 'invoice_payment_failed' ) );
+			$listener_after = has_filter( 'woocommerce_order_status_changed', $listener );
+		} finally {
+			remove_filter( 'woocommerce_order_status_changed', $listener, 10 );
+		}
+
+		$this->assertSame( 10, $listener_after, 'The WCS listener is back after the failure.' );
+		$this->assertSame( 'failed', wc_get_order( $renewal->get_id() )->get_status() );
+		$this->assertSame( 'completed', wc_get_order( $switch->get_id() )->get_status(), 'The newer switch order is untouched.' );
+		$this->assertSame( 'active', wc_get_order( $subscription->get_id() )->get_status() );
 	}
 
 	/**
