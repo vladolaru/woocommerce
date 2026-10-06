@@ -1353,6 +1353,8 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_kyc_completion_date', time() - 8 * DAY_IN_SECONDS, false );
 		add_filter( 'pre_wp_mail', '__return_false' );
 
+		// Account flags per client 11.1.0 `includes/class-wc-payments-account.php:367-377`; card_payments in the
+		// capabilities map, as the client's account validity check reads it (`:290-292`).
 		$account_service = $this->create_account_service(
 			array(
 				'is_live'           => true,
