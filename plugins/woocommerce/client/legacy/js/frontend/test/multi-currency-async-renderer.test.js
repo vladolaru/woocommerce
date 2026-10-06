@@ -155,16 +155,22 @@ describe( 'MultiCurrencyAsyncPriceRenderer', () => {
 	} );
 
 	test( 'publishes the selected currency after its single async renderer initialization', async () => {
+		const originalFetch = window.fetch;
 		jest.resetModules();
 		window.fetch = jest.fn().mockResolvedValue( {
 			ok: true,
 			json: jest.fn().mockResolvedValue( mockConfig ),
 		} );
 
-		require( '../multi-currency-async-renderer' );
+		try {
+			require( '../multi-currency-async-renderer' );
 
-		expect( window.wcpayAsyncCurrency.ready ).toBeInstanceOf( Promise );
-		await expect( window.wcpayAsyncCurrency.ready ).resolves.toBe( 'eur' );
-		expect( window.fetch ).toHaveBeenCalledTimes( 1 );
+			expect( window.wcpayAsyncCurrency.ready ).toBeInstanceOf( Promise );
+			await expect( window.wcpayAsyncCurrency.ready ).resolves.toBe( 'eur' );
+			expect( window.fetch ).toHaveBeenCalledTimes( 1 );
+		} finally {
+			window.fetch = originalFetch;
+			delete window.wcpayAsyncCurrency;
+		}
 	} );
 } );
