@@ -1391,7 +1391,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array(), $this->dispatch_onboarding_route_for_actioned_notes( $call ) );
 		$note_store_errors = array_filter(
 			$logger->get_errors(),
-			static fn( array $line ): bool => false !== strpos( $line[1], 'Invalid data store.' )
+			static fn( array $line ): bool => 'Native WooPayments could not read the actioned promotion notes for onboarding.' === $line[1]
 		);
 		$this->assertCount( 1, $note_store_errors, 'The note store failure is logged once.' );
 	}

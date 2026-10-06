@@ -3805,8 +3805,8 @@ class WooPaymentsService {
 			}
 		} catch ( \Throwable $e ) {
 			try {
-				// The note store's own message, as the client logs the exception (client 11.1.0 `includes/class-wc-payments-onboarding-service.php:1029-1032`).
-				wc_get_container()->get( WooPaymentsLogger::class )->error( 'Native WooPayments could not read the actioned promotion notes for onboarding: ' . $e->getMessage() );
+				// Gated like the client's Logger::error() (client 11.1.0 `includes/class-wc-payments-onboarding-service.php:1029-1032`); a PHP Error is always logged.
+				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Native WooPayments could not read the actioned promotion notes for onboarding.', $e );
 			} catch ( \Throwable $logging_error ) {
 				unset( $logging_error );
 			}
