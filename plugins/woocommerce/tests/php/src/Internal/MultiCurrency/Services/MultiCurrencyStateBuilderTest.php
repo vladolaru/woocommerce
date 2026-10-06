@@ -485,6 +485,31 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should rebuild a missing customer currency list from the currencies orders were placed in.
+	 */
+	public function test_rebuilds_missing_customer_currencies_from_orders(): void {
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP', 'EUR' ) );
+		foreach ( array(
+			'gbp' => '0.8',
+			'eur' => '0.9',
+		) as $code => $rate ) {
+			update_option( 'wcpay_multi_currency_exchange_rate_' . $code, 'manual' );
+			update_option( 'wcpay_multi_currency_manual_rate_' . $code, $rate );
+		}
+		foreach ( array( 'EUR', 'JPY' ) as $currency ) {
+			$order = \WC_Helper_Order::create_order();
+			$order->set_currency( $currency );
+			$order->save();
+		}
+
+		$currencies = $this->create_builder()->build()->get_customer_currencies();
+
+		// The client keeps only currencies it offers, sorted, and stores the list (client 11.1.0 `includes/multi-currency/MultiCurrency.php:1559-1601`).
+		$this->assertSame( array( 'EUR' ), $currencies );
+		$this->assertSame( array( 'EUR' ), get_option( 'wcpay_multi_currency_stored_customer_currencies' ) );
+	}
+
+	/**
 	 * @testdox Should read stored customer currencies only when asked for them, not while building state for a render.
 	 */
 	public function test_reads_stored_customer_currencies_only_on_demand(): void {

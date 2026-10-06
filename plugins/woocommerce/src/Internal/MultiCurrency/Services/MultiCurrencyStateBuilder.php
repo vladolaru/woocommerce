@@ -7,10 +7,12 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
+use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
+use Automattic\WooCommerce\Utilities\OrderUtil;
 
 /**
  * Builds non-mutating state snapshots for native multi-currency shadow work.
@@ -180,7 +182,7 @@ class MultiCurrencyStateBuilder {
 			return null === $override_code ? $stored : ( $enabled[ $override_code ] ?? $default );
 		};
 
-		$this->cached_state            = new MultiCurrencyState( $available, $enabled, $default, $selected, \Closure::fromCallable( array( $this, 'get_customer_currencies' ) ) );
+		$this->cached_state            = new MultiCurrencyState( $available, $enabled, $default, $selected, fn(): array => $this->get_customer_currencies( array_keys( $available ) ) );
 		$this->cached_state_generation = $current_generation;
 
 		return $this->cached_state;
@@ -466,14 +468,22 @@ class MultiCurrencyStateBuilder {
 	}
 
 	/**
-	 * Get stored customer-used currencies.
+	 * Get the currencies customers have used, rebuilding the stored list from orders when it is missing or empty.
 	 *
+	 * The client rebuilds it the same way (client 11.1.0 `includes/multi-currency/MultiCurrency.php:1559-1601`).
+	 *
+	 * @param string[] $available_codes Codes of the currencies the store offers.
 	 * @return string[]
 	 */
-	private function get_customer_currencies(): array {
+	private function get_customer_currencies( array $available_codes ): array {
 		$currencies = get_option( self::CUSTOMER_CURRENCIES_KEY, array() );
-		if ( ! is_array( $currencies ) ) {
-			return array();
+		if ( ! is_array( $currencies ) || empty( $currencies ) ) {
+			$currencies = $this->find_order_currencies( $available_codes );
+			if ( empty( $currencies ) ) {
+				return array();
+			}
+
+			update_option( self::CUSTOMER_CURRENCIES_KEY, $currencies );
 		}
 
 		$valid_currencies = array();
@@ -485,5 +495,33 @@ class MultiCurrencyStateBuilder {
 		}
 
 		return array_values( array_unique( $valid_currencies ) );
+	}
+
+	/**
+	 * Find which of the given currencies orders were placed in, sorted by code.
+	 *
+	 * One DISTINCT query instead of the client's EXISTS check per currency, which scans the orders table once for every absent currency.
+	 *
+	 * @param string[] $currency_codes Currency codes to look for.
+	 * @return string[]
+	 */
+	private function find_order_currencies( array $currency_codes ): array {
+		global $wpdb;
+
+		if ( empty( $currency_codes ) ) {
+			return array();
+		}
+
+		if ( OrderUtil::custom_orders_table_usage_is_enabled() ) {
+			$orders_table     = OrdersTableDataStore::get_orders_table_name();
+			$order_currencies = $wpdb->get_col( "SELECT DISTINCT currency FROM {$orders_table}" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name only.
+		} else {
+			$order_currencies = $wpdb->get_col( $wpdb->prepare( "SELECT DISTINCT meta_value FROM {$wpdb->postmeta} WHERE meta_key = %s", '_order_currency' ) );
+		}
+
+		$currencies = array_values( array_intersect( $currency_codes, array_map( 'strtoupper', $order_currencies ) ) );
+		sort( $currencies );
+
+		return $currencies;
 	}
 }
