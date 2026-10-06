@@ -52,18 +52,22 @@ class MultiCurrencyPriceProjectionService {
 	 * @return float
 	 */
 	public function get_price( $price, string $type ): float {
-		$state = $this->state_builder->build();
+		$currency                     = $this->state_builder->build()->get_selected_currency();
+		$apply_charm_only_to_products = true;
 
-		/**
-		 * Filters whether charm pricing applies only to product prices; shipping gets it too when false.
-		 *
-		 * @param bool $apply_charm_only_to_products Whether charm pricing is product-only.
-		 *
-		 * @since 11.0.0
-		 */
-		$apply_charm_only_to_products = (bool) apply_filters( MultiCurrencyFrontendProjectionService::APPLY_CHARM_PRODUCTS_HOOK, true );
+		// The client asks only when a product or shipping price is converted (client 11.1.0 `includes/multi-currency/MultiCurrency.php:943-967`).
+		if ( ! $currency->get_is_default() && in_array( $type, array( 'product', 'shipping' ), true ) ) {
+			/**
+			 * Filters whether charm pricing applies only to product prices; shipping gets it too when false.
+			 *
+			 * @param bool $apply_charm_only_to_products Whether charm pricing is product-only.
+			 *
+			 * @since 11.0.0
+			 */
+			$apply_charm_only_to_products = (bool) apply_filters( MultiCurrencyFrontendProjectionService::APPLY_CHARM_PRODUCTS_HOOK, true );
+		}
 
-		return $this->price_calculator->get_price( $price, $type, $state->get_selected_currency(), $apply_charm_only_to_products );
+		return $this->price_calculator->get_price( $price, $type, $currency, $apply_charm_only_to_products );
 	}
 
 	/**
