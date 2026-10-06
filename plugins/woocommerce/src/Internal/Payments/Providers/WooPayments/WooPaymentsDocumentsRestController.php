@@ -218,7 +218,8 @@ class WooPaymentsDocumentsRestController implements RegisterHooksInterface {
 		$content_type        = $this->get_raw_response_header( $raw_response, 'content-type' );
 		$content_disposition = $this->get_raw_response_header( $raw_response, 'content-disposition' );
 		$body                = wp_remote_retrieve_body( $raw_response );
-		$headers             = array();
+		// Invoices are private: like the client's nocache_headers() (documents controller :114-115), whatever rest_send_nocache_headers says.
+		$headers = array_filter( wp_get_nocache_headers() );
 
 		if ( $status <= 0 ) {
 			return new WP_Error(

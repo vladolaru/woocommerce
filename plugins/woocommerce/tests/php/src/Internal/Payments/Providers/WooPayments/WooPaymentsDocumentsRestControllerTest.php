@@ -390,6 +390,24 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A document download is never cacheable, even on a site that turns off the REST no-cache headers.
+	 *
+	 * Client 11.1.0 calls nocache_headers() before streaming (documents controller :114-115).
+	 */
+	public function test_get_document_sends_no_cache_headers(): void {
+		add_filter( 'rest_send_nocache_headers', '__return_false' );
+		$GLOBALS['wp_rest_server'] = new \Spy_REST_Server();
+		$server                    = $GLOBALS['wp_rest_server'];
+		$this->sut->register_routes();
+		$_SERVER['REQUEST_METHOD'] = 'GET';
+
+		$server->serve_request( '/wc/v3/payments/documents/vat_invoice-123' );
+
+		$this->assertStringContainsString( 'no-store', $server->sent_headers['Cache-Control'] );
+		$this->assertSame( '%PDF document', $server->sent_body );
+	}
+
+	/**
 	 * @testdox Malformed raw document responses fail closed before streaming or tracking.
 	 */
 	public function test_get_document_rejects_raw_responses_without_valid_http_status(): void {
