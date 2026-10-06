@@ -721,6 +721,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		try {
 			$cache = $this->legacy_proxy->call_function( 'get_option', self::ACCOUNT_OPTION );
 		} catch ( \Throwable $e ) {
+			$this->log_read_failure( 'the account cache', $e );
 			$cache = false;
 		}
 
@@ -833,6 +834,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		try {
 			$cache_contents = $this->legacy_proxy->call_function( 'get_option', self::ACCOUNT_OPTION );
 		} catch ( \Throwable $e ) {
+			$this->log_read_failure( 'the account cache', $e );
 			return;
 		}
 
@@ -912,6 +914,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 			$this->legacy_proxy->call_function( 'wp_cache_delete', self::ACCOUNT_OPTION, 'options' );
 			$persisted = $this->legacy_proxy->call_function( 'get_option', self::ACCOUNT_OPTION );
 		} catch ( \Throwable $e ) {
+			$this->log_read_failure( 'the account cache', $e );
 			return false;
 		}
 
@@ -983,11 +986,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		$fetched = is_numeric( $cache_contents['fetched'] ?? null ) ? (int) $cache_contents['fetched'] : 0;
 		$ttl     = $this->get_database_cache_ttl( $key, $cache_contents );
 
-		try {
-			$now = (int) $this->legacy_proxy->call_function( 'time' );
-		} catch ( \Throwable $e ) {
-			$now = time();
-		}
+		$now = (int) $this->legacy_proxy->call_function( 'time' );
 
 		return $fetched + $ttl < $now;
 	}
@@ -1689,6 +1688,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		try {
 			$store_id = $this->legacy_proxy->call_function( 'get_option', $option_name, '' );
 		} catch ( \Throwable $e ) {
+			$this->log_read_failure( 'the store ID', $e );
 			return '';
 		}
 
@@ -1704,6 +1704,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		try {
 			$settings = $this->legacy_proxy->call_function( 'get_option', self::SETTINGS_OPTION, array() );
 		} catch ( \Throwable $e ) {
+			$this->log_read_failure( 'the gateway settings', $e );
 			return array();
 		}
 
@@ -1719,10 +1720,31 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		try {
 			$value = $this->legacy_proxy->call_function( 'get_option', self::ONBOARDING_TEST_MODE_OPTION, 'no' );
 		} catch ( \Throwable $e ) {
+			$this->log_read_failure( 'the onboarding test mode setting', $e );
 			return false;
 		}
 
 		return in_array( $value, array( 'yes', '1' ), true );
+	}
+
+	/**
+	 * Log an option read that threw, whatever the logging setting.
+	 *
+	 * Only a third-party option filter can make the read throw; the caller then treats the option as missing, so the line
+	 * is the only trace. Written through wc_get_logger() directly, because WooPaymentsLogger reads the gateway settings here.
+	 *
+	 * @param string     $what      What was being read.
+	 * @param \Throwable $throwable Caught throwable.
+	 */
+	private function log_read_failure( string $what, \Throwable $throwable ): void {
+		try {
+			wc_get_logger()->error(
+				'Native WooPayments could not read ' . $what . '; treating it as missing.',
+				array_merge( WooPaymentsLogger::get_failure_context( $throwable ), array( 'source' => WooPaymentsLogger::SOURCE ) )
+			);
+		} catch ( \Throwable $logging_error ) {
+			unset( $logging_error );
+		}
 	}
 
 	/**
