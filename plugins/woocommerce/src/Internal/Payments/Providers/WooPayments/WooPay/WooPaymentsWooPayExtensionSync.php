@@ -121,10 +121,6 @@ class WooPaymentsWooPayExtensionSync implements RegisterHooksInterface {
 		if ( false === has_action( 'deactivated_plugin', array( $this, 'hide_warning_when_incompatible_extension_is_disabled' ) ) ) {
 			add_action( 'deactivated_plugin', array( $this, 'hide_warning_when_incompatible_extension_is_disabled' ) );
 		}
-
-		if ( false === has_action( 'woocommerce_woocommerce_payments_updated', array( $this, 'remove_legacy_schedule_action_name_on_update' ) ) ) {
-			add_action( 'woocommerce_woocommerce_payments_updated', array( $this, 'remove_legacy_schedule_action_name_on_update' ) );
-		}
 	}
 
 	/**

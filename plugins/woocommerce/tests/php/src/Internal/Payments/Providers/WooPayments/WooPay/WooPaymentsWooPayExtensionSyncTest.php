@@ -71,7 +71,8 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 		$this->assertSame( 10, has_action( 'validate_woopay_compatibility', array( $native_sync, 'update_compatibility_and_maybe_show_incompatibility_warning' ) ) );
 		$this->assertSame( 10, has_action( 'activated_plugin', array( $native_sync, 'show_warning_when_incompatible_extension_is_enabled' ) ) );
 		$this->assertSame( 10, has_action( 'deactivated_plugin', array( $native_sync, 'hide_warning_when_incompatible_extension_is_disabled' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_woocommerce_payments_updated', array( $native_sync, 'remove_legacy_schedule_action_name_on_update' ) ) );
+		// Native never fires the plugin's update hook (no plugin version), so nothing listens to it.
+		$this->assertFalse( has_action( 'woocommerce_woocommerce_payments_updated', array( $native_sync, 'remove_legacy_schedule_action_name_on_update' ) ) );
 
 		$plugin_sync = $this->create_sync( false );
 		$plugin_sync->register();
@@ -269,7 +270,6 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 		remove_action( 'validate_woopay_compatibility', array( $sync, 'update_compatibility_and_maybe_show_incompatibility_warning' ) );
 		remove_action( 'activated_plugin', array( $sync, 'show_warning_when_incompatible_extension_is_enabled' ) );
 		remove_action( 'deactivated_plugin', array( $sync, 'hide_warning_when_incompatible_extension_is_disabled' ) );
-		remove_action( 'woocommerce_woocommerce_payments_updated', array( $sync, 'remove_legacy_schedule_action_name_on_update' ) );
 	}
 
 	/**
