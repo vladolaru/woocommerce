@@ -7,6 +7,8 @@ import apiFetch from '@wordpress/api-fetch';
  * Internal dependencies
  */
 import { getWooPaymentsSettingsBootstrap } from '../../settings/bootstrap';
+import { normalizeDateFiltersForApi } from '../money-movement/query';
+import type { WooPaymentsMoneyMovementQuery } from '../money-movement/types';
 import {
 	DOCUMENT_LIST_QUERY_PARAM_ORDER,
 	DOCUMENT_SUMMARY_QUERY_PARAM_ORDER,
@@ -31,7 +33,13 @@ const buildPathWithQuery = (
 	query: WooPaymentsDocumentsQuery,
 	paramOrder: readonly string[]
 ) => {
-	const queryString = serializeDocumentsQuery( query, paramOrder );
+	// Client 11.1.0 `data/documents/resolvers.js:26-30`: dates go as the start or end of the merchant's day.
+	const queryString = serializeDocumentsQuery(
+		normalizeDateFiltersForApi(
+			query as WooPaymentsMoneyMovementQuery
+		) as WooPaymentsDocumentsQuery,
+		paramOrder
+	);
 
 	return queryString ? `${ path }?${ queryString }` : path;
 };

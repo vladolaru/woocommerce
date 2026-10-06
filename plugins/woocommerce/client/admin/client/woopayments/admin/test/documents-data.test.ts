@@ -17,6 +17,7 @@ import {
 import {
 	buildDocumentsRoutePath,
 	dataViewsViewToDocumentsQuery,
+	documentsQueryToDataViewsView,
 	parseDocumentsQuery,
 } from '../documents/query';
 
@@ -25,6 +26,17 @@ jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 const mockApiFetch = apiFetch as jest.MockedFunction< typeof apiFetch >;
 
 describe( 'WooPayments Documents data helpers', () => {
+	// Client 11.1.0 `formatDateValue()` takes the merchant's day; pin the browser at +03:00 so the UTC boundaries are fixed.
+	let timezoneSpy: jest.SpyInstance;
+	beforeEach( () => {
+		timezoneSpy = jest
+			.spyOn( Date.prototype, 'getTimezoneOffset' )
+			.mockReturnValue( -180 );
+	} );
+	afterEach( () => {
+		timezoneSpy.mockRestore();
+	} );
+
 	beforeEach( () => {
 		mockApiFetch.mockReset();
 		mockApiFetch.mockResolvedValue( {} );
@@ -83,7 +95,7 @@ describe( 'WooPayments Documents data helpers', () => {
 		} );
 
 		expect( mockApiFetch ).toHaveBeenCalledWith( {
-			path: '/wc/v3/payments/documents?page=2&pagesize=25&sort=date&direction=desc&match=all&date_before=2026-06-18&date_after=2026-06-01&date_between%5B%5D=2026-06-01&date_between%5B%5D=2026-06-18&type_is=vat_invoice&type_is_not=unknown',
+			path: '/wc/v3/payments/documents?page=2&pagesize=25&sort=date&direction=desc&match=all&date_before=2026-06-18+20%3A59%3A59&date_after=2026-05-31+21%3A00%3A00&date_between%5B%5D=2026-05-31+21%3A00%3A00&date_between%5B%5D=2026-06-18+20%3A59%3A59&type_is=vat_invoice&type_is_not=unknown',
 			method: 'GET',
 		} );
 	} );
@@ -100,7 +112,7 @@ describe( 'WooPayments Documents data helpers', () => {
 		} );
 
 		expect( mockApiFetch ).toHaveBeenCalledWith( {
-			path: '/wc/v3/payments/documents/summary?match=any&date_after=2026-06-01&type_is=vat_invoice',
+			path: '/wc/v3/payments/documents/summary?match=any&date_after=2026-05-31+21%3A00%3A00&type_is=vat_invoice',
 			method: 'GET',
 		} );
 	} );
@@ -202,4 +214,30 @@ describe( 'WooPayments Documents data helpers', () => {
 			},
 		} );
 	} );
+
+	it.each( [
+		[ '?date_before=2026-06-18', 'before', '2026-06-18' ],
+		[ '?date_after=2026-06-01', 'after', '2026-06-01' ],
+		[
+			'?date_between%5B%5D=2026-06-01&date_between%5B%5D=2026-06-18',
+			'between',
+			[ '2026-06-01', '2026-06-18' ],
+		],
+	] )(
+		'round-trips a %s Date filter between the URL and the view',
+		( search, operator, value ) => {
+			const view = documentsQueryToDataViewsView(
+				parseDocumentsQuery( search )
+			);
+
+			expect( view.filters ).toEqual( [
+				{ field: 'date', operator, value },
+			] );
+			expect(
+				documentsQueryToDataViewsView(
+					dataViewsViewToDocumentsQuery( view, {} )
+				).filters
+			).toEqual( view.filters );
+		}
+	);
 } );
