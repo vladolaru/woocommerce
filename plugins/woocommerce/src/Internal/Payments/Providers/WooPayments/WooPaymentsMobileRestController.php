@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 use WC_Order;
+use WC_Payment_Token;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -642,6 +643,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 
 			// The capture note, or the payment note for an intent the reader already captured (Interac), completes the payment as on the client (class-wc-payments-order-service.php:1582, :1659-1685); writing it schedules the Fee details job.
 			$this->apply_terminal_lifecycle_event( $order, $result, $intent_id, PaymentLifecycleEvent::STATUS_COMPLETED, 'succeeded' === $status );
+			$this->save_generated_card_for_subscriptions( $order, $intent );
 			$this->mark_terminal_payment_completed( $order, $result, $intent_id );
 
 			return new WP_REST_Response(
@@ -1254,6 +1256,47 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		}
 
 		$order->save();
+	}
+
+	/**
+	 * Save the card the reader generated for the order's subscriptions, so they renew automatically.
+	 *
+	 * Mirrors client 11.1.0 capture_terminal_payment() (class-wc-rest-payments-orders-controller.php:256-280): the
+	 * generated card becomes the customer's token on the order and its subscriptions, which switch to WooPayments and
+	 * leave manual renewal unless the store requires it. A wallet payment has no generated card and changes nothing.
+	 *
+	 * @param WC_Order            $order  Order.
+	 * @param array<string,mixed> $intent Intent read before the capture.
+	 */
+	private function save_generated_card_for_subscriptions( WC_Order $order, array $intent ): void {
+		$generated_card = $this->get_latest_charge( $intent )['payment_method_details']['card_present']['generated_card'] ?? null;
+		if ( ! is_string( $generated_card ) || '' === $generated_card ) {
+			return;
+		}
+
+		if ( ! function_exists( 'wcs_order_contains_subscription' ) || ! function_exists( 'wcs_get_subscriptions_for_order' ) || ! function_exists( 'wcs_is_manual_renewal_required' ) || ! wcs_order_contains_subscription( $order->get_id() ) ) {
+			return;
+		}
+
+		$token_service = wc_get_container()->get( WooPaymentsTokenService::class );
+		$token         = $token_service->get_or_create_token_for_user( $generated_card, $order->get_customer_id() );
+		if ( ! $token instanceof WC_Payment_Token ) {
+			return;
+		}
+
+		$token_service->attach_token_to_order( $order, $token );
+		foreach ( wcs_get_subscriptions_for_order( $order ) as $subscription ) {
+			$active_token = $token_service->get_active_token_for_order( $subscription );
+			if ( ! $active_token instanceof WC_Payment_Token || $active_token->get_id() !== $token->get_id() ) {
+				$subscription->add_payment_token( $token );
+			}
+
+			$subscription->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+			if ( ! wcs_is_manual_renewal_required() ) {
+				$subscription->set_requires_manual_renewal( false );
+			}
+			$subscription->save();
+		}
 	}
 
 	/**

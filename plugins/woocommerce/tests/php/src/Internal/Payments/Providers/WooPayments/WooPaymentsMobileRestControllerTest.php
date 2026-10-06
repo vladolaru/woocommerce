@@ -14,6 +14,9 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Helper_Order;
 use WC_REST_Unit_Test_Case;
 use WP_Error;
@@ -2143,6 +2146,117 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 			'USD, two decimals' => array( 12.34, 'USD', 1234 ),
 			'JPY, zero decimal' => array( 1234.0, 'JPY', 1234 ),
 		);
+	}
+
+	/**
+	 * @testdox An in-person subscription purchase saves the reader's generated card and turns automatic renewal on unless the store requires manual renewal.
+	 *
+	 * Client 11.1.0 class-wc-rest-payments-orders-controller.php:256-280.
+	 *
+	 * @dataProvider provide_manual_renewal_settings
+	 *
+	 * @param bool $manual_renewal_required Whether the store turns off automatic payments.
+	 * @param bool $expected_manual         Whether the subscription still renews manually.
+	 */
+	public function test_capture_terminal_payment_saves_the_generated_card_for_subscriptions( bool $manual_renewal_required, bool $expected_manual ): void {
+		WooCommerceSubscriptionsDoubles::load();
+		WooCommerceSubscriptionsDoubles::load_order_detector();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::MANUAL_RENEWAL_REQUIRED ] = $manual_renewal_required;
+		$user_id = $this->factory->user->create( array( 'role' => 'customer' ) );
+		$order   = $this->create_order( 12.34, 'USD' );
+		$order->set_customer_id( $user_id );
+		$order->save();
+		$subscription = new SubscriptionDouble();
+		$subscription->set_payment_method( 'cod' );
+		$subscription->set_customer_id( $user_id );
+		$subscription->set_requires_manual_renewal( true );
+		$subscription->save();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ][]                      = $subscription->get_id();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ][ $order->get_id() ] = array( 'parent' => array( $subscription->get_id() ) );
+		$token = new \WC_Payment_Token_CC();
+		$token->set_token( 'pm_generated' );
+		$token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$token->set_user_id( $user_id );
+		$token->set_card_type( 'visa' );
+		$token->set_last4( '4242' );
+		$token->set_expiry_month( '12' );
+		$token->set_expiry_year( '2030' );
+		$token->save();
+		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_token_for_user' ) )
+			->getMock();
+		$token_service->expects( $this->once() )->method( 'get_or_create_token_for_user' )->with( 'pm_generated', $user_id )->willReturn( $token );
+		wc_get_container()->replace( WooPaymentsTokenService::class, $token_service );
+		$this->set_capturable_terminal_intent( $order );
+		// A Stripe card_present charge carries the reusable card it generated (client controller :258).
+		$this->api_client->payment_intention_response['charges'] = array(
+			'data' => array(
+				array(
+					'id'                     => 'ch_terminal',
+					'payment_method_details' => array(
+						'type'         => 'card_present',
+						'card_present' => array( 'generated_card' => 'pm_generated' ),
+					),
+				),
+			),
+		);
+
+		try {
+			$response = $this->sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+
+			$this->assertInstanceOf( WP_REST_Response::class, $response );
+			$this->assertContains( $token->get_id(), wc_get_order( $order->get_id() )->get_payment_tokens() );
+			$subscription = wc_get_order( $subscription->get_id() );
+			$this->assertSame( OrderPaymentStore::GATEWAY_ID, $subscription->get_payment_method() );
+			$this->assertContains( $token->get_id(), $subscription->get_payment_tokens() );
+			$this->assertSame( $expected_manual, $subscription->is_manual() );
+		} finally {
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::MANUAL_RENEWAL_REQUIRED ], $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ], $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] );
+		}
+	}
+
+	/**
+	 * Store renewal settings and whether the subscription keeps renewing manually.
+	 *
+	 * @return array<string,array{0:bool,1:bool}>
+	 */
+	public function provide_manual_renewal_settings(): array {
+		return array(
+			'automatic payments allowed' => array( false, false ),
+			'manual renewal required'    => array( true, true ),
+		);
+	}
+
+	/**
+	 * @testdox An in-person purchase without subscriptions saves no generated card.
+	 */
+	public function test_capture_terminal_payment_saves_no_card_without_subscriptions(): void {
+		WooCommerceSubscriptionsDoubles::load_order_detector();
+		$order         = $this->create_order( 12.34, 'USD' );
+		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_token_for_user' ) )
+			->getMock();
+		$token_service->expects( $this->never() )->method( 'get_or_create_token_for_user' );
+		wc_get_container()->replace( WooPaymentsTokenService::class, $token_service );
+		$this->set_capturable_terminal_intent( $order );
+		$this->api_client->payment_intention_response['charges'] = array(
+			'data' => array(
+				array(
+					'id'                     => 'ch_terminal',
+					'payment_method_details' => array(
+						'type'         => 'card_present',
+						'card_present' => array( 'generated_card' => 'pm_generated' ),
+					),
+				),
+			),
+		);
+
+		$response = $this->sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( array(), wc_get_order( $order->get_id() )->get_payment_tokens() );
 	}
 
 	/**
