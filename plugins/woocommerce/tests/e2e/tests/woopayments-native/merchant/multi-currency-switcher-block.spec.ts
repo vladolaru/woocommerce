@@ -336,6 +336,49 @@ async function deleteRunPost(
 	);
 }
 
+async function findRunPostIdByTitle(
+	restApi: ApiClient,
+	title: string
+): Promise< number | undefined > {
+	const query = new URLSearchParams( {
+		search: title,
+		status: 'any',
+		context: 'edit',
+	} );
+	const posts = (
+		await restApi.get< Array< { id: number; title: { raw?: string } } > >(
+			`${ POSTS_API }?${ query.toString() }`
+		)
+	).data;
+	return posts.find(
+		( post: { id: number; title: { raw?: string } } ) =>
+			post.title.raw === title
+	)?.id;
+}
+
+/**
+ * Delete a run-owned post created through the editor. When the test failed
+ * before reading its ID, the post is found by its run-specific title in any
+ * status; nothing is deleted when the editor never saved it.
+ *
+ * @param restApi Authenticated admin REST client.
+ * @param postId  The ID read from the editor URL, when the test got that far.
+ * @param title   The run-specific post title.
+ */
+async function deleteEditorRunPost(
+	restApi: ApiClient,
+	postId: number | undefined,
+	title: string
+): Promise< void > {
+	const createdId =
+		postId && Number.isSafeInteger( postId ) && postId > 0
+			? postId
+			: await findRunPostIdByTitle( restApi, title );
+	if ( createdId ) {
+		await deleteRunPost( restApi, createdId );
+	}
+}
+
 /**
  * Currency switchers rendered inside the post body.
  *
@@ -586,102 +629,104 @@ test(
 			[ switcherBlockMarkup() ],
 			'properties'
 		);
-		expect(
-			parseSwitcherBlocks( await readPostContent( restApi, post.id ) )
-		).toEqual( [ {} ] );
+		try {
+			expect(
+				parseSwitcherBlocks( await readPostContent( restApi, post.id ) )
+			).toEqual( [ {} ] );
 
-		const pageErrors = trackPageErrors( page, storeBase );
-		const canvas = await openPostEditor( page, post.id );
-		await selectSwitcherBlock( canvas );
-		await openBlockInspector( page );
+			const pageErrors = trackPageErrors( page, storeBase );
+			const canvas = await openPostEditor( page, post.id );
+			await selectSwitcherBlock( canvas );
+			await openBlockInspector( page );
 
-		const displayFlags = page.getByRole( 'checkbox', {
-			name: DISPLAY_FLAGS_LABEL,
-		} );
-		const displaySymbols = page.getByRole( 'checkbox', {
-			name: DISPLAY_SYMBOLS_LABEL,
-		} );
-		const showBorder = page.getByRole( 'checkbox', {
-			name: SHOW_BORDER_LABEL,
-		} );
+			const displayFlags = page.getByRole( 'checkbox', {
+				name: DISPLAY_FLAGS_LABEL,
+			} );
+			const displaySymbols = page.getByRole( 'checkbox', {
+				name: DISPLAY_SYMBOLS_LABEL,
+			} );
+			const showBorder = page.getByRole( 'checkbox', {
+				name: SHOW_BORDER_LABEL,
+			} );
 
-		// Observable baseline: the merchant genuinely starts from the
-		// registered defaults, so a no-op save could not pass the assertions
-		// below.
-		await expect( displayFlags ).not.toBeChecked();
-		await expect( displaySymbols ).toBeChecked();
-		await expect( showBorder ).toBeChecked();
+			// Observable baseline: the merchant genuinely starts from the
+			// registered defaults, so a no-op save could not pass the assertions
+			// below.
+			await expect( displayFlags ).not.toBeChecked();
+			await expect( displaySymbols ).toBeChecked();
+			await expect( showBorder ).toBeChecked();
 
-		// Three supported presentation choices, each moved away from its
-		// default through the real inspector control. The numeric and color
-		// controls are deliberately not driven here: the ledger's disposition
-		// for this row keeps one representative save-and-reload boundary
-		// rather than coupling native coverage to every current inspector
-		// control, and the frontend row proves the numeric/color attributes
-		// reach the shopper.
-		await displayFlags.check();
-		await displaySymbols.uncheck();
-		await showBorder.uncheck();
+			// Three supported presentation choices, each moved away from its
+			// default through the real inspector control. The numeric and color
+			// controls are deliberately not driven here: the ledger's disposition
+			// for this row keeps one representative save-and-reload boundary
+			// rather than coupling native coverage to every current inspector
+			// control, and the frontend row proves the numeric/color attributes
+			// reach the shopper.
+			await displayFlags.check();
+			await displaySymbols.uncheck();
+			await showBorder.uncheck();
 
-		await expect( displayFlags ).toBeChecked();
-		await expect( displaySymbols ).not.toBeChecked();
-		await expect( showBorder ).not.toBeChecked();
+			await expect( displayFlags ).toBeChecked();
+			await expect( displaySymbols ).not.toBeChecked();
+			await expect( showBorder ).not.toBeChecked();
 
-		// Keyboard save rather than a labelled button: the post editor's save
-		// affordance is named differently across WordPress versions, while
-		// the shortcut is stable, and the persistence oracle below is the
-		// stored representation rather than any notice copy. Awaiting the
-		// save round trip in the page also keeps the reload below from racing
-		// an in-flight save.
-		const saveResponse = page.waitForResponse(
-			( response ) =>
-				response.request().method() === 'POST' &&
-				response.url().includes( `/wp/v2/posts/${ post.id }` ) &&
-				! response.url().includes( 'autosaves' ) &&
-				response.ok()
-		);
-		await page.keyboard.press( 'ControlOrMeta+s' );
-		await saveResponse;
+			// Keyboard save rather than a labelled button: the post editor's save
+			// affordance is named differently across WordPress versions, while
+			// the shortcut is stable, and the persistence oracle below is the
+			// stored representation rather than any notice copy. Awaiting the
+			// save round trip in the page also keeps the reload below from racing
+			// an in-flight save.
+			const saveResponse = page.waitForResponse(
+				( response ) =>
+					response.request().method() === 'POST' &&
+					response.url().includes( `/wp/v2/posts/${ post.id }` ) &&
+					! response.url().includes( 'autosaves' ) &&
+					response.ok()
+			);
+			await page.keyboard.press( 'ControlOrMeta+s' );
+			await saveResponse;
 
-		// Authoritative persistence: the saved post content carries exactly
-		// the three changed attributes. Gutenberg omits attributes equal to
-		// their registered default, so this set is both "the changes landed"
-		// and "nothing else was touched".
-		await expect
-			.poll(
-				async () =>
-					parseSwitcherBlocks(
-						await readPostContent( restApi, post.id )
-					),
-				{
-					message:
-						'the saved post content must carry the changed switcher attributes',
-					timeout: 30_000,
-				}
-			)
-			.toEqual( [ { flag: true, symbol: false, border: false } ] );
+			// Authoritative persistence: the saved post content carries exactly
+			// the three changed attributes. Gutenberg omits attributes equal to
+			// their registered default, so this set is both "the changes landed"
+			// and "nothing else was touched".
+			await expect
+				.poll(
+					async () =>
+						parseSwitcherBlocks(
+							await readPostContent( restApi, post.id )
+						),
+					{
+						message:
+							'the saved post content must carry the changed switcher attributes',
+						timeout: 30_000,
+					}
+				)
+				.toEqual( [ { flag: true, symbol: false, border: false } ] );
 
-		// Save-and-reload boundary: the merchant's choices come back when the
-		// editor is rebuilt from stored content, so this cannot pass on
-		// transient client-side state.
-		await page.reload();
-		await dismissEditorWelcomeGuide( page );
-		const reloadedCanvas = await getEditorCanvas( page );
-		await selectSwitcherBlock( reloadedCanvas );
-		await openBlockInspector( page );
-		await expect(
-			page.getByRole( 'checkbox', { name: DISPLAY_FLAGS_LABEL } )
-		).toBeChecked();
-		await expect(
-			page.getByRole( 'checkbox', { name: DISPLAY_SYMBOLS_LABEL } )
-		).not.toBeChecked();
-		await expect(
-			page.getByRole( 'checkbox', { name: SHOW_BORDER_LABEL } )
-		).not.toBeChecked();
+			// Save-and-reload boundary: the merchant's choices come back when the
+			// editor is rebuilt from stored content, so this cannot pass on
+			// transient client-side state.
+			await page.reload();
+			await dismissEditorWelcomeGuide( page );
+			const reloadedCanvas = await getEditorCanvas( page );
+			await selectSwitcherBlock( reloadedCanvas );
+			await openBlockInspector( page );
+			await expect(
+				page.getByRole( 'checkbox', { name: DISPLAY_FLAGS_LABEL } )
+			).toBeChecked();
+			await expect(
+				page.getByRole( 'checkbox', { name: DISPLAY_SYMBOLS_LABEL } )
+			).not.toBeChecked();
+			await expect(
+				page.getByRole( 'checkbox', { name: SHOW_BORDER_LABEL } )
+			).not.toBeChecked();
 
-		expect( pageErrors() ).toEqual( [] );
-
-		await deleteRunPost( restApi, post.id );
+			expect( pageErrors() ).toEqual( [] );
+		} finally {
+			await deleteRunPost( restApi, post.id );
+		}
 	}
 );
 
@@ -714,76 +759,82 @@ test(
 			],
 			'presentation'
 		);
+		try {
+			const pageErrors = trackPageErrors( page, storeBase );
+			// A fresh anonymous visitor: no admin session, no stored currency.
+			await page.context().clearCookies();
+			await page.goto( post.link );
 
-		const pageErrors = trackPageErrors( page, storeBase );
-		// A fresh anonymous visitor: no admin session, no stored currency.
-		await page.context().clearCookies();
-		await page.goto( post.link );
+			const switchers = contentSwitchers( page );
+			await expect( switchers ).toHaveCount( 2 );
+			const baseline = switchers.nth( 0 );
+			const configured = switchers.nth( 1 );
+			await expect( baseline ).toBeVisible();
+			await expect( configured ).toBeVisible();
 
-		const switchers = contentSwitchers( page );
-		await expect( switchers ).toHaveCount( 2 );
-		const baseline = switchers.nth( 0 );
-		const configured = switchers.nth( 1 );
-		await expect( baseline ).toBeVisible();
-		await expect( configured ).toBeVisible();
+			// Symbol/flag semantics, both directions. The baseline block shows the
+			// currency symbol and no flag; the configured block shows the flag and
+			// no symbol. The flag half is asserted on markup rather than on text so
+			// it is independent of whether WordPress's emoji script leaves the
+			// glyph as text or swaps in an <img alt="…"> — the packet for this row
+			// puts emoji glyph *implementation* out of scope, not flag semantics.
+			const baselineDefaultOption = baseline.locator(
+				'option[value="USD"]'
+			);
+			const configuredDefaultOption = configured.locator(
+				'option[value="USD"]'
+			);
+			await expect( baselineDefaultOption ).toHaveText( '$ USD' );
+			expect( await configuredDefaultOption.innerHTML() ).toContain(
+				USD_FLAG
+			);
+			expect( await configuredDefaultOption.textContent() ).not.toContain(
+				'$'
+			);
 
-		// Symbol/flag semantics, both directions. The baseline block shows the
-		// currency symbol and no flag; the configured block shows the flag and
-		// no symbol. The flag half is asserted on markup rather than on text so
-		// it is independent of whether WordPress's emoji script leaves the
-		// glyph as text or swaps in an <img alt="…"> — the packet for this row
-		// puts emoji glyph *implementation* out of scope, not flag semantics.
-		const baselineDefaultOption = baseline.locator( 'option[value="USD"]' );
-		const configuredDefaultOption = configured.locator(
-			'option[value="USD"]'
-		);
-		await expect( baselineDefaultOption ).toHaveText( '$ USD' );
-		expect( await configuredDefaultOption.innerHTML() ).toContain(
-			USD_FLAG
-		);
-		expect( await configuredDefaultOption.textContent() ).not.toContain(
-			'$'
-		);
+			// Representative configured presentation, as computed by the browser
+			// rather than as declared: this is what the shopper actually sees.
+			await expect( baseline ).toHaveCSS( 'border-top-width', '1px' );
+			await expect( baseline ).toHaveCSS(
+				'border-top-left-radius',
+				'3px'
+			);
+			await expect( baseline ).toHaveCSS( 'font-size', '14px' );
+			await expect( baseline ).toHaveCSS( 'color', 'rgb(0, 0, 0)' );
+			await expect( baseline ).toHaveCSS(
+				'background-color',
+				'rgba(0, 0, 0, 0)'
+			);
 
-		// Representative configured presentation, as computed by the browser
-		// rather than as declared: this is what the shopper actually sees.
-		await expect( baseline ).toHaveCSS( 'border-top-width', '1px' );
-		await expect( baseline ).toHaveCSS( 'border-top-left-radius', '3px' );
-		await expect( baseline ).toHaveCSS( 'font-size', '14px' );
-		await expect( baseline ).toHaveCSS( 'color', 'rgb(0, 0, 0)' );
-		await expect( baseline ).toHaveCSS(
-			'background-color',
-			'rgba(0, 0, 0, 0)'
-		);
+			await expect( configured ).toHaveCSS( 'border-top-width', '0px' );
+			await expect( configured ).toHaveCSS(
+				'border-top-left-radius',
+				'12px'
+			);
+			await expect( configured ).toHaveCSS( 'font-size', '24px' );
+			await expect( configured ).toHaveCSS( 'color', 'rgb(255, 0, 0)' );
+			await expect( configured ).toHaveCSS(
+				'background-color',
+				'rgb(0, 255, 0)'
+			);
 
-		await expect( configured ).toHaveCSS( 'border-top-width', '0px' );
-		await expect( configured ).toHaveCSS(
-			'border-top-left-radius',
-			'12px'
-		);
-		await expect( configured ).toHaveCSS( 'font-size', '24px' );
-		await expect( configured ).toHaveCSS( 'color', 'rgb(255, 0, 0)' );
-		await expect( configured ).toHaveCSS(
-			'background-color',
-			'rgb(0, 255, 0)'
-		);
+			// Line height is projected onto the switcher's wrapper, whose computed
+			// value depends on the theme's inherited font size; the declared value
+			// is the deterministic half, matched tolerantly so inline whitespace
+			// is not part of the claim.
+			await expect( baseline.locator( 'xpath=..' ) ).toHaveAttribute(
+				'style',
+				/line-height:\s*1\.5\s*;/
+			);
+			await expect( configured.locator( 'xpath=..' ) ).toHaveAttribute(
+				'style',
+				/line-height:\s*2\s*;/
+			);
 
-		// Line height is projected onto the switcher's wrapper, whose computed
-		// value depends on the theme's inherited font size; the declared value
-		// is the deterministic half, matched tolerantly so inline whitespace
-		// is not part of the claim.
-		await expect( baseline.locator( 'xpath=..' ) ).toHaveAttribute(
-			'style',
-			/line-height:\s*1\.5\s*;/
-		);
-		await expect( configured.locator( 'xpath=..' ) ).toHaveAttribute(
-			'style',
-			/line-height:\s*2\s*;/
-		);
-
-		expect( pageErrors() ).toEqual( [] );
-
-		await deleteRunPost( restApi, post.id );
+			expect( pageErrors() ).toEqual( [] );
+		} finally {
+			await deleteRunPost( restApi, post.id );
+		}
 	}
 );
 
@@ -808,87 +859,92 @@ test(
 		)[ 0 ];
 		const postTitle = `WooPayments MC switcher publish ${ runId }`;
 
-		const pageErrors = trackPageErrors( page, storeBase );
+		// The editor creates this post, so its ID is only known once the URL
+		// changes; a failure before that is cleaned up by the run's title.
+		let postId: number | undefined;
+		try {
+			const pageErrors = trackPageErrors( page, storeBase );
 
-		// The merchant half of the contract: the block is discoverable by its
-		// own title in the inserter and can be placed in post content.
-		await page.goto( 'wp-admin/post-new.php' );
-		await dismissEditorWelcomeGuide( page );
-		await fillPostTitle( page, postTitle );
-		await insertBlockFromInserter( page, BLOCK_TITLE );
+			// The merchant half of the contract: the block is discoverable by its
+			// own title in the inserter and can be placed in post content.
+			await page.goto( 'wp-admin/post-new.php' );
+			await dismissEditorWelcomeGuide( page );
+			await fillPostTitle( page, postTitle );
+			await insertBlockFromInserter( page, BLOCK_TITLE );
 
-		const canvas = await getEditorCanvas( page );
-		await expect( editorSwitcherBlock( canvas ) ).toHaveCount( 1 );
+			const canvas = await getEditorCanvas( page );
+			await expect( editorSwitcherBlock( canvas ) ).toHaveCount( 1 );
 
-		await publishOpenPost( page );
+			await publishOpenPost( page );
 
-		// The editor swaps the draft URL for the saved post's edit URL once
-		// the publish response lands; waiting for it keeps the ID read below
-		// off a stale address.
-		await page.waitForURL( /[?&]post=\d+/ );
-		const postId = Number(
-			new URL( page.url() ).searchParams.get( 'post' )
-		);
-		expect(
-			Number.isSafeInteger( postId ) && postId > 0,
-			`the published post must expose a durable ID: ${ page.url() }`
-		).toBe( true );
+			// The editor swaps the draft URL for the saved post's edit URL once
+			// the publish response lands; waiting for it keeps the ID read below
+			// off a stale address.
+			await page.waitForURL( /[?&]post=\d+/ );
+			postId = Number( new URL( page.url() ).searchParams.get( 'post' ) );
+			expect(
+				Number.isSafeInteger( postId ) && postId > 0,
+				`the published post must expose a durable ID: ${ page.url() }`
+			).toBe( true );
 
-		// Authoritative saved representation: exactly one switcher block
-		// reached the published content, so a double insertion or a silently
-		// dropped block cannot pass.
-		const publishedPost = (
-			await restApi.get< {
-				link: string;
-				status: string;
-				content: { raw?: string };
-			} >( `${ POSTS_API }/${ postId }?context=edit` )
-		).data;
-		expect( publishedPost.status ).toBe( 'publish' );
-		expect(
-			parseSwitcherBlocks( publishedPost.content.raw ?? '' )
-		).toEqual( [ {} ] );
+			// Authoritative saved representation: exactly one switcher block
+			// reached the published content, so a double insertion or a silently
+			// dropped block cannot pass.
+			const publishedPost = (
+				await restApi.get< {
+					link: string;
+					status: string;
+					content: { raw?: string };
+				} >( `${ POSTS_API }/${ postId }?context=edit` )
+			).data;
+			expect( publishedPost.status ).toBe( 'publish' );
+			expect(
+				parseSwitcherBlocks( publishedPost.content.raw ?? '' )
+			).toEqual( [ {} ] );
 
-		// Editor reload: the published block parses back intact rather than
-		// resolving to an invalid or unsupported block.
-		await page.reload();
-		await dismissEditorWelcomeGuide( page );
-		await expect(
-			editorSwitcherBlock( await getEditorCanvas( page ) )
-		).toHaveCount( 1 );
-
-		// The shopper half: a fresh anonymous visitor gets exactly one
-		// switcher in the published content, offering the enabled set.
-		await page.context().clearCookies();
-		await page.goto( publishedPost.link );
-		const switcher = contentSwitchers( page );
-		await expect( switcher ).toHaveCount( 1 );
-		await expect( switcher ).toBeVisible();
-		await expect( switcher ).toHaveValue( defaultCode );
-		await expect( switcher.locator( 'option' ) ).toHaveCount(
-			enabledCodes.length
-		);
-		for ( const code of enabledCodes ) {
+			// Editor reload: the published block parses back intact rather than
+			// resolving to an invalid or unsupported block.
+			await page.reload();
+			await dismissEditorWelcomeGuide( page );
 			await expect(
-				switcher.locator( `option[value="${ code }"]` )
+				editorSwitcherBlock( await getEditorCanvas( page ) )
 			).toHaveCount( 1 );
+
+			// The shopper half: a fresh anonymous visitor gets exactly one
+			// switcher in the published content, offering the enabled set.
+			await page.context().clearCookies();
+			await page.goto( publishedPost.link );
+			const switcher = contentSwitchers( page );
+			await expect( switcher ).toHaveCount( 1 );
+			await expect( switcher ).toBeVisible();
+			await expect( switcher ).toHaveValue( defaultCode );
+			await expect( switcher.locator( 'option' ) ).toHaveCount(
+				enabledCodes.length
+			);
+			for ( const code of enabledCodes ) {
+				await expect(
+					switcher.locator( `option[value="${ code }"]` )
+				).toHaveCount( 1 );
+			}
+			// The published control is a real, operable control rather than
+			// rendered markup: it takes focus, and committing a selection is
+			// honoured — which is what this row's residual risk asks for
+			// ("validate switch behavior, not visibility alone"). Price
+			// conversion is deliberately not claimed here; MultiCurrencyFrontendPricesControllerTest
+			// and MultiCurrencyPriceCalculatorTest own that assertion.
+			await switcher.focus();
+			await expect( switcher ).toBeFocused();
+			await switcher.selectOption( additionalCode );
+			await page.waitForURL(
+				new RegExp( `[?&]currency=${ additionalCode }` )
+			);
+			await expect( contentSwitchers( page ) ).toHaveValue(
+				additionalCode
+			);
+
+			expect( pageErrors() ).toEqual( [] );
+		} finally {
+			await deleteEditorRunPost( restApi, postId, postTitle );
 		}
-		// The published control is a real, operable control rather than
-		// rendered markup: it takes focus, and committing a selection is
-		// honoured — which is what this row's residual risk asks for
-		// ("validate switch behavior, not visibility alone"). Price
-		// conversion is deliberately not claimed here; MultiCurrencyFrontendPricesControllerTest
-		// and MultiCurrencyPriceCalculatorTest own that assertion.
-		await switcher.focus();
-		await expect( switcher ).toBeFocused();
-		await switcher.selectOption( additionalCode );
-		await page.waitForURL(
-			new RegExp( `[?&]currency=${ additionalCode }` )
-		);
-		await expect( contentSwitchers( page ) ).toHaveValue( additionalCode );
-
-		expect( pageErrors() ).toEqual( [] );
-
-		await deleteRunPost( restApi, postId );
 	}
 );
