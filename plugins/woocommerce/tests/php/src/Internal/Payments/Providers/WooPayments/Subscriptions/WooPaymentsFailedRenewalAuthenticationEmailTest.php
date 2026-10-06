@@ -44,7 +44,7 @@ class WooPaymentsFailedRenewalAuthenticationEmailTest extends WC_Unit_Test_Case 
 	 * Clear the subscription registry and the retry store the doubles read.
 	 */
 	public function tearDown(): void {
-		unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ], $GLOBALS['wcpay_test_retry_store'] );
+		unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ], $GLOBALS['wcpay_test_retry_store'], $GLOBALS['wcpay_test_renewal_order_ids'] );
 		parent::tearDown();
 	}
 
@@ -54,7 +54,7 @@ class WooPaymentsFailedRenewalAuthenticationEmailTest extends WC_Unit_Test_Case 
 	 * Client 11.1.0 `WC_Payments_Email_Failed_Renewal_Authentication::trigger()` and its template (link to the order's pay page).
 	 */
 	public function test_renewal_needing_authentication_emails_the_shopper_with_the_authorization_link(): void {
-		$order = $this->create_subscription_order();
+		$order = $this->create_renewal_order();
 		$email = new WooPaymentsFailedRenewalAuthenticationEmail();
 
 		$email->trigger( $order );
@@ -100,9 +100,32 @@ class WooPaymentsFailedRenewalAuthenticationEmailTest extends WC_Unit_Test_Case 
 		$email = new WooPaymentsFailedAuthenticationRetryEmail();
 
 		$email->trigger( $order->get_id(), $order );
+		$this->assertSame( array(), $this->sent, 'Nothing is sent without a retry store.' );
+
+		// WCS's store answers null for an order with no retry (abstract-wcs-retry-store.php:103-114).
+		$GLOBALS['wcpay_test_retry_store'] = new class() {
+			/**
+			 * Get the last retry of an order: none.
+			 *
+			 * @param int $order_id Order ID.
+			 * @return null
+			 */
+			public function get_last_retry_for_order( $order_id ) {
+				unset( $order_id );
+				return null;
+			}
+		};
+		$email->trigger( $order->get_id(), $order );
 		$this->assertSame( array(), $this->sent, 'Nothing is sent without a recorded retry.' );
 
 		$GLOBALS['wcpay_test_retry_store'] = new class() {
+			/**
+			 * Order IDs the retry was asked for.
+			 *
+			 * @var int[]
+			 */
+			public array $asked_for = array();
+
 			/**
 			 * Get the last retry of an order: one due in two days.
 			 *
@@ -110,7 +133,7 @@ class WooPaymentsFailedRenewalAuthenticationEmailTest extends WC_Unit_Test_Case 
 			 * @return object
 			 */
 			public function get_last_retry_for_order( $order_id ) {
-				unset( $order_id );
+				$this->asked_for[] = (int) $order_id;
 				return new class() {
 					/**
 					 * Get the retry time.
@@ -126,6 +149,7 @@ class WooPaymentsFailedRenewalAuthenticationEmailTest extends WC_Unit_Test_Case 
 		$email->trigger( $order->get_id(), $order );
 
 		$this->assertCount( 1, $this->sent );
+		$this->assertSame( array( $order->get_id() ), $GLOBALS['wcpay_test_retry_store']->asked_for );
 		$this->assertSame( get_option( 'admin_email' ), $this->sent[0]['to'] );
 		$this->assertStringContainsString( 'in 2 days', (string) $this->sent[0]['subject'] );
 		$this->assertStringContainsString( 'in 2 days', (string) $this->sent[0]['message'] );
@@ -154,6 +178,22 @@ class WooPaymentsFailedRenewalAuthenticationEmailTest extends WC_Unit_Test_Case 
 		WooCommerceSubscriptionsDoubles::load();
 		$order = $this->create_order();
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ][] = $order->get_id();
+
+		return $order;
+	}
+
+	/**
+	 * Create a renewal order of a subscription, as WooCommerce Subscriptions' renewal detector reports it.
+	 *
+	 * @return WC_Order
+	 */
+	private function create_renewal_order(): WC_Order {
+		if ( ! function_exists( 'wcs_order_contains_renewal' ) ) {
+			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; the email asks its renewal detector.
+			eval( 'function wcs_order_contains_renewal( $order ) { $order_id = is_object( $order ) && method_exists( $order, "get_id" ) ? $order->get_id() : absint( $order ); return in_array( $order_id, $GLOBALS["wcpay_test_renewal_order_ids"] ?? array(), true ); }' );
+		}
+		$order                                     = $this->create_order();
+		$GLOBALS['wcpay_test_renewal_order_ids'][] = $order->get_id();
 
 		return $order;
 	}
