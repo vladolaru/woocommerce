@@ -19,6 +19,11 @@ import { MemoryRouter } from 'react-router-dom';
  * Internal dependencies
  */
 import { summaryItem } from './helpers/table-summary';
+import {
+	chooseFilter,
+	getFilterPickerChoices,
+	getFilterPickerValue,
+} from './helpers/filter-picker';
 import { WooPaymentsTransactionsList } from '../money-movement/transactions-list';
 import {
 	getRiskLevelLabel,
@@ -710,18 +715,16 @@ describe( 'WooPayments transactions list Show and currency filters', () => {
 		const { unmount } = renderList();
 		await screen.findByText( 'No transactions found.' );
 
-		const show = screen.getByLabelText( 'Show' );
-		expect( show ).toHaveValue( 'all' );
-		expect(
-			within( show )
-				.getAllByRole( 'option' )
-				.map( ( option ) => option.textContent )
-		).toEqual( [ 'All transactions', 'Advanced filters' ] );
+		expect( getFilterPickerValue( 'Show' ) ).toBe( 'All transactions' );
+		expect( getFilterPickerChoices( 'Show' ) ).toEqual( [
+			'All transactions',
+			'Advanced filters',
+		] );
 		expect(
 			screen.getByTestId( 'transactions-dataviews' )
 		).toHaveAttribute( 'data-filterable-fields', '' );
 
-		fireEvent.change( show, { target: { value: 'advanced' } } );
+		chooseFilter( 'Show', 'Advanced filters' );
 		expect( mockHistoryPush ).toHaveBeenLastCalledWith(
 			expect.stringMatching( /&filter=advanced$/ )
 		);
@@ -735,9 +738,7 @@ describe( 'WooPayments transactions list Show and currency filters', () => {
 		expect( getFilterLabels() ).toEqual( ADVANCED_FILTER_LABELS );
 
 		// Leaving Advanced filters drops them, as the client's FilterPicker does.
-		fireEvent.change( screen.getByLabelText( 'Show' ), {
-			target: { value: 'all' },
-		} );
+		chooseFilter( 'Show', 'All transactions' );
 		expect( mockHistoryPush ).toHaveBeenLastCalledWith(
 			expect.not.stringMatching( /type_is|customer_country_is|filter=/ )
 		);
@@ -753,8 +754,8 @@ describe( 'WooPayments transactions list Show and currency filters', () => {
 		renderList( undefined, '?filter=advanced&type_is=refund&match=any' );
 		await screen.findByText( 'Transactions loaded.' );
 
-		expect( screen.getByLabelText( 'Transactions match' ) ).toHaveValue(
-			'any'
+		expect( getFilterPickerValue( 'Transactions match' ) ).toBe(
+			'Any filter'
 		);
 		expect( mockGetTransactions ).toHaveBeenLastCalledWith(
 			expect.objectContaining( { match: 'any', type_is: 'refund' } )
@@ -771,9 +772,7 @@ describe( 'WooPayments transactions list Show and currency filters', () => {
 		);
 
 		// Choosing "all" again drops the argument from the route.
-		fireEvent.change( screen.getByLabelText( 'Transactions match' ), {
-			target: { value: 'all' },
-		} );
+		chooseFilter( 'Transactions match', 'All filters' );
 		expect( mockHistoryPush ).toHaveBeenLastCalledWith(
 			expect.not.stringContaining( 'match=' )
 		);
@@ -955,9 +954,7 @@ describe( 'WooPayments transactions list Show and currency filters', () => {
 		renderList();
 		await screen.findByText( 'No transactions found.' );
 
-		fireEvent.change( screen.getByLabelText( 'Deposit currency' ), {
-			target: { value: 'eur' },
-		} );
+		chooseFilter( 'Deposit currency', 'Euro' );
 		expect( mockHistoryPush ).toHaveBeenLastCalledWith(
 			expect.stringContaining( 'store_currency_is=eur' )
 		);

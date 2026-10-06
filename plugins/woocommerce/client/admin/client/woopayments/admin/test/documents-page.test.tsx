@@ -16,6 +16,7 @@ import { MemoryRouter } from 'react-router-dom';
  * Internal dependencies
  */
 import { summaryItem } from './helpers/table-summary';
+import { chooseFilter, getFilterPickerValue } from './helpers/filter-picker';
 import { WooPaymentsDocumentsPage } from '../documents/page';
 import {
 	getWooPaymentsDocuments,
@@ -254,7 +255,7 @@ describe( 'WooPaymentsDocumentsPage', () => {
 		expect( screen.getByText( 'Date' ) ).toBeInTheDocument();
 		expect( screen.getByText( 'Type' ) ).toBeInTheDocument();
 		// The date and type filters sit under Show: Advanced filters.
-		expect( screen.getByLabelText( 'Show' ) ).toHaveValue( 'all' );
+		expect( getFilterPickerValue( 'Show' ) ).toBe( 'All documents' );
 		expect( screen.queryByText( 'Filter Date' ) ).not.toBeInTheDocument();
 		expect( screen.queryByText( 'Filter Type' ) ).not.toBeInTheDocument();
 		expect( screen.getByText( 'Description' ) ).toBeInTheDocument();
@@ -333,12 +334,7 @@ describe( 'WooPaymentsDocumentsPage', () => {
 		expect( screen.getByText( 'Filter Date' ) ).toBeInTheDocument();
 		expect( screen.getByText( 'Filter Type' ) ).toBeInTheDocument();
 
-		await act( async () => {
-			await userEvent.selectOptions(
-				screen.getByLabelText( 'Documents match' ),
-				'any'
-			);
-		} );
+		chooseFilter( 'Documents match', 'Any filter' );
 
 		await waitFor( () =>
 			expect( mockGetDocuments ).toHaveBeenLastCalledWith(

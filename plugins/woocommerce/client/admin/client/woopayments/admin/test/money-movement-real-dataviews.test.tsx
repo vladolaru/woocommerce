@@ -2,6 +2,7 @@
  * External dependencies
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 
 /**
@@ -205,6 +206,43 @@ describe( 'WooPayments list filters in the real DataViews', () => {
 				'status_is'
 			)
 		);
+	} );
+
+	// Client 11.1.0 FilterPicker (`@woocommerce/components` filter-picker `renderButton()`): a choice applies only when clicked.
+	it( 'requests the list once for a clicked Show choice and never while the keyboard browses the choices', async () => {
+		render(
+			<MemoryRouter initialEntries={ [ '/woopayments/disputes' ] }>
+				<SettingsShellHistoryBridge />
+				<WooPaymentsDisputesPage />
+			</MemoryRouter>
+		);
+		await waitFor( () =>
+			expect( getWooPaymentsDisputes ).toHaveBeenCalled()
+		);
+		const requests = () =>
+			( getWooPaymentsDisputes as jest.Mock ).mock.calls.length;
+		const before = requests();
+
+		await userEvent.click(
+			screen.getByLabelText( 'Show', { selector: 'button' } )
+		);
+		await userEvent.keyboard( '{ArrowDown}{ArrowDown}{ArrowUp}' );
+		await userEvent.tab();
+		await userEvent.keyboard( '{ArrowDown}' );
+		expect( requests() ).toBe( before );
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'All disputes' } )
+		);
+		expect( requests() ).toBe( before );
+
+		await userEvent.click(
+			screen.getByLabelText( 'Show', { selector: 'button' } )
+		);
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Advanced filters' } )
+		);
+		await waitFor( () => expect( requests() ).toBe( before + 1 ) );
 	} );
 
 	// Client 11.1.0 `deposits/filters/config.js:89-181`: the payout Date and Status filters under Advanced filters.

@@ -1,8 +1,10 @@
 /**
  * External dependencies
  */
-import { SelectControl } from '@wordpress/components';
+import { Button, Dropdown } from '@wordpress/components';
+import { useInstanceId } from '@wordpress/compose';
 import { __ } from '@wordpress/i18n';
+import clsx from 'clsx';
 
 export type WooPaymentsListFilter = {
 	id: string;
@@ -13,11 +15,97 @@ export type WooPaymentsListFilter = {
 };
 
 /**
- * The selects above a list, such as "Show" and the currency picker, standing in
+ * One filter as the client's `FilterPicker` draws it (client 11.1.0 `disputes/filters/index.tsx`,
+ * `@woocommerce/components` FilterPicker): a choice applies only when its button is clicked, so
+ * moving through the choices with the keyboard never reloads the list.
+ *
+ * @param props        The component props.
+ * @param props.filter The filter to show.
+ */
+export const WooPaymentsFilterPicker = ( {
+	filter,
+}: {
+	filter: WooPaymentsListFilter;
+} ) => {
+	const labelId = `woocommerce-woopayments-filter-picker-${ useInstanceId(
+		WooPaymentsFilterPicker
+	) }`;
+	const selected =
+		filter.options.find( ( option ) => option.value === filter.value ) ||
+		filter.options[ 0 ];
+
+	return (
+		<div className="woocommerce-filters-filter">
+			<span id={ labelId } className="woocommerce-filters-label">
+				{ filter.label }
+			</span>
+			<Dropdown
+				contentClassName="woocommerce-filters-filter__content"
+				popoverProps={ { placement: 'bottom' } }
+				renderToggle={ ( { isOpen, onToggle } ) => (
+					// The `@woocommerce/components` DropdownButton markup FilterPicker uses.
+					<Button
+						id={ `${ labelId }-toggle` }
+						className={ clsx( 'woocommerce-dropdown-button', {
+							'is-open': isOpen,
+						} ) }
+						aria-labelledby={ `${ labelId } ${ labelId }-toggle` }
+						aria-expanded={ isOpen }
+						onClick={ onToggle }
+					>
+						<div className="woocommerce-dropdown-button__labels">
+							<span>{ selected?.label }</span>
+						</div>
+					</Button>
+				) }
+				renderContent={ ( { onClose } ) => (
+					<ul
+						className="woocommerce-filters-filter__content-list"
+						aria-labelledby={ labelId }
+					>
+						{ filter.options.map( ( option ) => (
+							<li
+								key={ option.value }
+								className={ clsx(
+									'woocommerce-filters-filter__content-list-item',
+									{
+										'is-selected':
+											option.value === filter.value,
+									}
+								) }
+							>
+								<Button
+									className="woocommerce-filters-filter__button"
+									aria-current={
+										option.value === filter.value
+											? 'true'
+											: undefined
+									}
+									onClick={ () => {
+										onClose();
+										// FilterPicker `renderButton()`: the current choice only closes the list.
+										if ( option.value !== filter.value ) {
+											filter.onChange( option.value );
+										}
+									} }
+								>
+									{ option.label }
+								</Button>
+							</li>
+						) ) }
+					</ul>
+				) }
+			/>
+		</div>
+	);
+};
+
+/**
+ * The filters above a list, such as "Show" and the currency picker, standing in
  * for the client's `ReportFilters` pickers (client 11.1.0 `disputes/filters/index.tsx`).
  *
  * @param props         The component props.
- * @param props.filters The selects to show, in order.
+ * @param props.filters The filters to show, in order.
  */
 export const WooPaymentsListFilters = ( {
 	filters,
@@ -26,15 +114,7 @@ export const WooPaymentsListFilters = ( {
 } ) => (
 	<div className="woocommerce-woopayments-money-movement__filters">
 		{ filters.map( ( filter ) => (
-			<SelectControl
-				key={ filter.id }
-				__next40pxDefaultSize
-				__nextHasNoMarginBottom
-				label={ filter.label }
-				value={ filter.value }
-				options={ filter.options }
-				onChange={ filter.onChange }
-			/>
+			<WooPaymentsFilterPicker key={ filter.id } filter={ filter } />
 		) ) }
 	</div>
 );
@@ -108,10 +188,10 @@ export const withListShowFilter = (
 };
 
 /**
- * The advanced filters' "match all or any" select.
+ * The advanced filters' "match all or any" choice, drawn as a filter picker like "Show".
  * Client 11.1.0 `AdvancedFilters`, for example "Disputes match <select /> filters" (`disputes/filters/config.ts:104-114`).
  *
- * @param label    The select label, such as "Disputes match".
+ * @param label    The filter label, such as "Disputes match".
  * @param match    The current choice.
  * @param onChange Called with the new choice.
  */

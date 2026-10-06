@@ -1,13 +1,7 @@
 /**
  * External dependencies
  */
-import {
-	fireEvent,
-	render,
-	screen,
-	waitFor,
-	within,
-} from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -25,6 +19,7 @@ import type {
 	WooPaymentsDepositsOverview,
 } from '../overview/types';
 import { setMockUserPreferences } from './helpers/user-preferences';
+import { chooseFilter, getFilterPickerChoices } from './helpers/filter-picker';
 import {
 	SettingsShellHistoryBridge,
 	shellHistory,
@@ -318,22 +313,22 @@ describe( 'WooPayments payouts Show and currency filters', () => {
 		renderPayouts();
 		await waitFor( () => expect( mockGetDeposits ).toHaveBeenCalled() );
 
-		const show = await screen.findByLabelText( 'Show' );
-		expect(
-			within( show )
-				.getAllByRole( 'option' )
-				.map( ( option ) => option.textContent )
-		).toEqual( [ 'All payouts', 'Advanced filters' ] );
+		await screen.findByLabelText( 'Show' );
+		expect( getFilterPickerChoices( 'Show' ) ).toEqual( [
+			'All payouts',
+			'Advanced filters',
+		] );
 		expect(
 			screen.getByTestId( 'status-filter-operators' )
 		).toHaveTextContent( /^none$/ );
-		expect(
-			within( await screen.findByLabelText( 'Payout currency' ) )
-				.getAllByRole( 'option' )
-				.map( ( option ) => option.textContent )
-		).toEqual( [ 'All', 'United States (US) dollar', 'Euro' ] );
+		await screen.findByLabelText( 'Payout currency' );
+		expect( getFilterPickerChoices( 'Payout currency' ) ).toEqual( [
+			'All',
+			'United States (US) dollar',
+			'Euro',
+		] );
 
-		fireEvent.change( show, { target: { value: 'advanced' } } );
+		chooseFilter( 'Show', 'Advanced filters' );
 
 		expect(
 			await screen.findByTestId( 'status-filter-operators' )

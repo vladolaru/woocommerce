@@ -30,6 +30,11 @@ import {
 } from '../money-movement/data';
 import { setMockUserPreferences } from './helpers/user-preferences';
 import {
+	chooseFilter,
+	getFilterPickerChoices,
+	getFilterPickerValue,
+} from './helpers/filter-picker';
+import {
 	SettingsShellHistoryBridge,
 	shellHistory,
 } from './helpers/settings-shell-history';
@@ -578,22 +583,19 @@ describe( 'WooPayments disputes Show and currency filters', () => {
 
 		expect( lastQuery( mockGetDisputes ).search ).toEqual( AWAITING );
 		expect( lastQuery( mockGetSummary ).search ).toEqual( AWAITING );
-		expect( screen.getByLabelText( 'Show' ) ).toHaveValue(
-			'awaiting_response'
-		);
+		expect( getFilterPickerValue( 'Show' ) ).toBe( 'Needs response' );
 	} );
 
 	it( "offers the client's Show choices and requests all disputes by default", async () => {
 		renderPage();
 		await screen.findByText( 'Disputes loaded.' );
 
-		const show = screen.getByLabelText( 'Show' );
-		expect( show ).toHaveValue( 'all' );
-		expect(
-			within( show )
-				.getAllByRole( 'option' )
-				.map( ( option ) => option.textContent )
-		).toEqual( [ 'Needs response', 'All disputes', 'Advanced filters' ] );
+		expect( getFilterPickerValue( 'Show' ) ).toBe( 'All disputes' );
+		expect( getFilterPickerChoices( 'Show' ) ).toEqual( [
+			'Needs response',
+			'All disputes',
+			'Advanced filters',
+		] );
 		expect( lastQuery( mockGetDisputes ).search ).toBeUndefined();
 		expect(
 			screen.queryByLabelText( 'Dispute currency' )
@@ -610,9 +612,7 @@ describe( 'WooPayments disputes Show and currency filters', () => {
 			search: 'Ada',
 		} );
 
-		fireEvent.change( screen.getByLabelText( 'Show' ), {
-			target: { value: 'awaiting_response' },
-		} );
+		chooseFilter( 'Show', 'Needs response' );
 
 		await waitFor( () =>
 			expect( lastQuery( mockGetDisputes ).search ).toEqual( AWAITING )
@@ -637,9 +637,7 @@ describe( 'WooPayments disputes Show and currency filters', () => {
 		await screen.findByText( 'Disputes loaded.' );
 		expect( filterable() ).toEqual( [] );
 
-		fireEvent.change( screen.getByLabelText( 'Show' ), {
-			target: { value: 'advanced' },
-		} );
+		chooseFilter( 'Show', 'Advanced filters' );
 
 		await waitFor( () =>
 			expect( filterable() ).toEqual( [
@@ -679,11 +677,12 @@ describe( 'WooPayments disputes Show and currency filters', () => {
 
 		renderPage( '/woopayments/disputes?filter=advanced' );
 		await screen.findByText( 'Disputes loaded.' );
-		const match = screen.getByLabelText( 'Disputes match' );
-		expect( match ).toHaveValue( 'all' );
+		expect( getFilterPickerValue( 'Disputes match' ) ).toBe(
+			'All filters'
+		);
 		expect( lastQuery( mockGetDisputes ) ).not.toHaveProperty( 'match' );
 
-		fireEvent.change( match, { target: { value: 'any' } } );
+		chooseFilter( 'Disputes match', 'Any filter' );
 		await waitFor( () =>
 			expect( lastQuery( mockGetDisputes ).match ).toBe( 'any' )
 		);
@@ -723,14 +722,13 @@ describe( 'WooPayments disputes Show and currency filters', () => {
 		renderPage( '/woopayments/disputes?filter=awaiting_response' );
 		await screen.findByText( 'Disputes loaded.' );
 
-		const currency = screen.getByLabelText( 'Dispute currency' );
-		expect(
-			within( currency )
-				.getAllByRole( 'option' )
-				.map( ( option ) => option.textContent )
-		).toEqual( [ 'All currencies', 'United States (US) dollar', 'Euro' ] );
+		expect( getFilterPickerChoices( 'Dispute currency' ) ).toEqual( [
+			'All currencies',
+			'United States (US) dollar',
+			'Euro',
+		] );
 
-		fireEvent.change( currency, { target: { value: 'eur' } } );
+		chooseFilter( 'Dispute currency', 'Euro' );
 
 		await waitFor( () =>
 			expect( lastQuery( mockGetDisputes ).store_currency_is ).toBe(
