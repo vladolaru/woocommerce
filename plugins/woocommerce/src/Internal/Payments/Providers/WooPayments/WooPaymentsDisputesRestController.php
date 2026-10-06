@@ -192,6 +192,8 @@ class WooPaymentsDisputesRestController implements RegisterHooksInterface {
 				$submit,
 				is_array( $metadata ) ? $metadata : array()
 			);
+			// The client invalidates the dispute caches after the update, as after a close (class-wc-payments-api-client.php:722-724).
+			$this->dispute_cache_service->delete_dispute_caches();
 
 			$this->log_dispute_action( 'info', __( 'WooPayments dispute update completed.', 'woocommerce' ), $log_context );
 

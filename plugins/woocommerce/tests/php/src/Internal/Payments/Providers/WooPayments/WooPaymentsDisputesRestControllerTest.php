@@ -336,6 +336,29 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Submitting dispute evidence deletes stale dispute caches after the platform accepts it.
+	 *
+	 * Client 11.1.0 clears them after the update request returns, as it does for close (class-wc-payments-api-client.php:722-724).
+	 */
+	public function test_dispute_update_deletes_stale_dispute_caches_after_platform_success(): void {
+		$this->create_disputes_controller( true )->register_routes();
+		update_option( 'wcpay_dispute_status_counts_cache', array( 'data' => array( 'needs_response' => 1 ) ) );
+		update_option( 'wcpay_active_dispute_cache', array( 'id' => 'dp_test' ) );
+		$this->api_client->response = array(
+			'id'     => 'dp_test',
+			'status' => 'under_review',
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/disputes/dp_test' );
+		$request->set_body_params( array( 'submit' => true ) );
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertFalse( get_option( 'wcpay_dispute_status_counts_cache' ) );
+		$this->assertFalse( get_option( 'wcpay_active_dispute_cache' ) );
+	}
+
+	/**
 	 * @testdox Dispute close keeps dispute caches when the platform close fails.
 	 */
 	public function test_dispute_close_keeps_stale_dispute_caches_when_platform_fails(): void {
