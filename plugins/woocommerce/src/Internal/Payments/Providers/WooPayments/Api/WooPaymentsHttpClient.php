@@ -17,7 +17,7 @@ use WP_Error;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsHttpClient implements WooPaymentsHttpClientInterface {
+class WooPaymentsHttpClient {
 
 	/**
 	 * Tell whether the site has a usable WPCOM/Jetpack connection.
