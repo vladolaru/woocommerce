@@ -198,6 +198,46 @@ class WooPaymentsLoggerTest extends WC_Unit_Test_Case {
 		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
+	/**
+	 * @testdox Each line carries the client's request context, with the request path but no query string and no referrer.
+	 *
+	 * Client 11.1.0 `src/Internal/Logger.php:68` merges `src/Internal/LoggerContext.php:140-164` into every line; native leaves
+	 * out the referrer and the query string, which carry order keys on order-pay pages (monitor ruling 2026-10-06).
+	 */
+	public function test_lines_carry_the_request_context_without_order_keys(): void {
+		self::enable_woopayments_debug_logging();
+		$server = $_SERVER;
+		wp_set_current_user( self::factory()->user->create( array( 'user_login' => 'shop_manager_one' ) ) );
+		$_SERVER['REQUEST_URI']     = '/checkout/order-pay/12/?pay_for_order=true&key=wc_order_abc123';
+		$_SERVER['HTTP_REFERER']    = 'https://store.test/checkout/order-pay/12/?key=wc_order_abc123';
+		$_SERVER['HTTP_USER_AGENT'] = 'Merchant browser';
+		$account_service            = new WooPaymentsAccountService();
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ) );
+		$sut = new WooPaymentsLogger();
+		$sut->init( $account_service );
+		$logger = RecordingWcLogger::install();
+
+		try {
+			$sut->log( 'Charged the order.', 'info', array( 'WP_CLI' => 'caller value' ) );
+			$sut->log_always( 'Held the order.', 'warning' );
+		} finally {
+			$_SERVER = $server;
+		}
+
+		foreach ( array( 'Charged the order.', 'Held the order.' ) as $message ) {
+			$context = $this->get_logged_context( $logger, $message );
+			$this->assertSame( 'shop_manager_one', $context['WP_USER'] );
+			$this->assertSame( 'Merchant browser', $context['HTTP_USER_AGENT'] );
+			$this->assertSame( '/checkout/order-pay/12/', $context['REQUEST_URI'] );
+			$this->assertSame( '', $context['DOING_AJAX'] );
+			$this->assertSame( '', $context['DOING_CRON'] );
+			$this->assertArrayHasKey( 'WOOPAYMENTS_MODE', $context );
+			$this->assertArrayNotHasKey( 'HTTP_REFERER', $context );
+			$this->assertStringNotContainsString( 'wc_order_abc123', (string) wp_json_encode( $context ) );
+		}
+		$this->assertSame( 'caller value', $this->get_logged_context( $logger, 'Charged the order.' )['WP_CLI'], 'The caller\'s context wins, as in the client.' );
+	}
+
 	/** @return array<string,array{string,bool,bool}> */
 	public static function logging_states(): array {
 		return array(

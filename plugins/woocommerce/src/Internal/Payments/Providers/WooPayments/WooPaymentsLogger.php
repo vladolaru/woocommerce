@@ -162,7 +162,7 @@ class WooPaymentsLogger {
 			return;
 		}
 
-		wc_get_logger()->log( $level, $message, array_merge( $context, array( 'source' => self::SOURCE ) ) );
+		$this->log_always( $message, $level, $context );
 	}
 
 	/**
@@ -215,7 +215,32 @@ class WooPaymentsLogger {
 	 * @param array<string,mixed> $context Context, such as order_id or intent_id.
 	 */
 	public function log_always( string $message, string $level, array $context = array() ): void {
-		wc_get_logger()->log( $level, $message, array_merge( $context, array( 'source' => self::SOURCE ) ) );
+		wc_get_logger()->log( $level, $message, array_merge( $this->get_request_context(), $context, array( 'source' => self::SOURCE ) ) );
+	}
+
+	/**
+	 * Get the request context the client adds to every line (client 11.1.0 `src/Internal/LoggerContext.php:140-164`).
+	 *
+	 * The referrer and the request's query string are left out: on order-pay pages they carry the order key.
+	 *
+	 * @return array<string,string>
+	 */
+	private function get_request_context(): array {
+		$user = wp_get_current_user();
+		// phpcs:disable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Sanitized below, as the client does.
+		$user_agent  = isset( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : '--';
+		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? wp_parse_url( sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ), PHP_URL_PATH ) : '--';
+		// phpcs:enable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+
+		return array(
+			'WP_USER'          => $user->exists() ? $user->user_login : 'Guest (non logged-in user)',
+			'HTTP_USER_AGENT'  => $user_agent,
+			'REQUEST_URI'      => is_string( $request_uri ) ? $request_uri : '--',
+			'DOING_AJAX'       => wp_doing_ajax() ? '1' : '',
+			'DOING_CRON'       => wp_doing_cron() ? '1' : '',
+			'WP_CLI'           => defined( 'WP_CLI' ) && WP_CLI ? '1' : '',
+			'WOOPAYMENTS_MODE' => $this->account_service->is_test_mode_enabled() ? WooPaymentsOrderMode::TEST : WooPaymentsOrderMode::PRODUCTION,
+		);
 	}
 
 	/**
