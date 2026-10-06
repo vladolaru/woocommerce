@@ -887,6 +887,21 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
+	 * @testdox The transactions list still maps order searches when a list request filter returns something that is not a request.
+	 */
+	public function test_transactions_list_maps_order_search_after_a_broken_list_filter(): void {
+		$order = $this->create_order_with_charge( 'ch_order', 'pi_order' );
+		$this->create_transactions_controller( true )->register_routes();
+		add_filter( 'wcpay_list_transactions_request', '__return_null' );
+
+		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/transactions' );
+		$request->set_query_params( array( 'search' => array( __( 'Order #', 'woocommerce' ) . $order->get_id() ) ) );
+		$this->server->dispatch( $request );
+
+		$this->assertSame( array( 'ch_order' ), $this->api_client->last_call['query']['search'] );
+	}
+
+	/**
 	 * @testdox Transactions routes require manage_woocommerce before API calls.
 	 */
 	public function test_transactions_routes_require_manage_woocommerce(): void {

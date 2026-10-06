@@ -359,15 +359,9 @@ class WooPaymentsTransactionsRestController implements RegisterHooksInterface {
 		 */
 		$filtered_request = apply_filters( 'wcpay_list_transactions_request', $transactions_request );
 
-		if ( ! is_object( $filtered_request ) || ! method_exists( $filtered_request, 'get_params' ) ) {
-			return $transactions_request->get_params();
-		}
+		$params = is_object( $filtered_request ) && method_exists( $filtered_request, 'get_params' ) ? $filtered_request->get_params() : null;
 
-		$params = $filtered_request->get_params();
-
-		return $this->order_service->map_transaction_search_params(
-			is_array( $params ) ? $params : $transactions_request->get_params()
-		);
+		return $this->order_service->map_transaction_search_params( is_array( $params ) ? $params : $transactions_request->get_params() );
 	}
 
 	/**
