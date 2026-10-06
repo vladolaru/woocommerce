@@ -77,8 +77,9 @@ final class MultiCurrencyUsageDetector {
 			return $this->has_foreign_currency_orders_memo;
 		}
 
-		// Only "yes" is cached: order meta only accumulates, while a cached "no" would hide orders imported or created by any other
-		// writer until it expired. The client asks on every Analytics request (client 11.1.0 `includes/multi-currency/Analytics.php:565-590`).
+		// Only "yes" is cached, for an hour: a cached "no" would hide orders imported or created by any writer until it expired, while a
+		// stale "yes" after every such order is deleted only keeps Multi-Currency's history handling on a little longer. The client
+		// asks on every REST request (client 11.1.0 `includes/multi-currency/Analytics.php:89`, `:565-590`).
 		if ( ! $fresh && '1' === get_transient( self::HAS_MC_ORDERS_TRANSIENT ) ) {
 			$this->has_foreign_currency_orders_memo = true;
 
