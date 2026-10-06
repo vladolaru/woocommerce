@@ -446,9 +446,10 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should not remember "no foreign-currency orders", so an order imported with an exchange rate counts on the next request.
 	 */
 	public function test_counts_an_imported_foreign_currency_order_on_the_next_request(): void {
-		delete_transient( 'wc_mc_has_orders' );
+		// Earlier versions cached "no" as '0'; it must not hide the import either.
+		set_transient( 'wc_mc_has_orders', '0', HOUR_IN_SECONDS );
 		$this->create_controller_without_orders_resolver( MultiCurrencyRuntimeArbiter::OWNER_CORE )->register();
-		$this->assertFalse( get_transient( 'wc_mc_has_orders' ), 'A negative answer is not cached.' );
+		$this->assertSame( '0', get_transient( 'wc_mc_has_orders' ), 'A negative answer is not written.' );
 
 		// An import writes the rate through the order CRUD API, without the price controller (meta key: client 11.1.0 `includes/multi-currency/FrontendPrices.php:373`).
 		$order = \WC_Helper_Order::create_order();

@@ -115,6 +115,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 		$sut->enqueue_blocks_totals_script();
 		$this->assertTrue( wp_script_is( 'wc-multi-currency-blocks-totals', 'enqueued' ) );
 		$this->assertSame( array( 'wc-blocks-checkout' ), wp_scripts()->registered['wc-multi-currency-blocks-totals']->deps );
+		$this->assertMatchesRegularExpression( '#/assets/js/frontend/multi-currency-blocks-totals(\.min)?\.js$#', wp_scripts()->registered['wc-multi-currency-blocks-totals']->src );
 		wp_dequeue_script( 'wc-multi-currency-blocks-totals' );
 		wp_deregister_script( 'wc-multi-currency-blocks-totals' );
 	}
@@ -138,6 +139,8 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 9, has_action( 'woocommerce_account_view-order_endpoint', array( $sut, 'init_order_currency' ) ) );
 		$this->assertSame( 900, has_filter( 'woocommerce_cart_hash', array( $sut, 'add_currency_to_cart_hash' ) ) );
 		$this->assertSame( 900, has_filter( 'woocommerce_shipping_method_add_rate_args', array( $sut, 'fix_price_decimals_for_shipping_rates' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_blocks_enqueue_cart_block_scripts_after', array( $sut, 'enqueue_blocks_totals_script' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_blocks_enqueue_checkout_block_scripts_after', array( $sut, 'enqueue_blocks_totals_script' ) ) );
 	}
 
 	/**
