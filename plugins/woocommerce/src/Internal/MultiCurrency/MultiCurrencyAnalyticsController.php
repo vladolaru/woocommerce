@@ -262,12 +262,14 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 			$registry->add( 'customerCurrencySymbols', $this->get_analytics_projection_service()->get_currency_symbols() );
 		}
 
-		// Without an admin build the script is absent, as the Multi-Currency settings page also checks.
-		if ( ! file_exists( WC_ADMIN_ABSPATH . WC_ADMIN_DIST_JS_FOLDER . 'wp-admin-scripts/multi-currency-analytics.asset.php' ) ) {
+		try {
+			WCAdminAssets::register_script( 'wp-admin-scripts', 'multi-currency-analytics', true );
+		} catch ( \Exception $e ) {
+			// Core's asset loader finds no build manifest: a checkout whose admin client was not built.
+			wc_get_logger()->warning( 'Multi-Currency Analytics script not loaded: ' . $e->getMessage(), array( 'source' => 'multi-currency' ) );
 			return;
 		}
 
-		WCAdminAssets::register_script( 'wp-admin-scripts', 'multi-currency-analytics', true );
 		// The plugin's handle, kept as an alias for scripts that list it as a dependency (client 11.1.0 `Analytics.php:27`).
 		wp_register_script( 'WCPAY_MULTI_CURRENCY_ANALYTICS', false, array( 'wc-admin-multi-currency-analytics' ), WC_VERSION, true );
 	}

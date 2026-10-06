@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Blocks\Assets\AssetDataRegistry;
 use Automattic\WooCommerce\Blocks\Package;
+use Automattic\WooCommerce\Internal\Admin\WCAdminAssets;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAnalyticsController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
@@ -508,12 +509,27 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( '€', $symbols['EUR'] );
 		$this->assertSame( '$', $symbols['USD'] );
 		$this->assertSame( '¥', $symbols['JPY'] );
+	}
 
-		// The script exists only in an admin build; CI's PHP job runs without one, local runs and the release package have it.
-		if ( file_exists( WC_ADMIN_ABSPATH . WC_ADMIN_DIST_JS_FOLDER . 'wp-admin-scripts/multi-currency-analytics.asset.php' ) ) {
-			$this->assertTrue( wp_script_is( 'wc-admin-multi-currency-analytics', 'enqueued' ) );
-			$this->assertSame( array( 'wc-admin-multi-currency-analytics' ), wp_scripts()->registered['WCPAY_MULTI_CURRENCY_ANALYTICS']->deps );
+	/**
+	 * @testdox Should enqueue the Analytics script, with the plugin's handle as an alias, on wc-admin pages for store managers.
+	 */
+	public function test_enqueues_the_analytics_script_for_store_managers(): void {
+		try {
+			WCAdminAssets::get_script_asset_filename( 'wp-admin-scripts', 'multi-currency-analytics' );
+		} catch ( \Exception $e ) {
+			// CI's PHP job runs without the admin build; local runs and the release package have it.
+			$this->markTestSkipped( 'The admin client is not built: ' . $e->getMessage() );
 		}
+		$sut          = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$_GET['page'] = 'wc-admin';
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'shop_manager' ) ) );
+
+		$sut->handle_admin_enqueue_scripts();
+
+		$this->assertTrue( wp_script_is( 'wc-admin-multi-currency-analytics', 'enqueued' ) );
+		// The plugin's handle (client 11.1.0 `includes/multi-currency/Analytics.php:27`).
+		$this->assertSame( array( 'wc-admin-multi-currency-analytics' ), wp_scripts()->registered['WCPAY_MULTI_CURRENCY_ANALYTICS']->deps );
 	}
 
 	/**
