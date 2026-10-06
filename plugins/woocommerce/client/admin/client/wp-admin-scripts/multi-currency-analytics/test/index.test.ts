@@ -9,7 +9,8 @@ import { applyFilters, removeAllFilters } from '@wordpress/hooks';
 import '../index';
 
 const settings: Record< string, unknown > = {
-	// Shape the server registers: label and code of each currency customers ordered in.
+	// Shapes the server registers: label and code of each currency customers ordered in (client 11.1.0
+	// includes/multi-currency/Analytics.php:125-154), and symbols by code (MultiCurrencyAnalyticsProjectionService::get_currency_symbols()).
 	customerCurrencies: [
 		{ label: 'US dollar', value: 'USD' },
 		{ label: 'Euro', value: 'EUR' },
@@ -55,6 +56,7 @@ describe( 'multi-currency-analytics', () => {
 	} );
 
 	it( 'adds a customer currency column to the orders table only', () => {
+		// The table data wc-admin's ReportTable passes to the filter (client/analytics/components/report-table/index.js:184-191).
 		const table = {
 			endpoint: 'orders',
 			headers: [ { key: 'date' } ],
