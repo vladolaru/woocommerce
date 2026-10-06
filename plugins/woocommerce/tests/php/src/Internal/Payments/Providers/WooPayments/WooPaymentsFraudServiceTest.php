@@ -107,6 +107,26 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should print no Sift tracker when a filter returns a field that is not a string.
+	 * @testWith ["beacon_key"]
+	 *           ["user_id"]
+	 *           ["session_id"]
+	 *
+	 * @param string $field The filtered field.
+	 */
+	public function test_prints_no_sift_tracker_for_a_malformed_filtered_field( string $field ): void {
+		add_filter(
+			'woocommerce_woopayments_fraud_service_config',
+			static function ( $config ) use ( $field ) {
+				$config[ $field ] = new \stdClass();
+				return $config;
+			}
+		);
+
+		$this->assertSame( '', $this->render_admin_footer( array( 'page' => 'wc-admin' ) ) );
+	}
+
+	/**
 	 * @testdox Should not print the Sift tracker on other admin pages, without Sift, or without a beacon key.
 	 * @dataProvider provide_pages_without_the_admin_sift_tracker
 	 *

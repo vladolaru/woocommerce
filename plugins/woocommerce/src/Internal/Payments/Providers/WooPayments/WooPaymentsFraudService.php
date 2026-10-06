@@ -130,8 +130,12 @@ class WooPaymentsFraudService implements RegisterHooksInterface {
 			return;
 		}
 
-		$sift = $this->get_fraud_services_config()['sift'] ?? null;
-		if ( ! is_array( $sift ) || empty( $sift['beacon_key'] ) ) {
+		// The config comes through public filters, so every printed field must be a string.
+		$sift       = $this->get_fraud_services_config()['sift'] ?? null;
+		$beacon_key = is_array( $sift ) ? ( $sift['beacon_key'] ?? null ) : null;
+		$user_id    = is_array( $sift ) ? ( $sift['user_id'] ?? '' ) : '';
+		$session_id = is_array( $sift ) ? ( $sift['session_id'] ?? '' ) : '';
+		if ( ! is_string( $beacon_key ) || '' === $beacon_key || ! is_string( $user_id ) || ! is_string( $session_id ) ) {
 			return;
 		}
 		?>
@@ -139,9 +143,9 @@ class WooPaymentsFraudService implements RegisterHooksInterface {
 			var src = 'https://cdn.sift.com/s.js';
 
 			var _sift = ( window._sift = window._sift || [] );
-			_sift.push( [ '_setAccount', <?php echo wp_json_encode( (string) $sift['beacon_key'] ); ?> ] );
-			_sift.push( [ '_setUserId', <?php echo wp_json_encode( (string) ( $sift['user_id'] ?? '' ) ); ?> ] );
-			_sift.push( [ '_setSessionId', <?php echo wp_json_encode( (string) ( $sift['session_id'] ?? '' ) ); ?> ] );
+			_sift.push( [ '_setAccount', <?php echo wp_json_encode( $beacon_key ); ?> ] );
+			_sift.push( [ '_setUserId', <?php echo wp_json_encode( $user_id ); ?> ] );
+			_sift.push( [ '_setSessionId', <?php echo wp_json_encode( $session_id ); ?> ] );
 			_sift.push( [ '_trackPageview' ] );
 
 			if ( ! document.querySelector( '[src="' + src + '"]' ) ) {
