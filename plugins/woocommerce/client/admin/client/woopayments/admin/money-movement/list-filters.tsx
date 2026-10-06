@@ -6,6 +6,11 @@ import { useInstanceId } from '@wordpress/compose';
 import { __ } from '@wordpress/i18n';
 import clsx from 'clsx';
 
+/**
+ * Internal dependencies
+ */
+import './list-filters.scss';
+
 export type WooPaymentsListFilter = {
 	id: string;
 	label: string;
@@ -35,7 +40,7 @@ export const WooPaymentsFilterPicker = ( {
 		filter.options[ 0 ];
 
 	return (
-		<div className="woocommerce-filters-filter">
+		<div className="woocommerce-filters-filter woocommerce-woopayments-filter-picker">
 			<span id={ labelId } className="woocommerce-filters-label">
 				{ filter.label }
 			</span>
