@@ -407,13 +407,11 @@ export function MultiCurrencySettingsApp() {
 				return currentCurrencies;
 			}
 
+			// Only the enabled currency takes the saved rate: the available one
+			// keeps the fetched rate the dialog shows for the automatic source
+			// (client 11.1.0 multi-currency/data/actions.js:111-119).
 			return {
 				...currentCurrencies,
-				available: updateCurrencyRecordRate(
-					currentCurrencies.available,
-					code,
-					manualRate
-				),
 				enabled: updateCurrencyRecordRate(
 					currentCurrencies.enabled,
 					code,

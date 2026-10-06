@@ -736,6 +736,14 @@ describe( 'MultiCurrencySettingsApp', () => {
 				} )
 			).toHaveFocus();
 		} );
+
+		// The fetched rate stays what the provider gave, as the client keeps
+		// it apart from saved settings (client 11.1.0
+		// multi-currency/data/actions.js:111-119).
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Manage Euro settings' } )
+		);
+		expect( screen.getByText( 'Fetched rate 0.92' ) ).toBeInTheDocument();
 	} );
 
 	it( 'keeps modal save focus visible while updating currencies', async () => {
