@@ -62,30 +62,6 @@ class MultiCurrencySettingsProjectionService {
 	}
 
 	/**
-	 * Project settings page hook metadata.
-	 *
-	 * @return array<string,array<int,array<string,mixed>>>
-	 *
-	 * @since 11.0.0
-	 */
-	public static function get_hook_manifest(): array {
-		return array(
-			'actions' => array(
-				array(
-					'hook'     => 'admin_print_scripts',
-					'callback' => 'maybe_add_print_emoji_detection_script',
-					'priority' => 10,
-				),
-				array(
-					'hook'     => 'woocommerce_admin_field_wcpay_multi_currency_settings_page',
-					'callback' => 'render_settings_container',
-					'priority' => 10,
-				),
-			),
-		);
-	}
-
-	/**
 	 * Project the React settings container markup.
 	 *
 	 * @return string

@@ -12,64 +12,6 @@ use WC_Unit_Test_Case;
 class MultiCurrencyAsyncPriceProjectionServiceTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox Should project async renderer hook manifest only when active.
-	 */
-	public function test_projects_hook_manifest_only_when_active(): void {
-		$manifest = MultiCurrencyAsyncPriceProjectionService::get_hook_manifest(
-			true,
-			false,
-			false,
-			false,
-			false
-		);
-
-		$this->assertTrue( MultiCurrencyAsyncPriceProjectionService::should_activate( true, false, false, false, false ) );
-		$this->assertSame( array(), $manifest['blockers'] );
-		$this->assertSame(
-			array(
-				'wc_price',
-				'woocommerce_format_sale_price',
-				'woocommerce_format_price_range',
-			),
-			array_keys( $manifest['filters'] )
-		);
-		$this->assertSame(
-			array(
-				'callback'      => 'wrap_price_with_skeleton',
-				'priority'      => 999,
-				'accepted_args' => 5,
-			),
-			$manifest['filters']['wc_price']
-		);
-		$this->assertSame(
-			array(
-				'callback'      => 'annotate_sale_price_screen_reader_text',
-				'priority'      => 999,
-				'accepted_args' => 3,
-			),
-			$manifest['filters']['woocommerce_format_sale_price']
-		);
-		$this->assertSame(
-			array(
-				'callback'      => 'annotate_price_range_screen_reader_text',
-				'priority'      => 999,
-				'accepted_args' => 3,
-			),
-			$manifest['filters']['woocommerce_format_price_range']
-		);
-		$this->assertSame(
-			array(
-				'wp_enqueue_scripts' => array(
-					'callback'      => 'enqueue_async_renderer',
-					'priority'      => 10,
-					'accepted_args' => 1,
-				),
-			),
-			$manifest['actions']
-		);
-	}
-
-	/**
 	 * @testdox Should project async renderer activation blockers.
 	 */
 	public function test_projects_activation_blockers(): void {
@@ -83,14 +25,6 @@ class MultiCurrencyAsyncPriceProjectionServiceTest extends WC_Unit_Test_Case {
 				'active_session',
 			),
 			MultiCurrencyAsyncPriceProjectionService::get_activation_blockers( false, true, true, true, true )
-		);
-		$this->assertSame(
-			array(
-				'filters'  => array(),
-				'actions'  => array(),
-				'blockers' => array( 'active_session' ),
-			),
-			MultiCurrencyAsyncPriceProjectionService::get_hook_manifest( true, false, false, false, true )
 		);
 	}
 

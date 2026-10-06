@@ -15,36 +15,11 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
  */
 class MultiCurrencyAdminNoteProjectionService {
 
-	private const NOTE_NAME       = 'wc-payments-notes-multi-currency-available';
-	private const NOTE_SOURCE     = 'woocommerce-payments';
-	private const MIN_WC_VERSION  = '4.4.0';
-	private const NOTE_TYPE_INFO  = 'info';
-	private const ACTION_STATUS   = 'unactioned';
-	private const ADMIN_INIT_HOOK = 'admin_init';
-
-	/**
-	 * Project admin note hook metadata.
-	 *
-	 * @param bool $is_admin Whether the request is an admin request.
-	 * @return array{actions: array<int,array<string,mixed>>}
-	 *
-	 * @since 11.0.0
-	 */
-	public static function get_hook_manifest( bool $is_admin ): array {
-		if ( ! $is_admin ) {
-			return array( 'actions' => array() );
-		}
-
-		return array(
-			'actions' => array(
-				array(
-					'hook'     => self::ADMIN_INIT_HOOK,
-					'callback' => 'add_woo_admin_notes',
-					'priority' => 10,
-				),
-			),
-		);
-	}
+	private const NOTE_NAME      = 'wc-payments-notes-multi-currency-available';
+	private const NOTE_SOURCE    = 'woocommerce-payments';
+	private const MIN_WC_VERSION = '4.4.0';
+	private const NOTE_TYPE_INFO = 'info';
+	private const ACTION_STATUS  = 'unactioned';
 
 	/**
 	 * Project the multi-currency availability note.

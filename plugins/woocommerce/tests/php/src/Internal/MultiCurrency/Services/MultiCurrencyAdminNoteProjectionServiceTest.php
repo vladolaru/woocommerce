@@ -12,28 +12,6 @@ use WC_Unit_Test_Case;
 class MultiCurrencyAdminNoteProjectionServiceTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox Should project admin note hook manifest.
-	 */
-	public function test_projects_admin_note_hook_manifest(): void {
-		$this->assertSame(
-			array(
-				'actions' => array(
-					array(
-						'hook'     => 'admin_init',
-						'callback' => 'add_woo_admin_notes',
-						'priority' => 10,
-					),
-				),
-			),
-			MultiCurrencyAdminNoteProjectionService::get_hook_manifest( true )
-		);
-		$this->assertSame(
-			array( 'actions' => array() ),
-			MultiCurrencyAdminNoteProjectionService::get_hook_manifest( false )
-		);
-	}
-
-	/**
 	 * @testdox Should project multi-currency availability note manifest.
 	 */
 	public function test_projects_multi_currency_availability_note_manifest(): void {

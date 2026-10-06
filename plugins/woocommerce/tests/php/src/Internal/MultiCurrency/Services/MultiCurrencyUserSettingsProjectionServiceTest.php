@@ -12,31 +12,6 @@ use WC_Unit_Test_Case;
 class MultiCurrencyUserSettingsProjectionServiceTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox Should project account details hook manifest when active.
-	 */
-	public function test_projects_account_details_hook_manifest_when_active(): void {
-		$manifest = MultiCurrencyUserSettingsProjectionService::get_hook_manifest( 3 );
-
-		$this->assertTrue( MultiCurrencyUserSettingsProjectionService::should_activate( 3 ) );
-		$this->assertSame( array(), $manifest['blockers'] );
-		$this->assertSame(
-			array(
-				array(
-					'hook'     => 'woocommerce_edit_account_form',
-					'callback' => 'add_presentment_currency_switch',
-					'priority' => 10,
-				),
-				array(
-					'hook'     => 'woocommerce_save_account_details',
-					'callback' => 'save_presentment_currency',
-					'priority' => 10,
-				),
-			),
-			$manifest['actions']
-		);
-	}
-
-	/**
 	 * @testdox Should project single currency activation blocker.
 	 */
 	public function test_projects_single_currency_activation_blocker(): void {
@@ -44,13 +19,6 @@ class MultiCurrencyUserSettingsProjectionServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame(
 			array( 'single_currency' ),
 			MultiCurrencyUserSettingsProjectionService::get_activation_blockers( 1 )
-		);
-		$this->assertSame(
-			array(
-				'actions'  => array(),
-				'blockers' => array( 'single_currency' ),
-			),
-			MultiCurrencyUserSettingsProjectionService::get_hook_manifest( 1 )
 		);
 	}
 

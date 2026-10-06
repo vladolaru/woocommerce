@@ -18,23 +18,6 @@ class MultiCurrencyProductAddOnsCompatibilityProjectionService {
 	private const FILTER_PREFIX = 'wcpay_multi_currency_';
 
 	/**
-	 * Project the Product Add-ons compatibility hook/filter manifest.
-	 *
-	 * @return array<string,array<int,array<string,mixed>>>
-	 *
-	 * @since 11.0.0
-	 */
-	public static function get_hook_manifest(): array {
-		return array(
-			'filters' => array_merge(
-				self::get_frontend_filter_manifest(),
-				self::get_ajax_filter_manifest()
-			),
-			'actions' => array(),
-		);
-	}
-
-	/**
 	 * Project frontend Product Add-ons compatibility filters.
 	 *
 	 * @return array<int,array<string,mixed>>

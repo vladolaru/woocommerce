@@ -58,26 +58,9 @@ class MultiCurrencySettingsProjectionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should project settings hooks container and page detection.
+	 * @testdox Should project the settings container and page detection.
 	 */
-	public function test_projects_settings_hooks_container_and_page_detection(): void {
-		$this->assertSame(
-			array(
-				'actions' => array(
-					array(
-						'hook'     => 'admin_print_scripts',
-						'callback' => 'maybe_add_print_emoji_detection_script',
-						'priority' => 10,
-					),
-					array(
-						'hook'     => 'woocommerce_admin_field_wcpay_multi_currency_settings_page',
-						'callback' => 'render_settings_container',
-						'priority' => 10,
-					),
-				),
-			),
-			MultiCurrencySettingsProjectionService::get_hook_manifest()
-		);
+	public function test_projects_settings_container_and_page_detection(): void {
 		$this->assertSame(
 			'<div id="wcpay_multi_currency_settings_container" class="wc-settings-prevent-change-event" aria-describedby="wcpay_multi_currency_settings_container-description"></div>',
 			MultiCurrencySettingsProjectionService::get_settings_container_markup()

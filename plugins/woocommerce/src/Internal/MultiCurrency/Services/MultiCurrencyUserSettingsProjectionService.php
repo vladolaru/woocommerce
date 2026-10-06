@@ -16,8 +16,6 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 class MultiCurrencyUserSettingsProjectionService {
 
 	private const FIELD_NAME               = 'wcpay_selected_currency';
-	private const EDIT_ACCOUNT_ACTION      = 'woocommerce_edit_account_form';
-	private const SAVE_ACCOUNT_ACTION      = 'woocommerce_save_account_details';
 	private const PRESENTMENT_SWITCH_CLASS = 'woocommerce-form-row woocommerce-form-row--first form-row form-row-first';
 
 	/**
@@ -42,40 +40,6 @@ class MultiCurrencyUserSettingsProjectionService {
 	 */
 	public static function should_activate( int $enabled_currency_count ): bool {
 		return array() === self::get_activation_blockers( $enabled_currency_count );
-	}
-
-	/**
-	 * Project account details hook metadata.
-	 *
-	 * @param int $enabled_currency_count Enabled currency count.
-	 * @return array{actions: array<int,array<string,mixed>>, blockers: array<int,string>}
-	 *
-	 * @since 11.0.0
-	 */
-	public static function get_hook_manifest( int $enabled_currency_count ): array {
-		$blockers = self::get_activation_blockers( $enabled_currency_count );
-		if ( ! empty( $blockers ) ) {
-			return array(
-				'actions'  => array(),
-				'blockers' => $blockers,
-			);
-		}
-
-		return array(
-			'actions'  => array(
-				array(
-					'hook'     => self::EDIT_ACCOUNT_ACTION,
-					'callback' => 'add_presentment_currency_switch',
-					'priority' => 10,
-				),
-				array(
-					'hook'     => self::SAVE_ACCOUNT_ACTION,
-					'callback' => 'save_presentment_currency',
-					'priority' => 10,
-				),
-			),
-			'blockers' => array(),
-		);
 	}
 
 	/**

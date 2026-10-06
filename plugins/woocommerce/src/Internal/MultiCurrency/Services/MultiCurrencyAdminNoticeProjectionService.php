@@ -27,30 +27,6 @@ class MultiCurrencyAdminNoticeProjectionService {
 	private const LEGACY_NONCE_QUERY_ARG                     = '_wcpay_multi_currency_notice_nonce';
 
 	/**
-	 * Project admin notice hook metadata.
-	 *
-	 * @return array{actions: array<int,array<string,mixed>>}
-	 *
-	 * @since 11.0.0
-	 */
-	public static function get_hook_manifest(): array {
-		return array(
-			'actions' => array(
-				array(
-					'hook'     => 'admin_notices',
-					'callback' => 'admin_notices',
-					'priority' => 10,
-				),
-				array(
-					'hook'     => 'wp_loaded',
-					'callback' => 'hide_notices',
-					'priority' => 10,
-				),
-			),
-		);
-	}
-
-	/**
 	 * Project the manual-rate currency-changed notice.
 	 *
 	 * @param mixed $manual_rate_currencies Manual-rate currency labels.

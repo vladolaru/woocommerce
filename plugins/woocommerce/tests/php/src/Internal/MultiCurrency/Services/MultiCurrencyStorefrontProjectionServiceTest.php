@@ -21,36 +21,6 @@ class MultiCurrencyStorefrontProjectionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should project Storefront hook manifest when active.
-	 */
-	public function test_projects_storefront_hook_manifest_when_active(): void {
-		$manifest = MultiCurrencyStorefrontProjectionService::get_hook_manifest( 2, true );
-
-		$this->assertTrue( MultiCurrencyStorefrontProjectionService::should_activate( 2, true ) );
-		$this->assertSame( array(), $manifest['blockers'] );
-		$this->assertSame(
-			array(
-				array(
-					'hook'     => 'woocommerce_breadcrumb_defaults',
-					'callback' => 'inject_switcher_into_breadcrumb',
-					'priority' => 9999,
-				),
-			),
-			$manifest['filters']
-		);
-		$this->assertSame(
-			array(
-				array(
-					'hook'     => 'wp_enqueue_scripts',
-					'callback' => 'add_inline_css',
-					'priority' => 50,
-				),
-			),
-			$manifest['actions']
-		);
-	}
-
-	/**
 	 * @testdox Should project Storefront activation blockers and simulation overrides.
 	 */
 	public function test_projects_storefront_activation_blockers_and_simulation_overrides(): void {
@@ -77,14 +47,6 @@ class MultiCurrencyStorefrontProjectionServiceTest extends WC_Unit_Test_Case {
 				false,
 				array( 'enable_storefront_switcher' => true )
 			)
-		);
-		$this->assertSame(
-			array(
-				'filters'  => array(),
-				'actions'  => array(),
-				'blockers' => array( 'storefront_switcher_disabled' ),
-			),
-			MultiCurrencyStorefrontProjectionService::get_hook_manifest( 2, false )
 		);
 	}
 

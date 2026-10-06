@@ -15,8 +15,6 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
  */
 class MultiCurrencyCompatibilityProjectionService {
 
-	private const FILTER_PREFIX = 'wcpay_multi_currency_';
-
 	/**
 	 * Project compatibility integrations that load when more than one currency is enabled.
 	 *
@@ -40,65 +38,6 @@ class MultiCurrencyCompatibilityProjectionService {
 			'WooCommerceUPS',
 			'WooCommerceDeposits',
 			'WooCommercePointsAndRewards',
-		);
-	}
-
-	/**
-	 * Project the base compatibility hook/filter manifest.
-	 *
-	 * @return array<string,array<int,array<string,mixed>>>
-	 *
-	 * @since 11.0.0
-	 */
-	public static function get_hook_manifest(): array {
-		return array(
-			'actions' => array(
-				array(
-					'hook'     => 'init',
-					'callback' => 'init_compatibility_classes',
-					'priority' => 11,
-				),
-			),
-			'filters' => array(
-				array(
-					'hook'     => 'woocommerce_admin_sales_record_milestone_enabled',
-					'callback' => 'attach_order_modifier',
-					'priority' => 10,
-					'context'  => 'cron',
-				),
-				array(
-					'hook'     => self::filter_name( 'override_selected_currency' ),
-					'callback' => 'override_selected_currency',
-					'priority' => 10,
-				),
-				array(
-					'hook'        => self::filter_name( 'should_hide_widgets' ),
-					'callback'    => 'should_hide_widgets',
-					'priority'    => 10,
-					'deprecated'  => true,
-					'replaced_by' => self::filter_name( 'should_disable_currency_switching' ),
-				),
-				array(
-					'hook'     => self::filter_name( 'should_disable_currency_switching' ),
-					'callback' => 'should_disable_currency_switching',
-					'priority' => 10,
-				),
-				array(
-					'hook'     => self::filter_name( 'should_convert_coupon_amount' ),
-					'callback' => 'should_convert_coupon_amount',
-					'priority' => 10,
-				),
-				array(
-					'hook'     => self::filter_name( 'should_convert_product_price' ),
-					'callback' => 'should_convert_product_price',
-					'priority' => 10,
-				),
-				array(
-					'hook'     => self::filter_name( 'should_return_store_currency' ),
-					'callback' => 'should_return_store_currency',
-					'priority' => 10,
-				),
-			),
 		);
 	}
 
@@ -150,15 +89,5 @@ class MultiCurrencyCompatibilityProjectionService {
 		bool $external_filter_disabled = false
 	): bool {
 		return ! empty( self::get_switching_disable_reasons( $query_args, $subscription_context, $external_filter_disabled ) );
-	}
-
-	/**
-	 * Build a multi-currency filter name.
-	 *
-	 * @param string $suffix Filter suffix.
-	 * @return string
-	 */
-	private static function filter_name( string $suffix ): string {
-		return self::FILTER_PREFIX . $suffix;
 	}
 }

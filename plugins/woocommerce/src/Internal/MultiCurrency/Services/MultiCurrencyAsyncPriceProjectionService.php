@@ -98,54 +98,6 @@ class MultiCurrencyAsyncPriceProjectionService {
 	}
 
 	/**
-	 * Project the async price renderer hook/action manifest.
-	 *
-	 * @param bool $cache_optimized_mode Whether cache-optimized mode is active.
-	 * @param bool $is_admin             Whether the current request is admin.
-	 * @param bool $doing_cron           Whether the current request is cron.
-	 * @param bool $is_admin_api_request Whether the current request is an admin API request.
-	 * @param bool $has_active_session   Whether a WooCommerce session is already active.
-	 * @return array<string,mixed>
-	 *
-	 * @since 11.0.0
-	 */
-	public static function get_hook_manifest(
-		bool $cache_optimized_mode,
-		bool $is_admin,
-		bool $doing_cron,
-		bool $is_admin_api_request,
-		bool $has_active_session
-	): array {
-		$blockers = self::get_activation_blockers(
-			$cache_optimized_mode,
-			$is_admin,
-			$doing_cron,
-			$is_admin_api_request,
-			$has_active_session
-		);
-
-		if ( array() !== $blockers ) {
-			return array(
-				'filters'  => array(),
-				'actions'  => array(),
-				'blockers' => $blockers,
-			);
-		}
-
-		return array(
-			'filters'  => array(
-				'wc_price'                       => self::hook_entry( 'wrap_price_with_skeleton', 999, 5 ),
-				'woocommerce_format_sale_price'  => self::hook_entry( 'annotate_sale_price_screen_reader_text', 999, 3 ),
-				'woocommerce_format_price_range' => self::hook_entry( 'annotate_price_range_screen_reader_text', 999, 3 ),
-			),
-			'actions'  => array(
-				'wp_enqueue_scripts' => self::hook_entry( 'enqueue_async_renderer', 10, 1 ),
-			),
-			'blockers' => array(),
-		);
-	}
-
-	/**
 	 * Wrap a formatted price with async renderer skeleton markup.
 	 *
 	 * @param string           $price_html        Formatted price HTML.
@@ -315,22 +267,6 @@ class MultiCurrencyAsyncPriceProjectionService {
 				'timeout_ms'           => self::TIMEOUT_MS,
 				'max_cache_size'       => self::MAX_CACHE_SIZE,
 			),
-		);
-	}
-
-	/**
-	 * Build hook metadata.
-	 *
-	 * @param string $callback      Callback marker.
-	 * @param int    $priority      Hook priority.
-	 * @param int    $accepted_args Accepted argument count.
-	 * @return array<string,mixed>
-	 */
-	private static function hook_entry( string $callback, int $priority, int $accepted_args ): array {
-		return array(
-			'callback'      => $callback,
-			'priority'      => $priority,
-			'accepted_args' => $accepted_args,
 		);
 	}
 

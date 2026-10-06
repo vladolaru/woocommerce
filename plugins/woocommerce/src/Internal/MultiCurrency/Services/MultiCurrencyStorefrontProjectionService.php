@@ -15,14 +15,10 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
  */
 class MultiCurrencyStorefrontProjectionService {
 
-	private const THEME_STOREFRONT           = 'storefront';
-	private const STYLE_HANDLE               = 'storefront-style';
-	private const FILTER_PREFIX              = 'wcpay_multi_currency_';
-	private const WIDGET_ID                  = 'woocommerce-payments-multi-currency-storefront-widget';
-	private const BREADCRUMB_FILTER          = 'woocommerce_breadcrumb_defaults';
-	private const ENQUEUE_ACTION             = 'wp_enqueue_scripts';
-	private const BREADCRUMB_FILTER_PRIORITY = 9999;
-	private const ENQUEUE_ACTION_PRIORITY    = 50;
+	private const THEME_STOREFRONT = 'storefront';
+	private const STYLE_HANDLE     = 'storefront-style';
+	private const FILTER_PREFIX    = 'wcpay_multi_currency_';
+	private const WIDGET_ID        = 'woocommerce-payments-multi-currency-storefront-widget';
 
 	/**
 	 * Project whether the theme is Storefront-compatible.
@@ -92,54 +88,6 @@ class MultiCurrencyStorefrontProjectionService {
 			$enabled_currency_count,
 			$storefront_switcher_enabled,
 			$simulation_variables
-		);
-	}
-
-	/**
-	 * Project Storefront switcher hook/action metadata.
-	 *
-	 * @param int                 $enabled_currency_count      Enabled currency count.
-	 * @param bool                $storefront_switcher_enabled Whether the saved switcher setting is enabled.
-	 * @param array<string,mixed> $simulation_variables        Onboarding simulation variables.
-	 * @return array<string,mixed>
-	 *
-	 * @since 11.0.0
-	 */
-	public static function get_hook_manifest(
-		int $enabled_currency_count,
-		bool $storefront_switcher_enabled,
-		array $simulation_variables = array()
-	): array {
-		$blockers = self::get_activation_blockers(
-			$enabled_currency_count,
-			$storefront_switcher_enabled,
-			$simulation_variables
-		);
-
-		if ( array() !== $blockers ) {
-			return array(
-				'filters'  => array(),
-				'actions'  => array(),
-				'blockers' => $blockers,
-			);
-		}
-
-		return array(
-			'filters'  => array(
-				array(
-					'hook'     => self::BREADCRUMB_FILTER,
-					'callback' => 'inject_switcher_into_breadcrumb',
-					'priority' => self::BREADCRUMB_FILTER_PRIORITY,
-				),
-			),
-			'actions'  => array(
-				array(
-					'hook'     => self::ENQUEUE_ACTION,
-					'callback' => 'add_inline_css',
-					'priority' => self::ENQUEUE_ACTION_PRIORITY,
-				),
-			),
-			'blockers' => array(),
 		);
 	}
 

@@ -12,29 +12,6 @@ use WC_Unit_Test_Case;
 class MultiCurrencyAdminNoticeProjectionServiceTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox Should project admin notice hook manifest.
-	 */
-	public function test_projects_admin_notice_hook_manifest(): void {
-		$manifest = MultiCurrencyAdminNoticeProjectionService::get_hook_manifest();
-
-		$this->assertSame(
-			array(
-				array(
-					'hook'     => 'admin_notices',
-					'callback' => 'admin_notices',
-					'priority' => 10,
-				),
-				array(
-					'hook'     => 'wp_loaded',
-					'callback' => 'hide_notices',
-					'priority' => 10,
-				),
-			),
-			$manifest['actions']
-		);
-	}
-
-	/**
 	 * @testdox Should project manual rate currency changed notice.
 	 */
 	public function test_projects_manual_rate_currency_changed_notice(): void {
