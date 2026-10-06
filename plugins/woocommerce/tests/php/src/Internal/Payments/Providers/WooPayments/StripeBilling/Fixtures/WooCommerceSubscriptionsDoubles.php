@@ -157,7 +157,9 @@ final class WooCommerceSubscriptionsDoubles {
 	 * Define `wcs_order_contains_subscription()` and `wcs_is_manual_renewal_required()`.
 	 *
 	 * An order contains a subscription when `ORDER_SUBSCRIPTIONS` relates one to it as parent, resubscribe or switch (the
-	 * real function's default types), or when its ID is in `SUBSCRIPTION_IDS`, the shortcut the gateway adapter tests use.
+	 * real function's default types, WooCommerce Subscriptions includes/core/wcs-order-functions.php:421), or when its ID
+	 * is in `SUBSCRIPTION_IDS`, the shortcut the gateway adapter tests use. Manual renewal follows `MANUAL_RENEWAL_REQUIRED`
+	 * (the store setting the real function reads, includes/core/wcs-renewal-functions.php:233-234).
 	 */
 	public static function load_order_detector(): void {
 		if ( ! function_exists( 'wcs_order_contains_subscription' ) ) {

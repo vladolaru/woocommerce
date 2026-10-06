@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use RuntimeException;
 use Throwable;
 use WC_Order;
 use WC_Payment_Token;
@@ -1266,9 +1267,11 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 	 * Mirrors client 11.1.0 capture_terminal_payment() (class-wc-rest-payments-orders-controller.php:256-280): the
 	 * generated card becomes the customer's token on the order and its subscriptions, which switch to WooPayments and
 	 * leave manual renewal unless the store requires it. A wallet payment has no generated card and changes nothing.
+	 * A card that cannot be saved for a registered customer fails the request as the client's uncaught fetch error does.
 	 *
 	 * @param WC_Order            $order  Order.
 	 * @param array<string,mixed> $intent Intent read before the capture.
+	 * @throws RuntimeException When the generated card cannot be saved for a registered customer.
 	 */
 	private function save_generated_card_for_subscriptions( WC_Order $order, array $intent ): void {
 		$generated_card = $this->get_latest_charge( $intent )['payment_method_details']['card_present']['generated_card'] ?? null;
@@ -1283,6 +1286,11 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		$token_service = wc_get_container()->get( WooPaymentsTokenService::class );
 		$token         = $token_service->get_or_create_token_for_user( $generated_card, $order->get_customer_id() );
 		if ( ! $token instanceof WC_Payment_Token ) {
+			// A guest order has no customer to save the card for; anything else means the payment method could not be read.
+			if ( 0 < $order->get_customer_id() ) {
+				throw new RuntimeException( 'The card the reader generated could not be saved for the subscriptions.' );
+			}
+
 			return;
 		}
 
