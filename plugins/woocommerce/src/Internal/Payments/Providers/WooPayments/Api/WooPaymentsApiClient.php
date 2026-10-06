@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
 
 use Automattic\Jetpack\Connection\Client as Jetpack_Connection_Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCompatibilityData;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAuthorizationsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDocumentsListRequest;
@@ -2223,12 +2224,19 @@ class WooPaymentsApiClient {
 	}
 
 	/**
-	 * Apply WooPayments onboarding payload filters preserved from the plugin path.
+	 * Add the store ID and compatibility data to an onboarding payload, then apply the public payload filter.
+	 *
+	 * The client adds both through its own callbacks on the same filter (client 11.1.0
+	 * `includes/class-wc-payments-onboarding-service.php:120`, `:1491-1496`; `includes/class-compatibility-service.php:46`,
+	 * `:75-77`); adding them first lets other callbacks see them, as they do on the client.
 	 *
 	 * @param array<string,mixed> $request_args Onboarding request payload.
 	 * @return array<string,mixed>
 	 */
 	private function get_filtered_onboarding_request_args( array $request_args ): array {
+		$request_args['woocommerce_store_id'] = $this->account_service->get_woocommerce_store_id();
+		$request_args['compatibility_data']   = WooPaymentsCompatibilityData::get();
+
 		/**
 		 * Filters WooPayments onboarding request args.
 		 *

@@ -1654,11 +1654,13 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the WooCommerce store ID sent with account refresh requests.
+	 * Get the WooCommerce store ID sent with account refresh and onboarding requests.
+	 *
+	 * @internal
 	 *
 	 * @return string
 	 */
-	private function get_woocommerce_store_id(): string {
+	public function get_woocommerce_store_id(): string {
 		$option_name = class_exists( '\WC_Install' ) && defined( '\WC_Install::STORE_ID_OPTION' )
 			? \WC_Install::STORE_ID_OPTION
 			: 'woocommerce_store_id';

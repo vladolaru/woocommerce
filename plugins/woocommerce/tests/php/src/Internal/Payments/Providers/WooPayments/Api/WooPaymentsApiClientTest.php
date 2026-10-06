@@ -2959,7 +2959,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
+		$sut->init( $http_client, $this->create_account_service( true, null, 'store_123' ) );
 
 		$result = $sut->initialize_onboarding(
 			false,
@@ -2988,6 +2988,20 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'ref_test', $body['referral_code'] );
 		$this->assertTrue( $body['test_mode'] );
 		$this->assertTrue( $http_client->last_use_user_token );
+		$this->assert_store_identity_in_onboarding_payload( $body );
+	}
+
+	/**
+	 * Assert an onboarding payload carries the store ID and compatibility data, as the client's filter callbacks add them
+	 * (client 11.1.0 `includes/class-wc-payments-onboarding-service.php:1491-1496`, `includes/class-compatibility-service.php:75-77`).
+	 *
+	 * @param array<string,mixed> $body Decoded request body.
+	 */
+	private function assert_store_identity_in_onboarding_payload( array $body ): void {
+		$this->assertSame( 'store_123', $body['woocommerce_store_id'] );
+		$this->assertIsArray( $body['compatibility_data'] );
+		$this->assertSame( WC_VERSION, $body['compatibility_data']['woocommerce_version'] );
+		$this->assertSame( get_stylesheet(), $body['compatibility_data']['blog_theme'] );
 	}
 
 	/**
@@ -3033,6 +3047,8 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $body );
 		$this->assertSame( 'https://example.test/return', $body['return_url'] );
 		$this->assertTrue( $filtered_args['collect_payout_requirements'] );
+		$this->assertArrayHasKey( 'woocommerce_store_id', $filtered_args, 'Other filter callbacks see the store ID, as on the client.' );
+		$this->assertArrayHasKey( 'compatibility_data', $filtered_args, 'Other filter callbacks see the compatibility data, as on the client.' );
 		$this->assertTrue( $body['collect_payout_requirements'] );
 		$this->assertSame( array( 'woocommerce' => '11.0.0' ), $body['compatibility_data'] );
 		$this->assertSame( 'store_123', $body['account_data']['woocommerce_store_id'] );
@@ -3057,7 +3073,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
+		$sut->init( $http_client, $this->create_account_service( true, null, 'store_123' ) );
 
 		$result = $sut->initialize_onboarding_embedded_kyc(
 			true,
@@ -3080,6 +3096,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'wcpay-promo-test' ), $body['actioned_notes'] );
 		$this->assertTrue( $body['test_mode'] );
 		$this->assertTrue( $http_client->last_use_user_token );
+		$this->assert_store_identity_in_onboarding_payload( $body );
 	}
 
 	/**
@@ -5750,16 +5767,18 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	 *
 	 * @param bool      $test_mode            Whether WooPayments should run in test mode.
 	 * @param bool|null $test_mode_onboarding Whether WooPayments should use test-mode onboarding.
+	 * @param string    $store_id             WooCommerce store ID.
 	 * @return WooPaymentsAccountService
 	 */
-	private function create_account_service( bool $test_mode, ?bool $test_mode_onboarding = null ): WooPaymentsAccountService {
+	private function create_account_service( bool $test_mode, ?bool $test_mode_onboarding = null, string $store_id = '' ): WooPaymentsAccountService {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_test_mode_enabled', 'is_test_mode_onboarding_enabled' ) )
+			->onlyMethods( array( 'is_test_mode_enabled', 'is_test_mode_onboarding_enabled', 'get_woocommerce_store_id' ) )
 			->getMock();
 
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
 		$account_service->method( 'is_test_mode_onboarding_enabled' )->willReturn( $test_mode_onboarding ?? $test_mode );
+		$account_service->method( 'get_woocommerce_store_id' )->willReturn( $store_id );
 
 		return $account_service;
 	}
