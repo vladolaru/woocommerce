@@ -397,14 +397,14 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 				throw new InvalidCurrencyRateException( esc_html( 'Invalid manual currency rate passed to update_single_currency_settings: ' . (string) $manual_rate ), 500 );
 			}
 
-			update_option( self::OPTION_PREFIX . '_manual_rate_' . $currency_id, (float) $manual_rate );
+			update_option( 'wcpay_multi_currency_manual_rate_' . $currency_id, (float) $manual_rate );
 		}
 
-		update_option( self::OPTION_PREFIX . '_price_rounding_' . $currency_id, $price_rounding );
-		update_option( self::OPTION_PREFIX . '_price_charm_' . $currency_id, $price_charm );
+		update_option( 'wcpay_multi_currency_price_rounding_' . $currency_id, $price_rounding );
+		update_option( 'wcpay_multi_currency_price_charm_' . $currency_id, $price_charm );
 
 		if ( in_array( $exchange_rate_type, array( 'automatic', 'manual' ), true ) ) {
-			update_option( self::OPTION_PREFIX . '_exchange_rate_' . $currency_id, $exchange_rate_type );
+			update_option( 'wcpay_multi_currency_exchange_rate_' . $currency_id, $exchange_rate_type );
 		}
 
 		return null;
