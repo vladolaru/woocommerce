@@ -141,6 +141,21 @@ class WooPaymentsTosRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox ToS route treats a null accept as missing and leaves an enabled gateway on, like client 11.1.0 isset().
+	 */
+	public function test_tos_route_rejects_null_accept_without_disabling_the_gateway(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+		$this->sut = $this->create_controller( true );
+		$this->sut->register_routes();
+
+		$response = $this->server->dispatch( $this->create_tos_request( array( 'accept' => null ) ) );
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( array( 'result' => 'bad_request' ), $response->get_data() );
+		$this->assertSame( 'yes', $this->get_gateway_enabled_setting() );
+	}
+
+	/**
 	 * @testdox ToS route records acceptance, enables the gateway, and refreshes account data.
 	 */
 	public function test_tos_route_accepts_terms(): void {

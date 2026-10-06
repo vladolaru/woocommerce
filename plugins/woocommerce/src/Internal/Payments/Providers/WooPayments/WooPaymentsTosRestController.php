@@ -114,7 +114,8 @@ class WooPaymentsTosRestController implements RegisterHooksInterface {
 		$body = is_array( $body ) ? $body : array();
 
 		try {
-			if ( ! array_key_exists( 'accept', $body ) ) {
+			// A null accept counts as missing, as in client 11.1.0 (includes/admin/class-wc-rest-payments-tos-controller.php:108).
+			if ( ! isset( $body['accept'] ) ) {
 				return $this->result_response( self::RESULT_BAD_REQUEST, 400 );
 			}
 
