@@ -2155,7 +2155,8 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function create_account_service( array $settings, array $account_data = array(), bool $test_mode = true ): WooPaymentsAccountService {
 		// Account data as the client reads it: capability statuses keyed by capability (client 11.1.0
-		// `includes/class-wc-payment-gateway-wcpay.php:4696-4717`) and fees keyed by payment method ID (`:4867`).
+		// `includes/class-wc-payment-gateway-wcpay.php:4696-4717`) and fees keyed by payment method ID (`:4867`), each with
+		// a base fee carrying its currency (client/utils/account-fees.tsx:138-147).
 		$account_data = array_merge(
 			array(
 				'country'          => 'US',

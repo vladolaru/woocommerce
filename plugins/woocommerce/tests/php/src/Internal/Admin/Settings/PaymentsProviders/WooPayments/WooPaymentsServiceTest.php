@@ -1394,6 +1394,12 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			static fn( array $line ): bool => 'Native WooPayments could not read the actioned promotion notes for onboarding.' === $line[1]
 		);
 		$this->assertCount( 1, $note_store_errors, 'The note store failure is logged once.' );
+
+		// With debug logging off, the same exception is not logged, as the client's Logger::error() is gated.
+		remove_all_filters( 'option_' . WooPaymentsSettingsService::SETTINGS_OPTION );
+		$logger = RecordingWcLogger::install();
+		$this->assertSame( array(), $this->dispatch_onboarding_route_for_actioned_notes( $call ) );
+		$this->assertSame( array(), $logger->get_errors(), 'An exception reading the notes follows the logging setting.' );
 	}
 
 	/**

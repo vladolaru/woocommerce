@@ -224,6 +224,12 @@ class WooPaymentsTosRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( array( 'result' => 'error' ), $response->get_data() );
 		$this->assertSame( 'yes', $this->get_gateway_enabled_setting() );
 		$this->assertSame( array(), $logger->lines, 'With debug logging off, the failure is not logged, as on the client.' );
+		// The agreement is recorded before the account refresh, so a failed agreement refreshes nothing.
+		if ( 'record the agreement' === $failing_step ) {
+			$this->assertSame( 0, $this->account_service->refresh_count );
+		} else {
+			$this->assertCount( 1, $this->api_client->agreements );
+		}
 	}
 
 	/**
