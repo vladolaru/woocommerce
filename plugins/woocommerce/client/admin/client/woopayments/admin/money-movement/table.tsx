@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { Button, Notice } from '@wordpress/components';
+import { Button } from '@wordpress/components';
 import { dispatch } from '@wordpress/data';
 import { __ } from '@wordpress/i18n';
 import { download } from '@wordpress/icons';
@@ -67,32 +67,6 @@ export const LiveStatusMessage = ( {
 );
 
 /**
- * A list's load error or export result on core's `Notice` (monitor ruling N-243).
- *
- * @param props          The notice props.
- * @param props.isError  Whether it reports a failure.
- * @param props.isSpoken Whether the notice announces itself; off where a live region already does.
- * @param props.children The message.
- */
-export const ListNotice = ( {
-	isError = false,
-	isSpoken = true,
-	children,
-}: {
-	isError?: boolean;
-	isSpoken?: boolean;
-	children: ReactNode;
-} ) => (
-	<Notice
-		status={ isError ? 'error' : 'success' }
-		isDismissible={ false }
-		{ ...( isSpoken ? {} : { spokenMessage: '' } ) }
-	>
-		{ children }
-	</Notice>
-);
-
-/**
  * Reports a list read that failed, with the client's copy for that read, as the client's data
  * resolvers do (for example client 11.1.0 `data/transactions/resolvers.js:76-81`).
  *
@@ -131,10 +105,4 @@ export const ExportButton = ( {
 	>
 		{ __( 'Export', 'woocommerce' ) }
 	</Button>
-);
-
-export const EmptyState = ( { children }: { children: ReactNode } ) => (
-	<div className="woocommerce-woopayments-money-movement__empty">
-		{ children }
-	</div>
 );
