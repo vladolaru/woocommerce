@@ -114,6 +114,27 @@ class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A filter setter the request does not declare sets its parameter unchanged; any other undeclared call does nothing.
+	 * @dataProvider concrete_request_provider
+	 *
+	 * Client 11.1.0 request classes declare setters such as set_type_is() and set_loan_id_is() that native requests do not;
+	 * extensions call them on the objects handed to the wcpay_list_*_request filters.
+	 *
+	 * @param class-string $native_class Native request class.
+	 */
+	public function test_undeclared_filter_setter_sets_its_parameter( string $native_class ): void {
+		$request = $this->create_request( $native_class );
+		$value   = array( 'flxln_1', ' raw ' );
+
+		call_user_func( array( $request, 'set_extension_filter_is' ), $value );
+		$result = call_user_func( array( $request, 'get_extension_filter_is' ) );
+
+		$this->assertSame( $value, $request->get_params()['extension_filter_is'], 'The setter should store the value under the name after set_, unchanged.' );
+		$this->assertNull( $result, 'Any other undeclared call should return nothing.' );
+		$this->assertArrayNotHasKey( 'get_extension_filter_is', $request->get_params() );
+	}
+
+	/**
 	 * @testdox send() applies exactly the mapped legacy filter and transports its custom parameter.
 	 * @dataProvider request_filter_contract_provider
 	 *
