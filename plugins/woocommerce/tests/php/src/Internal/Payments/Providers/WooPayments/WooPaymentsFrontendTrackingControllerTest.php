@@ -156,6 +156,66 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should send a shopper event without the shopper's IP, referrer or request URL, keeping the identity properties.
+	 *
+	 * Client 11.1.0 `includes/class-woopay-tracker.php:368-405` builds shopper events from `_lg`, the blog and store ids,
+	 * `test_mode`, `wcpay_version` and `_via_ua` only; core's `WC_Tracks::get_server_details()` would add `_via_ip`, `_dr`
+	 * and `_dl` (`includes/tracks/class-wc-tracks.php:61-73`), and on pay-for-order pages the referrer carries the order key.
+	 */
+	public function test_shopper_event_omits_ip_referrer_and_request_url(): void {
+		$server       = $_SERVER;
+		$captured_url = '';
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		add_filter( 'wp_doing_ajax', '__return_true' );
+		add_filter(
+			'pre_http_request',
+			static function ( $preempt, $parsed_args, $url ) use ( &$captured_url ) {
+				$captured_url = $url;
+
+				return array(
+					'headers'  => array(),
+					'body'     => '',
+					'response' => array(
+						'code'    => 200,
+						'message' => 'OK',
+					),
+					'cookies'  => array(),
+					'filename' => null,
+				);
+			},
+			10,
+			3
+		);
+		$_SERVER['REMOTE_ADDR']     = '203.0.113.7';
+		$_SERVER['HTTP_REFERER']    = 'https://store.test/checkout/order-pay/12/?pay_for_order=true&key=wc_order_abc123';
+		$_SERVER['REQUEST_SCHEME']  = 'https';
+		$_SERVER['HTTP_HOST']       = 'store.test';
+		$_SERVER['REQUEST_URI']     = '/wp-admin/admin-ajax.php';
+		$_SERVER['HTTP_USER_AGENT'] = 'Shopper browser';
+
+		try {
+			$response = $this->create_controller( true, $this->create_account_service( true ) )->get_tracks_response(
+				array(
+					'tracksNonce'     => wp_create_nonce( 'platform_tracks_nonce' ),
+					'tracksEventName' => 'pay_for_order_page_view',
+					'tracksEventProp' => wp_json_encode( array() ),
+				)
+			);
+		} finally {
+			$_SERVER = $server;
+		}
+
+		$this->assertTrue( $response['success'] );
+		parse_str( (string) wp_parse_url( $captured_url, PHP_URL_QUERY ), $pixel_args );
+		$this->assertSame( 'wcpay_pay_for_order_page_view', $pixel_args['_en'] );
+		$this->assertArrayNotHasKey( '_via_ip', $pixel_args );
+		$this->assertArrayNotHasKey( '_dr', $pixel_args );
+		$this->assertArrayNotHasKey( '_dl', $pixel_args );
+		$this->assertSame( 'Shopper browser', $pixel_args['_via_ua'] );
+		$this->assertArrayHasKey( 'wcpay_version', $pixel_args );
+	}
+
+	/**
 	 * @testdox Should still record the event when a property filter returns a non-array, as the client's untyped builder does.
 	 *
 	 * Client 11.1.0 `includes/class-woopay-tracker.php:400` merges `(array) $properties`.

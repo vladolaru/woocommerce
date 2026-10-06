@@ -397,9 +397,12 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	private function build_event_properties( string $event_name, array $properties, WP_User $user ): array {
 		$blog_details = WC_Tracks::get_blog_details( $user->ID );
 
+		// Client 11.1.0 `class-woopay-tracker.php:368-405` sends no shopper IP, referrer or request URL.
+		$server_details = array_diff_key( WC_Tracks::get_server_details(), array_flip( array( '_via_ip', '_dr', '_dl' ) ) );
+
 		$event = array_merge(
 			$properties,
-			WC_Tracks::get_server_details(),
+			$server_details,
 			$this->get_tracks_identity( $user->ID ),
 			$blog_details,
 			array(
