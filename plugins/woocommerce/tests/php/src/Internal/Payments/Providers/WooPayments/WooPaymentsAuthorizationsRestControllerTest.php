@@ -282,6 +282,75 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	}
 
 	/**
+	 * @testdox An unexpected error during an authorization capture or cancel is logged and answers the client's generic error.
+	 *
+	 * Client 11.1.0 logs and answers wcpay_server_error (class-wc-rest-payments-orders-controller.php:434-436, :667-669).
+	 *
+	 * @dataProvider provide_authorization_actions
+	 *
+	 * @param string $action  Route action.
+	 * @param string $message Expected log line.
+	 */
+	public function test_authorization_actions_log_an_unexpected_error( string $action, string $message ): void {
+		$processing_service = new class() extends PaymentProcessingService {
+			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double always throws.
+			/**
+			 * Capture a payment.
+			 *
+			 * @param PaymentContext   $context  Payment context.
+			 * @param ProviderContract $provider Payment provider.
+			 * @return PaymentOutcome
+			 * @throws \RuntimeException Always.
+			 */
+			public function capture( PaymentContext $context, ProviderContract $provider ): PaymentOutcome {
+				throw new \RuntimeException( 'capture failed' );
+			}
+
+			/**
+			 * Cancel a payment.
+			 *
+			 * @param PaymentContext   $context  Payment context.
+			 * @param ProviderContract $provider Payment provider.
+			 * @return PaymentOutcome
+			 * @throws \RuntimeException Always.
+			 */
+			public function cancel( PaymentContext $context, ProviderContract $provider ): PaymentOutcome {
+				throw new \RuntimeException( 'cancel failed' );
+			}
+			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+		};
+		$logger             = RecordingWcLogger::install();
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		$this->create_authorizations_controller( true, $processing_service )->register_routes();
+		$order                      = $this->create_authorized_order( 'pi_auth' );
+		$this->api_client->response = array(
+			'id'       => 'pi_auth',
+			'status'   => 'requires_capture',
+			'metadata' => array( 'order_id' => (string) $order->get_id() ),
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/' . $action . '_authorization' );
+		$request->set_body_params( array( 'payment_intent_id' => 'pi_auth' ) );
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertSame( 'wcpay_server_error', $response->get_data()['code'] );
+		$this->assertSame( array( array( 'error', $message, 'woopayments' ) ), $logger->get_errors() );
+	}
+
+	/**
+	 * Authorization actions and the line their unexpected errors log.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function provide_authorization_actions(): array {
+		return array(
+			'capture' => array( 'capture', 'Failed to capture an authorization via the REST API.' ),
+			'cancel'  => array( 'cancel', 'Failed to cancel an authorization via the REST API.' ),
+		);
+	}
+
+	/**
 	 * @testdox Authorization actions validate order state before delegating to native payment processing.
 	 */
 	public function test_authorization_actions_validate_order_state_before_processing(): void {

@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Throwable;
 use WC_Order;
 use WP_Error;
 use WP_REST_Request;
@@ -165,7 +166,7 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public function capture_authorization( WP_REST_Request $request ) {
-		return $this->handle_authorization_action( $request, 'capture' );
+		return $this->run_authorization_action( $request, 'capture' );
 	}
 
 	/**
@@ -176,7 +177,31 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public function cancel_authorization( WP_REST_Request $request ) {
-		return $this->handle_authorization_action( $request, 'cancel' );
+		return $this->run_authorization_action( $request, 'cancel' );
+	}
+
+	/**
+	 * Run a capture or cancel request, logging any unexpected error before the client's generic answer.
+	 *
+	 * Client 11.1.0 wraps both routes the same way (class-wc-rest-payments-orders-controller.php:434-436, :667-669).
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @param string          $action  Action name, capture or cancel.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_REST_Response|WP_Error
+	 */
+	private function run_authorization_action( WP_REST_Request $request, string $action ) {
+		try {
+			return $this->handle_authorization_action( $request, $action );
+		} catch ( Throwable $exception ) {
+			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
+				'capture' === $action ? 'Failed to capture an authorization via the REST API.' : 'Failed to cancel an authorization via the REST API.',
+				$exception,
+				array( 'order_id' => absint( $request->get_param( 'order_id' ) ) )
+			);
+
+			return new WP_Error( 'wcpay_server_error', __( 'Unexpected server error', 'woocommerce' ), array( 'status' => 500 ) );
+		}
 	}
 
 	/**
