@@ -11,9 +11,6 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
-use DateTime;
-use DateTimeZone;
-use Exception;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -567,8 +564,8 @@ class WooPaymentsReportsRestController implements RegisterHooksInterface {
 			'type_is_in'    => $type ?? self::DEFAULT_FEE_BEARING_TYPES,
 			'order_id_is'   => $this->get_optional_string_param( $request, 'order_id' ),
 			'deposit_id'    => $this->get_optional_string_param( $request, 'deposit_id' ),
-			'date_before'   => $this->format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_before' ), $user_timezone ),
-			'date_after'    => $this->format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_after' ), $user_timezone ),
+			'date_before'   => WooPaymentsTransactionsListRequest::format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_before' ), $user_timezone ),
+			'date_after'    => WooPaymentsTransactionsListRequest::format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_after' ), $user_timezone ),
 			'date_between'  => $date_between,
 			'match'         => $this->get_optional_string_param( $request, 'match' ),
 			'search'        => empty( $identifier_filters ) ? $search : null,
@@ -601,8 +598,8 @@ class WooPaymentsReportsRestController implements RegisterHooksInterface {
 			'customer_email_is' => $this->get_optional_string_param( $request, 'customer_email' ),
 			'source_is'         => $this->get_optional_string_param( $request, 'payment_method_type' ),
 			'deposit_id'        => $this->get_optional_string_param( $request, 'deposit_id' ),
-			'date_before'       => $this->format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_before' ), $user_timezone ),
-			'date_after'        => $this->format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_after' ), $user_timezone ),
+			'date_before'       => WooPaymentsTransactionsListRequest::format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_before' ), $user_timezone ),
+			'date_after'        => WooPaymentsTransactionsListRequest::format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_after' ), $user_timezone ),
 			'date_between'      => $this->normalize_date_filters_by_timezone(
 				$this->normalize_string_list( $request->get_param( 'date_between' ) ),
 				$user_timezone
@@ -665,12 +662,12 @@ class WooPaymentsReportsRestController implements RegisterHooksInterface {
 			$params['to_date']   = $this->get_report_authorization_timestamp( $date_between[1] );
 		}
 
-		$date_before = $this->format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_before' ), $user_timezone );
+		$date_before = WooPaymentsTransactionsListRequest::format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_before' ), $user_timezone );
 		if ( null !== $date_before ) {
 			$params['from_date'] = $this->get_report_authorization_timestamp( $date_before );
 		}
 
-		$date_after = $this->format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_after' ), $user_timezone );
+		$date_after = WooPaymentsTransactionsListRequest::format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_after' ), $user_timezone );
 		if ( null !== $date_after ) {
 			$params['to_date'] = $this->get_report_authorization_timestamp( $date_after );
 		}
@@ -704,39 +701,10 @@ class WooPaymentsReportsRestController implements RegisterHooksInterface {
 
 		return array_map(
 			function ( string $date ) use ( $user_timezone ): string {
-				return $this->format_transaction_date_by_timezone( $date, $user_timezone ) ?? $date;
+				return WooPaymentsTransactionsListRequest::format_transaction_date_by_timezone( $date, $user_timezone ) ?? $date;
 			},
 			$dates
 		);
-	}
-
-	/**
-	 * Shift a transaction date filter by the difference between the store and user timezones.
-	 *
-	 * @param string|null $transaction_date Transaction date.
-	 * @param string|null $user_timezone    User timezone offset.
-	 * @return string|null
-	 */
-	private function format_transaction_date_by_timezone( ?string $transaction_date, ?string $user_timezone ): ?string {
-		if ( null === $transaction_date || null === $user_timezone ) {
-			return $transaction_date;
-		}
-
-		try {
-			$store_time = new DateTime( $transaction_date );
-			$store_time->setTimezone( new DateTimeZone( wp_timezone_string() ) );
-
-			$user_time = new DateTime( $transaction_date );
-			$user_time->setTimezone( new DateTimeZone( $user_timezone ) );
-
-			$time_difference = ( strtotime( $user_time->format( 'Y-m-d H:i:s' ) ) - strtotime( $store_time->format( 'Y-m-d H:i:s' ) ) ) / 60;
-			$formatted_date  = new DateTime( $transaction_date );
-			date_modify( $formatted_date, $time_difference . 'minutes' );
-
-			return $formatted_date->format( 'Y-m-d H:i:s' );
-		} catch ( Exception $exception ) {
-			return $transaction_date;
-		}
 	}
 
 	/**

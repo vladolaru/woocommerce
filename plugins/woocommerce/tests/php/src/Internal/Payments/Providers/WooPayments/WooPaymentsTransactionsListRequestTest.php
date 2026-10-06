@@ -4,7 +4,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTransactionsListRequest;
-use ReflectionMethod;
 use WC_Unit_Test_Case;
 
 /**
@@ -42,44 +41,24 @@ class WooPaymentsTransactionsListRequestTest extends WC_Unit_Test_Case {
 	 */
 	public function test_format_transaction_date_preserves_valid_timezone(): void {
 		update_option( 'timezone_string', 'UTC' );
-
-		$method = $this->get_format_method();
-		$date   = '2026-06-01 12:00:00';
+		$date = '2026-06-01 12:00:00';
 
 		// A timezone matching the store yields no shift.
-		$this->assertSame( $date, $method->invoke( null, $date, 'UTC' ) );
+		$this->assertSame( $date, WooPaymentsTransactionsListRequest::format_transaction_date_by_timezone( $date, 'UTC' ) );
 
 		// A different valid timezone shifts the date deterministically.
-		$this->assertSame( '2026-06-01 08:00:00', $method->invoke( null, $date, 'America/New_York' ) );
+		$this->assertSame( '2026-06-01 08:00:00', WooPaymentsTransactionsListRequest::format_transaction_date_by_timezone( $date, 'America/New_York' ) );
 	}
 
 	/**
-	 * @testdox Invalid user timezones fall back to UTC instead of throwing.
+	 * @testdox A time zone or date PHP cannot parse leaves the date unchanged instead of failing the request.
+	 *
+	 * Client 11.1.0 Request_Utils::format_transaction_date_by_timezone() has no guard, so the same input fatals its request.
 	 */
-	public function test_format_transaction_date_falls_back_to_utc_for_invalid_timezone(): void {
+	public function test_format_transaction_date_leaves_unparseable_input_unchanged(): void {
 		update_option( 'timezone_string', 'America/New_York' );
 
-		$method = $this->get_format_method();
-		$date   = '2026-06-01 12:00:00';
-
-		$utc_result     = $method->invoke( null, $date, 'UTC' );
-		$invalid_result = $method->invoke( null, $date, 'Not/AZone' );
-
-		// The invalid timezone is treated as UTC (same result as an explicit UTC request)...
-		$this->assertSame( $utc_result, $invalid_result );
-		// ...and the fallback path actually shifted the date, since the store timezone differs from UTC.
-		$this->assertNotSame( $date, $invalid_result );
-	}
-
-	/**
-	 * Get an accessible reflection of the private date-formatting method.
-	 *
-	 * @return ReflectionMethod
-	 */
-	private function get_format_method(): ReflectionMethod {
-		$method = new ReflectionMethod( WooPaymentsTransactionsListRequest::class, 'format_transaction_date_by_timezone' );
-		$method->setAccessible( true );
-
-		return $method;
+		$this->assertSame( '2026-06-01 12:00:00', WooPaymentsTransactionsListRequest::format_transaction_date_by_timezone( '2026-06-01 12:00:00', 'Not/AZone' ) );
+		$this->assertSame( 'not a date', WooPaymentsTransactionsListRequest::format_transaction_date_by_timezone( 'not a date', '+03:00' ) );
 	}
 }

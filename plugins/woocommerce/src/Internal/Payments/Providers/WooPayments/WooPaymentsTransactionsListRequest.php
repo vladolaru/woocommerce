@@ -216,33 +216,33 @@ class WooPaymentsTransactionsListRequest extends WooPaymentsPaginatedListRequest
 	}
 
 	/**
-	 * Format a transaction date according to the user's timezone.
+	 * Shift a transaction date filter by the difference between the store's and the merchant's time zones.
+	 *
+	 * Client 11.1.0 Request_Utils::format_transaction_date_by_timezone() (includes/core/server/request/class-request-utils.php
+	 * :27-48). A date or time zone PHP cannot parse fatals the client's request; here the date is sent unchanged.
 	 *
 	 * @param string|null $transaction_date Transaction date.
-	 * @param string|null $user_timezone User timezone.
+	 * @param string|null $user_timezone    The merchant's time zone, as the browser reports it.
 	 * @return string|null
 	 */
-	private static function format_transaction_date_by_timezone( ?string $transaction_date, ?string $user_timezone ): ?string {
+	public static function format_transaction_date_by_timezone( ?string $transaction_date, ?string $user_timezone ): ?string {
 		if ( null === $transaction_date || null === $user_timezone || '' === $transaction_date || '' === $user_timezone ) {
 			return $transaction_date;
 		}
 
-		$blog_time = new DateTime( $transaction_date );
-		$blog_time->setTimezone( new DateTimeZone( wp_timezone_string() ) );
-
 		try {
-			$user_time_zone = new DateTimeZone( $user_timezone );
+			$blog_time = new DateTime( $transaction_date );
+			$blog_time->setTimezone( new DateTimeZone( wp_timezone_string() ) );
+			$local_time = new DateTime( $transaction_date );
+			$local_time->setTimezone( new DateTimeZone( $user_timezone ) );
+
+			$time_difference = ( strtotime( $local_time->format( 'Y-m-d H:i:s' ) ) - strtotime( $blog_time->format( 'Y-m-d H:i:s' ) ) ) / 60;
+			$formatted_date  = new DateTime( $transaction_date );
+			date_modify( $formatted_date, $time_difference . 'minutes' );
+
+			return $formatted_date->format( 'Y-m-d H:i:s' );
 		} catch ( Exception $exception ) {
-			$user_time_zone = new DateTimeZone( 'UTC' );
+			return $transaction_date;
 		}
-
-		$local_time = new DateTime( $transaction_date );
-		$local_time->setTimezone( $user_time_zone );
-
-		$time_difference = ( strtotime( $local_time->format( 'Y-m-d H:i:s' ) ) - strtotime( $blog_time->format( 'Y-m-d H:i:s' ) ) ) / 60;
-		$formatted_date  = new DateTime( $transaction_date );
-		date_modify( $formatted_date, $time_difference . 'minutes' );
-
-		return $formatted_date->format( 'Y-m-d H:i:s' );
 	}
 }
