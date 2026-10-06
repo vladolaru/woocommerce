@@ -299,6 +299,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 		add_action( 'after_switch_theme', array( $this, 'schedule_compatibility_data_update' ) );
 		add_action( 'action_scheduler_ensure_recurring_actions', array( $this, 'schedule_recurring_actions' ) );
 		add_action( 'updated_option', array( $this, 'handle_site_language_update' ), 10, 3 );
+		add_action( 'update_option_woocommerce_coming_soon', array( $this, 'handle_store_launch' ), 10, 2 );
 		add_action( 'update_option_' . WooPaymentsSettingsService::SETTINGS_OPTION, array( $this, 'maybe_add_missing_currencies' ) );
 		add_action( 'update_option_' . WooPaymentsSettingsService::SETTINGS_OPTION, array( $this, 'maybe_handle_test_mode_toggle' ), 10, 2 );
 		add_action( 'woocommerce_order_status_changed', array( $this, 'handle_woocommerce_order_status_changed' ), 10, 4 );
@@ -493,6 +494,37 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 			$this->account_service->refresh_account_data();
 		} catch ( WooPaymentsApiException $exception ) {
 			$this->log_exception( 'Failed to propagate the site language to the WooPayments account locale.', $exception );
+		}
+	}
+
+	/**
+	 * Tell the platform when the store goes live, so Stripe runs its checks on the now-public site.
+	 *
+	 * Ports the plugin's inform_stripe_when_store_goes_live() (client 11.1.0 `includes/admin/class-wc-payments-admin.php:185`,
+	 * `:197-222`), which re-sends the account's business URL. The client watches the site visibility form only; the option
+	 * hook also covers the Launch Your Store task and WP-CLI, and fires only when the value changes. Without a connected
+	 * account there is no business URL to re-send.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $old_value Previous coming-soon value.
+	 * @param mixed $new_value New coming-soon value.
+	 */
+	public function handle_store_launch( $old_value, $new_value ): void {
+		unset( $old_value );
+		if ( 'no' !== $new_value ) {
+			return;
+		}
+
+		$business_url = $this->account_service->get_cached_account_data()['business_profile']['url'] ?? '';
+		if ( ! is_string( $business_url ) || '' === $business_url ) {
+			return;
+		}
+
+		try {
+			$this->api_client->update_account( array( 'business_url' => $business_url ) );
+		} catch ( WooPaymentsApiException $exception ) {
+			$this->log_exception( 'Failed to re-send the WooPayments business URL after the store went live.', $exception );
 		}
 	}
 

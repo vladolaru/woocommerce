@@ -574,6 +574,59 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should re-send the account's business URL once when the store goes live.
+	 */
+	public function test_store_launch_resends_business_url(): void {
+		update_option( 'woocommerce_coming_soon', 'yes' );
+		$api_client = $this->create_api_client( array( 'update_account' ) );
+		$api_client->expects( $this->once() )
+			->method( 'update_account' )
+			->with( array( 'business_url' => 'https://shop.example.com' ) )
+			->willReturn( array() );
+		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( self::get_account_with_business_url() ) );
+		$service->register();
+
+		update_option( 'woocommerce_coming_soon', 'no' );
+	}
+
+	/**
+	 * @testdox Should not contact the platform when the store does not go live, has no account or has no business URL.
+	 * @testWith ["store goes private", "no", "yes", true, true]
+	 *           ["no connected account", "yes", "no", false, true]
+	 *           ["no business URL", "yes", "no", true, false]
+	 *
+	 * @param string $scenario         Scenario label.
+	 * @param string $old_value        Coming-soon value before the write.
+	 * @param string $new_value        Coming-soon value written.
+	 * @param bool   $has_account      Whether the store has a connected account.
+	 * @param bool   $has_business_url Whether the account has a business URL.
+	 */
+	public function test_store_launch_skips_platform( string $scenario, string $old_value, string $new_value, bool $has_account, bool $has_business_url ): void {
+		unset( $scenario );
+		update_option( 'woocommerce_coming_soon', $old_value );
+		$api_client = $this->create_api_client( array( 'update_account' ) );
+		$api_client->expects( $this->never() )->method( 'update_account' );
+		$account_data = $has_business_url ? self::get_account_with_business_url() : array( 'account_id' => 'acct_native_test' );
+		$service      = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( $has_account ? $account_data : array() ) );
+		$service->register();
+
+		update_option( 'woocommerce_coming_soon', $new_value );
+	}
+
+	/**
+	 * Account data with a business URL, in the shape the client reads it (client 11.1.0
+	 * `includes/class-wc-payments-account.php:459-462`, `business_profile.url`).
+	 *
+	 * @return array<string,mixed>
+	 */
+	private static function get_account_with_business_url(): array {
+		return array(
+			'account_id'       => 'acct_native_test',
+			'business_profile' => array( 'url' => 'https://shop.example.com' ),
+		);
+	}
+
+	/**
 	 * @testdox Should auto-enable the currencies a newly enabled payment method requires.
 	 */
 	public function test_settings_save_auto_adds_currencies_for_enabled_methods(): void {
@@ -947,6 +1000,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 *           ["store setup sync"]
 	 *           ["compatibility data update"]
 	 *           ["saved payment method update"]
+	 *           ["store launch"]
 	 *
 	 * Client 11.1.0 appends the platform's message to these lines. The fee-breakdown job is covered above.
 	 *
@@ -958,13 +1012,14 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			'store setup sync'            => array( 'is_available', 'send_store_setup' ),
 			'compatibility data update'   => array( 'update_compatibility_data' ),
 			'saved payment method update' => array( 'update_payment_method' ),
+			'store launch'                => array( 'update_account' ),
 		);
 		$api_client = $this->create_api_client( $methods[ $job ] );
 		if ( 'store setup sync' === $job ) {
 			$api_client->method( 'is_available' )->willReturn( true );
 		}
 		$api_client->method( end( $methods[ $job ] ) )->willThrowException( self::make_provider_error() );
-		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( array( 'account_id' => 'acct_native_test' ) ) );
+		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( self::get_account_with_business_url() ) );
 		$logger  = RecordingWcLogger::install();
 
 		switch ( $job ) {
@@ -979,6 +1034,10 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			case 'compatibility data update':
 				$service->handle_wcpay_update_compatibility_data();
 				$expected = null;
+				break;
+			case 'store launch':
+				$service->handle_store_launch( 'yes', 'no' );
+				$expected = 'Failed to re-send the WooPayments business URL after the store went live.';
 				break;
 			default:
 				$order = wc_create_order();
@@ -1524,6 +1583,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		remove_action( 'after_switch_theme', array( $service, 'schedule_compatibility_data_update' ) );
 		remove_action( 'action_scheduler_ensure_recurring_actions', array( $service, 'schedule_recurring_actions' ) );
 		remove_action( 'updated_option', array( $service, 'handle_site_language_update' ) );
+		remove_action( 'update_option_woocommerce_coming_soon', array( $service, 'handle_store_launch' ) );
 		remove_action( 'update_option_woocommerce_woocommerce_payments_settings', array( $service, 'maybe_add_missing_currencies' ) );
 		remove_action( 'update_option_woocommerce_woocommerce_payments_settings', array( $service, 'maybe_handle_test_mode_toggle' ) );
 		remove_action( 'woocommerce_order_status_changed', array( $service, 'handle_woocommerce_order_status_changed' ) );
