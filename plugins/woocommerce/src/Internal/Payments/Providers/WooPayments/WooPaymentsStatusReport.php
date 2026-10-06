@@ -32,16 +32,16 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	private const WOOPAY_EXPRESS_CHECKOUT_FLAG_OPTION = '_wcpay_feature_woopay_express_checkout';
 
 	/**
-	 * The native diagnostics the status report shows in its own table, after the client's WooPayments section.
+	 * The native diagnostics the status report shows in its own table, by field, with their untranslated export labels.
 	 */
 	private const NATIVE_RUNTIME_FIELDS = array(
-		'runtime_owner',
-		'native_enabled',
-		'native_enabled_filter',
-		'native_enabled_note',
-		'preflight_failures',
-		'multi_currency_rate_provider',
-		'last_webhook_fetch',
+		'runtime_owner'                => 'Runtime owner',
+		'native_enabled'               => 'Native runtime enabled',
+		'native_enabled_filter'        => 'Native enabled filter',
+		'native_enabled_note'          => 'Native enabled note',
+		'preflight_failures'           => 'Cutover preflight failures',
+		'multi_currency_rate_provider' => 'WooPayments rate provider',
+		'last_webhook_fetch'           => 'Last webhook fetch',
 	);
 
 	private const SITE_HEALTH_TEST_ID = 'woocommerce_woopayments_native_cutover';
@@ -360,8 +360,8 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	public function render_status_report_section(): void {
 		$fields      = $this->get_status_fields();
 		$native_rows = array();
-		foreach ( self::NATIVE_RUNTIME_FIELDS as $field_id ) {
-			$native_rows[] = $this->status_row( $fields[ $field_id ]['label'], $fields[ $field_id ]['label'], '', $fields[ $field_id ]['value'] );
+		foreach ( self::NATIVE_RUNTIME_FIELDS as $field_id => $export_label ) {
+			$native_rows[] = $this->status_row( $export_label, $fields[ $field_id ]['label'], '', $fields[ $field_id ]['value'] );
 		}
 
 		// While the plugin owns payments it renders this section itself (client 11.1.0 `includes/class-wc-payments-status.php:55-56`).

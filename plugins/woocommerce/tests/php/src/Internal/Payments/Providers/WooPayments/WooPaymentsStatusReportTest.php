@@ -608,6 +608,23 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The native runtime table exports fixed English labels in a translated admin, as core's status tables do.
+	 */
+	public function test_native_runtime_table_exports_english_labels_in_a_translated_admin(): void {
+		$translate = static function ( $translation, $text, $domain ) {
+			return 'woocommerce' === $domain && 'Runtime owner' === $text ? 'Propriétaire du runtime' : $translation;
+		};
+		add_filter( 'gettext', $translate, 10, 3 );
+
+		$html = $this->render_report_for_connected_store();
+
+		remove_filter( 'gettext', $translate, 10 );
+		$runtime_owner = $this->get_status_cells( $html, 'WooPayments native runtime', 'Runtime owner' );
+		$this->assertSame( 'Propriétaire du runtime:', $runtime_owner['label'] );
+		$this->assertSame( 'native', $runtime_owner['value'] );
+	}
+
+	/**
 	 * @testdox The status report shows the client's enabled WooPay rows for a WooPay-eligible account.
 	 *
 	 * Client 11.1.0 `includes/class-wc-payments-status.php:507-535`; WooPay counts as enabled only for 'yes'
