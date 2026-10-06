@@ -1637,6 +1637,37 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Amazon Pay is offered only while `amazon_pay_payments` is exactly `active` and the account has an `amazon_pay` fee
+	 * entry, the platform's capability vocabulary and fee list as in the fixture of create_account_service().
+	 *
+	 * @testdox Should leave Amazon Pay out when its capability is $amazon_pay_status or its fee entry is missing.
+	 * @testWith ["inactive", true]
+	 *           ["pending", true]
+	 *           ["disabled", true]
+	 *           ["active", false]
+	 *
+	 * @param string $amazon_pay_status Platform status of the amazon_pay_payments capability.
+	 * @param bool   $has_fee           Whether the account lists an amazon_pay fee.
+	 */
+	public function test_allowed_payment_method_types_exclude_amazon_pay_without_active_capability_and_fee( string $amazon_pay_status, bool $has_fee ): void {
+		$sut = $this->create_service(
+			array(
+				'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
+				'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
+			),
+			true,
+			array(
+				'ece_confirmation_tokens_disabled' => false,
+				'capabilities'                     => array( 'amazon_pay_payments' => $amazon_pay_status ),
+				'fees'                             => $has_fee ? array( 'amazon_pay' => array( 'base' => array( 'currency' => 'usd' ) ) ) : array( 'card' => array() ),
+			)
+		);
+
+		$this->assertSame( array( 'card' ), $sut->get_allowed_payment_method_types_for_context( 'checkout' ) );
+		$this->assertSame( array( 'payment_request' ), $sut->get_enabled_methods_for_context( 'checkout' ) );
+	}
+
+	/**
 	 * @testdox Should fail closed when account data disables ECE confirmation tokens.
 	 */
 	public function test_allowed_payment_method_types_exclude_amazon_pay_when_confirmation_tokens_are_disabled(): void {

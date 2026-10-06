@@ -1055,6 +1055,42 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Link folds into card only while `link_payments` is exactly `active` and the account has a `link` fee entry. Statuses
+	 * are the platform's capability vocabulary (`unrequested`, `pending`, `inactive`, `active`, `disabled`, ...).
+	 *
+	 * @testdox Should not fold Link into card when its capability is $link_status or its fee entry is missing.
+	 * @testWith ["inactive", true]
+	 *           ["pending", true]
+	 *           ["disabled", true]
+	 *           ["active", false]
+	 *
+	 * @param string $link_status Platform status of the link_payments capability.
+	 * @param bool   $has_fee     Whether the account lists a link fee.
+	 */
+	public function test_get_payment_fields_js_config_does_not_fold_link_without_active_capability_and_fee( string $link_status, bool $has_fee ): void {
+		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
+		$account_service = $this->create_account_service_for_bridge(
+			true,
+			array(
+				'country'      => 'US',
+				'capabilities' => array(
+					'card_payments' => 'active',
+					'link_payments' => $link_status,
+				),
+				'fees'         => $has_fee ? array( 'link' => array() ) : array( 'card' => array() ),
+			),
+			array( 'upe_enabled_payment_method_ids' => array( 'card', 'link' ) )
+		);
+		$bridge          = new WooPaymentsCheckoutBridge();
+		$bridge->init( $legacy_runtime, $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+
+		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+
+		$this->assertArrayNotHasKey( 'link', $config['paymentMethodsConfig'] );
+		$this->assertSame( array( 'card' ), $config['paymentMethodTypes'] );
+	}
+
+	/**
 	 * @testdox Should fold enabled Link into the production explicit-card definition path.
 	 */
 	public function test_get_payment_fields_js_config_folds_link_into_explicit_card_definition(): void {
