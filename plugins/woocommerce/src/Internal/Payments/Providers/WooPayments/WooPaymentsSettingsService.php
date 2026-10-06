@@ -355,7 +355,7 @@ class WooPaymentsSettingsService {
 			'payment_request_button_border_radius'       => $this->get_int_setting( $settings, 'payment_request_button_border_radius', 4 ),
 			'is_saved_cards_enabled'                     => $this->is_yes( $settings['saved_cards'] ),
 			'is_card_present_eligible'                   => $this->is_card_present_eligible(),
-			'is_woopay_enabled'                          => $this->is_yes( $settings['platform_checkout'] ?? 'no' ),
+			'is_woopay_enabled'                          => $this->is_woopay_eligible() && $this->is_yes( $settings['platform_checkout'] ?? 'no' ),
 			'woopay_last_disable_date'                   => $this->get_string_setting( $settings, 'platform_checkout_last_disable_date' ),
 			'is_woopay_global_theme_support_enabled'     => $this->is_yes( $settings['is_woopay_global_theme_support_enabled'] ?? 'no' ),
 			'is_woopay_global_theme_support_eligible'    => $this->is_woopay_global_theme_support_eligible(),

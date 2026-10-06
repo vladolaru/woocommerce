@@ -663,9 +663,11 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose WooPay eligibility separately from the saved WooPay setting.
+	 * @testdox Should report WooPay as off for an ineligible account whatever the saved setting, like the client.
+	 *
+	 * Client 11.1.0 reports `is_woo_pay_eligible() && platform_checkout` (includes/admin/class-wc-rest-payments-settings-controller.php:585).
 	 */
-	public function test_get_settings_exposes_woopay_feature_eligibility_separately_from_saved_setting(): void {
+	public function test_get_settings_reports_woopay_off_for_an_ineligible_account(): void {
 		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', '1' );
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
@@ -688,7 +690,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 
 		$settings = $this->sut->get_settings();
 
-		$this->assertTrue( $settings['is_woopay_enabled'], 'The saved WooPay setting should remain visible even when the account is not eligible.' );
+		$this->assertFalse( $settings['is_woopay_enabled'], 'An account that cannot use WooPay does not report it enabled.' );
 		$this->assertSame(
 			array(
 				'woopay'                                   => false,

@@ -3,6 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -45,7 +47,25 @@ class WooPaymentsSettingsServiceWooPayToggleTest extends WC_Unit_Test_Case {
 		parent::setUp();
 
 		$this->original_gateway_settings = get_option( 'woocommerce_woocommerce_payments_settings', null );
+		// A WooPay-eligible account, as the client reads it (client 11.1.0 `includes/class-wc-payments-features.php:193-209`,
+		// `platform_checkout_eligible` in the cached account data).
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => array(
+					'account_id'                 => 'acct_native_test',
+					'is_live'                    => true,
+					'platform_checkout_eligible' => true,
+				),
+				'fetched' => time(),
+				'errored' => false,
+			)
+		);
 
+		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client->method( 'is_available' )->willReturn( true );
+		$connected_api_client->method( 'get_account' )->willThrowException( new WooPaymentsApiException( 'Unavailable.', 'wcpay_test_unavailable', 500 ) );
+		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
 		$account_service = new WooPaymentsAccountService();
 		$account_service->init( new LegacyProxy() );
 
@@ -62,6 +82,7 @@ class WooPaymentsSettingsServiceWooPayToggleTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
+		wc_get_container()->reset_all_replacements();
 		if ( null !== $this->original_gateway_settings ) {
 			update_option( 'woocommerce_woocommerce_payments_settings', $this->original_gateway_settings );
 		} else {
