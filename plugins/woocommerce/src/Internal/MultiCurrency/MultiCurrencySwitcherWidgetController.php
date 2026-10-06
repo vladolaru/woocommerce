@@ -114,15 +114,6 @@ class MultiCurrencySwitcherWidgetController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the registered widget instance.
-	 *
-	 * @return MultiCurrencySwitcherWidget|null
-	 */
-	public function get_registered_widget(): ?MultiCurrencySwitcherWidget {
-		return $this->widget;
-	}
-
-	/**
 	 * Get the registered switcher widget markup.
 	 *
 	 * @since 11.2.0

@@ -222,7 +222,6 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
 
 		$this->assertSame( $order->get_id(), $sut->init_order_currency( $order->get_id() ) );
-		$this->assertSame( 'JPY', $sut->get_order_currency() );
 		$this->assertSame( 'JPY', $sut->get_woocommerce_currency( 'USD' ) );
 		$this->assertSame( 0, $sut->get_price_decimals( 2 ) );
 	}
@@ -236,7 +235,6 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $missing_order_id, $sut->init_order_currency( $missing_order_id ) );
 
-		$this->assertSame( 'GBP', $sut->get_order_currency() );
 		$this->assertSame( 'GBP', $sut->get_woocommerce_currency( 'USD' ) );
 	}
 
@@ -300,7 +298,6 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 		$sut->init_order_currency( $order );
 		$this->assertSame( '$42.00', $sut->maybe_clear_order_currency_after_formatted_order_total( '$42.00', $order, '', false ) );
 
-		$this->assertNull( $sut->get_order_currency() );
 		$this->assertSame( 'GBP', $sut->get_woocommerce_currency( 'USD' ) );
 	}
 
@@ -319,7 +316,6 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 42.0, $sut->maybe_init_order_currency_from_order_total_prop( 42.0, $order ) );
 
-		$this->assertSame( 'JPY', $sut->get_order_currency() );
 		$this->assertSame( 'JPY', $sut->get_woocommerce_currency( 'USD' ) );
 	}
 
@@ -338,7 +334,6 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 42.0, $sut->maybe_init_order_currency_from_order_total_prop( 42.0, $order ) );
 
-		$this->assertNull( $sut->get_order_currency() );
 		$this->assertSame( 'GBP', $sut->get_woocommerce_currency( 'USD' ) );
 	}
 
@@ -358,7 +353,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 		$sut->init_order_currency( $order );
 		$this->assertSame( '$42.00', $sut->maybe_clear_order_currency_after_formatted_order_total( '$42.00', $order, '', false ) );
 
-		$this->assertSame( 'JPY', $sut->get_order_currency() );
+		$this->assertSame( 'JPY', $sut->get_woocommerce_currency() );
 	}
 
 	/**
@@ -379,7 +374,6 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 			function () use ( $sut, $order ): void {
 				$sut->init_order_currency_from_query_vars();
 
-				$this->assertSame( 'JPY', $sut->get_order_currency() );
 				$this->assertSame( 'JPY', $sut->get_woocommerce_currency( 'USD' ) );
 				$this->assertSame( 0, $sut->get_price_decimals( 2 ) );
 				$this->assertSame( $order->get_id(), $sut->init_order_currency( $order->get_id() ) );
@@ -424,7 +418,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 			function () use ( $sut ): void {
 				$sut->init_order_currency_from_query_vars();
 
-				$this->assertSame( 'JPY', $sut->get_order_currency() );
+				$this->assertSame( 'JPY', $sut->get_woocommerce_currency() );
 			}
 		);
 	}
@@ -444,7 +438,6 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 			function () use ( $sut ): void {
 				$sut->init_order_currency_from_query_vars();
 
-				$this->assertNull( $sut->get_order_currency() );
 				$this->assertSame( 'GBP', $sut->get_woocommerce_currency( 'USD' ) );
 			}
 		);

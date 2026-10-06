@@ -69,19 +69,6 @@ class MultiCurrencyStorefrontProjectionServiceTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( '#woocommerce-payments-multi-currency-storefront-widget', $style_manifest['css'] );
 		$this->assertStringContainsString( 'float: right;', $style_manifest['css'] );
 		$this->assertStringContainsString( 'margin: 0;', $style_manifest['css'] );
-		$this->assertSame(
-			array(
-				array(
-					'filter'  => 'wcpay_multi_currency_storefront_widget_instance',
-					'default' => array(),
-				),
-				array(
-					'filter'  => 'wcpay_multi_currency_storefront_widget_args',
-					'default' => MultiCurrencyStorefrontProjectionService::get_default_widget_args(),
-				),
-			),
-			MultiCurrencyStorefrontProjectionService::get_widget_filter_manifest()
-		);
 	}
 
 	/**

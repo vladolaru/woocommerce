@@ -109,28 +109,4 @@ class MultiCurrencyAdminNoteProjectionService {
 			'blockers'   => array(),
 		);
 	}
-
-	/**
-	 * Project delete-note metadata.
-	 *
-	 * @param string $wc_version WooCommerce version.
-	 * @return array{should_delete: bool, note_name: string|null, blockers: array<int,string>}
-	 *
-	 * @since 11.0.0
-	 */
-	public static function get_delete_note_manifest( string $wc_version ): array {
-		if ( ! self::supports_wc_admin_notes( $wc_version ) ) {
-			return array(
-				'should_delete' => false,
-				'note_name'     => null,
-				'blockers'      => array( 'unsupported_wc_version' ),
-			);
-		}
-
-		return array(
-			'should_delete' => true,
-			'note_name'     => self::NOTE_NAME,
-			'blockers'      => array(),
-		);
-	}
 }

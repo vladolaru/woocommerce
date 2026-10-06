@@ -69,17 +69,13 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should register single widget instance on widgets init.
 	 */
 	public function test_registers_single_widget_instance_on_widgets_init(): void {
-		global $wp_widget_factory;
-
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
 
+		$before = $this->get_switcher_widgets();
 		$sut->handle_widgets_init();
-		$first_widget = $sut->get_registered_widget();
 		$sut->handle_widgets_init();
 
-		$this->assertInstanceOf( MultiCurrencySwitcherWidget::class, $first_widget );
-		$this->assertSame( $first_widget, $sut->get_registered_widget() );
-		$this->assertTrue( in_array( $first_widget, $wp_widget_factory->widgets, true ), 'The widget instance must be registered with the widget factory, whatever key derivation the WordPress version uses.' );
+		$this->assertCount( 1, array_diff_key( $this->get_switcher_widgets(), $before ), 'One widget instance must be registered with the widget factory, whatever key derivation the WordPress version uses.' );
 	}
 
 	/**
@@ -133,8 +129,9 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 
 		$projection = $this->create_projection_service();
 		$sut        = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $projection );
+		$before     = $this->get_switcher_widgets();
 		$sut->handle_widgets_init();
-		$widget = $sut->get_registered_widget();
+		$widget = current( array_diff_key( $this->get_switcher_widgets(), $before ) );
 		$key    = array_search( $widget, $wp_widget_factory->widgets, true );
 		unset( $wp_widget_factory->widgets[ $key ] );
 		$wp_widget_factory->widgets[711] = $widget;
@@ -374,6 +371,24 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 		ob_end_clean();
 
 		$this->assertTrue( $projection->last_switching_disabled );
+	}
+
+	/**
+	 * Get the switcher widgets registered with the widget factory, keyed by object id.
+	 *
+	 * @return array<int,MultiCurrencySwitcherWidget>
+	 */
+	private function get_switcher_widgets(): array {
+		global $wp_widget_factory;
+
+		$widgets = array();
+		foreach ( $wp_widget_factory->widgets as $widget ) {
+			if ( $widget instanceof MultiCurrencySwitcherWidget ) {
+				$widgets[ spl_object_id( $widget ) ] = $widget;
+			}
+		}
+
+		return $widgets;
 	}
 
 	/**

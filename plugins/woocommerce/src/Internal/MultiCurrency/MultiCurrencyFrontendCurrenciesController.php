@@ -340,15 +340,6 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Get the current order-context currency.
-	 *
-	 * @return string|null
-	 */
-	public function get_order_currency(): ?string {
-		return $this->order_currency;
-	}
-
-	/**
 	 * Run a callback with prices formatted in an order's currency instead of the visitor's selected one.
 	 *
 	 * Background and webhook requests can run as a user whose selection differs from the order's currency.

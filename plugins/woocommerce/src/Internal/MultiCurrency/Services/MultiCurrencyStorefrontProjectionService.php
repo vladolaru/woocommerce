@@ -140,26 +140,6 @@ class MultiCurrencyStorefrontProjectionService {
 	}
 
 	/**
-	 * Project Storefront switcher widget filter metadata.
-	 *
-	 * @return array<int,array<string,mixed>>
-	 *
-	 * @since 11.0.0
-	 */
-	public static function get_widget_filter_manifest(): array {
-		return array(
-			array(
-				'filter'  => self::filter_name( 'storefront_widget_instance' ),
-				'default' => array(),
-			),
-			array(
-				'filter'  => self::filter_name( 'storefront_widget_args' ),
-				'default' => self::get_default_widget_args(),
-			),
-		);
-	}
-
-	/**
 	 * Project breadcrumb defaults with switcher markup inserted before the nav.
 	 *
 	 * @param array<string,mixed> $defaults      Breadcrumb defaults.

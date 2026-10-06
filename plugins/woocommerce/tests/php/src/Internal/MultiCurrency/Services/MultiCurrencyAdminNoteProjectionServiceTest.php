@@ -110,26 +110,4 @@ class MultiCurrencyAdminNoteProjectionServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array(), $manifest['blockers'] );
 		$this->assertSame( MultiCurrencyAdminNoteProjectionService::get_note_manifest(), $manifest['note'] );
 	}
-
-	/**
-	 * @testdox Should project delete note manifest.
-	 */
-	public function test_projects_delete_note_manifest(): void {
-		$this->assertSame(
-			array(
-				'should_delete' => false,
-				'note_name'     => null,
-				'blockers'      => array( 'unsupported_wc_version' ),
-			),
-			MultiCurrencyAdminNoteProjectionService::get_delete_note_manifest( '4.3.9' )
-		);
-		$this->assertSame(
-			array(
-				'should_delete' => true,
-				'note_name'     => 'wc-payments-notes-multi-currency-available',
-				'blockers'      => array(),
-			),
-			MultiCurrencyAdminNoteProjectionService::get_delete_note_manifest( '11.0.0' )
-		);
-	}
 }

@@ -15,7 +15,6 @@ class MultiCurrencyUserSettingsProjectionServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should project single currency activation blocker.
 	 */
 	public function test_projects_single_currency_activation_blocker(): void {
-		$this->assertFalse( MultiCurrencyUserSettingsProjectionService::should_activate( 1 ) );
 		$this->assertSame(
 			array( 'single_currency' ),
 			MultiCurrencyUserSettingsProjectionService::get_activation_blockers( 1 )

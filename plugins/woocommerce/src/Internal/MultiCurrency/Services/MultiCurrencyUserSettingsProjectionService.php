@@ -31,18 +31,6 @@ class MultiCurrencyUserSettingsProjectionService {
 	}
 
 	/**
-	 * Project whether account presentment currency settings should activate.
-	 *
-	 * @param int $enabled_currency_count Enabled currency count.
-	 * @return bool
-	 *
-	 * @since 11.0.0
-	 */
-	public static function should_activate( int $enabled_currency_count ): bool {
-		return array() === self::get_activation_blockers( $enabled_currency_count );
-	}
-
-	/**
 	 * Project presentment currency options.
 	 *
 	 * @param array<int,array{code:string,symbol:string}> $enabled_currencies Enabled currencies.
