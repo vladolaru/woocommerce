@@ -9,7 +9,7 @@ use Automattic\WooCommerce\Internal\CostOfGoodsSold\CostOfGoodsSoldController;
 use Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController;
 use Automattic\WooCommerce\Internal\DataStores\Orders\DataSynchronizer;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Utilities\PluginUtil;
 
@@ -73,7 +73,7 @@ class FeaturesControllerTest extends \WC_Unit_Test_Case {
 			}
 		};
 		// phpcs:enable Squiz.Commenting.FunctionComment.Missing
-		$container->replace( MultiCurrencyRuntimeArbiter::class, $this->multi_currency_feature_registerer );
+		$container->replace( MultiCurrencyFeatureController::class, $this->multi_currency_feature_registerer );
 
 		$this->sut = new FeaturesController();
 		$this->sut->init( wc_get_container()->get( LegacyProxy::class ), $this->fake_plugin_util );

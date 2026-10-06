@@ -16,7 +16,7 @@ use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Admin\OrderTaxLookupMigrator;
 use Automattic\WooCommerce\Internal\BatchProcessing\BatchProcessingController;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
@@ -721,7 +721,7 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 		wc_update_11204_seed_multi_currency_feature();
 
 		$this->assertSame( 'no', get_option( 'woocommerce_feature_multi_currency_enabled' ), 'The migration should preserve an existing feature decision.' );
-		$this->assertSame( 'woocommerce_feature_multi_currency_enabled', MultiCurrencyRuntimeArbiter::FEATURE_ENABLE_OPTION );
+		$this->assertSame( 'woocommerce_feature_multi_currency_enabled', MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
 	}
 
 	/**

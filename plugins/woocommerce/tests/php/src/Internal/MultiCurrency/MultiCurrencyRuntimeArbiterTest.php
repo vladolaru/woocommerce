@@ -3,9 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Enums\FeaturePluginCompatibility;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -55,33 +53,6 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register the visible, stable multi-currency feature as disabled by default.
-	 */
-	public function test_registers_multi_currency_feature_definition(): void {
-		$features_controller = $this->createMock( FeaturesController::class );
-		$features_controller
-			->expects( $this->once() )
-			->method( 'add_feature_definition' )
-			->with(
-				'multi_currency',
-				'Multi-currency',
-				$this->callback(
-					function ( array $definition ): bool {
-						return 'woocommerce_feature_multi_currency_enabled' === $definition['option_key']
-							&& 'Let customers shop and pay in their own currency.' === $definition['description']
-							&& false === $definition['enabled_by_default']
-							&& false === $definition['disable_ui']
-							&& false === $definition['is_experimental']
-							&& FeaturePluginCompatibility::COMPATIBLE === $definition['default_plugin_compatibility']
-							&& isset( $definition['setting'] );
-					}
-				)
-			);
-
-		$this->sut->add_feature_definition( $features_controller );
-	}
-
-	/**
 	 * @testdox Should leave core multi-currency disabled by default on new installs.
 	 */
 	public function test_core_multi_currency_is_disabled_by_default(): void {
@@ -100,8 +71,7 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 			$sut = new MultiCurrencyRuntimeArbiter();
 			$sut->init(
 				$this->payments_arbiter,
-				wc_get_container()->get( LegacyProxy::class ),
-				wc_get_container()->get( MultiCurrencyFeatureController::class )
+				wc_get_container()->get( LegacyProxy::class )
 			);
 
 			$this->assertFalse( $sut->feature_is_enabled() );

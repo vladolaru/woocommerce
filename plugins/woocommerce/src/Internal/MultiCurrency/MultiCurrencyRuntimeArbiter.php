@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 
@@ -23,24 +22,6 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
  * @internal Transitional internal component for the native multi-currency runtime.
  */
 class MultiCurrencyRuntimeArbiter {
-
-	/**
-	 * Multi-currency feature identifier.
-	 *
-	 * @deprecated 11.2.0 Use MultiCurrencyFeatureController::FEATURE_ID instead.
-	 *
-	 * @var string
-	 */
-	public const FEATURE_ID = MultiCurrencyFeatureController::FEATURE_ID;
-
-	/**
-	 * Option storing whether the multi-currency feature is enabled.
-	 *
-	 * @deprecated 11.2.0 Use MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION instead.
-	 *
-	 * @var string
-	 */
-	public const FEATURE_ENABLE_OPTION = MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION;
 
 	/**
 	 * Owner value: the standalone WooPayments plugin owns multi-currency.
@@ -78,36 +59,16 @@ class MultiCurrencyRuntimeArbiter {
 	private LegacyProxy $legacy_proxy;
 
 	/**
-	 * Multi-Currency feature definition controller.
-	 *
-	 * @var MultiCurrencyFeatureController
-	 */
-	private MultiCurrencyFeatureController $feature_controller;
-
-	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter   $payments_arbiter Payments runtime owner arbiter.
-	 * @param LegacyProxy                    $legacy_proxy Legacy proxy.
-	 * @param MultiCurrencyFeatureController $feature_controller Multi-Currency feature definition controller.
+	 * @param NativePaymentsRuntimeArbiter $payments_arbiter Payments runtime owner arbiter.
+	 * @param LegacyProxy                  $legacy_proxy Legacy proxy.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $payments_arbiter, LegacyProxy $legacy_proxy, MultiCurrencyFeatureController $feature_controller ): void {
-		$this->payments_arbiter   = $payments_arbiter;
-		$this->legacy_proxy       = $legacy_proxy;
-		$this->feature_controller = $feature_controller;
-	}
-
-	/**
-	 * Add the multi-currency feature definition.
-	 *
-	 * @param FeaturesController $features_controller Feature controller receiving the definition.
-	 *
-	 * @internal For exclusive usage of WooCommerce core, backwards compatibility not guaranteed.
-	 */
-	public function add_feature_definition( FeaturesController $features_controller ): void {
-		$this->feature_controller->add_feature_definition( $features_controller );
+	final public function init( NativePaymentsRuntimeArbiter $payments_arbiter, LegacyProxy $legacy_proxy ): void {
+		$this->payments_arbiter = $payments_arbiter;
+		$this->legacy_proxy     = $legacy_proxy;
 	}
 
 	/**
