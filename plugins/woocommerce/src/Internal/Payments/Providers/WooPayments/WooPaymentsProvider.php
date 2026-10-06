@@ -300,6 +300,9 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 		foreach ( array( NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ) as $state ) {
 			foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
 				$matrix[ $state ][ $request ][] = WooPaymentsSubscriptionRenewalHooks::class;
+				// Every request that can write a WooPayments log line numbers it under one request id, as the client's logger
+				// context does on every request (client 11.1.0 `includes/class-wc-payments.php:552`, `src/Internal/LoggerContext.php:73-79`).
+				$matrix[ $state ][ $request ][] = WooPaymentsLogEntryFormat::class;
 				$matrix[ $state ][ $request ][] = WooPaymentsStripeBillingModule::class;
 				$matrix[ $state ][ $request ][] = WooPaymentsTokenService::class;
 				// Saved SEPA, Link and Amazon Pay tokens load on any of these requests (renewals, admin subscription views);
