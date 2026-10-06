@@ -234,19 +234,20 @@ class WooPaymentsLogger {
 	/**
 	 * Get the request context the client adds to every line (client 11.1.0 `src/Internal/LoggerContext.php:140-164`).
 	 *
-	 * The referrer and the request's query string are left out: on order-pay pages they carry the order key.
+	 * The referrer and the request's query string are left out: on order-pay pages they carry the order key. The user is
+	 * read only after `init`, when WordPress has loaded and settled it.
 	 *
 	 * @return array<string,string>
 	 */
 	private function get_request_context(): array {
-		$user = wp_get_current_user();
+		$user = did_action( 'init' ) ? wp_get_current_user() : null;
 		// phpcs:disable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Sanitized below, as the client does.
 		$user_agent  = isset( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : '--';
 		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? wp_parse_url( sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ), PHP_URL_PATH ) : '--';
 		// phpcs:enable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 
 		return array(
-			'WP_USER'          => $user->exists() ? $user->user_login : 'Guest (non logged-in user)',
+			'WP_USER'          => null === $user ? '--' : ( $user->exists() ? $user->user_login : 'Guest (non logged-in user)' ),
 			'HTTP_USER_AGENT'  => $user_agent,
 			'REQUEST_URI'      => is_string( $request_uri ) ? $request_uri : '--',
 			'DOING_AJAX'       => wp_doing_ajax() ? '1' : '',
