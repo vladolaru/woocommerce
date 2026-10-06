@@ -13,6 +13,7 @@ import {
 	SelectControl,
 	TextControl,
 	TextareaControl,
+	VisuallyHidden,
 } from '@wordpress/components';
 import {
 	createInterpolateElement,
@@ -153,8 +154,13 @@ const getShippingDateFieldValue = ( shippingDate: string ) => {
  * @param coverLetter The cover letter text.
  */
 const openCoverLetterPreview = ( coverLetter: string ) => {
+	const lang = /^[A-Za-z0-9-]+$/.test( document.documentElement.lang )
+		? document.documentElement.lang
+		: 'en';
+	const dir = document.documentElement.dir === 'rtl' ? 'rtl' : 'ltr';
+	// The admin's language and direction, so a screen reader reads the letter in the right voice.
 	const htmlContent = `<!DOCTYPE html>
-<html>
+<html lang="${ lang }" dir="${ dir }">
 <head>
 	<meta charset="UTF-8">
 	<title>${ __( 'Cover Letter', 'woocommerce' ) }</title>
@@ -1547,7 +1553,15 @@ export const DisputeEvidenceForm = ( {
 												'Preview cover letter',
 												'woocommerce'
 											) + ' ' }
-											&#8599;
+											<span aria-hidden="true">
+												&#8599;
+											</span>
+											<VisuallyHidden>
+												{ __(
+													'(opens in a new tab)',
+													'woocommerce'
+												) }
+											</VisuallyHidden>
 										</Button>
 									</section>
 								) }

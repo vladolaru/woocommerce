@@ -591,7 +591,8 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 
 	// Client 11.1.0 `new-evidence/index.tsx:1235-1340` and `cover-letter.tsx`: the Review step is the step heading and
 	// subheading, the manual-edits warning when the letter is not the generated one, a 30-row COVER LETTER textarea and a
-	// primary "Preview cover letter ↗" button; there is no "Review" section heading.
+	// primary "Preview cover letter ↗" button (the arrow hidden, a new-tab cue for screen readers); there is no "Review"
+	// section heading.
 	describe( 'review step (client new-evidence/cover-letter.tsx)', () => {
 		const MANUAL_EDITS_WARNING =
 			"You've made some manual edits to your cover letter. If you update your evidence again, those changes won't be reflected here automatically — but you can always make further edits yourself.";
@@ -655,11 +656,27 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 			Object.assign( URL, { createObjectURL, revokeObjectURL } );
 
 			const preview = screen.getByRole( 'button', {
-				name: 'Preview cover letter ↗',
+				name: 'Preview cover letter (opens in a new tab)',
 			} );
-			await act( async () => {
-				await userEvent.click( preview );
+			document.documentElement.lang = 'ar';
+			document.documentElement.dir = 'rtl';
+			try {
+				await act( async () => {
+					await userEvent.click( preview );
+				} );
+			} finally {
+				document.documentElement.lang = '';
+				document.documentElement.dir = '';
+			}
+			const blob = (
+				createObjectURL.mock.calls[ 0 ] as unknown as [ Blob ]
+			 )[ 0 ];
+			const html = await new Promise< string >( ( resolve ) => {
+				const reader = new FileReader();
+				reader.onload = () => resolve( String( reader.result ) );
+				reader.readAsText( blob );
 			} );
+			expect( html ).toContain( '<html lang="ar" dir="rtl">' );
 
 			expect( open ).toHaveBeenCalledWith(
 				'blob:cover-letter',
