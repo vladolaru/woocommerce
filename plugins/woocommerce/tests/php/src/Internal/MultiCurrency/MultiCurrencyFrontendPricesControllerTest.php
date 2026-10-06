@@ -205,7 +205,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 
 		$fixed_coupon = new \WC_Coupon();
 		$fixed_coupon->set_discount_type( 'fixed_cart' );
-		$fixed_coupon->set_amount( '3.00' );
+		$fixed_coupon->set_amount( '3.01' );
 		$fixed_coupon->set_minimum_amount( '20.00' );
 
 		$percent_coupon = new \WC_Coupon();
@@ -216,7 +216,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		// products and shipping ceil to the rounding step, only products take the charm, fixed coupons round to the currency decimals.
 		$this->assertSame( '9.49', $product->get_price(), '10.00 x 0.91 = 9.10, ceiled to 9.50, minus the 0.01 charm.' );
 		$this->assertEquals( 5.0, $shipping_method->rates['flat_rate']->get_cost(), '5.00 x 0.91 = 4.55, ceiled to 5.00, no charm on shipping.' );
-		$this->assertEquals( 2.73, $fixed_coupon->get_amount(), '3.00 x 0.91 = 2.73, rounded to two decimals.' );
+		$this->assertEquals( 2.74, $fixed_coupon->get_amount(), '3.01 x 0.91 = 2.7391, rounded to two decimals.' );
 		$this->assertEquals( 18.49, $fixed_coupon->get_minimum_amount(), 'A coupon minimum is treated as a product price (client FrontendPrices.php:329-337).' );
 		$this->assertEquals( 10, $percent_coupon->get_amount(), 'A percent coupon keeps its percentage.' );
 	}
