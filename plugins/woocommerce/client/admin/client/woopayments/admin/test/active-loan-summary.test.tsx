@@ -120,7 +120,7 @@ describe( 'ActiveLoanSummary', () => {
 			screen.getByRole( 'link', { name: 'View transactions' } )
 		).toHaveAttribute(
 			'href',
-			'https://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions&loan_id_is=flxln_123456'
+			'https://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions&type=charge&filter=advanced&loan_id_is=flxln_123456'
 		);
 	} );
 
