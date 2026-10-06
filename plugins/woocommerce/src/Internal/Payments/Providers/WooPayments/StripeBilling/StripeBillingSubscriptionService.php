@@ -551,7 +551,9 @@ class StripeBillingSubscriptionService {
 		try {
 			$this->api->cancel_subscription( $wcpay_subscription_id );
 		} catch ( WooPaymentsApiException $exception ) {
-			$this->logger->log_throwable( 'There was a problem canceling the subscription on WooPayments server.', $exception, array( 'subscription_id' => $subscription->get_id() ), 'info' );
+			// The client writes a gated info line only (:525-529); a cancellation that did not reach Stripe keeps billing.
+			$this->logger->log_throwable_always( 'There was a problem canceling the subscription on WooPayments server.', $exception, array( 'subscription_id' => $subscription->get_id() ) );
+			$subscription->add_order_note( __( 'WooPayments could not cancel this subscription at Stripe, so Stripe may keep billing it. Check the subscription in your WooPayments dashboard.', 'woocommerce' ) );
 		}
 	}
 
@@ -568,7 +570,9 @@ class StripeBillingSubscriptionService {
 			return;
 		}
 
-		$this->suspend_subscription( $subscription );
+		if ( ! $this->suspend_subscription( $subscription ) ) {
+			return;
+		}
 
 		$subscription->add_order_note( __( 'Suspended WooPayments Subscription because subscription status changed to on-hold.', 'woocommerce' ) );
 
@@ -587,8 +591,9 @@ class StripeBillingSubscriptionService {
 	 * Pause collection of a Stripe subscription, voiding its invoices until it is reactivated.
 	 *
 	 * @param WC_Order $subscription Subscription.
+	 * @return bool Whether Stripe paused it.
 	 */
-	public function suspend_subscription( WC_Order $subscription ): void {
+	public function suspend_subscription( WC_Order $subscription ): bool {
 		if ( ! $this->is_wcpay_subscription( $subscription ) ) {
 			$this->logger->log(
 				sprintf(
@@ -596,10 +601,14 @@ class StripeBillingSubscriptionService {
 					$subscription->get_id()
 				)
 			);
-			return;
+			return false;
 		}
 
-		$this->update_subscription( $subscription, array( 'pause_collection' => array( 'behavior' => 'void' ) ) );
+		return null !== $this->update_subscription(
+			$subscription,
+			array( 'pause_collection' => array( 'behavior' => 'void' ) ),
+			__( 'WooPayments could not pause this subscription at Stripe, so Stripe may still bill it. Check the subscription in your WooPayments dashboard.', 'woocommerce' )
+		);
 	}
 
 	/**
@@ -619,7 +628,8 @@ class StripeBillingSubscriptionService {
 			array(
 				'cancel_at_period_end' => 'false',
 				'pause_collection'     => '',
-			)
+			),
+			__( 'WooPayments could not resume this subscription at Stripe, so Stripe may not bill its renewals. Check the subscription in your WooPayments dashboard.', 'woocommerce' )
 		);
 	}
 
@@ -635,7 +645,11 @@ class StripeBillingSubscriptionService {
 			return;
 		}
 
-		$this->update_subscription( $subscription, array( 'cancel_at_period_end' => 'true' ) );
+		$this->update_subscription(
+			$subscription,
+			array( 'cancel_at_period_end' => 'true' ),
+			__( 'WooPayments could not set this subscription to cancel at the end of its period at Stripe, so Stripe may keep billing it. Check the subscription in your WooPayments dashboard.', 'woocommerce' )
+		);
 	}
 
 	/**
@@ -1219,11 +1233,15 @@ class StripeBillingSubscriptionService {
 	/**
 	 * Update the Stripe subscription of a subscription, logging a platform failure instead of passing it on.
 	 *
+	 * The failure line is written whatever the logging setting, and the note, when given, tells the merchant Stripe is out
+	 * of step; the client writes a gated info line only (class-wc-payments-subscription-service.php:1014-1018).
+	 *
 	 * @param WC_Order            $subscription Subscription.
 	 * @param array<string,mixed> $data         Subscription data.
+	 * @param string              $failure_note Note left on the subscription when the update fails, if any.
 	 * @return array<string,mixed>|null The Stripe subscription, or null when there is none or the update failed.
 	 */
-	private function update_subscription( WC_Order $subscription, array $data ): ?array {
+	private function update_subscription( WC_Order $subscription, array $data, string $failure_note = '' ): ?array {
 		$wcpay_subscription_id = $this->get_wcpay_subscription_id( $subscription );
 		if ( ! $wcpay_subscription_id ) {
 			return null;
@@ -1232,7 +1250,10 @@ class StripeBillingSubscriptionService {
 		try {
 			return $this->api->update_subscription( $wcpay_subscription_id, $data );
 		} catch ( WooPaymentsApiException $exception ) {
-			$this->logger->log_throwable( 'There was a problem updating the WooPayments subscription on server.', $exception, array( 'subscription_id' => $subscription->get_id() ), 'info' );
+			$this->logger->log_throwable_always( 'There was a problem updating the WooPayments subscription on server.', $exception, array( 'subscription_id' => $subscription->get_id() ) );
+			if ( '' !== $failure_note ) {
+				$subscription->add_order_note( $failure_note );
+			}
 			return null;
 		}
 	}

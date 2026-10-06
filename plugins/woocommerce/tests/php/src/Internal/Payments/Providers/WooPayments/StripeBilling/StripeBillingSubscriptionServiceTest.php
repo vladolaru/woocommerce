@@ -593,13 +593,20 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A platform failure on cancel or update is logged and does not stop the status change (client `class-wc-payments-subscription-service.php:525-529`, `:1014-1018`).
-	 * @testWith ["cancel_subscription"]
-	 *           ["set_pending_cancel_for_subscription"]
+	 * @testdox A platform failure on $method does not stop the status change, writes an error line whatever the logging setting, and leaves a note on the subscription, without the suspension note.
+	 * @testWith ["cancel_subscription", "There was a problem canceling the subscription on WooPayments server.", "WooPayments could not cancel this subscription at Stripe"]
+	 *           ["handle_subscription_status_on_hold", "There was a problem updating the WooPayments subscription on server.", "WooPayments could not pause this subscription at Stripe"]
+	 *           ["set_pending_cancel_for_subscription", "There was a problem updating the WooPayments subscription on server.", "WooPayments could not set this subscription to cancel at the end of its period at Stripe"]
+	 *           ["reactivate_subscription", "There was a problem updating the WooPayments subscription on server.", "WooPayments could not resume this subscription at Stripe"]
 	 *
-	 * @param string $method Service method the status hook calls.
+	 * Client 11.1.0 only writes a gated log line (`class-wc-payments-subscription-service.php:525-529`, `:549-550`, `:1014-1018`),
+	 * and notes the suspension whether or not Stripe paused it; a failure here leaves Stripe billing out of step.
+	 *
+	 * @param string $method        Service method the status hook calls.
+	 * @param string $expected_line Error line written.
+	 * @param string $expected_note Note left on the subscription.
 	 */
-	public function test_platform_failures_on_status_changes_do_not_propagate( string $method ): void {
+	public function test_platform_failures_on_status_changes_are_logged_and_noted( string $method, string $expected_line, string $expected_note ): void {
 		$this->http_client->responses[] = $this->make_response(
 			500,
 			array(
@@ -609,10 +616,15 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		$subscription                   = $this->create_subscription( array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ) );
+		$logger                         = RecordingWcLogger::install();
 
 		$this->sut->$method( $subscription );
 
 		$this->assertSame( 1, $this->http_client->request_count );
+		$this->assertContains( $expected_line, array_column( $logger->get_errors(), 1 ), 'Logged with logging off.' );
+		$notes = $this->get_order_note_texts( $subscription );
+		$this->assertCount( 1, array_filter( $notes, static fn( string $note ): bool => 0 === strpos( $note, $expected_note ) ) );
+		$this->assertNotContains( 'Suspended WooPayments Subscription because subscription status changed to on-hold.', $notes );
 	}
 
 	/**
