@@ -689,6 +689,59 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $notes, 'The merchant sees that the update did not reach the order.' );
 	}
 
+	/**
+	 * @testdox An event the lock refused on every attempt still leaves its order note when the drop line's logger throws.
+	 */
+	public function test_lock_refusal_note_survives_a_throwing_drop_line(): void {
+		$order     = wc_create_order();
+		$event_id  = 'evt_lock_exhausted_throwing_log';
+		$event     = array(
+			'id'   => $event_id,
+			'type' => 'payment_intent.succeeded',
+		);
+		$refusal   = new OrderPaymentLockRefusedException( $order->get_id(), 'payment webhook' );
+		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$scheduler = new RecordingActionSchedulerService();
+		// Empty page of the platform's failed-events list (wpcom class-webhook-controller.php:346-357); unused here.
+		$provider = new StaticFailedEventsProvider(
+			array(
+				'data'     => array(),
+				'has_more' => false,
+			)
+		);
+		$service  = $this->create_service( $scheduler, $store, $provider, new ThrowingEventIngestor( $refusal ) );
+		$logger   = function ( $message ) {
+			if ( false !== strpos( (string) $message, 'was dropped' ) ) {
+				throw new \RuntimeException( 'Log handler failed.' );
+			}
+			return $message;
+		};
+		add_filter( 'woocommerce_logger_log_message', $logger );
+
+		$last_failure = null;
+		try {
+			$service->retry_failed_event( $event, $refusal );
+			$attempts = 1 + count( WooPaymentsWebhookReliabilityService::RETRY_DELAYS_SECONDS );
+			for ( $attempt = 1; $attempt <= $attempts; $attempt++ ) {
+				try {
+					$service->process_event( $event_id );
+				} catch ( \Throwable $exception ) {
+					$last_failure = $exception;
+				}
+			}
+		} finally {
+			remove_filter( 'woocommerce_logger_log_message', $logger );
+		}
+
+		$this->assertInstanceOf( \RuntimeException::class, $last_failure, 'The last attempt reached the throwing drop line.' );
+		$this->assertNull( $store->get_event( $event_id ) );
+		$notes = array_filter(
+			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+			static fn( $note ): bool => false !== strpos( $note->content, $event_id ) && false !== strpos( $note->content, 'kept the order locked' )
+		);
+		$this->assertCount( 1, $notes, 'The merchant still sees that the update did not reach the order.' );
+	}
+
 	/** @return array<string,array{string}> */
 	public static function delivery_paths(): array {
 		return array(

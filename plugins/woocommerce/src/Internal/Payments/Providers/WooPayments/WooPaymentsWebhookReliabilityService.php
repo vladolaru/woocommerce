@@ -293,6 +293,10 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	private function schedule_retry_or_give_up( string $event_id, array $event, int $attempts, \Throwable $exception ): void {
 		if ( $attempts >= count( self::RETRY_DELAYS_SECONDS ) ) {
 			$this->failed_event_store->delete_event( $event_id );
+			// The note goes first: it contains its own failures, so a throwing logger cannot cost the merchant the trail.
+			if ( $exception instanceof OrderPaymentLockRefusedException ) {
+				$this->add_lock_refusal_note( $exception->get_order_id(), $event_id );
+			}
 			wc_get_logger()->error(
 				sprintf(
 					'WooPayments webhook event %1$s (%2$s) could not be processed after %3$d retries and was dropped.',
@@ -302,9 +306,6 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 				),
 				array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => 'native-payments-webhook' ) )
 			);
-			if ( $exception instanceof OrderPaymentLockRefusedException ) {
-				$this->add_lock_refusal_note( $exception->get_order_id(), $event_id );
-			}
 			return;
 		}
 
