@@ -82,12 +82,23 @@ class MultiCurrencyRuntimeArbiter {
 	}
 
 	/**
+	 * Get the payments runtime owner Multi-Currency ownership follows.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return string One of the NativePaymentsRuntimeArbiter::OWNER_* values.
+	 */
+	public function get_payments_owner(): string {
+		return $this->payments_arbiter->get_runtime_owner();
+	}
+
+	/**
 	 * Get the multi-currency runtime owner for the current site.
 	 *
 	 * @return string One of self::OWNER_PLUGIN, self::OWNER_CORE, self::OWNER_NONE.
 	 */
 	public function get_runtime_owner(): string {
-		$payments_owner = $this->payments_arbiter->get_runtime_owner();
+		$payments_owner = $this->get_payments_owner();
 
 		if ( NativePaymentsRuntimeArbiter::OWNER_PLUGIN === $payments_owner && $this->is_plugin_multi_currency_enabled() ) {
 			return self::OWNER_PLUGIN;

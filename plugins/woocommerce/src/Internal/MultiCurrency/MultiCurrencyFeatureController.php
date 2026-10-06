@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 use Automattic\WooCommerce\Enums\FeaturePluginCompatibility;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 
 /**
  * Defines the native Multi-Currency feature and its safe disable presentation.
@@ -24,6 +25,11 @@ class MultiCurrencyFeatureController {
 
 	/** Option storing whether the Multi-Currency feature is enabled. */
 	public const FEATURE_ENABLE_OPTION = 'woocommerce_feature_multi_currency_enabled';
+
+	/**
+	 * Per-blog option recording the payments owner this site last ran under ('plugin' or 'native').
+	 */
+	public const LAST_PAYMENTS_OWNER_OPTION = 'woocommerce_multi_currency_last_payments_owner';
 
 	/**
 	 * Persisted Multi-Currency usage detector.
@@ -58,11 +64,36 @@ class MultiCurrencyFeatureController {
 	}
 
 	/**
-	 * Hand the plugin's Multi-Currency state over to the feature option when the plugin stops owning the site.
+	 * Record the payments owner this site runs under, and hand the plugin's Multi-Currency state over on the first request after the plugin stops owning it.
 	 *
-	 * Called once at that moment, before native serves a request: the cutover job's seeding stage while the plugin is still
-	 * active, or the manual deactivation hook. Until then the option does not control prices, so a stored value (a Features
-	 * page save stores "no") is replaced. Without plugin use only an existing "yes" is turned off; an unset option stays unset.
+	 * The marker is a per-blog option read with get_option(), not a network-wide site option, so each site of a network hands over on its own first
+	 * native-owned request. A plugin-owned request re-arms it, so a reactivation hands over again at the next switch. A store that never ran the plugin
+	 * gets neither the marker nor a handover. Runs before the Multi-Currency arbiter reads the feature option.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string $payments_owner Current payments runtime owner.
+	 */
+	public static function track_payments_owner( string $payments_owner ): void {
+		$last_owner = get_option( self::LAST_PAYMENTS_OWNER_OPTION );
+		if ( NativePaymentsRuntimeArbiter::OWNER_PLUGIN === $payments_owner ) {
+			if ( NativePaymentsRuntimeArbiter::OWNER_PLUGIN !== $last_owner ) {
+				update_option( self::LAST_PAYMENTS_OWNER_OPTION, NativePaymentsRuntimeArbiter::OWNER_PLUGIN, true );
+			}
+			return;
+		}
+
+		if ( NativePaymentsRuntimeArbiter::OWNER_NATIVE === $payments_owner && NativePaymentsRuntimeArbiter::OWNER_PLUGIN === $last_owner ) {
+			self::hand_over_plugin_state();
+			update_option( self::LAST_PAYMENTS_OWNER_OPTION, NativePaymentsRuntimeArbiter::OWNER_NATIVE, true );
+		}
+	}
+
+	/**
+	 * Hand the plugin's Multi-Currency state over to the feature option.
+	 *
+	 * While the plugin owns payments the option does not control prices, so a stored value (a Features page save stores "no") is replaced.
+	 * Without plugin use only an existing "yes" is turned off; an unset option stays unset.
 	 *
 	 * @since 11.2.0
 	 */

@@ -59,12 +59,88 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyAdminNoteController',
 	);
 
+	/** Start each case without the options the Multi-Currency handover reads and writes. */
+	public function setUp(): void {
+		parent::setUp();
+		$this->delete_handover_options();
+	}
+
 	/** Clear the WP_CLI override the CLI case sets, and the services and screen a booted request leaves behind. */
 	public function tearDown(): void {
+		$this->delete_handover_options();
 		Constants::clear_single_constant( 'WP_CLI' );
 		set_current_screen( 'front' );
 		wc_get_container()->reset_all_resolved();
 		parent::tearDown();
+	}
+
+	/** @testdox Should arm the Multi-Currency handover on a request the WooPayments plugin owns. */
+	public function test_plugin_owned_request_arms_the_handover(): void {
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
+
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_PLUGIN, get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION ) );
+	}
+
+	/** @testdox Should hand the plugin's Multi-Currency state over on the first native-owned request, before the arbiter reads the option. */
+	public function test_first_native_request_hands_over_before_the_arbiter_reads(): void {
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
+		// EUR set up in the plugin (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`); a Features page save stored "no"
+		// while the plugin owned payments.
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'no' );
+
+		$container = $this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+
+		$this->assertSame( 'yes', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION ) );
+		$this->assertSame( 'yes', $container->get( MultiCurrencyRuntimeArbiter::class )->feature_option_reads[0], 'The arbiter must read the handed-over value.' );
+	}
+
+	/** @testdox Should keep a merchant choice made under native ownership on later requests. */
+	public function test_later_native_request_keeps_the_merchant_choice(): void {
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'no' );
+
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+
+		$this->assertSame( 'no', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
+	}
+
+	/** @testdox Should hand over again after the plugin is reactivated and native takes over a second time. */
+	public function test_reactivation_rearms_the_handover(): void {
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'no' );
+
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+
+		$this->assertSame( 'yes', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
+	}
+
+	/** @testdox Should write neither the marker nor the feature option on a store that never ran the plugin. */
+	public function test_never_plugin_store_writes_nothing(): void {
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_NONE );
+
+		$this->assertFalse( get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION, false ) );
+		$this->assertFalse( get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, false ) );
+	}
+
+	/** @testdox Should count a completed plugin setup as plugin use at the switch. */
+	public function test_completed_setup_counts_as_plugin_use_at_the_switch(): void {
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
+		// The plugin saves true when its setup task finishes (client 11.1.0 `includes/multi-currency/client/setup/tasks/setup-complete-task/index.js:32`).
+		update_option( 'wcpay_multi_currency_setup_completed', '1' );
+
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+
+		$this->assertSame( 'yes', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
 	}
 
 	/** @testdox Should retain core roots when no provider roots are configured. */
@@ -808,31 +884,71 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		wc_get_container()->reset_all_resolved();
 	}
 
+	/** Delete the options the Multi-Currency handover reads and writes. */
+	private function delete_handover_options(): void {
+		foreach ( array( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION, MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'wcpay_multi_currency_enabled_currencies', 'wcpay_multi_currency_setup_completed' ) as $option ) {
+			delete_option( $option );
+		}
+	}
+
+	/**
+	 * Run one request's registration for a payments owner, with Multi-Currency following it.
+	 *
+	 * @param string $payments_owner Payments runtime owner.
+	 * @return RuntimeContainer The recording container.
+	 */
+	private function register_for_payments_owner( string $payments_owner ): RuntimeContainer {
+		$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_NONE, false, false, false, null, $payments_owner );
+		( new MultiCurrencyBootstrap( static fn(): array => array() ) )->register( $container, '__return_false' );
+
+		return $container;
+	}
+
 	/**
 	 * @param string                                    $owner Multi-Currency owner.
 	 * @param bool                                      $configured Whether extra configured currencies exist.
 	 * @param bool                                      $historical Whether historical orders exist.
 	 * @param bool                                      $throw_on_foreign_currency_order_detection Whether historical-order detection throws.
 	 * @param MultiCurrencyExplicitPriceController|null $explicit_price_controller Existing explicit-price controller.
+	 * @param string|null                               $payments_owner Payments owner; defaults to the one the Multi-Currency owner follows.
 	 * @return RuntimeContainer&object{resolved:array<int,string>,registered:array<int,string>,foreign_currency_order_checks:int}
 	 */
-	private function make_container( string $owner, bool $configured, bool $historical, bool $throw_on_foreign_currency_order_detection = false, ?MultiCurrencyExplicitPriceController $explicit_price_controller = null ): RuntimeContainer {
-		$arbiter = new class( $owner ) extends MultiCurrencyRuntimeArbiter {
+	private function make_container( string $owner, bool $configured, bool $historical, bool $throw_on_foreign_currency_order_detection = false, ?MultiCurrencyExplicitPriceController $explicit_price_controller = null, ?string $payments_owner = null ): RuntimeContainer {
+		$payments_owner = $payments_owner ?? array(
+			MultiCurrencyRuntimeArbiter::OWNER_CORE   => NativePaymentsRuntimeArbiter::OWNER_NATIVE,
+			MultiCurrencyRuntimeArbiter::OWNER_PLUGIN => NativePaymentsRuntimeArbiter::OWNER_PLUGIN,
+			MultiCurrencyRuntimeArbiter::OWNER_NONE   => NativePaymentsRuntimeArbiter::OWNER_NONE,
+		)[ $owner ];
+		$arbiter        = new class( $owner, $payments_owner ) extends MultiCurrencyRuntimeArbiter {
 			/** @var string */
 			private $owner;
 
+			/** @var string */
+			private $payments_owner;
+
+			/** @var array<int,mixed> Feature option values seen when the owner was read. */
+			public array $feature_option_reads = array();
+
 			/**
-			 * Initialize the configured owner.
+			 * Initialize the configured owners.
 			 *
-			 * @param string $owner Configured owner.
+			 * @param string $owner          Configured Multi-Currency owner.
+			 * @param string $payments_owner Configured payments owner.
 			 */
-			public function __construct( string $owner ) {
-				$this->owner = $owner;
+			public function __construct( string $owner, string $payments_owner ) {
+				$this->owner          = $owner;
+				$this->payments_owner = $payments_owner;
 			}
 
-			/** Return the configured owner. @return string Configured owner. */
+			/** Return the configured owner, recording the feature option it would read. @return string Configured owner. */
 			public function get_runtime_owner(): string {
+				$this->feature_option_reads[] = get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
 				return $this->owner;
+			}
+
+			/** Return the configured payments owner. @return string Configured payments owner. */
+			public function get_payments_owner(): string {
+				return $this->payments_owner;
 			}
 
 			/** Tell whether core may register the configured owner. @return bool Whether core owns the runtime. */

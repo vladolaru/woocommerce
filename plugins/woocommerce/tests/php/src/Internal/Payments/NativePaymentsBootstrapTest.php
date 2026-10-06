@@ -758,6 +758,11 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 							return MultiCurrencyRuntimeArbiter::class === $this->class_name ? $this->multi_currency_owner : $this->owner;
 						}
 
+						/** Return the configured native payments owner. */
+						public function get_payments_owner(): string {
+							return $this->owner;
+						}
+
 						/** Return the configured effective native state. */
 						public function get_state(): string {
 							if ( NativePaymentsRuntimeArbiter::OWNER_NONE === $this->owner ) {
