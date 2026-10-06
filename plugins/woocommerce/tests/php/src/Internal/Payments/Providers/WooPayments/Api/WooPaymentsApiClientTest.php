@@ -358,6 +358,43 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A $filter_name callback that returns something other than an array is ignored: the request goes out with the values it had.
+	 * @testWith ["wcpay_api_request_params"]
+	 *           ["wcpay_api_request_headers"]
+	 *
+	 * AGENTS.md: validate a filter's final value before using it. A null here used to reach http_build_query(),
+	 * wp_json_encode() and array_key_exists(), turning every platform call into a fatal.
+	 *
+	 * @param string $filter_name Request filter.
+	 */
+	public function test_a_non_array_request_filter_result_is_ignored( string $filter_name ): void {
+		// Same reduced Refund object as the test above (wpcom class-refunds-controller.php:114-149; Stripe "The Refund object").
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode( array( 'id' => 're_test' ) ),
+		);
+		$sut                   = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ) );
+		$filter = static fn() => null;
+		add_filter( $filter_name, $filter );
+
+		try {
+			$result = $sut->refund_charge( 'ch_test', 250, 'requested_by_customer', 'native_transport', 'idem_test' );
+		} finally {
+			remove_filter( $filter_name, $filter );
+		}
+
+		$this->assertSame( 're_test', $result['id'] );
+		$this->assertSame( 'idem_test', $http_client->last_headers['Idempotency-Key'] );
+		$this->assertSame( WooPaymentsClientVersion::get_user_agent(), $http_client->last_headers['User-Agent'] );
+		$body = json_decode( (string) $http_client->last_body, true );
+		$this->assertSame( array( 'ch_test', 250 ), array( $body['charge'] ?? null, $body['amount'] ?? null ) );
+	}
+
+	/**
 	 * @testdox Should send null amount and provider reason defaults for a full free-text refund.
 	 *
 	 * Pinned WooPayments 11.1.0: Refund_Charge::DEFAULT_PARAMS and Request::get_params().

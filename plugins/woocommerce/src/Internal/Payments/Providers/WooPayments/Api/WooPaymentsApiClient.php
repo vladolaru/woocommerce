@@ -2377,7 +2377,9 @@ class WooPaymentsApiClient {
 		 * @param string                  $api    API path.
 		 * @param string                  $method HTTP method.
 		 */
-		$params = apply_filters( 'wcpay_api_request_params', $params, $api, $method );
+		$filtered_params = apply_filters( 'wcpay_api_request_params', $params, $api, $method );
+		// A callback that returns something other than an array is ignored, so it cannot turn every platform call into a fatal.
+		$params = is_array( $filtered_params ) ? $filtered_params : $params;
 
 		$headers = array(
 			'Content-Type' => 'application/json; charset=utf-8',
@@ -2405,7 +2407,8 @@ class WooPaymentsApiClient {
 		 *
 		 * @param array<string,string> $headers Request headers.
 		 */
-		$headers            = apply_filters( 'wcpay_api_request_headers', $headers );
+		$filtered_headers   = apply_filters( 'wcpay_api_request_headers', $headers );
+		$headers            = is_array( $filtered_headers ) ? $filtered_headers : $headers;
 		$site_id            = $this->http_client->get_blog_id();
 		$endpoint_rest_base = $use_v2_api ? self::V2_ENDPOINT_REST_BASE : self::ENDPOINT_REST_BASE;
 		$path               = $is_site_scoped
