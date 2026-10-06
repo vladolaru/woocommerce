@@ -137,6 +137,27 @@ describe( 'WooPayments settings data store', () => {
 		);
 	} );
 
+	it( 'keeps the submitted WooPay choice when the save response reports WooPay off for an ineligible account', async () => {
+		const settings = {
+			is_woopay_enabled: true,
+			enabled_payment_method_ids: [ 'card' ],
+		};
+		mockGetSettings.mockReturnValue( settings );
+
+		const { saveSettings } = await import( '../data/actions' );
+		const action = saveSettings();
+
+		action.next();
+		action.next();
+
+		expect(
+			action.next( { data: { is_woopay_enabled: false } } ).value
+		).toEqual( {
+			type: 'SET_SETTINGS',
+			data: expect.objectContaining( { is_woopay_enabled: true } ),
+		} );
+	} );
+
 	it( 'accepts unwrapped REST settings responses when saving settings', async () => {
 		const settings = {
 			is_wcpay_enabled: true,

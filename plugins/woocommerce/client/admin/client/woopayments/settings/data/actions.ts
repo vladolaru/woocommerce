@@ -242,6 +242,12 @@ export function* saveSettings(): Generator<
 		yield updateSettings( {
 			...settings,
 			...responseData,
+			// The response reports WooPay as the saved choice AND current eligibility. Keep the merchant's choice, as the
+			// client keeps every submitted setting (client 11.1.0 client/data/settings/actions.js:194-197), so a later
+			// save cannot turn WooPay off while the account is briefly ineligible.
+			...( 'is_woopay_enabled' in settings
+				? { is_woopay_enabled: settings.is_woopay_enabled }
+				: {} ),
 			payment_method_statuses:
 				responseData.payment_method_statuses ??
 				settings.payment_method_statuses,
