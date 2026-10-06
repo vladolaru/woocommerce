@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyOrderContextService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
@@ -149,12 +150,32 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 			$this->add_filter_once( 'woocommerce_get_formatted_order_total', array( $this, 'maybe_clear_order_currency_after_formatted_order_total' ), 900, 4 );
 
 			$this->add_action_once( 'before_woocommerce_pay', array( $this, 'init_order_currency_from_query_vars' ) );
+			$this->add_action_once( 'woocommerce_blocks_enqueue_cart_block_scripts_after', array( $this, 'enqueue_blocks_totals_script' ) );
+			$this->add_action_once( 'woocommerce_blocks_enqueue_checkout_block_scripts_after', array( $this, 'enqueue_blocks_totals_script' ) );
 		}
 
 		$this->add_filter_once( 'woocommerce_thankyou_order_id', array( $this, 'init_order_currency' ) );
 		$this->add_action_once( 'woocommerce_account_view-order_endpoint', array( $this, 'init_order_currency' ), 9 );
 		$this->add_filter_once( 'woocommerce_cart_hash', array( $this, 'add_currency_to_cart_hash' ), 900 );
 		$this->add_filter_once( 'woocommerce_shipping_method_add_rate_args', array( $this, 'fix_price_decimals_for_shipping_rates' ), 900, 2 );
+	}
+
+	/**
+	 * Load the script that shows the currency code after the Cart and Checkout block totals.
+	 *
+	 * The client registers the same totals filter from its Blocks checkout script (client 11.1.0 `client/checkout/blocks/index.js:159-175`).
+	 *
+	 * @internal
+	 */
+	public function enqueue_blocks_totals_script(): void {
+		$suffix = Constants::is_true( 'SCRIPT_DEBUG' ) ? '' : '.min';
+		wp_enqueue_script(
+			'wc-multi-currency-blocks-totals',
+			plugins_url( 'assets/js/frontend/multi-currency-blocks-totals' . $suffix . '.js', WC_PLUGIN_FILE ),
+			array( 'wc-blocks-checkout' ),
+			Constants::get_constant( 'WC_VERSION' ),
+			array( 'in_footer' => true )
+		);
 	}
 
 	/**

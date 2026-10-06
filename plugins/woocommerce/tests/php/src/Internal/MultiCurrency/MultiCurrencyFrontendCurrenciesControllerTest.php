@@ -38,6 +38,8 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 		'before_woocommerce_pay',
 		'woocommerce_account_view-order_endpoint',
 		'woocommerce_order_class',
+		'woocommerce_blocks_enqueue_cart_block_scripts_after',
+		'woocommerce_blocks_enqueue_checkout_block_scripts_after',
 	);
 
 	/**
@@ -97,6 +99,24 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 10, has_filter( 'woocommerce_thankyou_order_id', array( $sut, 'init_order_currency' ) ) );
 		$this->assertSame( 10, has_action( 'before_woocommerce_pay', array( $sut, 'init_order_currency_from_query_vars' ) ) );
 		$this->assertSame( 9, has_action( 'woocommerce_account_view-order_endpoint', array( $sut, 'init_order_currency' ) ) );
+	}
+
+	/**
+	 * @testdox Should load the Blocks totals currency code script when the Cart or Checkout block loads its scripts.
+	 */
+	public function test_loads_the_blocks_totals_script_with_the_cart_and_checkout_blocks(): void {
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut->register();
+
+		// The client appends the currency code to the block totals (client 11.1.0 `client/checkout/blocks/index.js:159-175`).
+		$this->assertSame( 10, has_action( 'woocommerce_blocks_enqueue_cart_block_scripts_after', array( $sut, 'enqueue_blocks_totals_script' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_blocks_enqueue_checkout_block_scripts_after', array( $sut, 'enqueue_blocks_totals_script' ) ) );
+
+		$sut->enqueue_blocks_totals_script();
+		$this->assertTrue( wp_script_is( 'wc-multi-currency-blocks-totals', 'enqueued' ) );
+		$this->assertSame( array( 'wc-blocks-checkout' ), wp_scripts()->registered['wc-multi-currency-blocks-totals']->deps );
+		wp_dequeue_script( 'wc-multi-currency-blocks-totals' );
+		wp_deregister_script( 'wc-multi-currency-blocks-totals' );
 	}
 
 	/**
