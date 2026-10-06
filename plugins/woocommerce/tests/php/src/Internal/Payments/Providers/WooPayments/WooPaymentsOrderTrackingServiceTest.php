@@ -304,6 +304,93 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox With WooCommerce Subscriptions, a card order with no payment method ID takes its parent's, and its parent's customer, so it is tracked.
+	 *
+	 * Client 11.1.0 `maybe_schedule_subscription_order_tracking()` (trait-wc-payment-gateway-wcpay-subscriptions.php:1108-1160),
+	 * run first on every order update (class-wc-payment-gateway-wcpay.php:4492).
+	 */
+	public function test_repairs_an_untokened_order_from_its_parent_and_tracks_it(): void {
+		$this->make_subscriptions_available();
+		$scheduler = new RecordingActionSchedulerService();
+		$service   = $this->create_service( new StaticNativeRuntimeArbiter( true ), $scheduler );
+		$parent    = $this->create_order(
+			OrderPaymentStore::GATEWAY_ID,
+			array(
+				'_payment_method_id'  => 'pm_parent',
+				'_stripe_customer_id' => 'cus_parent',
+			)
+		);
+		$order     = $this->create_order( OrderPaymentStore::GATEWAY_ID );
+		$order->set_parent_id( $parent->get_id() );
+		$order->save();
+		$this->enable_sift_tracking();
+
+		$service->handle_woocommerce_update_order( $order->get_id(), $order );
+
+		$saved = wc_get_order( $order->get_id() );
+		$this->assertSame( 'pm_parent', $saved->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 'cus_parent', $saved->get_meta( '_stripe_customer_id', true ) );
+		$this->assertCount( 1, $scheduler->scheduled_jobs, 'The repaired order is tracked.' );
+	}
+
+	/**
+	 * @testdox With WooCommerce Subscriptions, a card order's stored payment method ID follows its latest token, and a missing customer comes from the parent.
+	 */
+	public function test_repairs_a_stale_payment_method_id_from_the_order_token(): void {
+		$this->make_subscriptions_available();
+		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService() );
+		$parent  = $this->create_order( OrderPaymentStore::GATEWAY_ID, array( '_stripe_customer_id' => 'cus_parent' ) );
+		$order   = $this->create_order( OrderPaymentStore::GATEWAY_ID, array( '_payment_method_id' => 'pm_old' ) );
+		$token   = new \WC_Payment_Token_CC();
+		$token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$token->set_token( 'pm_new' );
+		$token->set_card_type( 'visa' );
+		$token->set_last4( '4242' );
+		$token->set_expiry_month( '12' );
+		$token->set_expiry_year( '2030' );
+		$token->set_user_id( 1 );
+		$token->save();
+		$order->add_payment_token( $token );
+		$order->set_parent_id( $parent->get_id() );
+		$order->save();
+
+		$service->handle_woocommerce_update_order( $order->get_id(), $order );
+
+		$saved = wc_get_order( $order->get_id() );
+		$this->assertSame( 'pm_new', $saved->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 'cus_parent', $saved->get_meta( '_stripe_customer_id', true ) );
+	}
+
+	/**
+	 * @testdox The repair leaves orders of other gateways alone, split WooPayments gateways included.
+	 *
+	 * Native departure: the client repairs every updated order, writing WooPayments meta onto other gateways' orders.
+	 */
+	public function test_repair_leaves_other_gateways_orders_alone(): void {
+		$this->make_subscriptions_available();
+		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService() );
+		$parent  = $this->create_order( OrderPaymentStore::GATEWAY_ID, array( '_payment_method_id' => 'pm_parent' ) );
+		$order   = $this->create_order( OrderPaymentStore::GATEWAY_ID . '_sepa_debit' );
+		$order->set_parent_id( $parent->get_id() );
+		$order->save();
+
+		$service->handle_woocommerce_update_order( $order->get_id(), $order );
+
+		$this->assertSame( '', wc_get_order( $order->get_id() )->get_meta( '_payment_method_id', true ) );
+	}
+
+	/**
+	 * Make WooCommerce Subscriptions look available through its core library.
+	 */
+	private function make_subscriptions_available(): void {
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => static fn( string $class_name ): bool => 'WC_Subscriptions_Core_Plugin' === $class_name || class_exists( $class_name ),
+			)
+		);
+	}
+
+	/**
 	 * Enable Sift tracking for scheduling tests.
 	 */
 	private function enable_sift_tracking(): void {

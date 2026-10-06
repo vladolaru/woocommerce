@@ -10,8 +10,11 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WC_Order;
+use WC_Payment_Token;
+use WC_Payment_Tokens;
 
 /**
  * Native owner for WooPayments-compatible order tracking queue hooks.
@@ -129,6 +132,56 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Bring a subscription order's payment method and customer IDs up to date before it is tracked.
+	 *
+	 * Client 11.1.0 `maybe_schedule_subscription_order_tracking()` (trait-wc-payment-gateway-wcpay-subscriptions.php:1108-1160),
+	 * run first on every order update: the order's latest token wins; without one, an order with no payment method ID takes
+	 * its parent's, or is left alone; a missing customer ID comes from the parent. Native runs it for the card gateway's
+	 * orders only, where the client writes these WooPayments IDs onto any gateway's order.
+	 *
+	 * @param WC_Order $order Order being updated.
+	 */
+	private function maybe_repair_subscription_order_tracking_meta( WC_Order $order ): void {
+		if ( ! WooPaymentsSubscriptionMethodPolicy::is_subscriptions_available() ) {
+			return;
+		}
+
+		$save_meta         = false;
+		$token_ids         = $order->get_payment_tokens();
+		$token_id          = end( $token_ids );
+		$token             = $token_id ? WC_Payment_Tokens::get( $token_id ) : null;
+		$payment_method_id = $this->get_order_meta_string( $order, '_payment_method_id' );
+
+		if ( ! $token instanceof WC_Payment_Token ) {
+			if ( '' === $payment_method_id ) {
+				$parent                   = $order->get_parent_id() ? wc_get_order( $order->get_parent_id() ) : false;
+				$parent_payment_method_id = $parent instanceof WC_Order ? $this->get_order_meta_string( $parent, '_payment_method_id' ) : '';
+				if ( '' === $parent_payment_method_id ) {
+					return;
+				}
+				$order->update_meta_data( '_payment_method_id', $parent_payment_method_id );
+				$save_meta = true;
+			}
+		} elseif ( $payment_method_id !== $token->get_token() ) {
+			$order->update_meta_data( '_payment_method_id', $token->get_token() );
+			$save_meta = true;
+		}
+
+		if ( '' === $this->get_order_meta_string( $order, '_stripe_customer_id' ) ) {
+			$parent             = $order->get_parent_id() ? wc_get_order( $order->get_parent_id() ) : false;
+			$parent_customer_id = $parent instanceof WC_Order ? $this->get_order_meta_string( $parent, '_stripe_customer_id' ) : '';
+			if ( '' !== $parent_customer_id ) {
+				$order->update_meta_data( '_stripe_customer_id', $parent_customer_id );
+				$save_meta = true;
+			}
+		}
+
+		if ( $save_meta ) {
+			$order->save_meta_data();
+		}
+	}
+
+	/**
 	 * Handle the woocommerce_update_order hook.
 	 *
 	 * @internal
@@ -141,10 +194,6 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( ! $this->is_sift_tracking_enabled() ) {
-			return;
-		}
-
 		$order = $order instanceof WC_Order ? $order : wc_get_order( $order_id );
 		if ( ! $order instanceof WC_Order ) {
 			return;
@@ -154,6 +203,12 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 		// exact gateway-ID match, never the split sub-gateways — so native
 		// must not widen the population Sift trains on.
 		if ( OrderPaymentStore::GATEWAY_ID !== $order->get_payment_method() ) {
+			return;
+		}
+
+		$this->maybe_repair_subscription_order_tracking_meta( $order );
+
+		if ( ! $this->is_sift_tracking_enabled() ) {
 			return;
 		}
 
