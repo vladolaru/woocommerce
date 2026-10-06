@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyException;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyNameYourPriceCompatibilityProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
@@ -214,11 +215,16 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 		if ( $cart_item['nyp_currency'] === $selected_currency_code ) {
 			$cart_item['nyp'] = $cart_item['nyp_original'];
 		} else {
-			$cart_item['nyp'] = $this->get_price_projection_service()->get_raw_conversion(
-				(float) $cart_item['nyp_original'],
-				$selected_currency_code,
-				(string) $cart_item['nyp_currency']
-			);
+			try {
+				$cart_item['nyp'] = $this->get_price_projection_service()->get_raw_conversion(
+					(float) $cart_item['nyp_original'],
+					$selected_currency_code,
+					(string) $cart_item['nyp_currency']
+				);
+			} catch ( InvalidCurrencyException $e ) {
+				// The amount was entered in a currency the store no longer offers: keep the item as it is rather than fail the cart.
+				return $cart_item;
+			}
 		}
 
 		return $this->set_name_your_price_cart_item( $cart_item );

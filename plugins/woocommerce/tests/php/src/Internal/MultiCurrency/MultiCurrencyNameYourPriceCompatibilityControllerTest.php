@@ -197,6 +197,27 @@ class MultiCurrencyNameYourPriceCompatibilityControllerTest extends WC_Unit_Test
 	}
 
 	/**
+	 * @testdox Should keep a cart item entered in a currency the store no longer offers, instead of failing the cart.
+	 */
+	public function test_keeps_the_nyp_amount_when_its_currency_is_no_longer_enabled(): void {
+		$sut     = $this->create_controller();
+		$product = $this->create_product();
+
+		// The client loads no Name Your Price conversion when its base is unknown (client 11.1.0 `includes/multi-currency/MultiCurrency.php:302-319`).
+		$cart_item = $sut->convert_cart_currency(
+			array(
+				'data'         => $product,
+				'nyp'          => '99.00',
+				'nyp_original' => '10.00',
+				'nyp_currency' => 'CAD',
+			),
+			array()
+		);
+
+		$this->assertSame( '99.00', $cart_item['nyp'] );
+	}
+
+	/**
 	 * @testdox Should preserve cart item when NYP runtime function is unavailable.
 	 */
 	public function test_preserves_cart_item_when_name_your_price_function_is_unavailable(): void {
