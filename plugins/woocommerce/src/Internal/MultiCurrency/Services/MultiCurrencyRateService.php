@@ -99,7 +99,12 @@ class MultiCurrencyRateService {
 			return null;
 		}
 
-		$rates = $provider->get_currency_rates( $from_currency, array( $to_currency ) );
+		try {
+			$rates = $provider->get_currency_rates( $from_currency, array( $to_currency ) );
+		} catch ( \Throwable $e ) {
+			return null;
+		}
+
 		if ( isset( $rates['currencies'] ) && is_array( $rates['currencies'] ) ) {
 			$rates = $rates['currencies'];
 		}

@@ -55,12 +55,9 @@ class WooPaymentsNativeApiClientAdapter implements MultiCurrencyApiClientInterfa
 	 * @param string        $currency_from Currency to convert from.
 	 * @param string[]|null $currencies_to Currencies to convert into, or null for all supported.
 	 * @return array<string,mixed>
+	 * @throws \Throwable When the rate fetch fails, so the rate cache keeps its last good rates.
 	 */
 	public function get_currency_rates( string $currency_from, $currencies_to = null ): array {
-		try {
-			return $this->api_client->get_currency_rates( $currency_from, $currencies_to );
-		} catch ( \Throwable $e ) {
-			return array();
-		}
+		return $this->api_client->get_currency_rates( $currency_from, $currencies_to );
 	}
 }

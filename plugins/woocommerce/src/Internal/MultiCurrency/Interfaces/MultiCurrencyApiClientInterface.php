@@ -28,6 +28,7 @@ interface MultiCurrencyApiClientInterface {
 	 * @param string        $currency_from Currency to convert from.
 	 * @param string[]|null $currencies_to Currencies to convert into, or null for all supported.
 	 * @return array<string,mixed>
+	 * @throws \Throwable When the fetch fails; the rate cache then keeps its last good rates.
 	 */
 	public function get_currency_rates( string $currency_from, $currencies_to = null ): array;
 }

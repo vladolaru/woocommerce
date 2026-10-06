@@ -227,6 +227,22 @@ class MultiCurrencyRateServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should return no automatic rate when the provider's rate fetch fails.
+	 */
+	public function test_returns_null_for_automatic_rate_when_the_fetch_fails(): void {
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'automatic' );
+		$provider = $this->createMock( CurrencyRateProvider::class );
+		$provider->method( 'is_available' )->willReturn( true );
+		$provider->method( 'get_currency_rates' )->willThrowException( new \RuntimeException( 'Server error' ) );
+		$registry = new CurrencyRateProviderRegistry();
+		$registry->register( $provider );
+		$service = new MultiCurrencyRateService( $registry );
+
+		$this->assertNull( $service->get_rate( 'USD', 'EUR' ) );
+		$this->assertNull( $service->get_rates( 'USD' ) );
+	}
+
+	/**
 	 * Delete rate options touched by these tests.
 	 */
 	private function delete_rate_options(): void {

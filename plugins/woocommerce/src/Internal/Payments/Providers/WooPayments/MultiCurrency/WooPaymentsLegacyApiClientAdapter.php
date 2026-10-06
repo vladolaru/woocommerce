@@ -60,18 +60,15 @@ class WooPaymentsLegacyApiClientAdapter implements MultiCurrencyApiClientInterfa
 	 * @param string        $currency_from Currency to convert from.
 	 * @param string[]|null $currencies_to Currencies to convert into, or null for all supported.
 	 * @return array<string,mixed>
+	 * @throws \RuntimeException When the WooPayments API client is not loaded; a failed fetch is passed on too, so the rate cache keeps its last good rates.
 	 */
 	public function get_currency_rates( string $currency_from, $currencies_to = null ): array {
 		$api_client = $this->get_legacy_api_client();
 		if ( ! $api_client || ! is_callable( array( $api_client, 'get_currency_rates' ) ) ) {
-			return array();
+			throw new \RuntimeException( 'The WooPayments API client is not loaded.' );
 		}
 
-		try {
-			$rates = $api_client->get_currency_rates( $currency_from, $currencies_to );
-		} catch ( \Throwable $e ) {
-			return array();
-		}
+		$rates = $api_client->get_currency_rates( $currency_from, $currencies_to );
 
 		return is_array( $rates ) ? $rates : array();
 	}

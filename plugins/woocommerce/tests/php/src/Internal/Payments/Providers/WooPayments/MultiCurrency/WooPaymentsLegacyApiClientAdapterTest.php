@@ -22,14 +22,15 @@ class WooPaymentsLegacyApiClientAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should fail closed when the WooPayments runtime is absent.
+	 * @testdox Should report the server as disconnected and fail a rate fetch when the WooPayments runtime is absent.
 	 */
-	public function test_fails_closed_when_woopayments_runtime_is_absent(): void {
+	public function test_fails_a_rate_fetch_when_woopayments_runtime_is_absent(): void {
 		$this->mock_woopayments_runtime( false, null );
 		$sut = wc_get_container()->get( WooPaymentsLegacyApiClientAdapter::class );
 
 		$this->assertFalse( $sut->is_server_connected() );
-		$this->assertSame( array(), $sut->get_currency_rates( 'usd', array( 'gbp' ) ) );
+		$this->expectException( \RuntimeException::class );
+		$sut->get_currency_rates( 'usd', array( 'gbp' ) );
 	}
 
 	/**
@@ -47,14 +48,15 @@ class WooPaymentsLegacyApiClientAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return empty rates when the legacy API client throws.
+	 * @testdox Should pass a failed rate fetch on when the legacy API client throws.
 	 */
-	public function test_returns_empty_rates_when_legacy_api_client_throws(): void {
+	public function test_passes_a_failed_rate_fetch_on_when_legacy_api_client_throws(): void {
 		$this->mock_woopayments_runtime( true, $this->create_throwing_api_client() );
 		$sut = wc_get_container()->get( WooPaymentsLegacyApiClientAdapter::class );
 
 		$this->assertFalse( $sut->is_server_connected() );
-		$this->assertSame( array(), $sut->get_currency_rates( 'usd', array( 'gbp' ) ) );
+		$this->expectException( \RuntimeException::class );
+		$sut->get_currency_rates( 'usd', array( 'gbp' ) );
 	}
 
 	/**
