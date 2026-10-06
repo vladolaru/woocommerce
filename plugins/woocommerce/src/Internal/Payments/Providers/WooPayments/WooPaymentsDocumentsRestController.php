@@ -12,7 +12,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WP_Error;
-use WP_HTTP_Response;
 use WP_REST_Request;
 use WP_REST_Response;
 use WP_REST_Server;
@@ -53,9 +52,9 @@ class WooPaymentsDocumentsRestController implements RegisterHooksInterface {
 	/**
 	 * Raw document response currently being served through rest_pre_serve_request.
 	 *
-	 * @var WP_HTTP_Response|null
+	 * @var WP_REST_Response|null
 	 */
-	private ?WP_HTTP_Response $raw_document_response = null;
+	private ?WP_REST_Response $raw_document_response = null;
 
 	/**
 	 * Runtime owner arbiter.
@@ -197,7 +196,7 @@ class WooPaymentsDocumentsRestController implements RegisterHooksInterface {
 	 *
 	 * @param WP_REST_Request $request Request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
-	 * @return WP_HTTP_Response|WP_Error
+	 * @return WP_REST_Response|WP_Error
 	 */
 	public function get_document( WP_REST_Request $request ) {
 		$document_id = (string) $request->get_param( 'document_id' );
@@ -235,7 +234,9 @@ class WooPaymentsDocumentsRestController implements RegisterHooksInterface {
 
 		$this->record_document_download( $document_id );
 
-		$response                    = new WP_HTTP_Response(
+		// A WP_REST_Response passes through rest_ensure_response() unchanged; a plain WP_HTTP_Response is rebuilt as a new
+		// object, which the identity check in serve_raw_document_response() would never match.
+		$response                    = new WP_REST_Response(
 			$body,
 			$status,
 			$headers
@@ -257,7 +258,7 @@ class WooPaymentsDocumentsRestController implements RegisterHooksInterface {
 	 * @return mixed
 	 */
 	public function serve_raw_document_response( $served, $response ) {
-		if ( ! $response instanceof WP_HTTP_Response || $response !== $this->raw_document_response ) {
+		if ( ! $response instanceof WP_REST_Response || $response !== $this->raw_document_response ) {
 			return $served;
 		}
 

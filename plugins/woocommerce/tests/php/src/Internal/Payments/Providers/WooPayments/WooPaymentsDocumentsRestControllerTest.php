@@ -11,8 +11,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDo
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_REST_Unit_Test_Case;
 use WP_Error;
-use WP_HTTP_Response;
 use WP_REST_Request;
+use WP_REST_Response;
 use WP_REST_Server;
 
 /**
@@ -306,7 +306,7 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		$response = $this->sut->get_document( $request );
 
-		$this->assertInstanceOf( WP_HTTP_Response::class, $response );
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
 		$this->assertSame( 201, $response->get_status() );
 		$this->assertSame( '%PDF invoice', $response->get_data() );
 		$this->assertSame( 'application/pdf', $response->get_headers()['Content-Type'] );
@@ -320,6 +320,38 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->assertTrue( $served );
 		$this->assertSame( '%PDF invoice', $response_body );
+	}
+
+	/**
+	 * @testdox A document download served by the REST server sends the document bytes and headers, not JSON.
+	 *
+	 * The REST server turns a plain WP_HTTP_Response into a new WP_REST_Response (rest_ensure_response(), rest-api.php),
+	 * so only a real serve proves the bytes reach the browser. Client 11.1.0 streams them itself (documents controller :113-125).
+	 */
+	public function test_get_document_streams_through_the_rest_server(): void {
+		$this->api_client->document_response = array(
+			'response' => array(
+				'code'    => 200,
+				'message' => 'OK',
+			),
+			'headers'  => array(
+				'content-type'        => 'application/pdf',
+				'content-disposition' => 'attachment; filename="invoice.pdf"',
+			),
+			'body'     => '%PDF invoice',
+		);
+		// WordPress's spy server records headers and buffers the body instead of sending them.
+		$GLOBALS['wp_rest_server'] = new \Spy_REST_Server();
+		$server                    = $GLOBALS['wp_rest_server'];
+		$this->sut->register_routes();
+		$_SERVER['REQUEST_METHOD'] = 'GET';
+
+		$server->serve_request( '/wc/v3/payments/documents/vat_invoice-123' );
+
+		$this->assertSame( '%PDF invoice', $server->sent_body );
+		$this->assertSame( 200, $server->status );
+		$this->assertSame( 'application/pdf', $server->sent_headers['Content-Type'] );
+		$this->assertSame( 'attachment; filename="invoice.pdf"', $server->sent_headers['Content-Disposition'] );
 	}
 
 	/**
