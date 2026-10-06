@@ -286,11 +286,12 @@ describe( 'MultiCurrencySettingsApp', () => {
 	// (Add/remove below the list) and delete-button.js:130-145 (a trash icon).
 	// Client 11.1.0 `multi-currency/client/data/resolvers.js:23-33` and `settings/multi-currency/index.js:14-22`: the page
 	// keeps its sections, the empty table and Add/remove, and the failure is one snackbar in the client's words.
-	it( 'announces that currencies and store settings are loading', async () => {
+	it( 'announces that the currencies are loading', async () => {
 		render( <MultiCurrencySettingsApp /> );
 
 		// A live region mounted with its text is usually not read, so the
-		// loading messages go through the WordPress live region.
+		// loading message goes through the WordPress live region. Store
+		// settings and the currency modal are covered in their own tests.
 		expect( speak ).toHaveBeenCalledWith( 'Loading currencies…', 'polite' );
 		expect( await screen.findByText( 'Euro' ) ).toBeInTheDocument();
 	} );

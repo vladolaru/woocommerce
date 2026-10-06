@@ -3,6 +3,7 @@
  */
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { speak } from '@wordpress/a11y';
 import apiFetch from '@wordpress/api-fetch';
 
 /**
@@ -13,6 +14,7 @@ import { StoreLevelSettings } from '../store-settings';
 const mockCreateSuccessNotice = jest.fn();
 const mockCreateErrorNotice = jest.fn();
 
+jest.mock( '@wordpress/a11y', () => ( { speak: jest.fn() } ) );
 jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 jest.mock( '@woocommerce/settings', () => ( {
 	getSetting: ( name: string, fallback?: unknown ) =>
@@ -99,6 +101,20 @@ describe( 'StoreLevelSettings', () => {
 			screen.getByRole( 'button', { name: 'Save changes' } )
 		).toHaveAttribute( 'aria-disabled', 'true' );
 		expect( mockApiFetch ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	it( 'announces that the store settings are loading', async () => {
+		mockApiFetch.mockResolvedValueOnce( storeSettingsResponse );
+
+		render( <StoreLevelSettings /> );
+
+		expect( speak ).toHaveBeenCalledWith(
+			'Loading store settings…',
+			'polite'
+		);
+		expect(
+			await screen.findByRole( 'heading', { name: 'Store settings' } )
+		).toBeInTheDocument();
 	} );
 
 	// Client 11.1.0 store-settings/index.js:28-48 (section description),

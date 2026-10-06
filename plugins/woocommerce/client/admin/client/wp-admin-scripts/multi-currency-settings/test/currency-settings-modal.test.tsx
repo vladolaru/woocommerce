@@ -9,6 +9,7 @@ import {
 	waitFor,
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { speak } from '@wordpress/a11y';
 import apiFetch from '@wordpress/api-fetch';
 import { getSettings, setSettings } from '@wordpress/date';
 
@@ -20,6 +21,7 @@ import { CurrencySettingsModal } from '../currency-settings-modal';
 const mockCreateSuccessNotice = jest.fn();
 const mockCreateErrorNotice = jest.fn();
 
+jest.mock( '@wordpress/a11y', () => ( { speak: jest.fn() } ) );
 jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 jest.mock( '@wordpress/data', () => {
 	const actual = jest.requireActual( '@wordpress/data' );
@@ -154,6 +156,22 @@ describe( 'CurrencySettingsModal', () => {
 		expect(
 			screen.queryByLabelText( 'Manual rate' )
 		).not.toBeInTheDocument();
+	} );
+
+	it( 'announces that the currency settings are loading', async () => {
+		mockApiFetch.mockResolvedValueOnce( automaticSettingsResponse );
+
+		renderModal();
+
+		expect( speak ).toHaveBeenCalledWith(
+			'Loading currency settings…',
+			'polite'
+		);
+		expect(
+			await screen.findByRole( 'heading', {
+				name: 'Manage Euro settings',
+			} )
+		).toBeInTheDocument();
 	} );
 
 	// Client 11.1.0 single-currency/index.js:76, 157-165 and 256-273: the
