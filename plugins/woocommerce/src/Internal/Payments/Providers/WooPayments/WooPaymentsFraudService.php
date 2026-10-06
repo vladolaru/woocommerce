@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Admin\PageController;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 defined( 'ABSPATH' ) || exit;
@@ -103,12 +104,55 @@ class WooPaymentsFraudService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register the login session-link callback.
+	 * Register the login session-link callback and the admin Sift page tracker.
 	 */
 	public function register() {
 		if ( false === has_action( 'init', array( $this, 'link_session_if_user_just_logged_in' ) ) ) {
 			add_action( 'init', array( $this, 'link_session_if_user_just_logged_in' ) );
 		}
+		if ( false === has_action( 'admin_print_footer_scripts', array( $this, 'handle_admin_print_footer_scripts' ) ) ) {
+			add_action( 'admin_print_footer_scripts', array( $this, 'handle_admin_print_footer_scripts' ) );
+		}
+	}
+
+	/**
+	 * Print the Sift page tracker on WooCommerce admin pages, with the merchant's account as the Sift user.
+	 *
+	 * Same pages and script as client 11.1.0 (`includes/class-wc-payments-fraud-service.php:83`, `:207-243`): every
+	 * WooCommerce admin page except the WooPayments routes, only when Sift is configured. A test-mode store without a sandbox
+	 * beacon key gets no tracker, so test traffic never reaches the production Sift account.
+	 *
+	 * @internal
+	 */
+	public function handle_admin_print_footer_scripts(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only page check.
+		$path = isset( $_GET['path'] ) && is_string( $_GET['path'] ) ? sanitize_text_field( wp_unslash( $_GET['path'] ) ) : '';
+		if ( 0 === strpos( $path, '/woopayments/' ) || ! PageController::is_admin_or_embed_page() ) {
+			return;
+		}
+
+		$sift = $this->get_fraud_services_config()['sift'] ?? null;
+		if ( ! is_array( $sift ) || empty( $sift['beacon_key'] ) ) {
+			return;
+		}
+		?>
+		<script type="text/javascript">
+			var src = 'https://cdn.sift.com/s.js';
+
+			var _sift = ( window._sift = window._sift || [] );
+			_sift.push( [ '_setAccount', <?php echo wp_json_encode( (string) $sift['beacon_key'] ); ?> ] );
+			_sift.push( [ '_setUserId', <?php echo wp_json_encode( (string) ( $sift['user_id'] ?? '' ) ); ?> ] );
+			_sift.push( [ '_setSessionId', <?php echo wp_json_encode( (string) ( $sift['session_id'] ?? '' ) ); ?> ] );
+			_sift.push( [ '_trackPageview' ] );
+
+			if ( ! document.querySelector( '[src="' + src + '"]' ) ) {
+				var script = document.createElement( 'script' );
+				script.src = src;
+				script.async = true;
+				document.body.appendChild( script );
+			}
+		</script>
+		<?php
 	}
 
 	/**

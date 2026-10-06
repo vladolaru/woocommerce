@@ -67,8 +67,106 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'woocommerce_woopayments_fraud_services_config' );
 		remove_all_filters( 'woocommerce_woopayments_fraud_service_config' );
 		wp_set_current_user( 0 );
+		unset( $_GET['page'], $_GET['tab'], $_GET['path'] );
+		$GLOBALS['current_screen'] = null; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Leave the admin screen the test set.
 		$this->reset_container_replacements();
 		parent::tearDown();
+	}
+
+	/**
+	 * @testdox Should print the Sift page tracker in the footer of a WooCommerce admin page, as the client does.
+	 *
+	 * Client 11.1.0 `includes/class-wc-payments-fraud-service.php:83`, `:207-243`; the merchant's account id is the Sift user
+	 * id in the admin (`:348-358`).
+	 */
+	public function test_prints_the_sift_tracker_on_a_woocommerce_admin_page(): void {
+		$output = $this->render_admin_footer( array( 'page' => 'wc-admin' ) );
+
+		$this->assertStringContainsString( "var src = 'https://cdn.sift.com/s.js';", $output );
+		$this->assertStringContainsString( '_sift.push( [ \'_setAccount\', "prod_beacon" ] );', $output );
+		$this->assertStringContainsString( '_sift.push( [ \'_setUserId\', "acct_fraud_service_test" ] );', $output );
+		$this->assertStringContainsString( '_setSessionId', $output );
+		$this->assertStringContainsString( "_sift.push( [ '_trackPageview' ] );", $output );
+		$this->assertStringContainsString( 'if ( ! document.querySelector( \'[src="\' + src + \'"]\' ) ) {', $output );
+	}
+
+	/**
+	 * @testdox Should print the Sift page tracker on the Payments settings page, which is not a WooPayments route.
+	 */
+	public function test_prints_the_sift_tracker_on_the_payments_settings_page(): void {
+		$output = $this->render_admin_footer(
+			array(
+				'page' => 'wc-settings',
+				'tab'  => 'checkout',
+			)
+		);
+
+		$this->assertStringContainsString( '_sift.push( [ \'_setAccount\', "prod_beacon" ] );', $output );
+	}
+
+	/**
+	 * @testdox Should not print the Sift tracker on the WooPayments routes, other admin pages, without Sift, or without a beacon key.
+	 * @dataProvider provide_pages_without_the_admin_sift_tracker
+	 *
+	 * @param array<string,string> $query          Admin page query.
+	 * @param array<string,mixed>  $fraud_services Account fraud services.
+	 * @param string               $test_mode      The test_mode gateway setting.
+	 */
+	public function test_does_not_print_the_sift_tracker( array $query, array $fraud_services, string $test_mode ): void {
+		$this->assertSame( '', $this->render_admin_footer( $query, $fraud_services, $test_mode ) );
+	}
+
+	/**
+	 * Pages and configs without the admin Sift tracker.
+	 *
+	 * @return array<string,array{array<string,string>,array<string,mixed>,string}>
+	 */
+	public static function provide_pages_without_the_admin_sift_tracker(): array {
+		$sift = array( 'sift' => array( 'beacon_key' => 'prod_beacon' ) );
+
+		return array(
+			'WooPayments route'                      => array(
+				array(
+					'page' => 'wc-settings',
+					'tab'  => 'checkout',
+					'path' => '/woopayments/overview',
+				),
+				$sift,
+				'no',
+			),
+			'not a WooCommerce page'                 => array( array(), $sift, 'no' ),
+			'Sift not configured'                    => array( array( 'page' => 'wc-admin' ), array( 'stripe' => array() ), 'no' ),
+			'test mode without a sandbox beacon key' => array( array( 'page' => 'wc-admin' ), $sift, 'yes' ),
+		);
+	}
+
+	/**
+	 * Render the admin footer scripts as the fraud service prints them.
+	 *
+	 * @param array<string,string> $query          Admin page query.
+	 * @param array<string,mixed>  $fraud_services Account fraud services.
+	 * @param string               $test_mode      The test_mode gateway setting.
+	 * @return string
+	 */
+	private function render_admin_footer( array $query, array $fraud_services = array( 'sift' => array( 'beacon_key' => 'prod_beacon' ) ), string $test_mode = 'no' ): string {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => $test_mode ) );
+		$this->seed_account_fraud_services( $fraud_services );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		set_current_screen( 'dashboard' );
+		foreach ( $query as $key => $value ) {
+			$_GET[ $key ] = $value;
+		}
+		if ( 'wc-settings' === ( $query['page'] ?? '' ) ) {
+			// WooCommerce settings pages are connected admin pages, which the test request has not registered.
+			add_filter( 'woocommerce_navigation_is_connected_page', '__return_true' );
+		}
+		$sut = $this->make_sut();
+		$sut->register();
+
+		ob_start();
+		do_action( 'admin_print_footer_scripts' );
+
+		return trim( (string) ob_get_clean() );
 	}
 
 	/**
