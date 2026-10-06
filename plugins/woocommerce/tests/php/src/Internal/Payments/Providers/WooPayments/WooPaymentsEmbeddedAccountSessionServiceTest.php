@@ -94,11 +94,14 @@ class WooPaymentsEmbeddedAccountSessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array(), $session, 'Disconnected account-session requests should fail closed.' );
 		$this->assertCount( 1, $logger->get_errors(), 'The platform failure is logged.' );
 		$this->assertSame( array( 409, 'wcpay_wpcom_not_connected' ), array( $logger->contexts[0]['http_status'], $logger->contexts[0]['error_code'] ) );
-		$this->assertStringNotContainsString( 'Disconnected.', (string) wp_json_encode( $logger->lines ) );
+		$this->assertStringNotContainsString( 'Disconnected.', (string) wp_json_encode( array( $logger->lines, $logger->contexts ) ) );
 	}
 
 	/**
 	 * Data provider for malformed payload tests.
+	 *
+	 * Fields of the platform's account session, as the client maps them (client 11.1.0
+	 * `includes/class-wc-payments-account.php:3260-3266`), each case missing one or carrying the wrong type.
 	 *
 	 * @return array<string,array<int,array<string,mixed>>>
 	 */

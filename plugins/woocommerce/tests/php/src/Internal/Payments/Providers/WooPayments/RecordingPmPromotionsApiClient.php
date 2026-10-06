@@ -18,7 +18,8 @@ class RecordingPmPromotionsApiClient extends WooPaymentsApiClient {
 	public array $promotions_response = array();
 
 	/**
-	 * Platform cache-for header sent with the promotions.
+	 * Platform cache-for header sent with the promotions, in seconds; '0' means do not cache (client 11.1.0
+	 * `includes/class-wc-payments-pm-promotions-service.php:224-254`).
 	 *
 	 * @var string
 	 */

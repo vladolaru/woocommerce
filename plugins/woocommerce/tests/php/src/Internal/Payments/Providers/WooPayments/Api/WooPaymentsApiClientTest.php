@@ -5187,8 +5187,10 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	 * @testdox Should fetch payment method promotions through the preserved platform endpoint.
 	 */
 	public function test_get_pm_promotions_uses_preserved_platform_endpoint(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
+		$http_client          = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id = 123;
+		// The platform answers with the promotions list and a cache-for header in seconds (client 11.1.0
+		// `includes/class-wc-payments-pm-promotions-service.php:224-254`); entries carry the fields the client requires and normalizes at `:643`, `:844-912`.
 		$http_client->response = array(
 			'response' => array( 'code' => 200 ),
 			'headers'  => array(

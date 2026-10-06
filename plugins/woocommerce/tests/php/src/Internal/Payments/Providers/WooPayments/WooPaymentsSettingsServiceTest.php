@@ -802,6 +802,8 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				$this->create_gateway( 'woocommerce_payments', 'yes' ),
 				$this->create_gateway( 'legacy_applepay_gateway', 'yes' ),
 				$this->create_gateway( 'stripe', 'yes', array( 'payment_request' => 'yes' ) ),
+				// A third-party gateway offering wallets through the express_checkout_enabled option the client checks
+				// (client 11.1.0 `includes/class-duplicates-detection-service.php:141`).
 				$this->create_gateway( 'acme_wallets', 'yes', array( 'express_checkout_enabled' => 'yes' ) ),
 				$this->create_gateway( 'acme_cards', 'yes', array( 'express_checkout_enabled' => 'no' ) ),
 				$this->create_gateway( 'disabled_googlepay_gateway', 'no' ),
