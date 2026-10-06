@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling;
 
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Log_Handler_DB;
 use WC_Log_Handler_File;
 use WC_Logger_Interface;
@@ -166,7 +167,7 @@ class StripeBillingMigrationLogHandler {
 			return $old_filename;
 		}
 
-		$today = gmdate( 'Y-m-d' );
+		$today = (string) wc_get_container()->get( LegacyProxy::class )->call_function( 'gmdate', 'Y-m-d' );
 
 		return $matches[2] === $today ? $old_filename : "{$matches[1]}-{$today}-{$matches[3]}.log";
 	}

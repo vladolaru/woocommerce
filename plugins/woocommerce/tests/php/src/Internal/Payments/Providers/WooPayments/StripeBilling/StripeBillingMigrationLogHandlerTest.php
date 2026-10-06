@@ -23,6 +23,27 @@ class StripeBillingMigrationLogHandlerTest extends WC_Unit_Test_Case {
 	private const OTHER_SOURCE = 'rec-t63-other-log-source';
 
 	/**
+	 * The one "now" the handler and the expectations share.
+	 *
+	 * @var int
+	 */
+	private int $now;
+
+	/**
+	 * Give the handler and the expectations one clock, so a run that crosses midnight UTC still sees one date.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+		$this->now = time();
+		$now       = $this->now;
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'gmdate' => static fn( string $format, ?int $timestamp = null ): string => gmdate( $format, $timestamp ?? $now ),
+			)
+		);
+	}
+
+	/**
 	 * Remove the log files and entries the tests wrote, and the log handler constant.
 	 */
 	public function tearDown(): void {
@@ -57,7 +78,7 @@ class StripeBillingMigrationLogHandlerTest extends WC_Unit_Test_Case {
 
 		$log_files = $this->get_log_files();
 		$this->assertCount( 1, $log_files, 'The migration log file is written.' );
-		$old_date = gmdate( 'Y-m-d', time() - YEAR_IN_SECONDS );
+		$old_date = gmdate( 'Y-m-d', $this->now - YEAR_IN_SECONDS );
 		$aged     = trailingslashit( WC_LOG_DIR ) . preg_replace( '/\d{4}-\d{2}-\d{2}/', $old_date, basename( $log_files[0] ) );
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename
 		rename( $log_files[0], $aged );
@@ -66,7 +87,7 @@ class StripeBillingMigrationLogHandlerTest extends WC_Unit_Test_Case {
 
 		$log_files = $this->get_log_files();
 		$this->assertCount( 1, $log_files );
-		$this->assertStringContainsString( gmdate( 'Y-m-d' ), basename( $log_files[0] ) );
+		$this->assertStringContainsString( gmdate( 'Y-m-d', $this->now ), basename( $log_files[0] ) );
 		$this->assertStringContainsString( $message, (string) file_get_contents( $log_files[0] ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
 	}
 
@@ -78,8 +99,8 @@ class StripeBillingMigrationLogHandlerTest extends WC_Unit_Test_Case {
 		$sut->init_hooks();
 		$log_dir  = trailingslashit( WC_LOG_DIR );
 		$hash     = wp_hash( StripeBillingMigrationLogHandler::HANDLE );
-		$old_path = $log_dir . StripeBillingMigrationLogHandler::HANDLE . '-' . gmdate( 'Y-m-d', time() - DAY_IN_SECONDS ) . "-{$hash}.log";
-		$new_path = $log_dir . StripeBillingMigrationLogHandler::HANDLE . '-' . gmdate( 'Y-m-d' ) . "-{$hash}.log";
+		$old_path = $log_dir . StripeBillingMigrationLogHandler::HANDLE . '-' . gmdate( 'Y-m-d', $this->now - DAY_IN_SECONDS ) . "-{$hash}.log";
+		$new_path = $log_dir . StripeBillingMigrationLogHandler::HANDLE . '-' . gmdate( 'Y-m-d', $this->now ) . "-{$hash}.log";
 		// phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
 		file_put_contents( $old_path, "Old message from yesterday\n" );
 		file_put_contents( $new_path, "New message from today\n" );
