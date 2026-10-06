@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions;
 
 use Automattic\WooCommerce\Enums\OrderStatus;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use WC_Email;
 use WC_Email_Failed_Order;
 use WC_Order;
@@ -180,10 +181,8 @@ class WooPaymentsFailedAuthenticationRetryEmail extends WC_Email_Failed_Order {
 
 		$this->retry = $this->get_last_retry_for_order( $order );
 		if ( null === $this->retry ) {
-			wc_get_logger()->info(
-				'WCS_Retry_Manager class does not exist. Not able to send admin email about customer notification for authentication required for renewal payment.',
-				array( 'source' => 'woopayments-subscriptions' )
-			);
+			// The client writes this through its gated logger (class-wc-payments-email-failed-authentication-retry.php:172).
+			wc_get_container()->get( WooPaymentsLogger::class )->log( 'WCS_Retry_Manager class does not exist. Not able to send admin email about customer notification for authentication required for renewal payment.' );
 			$this->restore_locale();
 			return;
 		}
