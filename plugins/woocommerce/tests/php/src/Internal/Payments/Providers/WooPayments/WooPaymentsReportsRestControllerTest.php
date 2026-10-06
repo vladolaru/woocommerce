@@ -217,6 +217,28 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The Fees routes accept the dates the admin UI sends: day boundaries as UTC "Y-m-d H:i:s", like the client's formatDateValue().
+	 */
+	public function test_fees_routes_accept_the_admin_ui_dates(): void {
+		$this->create_controller( true, true )->register_routes();
+
+		foreach ( array( '/wc/v3/payments/reports/fees', '/wc/v3/payments/reports/fees/summary' ) as $route ) {
+			$request = new WP_REST_Request( 'GET', $route );
+			$request->set_query_params(
+				array(
+					'date_after'    => '2026-03-31 21:00:00',
+					'date_before'   => '2026-04-30 20:59:59',
+					'date_between'  => array( '2026-03-31 21:00:00', '2026-04-30 20:59:59' ),
+					'user_timezone' => '+03:00',
+				)
+			);
+			$response = $this->server->dispatch( $request );
+
+			$this->assertSame( 200, $response->get_status(), $route );
+		}
+	}
+
+	/**
 	 * Malformed report queries, one per input class.
 	 *
 	 * @return array<string,array{0:string,1:array<string,mixed>}>

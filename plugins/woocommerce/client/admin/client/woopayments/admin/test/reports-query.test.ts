@@ -12,6 +12,17 @@ import {
 } from '../reports/query';
 
 describe( 'WooPayments Reports query helpers', () => {
+	// Client 11.1.0 `formatDateValue()` takes the merchant's day; pin the browser at +03:00 so the UTC boundaries are fixed.
+	let timezoneSpy: jest.SpyInstance;
+	beforeEach( () => {
+		timezoneSpy = jest
+			.spyOn( Date.prototype, 'getTimezoneOffset' )
+			.mockReturnValue( -180 );
+	} );
+	afterEach( () => {
+		timezoneSpy.mockRestore();
+	} );
+
 	const timezonePattern = /^[+-]\d{2}:\d{2}$/;
 
 	it( 'serializes Balance currency in lowercase', () => {
@@ -70,10 +81,7 @@ describe( 'WooPayments Reports query helpers', () => {
 			per_page: 10,
 			sort: 'source',
 			direction: 'asc',
-			date_between: [
-				'2026-06-01T00:00:00.000Z',
-				'2026-06-19T23:59:59.999Z',
-			],
+			date_between: [ '2026-05-31 21:00:00', '2026-06-19 20:59:59' ],
 			payment_method_type: 'card',
 			type: [ 'refund' ],
 			search: [ 'txn_123' ],
@@ -85,15 +93,15 @@ describe( 'WooPayments Reports query helpers', () => {
 		[
 			'Previous month',
 			[ '2026-05-01', '2026-05-31' ],
-			[ '2026-05-01T00:00:00.000Z', '2026-05-31T23:59:59.999Z' ],
+			[ '2026-04-30 21:00:00', '2026-05-31 20:59:59' ],
 		],
 		[
 			'Previous year',
 			[ '2025-01-01', '2025-12-31' ],
-			[ '2025-01-01T00:00:00.000Z', '2025-12-31T23:59:59.999Z' ],
+			[ '2024-12-31 21:00:00', '2025-12-31 20:59:59' ],
 		],
 	] )(
-		'serializes %s date filters with inclusive UTC boundaries',
+		'serializes %s date filters at the merchant day boundaries',
 		( _, dates, expectedDates ) => {
 			const query = buildReportsFeesQueryFromView( {
 				type: 'table',
@@ -111,13 +119,11 @@ describe( 'WooPayments Reports query helpers', () => {
 					date_between: expectedDates,
 				} )
 			);
-			expect( serializeReportsFeesListQuery( query ) ).toContain(
-				`date_between%5B%5D=${ encodeURIComponent(
-					expectedDates[ 0 ]
-				) }&date_between%5B%5D=${ encodeURIComponent(
-					expectedDates[ 1 ]
-				) }`
-			);
+			expect(
+				new URLSearchParams(
+					serializeReportsFeesListQuery( query )
+				).getAll( 'date_between[]' )
+			).toEqual( expectedDates );
 		}
 	);
 

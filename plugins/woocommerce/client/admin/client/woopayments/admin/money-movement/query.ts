@@ -217,7 +217,14 @@ const formatUtcSqlDate = ( date: Date ) => {
 	) }:${ pad( date.getUTCSeconds() ) }`;
 };
 
-const formatLocalDateBoundaryForApi = (
+/**
+ * The start or end of a `YYYY-MM-DD` day in the merchant's time zone, as a UTC `Y-m-d H:i:s` string, like client
+ * 11.1.0 `formatDateValue()` (`client/utils/index.js:244-255`).
+ *
+ * @param value      The day.
+ * @param upperBound Whether to take the end of the day.
+ */
+export const formatLocalDateBoundaryForApi = (
 	value: string,
 	upperBound: boolean
 ) => {

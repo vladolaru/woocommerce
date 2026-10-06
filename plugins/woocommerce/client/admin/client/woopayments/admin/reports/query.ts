@@ -1,6 +1,7 @@
 /**
  * Internal dependencies
  */
+import { formatLocalDateBoundaryForApi } from '../money-movement/query';
 import type {
 	ReportsBalanceQuery,
 	ReportsFeesQuery,
@@ -102,11 +103,13 @@ const getSingleString = ( value: unknown ): string | undefined => {
 
 const isDateOnly = ( value: string ) => /^\d{4}-\d{2}-\d{2}$/.test( value );
 
-const toUtcDateRangeStart = ( value: string ) =>
-	isDateOnly( value ) ? `${ value }T00:00:00.000Z` : value;
+// Client 11.1.0 `data/reports/resolvers.js:36-43`: every date goes through `formatDateValue()`, the start of the day
+// for "after" and a range start, the end of the day for "before" and a range end, in the merchant's time zone.
+const toDayStart = ( value: string ) =>
+	isDateOnly( value ) ? formatLocalDateBoundaryForApi( value, false ) : value;
 
-const toUtcDateRangeEnd = ( value: string ) =>
-	isDateOnly( value ) ? `${ value }T23:59:59.999Z` : value;
+const toDayEnd = ( value: string ) =>
+	isDateOnly( value ) ? formatLocalDateBoundaryForApi( value, true ) : value;
 
 const getDateFilterQuery = (
 	value: unknown,
@@ -117,8 +120,8 @@ const getDateFilterQuery = (
 	if ( Array.isArray( dateRange ) && dateRange.length >= 2 ) {
 		return {
 			date_between: [
-				toUtcDateRangeStart( dateRange[ 0 ] ),
-				toUtcDateRangeEnd( dateRange[ 1 ] ),
+				toDayStart( dateRange[ 0 ] ),
+				toDayEnd( dateRange[ 1 ] ),
 			],
 		};
 	}
@@ -130,15 +133,15 @@ const getDateFilterQuery = (
 	}
 
 	if ( operator && operator.startsWith( 'before' ) ) {
-		return { date_before: date };
+		return { date_before: toDayEnd( date ) };
 	}
 
 	if ( operator && operator.startsWith( 'after' ) ) {
-		return { date_after: date };
+		return { date_after: toDayStart( date ) };
 	}
 
 	return {
-		date_between: [ date, date ],
+		date_between: [ toDayStart( date ), toDayEnd( date ) ],
 	};
 };
 
