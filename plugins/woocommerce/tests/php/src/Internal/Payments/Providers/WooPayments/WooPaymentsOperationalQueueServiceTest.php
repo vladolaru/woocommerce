@@ -1347,6 +1347,37 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Post-KYC activation email jobs leave the stage unrecorded when delivery fails, so a later job can retry it.
+	 */
+	public function test_post_kyc_activation_email_job_leaves_stage_unrecorded_after_failed_delivery(): void {
+		update_option( 'wcpay_kyc_completion_date', time() - 8 * DAY_IN_SECONDS, false );
+		add_filter( 'pre_wp_mail', '__return_false' );
+
+		$account_service = $this->create_account_service(
+			array(
+				'is_live'           => true,
+				'is_test_drive'     => false,
+				'payments_enabled'  => true,
+				'details_submitted' => true,
+				'capabilities'      => array(
+					'card_payments' => 'active',
+				),
+			),
+			false,
+			true,
+			false
+		);
+		$service         = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), null, $account_service );
+		$service->register();
+		$this->reset_mailer_emails();
+
+		$service->handle_wcpay_post_kyc_activation_email_send( 7 );
+
+		remove_filter( 'pre_wp_mail', '__return_false' );
+		$this->assertFalse( get_option( 'wcpay_post_kyc_activation_email_sent_stages' ) );
+	}
+
+	/**
 	 * @testdox Post-KYC activation email jobs fail closed when the WooCommerce email registry omits the preserved email.
 	 */
 	public function test_post_kyc_activation_email_job_skips_when_email_registry_omits_preserved_email(): void {
