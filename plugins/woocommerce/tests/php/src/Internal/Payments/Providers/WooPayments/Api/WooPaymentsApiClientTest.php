@@ -3000,6 +3000,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	private function assert_store_identity_in_onboarding_payload( array $body ): void {
 		$this->assertSame( 'store_123', $body['woocommerce_store_id'] );
 		$this->assertIsArray( $body['compatibility_data'] );
+		$this->assertSame( WooPaymentsClientVersion::VERSION, $body['compatibility_data']['woopayments_version'] );
 		$this->assertSame( WC_VERSION, $body['compatibility_data']['woocommerce_version'] );
 		$this->assertSame( get_stylesheet(), $body['compatibility_data']['blog_theme'] );
 	}

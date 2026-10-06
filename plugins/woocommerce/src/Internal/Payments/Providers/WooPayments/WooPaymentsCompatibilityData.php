@@ -11,7 +11,8 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
  * Store data the platform uses to check WooPayments compatibility with the site.
  *
  * Ports the client's compatibility data (client 11.1.0 `includes/class-compatibility-service.php:85-139`), sent on
- * account refreshes and theme switches and with every onboarding request.
+ * account refreshes and theme switches and with every onboarding request. The WooPayments version is the client release
+ * native was verified against, as in every other version native reports to the platform.
  *
  * @since 11.2.0
  * @internal Transitional internal component for the native payments runtime.
@@ -25,7 +26,7 @@ final class WooPaymentsCompatibilityData {
 	 */
 	public static function get(): array {
 		return array(
-			'woopayments_version'    => defined( 'WC_VERSION' ) ? WC_VERSION : '',
+			'woopayments_version'    => WooPaymentsClientVersion::VERSION,
 			'woocommerce_version'    => defined( 'WC_VERSION' ) ? WC_VERSION : '',
 			'woocommerce_permalinks' => get_option( 'woocommerce_permalinks', array() ),
 			'woocommerce_shop'       => self::get_permalink_for_page_id( 'shop' ),
