@@ -326,6 +326,52 @@ class WooPaymentsAdminNotesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Logs a failing note through the WooPayments logger with the note name and without the failure text, and still adds the other notes.
+	 */
+	public function test_logs_a_failing_note_without_its_message(): void {
+		$logger    = RecordingWcLogger::install();
+		$link_note = $this->createMock( WooPaymentsSetUpLinkNote::class );
+		$link_note->method( 'possibly_add_note' )->willThrowException( new \Error( 'platform text with acct_secret' ) );
+		$remediation_service = new WooPaymentsCanceledAuthorizationFeeRemediationService();
+		$remediation_service->init( new StaticNativeRuntimeArbiter( true ) );
+		$canceled_auth_remediation_note = new WooPaymentsCanceledAuthRemediationNote();
+		$canceled_auth_remediation_note->init( $remediation_service );
+		$sut = new WooPaymentsAdminNotesController();
+		$sut->init( new StaticNativeRuntimeArbiter( true ), new WooPaymentsSetHttpsForCheckoutNote(), $link_note, $canceled_auth_remediation_note );
+
+		$sut->add_woo_admin_notes();
+
+		$errors = $logger->get_errors();
+		$this->assertCount( 1, $errors );
+		$this->assertSame( 'Failed to add a WooPayments inbox note.', $errors[0][1] );
+		$this->assertSame( 'woopayments', $errors[0][2] );
+		$context = $logger->contexts[ array_search( $errors[0], $logger->lines, true ) ];
+		$this->assertSame( WooPaymentsSetUpLinkNote::NOTE_NAME, $context['note'] );
+		$this->assertStringNotContainsString( 'acct_secret', wp_json_encode( $logger->lines ) . wp_json_encode( $logger->contexts ) );
+		$this->get_single_note( WooPaymentsSetHttpsForCheckoutNote::NOTE_NAME );
+	}
+
+	/**
+	 * @testdox Logs nothing for a failing note's exception while WooPayments logging is off.
+	 */
+	public function test_keeps_a_failing_note_exception_behind_the_logging_setting(): void {
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$logger    = RecordingWcLogger::install();
+		$link_note = $this->createMock( WooPaymentsSetUpLinkNote::class );
+		$link_note->method( 'possibly_add_note' )->willThrowException( new \RuntimeException( 'platform text' ) );
+		$remediation_service = new WooPaymentsCanceledAuthorizationFeeRemediationService();
+		$remediation_service->init( new StaticNativeRuntimeArbiter( true ) );
+		$canceled_auth_remediation_note = new WooPaymentsCanceledAuthRemediationNote();
+		$canceled_auth_remediation_note->init( $remediation_service );
+		$sut = new WooPaymentsAdminNotesController();
+		$sut->init( new StaticNativeRuntimeArbiter( true ), new WooPaymentsSetHttpsForCheckoutNote(), $link_note, $canceled_auth_remediation_note );
+
+		$sut->add_woo_admin_notes();
+
+		$this->assertSame( array(), $logger->get_errors() );
+	}
+
+	/**
 	 * Create the controller.
 	 *
 	 * @param bool                $native_owns_runtime Whether native owns the payments runtime.

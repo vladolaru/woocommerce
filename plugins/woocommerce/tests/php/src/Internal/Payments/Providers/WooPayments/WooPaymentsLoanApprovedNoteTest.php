@@ -214,6 +214,22 @@ class WooPaymentsLoanApprovedNoteTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Logs an unexpected loan note failure through the WooPayments logger without its message.
+	 */
+	public function test_logs_an_unexpected_failure_without_its_message(): void {
+		$logger = RecordingWcLogger::install();
+		$this->api_client->method( 'get_capital_active_loan_summary' )->willThrowException( new \Error( 'platform text with acct_secret' ) );
+
+		$this->sut->handle_loan_approved_inbox_note( $this->get_active_loan_account() );
+
+		$errors = $logger->get_errors();
+		$this->assertCount( 1, $errors );
+		$this->assertSame( 'Failed to refresh the WooPayments loan approved note.', $errors[0][1] );
+		$this->assertSame( 'woopayments', $errors[0][2] );
+		$this->assertStringNotContainsString( 'acct_secret', wp_json_encode( $logger->lines ) . wp_json_encode( $logger->contexts ) );
+	}
+
+	/**
 	 * @testdox Adds no note when the loan summary is invalid.
 	 */
 	public function test_adds_no_note_when_summary_is_invalid(): void {

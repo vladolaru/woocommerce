@@ -100,10 +100,7 @@ class WooPaymentsLoanApprovedNote implements RegisterHooksInterface {
 
 			$this->possibly_add_note( $loan_info );
 		} catch ( Throwable $exception ) {
-			wc_get_logger()->error(
-				'Failed to refresh the native WooPayments loan approved note. ' . $exception->getMessage(),
-				array( 'source' => 'woopayments' )
-			);
+			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Failed to refresh the WooPayments loan approved note.', $exception );
 		}
 	}
 

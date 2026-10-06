@@ -98,23 +98,8 @@ class WooPaymentsAdminNotesController implements RegisterHooksInterface {
 			try {
 				$note->possibly_add_note();
 			} catch ( Throwable $exception ) {
-				$this->log_exception( $exception );
+				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Failed to add a WooPayments inbox note.', $exception, array( 'note' => $note::NOTE_NAME ) );
 			}
 		}
-	}
-
-	/**
-	 * Log a note failure without breaking the admin page.
-	 *
-	 * @param Throwable $exception Failure.
-	 */
-	private function log_exception( Throwable $exception ): void {
-		wc_get_logger()->error(
-			'Failed to add a native WooPayments inbox note.',
-			array(
-				'source'    => 'woopayments',
-				'exception' => $exception->getMessage(),
-			)
-		);
 	}
 }

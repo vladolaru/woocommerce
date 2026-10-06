@@ -98,6 +98,25 @@ class WooPaymentsAdminMenuBadgeServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should log a failed badge cache refresh with its cache key, without the failure text.
+	 */
+	public function test_logs_a_failed_badge_cache_refresh(): void {
+		add_filter( 'wcpay_dev_mode', '__return_true' );
+		$logger                        = RecordingWcLogger::install();
+		$api_client                    = $this->create_api_client();
+		$api_client->throw_on_disputes = true;
+
+		$this->create_service( $api_client )->get_disputes_awaiting_response_count();
+
+		$errors = $logger->get_errors();
+		$this->assertCount( 1, $errors );
+		$this->assertSame( 'Failed to refresh a WooPayments admin cache.', $errors[0][1] );
+		$context = $logger->contexts[ array_search( $errors[0], $logger->lines, true ) ];
+		$this->assertSame( 'wcpay_dispute_status_counts_cache', $context['cache_key'] );
+		$this->assertStringNotContainsString( 'Failed dispute count fetch', wp_json_encode( $logger->contexts ) );
+	}
+
+	/**
 	 * @testdox Should keep an errored badge cache for the full TTL, like the client database cache, so admin pages do not refetch.
 	 */
 	public function test_get_disputes_awaiting_response_count_keeps_cold_failure_for_the_full_ttl(): void {

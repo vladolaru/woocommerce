@@ -192,6 +192,7 @@ class WooPaymentsAdminMenuBadgeService {
 			}
 		} catch ( Throwable $exception ) {
 			$errored = true;
+			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Failed to refresh a WooPayments admin cache.', $exception, array( 'cache_key' => $key ) );
 		}
 
 		update_option(
