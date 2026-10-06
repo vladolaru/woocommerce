@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { Button, SelectControl } from '@wordpress/components';
+import { Button } from '@wordpress/components';
 import { speak } from '@wordpress/a11y';
 import { dateI18n } from '@wordpress/date';
 import { __, sprintf } from '@wordpress/i18n';
@@ -47,6 +47,7 @@ import {
 	useWooPaymentsExport,
 } from '../money-movement/export';
 import { useDataViewsReloadState } from '../money-movement/use-dataviews-reload-state';
+import { WooPaymentsFilterPicker } from '../money-movement/list-filters';
 import type {
 	ReportsBalanceQuery,
 	ReportsBalanceSummary,
@@ -1135,35 +1136,35 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 		>
 			<div className="woocommerce-woopayments-reports__toolbar">
 				<h2>{ __( 'Balance summary', 'woocommerce' ) }</h2>
-				<SelectControl
-					className="woocommerce-woopayments-reports__date-range"
-					label={ __( 'Date range', 'woocommerce' ) }
-					value={ activeDatePreset }
-					__next40pxDefaultSize
-					__nextHasNoMarginBottom
-					options={ [
-						{
-							label: __( 'Previous month', 'woocommerce' ),
-							value: 'last_month',
-						},
-						{
-							label: __( 'Previous year', 'woocommerce' ),
-							value: 'last_year',
-						},
-						{
-							label: __( 'Month to date', 'woocommerce' ),
-							value: 'month_to_date',
-						},
-						{
-							label: __( 'Year to date', 'woocommerce' ),
-							value: 'year_to_date',
-						},
-						{
-							label: __( 'Custom', 'woocommerce' ),
-							value: 'custom',
-						},
-					] }
-					onChange={ handlePresetChange }
+				<WooPaymentsFilterPicker
+					filter={ {
+						id: 'date-range',
+						label: __( 'Date range', 'woocommerce' ),
+						value: activeDatePreset,
+						options: [
+							{
+								label: __( 'Previous month', 'woocommerce' ),
+								value: 'last_month',
+							},
+							{
+								label: __( 'Previous year', 'woocommerce' ),
+								value: 'last_year',
+							},
+							{
+								label: __( 'Month to date', 'woocommerce' ),
+								value: 'month_to_date',
+							},
+							{
+								label: __( 'Year to date', 'woocommerce' ),
+								value: 'year_to_date',
+							},
+							{
+								label: __( 'Custom', 'woocommerce' ),
+								value: 'custom',
+							},
+						],
+						onChange: handlePresetChange,
+					} }
 				/>
 				<div className="woocommerce-woopayments-reports__actions">
 					<Button
@@ -1803,38 +1804,47 @@ const FeesReport = ( { now }: { now: Date } ) => {
 				header={
 					<div className="woocommerce-woopayments-reports__toolbar">
 						<h2>{ __( 'Fees', 'woocommerce' ) }</h2>
-						<SelectControl
-							className="woocommerce-woopayments-reports__date-range"
-							label={ __( 'Date range', 'woocommerce' ) }
-							value={ activeDatePreset }
-							__next40pxDefaultSize
-							__nextHasNoMarginBottom
-							options={ [
-								{
-									label: __(
-										'Previous month',
-										'woocommerce'
-									),
-									value: 'last_month',
-								},
-								{
-									label: __( 'Previous year', 'woocommerce' ),
-									value: 'last_year',
-								},
-								{
-									label: __( 'Month to date', 'woocommerce' ),
-									value: 'month_to_date',
-								},
-								{
-									label: __( 'Year to date', 'woocommerce' ),
-									value: 'year_to_date',
-								},
-								{
-									label: __( 'Custom', 'woocommerce' ),
-									value: 'custom',
-								},
-							] }
-							onChange={ handlePresetChange }
+						<WooPaymentsFilterPicker
+							filter={ {
+								id: 'date-range',
+								label: __( 'Date range', 'woocommerce' ),
+								value: activeDatePreset,
+								options: [
+									{
+										label: __(
+											'Previous month',
+											'woocommerce'
+										),
+										value: 'last_month',
+									},
+									{
+										label: __(
+											'Previous year',
+											'woocommerce'
+										),
+										value: 'last_year',
+									},
+									{
+										label: __(
+											'Month to date',
+											'woocommerce'
+										),
+										value: 'month_to_date',
+									},
+									{
+										label: __(
+											'Year to date',
+											'woocommerce'
+										),
+										value: 'year_to_date',
+									},
+									{
+										label: __( 'Custom', 'woocommerce' ),
+										value: 'custom',
+									},
+								],
+								onChange: handlePresetChange,
+							} }
 						/>
 						<Button
 							variant="primary"

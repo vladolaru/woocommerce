@@ -28,6 +28,11 @@ import {
 	requestWooPaymentsReportsFeesExport,
 } from '../reports/data';
 import { formatAmount as formatMoneyMovementAmount } from '../money-movement/utils';
+import {
+	chooseFilter,
+	getFilterPicker,
+	getFilterPickerChoices,
+} from './helpers/filter-picker';
 
 // The export raises snackbars; other stores keep the real dispatch.
 jest.mock( '@wordpress/data', () => {
@@ -747,16 +752,12 @@ describe( 'WooPaymentsReportsPage', () => {
 		renderReportsPage();
 
 		await screen.findByRole( 'heading', { name: 'Balance summary' } );
-		const dateRange = screen.getByLabelText( 'Date range' );
+		await userEvent.click( getFilterPicker( 'Date range' ) );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Year to date' } )
+		);
 
-		dateRange.focus();
-		fireEvent.change( dateRange, {
-			target: {
-				value: 'year_to_date',
-			},
-		} );
-
-		expect( screen.getByLabelText( 'Date range' ) ).toHaveFocus();
+		expect( getFilterPicker( 'Date range' ) ).toHaveFocus();
 
 		await waitFor( () =>
 			expect( mockGetBalanceSummary ).toHaveBeenLastCalledWith( {
@@ -777,7 +778,6 @@ describe( 'WooPaymentsReportsPage', () => {
 		await userEvent.click(
 			screen.getByRole( 'button', { name: 'Apply detailed fees view' } )
 		);
-		const feesDateRange = screen.getByLabelText( 'Date range' );
 
 		// The Previous month request hangs; the Previous year request answers first.
 		mockGetFees
@@ -790,12 +790,8 @@ describe( 'WooPaymentsReportsPage', () => {
 			.mockImplementation( async () => [
 				{ ...feeRow, transaction_id: 'txn_new' },
 			] );
-		fireEvent.change( feesDateRange, {
-			target: { value: 'last_month' },
-		} );
-		fireEvent.change( feesDateRange, {
-			target: { value: 'last_year' },
-		} );
+		chooseFilter( 'Date range', 'Previous month' );
+		chooseFilter( 'Date range', 'Previous year' );
 		await screen.findByRole( 'link', { name: 'txn_new' } );
 
 		await act( async () => {
@@ -818,7 +814,6 @@ describe( 'WooPaymentsReportsPage', () => {
 		await userEvent.click(
 			screen.getByRole( 'button', { name: 'Apply detailed fees view' } )
 		);
-		const feesDateRange = screen.getByLabelText( 'Date range' );
 
 		mockGetFees
 			.mockImplementationOnce(
@@ -830,12 +825,8 @@ describe( 'WooPaymentsReportsPage', () => {
 			.mockImplementation( async () => [
 				{ ...feeRow, transaction_id: 'txn_new' },
 			] );
-		fireEvent.change( feesDateRange, {
-			target: { value: 'last_month' },
-		} );
-		fireEvent.change( feesDateRange, {
-			target: { value: 'last_year' },
-		} );
+		chooseFilter( 'Date range', 'Previous month' );
+		chooseFilter( 'Date range', 'Previous year' );
 		await screen.findByRole( 'link', { name: 'txn_new' } );
 
 		await act( async () => {
@@ -859,7 +850,7 @@ describe( 'WooPaymentsReportsPage', () => {
 		await waitFor( () =>
 			expect( mockGetBalanceSummary ).toHaveBeenCalledTimes( 1 )
 		);
-		const balanceDateRange = await screen.findByLabelText( 'Date range' );
+		await screen.findByLabelText( 'Date range', { selector: 'button' } );
 
 		mockGetBalanceSummary
 			.mockImplementationOnce(
@@ -872,12 +863,8 @@ describe( 'WooPaymentsReportsPage', () => {
 				...balanceSummary,
 				ending_balance: { amount: 222222 },
 			} ) );
-		fireEvent.change( balanceDateRange, {
-			target: { value: 'last_year' },
-		} );
-		fireEvent.change( balanceDateRange, {
-			target: { value: 'last_month' },
-		} );
+		chooseFilter( 'Date range', 'Previous year' );
+		chooseFilter( 'Date range', 'Previous month' );
 		await screen.findByText( /2,222\.22/ );
 
 		await act( async () => {
@@ -896,21 +883,15 @@ describe( 'WooPaymentsReportsPage', () => {
 		renderReportsPage();
 
 		await screen.findByRole( 'heading', { name: 'Balance summary' } );
-		const balanceDateRange = screen.getByLabelText( 'Date range' );
-		expect(
-			within( balanceDateRange ).getByRole( 'option', {
-				name: 'Previous month',
-			} )
-		).toBeInTheDocument();
-		expect(
-			within( balanceDateRange ).getByRole( 'option', {
-				name: 'Previous year',
-			} )
-		).toBeInTheDocument();
+		expect( getFilterPickerChoices( 'Date range' ) ).toEqual( [
+			'Previous month',
+			'Previous year',
+			'Month to date',
+			'Year to date',
+			'Custom',
+		] );
 
-		fireEvent.change( balanceDateRange, {
-			target: { value: 'last_month' },
-		} );
+		chooseFilter( 'Date range', 'Previous month' );
 
 		await waitFor( () =>
 			expect( mockGetBalanceSummary ).toHaveBeenLastCalledWith( {
@@ -920,9 +901,7 @@ describe( 'WooPaymentsReportsPage', () => {
 			} )
 		);
 
-		fireEvent.change( balanceDateRange, {
-			target: { value: 'last_year' },
-		} );
+		chooseFilter( 'Date range', 'Previous year' );
 
 		await waitFor( () =>
 			expect( mockGetBalanceSummary ).toHaveBeenLastCalledWith( {
@@ -937,21 +916,15 @@ describe( 'WooPaymentsReportsPage', () => {
 		await userEvent.click(
 			screen.getByRole( 'button', { name: 'Apply detailed fees view' } )
 		);
-		const feesDateRange = screen.getByLabelText( 'Date range' );
-		expect(
-			within( feesDateRange ).getByRole( 'option', {
-				name: 'Previous month',
-			} )
-		).toBeInTheDocument();
-		expect(
-			within( feesDateRange ).getByRole( 'option', {
-				name: 'Previous year',
-			} )
-		).toBeInTheDocument();
+		expect( getFilterPickerChoices( 'Date range' ) ).toEqual( [
+			'Previous month',
+			'Previous year',
+			'Month to date',
+			'Year to date',
+			'Custom',
+		] );
 
-		fireEvent.change( feesDateRange, {
-			target: { value: 'last_month' },
-		} );
+		chooseFilter( 'Date range', 'Previous month' );
 
 		await waitFor( () =>
 			expect( mockGetFees ).toHaveBeenLastCalledWith(
@@ -970,9 +943,7 @@ describe( 'WooPaymentsReportsPage', () => {
 			)
 		);
 
-		fireEvent.change( feesDateRange, {
-			target: { value: 'last_year' },
-		} );
+		chooseFilter( 'Date range', 'Previous year' );
 
 		await waitFor( () =>
 			expect( mockGetFees ).toHaveBeenLastCalledWith(
