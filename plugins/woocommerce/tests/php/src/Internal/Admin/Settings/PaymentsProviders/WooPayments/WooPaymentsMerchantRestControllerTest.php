@@ -1396,6 +1396,33 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Each write route has its own permission callback; a public callback copied onto one must fail here.
+	 *
+	 * @testdox Should refuse the $method $route write route to an anonymous visitor and to a subscriber without calling a service.
+	 * @testWith ["POST", "/wc/v3/payments/settings"]
+	 *           ["POST", "/wc/v3/payments/settings/is_woopay_enabled"]
+	 *           ["POST", "/wc/v3/payments/file"]
+	 *           ["POST", "/wc/v3/payments/pm-promotions/klarna-promo__spotlight/activate"]
+	 *           ["POST", "/wc/v3/payments/pm-promotions/klarna-promo__spotlight/dismiss"]
+	 *
+	 * @param string $method HTTP method.
+	 * @param string $route  Route path.
+	 */
+	public function test_write_routes_refuse_users_without_manager_permission( string $method, string $route ): void {
+		foreach ( array( $this->mock_settings_service, $this->mock_pm_promotions_service, $this->mock_woopayments_service ) as $service ) {
+			$service->expects( $this->never() )->method( $this->anything() );
+		}
+
+		foreach ( array( 0, $this->factory->user->create( array( 'role' => 'subscriber' ) ) ) as $user_id ) {
+			wp_set_current_user( $user_id );
+			$request = new WP_REST_Request( $method, $route );
+			$request->set_body_params( array( 'value' => true ) );
+
+			$this->assertSame( rest_authorization_required_code(), $this->server->dispatch( $request )->get_status(), "user $user_id" );
+		}
+	}
+
+	/**
 	 * @testdox Should require payment gateway management permission for native payment method promotions.
 	 */
 	public function test_get_native_pm_promotions_requires_manager_permission(): void {
