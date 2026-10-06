@@ -902,6 +902,41 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
+	 * @testdox Transaction dates are shifted from the merchant's time zone to the store's for the list, summary and export.
+	 *
+	 * Client 11.1.0 format_transaction_date_with_timestamp() (class-wc-rest-payments-transactions-controller.php:275-293): a
+	 * store in Chicago (UTC-5 in June) and a browser at +03:00 move 10:00 by eight hours.
+	 */
+	public function test_transaction_dates_shift_by_the_merchant_time_zone(): void {
+		update_option( 'timezone_string', 'America/Chicago' );
+		$this->create_transactions_controller( true )->register_routes();
+		$query = array(
+			'date_after'    => '2026-06-18 10:00:00',
+			'date_between'  => array( '2026-06-18 10:00:00', '2026-06-19 10:00:00' ),
+			'user_timezone' => '+03:00',
+		);
+
+		$list = new WP_REST_Request( 'GET', '/wc/v3/payments/transactions' );
+		$list->set_query_params( $query );
+		$this->server->dispatch( $list );
+		$list_query = $this->api_client->last_call['query'];
+
+		$summary = new WP_REST_Request( 'GET', '/wc/v3/payments/transactions/summary' );
+		$summary->set_query_params( $query );
+		$this->server->dispatch( $summary );
+		$summary_filters = $this->api_client->last_call['filters'];
+
+		$export = new WP_REST_Request( 'POST', '/wc/v3/payments/transactions/download' );
+		$export->set_body_params( $query + array( 'user_email' => 'merchant@example.com' ) );
+		$this->server->dispatch( $export );
+
+		foreach ( array( $list_query, $summary_filters, $this->api_client->last_call['filters'] ) as $sent ) {
+			$this->assertSame( '2026-06-18 18:00:00', $sent['date_after'] );
+			$this->assertSame( array( '2026-06-18 18:00:00', '2026-06-19 18:00:00' ), $sent['date_between'] );
+		}
+	}
+
+	/**
 	 * @testdox Transactions routes require manage_woocommerce before API calls.
 	 */
 	public function test_transactions_routes_require_manage_woocommerce(): void {
