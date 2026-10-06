@@ -357,7 +357,29 @@ class WooPaymentsIntentCodec {
 				PaymentOutcome::DATA_ERROR_MESSAGE         => $exception->getMessage(),
 				PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE => self::shopper_message_for_exception( $error_code, $exception ),
 				'operation'                                => $operation,
+				// The admin capture and cancel routes answer with the platform's status and minimum amount, as the client does.
+				'http_code'                                => $exception->get_http_code(),
+				'extra_details'                            => self::amount_too_small_details( $error_code, $exception ),
 			)
+		);
+	}
+
+	/**
+	 * Get the minimum amount an amount_too_small platform error carries, as the client's Amount_Too_Small_Exception exposes it.
+	 *
+	 * @param string                  $error_code Platform error code.
+	 * @param WooPaymentsApiException $exception  Platform error.
+	 * @return array<string,int|string> minimum_amount and minimum_amount_currency, or empty for any other error.
+	 */
+	private static function amount_too_small_details( string $error_code, WooPaymentsApiException $exception ): array {
+		$error_data = $exception->get_error_data();
+		if ( 'amount_too_small' !== $error_code || ! isset( $error_data['minimum_amount'], $error_data['currency'] ) || ! is_numeric( $error_data['minimum_amount'] ) || ! is_string( $error_data['currency'] ) ) {
+			return array();
+		}
+
+		return array(
+			'minimum_amount'          => (int) $error_data['minimum_amount'],
+			'minimum_amount_currency' => strtoupper( $error_data['currency'] ),
 		);
 	}
 

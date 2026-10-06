@@ -351,6 +351,159 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	}
 
 	/**
+	 * @testdox A failed authorization capture or cancel answers the client's code, message and status.
+	 *
+	 * Client 11.1.0 class-wc-rest-payments-orders-controller.php:403-425 (capture) and :645-656 (cancel).
+	 *
+	 * @dataProvider provide_failed_authorization_outcomes
+	 *
+	 * @param string              $action   Route action.
+	 * @param array<string,mixed> $data     Failed outcome data, as WooPaymentsIntentCodec::failed_transport_outcome() builds it.
+	 * @param array<string,mixed> $expected Expected code, message and error data.
+	 */
+	public function test_failed_authorization_action_answers_the_client_error( string $action, array $data, array $expected ): void {
+		$processing_service = new class( $data ) extends PaymentProcessingService {
+			/**
+			 * Failed outcome data.
+			 *
+			 * @var array<string,mixed>
+			 */
+			private array $data;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array<string,mixed> $data Failed outcome data.
+			 */
+			public function __construct( array $data ) {
+				$this->data = $data;
+			}
+
+			/**
+			 * Capture a payment.
+			 *
+			 * @param PaymentContext   $context  Payment context.
+			 * @param ProviderContract $provider Payment provider.
+			 * @return PaymentOutcome
+			 */
+			public function capture( PaymentContext $context, ProviderContract $provider ): PaymentOutcome {
+				return new PaymentOutcome( PaymentOutcome::STATUS_FAILED, 'pi_auth', '', '', '', $this->data );
+			}
+
+			/**
+			 * Cancel a payment.
+			 *
+			 * @param PaymentContext   $context  Payment context.
+			 * @param ProviderContract $provider Payment provider.
+			 * @return PaymentOutcome
+			 */
+			public function cancel( PaymentContext $context, ProviderContract $provider ): PaymentOutcome {
+				return new PaymentOutcome( PaymentOutcome::STATUS_FAILED, 'pi_auth', '', '', '', $this->data );
+			}
+		};
+		$this->create_authorizations_controller( true, $processing_service )->register_routes();
+		$order                      = $this->create_authorized_order( 'pi_auth' );
+		$this->api_client->response = array(
+			'id'       => 'pi_auth',
+			'status'   => 'requires_capture',
+			'metadata' => array( 'order_id' => (string) $order->get_id() ),
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/' . $action . '_authorization' );
+		$request->set_body_params( array( 'payment_intent_id' => 'pi_auth' ) );
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( $expected['status'], $response->get_status() );
+		$this->assertSame( $expected['code'], $response->get_data()['code'] );
+		$this->assertSame( $expected['message'], $response->get_data()['message'] );
+		$this->assertSame( $expected['data'], $response->get_data()['data'] );
+	}
+
+	/**
+	 * Failed outcomes and the client's answers.
+	 *
+	 * @return array<string,array{0:string,1:array<string,mixed>,2:array<string,mixed>}>
+	 */
+	public function provide_failed_authorization_outcomes(): array {
+		$capture_prefix = 'Payment capture failed to complete with the following message: ';
+
+		return array(
+			'capture declined'         => array(
+				'capture',
+				array(
+					PaymentOutcome::DATA_ERROR_CODE    => 'card_declined',
+					PaymentOutcome::DATA_ERROR_MESSAGE => 'Error: <b>Declined</b>.',
+					'http_code'                        => 402,
+					'extra_details'                    => array(),
+				),
+				array(
+					'status'  => 402,
+					'code'    => 'wcpay_capture_error',
+					'message' => $capture_prefix . 'Error: &lt;b&gt;Declined&lt;/b&gt;.',
+					'data'    => array(
+						'status'        => 402,
+						'extra_details' => array(),
+						'error_type'    => 'card_declined',
+					),
+				),
+			),
+			'capture amount too small' => array(
+				'capture',
+				array(
+					PaymentOutcome::DATA_ERROR_CODE    => 'amount_too_small',
+					PaymentOutcome::DATA_ERROR_MESSAGE => 'Amount must be at least $0.50 usd',
+					'http_code'                        => 400,
+					'extra_details'                    => array(
+						'minimum_amount'          => 50,
+						'minimum_amount_currency' => 'USD',
+					),
+				),
+				array(
+					'status'  => 400,
+					'code'    => 'wcpay_capture_error',
+					'message' => $capture_prefix . 'Amount must be at least $0.50 usd The minimum amount to capture is $0.50 USD.',
+					'data'    => array(
+						'status'        => 400,
+						'extra_details' => array(
+							'minimum_amount'          => 50,
+							'minimum_amount_currency' => 'USD',
+						),
+						'error_type'    => 'amount_too_small',
+					),
+				),
+			),
+			'capture without message'  => array(
+				'capture',
+				array(),
+				array(
+					'status'  => 502,
+					'code'    => 'wcpay_capture_error',
+					'message' => $capture_prefix . 'Unknown error',
+					'data'    => array(
+						'status'        => 502,
+						'extra_details' => array(),
+						'error_type'    => null,
+					),
+				),
+			),
+			'cancel refused'           => array(
+				'cancel',
+				array(
+					PaymentOutcome::DATA_ERROR_CODE    => 'payment_intent_unexpected_state',
+					PaymentOutcome::DATA_ERROR_MESSAGE => 'The PaymentIntent is in an unexpected state.',
+					'http_code'                        => 400,
+				),
+				array(
+					'status'  => 502,
+					'code'    => 'wcpay_cancel_error',
+					'message' => 'Payment cancel failed to complete with the following message: The PaymentIntent is in an unexpected state.',
+					'data'    => array( 'status' => 502 ),
+				),
+			),
+		);
+	}
+
+	/**
 	 * @testdox Authorization actions validate order state before delegating to native payment processing.
 	 */
 	public function test_authorization_actions_validate_order_state_before_processing(): void {

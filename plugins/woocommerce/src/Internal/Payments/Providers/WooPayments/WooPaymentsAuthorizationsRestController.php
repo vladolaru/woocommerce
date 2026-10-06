@@ -564,22 +564,54 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 	}
 
 	/**
-	 * Convert a failed action outcome to a REST error.
+	 * Convert a failed action outcome to the client's REST error.
+	 *
+	 * Client 11.1.0 answers a failed capture with wcpay_capture_error, the escaped platform message, the minimum amount for
+	 * amount_too_small, the platform's status and the error type (class-wc-rest-payments-orders-controller.php:410-425,
+	 * class-wc-payment-gateway-wcpay.php:3991-4061), and a failed cancel with wcpay_cancel_error at 502 (:648-658).
 	 *
 	 * @param PaymentOutcome $outcome Outcome.
 	 * @param string         $action  Action name.
 	 * @return WP_Error
 	 */
 	private function authorization_action_error( PaymentOutcome $outcome, string $action ): WP_Error {
-		$data          = $outcome->get_data();
-		$error_code    = isset( $data['error_code'] ) && '' !== (string) $data['error_code'] ? (string) $data['error_code'] : ( 'capture' === $action ? 'wcpay_capture_error' : 'wcpay_cancel_error' );
-		$error_message = isset( $data['error_message'] ) && '' !== (string) $data['error_message'] ? (string) $data['error_message'] : ( 'capture' === $action ? __( 'The payment capture failed to complete.', 'woocommerce' ) : __( 'The payment cancellation failed to complete.', 'woocommerce' ) );
+		$data    = $outcome->get_data();
+		$message = isset( $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] ) ? (string) $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] : '';
+
+		if ( 'cancel' === $action ) {
+			return new WP_Error(
+				'wcpay_cancel_error',
+				sprintf(
+					/* translators: %s: the error message. */
+					__( 'Payment cancel failed to complete with the following message: %s', 'woocommerce' ),
+					'' !== $message ? $message : __( 'Unknown error', 'woocommerce' )
+				),
+				array( 'status' => 502 )
+			);
+		}
+
+		$error_type    = isset( $data[ PaymentOutcome::DATA_ERROR_CODE ] ) && '' !== (string) $data[ PaymentOutcome::DATA_ERROR_CODE ] ? (string) $data[ PaymentOutcome::DATA_ERROR_CODE ] : null;
+		$http_code     = isset( $data['http_code'] ) ? (int) $data['http_code'] : 0;
+		$extra_details = isset( $data['extra_details'] ) && is_array( $data['extra_details'] ) ? $data['extra_details'] : array();
+		if ( isset( $extra_details['minimum_amount'], $extra_details['minimum_amount_currency'] ) ) {
+			$message .= ' ' . sprintf(
+				/* translators: %s: formatted minimum amount with currency. */
+				__( 'The minimum amount to capture is %s.', 'woocommerce' ),
+				wc_get_container()->get( WooPaymentsOrderDataService::class )->format_explicit_currency_amount( (int) $extra_details['minimum_amount'], (string) $extra_details['minimum_amount_currency'] )
+			);
+		}
 
 		return new WP_Error(
-			$error_code,
-			$error_message,
+			'wcpay_capture_error',
+			sprintf(
+				/* translators: %s: the error message. */
+				__( 'Payment capture failed to complete with the following message: %s', 'woocommerce' ),
+				'' !== $message ? esc_html( $message ) : __( 'Unknown error', 'woocommerce' )
+			),
 			array(
-				'status' => 502,
+				'status'        => '' !== $message && 0 < $http_code ? $http_code : 502,
+				'extra_details' => $extra_details,
+				'error_type'    => $error_type,
 			)
 		);
 	}

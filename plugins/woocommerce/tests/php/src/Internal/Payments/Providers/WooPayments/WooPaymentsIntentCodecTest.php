@@ -376,6 +376,39 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Failed transport outcomes carry the platform status and an amount_too_small minimum, as the admin capture route answers them.
+	 */
+	public function test_failed_transport_outcome_carries_status_and_minimum_amount(): void {
+		// The platform's top-level amount_too_small envelope, mapped by the client to Amount_Too_Small_Exception (class-wc-payments-api-client.php:2845-2851).
+		$too_small = WooPaymentsIntentCodec::failed_transport_outcome(
+			'capture',
+			new WooPaymentsApiException(
+				'Amount must be at least $0.50 usd',
+				'amount_too_small',
+				400,
+				'',
+				'',
+				array(
+					'minimum_amount' => 50,
+					'currency'       => 'usd',
+				)
+			)
+		);
+		$declined  = WooPaymentsIntentCodec::failed_transport_outcome( 'capture', new WooPaymentsApiException( 'Declined.', 'card_declined', 402 ) );
+
+		$this->assertSame( 400, $too_small->get_data()['http_code'] );
+		$this->assertSame(
+			array(
+				'minimum_amount'          => 50,
+				'minimum_amount_currency' => 'USD',
+			),
+			$too_small->get_data()['extra_details']
+		);
+		$this->assertSame( 402, $declined->get_data()['http_code'] );
+		$this->assertSame( array(), $declined->get_data()['extra_details'] );
+	}
+
+	/**
 	 * @testdox Failed transport outcomes preserve grounded platform messages without changing diagnostic copy.
 	 *
 	 * @dataProvider grounded_transport_error_data
