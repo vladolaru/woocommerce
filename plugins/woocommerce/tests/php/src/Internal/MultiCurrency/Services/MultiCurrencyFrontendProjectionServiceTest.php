@@ -299,6 +299,22 @@ class MultiCurrencyFrontendProjectionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should report the store currency code only while a compatibility filter asks for it, as during a FedEx or UPS rate request.
+	 */
+	public function test_reports_the_store_currency_code_while_a_compatibility_filter_asks_for_it(): void {
+		$sut = $this->create_service( $this->create_state( 'GBP' ) );
+		$this->assertSame( 'GBP', $sut->get_woocommerce_currency() );
+
+		// The client checks the filter on every woocommerce_currency lookup (client 11.1.0 `includes/multi-currency/FrontendCurrencies.php:191-199`).
+		add_filter( 'wcpay_multi_currency_should_return_store_currency', '__return_true' );
+		$this->assertSame( 'USD', $sut->get_woocommerce_currency() );
+		$this->assertSame( 'USD', $sut->get_woocommerce_currency( 'EUR' ) );
+
+		remove_filter( 'wcpay_multi_currency_should_return_store_currency', '__return_true' );
+		$this->assertSame( 'GBP', $sut->get_woocommerce_currency() );
+	}
+
+	/**
 	 * Create the projection service.
 	 *
 	 * @param MultiCurrencyState $state       Multi-currency state.

@@ -72,7 +72,22 @@ class MultiCurrencyFrontendProjectionService {
 	 * @return string
 	 */
 	public function get_woocommerce_currency( ?string $order_currency = null ): string {
-		return $this->get_currency_code( $this->state_builder->build(), $order_currency );
+		$state = $this->state_builder->build();
+
+		/**
+		 * Filters whether WooCommerce sees the store currency code instead of the selected one, as FedEx and UPS rate requests need.
+		 *
+		 * Asked on every lookup (client 11.1.0 `includes/multi-currency/FrontendCurrencies.php:191-199`).
+		 *
+		 * @param bool $should_return_store_currency Whether to return the store currency code.
+		 *
+		 * @since 11.0.0
+		 */
+		if ( (bool) apply_filters( 'wcpay_multi_currency_should_return_store_currency', false ) ) {
+			return $state->get_default_currency()->get_code();
+		}
+
+		return $this->get_currency_code( $state, $order_currency );
 	}
 
 	/**

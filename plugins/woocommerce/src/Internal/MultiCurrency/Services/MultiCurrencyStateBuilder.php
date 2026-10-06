@@ -24,8 +24,7 @@ class MultiCurrencyStateBuilder {
 	const CURRENCY_STORAGE_KEY    = 'wcpay_currency';
 	const CUSTOMER_CURRENCIES_KEY = 'wcpay_multi_currency_stored_customer_currencies';
 
-	private const FILTER_OVERRIDE_SELECTED_CURRENCY   = 'wcpay_multi_currency_override_selected_currency';
-	private const FILTER_SHOULD_RETURN_STORE_CURRENCY = 'wcpay_multi_currency_should_return_store_currency';
+	private const FILTER_OVERRIDE_SELECTED_CURRENCY = 'wcpay_multi_currency_override_selected_currency';
 
 	/**
 	 * Localization service.
@@ -172,10 +171,14 @@ class MultiCurrencyStateBuilder {
 			$enabled[ $currency_code ] = $currency;
 		}
 
-		$selected_code = $this->get_selected_currency_code( $default_code );
-		$selected      = $selected_code && isset( $enabled[ $selected_code ] )
-			? $enabled[ $selected_code ]
-			: $default;
+		$stored_code = $this->get_stored_currency_code();
+		$stored      = $stored_code && isset( $enabled[ $stored_code ] ) ? $enabled[ $stored_code ] : $default;
+		// The override filter is asked on every read, as compatibility code changes it mid-request (client 11.1.0 `MultiCurrency.php:802-810`).
+		$selected = static function () use ( $enabled, $default, $stored ): MultiCurrencyCurrency {
+			$override_code = self::get_override_currency_code();
+
+			return null === $override_code ? $stored : ( $enabled[ $override_code ] ?? $default );
+		};
 
 		$this->cached_state            = new MultiCurrencyState( $available, $enabled, $default, $selected, \Closure::fromCallable( array( $this, 'get_customer_currencies' ) ) );
 		$this->cached_state_generation = $current_generation;
@@ -423,23 +426,11 @@ class MultiCurrencyStateBuilder {
 	}
 
 	/**
-	 * Get the selected currency code after applying compatibility filters.
+	 * Get the selected-currency override from compatibility filters.
 	 *
-	 * @param string $default_code Default currency code.
-	 * @return string|null
+	 * @return string|null Currency code, or null when nothing overrides the shopper's selection.
 	 */
-	private function get_selected_currency_code( string $default_code ): ?string {
-		/**
-		 * Filters whether native multi-currency should force store currency.
-		 *
-		 * @param bool $should_return_store_currency Whether to force store currency.
-		 *
-		 * @since 11.0.0
-		 */
-		if ( (bool) apply_filters( self::FILTER_SHOULD_RETURN_STORE_CURRENCY, false ) ) {
-			return $default_code;
-		}
-
+	private static function get_override_currency_code(): ?string {
 		/**
 		 * Filters the selected native multi-currency code.
 		 *
@@ -449,11 +440,7 @@ class MultiCurrencyStateBuilder {
 		 */
 		$override_currency_code = apply_filters( self::FILTER_OVERRIDE_SELECTED_CURRENCY, false );
 
-		if ( is_scalar( $override_currency_code ) && '' !== trim( (string) $override_currency_code ) ) {
-			return strtoupper( trim( (string) $override_currency_code ) );
-		}
-
-		return $this->get_stored_currency_code();
+		return is_scalar( $override_currency_code ) && '' !== trim( (string) $override_currency_code ) ? strtoupper( trim( (string) $override_currency_code ) ) : null;
 	}
 
 	/**

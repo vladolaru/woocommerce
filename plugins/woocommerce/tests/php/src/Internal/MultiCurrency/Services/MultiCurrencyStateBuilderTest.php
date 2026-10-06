@@ -393,9 +393,9 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should force store currency when compatibility filter requests it.
+	 * @testdox Should keep the shopper's selected currency when a compatibility filter asks for the store currency code.
 	 */
-	public function test_forces_store_currency_when_compatibility_filter_requests_it(): void {
+	public function test_keeps_selected_currency_when_compatibility_filter_asks_for_the_store_currency_code(): void {
 		$user_id = self::factory()->user->create();
 		wp_set_current_user( $user_id );
 		update_user_meta( $user_id, 'wcpay_currency', 'GBP' );
@@ -406,7 +406,35 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 
 		$state = $this->create_builder()->build();
 
-		$this->assertSame( 'USD', $state->get_selected_currency()->get_code() );
+		// The client reads this filter only for the woocommerce_currency code (client 11.1.0 `includes/multi-currency/FrontendCurrencies.php:191-199`).
+		$this->assertSame( 'GBP', $state->get_selected_currency()->get_code() );
+	}
+
+	/**
+	 * @testdox Should apply a selected-currency override added after the state was built.
+	 */
+	public function test_applies_a_selected_currency_override_on_each_lookup(): void {
+		$user_id = self::factory()->user->create();
+		wp_set_current_user( $user_id );
+		update_user_meta( $user_id, 'wcpay_currency', 'GBP' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP', 'EUR' ) );
+		foreach ( array(
+			'gbp' => '0.8',
+			'eur' => '0.9',
+		) as $code => $rate ) {
+			update_option( 'wcpay_multi_currency_exchange_rate_' . $code, 'manual' );
+			update_option( 'wcpay_multi_currency_manual_rate_' . $code, $rate );
+		}
+		$state = $this->create_builder()->build();
+		$this->assertSame( 'GBP', $state->get_selected_currency()->get_code() );
+
+		// The client applies the override on every lookup (client 11.1.0 `includes/multi-currency/MultiCurrency.php:802-810`).
+		$override = static fn() => 'EUR';
+		add_filter( 'wcpay_multi_currency_override_selected_currency', $override );
+		$this->assertSame( 'EUR', $state->get_selected_currency()->get_code() );
+
+		remove_filter( 'wcpay_multi_currency_override_selected_currency', $override );
+		$this->assertSame( 'GBP', $state->get_selected_currency()->get_code() );
 	}
 
 	/**

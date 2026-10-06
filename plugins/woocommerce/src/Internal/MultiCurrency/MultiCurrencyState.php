@@ -43,11 +43,11 @@ class MultiCurrencyState {
 	private MultiCurrencyCurrency $default_currency;
 
 	/**
-	 * Selected currency.
+	 * Selected currency, or a resolver asked on every read.
 	 *
-	 * @var MultiCurrencyCurrency
+	 * @var MultiCurrencyCurrency|\Closure
 	 */
-	private MultiCurrencyCurrency $selected_currency;
+	private $selected_currency;
 
 	/**
 	 * Customer-used currency codes, or a loader resolved on first read.
@@ -62,14 +62,15 @@ class MultiCurrencyState {
 	 * @param array<string,MultiCurrencyCurrency> $available_currencies Available currencies.
 	 * @param array<string,MultiCurrencyCurrency> $enabled_currencies   Enabled currencies.
 	 * @param MultiCurrencyCurrency               $default_currency     Default currency.
-	 * @param MultiCurrencyCurrency               $selected_currency    Selected currency.
+	 * @param MultiCurrencyCurrency|\Closure      $selected_currency    Selected currency, or a resolver asked on every read.
+	 * @phpstan-param MultiCurrencyCurrency|\Closure(): MultiCurrencyCurrency $selected_currency
 	 * @param string[]|\Closure                   $customer_currencies Customer-used currency codes, or a loader returning them.
 	 */
 	public function __construct(
 		array $available_currencies,
 		array $enabled_currencies,
 		MultiCurrencyCurrency $default_currency,
-		MultiCurrencyCurrency $selected_currency,
+		$selected_currency,
 		$customer_currencies = array()
 	) {
 		$this->available_currencies = $available_currencies;
@@ -118,7 +119,7 @@ class MultiCurrencyState {
 	 * @return MultiCurrencyCurrency
 	 */
 	public function get_selected_currency(): MultiCurrencyCurrency {
-		return $this->selected_currency;
+		return $this->selected_currency instanceof \Closure ? ( $this->selected_currency )() : $this->selected_currency;
 	}
 
 	/**
