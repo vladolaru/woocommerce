@@ -211,7 +211,14 @@ class WooPaymentsDocumentsRestController implements RegisterHooksInterface {
 		try {
 			$raw_response = $this->api_client->get_document( $document_id );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			// The merchant opened this URL in a browser window, so the client answers with an error page (documents controller :91-98).
+			$message = sprintf(
+				/* translators: %1: The document ID. %2: The error message. */
+				esc_html__( 'There was an error accessing document %1$s. %2$s', 'woocommerce' ),
+				$document_id,
+				$exception->getMessage()
+			);
+			wp_die( esc_html( $message ), '', (int) $exception->get_http_code() );
 		}
 
 		$status              = (int) wp_remote_retrieve_response_code( $raw_response );

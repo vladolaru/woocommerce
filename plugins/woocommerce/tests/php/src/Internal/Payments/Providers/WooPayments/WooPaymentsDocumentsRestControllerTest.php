@@ -390,6 +390,25 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A document the platform cannot serve shows the client's error page naming the document.
+	 *
+	 * The merchant opens the download URL in a browser window; client 11.1.0 answers a failure with wp_die() (documents controller :91-98).
+	 */
+	public function test_get_document_failure_shows_the_client_error_page(): void {
+		// The platform's answer for a missing document (wpcom class-documents-controller.php:259-263).
+		$this->api_client->exception = new WooPaymentsApiException( 'Document not found.', 'wcpay_document_not_found', 404 );
+		$request                     = new WP_REST_Request( 'GET', '/wc/v3/payments/documents/vat_invoice-123' );
+		$request->set_param( 'document_id', 'vat_invoice-123' );
+
+		try {
+			$this->sut->get_document( $request );
+			$this->fail( 'The failure must end the request with wp_die().' );
+		} catch ( \WPDieException $exception ) {
+			$this->assertSame( 'There was an error accessing document vat_invoice-123. Document not found.', $exception->getMessage() );
+		}
+	}
+
+	/**
 	 * @testdox A document download is never cacheable, even on a site that turns off the REST no-cache headers.
 	 *
 	 * Client 11.1.0 calls nocache_headers() before streaming (documents controller :114-115).
