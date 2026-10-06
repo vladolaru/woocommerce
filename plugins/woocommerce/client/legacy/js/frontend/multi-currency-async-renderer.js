@@ -12,8 +12,8 @@
 			: undefined;
 	}
 
-	// Prices are worked out on exact decimals, as the client's decimal.js-light renderer does, so a half cent rounds up as the
-	// server's round() does. A decimal is a BigInt of units and a scale: 12.345 is 12345n at 3.
+	// Prices are worked out on exact decimals, as the client's decimal.js-light renderer and the server's PHP do, so a half cent
+	// or a rounding step lands on the same value as the cart. A decimal is a BigInt of units and a scale: 12.345 is 12345n at 3.
 	function toDecimal( value ) {
 		var match = /^\s*([+-]?)(\d*)(?:\.(\d*))?(?:e([+-]?\d+))?\s*$/i.exec( String( value ) );
 		if ( ! match || ( '' === match[ 2 ] && ! match[ 3 ] ) ) {
