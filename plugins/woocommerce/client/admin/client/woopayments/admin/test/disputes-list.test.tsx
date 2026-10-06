@@ -523,11 +523,31 @@ describe( 'WooPayments disputes Show and currency filters', () => {
 		expect(
 			getDisputesApiQuery( { page: 1, search: 'Ada' }, 'all' )
 		).toEqual( { page: 1, search: 'Ada' } );
-		expect(
-			getDisputesApiQuery( { date_before: '2026-09-30' }, 'advanced' )
-				.date_before
-		).toMatch( /^2026-(09-30|10-01) \d{2}:59:59$/ );
 	} );
+
+	// Client 11.1.0 `formatDateValue()`: "before" is the end of the merchant's day, sent as UTC.
+	it.each( [
+		[ -180, '2026-09-30 20:59:59' ],
+		[ 300, '2026-10-01 04:59:59' ],
+	] )(
+		'sends date_before as the end of the merchant day at offset %i',
+		( offset, expected ) => {
+			const timezoneSpy = jest
+				.spyOn( Date.prototype, 'getTimezoneOffset' )
+				.mockReturnValue( offset );
+
+			try {
+				expect(
+					getDisputesApiQuery(
+						{ date_before: '2026-09-30' },
+						'advanced'
+					).date_before
+				).toBe( expected );
+			} finally {
+				timezoneSpy.mockRestore();
+			}
+		}
+	);
 
 	// Client 11.1.0 `disputes/index.tsx:52-59` and `data/disputes/resolvers.js:83`: the URL's
 	// `orderby=dueBy` / `order` sort the platform's `due_by`.
