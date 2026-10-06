@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPricePro
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
 use WC_Unit_Test_Case;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -247,6 +248,27 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should forget a cached "no foreign-currency orders" answer once it writes an order's exchange rate.
+	 */
+	public function test_writing_order_exchange_rate_meta_clears_the_cached_order_history_answer(): void {
+		$sut   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$order = wc_create_order();
+		$order->set_currency( 'USD' );
+		$order->save();
+		set_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT, '0', HOUR_IN_SECONDS );
+
+		$sut->add_order_meta( $order->get_id(), $order );
+		$this->assertSame( '0', get_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT ), 'A store-currency order writes no rate and keeps the answer.' );
+
+		$order->set_currency( 'GBP' );
+		$order->save();
+		$sut->add_order_meta( $order->get_id(), $order );
+
+		// The client asks the database on every Analytics request (client 11.1.0 `includes/multi-currency/Analytics.php:565-590`).
+		$this->assertFalse( get_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT ) );
+	}
+
+	/**
 	 * @testdox Should persist projected multi-currency refund meta.
 	 */
 	public function test_persists_projected_refund_meta(): void {
@@ -366,7 +388,8 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		$controller->init(
 			$this->create_arbiter( $owner ),
 			wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class ),
-			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class )
+			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class ),
+			new MultiCurrencyUsageDetector()
 		);
 		$controller->set_price_projection_service( $this->create_projection_service( $should_project_queries ) );
 		if ( null !== $request_context && method_exists( $controller, 'set_request_context' ) ) {

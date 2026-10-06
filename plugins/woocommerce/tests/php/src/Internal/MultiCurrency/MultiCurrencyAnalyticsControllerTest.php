@@ -451,33 +451,6 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should invalidate the cached multi-currency orders flag when a new order is created.
-	 */
-	public function test_new_order_invalidates_multi_currency_orders_cache(): void {
-		set_transient( 'wc_mc_has_orders', '1', HOUR_IN_SECONDS );
-		$sut = $this->create_controller_without_orders_resolver( MultiCurrencyRuntimeArbiter::OWNER_CORE );
-
-		$sut->register();
-
-		$this->assertTrue(
-			false !== has_filter( 'woocommerce_new_order' ),
-			'The controller should listen for new orders to invalidate the usage detector cache.'
-		);
-
-		$callbacks = $GLOBALS['wp_filter']['woocommerce_new_order']->callbacks[10] ?? array();
-		foreach ( $callbacks as $callback ) {
-			if ( $callback['function'][0] instanceof MultiCurrencyUsageDetector ) {
-				call_user_func( $callback['function'] );
-			}
-		}
-
-		$this->assertFalse(
-			get_transient( 'wc_mc_has_orders' ),
-			'Creating an order should clear the cached multi-currency orders flag.'
-		);
-	}
-
-	/**
 	 * @testdox Should load the customer currency filter on wc-admin pages for store managers, with currency names and symbols.
 	 */
 	public function test_loads_the_customer_currency_filter_on_wc_admin_pages_for_store_managers(): void {

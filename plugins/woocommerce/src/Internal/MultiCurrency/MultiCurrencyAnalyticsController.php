@@ -214,8 +214,6 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 			$this->add_filter_once( 'woocommerce_analytics_report_should_use_cache', array( $this, 'handle_woocommerce_analytics_report_should_use_cache' ) );
 		}
 
-		$this->add_filter_once( 'woocommerce_new_order', array( $this->usage_detector, 'invalidate_foreign_currency_orders_cache' ) );
-
 		$this->add_filter_once( 'woocommerce_analytics_orders_query_args', array( $this, 'handle_woocommerce_analytics_orders_query_args' ) );
 		$this->add_filter_once( 'woocommerce_analytics_orders_stats_query_args', array( $this, 'handle_woocommerce_analytics_orders_query_args' ) );
 
