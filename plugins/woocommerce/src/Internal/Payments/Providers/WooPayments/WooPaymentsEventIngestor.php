@@ -245,7 +245,8 @@ class WooPaymentsEventIngestor {
 	 *
 	 * The "processed" marker is written only after the event is handled, so an event whose processing threw, or
 	 * whose request died, is processed by the next delivery. Two deliveries of one event that overlap are not kept
-	 * apart here: the handlers that change an order do so under the order payment lock and add each note once.
+	 * apart here: the handlers that change an order serialize themselves (the order payment lock, or the Stripe Billing
+	 * invoice lock), and a redelivery after a failed attempt can add its notes again.
 	 * Client 11.1.0 keeps no marker at all.
 	 *
 	 * @since 11.0.0

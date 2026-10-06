@@ -28,7 +28,7 @@ defined( 'ABSPATH' ) || exit;
  *
  * Follows client 11.1.0 `includes/subscriptions/class-wc-payments-subscriptions-event-handler.php`. The event ingestor
  * runs it inside its usual processing (the mode check and the processed-event marker); overlapping deliveries of one
- * invoice are kept apart here by a lock on the invoice, and the payment is recorded under the order payment lock.
+ * invoice are kept apart here by a lock on the invoice, and a payment intent is recorded under the order payment lock.
  *
  * @since 11.2.0
  * @internal
@@ -83,7 +83,7 @@ class StripeBillingEventHandler {
 	private WooPaymentsLogger $logger;
 
 	/**
-	 * Lock held in the database rows of a transient, keeping two deliveries of one invoice from each creating a renewal order.
+	 * Lock held in the database rows of a transient, keeping two deliveries of one invoice from recording it at the same time.
 	 *
 	 * @var TransientRowLock
 	 */
