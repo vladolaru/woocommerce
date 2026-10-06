@@ -98,6 +98,48 @@ class WooPaymentsTransactionsListRequest extends WooPaymentsPaginatedListRequest
 	}
 
 	/**
+	 * Get the summary and export filters from REST request data: the client's get_transactions_filters() keys plus the
+	 * list's type filter, shifted to the merchant's time zone, with no paging, sorting or list request filter.
+	 *
+	 * Client 11.1.0 class-wc-rest-payments-transactions-controller.php:224-266.
+	 *
+	 * @param WP_REST_Request $request REST request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return array<string,mixed>
+	 */
+	public static function filters_from_rest_request( WP_REST_Request $request ): array {
+		$user_timezone = self::get_scalar_param( $request, 'user_timezone' );
+		$date_between  = $request->get_param( 'date_between' );
+		if ( null !== $date_between ) {
+			$date_between = array_map(
+				static function ( $transaction_date ) use ( $user_timezone ): ?string {
+					return self::format_transaction_date_by_timezone( is_scalar( $transaction_date ) ? (string) $transaction_date : null, $user_timezone );
+				},
+				(array) $date_between
+			);
+		}
+
+		$filters = array(
+			'match'        => $request->get_param( 'match' ),
+			'date_before'  => self::format_transaction_date_by_timezone( self::get_scalar_param( $request, 'date_before' ), $user_timezone ),
+			'date_after'   => self::format_transaction_date_by_timezone( self::get_scalar_param( $request, 'date_after' ), $user_timezone ),
+			'date_between' => $date_between,
+			// The client's UI sends the list's type filter here too, but its REST filter set drops it; native keeps the totals in step with the list.
+			'type_is_in'   => null === $request->get_param( 'type_is_in' ) ? null : (array) $request->get_param( 'type_is_in' ),
+		);
+		foreach ( array( 'type_is', 'type_is_not', 'source_device_is', 'source_device_is_not', 'channel_is', 'channel_is_not', 'customer_country_is', 'customer_country_is_not', 'risk_level_is', 'risk_level_is_not', 'store_currency_is', 'customer_currency_is', 'customer_currency_is_not', 'source_is', 'source_is_not', 'loan_id_is', 'search' ) as $name ) {
+			$filters[ $name ] = $request->get_param( $name );
+		}
+
+		return array_filter(
+			$filters,
+			static function ( $filter ): bool {
+				return null !== $filter;
+			}
+		);
+	}
+
+	/**
 	 * Returns the request's API.
 	 *
 	 * @return string

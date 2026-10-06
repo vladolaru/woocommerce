@@ -135,7 +135,7 @@ class WooPaymentsTransactionsRestController implements RegisterHooksInterface {
 		try {
 			return new WP_REST_Response(
 				$this->api_client->get_transactions_summary(
-					$this->get_filtered_transactions_list_params( $request ),
+					$this->get_transactions_filters( $request ),
 					$this->get_optional_string_param( $request, 'deposit_id' )
 				)
 			);
@@ -285,7 +285,7 @@ class WooPaymentsTransactionsRestController implements RegisterHooksInterface {
 		try {
 			return new WP_REST_Response(
 				$this->api_client->get_transactions_export(
-					$this->get_filtered_transactions_list_params( $request ),
+					$this->get_transactions_filters( $request ),
 					(string) $request->get_param( 'user_email' ),
 					$this->get_optional_string_param( $request, 'deposit_id' ),
 					$this->get_optional_string_param( $request, 'locale' )
@@ -368,6 +368,18 @@ class WooPaymentsTransactionsRestController implements RegisterHooksInterface {
 		return $this->order_service->map_transaction_search_params(
 			is_array( $params ) ? $params : $transactions_request->get_params()
 		);
+	}
+
+	/**
+	 * Get the summary and export filters, with order-number search terms mapped to charge IDs as the client's API client
+	 * does for both (class-wc-payments-api-client.php get_transactions_summary() and get_transactions_export()).
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return array<string,mixed>
+	 */
+	private function get_transactions_filters( WP_REST_Request $request ): array {
+		return $this->order_service->map_transaction_search_params( WooPaymentsTransactionsListRequest::filters_from_rest_request( $request ) );
 	}
 
 	/**

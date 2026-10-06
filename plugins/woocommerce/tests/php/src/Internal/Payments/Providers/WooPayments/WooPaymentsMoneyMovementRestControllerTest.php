@@ -843,6 +843,50 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
+	 * @testdox Transactions summary and export send the filters with order searches mapped, no paging, and run no list filter.
+	 *
+	 * Client 11.1.0 builds both from get_transactions_filters() (class-wc-rest-payments-transactions-controller.php:177-224) and
+	 * maps order searches in its API client (class-wc-payments-api-client.php get_transactions_summary(), get_transactions_export()).
+	 */
+	public function test_transactions_summary_and_export_send_only_filters(): void {
+		$order = $this->create_order_with_charge( 'ch_order', 'pi_order' );
+		$this->create_transactions_controller( true )->register_routes();
+		$list_filter_calls = 0;
+		add_filter(
+			'wcpay_list_transactions_request',
+			static function ( $request ) use ( &$list_filter_calls ) {
+				++$list_filter_calls;
+
+				return $request;
+			}
+		);
+		$query = array(
+			'store_currency_is' => 'eur',
+			'page'              => 2,
+			'pagesize'          => 50,
+			'sort'              => 'amount',
+			'search'            => array( __( 'Order #', 'woocommerce' ) . $order->get_id() ),
+		);
+
+		$summary = new WP_REST_Request( 'GET', '/wc/v3/payments/transactions/summary' );
+		$summary->set_query_params( $query );
+		$this->server->dispatch( $summary );
+		$summary_filters = $this->api_client->last_call['filters'];
+
+		$export = new WP_REST_Request( 'POST', '/wc/v3/payments/transactions/download' );
+		$export->set_body_params( $query + array( 'user_email' => 'merchant@example.com' ) );
+		$this->server->dispatch( $export );
+
+		$expected = array(
+			'store_currency_is' => 'eur',
+			'search'            => array( 'ch_order' ),
+		);
+		$this->assertSame( $expected, $summary_filters );
+		$this->assertSame( $expected, $this->api_client->last_call['filters'] );
+		$this->assertSame( 0, $list_filter_calls );
+	}
+
+	/**
 	 * @testdox Transactions routes require manage_woocommerce before API calls.
 	 */
 	public function test_transactions_routes_require_manage_woocommerce(): void {
