@@ -170,6 +170,38 @@ describe( 'WooPaymentsPayouts', () => {
 		);
 	} );
 
+	// Client 11.1.0 `data/deposits/resolvers.js:76-89` formats both ends of a date range to the start and end of the day.
+	it( 'sends both date range ends at the day boundaries to the list and the summary', async () => {
+		const timezoneSpy = jest
+			.spyOn( Date.prototype, 'getTimezoneOffset' )
+			.mockReturnValue( -180 );
+		mockGetDeposits.mockResolvedValue( { data: [], total_count: 0 } );
+		mockGetDepositsSummary.mockResolvedValue( { count: 0 } );
+
+		try {
+			render(
+				<MemoryRouter
+					initialEntries={ [
+						'/woopayments/payouts?filter=advanced&match=any&store_currency_is=eur&date_between=2026-07-08&date_between=2026-07-09',
+					] }
+				>
+					<WooPaymentsPayouts />
+				</MemoryRouter>
+			);
+			await screen.findByText( 'No payouts found.' );
+		} finally {
+			timezoneSpy.mockRestore();
+		}
+
+		const expected = expect.objectContaining( {
+			match: 'any',
+			store_currency_is: 'eur',
+			date_between: [ '2026-07-07 21:00:00', '2026-07-09 20:59:59' ],
+		} );
+		expect( mockGetDeposits ).toHaveBeenLastCalledWith( expected );
+		expect( mockGetDepositsSummary ).toHaveBeenLastCalledWith( expected );
+	} );
+
 	// Client 11.1.0 `deposits/list/index.tsx:113,296`: the pager is sized from the
 	// summary count; the list response carries no total.
 	it( 'pages through every payout the summary counts', async () => {

@@ -96,7 +96,7 @@ export interface WooPaymentsDepositsQuery {
 	store_currency_is?: string;
 	date_before?: string;
 	date_after?: string;
-	date_between?: string;
+	date_between?: string[];
 	status_is?: string;
 	status_is_not?: string;
 }

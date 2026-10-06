@@ -26,6 +26,7 @@ import {
 	buildMoneyMovementRoutePath,
 	dataViewsViewToMoneyMovementQuery,
 	moneyMovementQueryToDataViewsView,
+	normalizeDateFiltersForApi,
 	parseMoneyMovementQuery,
 } from './money-movement/query';
 import type {
@@ -147,23 +148,34 @@ const getFirstString = ( value: unknown ) => {
 	return typeof value === 'string' && value ? value : undefined;
 };
 
-// Client 11.1.0 `data/deposits/resolvers.js:76-89`: `match` is the advanced filters' "all or any".
+// Client 11.1.0 `data/deposits/resolvers.js:76-89`: `match` is the advanced filters' "all or any", and dates are sent
+// as the start or end of the chosen day, both ends of a range kept.
 const getPayoutsRequestQuery = (
 	query: ReturnType< typeof parseMoneyMovementQuery >,
 	match: WooPaymentsListMatch
-): WooPaymentsDepositsQuery => ( {
-	page: query.page,
-	pagesize: query.pagesize,
-	sort: query.sort,
-	direction: query.direction,
-	match: match === 'any' ? match : undefined,
-	store_currency_is: getFirstString( query.store_currency_is ),
-	status_is: getFirstString( query.status_is ),
-	status_is_not: getFirstString( query.status_is_not ),
-	date_after: getFirstString( query.date_after ),
-	date_before: getFirstString( query.date_before ),
-	date_between: getFirstString( query.date_between ),
-} );
+): WooPaymentsDepositsQuery => {
+	const dates = normalizeDateFiltersForApi( {
+		date_after: query.date_after,
+		date_before: query.date_before,
+		date_between: query.date_between,
+	} );
+
+	return {
+		page: query.page,
+		pagesize: query.pagesize,
+		sort: query.sort,
+		direction: query.direction,
+		match: match === 'any' ? match : undefined,
+		store_currency_is: getFirstString( query.store_currency_is ),
+		status_is: getFirstString( query.status_is ),
+		status_is_not: getFirstString( query.status_is_not ),
+		date_after: getFirstString( dates.date_after ),
+		date_before: getFirstString( dates.date_before ),
+		date_between: Array.isArray( dates.date_between )
+			? dates.date_between
+			: undefined,
+	};
+};
 
 export const WooPaymentsPayouts = () => {
 	const [ payouts, setPayouts ] = useState< WooPaymentsDeposit[] >( [] );
@@ -219,7 +231,19 @@ export const WooPaymentsPayouts = () => {
 			{
 				id: 'date',
 				label: __( 'Date', 'woocommerce' ),
+				type: 'date' as const,
 				enableHiding: false,
+				// Client 11.1.0 `deposits/filters/config.js:89-128`: a payout date before, after or between.
+				filterBy: isAdvanced
+					? {
+							operators: [
+								'before',
+								'after',
+								'between',
+							] as const,
+							isPrimary: true,
+					  }
+					: ( false as const ),
 				render: ( { item }: { item: WooPaymentsDeposit } ) => (
 					<a
 						href={ getPayoutDetailsUrl( item ) }
