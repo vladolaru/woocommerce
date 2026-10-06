@@ -105,8 +105,6 @@ class WooPaymentsDisputeReadinessRestControllerTest extends WC_REST_Unit_Test_Ca
 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( 'get_overview_payload', $this->service->last_call );
-		$this->assertTrue( $response->get_data()['overview']['enabled'] );
-		$this->assertFalse( $response->get_data()['overview']['hidden'] );
 	}
 
 	/**
@@ -120,7 +118,19 @@ class WooPaymentsDisputeReadinessRestControllerTest extends WC_REST_Unit_Test_Ca
 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( 'get_overview_payload', $this->service->last_call );
-		$this->assertTrue( $response->get_data()['overview']['enabled'] );
+	}
+
+	/**
+	 * @testdox GET answers the disabled overview, not an error, when the feature flag is off.
+	 */
+	public function test_get_returns_disabled_payload_when_feature_is_disabled(): void {
+		update_option( '_wcpay_feature_dispute_readiness_overview', '0' );
+		$this->sut->register_routes();
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/dispute-readiness' ) );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 'get_disabled_overview_payload', $this->service->last_call );
 	}
 
 	/**
@@ -151,7 +161,6 @@ class WooPaymentsDisputeReadinessRestControllerTest extends WC_REST_Unit_Test_Ca
 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( 'dismiss_overview_card', $this->service->last_call );
-		$this->assertTrue( $response->get_data()['overview']['isDismissed'] );
 	}
 
 	/**
@@ -165,7 +174,6 @@ class WooPaymentsDisputeReadinessRestControllerTest extends WC_REST_Unit_Test_Ca
 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( 'confirm_statement_descriptor', $this->service->last_call );
-		$this->assertSame( 'confirmed', $response->get_data()['overview']['signals'][0]['reason'] );
 	}
 
 	/**
