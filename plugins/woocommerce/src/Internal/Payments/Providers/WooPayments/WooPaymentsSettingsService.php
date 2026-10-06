@@ -1213,7 +1213,8 @@ class WooPaymentsSettingsService {
 			return true;
 		}
 
-		return false;
+		// Any other gateway with express checkout on offers the same buttons (client 11.1.0 `includes/class-duplicates-detection-service.php:141`).
+		return $this->is_gateway_option_enabled( $gateway, 'express_checkout_enabled' );
 	}
 
 	/**

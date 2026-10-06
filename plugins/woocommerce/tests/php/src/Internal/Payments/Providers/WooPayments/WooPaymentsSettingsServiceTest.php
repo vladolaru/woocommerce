@@ -802,6 +802,8 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				$this->create_gateway( 'woocommerce_payments', 'yes' ),
 				$this->create_gateway( 'legacy_applepay_gateway', 'yes' ),
 				$this->create_gateway( 'stripe', 'yes', array( 'payment_request' => 'yes' ) ),
+				$this->create_gateway( 'acme_wallets', 'yes', array( 'express_checkout_enabled' => 'yes' ) ),
+				$this->create_gateway( 'acme_cards', 'yes', array( 'express_checkout_enabled' => 'no' ) ),
 				$this->create_gateway( 'disabled_googlepay_gateway', 'no' ),
 			)
 		);
@@ -818,6 +820,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				'woocommerce_payments',
 				'legacy_applepay_gateway',
 				'stripe',
+				'acme_wallets',
 			),
 			$settings['duplicated_payment_method_ids']['apple_pay_google_pay'],
 			'Native payment request support should cluster with enabled Apple Pay, Google Pay, or Stripe payment-request gateways.'
