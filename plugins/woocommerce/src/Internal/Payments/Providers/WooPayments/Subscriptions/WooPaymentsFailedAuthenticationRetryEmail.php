@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use WC_Email;
 use WC_Email_Failed_Order;
 use WC_Order;
@@ -89,7 +90,7 @@ class WooPaymentsFailedAuthenticationRetryEmail extends WC_Email_Failed_Order {
 			$order = new WC_Order();
 		}
 
-		$order->set_status( 'failed' );
+		$order->set_status( OrderStatus::FAILED );
 		$order->set_billing_first_name( 'John' );
 		$order->set_billing_last_name( 'Doe' );
 		$order->set_billing_email( 'john.doe@example.com' );

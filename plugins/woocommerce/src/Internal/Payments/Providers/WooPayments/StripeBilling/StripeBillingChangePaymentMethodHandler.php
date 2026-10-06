@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use WC_Order;
 
 defined( 'ABSPATH' ) || exit;
@@ -221,7 +222,7 @@ class StripeBillingChangePaymentMethodHandler {
 
 		$last_order = is_callable( array( $subscription, 'get_last_order' ) ) ? $subscription->get_last_order( 'all', 'any' ) : false;
 
-		return $last_order instanceof WC_Order && $last_order->has_status( 'failed' ) && '' !== $this->invoice_service->get_pending_invoice_id( $subscription );
+		return $last_order instanceof WC_Order && $last_order->has_status( OrderStatus::FAILED ) && '' !== $this->invoice_service->get_pending_invoice_id( $subscription );
 	}
 
 	/**
