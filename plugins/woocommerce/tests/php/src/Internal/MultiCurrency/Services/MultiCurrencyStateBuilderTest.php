@@ -317,7 +317,19 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array( 'XYZ' ), array_keys( $state->get_enabled_currencies() ) );
 		$this->assertSame( array( 'XYZ' ), array_keys( $state->get_available_currencies() ) );
+		$this->assertSame( 'XYZ', $state->get_selected_currency()->get_code() );
 		$this->assertFalse( $state->has_additional_currencies_enabled() );
+	}
+
+	/**
+	 * @testdox Should keep the stored customer currencies while the store currency is unknown, so they survive the next order.
+	 */
+	public function test_keeps_customer_currencies_while_the_store_currency_is_unknown(): void {
+		update_option( 'woocommerce_currency', 'XYZ' );
+		// The plugin stores the list as currency codes (client 11.1.0 `includes/multi-currency/MultiCurrency.php:700-717`).
+		update_option( 'wcpay_multi_currency_stored_customer_currencies', array( 'EUR', 'GBP' ) );
+
+		$this->assertSame( array( 'EUR', 'GBP' ), $this->create_builder()->build()->get_customer_currencies() );
 	}
 
 	/**

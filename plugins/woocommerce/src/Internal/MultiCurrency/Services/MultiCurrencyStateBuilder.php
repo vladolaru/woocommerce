@@ -500,8 +500,9 @@ class MultiCurrencyStateBuilder {
 			);
 		}
 
-		$currencies                    = array( $store_currency->get_code() => $store_currency );
-		$this->cached_state            = new MultiCurrencyState( $currencies, $currencies, $store_currency, $store_currency, array() );
+		$currencies = array( $store_currency->get_code() => $store_currency );
+		// The stored customer currencies are kept, so a status-change write does not drop them.
+		$this->cached_state            = new MultiCurrencyState( $currencies, $currencies, $store_currency, $store_currency, fn(): array => $this->get_customer_currencies( array() ) );
 		$this->cached_state_generation = $current_generation;
 
 		return $this->cached_state;
