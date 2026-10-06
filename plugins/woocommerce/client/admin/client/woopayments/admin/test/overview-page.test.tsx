@@ -885,12 +885,15 @@ describe( 'WooPaymentsOverviewPage', () => {
 				)
 			);
 			expect( mockCreateSuccessNotice ).not.toHaveBeenCalled();
-			expect(
-				screen.queryByRole( 'dialog', { name: 'Instant payout' } )
-			).not.toBeInTheDocument();
-			expect(
-				screen.getByRole( 'button', { name: 'Get $9.00 now' } )
-			).toBeEnabled();
+			// The modal hides the page from assistive technology until it has fully closed.
+			await waitFor( () => {
+				expect(
+					screen.queryByRole( 'dialog', { name: 'Instant payout' } )
+				).not.toBeInTheDocument();
+				expect(
+					screen.getByRole( 'button', { name: 'Get $9.00 now' } )
+				).toBeEnabled();
+			} );
 		} );
 	} );
 
