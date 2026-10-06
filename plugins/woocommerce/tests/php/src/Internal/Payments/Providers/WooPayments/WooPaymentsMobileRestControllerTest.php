@@ -1820,6 +1820,23 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A failure recording a payment the reader already captured is logged as a captured payment.
+	 *
+	 * Client 11.1.0 links an intent the app captured itself, such as Interac (class-wc-rest-payments-orders-controller.php:219-228).
+	 * WC_Order::save() turns an Exception from its hooks into an order note, so only a PHP Error escapes this first save.
+	 */
+	public function test_capture_terminal_payment_logs_a_failure_recording_a_reader_captured_payment(): void {
+		$logger = RecordingWcLogger::install();
+		$order  = $this->create_order( 12.34, 'USD' );
+		$this->set_capturable_terminal_intent( $order );
+		$this->api_client->payment_intention_response['status'] = 'succeeded';
+		add_action(
+			'woocommerce_before_order_object_save',
+			static function () {
+				throw new \Error( 'save failed' );
+			}
+
+	/**
 	 * @testdox A failure before a terminal capture reaches the platform is logged when logging is on.
 	 *
 	 * Client 11.1.0 logs it through its gated Logger::error (class-wc-rest-payments-orders-controller.php:289-290).

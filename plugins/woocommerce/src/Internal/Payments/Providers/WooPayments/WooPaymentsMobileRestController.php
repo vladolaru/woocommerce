@@ -603,6 +603,8 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 			if ( ! in_array( $status, array( 'requires_capture', 'succeeded', 'processing' ), true ) ) {
 				return new WP_Error( 'wcpay_payment_uncapturable', __( 'The payment cannot be captured', 'woocommerce' ), array( 'status' => 409 ) );
 			}
+			// A reader that captured the payment itself (Interac) has charged the card before any write below.
+			$payment_captured = 'succeeded' === $status;
 
 			// The client attaches the in-person method and channel before any status change, so the order emails and core's POS email checks see them (class-wc-rest-payments-orders-controller.php:209-215).
 			$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
