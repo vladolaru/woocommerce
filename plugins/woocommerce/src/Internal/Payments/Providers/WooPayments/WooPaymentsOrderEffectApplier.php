@@ -721,8 +721,9 @@ class WooPaymentsOrderEffectApplier {
 			 */
 			$suffix = apply_filters( 'wcpay_payment_request_payment_method_title_suffix', 'WooPayments' );
 			// An empty return removes the suffix, as on the client (class-wc-payment-gateway-wcpay.php:2735-2740), so
-			// '__return_false' drops it. Two departures: '0' removes it too, where the client appends a bare "0", and a
-			// non-scalar keeps the default where the client prints "Array".
+			// '__return_false' drops it. Departures: '0' and an empty array remove it too, where the client appends a
+			// bare "0" or "Array"; any other non-scalar keeps the default, where the client prints " (Array)" for an
+			// array, uses a stringable object's string, and throws on an object that has none.
 			if ( empty( $suffix ) ) {
 				$suffix = '';
 			} elseif ( is_scalar( $suffix ) ) {
