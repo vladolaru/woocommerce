@@ -140,7 +140,7 @@ class WooPaymentsGatewayListController implements RegisterHooksInterface {
 
 			return self::order_woopayments_gateways( $ordering, $gateway_ids );
 		} catch ( \Exception $e ) {
-			wc_get_logger()->warning( 'Failed to order gateways: ' . $e->getMessage(), array( 'source' => 'woopayments' ) );
+			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Failed to order gateways.', $e, array(), 'warning' );
 			return (array) $ordering;
 		}
 	}

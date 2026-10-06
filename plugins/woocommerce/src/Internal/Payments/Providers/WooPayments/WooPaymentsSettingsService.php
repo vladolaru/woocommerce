@@ -658,12 +658,12 @@ class WooPaymentsSettingsService {
 		$projection = $this->get_gateway_settings_synchronizer()->persist( $settings, $payment_request_enabled );
 		if ( ! $projection['persisted'] ) {
 			// Account and fraud settings in this request already reached the platform; say which local option did not save.
-			wc_get_logger()->error(
+			wc_get_container()->get( WooPaymentsLogger::class )->log_always(
 				'Native WooPayments settings could not be saved locally.',
+				'error',
 				array(
 					'failed_options' => $projection['failed_option_names'],
 					'request_keys'   => array_keys( $params ),
-					'source'         => 'woocommerce-woopayments-settings',
 				)
 			);
 
@@ -1021,10 +1021,7 @@ class WooPaymentsSettingsService {
 
 			return $this->keep_woopayments_duplicate_clusters_only( $duplicate_candidates );
 		} catch ( Throwable $e ) {
-			wc_get_logger()->warning(
-				'Native WooPayments duplicate payment method detection failed: ' . $e->getMessage(),
-				array( 'source' => 'woocommerce-woopayments-settings' )
-			);
+			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Native WooPayments duplicate payment method detection failed.', $e, array(), 'warning' );
 
 			return array();
 		}
@@ -1874,8 +1871,10 @@ class WooPaymentsSettingsService {
 			$this->api_client->save_fraud_ruleset( $ruleset );
 			set_transient( 'wcpay_fraud_protection_settings', $ruleset, DAY_IN_SECONDS );
 		} catch ( WooPaymentsApiException $e ) {
-			$this->log_fraud_ruleset_refresh_warning(
+			// The client lets this failure surface from the settings save; native runs it at shutdown, so it always logs it.
+			wc_get_container()->get( WooPaymentsLogger::class )->log_always(
 				'Native WooPayments fraud ruleset update for new selling locations failed.',
+				'warning',
 				array(
 					'error_code'  => WooPaymentsLogger::get_loggable_error_code( $e->get_error_code() ),
 					'http_status' => $e->get_http_code(),
@@ -1978,13 +1977,8 @@ class WooPaymentsSettingsService {
 	 * @return void
 	 */
 	private function log_fraud_ruleset_refresh_warning( string $message, array $context = array() ): void {
-		if ( ! function_exists( 'wc_get_logger' ) ) {
-			return;
-		}
-
-		$context['source'] = 'woocommerce-woopayments-settings';
 		try {
-			wc_get_logger()->warning( $message, $context );
+			wc_get_container()->get( WooPaymentsLogger::class )->log( $message, 'warning', $context );
 		} catch ( Throwable $e ) {
 			unset( $e );
 		}

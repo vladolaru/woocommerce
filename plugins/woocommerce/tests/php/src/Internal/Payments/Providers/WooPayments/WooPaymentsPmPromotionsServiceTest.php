@@ -259,6 +259,7 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 		$this->account_service->cached_account_data = array( 'fees' => array( 'klarna' => array() ) );
 		$this->api_client->promotions_exception     = self::make_provider_error();
 		$logger                                     = RecordingWcLogger::install();
+		self::enable_woopayments_debug_logging();
 
 		$this->sut->get_visible_promotions();
 
@@ -283,6 +284,7 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 		);
 		$this->api_client->activation_exception     = self::make_provider_error();
 		$logger                                     = RecordingWcLogger::install();
+		self::enable_woopayments_debug_logging();
 
 		$this->assertFalse( $this->sut->activate_promotion( 'klarna-promo__spotlight' ) );
 

@@ -1381,15 +1381,17 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 				return $stores;
 			}
 		);
-		$log_calls = array();
-		$logger    = $this->mock_capturing_logger( $log_calls );
+		// The client logs this through its Logger, written only with debug logging on.
+		add_filter(
+			'option_' . WooPaymentsSettingsService::SETTINGS_OPTION,
+			static fn( $settings ) => array_merge( (array) $settings, array( 'enable_logging' => 'yes' ) )
+		);
+		$logger = RecordingWcLogger::install();
 
-		$this->assertSame( array(), $this->dispatch_onboarding_route_for_actioned_notes( $call, $logger ) );
+		$this->assertSame( array(), $this->dispatch_onboarding_route_for_actioned_notes( $call ) );
 		$note_store_errors = array_filter(
-			$log_calls,
-			static function ( array $log_call ): bool {
-				return 'error' === $log_call['level'] && false !== strpos( $log_call['message'], 'Invalid data store.' );
-			}
+			$logger->get_errors(),
+			static fn( array $line ): bool => false !== strpos( $line[1], 'Invalid data store.' )
 		);
 		$this->assertCount( 1, $note_store_errors, 'The note store failure is logged once.' );
 	}
@@ -1431,11 +1433,10 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Dispatch the real onboarding route that makes an API client call, and return the actioned notes the call received.
 	 *
-	 * @param string      $call   API client method: initialize_onboarding, initialize_onboarding_embedded_kyc or finalize_onboarding_embedded_kyc.
-	 * @param object|null $logger Optional logger returned by wc_get_logger().
+	 * @param string $call API client method: initialize_onboarding, initialize_onboarding_embedded_kyc or finalize_onboarding_embedded_kyc.
 	 * @return array
 	 */
-	private function dispatch_onboarding_route_for_actioned_notes( string $call, ?object $logger = null ): array {
+	private function dispatch_onboarding_route_for_actioned_notes( string $call ): array {
 		if ( 'finalize_onboarding_embedded_kyc' === $call ) {
 			$fixture    = $this->arrange_native_finalize_projection( array( $this->get_native_finalize_projection_account() ), array( 'card' => true ) );
 			$controller = new WooPaymentsRestController();
@@ -1457,16 +1458,6 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 				'initialize_onboarding' === $call
 					? WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT . '/init'
 					: WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION . '/kyc_session'
-			);
-		}
-
-		if ( null !== $logger ) {
-			$this->mockable_proxy->register_function_mocks(
-				array(
-					'wc_get_logger' => static function () use ( $logger ) {
-						return $logger;
-					},
-				)
 			);
 		}
 
@@ -2233,13 +2224,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A refused session-time pick write is logged when no heal marker can be stored either.
 	 */
 	public function test_refused_session_pick_write_is_logged_without_durable_marker(): void {
-		$logger = $this->getMockBuilder( \WC_Logger_Interface::class )->getMock();
-		$logger->expects( $this->once() )
-			->method( 'error' )
-			->with(
-				$this->stringContains( 'could not save the payment methods picked in onboarding' ),
-				array( 'source' => 'woocommerce-woopayments-onboarding' )
-			);
+		$logger = RecordingWcLogger::install();
 		$this->arrange_native_finalize_projection(
 			array( $this->get_native_finalize_projection_account() ),
 			array(
@@ -2247,13 +2232,16 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 				'ideal' => true,
 			)
 		);
-		$this->mock_native_projection_marker_write_failure( $logger );
+		$this->mock_native_projection_marker_write_failure();
 		$this->refuse_native_settings_writes_enabling( 'ideal' );
 
 		$this->sut->get_onboarding_kyc_session( 'US' );
 		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
 
 		$this->assertTrue( $response['success'] );
+		$this->assertCount( 1, $logger->get_errors() );
+		$this->assertStringContainsString( 'could not save the payment methods picked in onboarding', $logger->get_errors()[0][1] );
+		$this->assertSame( 'woopayments', $logger->get_errors()[0][2] );
 		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
 		$this->assertSame( array( 'card' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
 	}
@@ -14488,27 +14476,20 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Refuse the native projection marker write and optionally expose a logger.
-	 *
-	 * @param \WC_Logger_Interface|null $logger Optional logger returned by wc_get_logger().
+	 * Refuse the native projection marker write.
 	 */
-	private function mock_native_projection_marker_write_failure( ?\WC_Logger_Interface $logger = null ): void {
-		$function_mocks = array(
-			'update_option' => static function ( $option_name, $value, $autoload = null ) {
-				if ( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION === $option_name ) {
-					return false;
-				}
+	private function mock_native_projection_marker_write_failure(): void {
+		$this->mockable_proxy->register_function_mocks(
+			array(
+				'update_option' => static function ( $option_name, $value, $autoload = null ) {
+					if ( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION === $option_name ) {
+						return false;
+					}
 
-				return update_option( $option_name, $value, $autoload );
-			},
+					return update_option( $option_name, $value, $autoload );
+				},
+			)
 		);
-		if ( null !== $logger ) {
-			$function_mocks['wc_get_logger'] = static function () use ( $logger ) {
-				return $logger;
-			};
-		}
-
-		$this->mockable_proxy->register_function_mocks( $function_mocks );
 	}
 
 	/**

@@ -93,14 +93,15 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 		$settings    = array( 'upe_enabled_payment_method_ids' => array( 'card', 'ideal' ) );
 		$logger      = $this->createMock( \WC_Logger_Interface::class );
 		$logger->expects( $this->once() )
-			->method( 'warning' )
+			->method( 'log' )
 			->with(
+				'warning',
 				'WooPayments split gateway settings drift was detected during canonical projection.',
 				array(
-					'source'               => 'woocommerce-woopayments-settings',
 					'event'                => 'split_gateway_settings_drift',
 					'drifted_option_names' => array( $option_name ),
 					'failed_option_names'  => array(),
+					'source'               => 'woopayments',
 				)
 			);
 		$logger_filter = static fn() => $logger;

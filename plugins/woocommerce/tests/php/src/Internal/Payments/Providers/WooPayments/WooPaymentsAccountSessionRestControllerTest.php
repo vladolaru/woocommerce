@@ -243,6 +243,7 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 	public function test_route_logs_error_when_service_throws(): void {
 		$this->service->exception = self::make_provider_error();
 		$logger                   = $this->create_recording_logger();
+		self::enable_woopayments_debug_logging();
 		add_filter(
 			'woocommerce_logging_class',
 			static function () use ( $logger ): object {
@@ -258,7 +259,7 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 
 		$this->assertCount( 1, $logger->entries );
 		$this->assertSame( 'error', $logger->entries[0]['level'] );
-		$this->assertSame( 'woopayments-account-session', $logger->entries[0]['context']['source'] );
+		$this->assertSame( 'woopayments', $logger->entries[0]['context']['source'] );
 		$this->assertSame( 'Failed to create embedded account session.', $logger->entries[0]['message'] );
 		$this->assertSame( array( 404, 'resource_missing' ), array( $logger->entries[0]['context']['http_status'], $logger->entries[0]['context']['error_code'] ) );
 		foreach ( self::$provider_leak_fragments as $fragment ) {

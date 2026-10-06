@@ -18,6 +18,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
@@ -3666,12 +3667,7 @@ class WooPaymentsService {
 	 */
 	private function log_native_onboarding_error( string $message, array $context = array() ): void {
 		try {
-			$logger = $this->proxy->call_function( 'wc_get_logger' );
-			if ( ! $logger instanceof \WC_Logger_Interface ) {
-				return;
-			}
-
-			$logger->error( $message, array_merge( $context, array( 'source' => 'woocommerce-woopayments-onboarding' ) ) );
+			wc_get_container()->get( WooPaymentsLogger::class )->log_always( $message, 'error', $context );
 		} catch ( \Throwable $e ) {
 			return;
 		}
@@ -3809,10 +3805,8 @@ class WooPaymentsService {
 			}
 		} catch ( \Throwable $e ) {
 			try {
-				$this->proxy->call_function( 'wc_get_logger' )->error(
-					'Native WooPayments could not read the actioned promotion notes for onboarding: ' . $e->getMessage(),
-					array( 'source' => 'woocommerce-woopayments-onboarding' )
-				);
+				// The note store's own message, as the client logs the exception (client 11.1.0 `includes/class-wc-payments-onboarding-service.php:1029-1032`).
+				wc_get_container()->get( WooPaymentsLogger::class )->error( 'Native WooPayments could not read the actioned promotion notes for onboarding: ' . $e->getMessage() );
 			} catch ( \Throwable $logging_error ) {
 				unset( $logging_error );
 			}

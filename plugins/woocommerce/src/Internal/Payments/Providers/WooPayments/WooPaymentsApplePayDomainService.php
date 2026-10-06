@@ -669,10 +669,6 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	 * @param array<string,scalar> $context Log context.
 	 */
 	private function log( string $message, string $level = 'info', array $context = array() ): void {
-		if ( ! function_exists( 'wc_get_logger' ) ) {
-			return;
-		}
-
-		wc_get_logger()->log( $level, $message, array_merge( $context, array( 'source' => 'woocommerce-payments' ) ) );
+		wc_get_container()->get( WooPaymentsLogger::class )->log( $message, $level, $context );
 	}
 }

@@ -185,6 +185,7 @@ class WooPaymentsTosRestControllerTest extends WC_REST_Unit_Test_Case {
 	public function test_tos_agreement_failure_log_leaves_out_platform_text(): void {
 		$this->sut = $this->create_controller( true );
 		$this->sut->register_routes();
+		self::enable_woopayments_debug_logging();
 		$this->api_client->throw_on_agreement = true;
 		$logger                               = RecordingWcLogger::install();
 

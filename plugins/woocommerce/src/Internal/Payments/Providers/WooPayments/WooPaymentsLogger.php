@@ -207,7 +207,8 @@ class WooPaymentsLogger {
 	}
 
 	/**
-	 * Write a line whatever the logging setting, for an anomaly on the money path that support needs to see.
+	 * Write a line whatever the logging setting, for an anomaly support needs to see: on the money path, or a failure that
+	 * leaves settings or onboarding silently wrong.
 	 *
 	 * @param string              $message Message.
 	 * @param string              $level   Log level.

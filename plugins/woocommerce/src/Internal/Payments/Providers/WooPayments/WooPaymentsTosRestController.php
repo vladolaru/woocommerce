@@ -227,9 +227,6 @@ class WooPaymentsTosRestController implements RegisterHooksInterface {
 	 * @param Throwable $exception Exception.
 	 */
 	private function log_exception( string $message, Throwable $exception ): void {
-		wc_get_logger()->error(
-			$message,
-			array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => 'woopayments-tos' ) )
-		);
+		wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( $message, $exception );
 	}
 }

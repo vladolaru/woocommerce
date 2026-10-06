@@ -874,9 +874,7 @@ class WooPaymentsPmPromotionsService {
 	 * @return void
 	 */
 	private function log_promotion_error( string $message, array $context = array() ): void {
-		if ( function_exists( 'wc_get_logger' ) ) {
-			wc_get_logger()->warning( $message, array_merge( $context, array( 'source' => 'woocommerce-woopayments-promotions' ) ) );
-		}
+		wc_get_container()->get( WooPaymentsLogger::class )->log( $message, 'warning', $context );
 	}
 
 	/**

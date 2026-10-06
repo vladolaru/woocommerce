@@ -2067,6 +2067,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_fraud_ruleset_failure_logs_only_a_listed_code( string $step ): void {
 		$this->set_connected_account_data();
+		self::enable_woopayments_debug_logging();
 		update_option( 'current_protection_level', 'advanced' );
 		$free_text_code = new WooPaymentsApiException( 'Error: x', 'https://pay.example.test/r?key=sk_test_leak123', 500 );
 		if ( 'refresh' === $step ) {

@@ -182,6 +182,7 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 				'express_checkout_checkout_methods' => array( 'payment_request' ),
 			)
 		);
+		self::enable_woopayments_debug_logging();
 		$logger = RecordingWcLogger::install();
 
 		$this->service->register_domain();
@@ -210,6 +211,7 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 				'express_checkout_checkout_methods' => array( 'payment_request' ),
 			)
 		);
+		self::enable_woopayments_debug_logging();
 		$logger = RecordingWcLogger::install();
 
 		$this->service->register_domain();
