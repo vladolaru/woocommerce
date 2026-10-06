@@ -79,6 +79,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
 
 		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_PLUGIN, get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION ) );
+		$this->assertArrayHasKey( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION, wp_load_alloptions(), 'Every request reads the marker, so it is autoloaded.' );
 	}
 
 	/** @testdox Should hand the plugin's Multi-Currency state over on the first native-owned request, before the arbiter reads the option. */

@@ -11,6 +11,7 @@ use ActionScheduler;
 use ActionScheduler_QueueRunner;
 use ActionScheduler_Store;
 use Automattic\WooCommerce\Enums\WooPaymentsCutoverState;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsGatewayRegistry;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
@@ -333,6 +334,10 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			++$seeded;
 		};
 		add_action( 'woocommerce_woopayments_cutover_seed_features', $seed_features );
+		// Plugin Multi-Currency use (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`) next to a stored core choice: the
+		// handover runs on the first native-owned request, so the reconciliation itself must leave the choice alone.
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		try {
 			$this->assertTrue( $sut->enqueue( 'merchant' ) );
 			$pending = $this->require_state_store()->get_record();
@@ -349,6 +354,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $verification );
 		$this->assertSame( 1, $normalization->get_run_count() );
 		$this->assertSame( 1, $seeded );
+		$this->assertSame( 'no', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ), 'The reconciliation does not write the Multi-Currency option.' );
 		$this->assertSame( 1, $preflight->get_deactivation_calls() );
 		$this->assertSame( WooPaymentsCutoverState::PENDING, $verification['state'] );
 		$this->assertSame( 'verify_native_ownership', $verification['current_step'] );

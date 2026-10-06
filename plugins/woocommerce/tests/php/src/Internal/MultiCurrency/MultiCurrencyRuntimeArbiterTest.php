@@ -198,6 +198,23 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should report the payments owner the native payments arbiter resolves.
+	 */
+	public function test_reports_the_payments_owner(): void {
+		$this->fake_plugin( true );
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_PLUGIN, $this->sut->get_payments_owner() );
+
+		$this->reset_legacy_proxy_mocks();
+		$this->payments_arbiter->invalidate();
+		$this->fake_plugin();
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_payments_owner() );
+
+		$this->payments_arbiter->invalidate();
+		$this->enable_native_runtime();
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, $this->sut->get_payments_owner() );
+	}
+
+	/**
 	 * @testdox Should leave multi-currency unowned when no payments runtime owns the site.
 	 */
 	public function test_no_payments_owner_leaves_multi_currency_unowned(): void {
