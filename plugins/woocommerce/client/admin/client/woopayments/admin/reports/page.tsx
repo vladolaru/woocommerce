@@ -110,6 +110,7 @@ type DataViewsFilter = {
 type GlobalSettings = typeof globalThis & {
 	wcSettings?: {
 		adminUrl?: string;
+		dateFormat?: string;
 		admin?: {
 			woopaymentsSettings?: {
 				accountDefaultCurrency?: string;
@@ -207,9 +208,11 @@ const getBalanceReportIdentity = () => {
 	};
 };
 
-// Client 11.1.0 localizes the site's date_format and time_format as wcpaySettings.dateFormat and timeFormat; WordPress gives
-// native the same two options through `@wordpress/date`, as the other money-movement pages read them.
-const getDateFormat = () => getDateSettings().formats.date;
+// Client 11.1.0 `class-wc-payments-admin.php:1072-1073` sends wc_date_format() and the time_format option. Native has the first as
+// wcSettings.dateFormat (AssetDataRegistry) and the second through `@wordpress/date`.
+const getDateFormat = () =>
+	getGlobalSettings().wcSettings?.dateFormat ||
+	getDateSettings().formats.date;
 
 const getTimeFormat = () => getDateSettings().formats.time;
 

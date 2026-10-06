@@ -58,10 +58,15 @@ jest.mock( '@wordpress/a11y', () => ( {
 	speak: jest.fn(),
 } ) );
 
-// The site's formats as WordPress gives them to `@wordpress/date`; a 24-hour time shows the site's format is used, not a default.
+// WordPress gives `@wordpress/date` the date_format and time_format options (wp-includes/script-loader.php:472-476); WooCommerce
+// publishes wc_date_format() as wcSettings.dateFormat (src/Blocks/Assets/AssetDataRegistry.php:94). Distinct values show which
+// source each part of a report date comes from.
+let mockSiteTimeFormat = 'H:i';
 jest.mock( '@wordpress/date', () => ( {
 	dateI18n: jest.fn( ( format, date ) => `${ format }|${ date }` ),
-	getSettings: () => ( { formats: { date: 'F j, Y', time: 'H:i' } } ),
+	getSettings: () => ( {
+		formats: { date: 'F j, Y', time: mockSiteTimeFormat },
+	} ),
 } ) );
 
 jest.mock( '@woocommerce/csv-export', () => ( {
@@ -370,9 +375,10 @@ describe( 'WooPaymentsReportsPage', () => {
 	let printSpy: jest.SpyInstance;
 
 	beforeEach( () => {
+		mockSiteTimeFormat = 'H:i';
 		window.wcSettings = {
 			adminUrl: 'http://example.com/wp-admin',
-			dateFormat: 'F j, Y',
+			dateFormat: 'd/m/Y',
 			locale: {
 				userLocale: 'en_US',
 			},
@@ -757,6 +763,16 @@ describe( 'WooPaymentsReportsPage', () => {
 				expect.objectContaining( { currency: 'pln' } )
 			)
 		);
+	} );
+
+	// Client 11.1.0 `class-wc-payments-admin.php:1072-1073`: WooCommerce's date format and the site's time format.
+	it( "shows Fees dates in WooCommerce's date format and the site's time format", async () => {
+		mockSiteTimeFormat = 'G:i';
+		renderReportsPage( [ '/woopayments/reports?tab=fees' ] );
+
+		expect(
+			await screen.findByText( 'd/m/Y / G:i|2026-06-18T10:11:12Z' )
+		).toBeInTheDocument();
 	} );
 
 	it( 'lets merchants change the Balance period through the Date range selector', async () => {
@@ -1162,7 +1178,7 @@ describe( 'WooPaymentsReportsPage', () => {
 		expect( screen.getByText( 'Gross amount' ) ).toBeInTheDocument();
 		expect( screen.getByText( 'Fees total' ) ).toBeInTheDocument();
 		expect(
-			screen.getByText( 'F j, Y / H:i|2026-06-18T10:11:12Z' )
+			screen.getByText( 'd/m/Y / H:i|2026-06-18T10:11:12Z' )
 		).toBeInTheDocument();
 		expect(
 			screen.getByRole( 'link', { name: 'txn_123' } )
