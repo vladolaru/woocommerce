@@ -831,7 +831,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the store terminal location.
+	 * Get the platform terminal location for the store address, creating one on the platform when none matches.
 	 *
 	 * @param WP_REST_Request $request Request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
@@ -1258,9 +1258,6 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 
 	/**
 	 * Get the IPP channel from a PaymentIntent, restricted to the channels the plugin recognizes.
-	 *
-	 * The write must land before the completion transition: Core's POS email
-	 * suppression reads the meta synchronously while the completion emails fire.
 	 *
 	 * @param array<string,mixed> $intent Intent.
 	 * @return string Validated channel, or an empty string.
