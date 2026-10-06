@@ -361,14 +361,15 @@ final class MultiCurrencyBootstrap {
 			return $this->get_roots_for_tier( 'configured', $request );
 		}
 
-		$has_explicit_price_filter = false !== has_filter( 'wcpay_multi_currency_should_output_explicit_price' );
+		// The explicit-price filter can be added after WooCommerce loads, so its controller registers wherever prices may render and
+		// the filter is read at render, as the client does (client 11.1.0 `includes/class-wc-payments-explicit-price-formatter.php:55-73`).
 		if ( in_array( $request, array( 'front', 'ajax', 'cli' ), true ) ) {
-			return $has_explicit_price_filter ? array( MultiCurrencyExplicitPriceController::class ) : array();
+			return array( MultiCurrencyExplicitPriceController::class );
 		}
 
 		$this->data_tier = $this->get_history_tier( $usage_detector );
-		$roots           = $this->get_roots_for_tier( $this->data_tier, $request );
-		return $has_explicit_price_filter ? array_merge( $roots, array( MultiCurrencyExplicitPriceController::class ) ) : $roots;
+
+		return array_merge( $this->get_roots_for_tier( $this->data_tier, $request ), array( MultiCurrencyExplicitPriceController::class ) );
 	}
 
 	/**

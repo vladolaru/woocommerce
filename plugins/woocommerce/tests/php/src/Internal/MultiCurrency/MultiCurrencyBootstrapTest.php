@@ -168,7 +168,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$sut->register( $container, '__return_false' );
 
 		$this->assertSame( 0, $resolver_calls );
-		$this->assertSame( array(), $container->registered );
+		$this->assertSame( array( MultiCurrencyExplicitPriceController::class ), $container->registered );
 		$this->assertFalse( has_filter( 'woocommerce_cart_total' ) );
 		$this->assertFalse( has_filter( 'woocommerce_get_formatted_order_total' ) );
 		$this->assertFalse( has_action( 'woocommerce_admin_order_totals_after_tax' ) );
@@ -176,7 +176,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should apply the explicit price filter from a core-owned single-currency front request.
+	 * @testdox Should apply an explicit price filter added after WooCommerce loaded on a core-owned single-currency front request.
 	 */
 	public function test_core_owned_single_currency_front_request_registers_explicit_price_filter_without_provider_roots(): void {
 		$controller     = $this->create_explicit_price_controller( false );
@@ -189,6 +189,9 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 				return array( 'ProviderRoot' );
 			}
 		);
+		$sut->register( $container, '__return_false' );
+		// Added after WooCommerce loaded, as a theme or a later plugin does; the client applies it at render
+		// (client 11.1.0 `includes/class-wc-payments-explicit-price-formatter.php:55-73`).
 		add_filter(
 			'wcpay_multi_currency_should_output_explicit_price',
 			static function ( bool $current_default ) use ( &$defaults ): bool {
@@ -196,8 +199,6 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 				return true;
 			}
 		);
-
-		$sut->register( $container, '__return_false' );
 
 		$this->assertSame( '$10.30 USD', apply_filters( 'woocommerce_cart_total', '$10.30' ) );
 		$this->assertSame( array( false ), $defaults );
@@ -209,7 +210,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should retain provider roots for an empty core-owned REST request without the public filter.
+	 * @testdox Should retain provider roots, and the explicit-price controller, for an empty core-owned REST request without the public filter.
 	 */
 	public function test_empty_core_owned_rest_request_retains_provider_roots_without_the_public_filter(): void {
 		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, false );
@@ -224,7 +225,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$sut->register( $container, '__return_true' );
 
 		$this->assertSame( 1, $resolver_calls );
-		$this->assertSame( array( 'ProviderRoot', self::CORE_ROOTS[21] ), $container->registered );
+		$this->assertSame( array( 'ProviderRoot', self::CORE_ROOTS[21], MultiCurrencyExplicitPriceController::class ), $container->registered );
 	}
 
 	/** @testdox Should append the existing controller to empty REST roots when the public filter is attached before bootstrap. */
@@ -269,7 +270,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( 0, $resolver_calls );
-		$this->assertSame( array(), $container->registered );
+		$this->assertSame( array( MultiCurrencyExplicitPriceController::class ), $container->registered );
 	}
 
 	/**
@@ -294,7 +295,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( 0, $resolver_calls );
-		$this->assertSame( array(), $container->registered );
+		$this->assertSame( array( MultiCurrencyExplicitPriceController::class ), $container->registered );
 	}
 
 	/**
@@ -315,7 +316,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$sut->register( $container, '__return_true' );
 
 		$this->assertSame( 0, $resolver_calls );
-		$this->assertSame( array(), $container->registered );
+		$this->assertSame( array( MultiCurrencyExplicitPriceController::class ), $container->registered );
 	}
 
 	/**
@@ -352,6 +353,8 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$rest       = self::CORE_ROOTS[21];
 		$override   = self::CORE_ROOTS[22];
 		$admin      = array( self::CORE_ROOTS[24], self::CORE_ROOTS[25] );
+		// Outside the configured tier the explicit-price controller registers on every request, so a late filter still applies.
+		$explicit = array( self::CORE_ROOTS[15] );
 		return array(
 			'configured front' => array( true, false, 'front', array_merge( $base, $price, $compat, $storefront ) ),
 			'configured ajax'  => array( true, false, 'ajax', array_merge( $base, $price, $compat, array( self::CORE_ROOTS[19], self::CORE_ROOTS[20] ), $history ) ),
@@ -359,18 +362,18 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 			'configured admin' => array( true, false, 'admin', array_merge( $base, $price, $compat, array( self::CORE_ROOTS[4], self::CORE_ROOTS[17], $settings, self::CORE_ROOTS[23] ), $admin ) ),
 			'configured cron'  => array( true, false, 'cron', array_merge( $base, array( self::CORE_ROOTS[2] ), $compat, $history ) ),
 			'configured cli'   => array( true, false, 'cli', array_merge( $base, array( self::CORE_ROOTS[2] ), $compat, $history ) ),
-			'historical admin' => array( false, true, 'admin', array_merge( $base, array( self::CORE_ROOTS[4], $settings, self::CORE_ROOTS[23] ), $admin ) ),
-			'historical rest'  => array( false, true, 'rest', array_merge( $base, array( self::CORE_ROOTS[4], $rest, $override, self::CORE_ROOTS[23] ) ) ),
-			'historical cron'  => array( false, true, 'cron', array_merge( $base, $history ) ),
-			'historical front' => array( false, true, 'front', array() ),
-			'historical ajax'  => array( false, true, 'ajax', array() ),
-			'historical cli'   => array( false, true, 'cli', array() ),
-			'empty admin'      => array( false, false, 'admin', array( $settings, self::CORE_ROOTS[25] ) ),
-			'empty rest'       => array( false, false, 'rest', array( $rest ) ),
-			'empty front'      => array( false, false, 'front', array() ),
-			'empty ajax'       => array( false, false, 'ajax', array() ),
-			'empty cron'       => array( false, false, 'cron', array() ),
-			'empty cli'        => array( false, false, 'cli', array() ),
+			'historical admin' => array( false, true, 'admin', array_merge( array_merge( $base, array( self::CORE_ROOTS[4], $settings, self::CORE_ROOTS[23] ), $admin ), $explicit ) ),
+			'historical rest'  => array( false, true, 'rest', array_merge( array_merge( $base, array( self::CORE_ROOTS[4], $rest, $override, self::CORE_ROOTS[23] ) ), $explicit ) ),
+			'historical cron'  => array( false, true, 'cron', array_merge( array_merge( $base, $history ), $explicit ) ),
+			'historical front' => array( false, true, 'front', $explicit ),
+			'historical ajax'  => array( false, true, 'ajax', $explicit ),
+			'historical cli'   => array( false, true, 'cli', $explicit ),
+			'empty admin'      => array( false, false, 'admin', array_merge( array( $settings, self::CORE_ROOTS[25] ), $explicit ) ),
+			'empty rest'       => array( false, false, 'rest', array_merge( array( $rest ), $explicit ) ),
+			'empty front'      => array( false, false, 'front', $explicit ),
+			'empty ajax'       => array( false, false, 'ajax', $explicit ),
+			'empty cron'       => array( false, false, 'cron', $explicit ),
+			'empty cli'        => array( false, false, 'cli', $explicit ),
 		);
 	}
 
@@ -415,7 +418,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 			$method = new \ReflectionMethod( MultiCurrencyBootstrap::class, 'get_core_roots' );
 			$method->setAccessible( true );
 
-			$this->assertSame( array(), $method->invoke( $sut, $container, $request ) );
+			$this->assertSame( array( MultiCurrencyExplicitPriceController::class ), $method->invoke( $sut, $container, $request ) );
 			$this->assertSame( 0, $container->foreign_currency_order_checks, $request . ' must return before querying order storage.' );
 		}
 	}
@@ -486,14 +489,15 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	public static function page_request_cron_root_gaps(): array {
 		$matrix          = self::core_root_matrix();
 		$history         = array( self::CORE_ROOTS[4], self::CORE_ROOTS[23] );
-		$historical_cron = array_merge( array( 'ProviderRoot' ), $matrix['historical cron'][3] );
+		$explicit        = array( self::CORE_ROOTS[15] );
+		$historical_cron = array_merge( array( 'ProviderRoot' ), array_values( array_diff( $matrix['historical cron'][3], $explicit ) ) );
 
 		return array(
 			'configured front' => array( 'configured', 'front', array_merge( array( 'ProviderRoot' ), $matrix['configured front'][3] ), $history ),
-			'historical front' => array( 'historical', 'front', array(), $historical_cron ),
-			'historical ajax'  => array( 'historical', 'ajax', array(), $historical_cron ),
-			'historical cli'   => array( 'historical', 'cli', array(), $historical_cron ),
-			'empty front'      => array( 'empty', 'front', array(), array() ),
+			'historical front' => array( 'historical', 'front', $explicit, $historical_cron ),
+			'historical ajax'  => array( 'historical', 'ajax', $explicit, $historical_cron ),
+			'historical cli'   => array( 'historical', 'cli', $explicit, $historical_cron ),
+			'empty front'      => array( 'empty', 'front', $explicit, array() ),
 		);
 	}
 
@@ -983,6 +987,8 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 * @return MultiCurrencyExplicitPriceController Explicit-price controller.
 	 */
 	private function create_explicit_price_controller( bool $has_additional_currencies_enabled ): MultiCurrencyExplicitPriceController {
+		// The plugin stores the enabled list as currency codes (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`).
+		update_option( 'wcpay_multi_currency_enabled_currencies', $has_additional_currencies_enabled ? array( 'USD', 'EUR' ) : array() );
 		$state = $this->createMock( MultiCurrencyState::class );
 		$state->method( 'has_additional_currencies_enabled' )->willReturn( $has_additional_currencies_enabled );
 		$builder = $this->getMockBuilder( MultiCurrencyStateBuilder::class )
@@ -1003,7 +1009,8 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 					return true;
 				}
 			},
-			$factory
+			$factory,
+			new MultiCurrencyUsageDetector()
 		);
 
 		return $controller;

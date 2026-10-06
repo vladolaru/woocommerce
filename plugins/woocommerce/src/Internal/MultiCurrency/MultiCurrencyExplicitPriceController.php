@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -34,16 +35,25 @@ class MultiCurrencyExplicitPriceController implements RegisterHooksInterface {
 	private MultiCurrencyStateBuilderFactory $state_builder_factory;
 
 	/**
+	 * Persisted usage detector, read before any state is built.
+	 *
+	 * @var MultiCurrencyUsageDetector
+	 */
+	private MultiCurrencyUsageDetector $usage_detector;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
 	 * @param MultiCurrencyRuntimeArbiter      $arbiter               Runtime owner arbiter.
 	 * @param MultiCurrencyStateBuilderFactory $state_builder_factory State builder factory.
+	 * @param MultiCurrencyUsageDetector       $usage_detector        Persisted usage detector.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyStateBuilderFactory $state_builder_factory ): void {
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyStateBuilderFactory $state_builder_factory, MultiCurrencyUsageDetector $usage_detector ): void {
 		$this->arbiter               = $arbiter;
 		$this->state_builder_factory = $state_builder_factory;
+		$this->usage_detector        = $usage_detector;
 	}
 
 	/**
@@ -135,10 +145,14 @@ class MultiCurrencyExplicitPriceController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function should_output_explicit_price(): bool {
-		try {
-			$default = $this->state_builder_factory->create()->build()->has_additional_currencies_enabled();
-		} catch ( \Throwable $e ) {
-			$default = false;
+		// The enabled-currencies option is read first, so a store without additional currencies builds no state per price.
+		$default = false;
+		if ( $this->usage_detector->has_additional_enabled_currencies() ) {
+			try {
+				$default = $this->state_builder_factory->create()->build()->has_additional_currencies_enabled();
+			} catch ( \Throwable $e ) {
+				$default = false;
+			}
 		}
 
 		return MultiCurrencyExplicitPriceProjectionService::should_output_explicit_price( $default );

@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
 use WC_Unit_Test_Case;
 
 /**
@@ -73,14 +74,31 @@ class MultiCurrencyExplicitPriceControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should format explicit prices only when additional currencies are enabled.
 	 */
 	public function test_formats_explicit_prices_only_when_additional_currencies_are_enabled(): void {
-		$multi_currency  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true );
-		$single_currency = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false );
-		$order           = $this->createMock( \WC_Order::class );
+		$order = $this->createMock( \WC_Order::class );
 		$order->method( 'get_currency' )->willReturn( 'BRL' );
 
+		$multi_currency = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true );
 		$this->assertSame( 'R$ 5,90 BRL', $multi_currency->get_explicit_price( 'R$ 5,90', $order ) );
 		$this->assertSame( '$10.30 USD', $multi_currency->get_explicit_price( '$10.30' ) );
+
+		$single_currency = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false );
 		$this->assertSame( 'R$ 5,90', $single_currency->get_explicit_price( 'R$ 5,90', $order ) );
+	}
+
+	/**
+	 * @testdox Should not build Multi-Currency state for a price when no additional currency is enabled.
+	 */
+	public function test_does_not_build_state_without_additional_enabled_currencies(): void {
+		delete_option( 'wcpay_multi_currency_enabled_currencies' );
+		$factory = $this->getMockBuilder( MultiCurrencyStateBuilderFactory::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'create' ) )
+			->getMock();
+		$factory->expects( $this->never() )->method( 'create' );
+		$sut = new MultiCurrencyExplicitPriceController();
+		$sut->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_CORE ), $factory, new MultiCurrencyUsageDetector() );
+
+		$this->assertSame( '$10.00', $sut->get_explicit_price( '$10.00' ) );
 	}
 
 	/**
@@ -190,7 +208,8 @@ class MultiCurrencyExplicitPriceControllerTest extends WC_Unit_Test_Case {
 			->onlyMethods( array( 'create' ) )
 			->getMock();
 		$factory->method( 'create' )->willThrowException( new \RuntimeException( 'State failed.' ) );
-		$controller->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_CORE ), $factory );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
+		$controller->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_CORE ), $factory, new MultiCurrencyUsageDetector() );
 		$defaults = array();
 		add_filter(
 			'wcpay_multi_currency_should_output_explicit_price',
@@ -233,10 +252,13 @@ class MultiCurrencyExplicitPriceControllerTest extends WC_Unit_Test_Case {
 	 * @return MultiCurrencyExplicitPriceController
 	 */
 	private function create_controller( string $owner, bool $has_additional_currencies_enabled ): MultiCurrencyExplicitPriceController {
+		// The plugin stores the enabled list as currency codes (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`).
+		update_option( 'wcpay_multi_currency_enabled_currencies', $has_additional_currencies_enabled ? array( 'USD', 'EUR' ) : array() );
 		$controller = new MultiCurrencyExplicitPriceController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			$this->create_state_builder_factory( $has_additional_currencies_enabled )
+			$this->create_state_builder_factory( $has_additional_currencies_enabled ),
+			new MultiCurrencyUsageDetector()
 		);
 
 		return $controller;
