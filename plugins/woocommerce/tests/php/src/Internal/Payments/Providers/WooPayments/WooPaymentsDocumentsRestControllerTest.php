@@ -395,16 +395,27 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * The merchant opens the download URL in a browser window; client 11.1.0 answers a failure with wp_die() (documents controller :91-98).
 	 */
 	public function test_get_document_failure_shows_the_client_error_page(): void {
-		// The platform's answer for a missing document (wpcom class-documents-controller.php:259-263).
-		$this->api_client->exception = new WooPaymentsApiException( 'Document not found.', 'wcpay_document_not_found', 404 );
+		// The platform's answer for a missing document (wpcom class-documents-controller.php:259-263), with markup a message could carry.
+		$this->api_client->exception = new WooPaymentsApiException( 'Document <b>not</b> found.', 'wcpay_document_not_found', 404 );
 		$request                     = new WP_REST_Request( 'GET', '/wc/v3/payments/documents/vat_invoice-123' );
 		$request->set_param( 'document_id', 'vat_invoice-123' );
+		$die = array();
+		add_filter(
+			'wp_die_handler',
+			static function () use ( &$die ) {
+				return static function ( $message, $title, $args ) use ( &$die ) {
+					$die = array( $message, $args );
+					throw new \WPDieException( (string) $message );
+				};
+			}
+		);
 
 		try {
 			$this->sut->get_document( $request );
 			$this->fail( 'The failure must end the request with wp_die().' );
 		} catch ( \WPDieException $exception ) {
-			$this->assertSame( 'There was an error accessing document vat_invoice-123. Document not found.', $exception->getMessage() );
+			$this->assertSame( 'There was an error accessing document vat_invoice-123. Document &lt;b&gt;not&lt;/b&gt; found.', $die[0] );
+			$this->assertSame( 404, $die[1]['response'] );
 		}
 	}
 

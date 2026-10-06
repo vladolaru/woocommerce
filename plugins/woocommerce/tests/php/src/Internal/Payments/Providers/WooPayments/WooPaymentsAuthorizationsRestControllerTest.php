@@ -322,7 +322,8 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 		$logger             = RecordingWcLogger::install();
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
 		$this->create_authorizations_controller( true, $processing_service )->register_routes();
-		$order                      = $this->create_authorized_order( 'pi_auth' );
+		$order = $this->create_authorized_order( 'pi_auth' );
+		// The intent fields the client checks before acting: metadata.order_id and an authorized status (class-wc-rest-payments-orders-controller.php:389-401).
 		$this->api_client->response = array(
 			'id'       => 'pi_auth',
 			'status'   => 'requires_capture',
@@ -336,6 +337,74 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 		$this->assertSame( 500, $response->get_status() );
 		$this->assertSame( 'wcpay_server_error', $response->get_data()['code'] );
 		$this->assertSame( array( array( 'error', $message, 'woopayments' ) ), $logger->get_errors() );
+	}
+
+	/**
+	 * @testdox An unexpected PHP error during an authorization capture is logged even with logging off.
+	 */
+	public function test_authorization_capture_logs_a_php_error_with_logging_off(): void {
+		$processing_service = new class() extends PaymentProcessingService {
+			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double always throws.
+			/**
+			 * Capture a payment.
+			 *
+			 * @param PaymentContext   $context  Payment context.
+			 * @param ProviderContract $provider Payment provider.
+			 * @return PaymentOutcome
+			 * @throws \Error Always.
+			 */
+			public function capture( PaymentContext $context, ProviderContract $provider ): PaymentOutcome {
+				throw new \Error( 'capture failed' );
+			}
+			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+		};
+		$logger             = RecordingWcLogger::install();
+		$this->create_authorizations_controller( true, $processing_service )->register_routes();
+		$order = $this->create_authorized_order( 'pi_auth' );
+		// The intent fields the client checks before acting: metadata.order_id and an authorized status (class-wc-rest-payments-orders-controller.php:389-401).
+		$this->api_client->response = array(
+			'id'       => 'pi_auth',
+			'status'   => 'requires_capture',
+			'metadata' => array( 'order_id' => (string) $order->get_id() ),
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_authorization' );
+		$request->set_body_params( array( 'payment_intent_id' => 'pi_auth' ) );
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 'wcpay_server_error', $response->get_data()['code'] );
+		$this->assertSame( array( array( 'error', 'Failed to capture an authorization via the REST API.', 'woopayments' ) ), $logger->get_errors() );
+	}
+
+	/**
+	 * @testdox A capture refused by the order payment lock keeps one audit entry and reaches no provider.
+	 *
+	 * The real processing service refuses before the provider call and saves nothing, so only the route's save keeps the entry.
+	 */
+	public function test_lock_refused_capture_keeps_one_audit_entry(): void {
+		$order   = $this->create_authorized_order( 'pi_auth' );
+		$store   = wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\OrderPaymentStore::class );
+		$profile = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile();
+		$holder  = $store->claim_order_payment_lock_for_operation( $order, $profile, 'pi_other', 'payment status update' );
+		$this->assertNotNull( $holder );
+		$controller = new WooPaymentsAuthorizationsRestController();
+		$controller->init( $this->create_arbiter( true ), $this->api_client, wc_get_container()->get( PaymentProcessingService::class ), wc_get_container()->get( WooPaymentsProvider::class ) );
+		$controller->register_routes();
+		// The intent fields the client checks before acting: metadata.order_id and an authorized status (class-wc-rest-payments-orders-controller.php:389-401).
+		$this->api_client->response = array(
+			'id'       => 'pi_auth',
+			'status'   => 'requires_capture',
+			'metadata' => array( 'order_id' => (string) $order->get_id() ),
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_authorization' );
+		$request->set_body_params( array( 'payment_intent_id' => 'pi_auth' ) );
+		$response = $this->server->dispatch( $request );
+		$store->release_order_payment_lock( $order, $profile, (string) $holder );
+
+		$this->assertSame( 'wcpay_capture_error', $response->get_data()['code'] );
+		$this->assertNotSame( 'capture_intention', $this->api_client->last_call['method'] ?? '' );
+		$this->assertCount( 1, wc_get_order( $order->get_id() )->get_meta( '_wcpay_fraud_outcome_manual_entry', false ) );
 	}
 
 	/**
@@ -402,7 +471,8 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			}
 		};
 		$this->create_authorizations_controller( true, $processing_service )->register_routes();
-		$order                      = $this->create_authorized_order( 'pi_auth' );
+		$order = $this->create_authorized_order( 'pi_auth' );
+		// The intent fields the client checks before acting: metadata.order_id and an authorized status (class-wc-rest-payments-orders-controller.php:389-401).
 		$this->api_client->response = array(
 			'id'       => 'pi_auth',
 			'status'   => 'requires_capture',
@@ -417,7 +487,10 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 		$this->assertSame( $expected['code'], $response->get_data()['code'] );
 		$this->assertSame( $expected['message'], $response->get_data()['message'] );
 		$this->assertSame( $expected['data'], $response->get_data()['data'] );
-		$this->assertNotEmpty( wc_get_order( $order->get_id() )->get_meta( '_wcpay_fraud_outcome_manual_entry', false ), 'The merchant\'s action is recorded even when the platform refuses it, as on the client.' );
+		$entries = array_values( wc_get_order( $order->get_id() )->get_meta( '_wcpay_fraud_outcome_manual_entry', false ) );
+		$this->assertCount( 1, $entries, 'The merchant\'s action is recorded once even when the platform refuses it, as on the client.' );
+		$this->assertSame( 'capture' === $action ? 'approved' : 'blocked', $entries[0]->value['action'] );
+		$this->assertSame( get_current_user_id(), $entries[0]->value['user']['id'] );
 	}
 
 	/**

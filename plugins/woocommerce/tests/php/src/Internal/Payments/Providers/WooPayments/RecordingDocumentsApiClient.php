@@ -52,8 +52,7 @@ class RecordingDocumentsApiClient extends WooPaymentsApiClient {
 	 * @var array<string,mixed>
 	 */
 	public array $documents_response = array(
-		'data'        => array(),
-		'total_count' => 0,
+		'data' => array(),
 	);
 
 	/**
