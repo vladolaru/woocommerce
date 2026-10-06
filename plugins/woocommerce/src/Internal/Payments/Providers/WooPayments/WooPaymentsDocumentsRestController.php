@@ -133,16 +133,20 @@ class WooPaymentsDocumentsRestController implements RegisterHooksInterface {
 			array(
 				'methods'             => WP_REST_Server::EDITABLE,
 				'args'                => array(
+					// The client's formats sanitize the company details (class-wc-rest-payments-vat-controller.php:43-58).
 					'vat_number' => array(
 						'type'     => 'string',
+						'format'   => 'text-field',
 						'required' => false,
 					),
 					'name'       => array(
 						'type'     => 'string',
+						'format'   => 'text-field',
 						'required' => true,
 					),
 					'address'    => array(
 						'type'     => 'string',
+						'format'   => 'textarea-field',
 						'required' => true,
 					),
 				),
