@@ -846,6 +846,12 @@ describe( 'WooPaymentsOverviewPage', () => {
 			await waitFor( () =>
 				expect( mockGetOverview ).toHaveBeenCalledTimes( 2 )
 			);
+			// While the modal is open it hides the page from the accessibility tree, so the button checks wait for it to close.
+			await waitFor( () =>
+				expect(
+					screen.queryByRole( 'dialog', { name: 'Instant payout' } )
+				).not.toBeInTheDocument()
+			);
 			// The paid-out balance is never offered again, while the refresh runs or after it fails.
 			expect(
 				screen.queryByRole( 'button', { name: 'Get $9.00 now' } )
