@@ -81,17 +81,55 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Deposits routes require manage_woocommerce before calling the platform API.
+	 * @testdox Every payout route, the instant payout included, refuses visitors and customers before calling the platform.
+	 *
+	 * @dataProvider provide_payout_route_requests
+	 *
+	 * @param string              $method HTTP method.
+	 * @param string              $path   Route path.
+	 * @param array<string,mixed> $params Body arguments.
 	 */
-	public function test_routes_require_manage_woocommerce(): void {
+	public function test_routes_require_manage_woocommerce( string $method, string $path, array $params = array() ): void {
 		$this->sut->register_routes();
-		wp_set_current_user( 0 );
 
-		$request  = new WP_REST_Request( 'GET', '/wc/v3/payments/deposits' );
-		$response = $this->server->dispatch( $request );
+		foreach ( array( 0, $this->factory->user->create( array( 'role' => 'customer' ) ) ) as $user_id ) {
+			wp_set_current_user( $user_id );
+			$request = new WP_REST_Request( $method, $path );
+			$request->set_body_params( $params );
+			$response = $this->server->dispatch( $request );
 
-		$this->assertSame( rest_authorization_required_code(), $response->get_status() );
+			$this->assertSame( rest_authorization_required_code(), $response->get_status(), "User {$user_id} on {$method} {$path}." );
+		}
 		$this->assertNull( $this->api_client->last_deposits_query );
+		$this->assertNull( $this->api_client->last_deposits_summary_query );
+		$this->assertNull( $this->api_client->last_deposit_id );
+		$this->assertNull( $this->api_client->last_export_query );
+		$this->assertNull( $this->api_client->last_export_id );
+		$this->assertNull( $this->api_client->last_manual_deposit );
+	}
+
+	/**
+	 * One request per payout route and method.
+	 *
+	 * @return array<string,array<int,mixed>>
+	 */
+	public function provide_payout_route_requests(): array {
+		return array(
+			'list'           => array( 'GET', '/wc/v3/payments/deposits' ),
+			'instant payout' => array(
+				'POST',
+				'/wc/v3/payments/deposits',
+				array(
+					'type'     => 'instant',
+					'currency' => 'usd',
+				),
+			),
+			'export'         => array( 'POST', '/wc/v3/payments/deposits/download' ),
+			'export url'     => array( 'GET', '/wc/v3/payments/deposits/download/export_test' ),
+			'summary'        => array( 'GET', '/wc/v3/payments/deposits/summary' ),
+			'overview'       => array( 'GET', '/wc/v3/payments/deposits/overview-all' ),
+			'detail'         => array( 'GET', '/wc/v3/payments/deposits/po_test' ),
+		);
 	}
 
 	/**
