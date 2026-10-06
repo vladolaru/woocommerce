@@ -58,6 +58,31 @@ class WooPaymentsLogEntryFormatTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Leaves a line alone when an earlier filter changed core's prefix, when it is already numbered, or when it is not a string.
+	 */
+	public function test_leaves_lines_without_cores_prefix_unchanged(): void {
+		$sut = new WooPaymentsLogEntryFormat();
+		$sut->register();
+
+		$changed_prefix = '[ERROR] 2026-10-06 The platform sent an upstream ERROR response.';
+		$numbered       = '2026-10-06T10:00:00+00:00 ERROR 0123456789abc-0007 Already numbered.';
+
+		$this->assertSame( $changed_prefix, $this->format( $changed_prefix, 'error', 'woopayments' ) );
+		$this->assertSame( $numbered, $this->format( $numbered, 'error', 'woopayments' ) );
+		$this->assertSame(
+			array( 'not a string' ),
+			$sut->handle_woocommerce_format_log_entry(
+				array( 'not a string' ),
+				array(
+					'level'   => 'error',
+					'context' => array( 'source' => 'woopayments' ),
+				)
+			)
+		);
+		$this->assertMatchesRegularExpression( '/ ERROR \w+-0001 First counted\.$/', $this->format( '2026-10-06T10:00:00+00:00 ERROR First counted.', 'error', 'woopayments' ) );
+	}
+
+	/**
 	 * Run an entry through the core log entry filter.
 	 *
 	 * @param string $entry  Formatted entry.

@@ -63,14 +63,11 @@ class WooPaymentsLogEntryFormat implements RegisterHooksInterface {
 			return $entry;
 		}
 
-		$level_marker = ' ' . strtoupper( $args['level'] ) . ' ';
-		$position     = strpos( $entry, $level_marker );
-		if ( false === $position ) {
+		// Only core's own "<time> <LEVEL> " prefix, at the start of a line not numbered yet (core `format_entry()`).
+		if ( 1 !== preg_match( '/^\S+ ' . preg_quote( strtoupper( $args['level'] ), '/' ) . ' (?![0-9a-f]{13}-\d{4} )/', $entry, $prefix ) ) {
 			return $entry;
 		}
 
-		$cut = $position + strlen( $level_marker );
-
-		return substr( $entry, 0, $cut ) . sprintf( '%s-%04d ', $this->request_id, ++$this->entry_number ) . substr( $entry, $cut );
+		return $prefix[0] . sprintf( '%s-%04d ', $this->request_id, ++$this->entry_number ) . substr( $entry, strlen( $prefix[0] ) );
 	}
 }
