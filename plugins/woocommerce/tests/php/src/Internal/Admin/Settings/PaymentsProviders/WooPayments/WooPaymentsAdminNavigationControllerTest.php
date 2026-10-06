@@ -74,7 +74,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		remove_filter( 'wp_doing_ajax', '__return_true' );
 		remove_all_filters( 'woocommerce_multi_currency_js_settings' );
 		remove_all_filters( 'wcpay_js_settings' );
-		unset( $_GET['page'], $_GET['tab'], $_GET['path'], $_GET['woopayments-vat-details-redirect'], $_GET['from'], $_SERVER['HTTP_REFERER'] );
+		unset( $_GET['page'], $_GET['tab'], $_GET['path'], $_GET['from'], $_SERVER['HTTP_REFERER'] );
 		delete_option( 'wcpay_account_data' );
 		delete_option( 'wcpay_onboarding_test_mode' );
 		delete_option( 'wcpay_next_deposit_notice_dismissed' );
@@ -106,7 +106,6 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		remove_action( 'adminmenu', array( $sut, 'open_payments_menu' ) );
 		remove_action( 'admin_menu', array( $sut, 'add_menu_items' ), 70 );
 		remove_action( 'admin_init', array( $sut, 'redirect_legacy_payment_paths' ), 10 );
-		remove_action( 'template_redirect', array( $sut, 'redirect_vat_details_request' ), 10 );
 		remove_filter( 'woocommerce_admin_shared_settings', array( $sut, 'preload_shared_settings' ), 10 );
 	}
 
@@ -129,97 +128,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertFalse( has_action( 'admin_menu', array( $sut, 'add_menu_items' ) ) );
 		$this->assertFalse( has_action( 'admin_init', array( $sut, 'redirect_legacy_payment_paths' ) ) );
-		$this->assertFalse( has_action( 'template_redirect', array( $sut, 'redirect_vat_details_request' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_admin_shared_settings', array( $sut, 'preload_shared_settings' ) ) );
-	}
-
-	/**
-	 * @testdox Should register the VAT details redirect bridge when native runtime owns payments.
-	 */
-	public function test_registers_vat_details_redirect_bridge_when_native_runtime_owns_payments(): void {
-		$sut = $this->create_controller( true );
-
-		$sut->register();
-
-		$this->assertSame( 10, has_action( 'template_redirect', array( $sut, 'redirect_vat_details_request' ) ) );
-
-		remove_action( 'admin_menu', array( $sut, 'add_menu_items' ), 70 );
-		remove_action( 'admin_init', array( $sut, 'redirect_legacy_payment_paths' ), 10 );
-		remove_action( 'template_redirect', array( $sut, 'redirect_vat_details_request' ), 10 );
-		remove_filter( 'woocommerce_admin_shared_settings', array( $sut, 'preload_shared_settings' ), 10 );
-	}
-
-	/**
-	 * @testdox Should build a native settings URL for legacy VAT details redirects.
-	 */
-	public function test_builds_native_settings_url_for_legacy_vat_details_redirects(): void {
-		$sut = $this->create_controller( true );
-
-		$this->assertTrue( method_exists( $sut, 'get_vat_details_redirect_url' ) );
-
-		$url = $sut->get_vat_details_redirect_url(
-			array(
-				'woopayments-vat-details-redirect' => '1',
-			)
-		);
-		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
-
-		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout', $url );
-		$this->assertSame( '/woopayments/settings', $query['path'] );
-		$this->assertSame( 'true', $query['woopayments-vat-details-modal'] );
-		$this->assertArrayNotHasKey( 'woopayments-vat-details-redirect', $query );
-	}
-
-	/**
-	 * @testdox Should ignore requests without the legacy VAT details redirect query.
-	 */
-	public function test_ignores_requests_without_legacy_vat_details_redirect_query(): void {
-		$sut = $this->create_controller( true );
-
-		$this->assertTrue( method_exists( $sut, 'get_vat_details_redirect_url' ) );
-		$this->assertSame( '', $sut->get_vat_details_redirect_url( array() ) );
-	}
-
-	/**
-	 * @testdox Should redirect legacy VAT details requests to native provider settings.
-	 */
-	public function test_redirects_legacy_vat_details_requests_to_native_provider_settings(): void {
-		$sut                                      = $this->create_controller( true );
-		$_GET['woopayments-vat-details-redirect'] = '1';
-		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ), 10, 1 );
-
-		try {
-			$sut->redirect_vat_details_request();
-			$this->fail( 'Expected the VAT details redirect to be intercepted.' );
-		} catch ( \RuntimeException $exception ) {
-			$this->assertSame( 'wp_redirect intercepted', $exception->getMessage() );
-		}
-
-		$url = $this->intercepted_redirect;
-		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
-
-		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout', $url );
-		$this->assertSame( '/woopayments/settings', $query['path'] );
-		$this->assertSame( 'true', $query['woopayments-vat-details-modal'] );
-		$this->assertArrayNotHasKey( 'woopayments-vat-details-redirect', $query );
-	}
-
-	/**
-	 * @testdox Should not redirect legacy VAT details requests during AJAX requests.
-	 */
-	public function test_does_not_redirect_legacy_vat_details_requests_during_ajax_requests(): void {
-		$sut                                      = $this->create_controller( true );
-		$_GET['woopayments-vat-details-redirect'] = '1';
-		add_filter( 'wp_doing_ajax', '__return_true' );
-		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ), 10, 1 );
-
-		try {
-			$sut->redirect_vat_details_request();
-		} catch ( \RuntimeException $exception ) {
-			$this->fail( 'AJAX VAT details requests should not redirect: ' . $exception->getMessage() );
-		}
-
-		$this->assertSame( '', $this->intercepted_redirect, 'AJAX requests with legacy VAT details query should return without redirecting.' );
 	}
 
 	/**
@@ -2371,7 +2280,6 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		remove_action( 'admin_menu', array( $sut, 'add_menu_items' ), 70 );
 		remove_action( 'admin_init', array( $sut, 'redirect_legacy_payment_paths' ), 10 );
 		remove_action( 'admin_init', array( $sut, 'maybe_redirect_to_onboarding' ), 16 );
-		remove_action( 'template_redirect', array( $sut, 'redirect_vat_details_request' ), 10 );
 		remove_filter( 'woocommerce_admin_shared_settings', array( $sut, 'preload_shared_settings' ), 10 );
 	}
 

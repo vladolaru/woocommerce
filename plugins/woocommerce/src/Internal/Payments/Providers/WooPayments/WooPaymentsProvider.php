@@ -213,7 +213,8 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 				'cron'  => array( WooPaymentsCutoverReconciliationJob::class ),
 			),
 			NativePaymentsState::CONNECTED => array(
-				'front' => $gateway_prefix,
+				// The VAT details link lands on a front-end URL (client 11.1.0 `includes/class-wc-payments-vat-redirect-service.php:25`).
+				'front' => array_merge( $gateway_prefix, array( WooPaymentsVatDetailsRedirect::class ) ),
 				'admin' => array_merge( $gateway_prefix, $connected_admin ),
 				'ajax'  => array_merge( $gateway_prefix, $connected_ajax ),
 				'rest'  => array_merge( $gateway_prefix, $connected_rest ),
@@ -243,6 +244,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 						WooPaymentsOrderTrackingService::class,
 						WooPaymentsOperationalQueueService::class,
 						WooPaymentsTestModeOrderEmailService::class,
+						WooPaymentsVatDetailsRedirect::class,
 					)
 				),
 				'admin' => array_merge( $active_maintenance_prefix, $connected_admin ),
