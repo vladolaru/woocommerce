@@ -31,7 +31,7 @@ const SWITCHER_ACCESSIBLE_NAME = 'Select your currency';
 
 // One run-stable virtual product priced so the manual EUR rate below converts
 // it to a whole amount: USD 10.00 × 0.80 = EUR 8.00, immune to charm pricing
-// and price rounding, both pinned to zero in the setup.
+// and price rounding, both zero in the readonly seed.
 const PRODUCT_SLUG = 'woopayments-mc-family-smoke';
 const PRODUCT_NAME = 'WooPayments MC family smoke';
 const PRODUCT_PRICE = '10.00';
@@ -233,62 +233,145 @@ async function expectHistoricalOrdersRendered(
 }
 
 /**
- * Make EUR deterministically available and enabled next to the USD store
- * currency. The manual rate keeps the smoke independent of provider-fetched
- * exchange rates, which this standing store does not cache.
+ * Check the readonly seed's currencies (`envs/woopayments-native/seed-readonly.sh`)
+ * instead of writing them: USD and EUR enabled, EUR on a 0.8 manual rate with
+ * rounding and charm off. The manual rate keeps the smoke independent of
+ * provider-fetched exchange rates, which this store does not cache. Sibling
+ * specs read the same enabled set, so this spec must not change it.
  */
-async function ensureEnabledCurrencies( restApi: ApiClient ): Promise< void > {
-	await restApi.post( `${ MULTI_CURRENCY_API }/currencies/EUR`, {
+async function expectSeededCurrencies( restApi: ApiClient ): Promise< void > {
+	const state = (
+		await restApi.get< { enabled: Record< string, unknown > } >(
+			`${ MULTI_CURRENCY_API }/currencies`
+		)
+	).data;
+	expect(
+		Object.keys( state.enabled ?? {} ),
+		'the readonly seed enables EUR next to the USD store currency'
+	).toEqual( expect.arrayContaining( [ 'USD', 'EUR' ] ) );
+
+	const eur = (
+		await restApi.get< {
+			exchange_rate_type: string;
+			manual_rate: unknown;
+			price_rounding: unknown;
+			price_charm: unknown;
+		} >( `${ MULTI_CURRENCY_API }/currencies/EUR` )
+	).data;
+	expect( {
+		exchange_rate_type: eur.exchange_rate_type,
+		manual_rate: Number( eur.manual_rate ),
+		price_rounding: Number( eur.price_rounding ),
+		price_charm: Number( eur.price_charm ),
+	} ).toEqual( {
 		exchange_rate_type: 'manual',
 		manual_rate: EUR_MANUAL_RATE,
 		price_rounding: 0,
 		price_charm: 0,
 	} );
-	// The route answers HTTP 200 with the unchanged list when the payload is
-	// not a non-empty array, so a green response alone does not prove the
-	// request took effect; assert the returned state at the call site.
-	const updated = (
-		await restApi.post< { enabled: Record< string, unknown > } >(
-			`${ MULTI_CURRENCY_API }/update-enabled-currencies`,
-			{ enabled: [ 'USD', 'EUR' ] }
-		)
-	).data;
-	const updatedCodes = Object.keys( updated.enabled ?? {} ).toSorted();
-	if ( updatedCodes.join( ',' ) !== 'EUR,USD' ) {
-		throw new Error(
-			`Enabled-currencies update did not take effect; store reports: ${ updatedCodes.join(
-				', '
-			) }`
-		);
-	}
+}
+
+interface HeaderPart {
+	id: string;
+	slug: string;
+	source: string;
+	content: { raw?: string };
+}
+
+async function readHeaderParts( restApi: ApiClient ): Promise< HeaderPart[] > {
+	return (
+		await restApi.get< HeaderPart[] >( TEMPLATE_PARTS_API, {
+			context: 'edit',
+		} )
+	).data.filter( ( part: HeaderPart ) => part.slug === 'header' );
+}
+
+function headerState( parts: HeaderPart[] ): Array< Record< string, string > > {
+	return parts.map( ( part ) => ( {
+		id: part.id,
+		source: part.source,
+		content: part.content.raw ?? '',
+	} ) );
 }
 
 /**
- * Place the native switcher block in the theme header template part so the
- * retained product-page context renders it. Skips the part if it already
- * carries the block.
+ * Run the callback with the native switcher block in the theme header
+ * template part, which is where the product page and My Account render it,
+ * then put every header part back. A part that came from the theme file loses
+ * the customization the write created; a customized part gets its content
+ * back. A restore failure never hides the scenario's own failure.
  */
-async function ensureSwitcherPlacement( restApi: ApiClient ): Promise< void > {
-	const headerParts = (
-		await restApi.get<
-			Array< { id: string; slug: string; content: { raw?: string } } >
-		>( TEMPLATE_PARTS_API, { context: 'edit' } )
-	).data.filter( ( part ) => part.slug === 'header' );
-
-	if ( headerParts.length < 1 ) {
-		throw new Error( 'Expected the theme header template part.' );
+async function withHeaderSwitcher< Result >(
+	restApi: ApiClient,
+	callback: () => Promise< Result >
+): Promise< Result > {
+	const before = await readHeaderParts( restApi );
+	expect(
+		before.length,
+		'the theme must have a header template part'
+	).toBeGreaterThan( 0 );
+	for ( const part of before ) {
+		expect(
+			( part.content.raw ?? '' ).includes( SWITCHER_BLOCK_NAME ),
+			'the header must not already carry a switcher block; a previous run leaked it and it needs manual attention'
+		).toBe( false );
 	}
 
-	for ( const header of headerParts ) {
-		const rawContent = header.content.raw ?? '';
-		if ( rawContent.includes( SWITCHER_BLOCK_NAME ) ) {
-			continue;
+	const restore = async (): Promise< void > => {
+		for ( const part of before ) {
+			if ( part.source === 'custom' ) {
+				await restApi.post( `${ TEMPLATE_PARTS_API }/${ part.id }`, {
+					content: part.content.raw ?? '',
+				} );
+			} else {
+				await restApi.delete( `${ TEMPLATE_PARTS_API }/${ part.id }`, {
+					force: true,
+				} );
+			}
 		}
+		expect(
+			headerState( await readHeaderParts( restApi ) ),
+			'the header template parts must come back exactly as they were'
+		).toEqual( headerState( before ) );
+	};
 
-		await restApi.post( `${ TEMPLATE_PARTS_API }/${ header.id }`, {
-			content: `${ SWITCHER_BLOCK }\n${ rawContent }`,
-		} );
+	let result: Result | undefined;
+	let scenarioError: unknown;
+	try {
+		for ( const part of before ) {
+			await restApi.post( `${ TEMPLATE_PARTS_API }/${ part.id }`, {
+				content: `${ SWITCHER_BLOCK }\n${ part.content.raw ?? '' }`,
+			} );
+		}
+		result = await callback();
+	} catch ( error ) {
+		scenarioError = error;
 	}
+
+	let restorationError: unknown;
+	try {
+		await restore();
+	} catch ( error ) {
+		restorationError = error;
+	}
+
+	if ( scenarioError !== undefined ) {
+		if ( restorationError !== undefined ) {
+			throw new Error(
+				`${ String(
+					scenarioError
+				) }\n\nThe header then failed to restore: ${ String(
+					restorationError
+				) }`,
+				{ cause: scenarioError }
+			);
+		}
+		throw scenarioError;
+	}
+	if ( restorationError !== undefined ) {
+		throw restorationError;
+	}
+	return result as Result;
 }
 
 async function ensureSmokeProduct( restApi: ApiClient ): Promise< number > {
@@ -367,23 +450,24 @@ test(
 		tag: [ tags.WOOPAYMENTS_NATIVE ],
 	},
 	async ( { restApi, page } ) => {
-		await ensureEnabledCurrencies( restApi );
-		await ensureSwitcherPlacement( restApi );
+		await expectSeededCurrencies( restApi );
 		await ensureSmokeProduct( restApi );
 
-		// Contract: switching currency at the product page converts the
-		// product price and the selection survives a query-free navigation.
-		await page.goto( `product/${ PRODUCT_SLUG }/?currency=USD` );
-		const productSwitcher = currencySwitcher( page );
-		await expect( productSwitcher ).toBeVisible();
-		await productSwitcher.focus();
-		await expect( productSwitcher ).toBeFocused();
-		await expect( visibleText( page, USD_PRICE_TEXT ) ).toBeVisible();
-		await switchCurrency( page, 'EUR' );
-		await expectConvertedPrices( page, EUR_PRICE_TEXT, USD_PRICE_TEXT );
-		await page.goto( `product/${ PRODUCT_SLUG }/` );
-		await expect( currencySwitcher( page ) ).toHaveValue( 'EUR' );
-		await expectConvertedPrices( page, EUR_PRICE_TEXT, USD_PRICE_TEXT );
+		await withHeaderSwitcher( restApi, async () => {
+			// Contract: switching currency at the product page converts the
+			// product price and the selection survives a query-free navigation.
+			await page.goto( `product/${ PRODUCT_SLUG }/?currency=USD` );
+			const productSwitcher = currencySwitcher( page );
+			await expect( productSwitcher ).toBeVisible();
+			await productSwitcher.focus();
+			await expect( productSwitcher ).toBeFocused();
+			await expect( visibleText( page, USD_PRICE_TEXT ) ).toBeVisible();
+			await switchCurrency( page, 'EUR' );
+			await expectConvertedPrices( page, EUR_PRICE_TEXT, USD_PRICE_TEXT );
+			await page.goto( `product/${ PRODUCT_SLUG }/` );
+			await expect( currencySwitcher( page ) ).toHaveValue( 'EUR' );
+			await expectConvertedPrices( page, EUR_PRICE_TEXT, USD_PRICE_TEXT );
+		} );
 	}
 );
 
@@ -398,66 +482,67 @@ test(
 	},
 	async ( { restApi, page } ) => {
 		const runId = random();
-		await ensureEnabledCurrencies( restApi );
-		await ensureSwitcherPlacement( restApi );
+		await expectSeededCurrencies( restApi );
 		const productId = await ensureSmokeProduct( restApi );
 		const customerId = await standingCustomerId( restApi );
 		const orders: HistoricalOrder[] = [];
 
-		try {
-			for ( const expectation of HISTORICAL_ORDER_EXPECTATIONS ) {
-				let order = await createHistoricalOrder(
-					restApi,
-					productId,
-					customerId,
-					runId,
-					expectation
-				);
-				orders.push( order );
-				order = await seedHistoricalOrderMetadata(
-					restApi,
-					order,
-					expectation
-				);
-				orders[ orders.length - 1 ] = order;
-				expect( historicalOrderSnapshot( order ) ).toEqual( {
-					customer_id: customerId,
-					currency: expectation.currency,
-					total: expectation.total,
-					status: 'completed',
-					payment_method: 'woocommerce_payments',
-					payment_method_title: 'Visa credit card',
-					transaction_id: `pi_e2e_historical_${ runId }_${ expectation.currency.toLowerCase() }`,
-					multi_currency_meta: expectation.meta,
-				} );
-			}
+		await withHeaderSwitcher( restApi, async () => {
+			try {
+				for ( const expectation of HISTORICAL_ORDER_EXPECTATIONS ) {
+					let order = await createHistoricalOrder(
+						restApi,
+						productId,
+						customerId,
+						runId,
+						expectation
+					);
+					orders.push( order );
+					order = await seedHistoricalOrderMetadata(
+						restApi,
+						order,
+						expectation
+					);
+					orders[ orders.length - 1 ] = order;
+					expect( historicalOrderSnapshot( order ) ).toEqual( {
+						customer_id: customerId,
+						currency: expectation.currency,
+						total: expectation.total,
+						status: 'completed',
+						payment_method: 'woocommerce_payments',
+						payment_method_title: 'Visa credit card',
+						transaction_id: `pi_e2e_historical_${ runId }_${ expectation.currency.toLowerCase() }`,
+						multi_currency_meta: expectation.meta,
+					} );
+				}
 
-			await logInAsStandingCustomer( page );
-			await expectHistoricalOrdersRendered( page, orders );
+				await logInAsStandingCustomer( page );
+				await expectHistoricalOrdersRendered( page, orders );
 
-			await page.goto( 'my-account/orders/' );
-			await currencySwitcher( page ).selectOption( 'EUR' );
-			await page.waitForURL( /[?&]currency=EUR/ );
-			await page.reload();
-			await expect( currencySwitcher( page ) ).toHaveValue( 'EUR' );
-			await expectHistoricalOrdersRendered( page, orders, 'EUR' );
+				await page.goto( 'my-account/orders/' );
+				await currencySwitcher( page ).selectOption( 'EUR' );
+				await page.waitForURL( /[?&]currency=EUR/ );
+				await page.reload();
+				await expect( currencySwitcher( page ) ).toHaveValue( 'EUR' );
+				await expectHistoricalOrdersRendered( page, orders, 'EUR' );
 
-			for ( const order of orders ) {
-				const stored = (
-					await restApi.get< HistoricalOrder >(
-						`wc/v3/orders/${ order.id }`
+				for ( const order of orders ) {
+					const stored = (
+						await restApi.get< HistoricalOrder >(
+							`wc/v3/orders/${ order.id }`
+						)
+					).data;
+					expect( historicalOrderSnapshot( stored ) ).toEqual(
+						historicalOrderSnapshot( order )
+					);
+				}
+			} finally {
+				await Promise.all(
+					orders.map( ( order ) =>
+						deleteHistoricalOrder( restApi, order.id )
 					)
-				).data;
-				expect( historicalOrderSnapshot( stored ) ).toEqual(
-					historicalOrderSnapshot( order )
 				);
 			}
-		} finally {
-			await Promise.all(
-				orders.map( ( order ) =>
-					deleteHistoricalOrder( restApi, order.id )
-				)
-			);
-		}
+		} );
 	}
 );
