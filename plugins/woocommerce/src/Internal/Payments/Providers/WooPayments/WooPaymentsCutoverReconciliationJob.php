@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Enums\WooPaymentsCutoverState;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
@@ -1323,6 +1324,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				$claimed = $seeded_claim;
 			}
 			try {
+				MultiCurrencyFeatureController::seed_from_prior_use();
 				/**
 				 * Fires before WooPayments plugin deactivation so feature owners can seed native settings.
 				 *

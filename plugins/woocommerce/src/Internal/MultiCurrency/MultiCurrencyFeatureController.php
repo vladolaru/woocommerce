@@ -44,6 +44,25 @@ class MultiCurrencyFeatureController {
 	}
 
 	/**
+	 * Turn the feature on for a store that used the WooPayments plugin's Multi-Currency, unless a choice is already stored.
+	 *
+	 * Runs at upgrade and again at the WooPayments cutover, so currencies set up in the plugin in between carry over.
+	 * Without prior use the option stays unset, so the feature stays off and a later cutover can still turn it on.
+	 *
+	 * @since 11.2.0
+	 */
+	public static function seed_from_prior_use(): void {
+		$enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies', array() );
+		$has_prior_use      = ( is_array( $enabled_currencies ) && ! empty( $enabled_currencies ) )
+			|| filter_var( get_option( 'wcpay_multi_currency_setup_completed', false ), FILTER_VALIDATE_BOOLEAN );
+
+		// The plugin's own feature flag, on unless the merchant turned it off (client 11.1.0 `includes/class-wc-payments-features.php:67-69`).
+		if ( $has_prior_use && '1' === (string) get_option( '_wcpay_feature_customer_multi_currency', '1' ) ) {
+			add_option( self::FEATURE_ENABLE_OPTION, 'yes', '', true );
+		}
+	}
+
+	/**
 	 * Add the Multi-Currency feature definition.
 	 *
 	 * @since 11.2.0

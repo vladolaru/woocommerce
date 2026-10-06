@@ -53,6 +53,23 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should turn the feature on from prior plugin use, leave it unset without it, and never override a stored choice.
+	 */
+	public function test_seed_from_prior_use(): void {
+		MultiCurrencyFeatureController::seed_from_prior_use();
+		$this->assertFalse( get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ), 'A store that never used the plugin feature keeps the option unset, so new stores stay off.' );
+
+		// The merchant set up currencies in the plugin after upgrading; the cutover runs the seed again.
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		MultiCurrencyFeatureController::seed_from_prior_use();
+		$this->assertSame( 'yes', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
+
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'no' );
+		MultiCurrencyFeatureController::seed_from_prior_use();
+		$this->assertSame( 'no', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ), 'A Features-screen choice wins over prior use.' );
+	}
+
+	/**
 	 * @testdox Should register the stable Multi-Currency feature with its dynamic radio setting.
 	 */
 	public function test_add_feature_definition_registers_dynamic_radio_setting(): void {

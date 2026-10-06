@@ -665,7 +665,7 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Migration registers and seeds the multi-currency feature once from prior WooPayments use.
+	 * @testdox Migration registers the multi-currency seed, which turns the feature on after prior WooPayments use and otherwise leaves it unset.
 	 */
 	public function test_wc_update_11204_seed_multi_currency_feature(): void {
 		global $wpdb;
@@ -679,8 +679,8 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 		$cases = array(
 			'implicit legacy default plus enabled currencies' => array( null, array( 'EUR' ), null, 'yes' ),
 			'explicit legacy flag plus completed setup' => array( '1', array(), '1', 'yes' ),
-			'legacy flag without merchant use'          => array( '1', array(), null, 'no' ),
-			'disabled legacy flag with merchant use'    => array( '0', array( 'EUR' ), '1', 'no' ),
+			'legacy flag without merchant use'          => array( '1', array(), null, false ),
+			'disabled legacy flag with merchant use'    => array( '0', array( 'EUR' ), '1', false ),
 		);
 
 		foreach ( $cases as $case => list( $legacy_flag, $enabled_currencies, $setup_completed, $expected ) ) {
@@ -704,6 +704,10 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 			$this->assertSame( $expected, get_option( 'woocommerce_feature_multi_currency_enabled' ), $case );
 		}
 
+		delete_option( 'woocommerce_feature_multi_currency_enabled' );
+		delete_option( '_wcpay_feature_customer_multi_currency' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		wc_update_11204_seed_multi_currency_feature();
 		$this->assertContains(
 			$wpdb->get_var( $wpdb->prepare( "SELECT autoload FROM {$wpdb->options} WHERE option_name = %s", 'woocommerce_feature_multi_currency_enabled' ) ),
 			wp_autoload_values_to_autoload(),
