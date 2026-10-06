@@ -77,8 +77,6 @@ class MultiCurrencyTrackingOrderCountProjectionService {
 					orders.id AS order_id, orders.payment_method as gateway, orders.total_amount as total, orders.currency as currency
 				FROM
 					{$wpdb->prefix}wc_orders orders
-				LEFT JOIN
-					{$wpdb->prefix}wc_orders_meta order_meta ON order_meta.order_id = orders.id
 				INNER JOIN
 					{$wpdb->prefix}wc_orders_meta mc_meta ON mc_meta.order_id = orders.id
 					AND mc_meta.meta_key = '_wcpay_multi_currency_order_exchange_rate'
