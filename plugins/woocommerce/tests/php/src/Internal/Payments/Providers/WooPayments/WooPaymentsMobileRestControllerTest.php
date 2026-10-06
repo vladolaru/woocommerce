@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsMo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use WC_Helper_Order;
 use WC_REST_Unit_Test_Case;
 use WP_Error;
@@ -1805,6 +1806,99 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Terminal capture waits for a short-lived order payment lock holder and then captures once.
+	 *
+	 * The likely holder is the webhook applying an event for the same intent; client 11.1.0 takes no lock here at all.
+	 */
+	public function test_capture_terminal_payment_waits_for_the_order_payment_lock(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		$this->set_capturable_terminal_intent( $order );
+		$store        = wc_get_container()->get( OrderPaymentStore::class );
+		$profile      = new WooPaymentsPersistenceProfile();
+		$holder_token = $store->claim_order_payment_lock_for_operation( $order, $profile, 'pi_terminal', 'payment status update' );
+		$this->assertNotNull( $holder_token );
+		$sut = $this->create_lock_waiting_controller(
+			static function ( int $wait ) use ( $store, $order, $profile, $holder_token ): void {
+				if ( 2 === $wait ) {
+					$store->release_order_payment_lock( $order, $profile, $holder_token );
+				}
+			}
+		);
+
+		$response = $sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( 'succeeded', $response->get_data()['status'] );
+		$this->assertSame( 2, $sut->waits );
+		$this->assertSame(
+			array(
+				array(
+					'intent_id' => 'pi_terminal',
+					'amount'    => 1234,
+				),
+			),
+			$this->api_client->captures
+		);
+		$this->assertSame( 'completed', wc_get_order( $order->get_id() )->get_status() );
+		$this->assertNotNull( $store->claim_order_payment_lock_for_operation( $order, $profile, 'pi_terminal', 'payment status update' ), 'The capture released the lock.' );
+	}
+
+	/**
+	 * @testdox Terminal capture refuses with a retryable capture error, and captures nothing, when the order payment lock stays held.
+	 *
+	 * The Android app treats wcpay_payment_uncapturable as already captured and reports a sale (woocommerce-android
+	 * PaymentManager.kt:277), so the refusal uses wcpay_capture_error, which it retries on the same intent.
+	 */
+	public function test_capture_terminal_payment_refuses_while_the_order_payment_lock_stays_held(): void {
+		$logger = RecordingWcLogger::install();
+		$order  = $this->create_order( 12.34, 'USD' );
+		$this->set_capturable_terminal_intent( $order );
+		$store        = wc_get_container()->get( OrderPaymentStore::class );
+		$profile      = new WooPaymentsPersistenceProfile();
+		$holder_token = $store->claim_order_payment_lock_for_operation( $order, $profile, 'pi_terminal', 'payment status update' );
+		$sut          = $this->create_lock_waiting_controller();
+
+		$response = $sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+		$store->release_order_payment_lock( $order, $profile, (string) $holder_token );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 'wcpay_capture_error', $response->get_error_code() );
+		$this->assertSame( 'The payment is still being processed. Try again.', $response->get_error_message() );
+		$this->assertSame( 409, $response->get_error_data()['status'] );
+		$this->assertSame( 3, $sut->waits );
+		$this->assertSame( array(), $this->api_client->captures );
+		$this->assertSame( 'pending', wc_get_order( $order->get_id() )->get_status() );
+		$refusals = array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] && false !== strpos( $line[1], 'refused terminal capture' ) );
+		$this->assertCount( 1, $refusals );
+	}
+
+	/**
+	 * @testdox Terminal capture reads the order again under the lock and does not capture a payment another request completed while it waited.
+	 */
+	public function test_capture_terminal_payment_rechecks_the_order_under_the_lock(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		$this->set_capturable_terminal_intent( $order );
+		$store        = wc_get_container()->get( OrderPaymentStore::class );
+		$profile      = new WooPaymentsPersistenceProfile();
+		$holder_token = $store->claim_order_payment_lock_for_operation( $order, $profile, 'pi_terminal', 'payment status update' );
+		$order_id     = $order->get_id();
+		$sut          = $this->create_lock_waiting_controller(
+			static function () use ( $store, $order, $profile, $holder_token, $order_id ): void {
+				$completed = wc_get_order( $order_id );
+				$completed->update_meta_data( '_intention_status', 'succeeded' );
+				$completed->save();
+				$store->release_order_payment_lock( $order, $profile, $holder_token );
+			}
+		);
+
+		$response = $sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 'wcpay_payment_uncapturable', $response->get_error_code() );
+		$this->assertSame( array(), $this->api_client->captures );
+	}
+
+	/**
 	 * Mobile routes whose unexpected errors are logged, with the expected log line.
 	 *
 	 * @return array<string,array{0:string,1:string}>
@@ -1860,13 +1954,59 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * Create a controller whose lock waits are counted instead of slept, with a callback run on each wait.
+	 *
+	 * @param callable|null $on_wait Called with the wait number.
+	 * @return WooPaymentsMobileRestController&object{waits:int}
+	 */
+	private function create_lock_waiting_controller( ?callable $on_wait = null ): WooPaymentsMobileRestController {
+		$controller = new class( $on_wait ) extends WooPaymentsMobileRestController {
+			/**
+			 * Number of waits.
+			 *
+			 * @var int
+			 */
+			public int $waits = 0;
+
+			/**
+			 * Callback run on each wait.
+			 *
+			 * @var callable|null
+			 */
+			private $on_wait;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param callable|null $on_wait Callback run on each wait.
+			 */
+			public function __construct( ?callable $on_wait ) {
+				$this->on_wait = $on_wait;
+			}
+
+			/**
+			 * Count the wait instead of sleeping.
+			 */
+			protected function wait_before_lock_retry(): void {
+				++$this->waits;
+				if ( null !== $this->on_wait ) {
+					( $this->on_wait )( $this->waits );
+				}
+			}
+		};
+
+		return $this->create_controller( true, true, $controller );
+	}
+
+	/**
 	 * Create a native mobile REST controller.
 	 *
-	 * @param bool $native_register Whether native should own route registration.
-	 * @param bool $test_mode       Whether the account runs in test mode.
+	 * @param bool                                 $native_register Whether native should own route registration.
+	 * @param bool                                 $test_mode       Whether the account runs in test mode.
+	 * @param WooPaymentsMobileRestController|null $controller      Controller instance to initialize, a new one when null.
 	 * @return WooPaymentsMobileRestController
 	 */
-	private function create_controller( bool $native_register, bool $test_mode = true ): WooPaymentsMobileRestController {
+	private function create_controller( bool $native_register, bool $test_mode = true, ?WooPaymentsMobileRestController $controller = null ): WooPaymentsMobileRestController {
 		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'should_native_register' ) )
@@ -1895,7 +2035,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$customer_service = new WooPaymentsCustomerService();
 		$customer_service->init( $this->api_client, $account_service, new WooPaymentsSessionService() );
 
-		$controller = new WooPaymentsMobileRestController();
+		$controller = $controller ?? new WooPaymentsMobileRestController();
 		$controller->init( $arbiter, $this->api_client, $account_service, $customer_service, new WooPaymentsOrderDataService(), new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService() );
 
 		return $controller;

@@ -130,6 +130,13 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	public $captured_intention_exception = null;
 
 	/**
+	 * Each capture_intention call as intent id and amount, in call order.
+	 *
+	 * @var array<int,array{intent_id:string,amount:int}>
+	 */
+	public array $captures = array();
+
+	/**
 	 * Last metadata passed to capture_intention.
 	 *
 	 * @var array<string,mixed>
@@ -384,8 +391,10 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	 * @return array<string,mixed>
 	 */
 	public function capture_intention( string $intent_id, int $amount_to_capture, array $metadata = array(), array $level3 = array() ): array {
-		unset( $intent_id, $amount_to_capture );
-
+		$this->captures[]            = array(
+			'intent_id' => $intent_id,
+			'amount'    => $amount_to_capture,
+		);
 		$this->last_capture_metadata = $metadata;
 
 		if ( null !== $this->captured_intention_exception ) {
