@@ -83,19 +83,19 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 				wc_price( 25.00, array( 'currency' => 'USD' ) ),
 				$transaction_url
 			),
-			$sut->format_payment_success_note( $order, 'pi_test_charge', 'ch_test_charge', 'txn_test_charge' )
+			$sut->format_payment_success_note_candidates( $order, 'pi_test_charge', 'ch_test_charge', 'txn_test_charge' )[0]
 		);
 		$this->assertStringContainsString(
 			'successfully captured</strong> using WooPayments',
-			$sut->format_capture_success_note( $order, 'pi_test_charge', 'ch_test_charge', 'txn_test_charge' )
+			$sut->format_capture_success_note_candidates( $order, 'pi_test_charge', 'ch_test_charge', 'txn_test_charge' )[0]
 		);
 		$this->assertStringContainsString(
 			'A capture of',
-			$sut->format_capture_failed_note( $order, 'pi_test_charge', 'ch_test_charge', 'Capture failed.' )
+			$sut->format_capture_failed_note_candidates( $order, 'pi_test_charge', 'ch_test_charge', 'Capture failed.' )[0]
 		);
 		$this->assertStringContainsString(
 			'Capture failed.',
-			$sut->format_capture_failed_note( $order, 'pi_test_charge', 'ch_test_charge', 'Capture failed.' )
+			$sut->format_capture_failed_note_candidates( $order, 'pi_test_charge', 'ch_test_charge', 'Capture failed.' )[0]
 		);
 	}
 
@@ -133,7 +133,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 		$sut = new WooPaymentsOrderNoteService();
 
 		$refund_note  = $sut->format_created_refund_note( $order, 4.00, 'USD', 're_123', '', false );
-		$payment_note = $sut->format_payment_success_note( $order, 'pi_123', 'ch_123', 'txn_123' );
+		$payment_note = $sut->format_payment_success_note_candidates( $order, 'pi_123', 'ch_123', 'txn_123' )[0];
 
 		$this->assertSame( "A refund of \$4.00{$code} was successfully processed using WooPayments (re_123).", html_entity_decode( wp_strip_all_tags( $refund_note ) ) );
 		$this->assertSame( "A payment of \$25.00{$code} was successfully charged using WooPayments (pi_123).", html_entity_decode( wp_strip_all_tags( $payment_note ) ) );
@@ -538,8 +538,8 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 		$order->set_total( '65.00' );
 		$sut = new WooPaymentsOrderNoteService();
 
-		$this->assertStringContainsString( '<strong>authorized</strong> using WooPayments', $sut->format_payment_authorized_note( $order, 'pi_authorized', 'ch_authorized' ) );
-		$this->assertStringContainsString( '<strong>started</strong> using WooPayments', $sut->format_payment_started_note( $order, 'pi_started' ) );
+		$this->assertStringContainsString( '<strong>authorized</strong> using WooPayments', $sut->format_payment_authorized_note_candidates( $order, 'pi_authorized', 'ch_authorized' )[0] );
+		$this->assertStringContainsString( '<strong>started</strong> using WooPayments', $sut->format_payment_started_note_candidates( $order, 'pi_started' )[0] );
 	}
 
 	/**
@@ -577,12 +577,12 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 		switch_to_locale( 'de_DE' );
 
 		$cases             = array(
-			'payment success'       => array( 'format_payment_success_note_candidates', array( $order, 'pi_success', 'ch_success', 'txn_success' ), 'format_payment_success_note' ),
-			'payment authorized'    => array( 'format_payment_authorized_note_candidates', array( $order, 'pi_authorized', 'ch_authorized' ), 'format_payment_authorized_note' ),
-			'payment started'       => array( 'format_payment_started_note_candidates', array( $order, 'pi_started' ), 'format_payment_started_note' ),
-			'capture success'       => array( 'format_capture_success_note_candidates', array( $order, 'pi_captured', 'ch_captured', 'txn_captured' ), 'format_capture_success_note' ),
-			'capture failure'       => array( 'format_capture_failed_note_candidates', array( $order, 'pi_failed', 'ch_failed', 'Provider diagnostic.' ), 'format_capture_failed_note' ),
-			'capture cancellation'  => array( 'format_capture_cancelled_note_candidates', array( 'pi_canceled', 'ch_canceled' ), 'format_capture_cancelled_note' ),
+			'payment success'       => array( 'format_payment_success_note_candidates', array( $order, 'pi_success', 'ch_success', 'txn_success' ), null ),
+			'payment authorized'    => array( 'format_payment_authorized_note_candidates', array( $order, 'pi_authorized', 'ch_authorized' ), null ),
+			'payment started'       => array( 'format_payment_started_note_candidates', array( $order, 'pi_started' ), null ),
+			'capture success'       => array( 'format_capture_success_note_candidates', array( $order, 'pi_captured', 'ch_captured', 'txn_captured' ), null ),
+			'capture failure'       => array( 'format_capture_failed_note_candidates', array( $order, 'pi_failed', 'ch_failed', 'Provider diagnostic.' ), null ),
+			'capture cancellation'  => array( 'format_capture_cancelled_note_candidates', array( 'pi_canceled', 'ch_canceled' ), null ),
 			'payment failure'       => array(
 				'format_payment_failed_note_candidates',
 				array(
@@ -616,7 +616,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 		);
 
 		foreach ( $cases as $case_name => $case ) {
-			list( $candidate_method, $arguments, $native_method ) = $case;
+			list( $candidate_method, $arguments ) = $case;
 			$this->assertTrue( method_exists( $sut, $candidate_method ), "Missing candidate formatter for {$case_name}." );
 			if ( ! method_exists( $sut, $candidate_method ) ) {
 				continue;
@@ -625,9 +625,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 			$candidates = $sut->{$candidate_method}( ...$arguments );
 			$this->assertCount( 2, $candidates, "Expected Core and plugin candidates for {$case_name}." );
 			$this->assertStringContainsString( 'Legacy', $candidates[1], "Expected the plugin catalog rendering for {$case_name}." );
-			if ( null !== $native_method ) {
-				$this->assertSame( $sut->{$native_method}( ...$arguments ), $candidates[0], "Native rendering must stay first for {$case_name}." );
-			}
+			$this->assertStringNotContainsString( 'Legacy', $candidates[0], "Native rendering must stay first for {$case_name}." );
 			if ( in_array( $case_name, $amount_case_names, true ) ) {
 				$this->assertStringNotContainsString( ' USD ', $candidates[0], "Native {$case_name} candidate must omit the code in a single-currency store, as the client." );
 				$this->assertStringNotContainsString( ' USD ', $candidates[1], "Default-store plugin {$case_name} candidate must match the plugin's suffix-free amount." );
@@ -918,7 +916,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 				'Payment authorization was successfully <strong>cancelled</strong> (<a href="%1$s" target="_blank" rel="noopener noreferrer">pi_canceled</a>).',
 				$transaction_url
 			),
-			$sut->format_capture_cancelled_note( 'pi_canceled', 'ch_canceled' )
+			$sut->format_capture_cancelled_note_candidates( 'pi_canceled', 'ch_canceled' )[0]
 		);
 	}
 

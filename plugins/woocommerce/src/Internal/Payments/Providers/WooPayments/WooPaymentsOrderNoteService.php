@@ -33,20 +33,6 @@ class WooPaymentsOrderNoteService {
 	public const NOTE_IDENTITY_META_KEY = '_wc_woopayments_note_identity';
 
 	/**
-	 * Build a WooPayments-compatible payment-success note.
-	 *
-	 * @param WC_Order $order                  Order object.
-	 * @param string   $intent_id              Payment intent ID.
-	 * @param string   $charge_id              Charge ID.
-	 * @param string   $balance_transaction_id Balance transaction ID.
-	 * @param ?string  $order_mode             `_wcpay_mode` value (WooPaymentsOrderMode), or null to use the persisted order mode.
-	 * @return string
-	 */
-	public function format_payment_success_note( WC_Order $order, string $intent_id, string $charge_id, string $balance_transaction_id = '', ?string $order_mode = null ): string {
-		return $this->format_payment_success_note_for_domain( $order, $intent_id, $charge_id, $balance_transaction_id, 'woocommerce', null, $this->get_payment_success_note_order_mode( $order, $order_mode ) );
-	}
-
-	/**
 	 * Build exact Core- and plugin-catalog renderings of a payment-success note.
 	 *
 	 * @param WC_Order $order                  Order object.
@@ -85,18 +71,6 @@ class WooPaymentsOrderNoteService {
 	}
 
 	/**
-	 * Build a WooPayments-compatible payment-authorization note.
-	 *
-	 * @param WC_Order $order     Order object.
-	 * @param string   $intent_id Payment intent ID.
-	 * @param string   $charge_id Charge ID.
-	 * @return string
-	 */
-	public function format_payment_authorized_note( WC_Order $order, string $intent_id, string $charge_id ): string {
-		return $this->format_payment_authorized_note_for_domain( $order, $intent_id, $charge_id, 'woocommerce' );
-	}
-
-	/**
 	 * Build exact Core- and plugin-catalog renderings of a payment-authorization note.
 	 *
 	 * @param WC_Order $order     Order object.
@@ -111,17 +85,6 @@ class WooPaymentsOrderNoteService {
 			$order,
 			fn( string $text_domain, string $formatted_amount ): string => $this->format_payment_authorized_note_for_domain( $order, $intent_id, $charge_id, $text_domain, $formatted_amount )
 		);
-	}
-
-	/**
-	 * Build a WooPayments-compatible payment-started note.
-	 *
-	 * @param WC_Order $order     Order object.
-	 * @param string   $intent_id Payment intent ID.
-	 * @return string
-	 */
-	public function format_payment_started_note( WC_Order $order, string $intent_id ): string {
-		return $this->format_payment_started_note_for_domain( $order, $intent_id, 'woocommerce' );
 	}
 
 	/**
@@ -164,19 +127,6 @@ class WooPaymentsOrderNoteService {
 	}
 
 	/**
-	 * Build a WooPayments-compatible capture-success note.
-	 *
-	 * @param WC_Order $order                  Order object.
-	 * @param string   $intent_id              Payment intent ID.
-	 * @param string   $charge_id              Charge ID.
-	 * @param string   $balance_transaction_id Balance transaction ID.
-	 * @return string
-	 */
-	public function format_capture_success_note( WC_Order $order, string $intent_id, string $charge_id, string $balance_transaction_id = '' ): string {
-		return $this->format_capture_success_note_for_domain( $order, $intent_id, $charge_id, $balance_transaction_id, 'woocommerce' );
-	}
-
-	/**
 	 * Build exact Core- and plugin-catalog renderings of a capture-success note.
 	 *
 	 * @param WC_Order $order                  Order object.
@@ -195,19 +145,6 @@ class WooPaymentsOrderNoteService {
 	}
 
 	/**
-	 * Build a WooPayments-compatible authorization-cancellation note.
-	 *
-	 * @param string $intent_id Payment intent ID.
-	 * @param string $charge_id Charge ID.
-	 * @return string
-	 *
-	 * @since 11.0.0
-	 */
-	public function format_capture_cancelled_note( string $intent_id, string $charge_id ): string {
-		return $this->format_capture_cancelled_note_for_domain( $intent_id, $charge_id, 'woocommerce' );
-	}
-
-	/**
 	 * Build exact Core- and plugin-catalog renderings of an authorization-cancellation note.
 	 *
 	 * @param string $intent_id Payment intent ID.
@@ -221,19 +158,6 @@ class WooPaymentsOrderNoteService {
 			$this->format_capture_cancelled_note_for_domain( $intent_id, $charge_id, 'woocommerce' ),
 			$this->format_capture_cancelled_note_for_domain( $intent_id, $charge_id, 'woocommerce-payments' )
 		);
-	}
-
-	/**
-	 * Build a WooPayments-compatible capture-failure note.
-	 *
-	 * @param WC_Order $order     Order object.
-	 * @param string   $intent_id Payment intent ID.
-	 * @param string   $charge_id Charge ID.
-	 * @param string   $message   Failure message.
-	 * @return string
-	 */
-	public function format_capture_failed_note( WC_Order $order, string $intent_id, string $charge_id, string $message ): string {
-		return $this->format_capture_failed_note_for_domain( $order, $intent_id, $charge_id, $message, 'woocommerce' );
 	}
 
 	/**
