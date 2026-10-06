@@ -115,18 +115,6 @@ export const getResourceId = ( item: {
 export const getDisputeId = ( item: { id?: string; dispute_id?: string } ) =>
 	item.dispute_id || item.id || '';
 
-export const getChargeId = ( item: {
-	id?: string;
-	charge_id?: string;
-	charge?: string | { id?: string };
-} ) => {
-	if ( typeof item.charge === 'string' ) {
-		return item.charge;
-	}
-
-	return item.charge_id || item.charge?.id || item.id || '';
-};
-
 export const getTransactionDetailsRoute = ( item: {
 	id?: string;
 	transaction_id?: string;
@@ -207,48 +195,6 @@ export const formatSiteDateTime = (
 		date.toISOString(),
 		undefined
 	);
-};
-
-export const formatDate = ( value?: string | number ) => {
-	if ( ! value ) {
-		return '-';
-	}
-
-	const timestamp =
-		typeof value === 'number' && value < 10000000000 ? value * 1000 : value;
-	const date = new Date( timestamp );
-
-	if ( Number.isNaN( date.getTime() ) ) {
-		return '-';
-	}
-
-	return date.toLocaleDateString( undefined, {
-		year: 'numeric',
-		month: 'short',
-		day: 'numeric',
-	} );
-};
-
-export const formatDateTime = ( value?: string | number ) => {
-	if ( ! value ) {
-		return '-';
-	}
-
-	const timestamp =
-		typeof value === 'number' && value < 10000000000 ? value * 1000 : value;
-	const date = new Date( timestamp );
-
-	if ( Number.isNaN( date.getTime() ) ) {
-		return '-';
-	}
-
-	return date.toLocaleString( undefined, {
-		year: 'numeric',
-		month: 'short',
-		day: 'numeric',
-		hour: 'numeric',
-		minute: '2-digit',
-	} );
 };
 
 export const formatLabel = ( value?: string ) => {

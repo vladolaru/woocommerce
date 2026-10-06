@@ -16,16 +16,8 @@ const ZERO_DECIMAL_PROVIDER_CURRENCY_CODES = new Set( [
 	'XPF',
 ] );
 
-const ZERO_DECIMAL_DISPLAY_CURRENCY_CODES = new Set( [
-	...ZERO_DECIMAL_PROVIDER_CURRENCY_CODES,
-	'UGX',
-] );
-
 const isWooPaymentsZeroDecimalProviderCurrency = ( currency: string ) =>
 	ZERO_DECIMAL_PROVIDER_CURRENCY_CODES.has( currency.toUpperCase() );
-
-export const isWooPaymentsZeroDecimalDisplayCurrency = ( currency: string ) =>
-	ZERO_DECIMAL_DISPLAY_CURRENCY_CODES.has( currency.toUpperCase() );
 
 export const getWooPaymentsAmountFromMinorUnits = (
 	amount: number,
