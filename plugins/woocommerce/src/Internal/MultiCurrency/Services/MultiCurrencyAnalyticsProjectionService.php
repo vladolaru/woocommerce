@@ -129,6 +129,8 @@ class MultiCurrencyAnalyticsProjectionService {
 
 		$currencies[] = $currency_code;
 		update_option( MultiCurrencyStateBuilder::CUSTOMER_CURRENCIES_KEY, $currencies );
+		// The next order in this request must see the new list (the client rereads the option, client 11.1.0 `MultiCurrency.php:1562`).
+		$this->state_builder->reset();
 	}
 
 	/**

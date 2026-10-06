@@ -593,16 +593,29 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_http_request', static fn() => new \WP_Error( 'blocked', 'Outbound HTTP is blocked in this test.' ) );
 		update_option( 'woocommerce_currency', 'USD' );
 		update_option( 'wcpay_multi_currency_stored_customer_currencies', array( 'USD' ) );
-		$order = WC_Helper_Order::create_order();
-		$order->set_currency( 'EUR' );
-		$order->save();
+		$orders = array();
+		foreach ( array( 'EUR', 'GBP' ) as $currency ) {
+			$order = WC_Helper_Order::create_order();
+			$order->set_currency( $currency );
+			$order->save();
+			$orders[] = $order;
+		}
 		$this->enable_core_multi_currency( false );
 		$sut = new MultiCurrencyBootstrap( static fn(): array => array() );
 
-		// Client 11.1.0 registers this on every request (`includes/multi-currency/MultiCurrency.php:384`, `:700-717`).
-		$this->register_as( $sut, wc_get_container(), $request, static fn() => $order->update_status( 'completed' ) );
+		// Client 11.1.0 registers this on every request and rereads the list each time (`includes/multi-currency/MultiCurrency.php:384`, `:700-717`, `:1562`).
+		$this->register_as(
+			$sut,
+			wc_get_container(),
+			$request,
+			static function () use ( $orders ): void {
+				foreach ( $orders as $order ) {
+					$order->update_status( 'completed' );
+				}
+			}
+		);
 
-		$this->assertSame( array( 'USD', 'EUR' ), get_option( 'wcpay_multi_currency_stored_customer_currencies' ) );
+		$this->assertSame( array( 'USD', 'EUR', 'GBP' ), get_option( 'wcpay_multi_currency_stored_customer_currencies' ) );
 	}
 
 	/**
