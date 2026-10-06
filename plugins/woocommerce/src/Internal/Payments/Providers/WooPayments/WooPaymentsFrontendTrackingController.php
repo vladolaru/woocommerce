@@ -325,6 +325,10 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 		 * @param string              $event_name Event name.
 		 */
 		$properties = apply_filters( 'wcpay_tracks_event_properties', $properties, $event_name );
+		if ( ! is_array( $properties ) ) {
+			// Client 11.1.0 `class-woopay-tracker.php:400` merges `(array) $properties`.
+			$properties = (array) $properties;
+		}
 
 		$is_admin_event      = false;
 		$track_on_all_stores = false;

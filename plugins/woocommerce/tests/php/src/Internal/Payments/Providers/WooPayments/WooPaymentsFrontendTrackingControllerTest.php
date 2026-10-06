@@ -156,6 +156,49 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should still record the event when a property filter returns a non-array, as the client's untyped builder does.
+	 *
+	 * Client 11.1.0 `includes/class-woopay-tracker.php:400` merges `(array) $properties`.
+	 */
+	public function test_property_filter_returning_null_does_not_break_recording(): void {
+		$captured_url = '';
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		add_filter( 'wp_doing_ajax', '__return_true' );
+		add_filter( 'wcpay_tracks_event_properties', '__return_null' );
+		add_filter(
+			'pre_http_request',
+			static function ( $preempt, $parsed_args, $url ) use ( &$captured_url ) {
+				$captured_url = $url;
+
+				return array(
+					'headers'  => array(),
+					'body'     => '',
+					'response' => array(
+						'code'    => 200,
+						'message' => 'OK',
+					),
+					'cookies'  => array(),
+					'filename' => null,
+				);
+			},
+			10,
+			3
+		);
+
+		$response = $this->create_controller( true, $this->create_account_service( true ) )->get_tracks_response(
+			array(
+				'tracksNonce'     => wp_create_nonce( 'platform_tracks_nonce' ),
+				'tracksEventName' => 'woopay_button_click',
+				'tracksEventProp' => wp_json_encode( array( 'source' => 'checkout' ) ),
+			)
+		);
+
+		$this->assertTrue( $response['success'] );
+		parse_str( (string) wp_parse_url( $captured_url, PHP_URL_QUERY ), $pixel_args );
+		$this->assertSame( 'wcpay_woopay_button_click', $pixel_args['_en'] );
+	}
+
+	/**
 	 * @testdox Should hand a page-request event to core's Tracks footer pixel instead of sending it mid-request.
 	 */
 	public function test_records_through_core_tracks_event_transport(): void {
