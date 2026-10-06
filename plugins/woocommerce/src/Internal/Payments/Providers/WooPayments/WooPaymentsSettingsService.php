@@ -661,10 +661,7 @@ class WooPaymentsSettingsService {
 			wc_get_container()->get( WooPaymentsLogger::class )->log_always(
 				'Native WooPayments settings could not be saved locally.',
 				'error',
-				array(
-					'failed_options' => $projection['failed_option_names'],
-					'request_keys'   => array_keys( $params ),
-				)
+				array( 'failed_options' => $projection['failed_option_names'] )
 			);
 
 			return new WP_Error(
