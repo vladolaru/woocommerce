@@ -152,7 +152,7 @@ describe( 'WooPaymentsCapitalPage', () => {
 			} )
 		).toHaveAttribute(
 			'href',
-			'http://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions&loan_id_is=loan_test'
+			'http://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions&type=charge&filter=advanced&loan_id_is=loan_test'
 		);
 		expect( screen.getByRole( 'status' ) ).toHaveTextContent(
 			'Capital Loans loaded.'
@@ -176,7 +176,7 @@ describe( 'WooPaymentsCapitalPage', () => {
 			screen.getByRole( 'link', { name: 'View transactions' } )
 		).toHaveAttribute(
 			'href',
-			'http://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions&loan_id_is=loan_test'
+			'http://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions&type=charge&filter=advanced&loan_id_is=loan_test'
 		);
 		expect(
 			screen.getByText( /Repaid this period \(until / )
@@ -195,7 +195,7 @@ describe( 'WooPaymentsCapitalPage', () => {
 			} )
 		).toHaveAttribute(
 			'href',
-			'http://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions&loan_id_is=loan_test'
+			'http://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions&type=charge&filter=advanced&loan_id_is=loan_test'
 		);
 		expect(
 			screen.queryByRole( 'link', {

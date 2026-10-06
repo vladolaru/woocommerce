@@ -990,7 +990,7 @@ describe( 'WooPaymentsTransactionTimeline financing paydowns', () => {
 		).toHaveAttribute(
 			'href',
 			expect.stringContaining(
-				'path=%2Fwoopayments%2Ftransactions&loan_id_is=flxln_1KOKzdR4ByxURRrFX9A65q40'
+				'path=%2Fwoopayments%2Ftransactions&type=charge&filter=advanced&loan_id_is=flxln_1KOKzdR4ByxURRrFX9A65q40'
 			)
 		);
 

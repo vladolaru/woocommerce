@@ -28,9 +28,17 @@ import './active-loan-summary.scss';
 export const formatCapitalPercent = ( value: number ) =>
 	`${ Number( ( value * 100 ).toFixed( 2 ) ) }%`;
 
+/**
+ * The transactions list filtered by a loan, with the advanced filters open so the merchant sees and can clear the loan
+ * filter, like client 11.1.0 (`capital/index.tsx:102-108`, `components/active-loan-summary/index.tsx:140-146`).
+ *
+ * @param loanId The Stripe loan ID.
+ */
 export const getCapitalLoanTransactionsUrl = ( loanId: string ) =>
 	getSettingsPaymentsProviderRouteUrl(
-		`/woopayments/transactions?loan_id_is=${ encodeURIComponent( loanId ) }`
+		`/woopayments/transactions?type=charge&filter=advanced&loan_id_is=${ encodeURIComponent(
+			loanId
+		) }`
 	);
 
 /**

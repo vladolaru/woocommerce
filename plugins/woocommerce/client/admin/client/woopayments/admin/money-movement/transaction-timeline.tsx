@@ -48,6 +48,7 @@ import {
 	type WooPaymentsTimelineItem,
 } from './transaction-timeline-list';
 import { getSettingsPaymentsProviderRouteUrl } from '../utils';
+import { getCapitalLoanTransactionsUrl } from '../capital/active-loan-summary';
 import './transaction-timeline.scss';
 
 // Maps platform timeline events to core `Timeline` items the way client 11.1.0
@@ -1064,10 +1065,8 @@ const mapTimelineEvent = (
 										a: (
 											// eslint-disable-next-line jsx-a11y/anchor-has-content -- Content is interpolated.
 											<a
-												href={ getSettingsPaymentsProviderRouteUrl(
-													`/woopayments/transactions?loan_id_is=${ encodeURIComponent(
-														loanId
-													) }`
+												href={ getCapitalLoanTransactionsUrl(
+													loanId
 												) }
 											/>
 										),
