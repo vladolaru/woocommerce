@@ -34,6 +34,7 @@
 }
 
 .wcpay-price-error {
-	color: #999;
+	// The theme text colour: the dash is the only visible sign the price is missing, and #999 was 2.85:1 on white.
+	color: inherit;
 	font-style: italic;
 }

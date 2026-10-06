@@ -105,9 +105,10 @@
 			width: 20%;
 		}
 
+		// WordPress admin grey: 5.15:1 on the default row's #f6f7f7, where #757575 was 4.29:1 (WCAG 1.4.3).
 		td:nth-child(2),
 		.woocommerce-multi-currency-settings__currency-code {
-			color: #757575;
+			color: #646970;
 		}
 	}
 
