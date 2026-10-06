@@ -144,9 +144,9 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	public array $payment_intention_response_queue = array();
 
 	/**
-	 * Exception thrown by get_payment_intention when set.
+	 * Throwable thrown by get_payment_intention when set.
 	 *
-	 * @var \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException|null
+	 * @var \Throwable|null
 	 */
 	public $payment_intention_exception = null;
 

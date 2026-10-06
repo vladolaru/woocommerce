@@ -1727,6 +1727,139 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A failure after the platform captured a terminal payment is logged even with logging off, and the app gets the client's generic error.
+	 *
+	 * Client 11.1.0 logs every throwable before answering wcpay_server_error (class-wc-rest-payments-orders-controller.php:289-290).
+	 */
+	public function test_capture_terminal_payment_logs_a_failure_after_the_capture(): void {
+		$logger = RecordingWcLogger::install();
+		$order  = $this->create_order( 12.34, 'USD' );
+		$this->set_capturable_terminal_intent( $order );
+		add_filter(
+			'wcpay_terminal_payment_completed_order_status',
+			static function () {
+				throw new \RuntimeException( 'status filter failed' );
+			}
+		);
+
+		$response = $this->sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 'wcpay_server_error', $response->get_error_code() );
+		$this->assertSame( 500, $response->get_error_data()['status'] );
+		$errors = $logger->get_errors();
+		$this->assertCount( 1, $errors );
+		$this->assertSame( array( 'error', 'Terminal payment captured, but recording it on the order failed.', 'woopayments' ), $errors[0] );
+		$context = $logger->contexts[ array_search( $errors[0], $logger->lines, true ) ];
+		$this->assertSame( $order->get_id(), $context['order_id'] );
+		$this->assertSame( 'pi_terminal', $context['intent_id'] );
+		$this->assertSame( 'RuntimeException', $context['exception'] );
+	}
+
+	/**
+	 * @testdox A failure before a terminal capture reaches the platform is logged when logging is on.
+	 *
+	 * Client 11.1.0 logs it through its gated Logger::error (class-wc-rest-payments-orders-controller.php:289-290).
+	 */
+	public function test_capture_terminal_payment_logs_a_failure_before_the_capture(): void {
+		$logger = RecordingWcLogger::install();
+		$this->enable_terminal_debug_logging();
+		$order = $this->create_order( 12.34, 'USD' );
+		$this->api_client->payment_intention_exception = new \RuntimeException( 'intent read failed' );
+
+		$response = $this->sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+
+		$this->assertSame( 'wcpay_server_error', $response->get_error_code() );
+		$this->assertSame( array( array( 'error', 'Failed to capture a terminal payment via the REST API.', 'woopayments' ) ), $logger->get_errors() );
+		$this->assertSame( array(), $this->api_client->last_capture_metadata, 'No capture was requested.' );
+	}
+
+	/**
+	 * @testdox Customer creation and terminal intent creation log an unexpected PHP error before the client's generic answer.
+	 *
+	 * Client 11.1.0 logs both before answering wcpay_server_error (class-wc-rest-payments-orders-controller.php:502-503, :544-545).
+	 *
+	 * @dataProvider provide_mobile_routes_with_unexpected_errors
+	 *
+	 * @param string $route   Controller method under test.
+	 * @param string $message Expected log line.
+	 */
+	public function test_mobile_routes_log_an_unexpected_error( string $route, string $message ): void {
+		$logger = RecordingWcLogger::install();
+		$order  = $this->create_order( 12.34, 'USD' );
+		$order->update_meta_data( '_stripe_customer_id', 'cus_existing' );
+		$order->save();
+		$throw = static function () {
+			throw new \Error( 'unexpected' );
+		};
+		// The customer update reads the order's billing name and the intent request its order number; both go through these filters.
+		add_filter( 'woocommerce_order_get_billing_first_name', $throw );
+		add_filter( 'woocommerce_order_number', $throw );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() );
+		$request->set_param( 'order_id', $order->get_id() );
+		$response = $this->sut->$route( $request );
+
+		$this->assertSame( 'wcpay_server_error', $response->get_error_code() );
+		$this->assertSame( array( array( 'error', $message, 'woopayments' ) ), $logger->get_errors() );
+	}
+
+	/**
+	 * Mobile routes whose unexpected errors are logged, with the expected log line.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function provide_mobile_routes_with_unexpected_errors(): array {
+		return array(
+			'customer'        => array( 'create_customer', 'Failed to create or update the customer from the order via the REST API.' ),
+			'terminal intent' => array( 'create_terminal_intent', 'Failed to create a terminal payment intent via the REST API.' ),
+		);
+	}
+
+	/**
+	 * Turn WooPayments logging on, so gated lines are written.
+	 */
+	private function enable_terminal_debug_logging(): void {
+		$this->gateway_settings['enable_logging'] = 'yes';
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+	}
+
+	/**
+	 * Make the fake platform return a capturable terminal intent for an order and a succeeded capture.
+	 *
+	 * Shapes follow the PaymentIntent the client reads in capture_terminal_payment() (class-wc-rest-payments-orders-controller.php:195-213).
+	 *
+	 * @param \WC_Order $order Order.
+	 */
+	private function set_capturable_terminal_intent( \WC_Order $order ): void {
+		$this->api_client->payment_intention_response  = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'requires_capture',
+			'currency' => 'usd',
+			'metadata' => array( 'order_id' => (string) $order->get_id() ),
+		);
+		$this->api_client->captured_intention_response = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+		);
+	}
+
+	/**
+	 * Build a capture request for an order and the pi_terminal intent.
+	 *
+	 * @param \WC_Order $order Order.
+	 * @return WP_REST_Request
+	 */
+	private function make_capture_request( \WC_Order $order ): WP_REST_Request {
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		return $request;
+	}
+
+	/**
 	 * Create a native mobile REST controller.
 	 *
 	 * @param bool $native_register Whether native should own route registration.

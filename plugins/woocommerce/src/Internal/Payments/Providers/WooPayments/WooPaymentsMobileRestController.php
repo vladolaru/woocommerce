@@ -393,6 +393,9 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 
 			return new WP_REST_Response( array( 'id' => $customer_id ) );
 		} catch ( Throwable $exception ) {
+			// The client logs before its generic answer (class-wc-rest-payments-orders-controller.php:502-503).
+			$this->get_logger()->log_throwable( 'Failed to create or update the customer from the order via the REST API.', $exception, array( 'order_id' => $order->get_id() ) );
+
 			return $this->server_error();
 		}
 	}
@@ -444,6 +447,9 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		} catch ( WooPaymentsApiException $exception ) {
 			return $this->api_exception_to_wp_error( $exception );
 		} catch ( Throwable $exception ) {
+			// The client logs before its generic answer (class-wc-rest-payments-orders-controller.php:544-545).
+			$this->get_logger()->log_throwable( 'Failed to create a terminal payment intent via the REST API.', $exception, array( 'order_id' => $order->get_id() ) );
+
 			return $this->server_error();
 		}
 	}
@@ -505,6 +511,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 			return $uncapturable_error;
 		}
 
+		$payment_captured = false;
 		try {
 			$intent = $this->api_client->get_payment_intention( $intent_id );
 			if ( ! $this->intent_matches_order( $intent, $order ) ) {
@@ -551,6 +558,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 
 				return $this->get_terminal_capture_error( $result );
 			}
+			$payment_captured = true;
 
 			// The capture note, or the payment note for an intent the reader already captured (Interac), completes the payment as on the client (class-wc-payments-order-service.php:1582, :1659-1685); writing it schedules the Fee details job.
 			$this->apply_terminal_lifecycle_event( $order, $result, $intent_id, PaymentLifecycleEvent::STATUS_COMPLETED, 'succeeded' === $status );
@@ -581,6 +589,18 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 
 			return $this->api_exception_to_wp_error( $exception );
 		} catch ( Throwable $exception ) {
+			$context = array(
+				'order_id'  => $order->get_id(),
+				'intent_id' => $intent_id,
+			);
+			if ( $payment_captured ) {
+				// The card is charged and the payment_intent.succeeded webhook still records it, but this request's own writes (receipt URL, fraud box) are lost.
+				$this->get_logger()->log_throwable_always( 'Terminal payment captured, but recording it on the order failed.', $exception, $context );
+			} else {
+				// The client logs before its generic answer (class-wc-rest-payments-orders-controller.php:289-290).
+				$this->get_logger()->log_throwable( 'Failed to capture a terminal payment via the REST API.', $exception, $context );
+			}
+
 			return $this->server_error();
 		}
 	}
@@ -1915,6 +1935,15 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 			$exception->getMessage(),
 			array( 'status' => 0 < $exception->get_http_code() ? $exception->get_http_code() : 500 )
 		);
+	}
+
+	/**
+	 * Get the WooPayments logger.
+	 *
+	 * @return WooPaymentsLogger
+	 */
+	private function get_logger(): WooPaymentsLogger {
+		return wc_get_container()->get( WooPaymentsLogger::class );
 	}
 
 	/**
