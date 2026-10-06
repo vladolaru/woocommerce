@@ -336,46 +336,36 @@ async function deleteRunPost(
 	);
 }
 
-async function findRunPostIdByTitle(
-	restApi: ApiClient,
-	title: string
-): Promise< number | undefined > {
-	const query = new URLSearchParams( {
-		search: title,
-		status: 'any',
-		context: 'edit',
-	} );
-	const posts = (
-		await restApi.get< Array< { id: number; title: { raw?: string } } > >(
-			`${ POSTS_API }?${ query.toString() }`
-		)
-	).data;
-	return posts.find(
-		( post: { id: number; title: { raw?: string } } ) =>
-			post.title.raw === title
-	)?.id;
+/**
+ * The ID WordPress gave the post the editor opened.
+ *
+ * @param page Editor page.
+ * @return The post ID.
+ */
+async function readEditorPostId( page: Page ): Promise< number > {
+	const postId = await page.evaluate( () =>
+		window.wp.data.select( 'core/editor' ).getCurrentPostId()
+	);
+	expect(
+		Number.isSafeInteger( postId ) && postId > 0,
+		'the editor must have created the post'
+	).toBe( true );
+	return Number( postId );
 }
 
 /**
- * Delete a run-owned post created through the editor. When the test failed
- * before reading its ID, the post is found by its run-specific title in any
- * status; nothing is deleted when the editor never saved it.
+ * Delete the post the editor opened, when the test got as far as reading its
+ * ID. Only that ID is deleted.
  *
  * @param restApi Authenticated admin REST client.
- * @param postId  The ID read from the editor URL, when the test got that far.
- * @param title   The run-specific post title.
+ * @param postId  The ID read when the editor opened.
  */
 async function deleteEditorRunPost(
 	restApi: ApiClient,
-	postId: number | undefined,
-	title: string
+	postId: number | undefined
 ): Promise< void > {
-	const createdId =
-		postId && Number.isSafeInteger( postId ) && postId > 0
-			? postId
-			: await findRunPostIdByTitle( restApi, title );
-	if ( createdId ) {
-		await deleteRunPost( restApi, createdId );
+	if ( postId !== undefined ) {
+		await deleteRunPost( restApi, postId );
 	}
 }
 
@@ -859,8 +849,8 @@ test(
 		)[ 0 ];
 		const postTitle = `WooPayments MC switcher publish ${ runId }`;
 
-		// The editor creates this post, so its ID is only known once the URL
-		// changes; a failure before that is cleaned up by the run's title.
+		// WordPress creates the post as an auto-draft when the editor opens, so
+		// its ID is read at once and cleanup deletes exactly that post.
 		let postId: number | undefined;
 		try {
 			const pageErrors = trackPageErrors( page, storeBase );
@@ -868,6 +858,7 @@ test(
 			// The merchant half of the contract: the block is discoverable by its
 			// own title in the inserter and can be placed in post content.
 			await page.goto( 'wp-admin/post-new.php' );
+			postId = await readEditorPostId( page );
 			await dismissEditorWelcomeGuide( page );
 			await fillPostTitle( page, postTitle );
 			await insertBlockFromInserter( page, BLOCK_TITLE );
@@ -878,14 +869,13 @@ test(
 			await publishOpenPost( page );
 
 			// The editor swaps the draft URL for the saved post's edit URL once
-			// the publish response lands; waiting for it keeps the ID read below
-			// off a stale address.
+			// the publish response lands; the published post is the one the
+			// editor opened, not a second one.
 			await page.waitForURL( /[?&]post=\d+/ );
-			postId = Number( new URL( page.url() ).searchParams.get( 'post' ) );
 			expect(
-				Number.isSafeInteger( postId ) && postId > 0,
-				`the published post must expose a durable ID: ${ page.url() }`
-			).toBe( true );
+				Number( new URL( page.url() ).searchParams.get( 'post' ) ),
+				`the published post must be the post the editor opened: ${ page.url() }`
+			).toBe( postId );
 
 			// Authoritative saved representation: exactly one switcher block
 			// reached the published content, so a double insertion or a silently
@@ -944,7 +934,7 @@ test(
 
 			expect( pageErrors() ).toEqual( [] );
 		} finally {
-			await deleteEditorRunPost( restApi, postId, postTitle );
+			await deleteEditorRunPost( restApi, postId );
 		}
 	}
 );
