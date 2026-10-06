@@ -356,6 +356,85 @@ describe( 'AccountBalancesCard', () => {
 		expect( mockCreateErrorNotice ).not.toHaveBeenCalled();
 	} );
 
+	describe( 'instant payout while the request runs', () => {
+		const instantOverview = () =>
+			createOverview( {
+				balance: {
+					available: [ { amount: 1000, currency: 'usd' } ],
+					pending: [ { amount: 250, currency: 'usd' } ],
+					instant: [
+						{
+							amount: 900,
+							currency: 'usd',
+							fee: 14,
+							net: 886,
+							fee_percentage: 1.5,
+						},
+					],
+				},
+			} );
+		const deposit = {
+			id: 'po_instant',
+			date: 1781740800000,
+			type: 'instant',
+			amount: 900,
+			status: 'in_transit',
+			currency: 'usd',
+		};
+
+		// Client 11.1.0 `deposits/instant-payouts/index.tsx:66-72`: `( isModalOpen || inProgress )` keeps the dialog while the request runs.
+		it( 'keeps the dialog open until the payout request settles', async () => {
+			let resolvePayout: ( value: typeof deposit ) => void = () => {};
+			const submitInstantPayout = jest.fn(
+				() =>
+					new Promise< typeof deposit >( ( resolve ) => {
+						resolvePayout = resolve;
+					} )
+			);
+			render(
+				<AccountBalancesCard
+					isLoading={ false }
+					overview={ instantOverview() }
+					selectedCurrency="usd"
+					onCurrencyChange={ jest.fn() }
+					onInstantPayoutSubmit={ submitInstantPayout }
+				/>
+			);
+
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Get $9.00 now' } )
+			);
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Pay out $8.86 now' } )
+			);
+			await userEvent.keyboard( '{Escape}' );
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Cancel' } )
+			);
+
+			const dialog = screen.getByRole( 'dialog', {
+				name: 'Instant payout',
+			} );
+			expect(
+				within( dialog ).getByRole( 'button', { name: 'Cancel' } )
+			).toHaveAttribute( 'aria-disabled', 'true' );
+			expect(
+				within( dialog ).getByRole( 'button', {
+					name: 'Pay out $8.86 now',
+				} )
+			).toHaveAttribute( 'aria-disabled', 'true' );
+
+			await act( async () => {
+				resolvePayout( deposit );
+			} );
+
+			expect(
+				screen.queryByRole( 'dialog', { name: 'Instant payout' } )
+			).not.toBeInTheDocument();
+			expect( submitInstantPayout ).toHaveBeenCalledTimes( 1 );
+		} );
+	} );
+
 	// Client 11.1.0 `components/account-balances/index.tsx:31-46, 157-222`.
 	describe( 'instant payout offer dismissal', () => {
 		const renderOffer = ( isDismissed: boolean ) =>

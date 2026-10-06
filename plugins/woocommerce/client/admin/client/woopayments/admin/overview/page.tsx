@@ -91,6 +91,8 @@ export const WooPaymentsOverviewPage = () => {
 	const [ isPayoutsLoading, setIsPayoutsLoading ] = useState( false );
 	const [ hasOverviewError, setOverviewError ] = useState( false );
 	const [ hasPayoutsError, setPayoutsError ] = useState( false );
+	// Bumped after an instant payout to reload the balance and recent payouts through their own loaders.
+	const [ balanceReloadKey, setBalanceReloadKey ] = useState( 0 );
 	const [ shell, setShell ] = useState< WooPaymentsOverviewShell | null >(
 		preloadedShell
 	);
@@ -124,20 +126,12 @@ export const WooPaymentsOverviewPage = () => {
 		} );
 	}, [] );
 
-	const reloadOverviewAndPayouts = async ( currency: string ) => {
+	// Client 11.1.0 `data/deposits/actions.js:87-142`: only the payout request decides whether the payout failed; the
+	// reads are then invalidated, and a failed reload is reported by its own loader, never as a failed payout.
+	const submitInstantPayout = async ( currency: string ) => {
 		const deposit = await submitWooPaymentsInstantDeposit( currency );
-		const [ nextOverview, recent ] = await Promise.all( [
-			getWooPaymentsDepositsOverview(),
-			getWooPaymentsRecentDeposits( currency ),
-		] );
 
-		setOverview( nextOverview );
-		setOverviewError( false );
-		setSelectedCurrency(
-			getSelectedBalanceCurrency( nextOverview, currency )
-		);
-		setRecentPayouts( recent.data );
-		setPayoutsError( false );
+		setBalanceReloadKey( ( key ) => key + 1 );
 
 		return deposit;
 	};
@@ -163,10 +157,6 @@ export const WooPaymentsOverviewPage = () => {
 
 			try {
 				const nextOverview = await getWooPaymentsDepositsOverview();
-				const currency = getSelectedBalanceCurrency(
-					nextOverview,
-					null
-				);
 
 				if ( ! isMounted ) {
 					return;
@@ -174,7 +164,10 @@ export const WooPaymentsOverviewPage = () => {
 
 				setOverview( nextOverview );
 				setOverviewError( false );
-				setSelectedCurrency( currency );
+				// A reload after a payout keeps the selected currency when the overview still has it.
+				setSelectedCurrency( ( previous ) =>
+					getSelectedBalanceCurrency( nextOverview, previous )
+				);
 			} catch {
 				if ( isMounted ) {
 					// Client 11.1.0 `data/deposits/resolvers.js:61-71`: one snackbar, never the server's message.
@@ -200,7 +193,7 @@ export const WooPaymentsOverviewPage = () => {
 		return () => {
 			isMounted = false;
 		};
-	}, [ showBalanceAndPayouts ] );
+	}, [ showBalanceAndPayouts, balanceReloadKey ] );
 
 	useEffect( () => {
 		if ( selectedCurrency === null ) {
@@ -241,7 +234,7 @@ export const WooPaymentsOverviewPage = () => {
 		return () => {
 			isMounted = false;
 		};
-	}, [ selectedCurrency ] );
+	}, [ selectedCurrency, balanceReloadKey ] );
 
 	useEffect( () => {
 		let isMounted = true;
@@ -467,7 +460,7 @@ export const WooPaymentsOverviewPage = () => {
 						overview={ overview }
 						selectedCurrency={ selectedCurrency || undefined }
 						onCurrencyChange={ setSelectedCurrency }
-						onInstantPayoutSubmit={ reloadOverviewAndPayouts }
+						onInstantPayoutSubmit={ submitInstantPayout }
 						instantDepositsPreviouslyEligible={
 							!! shell?.instant_deposits_previously_eligible
 						}

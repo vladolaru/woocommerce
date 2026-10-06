@@ -770,6 +770,108 @@ describe( 'WooPaymentsOverviewPage', () => {
 		).not.toBeInTheDocument();
 	} );
 
+	// Client 11.1.0 `data/deposits/actions.js:87-142`: only the payout POST decides whether the payout failed; the reads are
+	// invalidated afterwards, and their own resolvers report a read failure (`data/deposits/resolvers.js:61-71`, `:130-136`).
+	describe( 'instant payout outcome', () => {
+		const instantOverview = {
+			balance: {
+				available: [ { amount: 1000, currency: 'usd' } ],
+				pending: [ { amount: 250, currency: 'usd' } ],
+				instant: [
+					{
+						amount: 900,
+						currency: 'usd',
+						fee: 14,
+						net: 886,
+						fee_percentage: 1.5,
+					},
+				],
+			},
+			account: {
+				default_currency: 'usd',
+				deposits_enabled: true,
+				deposits_schedule: {
+					interval: 'weekly',
+					weekly_anchor: 'monday',
+				},
+				default_external_accounts: [],
+			},
+			deposit: {
+				last_paid: [],
+			},
+		};
+		const payOut = async () => {
+			render( <WooPaymentsOverviewPage /> );
+			await userEvent.click(
+				await screen.findByRole( 'button', { name: 'Get $9.00 now' } )
+			);
+			await userEvent.click(
+				await screen.findByRole( 'button', {
+					name: 'Pay out $8.86 now',
+				} )
+			);
+		};
+
+		it( 'reports a successful payout as successful when the refresh after it fails', async () => {
+			mockGetOverview
+				.mockResolvedValueOnce( instantOverview )
+				.mockRejectedValueOnce( new Error( 'Refresh failed' ) );
+			mockGetRecent
+				.mockResolvedValueOnce( { data: [], total_count: 0 } )
+				.mockRejectedValueOnce( new Error( 'Refresh failed' ) );
+			mockSubmitInstantPayout.mockResolvedValue( {
+				id: 'po_instant',
+				date: 1781740800000,
+				type: 'instant',
+				amount: 900,
+				status: 'in_transit',
+				currency: 'usd',
+			} );
+
+			await payOut();
+
+			await waitFor( () =>
+				expect( mockCreateSuccessNotice ).toHaveBeenCalledWith(
+					'Instant payout for $9.00 in transit.',
+					expect.anything()
+				)
+			);
+			await waitFor( () =>
+				expect( mockGetOverview ).toHaveBeenCalledTimes( 2 )
+			);
+			expect( mockSubmitInstantPayout ).toHaveBeenCalledTimes( 1 );
+			expect( mockCreateErrorNotice ).not.toHaveBeenCalledWith(
+				'Error creating instant payout.'
+			);
+			expect(
+				screen.queryByRole( 'dialog', { name: 'Instant payout' } )
+			).not.toBeInTheDocument();
+		} );
+
+		it( 'reports a failed payout and closes the dialog, as the client does', async () => {
+			mockGetOverview.mockResolvedValueOnce( instantOverview );
+			mockGetRecent.mockResolvedValueOnce( { data: [], total_count: 0 } );
+			mockSubmitInstantPayout.mockRejectedValue(
+				new Error( 'Payout failed' )
+			);
+
+			await payOut();
+
+			await waitFor( () =>
+				expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+					'Error creating instant payout.'
+				)
+			);
+			expect( mockCreateSuccessNotice ).not.toHaveBeenCalled();
+			expect(
+				screen.queryByRole( 'dialog', { name: 'Instant payout' } )
+			).not.toBeInTheDocument();
+			expect(
+				screen.getByRole( 'button', { name: 'Get $9.00 now' } )
+			).toBeEnabled();
+		} );
+	} );
+
 	it( 'renders query notices, tasks, spotlight, and financial cards in shell order', async () => {
 		window.history.pushState(
 			{},

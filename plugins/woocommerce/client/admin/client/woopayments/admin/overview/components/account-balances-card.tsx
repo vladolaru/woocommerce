@@ -175,6 +175,8 @@ const InstantPayoutModal = ( {
 				<Button
 					variant="secondary"
 					onClick={ onClose }
+					accessibleWhenDisabled
+					disabled={ isSubmitting }
 					__next40pxDefaultSize
 				>
 					{ __( 'Cancel', 'woocommerce' ) }
@@ -183,6 +185,7 @@ const InstantPayoutModal = ( {
 					variant="primary"
 					onClick={ onSubmit }
 					isBusy={ isSubmitting }
+					accessibleWhenDisabled
 					disabled={ isSubmitting }
 					__next40pxDefaultSize
 				>
@@ -231,6 +234,8 @@ export const AccountBalancesCard = ( {
 	const [ isInstantPayoutSubmitting, setIsInstantPayoutSubmitting ] =
 		useState( false );
 	const headingId = 'woocommerce-woopayments-balance-heading';
+	const isInstantPayoutModalShown =
+		isInstantPayoutModalOpen || isInstantPayoutSubmitting;
 	const currencySelectId = 'woocommerce-woopayments-balance-currency';
 	if ( ! isLoading && ! hasError && ! overview ) {
 		return null;
@@ -259,6 +264,9 @@ export const AccountBalancesCard = ( {
 			return;
 		}
 
+		// Client 11.1.0 `deposits/instant-payouts/index.tsx:41-44, 66-72`: the dialog is closed on submit but stays shown
+		// while the request runs, so it cannot be dismissed mid-request and is gone once the request settles either way.
+		setIsInstantPayoutModalOpen( false );
 		setIsInstantPayoutSubmitting( true );
 
 		try {
@@ -270,7 +278,6 @@ export const AccountBalancesCard = ( {
 				deposit.currency || instantBalance.currency
 			);
 
-			setIsInstantPayoutModalOpen( false );
 			dispatch( 'core/notices' ).createSuccessNotice(
 				sprintf(
 					/* translators: %s: Instant payout amount. */
@@ -290,7 +297,7 @@ export const AccountBalancesCard = ( {
 					],
 				}
 			);
-		} catch ( error ) {
+		} catch {
 			dispatch( 'core/notices' ).createErrorNotice(
 				__( 'Error creating instant payout.', 'woocommerce' )
 			);
@@ -537,7 +544,7 @@ export const AccountBalancesCard = ( {
 								</Notice>
 							</CardBody>
 						) }
-					{ isInstantPayoutModalOpen && instantBalance && (
+					{ isInstantPayoutModalShown && instantBalance && (
 						<InstantPayoutModal
 							instantBalance={ instantBalance }
 							isSubmitting={ isInstantPayoutSubmitting }
