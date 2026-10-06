@@ -213,6 +213,43 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Disputes summary and export send only the filters, without paging, and run no list filter.
+	 *
+	 * Client 11.1.0 builds both from get_disputes_filters() alone (class-wc-rest-payments-disputes-controller.php:124-127, :174-205).
+	 */
+	public function test_disputes_summary_and_export_send_only_filters(): void {
+		$this->create_disputes_controller( true )->register_routes();
+		$list_filter_calls = 0;
+		add_filter(
+			'wcpay_list_disputes_request',
+			static function ( $request ) use ( &$list_filter_calls ) {
+				++$list_filter_calls;
+
+				return $request;
+			}
+		);
+		$query = array(
+			'store_currency_is' => 'gbp',
+			'page'              => 3,
+			'pagesize'          => 50,
+			'sort'              => 'amount',
+		);
+
+		$summary = new WP_REST_Request( 'GET', '/wc/v3/payments/disputes/summary' );
+		$summary->set_query_params( $query );
+		$this->server->dispatch( $summary );
+		$summary_filters = $this->api_client->last_call['filters'];
+
+		$export = new WP_REST_Request( 'POST', '/wc/v3/payments/disputes/download' );
+		$export->set_body_params( $query + array( 'user_email' => 'merchant@example.com' ) );
+		$this->server->dispatch( $export );
+
+		$this->assertSame( array( 'currency_is' => 'gbp' ), $summary_filters );
+		$this->assertSame( array( 'currency_is' => 'gbp' ), $this->api_client->last_call['filters'] );
+		$this->assertSame( 0, $list_filter_calls );
+	}
+
+	/**
 	 * @testdox Dispute update and close forward preserved payloads.
 	 */
 	public function test_dispute_update_and_close_forward_payloads(): void {

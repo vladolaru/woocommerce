@@ -143,7 +143,7 @@ class WooPaymentsDisputesRestController implements RegisterHooksInterface {
 	 */
 	public function get_disputes_summary( WP_REST_Request $request ) {
 		try {
-			return new WP_REST_Response( $this->api_client->get_disputes_summary( $this->get_filtered_disputes_list_params( $request ) ) );
+			return new WP_REST_Response( $this->api_client->get_disputes_summary( $this->get_disputes_filters( $request ) ) );
 		} catch ( WooPaymentsApiException $exception ) {
 			return $this->api_exception_to_wp_error( $exception );
 		}
@@ -263,7 +263,7 @@ class WooPaymentsDisputesRestController implements RegisterHooksInterface {
 		try {
 			return new WP_REST_Response(
 				$this->api_client->get_disputes_export(
-					$this->get_filtered_disputes_list_params( $request ),
+					$this->get_disputes_filters( $request ),
 					(string) $request->get_param( 'user_email' ),
 					$this->get_optional_string_param( $request, 'locale' )
 				)
@@ -343,6 +343,33 @@ class WooPaymentsDisputesRestController implements RegisterHooksInterface {
 		$params = $filtered_request->get_params();
 
 		return is_array( $params ) ? $params : $disputes_request->get_params();
+	}
+
+	/**
+	 * Get the summary and export filters: the client's get_disputes_filters() keys, with no paging and no list filter.
+	 *
+	 * Client 11.1.0 class-wc-rest-payments-disputes-controller.php:188-205.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return array<string,mixed>
+	 */
+	private function get_disputes_filters( WP_REST_Request $request ): array {
+		return array_filter(
+			array(
+				'match'           => $request->get_param( 'match' ),
+				'currency_is'     => $request->get_param( 'store_currency_is' ),
+				'created_before'  => $request->get_param( 'date_before' ),
+				'created_after'   => $request->get_param( 'date_after' ),
+				'created_between' => $request->get_param( 'date_between' ),
+				'search'          => $request->get_param( 'search' ),
+				'status_is'       => $request->get_param( 'status_is' ),
+				'status_is_not'   => $request->get_param( 'status_is_not' ),
+			),
+			static function ( $filter ): bool {
+				return null !== $filter;
+			}
+		);
 	}
 
 	/**
