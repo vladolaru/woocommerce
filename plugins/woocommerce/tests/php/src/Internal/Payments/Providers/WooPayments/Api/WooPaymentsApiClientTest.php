@@ -3048,8 +3048,8 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $body );
 		$this->assertSame( 'https://example.test/return', $body['return_url'] );
 		$this->assertTrue( $filtered_args['collect_payout_requirements'] );
-		$this->assertArrayHasKey( 'woocommerce_store_id', $filtered_args, 'Other filter callbacks see the store ID, as on the client.' );
-		$this->assertArrayHasKey( 'compatibility_data', $filtered_args, 'Other filter callbacks see the compatibility data, as on the client.' );
+		$this->assertArrayHasKey( 'woocommerce_store_id', $filtered_args, 'Filter callbacks see the store ID.' );
+		$this->assertArrayHasKey( 'compatibility_data', $filtered_args, 'Filter callbacks see the compatibility data.' );
 		$this->assertTrue( $body['collect_payout_requirements'] );
 		$this->assertSame( array( 'woocommerce' => '11.0.0' ), $body['compatibility_data'] );
 		$this->assertSame( 'store_123', $body['account_data']['woocommerce_store_id'] );

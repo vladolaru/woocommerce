@@ -12,7 +12,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
  *
  * Ports the client's compatibility data (client 11.1.0 `includes/class-compatibility-service.php:85-139`), sent on
  * account refreshes and theme switches and with every onboarding request. The WooPayments version is the client release
- * native was verified against, as in every other version native reports to the platform.
+ * native was verified against, the same value as `client_version`, `wcpay_version` and the user agent's WooPayments part.
  *
  * @since 11.2.0
  * @internal Transitional internal component for the native payments runtime.

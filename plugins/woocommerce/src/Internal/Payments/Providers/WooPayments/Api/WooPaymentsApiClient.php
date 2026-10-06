@@ -2226,9 +2226,9 @@ class WooPaymentsApiClient {
 	/**
 	 * Add the store ID and compatibility data to an onboarding payload, then apply the public payload filter.
 	 *
-	 * The client adds both through its own callbacks on the same filter (client 11.1.0
+	 * The client adds both through its own callbacks on the same filter, at priority 10 (client 11.1.0
 	 * `includes/class-wc-payments-onboarding-service.php:120`, `:1491-1496`; `includes/class-compatibility-service.php:46`,
-	 * `:75-77`); adding them first lets other callbacks see them, as they do on the client.
+	 * `:75-77`). Native adds them before any callback runs, so callbacks at every priority see them and can change them.
 	 *
 	 * @param array<string,mixed> $request_args Onboarding request payload.
 	 * @return array<string,mixed>
