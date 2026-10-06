@@ -123,14 +123,13 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should tell a Stripe-billed subscription and its renewal order apart once loaded (client `class-wc-payments-subscription-service.php:292-294`, `:312-324`).
+	 * @testdox Should tell an order of a Stripe-billed subscription once loaded (client `class-wc-payments-subscription-service.php:312-324`).
 	 */
-	public function test_tells_stripe_billed_subscriptions_and_orders_once_loaded(): void {
+	public function test_tells_stripe_billed_orders_once_loaded(): void {
 		$this->load_subscriptions();
-		$sut                          = $this->register_module( true );
-		list( $subscription, $order ) = $this->create_stripe_billed_subscription_and_renewal();
+		$sut             = $this->register_module( true );
+		list( , $order ) = $this->create_stripe_billed_subscription_and_renewal();
 
-		$this->assertTrue( $sut->is_stripe_billed_subscription( $subscription ) );
 		$this->assertTrue( $sut->is_stripe_billed_order( $order ) );
 	}
 
@@ -138,11 +137,10 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	 * @testdox Should call nothing Stripe-billed while the module is not loaded.
 	 */
 	public function test_calls_nothing_stripe_billed_while_not_loaded(): void {
-		$sut                          = $this->register_module( true );
-		list( $subscription, $order ) = $this->create_stripe_billed_subscription_and_renewal();
+		$sut             = $this->register_module( true );
+		list( , $order ) = $this->create_stripe_billed_subscription_and_renewal();
 
 		try {
-			$this->assertFalse( $sut->is_stripe_billed_subscription( $subscription ) );
 			$this->assertFalse( $sut->is_stripe_billed_order( $order ) );
 		} finally {
 			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ], $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] );

@@ -191,16 +191,6 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether a subscription is billed by Stripe Billing; always false when the module is not loaded.
-	 *
-	 * @param WC_Order $subscription Subscription.
-	 * @return bool
-	 */
-	public function is_stripe_billed_subscription( WC_Order $subscription ): bool {
-		return $this->loaded && $this->get_subscription_service()->is_wcpay_subscription( $subscription );
-	}
-
-	/**
 	 * Tell whether any subscription related to an order is billed by Stripe Billing; always false when the module is not loaded.
 	 *
 	 * @param WC_Order $order Order.
