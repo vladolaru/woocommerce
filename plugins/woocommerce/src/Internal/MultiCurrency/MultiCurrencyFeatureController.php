@@ -83,10 +83,35 @@ class MultiCurrencyFeatureController {
 			return;
 		}
 
-		if ( NativePaymentsRuntimeArbiter::OWNER_NATIVE === $payments_owner && NativePaymentsRuntimeArbiter::OWNER_PLUGIN === $last_owner ) {
+		if ( NativePaymentsRuntimeArbiter::OWNER_NATIVE === $payments_owner && NativePaymentsRuntimeArbiter::OWNER_PLUGIN === $last_owner && self::claim_handover() ) {
 			self::hand_over_plugin_state();
-			update_option( self::LAST_PAYMENTS_OWNER_OPTION, NativePaymentsRuntimeArbiter::OWNER_NATIVE, true );
 		}
+	}
+
+	/**
+	 * Claim the plugin-to-native transition with one conditional update of the marker row.
+	 *
+	 * Two first native-owned requests can both read 'plugin'; only the one whose update changes the row hands over, so a choice the
+	 * merchant saves after the first handover is never overwritten by the second.
+	 *
+	 * @return bool True when this request moved the marker from 'plugin' to 'native'.
+	 */
+	private static function claim_handover(): bool {
+		global $wpdb;
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- An atomic compare-and-set; the caches are cleared below.
+		$claimed = $wpdb->update(
+			$wpdb->options,
+			array( 'option_value' => NativePaymentsRuntimeArbiter::OWNER_NATIVE ),
+			array(
+				'option_name'  => self::LAST_PAYMENTS_OWNER_OPTION,
+				'option_value' => NativePaymentsRuntimeArbiter::OWNER_PLUGIN,
+			)
+		);
+		wp_cache_delete( self::LAST_PAYMENTS_OWNER_OPTION, 'options' );
+		wp_cache_delete( 'alloptions', 'options' );
+
+		return 1 === $claimed;
 	}
 
 	/**

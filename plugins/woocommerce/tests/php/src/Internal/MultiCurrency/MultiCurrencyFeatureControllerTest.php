@@ -10,6 +10,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use WC_Unit_Test_Case;
 
 /**
@@ -36,6 +37,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
 		delete_option( '_wcpay_feature_customer_multi_currency' );
 		delete_option( 'wcpay_multi_currency_setup_completed' );
+		delete_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION );
 		delete_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT );
 		$this->previous_user_id = get_current_user_id();
 		$this->sut              = new MultiCurrencyFeatureController();
@@ -50,6 +52,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
 		delete_option( '_wcpay_feature_customer_multi_currency' );
 		delete_option( 'wcpay_multi_currency_setup_completed' );
+		delete_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION );
 		delete_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT );
 		wp_set_current_user( $this->previous_user_id );
 		$_GET = array();
@@ -95,6 +98,33 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		update_option( '_wcpay_feature_customer_multi_currency', '0' );
 		MultiCurrencyFeatureController::hand_over_plugin_state();
 		$this->assertSame( 'no', get_option( $option ), 'Multi-Currency turned off in the plugin stays off.' );
+	}
+
+	/**
+	 * @testdox Should hand over once when two first native-owned requests both read the plugin marker.
+	 */
+	public function test_concurrent_first_native_requests_hand_over_once(): void {
+		$marker = MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION;
+		$option = MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION;
+		update_option( $marker, NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+
+		// Request A hands over; the merchant then turns Multi-Currency off.
+		MultiCurrencyFeatureController::track_payments_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		$this->assertSame( 'yes', get_option( $option ) );
+		update_option( $option, 'no' );
+
+		// Request B read the marker before A wrote it, so it still sees 'plugin'.
+		$stale_read = static fn() => NativePaymentsRuntimeArbiter::OWNER_PLUGIN;
+		add_filter( 'pre_option_' . $marker, $stale_read );
+		try {
+			MultiCurrencyFeatureController::track_payments_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		} finally {
+			remove_filter( 'pre_option_' . $marker, $stale_read );
+		}
+
+		$this->assertSame( 'no', get_option( $option ), 'Only the request that claims the transition hands over.' );
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, get_option( $marker ) );
 	}
 
 	/**
