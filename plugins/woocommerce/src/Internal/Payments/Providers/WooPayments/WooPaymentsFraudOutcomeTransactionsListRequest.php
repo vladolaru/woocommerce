@@ -60,6 +60,7 @@ class WooPaymentsFraudOutcomeTransactionsListRequest extends WooPaymentsPaginate
 	 * Returns the request's API.
 	 *
 	 * @return string
+	 * @throws WooPaymentsApiException When the status is not allow, block or review.
 	 */
 	public function get_api(): string {
 		$status = $this->get_param( 'status' );
