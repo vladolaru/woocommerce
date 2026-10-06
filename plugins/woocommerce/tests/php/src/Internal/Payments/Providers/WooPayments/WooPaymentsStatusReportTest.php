@@ -610,16 +610,25 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox The status report shows the client's enabled WooPay rows for a WooPay-eligible account.
 	 *
-	 * Client 11.1.0 `includes/class-wc-payments-status.php:507-535`.
+	 * Client 11.1.0 `includes/class-wc-payments-status.php:507-535`; WooPay counts as enabled only for 'yes'
+	 * (`includes/class-wc-payments-features.php:54-59`).
+	 *
+	 * @testWith ["yes", "Enabled (cart,checkout)"]
+	 *           ["no", "Disabled"]
+	 *           ["1", "Disabled"]
+	 *           [true, "Disabled"]
+	 *
+	 * @param mixed  $platform_checkout The platform_checkout gateway setting.
+	 * @param string $expected          The WooPay value.
 	 */
-	public function test_status_report_shows_the_enabled_woopay_rows_for_an_eligible_account(): void {
+	public function test_status_report_shows_the_enabled_woopay_rows_for_an_eligible_account( $platform_checkout, string $expected ): void {
 		update_option( 'woopay_invalid_extension_found', true );
 
-		$html = $this->render_report_for_connected_store( array( 'platform_checkout_eligible' => true ) );
+		$html = $this->render_report_for_connected_store( array( 'platform_checkout_eligible' => true ), array( 'platform_checkout' => $platform_checkout ) );
 
 		$client = $this->get_status_tables( $html )['WooPayments'];
 		delete_option( 'woopay_invalid_extension_found' );
-		$this->assertSame( 'Enabled (cart,checkout)', $client['WooPay'] );
+		$this->assertSame( $expected, $client['WooPay'] );
 		$this->assertSame( 'Yes', $client['WooPay Incompatible Extensions'] );
 		$woopay = $this->get_status_cells( $html, 'WooPayments', 'WooPay' );
 		$this->assertSame( 'WooPay Express Checkout:', $woopay['label'] );
@@ -636,7 +645,8 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 			array(),
 			array(),
 			'advanced',
-			// Ruleset rules carry a key, as the platform's fraud ruleset does (client `includes/fraud-prevention/models/class-rule.php`).
+			// Only the rule keys, the part of the platform's fraud ruleset the client's status section reads
+			// (client 11.1.0 `includes/class-wc-payments-status.php:555-592`, rules per `includes/fraud-prevention/models/class-rule.php`).
 			array( array( 'key' => 'avs_verification' ), array( 'key' => 'address_mismatch' ), array( 'key' => 'unknown_rule' ) )
 		);
 
@@ -735,8 +745,9 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$http_client->method( 'get_blog_id' )->willReturn( 12345 );
 		wc_get_container()->replace( WooPaymentsHttpClient::class, $http_client );
 		$this->seed_connected_store();
-		// Account fields per the platform account response the client reads (client 11.1.0 `includes/class-wc-payments-account.php:489-492`,
-		// `includes/class-wc-payments-features.php:193-220`); the keys are sentinels the report must never print.
+		// Account fields per the platform account response the client reads (client 11.1.0 `includes/class-wc-payments-account.php:367-377`
+		// status flags, `:489-492` support phone, `:181-192` publishable keys, `includes/class-wc-payments-features.php:193-220` WooPay and
+		// documents); the keys are sentinels the report must never print.
 		wc_get_container()->get( WooPaymentsAccountService::class )->cache_account_data(
 			array_merge(
 				array(
