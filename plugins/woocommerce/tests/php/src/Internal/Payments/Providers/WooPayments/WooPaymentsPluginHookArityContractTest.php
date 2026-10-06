@@ -58,10 +58,6 @@ use WC_Unit_Test_Case;
  * 38 probe groups), by driving native's own product-path entry point for each group and observing
  * the hook fire, instead of firing it directly.
  *
- * See `.agents/scratchpad/sessions/2026-09-03-native-payments-program-orientation/`
- * `plan-task-t4-bc-inventories.md`, "2. Hook argument shapes (arity and declared types)", and
- * the controller review's "Arity stays runtime, with a time box."
- *
  * Every one of the 38 groups below reaches its hook(s) through a real native call, ported from the
  * retired harness's own native branch for that group (`hook-shape-parity.php`, read at
  * `data/bc-inventory-sources/hook-shape-parity.php`). None of them fires the hook itself, so

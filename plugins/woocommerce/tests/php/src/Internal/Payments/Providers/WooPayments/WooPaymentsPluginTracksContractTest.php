@@ -18,9 +18,6 @@ use WC_Unit_Test_Case;
  * it fires at runtime. A call site inside dead code would pass; runtime emission is a live-store
  * residual (draft issue 14).
  *
- * See `.agents/scratchpad/sessions/2026-09-03-native-payments-program-orientation/`
- * `plan-task-t4-bc-inventories.md`, "4. Tracks event continuity".
- *
  * @since 11.2.0
  */
 class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {

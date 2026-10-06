@@ -20,9 +20,6 @@ use WC_Unit_Test_Case;
  * nor recorded as an allowed difference is a build-time failure instead of a silent data-loss
  * risk on cutover.
  *
- * See `.agents/scratchpad/sessions/2026-09-03-native-payments-program-orientation/`
- * `plan-task-t4-bc-inventories.md`, "5. BC surface pin: persisted data and scheduler names".
- *
  * @since 11.2.0
  */
 class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {

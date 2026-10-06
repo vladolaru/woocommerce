@@ -19,10 +19,6 @@ use WC_Unit_Test_Case;
  * `ALLOWED_DIFFERENCES` with its recorded authority. `NATIVE_ONLY_HOOKS` (D6) separately pins the 24
  * native-only filters that carry no plugin fixture entry at all.
  *
- * See `.agents/scratchpad/sessions/2026-09-03-native-payments-program-orientation/`
- * `plan-task-t4-bc-inventories.md`, "1. Hook names", D4 and D6, and
- * `data/bc-inventory-undecided-classified.tsv` (the `hooks` rows: 54 DECIDED, 5 FALSE_NEGATIVE).
- *
  * @since 11.2.0
  */
 class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {

@@ -23,9 +23,6 @@ use WP_REST_Request;
  * against what native serves, so a route or action neither served nor recorded as an allowed
  * difference is a build-time failure instead of a silent regression.
  *
- * See `.agents/scratchpad/sessions/2026-09-03-native-payments-program-orientation/`
- * `plan-task-t4-bc-inventories.md`, "3. REST route and AJAX endpoint presence".
- *
  * @since 11.2.0
  */
 class WooPaymentsPluginEndpointsContractTest extends WC_REST_Unit_Test_Case {
