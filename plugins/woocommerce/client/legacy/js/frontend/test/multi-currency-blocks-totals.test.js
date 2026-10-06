@@ -6,6 +6,8 @@ describe( 'multi-currency-blocks-totals', () => {
 
 	test( 'registers a totals filter that adds the cart currency code', () => {
 		const registerCheckoutFilters = jest.fn();
+		// The wc-blocks-checkout script exposes the filter registry as window.wc.blocksCheckout (client/blocks/bin/webpack-helpers.js:27
+		// maps @woocommerce/blocks-checkout to [ 'wc', 'blocksCheckout' ]).
 		window.wc = { blocksCheckout: { registerCheckoutFilters } };
 
 		const { getTotalValue } = require( '../multi-currency-blocks-totals' );
@@ -13,7 +15,8 @@ describe( 'multi-currency-blocks-totals', () => {
 		expect( registerCheckoutFilters ).toHaveBeenCalledWith( 'woocommerce-payments', {
 			totalValue: getTotalValue,
 		} );
-		// Store API cart totals carry currency_code (StoreApi CartSchema totals).
+		// The filter receives { cart } with the Store API cart's totals as cartTotals (client 11.1.0
+		// client/checkout/blocks/index.js:159-173 reads the same path; StoreApi CartSchema totals carry currency_code).
 		expect(
 			getTotalValue( '<price/>', {}, { cart: { cartTotals: { currency_code: 'CAD' } } } )
 		).toBe( '<price/> CAD' );

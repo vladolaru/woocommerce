@@ -120,7 +120,7 @@ describe( 'multi-currency-analytics', () => {
 	} );
 
 	it( 'keeps the plugin namespace, so code that removes the plugin callbacks still can', () => {
-		// The client registers under 'woocommerce-payments' (includes/multi-currency/client/analytics/index.js:18).
+		// The client registers its report-table callback under 'woocommerce-payments' (includes/multi-currency/client/analytics/index.js:67-69).
 		removeFilter(
 			'woocommerce_admin_report_table',
 			'woocommerce-payments'
