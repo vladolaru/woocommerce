@@ -3304,7 +3304,13 @@ class WooPaymentsService {
 		$settings['enabled']   = 'yes';
 		$settings['test_mode'] = $is_live ? 'no' : 'yes';
 
-		wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class )->persist( $settings );
+		$projection = wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class )->persist( $settings );
+		if ( ! $projection['persisted'] ) {
+			$this->log_native_onboarding_error(
+				'Native WooPayments could not enable the gateway after KYC finalization.',
+				array( 'failed_options' => $projection['failed_option_names'] )
+			);
+		}
 	}
 
 	/**
@@ -3318,8 +3324,10 @@ class WooPaymentsService {
 		}
 
 		$restored_ids = $this->get_test_drive_enabled_payment_method_ids();
-		if ( ! empty( $restored_ids ) ) {
-			$this->enable_native_payment_methods( $restored_ids );
+		if ( ! empty( $restored_ids ) && ! $this->enable_native_payment_methods( $restored_ids ) ) {
+			// Keep the Test Drive selection until the transient expires, so it is not lost with the failed write.
+			$this->log_native_onboarding_error( 'Native WooPayments could not restore the Test Drive payment methods after KYC finalization.' );
+			return;
 		}
 
 		$this->proxy->call_function( 'delete_transient', self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT );
@@ -3647,16 +3655,23 @@ class WooPaymentsService {
 	 * Log a session-time pick write that did not persist and has no durable heal marker.
 	 */
 	private function log_payment_methods_projection_fallback_failure(): void {
+		$this->log_native_onboarding_error( 'Native WooPayments could not save the payment methods picked in onboarding, and no durable retry marker is available.' );
+	}
+
+	/**
+	 * Log a native onboarding failure whatever the logging setting.
+	 *
+	 * @param string              $message Log message.
+	 * @param array<string,mixed> $context Log context.
+	 */
+	private function log_native_onboarding_error( string $message, array $context = array() ): void {
 		try {
 			$logger = $this->proxy->call_function( 'wc_get_logger' );
 			if ( ! $logger instanceof \WC_Logger_Interface ) {
 				return;
 			}
 
-			$logger->error(
-				'Native WooPayments could not save the payment methods picked in onboarding, and no durable retry marker is available.',
-				array( 'source' => 'woocommerce-woopayments-onboarding' )
-			);
+			$logger->error( $message, array_merge( $context, array( 'source' => 'woocommerce-woopayments-onboarding' ) ) );
 		} catch ( \Throwable $e ) {
 			return;
 		}

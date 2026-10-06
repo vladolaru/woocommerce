@@ -20,6 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
@@ -1967,6 +1968,52 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->sut->finish_onboarding_kyc_session( 'US' );
 
 		$this->assertSame( self::TEST_EPOCH - DAY_IN_SECONDS, (int) get_option( 'wcpay_kyc_submitted_date' ) );
+	}
+
+	/**
+	 * Client 11.1.0 ignores both writes (class-wc-payments-account.php:2272, :2288, :2306-2307); native logs them, and keeps
+	 * the Test Drive selection when restoring it did not persist.
+	 *
+	 * @testdox Native KYC finalization logs a gateway enable or Test Drive restore that did not persist and still answers success.
+	 * @testWith ["gateway enable"]
+	 *           ["test drive restore"]
+	 *
+	 * @param string $refused_write Settings write the store refuses.
+	 */
+	public function test_native_kyc_finalize_logs_settings_writes_that_did_not_persist( string $refused_write ): void {
+		update_option( WooPaymentsSettingsService::SETTINGS_OPTION, array( 'enabled' => 'no' ) );
+		$this->arrange_native_finalize_projection( array( $this->get_native_finalize_projection_account() ), array( 'card' => true ) );
+		set_transient(
+			self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT,
+			array(
+				'capabilities'            => array( 'link_payments' => array( 'requested' => 'true' ) ),
+				'enabled_payment_methods' => array( 'card', 'link' ),
+			),
+			HOUR_IN_SECONDS
+		);
+		if ( 'gateway enable' === $refused_write ) {
+			add_filter(
+				'pre_update_option_' . WooPaymentsSettingsService::SETTINGS_OPTION,
+				static fn( $value, $old_value ) => is_array( $value ) && 'yes' === ( $value['enabled'] ?? 'no' ) ? $old_value : $value,
+				10,
+				2
+			);
+		} else {
+			$this->refuse_native_settings_writes_enabling( 'link' );
+		}
+		$logger = RecordingWcLogger::install();
+
+		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
+
+		$this->assertTrue( $response['success'], 'The platform finalization cannot be replayed, so the answer stays a success.' );
+		$messages = array_column( $logger->get_errors(), 1 );
+		if ( 'gateway enable' === $refused_write ) {
+			$this->assertContains( 'Native WooPayments could not enable the gateway after KYC finalization.', $messages );
+			$this->assertStringContainsString( WooPaymentsSettingsService::SETTINGS_OPTION, (string) wp_json_encode( $logger->contexts ) );
+		} else {
+			$this->assertSame( array( 'Native WooPayments could not restore the Test Drive payment methods after KYC finalization.' ), $messages );
+			$this->assertNotFalse( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ), 'The Test Drive selection is not deleted with the failed write.' );
+		}
 	}
 
 	/**
