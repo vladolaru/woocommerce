@@ -1,7 +1,10 @@
 /**
  * Internal dependencies
  */
-import { formatLocalDateBoundaryForApi } from '../money-movement/query';
+import {
+	formatLocalDateBoundaryForApi,
+	normalizeLocalCalendarDate,
+} from '../money-movement/query';
 import type {
 	ReportsBalanceQuery,
 	ReportsFeesQuery,
@@ -105,11 +108,15 @@ const isDateOnly = ( value: string ) => /^\d{4}-\d{2}-\d{2}$/.test( value );
 
 // Client 11.1.0 `data/reports/resolvers.js:36-43`: every date goes through `formatDateValue()`, the start of the day
 // for "after" and a range start, the end of the day for "before" and a range end, in the merchant's time zone.
-const toDayStart = ( value: string ) =>
-	isDateOnly( value ) ? formatLocalDateBoundaryForApi( value, false ) : value;
+const toDayBoundary = ( value: string, upperBound: boolean ) => {
+	const day = normalizeLocalCalendarDate( value );
 
-const toDayEnd = ( value: string ) =>
-	isDateOnly( value ) ? formatLocalDateBoundaryForApi( value, true ) : value;
+	return day ? formatLocalDateBoundaryForApi( day, upperBound ) : value;
+};
+
+const toDayStart = ( value: string ) => toDayBoundary( value, false );
+
+const toDayEnd = ( value: string ) => toDayBoundary( value, true );
 
 const getDateFilterQuery = (
 	value: unknown,

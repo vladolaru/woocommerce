@@ -240,4 +240,15 @@ describe( 'WooPayments Documents data helpers', () => {
 			).toEqual( view.filters );
 		}
 	);
+
+	it( 'sends a date-time filter at the boundary of its local day', async () => {
+		await getWooPaymentsDocuments( {
+			date_before: '2026-07-08T12:00:00+03:00',
+		} );
+
+		expect( mockApiFetch ).toHaveBeenLastCalledWith( {
+			path: '/wc/v3/payments/documents?date_before=2026-07-08+20%3A59%3A59',
+			method: 'GET',
+		} );
+	} );
 } );

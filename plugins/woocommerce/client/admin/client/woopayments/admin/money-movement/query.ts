@@ -149,7 +149,15 @@ const isDateFilterParam = (
 	param === 'date_before' ||
 	param === 'date_between';
 
-const normalizeLocalCalendarDate = ( value: unknown ): string | undefined => {
+/**
+ * The merchant's calendar day, `YYYY-MM-DD`, for a date filter value: a bare day as is, or the browser-local day of a
+ * date-time, as client 11.1.0 `formatDateValue()` takes the day of any date Moment parses (`client/utils/index.js:244-255`).
+ *
+ * @param value The filter value.
+ */
+export const normalizeLocalCalendarDate = (
+	value: unknown
+): string | undefined => {
 	if ( typeof value !== 'string' ) {
 		return undefined;
 	}
@@ -157,7 +165,18 @@ const normalizeLocalCalendarDate = ( value: unknown ): string | undefined => {
 	const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec( value );
 
 	if ( ! match ) {
-		return undefined;
+		const dateTime = new Date( value );
+		if (
+			! /\d{2}:\d{2}/.test( value ) ||
+			Number.isNaN( dateTime.getTime() )
+		) {
+			return undefined;
+		}
+		const pad = ( part: number ) => String( part ).padStart( 2, '0' );
+
+		return `${ dateTime.getFullYear() }-${ pad(
+			dateTime.getMonth() + 1
+		) }-${ pad( dateTime.getDate() ) }`;
 	}
 
 	const year = Number( match[ 1 ] );
