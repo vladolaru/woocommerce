@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\Utilities\ArrayUtil;
 use RuntimeException;
 use Throwable;
 use WC_Order;
@@ -1580,7 +1581,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 			}
 		}
 
-		return $this->is_list_array( $response ) ? $this->normalize_list( $response ) : array();
+		return ArrayUtil::array_is_list( $response ) ? $this->normalize_list( $response ) : array();
 	}
 
 	/**
@@ -1598,16 +1599,6 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 				}
 			)
 		);
-	}
-
-	/**
-	 * Tell whether an array is a list.
-	 *
-	 * @param array<mixed> $items Items.
-	 * @return bool
-	 */
-	private function is_list_array( array $items ): bool {
-		return array_keys( $items ) === range( 0, count( $items ) - 1 );
 	}
 
 	/**
