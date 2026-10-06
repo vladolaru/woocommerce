@@ -10533,6 +10533,140 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Native test account init skips the step forward when the platform error is non-recoverable.
+	 *
+	 * The platform reports a Stripe error body as `{"error":{"type":"invalid_request_error","code":...}}`, which the
+	 * client API client turns into an exception whose error code is the body code (or the type when no code is set)
+	 * and whose error type is the body type (client 11.1.0 `includes/wc-payment-api/class-wc-payments-api-client.php:2868-2871`).
+	 *
+	 * @dataProvider provider_native_non_recoverable_platform_errors
+	 *
+	 * @param string      $error_code        Platform error code.
+	 * @param string      $error_type        Platform error type.
+	 * @param string|null $filtered_code     Error code a site adds through the non-recoverable errors filter.
+	 */
+	public function test_native_onboarding_test_account_init_skips_step_on_non_recoverable_error( string $error_code, string $error_type, ?string $filtered_code ): void {
+		if ( null !== $filtered_code ) {
+			add_filter(
+				'woocommerce_woopayments_onboarding_test_account_non_recoverable_errors',
+				static function () use ( $filtered_code ) {
+					return array( $filtered_code );
+				}
+			);
+		}
+		$api_client = new class( $error_code, $error_type ) extends WooPaymentsApiClient {
+			/**
+			 * Platform error code.
+			 *
+			 * @var string
+			 */
+			private string $error_code;
+
+			/**
+			 * Platform error type.
+			 *
+			 * @var string
+			 */
+			private string $error_type;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param string $error_code Platform error code.
+			 * @param string $error_type Platform error type.
+			 */
+			public function __construct( string $error_code, string $error_type ) {
+				$this->error_code = $error_code;
+				$this->error_type = $error_type;
+			}
+
+			/**
+			 * Tell whether the fake client is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Reject the test-drive init like the platform does for a non-recoverable request.
+			 *
+			 * @param bool        $live_account   Whether the account is live.
+			 * @param string      $return_url     Return URL for the onboarding flow.
+			 * @param array       $site_data      Site data.
+			 * @param array       $user_data      User data.
+			 * @param array       $account_data   Account data.
+			 * @param array       $actioned_notes Actioned notes.
+			 * @param bool        $collect_payout_requirements Whether to collect payout requirements.
+			 * @param string|null $referral_code  Referral code.
+			 * @return array
+			 * @throws WooPaymentsApiException When an error type is set.
+			 */
+			public function initialize_onboarding( bool $live_account, string $return_url, array $site_data = array(), array $user_data = array(), array $account_data = array(), array $actioned_notes = array(), bool $collect_payout_requirements = false, ?string $referral_code = null ): array {
+				unset( $live_account, $return_url, $site_data, $user_data, $account_data, $actioned_notes, $collect_payout_requirements, $referral_code );
+				if ( '' !== $this->error_type ) {
+					throw new WooPaymentsApiException( "The statement descriptor matches a common term or website URL, and can't be used.", esc_html( $this->error_code ), 400, esc_html( $this->error_type ) );
+				}
+
+				return array();
+			}
+		};
+		$adapter    = $this->getMockBuilder( WooPaymentsOnboardingAdapter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_onboarding_runtime_available', 'is_native_onboarding_available', 'get_payment_gateway', 'has_account', 'has_valid_account', 'has_working_account', 'has_test_account', 'has_sandbox_account', 'has_live_account' ) )
+			->getMock();
+		$adapter->method( 'is_onboarding_runtime_available' )->willReturn( true );
+		$adapter->method( 'is_native_onboarding_available' )->willReturn( true );
+		$adapter->method( 'get_payment_gateway' )->willReturn( new FakePaymentGateway() );
+		foreach ( array( 'has_account', 'has_valid_account', 'has_working_account', 'has_test_account', 'has_sandbox_account', 'has_live_account' ) as $method ) {
+			$adapter->method( $method )->willReturn( false );
+		}
+
+		$this->mock_wpcom_connection_manager->method( 'is_connected' )->willReturn( true );
+		$this->mock_wpcom_connection_manager->method( 'has_connected_owner' )->willReturn( true );
+		update_option(
+			WooPaymentsService::NOX_PROFILE_OPTION_KEY,
+			array( 'onboarding' => array( 'US' => array( 'steps' => array( WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => array( 'data' => array( 'payment_methods' => array( 'card' => true ) ) ) ) ) ) )
+		);
+		$this->mockable_proxy->register_function_mocks(
+			array(
+				'class_exists' => function ( $class_to_check ) {
+					unset( $class_to_check );
+					return false;
+				},
+			)
+		);
+		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
+		$this->sut = new WooPaymentsService();
+		$this->init_sut( $this->mock_providers, $this->mockable_proxy, $adapter, $this->create_legacy_runtime(), $api_client, $this->create_native_account_service() );
+
+		try {
+			$this->sut->onboarding_test_account_init( 'US' );
+			$this->fail( 'Expected ApiException was not thrown.' );
+		} catch ( ApiException $e ) {
+			$this->assertSame( 'woocommerce_woopayments_onboarding_test_account_non_recoverable_error', $e->getErrorCode() );
+		}
+
+		$statuses = get_option( WooPaymentsService::NOX_PROFILE_OPTION_KEY )['onboarding']['US']['steps'][ WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT ]['statuses'];
+		$this->assertArrayHasKey( WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, $statuses, 'The step should be marked completed so onboarding can proceed.' );
+		$this->assertArrayNotHasKey( WooPaymentsService::ONBOARDING_STEP_STATUS_FAILED, $statuses, 'The step should not be marked failed.' );
+	}
+
+	/**
+	 * Non-recoverable platform errors, by where the identifier sits.
+	 *
+	 * @return array<string,array{string,string,string|null}>
+	 */
+	public function provider_native_non_recoverable_platform_errors(): array {
+		return array(
+			'type only, code from the type' => array( 'invalid_request_error', 'invalid_request_error', null ),
+			'type with a Stripe error code' => array( 'parameter_invalid_string', 'invalid_request_error', null ),
+			'code added through the filter' => array( 'parameter_invalid_string', 'api_error', 'parameter_invalid_string' ),
+		);
+	}
+
+	/**
 	 * @testdox Test account init marks the step failed when the response is malformed.
 	 *
 	 * @return void

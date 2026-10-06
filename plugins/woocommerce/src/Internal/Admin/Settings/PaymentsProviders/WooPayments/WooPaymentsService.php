@@ -4281,6 +4281,10 @@ class WooPaymentsService {
 	/**
 	 * Convert a native API exception to a WP_Error compatible with existing onboarding handlers.
 	 *
+	 * The data carries the error code and error type the plugin's onboarding controller forwards
+	 * (client 11.1.0 `includes/admin/class-wc-rest-payments-onboarding-controller.php:370-385`), so callers
+	 * can tell non-recoverable errors from transient ones.
+	 *
 	 * @param WooPaymentsApiException $exception        API exception.
 	 * @param string                  $fallback_message Fallback error message.
 	 * @return WP_Error
@@ -4293,8 +4297,10 @@ class WooPaymentsService {
 			'' !== $error_code ? $error_code : 'woocommerce_woopayments_onboarding_client_api_exception',
 			'' !== $error_message ? $error_message : $fallback_message,
 			array(
-				'code'    => $exception->get_http_code(),
-				'message' => $error_message,
+				'code'       => $exception->get_http_code(),
+				'message'    => $error_message,
+				'error_code' => $error_code,
+				'error_type' => $exception->get_error_type(),
 			)
 		);
 	}
