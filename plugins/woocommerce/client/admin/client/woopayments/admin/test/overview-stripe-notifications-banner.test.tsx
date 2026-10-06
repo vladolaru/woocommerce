@@ -19,6 +19,7 @@ import {
 } from '../overview/data';
 
 const mockCreateSuccessNotice = jest.fn();
+// An opaque stand-in for the StripeConnectInstance `loadConnectAndInitialize()` returns (`@stripe/connect-js` `types/index.d.ts`).
 const mockConnectInstance = { id: 'connect-instance' };
 let mockBannerProps: Record< string, jest.Mock | unknown > | null = null;
 let mockBannerError: Error | null = null;
@@ -137,6 +138,8 @@ const renderWithBanner = async () => {
 	return bannerProps();
 };
 
+// `NotificationCount` in `@stripe/connect-js` `dist/types/config.d.ts`, the onNotificationsChange payload
+// (`@stripe/react-connect-js` `ConnectNotificationBanner`).
 const notifyChange = ( total: number, actionRequired: number ) =>
 	act( () =>
 		bannerProps().onNotificationsChange( { total, actionRequired } )
@@ -206,6 +209,7 @@ describe( 'WooPayments Overview Stripe notifications banner', () => {
 		expect( screen.queryByText( FINISH_SETUP_TASK ) ).toBeNull();
 
 		act( () => {
+			// `LoadError` in `@stripe/connect-js` `dist/types/config.d.ts`.
 			props.onLoadError( {
 				elementTagName: 'stripe-connect-notification-banner',
 				error: { type: 'invalid_request_error', message: 'HTTPS' },
@@ -376,6 +380,7 @@ describe( 'WooPayments Overview Stripe notifications banner', () => {
 		const props = await renderWithBanner();
 
 		act( () => {
+			// `LoadError` in `@stripe/connect-js` `dist/types/config.d.ts`.
 			props.onLoadError( {
 				elementTagName: 'stripe-connect-notification-banner',
 				error: { type: 'api_error', message: 'Stripe is down' },
