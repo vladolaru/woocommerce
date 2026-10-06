@@ -10,6 +10,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
+use Automattic\WooCommerce\Admin\PageController;
 use WC_Unit_Test_Case;
 use WP_Error;
 
@@ -69,6 +70,9 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 		wp_set_current_user( 0 );
 		unset( $_GET['page'], $_GET['tab'], $_GET['path'] );
 		$GLOBALS['current_screen'] = null; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Leave the admin screen the test set.
+		$current_page              = new \ReflectionProperty( PageController::class, 'current_page' );
+		$current_page->setAccessible( true );
+		$current_page->setValue( PageController::get_instance(), null );
 		$this->reset_container_replacements();
 		parent::tearDown();
 	}
@@ -195,6 +199,8 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 			// WooCommerce settings pages are connected admin pages, which the test request has not registered.
 			add_filter( 'woocommerce_navigation_is_connected_page', '__return_true' );
 		}
+		// The page controller memoizes the current page; work it out for this test's screen and query.
+		PageController::get_instance()->determine_current_page();
 		$sut = $this->make_sut();
 		$sut->register();
 		$this->assertSame( 10, has_action( 'admin_print_footer_scripts', array( $sut, 'handle_admin_print_footer_scripts' ) ) );
