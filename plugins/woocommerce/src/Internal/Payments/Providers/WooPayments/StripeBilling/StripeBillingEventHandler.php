@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
@@ -26,7 +27,8 @@ defined( 'ABSPATH' ) || exit;
  * Handles the Stripe Billing invoice events: `invoice.upcoming`, `invoice.paid` and `invoice.payment_failed`.
  *
  * Follows client 11.1.0 `includes/subscriptions/class-wc-payments-subscriptions-event-handler.php`. The event ingestor
- * runs it inside its usual processing, so the mode check, duplicate events and the order lock are handled there.
+ * runs it inside its usual processing (the mode check and the processed-event marker); overlapping deliveries of one
+ * invoice are kept apart here by a lock on the invoice, and the payment is recorded under the order payment lock.
  *
  * @since 11.2.0
  * @internal
@@ -208,11 +210,14 @@ class StripeBillingEventHandler {
 	/**
 	 * Record the renewal a paid invoice billed: find or create the renewal order, mark it paid, and tell the platform about it.
 	 *
-	 * The invoice of the subscription's first order is ignored: checkout records that payment.
+	 * The invoice of the subscription's first order is ignored: checkout records that payment. Everything that changes
+	 * the order or the subscription runs under the invoice lock (see run_under_invoice_lock()); the platform updates
+	 * that follow it do not need it.
+	 *
+	 * A RuntimeException from the invoice lock or the recording fails the event, so it is retried.
 	 *
 	 * @param array<string,mixed> $event Event payload.
 	 * @throws StripeBillingException When the event has missing data or names no subscription of this store.
-	 * @throws RuntimeException When the renewal order is still unpaid after recording its payment.
 	 */
 	private function handle_invoice_paid( array $event ): void {
 		$event_object          = $this->get_event_array( $event, array( 'data', 'object' ) );
@@ -231,8 +236,33 @@ class StripeBillingEventHandler {
 			throw new StripeBillingException( __( 'Cannot find subscription for the incoming "invoice.paid" event.', 'woocommerce' ), StripeBillingException::INVALID_EVENT_DATA );
 		}
 
-		if ( $this->invoice_service->get_subscription_invoice_id( $subscription ) === $wcpay_invoice_id ) {
+		$order = $this->run_under_invoice_lock(
+			$subscription,
+			$wcpay_invoice_id,
+			'',
+			fn() => $this->record_paid_invoice( $this->get_fresh_subscription( $subscription ), $wcpay_invoice_id, $event_object )
+		);
+		if ( null === $order ) {
 			return;
+		}
+
+		$invoice = $this->invoice_service->record_subscription_payment_context( $wcpay_invoice_id );
+		$this->invoice_service->update_charge_details( $invoice, $order->get_id() );
+		$this->invoice_service->update_transaction_details( $invoice, $order );
+	}
+
+	/**
+	 * Record a paid invoice on its renewal order and the subscription, under the invoice lock.
+	 *
+	 * @param WC_Order            $subscription     Subscription, read after the lock was claimed.
+	 * @param string              $wcpay_invoice_id Invoice ID.
+	 * @param array<string,mixed> $event_object     Invoice from the event.
+	 * @return WC_Order|null The renewal order, or null for the invoice of the subscription's first order.
+	 * @throws RuntimeException When the renewal order is still unpaid after recording its payment.
+	 */
+	private function record_paid_invoice( WC_Order $subscription, string $wcpay_invoice_id, array $event_object ): ?WC_Order {
+		if ( $this->invoice_service->get_subscription_invoice_id( $subscription ) === $wcpay_invoice_id ) {
+			return null;
 		}
 
 		$order     = $this->get_or_create_renewal_order( $subscription, $wcpay_invoice_id, __( 'Unable to generate renewal order for subscription on the "invoice.paid" event.', 'woocommerce' ) );
@@ -264,8 +294,7 @@ class StripeBillingEventHandler {
 			);
 
 			// Completing the order activated another instance of the subscription; saving this one would undo that.
-			$fresh_subscription = function_exists( 'wcs_get_subscription' ) ? wcs_get_subscription( $subscription->get_id() ) : null;
-			$subscription       = $fresh_subscription instanceof WC_Order ? $fresh_subscription : $subscription;
+			$subscription = $this->get_fresh_subscription( $subscription );
 
 			if ( $order->needs_payment() ) {
 				// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
@@ -287,13 +316,16 @@ class StripeBillingEventHandler {
 
 		$this->invoice_service->mark_pending_invoice_paid_for_subscription( $subscription );
 
-		$invoice = $this->invoice_service->record_subscription_payment_context( $wcpay_invoice_id );
-		$this->invoice_service->update_charge_details( $invoice, $order->get_id() );
-		$this->invoice_service->update_transaction_details( $invoice, $order );
+		return $order;
 	}
 
 	/**
 	 * Record a failed renewal attempt: note the decline, put the subscription on hold, or cancel it after the last attempt.
+	 *
+	 * The notes and the status changes run under the invoice lock (see run_under_invoice_lock()). A failure for an invoice
+	 * whose renewal order no longer needs payment, such as one that arrives after the invoice was paid, changes nothing.
+	 *
+	 * A RuntimeException from the invoice lock fails the event.
 	 *
 	 * @param array<string,mixed> $event Event payload.
 	 * @throws StripeBillingException When the event has missing data or names no subscription of this store.
@@ -333,17 +365,40 @@ class StripeBillingEventHandler {
 			$error_code    = (string) ( $charge['failure_code'] ?? '' );
 		}
 
-		$order = $this->get_or_create_renewal_order(
+		$order = $this->run_under_invoice_lock(
 			$subscription,
 			$wcpay_invoice_id,
-			__( 'Unable to generate renewal order for subscription to record the incoming "invoice.payment_failed" event.', 'woocommerce' ),
 			sprintf(
 				/* translators: %1$s: Stripe Billing invoice ID, %2$d: renewal attempt number. */
 				__( 'A WooPayments failed-payment update for this subscription (invoice %1$s, attempt %2$d) could not be applied, because another update of the same invoice was running. Check the subscription in your WooPayments dashboard.', 'woocommerce' ),
 				$wcpay_invoice_id,
 				$attempts
-			)
+			),
+			fn() => $this->record_failed_invoice( $this->get_fresh_subscription( $subscription ), $wcpay_invoice_id, $attempts, $error_details, $error_code )
 		);
+		if ( null === $order ) {
+			return;
+		}
+
+		$this->invoice_service->record_subscription_payment_context( $wcpay_invoice_id );
+	}
+
+	/**
+	 * Record a failed renewal attempt on its renewal order and the subscription, under the invoice lock.
+	 *
+	 * @param WC_Order $subscription     Subscription, read after the lock was claimed.
+	 * @param string   $wcpay_invoice_id Invoice ID.
+	 * @param int      $attempts         Renewal attempts Stripe made for the invoice.
+	 * @param string   $error_details    Decline message, empty when unknown.
+	 * @param string   $error_code       Decline code.
+	 * @return WC_Order|null The renewal order, or null when it no longer needs payment.
+	 * @throws StripeBillingException When the renewal order cannot be created.
+	 */
+	private function record_failed_invoice( WC_Order $subscription, string $wcpay_invoice_id, int $attempts, string $error_details, string $error_code ): ?WC_Order {
+		$order = $this->get_or_create_renewal_order( $subscription, $wcpay_invoice_id, __( 'Unable to generate renewal order for subscription to record the incoming "invoice.payment_failed" event.', 'woocommerce' ) );
+		if ( ! $order->needs_payment() ) {
+			return null;
+		}
 
 		if ( $error_details ) {
 			$subscription->add_order_note(
@@ -373,45 +428,90 @@ class StripeBillingEventHandler {
 			$subscription->add_order_note( sprintf( _n( 'WooPayments subscription renewal attempt %d failed.', 'WooPayments subscription renewal attempt %d failed.', $attempts, 'woocommerce' ), $attempts ) );
 		}
 
-		if ( is_callable( array( $subscription, 'payment_failed' ) ) ) {
-			if ( self::MAX_RETRIES > $attempts ) {
-				// Stripe retries the invoice itself, so putting the subscription on hold must not pause it there.
-				$this->subscription_service->run_without_stripe_sync(
-					static function () use ( $subscription ): void {
-						$subscription->payment_failed();
-					}
-				);
-			} else {
-				$subscription->payment_failed( 'cancelled' );
-			}
+		if ( self::MAX_RETRIES > $attempts ) {
+			// Stripe retries the invoice itself, so putting the subscription on hold must not pause it there.
+			$this->subscription_service->run_without_stripe_sync(
+				function () use ( $subscription, $order ): void {
+					$this->fail_renewal_order( $subscription, $order, 'on-hold' );
+				}
+			);
+		} else {
+			$this->fail_renewal_order( $subscription, $order, 'cancelled' );
 		}
 
 		// A later payment method change charges this invoice again.
 		$this->invoice_service->mark_pending_invoice_for_subscription( $subscription, $wcpay_invoice_id );
 
-		$this->invoice_service->record_subscription_payment_context( $wcpay_invoice_id );
+		return $order;
 	}
 
 	/**
-	 * Get the renewal order an invoice paid, or create it.
+	 * Fail an invoice's renewal order and move the subscription to the given status, as WooCommerce Subscriptions does.
+	 *
+	 * The client calls `payment_failed()` (event handler :298-304), which WooCommerce Subscriptions deprecated in 7.9.0
+	 * because it fails the subscription's last order, whichever invoice it belongs to. The invoice's own order is passed
+	 * to `payment_failed_for_related_order()` instead. Before 7.9.0, `payment_failed()` runs only when the last order is
+	 * the invoice's; otherwise the invoice's order is failed and noted here, and the subscription is left as it is.
+	 *
+	 * @param WC_Order $subscription Subscription.
+	 * @param WC_Order $order        The invoice's renewal order.
+	 * @param string   $new_status   Subscription status after the failure: `on-hold` or `cancelled`.
+	 */
+	private function fail_renewal_order( WC_Order $subscription, WC_Order $order, string $new_status ): void {
+		if ( is_callable( array( $subscription, 'payment_failed_for_related_order' ) ) ) {
+			$subscription->payment_failed_for_related_order( $new_status, $order );
+			return;
+		}
+
+		if ( ! is_callable( array( $subscription, 'payment_failed' ) ) ) {
+			return;
+		}
+
+		$last_order_id = is_callable( array( $subscription, 'get_last_order' ) ) ? (int) $subscription->get_last_order( 'ids', 'any' ) : 0;
+		if ( $last_order_id === $order->get_id() ) {
+			$subscription->payment_failed( $new_status );
+			return;
+		}
+
+		if ( ! $order->has_status( OrderStatus::FAILED ) ) {
+			$order->update_status( OrderStatus::FAILED );
+		}
+		/* translators: %d: renewal order ID. */
+		$subscription->add_order_note( sprintf( __( 'Related order #%d failed.', 'woocommerce' ), $order->get_id() ) );
+	}
+
+	/**
+	 * Read a subscription again, so a change another instance saved is not overwritten.
+	 *
+	 * @param WC_Order $subscription Subscription.
+	 * @return WC_Order The subscription as stored, or the one given when WooCommerce Subscriptions cannot read it.
+	 */
+	private function get_fresh_subscription( WC_Order $subscription ): WC_Order {
+		$fresh_subscription = function_exists( 'wcs_get_subscription' ) ? wcs_get_subscription( $subscription->get_id() ) : null;
+
+		return $fresh_subscription instanceof WC_Order ? $fresh_subscription : $subscription;
+	}
+
+	/**
+	 * Run what an invoice event changes in this store under a lock on the invoice.
 	 *
 	 * Two deliveries of one invoice can overlap (a slow first delivery the platform counts as failed and lists again,
-	 * or a duplicate push). The lookup, the creation and the invoice link run under a lock on the invoice, so a second
-	 * delivery finds the linked order or is refused: invoice.paid is retried and finds the order later; an
-	 * invoice.payment_failed gets one attempt, so its refusal leaves a note on the subscription. Like the order payment
-	 * lock, this is a lease of WooPaymentsPersistenceProfile::LOCK_TTL_SECONDS: a delivery that died cannot block the
-	 * next one, and a creation that stalls past it can be overtaken (accepted, as for the order payment lock).
-	 * Client 11.1.0 looks up and creates without a lock (class-wc-payments-subscriptions-event-handler.php:146-175).
+	 * or a duplicate push). The renewal order lookup and creation, the payment recording, the notes and the subscription
+	 * status changes run under the lock, so a second delivery waits for none of it: it is refused. invoice.paid is
+	 * retried and finds the order paid; an invoice.payment_failed gets one attempt, so its refusal leaves a note on the
+	 * subscription. Like the order payment lock, this is a lease of WooPaymentsPersistenceProfile::LOCK_TTL_SECONDS: a
+	 * delivery that died cannot block the next one, and one that stalls past it can be overtaken (accepted, as for the
+	 * order payment lock). Client 11.1.0 takes no lock (class-wc-payments-subscriptions-event-handler.php:146-175, :254-307).
 	 *
-	 * @param WC_Order $subscription  Subscription.
-	 * @param string   $invoice_id    Invoice ID.
-	 * @param string   $error_message Message when the renewal order cannot be created.
-	 * @param string   $refusal_note  Note left on the subscription when another delivery holds the lock, if any.
-	 * @return WC_Order
-	 * @throws StripeBillingException When the renewal order cannot be created.
-	 * @throws RuntimeException When another delivery of the invoice is creating its renewal order.
+	 * @template T
+	 * @param WC_Order      $subscription Subscription, for the refusal note.
+	 * @param string        $invoice_id   Invoice ID.
+	 * @param string        $refusal_note Note left on the subscription when another delivery holds the lock, if any.
+	 * @param callable(): T $callback     What the event changes.
+	 * @return T
+	 * @throws RuntimeException When another delivery of the invoice holds the lock.
 	 */
-	private function get_or_create_renewal_order( WC_Order $subscription, string $invoice_id, string $error_message, string $refusal_note = '' ): WC_Order {
+	private function run_under_invoice_lock( WC_Order $subscription, string $invoice_id, string $refusal_note, callable $callback ) {
 		$lock_key   = 'wcpay_stripe_billing_renewal_' . md5( $invoice_id );
 		$lock_token = wp_generate_uuid4();
 		if ( ! $this->row_lock->claim( $lock_key, $lock_token, WooPaymentsPersistenceProfile::LOCK_TTL_SECONDS ) ) {
@@ -423,28 +523,41 @@ class StripeBillingEventHandler {
 				}
 			}
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
-			throw new RuntimeException( sprintf( 'Another delivery of invoice %s is creating its renewal order.', $invoice_id ) );
+			throw new RuntimeException( sprintf( 'Another delivery of invoice %s is being recorded.', $invoice_id ) );
 		}
 
 		try {
-			$order = wc_get_order( $this->invoice_service->get_order_id_by_invoice_id( $invoice_id ) );
-			if ( $order instanceof WC_Order ) {
-				return $order;
-			}
-
-			$order = function_exists( 'wcs_create_renewal_order' ) ? wcs_create_renewal_order( $subscription ) : null;
-			if ( ! $order instanceof WC_Order ) {
-				// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
-				throw new StripeBillingException( $error_message, StripeBillingException::INVALID_EVENT_DATA );
-			}
-
-			$order->set_payment_method( WooPaymentsPersistenceProfile::GATEWAY_ID );
-			$this->invoice_service->set_order_invoice_id( $order, $invoice_id );
-
-			return $order;
+			return $callback();
 		} finally {
 			$this->row_lock->release( $lock_key, $lock_token );
 		}
+	}
+
+	/**
+	 * Get the renewal order an invoice paid, or create it. Runs under the invoice lock.
+	 *
+	 * @param WC_Order $subscription  Subscription.
+	 * @param string   $invoice_id    Invoice ID.
+	 * @param string   $error_message Message when the renewal order cannot be created.
+	 * @return WC_Order
+	 * @throws StripeBillingException When the renewal order cannot be created.
+	 */
+	private function get_or_create_renewal_order( WC_Order $subscription, string $invoice_id, string $error_message ): WC_Order {
+		$order = wc_get_order( $this->invoice_service->get_order_id_by_invoice_id( $invoice_id ) );
+		if ( $order instanceof WC_Order ) {
+			return $order;
+		}
+
+		$order = function_exists( 'wcs_create_renewal_order' ) ? wcs_create_renewal_order( $subscription ) : null;
+		if ( ! $order instanceof WC_Order ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+			throw new StripeBillingException( $error_message, StripeBillingException::INVALID_EVENT_DATA );
+		}
+
+		$order->set_payment_method( WooPaymentsPersistenceProfile::GATEWAY_ID );
+		$this->invoice_service->set_order_invoice_id( $order, $invoice_id );
+
+		return $order;
 	}
 
 	/**

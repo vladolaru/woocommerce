@@ -204,7 +204,8 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 				$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ],
 				$GLOBALS[ WooCommerceSubscriptionsDoubles::RENEWAL_SUBSCRIPTIONS ],
 				$GLOBALS[ WooCommerceSubscriptionsDoubles::DUPLICATE_SITE ],
-				$GLOBALS[ WooCommerceSubscriptionsDoubles::RENEWAL_ORDER_ERROR ]
+				$GLOBALS[ WooCommerceSubscriptionsDoubles::RENEWAL_ORDER_ERROR ],
+				$GLOBALS[ WooCommerceSubscriptionsDoubles::BEFORE_RELATED_ORDER_FAILURE ]
 			);
 		} finally {
 			parent::tearDown();
@@ -482,6 +483,124 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( RuntimeException::class, $inner_refusal );
 		$this->assertCount( 1, $this->get_renewal_orders( self::FAILED_INVOICE_ID ) );
 		$this->assertCount( 1, $this->get_notes_containing( wc_get_order( $subscription->get_id() ), 'A WooPayments failed-payment update for this subscription (invoice ' . self::FAILED_INVOICE_ID . ', attempt 1) could not be applied, because another update of the same invoice was running.' ) );
+	}
+
+	/**
+	 * @testdox A second delivery of a paid invoice that arrives while the first is reading the intent is refused, so the paid renewal leaves the subscription active.
+	 *
+	 * The invoice lock covers the whole recording, not only the renewal order's creation: without it the second delivery
+	 * pays the renewal and activates the subscription, and the first then puts it on hold from its stale copy.
+	 */
+	public function test_paid_invoice_delivered_while_the_first_reads_the_intent_leaves_the_subscription_active(): void {
+		$subscription = $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID );
+		// Platform answers for two complete deliveries, so a store that let both through would run both to the end.
+		for ( $delivery = 1; $delivery <= 2; $delivery++ ) {
+			$this->queue_response( 200, $this->get_renewal_intent() );
+			$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+		}
+		$event         = $this->get_event( 'invoice_paid_renewal' );
+		$inner_refusal = null;
+		$overlap       = function ( $params ) use ( $event, &$inner_refusal, &$overlap ) {
+			// The overlapping delivery runs once, when the first delivery sends its first platform request: the intent read.
+			remove_filter( 'wcpay_api_request_params', $overlap );
+			try {
+				$this->sut->handle_event( $event );
+			} catch ( RuntimeException $exception ) {
+				$inner_refusal = $exception;
+			}
+			return $params;
+		};
+		add_filter( 'wcpay_api_request_params', $overlap );
+
+		try {
+			$this->sut->handle_event( $event );
+		} finally {
+			remove_filter( 'wcpay_api_request_params', $overlap );
+		}
+
+		$this->assertInstanceOf( RuntimeException::class, $inner_refusal, 'The overlapping delivery fails, so invoice.paid is retried.' );
+		$orders = $this->get_renewal_orders( self::RENEWAL_INVOICE_ID );
+		$this->assertCount( 1, $orders );
+		$this->assertSame( 'processing', $orders[0]->get_status() );
+		$this->assertSame( 'active', wc_get_order( $subscription->get_id() )->get_status() );
+	}
+
+	/**
+	 * @testdox A failed-payment update for an invoice whose renewal order is already paid changes nothing: the order stays paid and the subscription active.
+	 *
+	 * Client 11.1.0 calls `payment_failed()` here without a check (event handler :298-304), which fails the subscription's last order.
+	 */
+	public function test_failed_invoice_update_for_a_paid_renewal_changes_nothing(): void {
+		$subscription = $this->create_subscription( self::FAILING_SUBSCRIPTION_ID );
+		$order        = WooCommerceSubscriptionsDoubles::create_renewal_order( $subscription );
+		$order->set_payment_method( 'woocommerce_payments' );
+		$order->update_meta_data( '_wcpay_billing_invoice_id', self::FAILED_INVOICE_ID );
+		$order->set_status( 'processing' );
+		$order->save();
+		$this->queue_response( 200, $this->get_declined_charge() );
+
+		$this->sut->handle_event( $this->get_event( 'invoice_payment_failed' ) );
+
+		$subscription = wc_get_order( $subscription->get_id() );
+		$this->assertSame( 'processing', wc_get_order( $order->get_id() )->get_status() );
+		$this->assertSame( 'active', $subscription->get_status() );
+		$this->assertSame( '', $subscription->get_meta( '_wcpay_pending_invoice_id', true ), 'A paid invoice is not kept for a payment method change.' );
+		$this->assertSame( array(), $this->get_notes_containing( $subscription, 'failed' ) );
+		$this->assertCount( 1, $this->get_requests(), 'Only the charge is read; nothing is reported to the platform.' );
+	}
+
+	/**
+	 * @testdox A failed-payment update fails the invoice's own renewal order, not a newer renewal, on WooCommerce Subscriptions $_dataName.
+	 * @testWith ["7.9.0 and later", false, "on-hold"]
+	 *           ["before 7.9.0", true, "active"]
+	 *
+	 * WooCommerce Subscriptions deprecated `payment_failed()` in 7.9.0 because it fails the subscription's last order
+	 * (includes/core/class-wc-subscription.php:2151-2160); the invoice's order goes to `payment_failed_for_related_order()`.
+	 * Before 7.9.0 the invoice's order is failed and noted directly and the subscription is left as it is.
+	 *
+	 * @param string $version                   WooCommerce Subscriptions version range.
+	 * @param bool   $before_related_order_failure Whether WooCommerce Subscriptions predates the related-order failure.
+	 * @param string $expected_subscription_status Subscription status after the update.
+	 */
+	public function test_failed_invoice_update_fails_its_own_renewal_not_a_newer_one( string $version, bool $before_related_order_failure, string $expected_subscription_status ): void {
+		unset( $version );
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::BEFORE_RELATED_ORDER_FAILURE ] = $before_related_order_failure;
+		$subscription = $this->create_subscription( self::FAILING_SUBSCRIPTION_ID );
+		$older        = WooCommerceSubscriptionsDoubles::create_renewal_order( $subscription );
+		$older->set_payment_method( 'woocommerce_payments' );
+		$older->update_meta_data( '_wcpay_billing_invoice_id', self::FAILED_INVOICE_ID );
+		$older->save();
+		$newer = WooCommerceSubscriptionsDoubles::create_renewal_order( $subscription );
+		$newer->set_status( 'completed' );
+		$newer->save();
+		$this->queue_response( 200, $this->get_declined_charge() );
+		$this->queue_billing( 'update_invoice' );
+
+		$this->sut->handle_event( $this->get_event( 'invoice_payment_failed' ) );
+
+		$subscription = wc_get_order( $subscription->get_id() );
+		$this->assertSame( 'failed', wc_get_order( $older->get_id() )->get_status() );
+		$this->assertSame( 'completed', wc_get_order( $newer->get_id() )->get_status(), 'The newer renewal is untouched.' );
+		$this->assertSame( $expected_subscription_status, $subscription->get_status() );
+		$this->assertCount( 1, $this->get_notes_containing( $subscription, 'Related order #' . $older->get_id() . ' failed.' ) );
+		$this->assertSame( array(), $this->get_notes_containing( $subscription, 'Related order #' . $newer->get_id() . ' failed.' ) );
+	}
+
+	/**
+	 * @testdox On WooCommerce Subscriptions before 7.9.0, a failed-payment update whose renewal is the subscription's last order goes through payment_failed(), as the client does.
+	 */
+	public function test_failed_invoice_update_for_the_last_renewal_uses_payment_failed_before_wcs_7_9(): void {
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::BEFORE_RELATED_ORDER_FAILURE ] = true;
+		$subscription = $this->create_subscription( self::FAILING_SUBSCRIPTION_ID );
+		$this->queue_response( 200, $this->get_declined_charge() );
+		$this->queue_billing( 'update_invoice' );
+
+		$this->sut->handle_event( $this->get_event( 'invoice_payment_failed' ) );
+
+		$order = $this->get_renewal_orders( self::FAILED_INVOICE_ID )[0];
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertSame( 'on-hold', wc_get_order( $subscription->get_id() )->get_status() );
+		$this->assertCount( 1, $this->get_notes_containing( wc_get_order( $subscription->get_id() ), 'Related order #' . $order->get_id() . ' failed.' ) );
 	}
 
 	/**

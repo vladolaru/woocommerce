@@ -103,11 +103,22 @@ class SubscriptionDouble extends \WC_Order {
 	}
 
 	/**
-	 * Record a failed renewal payment: the subscription moves to the given status, on hold unless told otherwise.
+	 * Record a failed renewal payment as WooCommerce Subscriptions before 7.9.0 does: the subscription's last order fails,
+	 * whichever invoice it belongs to, and the subscription moves to the given status, on hold unless told otherwise.
+	 *
+	 * WooCommerce Subscriptions `WC_Subscription::payment_failed()` and `payment_failed_for_related_order()`
+	 * (includes/core/class-wc-subscription.php:2094-2160).
 	 *
 	 * @param string $new_status Status after the failure.
 	 */
 	public function payment_failed( string $new_status = 'on-hold' ): void {
+		$last_order = $this->get_last_order( 'all', 'any' );
+		if ( $last_order instanceof \WC_Order ) {
+			if ( ! $last_order->has_status( 'failed' ) ) {
+				$last_order->update_status( 'failed' );
+			}
+			$this->add_order_note( sprintf( 'Related order #%d failed.', $last_order->get_id() ) );
+		}
 		$this->update_status( $new_status );
 	}
 

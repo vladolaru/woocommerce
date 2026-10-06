@@ -55,6 +55,11 @@ final class WooCommerceSubscriptionsDoubles {
 	public const RENEWAL_ORDER_ERROR = 'wcpay_test_renewal_order_error';
 
 	/**
+	 * Global that loads subscriptions as WooCommerce Subscriptions before 7.9.0 has them, without the related-order failure, when true.
+	 */
+	public const BEFORE_RELATED_ORDER_FAILURE = 'wcpay_test_before_related_order_failure';
+
+	/**
 	 * Global that makes `WC_Subscriptions_Cart::cart_contains_subscription()` report a subscription cart when true.
 	 */
 	public const CART_CONTAINS_SUBSCRIPTION = 'wcpay_test_cart_contains_subscription';
@@ -520,6 +525,10 @@ final class WooCommerceSubscriptionsDoubles {
 	public static function get_subscription_order_class( $class_name, $order_type, $order_id ) {
 		unset( $order_type );
 
-		return in_array( absint( $order_id ), $GLOBALS[ self::SUBSCRIPTION_IDS ] ?? array(), true ) ? SubscriptionDouble::class : $class_name;
+		if ( ! in_array( absint( $order_id ), $GLOBALS[ self::SUBSCRIPTION_IDS ] ?? array(), true ) ) {
+			return $class_name;
+		}
+
+		return empty( $GLOBALS[ self::BEFORE_RELATED_ORDER_FAILURE ] ) ? RelatedOrderFailureSubscriptionDouble::class : SubscriptionDouble::class;
 	}
 }
