@@ -97,9 +97,8 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 	/**
 	 * Fixture keys native intentionally does not carry, with the recorded authority.
 	 *
-	 * `data/bc-inventory-undecided-classified.tsv` tracks rows classified DECIDED, plus the
-	 * MISSING_SURFACE/UNDECIDED rows the controller resolved to a superseded-by-NOX or dead-code
-	 * authority (Task 0 of plan-task-t4-bc-inventories.md).
+	 * The decided Tracks rows of the program's BC inventory, plus the rows resolved to a
+	 * superseded-by-NOX or dead-code authority.
 	 *
 	 * @var array<string,string>
 	 */

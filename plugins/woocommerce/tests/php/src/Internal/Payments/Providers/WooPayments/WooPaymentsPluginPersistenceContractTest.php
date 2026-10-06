@@ -67,10 +67,8 @@ class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
 	/**
 	 * Fixture keys native intentionally does not carry, with the recorded authority.
 	 *
-	 * `data/bc-inventory-undecided-classified.tsv` rows 194-197, 200, 201, 202 (Task 0 of
-	 * plan-task-t4-bc-inventories.md). The two review-prompt user-meta keys were not part of that
-	 * classification round (the extractor did not yet find them, R3 of
-	 * `data/t4-bc-tests-1-3-review.md`); they fall under the same in-app-review-prompt authority
+	 * The decided persisted-data rows of the program's BC inventory. The two review-prompt user-meta keys
+	 * were not part of that classification round; they fall under the same in-app-review-prompt authority
 	 * already recorded for the corresponding hook and Tracks rows.
 	 *
 	 * @var array<string,string>

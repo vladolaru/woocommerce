@@ -54,13 +54,11 @@ use WC_Unit_Test_Case;
 
 /**
  * Pins the plugin 11.1.0 hook argument shapes (arity and declared types) for the 70 hooks of the
- * retired `hook-shape-parity.php` manifest (`data/bc-inventory-sources/hook-shape-inventory.json`,
- * 38 probe groups), by driving native's own product-path entry point for each group and observing
+ * retired `hook-shape-parity.php` manifest (38 probe groups), by driving native's own product-path entry point for each group and observing
  * the hook fire, instead of firing it directly.
  *
  * Every one of the 38 groups below reaches its hook(s) through a real native call, ported from the
- * retired harness's own native branch for that group (`hook-shape-parity.php`, read at
- * `data/bc-inventory-sources/hook-shape-parity.php`). None of them fires the hook itself, so
+ * retired harness's own native branch for that group (`hook-shape-parity.php`). None of them fires the hook itself, so
  * `STATIC_ONLY` is empty: every hook in the manifest is proven at runtime here, and the name test
  * (`WooPaymentsPluginHookNamesContractTest`) reads `probed_hooks()` to skip re-proving them
  * statically.
@@ -365,7 +363,7 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 		$this->assertNotNull( $captured, "Native must fire {$hook} on its product path (plugin_site: {$entry['plugin_site']})." );
 
 		// The fixture's top-level `arity`/`params` are the plugin's own MAXIMUM-arity call site
-		// (`data/t4-bc-tests-4-5-review.md` R3: for `wcpay_metadata_from_order`, fired at both a
+		// (for `wcpay_metadata_from_order`, fired at both a
 		// 2- and a 3-argument plugin site, this is 3), so a callback registered against either
 		// plugin population still receives every argument it declared.
 		$this->assertCount( $entry['arity'], $captured, "Native fired {$hook} with a different argument count than the plugin." );

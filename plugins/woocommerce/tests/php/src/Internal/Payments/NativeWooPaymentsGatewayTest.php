@@ -2520,7 +2520,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * Oracle: client 11.1.0 `class-wc-payment-gateway-wcpay.php:4437` "We're not able to add this payment
 	 * method. Please try again later", with no trailing period. Native uses that copy for a succeeded
 	 * intent without a payment method, a token that cannot be created, and an unexpected non-API exception
-	 * (where the client shows the exception's own text; kept as proposed in data/t7-batch13.md).
+	 * (where the client shows the exception's own text).
 	 *
 	 * @dataProvider unsaveable_setup_intent_provider
 	 *

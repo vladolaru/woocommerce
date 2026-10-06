@@ -37,8 +37,8 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	);
 
 	/**
-	 * Native-owned fire sites outside `SCAN_ROOTS`, needed by three of the five FALSE_NEGATIVE rows
-	 * `data/t4-bc-tests-1-3-review.md`'s classification found (the IPP receipt email templates and
+	 * Native-owned fire sites outside `SCAN_ROOTS`, needed by three of the five false-negative rows
+	 * the inventory classification found (the IPP receipt email templates and
 	 * the WooPayments React settings-section admin-notices action).
 	 *
 	 * @var array<int,string>
@@ -54,7 +54,7 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	 * level down (`WooPaymentsApiClient::request_with_legacy_request_filter()` /
 	 * `request_with_legacy_filter()`, both of which end in `apply_filters( $hook, $request )`,
 	 * arity 1). Needed for `wcpay_get_reporting_balance_summary_request`, the one FALSE_NEGATIVE row
-	 * not covered by the runtime probe set (`data/t4-bc-tests-1-3-review.md`).
+	 * not covered by the runtime probe set.
 	 *
 	 * @var array<string,int>
 	 */
@@ -66,10 +66,10 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	/**
 	 * Fixture hook names native intentionally does not fire, with the recorded authority.
 	 *
-	 * `data/bc-inventory-undecided-classified.tsv`, the `hooks` rows classified DECIDED (54 rows, less
+	 * The decided `hooks` rows of the program's BC inventory (54 rows, less
 	 * `wpcay_get_account_login_data`, which native fires again since F-T60-24, and
 	 * `wcpay_prepare_fraud_config`, which native fires through `apply_filters_deprecated()` since N-196).
-	 * Every citation below is copied verbatim from that TSV's `native_evidence_or_authority` column,
+	 * Every citation below is copied verbatim from that inventory's authority column,
 	 * which already corrected the seven wrong Decision 1 citations the review found.
 	 *
 	 * @var array<string,string>
@@ -262,7 +262,7 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	 *
 	 * A runtime probe (`WooPaymentsPluginHookArityContractTest`) proves one native call site fires the
 	 * hook with the fixture's arity; it says nothing about a second native site of the same name
-	 * (R4 of `data/t4-bc-tests-4-5-review.md`: for example `wcpay_database_cache_ttl` also fires from
+	 * (for example `wcpay_database_cache_ttl` also fires from
 	 * `MultiCurrencyDatabaseCache` and `WooPaymentsAdminMenuBadgeService`, and
 	 * `wcpay_list_transactions_request` also fires from `WooPaymentsReportsRestController` twice).
 	 * This closes that gap statically, without a second runtime probe per secondary site.
