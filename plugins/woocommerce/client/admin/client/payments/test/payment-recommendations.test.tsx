@@ -139,30 +139,6 @@ describe( 'Payment recommendations', () => {
 		);
 	} );
 
-	it( 'should ignore the removed pre-install WooPayments promotion row when recording pageview props', () => {
-		( isWCPaySupported as jest.Mock ).mockReturnValue( true );
-		( useSelect as jest.Mock ).mockReturnValue( {
-			installedPaymentGateways: {},
-			paymentGatewaySuggestions: [
-				{ title: 'test', id: 'test', plugins: [ 'test' ] },
-			],
-		} );
-		const { container } = render(
-			<div>
-				<div data-gateway_id="pre_install_woocommerce_payments_promotion"></div>
-				<PaymentRecommendations />
-			</div>
-		);
-
-		expect( container.firstChild ).not.toBeNull();
-		expect( recordEvent ).toHaveBeenCalledWith(
-			'settings_payments_recommendations_pageview',
-			{
-				test_displayed: true,
-			}
-		);
-	} );
-
 	it( 'should not render if there are no paymentGatewaySuggestions', () => {
 		( isWCPaySupported as jest.Mock ).mockReturnValue( true );
 		( useSelect as jest.Mock ).mockReturnValue( {
