@@ -81,6 +81,9 @@ class WooPaymentsSellingLocationsFraudSyncTest extends WC_Unit_Test_Case {
 			remove_action( 'update_option_' . $option, array( $this->sut, 'schedule_refresh' ) );
 		}
 		remove_action( 'shutdown', array( $this->sut, 'refresh_fraud_rules' ) );
+		wp_set_current_user( 0 );
+		// The REST writer test builds the global REST server; later tests must get a fresh one.
+		$GLOBALS['wp_rest_server'] = null;
 		Constants::clear_single_constant( 'WC_INSTALLING' );
 		Constants::clear_single_constant( 'WC_UPDATING' );
 		wc_get_container()->reset_all_replacements();
