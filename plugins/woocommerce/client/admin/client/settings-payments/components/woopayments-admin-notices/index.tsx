@@ -64,6 +64,7 @@ export const WooPaymentsAdminNotices = ( {
 	);
 	const shownKey = `${ notice.id }:${ notice.stage ?? '' }`;
 	const shownRef = useRef< string | null >( null );
+	const noticeRef = useRef< HTMLDivElement >( null );
 	const isSuppressed = isCachedNoticeSuppressed( notice );
 	const { createSuccessNotice, createErrorNotice } =
 		dispatch( 'core/notices' );
@@ -97,7 +98,15 @@ export const WooPaymentsAdminNotices = ( {
 	] );
 
 	const finish = () => {
-		focusTargetRef.current?.focus();
+		// Move focus only when it is still on the notice; a user who moved on during the request keeps their place.
+		const activeElement = noticeRef.current?.ownerDocument.activeElement;
+		if (
+			! activeElement ||
+			activeElement === activeElement.ownerDocument.body ||
+			noticeRef.current?.contains( activeElement )
+		) {
+			focusTargetRef.current?.focus();
+		}
 		onDismiss();
 	};
 
@@ -214,7 +223,7 @@ export const WooPaymentsAdminNotices = ( {
 	);
 
 	return (
-		<div>
+		<div ref={ noticeRef }>
 			<Notice
 				status="info"
 				isDismissible={ false }
