@@ -1112,7 +1112,8 @@ class DefaultPaymentGateways {
 						'type'        => 'option',
 						'option_name' => 'woocommerce_native_payments_killswitch',
 						'operation'   => '!in',
-						// The stored values wc_string_to_bool() reads as true, as the runtime arbiter reads the kill switch.
+						// The usual stored spellings of the values wc_string_to_bool() reads as true, which the runtime arbiter
+						// applies to the kill switch. Rules compare strings as stored, so other casings are not matched.
 						'value'       => array( '1', 'yes', 'Yes', 'YES', 'true', 'True', 'TRUE' ),
 						'default'     => '0',
 					),
