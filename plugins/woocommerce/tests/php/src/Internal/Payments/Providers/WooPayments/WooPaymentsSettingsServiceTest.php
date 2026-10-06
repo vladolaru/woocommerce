@@ -1342,6 +1342,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		update_option( $option_name, $original_settings );
 		$store_setup_sync_count = did_action( 'wcpay_store_setup_sync' );
 		$reject_update          = static fn( $value, $old_value ) => $old_value;
+		$logger                 = RecordingWcLogger::install();
 		add_filter( 'pre_update_option_' . $option_name, $reject_update, 10, 2 );
 
 		try {
@@ -1353,6 +1354,9 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WP_Error::class, $result );
 		$this->assertSame( 'woocommerce_woopayments_settings_persistence_failed', $result->get_error_code() );
 		$this->assertSame( 500, $result->get_error_data()['status'] );
+		$this->assertCount( 1, $logger->get_errors(), 'The failed local save is logged.' );
+		$this->assertSame( array( $option_name ), $logger->contexts[0]['failed_options'] );
+		$this->assertSame( array( 'is_wcpay_enabled' ), $logger->contexts[0]['request_keys'] );
 		$this->assertSame( $original_settings, get_option( $option_name ) );
 		$this->assertSame( $store_setup_sync_count, did_action( 'wcpay_store_setup_sync' ) );
 	}

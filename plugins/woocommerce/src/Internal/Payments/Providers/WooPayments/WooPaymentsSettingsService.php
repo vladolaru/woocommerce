@@ -657,6 +657,16 @@ class WooPaymentsSettingsService {
 		// Persist every setting in one canonical write, then project enabled state to split gateways.
 		$projection = $this->get_gateway_settings_synchronizer()->persist( $settings, $payment_request_enabled );
 		if ( ! $projection['persisted'] ) {
+			// Account and fraud settings in this request already reached the platform; say which local option did not save.
+			wc_get_logger()->error(
+				'Native WooPayments settings could not be saved locally.',
+				array(
+					'failed_options' => $projection['failed_option_names'],
+					'request_keys'   => array_keys( $params ),
+					'source'         => 'woocommerce-woopayments-settings',
+				)
+			);
+
 			return new WP_Error(
 				'woocommerce_woopayments_settings_persistence_failed',
 				esc_html__( 'WooPayments settings could not be saved. Please try again.', 'woocommerce' ),
