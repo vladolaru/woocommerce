@@ -3704,10 +3704,12 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$http_client->response = array(
 			'response' => array( 'code' => 200 ),
 			'headers'  => array( 'content-type' => 'application/json' ),
+			// The platform answers with the PaymentIntent, which it prepares only before confirmation (wpcom class-intentions-controller.php:626, :660).
 			'body'     => wp_json_encode(
 				array(
-					'reader_id' => 'tmr_test',
-					'status'    => 'collecting_payment_method',
+					'id'     => 'pi_terminal',
+					'object' => 'payment_intent',
+					'status' => 'requires_confirmation',
 				)
 			),
 		);
@@ -3722,7 +3724,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'POST', $http_client->last_method );
 		$this->assertIsArray( $body );
 		$this->assertSame( 42, $body['order_id'] );
-		$this->assertSame( 'collecting_payment_method', $result['status'] );
+		$this->assertSame( 'requires_confirmation', $result['status'] );
 	}
 
 	/**
