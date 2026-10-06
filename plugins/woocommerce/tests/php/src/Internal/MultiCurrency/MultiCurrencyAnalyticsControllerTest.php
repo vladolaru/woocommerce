@@ -45,6 +45,9 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		'admin_enqueue_scripts',
 	);
 
+	/** Asset file contents this test writes when the admin build is absent. */
+	private const ASSET_FIXTURE = "<?php return array( 'dependencies' => array(), 'version' => 'multi-currency-analytics-test' );";
+
 	/**
 	 * Shared asset data registry.
 	 *
@@ -78,11 +81,16 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 			$this->registry_state[ $property ] = $reflection->getValue( $this->registry );
 		}
 
-		// CI runs PHP tests without the admin build; WCAdminAssetsTest writes into the dist folder the same way.
+		// CI runs PHP tests without the admin build; WCAdminAssetsTest writes into the dist folder the same way. The file is created
+		// only if absent ('x' mode) and removed only while it still holds this fixture, so a real build is never touched.
 		$asset_file = WC_ADMIN_ABSPATH . WC_ADMIN_DIST_JS_FOLDER . 'wp-admin-scripts/multi-currency-analytics.asset.php';
-		if ( ! file_exists( $asset_file ) && wp_is_writable( dirname( $asset_file ) ) ) {
-			file_put_contents( $asset_file, "<?php return array( 'dependencies' => array(), 'version' => 'test' );" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
-			$this->created_asset_file = $asset_file;
+		if ( wp_is_writable( dirname( $asset_file ) ) ) {
+			$handle = @fopen( $asset_file, 'x' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Fails quietly when the build already wrote it.
+			if ( false !== $handle ) {
+				fwrite( $handle, self::ASSET_FIXTURE ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite
+				fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose
+				$this->created_asset_file = $asset_file;
+			}
 		}
 	}
 
@@ -100,7 +108,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 			$reflection->setAccessible( true );
 			$reflection->setValue( $this->registry, $value );
 		}
-		if ( null !== $this->created_asset_file ) {
+		if ( null !== $this->created_asset_file && self::ASSET_FIXTURE === file_get_contents( $this->created_asset_file ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
 			wp_delete_file( $this->created_asset_file );
 		}
 		unset( $_GET['page'] );
