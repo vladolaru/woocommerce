@@ -255,9 +255,11 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 		// Concrete values, as the client registers them, so a key another plugin already registered, even lazily, is kept.
 		$registry = Package::container()->get( AssetDataRegistry::class );
 		if ( ! $registry->exists( 'customerCurrencies' ) ) {
-			$projection = $this->get_analytics_projection_service();
-			$registry->add( 'customerCurrencies', $projection->get_customer_currency_options() );
-			$registry->add( 'customerCurrencySymbols', $projection->get_currency_symbols() );
+			$registry->add( 'customerCurrencies', $this->get_analytics_projection_service()->get_customer_currency_options() );
+		}
+		// Symbols too when another plugin supplied the list, as the client's come from a separate source.
+		if ( ! $registry->exists( 'customerCurrencySymbols' ) ) {
+			$registry->add( 'customerCurrencySymbols', $this->get_analytics_projection_service()->get_currency_symbols() );
 		}
 
 		WCAdminAssets::register_script( 'wp-admin-scripts', 'multi-currency-analytics', true );

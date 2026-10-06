@@ -537,36 +537,33 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep customer currencies another plugin registered, even lazily.
+	 * @testdox Should keep customer currencies another plugin registered ($label) and still provide every currency's symbol.
+	 * @testWith ["concretely", false]
+	 *           ["lazily", true]
+	 *
+	 * @param string $label Case label.
+	 * @param bool   $lazy  Whether the other plugin registered a lazy value.
 	 */
-	public function test_keeps_customer_currencies_another_plugin_registered(): void {
+	public function test_keeps_customer_currencies_another_plugin_registered( string $label, bool $lazy ): void {
+		unset( $label );
 		$sut          = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
 		$_GET['page'] = 'wc-admin';
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'shop_manager' ) ) );
-		$this->registry->add(
-			'customerCurrencies',
-			static fn(): array => array(
-				array(
-					'label' => 'Theirs',
-					'value' => 'XTS',
-				),
-			)
+		$theirs = array(
+			array(
+				'label' => 'Euro',
+				'value' => 'EUR',
+			),
 		);
+		$this->registry->add( 'customerCurrencies', $lazy ? static fn(): array => $theirs : $theirs );
 
 		$sut->handle_admin_enqueue_scripts();
-		$lazy = new \ReflectionMethod( AssetDataRegistry::class, 'execute_lazy_data' );
-		$lazy->setAccessible( true );
-		$lazy->invoke( $this->registry );
+		$lazy_data = new \ReflectionMethod( AssetDataRegistry::class, 'execute_lazy_data' );
+		$lazy_data->setAccessible( true );
+		$lazy_data->invoke( $this->registry );
 
-		$this->assertSame(
-			array(
-				array(
-					'label' => 'Theirs',
-					'value' => 'XTS',
-				),
-			),
-			$this->get_registry_data()['customerCurrencies']
-		);
+		$this->assertSame( $theirs, $this->get_registry_data()['customerCurrencies'] );
+		$this->assertSame( '€', $this->get_registry_data()['customerCurrencySymbols']['EUR'] );
 	}
 
 	/**
