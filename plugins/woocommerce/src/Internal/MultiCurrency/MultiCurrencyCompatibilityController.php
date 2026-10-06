@@ -50,13 +50,6 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 	private ?MultiCurrencyStateBuilder $state_builder = null;
 
 	/**
-	 * Projected compatibility integration names.
-	 *
-	 * @var string[]
-	 */
-	private array $compatibility_integrations = array();
-
-	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -88,31 +81,9 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 			return;
 		}
 
-		$this->add_action_once( 'init', array( $this, 'init_compatibility_classes' ), 11 );
-
 		if ( $this->is_cron_request() ) {
 			$this->add_filter_once( 'woocommerce_admin_sales_record_milestone_enabled', array( $this, 'attach_order_modifier' ) );
 		}
-	}
-
-	/**
-	 * Initialize projected compatibility integrations.
-	 *
-	 * @internal
-	 */
-	public function init_compatibility_classes(): void {
-		$this->compatibility_integrations = MultiCurrencyCompatibilityProjectionService::get_compatibility_integrations(
-			$this->get_state_builder()->build()->has_additional_currencies_enabled()
-		);
-	}
-
-	/**
-	 * Get projected compatibility integration names.
-	 *
-	 * @return string[]
-	 */
-	public function get_compatibility_integrations(): array {
-		return $this->compatibility_integrations;
 	}
 
 	/**
@@ -326,20 +297,6 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 		}
 
 		return false;
-	}
-
-	/**
-	 * Register an action only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_action_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_action( $hook, $callback ) ) {
-			add_action( $hook, $callback, $priority, $accepted_args );
-		}
 	}
 
 	/**

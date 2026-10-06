@@ -57,20 +57,7 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 
 		$sut->register();
 
-		$this->assertFalse( has_action( 'init', array( $sut, 'init_compatibility_classes' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_admin_sales_record_milestone_enabled', array( $sut, 'attach_order_modifier' ) ) );
-	}
-
-	/**
-	 * @testdox Should register compatibility hooks when core owns runtime.
-	 */
-	public function test_registers_compatibility_hooks_when_core_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false );
-
-		$sut->register();
-		$sut->register();
-
-		$this->assertSame( 11, has_action( 'init', array( $sut, 'init_compatibility_classes' ) ) );
 	}
 
 	/**
@@ -85,41 +72,6 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertFalse( has_filter( 'woocommerce_admin_sales_record_milestone_enabled', array( $non_cron, 'attach_order_modifier' ) ) );
 		$this->assertSame( 10, has_filter( 'woocommerce_admin_sales_record_milestone_enabled', array( $cron, 'attach_order_modifier' ) ) );
-	}
-
-	/**
-	 * @testdox Should project compatibility integrations when multiple currencies are enabled.
-	 */
-	public function test_projects_compatibility_integrations_when_multiple_currencies_are_enabled(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, true, 2 );
-
-		$sut->init_compatibility_classes();
-
-		$this->assertSame(
-			array(
-				'WooCommerceBookings',
-				'WooCommerceFedEx',
-				'WooCommerceNameYourPrice',
-				'WooCommercePreOrders',
-				'WooCommerceProductAddOns',
-				'WooCommerceSubscriptions',
-				'WooCommerceUPS',
-				'WooCommerceDeposits',
-				'WooCommercePointsAndRewards',
-			),
-			$sut->get_compatibility_integrations()
-		);
-	}
-
-	/**
-	 * @testdox Should project no compatibility integrations with one currency.
-	 */
-	public function test_projects_no_compatibility_integrations_with_one_currency(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, true, 1 );
-
-		$sut->init_compatibility_classes();
-
-		$this->assertSame( array(), $sut->get_compatibility_integrations() );
 	}
 
 	/**

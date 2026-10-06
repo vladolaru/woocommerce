@@ -12,27 +12,6 @@ use WC_Unit_Test_Case;
 class MultiCurrencyCompatibilityProjectionServiceTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox Should project compatibility integrations when multiple currencies are enabled.
-	 */
-	public function test_projects_compatibility_integrations_when_multiple_currencies_are_enabled(): void {
-		$this->assertSame(
-			array(
-				'WooCommerceBookings',
-				'WooCommerceFedEx',
-				'WooCommerceNameYourPrice',
-				'WooCommercePreOrders',
-				'WooCommerceProductAddOns',
-				'WooCommerceSubscriptions',
-				'WooCommerceUPS',
-				'WooCommerceDeposits',
-				'WooCommercePointsAndRewards',
-			),
-			MultiCurrencyCompatibilityProjectionService::get_compatibility_integrations( true )
-		);
-		$this->assertSame( array(), MultiCurrencyCompatibilityProjectionService::get_compatibility_integrations( false ) );
-	}
-
-	/**
 	 * @testdox Should project switching disable reasons from explicit inputs.
 	 */
 	public function test_projects_switching_disable_reasons_from_explicit_inputs(): void {

@@ -16,32 +16,6 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 class MultiCurrencyCompatibilityProjectionService {
 
 	/**
-	 * Project compatibility integrations that load when more than one currency is enabled.
-	 *
-	 * @param bool $has_additional_currencies Whether the store has additional enabled currencies.
-	 * @return string[]
-	 *
-	 * @since 11.0.0
-	 */
-	public static function get_compatibility_integrations( bool $has_additional_currencies ): array {
-		if ( ! $has_additional_currencies ) {
-			return array();
-		}
-
-		return array(
-			'WooCommerceBookings',
-			'WooCommerceFedEx',
-			'WooCommerceNameYourPrice',
-			'WooCommercePreOrders',
-			'WooCommerceProductAddOns',
-			'WooCommerceSubscriptions',
-			'WooCommerceUPS',
-			'WooCommerceDeposits',
-			'WooCommercePointsAndRewards',
-		);
-	}
-
-	/**
 	 * Project switching-disable reasons from explicit non-mutating inputs.
 	 *
 	 * @param array<string,mixed> $query_args               Query arguments.
