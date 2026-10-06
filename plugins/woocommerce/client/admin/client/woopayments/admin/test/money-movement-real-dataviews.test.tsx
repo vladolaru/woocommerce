@@ -1,7 +1,13 @@
 /**
  * External dependencies
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+	within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -223,9 +229,19 @@ describe( 'WooPayments list filters in the real DataViews', () => {
 			( getWooPaymentsDisputes as jest.Mock ).mock.calls.length;
 		const before = requests();
 
+		// The toggle reads its label and the current choice; the open list is named after the filter and marks the current choice.
 		await userEvent.click(
-			screen.getByLabelText( 'Show', { selector: 'button' } )
+			screen.getByRole( 'button', { name: 'Show All disputes' } )
 		);
+		const choices = screen.getByRole( 'list', { name: 'Show' } );
+		expect(
+			within( choices ).getByRole( 'button', { name: 'All disputes' } )
+		).toHaveAttribute( 'aria-current', 'true' );
+		expect(
+			within( choices ).getByRole( 'button', {
+				name: 'Advanced filters',
+			} )
+		).not.toHaveAttribute( 'aria-current' );
 		await userEvent.keyboard( '{ArrowDown}{ArrowDown}{ArrowUp}' );
 		await userEvent.tab();
 		await userEvent.keyboard( '{ArrowDown}' );

@@ -251,4 +251,23 @@ describe( 'WooPayments Documents data helpers', () => {
 			method: 'GET',
 		} );
 	} );
+
+	// The local day comes from the date getters, so pin the process time zone to the offset spy's +03:00 (Etc/GMT-3);
+	// 22:00 at -05:00 is already July 9 there, so the literal date would be a day early.
+	it( 'takes the local day of a date-time from another offset', async () => {
+		const originalTz = process.env.TZ;
+		process.env.TZ = 'Etc/GMT-3';
+		try {
+			await getWooPaymentsDocuments( {
+				date_before: '2026-07-08T22:00:00-05:00',
+			} );
+		} finally {
+			process.env.TZ = originalTz;
+		}
+
+		expect( mockApiFetch ).toHaveBeenLastCalledWith( {
+			path: '/wc/v3/payments/documents?date_before=2026-07-09+20%3A59%3A59',
+			method: 'GET',
+		} );
+	} );
 } );

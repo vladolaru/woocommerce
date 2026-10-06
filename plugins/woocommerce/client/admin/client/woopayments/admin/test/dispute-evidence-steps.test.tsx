@@ -70,6 +70,11 @@ describe( 'Dispute evidence step labels', () => {
 	// Client 11.1.0 `disputes/new-evidence/index.tsx:812-821` and `:1586-1590`: a step label click saves the draft, then changes step.
 	it( 'saves the draft and opens the step when its label is clicked', async () => {
 		renderForm( makeDispute() );
+		const description = screen.getByRole( 'textbox', {
+			name: 'Product or service description',
+		} );
+		await userEvent.clear( description );
+		await userEvent.type( description, 'Downloaded software.' );
 
 		await userEvent.click(
 			screen.getByRole( 'button', { name: '2 Review' } )
@@ -79,9 +84,18 @@ describe( 'Dispute evidence step labels', () => {
 			await screen.findByRole( 'textbox', { name: 'Cover letter' } )
 		).toBeInTheDocument();
 		expect( mockUpdateDispute ).toHaveBeenCalledTimes( 1 );
-		expect( mockUpdateDispute.mock.calls[ 0 ][ 1 ] ).toMatchObject( {
-			submit: false,
-		} );
+		expect( mockUpdateDispute ).toHaveBeenCalledWith(
+			'dp_test',
+			expect.objectContaining( {
+				evidence: expect.objectContaining( {
+					product_description: 'Downloaded software.',
+				} ),
+				metadata: expect.objectContaining( {
+					__product_type: 'digital_product_or_service',
+				} ),
+				submit: false,
+			} )
+		);
 	} );
 
 	it( 'stays on the step when the draft save fails', async () => {

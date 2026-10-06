@@ -249,23 +249,39 @@ describe( 'WooPayments Reports query helpers', () => {
 	} );
 
 	// Client 11.1.0 `data/reports/resolvers.js:36-43` `formatDateValue()`: Before is the end of the merchant's day, and a
-	// date-time counts by its local day.
-	it.each( [
-		[ 'before', '2026-06-18', { date_before: '2026-06-18 20:59:59' } ],
-		[
-			'after',
-			'2026-06-18T23:30:00+03:00',
-			{ date_after: '2026-06-17 21:00:00' },
-		],
-	] )(
-		'sends a %s Date filter at the merchant day boundary',
-		( operator, value, expected ) => {
-			expect(
-				buildReportsFeesQueryFromView( {
-					type: 'table',
-					filters: [ { field: 'date', operator, value } ],
-				} )
-			).toEqual( expect.objectContaining( expected ) );
-		}
-	);
+	// date-time counts by its local day. The local day comes from the date getters, so the process time zone is pinned
+	// too (Etc/GMT-3 is +03:00, as the offset spy says); 23:30 at -05:00 is already the next day there.
+	describe( 'with the browser at +03:00', () => {
+		const originalTz = process.env.TZ;
+		beforeAll( () => {
+			process.env.TZ = 'Etc/GMT-3';
+		} );
+		afterAll( () => {
+			process.env.TZ = originalTz;
+		} );
+
+		it.each( [
+			[ 'before', '2026-06-18', { date_before: '2026-06-18 20:59:59' } ],
+			[
+				'after',
+				'2026-06-18T23:30:00+03:00',
+				{ date_after: '2026-06-17 21:00:00' },
+			],
+			[
+				'after',
+				'2026-06-18T23:30:00-05:00',
+				{ date_after: '2026-06-18 21:00:00' },
+			],
+		] )(
+			'sends a %s Date filter at the merchant day boundary',
+			( operator, value, expected ) => {
+				expect(
+					buildReportsFeesQueryFromView( {
+						type: 'table',
+						filters: [ { field: 'date', operator, value } ],
+					} )
+				).toEqual( expect.objectContaining( expected ) );
+			}
+		);
+	} );
 } );

@@ -879,6 +879,40 @@ describe( 'WooPaymentsReportsPage', () => {
 		expect( screen.queryByText( /1,111\.11/ ) ).not.toBeInTheDocument();
 	} );
 
+	it( 'keeps the Balance totals of the current query when an earlier request fails last', async () => {
+		let rejectEarlier: ( error: Error ) => void = () => {};
+		renderReportsPage();
+		await waitFor( () =>
+			expect( mockGetBalanceSummary ).toHaveBeenCalledTimes( 1 )
+		);
+		await screen.findByLabelText( 'Date range', { selector: 'button' } );
+
+		mockGetBalanceSummary
+			.mockImplementationOnce(
+				() =>
+					new Promise( ( resolve, reject ) => {
+						rejectEarlier = reject;
+					} )
+			)
+			.mockImplementation( async () => ( {
+				...balanceSummary,
+				ending_balance: { amount: 222222 },
+			} ) );
+		chooseFilter( 'Date range', 'Previous year' );
+		chooseFilter( 'Date range', 'Previous month' );
+		await screen.findByText( /2,222\.22/ );
+
+		await act( async () => {
+			rejectEarlier( new Error( 'Earlier request failed.' ) );
+			await waitForNextTick();
+		} );
+
+		expect( screen.getByText( /2,222\.22/ ) ).toBeInTheDocument();
+		expect(
+			screen.queryByText( 'Balance report could not be loaded.' )
+		).not.toBeInTheDocument();
+	} );
+
 	it( 'applies previous-period presets to Balance and Fees using the stable report clock', async () => {
 		renderReportsPage();
 
