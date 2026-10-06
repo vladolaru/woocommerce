@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsCurrencyRateProvider;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Exception;
@@ -27,6 +28,21 @@ defined( 'ABSPATH' ) || exit;
 class WooPaymentsStatusReport implements RegisterHooksInterface {
 
 	private const MULTI_CURRENCY_FLAG_OPTION = '_wcpay_feature_customer_multi_currency';
+
+	private const WOOPAY_EXPRESS_CHECKOUT_FLAG_OPTION = '_wcpay_feature_woopay_express_checkout';
+
+	/**
+	 * The native diagnostics the status report shows in its own table, after the client's WooPayments section.
+	 */
+	private const NATIVE_RUNTIME_FIELDS = array(
+		'runtime_owner',
+		'native_enabled',
+		'native_enabled_filter',
+		'native_enabled_note',
+		'preflight_failures',
+		'multi_currency_rate_provider',
+		'last_webhook_fetch',
+	);
 
 	private const SITE_HEALTH_TEST_ID = 'woocommerce_woopayments_native_cutover';
 
@@ -339,25 +355,248 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Render WooPayments status report rows.
+	 * Render the client's WooPayments section, then the native runtime diagnostics as a separate table.
 	 */
 	public function render_status_report_section(): void {
-		$fields = $this->get_status_fields();
+		$fields      = $this->get_status_fields();
+		$native_rows = array();
+		foreach ( self::NATIVE_RUNTIME_FIELDS as $field_id ) {
+			$native_rows[] = $this->status_row( $fields[ $field_id ]['label'], $fields[ $field_id ]['label'], '', $fields[ $field_id ]['value'] );
+		}
+
+		$this->render_status_table( 'WooPayments', $this->get_client_status_rows() );
+		$this->render_status_table( 'WooPayments native runtime', $native_rows );
+	}
+
+	/**
+	 * Get the rows of the client's WooPayments status section, with the client's labels and values.
+	 *
+	 * Client 11.1.0 `includes/class-wc-payments-status.php:427-641`: the account rows show only with a WPCOM
+	 * connection, and the settings rows only with a connected account.
+	 *
+	 * @return array<int,array{export_label:string,label:string,help:string,value:string,warning:bool}>
+	 */
+	public function get_client_status_rows(): array {
+		$http_client = wc_get_container()->get( WooPaymentsHttpClient::class );
+		$rows        = array(
+			$this->status_row(
+				'Version',
+				__( 'Version', 'woocommerce' ),
+				/* translators: %s: WooPayments */
+				sprintf( __( 'The current version of the %s extension.', 'woocommerce' ), 'WooPayments' ),
+				WooPaymentsClientVersion::get_reported_version()
+			),
+		);
+
+		$wpcom_connected = $http_client->is_connected();
+		$rows[]          = $this->status_row(
+			'Connected to WPCOM',
+			__( 'Connected to WPCOM', 'woocommerce' ),
+			/* translators: %s: WooPayments */
+			sprintf( __( "Can your store connect securely to wordpress.com? Without a proper WPCOM connection %s can't function!", 'woocommerce' ), 'WooPayments' ),
+			$this->format_yes_no( $wpcom_connected ),
+			! $wpcom_connected
+		);
+
+		if ( $wpcom_connected ) {
+			$gateway           = wc_get_container()->get( NativeWooPaymentsGateway::class );
+			$account_connected = $gateway->is_connected();
+			$account_id        = $this->get_account_service()->get_account_id();
+			$rows[]            = $this->status_row(
+				'WPCOM Blog ID',
+				__( 'WPCOM Blog ID', 'woocommerce' ),
+				__( 'The corresponding wordpress.com blog ID for this store.', 'woocommerce' ),
+				(string) ( $http_client->get_blog_id() ?? '-' )
+			);
+			$rows[]            = $this->status_row(
+				'Account ID',
+				__( 'Account ID', 'woocommerce' ),
+				__( 'The merchant account ID you are currently using to process payments with.', 'woocommerce' ),
+				$account_connected ? ( '' !== $account_id ? $account_id : '-' ) : __( 'Not connected', 'woocommerce' ),
+				! $account_connected
+			);
+
+			if ( $account_connected ) {
+				$rows = array_merge( $rows, $this->get_client_account_status_rows( $gateway ) );
+			}
+		}
+
+		$rows[] = $this->status_row(
+			'Logging',
+			__( 'Logging', 'woocommerce' ),
+			__( 'Whether debug logging is enabled and working or not.', 'woocommerce' ),
+			$this->format_enabled( wc_get_container()->get( WooPaymentsLogger::class )->can_log() )
+		);
+
+		return $rows;
+	}
+
+	/**
+	 * Get the client's rows that need a connected account.
+	 *
+	 * @param NativeWooPaymentsGateway $gateway The WooPayments gateway.
+	 * @return array<int,array{export_label:string,label:string,help:string,value:string,warning:bool}>
+	 */
+	private function get_client_account_status_rows( NativeWooPaymentsGateway $gateway ): array {
+		$account_service  = $this->get_account_service();
+		$settings_service = wc_get_container()->get( WooPaymentsSettingsService::class );
+		$needs_setup      = $gateway->needs_setup();
+		$dev_triggers     = $account_service->get_dev_mode_triggers();
+		$woopay_eligible  = $settings_service->is_woopay_eligible();
+		$protection_level = $settings_service->get_current_protection_level();
+		$support_phone    = $account_service->get_cached_account_data()['business_profile']['support_phone'] ?? '';
+		$support_phone    = is_scalar( $support_phone ) ? (string) $support_phone : '';
+
+		$rows = array(
+			$this->status_row(
+				'Payment Gateway',
+				__( 'Payment Gateway', 'woocommerce' ),
+				__( 'Is the payment gateway ready and enabled for use on your store?', 'woocommerce' ),
+				$needs_setup ? __( 'Needs setup', 'woocommerce' ) : $this->format_enabled( $account_service->is_gateway_enabled() ),
+				$needs_setup
+			),
+			$this->status_row(
+				'Test Mode',
+				__( 'Test Mode', 'woocommerce' ),
+				__( 'Whether the payment gateway has test payments enabled or not.', 'woocommerce' ),
+				$this->format_enabled( $account_service->is_test_mode_enabled() )
+			),
+			$this->status_row(
+				'Dev Mode',
+				__( 'Dev Mode', 'woocommerce' ),
+				__( 'Whether WooPayments is running in dev (sandbox) mode and what triggered it.', 'woocommerce' ),
+				array() !== $dev_triggers ? __( 'Enabled', 'woocommerce' ) . ' (' . implode( ', ', $dev_triggers ) . ')' : __( 'Disabled', 'woocommerce' )
+			),
+			$this->status_row(
+				'Enabled APMs',
+				__( 'Enabled APMs', 'woocommerce' ),
+				__( 'What payment methods are enabled for the store.', 'woocommerce' ),
+				implode( ',', $this->get_enabled_payment_methods() )
+			),
+		);
+
+		if ( ! $woopay_eligible || '1' !== (string) get_option( self::WOOPAY_EXPRESS_CHECKOUT_FLAG_OPTION, '1' ) ) {
+			$rows[] = $this->status_row(
+				'WooPay',
+				__( 'WooPay Express Checkout', 'woocommerce' ),
+				/* translators: %s: WooPayments */
+				sprintf( __( 'WooPay is not available, as a %s feature, or the store is not yet eligible.', 'woocommerce' ), 'WooPayments' ),
+				$woopay_eligible ? __( 'Not active', 'woocommerce' ) : __( 'Not eligible', 'woocommerce' )
+			);
+		} else {
+			$rows[] = $this->status_row(
+				'WooPay',
+				__( 'WooPay Express Checkout', 'woocommerce' ),
+				__( 'Whether the new WooPay Express Checkout is enabled or not.', 'woocommerce' ),
+				$this->format_client_express_checkout_status( $this->is_setting_enabled( 'platform_checkout' ), $this->get_express_checkout_method_locations( 'woopay' ) )
+			);
+			$rows[] = $this->status_row(
+				'WooPay Incompatible Extensions',
+				__( 'WooPay Incompatible Extensions', 'woocommerce' ),
+				__( 'Whether there are extensions active that are have known incompatibilities with the functioning of the new WooPay Express Checkout.', 'woocommerce' ),
+				$this->format_yes_no( (bool) get_option( 'woopay_invalid_extension_found', false ) )
+			);
+		}
+
+		$rows[] = $this->status_row(
+			'Apple Pay / Google Pay',
+			__( 'Apple Pay / Google Pay Express Checkout', 'woocommerce' ),
+			__( 'Whether the store has Payment Request enabled or not.', 'woocommerce' ),
+			$this->format_client_express_checkout_status( $account_service->is_payment_request_enabled(), $this->get_express_checkout_method_locations( 'payment_request' ) )
+		);
+		$rows[] = $this->status_row(
+			'Fraud Protection Level',
+			__( 'Fraud Protection Level', 'woocommerce' ),
+			__( 'The current fraud protection level the payment gateway is using.', 'woocommerce' ),
+			$protection_level
+		);
+		if ( 'advanced' === $protection_level ) {
+			$filters = $this->get_enabled_fraud_filter_names( $settings_service->get_advanced_fraud_protection_settings() );
+			$rows[]  = $this->status_row(
+				'Enabled Fraud Filters',
+				__( 'Enabled Fraud Filters', 'woocommerce' ),
+				__( 'The advanced fraud protection filters currently enabled.', 'woocommerce' ),
+				array() !== $filters ? implode( ',', $filters ) : '-'
+			);
+		}
+
+		$rows[] = $this->status_row(
+			'Multi-currency',
+			__( 'Multi-currency', 'woocommerce' ),
+			__( 'Whether the store has the Multi-currency feature enabled or not.', 'woocommerce' ),
+			$this->format_enabled( '1' === (string) get_option( self::MULTI_CURRENCY_FLAG_OPTION, '1' ) )
+		);
+		$rows[] = $this->status_row(
+			'Auth and Capture',
+			__( 'Auth and Capture', 'woocommerce' ),
+			__( 'Whether the store has the Auth & Capture feature enabled or not.', 'woocommerce' ),
+			$this->format_enabled( $this->is_setting_enabled( 'manual_capture' ) )
+		);
+		$rows[] = $this->status_row(
+			'Support Phone',
+			__( 'Support Phone', 'woocommerce' ),
+			__( 'The support phone number set in WooPayments settings. If not set, the settings Save button will be disabled.', 'woocommerce' ),
+			'' !== $support_phone ? $support_phone : __( 'Not set', 'woocommerce' ),
+			'' === $support_phone
+		);
+		$rows[] = $this->status_row(
+			'Documents',
+			__( 'Documents', 'woocommerce' ),
+			__( 'Whether the tax documents section is enabled or not.', 'woocommerce' ),
+			$this->format_enabled( $account_service->is_documents_enabled() )
+		);
+
+		return $rows;
+	}
+
+	/**
+	 * Build one status row.
+	 *
+	 * @param string $export_label Untranslated label copied into the text report.
+	 * @param string $label        Shown label.
+	 * @param string $help         Help tip text, or empty for none.
+	 * @param string $value        Value text.
+	 * @param bool   $warning      Whether to mark the value as a problem.
+	 * @return array{export_label:string,label:string,help:string,value:string,warning:bool}
+	 */
+	private function status_row( string $export_label, string $label, string $help, string $value, bool $warning = false ): array {
+		return array(
+			'export_label' => $export_label,
+			'label'        => $label,
+			'help'         => $help,
+			'value'        => $value,
+			'warning'      => $warning,
+		);
+	}
+
+	/**
+	 * Render one status report table.
+	 *
+	 * @param string                                                                                   $title Table heading, also its export label.
+	 * @param array<int,array{export_label:string,label:string,help:string,value:string,warning:bool}> $rows  Rows.
+	 */
+	private function render_status_table( string $title, array $rows ): void {
 		?>
 		<table class="wc_status_table widefat" cellspacing="0">
 			<thead>
 				<tr>
-					<th colspan="3" data-export-label="WooPayments native payments">
-						<h2><?php esc_html_e( 'WooPayments native payments', 'woocommerce' ); ?></h2>
+					<th colspan="3" data-export-label="<?php echo esc_attr( $title ); ?>">
+						<h2><?php echo esc_html( $title ); ?></h2>
 					</th>
 				</tr>
 			</thead>
 			<tbody>
-				<?php foreach ( $fields as $field ) : ?>
+				<?php foreach ( $rows as $row ) : ?>
 					<tr>
-						<td data-export-label="<?php echo esc_attr( $field['label'] ); ?>"><?php echo esc_html( $field['label'] ); ?>:</td>
-						<td class="help">&nbsp;</td>
-						<td><?php echo esc_html( $field['value'] ); ?></td>
+						<td data-export-label="<?php echo esc_attr( $row['export_label'] ); ?>"><?php echo esc_html( $row['label'] ); ?>:</td>
+						<td class="help"><?php echo '' !== $row['help'] ? wc_help_tip( $row['help'] ) : '&nbsp;'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- wc_help_tip() escapes the tip. ?></td>
+						<td>
+							<?php if ( $row['warning'] ) : ?>
+								<mark class="error"><span class="dashicons dashicons-warning"></span> <?php echo esc_html( $row['value'] ); ?></mark>
+							<?php else : ?>
+								<?php echo esc_html( $row['value'] ); ?>
+							<?php endif; ?>
+						</td>
 					</tr>
 				<?php endforeach; ?>
 			</tbody>
@@ -792,6 +1031,49 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 				__( 'Enabled (%s)', 'woocommerce' ),
 				implode( ', ', $locations )
 			);
+	}
+
+	/**
+	 * Format an express checkout method the way the client's status section does.
+	 *
+	 * @param bool     $enabled   Whether the method is enabled.
+	 * @param string[] $locations Enabled locations.
+	 * @return string
+	 */
+	private function format_client_express_checkout_status( bool $enabled, array $locations ): string {
+		if ( ! $enabled ) {
+			return __( 'Disabled', 'woocommerce' );
+		}
+
+		return __( 'Enabled', 'woocommerce' ) . ' (' . ( array() !== $locations ? implode( ',', $locations ) : 'no locations enabled' ) . ')';
+	}
+
+	/**
+	 * Name the advanced fraud filters in a ruleset, as the client's status section does.
+	 *
+	 * Client 11.1.0 `includes/class-wc-payments-status.php:555-592`; a ruleset that failed to load names none.
+	 *
+	 * @param mixed $ruleset Advanced fraud protection settings.
+	 * @return string[]
+	 */
+	private function get_enabled_fraud_filter_names( $ruleset ): array {
+		$names = array(
+			'avs_verification'         => 'AVS Verification',
+			'international_ip_address' => 'International IP Address',
+			'ip_address_mismatch'      => 'IP Address Mismatch',
+			'address_mismatch'         => 'Address Mismatch',
+			'purchase_price_threshold' => 'Purchase Price Threshold',
+			'order_items_threshold'    => 'Order Items Threshold',
+		);
+		$list  = array();
+		foreach ( is_array( $ruleset ) ? $ruleset : array() as $rule ) {
+			$key = is_array( $rule ) && isset( $rule['key'] ) && is_string( $rule['key'] ) ? $rule['key'] : '';
+			if ( isset( $names[ $key ] ) ) {
+				$list[] = $names[ $key ];
+			}
+		}
+
+		return $list;
 	}
 
 	/**

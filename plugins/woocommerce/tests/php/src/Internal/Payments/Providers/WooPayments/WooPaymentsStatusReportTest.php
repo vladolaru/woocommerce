@@ -9,8 +9,10 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverStateStore;
@@ -60,6 +62,9 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		delete_option( '_wcpay_feature_customer_multi_currency' );
 		delete_option( self::EXPECTED_LAST_FETCH_OPTION );
 		wc_get_container()->reset_replacement( WooPaymentsApiClient::class );
+		wc_get_container()->reset_replacement( WooPaymentsHttpClient::class );
+		delete_transient( 'wcpay_fraud_protection_settings' );
+		delete_option( 'current_protection_level' );
 		wc_get_container()->reset_replacement( WooPaymentsCanceledAuthorizationFeeRemediationService::class );
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
 		update_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION, '0', true );
@@ -552,6 +557,134 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'native', $info['woocommerce_native_payments']['fields']['runtime_owner']['value'] );
 		$this->assertSame( 'acct_native_test', $info['woocommerce_native_payments']['fields']['account_id']['value'] );
 		$this->assertStringContainsString( 'mu-plugin', $info['woocommerce_native_payments']['fields']['native_enabled_note']['value'] );
+	}
+
+	/**
+	 * @testdox The status report keeps the client's WooPayments section labels and values, and adds the native diagnostics as their own table.
+	 *
+	 * Client 11.1.0 `includes/class-wc-payments-status.php:427-641`; support macros and copied reports key on these labels.
+	 *
+	 * @testWith ["yes", "Enabled"]
+	 *           ["no", "Disabled"]
+	 *
+	 * @param string $manual_capture The manual_capture gateway setting.
+	 * @param string $expected       The Auth and Capture value.
+	 */
+	public function test_status_report_renders_the_client_section_for_a_connected_store( string $manual_capture, string $expected ): void {
+		$this->fake_plugin( false );
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client->method( 'is_available' )->willReturn( true );
+		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
+		$http_client = $this->createMock( WooPaymentsHttpClient::class );
+		$http_client->method( 'is_connected' )->willReturn( true );
+		$http_client->method( 'get_blog_id' )->willReturn( 12345 );
+		wc_get_container()->replace( WooPaymentsHttpClient::class, $http_client );
+		$this->seed_connected_store();
+		// Account fields per the platform account response the client reads (client 11.1.0 `includes/class-wc-payments-account.php:489-492`, features `:217-220`).
+		wc_get_container()->get( WooPaymentsAccountService::class )->cache_account_data(
+			array(
+				'account_id'           => 'acct_native_test',
+				'status'               => 'complete',
+				'is_live'              => true,
+				'payments_enabled'     => true,
+				'details_submitted'    => true,
+				'is_documents_enabled' => true,
+				'business_profile'     => array( 'support_phone' => '+15555550123' ),
+			)
+		);
+		$settings                   = get_option( 'woocommerce_woocommerce_payments_settings' );
+		$settings['manual_capture'] = $manual_capture;
+		update_option( 'woocommerce_woocommerce_payments_settings', $settings );
+		set_transient( 'wcpay_fraud_protection_settings', array(), HOUR_IN_SECONDS );
+		update_option( 'current_protection_level', 'basic' );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+
+		ob_start();
+		$this->get_sut()->render_status_report_section();
+		$html = (string) ob_get_clean();
+
+		$tables = $this->get_status_tables( $html );
+		$this->assertSame( array( 'WooPayments', 'WooPayments native runtime' ), array_keys( $tables ) );
+		$client = $tables['WooPayments'];
+		$this->assertSame( WooPaymentsClientVersion::get_reported_version(), $client['Version'] );
+		$this->assertSame( 'Yes', $client['Connected to WPCOM'] );
+		$this->assertSame( '12345', $client['WPCOM Blog ID'] );
+		$this->assertSame( 'acct_native_test', $client['Account ID'] );
+		$this->assertSame( 'Enabled', $client['Payment Gateway'] );
+		$this->assertSame( 'Enabled', $client['Test Mode'] );
+		$this->assertSame( 'card,link', $client['Enabled APMs'] );
+		$this->assertSame( 'Enabled (product,checkout)', $client['Apple Pay / Google Pay'] );
+		$this->assertSame( 'basic', $client['Fraud Protection Level'] );
+		$this->assertSame( 'Enabled', $client['Multi-currency'] );
+		$this->assertSame( $expected, $client['Auth and Capture'] );
+		$this->assertSame( '+15555550123', $client['Support Phone'] );
+		$this->assertSame( 'Enabled', $client['Documents'] );
+		$this->assertSame( 'Disabled', $client['Dev Mode'] );
+		$this->assertSame( 'Disabled', $client['Logging'] );
+		$this->assertSame( 'native', $tables['WooPayments native runtime']['Runtime owner'] );
+		$this->assertArrayNotHasKey( 'Account ID', $tables['WooPayments native runtime'] );
+		$this->assertStringNotContainsString( 'sk_', $html );
+		$this->assertStringNotContainsString( 'pk_', $html );
+	}
+
+	/**
+	 * @testdox Dev mode triggers follow the wcpay_dev_mode filter, which can turn dev mode on or off, as in the client.
+	 *
+	 * Client 11.1.0 `includes/core/class-mode.php:72-111`.
+	 */
+	public function test_dev_mode_triggers_follow_the_dev_mode_filter(): void {
+		$account_service = wc_get_container()->get( WooPaymentsAccountService::class );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$this->assertSame( array(), $account_service->get_dev_mode_triggers() );
+		remove_filter( 'wcpay_dev_mode', '__return_false' );
+
+		add_filter( 'wcpay_dev_mode', '__return_true' );
+		$triggers = $account_service->get_dev_mode_triggers();
+
+		$this->assertNotEmpty( $triggers );
+		$this->assertTrue( $account_service->is_dev_mode_enabled() );
+	}
+
+	/**
+	 * @testdox The status report shows only the client's connection rows when the store has no WPCOM connection.
+	 */
+	public function test_status_report_without_a_wpcom_connection_shows_the_client_connection_rows(): void {
+		$http_client = $this->createMock( WooPaymentsHttpClient::class );
+		$http_client->method( 'is_connected' )->willReturn( false );
+		wc_get_container()->replace( WooPaymentsHttpClient::class, $http_client );
+
+		$rows = $this->get_sut()->get_client_status_rows();
+
+		$this->assertSame( array( 'Version', 'Connected to WPCOM', 'Logging' ), array_column( $rows, 'export_label' ) );
+		$this->assertSame( 'No', $rows[1]['value'] );
+		$this->assertTrue( $rows[1]['warning'] );
+	}
+
+	/**
+	 * Read each rendered status table as export label => value text.
+	 *
+	 * @param string $html Rendered status report section.
+	 * @return array<string,array<string,string>>
+	 */
+	private function get_status_tables( string $html ): array {
+		$document = new \DOMDocument();
+		libxml_use_internal_errors( true );
+		$document->loadHTML( '<?xml encoding="utf-8"?><body>' . $html . '</body>' );
+		libxml_clear_errors();
+
+		$tables = array();
+		foreach ( $document->getElementsByTagName( 'table' ) as $table ) {
+			$title = $table->getElementsByTagName( 'th' )->item( 0 )->getAttribute( 'data-export-label' );
+			$rows  = array();
+			foreach ( $table->getElementsByTagName( 'tbody' )->item( 0 )->getElementsByTagName( 'tr' ) as $row ) {
+				$cells = $row->getElementsByTagName( 'td' );
+				$rows[ $cells->item( 0 )->getAttribute( 'data-export-label' ) ] = trim( $cells->item( 2 )->textContent );
+			}
+			$tables[ $title ] = $rows;
+		}
+
+		return $tables;
 	}
 
 	/**

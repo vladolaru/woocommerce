@@ -445,9 +445,11 @@ class WooPaymentsSettingsService {
 	/**
 	 * Tell whether the connected account can use WooPay surfaces.
 	 *
+	 * @internal
+	 *
 	 * @return bool
 	 */
-	private function is_woopay_eligible(): bool {
+	public function is_woopay_eligible(): bool {
 		if ( ! class_exists( 'Automattic\WooCommerce\StoreApi\Routes\V1\AbstractCartRoute' ) ) {
 			return false;
 		}
@@ -1793,9 +1795,11 @@ class WooPaymentsSettingsService {
 	/**
 	 * Get current fraud protection level.
 	 *
+	 * @internal
+	 *
 	 * @return string
 	 */
-	private function get_current_protection_level(): string {
+	public function get_current_protection_level(): string {
 		$this->maybe_refresh_fraud_protection_settings();
 
 		$level = get_option( 'current_protection_level', 'basic' );
@@ -1823,9 +1827,11 @@ class WooPaymentsSettingsService {
 	/**
 	 * Get advanced fraud protection settings.
 	 *
+	 * @internal
+	 *
 	 * @return array<int|string,mixed>|string
 	 */
-	private function get_advanced_fraud_protection_settings() {
+	public function get_advanced_fraud_protection_settings() {
 		if ( ! $this->account_service->has_account() ) {
 			return array();
 		}

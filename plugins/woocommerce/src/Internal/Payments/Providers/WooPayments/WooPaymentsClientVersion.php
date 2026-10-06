@@ -55,7 +55,16 @@ final class WooPaymentsClientVersion {
 	 * @return string
 	 */
 	public static function get_user_agent(): string {
-		return 'WooCommerce Payments/' . self::VERSION . '-native-woocommerce/' . self::get_woocommerce_version();
+		return 'WooCommerce Payments/' . self::get_reported_version();
+	}
+
+	/**
+	 * The version reported to the platform, as the status report's Version row shows it.
+	 *
+	 * @return string
+	 */
+	public static function get_reported_version(): string {
+		return self::VERSION . '-native-woocommerce/' . self::get_woocommerce_version();
 	}
 
 	/**

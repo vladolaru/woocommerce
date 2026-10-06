@@ -1611,9 +1611,27 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	public function is_dev_mode_enabled(): bool {
-		$dev_mode = $this->is_wcpay_dev_mode_defined()
-			|| $this->is_wp_environment_dev_mode()
-			|| $this->is_wp_development_mode_enabled();
+		return array() !== $this->get_dev_mode_triggers();
+	}
+
+	/**
+	 * Get what put WooPayments in development mode, empty when it is off.
+	 *
+	 * The trigger names are the client's (client 11.1.0 `includes/core/class-mode.php:72-111`).
+	 *
+	 * @return string[]
+	 */
+	public function get_dev_mode_triggers(): array {
+		$triggers = array();
+		if ( $this->is_wcpay_dev_mode_defined() ) {
+			$triggers[] = 'WCPAY_DEV_MODE';
+		}
+		if ( $this->is_wp_environment_dev_mode() ) {
+			$triggers[] = 'WP_ENVIRONMENT_TYPE=' . wp_get_environment_type();
+		}
+		if ( $this->is_wp_development_mode_enabled() ) {
+			$triggers[] = 'WP_DEVELOPMENT_MODE=' . wp_get_development_mode();
+		}
 
 		/**
 		 * Allows WooPayments to enter dev mode.
@@ -1622,7 +1640,12 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		 *
 		 * @param bool $dev_mode Whether WooPayments should enter dev mode.
 		 */
-		return (bool) apply_filters( 'wcpay_dev_mode', $dev_mode );
+		$dev_mode = (bool) apply_filters( 'wcpay_dev_mode', array() !== $triggers );
+		if ( ! $dev_mode ) {
+			return array();
+		}
+
+		return array() !== $triggers ? $triggers : array( 'wcpay_dev_mode filter' );
 	}
 
 	/**
