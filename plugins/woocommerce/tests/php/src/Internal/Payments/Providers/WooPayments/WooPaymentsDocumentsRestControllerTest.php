@@ -405,6 +405,7 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 			static function () use ( &$die ) {
 				return static function ( $message, $title, $args ) use ( &$die ) {
 					$die = array( $message, $args );
+					// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Test double: the message is asserted, never rendered.
 					throw new \WPDieException( (string) $message );
 				};
 			}
