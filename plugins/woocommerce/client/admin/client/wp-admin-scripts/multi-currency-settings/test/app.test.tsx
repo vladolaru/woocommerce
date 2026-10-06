@@ -286,6 +286,15 @@ describe( 'MultiCurrencySettingsApp', () => {
 	// (Add/remove below the list) and delete-button.js:130-145 (a trash icon).
 	// Client 11.1.0 `multi-currency/client/data/resolvers.js:23-33` and `settings/multi-currency/index.js:14-22`: the page
 	// keeps its sections, the empty table and Add/remove, and the failure is one snackbar in the client's words.
+	it( 'announces that currencies and store settings are loading', async () => {
+		render( <MultiCurrencySettingsApp /> );
+
+		// A live region mounted with its text is usually not read, so the
+		// loading messages go through the WordPress live region.
+		expect( speak ).toHaveBeenCalledWith( 'Loading currencies…', 'polite' );
+		expect( await screen.findByText( 'Euro' ) ).toBeInTheDocument();
+	} );
+
 	it( 'keeps the page frame and reports a failed currencies read once', async () => {
 		mockApiFetch.mockReset();
 		mockApiFetch.mockRejectedValueOnce(
@@ -945,6 +954,8 @@ describe( 'MultiCurrencySettingsApp', () => {
 		} );
 
 		render( <MultiCurrencySettingsApp /> );
+		// Only the announcements this test makes count, not the loading one.
+		jest.mocked( speak ).mockClear();
 
 		fireEvent.click(
 			await screen.findByRole( 'button', {
@@ -1172,6 +1183,8 @@ describe( 'MultiCurrencySettingsApp', () => {
 		mockApiFetch.mockResolvedValueOnce( updatedResponse );
 
 		render( <MultiCurrencySettingsApp /> );
+		// Only the announcements this test makes count, not the loading one.
+		jest.mocked( speak ).mockClear();
 
 		fireEvent.click(
 			await screen.findByRole( 'button', {
@@ -1209,6 +1222,8 @@ describe( 'MultiCurrencySettingsApp', () => {
 		mockApiFetch.mockRejectedValueOnce( new Error( 'Nope' ) );
 
 		render( <MultiCurrencySettingsApp /> );
+		// Only the announcements this test makes count, not the loading one.
+		jest.mocked( speak ).mockClear();
 
 		fireEvent.click(
 			await screen.findByRole( 'button', {

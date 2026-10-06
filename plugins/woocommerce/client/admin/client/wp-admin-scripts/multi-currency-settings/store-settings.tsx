@@ -28,6 +28,7 @@ import type { ReactNode } from 'react';
 /**
  * Internal dependencies
  */
+import { useLoadingAnnouncement } from './use-loading-announcement';
 import { SettingsSection } from './settings-section';
 import type {
 	RenderingMode,
@@ -132,6 +133,10 @@ export function StoreLevelSettings() {
 	const [ draftSettings, setDraftSettings ] =
 		useState< StoreSettingsState | null >( null );
 	const [ isLoading, setIsLoading ] = useState( true );
+	useLoadingAnnouncement(
+		isLoading,
+		__( 'Loading store settings…', 'woocommerce' )
+	);
 	const [ isSaving, setIsSaving ] = useState( false );
 	const [ isPreviewOpen, setIsPreviewOpen ] = useState( false );
 
@@ -245,7 +250,7 @@ export function StoreLevelSettings() {
 	if ( isLoading ) {
 		return (
 			<StoreSettingsSection>
-				<p aria-live="polite">
+				<p>
 					<Spinner />
 					{ __( 'Loading store settings…', 'woocommerce' ) }
 				</p>

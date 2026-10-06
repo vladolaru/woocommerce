@@ -24,6 +24,7 @@ import { __, sprintf } from '@wordpress/i18n';
 /**
  * Internal dependencies
  */
+import { useLoadingAnnouncement } from './use-loading-announcement';
 import { CurrencyPreview } from './currency-preview';
 import type {
 	AutomaticRatesDescriptor,
@@ -181,6 +182,10 @@ export function CurrencySettingsModal( {
 		null
 	);
 	const [ isLoading, setIsLoading ] = useState( true );
+	useLoadingAnnouncement(
+		isLoading,
+		__( 'Loading currency settings…', 'woocommerce' )
+	);
 	const [ isSaving, setIsSaving ] = useState( false );
 	const [ isDirty, setIsDirty ] = useState( false );
 
@@ -355,7 +360,7 @@ export function CurrencySettingsModal( {
 			onRequestClose={ requestClose }
 		>
 			{ isLoading && (
-				<p aria-live="polite">
+				<p>
 					<Spinner />
 					{ __( 'Loading currency settings…', 'woocommerce' ) }
 				</p>

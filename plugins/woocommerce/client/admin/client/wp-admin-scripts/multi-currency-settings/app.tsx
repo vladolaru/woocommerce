@@ -28,6 +28,7 @@ import { trash } from '@wordpress/icons';
 /**
  * Internal dependencies
  */
+import { useLoadingAnnouncement } from './use-loading-announcement';
 import type {
 	AutomaticRatesDescriptor,
 	MultiCurrencyCurrency,
@@ -172,6 +173,10 @@ export function MultiCurrencySettingsApp() {
 	const [ currencies, setCurrencies ] =
 		useState< StoreCurrenciesResponse | null >( null );
 	const [ isLoading, setIsLoading ] = useState( true );
+	useLoadingAnnouncement(
+		isLoading,
+		__( 'Loading currencies…', 'woocommerce' )
+	);
 	const [ isSaving, setIsSaving ] = useState( false );
 	const [ isModalOpen, setIsModalOpen ] = useState( false );
 	const [ currencyToRemove, setCurrencyToRemove ] =
@@ -420,7 +425,7 @@ export function MultiCurrencySettingsApp() {
 
 	if ( isLoading ) {
 		return (
-			<p aria-live="polite">
+			<p>
 				<Spinner />
 				{ __( 'Loading currencies…', 'woocommerce' ) }
 			</p>
