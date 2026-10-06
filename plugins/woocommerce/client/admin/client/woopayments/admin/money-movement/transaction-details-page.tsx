@@ -688,12 +688,16 @@ export const WooPaymentsTransactionDetailsPage = () => {
 					nextTransaction,
 					id
 				);
-				if (
-					isAuthorizationEligible(
-						nextTransaction,
-						nextPaymentIntentId
-					)
-				) {
+				const loadAuthorization = async () => {
+					if (
+						! isAuthorizationEligible(
+							nextTransaction,
+							nextPaymentIntentId
+						)
+					) {
+						return;
+					}
+
 					try {
 						const loadedAuthorization =
 							await getWooPaymentsAuthorization(
@@ -712,10 +716,13 @@ export const WooPaymentsTransactionDetailsPage = () => {
 							);
 						}
 					}
-				}
+				};
+				const loadTimeline = async () => {
+					const timelineId = getTimelineId( nextTransaction, id );
+					if ( ! timelineId ) {
+						return;
+					}
 
-				const timelineId = getTimelineId( nextTransaction, id );
-				if ( timelineId ) {
 					try {
 						const timeline =
 							await getWooPaymentsTimeline( timelineId );
@@ -729,7 +736,11 @@ export const WooPaymentsTransactionDetailsPage = () => {
 							)
 						);
 					}
-				}
+				};
+
+				// The authorization and the timeline only need the transaction, so they load together, as the client's
+				// separate data hooks do.
+				await Promise.all( [ loadAuthorization(), loadTimeline() ] );
 
 				if ( shouldUpdate() ) {
 					setTransaction( nextTransaction );

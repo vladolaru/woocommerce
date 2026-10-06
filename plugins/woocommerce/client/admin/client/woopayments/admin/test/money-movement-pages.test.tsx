@@ -5245,6 +5245,50 @@ describe( 'WooPayments money movement pages', () => {
 		expect( routeChangeButton ).toHaveFocus();
 	} );
 
+	it( 'requests the timeline while the authorization is still loading', async () => {
+		mockGetPaymentIntent.mockResolvedValue( {
+			id: 'pi_auth',
+			status: 'requires_capture',
+			amount: 5000,
+			currency: 'usd',
+			created: 1781712000,
+			charge: {
+				id: 'ch_auth',
+				balance_transaction: 'txn_auth',
+				type: 'charge',
+				amount: 5000,
+				currency: 'usd',
+				created: 1781712000,
+				payment_intent: 'pi_auth',
+				status: 'succeeded',
+				captured: false,
+				amount_refunded: 0,
+				order: { id: 123, number: '123' },
+			},
+		} );
+		mockGetAuthorization.mockImplementation(
+			() => new Promise( () => {} )
+		);
+		mockGetTimeline.mockResolvedValue( { data: [] } );
+
+		render(
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/transactions/details?id=pi_auth&transaction_id=txn_auth',
+				] }
+			>
+				<WooPaymentsTransactionDetailsPage />
+			</MemoryRouter>
+		);
+
+		await waitFor( () =>
+			expect( mockGetAuthorization ).toHaveBeenCalledWith( 'pi_auth' )
+		);
+		await waitFor( () =>
+			expect( mockGetTimeline ).toHaveBeenCalledWith( 'pi_auth' )
+		);
+	} );
+
 	it( 'captures an uncaptured authorization from transaction details and reloads the detail data', async () => {
 		mockGetPaymentIntent
 			.mockResolvedValueOnce( {
