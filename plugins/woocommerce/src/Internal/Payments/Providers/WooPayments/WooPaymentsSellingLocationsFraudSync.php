@@ -76,12 +76,13 @@ class WooPaymentsSellingLocationsFraudSync implements RegisterHooksInterface {
 	/**
 	 * Schedule one fraud-rule refresh at shutdown, however many selling-location options this request writes.
 	 *
-	 * Writes made while WooCommerce installs or updates are ignored: they set defaults, not merchant choices.
+	 * Writes made while WooCommerce installs or updates are ignored: they set defaults, not merchant choices. So are
+	 * writes made while another site is switched in, since the refresh runs at shutdown in the request's own site.
 	 *
 	 * @internal
 	 */
 	public function schedule_refresh(): void {
-		if ( $this->is_installing_or_updating() ) {
+		if ( $this->is_installing_or_updating() || ( is_multisite() && ms_is_switched() ) ) {
 			return;
 		}
 
