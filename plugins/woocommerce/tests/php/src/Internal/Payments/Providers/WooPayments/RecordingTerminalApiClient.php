@@ -251,7 +251,12 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 			throw $this->prepare_terminal_payment_exception;
 		}
 
-		return array( 'status' => 'collecting_payment_method' );
+		// The platform answers with the PaymentIntent, which it prepares only before confirmation (wpcom class-intentions-controller.php:626, :660).
+		return array(
+			'id'     => $intent_id,
+			'object' => 'payment_intent',
+			'status' => 'requires_confirmation',
+		);
 	}
 
 	/**

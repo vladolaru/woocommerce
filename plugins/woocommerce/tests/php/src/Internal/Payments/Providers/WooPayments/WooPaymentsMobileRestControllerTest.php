@@ -1939,6 +1939,125 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Terminal capture refuses an order whose stored payment is already processed, with the client's answer and no capture.
+	 *
+	 * Client 11.1.0 checks the stored intent status before reading the intent (class-wc-rest-payments-orders-controller.php:181-194).
+	 *
+	 * @dataProvider provide_processed_intent_statuses
+	 *
+	 * @param string $stored_status Stored intent status.
+	 */
+	public function test_capture_terminal_payment_refuses_a_processed_order( string $stored_status ): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		$order->update_meta_data( '_intention_status', $stored_status );
+		$order->save();
+		$this->set_capturable_terminal_intent( $order );
+
+		$response = $this->sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+
+		$this->assertSame( 'wcpay_payment_uncapturable', $response->get_error_code() );
+		$this->assertSame( 'The payment cannot be captured for completed or processed orders.', $response->get_error_message() );
+		$this->assertSame( 409, $response->get_error_data()['status'] );
+		$this->assertSame( array(), $this->api_client->captures );
+	}
+
+	/**
+	 * Stored intent statuses the client treats as already processed.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function provide_processed_intent_statuses(): array {
+		return array(
+			'succeeded'  => array( 'succeeded' ),
+			'canceled'   => array( 'canceled' ),
+			'processing' => array( 'processing' ),
+		);
+	}
+
+	/**
+	 * @testdox Terminal capture refuses an intent that is not authorized, with the client's answer and no capture.
+	 */
+	public function test_capture_terminal_payment_refuses_an_intent_that_is_not_authorized(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		$this->set_capturable_terminal_intent( $order );
+		$this->api_client->payment_intention_response['status'] = 'requires_payment_method';
+
+		$response = $this->sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+
+		// Client 11.1.0 class-wc-rest-payments-orders-controller.php:208-210.
+		$this->assertSame( 'wcpay_payment_uncapturable', $response->get_error_code() );
+		$this->assertSame( 'The payment cannot be captured', $response->get_error_message() );
+		$this->assertSame( array(), $this->api_client->captures );
+	}
+
+	/**
+	 * @testdox Terminal capture sends a processing intent to the capture call, as the client's authorized check does.
+	 */
+	public function test_capture_terminal_payment_sends_a_processing_intent_to_the_capture_call(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		$this->set_capturable_terminal_intent( $order );
+		$this->api_client->payment_intention_response['status'] = 'processing';
+
+		$this->sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+
+		$this->assertCount( 1, $this->api_client->captures );
+	}
+
+	/**
+	 * @testdox Terminal capture and preparation refuse a partially refunded order with the client's answers and no platform call.
+	 *
+	 * Client 11.1.0 class-wc-rest-payments-orders-controller.php:172-179 and :321-327.
+	 */
+	public function test_terminal_routes_refuse_a_refunded_order(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		$this->set_capturable_terminal_intent( $order );
+		wc_create_refund(
+			array(
+				'order_id' => $order->get_id(),
+				'amount'   => 1.00,
+			)
+		);
+
+		$capture = $this->sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+		$prepare = $this->sut->prepare_terminal_payment( $this->make_prepare_request( $order ) );
+
+		$this->assertSame( 'wcpay_refunded_order_uncapturable', $capture->get_error_code() );
+		$this->assertSame( 'Payment cannot be captured for partially or fully refunded orders.', $capture->get_error_message() );
+		$this->assertSame( 400, $capture->get_error_data()['status'] );
+		$this->assertSame( 'wcpay_refunded_order_unpreparable', $prepare->get_error_code() );
+		$this->assertSame( 'Terminal payments cannot be prepared for partially or fully refunded orders.', $prepare->get_error_message() );
+		$this->assertSame( array(), $this->api_client->captures );
+		$this->assertSame( array(), $this->api_client->prepared_terminal_payments );
+	}
+
+	/**
+	 * @testdox Terminal preparation forwards the intent and order ids and answers the platform response.
+	 */
+	public function test_prepare_terminal_payment_forwards_the_ids(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+
+		$response = $this->sut->prepare_terminal_payment( $this->make_prepare_request( $order ) );
+
+		$this->assertSame(
+			array(
+				'id'     => 'pi_terminal',
+				'object' => 'payment_intent',
+				'status' => 'requires_confirmation',
+			),
+			$response->get_data()
+		);
+		$this->assertSame(
+			array(
+				array(
+					'intent_id' => 'pi_terminal',
+					'order_id'  => $order->get_id(),
+				),
+			),
+			$this->api_client->prepared_terminal_payments
+		);
+	}
+
+	/**
 	 * Mobile routes whose unexpected errors are logged, with the expected log line.
 	 *
 	 * @return array<string,array{0:string,1:string}>

@@ -476,8 +476,8 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 			return new WP_Error( 'wcpay_invalid_payment_intent_id', __( 'Invalid payment intent ID.', 'woocommerce' ), array( 'status' => 400 ) );
 		}
 
-		if ( 0 < count( $order->get_refunds() ) ) {
-			return new WP_Error( 'wcpay_refunded_order_unpreparable', __( 'Refunded orders cannot be prepared for terminal payment.', 'woocommerce' ), array( 'status' => 400 ) );
+		if ( 0 < $order->get_total_refunded() ) {
+			return new WP_Error( 'wcpay_refunded_order_unpreparable', __( 'Terminal payments cannot be prepared for partially or fully refunded orders.', 'woocommerce' ), array( 'status' => 400 ) );
 		}
 
 		try {
@@ -579,8 +579,8 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 	 * @return WP_REST_Response|WP_Error
 	 */
 	private function capture_terminal_payment_under_lock( WC_Order $order, string $intent_id ) {
-		if ( 0 < count( $order->get_refunds() ) ) {
-			return new WP_Error( 'wcpay_refunded_order_uncapturable', __( 'Refunded orders cannot be captured.', 'woocommerce' ), array( 'status' => 400 ) );
+		if ( 0 < $order->get_total_refunded() ) {
+			return new WP_Error( 'wcpay_refunded_order_uncapturable', __( 'Payment cannot be captured for partially or fully refunded orders.', 'woocommerce' ), array( 'status' => 400 ) );
 		}
 
 		$uncapturable_error = $this->get_uncapturable_order_error( $order, $intent_id );
@@ -592,12 +592,15 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		try {
 			$intent = $this->api_client->get_payment_intention( $intent_id );
 			if ( ! $this->intent_matches_order( $intent, $order ) ) {
-				return new WP_Error( 'wcpay_intent_order_mismatch', __( 'Payment intent does not belong to this order.', 'woocommerce' ), array( 'status' => 409 ) );
+				$this->get_logger()->error( 'Payment capture rejected due to failed validation: order id on intent is incorrect or missing.', array( 'order_id' => $order->get_id() ) );
+
+				return new WP_Error( 'wcpay_intent_order_mismatch', __( 'The payment cannot be captured', 'woocommerce' ), array( 'status' => 409 ) );
 			}
 
 			$status = isset( $intent['status'] ) ? (string) $intent['status'] : '';
-			if ( ! in_array( $status, array( 'requires_capture', 'succeeded' ), true ) ) {
-				return new WP_Error( 'wcpay_payment_uncapturable', __( 'Payment cannot be captured for this order.', 'woocommerce' ), array( 'status' => 409 ) );
+			// The client's is_authorized() statuses (Intent_Status::AUTHORIZED_STATUSES, class-intent-status.php:35-39).
+			if ( ! in_array( $status, array( 'requires_capture', 'succeeded', 'processing' ), true ) ) {
+				return new WP_Error( 'wcpay_payment_uncapturable', __( 'The payment cannot be captured', 'woocommerce' ), array( 'status' => 409 ) );
 			}
 
 			// The client attaches the in-person method and channel before any status change, so the order emails and core's POS email checks see them (class-wc-rest-payments-orders-controller.php:209-215).
@@ -1057,11 +1060,11 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		$stored_intent = (string) $order->get_meta( '_intent_id', true );
 
 		if ( in_array( $stored_status, array( 'succeeded', 'canceled', 'processing' ), true ) ) {
-			return new WP_Error( 'wcpay_payment_uncapturable', __( 'Payment cannot be captured for this order.', 'woocommerce' ), array( 'status' => 409 ) );
+			return new WP_Error( 'wcpay_payment_uncapturable', __( 'The payment cannot be captured for completed or processed orders.', 'woocommerce' ), array( 'status' => 409 ) );
 		}
 
 		if ( '' !== $stored_intent && $stored_intent !== $intent_id ) {
-			return new WP_Error( 'wcpay_payment_uncapturable', __( 'Payment cannot be captured for this order.', 'woocommerce' ), array( 'status' => 409 ) );
+			return new WP_Error( 'wcpay_payment_uncapturable', __( 'The payment cannot be captured for completed or processed orders.', 'woocommerce' ), array( 'status' => 409 ) );
 		}
 
 		return null;
