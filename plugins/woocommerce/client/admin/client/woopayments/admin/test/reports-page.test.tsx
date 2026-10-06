@@ -2,6 +2,7 @@
  * External dependencies
  */
 import {
+	act,
 	fireEvent,
 	render,
 	screen,
@@ -767,6 +768,47 @@ describe( 'WooPaymentsReportsPage', () => {
 		expect( screen.getByTestId( 'location' ) ).toHaveTextContent(
 			'date_between%5B%5D=2026-01-01'
 		);
+	} );
+
+	it( 'keeps the Fees rows of the current query when an earlier request answers last', async () => {
+		let resolveEarlier: ( rows: ( typeof feeRow )[] ) => void = () => {};
+		renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
+		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Apply detailed fees view' } )
+		);
+		const feesDateRange = screen.getByLabelText( 'Date range' );
+
+		// The Previous month request hangs; the Previous year request answers first.
+		mockGetFees
+			.mockImplementationOnce(
+				() =>
+					new Promise( ( resolve ) => {
+						resolveEarlier = resolve;
+					} )
+			)
+			.mockImplementation( async () => [
+				{ ...feeRow, transaction_id: 'txn_new' },
+			] );
+		fireEvent.change( feesDateRange, {
+			target: { value: 'last_month' },
+		} );
+		fireEvent.change( feesDateRange, {
+			target: { value: 'last_year' },
+		} );
+		await screen.findByRole( 'link', { name: 'txn_new' } );
+
+		await act( async () => {
+			resolveEarlier( [ { ...feeRow, transaction_id: 'txn_old' } ] );
+			await waitForNextTick();
+		} );
+
+		expect(
+			screen.getByRole( 'link', { name: 'txn_new' } )
+		).toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'link', { name: 'txn_old' } )
+		).not.toBeInTheDocument();
 	} );
 
 	it( 'applies previous-period presets to Balance and Fees using the stable report clock', async () => {

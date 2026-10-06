@@ -898,6 +898,8 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 	const errorHeadingRef = useRef< HTMLHeadingElement >( null );
 	const [ exportStatus, setExportStatus ] = useState( '' );
 	const mountedRef = useRef( true );
+	// Only the latest request may write: a slower answer for an earlier query must not replace the current one.
+	const requestIdRef = useRef( 0 );
 
 	useEffect(
 		() => () => {
@@ -907,6 +909,10 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 	);
 
 	const load = useCallback( async () => {
+		const requestId = ++requestIdRef.current;
+		const isCurrent = () =>
+			mountedRef.current && requestId === requestIdRef.current;
+
 		setState( ( previous ) => ( {
 			...previous,
 			isLoading: true,
@@ -917,7 +923,7 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 			const rows = getBalanceRows( summary );
 			const rowsHaveActivity = hasBalanceActivity( rows );
 
-			if ( ! mountedRef.current ) {
+			if ( ! isCurrent() ) {
 				return;
 			}
 
@@ -942,7 +948,7 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 				);
 			}
 		} catch ( error ) {
-			if ( ! mountedRef.current ) {
+			if ( ! isCurrent() ) {
 				return;
 			}
 
@@ -1314,6 +1320,8 @@ const FeesReport = ( { now }: { now: Date } ) => {
 	const runExport = useWooPaymentsExport();
 	const errorHeadingRef = useRef< HTMLHeadingElement >( null );
 	const mountedRef = useRef( true );
+	// Only the latest request may write: a slower answer for an earlier query must not replace the current one.
+	const feesRequestIdRef = useRef( 0 );
 	const query = useMemo(
 		() => buildReportsFeesQueryFromView( view ),
 		[ view ]
@@ -1413,6 +1421,9 @@ const FeesReport = ( { now }: { now: Date } ) => {
 
 	const load = useCallback( async () => {
 		const requestQuery = JSON.parse( serializedQuery ) as ReportsFeesQuery;
+		const requestId = ++feesRequestIdRef.current;
+		const isCurrent = () =>
+			mountedRef.current && requestId === feesRequestIdRef.current;
 
 		setRowsState( ( previous ) => ( {
 			...previous,
@@ -1431,7 +1442,7 @@ const FeesReport = ( { now }: { now: Date } ) => {
 				getWooPaymentsReportsFeesSummary( requestQuery ),
 			] );
 
-			if ( ! mountedRef.current ) {
+			if ( ! isCurrent() ) {
 				return;
 			}
 
@@ -1463,7 +1474,7 @@ const FeesReport = ( { now }: { now: Date } ) => {
 				'polite'
 			);
 		} catch ( error ) {
-			if ( ! mountedRef.current ) {
+			if ( ! isCurrent() ) {
 				return;
 			}
 
