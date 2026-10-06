@@ -105,6 +105,13 @@ class MultiCurrencyStateBuilder {
 	}
 
 	/**
+	 * Whether this request already logged an unknown store currency.
+	 *
+	 * @var bool
+	 */
+	private static bool $unknown_store_currency_logged = false;
+
+	/**
 	 * Build a multi-currency state snapshot.
 	 *
 	 * The result is memoized for the lifetime of this builder instance because the
@@ -133,8 +140,12 @@ class MultiCurrencyStateBuilder {
 		$this->uses_manual_rate_cache = array();
 		$this->rate_cache             = array();
 
-		$default_code  = strtoupper( (string) get_option( 'woocommerce_currency', 'USD' ) );
-		$default       = new MultiCurrencyCurrency( $this->localization_service, $default_code, 1.0, true );
+		$default_code = strtoupper( (string) get_option( 'woocommerce_currency', 'USD' ) );
+		$default      = new MultiCurrencyCurrency( $this->localization_service, $default_code, 1.0, true );
+		if ( ! array_key_exists( $default_code, get_woocommerce_currencies() ) ) {
+			return $this->build_without_other_currencies( $default, $current_generation );
+		}
+
 		$available     = array_merge(
 			array( $default_code => $default ),
 			$this->get_cached_currency_rates( $default_code )
@@ -465,6 +476,35 @@ class MultiCurrencyStateBuilder {
 		}
 
 		return null;
+	}
+
+	/**
+	 * Build a state with only the store currency, when WooCommerce no longer knows that currency.
+	 *
+	 * A removed custom currency leaves no base the rates or formats can use, so, as the client does, Multi-Currency logs it
+	 * and offers no other currencies (client 11.1.0 `includes/multi-currency/MultiCurrency.php:302-319`).
+	 *
+	 * @param MultiCurrencyCurrency $store_currency     Store currency.
+	 * @param int                   $current_generation State generation the snapshot belongs to.
+	 * @return MultiCurrencyState
+	 */
+	private function build_without_other_currencies( MultiCurrencyCurrency $store_currency, int $current_generation ): MultiCurrencyState {
+		if ( ! self::$unknown_store_currency_logged ) {
+			self::$unknown_store_currency_logged = true;
+			wc_get_logger()->error(
+				sprintf(
+					'Multi-Currency disabled: store currency "%s" is not a recognized WooCommerce currency. A custom currency may have been removed. Update the currency at WooCommerce > Settings > General.',
+					$store_currency->get_code()
+				),
+				array( 'source' => 'multi-currency' )
+			);
+		}
+
+		$currencies                    = array( $store_currency->get_code() => $store_currency );
+		$this->cached_state            = new MultiCurrencyState( $currencies, $currencies, $store_currency, $store_currency, array() );
+		$this->cached_state_generation = $current_generation;
+
+		return $this->cached_state;
 	}
 
 	/**

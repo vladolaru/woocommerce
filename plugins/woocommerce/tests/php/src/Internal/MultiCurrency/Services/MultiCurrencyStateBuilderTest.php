@@ -303,6 +303,24 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should offer no other currencies when WooCommerce no longer knows the store currency.
+	 */
+	public function test_offers_no_other_currencies_when_the_store_currency_is_unknown(): void {
+		// A custom currency the store used was removed; the client then runs with no currencies (client 11.1.0 `MultiCurrency.php:302-319`).
+		update_option( 'woocommerce_currency', 'XYZ' );
+		// The plugin stores the enabled list and manual rates as these options (client `MultiCurrency.php:767-783`, `:1757-1770`).
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_gbp', '0.8' );
+
+		$state = $this->create_builder()->build();
+
+		$this->assertSame( array( 'XYZ' ), array_keys( $state->get_enabled_currencies() ) );
+		$this->assertSame( array( 'XYZ' ), array_keys( $state->get_available_currencies() ) );
+		$this->assertFalse( $state->has_additional_currencies_enabled() );
+	}
+
+	/**
 	 * @testdox Should select the enabled user-meta currency.
 	 */
 	public function test_selects_enabled_user_meta_currency(): void {
