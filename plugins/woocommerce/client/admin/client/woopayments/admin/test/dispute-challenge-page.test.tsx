@@ -1597,6 +1597,90 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		);
 	} );
 
+	const openReviewStep = async () => {
+		renderChallengePage();
+		await screen.findByRole( 'button', { name: 'Next' } );
+		await clickButton( 'Next' );
+		await screen.findByRole( 'heading', {
+			name: 'Add your shipping details',
+		} );
+		await clickButton( 'Next' );
+		await screen.findByRole( 'button', { name: 'Submit' } );
+		mockUpdateDispute.mockClear();
+		mockRecordEvent.mockClear();
+	};
+
+	it( 'sends nothing when the submit confirmation is declined', async () => {
+		mockGetDispute.mockResolvedValue( makeDispute() );
+		await openReviewStep();
+		jest.spyOn( window, 'confirm' ).mockReturnValue( false );
+
+		await clickButton( 'Submit' );
+
+		expect( window.confirm ).toHaveBeenCalledTimes( 1 );
+		expect( mockUpdateDispute ).not.toHaveBeenCalled();
+		expect( mockRecordEvent ).not.toHaveBeenCalledWith(
+			'wcpay_dispute_submit_evidence_clicked',
+			expect.anything()
+		);
+		expect(
+			screen.getByRole( 'button', { name: 'Submit' } )
+		).not.toHaveAttribute( 'aria-disabled' );
+	} );
+
+	it( 'keeps the merchant on the review step when the submit fails', async () => {
+		mockGetDispute.mockResolvedValue( makeDispute() );
+		await openReviewStep();
+		mockUpdateDispute.mockRejectedValueOnce(
+			new Error( 'Provider failed' )
+		);
+
+		await clickButton( 'Submit' );
+
+		await expectEvidenceNotice( 'Provider failed', 'assertive' );
+		expect( mockRecordEvent ).toHaveBeenCalledWith(
+			'wcpay_dispute_submit_evidence_failed',
+			expect.objectContaining( { dispute_id: 'dp_test' } )
+		);
+		expect(
+			screen.getByRole( 'button', { name: 'Submit' } )
+		).not.toHaveAttribute( 'aria-disabled' );
+		expect(
+			screen.queryByRole( 'heading', {
+				name: 'Thanks for sharing your response!',
+			} )
+		).not.toBeInTheDocument();
+	} );
+
+	// The step labels stay clickable while saving (client 11.1.0 `components/stepper/stepper-panel.tsx`), so only the in-progress guard stops a second request.
+	it( 'sends one submit while the first is still running', async () => {
+		mockGetDispute.mockResolvedValue( makeDispute() );
+		await openReviewStep();
+		const update = createDeferred< WooPaymentsDispute >();
+		mockUpdateDispute.mockReturnValueOnce( update.promise );
+
+		await clickButton( 'Submit' );
+		await clickButton( 'Submit' );
+		await clickButton( '1 Purchase info' );
+
+		expect( mockUpdateDispute ).toHaveBeenCalledTimes( 1 );
+		expect( mockUpdateDispute ).toHaveBeenCalledWith(
+			'dp_test',
+			expect.objectContaining( { submit: true } )
+		);
+
+		await act( async () => {
+			update.resolve( makeDispute() );
+		} );
+
+		expect(
+			await screen.findByRole( 'heading', {
+				name: 'Thanks for sharing your response!',
+			} )
+		).toBeInTheDocument();
+		expect( mockUpdateDispute ).toHaveBeenCalledTimes( 1 );
+	} );
+
 	// Client 11.1.0 `new-evidence/index.tsx:291-292` prints `String( error )` ("[object Object]"); native keeps its own copy, never the server's message.
 	it( 'shows its own copy, not the server message, when the dispute fails to load', async () => {
 		mockGetDispute.mockRejectedValue(
