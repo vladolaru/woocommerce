@@ -1732,6 +1732,30 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The gated transport log redacts the shopper's name, email and country the Stripe Billing transaction update sends.
+	 *
+	 * The params are exactly what StripeBillingInvoiceService::update_transaction_details() sends (client
+	 * class-wc-payments-invoice-service.php:339-347 sends the same four).
+	 */
+	public function test_transport_log_redacts_the_transaction_update_shopper_details(): void {
+		$logger = $this->log_transport_request(
+			array(
+				'customer_first_name' => 'Janeleak',
+				'customer_last_name'  => 'Doeleak',
+				'customer_email'      => 'janeleak@example.com',
+				'customer_country'    => 'DE',
+			),
+			array( 'result' => 'success' )
+		);
+
+		$request = $this->get_transport_entry( $logger, 'API REQUEST (' );
+		foreach ( array( 'customer_first_name', 'customer_last_name', 'customer_email', 'customer_country' ) as $key ) {
+			$this->assertSame( '(redacted)', $request['context']['body'][ $key ] ?? null, $key );
+		}
+		$this->assertStringNotContainsString( 'leak', (string) wp_json_encode( $logger->entries ) );
+	}
+
+	/**
 	 * @testdox The gated transport log keeps none of a key-bearing URL's query, a signature two levels down and a client secret under an unknown key.
 	 *
 	 * The response body is synthetic transport-only input, not a platform answer: the client logs whatever body the platform

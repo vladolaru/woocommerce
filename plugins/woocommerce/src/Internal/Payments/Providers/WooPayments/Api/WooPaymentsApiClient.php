@@ -124,6 +124,10 @@ class WooPaymentsApiClient {
 		// evidence is free text about the cardholder.
 		'evidence',
 		'issuer_evidence',
+		// The Stripe Billing transaction update sends the shopper's name and country (StripeBillingInvoiceService::update_transaction_details()).
+		'customer_first_name',
+		'customer_last_name',
+		'customer_country',
 	);
 
 	/**
