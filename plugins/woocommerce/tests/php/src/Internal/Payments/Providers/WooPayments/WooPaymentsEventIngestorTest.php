@@ -374,10 +374,11 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The received line redacts a dispute's evidence, which carries the shopper's addresses, email and purchase IP.
+	 * @testdox The received line redacts a dispute's evidence and issuer evidence, which carry the shopper's details and free text.
 	 *
 	 * REC-5b R-e `winning_evidence_closed_won` (`Fixtures/rec-5b-dispute-events.json`) is the exact dispute event body local
-	 * WPCOM forwarded; its `evidence` object holds billing_address, customer_email_address and customer_purchase_ip.
+	 * WPCOM forwarded; its `evidence` object holds billing_address, customer_email_address and customer_name, and its
+	 * `issuer_evidence` list holds the issuer's text_evidence.
 	 */
 	public function test_received_line_redacts_dispute_evidence(): void {
 		update_option(
@@ -401,6 +402,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $received );
 		$dispute = $logger->contexts[ $received[0] ]['body']['data']['object'];
 		$this->assertSame( '(redacted)', $dispute['evidence'] );
+		$this->assertNotEmpty( $event['data']['object']['issuer_evidence'], 'The recording carries issuer evidence to redact.' );
+		$this->assertSame( '(redacted)', $dispute['issuer_evidence'] );
 		$this->assertSame( $event['data']['object']['id'], $dispute['id'], 'The dispute ID support needs stays.' );
 		$this->assertSame( $event['data']['object']['amount'], $dispute['amount'] );
 		$this->assertSame( $event['data']['object']['status'], $dispute['status'] );

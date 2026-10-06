@@ -703,16 +703,17 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
 		$scheduler = new RecordingActionSchedulerService();
 		// Empty page of the platform's failed-events list (wpcom class-webhook-controller.php:346-357); unused here.
-		$provider = new StaticFailedEventsProvider(
+		$provider       = new StaticFailedEventsProvider(
 			array(
 				'data'     => array(),
 				'has_more' => false,
 			)
 		);
-		$service  = $this->create_service( $scheduler, $store, $provider, new ThrowingEventIngestor( $refusal ) );
-		$logger   = function ( $message ) {
+		$service        = $this->create_service( $scheduler, $store, $provider, new ThrowingEventIngestor( $refusal ) );
+		$logger_failure = new \RuntimeException( 'Log handler failed.' );
+		$logger         = function ( $message ) use ( $logger_failure ) {
 			if ( false !== strpos( (string) $message, 'was dropped' ) ) {
-				throw new \RuntimeException( 'Log handler failed.' );
+				throw $logger_failure;
 			}
 			return $message;
 		};
@@ -733,7 +734,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			remove_filter( 'woocommerce_logger_log_message', $logger );
 		}
 
-		$this->assertInstanceOf( \RuntimeException::class, $last_failure, 'The last attempt reached the throwing drop line.' );
+		$this->assertSame( $logger_failure, $last_failure, 'The last attempt reached the throwing drop line.' );
 		$this->assertNull( $store->get_event( $event_id ) );
 		$notes = array_filter(
 			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),

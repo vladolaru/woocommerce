@@ -120,8 +120,10 @@ class WooPaymentsApiClient {
 		'description',
 		'custom_fields',
 		'footer',
-		// A dispute's evidence holds the shopper's addresses, email and purchase IP plus merchant free text.
+		// A dispute's evidence holds the shopper's addresses, email and purchase IP plus merchant free text; the issuer's
+		// evidence is free text about the cardholder.
 		'evidence',
+		'issuer_evidence',
 	);
 
 	/**
