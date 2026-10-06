@@ -3185,8 +3185,8 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Record the level, message and context (without the source) of every line written under the WooPayments log source
-	 * until the test ends.
+	 * Record the level, message and context of every line written under the WooPayments log source until the test ends,
+	 * without the source and the per-request context the logger adds while logging is on (pinned in WooPaymentsLoggerTest).
 	 *
 	 * WC_Logger applies the message filter once per log handler, so a line can be recorded more than once.
 	 *
@@ -3198,7 +3198,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 			'woocommerce_logger_log_message',
 			static function ( $message, $level, $context ) use ( $lines ) {
 				if ( 'woopayments' === ( $context['source'] ?? '' ) ) {
-					unset( $context['source'] );
+					unset( $context['source'], $context['WP_USER'], $context['HTTP_USER_AGENT'], $context['REQUEST_URI'], $context['DOING_AJAX'], $context['DOING_CRON'], $context['WP_CLI'], $context['WOOPAYMENTS_MODE'] );
 					$lines[] = array( (string) $level, (string) $message, $context );
 				}
 

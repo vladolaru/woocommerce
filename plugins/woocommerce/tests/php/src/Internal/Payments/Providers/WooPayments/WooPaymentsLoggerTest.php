@@ -238,6 +238,30 @@ class WooPaymentsLoggerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'caller value', $this->get_logged_context( $logger, 'Charged the order.' )['WP_CLI'], 'The caller\'s context wins, as in the client.' );
 	}
 
+	/**
+	 * @testdox A line written while WooPayments logging is off carries no request context, as the client writes none then.
+	 */
+	public function test_lines_written_with_logging_off_carry_no_request_context(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		wp_set_current_user( self::factory()->user->create( array( 'user_login' => 'shop_manager_two' ) ) );
+		$account_service = new WooPaymentsAccountService();
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ) );
+		$sut = new WooPaymentsLogger();
+		$sut->init( $account_service );
+		$logger = RecordingWcLogger::install();
+
+		$sut->log_always( 'Held the order.', 'warning', array( 'order_id' => 7 ) );
+
+		$this->assertSame(
+			array(
+				'order_id' => 7,
+				'source'   => 'woopayments',
+			),
+			$this->get_logged_context( $logger, 'Held the order.' )
+		);
+	}
+
 	/** @return array<string,array{string,bool,bool}> */
 	public static function logging_states(): array {
 		return array(

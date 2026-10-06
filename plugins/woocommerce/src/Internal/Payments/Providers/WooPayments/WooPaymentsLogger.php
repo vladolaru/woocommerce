@@ -162,7 +162,7 @@ class WooPaymentsLogger {
 			return;
 		}
 
-		$this->log_always( $message, $level, $context );
+		$this->write( $message, $level, $context, true );
 	}
 
 	/**
@@ -215,7 +215,20 @@ class WooPaymentsLogger {
 	 * @param array<string,mixed> $context Context, such as order_id or intent_id.
 	 */
 	public function log_always( string $message, string $level, array $context = array() ): void {
-		wc_get_logger()->log( $level, $message, array_merge( $this->get_request_context(), $context, array( 'source' => self::SOURCE ) ) );
+		$this->write( $message, $level, $context, $this->can_log() );
+	}
+
+	/**
+	 * Write a line, with the request context only while WooPayments logging is on, as the client adds it only then.
+	 *
+	 * @param string              $message              Message.
+	 * @param string              $level                Log level.
+	 * @param array<string,mixed> $context              Context, such as order_id or intent_id.
+	 * @param bool                $with_request_context Whether to add the request context.
+	 */
+	private function write( string $message, string $level, array $context, bool $with_request_context ): void {
+		$request_context = $with_request_context ? $this->get_request_context() : array();
+		wc_get_logger()->log( $level, $message, array_merge( $request_context, $context, array( 'source' => self::SOURCE ) ) );
 	}
 
 	/**
