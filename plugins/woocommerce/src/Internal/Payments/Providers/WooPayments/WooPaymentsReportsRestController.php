@@ -163,14 +163,7 @@ class WooPaymentsReportsRestController implements RegisterHooksInterface {
 	 */
 	public function get_fees( WP_REST_Request $request ) {
 		try {
-			$response = $this->api_client->get_transactions( $this->get_filtered_fees_list_params( $request ) );
-			$rows     = $response;
-
-			if ( isset( $response['data'] ) ) {
-				$rows = is_array( $response['data'] ) ? $response['data'] : array();
-			}
-
-			return new WP_REST_Response( $this->prepare_fees_rows( $rows ) );
+			return new WP_REST_Response( $this->prepare_fees_rows( $this->extract_response_rows( $this->api_client->get_transactions( $this->get_filtered_fees_list_params( $request ) ) ) ) );
 		} catch ( WooPaymentsApiException $exception ) {
 			return $this->api_exception_to_wp_error( $exception );
 		}
@@ -708,42 +701,21 @@ class WooPaymentsReportsRestController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Prepare Fees rows for REST output.
+	 * Prepare Fees rows for REST output: the transaction report rows without the customer, which the Fees report never
+	 * returns (client 11.1.0 class-wc-rest-payments-reports-fees-controller.php).
 	 *
-	 * @param array<int|string,mixed> $rows Rows.
+	 * @param array<int,array<string,mixed>> $rows Rows.
 	 * @return array<int,array<string,mixed>>
 	 */
 	private function prepare_fees_rows( array $rows ): array {
-		$prepared = array();
-		foreach ( $rows as $row ) {
-			if ( ! is_array( $row ) ) {
-				continue;
-			}
+		return array_map(
+			static function ( array $row ): array {
+				unset( $row['customer'] );
 
-			$prepared[] = array(
-				'transaction_id'       => $row['transaction_id'] ?? '',
-				'date'                 => $row['date'] ?? '',
-				'payment_id'           => $row['payment_intent_id'] ?? '',
-				'channel'              => $row['channel'] ?? '',
-				'payment_method'       => array(
-					'type' => $row['source'] ?? '',
-				),
-				'type'                 => $row['type'] ?? '',
-				'transaction_currency' => $row['customer_currency'] ?? '',
-				'amount'               => $row['amount'] ?? 0,
-				'exchange_rate'        => $row['exchange_rate'] ?? null,
-				'deposit_currency'     => $row['currency'] ?? '',
-				'fees'                 => $row['fees'] ?? 0,
-				'net_amount'           => $row['net'] ?? 0,
-				'order_id'             => $row['order_id'] ?? null,
-				'risk_level'           => $row['risk_level'] ?? null,
-				'deposit_date'         => $row['available_on'] ?? null,
-				'deposit_id'           => $row['deposit_id'] ?? null,
-				'deposit_status'       => $row['deposit_status'] ?? null,
-			);
-		}
-
-		return $prepared;
+				return $row;
+			},
+			$this->prepare_report_transaction_rows( $rows )
+		);
 	}
 
 	/**
