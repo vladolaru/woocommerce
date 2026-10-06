@@ -1132,6 +1132,120 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A manual deactivation hands Multi-Currency over at the hook, and the later reconciliation and its retry keep the live choice.
+	 */
+	public function test_manual_deactivation_hands_multi_currency_over_once(): void {
+		$normalization = new class() extends WooPaymentsCutoverNormalizationRunner {
+			/** @return array{ran:bool,changes:string[]} */
+			public function run(): array {
+				return array(
+					'ran'     => true,
+					'changes' => array( 'no_changes' ),
+				);
+			}
+		};
+		$sut           = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, false, $normalization );
+		$option        = MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION;
+		// EUR set up in the plugin (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`); a Features page save stored "no"
+		// while the plugin owned payments.
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		update_option( $option, 'no' );
+
+		$this->assertTrue( $sut->enqueue_manual_deactivation( 'renamed-wcpay/woocommerce-payments.php', false ) );
+		$this->assertSame( 'yes', get_option( $option ), 'The handover happens at the deactivation, before native serves a request.' );
+
+		// Native owns payments from here on; the merchant turns Multi-Currency off before the job runs.
+		update_option( $option, 'no' );
+		$throwing_seed = static function (): void {
+			throw new \RuntimeException( 'Expected feature seeding failure.' );
+		};
+		add_action( WooPaymentsCutoverReconciliationJob::ACTION_SEED_FEATURES, $throwing_seed );
+		try {
+			$pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $pending );
+			$this->require_scheduler()->cancel( $pending['generation'], 1 );
+			$sut->handle_reconcile( $pending['generation'], 1 );
+		} finally {
+			remove_action( WooPaymentsCutoverReconciliationJob::ACTION_SEED_FEATURES, $throwing_seed );
+		}
+
+		$deferred = $this->require_state_store()->get_record();
+		$this->assertIsArray( $deferred );
+		$this->assertSame( array( 'feature_seeding_failed' ), $deferred['deferred_codes'] );
+		$this->assertSame( 'no', get_option( $option ), 'The reconciliation must not rewrite a choice made under native ownership.' );
+
+		$this->require_scheduler()->cancel( $deferred['generation'], 2 );
+		$sut->handle_reconcile( $deferred['generation'], 2 );
+
+		$this->assertSame( 'no', get_option( $option ), 'A retry after a failed seeding attempt must not re-seed the live choice either.' );
+	}
+
+	/**
+	 * @testdox A network deactivation hands Multi-Currency over on every site the plugin stops owning, and skips a site where it stays active.
+	 *
+	 * @group multisite
+	 */
+	public function test_network_deactivation_hands_multi_currency_over_where_the_plugin_stops_owning(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+
+		$main_site_id   = get_current_blog_id();
+		$second_site_id = $this->create_cutover_multisite_site( 'cutover-mc-handover.example.org' );
+		$option         = MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION;
+		$plugin_file    = 'renamed-wcpay/woocommerce-payments.php';
+		$preflight      = new class() extends WooPaymentsCutoverPreflightService {
+			/** @return string[] */
+			public function get_reconciliation_failures(): array {
+				return array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Report the controlled network activation. */
+			public function is_woopayments_network_active(): bool {
+				return true;
+			}
+		};
+		$sut            = $this->create_job( true, $preflight );
+
+		try {
+			foreach ( array( $main_site_id, $second_site_id ) as $site_id ) {
+				switch_to_blog( $site_id );
+				update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+				update_option( $option, 'no' );
+				restore_current_blog();
+			}
+			// The second site also activated the plugin on its own, so it keeps the plugin after the network deactivation.
+			switch_to_blog( $second_site_id );
+			update_option( 'active_plugins', array( $plugin_file ) );
+			restore_current_blog();
+
+			$this->assertTrue( $sut->enqueue_manual_deactivation( $plugin_file, true ) );
+
+			$this->assertSame( 'yes', get_option( $option ), 'The site the plugin stops owning gets the plugin state.' );
+			switch_to_blog( $second_site_id );
+			$this->assertSame( 'no', get_option( $option ), 'A site where the plugin stays active is still plugin-owned.' );
+			restore_current_blog();
+		} finally {
+			while ( get_current_blog_id() !== $main_site_id ) {
+				restore_current_blog();
+			}
+			switch_to_blog( $second_site_id );
+			$this->cleanup_state();
+			restore_current_blog();
+			wpmu_delete_blog( $second_site_id, true );
+		}
+	}
+
+	/**
 	 * @testdox Every exceptional manual-deactivation exit defers without reactivating and retains exact origin metadata.
 	 * @dataProvider manual_exception_provider
 	 *

@@ -58,15 +58,20 @@ class MultiCurrencyFeatureController {
 	}
 
 	/**
-	 * Hand the plugin's Multi-Currency state over to the feature option at the cutover, in both directions.
+	 * Hand the plugin's Multi-Currency state over to the feature option when the plugin stops owning the site.
 	 *
-	 * While the plugin owns payments the option has no effect, so whatever it held before (a Features page save stores "no")
-	 * carries no merchant intent. From the cutover on the option is live and the merchant's Features choice stands.
+	 * Called once at that moment, before native serves a request: the cutover job's seeding stage while the plugin is still
+	 * active, or the manual deactivation hook. Until then the option does not control prices, so a stored value (a Features
+	 * page save stores "no") is replaced. Without plugin use only an existing "yes" is turned off; an unset option stays unset.
 	 *
 	 * @since 11.2.0
 	 */
 	public static function hand_over_plugin_state(): void {
-		update_option( self::FEATURE_ENABLE_OPTION, self::is_plugin_multi_currency_in_use() ? 'yes' : 'no', true );
+		if ( self::is_plugin_multi_currency_in_use() ) {
+			update_option( self::FEATURE_ENABLE_OPTION, 'yes', true );
+		} elseif ( 'yes' === get_option( self::FEATURE_ENABLE_OPTION ) ) {
+			update_option( self::FEATURE_ENABLE_OPTION, 'no', true );
+		}
 	}
 
 	/**

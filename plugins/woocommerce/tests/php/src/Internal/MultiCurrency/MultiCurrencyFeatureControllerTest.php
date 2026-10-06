@@ -35,6 +35,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		delete_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
 		delete_option( '_wcpay_feature_customer_multi_currency' );
+		delete_option( 'wcpay_multi_currency_setup_completed' );
 		delete_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT );
 		$this->previous_user_id = get_current_user_id();
 		$this->sut              = new MultiCurrencyFeatureController();
@@ -48,6 +49,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		delete_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
 		delete_option( '_wcpay_feature_customer_multi_currency' );
+		delete_option( 'wcpay_multi_currency_setup_completed' );
 		delete_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT );
 		wp_set_current_user( $this->previous_user_id );
 		$_GET = array();
@@ -73,15 +75,17 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should hand the plugin's Multi-Currency state over at the cutover, over whatever the option held before.
+	 * @testdox Should hand the plugin's Multi-Currency state over, turning it off only over an existing yes.
 	 */
 	public function test_hand_over_plugin_state_mirrors_the_plugin(): void {
 		$option = MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION;
 
-		// Before the cutover the option has no effect while the plugin owns payments, so a stored value carries no merchant intent.
+		MultiCurrencyFeatureController::hand_over_plugin_state();
+		$this->assertFalse( get_option( $option, false ), 'Without plugin use an unset option stays unset, which is off, and no feature change fires.' );
+
 		update_option( $option, 'yes' );
 		MultiCurrencyFeatureController::hand_over_plugin_state();
-		$this->assertSame( 'no', get_option( $option ), 'Without plugin use, Multi-Currency stays off after the cutover.' );
+		$this->assertSame( 'no', get_option( $option ), 'Without plugin use, Multi-Currency is off after the handover.' );
 
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 		MultiCurrencyFeatureController::hand_over_plugin_state();
@@ -91,6 +95,20 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		update_option( '_wcpay_feature_customer_multi_currency', '0' );
 		MultiCurrencyFeatureController::hand_over_plugin_state();
 		$this->assertSame( 'no', get_option( $option ), 'Multi-Currency turned off in the plugin stays off.' );
+	}
+
+	/**
+	 * @testdox Should count a completed plugin setup as plugin use even without stored currencies.
+	 */
+	public function test_hand_over_plugin_state_counts_a_completed_setup(): void {
+		// The plugin saves true when its setup task finishes (client 11.1.0 `includes/multi-currency/client/setup/tasks/setup-complete-task/index.js:32`,
+		// typed bool by `includes/admin/class-wc-rest-payments-settings-option-controller.php:22`, read with FILTER_VALIDATE_BOOLEAN at
+		// `includes/admin/class-wc-payments-admin.php:1037`).
+		update_option( 'wcpay_multi_currency_setup_completed', '1' );
+
+		MultiCurrencyFeatureController::hand_over_plugin_state();
+
+		$this->assertSame( 'yes', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
 	}
 
 	/**

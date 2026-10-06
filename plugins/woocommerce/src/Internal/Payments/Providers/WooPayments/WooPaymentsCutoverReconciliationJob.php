@@ -221,7 +221,37 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @return bool True when durable reconciliation already exists or was scheduled.
 	 */
 	public function enqueue_manual_deactivation( string $plugin_file, bool $network_wide ): bool {
+		$this->hand_over_features_at_deactivation( $plugin_file, $network_wide );
+
 		return $this->enqueue_with_context( 'manual_deactivation', $plugin_file, $network_wide ? 'network' : 'site' );
+	}
+
+	/**
+	 * Hand plugin-owned feature state over on each site the plugin stops owning, before native serves a request there.
+	 *
+	 * WordPress fires deactivated_plugin before it saves the active-plugin lists, so after a network deactivation a site keeps
+	 * the plugin only when its own list still holds the file. A failure is logged and never blocks the deactivation.
+	 *
+	 * @param string $plugin_file  Exact deactivated WooPayments plugin file.
+	 * @param bool   $network_wide Whether WordPress is deactivating it network-wide.
+	 */
+	private function hand_over_features_at_deactivation( string $plugin_file, bool $network_wide ): void {
+		try {
+			if ( ! $network_wide || ! is_multisite() ) {
+				MultiCurrencyFeatureController::hand_over_plugin_state();
+				return;
+			}
+			$this->run_on_sites(
+				$this->get_current_network_site_ids(),
+				static function () use ( $plugin_file ): void {
+					if ( ! in_array( $plugin_file, (array) get_option( 'active_plugins', array() ), true ) ) {
+						MultiCurrencyFeatureController::hand_over_plugin_state();
+					}
+				}
+			);
+		} catch ( \Throwable $error ) {
+			$this->log_error( 'WooPayments manual deactivation feature handover failed.', array( 'error' => $error->getMessage() ) );
+		}
 	}
 
 	/**
@@ -771,6 +801,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 
 		return array_values( array_map( 'intval', $site_ids ) );
 	}
+
 	/**
 	 * Run a callback with each given site current, then restore the site the request started on.
 	 *
@@ -1339,7 +1370,10 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				$claimed = $seeded_claim;
 			}
 			try {
-				MultiCurrencyFeatureController::hand_over_plugin_state();
+				if ( ! $this->is_manual_deactivation_claim( $claimed ) ) {
+					// A manual deactivation handed the state over at its hook; native has owned payments since, so the option is live.
+					MultiCurrencyFeatureController::hand_over_plugin_state();
+				}
 				/**
 				 * Fires before WooPayments plugin deactivation so feature owners can seed native settings.
 				 *
