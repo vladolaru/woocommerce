@@ -615,17 +615,9 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			return $info;
 		}
 
-		$fields = array();
-		foreach ( $this->get_status_fields() as $field_id => $field ) {
-			$fields[ $field_id ] = array(
-				'label' => $field['label'],
-				'value' => $field['value'],
-			);
-		}
-
 		$info['woocommerce_native_payments'] = array(
 			'label'  => __( 'WooPayments native payments', 'woocommerce' ),
-			'fields' => $fields,
+			'fields' => $this->get_status_fields(),
 		);
 
 		return $info;
