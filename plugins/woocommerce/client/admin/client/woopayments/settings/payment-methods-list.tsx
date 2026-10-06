@@ -1035,6 +1035,22 @@ export const getPaymentMethodAvailability = (
 				),
 				noticeStatus: 'warning',
 			};
+		// The platform reports `disabled` for a method it no longer offers to this account. The client has no case for it and
+		// leaves the toggle working while checkout drops the method (client 11.1.0 .claude/docs/payment-method-lifecycle.md).
+		case 'disabled':
+			return {
+				isActionable: false,
+				chip: __( 'Unavailable', 'woocommerce' ),
+				notice: sprintf(
+					/* translators: %s: Payment method label. */
+					__(
+						"%s isn't available for your store, so it won't be shown at checkout.",
+						'woocommerce'
+					),
+					definition.label
+				),
+				noticeStatus: 'warning',
+			};
 		case 'rejected':
 			return {
 				isActionable: false,

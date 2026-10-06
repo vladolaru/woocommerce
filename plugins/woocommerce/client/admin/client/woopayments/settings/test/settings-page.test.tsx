@@ -2807,6 +2807,34 @@ describe( 'WooPaymentsSettingsPage', () => {
 		);
 	} );
 
+	it( 'renders a payment method the platform reports disabled as unavailable with a locked toggle', () => {
+		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'sepa_debit',
+		] );
+		mockUseEnabledPaymentMethodIds.mockReturnValue( [
+			[ 'card', 'sepa_debit' ],
+			noop,
+		] );
+		mockUseGetPaymentMethodStatuses.mockReturnValue( {
+			card_payments: { status: 'active', requirements: [] },
+			sepa_debit_payments: { status: 'disabled', requirements: [] },
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			screen.getByRole( 'checkbox', { name: /SEPA Direct Debit/ } )
+		).toBeDisabled();
+		expect(
+			screen
+				.getByText(
+					/isn't available for your store, so it won't be shown at checkout/
+				)
+				.closest( '.components-notice' )
+		).toHaveClass( 'is-warning' );
+	} );
+
 	it( 'renders a missing-currency warning for enabled methods when multi-currency is off', () => {
 		mockUseGetSettings.mockReturnValue( {
 			account_country: 'US',
