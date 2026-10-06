@@ -229,8 +229,9 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 	/**
 	 * Remove a NYP cart item whose price was entered in a currency that can no longer be converted, before the cart loads it.
 	 *
-	 * The client lets the conversion exception escape while the cart loads; removing the item with a notice, as core does
-	 * for modified products, keeps the cart usable and never charges the entered amount in another currency.
+	 * The client lets the conversion exception escape while the cart loads; removing the item with an error notice, as core
+	 * does for an item that can no longer be purchased, keeps the cart usable, reaches Store API carts as a cart error, and
+	 * never charges the entered amount in another currency.
 	 *
 	 * @internal
 	 *
@@ -264,7 +265,7 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 						esc_html( $product->get_name() ),
 						esc_url( $product->get_permalink() )
 					),
-					'notice'
+					'error'
 				);
 			}
 

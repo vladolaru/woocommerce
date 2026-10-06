@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPricePro
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
+use Automattic\WooCommerce\StoreApi\Utilities\CartController;
 use WC_Unit_Test_Case;
 
 /**
@@ -221,9 +222,45 @@ class MultiCurrencyNameYourPriceCompatibilityControllerTest extends WC_Unit_Test
 		);
 
 		$this->assertTrue( $remove );
-		$notices = wc_get_notices( 'notice' );
+		$notices = wc_get_notices( 'error' );
 		$this->assertCount( 1, $notices );
 		$this->assertStringContainsString( $product->get_name(), $notices[0]['notice'] );
+		wc_clear_notices();
+	}
+
+	/**
+	 * @testdox Should report the removed item in the Store API cart errors when the cart loads from the session.
+	 */
+	public function test_reports_the_removed_nyp_item_in_store_api_cart_errors(): void {
+		$sut = $this->create_controller();
+		$sut->register();
+		$product = \WC_Helper_Product::create_simple_product();
+		WC()->cart->empty_cart();
+		wc_clear_notices();
+
+		// Name Your Price keeps the entered amount and its currency on the cart item
+		// (client 11.1.0 includes/multi-currency/Compatibility/WooCommerceNameYourPrice.php:66-69).
+		WC()->session->set(
+			'cart',
+			array(
+				'nyp-item' => array(
+					'key'          => 'nyp-item',
+					'product_id'   => $product->get_id(),
+					'variation_id' => 0,
+					'variation'    => array(),
+					'quantity'     => 1,
+					'nyp'          => '99.00',
+					'nyp_original' => '10.00',
+					'nyp_currency' => 'CAD',
+				),
+			)
+		);
+		WC()->cart->get_cart_from_session();
+
+		$this->assertSame( array(), WC()->cart->get_cart() );
+		$messages = ( new CartController() )->get_cart_errors()->get_error_messages();
+		$this->assertCount( 1, $messages );
+		$this->assertStringContainsString( $product->get_name(), $messages[0] );
 		wc_clear_notices();
 	}
 
