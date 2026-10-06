@@ -54,7 +54,16 @@ class MultiCurrencyPriceProjectionService {
 	public function get_price( $price, string $type ): float {
 		$state = $this->state_builder->build();
 
-		return $this->price_calculator->get_price( $price, $type, $state->get_selected_currency() );
+		/**
+		 * Filters whether charm pricing applies only to product prices; shipping gets it too when false.
+		 *
+		 * @param bool $apply_charm_only_to_products Whether charm pricing is product-only.
+		 *
+		 * @since 11.0.0
+		 */
+		$apply_charm_only_to_products = (bool) apply_filters( MultiCurrencyFrontendProjectionService::APPLY_CHARM_PRODUCTS_HOOK, true );
+
+		return $this->price_calculator->get_price( $price, $type, $state->get_selected_currency(), $apply_charm_only_to_products );
 	}
 
 	/**

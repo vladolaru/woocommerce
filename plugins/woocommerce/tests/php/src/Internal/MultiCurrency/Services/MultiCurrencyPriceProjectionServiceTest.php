@@ -27,6 +27,19 @@ class MultiCurrencyPriceProjectionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should add the charm to shipping only when the charm-only-to-products filter is turned off.
+	 */
+	public function test_applies_the_charm_to_shipping_when_the_products_only_filter_is_off(): void {
+		$sut = $this->create_service( $this->create_state( 'GBP' ) );
+
+		// 10.00 at 0.82 is 8.20, rounded up to 8.50; the -0.10 charm follows the filter (client 11.1.0 `includes/multi-currency/MultiCurrency.php:922-930`, `:962-967`).
+		$this->assertSame( 8.5, $sut->get_price( '10.00', 'shipping' ) );
+
+		add_filter( 'wcpay_multi_currency_apply_charm_only_to_products', '__return_false' );
+		$this->assertSame( 8.4, $sut->get_price( '10.00', 'shipping' ) );
+	}
+
+	/**
 	 * @testdox Should project raw conversions between enabled currencies.
 	 */
 	public function test_projects_raw_conversions_between_enabled_currencies(): void {
