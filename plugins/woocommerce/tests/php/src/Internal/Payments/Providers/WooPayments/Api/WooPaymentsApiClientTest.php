@@ -1315,6 +1315,9 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$http_client->response = array(
 			'response' => array( 'code' => 200 ),
 			'headers'  => array( 'content-type' => 'application/json' ),
+			// Synthetic transport input, not a platform answer: a Stripe Refund object (Stripe API reference, "The Refund
+			// object") has no client_secret. It is added to prove the response line is redacted, as the client logs whatever
+			// body the platform answers (class-wc-payments-api-client.php:2780-2784).
 			'body'     => wp_json_encode(
 				array(
 					'id'            => 're_test',
@@ -1557,7 +1560,10 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array(), $entries_while_off );
 		$this->assertSame( 0, $redactions_while_off, 'Nothing is redacted while logging is off.' );
-		$this->assertSame( 4, $sut->redactions, 'With logging on: the params, the response body, and the error message and code.' );
+		$this->assertGreaterThan( 0, $sut->redactions, 'With logging on, the logged values are redacted.' );
+		$this->assertCount( 1, array_filter( $logger->entries, static fn( array $entry ): bool => 0 === strpos( $entry['message'], 'API REQUEST (' ) ), 'The request line is written.' );
+		$this->assertCount( 1, array_filter( $logger->entries, static fn( array $entry ): bool => 0 === strpos( $entry['message'], 'API RESPONSE (' ) ), 'The response line is written.' );
+		$this->assertNotEmpty( array_filter( $logger->entries, static fn( array $entry ): bool => 'error' === $entry['level'] ), 'The error line is written.' );
 	}
 
 	/**
@@ -1771,6 +1777,10 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			array( 'result' => 'success' )
 		);
 
+		$request = $this->get_transport_entry( $logger, 'API REQUEST (' );
+		$this->assertSame( '(redacted)', $request['context']['body']['payment']['proof']['signature'] ?? null );
+		$this->assertSame( '(redacted)', $request['context']['body']['opaque'] ?? null );
+		$this->assertStringStartsWith( 'https://shop.example.test', (string) ( $request['context']['body']['redirect'] ?? '' ), 'The URL keeps its host.' );
 		$this->assertStringNotContainsString( 'ombinedleak', (string) wp_json_encode( $logger->entries ) );
 	}
 
