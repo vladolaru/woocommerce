@@ -2,6 +2,7 @@
  * External dependencies
  */
 import apiFetch from '@wordpress/api-fetch';
+import { speak } from '@wordpress/a11y';
 import {
 	BaseControl,
 	Button,
@@ -12,7 +13,7 @@ import {
 	Spinner,
 	TextareaControl,
 } from '@wordpress/components';
-import { useState } from '@wordpress/element';
+import { useRef, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { image } from '@wordpress/icons';
 import { recordEvent } from '@woocommerce/tracks';
@@ -83,7 +84,7 @@ const WooPayLogoUpload = ( {
 	const [ isUploading, setIsUploading ] = useState( false );
 	const [ error, setError ] = useState< string | null >( null );
 	const [ uploadedFileName, setUploadedFileName ] = useState( '' );
-	const [ uploadStatusMessage, setUploadStatusMessage ] = useState( '' );
+	const uploadButtonRef = useRef< HTMLButtonElement >( null );
 
 	const handleUpload = async ( event: ChangeEvent< HTMLInputElement > ) => {
 		const file = event.target.files?.[ 0 ];
@@ -109,7 +110,7 @@ const WooPayLogoUpload = ( {
 
 		setIsUploading( true );
 		setError( null );
-		setUploadStatusMessage( '' );
+		speak( __( 'Uploading logo…', 'woocommerce' ) );
 		// Client 11.1.0 `settings/express-checkout-settings/file-upload.tsx:73-102`.
 		const tracksProperties = { type: 'woopay-store-logo' };
 		recordEvent(
@@ -130,7 +131,7 @@ const WooPayLogoUpload = ( {
 				tracksProperties
 			);
 			setUploadedFileName( file.name );
-			setUploadStatusMessage(
+			speak(
 				sprintf(
 					/* translators: %s: Uploaded file name. */
 					__( 'Logo uploaded: %s', 'woocommerce' ),
@@ -151,7 +152,6 @@ const WooPayLogoUpload = ( {
 			setError( message );
 			setLogoId( '' );
 			setUploadedFileName( '' );
-			setUploadStatusMessage( '' );
 		} finally {
 			setIsUploading( false );
 			event.target.value = '';
@@ -176,6 +176,7 @@ const WooPayLogoUpload = ( {
 					onChange={ handleUpload }
 					render={ ( { openFileDialog } ) => (
 						<Button
+							ref={ uploadButtonRef }
 							variant="secondary"
 							icon={ image }
 							disabled={ isUploading }
@@ -188,19 +189,13 @@ const WooPayLogoUpload = ( {
 					) }
 				/>
 				{ isUploading && (
-					<p
-						aria-live="polite"
-						className="woopayments-express-checkout-settings__inline-status"
-					>
+					<p className="woopayments-express-checkout-settings__inline-status">
 						<Spinner />
 						{ __( 'Uploading logo…', 'woocommerce' ) }
 					</p>
 				) }
 				{ logoId && ! isUploading && (
-					<p
-						aria-live="polite"
-						className="woopayments-express-checkout-settings__inline-status"
-					>
+					<p className="woopayments-express-checkout-settings__inline-status">
 						{ sprintf(
 							/* translators: 1: Uploaded file name, 2: Uploaded file ID. */
 							__(
@@ -216,17 +211,13 @@ const WooPayLogoUpload = ( {
 							onClick={ () => {
 								setLogoId( '' );
 								setUploadedFileName( '' );
-								setUploadStatusMessage( '' );
+								// The Remove button unmounts with the logo; keep keyboard focus in the control.
+								uploadButtonRef.current?.focus();
 							} }
 						>
 							{ __( 'Remove', 'woocommerce' ) }
 						</Button>
 					</p>
-				) }
-				{ uploadStatusMessage && ! isUploading && (
-					<span className="screen-reader-text" aria-live="polite">
-						{ uploadStatusMessage }
-					</span>
 				) }
 				{ error && (
 					<Notice status="error" isDismissible={ false }>

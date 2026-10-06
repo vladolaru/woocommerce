@@ -2,6 +2,7 @@
  * External dependencies
  */
 import apiFetch from '@wordpress/api-fetch';
+import { speak } from '@wordpress/a11y';
 import { dispatch } from '@wordpress/data';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -13,6 +14,7 @@ import { getHistory } from '@woocommerce/navigation';
 import { WooPaymentsExpressCheckoutSettings } from '../express-checkout/express-checkout-settings';
 
 jest.mock( '@wordpress/api-fetch', () => jest.fn() );
+jest.mock( '@wordpress/a11y', () => ( { speak: jest.fn() } ) );
 
 const mockCreateErrorNotice = jest.fn();
 
@@ -1493,9 +1495,26 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 		expect( uploadBody.get( 'file' ) ).toBe( logoFile );
 		expect( uploadBody.get( 'purpose' ) ).toBe( 'business_logo' );
 		expect( setLogoId ).toHaveBeenCalledWith( 'file_logo' );
+		await waitFor( () =>
+			expect( speak ).toHaveBeenCalledWith( 'Logo uploaded: logo.png' )
+		);
+		expect( speak ).toHaveBeenCalledWith( 'Uploading logo…' );
+	} );
+
+	it( 'keeps keyboard focus on the upload button after removing the WooPay checkout logo', async () => {
+		const setLogoId = jest.fn();
+		mockUseWooPayStoreLogo.mockReturnValue( [ 'file_logo', setLogoId ] );
+
+		render( <WooPaymentsExpressCheckoutSettings methodId="woopay" /> );
+
+		await userEvent.click(
+			await screen.findByRole( 'button', { name: 'Remove' } )
+		);
+
+		expect( setLogoId ).toHaveBeenCalledWith( '' );
 		expect(
-			await screen.findByText( 'Logo uploaded: logo.png' )
-		).toBeInTheDocument();
+			screen.getByRole( 'button', { name: 'Upload custom logo' } )
+		).toHaveFocus();
 	} );
 
 	it( 'rejects WooPay checkout logos over the reference file size limit', async () => {
