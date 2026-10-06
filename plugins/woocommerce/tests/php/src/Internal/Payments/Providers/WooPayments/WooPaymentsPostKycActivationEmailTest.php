@@ -65,7 +65,7 @@ class WooPaymentsPostKycActivationEmailTest extends WC_Unit_Test_Case {
 	 * @param string $body    The client's stage body.
 	 */
 	public function test_sends_each_stage_with_the_client_copy( int $stage, string $heading, string $body ): void {
-		$email = new WooPaymentsPostKycActivationEmail();
+		$email             = new WooPaymentsPostKycActivationEmail();
 		$email->email_type = 'html';
 
 		$this->assertTrue( $email->trigger( $stage ) );
@@ -76,9 +76,18 @@ class WooPaymentsPostKycActivationEmailTest extends WC_Unit_Test_Case {
 		$html = html_entity_decode( (string) $this->mails[0]['message'], ENT_QUOTES, 'UTF-8' );
 		$this->assertStringContainsString( $heading, $html );
 		$this->assertStringContainsString( $body, $html );
-		$this->assertStringContainsString( 'Promote my store', $html );
-		$this->assertStringContainsString( 'wcpay_referrer=post_kyc_email', $html );
-		$this->assertStringContainsString( 'wcpay_referrer_stage=' . $stage, $html );
+		$document = new \DOMDocument();
+		libxml_use_internal_errors( true );
+		$document->loadHTML( '<?xml encoding="utf-8"?>' . (string) $this->mails[0]['message'] );
+		libxml_clear_errors();
+		$cta = null;
+		foreach ( $document->getElementsByTagName( 'a' ) as $link ) {
+			if ( 'Promote my store' === trim( $link->textContent ) ) { // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOMNode property.
+				$cta = $link;
+			}
+		}
+		$this->assertNotNull( $cta, 'The CTA is a link labelled Promote my store.' );
+		$this->assertSame( $this->get_client_cta_url( $stage ), $cta->getAttribute( 'href' ) );
 	}
 
 	/**
@@ -90,7 +99,7 @@ class WooPaymentsPostKycActivationEmailTest extends WC_Unit_Test_Case {
 	 * @param string $body    The client's stage body.
 	 */
 	public function test_plain_email_carries_the_client_copy( int $stage, string $heading, string $body ): void {
-		$email = new WooPaymentsPostKycActivationEmail();
+		$email             = new WooPaymentsPostKycActivationEmail();
 		$email->email_type = 'plain';
 
 		$this->assertTrue( $email->trigger( $stage ) );
@@ -99,7 +108,17 @@ class WooPaymentsPostKycActivationEmailTest extends WC_Unit_Test_Case {
 		$text = (string) preg_replace( '/\s+/', ' ', (string) $this->mails[0]['message'] );
 		$this->assertStringContainsString( $heading, $text );
 		$this->assertStringContainsString( $body, $text );
-		$this->assertStringContainsString( 'Promote my store: ' . $email->get_cta_url(), $text );
+		$this->assertStringContainsString( 'Promote my store: ' . $this->get_client_cta_url( $stage ), $text );
+	}
+
+	/**
+	 * The CTA destination the client builds (client 11.1.0 `includes/emails/class-wc-payments-email-post-kyc-activation.php:125-134`).
+	 *
+	 * @param int $stage Stage day.
+	 * @return string
+	 */
+	private function get_client_cta_url( int $stage ): string {
+		return admin_url( 'admin.php' ) . '?page=wc-admin&path=/marketing&wcpay_referrer=post_kyc_email&wcpay_referrer_stage=' . $stage;
 	}
 
 	/**
@@ -109,9 +128,9 @@ class WooPaymentsPostKycActivationEmailTest extends WC_Unit_Test_Case {
 	 */
 	public static function provide_stages(): array {
 		return array(
-			'day 7'  => array( 7, 'Your store is ready — let’s make your first sale', 'Now it’s about getting eyes on your store — share your link, tell your network, and make your first sale.' ),
-			'day 14' => array( 14, 'Two weeks in — have you shared your store yet?', 'Share your store with your first potential customers to get that first sale.' ),
-			'day 30' => array( 30, 'Your payments are ready — your first sale can be too', 'The next step is getting your first customer through the door — share your store link and start spreading the word.' ),
+			'day 7'  => array( 7, 'Your store is ready — let’s make your first sale', 'Your WooPayments account is approved and ready to accept payments. Now it’s about getting eyes on your store — share your link, tell your network, and make your first sale.' ),
+			'day 14' => array( 14, 'Two weeks in — have you shared your store yet?', 'Your account is fully approved and accepting payments. Share your store with your first potential customers to get that first sale.' ),
+			'day 30' => array( 30, 'Your payments are ready — your first sale can be too', 'Everything on the payments side is ready. The next step is getting your first customer through the door — share your store link and start spreading the word.' ),
 		);
 	}
 
