@@ -40,6 +40,25 @@ class MultiCurrencyPriceProjectionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should ask the charm-only-to-products filter only when a product or shipping price is converted.
+	 */
+	public function test_asks_the_charm_filter_only_for_converted_product_and_shipping_prices(): void {
+		$calls = 0;
+		$count = static function ( $value ) use ( &$calls ) {
+			++$calls;
+			return $value;
+		};
+		add_filter( 'wcpay_multi_currency_apply_charm_only_to_products', $count );
+
+		$this->create_service( $this->create_state( 'GBP' ) )->get_price( '10.00', 'coupon' );
+		$this->create_service( $this->create_state( 'USD' ) )->get_price( '10.00', 'shipping' );
+		$this->assertSame( 0, $calls );
+
+		$this->create_service( $this->create_state( 'GBP' ) )->get_price( '10.00', 'product' );
+		$this->assertSame( 1, $calls );
+	}
+
+	/**
 	 * @testdox Should project raw conversions between enabled currencies.
 	 */
 	public function test_projects_raw_conversions_between_enabled_currencies(): void {
