@@ -1898,6 +1898,9 @@ class WooPaymentsSettingsService {
 	/**
 	 * Refresh cached fraud protection settings from the platform when local cache is missing.
 	 *
+	 * When the platform has no ruleset yet, saves the Basic ruleset to the platform, as the client does
+	 * (client 11.1.0 `includes/class-wc-payment-gateway-wcpay.php:3792-3804`).
+	 *
 	 * @return void
 	 */
 	private function maybe_refresh_fraud_protection_settings(): void {

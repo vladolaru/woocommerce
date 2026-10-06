@@ -1194,7 +1194,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether WooPayments has an account cache entry.
+	 * Tell whether a connected WooPayments account ID is available.
 	 *
 	 * @return bool
 	 */
@@ -1726,7 +1726,10 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Validate refreshed account data before caching it.
+	 * Tell whether account data is valid to read from or write to the cache.
+	 *
+	 * Runs on cache reads as well as refreshes. For a test account checked in dev mode with onboarding test mode off, it
+	 * also turns onboarding test mode on, as the client does (client 11.1.0 `includes/class-wc-payments-account.php:2554-2583`).
 	 *
 	 * @param mixed $account_data Account data.
 	 * @return bool
