@@ -31,26 +31,6 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 
 	private const NAMESPACE = 'wc/v3';
 
-	private const LIST_QUERY_PARAMS = array(
-		'page'                => true,
-		'pagesize'            => true,
-		'sort'                => true,
-		'direction'           => true,
-		'limit'               => true,
-		'match'               => true,
-		'order_id_is'         => true,
-		'customer_email_is'   => true,
-		'customer_country_is' => true,
-		'risk_level_is'       => true,
-		'source_is'           => true,
-		'date_before'         => true,
-		'date_after'          => true,
-		'date_between'        => true,
-		'from_date'           => true,
-		'to_date'             => true,
-		'search'              => true,
-	);
-
 	/**
 	 * Runtime owner arbiter.
 	 *
@@ -358,7 +338,7 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 		);
 
 		$params = array_filter(
-			array_intersect_key( $params, self::LIST_QUERY_PARAMS ),
+			$params,
 			static function ( $value ): bool {
 				return null !== $value && '' !== $value;
 			}
