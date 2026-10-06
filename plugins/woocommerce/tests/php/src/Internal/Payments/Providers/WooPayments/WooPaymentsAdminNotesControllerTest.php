@@ -326,16 +326,14 @@ class WooPaymentsAdminNotesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Logs a failing note through the WooPayments logger with the note name and without the failure text, and still adds the other notes.
+	 * @testdox Logs a failing note through the WooPayments logger with the note name and without the failure text, and still runs the notes before and after it.
 	 */
 	public function test_logs_a_failing_note_without_its_message(): void {
 		$logger    = RecordingWcLogger::install();
 		$link_note = $this->createMock( WooPaymentsSetUpLinkNote::class );
 		$link_note->method( 'possibly_add_note' )->willThrowException( new \Error( 'platform text with acct_secret' ) );
-		$remediation_service = new WooPaymentsCanceledAuthorizationFeeRemediationService();
-		$remediation_service->init( new StaticNativeRuntimeArbiter( true ) );
-		$canceled_auth_remediation_note = new WooPaymentsCanceledAuthRemediationNote();
-		$canceled_auth_remediation_note->init( $remediation_service );
+		$canceled_auth_remediation_note = $this->createMock( WooPaymentsCanceledAuthRemediationNote::class );
+		$canceled_auth_remediation_note->expects( $this->once() )->method( 'possibly_add_note' );
 		$sut = new WooPaymentsAdminNotesController();
 		$sut->init( new StaticNativeRuntimeArbiter( true ), new WooPaymentsSetHttpsForCheckoutNote(), $link_note, $canceled_auth_remediation_note );
 
