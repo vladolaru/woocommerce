@@ -81,6 +81,36 @@ final class WooPaymentsSubscriptionMethodPolicy {
 	}
 
 	/**
+	 * Run a callback with WooCommerce's payment-complete stock reduction turned off.
+	 *
+	 * A subscription payment method change can complete the subscription's failed renewal, and that must not take stock
+	 * again. Client 11.1.0 `with_stock_reduction_disabled()` (class-wc-payment-gateway-wcpay.php:5483-5499): the filter
+	 * goes on at PHP_INT_MAX - 1 so a later filter cannot turn reduction back on, and only if it is not already there.
+	 *
+	 * @param callable $callback Callback to run.
+	 * @return mixed The callback's return value.
+	 *
+	 * @since 11.2.0
+	 */
+	public static function run_without_stock_reduction( callable $callback ) {
+		$filter           = 'woocommerce_payment_complete_reduce_order_stock';
+		$priority         = PHP_INT_MAX - 1;
+		$already_filtered = false !== has_filter( $filter, '__return_false' );
+
+		if ( ! $already_filtered ) {
+			add_filter( $filter, '__return_false', $priority );
+		}
+
+		try {
+			return $callback();
+		} finally {
+			if ( ! $already_filtered ) {
+				remove_filter( $filter, '__return_false', $priority );
+			}
+		}
+	}
+
+	/**
 	 * Tell whether a gateway supports reusable subscription payment methods.
 	 *
 	 * @param string $gateway_id Gateway ID.

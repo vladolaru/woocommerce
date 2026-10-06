@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 use WC_Order;
@@ -265,7 +266,17 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 			? $this->api_client->get_setup_intention( $intent_id )
 			: $this->api_client->get_payment_intention( $intent_id );
 
-		$this->confirm_fetched_intent_for_order( $order, $intent, $save_payment_method, false, ! $is_payment_method_change );
+		if ( ! $is_payment_method_change ) {
+			$this->confirm_fetched_intent_for_order( $order, $intent, $save_payment_method, false, true );
+			return;
+		}
+
+		// Client 11.1.0 gw:4337-4345: a payment method change does not take stock for the renewal it completes.
+		WooPaymentsSubscriptionMethodPolicy::run_without_stock_reduction(
+			function () use ( $order, $intent, $save_payment_method ): void {
+				$this->confirm_fetched_intent_for_order( $order, $intent, $save_payment_method, false, false );
+			}
+		);
 	}
 
 	// phpcs:disable Squiz.Commenting.FunctionCommentThrowTag.WrongNumber -- The method explicitly throws its domain exception and can propagate downstream Throwables.

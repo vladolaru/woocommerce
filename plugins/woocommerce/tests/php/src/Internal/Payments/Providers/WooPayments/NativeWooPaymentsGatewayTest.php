@@ -4,8 +4,10 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
+use Automattic\WooCommerce\Internal\Payments\ProviderContract;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingApi;
@@ -500,6 +502,41 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A change to a saved payment method runs the payment with WooCommerce's payment-complete stock reduction off, and turns it back on after (client `class-wc-payment-gateway-wcpay.php:2197-2205`).
+	 */
+	public function test_a_saved_method_change_runs_the_payment_without_stock_reduction(): void {
+		WooCommerceSubscriptionsDoubles::load();
+		$user_id      = self::factory()->user->create();
+		$subscription = $this->create_subscription( $user_id, '' );
+		$token        = $this->create_card_token( $user_id );
+		$service      = new class() extends RecordingPaymentProcessingService {
+			/**
+			 * What WooCommerce would decide about reducing stock while the payment runs.
+			 *
+			 * @var bool|null
+			 */
+			public $reduces_stock = null;
+
+			/**
+			 * Record the stock decision, then answer as the recording service does.
+			 *
+			 * @param PaymentContext   $context  Payment context.
+			 * @param ProviderContract $provider Provider.
+			 * @return PaymentOutcome
+			 */
+			public function process_checkout_outcome( PaymentContext $context, ProviderContract $provider ): PaymentOutcome {
+				$this->reduces_stock = (bool) apply_filters( 'woocommerce_payment_complete_reduce_order_stock', true, $context->get_order_id() ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+				return parent::process_checkout_outcome( $context, $provider );
+			}
+		};
+
+		$this->process_saved_method_change( $subscription, $token, 'completed', $service );
+
+		$this->assertFalse( $service->reduces_stock, 'The payment of a payment method change does not take stock.' );
+		$this->assertTrue( (bool) apply_filters( 'woocommerce_payment_complete_reduce_order_stock', true, $subscription->get_id() ), 'Stock reduction is back on after the change.' ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+	}
+
+	/**
 	 * @testdox After a Stripe-billed subscription is switched to a saved card, the Stripe Billing module charges its pending invoice and completes the failed renewal (client `class-wc-payments-subscription-service.php:658-694`).
 	 */
 	public function test_a_saved_method_change_charges_the_pending_stripe_billing_invoice(): void {
@@ -793,18 +830,19 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * Send a customer's request to switch a subscription to a saved payment method through the gateway.
 	 *
-	 * @param WC_Order         $subscription   Subscription.
-	 * @param WC_Payment_Token $token          Saved payment method picked.
-	 * @param string           $outcome_status Outcome the payment processing answers with.
+	 * @param WC_Order                               $subscription   Subscription.
+	 * @param WC_Payment_Token                       $token          Saved payment method picked.
+	 * @param string                                 $outcome_status Outcome the payment processing answers with.
+	 * @param RecordingPaymentProcessingService|null $service        Payment processing to use, a plain recording one when null.
 	 */
-	private function process_saved_method_change( WC_Order $subscription, WC_Payment_Token $token, string $outcome_status ): void {
+	private function process_saved_method_change( WC_Order $subscription, WC_Payment_Token $token, string $outcome_status, ?RecordingPaymentProcessingService $service = null ): void {
 		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
 		wp_set_current_user( $subscription->get_customer_id() );
 		$_POST['_wcsnonce']                             = wp_create_nonce( 'wcs_change_payment_method' );
 		$_POST['woocommerce_change_payment']            = (string) $subscription->get_id();
 		$_POST['wc-woocommerce_payments-payment-token'] = (string) $token->get_id();
 
-		$service                   = new RecordingPaymentProcessingService();
+		$service                   = $service ?? new RecordingPaymentProcessingService();
 		$service->checkout_outcome = new PaymentOutcome( $outcome_status, 'seti_1UM1VrBzWlxcwgpPChgT63' );
 		$gateway                   = new NativeWooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider(), null, null, null, $this->create_unhooked_token_service() );

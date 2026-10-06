@@ -1871,7 +1871,12 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			$this->get_checkout_provider_data( $is_subscription_change, $is_subscription_payment_method_change )
 		);
 		$this->checkout_payment_started = true;
-		$outcome                        = $this->get_processing_service()->process_checkout_outcome( $context, $this->get_provider() );
+		$outcome                        = $is_subscription_payment_method_change
+			// Client 11.1.0 gw:2197-2205: a payment method change does not take stock for the renewal it completes.
+			? WooPaymentsSubscriptionMethodPolicy::run_without_stock_reduction(
+				fn() => $this->get_processing_service()->process_checkout_outcome( $context, $this->get_provider() )
+			)
+			: $this->get_processing_service()->process_checkout_outcome( $context, $this->get_provider() );
 		if ( true === ( $outcome->get_data()[ PaymentOutcome::DATA_ORDER_PAID_BY_ANOTHER_REQUEST ] ?? false ) ) {
 			// Another submission paid the order after this one passed the already-paid check above.
 			return $this->get_duplicate_payment_prevention_service()->prevent_payment_for_paid_order( $order, $this );
