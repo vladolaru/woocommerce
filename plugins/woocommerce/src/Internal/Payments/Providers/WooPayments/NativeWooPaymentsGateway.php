@@ -21,7 +21,6 @@ use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsFailedAuthenticationRetryEmail;
@@ -1481,21 +1480,10 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Get the connected account's domestic currency, lowercase.
 	 *
-	 * Mirrors the reference client's get_account_domestic_currency(): the merchant
-	 * country's locale data resolves the currency first, and the account default
-	 * currency is only the fallback when locale data is missing for the country.
-	 *
 	 * @return string
 	 */
 	private function get_account_domestic_currency(): string {
-		$country_locale_data = wc_get_container()->get( MultiCurrencyLocalizationService::class )->get_country_locale_data( $this->get_account_country() );
-		$currency_code       = $country_locale_data['currency_code'] ?? null;
-
-		if ( ! is_string( $currency_code ) || '' === $currency_code ) {
-			return $this->get_account_service()->get_account_default_currency();
-		}
-
-		return strtolower( $currency_code );
+		return $this->get_account_service()->get_account_domestic_currency();
 	}
 
 	/**
@@ -1504,22 +1492,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return string
 	 */
 	private function get_account_country(): string {
-		$account_data = $this->get_account_service()->get_cached_account_data();
-		$country      = isset( $account_data['country'] ) && is_scalar( $account_data['country'] )
-			? strtoupper( (string) $account_data['country'] )
-			: '';
-
-		if ( '' === $country ) {
-			$base    = function_exists( 'wc_get_base_location' ) ? wc_get_base_location() : array();
-			$country = strtoupper( (string) ( $base['country'] ?? '' ) );
-		}
-
-		if ( false !== strpos( $country, ':' ) ) {
-			$base_country = strtok( $country, ':' );
-			$country      = is_string( $base_country ) ? $base_country : '';
-		}
-
-		return '' !== $country ? $country : 'US';
+		return $this->get_account_service()->get_account_or_store_country();
 	}
 
 	/**

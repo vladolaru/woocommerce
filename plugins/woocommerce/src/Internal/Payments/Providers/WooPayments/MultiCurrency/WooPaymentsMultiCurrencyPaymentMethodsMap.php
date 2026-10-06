@@ -126,7 +126,8 @@ class WooPaymentsMultiCurrencyPaymentMethodsMap implements RegisterHooksInterfac
 	/**
 	 * Get the enabled payment methods that need each currency.
 	 *
-	 * A domestic-only method needs the account currency; others need their supported currencies.
+	 * A domestic-only method needs the account country's currency, as the client's currency manager maps it (client 11.1.0
+	 * `includes/compat/multi-currency/class-wc-payments-currency-manager.php:67-82`); others need their supported currencies.
 	 *
 	 * @return array<string,array<string,string>> Method titles keyed by method ID, keyed by currency code.
 	 */
@@ -139,7 +140,7 @@ class WooPaymentsMultiCurrencyPaymentMethodsMap implements RegisterHooksInterfac
 		foreach ( $this->get_currency_dependent_definitions() as $definition ) {
 			$payment_method_id = $definition->get_id();
 			$currencies        = in_array( WooPaymentsPaymentMethodRegistry::DOMESTIC_TRANSACTIONS_ONLY, $definition->get_capabilities(), true )
-				? array( $account_service->get_account_default_currency() )
+				? array( $account_service->get_account_domestic_currency() )
 				: $definition->get_supported_currencies( $country );
 
 			foreach ( $currencies as $currency_code ) {

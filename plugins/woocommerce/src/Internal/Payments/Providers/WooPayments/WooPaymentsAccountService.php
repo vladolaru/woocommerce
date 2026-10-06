@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -1100,6 +1101,53 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		$native_payments = $account_data['native_payments'] ?? null;
 
 		return ! is_array( $native_payments ) || false !== ( $native_payments['eligible'] ?? null );
+	}
+
+	/**
+	 * Get the connected account country, falling back to the store base country, then to US.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return string Uppercase country code.
+	 */
+	public function get_account_or_store_country(): string {
+		$account_data = $this->get_cached_account_data();
+		$country      = isset( $account_data['country'] ) && is_scalar( $account_data['country'] )
+			? strtoupper( (string) $account_data['country'] )
+			: '';
+
+		if ( '' === $country ) {
+			$base    = function_exists( 'wc_get_base_location' ) ? wc_get_base_location() : array();
+			$country = strtoupper( (string) ( $base['country'] ?? '' ) );
+		}
+
+		if ( false !== strpos( $country, ':' ) ) {
+			$base_country = strtok( $country, ':' );
+			$country      = is_string( $base_country ) ? $base_country : '';
+		}
+
+		return '' !== $country ? $country : 'US';
+	}
+
+	/**
+	 * Get the connected account's domestic currency, lowercase.
+	 *
+	 * Mirrors the client's get_account_domestic_currency(): the account country's locale data gives the currency, and the
+	 * account default currency is the fallback when the country has no locale data.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return string
+	 */
+	public function get_account_domestic_currency(): string {
+		$country_locale_data = wc_get_container()->get( MultiCurrencyLocalizationService::class )->get_country_locale_data( $this->get_account_or_store_country() );
+		$currency_code       = $country_locale_data['currency_code'] ?? null;
+
+		if ( ! is_string( $currency_code ) || '' === $currency_code ) {
+			return $this->get_account_default_currency();
+		}
+
+		return strtolower( $currency_code );
 	}
 
 	/**

@@ -147,7 +147,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$base_country_filter = static function (): string {
 			return 'FR';
 		};
-		$account_service     = $this->createMock( WooPaymentsAccountService::class );
+		$account_service     = $this->getMockBuilder( WooPaymentsAccountService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_cached_account_data' ) )->getMock();
 		$account_service->method( 'get_cached_account_data' )->willReturn( array() );
 		wc_get_container()->replace( WooPaymentsAccountService::class, $account_service );
 		wc_get_container()->reset_all_resolved();
@@ -168,7 +168,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should not resolve account data while constructing the gateway.
 	 */
 	public function test_construction_does_not_touch_wc_instance_when_country_uncached(): void {
-		$account_service = $this->createMock( WooPaymentsAccountService::class );
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_cached_account_data' ) )->getMock();
 		$account_service->expects( $this->never() )->method( 'get_cached_account_data' );
 		wc_get_container()->replace( WooPaymentsAccountService::class, $account_service );
 		wc_get_container()->reset_all_resolved();
@@ -180,7 +180,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should lazily memoize account-country branding when the title is requested.
 	 */
 	public function test_get_title_lazily_memoizes_account_country_branding(): void {
-		$account_service = $this->createMock( WooPaymentsAccountService::class );
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_cached_account_data' ) )->getMock();
 		$account_service->expects( $this->once() )
 			->method( 'get_cached_account_data' )
 			->willReturn( array( 'country' => 'US' ) );
@@ -198,7 +198,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_method_title_lazily_memoizes_account_country_branding(): void {
 		$registry        = new WooPaymentsPaymentMethodRegistry();
-		$account_service = $this->createMock( WooPaymentsAccountService::class );
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_cached_account_data' ) )->getMock();
 		$account_service->expects( $this->once() )
 			->method( 'get_cached_account_data' )
 			->willReturn( array( 'country' => 'US' ) );

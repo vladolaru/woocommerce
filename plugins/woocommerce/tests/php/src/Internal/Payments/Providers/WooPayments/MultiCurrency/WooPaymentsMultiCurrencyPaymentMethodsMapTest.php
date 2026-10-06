@@ -69,6 +69,20 @@ class WooPaymentsMultiCurrencyPaymentMethodsMapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should map a domestic-only method to the account country's currency, not the payout currency.
+	 */
+	public function test_maps_domestic_only_methods_to_the_account_country_currency(): void {
+		$this->enable_methods( array( 'card', 'klarna' ) );
+
+		// A German account paid out in US dollars: the client uses the domestic currency
+		// (client 11.1.0 `includes/compat/multi-currency/class-wc-payments-currency-manager.php:67-82`).
+		$this->assertSame(
+			array( 'EUR' => array( 'klarna' => 'Klarna' ) ),
+			$this->create_sut( true, 'DE' )->get_currency_payment_methods_map()
+		);
+	}
+
+	/**
 	 * @testdox Should print the map on the Multi-Currency settings page only.
 	 */
 	public function test_prints_the_map_on_the_multi_currency_settings_page(): void {
@@ -151,12 +165,13 @@ class WooPaymentsMultiCurrencyPaymentMethodsMapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create the system under test with a US account.
+	 * Create the system under test with an account paid out in US dollars.
 	 *
-	 * @param bool $native_owner Whether native WooPayments owns the runtime.
+	 * @param bool   $native_owner    Whether native WooPayments owns the runtime.
+	 * @param string $account_country Account country.
 	 * @return WooPaymentsMultiCurrencyPaymentMethodsMap
 	 */
-	private function create_sut( bool $native_owner = true ): WooPaymentsMultiCurrencyPaymentMethodsMap {
+	private function create_sut( bool $native_owner = true, string $account_country = 'US' ): WooPaymentsMultiCurrencyPaymentMethodsMap {
 		$arbiter = new class( $native_owner ) extends NativePaymentsRuntimeArbiter {
 			/**
 			 * Whether native owns runtime.
@@ -184,14 +199,42 @@ class WooPaymentsMultiCurrencyPaymentMethodsMapTest extends WC_Unit_Test_Case {
 			}
 		};
 
-		$account = new class() extends WooPaymentsAccountService {
+		$account = new class( $account_country ) extends WooPaymentsAccountService {
+			/**
+			 * Account country.
+			 *
+			 * @var string
+			 */
+			private string $country;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param string $country Account country.
+			 */
+			public function __construct( string $country ) {
+				$this->country = $country;
+			}
+
 			/**
 			 * Get the account country.
 			 *
 			 * @return string
 			 */
 			public function get_account_country(): string {
-				return 'US';
+				return $this->country;
+			}
+
+			/**
+			 * Get the cached account data, in the shape the platform account endpoint returns.
+			 *
+			 * @param bool $force_refresh Unused.
+			 * @return array<string,mixed>
+			 */
+			public function get_cached_account_data( bool $force_refresh = false ): array {
+				unset( $force_refresh );
+
+				return array( 'country' => $this->country );
 			}
 
 			/**
