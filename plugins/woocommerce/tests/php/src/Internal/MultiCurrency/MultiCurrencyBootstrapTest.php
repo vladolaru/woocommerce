@@ -122,11 +122,35 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'yes', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
 	}
 
-	/** @testdox Should write neither the marker nor the feature option on a store that never ran the plugin. */
-	public function test_never_plugin_store_writes_nothing(): void {
+	/** @testdox Should mark a store native on its first native-owned request without a marker, leaving the option unset without plugin data. */
+	public function test_first_native_request_without_marker_marks_the_store_native(): void {
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION ), 'Later requests then read the marker from the autoloaded options.' );
+		$this->assertFalse( get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, false ) );
+	}
+
+	/** @testdox Should apply the upgrade seed on a first native-owned request without a marker, never over a stored choice. */
+	public function test_first_native_request_without_marker_applies_the_upgrade_seed(): void {
+		// A network site that got no request between the upgrade and a network deactivation: its upgrade seed never ran. The plugin stores
+		// a list of currency codes (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`).
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 
 		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+
+		$this->assertSame( 'yes', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
+
+		delete_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION );
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'no' );
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+
+		$this->assertSame( 'no', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ), 'The seed adds the option only when it is unset.' );
+	}
+
+	/** @testdox Should write nothing when no payments runtime owns the site. */
+	public function test_no_payments_owner_writes_nothing(): void {
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+
 		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_NONE );
 
 		$this->assertFalse( get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION, false ) );

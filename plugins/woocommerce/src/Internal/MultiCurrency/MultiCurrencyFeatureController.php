@@ -67,8 +67,8 @@ class MultiCurrencyFeatureController {
 	 * Record the payments owner this site runs under, and hand the plugin's Multi-Currency state over on the first request after the plugin stops owning it.
 	 *
 	 * The marker is a per-blog option read with get_option(), not a network-wide site option, so each site of a network hands over on its own first
-	 * native-owned request. A plugin-owned request re-arms it, so a reactivation hands over again at the next switch. A store that never ran the plugin
-	 * gets neither the marker nor a handover. Runs before the Multi-Currency arbiter reads the feature option.
+	 * native-owned request. A plugin-owned request re-arms it, so a reactivation hands over again at the next switch. A native-owned request with no
+	 * marker gets the upgrade seed and the 'native' marker. Runs before the Multi-Currency arbiter reads the feature option.
 	 *
 	 * @since 11.2.0
 	 *
@@ -83,7 +83,17 @@ class MultiCurrencyFeatureController {
 			return;
 		}
 
-		if ( NativePaymentsRuntimeArbiter::OWNER_NATIVE === $payments_owner && NativePaymentsRuntimeArbiter::OWNER_PLUGIN === $last_owner && self::claim_handover() ) {
+		if ( NativePaymentsRuntimeArbiter::OWNER_NATIVE !== $payments_owner ) {
+			return;
+		}
+		if ( false === $last_owner ) {
+			// No plugin-owned request was recorded (a network site may get none before a network deactivation). Apply the upgrade seed,
+			// which never overwrites a stored choice, and mark the site so later requests read the autoloaded marker instead of a missing option.
+			self::seed_from_prior_use();
+			update_option( self::LAST_PAYMENTS_OWNER_OPTION, NativePaymentsRuntimeArbiter::OWNER_NATIVE, true );
+			return;
+		}
+		if ( NativePaymentsRuntimeArbiter::OWNER_PLUGIN === $last_owner && self::claim_handover() ) {
 			self::hand_over_plugin_state();
 		}
 	}
