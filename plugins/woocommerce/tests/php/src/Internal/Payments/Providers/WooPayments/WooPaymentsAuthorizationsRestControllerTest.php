@@ -351,7 +351,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox A failed authorization capture or cancel answers the client's code, message and status.
+	 * @testdox A failed authorization capture or cancel answers the client's code, message and status, and keeps the merchant's audit entry.
 	 *
 	 * Client 11.1.0 class-wc-rest-payments-orders-controller.php:403-425 (capture) and :645-656 (cancel).
 	 *
@@ -417,6 +417,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 		$this->assertSame( $expected['code'], $response->get_data()['code'] );
 		$this->assertSame( $expected['message'], $response->get_data()['message'] );
 		$this->assertSame( $expected['data'], $response->get_data()['data'] );
+		$this->assertNotEmpty( wc_get_order( $order->get_id() )->get_meta( '_wcpay_fraud_outcome_manual_entry', false ), 'The merchant\'s action is recorded even when the platform refuses it, as on the client.' );
 	}
 
 	/**

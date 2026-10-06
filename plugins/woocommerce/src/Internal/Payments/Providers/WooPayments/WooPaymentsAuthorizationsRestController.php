@@ -258,11 +258,13 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 			? $this->processing_service->capture( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID, $capture_amount ), $this->provider )
 			: $this->processing_service->cancel( PaymentContext::for_cancel( $order, OrderPaymentStore::GATEWAY_ID ), $this->provider );
 
+		// The merchant's audit entry is kept whatever the platform answered: the client's capture and cancel save the order on
+		// failure too (class-wc-payment-gateway-wcpay.php capture_charge and cancel_authorization).
+		$order->save_meta_data();
+
 		if ( ! $this->is_expected_action_outcome( $outcome, $action ) ) {
 			return $this->authorization_action_error( $outcome, $action );
 		}
-
-		$order->save_meta_data();
 
 		return new WP_REST_Response(
 			array(
