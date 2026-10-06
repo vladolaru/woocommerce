@@ -197,9 +197,11 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 		}
 		$sut = $this->make_sut();
 		$sut->register();
+		$this->assertSame( 10, has_action( 'admin_print_footer_scripts', array( $sut, 'handle_admin_print_footer_scripts' ) ) );
 
+		// Only this callback's output: other footer scripts (core's Tracks, for one) may be hooked by earlier tests.
 		ob_start();
-		do_action( 'admin_print_footer_scripts' );
+		$sut->handle_admin_print_footer_scripts();
 
 		return trim( (string) ob_get_clean() );
 	}
