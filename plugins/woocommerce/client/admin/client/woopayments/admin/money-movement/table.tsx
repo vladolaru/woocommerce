@@ -102,6 +102,8 @@ export const ExportButton = ( {
 		onClick={ onClick }
 		isBusy={ isBusy }
 		disabled={ disabled }
+		// The button disables itself once pressed; keeping it focusable leaves keyboard focus on it, not on the page.
+		accessibleWhenDisabled
 	>
 		{ __( 'Export', 'woocommerce' ) }
 	</Button>
