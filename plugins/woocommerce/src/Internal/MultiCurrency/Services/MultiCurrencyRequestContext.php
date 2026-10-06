@@ -153,8 +153,12 @@ class MultiCurrencyRequestContext {
 			return false;
 		}
 
+		// Core's WooCommerce::is_rest_api_request(), which cannot be called while WooCommerce is still constructing: the REST prefix
+		// in the path, or a rest_route parameter on plain-permalink stores and Jetpack-signed calls.
+		// phpcs:disable WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.NonceVerification.Recommended
 		$rest_prefix         = trailingslashit( rest_get_url_prefix() );
-		$is_rest_api_request = false !== strpos( $_SERVER['REQUEST_URI'], $rest_prefix ); // phpcs:disable WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		$is_rest_api_request = false !== strpos( $_SERVER['REQUEST_URI'], $rest_prefix ) || ! empty( $_GET['rest_route'] );
+		// phpcs:enable
 
 		/**
 		 * Filters whether this is a WooCommerce REST API request.

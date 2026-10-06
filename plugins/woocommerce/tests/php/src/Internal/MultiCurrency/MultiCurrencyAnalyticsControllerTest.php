@@ -144,6 +144,31 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should add the currency SQL to Analytics requests sent with a rest_route parameter, as on plain-permalink stores.
+	 */
+	public function test_registers_sql_hooks_for_rest_route_requests(): void {
+		$previous_uri = $_SERVER['REQUEST_URI'] ?? null; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Preserve the test request URI for restoration.
+		set_transient( 'wc_mc_has_orders', '1', HOUR_IN_SECONDS );
+		// The client checks with core's WooCommerce::is_rest_api_request(), which accepts rest_route (client 11.1.0 `Analytics.php:89`).
+		$_SERVER['REQUEST_URI'] = '/index.php?rest_route=/wc-analytics/reports/orders';
+		$_GET['rest_route']     = '/wc-analytics/reports/orders';
+
+		try {
+			$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false );
+			$sut->register();
+		} finally {
+			unset( $_GET['rest_route'] );
+			if ( null === $previous_uri ) {
+				unset( $_SERVER['REQUEST_URI'] );
+			} else {
+				$_SERVER['REQUEST_URI'] = $previous_uri;
+			}
+		}
+
+		$this->assertSame( 20, has_filter( 'woocommerce_analytics_clauses_select', array( $sut, 'handle_woocommerce_analytics_clauses_select' ) ) );
+	}
+
+	/**
 	 * @testdox Should not resolve the WooCommerce singleton while registering analytics hooks.
 	 */
 	public function test_register_does_not_resolve_woocommerce_singleton_for_rest_detection(): void {

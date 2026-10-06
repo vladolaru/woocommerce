@@ -177,7 +177,13 @@ class MultiCurrencyRequestContextTest extends WC_Unit_Test_Case {
 
 		try {
 			$this->assertTrue( $sut->is_wc_rest_api_request_for_test(), 'WooCommerce REST requests should be detected from the request URI.' );
+
+			// Plain permalinks and Jetpack-signed calls pass the route as a parameter (core `WooCommerce::is_rest_api_request()`).
+			$_SERVER['REQUEST_URI'] = '/index.php?rest_route=/wc/v3/products';
+			$_GET['rest_route']     = '/wc/v3/products';
+			$this->assertTrue( $sut->is_wc_rest_api_request_for_test(), 'A rest_route request is a REST request.' );
 		} finally {
+			unset( $_GET['rest_route'] );
 			$this->restore_woocommerce_singleton_sentinel( $sentinel );
 		}
 
