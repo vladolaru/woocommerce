@@ -556,7 +556,8 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * @testdox Saving VAT details strips markup from the company details before they reach the platform.
 	 *
-	 * Client 11.1.0 declares text-field formats for the three args (class-wc-rest-payments-vat-controller.php:43-58).
+	 * Client 11.1.0 declares text-field on the VAT number and name, which also flattens line breaks, and textarea-field on
+	 * the address, which keeps them (class-wc-rest-payments-vat-controller.php:43-58).
 	 */
 	public function test_save_vat_sanitizes_company_details(): void {
 		$this->sut->register_routes();
@@ -564,8 +565,8 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/vat' );
 		$request->set_body_params(
 			array(
-				'vat_number' => '<b>RO123456</b>',
-				'name'       => '<script>alert(1)</script>ACME SRL',
+				'vat_number' => "<b>RO123</b>\n456",
+				'name'       => "<script>alert(1)</script>ACME\nSRL",
 				'address'    => "1 Market Street\n<i>Floor 2</i>",
 			)
 		);
@@ -575,7 +576,7 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame(
 			array(
-				'vat_number' => 'RO123456',
+				'vat_number' => 'RO123 456',
 				'name'       => 'ACME SRL',
 				'address'    => "1 Market Street\nFloor 2",
 			),

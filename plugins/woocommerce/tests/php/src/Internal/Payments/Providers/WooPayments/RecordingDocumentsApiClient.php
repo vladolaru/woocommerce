@@ -47,7 +47,7 @@ class RecordingDocumentsApiClient extends WooPaymentsApiClient {
 	public ?array $last_saved_vat_details = null;
 
 	/**
-	 * Documents list response.
+	 * Documents list response: the platform wraps the records in `data` (wpcom class-documents-controller.php:184-194).
 	 *
 	 * @var array<string,mixed>
 	 */
@@ -57,14 +57,15 @@ class RecordingDocumentsApiClient extends WooPaymentsApiClient {
 	);
 
 	/**
-	 * Documents summary response.
+	 * Documents summary response, passed through unchanged by the controller (a sentinel, not a platform shape).
 	 *
 	 * @var array<string,mixed>
 	 */
 	public array $documents_summary_response = array();
 
 	/**
-	 * Raw document response.
+	 * Raw document response: the WordPress HTTP response array the client reads (documents controller :113-123) for the
+	 * file the platform streams (wpcom class-documents-controller.php:266-268).
 	 *
 	 * @var array<string,mixed>
 	 */
@@ -81,7 +82,7 @@ class RecordingDocumentsApiClient extends WooPaymentsApiClient {
 	);
 
 	/**
-	 * VAT validation response.
+	 * VAT validation response, passed through unchanged by the controller (a sentinel, not a platform shape).
 	 *
 	 * @var array<string,mixed>
 	 */
@@ -90,7 +91,7 @@ class RecordingDocumentsApiClient extends WooPaymentsApiClient {
 	);
 
 	/**
-	 * VAT save response.
+	 * VAT save response, passed through unchanged by the controller (a sentinel, not a platform shape).
 	 *
 	 * @var array<string,mixed>
 	 */
