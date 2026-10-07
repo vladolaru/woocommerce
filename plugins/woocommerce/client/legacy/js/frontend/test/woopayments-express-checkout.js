@@ -2329,6 +2329,79 @@ describe( 'WooPayments express checkout', () => {
 		);
 	} );
 
+	test( 'keeps the wallet cart session when an older IAPI preview answers after the click', async () => {
+		const preview = createDeferred();
+		jest.useFakeTimers();
+		setProductPage( { iapi: true } );
+		window.wcpayExpressCheckoutParams.product.needs_shipping = true;
+
+		require( '../woopayments-express-checkout' );
+		await jest.advanceTimersByTimeAsync( 0 );
+
+		window.wp.apiFetch
+			.mockReturnValueOnce( preview.promise )
+			// Store API add-item answer for the sheet's tokenized cart (cart.md "Add Item"), carrying its session.
+			.mockResolvedValueOnce(
+				getStoreApiResponse(
+					{
+						needs_shipping: true,
+						totals: {
+							total_price: '2500',
+							currency_code: 'USD',
+						},
+					},
+					{
+						'X-WooPayments-Tokenized-Cart-Session':
+							'wallet-session',
+					}
+				)
+			);
+
+		await changeIapiVariation( 'red' );
+		await expressHandlers.click( { resolve: jest.fn() } );
+		await flushMicrotasks();
+
+		// The preview of the earlier selection lands after the sheet's cart exists, with its own ephemeral session.
+		preview.resolve(
+			getStoreApiResponse(
+				{
+					needs_shipping: true,
+					totals: { total_price: '4000', currency_code: 'USD' },
+				},
+				{
+					'X-WooPayments-Tokenized-Cart-Session':
+						'ephemeral-preview-session',
+				}
+			)
+		);
+		await flushMicrotasks();
+
+		// `shippingaddresschange`: name, address, resolve, reject
+		// (https://docs.stripe.com/js/elements_object/express_checkout_element_shippingaddresschange_event).
+		await expressHandlers.shippingaddresschange( {
+			address: {
+				city: 'San Francisco',
+				state: 'CA',
+				postal_code: '94107',
+				country: 'US',
+			},
+			resolve: jest.fn(),
+			reject: jest.fn(),
+		} );
+		await flushMicrotasks();
+
+		expect( window.wp.apiFetch ).toHaveBeenCalledTimes( 3 );
+		expect( window.wp.apiFetch ).toHaveBeenLastCalledWith(
+			expect.objectContaining( {
+				method: 'POST',
+				path: '/wc/store/v1/cart/update-customer?currency=USD',
+				headers: expect.objectContaining( {
+					'X-WooPayments-Tokenized-Cart-Session': 'wallet-session',
+				} ),
+			} )
+		);
+	} );
+
 	test( 'does not preview an IAPI selection after its express checkout click starts', async () => {
 		const resolveClick = jest.fn();
 		jest.useFakeTimers();
