@@ -80,6 +80,38 @@ const getExpressCheckoutMethodUnavailableMessage = (
 	return __( 'Amazon Pay is not available for this store.', 'woocommerce' );
 };
 
+/**
+ * The loading message in a status region that is on the page before its text, for the settings read and for
+ * the method's code chunk.
+ *
+ * @param props           The component props.
+ * @param props.isLoading Whether to show the message.
+ */
+const LoadingStatus = ( { isLoading }: { isLoading: boolean } ) => {
+	const loadingStatus = useDeferredStatusText(
+		isLoading ? __( 'Loading WooPayments settings…', 'woocommerce' ) : ''
+	);
+
+	return (
+		<p
+			className={
+				loadingStatus
+					? 'woopayments-express-checkout-settings__loading'
+					: 'screen-reader-text'
+			}
+			role="status"
+			aria-live="polite"
+		>
+			{ loadingStatus && (
+				<>
+					<Spinner />
+					{ loadingStatus }
+				</>
+			) }
+		</p>
+	);
+};
+
 export const WooPaymentsExpressCheckoutSettings = ( {
 	methodId,
 }: {
@@ -89,9 +121,6 @@ export const WooPaymentsExpressCheckoutSettings = ( {
 	const settings = asSettingsRecord( useGetSettings() );
 	const hasSettings = Object.keys( settings ).length > 0;
 	const isDevModeEnabled = Boolean( useDevMode() );
-	const loadingStatus = useDeferredStatusText(
-		isLoading ? __( 'Loading WooPayments settings…', 'woocommerce' ) : ''
-	);
 
 	if ( ! isExpressCheckoutMethodId( methodId ) ) {
 		return (
@@ -126,20 +155,7 @@ export const WooPaymentsExpressCheckoutSettings = ( {
 	} else {
 		content = (
 			<SettingsBusyState isBusy={ Boolean( isSaving ) }>
-				<Suspense
-					fallback={
-						<p
-							className="woopayments-express-checkout-settings__loading"
-							aria-live="polite"
-						>
-							<Spinner />
-							{ __(
-								'Loading WooPayments settings…',
-								'woocommerce'
-							) }
-						</p>
-					}
-				>
+				<Suspense fallback={ <LoadingStatus isLoading /> }>
 					<MethodSettings />
 					<SaveSettingsSection />
 				</Suspense>
@@ -159,22 +175,7 @@ export const WooPaymentsExpressCheckoutSettings = ( {
 			{ ! isLoading && (
 				<AccountModeNotice isDevModeEnabled={ isDevModeEnabled } />
 			) }
-			<p
-				className={
-					loadingStatus
-						? 'woopayments-express-checkout-settings__loading'
-						: 'screen-reader-text'
-				}
-				role="status"
-				aria-live="polite"
-			>
-				{ loadingStatus && (
-					<>
-						<Spinner />
-						{ loadingStatus }
-					</>
-				) }
-			</p>
+			<LoadingStatus isLoading={ isLoading } />
 			{ content }
 		</SettingsSubpage>
 	);
