@@ -178,8 +178,8 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 		$this->register_legacy_facades();
 
 		// Even a consumer probing the classes earlier in the request must not declare them: no autoloader is registered.
-		$this->assertFalse( class_exists( 'WC_Payments' ), 'An activation request must reach the plugin sandbox without a predeclared bootstrap class.' );
-		$this->assertFalse( class_exists( 'WC_Payments_Features' ), 'An activation request must reach the plugin sandbox without a predeclared feature class.' );
+		$this->assertFalse( class_exists( 'WC_Payments' ), 'An activation request must reach the plugin sandbox without a predeclared bootstrap class. ' . $this->describe_facade_state() );
+		$this->assertFalse( class_exists( 'WC_Payments_Features' ), 'An activation request must reach the plugin sandbox without a predeclared feature class. ' . $this->describe_facade_state() );
 	}
 
 	/**
@@ -266,8 +266,8 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 		$this->register_legacy_facades();
 
 		// Probing with autoload: a recognized activation registers no autoloader, so even a probe declares nothing.
-		$this->assertFalse( class_exists( 'WC_Payments' ), 'WP-CLI must be able to activate the standalone plugin without a class collision.' );
-		$this->assertFalse( class_exists( 'WC_Payments_Features' ), 'WP-CLI must retain the plugin feature-class name for an activation sandbox.' );
+		$this->assertFalse( class_exists( 'WC_Payments' ), 'WP-CLI must be able to activate the standalone plugin without a class collision. ' . $this->describe_facade_state() );
+		$this->assertFalse( class_exists( 'WC_Payments_Features' ), 'WP-CLI must retain the plugin feature-class name for an activation sandbox. ' . $this->describe_facade_state() );
 	}
 
 	/**
@@ -412,5 +412,36 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 		$loader = new LegacyFacadeLoader();
 		$loader->init( $arbiter );
 		$loader->register();
+	}
+
+	/**
+	 * Describe where the facade names come from, so a failure in another environment names its source.
+	 *
+	 * @return string JSON state: the file declaring WC_Payments, the registered autoloaders and the runtime ownership inputs.
+	 */
+	private function describe_facade_state(): string {
+		$autoloaders = array();
+		foreach ( spl_autoload_functions() as $autoloader ) {
+			if ( is_array( $autoloader ) ) {
+				$autoloaders[] = ( is_object( $autoloader[0] ) ? get_class( $autoloader[0] ) : (string) $autoloader[0] ) . '::' . $autoloader[1];
+			} elseif ( $autoloader instanceof \Closure ) {
+				$reflection    = new \ReflectionFunction( $autoloader );
+				$autoloaders[] = 'closure@' . $reflection->getFileName() . ':' . $reflection->getStartLine();
+			} else {
+				$autoloaders[] = is_string( $autoloader ) ? $autoloader : gettype( $autoloader );
+			}
+		}
+
+		return (string) wp_json_encode(
+			array(
+				'wc_payments_file'          => class_exists( 'WC_Payments', false ) ? ( new \ReflectionClass( 'WC_Payments' ) )->getFileName() : null,
+				'wc_payments_features_file' => class_exists( 'WC_Payments_Features', false ) ? ( new \ReflectionClass( 'WC_Payments_Features' ) )->getFileName() : null,
+				'autoloaders'               => $autoloaders,
+				'runtime_owner'             => wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->get_runtime_owner(),
+				'native_option'             => get_option( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, null ),
+				'version_constant'          => defined( 'WCPAY_VERSION_NUMBER' ) ? constant( 'WCPAY_VERSION_NUMBER' ) : null,
+				'active_plugins'            => get_option( 'active_plugins', array() ),
+			)
+		);
 	}
 }
