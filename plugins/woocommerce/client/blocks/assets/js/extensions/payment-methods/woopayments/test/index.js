@@ -86,6 +86,7 @@ jest.mock( '@woocommerce/settings', () => {
 				title: 'Card',
 				isReusable: true,
 				showSaveOption: false,
+				forceNetworkSavedCards: true,
 				cardBrandIcons: [
 					{
 						id: 'visa',

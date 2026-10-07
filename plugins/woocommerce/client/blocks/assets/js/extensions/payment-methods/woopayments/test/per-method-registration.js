@@ -51,6 +51,8 @@ jest.mock( '@woocommerce/settings', () => {
 			stylesCacheVersion: 'styles-v1',
 			currency: 'USD',
 			isCoreNativeCheckoutAvailable: true,
+			// The split config carries the card's top-level flag (WooPaymentsCheckoutBridge payment fields config).
+			forceNetworkSavedCards: true,
 			paymentMethodTypes: [ 'klarna' ],
 			paymentMethodsConfig: {
 				klarna: {
@@ -319,6 +321,12 @@ describe( 'wc-payment-method-woopayments per-method registration', () => {
 			expect.objectContaining( {
 				paymentMethodTypes: [ 'klarna' ],
 			} )
+		);
+		// Only the card follows forceNetworkSavedCards onto the platform account (client 11.1.0
+		// includes/class-wc-payments-checkout.php:598-599); Klarna stays on the connected account.
+		expect( window.Stripe ).toHaveBeenCalledWith(
+			'pk_test_123',
+			expect.objectContaining( { stripeAccount: 'acct_123' } )
 		);
 	} );
 

@@ -2679,17 +2679,44 @@ describe( 'WooPayments checkout', () => {
 		).toBe( 'pm_native' );
 	} );
 
+	// Distinct doubles for the two Stripe accounts, so each assertion names the account that did the work. They reuse
+	// the shared Elements double and the Stripe result shapes of stripeMock above.
+	function useSeparateStripeAccounts() {
+		const platformStripe = Object.assign( {}, stripeMock, {
+			createPaymentMethod: jest.fn( () =>
+				Promise.resolve( { paymentMethod: { id: 'pm_platform' } } )
+			),
+			handleNextAction: jest.fn(),
+		} );
+		const connectedStripe = Object.assign( {}, stripeMock, {
+			createPaymentMethod: jest.fn( () =>
+				Promise.resolve( { paymentMethod: { id: 'pm_connected' } } )
+			),
+		} );
+		window.Stripe = jest.fn( ( key, options ) =>
+			options && options.stripeAccount ? connectedStripe : platformStripe
+		);
+
+		return { platformStripe, connectedStripe };
+	}
+
 	test( 'creates the card payment method on the platform account when network saved cards are forced', async () => {
 		window.wcpay_core_checkout_config.paymentMethodsConfig.card.forceNetworkSavedCards = true;
+		const { platformStripe, connectedStripe } = useSeparateStripeAccounts();
 
 		require( '../woopayments-checkout' );
 		checkoutFormEventHandlers.checkout_place_order_woocommerce_payments();
 		await flushPromises();
 
-		// Client 11.1.0 api/index.js:79-95 creates the platform instance with the locale only.
+		// Client 11.1.0 api/index.js:79-95 creates the platform instance without a connected account or betas.
 		expect( window.Stripe ).toHaveBeenCalledWith( 'pk_test', {
 			locale: 'en-US',
 		} );
+		expect( platformStripe.createPaymentMethod ).toHaveBeenCalled();
+		expect( connectedStripe.createPaymentMethod ).not.toHaveBeenCalled();
+		expect(
+			global.jQuery.checkoutFormFields[ 'wcpay-payment-method' ].value
+		).toBe( 'pm_platform' );
 		expect(
 			global.jQuery.checkoutFormFields[ 'wcpay-is-platform-payment-method' ]
 				.value
@@ -2707,8 +2734,59 @@ describe( 'WooPayments checkout', () => {
 		).toBe( 'false' );
 	} );
 
+	test( 'never marks a saved card as created on the platform', () => {
+		window.wcpay_core_checkout_config.paymentMethodsConfig.card.forceNetworkSavedCards = true;
+		document
+			.querySelector( 'form.checkout' )
+			.insertAdjacentHTML(
+				'beforeend',
+				'<input id="wc-woocommerce_payments-payment-token-new" ' +
+					'name="wc-woocommerce_payments-payment-token" type="radio" value="new" />' +
+					'<input id="wc-woocommerce_payments-payment-token-12" ' +
+					'name="wc-woocommerce_payments-payment-token" type="radio" value="12" checked />'
+			);
+
+		require( '../woopayments-checkout' );
+
+		expect(
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
+		).toBe( true );
+		expect(
+			global.jQuery.checkoutFormFields[ 'wcpay-is-platform-payment-method' ]
+				.value
+		).toBe( 'false' );
+	} );
+
+	test( 'keeps a non-card method on the connected account when only the card forces network saved cards', () => {
+		document.body.innerHTML =
+			'<form class="checkout">' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments_sepa_debit" checked />' +
+			'<div id="wcpay-core-payment-element"></div>' +
+			'</form>';
+		window.wcpay_core_checkout_config_woocommerce_payments_sepa_debit =
+			Object.assign( {}, window.wcpay_core_checkout_config, {
+				gatewayId: 'woocommerce_payments_sepa_debit',
+				forceNetworkSavedCards: true,
+				paymentMethodTypes: [ 'sepa_debit' ],
+				paymentMethodsConfig: {
+					sepa_debit: {
+						isReusable: true,
+					},
+				},
+			} );
+
+		require( '../woopayments-checkout' );
+
+		expect( window.Stripe ).toHaveBeenCalledWith(
+			'pk_test',
+			expect.objectContaining( { stripeAccount: 'acct_test' } )
+		);
+		delete window.wcpay_core_checkout_config_woocommerce_payments_sepa_debit;
+	} );
+
 	test( 'confirms on the connected account while the card element uses the platform account', async () => {
 		window.wcpay_core_checkout_config.paymentMethodsConfig.card.forceNetworkSavedCards = true;
+		const { platformStripe, connectedStripe } = useSeparateStripeAccounts();
 
 		require( '../woopayments-checkout' );
 		setPaymentIntentConfirmationHash();
@@ -2716,14 +2794,10 @@ describe( 'WooPayments checkout', () => {
 		await flushPromises();
 
 		// Client 11.1.0 api/index.js confirmIntent() confirms through getStripe( true ), the connected account.
-		expect( window.Stripe ).toHaveBeenLastCalledWith( 'pk_test', {
-			locale: 'en-US',
-			stripeAccount: 'acct_test',
-			betas: [ 'card_country_event_beta_1', 'link_autofill_modal_beta_1' ],
-		} );
-		expect( stripeMock.handleNextAction ).toHaveBeenCalledWith( {
+		expect( connectedStripe.handleNextAction ).toHaveBeenCalledWith( {
 			clientSecret: 'pi_native_secret_abc',
 		} );
+		expect( platformStripe.handleNextAction ).not.toHaveBeenCalled();
 	} );
 
 	test( 'intercepts and resubmits the order-pay form with a created payment method', async () => {

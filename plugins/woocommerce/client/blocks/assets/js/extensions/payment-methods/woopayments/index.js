@@ -473,10 +473,11 @@ const handleConfirmationResponse = async (
 	}
 };
 
+// Client 11.1.0 getStripeForUPE() reads only the selected method's flag, which is false for every method but card
+// (includes/class-wc-payments-checkout.php:598-599); the top-level flag is the card's and must not leak to others.
 const shouldUsePlatformStripeForCard = ( paymentSettings = defaultSettings ) =>
 	Boolean(
-		getPrimaryPaymentMethodConfig( paymentSettings )
-			?.forceNetworkSavedCards ?? paymentSettings.forceNetworkSavedCards
+		getPrimaryPaymentMethodConfig( paymentSettings )?.forceNetworkSavedCards
 	);
 
 const isLinkEnabled = ( paymentSettings = defaultSettings ) =>

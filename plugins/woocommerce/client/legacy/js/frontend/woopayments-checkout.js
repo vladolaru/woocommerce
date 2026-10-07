@@ -651,17 +651,14 @@
 		return betas;
 	}
 
-	// Client 11.1.0 api/index.js getStripeForUPE(): the selected method's forceNetworkSavedCards picks the platform
-	// account, so the card can be saved for WooPay; the platform instance gets no account and no betas (:79-95).
+	// Client 11.1.0 api/index.js getStripeForUPE(): only the selected method's forceNetworkSavedCards picks the platform
+	// account, so the card can be saved for WooPay; it is false for every method but card
+	// (includes/class-wc-payments-checkout.php:598-599). The platform instance has no connected account and no betas.
 	function shouldUsePlatformStripe() {
 		var methodsConfig = config.paymentMethodsConfig || {};
 		var methodConfig = methodsConfig[ getStripePaymentMethodTypes()[ 0 ] ];
 
-		return Boolean(
-			methodConfig && 'forceNetworkSavedCards' in methodConfig
-				? methodConfig.forceNetworkSavedCards
-				: config.forceNetworkSavedCards
-		);
+		return Boolean( methodConfig && methodConfig.forceNetworkSavedCards );
 	}
 
 	function createAccountStripe() {
