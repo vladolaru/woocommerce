@@ -175,7 +175,7 @@
 				var refreshed;
 				var target;
 
-				// Each update_order_review inserts new wrappers, so a wrapper already read has nothing new.
+				// Core replaces a changed fragment with new elements (checkout.js:773), so a wrapper already read has nothing new.
 				if ( wrapper.wcpayConfigMerged ) {
 					return;
 				}
