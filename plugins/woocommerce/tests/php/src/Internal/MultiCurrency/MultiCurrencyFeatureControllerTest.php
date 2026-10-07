@@ -142,6 +142,28 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should never replace a stored choice, even when the seeding request still sees the option as absent.
+	 */
+	public function test_seed_never_replaces_a_choice_saved_by_another_request(): void {
+		$option = MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION;
+		// The plugin stores a list of currency codes (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`).
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		update_option( $option, 'no' );
+
+		// Another request saved "no" after this one last read the option, so this one still sees it as absent.
+		add_filter( 'option_' . $option, '__return_false' );
+		try {
+			MultiCurrencyFeatureController::seed_from_prior_use();
+		} finally {
+			remove_filter( 'option_' . $option, '__return_false' );
+		}
+
+		wp_cache_delete( $option, 'options' );
+		wp_cache_delete( 'alloptions', 'options' );
+		$this->assertSame( 'no', get_option( $option ) );
+	}
+
+	/**
 	 * @testdox Should register the stable Multi-Currency feature with its dynamic radio setting.
 	 */
 	public function test_add_feature_definition_registers_dynamic_radio_setting(): void {

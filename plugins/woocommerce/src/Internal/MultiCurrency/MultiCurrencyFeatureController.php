@@ -59,8 +59,34 @@ class MultiCurrencyFeatureController {
 	 */
 	public static function seed_from_prior_use(): void {
 		if ( self::is_plugin_multi_currency_in_use() ) {
-			add_option( self::FEATURE_ENABLE_OPTION, 'yes', '', true );
+			self::add_option_if_absent( self::FEATURE_ENABLE_OPTION, 'yes' );
 		}
+	}
+
+	/**
+	 * Add an autoloaded option only when its row does not exist yet.
+	 *
+	 * WordPress's add_option() checks for the option in PHP and then writes with INSERT ... ON DUPLICATE KEY UPDATE, so a request that read the
+	 * option before another one saved it would replace that choice. Here the database keeps an existing row.
+	 *
+	 * @param string $option Option name.
+	 * @param string $value  Option value.
+	 */
+	private static function add_option_if_absent( string $option, string $value ): void {
+		global $wpdb;
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- An insert-only write; the caches are cleared below.
+		$wpdb->query(
+			$wpdb->prepare(
+				"INSERT INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE option_name = option_name",
+				$option,
+				$value,
+				wp_determine_option_autoload_value( $option, $value, $value, true )
+			)
+		);
+		wp_cache_delete( $option, 'options' );
+		wp_cache_delete( 'alloptions', 'options' );
+		wp_cache_delete( 'notoptions', 'options' );
 	}
 
 	/**
