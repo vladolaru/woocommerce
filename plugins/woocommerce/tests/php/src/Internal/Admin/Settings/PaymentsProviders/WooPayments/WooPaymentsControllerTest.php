@@ -406,6 +406,59 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * While the plugin owns the runtime the native routes are not served, so a bookmark or a stale link to a native
+	 * settings route opens the plugin's settings page: the URL WooPayments::get_settings_url() gives there, built from
+	 * client 11.1.0 `includes/admin/class-wc-payments-admin-settings.php:32-36` (page, tab, section).
+	 *
+	 * @testdox Should send native settings routes to the plugin's settings page while the plugin owns the runtime.
+	 * @dataProvider provider_native_settings_paths
+	 *
+	 * @param string $path Native settings route.
+	 */
+	public function test_sends_native_settings_routes_to_the_plugin_settings_page_while_the_plugin_owns_the_runtime( string $path ): void {
+		$this->set_admin_user();
+		$sut = $this->create_redirecting_controller( false, false, false, true );
+
+		$location = $this->run_shell_redirect( $sut, $path );
+
+		$this->assertSame( admin_url( 'admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments' ), $location );
+	}
+
+	/**
+	 * Native settings routes.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function provider_native_settings_paths(): array {
+		return array(
+			'settings'         => array( '/woopayments/settings' ),
+			'express checkout' => array( '/woopayments/settings/express-checkout/woopay' ),
+			'fraud protection' => array( '/woopayments/settings/fraud-protection' ),
+		);
+	}
+
+	/**
+	 * @testdox Should leave the plugin's own settings page and other native routes alone while the plugin owns the runtime.
+	 */
+	public function test_leaves_the_plugin_settings_section_alone_while_the_plugin_owns_the_runtime(): void {
+		$this->set_admin_user();
+		$sut = $this->create_redirecting_controller( false, false, false, true );
+
+		$this->assertSame(
+			'',
+			$this->run_shell_redirect_for_request(
+				$sut,
+				array(
+					'page'    => 'wc-settings',
+					'tab'     => 'checkout',
+					'section' => 'woocommerce_payments',
+				)
+			)
+		);
+		$this->assertSame( '', $this->run_shell_redirect( $this->create_redirecting_controller( false, false, false, true ), '/woopayments/transactions' ) );
+	}
+
+	/**
 	 * @testdox Should not resolve the onboarding redirect on unrelated admin requests.
 	 * @dataProvider provider_unrelated_requests
 	 *
@@ -572,11 +625,13 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsApiClient $api_client    API client double.
 	 * @param bool                 $valid_account Whether the account is valid for admin navigation.
 	 * @param bool                 $native_owner  Whether native owns the payments runtime.
+	 * @param bool                 $plugin_owner  Whether the WooPayments plugin owns the payments runtime.
 	 * @return WooPaymentsOnboardingRedirect
 	 */
-	private function create_onboarding_redirect( WooPaymentsApiClient $api_client, bool $valid_account, bool $native_owner ): WooPaymentsOnboardingRedirect {
+	private function create_onboarding_redirect( WooPaymentsApiClient $api_client, bool $valid_account, bool $native_owner, bool $plugin_owner = false ): WooPaymentsOnboardingRedirect {
 		$arbiter = $this->createMock( NativePaymentsRuntimeArbiter::class );
 		$arbiter->method( 'should_native_register' )->willReturn( $native_owner );
+		$arbiter->method( 'is_plugin_runtime_active' )->willReturn( $plugin_owner );
 		$account_service = $this->createMock( WooPaymentsAccountService::class );
 		$account_service->method( 'has_valid_account_for_admin_navigation' )->willReturn( $valid_account );
 
@@ -592,12 +647,13 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 	 * @param bool $connected     Whether the WordPress.com connection works.
 	 * @param bool $valid_account Whether the account is valid for admin navigation.
 	 * @param bool $native_owner  Whether native owns the payments runtime.
+	 * @param bool $plugin_owner  Whether the WooPayments plugin owns the payments runtime.
 	 * @return WooPaymentsController&object{resolutions:int}
 	 */
-	private function create_redirecting_controller( bool $connected, bool $valid_account, bool $native_owner = true ): WooPaymentsController {
+	private function create_redirecting_controller( bool $connected, bool $valid_account, bool $native_owner = true, bool $plugin_owner = false ): WooPaymentsController {
 		$api_client = $this->createMock( WooPaymentsApiClient::class );
 		$api_client->method( 'is_available' )->willReturn( $connected );
-		$redirect = $this->create_onboarding_redirect( $api_client, $valid_account, $native_owner );
+		$redirect = $this->create_onboarding_redirect( $api_client, $valid_account, $native_owner, $plugin_owner );
 
 		$controller = new class( $redirect ) extends WooPaymentsController {
 			/**

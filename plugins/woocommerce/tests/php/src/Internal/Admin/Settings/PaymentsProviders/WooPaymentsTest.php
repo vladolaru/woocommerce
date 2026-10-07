@@ -251,10 +251,11 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$url = rawurldecode( $this->sut->get_settings_url( $fake_gateway ) );
-
-		$this->assertStringContainsString( 'section=woocommerce_payments', $url );
-		$this->assertStringNotContainsString( 'path=/woopayments/settings', $url );
+		// The gateway's own link, as PaymentGateway::get_settings_url() returns it (with the Payments settings `from`).
+		$this->assertSame(
+			'https://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments&from=' . Payments::FROM_PAYMENTS_SETTINGS,
+			$this->sut->get_settings_url( $fake_gateway )
+		);
 	}
 
 	/**

@@ -220,6 +220,14 @@ class WooPaymentsOnboardingRedirect {
 		$this->decided = true;
 
 		if ( ! $this->arbiter->should_native_register() ) {
+			// While the plugin owns the runtime the native routes are not served: a native settings link opens the plugin's
+			// settings page, the URL WooPayments::get_settings_url() gives there (client 11.1.0
+			// `class-wc-payments-admin-settings.php:32-36`). The section link itself carries no path, so it is left alone.
+			if ( self::PATH_SETTINGS === $guarded_path && str_starts_with( $requested_path, self::PATH_SETTINGS ) && $this->arbiter->is_plugin_runtime_active() ) {
+				wp_safe_redirect( Utils::wc_payments_settings_url( null, array( 'section' => self::LEGACY_SETTINGS_SECTION ) ) );
+				exit;
+			}
+
 			return;
 		}
 
