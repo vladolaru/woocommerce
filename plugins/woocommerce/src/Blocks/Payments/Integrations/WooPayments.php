@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionService;
 
@@ -18,16 +19,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWo
  * @since 11.0.0
  */
 final class WooPayments extends AbstractPaymentMethodType {
-
-	/**
-	 * Stripe.js script handle.
-	 */
-	private const STRIPE_SCRIPT_HANDLE = 'stripe';
-
-	/**
-	 * Stripe.js script URL.
-	 */
-	private const STRIPE_SCRIPT_URL = 'https://js.stripe.com/v3/';
 
 	/**
 	 * Checkout Blocks script handle.
@@ -182,14 +173,14 @@ final class WooPayments extends AbstractPaymentMethodType {
 
 		$handles = array();
 		if ( ! $this->is_blocks_cart_only_surface() ) {
-			$this->register_stripe_script();
+			WooPaymentsFrontendAssets::register_stripe_script();
 			// The card script's asset file lists this handle: FingerprintJS is a build external.
 			$this->checkout_bridge->register_fingerprint_script();
 
 			$this->asset_api->register_script(
 				self::PAYMENT_METHOD_SCRIPT_HANDLE,
 				'assets/client/blocks/wc-payment-method-woopayments.js',
-				array_merge( array( self::STRIPE_SCRIPT_HANDLE, self::CHECKOUT_BLOCKS_SCRIPT_HANDLE ), $this->register_common_scripts( true ) )
+				array_merge( array( WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE, self::CHECKOUT_BLOCKS_SCRIPT_HANDLE ), $this->register_common_scripts( true ) )
 			);
 			$this->asset_api->register_style(
 				self::PAYMENT_METHOD_SCRIPT_HANDLE,
@@ -220,11 +211,11 @@ final class WooPayments extends AbstractPaymentMethodType {
 		}
 
 		if ( $this->is_base_gateway_integration() && $this->should_enqueue_express_checkout_assets() ) {
-			$this->register_stripe_script();
+			WooPaymentsFrontendAssets::register_stripe_script();
 			$this->asset_api->register_script(
 				self::EXPRESS_CHECKOUT_SCRIPT_HANDLE,
 				'assets/client/blocks/wc-payment-method-woopayments-express-checkout.js',
-				array_merge( array( self::STRIPE_SCRIPT_HANDLE, self::CHECKOUT_BLOCKS_SCRIPT_HANDLE ), $this->register_common_scripts( false ) )
+				array_merge( array( WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE, self::CHECKOUT_BLOCKS_SCRIPT_HANDLE ), $this->register_common_scripts( false ) )
 			);
 			$this->asset_api->register_style(
 				self::EXPRESS_CHECKOUT_SCRIPT_HANDLE,
@@ -401,18 +392,6 @@ final class WooPayments extends AbstractPaymentMethodType {
 		}
 
 		return array_keys( $handles );
-	}
-
-	/**
-	 * Register Stripe.js for the Blocks payment element.
-	 */
-	private function register_stripe_script(): void {
-		if ( wp_script_is( self::STRIPE_SCRIPT_HANDLE, 'registered' ) ) {
-			return;
-		}
-
-		// phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion
-		wp_register_script( self::STRIPE_SCRIPT_HANDLE, self::STRIPE_SCRIPT_URL, array(), null, true );
 	}
 
 	/**

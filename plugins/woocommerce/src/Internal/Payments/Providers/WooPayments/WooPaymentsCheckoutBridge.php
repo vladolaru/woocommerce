@@ -55,11 +55,6 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	private const CLASSIC_STYLE_HANDLE = 'wc-woopayments-checkout';
 
 	/**
-	 * Stripe.js script handle.
-	 */
-	private const STRIPE_SCRIPT_HANDLE = 'stripe';
-
-	/**
 	 * Core's tokenization-form.js handle, registered by WC_Payment_Gateway::tokenization_script().
 	 */
 	private const TOKENIZATION_FORM_SCRIPT_HANDLE = 'woocommerce-tokenization-form';
@@ -971,7 +966,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		}
 
 		if ( $this->should_expose_checkout_surface() ) {
-			wp_enqueue_script( self::STRIPE_SCRIPT_HANDLE );
+			wp_enqueue_script( WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE );
 		}
 	}
 
@@ -1020,10 +1015,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 * @return void
 	 */
 	public function register_classic_assets( array $supports = array() ): void {
-		if ( ! wp_script_is( self::STRIPE_SCRIPT_HANDLE, 'registered' ) ) {
-			// phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion
-			wp_register_script( self::STRIPE_SCRIPT_HANDLE, 'https://js.stripe.com/v3/', array(), null, true );
-		}
+		WooPaymentsFrontendAssets::register_stripe_script();
 
 		$suffix = Constants::is_true( 'SCRIPT_DEBUG' ) ? '' : '.min';
 
@@ -1032,7 +1024,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		$this->register_fingerprint_script();
 
 		if ( ! wp_script_is( self::CLASSIC_SCRIPT_HANDLE, 'registered' ) ) {
-			$dependencies = array( 'jquery', 'wc-checkout', self::STRIPE_SCRIPT_HANDLE, self::FINGERPRINT_SCRIPT_HANDLE, WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE );
+			$dependencies = array( 'jquery', 'wc-checkout', WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE, self::FINGERPRINT_SCRIPT_HANDLE, WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE );
 			// tokenization-form.js must listen before this script mounts the card element and fires
 			// `wc-credit-card-form-init`, on any theme (client 11.1.0 includes/class-wc-payments-checkout.php:130-131).
 			if ( in_array( PaymentGatewayFeature::TOKENIZATION, $supports, true ) ) {

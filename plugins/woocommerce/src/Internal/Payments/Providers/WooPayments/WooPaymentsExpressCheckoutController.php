@@ -22,10 +22,6 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 
 	private const CLASSIC_EXPRESS_CHECKOUT_STYLE_HANDLE = 'wc-woopayments-express-checkout';
 
-	private const STRIPE_SCRIPT_HANDLE = 'stripe';
-
-	private const STRIPE_SCRIPT_URL = 'https://js.stripe.com/v3/';
-
 	/**
 	 * Runtime owner arbiter.
 	 *
@@ -285,7 +281,7 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	 * Register the classic express checkout assets; this controller is their only registrar.
 	 */
 	private function register_classic_express_checkout_assets(): void {
-		$this->register_stripe_script();
+		WooPaymentsFrontendAssets::register_stripe_script();
 
 		if ( ! wp_script_is( self::CLASSIC_EXPRESS_CHECKOUT_SCRIPT_HANDLE, 'registered' ) ) {
 			$suffix = defined( 'SCRIPT_DEBUG' ) && SCRIPT_DEBUG ? '' : '.min';
@@ -294,7 +290,7 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 				WC()->plugin_url() . '/assets/js/frontend/woopayments-express-checkout' . $suffix . '.js',
 				// wp-hooks on every surface: the extension filters (WooCommerce Subscriptions, Deposits, Product Bundles) run
 				// through it, as the client 11.1.0 bundle that imports @wordpress/hooks does.
-				array( 'jquery', self::STRIPE_SCRIPT_HANDLE, 'wp-api-fetch', 'wp-hooks', 'wp-i18n' ),
+				array( 'jquery', WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE, 'wp-api-fetch', 'wp-hooks', 'wp-i18n' ),
 				defined( 'WC_VERSION' ) ? WC_VERSION : '',
 				true
 			);
@@ -310,18 +306,6 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 			);
 			wp_style_add_data( self::CLASSIC_EXPRESS_CHECKOUT_STYLE_HANDLE, 'rtl', 'replace' );
 		}
-	}
-
-	/**
-	 * Register Stripe.js when the card checkout bridge is not active on the current surface.
-	 */
-	private function register_stripe_script(): void {
-		if ( wp_script_is( self::STRIPE_SCRIPT_HANDLE, 'registered' ) ) {
-			return;
-		}
-
-		// phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion
-		wp_register_script( self::STRIPE_SCRIPT_HANDLE, self::STRIPE_SCRIPT_URL, array(), null, true );
 	}
 
 	/**

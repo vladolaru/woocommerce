@@ -27,10 +27,6 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 
 	private const CART_BLOCK_SCRIPT_HANDLE = 'wc-woopayments-cart-block-payment-method-messaging';
 
-	private const STRIPE_SCRIPT_HANDLE = 'stripe';
-
-	private const STRIPE_SCRIPT_URL = 'https://js.stripe.com/v3/';
-
 	private const STYLE_HANDLE = 'wc-woopayments-payment-method-messaging';
 
 	private const CART_BLOCK_STYLE_HANDLE = 'wc-woopayments-cart-block-payment-method-messaging';
@@ -326,10 +322,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	 * @param bool $is_cart_block Whether the current surface is the cart block.
 	 */
 	private function register_site_messaging_assets( bool $is_cart_block ): void {
-		if ( ! wp_script_is( self::STRIPE_SCRIPT_HANDLE, 'registered' ) ) {
-			// phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion
-			wp_register_script( self::STRIPE_SCRIPT_HANDLE, self::STRIPE_SCRIPT_URL, array(), null, true );
-		}
+		WooPaymentsFrontendAssets::register_stripe_script();
 
 		if ( $is_cart_block ) {
 			$this->register_cart_block_assets();
@@ -344,7 +337,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 			wp_register_script(
 				self::SCRIPT_HANDLE,
 				WC()->plugin_url() . '/assets/js/frontend/woopayments-payment-method-messaging' . $suffix . '.js',
-				array( 'jquery', self::STRIPE_SCRIPT_HANDLE, WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE ),
+				array( 'jquery', WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE, WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE ),
 				WC_VERSION,
 				true
 			);
@@ -370,7 +363,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 				self::CART_BLOCK_SCRIPT_HANDLE,
 				WC()->plugin_url() . '/assets/client/blocks/wc-woopayments-cart-block-payment-method-messaging.js',
 				array(
-					self::STRIPE_SCRIPT_HANDLE,
+					WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE,
 					'react-jsx-runtime',
 					'wc-blocks-checkout',
 					'wp-data',
