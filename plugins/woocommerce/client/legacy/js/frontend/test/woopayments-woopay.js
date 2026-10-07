@@ -1573,19 +1573,55 @@ describe( 'WooPayments WooPay checkout', () => {
 			consoleSpy.mockRestore();
 		} );
 
-		test.each( [
-			[ 'disabled direct flag', '<a href="#checkout">Checkout</a>' ],
-			[ 'missing checkout href', '<div class="wp-block-woocommerce-proceed-to-checkout-block">Checkout</div>' ],
-		] )( 'preserves browser behavior for %s', async ( name, markup ) => {
-			configureDirectCheckout( markup );
-			if ( name === 'disabled direct flag' ) {
-				window.wcpay_core_woopay_config.isWooPayDirectCheckoutEnabled = false;
+		test( 'leaves the cart checkout link to the browser when direct checkout is off', async () => {
+			// A hash href keeps jsdom from attempting a real navigation once the click is left to the browser.
+			configureDirectCheckout(
+				'<div class="wc-proceed-to-checkout"><a class="checkout-button" href="#checkout">Checkout</a></div>'
+			);
+			window.wcpay_core_woopay_config.isWooPayDirectCheckoutEnabled = false;
+			const postMessage = installConnect();
+			const { __test__ } = require( '../woopayments-woopay' );
+			const navigate = jest.fn();
+			__test__.setNavigate( navigate );
+
+			// The same arming sequence as the enabled flow: Connect ready, a logged-in answer, then a cart refresh. With the
+			// flag off nothing creates the Connect iframe, so it is loaded only if it exists.
+			const connectIframe = document.getElementById( 'woopay-connect-iframe' );
+			if ( connectIframe ) {
+				connectIframe.dispatchEvent( new window.Event( 'load' ) );
 			}
+			await flushPromises();
+			emitConnectMessage( 'get_is_user_logged_in_success', true );
+			await flushPromises();
+			bodyEventHandlers.updated_cart_totals();
+
+			const event = new window.MouseEvent( 'click', {
+				bubbles: true,
+				cancelable: true,
+			} );
+			document.querySelector( '.checkout-button' ).dispatchEvent( event );
+			await flushPromises();
+
+			expect( event.defaultPrevented ).toBe( false );
+			expect( postMessage ).not.toHaveBeenCalledWith(
+				{ action: 'getEncryptedData' },
+				expect.anything()
+			);
+			expect( postMessage ).not.toHaveBeenCalledWith(
+				{ action: 'isWooPayReachable' },
+				expect.anything()
+			);
+			expect( global.jQuery.post ).not.toHaveBeenCalled();
+			expect( navigate ).not.toHaveBeenCalled();
+		} );
+
+		test( 'leaves a proceed-to-checkout control without a link to the browser', async () => {
+			configureDirectCheckout(
+				'<div class="wp-block-woocommerce-proceed-to-checkout-block">Checkout</div>'
+			);
 			installConnect();
 			require( '../woopayments-woopay' );
-			if ( name === 'missing checkout href' ) {
-				await initializeDirectCheckout( false );
-			}
+			await initializeDirectCheckout( false );
 			const event = new window.MouseEvent( 'click', {
 				bubbles: true,
 				cancelable: true,
