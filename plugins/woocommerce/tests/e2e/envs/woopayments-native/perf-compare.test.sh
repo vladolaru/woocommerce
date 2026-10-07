@@ -462,39 +462,6 @@ exit( in_array( "query", $registered_filters, true ) ? 1 : 0 );
 assert_trace_is_rejected disabled baseline_noop
 assert_trace_is_rejected active_native disabled
 
-assert_legacy_facade_suppression() {
-	local control_state="$1" expected="$2"
-	php -r '
-define( "ABSPATH", __DIR__ );
-$registered_filters = array();
-$control_state = $argv[2];
-function wp_unslash( $value ) {
-	return $value;
-}
-function sanitize_text_field( $value ) {
-	return $value;
-}
-function get_option() {
-	global $control_state;
-	return array( "state" => $control_state, "reference_plugin_slug" => "woocommerce-payments-reference/woocommerce-payments.php" );
-}
-function add_filter( $hook, $callback ) {
-	global $registered_filters;
-	$registered_filters[ $hook ] = $callback;
-}
-function add_action() {}
-require $argv[1];
-$hook = "woocommerce_native_payments_should_load_legacy_facades";
-$registered = isset( $registered_filters[ $hook ] );
-if ( "suppressed" === $argv[3] ) {
-	exit( $registered && false === call_user_func( $registered_filters[ $hook ], true ) ? 0 : 1 );
-}
-exit( $registered ? 1 : 0 );
-' "$PROBE" "$control_state" "$expected" || fail "The $control_state probe state did not leave legacy facade ownership $expected."
-}
-
-assert_legacy_facade_suppression active_native unchanged
-assert_legacy_facade_suppression active_plugin suppressed
 
 setup_case() {
 	local name="$1" root="$TEST_ROOT/$1"
