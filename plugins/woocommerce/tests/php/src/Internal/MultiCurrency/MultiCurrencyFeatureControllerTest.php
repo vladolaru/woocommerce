@@ -107,6 +107,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		$marker = MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION;
 		$option = MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION;
 		update_option( $marker, NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
+		// The plugin stores a list of currency codes (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`).
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 
 		// Request A hands over; the merchant then turns Multi-Currency off.

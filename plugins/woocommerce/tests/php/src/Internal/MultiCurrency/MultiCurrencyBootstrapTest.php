@@ -127,6 +127,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
 
 		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION ), 'Later requests then read the marker from the autoloaded options.' );
+		$this->assertArrayHasKey( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION, wp_load_alloptions() );
 		$this->assertFalse( get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, false ) );
 	}
 
