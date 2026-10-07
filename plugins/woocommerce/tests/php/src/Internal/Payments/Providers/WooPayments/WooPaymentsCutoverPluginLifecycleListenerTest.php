@@ -47,7 +47,7 @@ class WooPaymentsCutoverPluginLifecycleListenerTest extends WC_Unit_Test_Case {
 	 * Remove the listener's hooks and the container replacement.
 	 */
 	public function tearDown(): void {
-		remove_action( 'activate_' . NativePaymentsRuntimeArbiter::PLUGIN_FILE, array( $this->sut, 'guard_woopayments_activation' ) );
+		remove_action( 'activate_plugin', array( $this->sut, 'guard_woopayments_activation' ) );
 		remove_action( 'activated_plugin', array( $this->sut, 'handle_plugin_activated' ), 10 );
 		remove_action( 'deactivated_plugin', array( $this->sut, 'handle_plugin_deactivated' ), 10 );
 		wc_get_container()->reset_replacement( WooPaymentsCutoverController::class );
@@ -66,6 +66,32 @@ class WooPaymentsCutoverPluginLifecycleListenerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A network-wide WooPayments deactivation reaches the controller as network-wide.
+	 */
+	public function test_network_deactivation_reaches_the_controller_as_network_wide(): void {
+		$this->controller->expects( $this->once() )
+			->method( 'handle_plugin_deactivated' )
+			->with( NativePaymentsRuntimeArbiter::PLUGIN_FILE, true );
+
+		do_action( 'deactivated_plugin', NativePaymentsRuntimeArbiter::PLUGIN_FILE, true );
+	}
+
+	/**
+	 * @testdox A caller firing the lifecycle hooks with only the plugin path reaches the controller as a site-only change.
+	 */
+	public function test_one_argument_lifecycle_hooks_reach_the_controller_as_site_only(): void {
+		$this->controller->expects( $this->once() )
+			->method( 'handle_plugin_activated' )
+			->with( NativePaymentsRuntimeArbiter::PLUGIN_FILE, false );
+		$this->controller->expects( $this->once() )
+			->method( 'handle_plugin_deactivated' )
+			->with( NativePaymentsRuntimeArbiter::PLUGIN_FILE, false );
+
+		do_action( 'activated_plugin', NativePaymentsRuntimeArbiter::PLUGIN_FILE ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fires the core hook with one argument, as some callers do.
+		do_action( 'deactivated_plugin', NativePaymentsRuntimeArbiter::PLUGIN_FILE ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fires the core hook with one argument, as some callers do.
+	}
+
+	/**
 	 * @testdox A WooPayments activation in any request reaches the controller, which records a rollback.
 	 */
 	public function test_activation_reaches_the_controller(): void {
@@ -77,19 +103,42 @@ class WooPaymentsCutoverPluginLifecycleListenerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The WooPayments activation hook reaches the controller's guard.
+	 * @testdox Activating WooPayments from its own folder or a renamed one reaches the controller's guard, as the arbiter detects either.
+	 * @dataProvider woopayments_plugin_files
+	 *
+	 * @param string $plugin_file Plugin file being activated.
 	 */
-	public function test_activation_hook_reaches_the_guard(): void {
+	public function test_woopayments_activation_reaches_the_guard( string $plugin_file ): void {
 		$this->controller->expects( $this->once() )->method( 'guard_woopayments_activation' );
 
-		do_action( 'activate_' . NativePaymentsRuntimeArbiter::PLUGIN_FILE );
+		do_action( 'activate_plugin', $plugin_file, false );
 	}
 
 	/**
-	 * @testdox The listener registers on WordPress's exact WooPayments activation hook and the two plugin lifecycle hooks.
+	 * @return array<string,array{string}>
+	 */
+	public function woopayments_plugin_files(): array {
+		return array(
+			'canonical folder' => array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ),
+			'renamed folder'   => array( 'renamed-wcpay/woocommerce-payments.php' ),
+		);
+	}
+
+	/**
+	 * @testdox Activating another plugin does not reach the guard.
+	 */
+	public function test_other_plugin_activation_skips_the_guard(): void {
+		$this->controller->expects( $this->never() )->method( 'guard_woopayments_activation' );
+
+		do_action( 'activate_plugin', 'woocommerce-payments-dev-tools/woocommerce-payments-dev-tools.php', false );
+		do_action( 'activate_plugin', 'woocommerce-payments.php-helper/helper.php', false );
+	}
+
+	/**
+	 * @testdox The listener registers on the generic activation hook and the two plugin lifecycle hooks.
 	 */
 	public function test_registers_the_lifecycle_hooks(): void {
-		$this->assertSame( 10, has_action( 'activate_' . NativePaymentsRuntimeArbiter::PLUGIN_FILE, array( $this->sut, 'guard_woopayments_activation' ) ) );
+		$this->assertSame( 10, has_action( 'activate_plugin', array( $this->sut, 'guard_woopayments_activation' ) ) );
 		$this->assertSame( 10, has_action( 'activated_plugin', array( $this->sut, 'handle_plugin_activated' ) ) );
 		$this->assertSame( 10, has_action( 'deactivated_plugin', array( $this->sut, 'handle_plugin_deactivated' ) ) );
 	}
