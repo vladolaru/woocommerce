@@ -157,8 +157,20 @@
 
 @media (forced-colors: active) {
 
+	/* The themes set the button apart by its background, which forced colors
+	 * repaints; give it an edge instead. */
+	.woopay-express-button {
+		border: 1px solid ButtonText;
+	}
+
 	.woopay-express-button:focus-visible {
 		outline: 2px solid ButtonText;
+	}
+
+	/* The logo paths carry a fixed fill, which forced colors keeps while it
+	 * repaints the button, so the logo vanished. */
+	.woopay-express-button svg path {
+		fill: ButtonText;
 	}
 
 	.woopay-button-separator {
