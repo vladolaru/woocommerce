@@ -806,11 +806,6 @@ export const WooPaymentsTransactionsPage = () => {
 						total={ totalCount || authorizations.length }
 						isLoading={ isLoading }
 						// Client 11.1.0 `transactions/uncaptured/index.tsx:257-272`: no search on this card.
-						search={ false }
-						searchLabel={ __(
-							'Search uncaptured transactions',
-							'woocommerce'
-						) }
 						title={ __( 'Uncaptured transactions', 'woocommerce' ) }
 						summary={ summaryItems }
 						// Client 11.1.0 `transactions/uncaptured/index.tsx:81-86`.

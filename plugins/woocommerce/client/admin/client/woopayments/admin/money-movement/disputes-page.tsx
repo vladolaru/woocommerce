@@ -805,8 +805,6 @@ export const WooPaymentsDisputesPage = () => {
 					total={ summaryCount ?? ( totalCount || disputes.length ) }
 					isLoading={ isLoading }
 					// Client 11.1.0 `disputes/index.tsx:527-551`: the disputes card has no search.
-					search={ false }
-					searchLabel={ __( 'Search disputes', 'woocommerce' ) }
 					title={ __( 'Disputes', 'woocommerce' ) }
 					summary={ summaryItems }
 					// Client 11.1.0 `disputes/index.tsx:139-146`: the action column is the numeric one.

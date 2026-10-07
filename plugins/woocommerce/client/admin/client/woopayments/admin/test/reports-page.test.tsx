@@ -33,6 +33,7 @@ import {
 	getFilterPicker,
 	getFilterPickerChoices,
 } from './helpers/filter-picker';
+import { ZERO_DECIMAL_CURRENCIES } from './helpers/zero-decimal-currencies';
 
 // The export raises snackbars; other stores keep the real dispatch.
 jest.mock( '@wordpress/data', () => {
@@ -386,6 +387,7 @@ describe( 'WooPaymentsReportsPage', () => {
 				woopaymentsSettings: {
 					// The server preloads the account's default currency in lower case (WooPaymentsAccountService::get_account_default_currency()).
 					accountDefaultCurrency: 'usd',
+					zeroDecimalCurrencies: ZERO_DECIMAL_CURRENCIES,
 					balanceReportIdentity: {
 						businessName: 'Native Merchant LLC',
 						accountId: 'acct_native_123',

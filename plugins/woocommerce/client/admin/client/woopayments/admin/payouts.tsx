@@ -587,8 +587,6 @@ export const WooPaymentsPayouts = () => {
 					total={ summaryCount ?? ( totalCount || payouts.length ) }
 					isLoading={ isLoading }
 					// Client 11.1.0 `deposits/list/index.tsx:291-315`: the payouts card has no search.
-					search={ false }
-					searchLabel={ __( 'Search payouts', 'woocommerce' ) }
 					title={ __( 'Payout history', 'woocommerce' ) }
 					summary={ summaryItems }
 					// Client 11.1.0 `deposits/list/index.tsx:67-72`.

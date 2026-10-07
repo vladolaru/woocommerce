@@ -470,8 +470,6 @@ export const WooPaymentsTransactionsList = (
 				onChangeView={ handleViewChange }
 				total={ totalCount }
 				isLoading={ isLoading }
-				search={ false }
-				searchLabel={ __( 'Search transactions', 'woocommerce' ) }
 				title={ title }
 				summary={ summaryItems }
 				// Client 11.1.0 `transactions/list/index.tsx:173-222`: the `isNumeric` columns.

@@ -41,7 +41,6 @@ const renderList = (
 		total={ 4 }
 		isLoading={ isLoading }
 		title="Transactions"
-		searchLabel="Search transactions"
 	/>
 );
 

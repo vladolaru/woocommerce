@@ -196,12 +196,10 @@ const mockUseWooPayStoreLogo = jest.fn();
 const mockUseCurrentProtectionLevel = jest.fn();
 const mockUseAdvancedFraudProtectionSettings = jest.fn();
 const mockUseAccountCommunicationsEmail = jest.fn();
-const mockUseAccountDomesticCurrency = jest.fn();
 const mockUseSelectedPaymentMethod = jest.fn();
 const mockUseUnselectedPaymentMethod = jest.fn();
 const mockUseTestModeOnboarding = jest.fn();
 const mockUseDevMode = jest.fn();
-const mockUseWCPaySubscriptions = jest.fn();
 const mockUseStripeBilling = jest.fn();
 const mockUseStripeBillingMigration = jest.fn();
 const mockUseDepositDelayDays = jest.fn();
@@ -262,12 +260,10 @@ jest.mock( '../data/hooks', () => ( {
 	useAdvancedFraudProtectionSettings: () =>
 		mockUseAdvancedFraudProtectionSettings(),
 	useAccountCommunicationsEmail: () => mockUseAccountCommunicationsEmail(),
-	useAccountDomesticCurrency: () => mockUseAccountDomesticCurrency(),
 	useSelectedPaymentMethod: () => mockUseSelectedPaymentMethod(),
 	useUnselectedPaymentMethod: () => mockUseUnselectedPaymentMethod(),
 	useTestModeOnboarding: () => mockUseTestModeOnboarding(),
 	useDevMode: () => mockUseDevMode(),
-	useWCPaySubscriptions: () => mockUseWCPaySubscriptions(),
 	useStripeBilling: () => mockUseStripeBilling(),
 	useStripeBillingMigration: () => mockUseStripeBillingMigration(),
 	useDepositDelayDays: () => mockUseDepositDelayDays(),
@@ -521,7 +517,6 @@ const setHookDefaults = () => {
 		'owner@example.com',
 		noop,
 	] );
-	mockUseAccountDomesticCurrency.mockReturnValue( 'USD' );
 	mockUseSelectedPaymentMethod.mockReturnValue( [
 		[ 'card', 'link', 'amazon_pay', 'affirm' ],
 		noop,
@@ -532,7 +527,6 @@ const setHookDefaults = () => {
 	] );
 	mockUseTestModeOnboarding.mockReturnValue( false );
 	mockUseDevMode.mockReturnValue( false );
-	mockUseWCPaySubscriptions.mockReturnValue( [ true, true, noop ] );
 	mockUseStripeBilling.mockReturnValue( [ false, noop ] );
 	mockUseStripeBillingMigration.mockReturnValue( [
 		false,

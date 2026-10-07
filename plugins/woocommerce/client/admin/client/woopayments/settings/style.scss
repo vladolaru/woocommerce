@@ -437,43 +437,6 @@
 	max-width: $woopayments-field-max-width;
 }
 
-.woopayments-settings-location-grid {
-	display: grid;
-	grid-template-columns: repeat(3, minmax(0, 1fr));
-	gap: $gap-small;
-	margin: $gap-smaller 0 $gap;
-
-	@include breakpoint("<782px") {
-		grid-template-columns: 1fr;
-	}
-}
-
-.woopayments-settings-location-fieldset {
-	min-width: 0;
-	margin: $gap-smaller 0 $gap;
-	padding: 0;
-	border: 0;
-}
-
-.woopayments-settings-logo-upload {
-	margin-top: $gap;
-
-	label {
-		display: block;
-		margin-bottom: $gap-smaller;
-		font-weight: 500;
-	}
-
-	input[type="file"] {
-		display: block;
-		max-width: 100%;
-	}
-
-	.components-notice {
-		margin: $gap-small 0 0;
-	}
-}
-
 .woopayments-settings-modal {
 	display: flex;
 	flex-direction: column;
@@ -584,18 +547,6 @@
 			// stylelint-disable-next-line declaration-property-value-disallowed-list -- sized by the hosted form's content.
 			min-height: 560px;
 		}
-	}
-}
-
-.woopayments-settings-inline-status {
-	display: flex;
-	align-items: center;
-	gap: $gap-smaller;
-	margin: $gap-smaller 0 0;
-	color: $gray-700;
-
-	.components-button {
-		margin-inline-start: $gap-smaller;
 	}
 }
 

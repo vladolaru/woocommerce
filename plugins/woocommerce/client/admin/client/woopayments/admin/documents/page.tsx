@@ -523,8 +523,6 @@ export const WooPaymentsDocumentsPage = () => {
 				fields={ fields }
 				rows={ documents }
 				isLoading={ isLoading }
-				search={ false }
-				searchLabel={ __( 'Search documents', 'woocommerce' ) }
 				title={ __( 'Documents', 'woocommerce' ) }
 				summary={
 					isLoading

@@ -146,12 +146,6 @@ export function updateIsMultiCurrencyEnabled( isEnabled: boolean ) {
 	return updateSettingsValues( { is_multi_currency_enabled: isEnabled } );
 }
 
-export function updateIsWCPaySubscriptionsEnabled( isEnabled: boolean ) {
-	return updateSettingsValues( {
-		is_wcpay_subscriptions_enabled: isEnabled,
-	} );
-}
-
 export function updateIsStripeBillingEnabled( isEnabled: boolean ) {
 	return updateSettingsValues( { is_stripe_billing_enabled: isEnabled } );
 }

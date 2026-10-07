@@ -149,11 +149,6 @@ export const useAccountCommunicationsEmail = makeSettingHook(
 	'updateAccountCommunicationsEmail'
 );
 
-export const useAccountDomesticCurrency = () =>
-	useRegisteredSelect( ( select ) =>
-		select( STORE_NAME ).getAccountDomesticCurrency()
-	);
-
 export const useSelectedPaymentMethod = () => {
 	const { updateSelectedPaymentMethod } = useRegisteredDispatch();
 	const enabledPaymentMethodIds = useRegisteredSelect( ( select ) =>
@@ -183,22 +178,6 @@ export const useDevMode = () =>
 		( select ) => select( STORE_NAME ).getIsDevModeEnabled(),
 		[]
 	);
-
-export const useWCPaySubscriptions = () => {
-	const { updateIsWCPaySubscriptionsEnabled } = useRegisteredDispatch();
-	const isWCPaySubscriptionsEnabled = useRegisteredSelect( ( select ) =>
-		select( STORE_NAME ).getIsWCPaySubscriptionsEnabled()
-	);
-	const isWCPaySubscriptionsEligible = useRegisteredSelect( ( select ) =>
-		select( STORE_NAME ).getIsWCPaySubscriptionsEligible()
-	);
-
-	return [
-		isWCPaySubscriptionsEnabled,
-		isWCPaySubscriptionsEligible,
-		updateIsWCPaySubscriptionsEnabled,
-	];
-};
 
 export const useStripeBilling = makeSettingHook(
 	'getIsStripeBillingEnabled',

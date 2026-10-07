@@ -390,8 +390,6 @@ export const WooPaymentsBlockedTransactions = () => {
 				onChangeView={ handleViewChange }
 				total={ totalRows }
 				isLoading={ isLoading }
-				search={ false }
-				searchLabel={ title }
 				title={ title }
 				summary={ summaryItems }
 				// Client 11.1.0 `transactions/blocked/columns.tsx:42-47`.

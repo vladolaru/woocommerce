@@ -1,23 +1,10 @@
-const ZERO_DECIMAL_PROVIDER_CURRENCY_CODES = new Set( [
-	'BIF',
-	'CLP',
-	'DJF',
-	'GNF',
-	'JPY',
-	'KMF',
-	'KRW',
-	'MGA',
-	'PYG',
-	'RWF',
-	'VND',
-	'VUV',
-	'XAF',
-	'XOF',
-	'XPF',
-] );
+/**
+ * Internal dependencies
+ */
+import { isZeroDecimalCurrency } from './admin/currency-format';
 
-export const isWooPaymentsZeroDecimalProviderCurrency = ( currency: string ) =>
-	ZERO_DECIMAL_PROVIDER_CURRENCY_CODES.has( currency.toUpperCase() );
+// The server's list, preloaded as `woopaymentsSettings.zeroDecimalCurrencies`, like every other admin money path.
+export const isWooPaymentsZeroDecimalProviderCurrency = isZeroDecimalCurrency;
 
 export const getWooPaymentsAmountFromMinorUnits = (
 	amount: number,

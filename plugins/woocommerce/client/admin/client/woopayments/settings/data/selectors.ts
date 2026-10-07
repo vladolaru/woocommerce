@@ -95,10 +95,6 @@ export const getAccountBusinessSupportPhone = ( state: SettingsRootState ) => {
 	return getSettings( state ).account_business_support_phone || '';
 };
 
-export const getAccountDomesticCurrency = ( state: SettingsRootState ) => {
-	return getSettings( state ).account_domestic_currency || '';
-};
-
 export const getDepositScheduleInterval = ( state: SettingsRootState ) => {
 	return getSettings( state ).deposit_schedule_interval || '';
 };
@@ -198,14 +194,6 @@ export const getSavingError = ( state: SettingsRootState ) => {
 
 export const getIsCardPresentEligible = ( state: SettingsRootState ) => {
 	return getSettings( state ).is_card_present_eligible || false;
-};
-
-export const getIsWCPaySubscriptionsEnabled = ( state: SettingsRootState ) => {
-	return getSettings( state ).is_wcpay_subscriptions_enabled || false;
-};
-
-export const getIsWCPaySubscriptionsEligible = ( state: SettingsRootState ) => {
-	return getSettings( state ).is_wcpay_subscriptions_eligible || false;
 };
 
 export const getIsStripeBillingEnabled = ( state: SettingsRootState ) => {

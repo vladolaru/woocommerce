@@ -24,8 +24,6 @@ export type WooPaymentsMoneyMovementDataViewsProps<
 	onChangeView: ( view: View ) => void;
 	total: number;
 	isLoading: boolean;
-	search?: boolean;
-	searchLabel: string;
 	/** The card title, like the client's `TableCard` `title`. */
 	title?: string;
 	/** The card footer's summary, like the client's `TableCard` `summary`. */
@@ -33,8 +31,6 @@ export type WooPaymentsMoneyMovementDataViewsProps<
 	/** Fields aligned to the end, like the client's `isNumeric` columns. */
 	numericFields?: string[];
 	toolbarActions?: ReactNode;
-	/** The empty list's message; the client's "No data to display" by default. */
-	empty?: string;
 	loadingMessage?: ReactNode;
 	getItemId?: ( item: Item ) => string;
 };
@@ -55,13 +51,10 @@ export function WooPaymentsMoneyMovementDataViews<
 	onChangeView,
 	total,
 	isLoading,
-	search = true,
-	searchLabel,
 	title,
 	summary,
 	numericFields,
 	toolbarActions,
-	empty,
 	loadingMessage,
 	getItemId,
 }: WooPaymentsMoneyMovementDataViewsProps< Item > ) {
@@ -127,8 +120,8 @@ export function WooPaymentsMoneyMovementDataViews<
 					fields={ fields }
 					data={ data }
 					isLoading={ isLoading }
-					search={ search }
-					searchLabel={ searchLabel }
+					// The lists that search do it with their own field (`transaction-search.tsx`), not DataViews' text search.
+					search={ false }
 					header={ headerContent }
 					paginationInfo={ {
 						totalItems: total,
@@ -141,9 +134,10 @@ export function WooPaymentsMoneyMovementDataViews<
 					getItemId={ resolvedGetItemId }
 					empty={
 						<p className="woocommerce-woopayments-money-movement-dataviews__empty">
-							{ empty ??
+							{
 								// Client 11.1.0 `TableCard` without `emptyMessage`: `@woocommerce/components` Table's default.
-								__( 'No data to display', 'woocommerce' ) }
+								__( 'No data to display', 'woocommerce' )
+							}
 						</p>
 					}
 				/>

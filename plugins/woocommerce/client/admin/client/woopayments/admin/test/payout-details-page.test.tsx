@@ -127,7 +127,6 @@ const mockDataViews = jest.fn(
 		fields = [],
 		header,
 		onChangeView,
-		searchLabel,
 		view = {},
 	}: {
 		data?: Array< Record< string, unknown > >;
@@ -139,18 +138,9 @@ const mockDataViews = jest.fn(
 		} >;
 		header?: ReactNode;
 		onChangeView?: ( view: Record< string, unknown > ) => void;
-		searchLabel?: string;
 		view?: { search?: string };
 	} ) => (
 		<div data-testid="money-movement-dataviews">
-			{ searchLabel && (
-				<input
-					type="search"
-					aria-label={ searchLabel }
-					value={ view.search || '' }
-					readOnly
-				/>
-			) }
 			<button
 				type="button"
 				onClick={ () =>
@@ -629,7 +619,6 @@ describe( 'WooPayments payout details admin surface', () => {
 		// Client 11.1.0 `transactions/list/index.tsx:311`: every transactions column but the payout ones.
 		expect( mockDataViews ).toHaveBeenLastCalledWith(
 			expect.objectContaining( {
-				searchLabel: 'Search transactions',
 				paginationInfo: {
 					totalItems: 3,
 					totalPages: 1,

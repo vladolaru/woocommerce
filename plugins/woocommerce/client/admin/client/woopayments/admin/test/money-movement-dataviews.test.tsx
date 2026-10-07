@@ -59,7 +59,6 @@ describe( 'WooPaymentsMoneyMovementDataViews', () => {
 				isLoading={ false }
 				title="Transactions"
 				toolbarActions={ <button type="button">Export</button> }
-				searchLabel="Search transactions"
 			/>
 		);
 
@@ -77,8 +76,7 @@ describe( 'WooPaymentsMoneyMovementDataViews', () => {
 				view,
 				onChangeView,
 				isLoading: false,
-				search: true,
-				searchLabel: 'Search transactions',
+				search: false,
 				paginationInfo: {
 					totalItems: 52,
 					totalPages: 3,
@@ -102,8 +100,6 @@ describe( 'WooPaymentsMoneyMovementDataViews', () => {
 				total={ 0 }
 				isLoading
 				loadingMessage="Loading transactions"
-				empty="No transactions found."
-				searchLabel="Search transactions"
 			/>
 		);
 
@@ -125,15 +121,13 @@ describe( 'WooPaymentsMoneyMovementDataViews', () => {
 				total={ 0 }
 				isLoading={ false }
 				loadingMessage="Loading transactions"
-				empty="No transactions found."
-				searchLabel="Search transactions"
 			/>
 		);
 
 		// DataViews shows the empty text in its own no-results area, so the
 		// wrapper passes it through rather than adding a second message.
 		expect(
-			screen.queryByText( 'No transactions found.' )
+			screen.queryByText( 'No data to display' )
 		).not.toBeInTheDocument();
 		const lastProps = mockDataViews.mock.lastCall?.[ 0 ] as
 			| { empty: ReactElement }
@@ -141,34 +135,7 @@ describe( 'WooPaymentsMoneyMovementDataViews', () => {
 		expect( lastProps ).toBeDefined();
 		const { empty } = lastProps as { empty: ReactElement };
 		render( empty );
-		expect(
-			screen.getByText( 'No transactions found.' )
-		).toBeInTheDocument();
-	} );
-
-	it( 'allows callers to replace the built-in plain-text search', () => {
-		render(
-			<WooPaymentsMoneyMovementDataViews
-				fields={ [ { id: 'date', label: 'Date' } ] }
-				rows={ [] }
-				view={ {
-					type: 'table',
-					page: 1,
-					perPage: 25,
-					fields: [ 'date' ],
-				} }
-				onChangeView={ jest.fn() }
-				total={ 0 }
-				isLoading={ false }
-				search={ false }
-				searchLabel="Search transactions"
-			/>
-		);
-
-		expect( mockDataViews ).toHaveBeenCalledWith(
-			expect.objectContaining( {
-				search: false,
-			} )
-		);
+		// Client 11.1.0 `TableCard` without `emptyMessage`: `@woocommerce/components` Table's default.
+		expect( screen.getByText( 'No data to display' ) ).toBeInTheDocument();
 	} );
 } );
