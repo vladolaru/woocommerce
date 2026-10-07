@@ -1276,6 +1276,9 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_guest_order_pay_context_needs_the_order_key( string $key, bool $expects_order ): void {
 		update_option( 'woocommerce_currency', 'USD' );
+		// A cart with its own total, so the fallback is shown to be the cart's.
+		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product( true, array( 'regular_price' => 10 ) )->get_id(), 1 );
+		WC()->cart->calculate_totals();
 		// No customer: core grants pay_for_order on such an order to every visitor (wc-user-functions.php).
 		$order = wc_create_order();
 		$order->set_currency( 'EUR' );
@@ -1304,7 +1307,9 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			$this->create_frontend_tracking_controller_for_bridge()
 		);
 
-		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config     = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$cart_total = (int) round( (float) WC()->cart->get_total( '' ) * 100 );
+		WC()->cart->empty_cart();
 
 		$this->assertTrue( current_user_can( 'pay_for_order', $order->get_id() ) );
 		if ( $expects_order ) {
@@ -1315,6 +1320,8 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			$this->assertArrayNotHasKey( 'orderId', $config );
 			$this->assertArrayNotHasKey( 'isOrderPay', $config );
 			$this->assertSame( 'USD', $config['currency'] );
+			$this->assertNotSame( 1234, $config['cartTotal'] );
+			$this->assertSame( $cart_total, $config['cartTotal'] );
 		}
 	}
 
@@ -2381,6 +2388,22 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Blocks data carries no order-pay keys for a pay-for-order link with a wrong key.
+	 */
+	public function test_blocks_data_carries_no_order_pay_keys_with_a_wrong_key(): void {
+		$order = \WC_Helper_Order::create_order( 0 );
+		wp_set_current_user( 0 );
+		$this->go_to_pay_for_order_link( $order );
+		$_GET['key'] = 'wc_order_wrong';
+
+		$data = $this->create_bridge_for_express_handlers()->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+
+		$this->assertTrue( current_user_can( 'pay_for_order', $order->get_id() ) );
+		$this->assertArrayNotHasKey( 'order_id', $data );
+		$this->assertArrayNotHasKey( 'billing_email', $data );
+	}
+
+	/**
 	 * @testdox Blocks data gives a shopper who cannot see the order the email they typed, not the order's.
 	 *
 	 * On the configured checkout page, where core defines DONOTCACHEPAGE (WC_Cache_Helper::prevent_caching()); the constant
@@ -2818,7 +2841,9 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * Create an account service mock for checkout bridge tests.
 	 *
 	 * @param bool  $can_process_payments Whether the account can process payments.
-	 * @param array $account_data         Account cache data.
+	 * @param array $account_data         Account cache data, in the platform account shape the client caches (country,
+	 *                                    capabilities keyed by capability with a status; client 11.1.0
+	 *                                    includes/class-wc-payments-account.php:269-292).
 	 * @param array $gateway_settings     Gateway settings.
 	 * @return WooPaymentsAccountService|\PHPUnit\Framework\MockObject\MockObject
 	 */

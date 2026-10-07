@@ -904,34 +904,19 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the client's order-pay keys for a pay-for-order link opened by someone allowed to pay the order.
+	 * Get the client's order-pay keys for a pay-for-order link whose key lets the visitor pay the order.
 	 *
-	 * Client 11.1.0 `add_pay_for_order_params_to_js_config()` (class-wc-payments-express-checkout-button-display-handler.php:183-224).
+	 * Client 11.1.0 `add_pay_for_order_params_to_js_config()` (class-wc-payments-express-checkout-button-display-handler.php:183-224)
+	 * checks only that a key is present; WooPaymentsOrderPayAccess::get_pay_for_order_page_params() requires the order's.
 	 * The visitor's email goes into the page only when WooPaymentsOrderPayAccess::may_put_shopper_email_in_page() allows it.
 	 *
 	 * @return array<string,mixed>
 	 */
 	private function get_pay_for_order_config(): array {
-		global $wp;
-
-		$order_id = is_object( $wp ) ? ( $wp->query_vars['order-pay'] ?? null ) : null;
-		// phpcs:disable WordPress.Security.NonceVerification -- Read-only order-pay link values, as in the client.
-		if ( ! $order_id || ! isset( $_GET['pay_for_order'], $_GET['key'] ) || ! current_user_can( 'pay_for_order', $order_id ) ) {
-			return array();
+		$config = WooPaymentsOrderPayAccess::get_pay_for_order_page_params();
+		if ( ! empty( $config ) && ! WooPaymentsOrderPayAccess::may_put_shopper_email_in_page() ) {
+			$config['billing_email'] = '';
 		}
-
-		$order = wc_get_order( $order_id );
-		if ( ! $order instanceof \WC_Order ) {
-			return array();
-		}
-
-		$config = array(
-			'order_id'      => $order->get_id(),
-			'pay_for_order' => sanitize_text_field( wp_unslash( $_GET['pay_for_order'] ) ),
-			'key'           => sanitize_text_field( wp_unslash( $_GET['key'] ) ),
-			'billing_email' => WooPaymentsOrderPayAccess::may_put_shopper_email_in_page() ? WooPaymentsOrderPayAccess::get_billing_email_for_current_visitor( $order ) : '',
-		);
-		// phpcs:enable WordPress.Security.NonceVerification
 
 		return $config;
 	}
