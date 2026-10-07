@@ -172,7 +172,9 @@ describe( 'WooPayments BNPL payment method messaging', () => {
 		);
 		mountElement = jest.fn();
 		updateElement = jest.fn();
-		// Stripe.js elements.create( 'paymentMethodMessaging', options ) returns an element with mount(), on() and update().
+		// Stripe.js elements.create( 'paymentMethodMessaging', options ) returns an element with mount(), on() and update()
+		// (https://docs.stripe.com/js/elements_object/create_payment_method_messaging_element; client 11.1.0
+		// client/product-details/bnpl-site-messaging/index.js:84-94 creates and mounts it).
 		createElement = jest.fn( () => ( {
 			mount: mountElement,
 			on: jest.fn(),
@@ -181,7 +183,8 @@ describe( 'WooPayments BNPL payment method messaging', () => {
 		stripeElements = jest.fn( () => ( {
 			create: createElement,
 		} ) );
-		// Stripe.js global: Stripe( publishableKey, options ) returns a client whose elements( options ) builds elements.
+		// Stripe.js global: Stripe( publishableKey, options ) returns a client whose elements( options ) builds elements
+		// (https://docs.stripe.com/js/initializing, https://docs.stripe.com/js/elements_object/create).
 		window.Stripe = jest.fn( () => ( {
 			elements: stripeElements,
 		} ) );

@@ -2652,11 +2652,18 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 					},
 				} );
 
+				// Client 11.1.0 use-express-checkout.js:52-55 locks the page before it sets window.location.
+				let lockedWhenLeaving = false;
+				navigate.mockImplementationOnce( () => {
+					lockedWhenLeaving = pageLock.isLocked();
+				} );
+
 				await confirmGooglePay();
 
 				expect( navigate ).toHaveBeenCalledWith(
 					'http://localhost/checkout/order-received/77/?key=wc_order_abc'
 				);
+				expect( lockedWhenLeaving ).toBe( true );
 				expect( pageLock.isLocked() ).toBe( true );
 			} );
 
