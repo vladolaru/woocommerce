@@ -49,11 +49,11 @@ const COUNTRY_CONFIGS = {
 const getCheckoutDescription = ( country ) =>
 	country === 'US'
 		? __(
-				'Our all-in-one checkout solution lets you offer PayPal, Venmo, Pay Later options, and more to help maximise conversion',
+				"PayPal's checkout lets shoppers pay with PayPal, Venmo, or Pay Later, to help you increase conversion.",
 				'woocommerce'
 		  )
 		: __(
-				'Our all-in-one checkout solution lets you offer PayPal, Pay Later options, and more to help maximise conversion',
+				"PayPal's checkout lets shoppers pay with PayPal or Pay Later, to help you increase conversion.",
 				'woocommerce'
 		  );
 

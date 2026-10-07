@@ -8,7 +8,7 @@ const WelcomeDocs = ( { storeCountry } ) => {
 		<div className="ppcp-r-welcome-docs">
 			<h2 className="ppcp-r-welcome-docs__title">
 				{ __(
-					'Want to know more about PayPal Payments?',
+					'Want to know more about PayPal Wallet?',
 					'woocommerce'
 				) }
 			</h2>

@@ -162,7 +162,7 @@ class PaymentMethodsDefinition {
 			array(
 				'id'          => PayPalGateway::ID,
 				'title'       => __( 'PayPal', 'woocommerce' ),
-				'description' => __( 'Our all-in-one checkout solution lets you offer PayPal, Venmo, Pay Later options, and more to help maximize conversion.', 'woocommerce' ),
+				'description' => __( "PayPal's checkout lets shoppers pay with PayPal, Venmo, or Pay Later, to help you increase conversion.", 'woocommerce' ),
 				'icon'        => 'payment-method-paypal',
 				'fields'      => array(
 					'paypalShowLogo' => array(

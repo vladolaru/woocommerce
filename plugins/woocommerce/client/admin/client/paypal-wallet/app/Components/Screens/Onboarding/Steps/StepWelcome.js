@@ -36,7 +36,7 @@ const StepWelcome = ( { onNext } ) => {
 	const { icons } = usePaymentConfig( storeCountry );
 
 	const onboardingHeaderDescription = __(
-		'Your all-in-one integration for PayPal checkout solutions that enable buyers to pay via PayPal, Pay Later, and more.',
+		'Let shoppers pay with PayPal and Pay Later, plus Venmo in the US.',
 		'woocommerce'
 	);
 

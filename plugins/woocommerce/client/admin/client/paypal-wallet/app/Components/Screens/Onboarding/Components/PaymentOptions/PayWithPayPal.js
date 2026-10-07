@@ -8,7 +8,7 @@ const PayWithPayPal = ( { learnMore = '' } ) => {
 			title={ __( 'Pay with PayPal', 'woocommerce' ) }
 			imageBadge={ [ 'icon-button-paypal.svg' ] }
 			description={ __(
-				'Our brand recognition helps give customers the confidence to buy.',
+				"PayPal's brand recognition helps give customers the confidence to buy.",
 				'woocommerce'
 			) }
 			learnMoreLink={ learnMore }
