@@ -3115,7 +3115,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 					$sut->handle_reconcile( $main_pending['generation'], 1 );
 				}
 			);
-			$peer_leases = count(
+			$peer_leases  = count(
 				array_filter(
 					$lease_events,
 					static function ( array $event ) use ( $second_site_id ): bool {
