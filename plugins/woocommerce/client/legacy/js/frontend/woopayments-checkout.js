@@ -162,6 +162,54 @@
 		return null;
 	}
 
+	// Client 11.1.0 includes/class-wc-payments-checkout.php:353-373 merges the refreshed paymentMethodsConfig, currency
+	// and cartTotal into the page config after each update_order_review. Native reads them from the payment fields
+	// WooCommerce re-renders in that fragment (data-wcpay-config, one per WooPayments gateway).
+	function mergeRefreshedPaymentFieldsConfig() {
+		document
+			.querySelectorAll( '.wcpay-core-checkout-form[data-wcpay-config]' )
+			.forEach( function ( wrapper ) {
+				var refreshed;
+				var target;
+
+				try {
+					refreshed = JSON.parse(
+						wrapper.getAttribute( 'data-wcpay-config' )
+					);
+				} catch ( error ) {
+					return;
+				}
+
+				if ( ! refreshed || typeof refreshed !== 'object' ) {
+					return;
+				}
+
+				target =
+					window[
+						getGatewayConfigObjectName( refreshed.gatewayId )
+					];
+				if (
+					( ! target || typeof target !== 'object' ) &&
+					( baseConfig.gatewayId || defaultGatewayId ) ===
+						refreshed.gatewayId
+				) {
+					target = baseConfig;
+				}
+
+				if ( ! target || typeof target !== 'object' ) {
+					return;
+				}
+
+				[ 'paymentMethodsConfig', 'currency', 'cartTotal' ].forEach(
+					function ( key ) {
+						if ( key in refreshed ) {
+							target[ key ] = refreshed[ key ];
+						}
+					}
+				);
+			} );
+	}
+
 	function getGatewayPaymentMethodConfigs( gatewayConfig ) {
 		return Object.assign(
 			{},
@@ -3481,6 +3529,7 @@
 	} );
 
 	$( document.body ).on( 'updated_checkout', function () {
+		mergeRefreshedPaymentFieldsConfig();
 		togglePaymentMethodsForBillingCountry();
 		initializeStripeElement();
 		swapPaymentMethodIconsForTheme();

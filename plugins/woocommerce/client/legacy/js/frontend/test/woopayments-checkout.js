@@ -3237,6 +3237,87 @@ describe( 'WooPayments checkout', () => {
 		);
 	} );
 
+	// The payment fields WooCommerce re-renders in the update_order_review fragment carry the gateway's refreshed
+	// config in data-wcpay-config (WooPaymentsCheckoutBridge::render_payment_fields()).
+	function renderRefreshedPaymentFields( refreshedConfig ) {
+		const wrapper = document.createElement( 'div' );
+		wrapper.className = 'wcpay-core-checkout-form wcpay-upe-form';
+		wrapper.setAttribute(
+			'data-wcpay-config',
+			JSON.stringify( refreshedConfig )
+		);
+		wrapper.innerHTML =
+			'<div id="wcpay-core-payment-element" class="wcpay-core-payment-element"></div>';
+		document.querySelector( 'form.checkout' ).appendChild( wrapper );
+	}
+
+	test( 'applies the country rules of the refreshed payment fields after a checkout update', () => {
+		window.wcpay_core_checkout_config_woocommerce_payments_ideal =
+			Object.assign( {}, window.wcpay_core_checkout_config, {
+				gatewayId: 'woocommerce_payments_ideal',
+				paymentMethodId: 'ideal',
+				paymentMethodTypes: [ 'ideal' ],
+				paymentMethodsConfig: {
+					ideal: {
+						countries: [],
+						isReusable: false,
+					},
+				},
+			} );
+		document.body.innerHTML =
+			'<form class="checkout">' +
+			'<select id="billing_country" name="billing_country">' +
+			'<option value="US" selected>US</option>' +
+			'</select>' +
+			'<ul>' +
+			'<li id="payment-card"><input type="radio" name="payment_method" value="woocommerce_payments" checked /></li>' +
+			'<li id="payment-ideal"><input type="radio" name="payment_method" value="woocommerce_payments_ideal" /></li>' +
+			'</ul>' +
+			'</form>';
+
+		require( '../woopayments-checkout' );
+		renderRefreshedPaymentFields( {
+			gatewayId: 'woocommerce_payments_ideal',
+			currency: 'EUR',
+			cartTotal: 7000,
+			paymentMethodsConfig: {
+				ideal: {
+					countries: [ 'NL' ],
+					isReusable: false,
+				},
+			},
+		} );
+		bodyEventHandlers.updated_checkout();
+
+		expect( document.getElementById( 'payment-ideal' ).style.display ).toBe(
+			'none'
+		);
+	} );
+
+	test( 'creates a payment element from the refreshed amount and currency after a checkout update', () => {
+		document.body.innerHTML =
+			'<form class="checkout">' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
+			'</form>';
+
+		require( '../woopayments-checkout' );
+		expect( mountPaymentElement ).not.toHaveBeenCalled();
+
+		renderRefreshedPaymentFields( {
+			gatewayId: 'woocommerce_payments',
+			currency: 'EUR',
+			cartTotal: 7000,
+			paymentMethodsConfig:
+				window.wcpay_core_checkout_config.paymentMethodsConfig,
+		} );
+		bodyEventHandlers.updated_checkout();
+
+		expect( stripeElementsOptions ).toMatchObject( {
+			amount: 7000,
+			currency: 'eur',
+		} );
+	} );
+
 	function renderTestNumberButton() {
 		document.body.innerHTML +=
 			'<button type="button" class="js-woopayments-copy-test-number">' +
