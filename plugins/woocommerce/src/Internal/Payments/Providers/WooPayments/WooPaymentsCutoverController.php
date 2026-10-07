@@ -64,41 +64,6 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	public const MINIMUM_CUTOVER_PLUGIN_VERSION = '10.5.0';
 
 	/**
-	 * Filter that reports whether a core-owned WooPayments transport is ready to process after deactivation.
-	 *
-	 * @var string
-	 */
-	public const FILTER_NATIVE_TRANSPORT_READY = 'woocommerce_woopayments_cutover_transport_ready';
-
-	/**
-	 * Filter that reports whether native WooPayments merchant admin surfaces are ready after deactivation.
-	 *
-	 * @var string
-	 */
-	public const FILTER_NATIVE_ADMIN_SURFACES_READY = 'woocommerce_woopayments_cutover_admin_surfaces_ready';
-
-	/**
-	 * Filter that reports provider event types still pending native cutover disposition.
-	 *
-	 * @var string
-	 */
-	public const FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER = 'woocommerce_woopayments_cutover_pending_event_types';
-
-	/**
-	 * Filter that reports operational queue hooks still pending native cutover disposition.
-	 *
-	 * @var string
-	 */
-	public const FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER = 'woocommerce_woopayments_cutover_pending_operational_queue_hooks';
-
-	/**
-	 * Filter for cutover preflight failures.
-	 *
-	 * @var string
-	 */
-	public const FILTER_PREFLIGHT_FAILURES = 'woocommerce_woopayments_cutover_preflight_failures';
-
-	/**
 	 * Nonce action for the one-click disable action.
 	 *
 	 * @var string
@@ -499,7 +464,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @return array<int,string> Failure codes.
 	 */
 	public function get_preflight_failures(): array {
-		return $this->preflight_service->get_preflight_failures();
+		return $this->preflight_service->get_reconciliation_failures();
 	}
 
 	/**

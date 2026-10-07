@@ -85,13 +85,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		'wcpay_migrate_subscription_retry',
 	);
 
-	/** Conditions caused by an invalid extension filter. */
-	private const ENGINEERING_ERROR_CODES = array(
-		'preflight_filter_invalid',
-		'provider_events_filter_invalid',
-		'operational_queue_hooks_filter_invalid',
-	);
-
 	/**
 	 * Runtime owner arbiter.
 	 *
@@ -968,7 +961,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				return;
 			}
 
-			$claimed  = $this->record_engineering_error_observations( $claimed, $failures );
 			$outcomes = array();
 			if ( in_array( 'wpcom_connection_owner_user_token_unavailable', $failures, true ) && $this->preflight_service->is_cutover_connection_owner_user_missing() ) {
 				$outcomes[] = array( 'code' => 'reconnect_required' );
@@ -1804,36 +1796,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Record and report newly observed invalid-filter diagnostics.
-	 *
-	 * @param array<string,mixed> $claimed  Exact running state owned by this worker.
-	 * @param string[]            $failures Current reconciliation failures.
-	 * @return array<string,mixed> Current claimed revision after observations are persisted.
-	 */
-	private function record_engineering_error_observations( array $claimed, array $failures ): array {
-		foreach ( array_intersect( self::ENGINEERING_ERROR_CODES, $failures ) as $code ) {
-			$outcome = array(
-				'code'      => 'diagnostic_observed',
-				'condition' => $code,
-			);
-			if ( $this->has_information_outcome( $claimed['informational_outcomes'], $outcome ) ) {
-				continue;
-			}
-
-			$observed = $this->persist_information_outcomes( $claimed, array( $outcome ) );
-			if ( null === $observed ) {
-				continue;
-			}
-
-			$claimed = $observed;
-			$this->log_error( 'WooPayments cutover encountered an invalid preflight filter.', array( 'condition' => $code ) );
-			$this->record_tracks_diagnostic( $code );
-		}
-
-		return $claimed;
-	}
-
-	/**
 	 * Persist informational outcomes while retaining the running lease fence.
 	 *
 	 * @param array<string,mixed> $claimed  Exact running state owned by this worker.
@@ -2131,23 +2093,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 */
 	protected function write_log_error( string $message, array $context ): void {
 		wc_get_logger()->error( $message, $context );
-	}
-
-	/**
-	 * Emit a best-effort Tracks diagnostic when the recorder is available.
-	 *
-	 * @param string $code Invalid filter condition code.
-	 */
-	protected function record_tracks_diagnostic( string $code ): void {
-		if ( ! class_exists( '\WC_Tracks' ) || ! is_callable( array( '\WC_Tracks', 'record_event' ) ) ) {
-			return;
-		}
-
-		try {
-			WooPaymentsTracks::record_wcadmin_event( 'woocommerce_woopayments_cutover_diagnostic', array( 'condition' => $code ) );
-		} catch ( \Throwable $error ) {
-			return;
-		}
 	}
 
 	/**

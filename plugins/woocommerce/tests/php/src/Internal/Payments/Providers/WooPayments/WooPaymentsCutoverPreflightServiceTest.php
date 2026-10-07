@@ -67,10 +67,6 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_woocommerce_payments_version', '10.5.0' );
 		update_option( WooPaymentsSettingsService::SETTINGS_OPTION, array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-		add_filter( WooPaymentsCutoverPreflightService::FILTER_NATIVE_TRANSPORT_READY, '__return_true' );
-		add_filter( WooPaymentsCutoverPreflightService::FILTER_NATIVE_ADMIN_SURFACES_READY, '__return_true' );
-		add_filter( WooPaymentsCutoverPreflightService::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER, '__return_empty_array' );
-		add_filter( WooPaymentsCutoverPreflightService::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER, '__return_empty_array' );
 	}
 
 	/**
@@ -78,11 +74,6 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
-		remove_all_filters( WooPaymentsCutoverPreflightService::FILTER_NATIVE_TRANSPORT_READY );
-		remove_all_filters( WooPaymentsCutoverPreflightService::FILTER_NATIVE_ADMIN_SURFACES_READY );
-		remove_all_filters( WooPaymentsCutoverPreflightService::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER );
-		remove_all_filters( WooPaymentsCutoverPreflightService::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER );
-		remove_all_filters( WooPaymentsCutoverPreflightService::FILTER_PREFLIGHT_FAILURES );
 		as_unschedule_all_actions( WooPaymentsCutoverActionScheduler::ACTION_HOOK );
 		as_unschedule_all_actions( 'wcpay_preflight_service_test' );
 		as_unschedule_all_actions( 'woocommerce_woopayments_cutover_network_reconcile' );
@@ -104,70 +95,22 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Reconciliation preflight keeps each invalid nested filter observable.
+	 * @testdox A store with every check passing reports no failure, including no undispositioned provider events.
 	 */
-	public function test_reconciliation_failures_preserve_invalid_nested_filter_codes(): void {
-		add_filter( WooPaymentsCutoverPreflightService::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER, '__return_true' );
-		add_filter( WooPaymentsCutoverPreflightService::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER, '__return_true' );
-
-		$failures = $this->create_sut()->get_reconciliation_failures();
-
-		$this->assertContains( 'provider_events_filter_invalid', $failures );
-		$this->assertContains( 'operational_queue_hooks_filter_invalid', $failures );
-		$this->assertNotContains( 'provider_events_undispositioned', $failures );
-		$this->assertNotContains( 'operational_queue_hooks_undispositioned', $failures );
+	public function test_ready_store_reports_no_failures(): void {
+		$this->assertSame( array(), $this->create_sut()->get_reconciliation_failures() );
 	}
 
 	/**
-	 * @testdox Final preflight filters cannot remove built-in safety conditions.
+	 * @testdox The induced reconciliation vocabulary is exactly the 12 conditions a store can reach.
 	 */
-	public function test_final_preflight_filter_cannot_remove_built_in_conditions(): void {
-		add_filter( WooPaymentsCutoverPreflightService::FILTER_PREFLIGHT_FAILURES, '__return_empty_array' );
-		update_option( 'woocommerce_woocommerce_payments_version', '10.4.9' );
-
-		$this->assertSame( array( 'woopayments_plugin_version_unsupported' ), $this->create_sut()->get_reconciliation_failures() );
-	}
-
-	/**
-	 * @testdox Compatibility preflight still allows filters to remove non-protected conditions.
-	 */
-	public function test_compatibility_filter_can_remove_non_protected_conditions_while_reconciliation_keeps_them(): void {
-		remove_all_filters( WooPaymentsCutoverPreflightService::FILTER_NATIVE_TRANSPORT_READY );
-		$this->provider_ready = false;
-		add_filter( WooPaymentsCutoverPreflightService::FILTER_PREFLIGHT_FAILURES, static fn( array $failures ): array => array_values( array_diff( $failures, array( 'native_transport_unavailable' ) ) ) );
-		$sut = $this->create_sut();
-
-		$this->assertNotContains( 'native_transport_unavailable', $sut->get_preflight_failures() );
-		$this->assertContains( 'native_transport_unavailable', $sut->get_reconciliation_failures() );
-	}
-
-	/**
-	 * @testdox Valid filter additions are preserved without collapsed nested-error codes in reconciliation.
-	 */
-	public function test_valid_filter_addition_is_preserved_without_collapsed_nested_error_codes(): void {
-		add_filter( WooPaymentsCutoverPreflightService::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER, '__return_true' );
-		add_filter( WooPaymentsCutoverPreflightService::FILTER_PREFLIGHT_FAILURES, static fn( array $failures ): array => array_merge( $failures, array( 'extension_deferred' ) ) );
-		$sut = $this->create_sut();
-
-		$this->assertContains( 'extension_deferred', $sut->get_preflight_failures() );
-		$this->assertContains( 'extension_deferred', $sut->get_reconciliation_failures() );
-		$this->assertContains( 'provider_events_filter_invalid', $sut->get_reconciliation_failures() );
-		$this->assertNotContains( 'provider_events_undispositioned', $sut->get_reconciliation_failures() );
-	}
-
-	/**
-	 * @testdox The induced reconciliation vocabulary is exactly the 16 planned conditions.
-	 */
-	public function test_induced_reconciliation_vocabulary_is_exactly_the_planned_sixteen_conditions(): void {
+	public function test_induced_reconciliation_vocabulary_is_exactly_the_twelve_reachable_conditions(): void {
 		$codes = array();
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_false' );
 		$codes = array_merge( $codes, $this->create_sut()->get_reconciliation_failures() );
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-		remove_all_filters( WooPaymentsCutoverPreflightService::FILTER_NATIVE_TRANSPORT_READY );
-		remove_all_filters( WooPaymentsCutoverPreflightService::FILTER_NATIVE_ADMIN_SURFACES_READY );
-		remove_all_filters( WooPaymentsCutoverPreflightService::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER );
 		$this->provider_ready        = false;
 		$this->platform_failures     = array( 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable', 'wpcom_connection_owner_user_token_unavailable' );
 		$this->fee_remediation_ready = false;
@@ -177,49 +120,12 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
 		$this->create_legacy_stripe_billing_subscription_marker();
 		as_schedule_single_action( time() + HOUR_IN_SECONDS, 'wcpay_preflight_service_test', array(), 'test', true );
-		add_filter( WooPaymentsCutoverPreflightService::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER, static fn(): array => array( 'event.type' ) );
-		$codes = array_merge( $codes, $this->create_sut()->get_reconciliation_failures() );
-		remove_all_filters( WooPaymentsCutoverPreflightService::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER );
-		add_filter( WooPaymentsCutoverPreflightService::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER, '__return_true' );
-		$codes = array_merge( $codes, $this->create_sut()->get_reconciliation_failures() );
-		remove_all_filters( WooPaymentsCutoverPreflightService::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER );
-		add_filter( WooPaymentsCutoverPreflightService::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER, '__return_true' );
-		$codes = array_merge( $codes, $this->create_sut()->get_reconciliation_failures() );
-		add_filter( WooPaymentsCutoverPreflightService::FILTER_PREFLIGHT_FAILURES, '__return_true' );
 		$codes = array_merge( $codes, $this->create_sut()->get_reconciliation_failures() );
 
 		$unique_codes = array_values( array_unique( $codes ) );
 
-		$this->assertSame( array( 'native_runtime_disabled', 'woopayments_plugin_version_unsupported', 'native_transport_unavailable', 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable', 'wpcom_connection_owner_user_token_unavailable', 'multi_currency_rates_unavailable', 'native_admin_surfaces_unavailable', 'provider_events_undispositioned', 'operational_queue_hooks_undispositioned', 'financial_migrations_unavailable', 'legacy_stripe_billing_subscriptions_present', 'provider_events_filter_invalid', 'operational_queue_hooks_filter_invalid', 'preflight_filter_invalid' ), $unique_codes );
-		$this->assertCount( 16, $unique_codes );
-	}
-
-	/**
-	 * @testdox An invalid final preflight filter yields a direct reconciliation condition.
-	 */
-	public function test_invalid_final_preflight_filter_yields_direct_condition(): void {
-		add_filter( WooPaymentsCutoverPreflightService::FILTER_PREFLIGHT_FAILURES, '__return_true' );
-
-		$this->assertSame( array( 'preflight_filter_invalid' ), $this->create_sut()->get_reconciliation_failures() );
-	}
-
-	/**
-	 * @testdox Compatibility and reconciliation projections evaluate the final filter once.
-	 */
-	public function test_compatibility_and_reconciliation_projections_share_one_final_filter_evaluation(): void {
-		$filter_calls = 0;
-		add_filter(
-			WooPaymentsCutoverPreflightService::FILTER_PREFLIGHT_FAILURES,
-			static function ( array $failures ) use ( &$filter_calls ): array {
-				++$filter_calls;
-				return array_merge( $failures, array( 'extension_deferred' ) );
-			}
-		);
-		$sut = $this->create_sut();
-
-		$this->assertSame( array( 'extension_deferred' ), $sut->get_preflight_failures() );
-		$this->assertSame( array( 'extension_deferred' ), $sut->get_reconciliation_failures() );
-		$this->assertSame( 1, $filter_calls );
+		$this->assertSame( array( 'native_runtime_disabled', 'woopayments_plugin_version_unsupported', 'native_transport_unavailable', 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable', 'wpcom_connection_owner_user_token_unavailable', 'multi_currency_rates_unavailable', 'native_admin_surfaces_unavailable', 'operational_queue_hooks_undispositioned', 'financial_migrations_unavailable', 'legacy_stripe_billing_subscriptions_present' ), $unique_codes );
+		$this->assertCount( 12, $unique_codes );
 	}
 
 	/**
@@ -241,19 +147,9 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Compatibility preflight retains generic nested filter blockers.
-	 */
-	public function test_compatibility_preflight_collapses_nested_filter_errors(): void {
-		add_filter( WooPaymentsCutoverPreflightService::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER, '__return_true' );
-
-		$this->assertSame( array( 'provider_events_undispositioned' ), $this->create_sut()->get_preflight_failures() );
-	}
-
-	/**
 	 * @testdox Invalidating the current blog memoization re-evaluates preflight facts.
 	 */
 	public function test_invalidate_current_blog_memoization_re_evaluates_facts(): void {
-		remove_all_filters( WooPaymentsCutoverPreflightService::FILTER_NATIVE_TRANSPORT_READY );
 		$this->provider_ready = false;
 		$sut                  = $this->create_sut();
 
@@ -360,8 +256,6 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 			),
 			$sut->get_queued_plugin_actions()
 		);
-		remove_all_filters( WooPaymentsCutoverPreflightService::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER );
-		$this->assertSame( array( 'operational_queue_hooks_undispositioned' ), $sut->get_preflight_failures() );
 		$this->assertSame( array( 'operational_queue_hooks_undispositioned' ), $sut->get_reconciliation_failures() );
 	}
 

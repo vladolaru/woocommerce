@@ -1989,9 +1989,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			'WordPress.com connection unavailable'       => array( 'wpcom_connection_unavailable', WooPaymentsCutoverState::DEFERRED ),
 			'WordPress.com connection owner unavailable' => array( 'wpcom_connection_owner_unavailable', WooPaymentsCutoverState::DEFERRED ),
 			'WordPress.com owner token unavailable'      => array( 'wpcom_connection_owner_user_token_unavailable', WooPaymentsCutoverState::DEFERRED ),
-			'invalid final preflight filter'             => array( 'preflight_filter_invalid', WooPaymentsCutoverState::DEFERRED ),
-			'invalid provider-events filter'             => array( 'provider_events_filter_invalid', WooPaymentsCutoverState::DEFERRED ),
-			'invalid operational-queue filter'           => array( 'operational_queue_hooks_filter_invalid', WooPaymentsCutoverState::DEFERRED ),
 		);
 	}
 
@@ -2058,93 +2055,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 		$this->assertFalse( $sut->consume_reconnect_notice() );
 		$this->assertSame( $running, $this->require_state_store()->get_record() );
-	}
-
-	/**
-	 * @testdox Replaying an invalid-filter observation does not persist another diagnostic outcome.
-	 *
-	 * @dataProvider engineering_error_condition_provider
-	 *
-	 * @param string $condition Invalid-filter condition code.
-	 */
-	public function test_replayed_invalid_filter_observation_is_persisted_once( string $condition ): void {
-		$preflight = $this->create_preflight_with_failures( array( $condition ) );
-		$job       = new class() extends WooPaymentsCutoverReconciliationJob {
-			/** @var array<int,array<string,mixed>> */
-			private array $logged_errors = array();
-
-			/** @var string[] */
-			private array $tracked_diagnostics = array();
-
-			/**
-			 * Record controlled diagnostic logging.
-			 *
-			 * @param string              $message Error message.
-			 * @param array<string,mixed> $context Error context.
-			 */
-			protected function write_log_error( string $message, array $context ): void {
-				$this->logged_errors[] = array_merge( array( 'message' => $message ), $context );
-			}
-
-			/**
-			 * Record controlled Tracks diagnostics.
-			 *
-			 * @param string $code Invalid-filter condition code.
-			 */
-			protected function record_tracks_diagnostic( string $code ): void {
-				$this->tracked_diagnostics[] = $code;
-			}
-
-			/** @return array<int,array<string,mixed>> */
-			public function get_logged_errors(): array {
-				return $this->logged_errors;
-			}
-
-			/** @return string[] */
-			public function get_tracked_diagnostics(): array {
-				return $this->tracked_diagnostics;
-			}
-		};
-		$sut       = $this->create_job( true, $preflight, $job );
-		$sut->enqueue( 'merchant' );
-		$pending = $this->require_state_store()->get_record();
-		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
-		$sut->register();
-
-		$sut->handle_reconcile( $pending['generation'], 1 );
-		$first = $this->require_state_store()->get_record();
-		$this->assertIsArray( $first );
-		$sut->handle_reconcile( $first['generation'], 2 );
-
-		$second = $this->require_state_store()->get_record();
-		$this->assertIsArray( $second );
-		$diagnostics = array_filter(
-			$second['informational_outcomes'],
-			static function ( $outcome ) use ( $condition ): bool {
-				return array(
-					'code'      => 'diagnostic_observed',
-					'condition' => $condition,
-				) === $outcome;
-			}
-		);
-		$this->assertCount( 1, $diagnostics );
-		$this->assertCount( 1, $job->get_logged_errors() );
-		$this->assertSame( 'woocommerce-woopayments-cutover', $job->get_logged_errors()[0]['source'] );
-		$this->assertSame( array( $condition ), $job->get_tracked_diagnostics() );
-	}
-
-	/**
-	 * Provide all invalid-filter condition codes that are diagnosed once per persisted observation.
-	 *
-	 * @return array<string,array{string}>
-	 */
-	public function engineering_error_condition_provider(): array {
-		return array(
-			'preflight filter'         => array( 'preflight_filter_invalid' ),
-			'provider-events filter'   => array( 'provider_events_filter_invalid' ),
-			'operational-queue filter' => array( 'operational_queue_hooks_filter_invalid' ),
-		);
 	}
 
 	/**

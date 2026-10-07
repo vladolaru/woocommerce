@@ -351,13 +351,8 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_multi_currency_exchange_rate_gbp' );
 
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
-		remove_all_filters( WooPaymentsCutoverController::FILTER_NATIVE_TRANSPORT_READY );
-		remove_all_filters( WooPaymentsCutoverController::FILTER_NATIVE_ADMIN_SURFACES_READY );
-		remove_all_filters( WooPaymentsCutoverController::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER );
-		remove_all_filters( WooPaymentsCutoverController::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER );
 		remove_all_filters( WooPaymentsCutoverController::FILTER_SOFT_CUTOVER_ENABLED );
 		remove_all_filters( WooPaymentsCutoverController::FILTER_MANDATORY_CUTOVER_ENABLED );
-		remove_all_filters( WooPaymentsCutoverController::FILTER_PREFLIGHT_FAILURES );
 		remove_all_filters( 'wp_die_handler' );
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
 		if ( $this->registered_subscription_order_type ) {
@@ -1300,66 +1295,22 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Cutover preflight short-circuits expensive checks while native runtime is disabled.
 	 */
 	public function test_preflight_short_circuits_when_native_runtime_is_disabled(): void {
-		$provider_event_filter_calls    = 0;
-		$operational_queue_filter_calls = 0;
-		$preflight_filter_calls         = 0;
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_false' );
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
-		add_filter(
-			WooPaymentsCutoverController::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER,
-			static function () use ( &$provider_event_filter_calls ): array {
-				++$provider_event_filter_calls;
-				return array( 'example.event' );
-			}
-		);
-		add_filter(
-			WooPaymentsCutoverController::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER,
-			static function () use ( &$operational_queue_filter_calls ): array {
-				++$operational_queue_filter_calls;
-				return array( 'example_hook' );
-			}
-		);
-		add_filter(
-			WooPaymentsCutoverController::FILTER_PREFLIGHT_FAILURES,
-			static function () use ( &$preflight_filter_calls ): array {
-				++$preflight_filter_calls;
-				return array();
-			}
-		);
 
 		$failures = $this->sut->get_preflight_failures();
 
 		$this->assertSame( array( 'native_runtime_disabled' ), $failures, 'Disabled native runtime should be the only preflight result.' );
 		$this->assertSame( 0, $this->native_provider_readiness_calls, 'Native transport readiness should not be checked while native runtime is disabled.' );
 		$this->assertSame( 0, $this->platform_connection_preflight_calls, 'Platform connection preflight should not run while native runtime is disabled.' );
-		$this->assertSame( 0, $provider_event_filter_calls, 'Provider event disposition scans should not run while native runtime is disabled.' );
-		$this->assertSame( 0, $operational_queue_filter_calls, 'Operational queue disposition scans should not run while native runtime is disabled.' );
 		$this->assertSame( 0, $this->fee_remediation_preflight_calls, 'Financial migration preflight should not run while native runtime is disabled.' );
-		$this->assertSame( 0, $preflight_filter_calls, 'The preflight failure filter should not run when native runtime is disabled.' );
 	}
 
 	/**
 	 * @testdox Cutover preflight memoizes expensive checks for the current request.
 	 */
 	public function test_preflight_memoizes_expensive_checks_within_request(): void {
-		$provider_event_filter_calls    = 0;
-		$operational_queue_filter_calls = 0;
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-		add_filter( WooPaymentsCutoverController::FILTER_NATIVE_ADMIN_SURFACES_READY, '__return_true' );
-		add_filter(
-			WooPaymentsCutoverController::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER,
-			static function () use ( &$provider_event_filter_calls ): array {
-				++$provider_event_filter_calls;
-				return array();
-			}
-		);
-		add_filter(
-			WooPaymentsCutoverController::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER,
-			static function () use ( &$operational_queue_filter_calls ): array {
-				++$operational_queue_filter_calls;
-				return array();
-			}
-		);
 		$this->native_provider_ready = true;
 
 		$first_failures  = $this->sut->get_preflight_failures();
@@ -1368,19 +1319,17 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( $first_failures, $second_failures, 'Repeated preflight checks in one request should reuse the first result.' );
 		$this->assertSame( 1, $this->native_provider_readiness_calls, 'Native transport readiness should be checked once per request.' );
 		$this->assertSame( 1, $this->platform_connection_preflight_calls, 'Platform connection preflight should be checked once per request.' );
-		$this->assertSame( 1, $provider_event_filter_calls, 'Provider event disposition scans should run once per request.' );
-		$this->assertSame( 1, $operational_queue_filter_calls, 'Operational queue disposition scans should run once per request.' );
 		$this->assertSame( 1, $this->fee_remediation_preflight_calls, 'Financial migration preflight should run once per request.' );
 	}
 
 	/**
-	 * @testdox Transport readiness filter can still block cutover when the native provider is ready.
+	 * @testdox Cutover preflight blocks while the native provider cannot process payments.
 	 */
-	public function test_transport_filter_can_block_provider_backed_preflight(): void {
+	public function test_preflight_blocks_when_native_provider_cannot_process_payments(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		$this->enable_ready_cutover();
-		add_filter( WooPaymentsCutoverController::FILTER_NATIVE_TRANSPORT_READY, '__return_false' );
+		$this->native_provider_ready = false;
 
 		$this->assertContains( 'native_transport_unavailable', $this->sut->get_preflight_failures() );
 	}
@@ -1395,19 +1344,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->platform_connection_failures = array( 'wpcom_connection_owner_user_token_unavailable' );
 
 		$this->assertContains( 'wpcom_connection_owner_user_token_unavailable', $this->sut->get_preflight_failures() );
-	}
-
-	/**
-	 * @testdox Cutover preflight filters cannot remove platform connection blockers.
-	 */
-	public function test_preflight_filter_cannot_remove_platform_connection_blocker(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		$this->enable_ready_cutover();
-		$this->platform_connection_failures = array( 'wpcom_blog_id_unavailable' );
-		add_filter( WooPaymentsCutoverController::FILTER_PREFLIGHT_FAILURES, '__return_empty_array' );
-
-		$this->assertContains( 'wpcom_blog_id_unavailable', $this->sut->get_preflight_failures() );
 	}
 
 	/**
@@ -1448,41 +1384,12 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Cutover preflight filters cannot remove multi-currency rate-provider blockers.
-	 */
-	public function test_preflight_filter_cannot_remove_multi_currency_rate_provider_blocker(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		$this->enable_ready_cutover();
-		$this->enable_multi_currency_with_rate_type( 'automatic' );
-		add_filter( WooPaymentsCutoverController::FILTER_PREFLIGHT_FAILURES, '__return_empty_array' );
-
-		$this->assertContains( 'multi_currency_rates_unavailable', $this->sut->get_preflight_failures() );
-	}
-
-	/**
-	 * @testdox Cutover preflight blocks while native admin surfaces are unavailable.
-	 */
-	public function test_preflight_blocks_when_native_admin_surfaces_are_unavailable(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-		add_filter( WooPaymentsCutoverController::FILTER_NATIVE_ADMIN_SURFACES_READY, '__return_false' );
-		add_filter( WooPaymentsCutoverController::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER, '__return_empty_array' );
-		$this->native_provider_ready = true;
-
-		$this->assertContains( 'native_admin_surfaces_unavailable', $this->sut->get_preflight_failures() );
-	}
-
-	/**
 	 * @testdox Cutover preflight blocks when an allowed admin route is not registered.
 	 */
 	public function test_preflight_blocks_when_admin_route_registry_cannot_resolve_allowed_route(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-		add_filter( WooPaymentsCutoverController::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER, '__return_empty_array' );
-		add_filter( WooPaymentsCutoverController::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER, '__return_empty_array' );
 		$this->native_provider_ready = true;
 		$sut                         = $this->create_cutover_controller( $this->create_admin_navigation_controller( false ) );
 
@@ -1496,8 +1403,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-		add_filter( WooPaymentsCutoverController::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER, '__return_empty_array' );
-		add_filter( WooPaymentsCutoverController::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER, '__return_empty_array' );
 		$this->native_provider_ready = true;
 
 		$failures = $this->sut->get_preflight_failures();
@@ -1515,7 +1420,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_plugin_active();
 		$this->enable_ready_cutover();
 		update_option( 'woocommerce_woocommerce_payments_version', $version );
-		add_filter( WooPaymentsCutoverController::FILTER_PREFLIGHT_FAILURES, '__return_empty_array' );
 
 		$this->assertContains( 'woopayments_plugin_version_unsupported', $this->sut->get_preflight_failures() );
 	}
@@ -1534,44 +1438,12 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Cutover preflight blocks while provider event types remain undispositioned.
-	 */
-	public function test_preflight_blocks_when_provider_events_are_undispositioned(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-		add_filter( WooPaymentsCutoverController::FILTER_NATIVE_ADMIN_SURFACES_READY, '__return_true' );
-		add_filter( WooPaymentsCutoverController::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER, static fn() => array( 'example.event' ) );
-		add_filter( WooPaymentsCutoverController::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER, '__return_empty_array' );
-		$this->native_provider_ready = true;
-
-		$this->assertContains( 'provider_events_undispositioned', $this->sut->get_preflight_failures() );
-	}
-
-	/**
-	 * @testdox Cutover preflight blocks while operational queue hooks remain undispositioned.
-	 */
-	public function test_preflight_blocks_when_operational_queue_hooks_are_undispositioned(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-		add_filter( WooPaymentsCutoverController::FILTER_NATIVE_ADMIN_SURFACES_READY, '__return_true' );
-		add_filter( WooPaymentsCutoverController::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER, '__return_empty_array' );
-		add_filter( WooPaymentsCutoverController::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER, static fn() => array( 'example_hook' ) );
-		$this->native_provider_ready = true;
-
-		$this->assertContains( 'operational_queue_hooks_undispositioned', $this->sut->get_preflight_failures() );
-	}
-
-	/**
 	 * @testdox Cutover preflight discovers pending WooPayments actions without a static hook inventory.
 	 */
 	public function test_preflight_blocks_when_unknown_woopayments_action_is_pending(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-		add_filter( WooPaymentsCutoverController::FILTER_NATIVE_ADMIN_SURFACES_READY, '__return_true' );
-		add_filter( WooPaymentsCutoverController::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER, '__return_empty_array' );
 		$this->native_provider_ready = true;
 
 		$hook_name                      = 'wcpay_synthetic_cutover_probe';
@@ -1594,8 +1466,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-		add_filter( WooPaymentsCutoverController::FILTER_NATIVE_ADMIN_SURFACES_READY, '__return_true' );
-		add_filter( WooPaymentsCutoverController::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER, '__return_empty_array' );
 		$this->native_provider_ready = true;
 
 		$this->scheduled_action_hooks[] = $hook_name;
@@ -1652,7 +1522,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-		add_filter( WooPaymentsCutoverController::FILTER_NATIVE_ADMIN_SURFACES_READY, '__return_true' );
 		$this->native_provider_ready = true;
 
 		$failures = $this->sut->get_preflight_failures();
@@ -1716,19 +1585,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Cutover preflight filters cannot remove the legacy Stripe Billing marker blocker.
-	 */
-	public function test_preflight_filter_cannot_remove_legacy_stripe_billing_marker_blocker(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		$this->enable_ready_cutover();
-		$this->create_legacy_stripe_billing_subscription( 'active' );
-		add_filter( WooPaymentsCutoverController::FILTER_PREFLIGHT_FAILURES, '__return_empty_array' );
-
-		$this->assertContains( 'legacy_stripe_billing_subscriptions_present', $this->sut->get_preflight_failures() );
-	}
-
-	/**
 	 * @testdox Cutover preflight allows orders that keep their Stripe Billing invoice IDs after a migration.
 	 */
 	public function test_preflight_allows_stripe_billing_invoice_order_markers(): void {
@@ -1764,21 +1620,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->enable_ready_cutover();
 
 		$this->assertNotContains( 'legacy_stripe_billing_subscriptions_present', $this->sut->get_preflight_failures() );
-	}
-
-	/**
-	 * @testdox Transport readiness filter can still force cutover readiness for controlled rollouts.
-	 */
-	public function test_transport_filter_can_force_preflight_when_provider_is_not_ready(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-		add_filter( WooPaymentsCutoverController::FILTER_NATIVE_ADMIN_SURFACES_READY, '__return_true' );
-		add_filter( WooPaymentsCutoverController::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER, '__return_empty_array' );
-		add_filter( WooPaymentsCutoverController::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER, '__return_empty_array' );
-		add_filter( WooPaymentsCutoverController::FILTER_NATIVE_TRANSPORT_READY, '__return_true' );
-
-		$this->assertNotContains( 'native_transport_unavailable', $this->sut->get_preflight_failures() );
 	}
 
 	/**
@@ -2039,9 +1880,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 */
 	private function enable_ready_cutover(): void {
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-		add_filter( WooPaymentsCutoverController::FILTER_NATIVE_ADMIN_SURFACES_READY, '__return_true' );
-		add_filter( WooPaymentsCutoverController::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER, '__return_empty_array' );
-		add_filter( WooPaymentsCutoverController::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER, '__return_empty_array' );
 		$this->native_provider_ready = true;
 	}
 

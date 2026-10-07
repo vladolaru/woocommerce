@@ -24,16 +24,6 @@ defined( 'ABSPATH' ) || exit;
  */
 class WooPaymentsCutoverPreflightService {
 
-	public const FILTER_NATIVE_TRANSPORT_READY = 'woocommerce_woopayments_cutover_transport_ready';
-
-	public const FILTER_NATIVE_ADMIN_SURFACES_READY = 'woocommerce_woopayments_cutover_admin_surfaces_ready';
-
-	public const FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER = 'woocommerce_woopayments_cutover_pending_event_types';
-
-	public const FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER = 'woocommerce_woopayments_cutover_pending_operational_queue_hooks';
-
-	public const FILTER_PREFLIGHT_FAILURES = 'woocommerce_woopayments_cutover_preflight_failures';
-
 	public const MINIMUM_CUTOVER_PLUGIN_VERSION = '10.5.0';
 
 	private const WOOPAYMENTS_VERSION_OPTION = 'woocommerce_woocommerce_payments_version';
@@ -142,13 +132,6 @@ class WooPaymentsCutoverPreflightService {
 	private array $reconciliation_memo = array();
 
 	/**
-	 * Request-local compatibility preflight failures keyed by blog ID.
-	 *
-	 * @var array<int,array<int,string>>
-	 */
-	private array $preflight_memo = array();
-
-	/**
 	 * Request-local network preflight failures.
 	 *
 	 * @var int[]|null
@@ -175,7 +158,7 @@ class WooPaymentsCutoverPreflightService {
 	 */
 	public function invalidate_current_blog_memoization(): void {
 		$blog_id = get_current_blog_id();
-		unset( $this->reconciliation_memo[ $blog_id ], $this->preflight_memo[ $blog_id ] );
+		unset( $this->reconciliation_memo[ $blog_id ] );
 		$this->network_preflight_failing_site_ids_memo = null;
 	}
 
@@ -186,19 +169,10 @@ class WooPaymentsCutoverPreflightService {
 	 */
 	public function get_reconciliation_failures(): array {
 		$blog_id = get_current_blog_id();
-		$this->evaluate_failures( $blog_id );
+		if ( ! array_key_exists( $blog_id, $this->reconciliation_memo ) ) {
+			$this->reconciliation_memo[ $blog_id ] = $this->evaluate_failures();
+		}
 		return $this->reconciliation_memo[ $blog_id ];
-	}
-
-	/**
-	 * Get the legacy compatibility-facing preflight shape.
-	 *
-	 * @return string[] Failure codes.
-	 */
-	public function get_preflight_failures(): array {
-		$blog_id = get_current_blog_id();
-		$this->evaluate_failures( $blog_id );
-		return $this->preflight_memo[ $blog_id ];
 	}
 
 	/**
@@ -215,93 +189,49 @@ class WooPaymentsCutoverPreflightService {
 	}
 
 	/**
-	 * Evaluate and memoize cutover failures for a site.
+	 * Evaluate the cutover failures for the current site.
 	 *
-	 * @param int $blog_id Current blog ID.
+	 * @return string[] Failure codes.
 	 */
-	private function evaluate_failures( int $blog_id ): void {
-		if ( array_key_exists( $blog_id, $this->reconciliation_memo ) ) {
-			return;
-		}
+	private function evaluate_failures(): array {
 		if ( ! $this->arbiter->is_native_runtime_enabled() ) {
-			$this->reconciliation_memo[ $blog_id ] = array( 'native_runtime_disabled' );
-			$this->preflight_memo[ $blog_id ]      = array( 'native_runtime_disabled' );
-			return;
+			return array( 'native_runtime_disabled' );
 		}
 
-		$raw_failures           = array();
-		$compatibility_failures = array();
-		$protected_failures     = array();
+		$failures = array();
 		if ( ! $this->is_woopayments_plugin_version_supported() ) {
-			$raw_failures[]           = 'woopayments_plugin_version_unsupported';
-			$compatibility_failures[] = 'woopayments_plugin_version_unsupported';
-			$protected_failures[]     = 'woopayments_plugin_version_unsupported';
+			$failures[] = 'woopayments_plugin_version_unsupported';
 		}
-		/**
-		 * Filters whether native WooPayments transport is ready for cutover.
-		 *
-		 * @since 11.0.0
-		 * @param bool $is_ready Whether native transport can process WooPayments requests.
-		 */
-		if ( ! (bool) apply_filters( self::FILTER_NATIVE_TRANSPORT_READY, $this->is_native_transport_ready() ) ) {
-			$raw_failures[]           = 'native_transport_unavailable';
-			$compatibility_failures[] = 'native_transport_unavailable';
+		if ( ! $this->is_native_transport_ready() ) {
+			$failures[] = 'native_transport_unavailable';
 		}
-		$platform_failures      = $this->get_platform_connection_service()->get_cutover_preflight_failures();
-		$raw_failures           = array_merge( $raw_failures, $platform_failures );
-		$compatibility_failures = array_merge( $compatibility_failures, $platform_failures );
-		$protected_failures     = array_merge( $protected_failures, $platform_failures );
+		$failures = array_merge( $failures, $this->get_platform_connection_service()->get_cutover_preflight_failures() );
 		if ( $this->has_unavailable_multi_currency_rate_provider() ) {
-			$raw_failures[]           = 'multi_currency_rates_unavailable';
-			$compatibility_failures[] = 'multi_currency_rates_unavailable';
-			$protected_failures[]     = 'multi_currency_rates_unavailable';
+			$failures[] = 'multi_currency_rates_unavailable';
+		}
+		if ( ! $this->get_admin_navigation_controller()->are_all_available_routes_registered() ) {
+			$failures[] = 'native_admin_surfaces_unavailable';
 		}
 		/**
-		 * Filters whether native WooPayments merchant admin surfaces are ready after deactivation.
+		 * Event types that still block the switch. The list is empty today.
 		 *
-		 * @since 11.0.0
-		 * @param bool $is_ready Whether native merchant admin surfaces are ready.
+		 * @var string[] $unhandled_event_types
 		 */
-		if ( ! (bool) apply_filters( self::FILTER_NATIVE_ADMIN_SURFACES_READY, $this->get_admin_navigation_controller()->are_all_available_routes_registered() ) ) {
-			$raw_failures[]           = 'native_admin_surfaces_unavailable';
-			$compatibility_failures[] = 'native_admin_surfaces_unavailable';
+		$unhandled_event_types = WooPaymentsEventIngestor::KNOWN_UNHANDLED_EVENT_TYPES;
+		if ( array() !== $unhandled_event_types ) {
+			$failures[] = 'provider_events_undispositioned';
 		}
-		$pending_provider_event_types = $this->get_pending_provider_event_types();
-		if ( array() !== $pending_provider_event_types ) {
-			$raw_failures[]           = in_array( 'provider_events_filter_invalid', $pending_provider_event_types, true ) ? 'provider_events_filter_invalid' : 'provider_events_undispositioned';
-			$compatibility_failures[] = 'provider_events_undispositioned';
-		}
-		$pending_operational_queue_hooks = $this->get_pending_operational_queue_hooks();
-		if ( array() !== $pending_operational_queue_hooks ) {
-			$raw_failures[]           = in_array( 'operational_queue_hooks_filter_invalid', $pending_operational_queue_hooks, true ) ? 'operational_queue_hooks_filter_invalid' : 'operational_queue_hooks_undispositioned';
-			$compatibility_failures[] = 'operational_queue_hooks_undispositioned';
+		if ( array() !== $this->get_pending_operational_queue_hooks() ) {
+			$failures[] = 'operational_queue_hooks_undispositioned';
 		}
 		if ( ! $this->get_fee_remediation_service()->can_schedule_cutover_remediation() ) {
-			$raw_failures[]           = 'financial_migrations_unavailable';
-			$compatibility_failures[] = 'financial_migrations_unavailable';
+			$failures[] = 'financial_migrations_unavailable';
 		}
 		if ( $this->get_legacy_subscriptions_guard()->is_bundled_stripe_billing_store() ) {
-			$raw_failures[] = 'legacy_stripe_billing_subscriptions_present';
+			$failures[] = 'legacy_stripe_billing_subscriptions_present';
 		}
-		$raw_failures           = self::normalize_string_list( $raw_failures );
-		$compatibility_failures = self::normalize_string_list( $compatibility_failures );
-		$protected_failures     = self::normalize_string_list( $protected_failures );
-		/**
-		 * Filters WooPayments native cutover preflight failures.
-		 *
-		 * @since 11.0.0
-		 * @param array<int,string> $failures Failure codes.
-		 */
-		$filtered_failures = apply_filters( self::FILTER_PREFLIGHT_FAILURES, array_values( $compatibility_failures ) );
-		if ( is_array( $filtered_failures ) ) {
-			$filtered_failures                     = self::normalize_string_list( $filtered_failures );
-			$extensions                            = array_values( array_diff( $filtered_failures, $compatibility_failures ) );
-			$this->reconciliation_memo[ $blog_id ] = self::normalize_string_list( array_merge( $raw_failures, $extensions ) );
-			$this->preflight_memo[ $blog_id ]      = self::normalize_string_list( array_merge( $filtered_failures, $protected_failures, in_array( 'legacy_stripe_billing_subscriptions_present', $raw_failures, true ) ? array( 'legacy_stripe_billing_subscriptions_present' ) : array() ) );
-			return;
-		}
-		$this->reconciliation_memo[ $blog_id ] = self::normalize_string_list( array_merge( $raw_failures, array( 'preflight_filter_invalid' ) ) );
-		$this->preflight_memo[ $blog_id ]      = self::normalize_string_list( array_merge( array( 'preflight_filter_invalid' ), $protected_failures, in_array( 'legacy_stripe_billing_subscriptions_present', $raw_failures, true ) ? array( 'legacy_stripe_billing_subscriptions_present' ) : array() ) );
+
+		return self::normalize_string_list( $failures );
 	}
 
 	/**
@@ -337,7 +267,7 @@ class WooPaymentsCutoverPreflightService {
 					switch_to_blog( $site_id );
 				}
 				try {
-					if ( array() !== $this->get_preflight_failures() ) {
+					if ( array() !== $this->get_reconciliation_failures() ) {
 						$failing_site_ids[] = $site_id;
 					}
 				} finally {
@@ -562,22 +492,6 @@ class WooPaymentsCutoverPreflightService {
 	}
 
 	/**
-	 * Get provider event types that still need disposition.
-	 *
-	 * @return string[]
-	 */
-	private function get_pending_provider_event_types(): array {
-		/**
-		 * Filters provider event types that still need native cutover disposition.
-		 *
-		 * @since 11.0.0
-		 * @param array<int,string> $event_types Event types that still block cutover.
-		 */
-		$event_types = apply_filters( self::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER, WooPaymentsEventIngestor::KNOWN_UNHANDLED_EVENT_TYPES );
-		return is_array( $event_types ) ? self::normalize_string_list( $event_types ) : array( 'provider_events_filter_invalid' );
-	}
-
-	/**
 	 * Get operational queue hooks that still need disposition.
 	 *
 	 * @return string[]
@@ -588,14 +502,7 @@ class WooPaymentsCutoverPreflightService {
 		if ( in_array( self::IDENTIFIER_PLACEHOLDERS_UNAVAILABLE_HOOK, $hooks, true ) ) {
 			return array( self::IDENTIFIER_PLACEHOLDERS_UNAVAILABLE_HOOK );
 		}
-		/**
-		 * Filters operational queue hooks that still need native cutover disposition.
-		 *
-		 * @since 11.0.0
-		 * @param array<int,string> $hook_names Operational queue hooks that still block cutover.
-		 */
-		$hook_names = apply_filters( self::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER, array_values( array_diff( $hooks, self::NATIVE_OWNED_OPERATIONAL_QUEUE_HOOKS ) ) );
-		return is_array( $hook_names ) ? self::normalize_string_list( $hook_names ) : array( 'operational_queue_hooks_filter_invalid' );
+		return array_values( array_diff( $hooks, self::NATIVE_OWNED_OPERATIONAL_QUEUE_HOOKS ) );
 	}
 
 	/**
