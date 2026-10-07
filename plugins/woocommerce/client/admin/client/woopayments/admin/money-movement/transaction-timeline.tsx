@@ -47,8 +47,14 @@ import {
 	WooPaymentsTimelineList,
 	type WooPaymentsTimelineItem,
 } from './transaction-timeline-list';
-import { getSettingsPaymentsProviderRouteUrl } from '../utils';
-import { getCapitalLoanTransactionsUrl } from '../capital/active-loan-summary';
+import {
+	getSettingsPaymentsProviderRouteUrl,
+	handleSettingsPaymentsProviderRouteClick,
+} from '../utils';
+import {
+	getCapitalLoanTransactionsRoute,
+	getCapitalLoanTransactionsUrl,
+} from '../capital/active-loan-summary';
 import './transaction-timeline.scss';
 
 // Maps platform timeline events to core `Timeline` items the way client 11.1.0
@@ -341,6 +347,10 @@ const getPayoutMessage = (
 		return sprintf( getFuturePayoutTemplate( direction ), amount );
 	}
 
+	const payoutRoute = `/woopayments/payouts/details?id=${ encodeURIComponent(
+		depositId
+	) }`;
+
 	return createInterpolateElement(
 		sprintf(
 			getLinkedPayoutTemplate( direction ),
@@ -351,10 +361,9 @@ const getPayoutMessage = (
 			a: (
 				// eslint-disable-next-line jsx-a11y/anchor-has-content -- Content is interpolated.
 				<a
-					href={ getSettingsPaymentsProviderRouteUrl(
-						`/woopayments/payouts/details?id=${ encodeURIComponent(
-							depositId
-						) }`
+					href={ getSettingsPaymentsProviderRouteUrl( payoutRoute ) }
+					onClick={ handleSettingsPaymentsProviderRouteClick(
+						payoutRoute
 					) }
 				/>
 			),
@@ -1067,6 +1076,11 @@ const mapTimelineEvent = (
 											<a
 												href={ getCapitalLoanTransactionsUrl(
 													loanId
+												) }
+												onClick={ handleSettingsPaymentsProviderRouteClick(
+													getCapitalLoanTransactionsRoute(
+														loanId
+													)
 												) }
 											/>
 										),

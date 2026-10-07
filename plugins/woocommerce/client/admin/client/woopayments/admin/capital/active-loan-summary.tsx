@@ -22,7 +22,10 @@ import {
 	formatExplicitCurrency,
 	formatSiteDateTime,
 } from '../money-movement/utils';
-import { getSettingsPaymentsProviderRouteUrl } from '../utils';
+import {
+	getSettingsPaymentsProviderRouteUrl,
+	handleSettingsPaymentsProviderRouteClick,
+} from '../utils';
 import './active-loan-summary.scss';
 
 export const formatCapitalPercent = ( value: number ) =>
@@ -138,6 +141,9 @@ export const ActiveLoanSummary = ( {
 					<Button
 						variant="link"
 						href={ getCapitalLoanTransactionsUrl( activeLoanId ) }
+						onClick={ handleSettingsPaymentsProviderRouteClick(
+							getCapitalLoanTransactionsRoute( activeLoanId )
+						) }
 						__next40pxDefaultSize
 					>
 						{ __( 'View transactions', 'woocommerce' ) }

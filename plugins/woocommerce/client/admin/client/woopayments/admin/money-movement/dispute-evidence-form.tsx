@@ -448,6 +448,9 @@ export const DisputeEvidenceForm = ( {
 	const noticeRef = useRef< HTMLDivElement | null >( null );
 	const previousFileDetailsRef = useRef< EvidenceFileMap >( fileDetails );
 	const disputeId = getDisputeId( dispute );
+	const disputeDetailsRoute = `/woopayments/disputes/details?id=${ encodeURIComponent(
+		disputeId
+	) }`;
 	const refundIssuedControlId = `${ disputeId }-refund-status-issued`;
 	const refundNotOwedControlId = `${ disputeId }-refund-status-not-owed`;
 	const duplicateControlId = `${ disputeId }-duplicate-status-duplicate`;
@@ -1083,6 +1086,9 @@ export const DisputeEvidenceForm = ( {
 												href={ getSettingsPaymentsProviderRouteUrl(
 													'/woopayments/disputes'
 												) }
+												onClick={ handleSettingsPaymentsProviderRouteClick(
+													'/woopayments/disputes'
+												) }
 											/>
 										),
 									}
@@ -1144,9 +1150,13 @@ export const DisputeEvidenceForm = ( {
 								href={ getSettingsPaymentsProviderRouteUrl(
 									'/woopayments/disputes'
 								) }
+								onClick={ handleSettingsPaymentsProviderRouteClick(
+									'/woopayments/disputes'
+								) }
 							>
 								{ __( 'Return to disputes', 'woocommerce' ) }
 							</Button>
+							{ /* A full load, as client 11.1.0 confirmation-screen.tsx:215-222: this is the page on screen, read again to show the submitted dispute. */ }
 							<Button
 								variant="primary"
 								href={ getSettingsPaymentsProviderRouteUrl(
@@ -1600,9 +1610,10 @@ export const DisputeEvidenceForm = ( {
 									<Button
 										variant="secondary"
 										href={ getSettingsPaymentsProviderRouteUrl(
-											`/woopayments/disputes/details?id=${ encodeURIComponent(
-												disputeId
-											) }`
+											disputeDetailsRoute
+										) }
+										onClick={ handleSettingsPaymentsProviderRouteClick(
+											disputeDetailsRoute
 										) }
 									>
 										{ __( 'Cancel', 'woocommerce' ) }

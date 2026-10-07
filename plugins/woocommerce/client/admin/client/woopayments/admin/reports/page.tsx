@@ -63,7 +63,10 @@ import {
 	formatExplicitCurrency,
 	getTransactionDetailsRoute,
 } from '../money-movement/utils';
-import { getSettingsPaymentsProviderRouteUrl } from '../utils';
+import {
+	getSettingsPaymentsProviderRouteUrl,
+	handleSettingsPaymentsProviderRouteClick,
+} from '../utils';
 import { getWooPaymentsAmountFromMinorUnits } from '../../currency';
 
 type WooPaymentsReportsPageProps = {
@@ -259,14 +262,12 @@ const getOrderUrl = ( orderId: ReportsFee[ 'order_id' ] ) =>
 		String( orderId ?? '' )
 	) }`;
 
-const getTransactionUrl = ( item: ReportsFee ) =>
-	getSettingsPaymentsProviderRouteUrl(
-		getTransactionDetailsRoute( {
-			id: item.payment_id || item.transaction_id,
-			transaction_id: item.transaction_id,
-			type: item.type,
-		} )
-	);
+const getTransactionRoute = ( item: ReportsFee ) =>
+	getTransactionDetailsRoute( {
+		id: item.payment_id || item.transaction_id,
+		transaction_id: item.transaction_id,
+		type: item.type,
+	} );
 
 const isYmd = ( value: unknown ): value is string =>
 	typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test( value );
@@ -1580,7 +1581,14 @@ const FeesReport = ( { now }: { now: Date } ) => {
 				getValue: ( { item }: { item: ReportsFee } ) =>
 					item.transaction_id,
 				render: ( { item }: { item: ReportsFee } ) => (
-					<a href={ getTransactionUrl( item ) }>
+					<a
+						href={ getSettingsPaymentsProviderRouteUrl(
+							getTransactionRoute( item )
+						) }
+						onClick={ handleSettingsPaymentsProviderRouteClick(
+							getTransactionRoute( item )
+						) }
+					>
 						{ item.transaction_id }
 					</a>
 				),
