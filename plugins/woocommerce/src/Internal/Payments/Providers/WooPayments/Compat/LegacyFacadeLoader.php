@@ -21,11 +21,12 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 class LegacyFacadeLoader implements RegisterHooksInterface {
 
 	/**
-	 * Filter that lets a programmatic plugin activator suppress the facades before its sandbox include.
-	 *
-	 * @var string
+	 * Facade class names and the files that declare them.
 	 */
-	public const FILTER_SHOULD_LOAD = 'woocommerce_native_payments_should_load_legacy_facades';
+	private const FACADE_FILES = array(
+		'WC_Payments'          => 'class-wc-payments.php',
+		'WC_Payments_Features' => 'class-wc-payments-features.php',
+	);
 
 	/**
 	 * Runtime owner arbiter.
@@ -62,7 +63,12 @@ class LegacyFacadeLoader implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Load the legacy facades when the native runtime owns payments.
+	 * Make the legacy facades available when the native runtime owns payments.
+	 *
+	 * The two classes are declared on first use through an autoloader, so a request that activates WooPayments without
+	 * anything asking for them first leaves the names to the plugin's own declarations. Requests recognized as a
+	 * WooPayments activation get no facades at all, since a consumer probing the class earlier in the same request would
+	 * otherwise declare it before the plugin does.
 	 *
 	 * @since 11.0.0
 	 */
@@ -75,31 +81,24 @@ class LegacyFacadeLoader implements RegisterHooksInterface {
 			return;
 		}
 
-		/**
-		 * Filters whether native WooPayments may declare its legacy global facades.
-		 *
-		 * Programmatic activators that do not use a WordPress request surface must return false before
-		 * `plugins_loaded` priority 0, so the standalone plugin can own its classes during the activation
-		 * sandbox include.
-		 *
-		 * @since 11.0.0
-		 *
-		 * @param bool $should_load Whether the native compatibility facades should load.
-		 */
-		if ( ! apply_filters( self::FILTER_SHOULD_LOAD, true ) ) {
-			return;
-		}
-
+		// The plugin defines its own version constant in WC_Payments::init(), never while its activation file loads.
 		if ( ! defined( 'WCPAY_VERSION_NUMBER' ) ) {
 			define( 'WCPAY_VERSION_NUMBER', WooPaymentsClientVersion::VERSION );
 		}
 
-		if ( ! class_exists( 'WC_Payments', false ) ) {
-			require_once __DIR__ . '/legacy/class-wc-payments.php';
-		}
+		spl_autoload_register( array( $this, 'autoload_facade' ) );
+	}
 
-		if ( ! class_exists( 'WC_Payments_Features', false ) ) {
-			require_once __DIR__ . '/legacy/class-wc-payments-features.php';
+	/**
+	 * Declare a legacy facade class the first time it is used.
+	 *
+	 * @internal
+	 *
+	 * @param string $class_name Class being autoloaded.
+	 */
+	public function autoload_facade( string $class_name ): void {
+		if ( isset( self::FACADE_FILES[ $class_name ] ) ) {
+			require_once __DIR__ . '/legacy/' . self::FACADE_FILES[ $class_name ];
 		}
 	}
 
@@ -127,6 +126,12 @@ class LegacyFacadeLoader implements RegisterHooksInterface {
 		$activation_actions = array( 'activate', 'activate-plugin', 'activate-selected' );
 
 		if ( ( in_array( $action, $activation_actions, true ) || in_array( $secondary_action, $activation_actions, true ) ) && $this->request_targets_woopayments( $request ) ) {
+			return true;
+		}
+
+		// WooCommerce's PluginsInstaller activates from an admin URL with a comma-separated `plugins` list.
+		$plugin_action = isset( $request['plugin_action'] ) && is_string( $request['plugin_action'] ) ? sanitize_key( $request['plugin_action'] ) : '';
+		if ( in_array( $plugin_action, array( 'activate', 'install-activate' ), true ) && isset( $request['plugins'] ) && is_string( $request['plugins'] ) && $this->request_targets_woopayments( array( 'plugins' => explode( ',', $request['plugins'] ) ) ) ) {
 			return true;
 		}
 
@@ -160,7 +165,7 @@ class LegacyFacadeLoader implements RegisterHooksInterface {
 
 			$command           = $arguments[ $index + 1 ];
 			$command_arguments = array_slice( $arguments, $index + 2 );
-			if ( 'activate' === $command ) {
+			if ( 'activate' === $command || 'toggle' === $command ) {
 				return in_array( '--all', $command_arguments, true ) || $this->request_targets_woopayments( array( 'plugins' => $command_arguments ) );
 			}
 
@@ -204,7 +209,7 @@ class LegacyFacadeLoader implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the core plugins REST controller may install or activate WooPayments.
+	 * Tell whether a plugins REST route (core's or WooCommerce's) may install or activate WooPayments.
 	 *
 	 * @param array<string,mixed> $request Unslashed request parameters.
 	 * @return bool True for a mutating plugins collection request or WooPayments item request.
@@ -220,7 +225,15 @@ class LegacyFacadeLoader implements RegisterHooksInterface {
 			$route = sanitize_text_field( rawurldecode( wp_unslash( $_SERVER['REQUEST_URI'] ) ) ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Sanitized inline.
 		}
 
-		$route           = rawurldecode( $route );
+		$route = rawurldecode( $route );
+		// WooCommerce's own plugin routes take their plugin list in a JSON body, so any install or activation request counts.
+		foreach ( array( '/wc-admin/plugins/activate', '/wc-admin/plugins/install' ) as $wc_admin_route ) {
+			$route_position = strpos( $route, $wc_admin_route );
+			if ( false !== $route_position && ! str_starts_with( substr( $route, $route_position + strlen( $wc_admin_route ) ), '/status' ) ) {
+				return true;
+			}
+		}
+
 		$plugins_marker  = '/wp/v2/plugins';
 		$marker_position = strpos( $route, $plugins_marker );
 		if ( false === $marker_position ) {

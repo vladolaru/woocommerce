@@ -78,7 +78,7 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 		$legacy_runtime = new WooPaymentsLegacyRuntime();
 		$legacy_runtime->init( new LegacyProxy(), $arbiter );
 
-		$this->assertTrue( class_exists( 'WC_Payments', false ), 'Extension compatibility requires the native facade to remain declared.' );
+		$this->assertTrue( class_exists( 'WC_Payments' ), 'Extension compatibility requires the native facade to be available.' );
 		$this->assertFalse( $legacy_runtime->is_loaded(), 'Core must retain its Payments menu and other native-only behavior when only the facade is present.' );
 	}
 
@@ -177,8 +177,9 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 
 		$this->register_legacy_facades();
 
-		$this->assertFalse( class_exists( 'WC_Payments', false ), 'An activation request must reach the plugin sandbox without a predeclared bootstrap class.' );
-		$this->assertFalse( class_exists( 'WC_Payments_Features', false ), 'An activation request must reach the plugin sandbox without a predeclared feature class.' );
+		// Even a consumer probing the classes earlier in the request must not declare them: no autoloader is registered.
+		$this->assertFalse( class_exists( 'WC_Payments' ), 'An activation request must reach the plugin sandbox without a predeclared bootstrap class.' );
+		$this->assertFalse( class_exists( 'WC_Payments_Features' ), 'An activation request must reach the plugin sandbox without a predeclared feature class.' );
 	}
 
 	/**
@@ -188,14 +189,14 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 	 */
 	public function official_activation_request_provider(): array {
 		return array(
-			'bulk plugins screen'     => array(
+			'bulk plugins screen'                => array(
 				array(
 					'action'  => 'activate-selected',
 					'checked' => array( 'another-plugin/another-plugin.php', NativePaymentsRuntimeArbiter::PLUGIN_FILE ),
 				),
 				array(),
 			),
-			'bulk bottom selector'    => array(
+			'bulk bottom selector'               => array(
 				array(
 					'action'  => '-1',
 					'action2' => 'activate-selected',
@@ -203,7 +204,7 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 				),
 				array(),
 			),
-			'plugin installer ajax'   => array(
+			'plugin installer ajax'              => array(
 				array(
 					'action' => 'activate-plugin',
 					'plugin' => NativePaymentsRuntimeArbiter::PLUGIN_FILE,
@@ -211,16 +212,34 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 				),
 				array(),
 			),
-			'plugins REST item'       => array(
+			'plugins REST item'                  => array(
 				array(),
 				array(
 					'REQUEST_METHOD' => 'PUT',
 					'REQUEST_URI'    => '/wp-json/wp/v2/plugins/woocommerce-payments%2Fwoocommerce-payments',
 				),
 			),
-			'plugins REST collection' => array(
+			'plugins REST collection'            => array(
 				array( 'rest_route' => '/wp/v2/plugins' ),
 				array( 'REQUEST_METHOD' => 'POST' ),
+			),
+			'WooCommerce plugins activate route' => array(
+				array(),
+				array(
+					'REQUEST_METHOD' => 'POST',
+					'REQUEST_URI'    => '/wp-json/wc-admin/plugins/activate',
+				),
+			),
+			'WooCommerce plugins install route'  => array(
+				array( 'rest_route' => '/wc-admin/plugins/install' ),
+				array( 'REQUEST_METHOD' => 'POST' ),
+			),
+			'WooCommerce PluginsInstaller URL'   => array(
+				array(
+					'plugin_action' => 'install-activate',
+					'plugins'       => 'jetpack,woocommerce-payments',
+				),
+				array(),
 			),
 		);
 	}
@@ -255,6 +274,7 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 			'activate all'              => array( array( 'wp', 'plugin', 'activate', '--all' ) ),
 			'install and activate'      => array( array( 'wp', 'plugin', 'install', 'woocommerce-payments', '--activate' ) ),
 			'install network activated' => array( array( 'wp', 'plugin', 'install', 'woocommerce-payments', '--activate-network' ) ),
+			'toggle'                    => array( array( 'wp', 'plugin', 'toggle', 'woocommerce-payments' ) ),
 		);
 	}
 
@@ -272,8 +292,8 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 
 		$this->register_legacy_facades();
 
-		$this->assertTrue( class_exists( 'WC_Payments', false ), 'Ordinary WP-CLI commands should retain native WooPayments compatibility.' );
-		$this->assertTrue( class_exists( 'WC_Payments_Features', false ), 'Ordinary WP-CLI commands should retain native WooPayments feature compatibility.' );
+		$this->assertTrue( class_exists( 'WC_Payments' ), 'Ordinary WP-CLI commands should retain native WooPayments compatibility.' );
+		$this->assertTrue( class_exists( 'WC_Payments_Features' ), 'Ordinary WP-CLI commands should retain native WooPayments feature compatibility.' );
 	}
 
 	/**
@@ -290,19 +310,39 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A programmatic activator can suppress facades before its sandbox include.
+	 * @testdox The facades are declared on first use, so an activation nothing probed first leaves both names to the plugin.
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
-	public function test_programmatic_activator_can_suppress_facades(): void {
-		add_filter( LegacyFacadeLoader::FILTER_SHOULD_LOAD, '__return_false' );
-
+	public function test_facades_are_declared_on_first_use(): void {
 		$this->register_legacy_facades();
+
+		$this->assertFalse( class_exists( 'WC_Payments', false ), 'Loading must not declare the bootstrap facade before it is used.' );
+		$this->assertFalse( class_exists( 'WC_Payments_Features', false ), 'Loading must not declare the feature facade before it is used.' );
+		$this->assertTrue( defined( 'WCPAY_VERSION_NUMBER' ) );
+
+		// An activation path no request shape reveals (an Action Scheduler activation callback, activate_plugin() from code).
 		define( 'WP_SANDBOX_SCRAPING', true );
 		require __DIR__ . '/Fixtures/woocommerce-payments-activation-bootstrap.inc';
 
-		$this->assertSame( 'plugin', \WC_Payments::DECLARATION_OWNER, 'A programmatic activation sandbox should own the plugin bootstrap class.' );
-		$this->assertSame( 'plugin', \WC_Payments_Features::DECLARATION_OWNER, 'A programmatic activation sandbox should own the plugin feature class.' );
+		$this->assertSame( 'plugin', \WC_Payments::DECLARATION_OWNER );
+		$this->assertSame( 'plugin', \WC_Payments_Features::DECLARATION_OWNER );
+	}
+
+	/**
+	 * @testdox Probing WC_Payments declares only that facade, so the plugin's main file can still declare WC_Payments_Features.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_probing_wc_payments_leaves_the_feature_class_to_the_plugin(): void {
+		$this->register_legacy_facades();
+
+		$this->assertTrue( class_exists( 'WC_Payments' ), 'A consumer probe declares the bootstrap facade.' );
+		$this->assertFalse( class_exists( 'WC_Payments_Features', false ), 'The bootstrap facade must not pull in the feature facade.' );
+
+		require __DIR__ . '/Fixtures/woocommerce-payments-main-file.inc';
+
+		$this->assertSame( 'plugin', \WC_Payments_Features::DECLARATION_OWNER );
 	}
 
 	/**
@@ -316,8 +356,8 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 
 		$this->register_legacy_facades();
 
-		$this->assertTrue( class_exists( 'WC_Payments', false ), 'Unrelated activation requests should retain native WooPayments compatibility.' );
-		$this->assertTrue( class_exists( 'WC_Payments_Features', false ), 'Unrelated activation requests should retain native WooPayments feature compatibility.' );
+		$this->assertTrue( class_exists( 'WC_Payments' ), 'Unrelated activation requests should retain native WooPayments compatibility.' );
+		$this->assertTrue( class_exists( 'WC_Payments_Features' ), 'Unrelated activation requests should retain native WooPayments feature compatibility.' );
 	}
 
 	/**
