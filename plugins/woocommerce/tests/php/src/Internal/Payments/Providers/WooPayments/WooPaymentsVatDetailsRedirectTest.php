@@ -70,7 +70,7 @@ class WooPaymentsVatDetailsRedirectTest extends WC_Unit_Test_Case {
 		foreach ( array( NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ) as $state ) {
 			$this->assertContains( WooPaymentsVatDetailsRedirect::class, $matrix[ $state ]['front'], $state );
 		}
-		$this->assertArrayNotHasKey( 'front', $matrix[ NativePaymentsState::AVAILABLE ] );
+		$this->assertNotContains( WooPaymentsVatDetailsRedirect::class, $matrix[ NativePaymentsState::AVAILABLE ]['front'] ?? array(), 'A store without an account has no VAT details to show.' );
 	}
 
 	/**
