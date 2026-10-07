@@ -280,7 +280,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @return bool True when reconciliation was queued.
 	 */
 	public function disable_woopayments_plugin(): bool {
-		if ( ! $this->account_service->is_native_eligible() || ! $this->arbiter->is_plugin_runtime_active() || ! $this->current_user_can_cutover() ) {
+		if ( ! $this->arbiter->is_native_runtime_enabled() || ! $this->account_service->is_native_eligible() || ! $this->arbiter->is_plugin_runtime_active() || ! $this->current_user_can_cutover() ) {
 			return false;
 		}
 		if ( $this->reconciliation_job->enqueue( 'merchant' ) ) {
@@ -288,7 +288,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		}
 
 		// An eligible store manager asked for the switch and nothing was queued, for example while another request held the lease.
-		wc_get_logger()->error( 'WooPayments cutover: the merchant asked to start the switch, but no reconciliation was queued.', array( 'source' => 'woocommerce-woopayments-cutover' ) );
+		$this->legacy_proxy->call_function( 'wc_get_logger' )->error( 'WooPayments cutover: the merchant asked to start the switch, but no reconciliation was queued.', array( 'source' => 'woocommerce-woopayments-cutover' ) );
 		wp_die( esc_html__( 'Action failed. Please refresh the page and retry.', 'woocommerce' ) );
 	}
 
