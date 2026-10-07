@@ -689,6 +689,22 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
+	 * Print the saved payment methods list, but nothing when the customer has no saved methods.
+	 *
+	 * Client 11.1.0 (class-wc-payment-gateway-wcpay.php:974-980) skips core's list then, which would otherwise print an
+	 * empty element and a blank line above the card fields.
+	 *
+	 * @return void
+	 */
+	public function saved_payment_methods() {
+		if ( empty( $this->get_tokens() ) ) {
+			return;
+		}
+
+		parent::saved_payment_methods();
+	}
+
+	/**
 	 * Render the native WooPayments payment form.
 	 *
 	 * @return void

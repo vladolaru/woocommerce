@@ -6152,6 +6152,46 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should print no saved payment methods list for a customer without saved methods, and the list otherwise.
+	 */
+	public function test_saved_payment_methods_list_needs_saved_methods(): void {
+		$customer_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		wp_set_current_user( $customer_id );
+
+		$render         = static function (): string {
+			$gateway = new NativeWooPaymentsGateway();
+			ob_start();
+			$gateway->saved_payment_methods();
+			return (string) ob_get_clean();
+		};
+		$without_tokens = '';
+		$with_tokens    = '';
+
+		$this->with_gateway_settings(
+			array( 'saved_cards' => 'yes' ),
+			function () use ( $render, $customer_id, &$without_tokens, &$with_tokens ): void {
+				$without_tokens = $render();
+
+				$token = new \WC_Payment_Token_CC();
+				$token->set_token( 'pm_test_saved' );
+				$token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+				$token->set_card_type( 'visa' );
+				$token->set_last4( '4242' );
+				$token->set_expiry_month( '12' );
+				$token->set_expiry_year( '2040' );
+				$token->set_user_id( $customer_id );
+				$token->save();
+
+				$with_tokens = $render();
+			}
+		);
+
+		$this->assertSame( '', $without_tokens );
+		$this->assertStringContainsString( 'wc-saved-payment-methods', $with_tokens );
+		$this->assertStringContainsString( '4242', $with_tokens );
+	}
+
+	/**
 	 * @testdox Should hide a checked save-payment control for a subscription cart.
 	 */
 	public function test_save_payment_method_checkbox_hides_checked_control_for_subscription_cart(): void {
