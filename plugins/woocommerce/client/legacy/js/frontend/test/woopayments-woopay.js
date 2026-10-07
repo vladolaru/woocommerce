@@ -38,6 +38,7 @@ describe( 'WooPayments WooPay checkout', () => {
 	);
 
 	afterEach( () => {
+		delete window.wcWooPaymentsPhoneValidation;
 		Object.defineProperty(
 			window.HTMLIFrameElement.prototype,
 			'contentWindow',
@@ -680,13 +681,18 @@ describe( 'WooPayments WooPay checkout', () => {
 			window.wcpay_core_woopay_config.woopaySourceUrl =
 				'https://example.test/checkout/';
 			window.history.pushState( {}, '', '/checkout/?utm_source=a-long-campaign' );
+			// Stand-in for the validation script (phone-validation.js, core's validatePhoneNumber) the section loads on
+			// opt-in; core tests the rules themselves.
+			window.wcWooPaymentsPhoneValidation = {
+				validatePhoneNumber: ( number ) => number === '+12015550123',
+			};
 			require( '../woopayments-woopay' );
 
 		const saveCheckbox = document.querySelector(
 			'input[name="save_user_in_woopay"]'
 		);
 		const phoneField = document.querySelector(
-			'input[name="woopay_user_phone_field[full]"]'
+			'#woopay_user_phone_field_full'
 		);
 
 		expect( saveCheckbox ).not.toBeNull();
@@ -707,7 +713,7 @@ describe( 'WooPayments WooPay checkout', () => {
 			document.querySelector( 'input[name="woopay_viewport"]' )
 		).not.toBeNull();
 
-		phoneField.value = '+15555550123';
+		phoneField.value = '+12015550123';
 		phoneField.dispatchEvent(
 			new window.Event( 'blur', { bubbles: true, cancelable: true } )
 		);
@@ -721,7 +727,7 @@ describe( 'WooPayments WooPay checkout', () => {
 				woopay_is_blocks: 'false',
 				woopay_source_url: 'https://example.test/checkout/',
 				woopay_user_phone_field: {
-					full: '+15555550123',
+					full: '+12015550123',
 				},
 			} )
 		);
@@ -993,7 +999,7 @@ describe( 'WooPayments WooPay checkout', () => {
 
 		require( '../woopayments-woopay' );
 		document
-			.querySelector( 'input[name="woopay_user_phone_field[full]"]' )
+			.querySelector( '#woopay_user_phone_field_full' )
 			.dispatchEvent( new window.Event( 'blur', { bubbles: true } ) );
 		await flushPromises();
 
@@ -1038,6 +1044,59 @@ describe( 'WooPayments WooPay checkout', () => {
 		expect( posts[ posts.length - 1 ].empty ).toBe( 'true' );
 	} );
 
+	test( 'shows the WooPay phone error for an invalid number without stopping the order', () => {
+		// Stand-in for the validation script (phone-validation.js, core's validatePhoneNumber).
+		window.wcWooPaymentsPhoneValidation = {
+			validatePhoneNumber: ( number ) => number === '+12015550123',
+		};
+		require( '../woopayments-woopay' );
+		const phoneField = document.getElementById( 'woopay_user_phone_field_full' );
+		const error = document.getElementById(
+			'validate-error-invalid-woopay-phone-number'
+		);
+
+		phoneField.value = '123';
+		phoneField.dispatchEvent( new window.Event( 'blur', { bubbles: true } ) );
+
+		// Client 11.1.0 checkout-page-save-user.js:389-398 shows the message under the field.
+		expect( error.hidden ).toBe( false );
+		expect(
+			getSaveUserPosts().some(
+				( data ) => data.woopay_user_phone_field.full === '+1123'
+			)
+		).toBe( false );
+
+		phoneField.value = '(201) 555-0123';
+		phoneField.dispatchEvent( new window.Event( 'blur', { bubbles: true } ) );
+
+		expect( error.hidden ).toBe( true );
+		expect(
+			document.querySelector( 'input[name="woopay_user_phone_field[full]"]' )
+				.value
+		).toBe( '+12015550123' );
+	} );
+
+	test( 'loads the phone validation script only when the shopper opts in', () => {
+		window.wcpay_core_woopay_config.PRE_CHECK_SAVE_MY_INFO = false;
+		window.wcpay_core_woopay_config.woopayPhoneValidationScriptUrl =
+			'https://example.test/wc-woopayments-phone-validation.js';
+		const getScript = () =>
+			document.querySelector(
+				'script[src="https://example.test/wc-woopayments-phone-validation.js"]'
+			);
+
+		require( '../woopayments-woopay' );
+		expect( getScript() ).toBeNull();
+
+		const saveCheckbox = document.querySelector(
+			'input[name="save_user_in_woopay"]'
+		);
+		saveCheckbox.checked = true;
+		saveCheckbox.dispatchEvent( new window.Event( 'change', { bubbles: true } ) );
+
+		expect( getScript() ).not.toBeNull();
+	} );
+
 	test( 'shows the WooPay phone field only while save my info is checked', () => {
 		// Client 11.1.0 checkout-page-save-user.js renders the phone field
 		// inside the save-details form, which exists only while checked.
@@ -1049,7 +1108,7 @@ describe( 'WooPayments WooPay checkout', () => {
 			'input[name="save_user_in_woopay"]'
 		);
 		const phoneField = document.querySelector(
-			'input[name="woopay_user_phone_field[full]"]'
+			'#woopay_user_phone_field_full'
 		);
 		expect( saveCheckbox.checked ).toBe( false );
 		expect( phoneField.closest( '[hidden]' ) ).not.toBeNull();

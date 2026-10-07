@@ -231,6 +231,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertStringContainsString( '"shouldShowWooPayButton":""', $localized_data );
 		$this->assertStringContainsString( '"PRE_CHECK_SAVE_MY_INFO":"1"', $localized_data );
 		$this->assertSame( wc_get_checkout_url(), $this->get_localized_woopay_config()['woopaySourceUrl'] );
+		$this->assertStringContainsString( '/assets/client/blocks/wc-woopayments-phone-validation.js', $this->get_localized_woopay_config()['woopayPhoneValidationScriptUrl'] );
 	}
 
 	/**

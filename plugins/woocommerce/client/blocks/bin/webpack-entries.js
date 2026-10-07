@@ -402,6 +402,8 @@ const entries = {
 			'./assets/js/extensions/payment-methods/paypal/index.js',
 		'wc-payment-method-woopayments':
 			'./assets/js/extensions/payment-methods/woopayments/index.js',
+		'wc-woopayments-phone-validation':
+			'./assets/js/extensions/payment-methods/woopayments/phone-validation.js',
 		'wc-payment-method-woopayments-woopay':
 			'./assets/js/extensions/payment-methods/woopayments/woopay/index.js',
 		'wc-payment-method-woopayments-express-checkout':

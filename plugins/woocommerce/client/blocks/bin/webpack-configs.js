@@ -254,8 +254,9 @@ const getMainConfig = ( options = {} ) => {
 							if (
 								metadata.parent &&
 								! genericBlocks[ blockName ]
-							)
+							) {
 								return `./inner-blocks/${ blockName }/block.json`;
+							}
 							return `./${ blockName }/block.json`;
 						},
 					},
@@ -379,7 +380,18 @@ const getFrontConfig = ( options = {} ) => {
  */
 const getPaymentsConfig = ( options = {} ) => {
 	const { alias, resolvePlugins = [] } = options;
-	const resolve = getResolve( { alias, resolvePlugins } );
+	const resolve = getResolve( {
+		alias: {
+			...alias,
+			// Core's mobile phone validation, bundled into the WooPay save-user phone validation script only. Not an
+			// `@woocommerce/` request, so it is never externalized to the wc-components admin script.
+			'woocommerce-phone-number-validation': path.resolve(
+				__dirname,
+				'../../../../../packages/js/components/src/phone-number-input/validation.ts'
+			),
+		},
+		resolvePlugins,
+	} );
 	return {
 		entry: getEntryConfig( 'payments', options.exclude || [] ),
 		output: {

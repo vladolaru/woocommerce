@@ -16,6 +16,7 @@ import { registerExpressPaymentMethod } from '@woocommerce/blocks-registry';
 /**
  * Internal dependencies
  */
+import { validatePhoneNumber } from 'woocommerce-phone-number-validation';
 import registerWooPayments from '../index';
 import { recordWooPaymentsUserEvent } from '../tracks';
 import {
@@ -154,8 +155,15 @@ jest.mock( '@woocommerce/blocks-components', () => ( {
 	StoreNotice: ( { children } ) => <div role="alert">{ children }</div>,
 } ) );
 
+// The validation store actions the WooPay save-user section dispatches (wc/store/validation).
+const mockValidationActions = {
+	setValidationErrors: jest.fn(),
+	clearValidationError: jest.fn(),
+};
+
 jest.mock( '@wordpress/data', () => ( {
 	useSelect: jest.fn(),
+	dispatch: jest.fn( () => mockValidationActions ),
 } ) );
 
 const originalFetch = window.fetch;
@@ -178,6 +186,7 @@ describe( 'wc-payment-method-woopayments', () => {
 		useSelect.mockImplementation( ( callback ) =>
 			callback( () => ( {
 				getActivePaymentMethod: () => activePaymentMethod,
+				getValidationError: () => undefined,
 				getPaymentMethodData: () => ( {
 					payment_method: 'woocommerce_payments',
 					'wc-woocommerce_payments-payment-token': '12',
@@ -192,6 +201,7 @@ describe( 'wc-payment-method-woopayments', () => {
 		jest.useRealTimers();
 		jest.restoreAllMocks();
 		delete window.Stripe;
+		delete window.wcWooPaymentsPhoneValidation;
 		delete window.navigator.clipboard;
 		delete window.wcpayFraudPreventionToken;
 		window.fetch = originalFetch;
@@ -522,17 +532,20 @@ describe( 'wc-payment-method-woopayments', () => {
 		expect(
 			document.querySelector( 'input[name="woopay_viewport"]' )
 		).toBeInTheDocument();
+		// The posted number carries its country code, as the client's phone input posts it.
 		expect(
 			document.querySelector(
 				'input[name="woopay_user_phone_field[full]"]'
 			)
-		).toHaveValue( '5551234567' );
+		).toHaveValue( '+15551234567' );
 		expect( screen.getByLabelText( 'Mobile phone number' ) ).toHaveValue(
 			'5551234567'
 		);
 	} );
 
 	it( 'records WooPay save-info checkbox events and leaves the offer to the email check', async () => {
+		// The validation script the section loads on opt-in (phone-validation.js), already present here.
+		window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
 		window.fetch = jest.fn().mockResolvedValue( {
 			json: jest.fn().mockResolvedValue( { success: true } ),
 		} );
@@ -540,7 +553,7 @@ describe( 'wc-payment-method-woopayments', () => {
 			<div class="wc-block-checkout">
 				<div class="wp-block-woocommerce-checkout-payment-block"></div>
 			</div>
-			<input id="billing-phone" value="5551234567" />
+			<input id="billing-phone" value="2015550123" />
 		`;
 
 		const registration = registerWooPayments();
@@ -597,8 +610,13 @@ describe( 'wc-payment-method-woopayments', () => {
 					props: JSON.parse( options.body.get( 'tracksEventProp' ) ),
 				} ) );
 
-			// The offer is recorded by the WooPay email check (client 11.1.0 email-input-iframe.js:411-427), not here.
+			// The offer is recorded by the WooPay email check (client 11.1.0 email-input-iframe.js:411-427), not here;
+			// mobile_enter follows each time the number becomes valid (checkout-page-save-user.js:169-174).
 			expect( events ).toEqual( [
+				{
+					name: 'checkout_woopay_save_my_info_mobile_enter',
+					props: {},
+				},
 				{
 					name: 'checkout_save_my_info_click',
 					props: { status: 'unchecked' },
@@ -702,6 +720,81 @@ describe( 'wc-payment-method-woopayments', () => {
 		} );
 		const requests = getSaveUserRequests();
 		expect( requests[ requests.length - 1 ].get( 'empty' ) ).toBe( '1' );
+	} );
+
+	const getPhoneErrorCalls = () =>
+		mockValidationActions.setValidationErrors.mock.calls.filter(
+			( [ errors ] ) => errors[ 'invalid-woopay-phone-number' ]
+		);
+
+	it( 'blocks the checkout for an invalid WooPay phone number once the shopper leaves the field', async () => {
+		window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
+		mockValidationActions.setValidationErrors.mockClear();
+		renderSaveUserSection();
+		const phoneField = await screen.findByLabelText(
+			'Mobile phone number'
+		);
+
+		fireEvent.change( phoneField, { target: { value: '123' } } );
+		// Client 11.1.0 checkout-page-save-user.js:184-223: hidden until touched, still blocking the checkout.
+		expect( getPhoneErrorCalls().pop()[ 0 ] ).toEqual( {
+			'invalid-woopay-phone-number': {
+				message: 'Please enter a valid mobile phone number.',
+				hidden: true,
+			},
+		} );
+
+		fireEvent.blur( phoneField );
+		expect(
+			getPhoneErrorCalls().pop()[ 0 ][ 'invalid-woopay-phone-number' ]
+				.hidden
+		).toBe( false );
+	} );
+
+	it( 'clears the WooPay phone error for a valid number', async () => {
+		window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
+		renderSaveUserSection();
+		const phoneField = await screen.findByLabelText(
+			'Mobile phone number'
+		);
+		mockValidationActions.clearValidationError.mockClear();
+
+		fireEvent.change( phoneField, { target: { value: '(201) 555-0123' } } );
+
+		expect(
+			mockValidationActions.clearValidationError
+		).toHaveBeenCalledWith( 'invalid-woopay-phone-number' );
+		expect(
+			document.querySelector(
+				'input[name="woopay_user_phone_field[full]"]'
+			)
+		).toHaveValue( '+12015550123' );
+	} );
+
+	it( 'loads the phone validation script only when the shopper opts in', async () => {
+		const settings = jest.requireMock( '@woocommerce/settings' );
+		const defaultData = settings.getPaymentMethodData();
+		// Keys from WooPaymentsWooPaySessionService::get_save_user_checkout_data().
+		settings.getPaymentMethodData.mockImplementation( () => ( {
+			...defaultData,
+			PRE_CHECK_SAVE_MY_INFO: false,
+			woopayPhoneValidationScriptUrl:
+				'https://example.test/wc-woopayments-phone-validation.js',
+		} ) );
+		renderSaveUserSection();
+		const checkbox = await screen.findByRole( 'checkbox', {
+			name: 'Securely save my information for 1-click checkout',
+		} );
+		const getScript = () =>
+			document.querySelector(
+				'script[src="https://example.test/wc-woopayments-phone-validation.js"]'
+			);
+		expect( getScript() ).toBeNull();
+
+		fireEvent.click( checkbox );
+
+		expect( getScript() ).not.toBeNull();
+		settings.getPaymentMethodData.mockImplementation( () => defaultData );
 	} );
 
 	it( 'clears the stored WooPay opt-in when the shopper unchecks save my info', async () => {

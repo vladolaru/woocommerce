@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
@@ -2697,7 +2698,13 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertSame( array( 'PRE_CHECK_SAVE_MY_INFO' => true ), $sut->get_save_user_checkout_data() );
+		$this->assertSame(
+			array(
+				'PRE_CHECK_SAVE_MY_INFO'         => true,
+				'woopayPhoneValidationScriptUrl' => WooPaymentsFrontendAssets::get_phone_validation_script_url(),
+			),
+			$sut->get_save_user_checkout_data()
+		);
 	}
 
 	/**

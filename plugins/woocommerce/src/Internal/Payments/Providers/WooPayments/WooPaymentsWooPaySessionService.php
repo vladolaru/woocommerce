@@ -1315,13 +1315,14 @@ class WooPaymentsWooPaySessionService {
 	/**
 	 * Get WooPay save-user checkout data.
 	 *
-	 * @return array<string,bool>
+	 * @return array<string,bool|string>
 	 */
 	public function get_save_user_checkout_data(): array {
 		$account_data = $this->get_account_service()->get_cached_account_data();
 
 		return array(
-			'PRE_CHECK_SAVE_MY_INFO' => ! empty( $account_data['pre_check_save_my_info'] ),
+			'PRE_CHECK_SAVE_MY_INFO'         => ! empty( $account_data['pre_check_save_my_info'] ),
+			'woopayPhoneValidationScriptUrl' => WooPaymentsFrontendAssets::get_phone_validation_script_url(),
 		);
 	}
 

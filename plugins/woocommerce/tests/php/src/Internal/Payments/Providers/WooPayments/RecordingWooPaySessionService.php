@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionService;
 use WP_REST_Request;
 
@@ -212,10 +213,13 @@ class RecordingWooPaySessionService extends WooPaymentsWooPaySessionService {
 	/**
 	 * Get WooPay save-user checkout data.
 	 *
-	 * @return array<string,bool>
+	 * @return array<string,bool|string>
 	 */
 	public function get_save_user_checkout_data(): array {
-		return array( 'PRE_CHECK_SAVE_MY_INFO' => true );
+		return array(
+			'PRE_CHECK_SAVE_MY_INFO'         => true,
+			'woopayPhoneValidationScriptUrl' => WooPaymentsFrontendAssets::get_phone_validation_script_url(),
+		);
 	}
 
 	/**

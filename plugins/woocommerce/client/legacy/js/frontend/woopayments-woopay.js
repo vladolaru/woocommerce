@@ -27,6 +27,7 @@
 	var directCheckoutLoggedIn = false;
 	var hasPhoneForMobileEnter = false;
 	var hasSentSaveUserData = false;
+	var phoneValidationPromise = null;
 	var isWooPayUser = false;
 	var proceedToCheckoutSelector =
 		'.wc-proceed-to-checkout .checkout-button,' +
@@ -1675,11 +1676,87 @@
 		}
 	}
 
+	// Client 11.1.0 checkout-page-save-user.js:93-111: keep digits and +, and read a number without a country code as US
+	// (WooPay is US-only).
+	function normalizeWooPayPhone( phone ) {
+		var value = String( phone || '' ).replace( /[^\d+]*/g, '' );
+		return value.indexOf( '+' ) === 0 ? value : '+1' + value;
+	}
+
+	// Core's mobile phone validation, built once by the Blocks build (phone-validation.js) for both checkouts and
+	// loaded only when the shopper opts in. Resolves null when it cannot load.
+	function loadPhoneValidation() {
+		if ( window.wcWooPaymentsPhoneValidation ) {
+			return Promise.resolve( window.wcWooPaymentsPhoneValidation );
+		}
+		if ( ! config.woopayPhoneValidationScriptUrl ) {
+			return Promise.resolve( null );
+		}
+		if ( ! phoneValidationPromise ) {
+			phoneValidationPromise = new Promise( function ( resolve ) {
+				var script = document.createElement( 'script' );
+				script.src = config.woopayPhoneValidationScriptUrl;
+				script.async = true;
+				script.onload = function () {
+					resolve( window.wcWooPaymentsPhoneValidation || null );
+				};
+				script.onerror = function () {
+					phoneValidationPromise = null;
+					resolve( null );
+				};
+				document.head.appendChild( script );
+			} );
+		}
+		return phoneValidationPromise;
+	}
+
+	// True, false, or null while the validation script is not loaded.
+	function isWooPayPhoneValid() {
+		var phoneField = document.getElementById( 'woopay_user_phone_field_full' );
+
+		if ( ! window.wcWooPaymentsPhoneValidation || ! phoneField ) {
+			return null;
+		}
+
+		return window.wcWooPaymentsPhoneValidation.validatePhoneNumber(
+			normalizeWooPayPhone( phoneField.value )
+		);
+	}
+
+	// Client 11.1.0 checkout-page-save-user.js:176-181, :389-398: the classic message shows for an invalid number, and
+	// for any number not known to be valid once the shopper places the order; it does not stop the submission.
+	function updateWooPayPhoneError( isPlacingOrder ) {
+		var checkbox = document.querySelector(
+			'input[name="save_user_in_woopay"]'
+		);
+		var error = document.getElementById(
+			'validate-error-invalid-woopay-phone-number'
+		);
+		var isValid = isWooPayPhoneValid();
+
+		if ( ! error ) {
+			return;
+		}
+
+		error.hidden = ! (
+			checkbox &&
+			checkbox.checked &&
+			isSaveUserOfferApplicable() &&
+			( isValid === false ||
+				( isPlacingOrder &&
+					isValid === null &&
+					window.wcWooPaymentsPhoneValidation ) )
+		);
+	}
+
 	function sendWooPayPhoneData( empty ) {
 		var checkbox = document.querySelector(
 			'input[name="save_user_in_woopay"]'
 		);
-		var phoneField = document.querySelector(
+		var phoneField = document.getElementById(
+			'woopay_user_phone_field_full'
+		);
+		var fullPhoneField = document.querySelector(
 			'input[name="woopay_user_phone_field[full]"]'
 		);
 		var sourceField = document.querySelector(
@@ -1688,17 +1765,18 @@
 		var viewportField = document.querySelector(
 			'input[name="woopay_viewport"]'
 		);
-		var hasPhone = !! (
-			checkbox &&
-			checkbox.checked &&
-			phoneField &&
-			phoneField.value.trim()
-		);
+		var fullPhone = phoneField ? normalizeWooPayPhone( phoneField.value ) : '';
+		var isPhoneValid = !! ( checkbox && checkbox.checked && isWooPayPhoneValid() );
 
-		if ( hasPhone && ! hasPhoneForMobileEnter ) {
+		if ( fullPhoneField ) {
+			fullPhoneField.value = fullPhone;
+		}
+
+		// Client 11.1.0 checkout-page-save-user.js:169-174 records this once the number is valid.
+		if ( isPhoneValid && ! hasPhoneForMobileEnter ) {
 			recordUserEvent( 'checkout_woopay_save_my_info_mobile_enter' );
 		}
-		hasPhoneForMobileEnter = hasPhone;
+		hasPhoneForMobileEnter = isPhoneValid;
 		hasSentSaveUserData = ! empty;
 
 		postWooPayAjax( 'set_woopay_phone_number', {
@@ -1712,7 +1790,7 @@
 			woopay_is_blocks: 'false',
 			woopay_viewport: viewportField ? viewportField.value : getWooPayViewport(),
 			woopay_user_phone_field: {
-				full: phoneField ? phoneField.value : '',
+				full: fullPhone,
 			},
 		} );
 	}
@@ -1777,6 +1855,7 @@
 		var sourceField;
 		var viewportField;
 		var fields;
+		var billingPhoneField;
 
 		if (
 			! form ||
@@ -1801,7 +1880,12 @@
 			'<label for="woopay_user_phone_field_full">' +
 			escapeHtml( config.woopayPhoneLabel ) +
 			'</label>' +
-			'<input type="tel" id="woopay_user_phone_field_full" name="woopay_user_phone_field[full]" autocomplete="tel" />' +
+			'<input type="tel" id="woopay_user_phone_field_full" autocomplete="tel" aria-describedby="validate-error-invalid-woopay-phone-number" />' +
+			// The number WooPay receives, with its country code, as the client's phone input posts it.
+			'<input type="hidden" name="woopay_user_phone_field[full]" />' +
+			'<p id="validate-error-invalid-woopay-phone-number" class="woopay-phone-number-error" role="alert" hidden>' +
+			escapeHtml( __( 'Please enter a valid mobile phone number.', 'woocommerce' ) ) +
+			'</p>' +
 			'</div>' +
 			'<input type="hidden" name="woopay_source_url" />' +
 			'<input type="hidden" name="woopay_viewport" />' +
@@ -1820,9 +1904,7 @@
 		checkbox = container.querySelector(
 			'input[name="save_user_in_woopay"]'
 		);
-		phoneField = container.querySelector(
-			'input[name="woopay_user_phone_field[full]"]'
-		);
+		phoneField = container.querySelector( '#woopay_user_phone_field_full' );
 		sourceField = container.querySelector(
 			'input[name="woopay_source_url"]'
 		);
@@ -1838,6 +1920,19 @@
 
 		// The offer and a pre-checked box are recorded by the WooPay email check when it finds no WooPay user, as in
 		// client 11.1.0 checkout/woopay/email-input-iframe.js:411-427, not again when the fields render.
+		// Client 11.1.0 checkout-page-save-user.js:93-111, :225-232: the number starts from the billing phone.
+		billingPhoneField = document.getElementById( 'billing_phone' );
+		phoneField.value = billingPhoneField ? billingPhoneField.value : '';
+
+		function validateWhenOptedIn() {
+			if ( ! checkbox.checked ) {
+				return;
+			}
+			loadPhoneValidation().then( function () {
+				updateWooPayPhoneError( false );
+			} );
+		}
+
 		checkbox.addEventListener( 'change', function () {
 			fields.hidden = ! checkbox.checked;
 			recordUserEvent( 'checkout_save_my_info_click', {
@@ -1845,11 +1940,21 @@
 			} );
 			// Unchecking clears the stored opt-in, as the client's empty request does.
 			sendWooPayPhoneData( ! checkbox.checked );
+			validateWhenOptedIn();
+			updateWooPayPhoneError( false );
 		} );
 		phoneField.addEventListener( 'blur', function () {
+			updateWooPayPhoneError( false );
+			if ( isWooPayPhoneValid() === false ) {
+				return;
+			}
 			sendWooPayPhoneData( false );
 		} );
+		$( form ).on( 'checkout_place_order', function () {
+			updateWooPayPhoneError( true );
+		} );
 		updateSaveUserVisibility();
+		validateWhenOptedIn();
 	}
 
 	$( document.body ).on( 'updated_checkout', function () {

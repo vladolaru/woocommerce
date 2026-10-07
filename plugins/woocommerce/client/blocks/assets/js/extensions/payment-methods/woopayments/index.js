@@ -12,7 +12,7 @@ import {
 	useRef,
 	useState,
 } from '@wordpress/element';
-import { useSelect } from '@wordpress/data';
+import { dispatch, useSelect } from '@wordpress/data';
 import { StoreNotice } from '@woocommerce/blocks-components';
 import FingerprintJS from '@fingerprintjs/fingerprintjs';
 
@@ -734,6 +734,42 @@ const WooPaySaveUserAgreement = ( { paymentSettings } ) => (
 	</div>
 );
 
+const WOOPAY_PHONE_ERROR_ID = 'invalid-woopay-phone-number';
+let phoneValidationPromise = null;
+
+// Core's mobile phone validation, built once as its own script (phone-validation.js) and loaded only when the
+// shopper opts in (WooPaymentsFrontendAssets::get_phone_validation_script_url()). Resolves null when it cannot load.
+const loadPhoneValidation = ( url ) => {
+	if ( window.wcWooPaymentsPhoneValidation ) {
+		return Promise.resolve( window.wcWooPaymentsPhoneValidation );
+	}
+	if ( ! url ) {
+		return Promise.resolve( null );
+	}
+	if ( ! phoneValidationPromise ) {
+		phoneValidationPromise = new Promise( ( resolve ) => {
+			const script = document.createElement( 'script' );
+			script.src = url;
+			script.async = true;
+			script.onload = () =>
+				resolve( window.wcWooPaymentsPhoneValidation || null );
+			script.onerror = () => {
+				phoneValidationPromise = null;
+				resolve( null );
+			};
+			document.head.appendChild( script );
+		} );
+	}
+	return phoneValidationPromise;
+};
+
+// Client 11.1.0 checkout-page-save-user.js:93-111: keep digits and +, and read a number without a country code as US
+// (WooPay is US-only).
+const normalizeWooPayPhone = ( phone ) => {
+	const value = String( phone || '' ).replace( /[^\d+]*/g, '' );
+	return value.startsWith( '+' ) ? value : '+1' + value;
+};
+
 // Client 11.1.0 use-woopay-user.js: the WooPay email check announces a WooPay user with this window event.
 const useIsWooPayUser = () => {
 	const [ isWooPayUser, setIsWooPayUser ] = useState( false );
@@ -768,7 +804,96 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 		initialIsSavingUser.current
 	);
 	const [ phone, setPhone ] = useState( getWooPayInitialPhone );
-	const hasPhoneForMobileEnter = useRef( false );
+	const [ phoneValidation, setPhoneValidation ] = useState(
+		() => window.wcWooPaymentsPhoneValidation || null
+	);
+	const [ isPhoneValidationUnavailable, setIsPhoneValidationUnavailable ] =
+		useState( false );
+	const [ isPhoneTouched, setIsPhoneTouched ] = useState( false );
+	const fullPhone = normalizeWooPayPhone( phone );
+	// Unknown (null) while the validation script loads, as the client's lazy phone input is.
+	const isPhoneValid = phoneValidation
+		? phoneValidation.validatePhoneNumber( fullPhone )
+		: null;
+	const phoneError = useSelect( ( select ) =>
+		select( 'wc/store/validation' ).getValidationError(
+			WOOPAY_PHONE_ERROR_ID
+		)
+	);
+
+	useEffect( () => {
+		if ( ! isSavingUser || phoneValidation ) {
+			return undefined;
+		}
+
+		let isMounted = true;
+		loadPhoneValidation(
+			paymentSettings.woopayPhoneValidationScriptUrl
+		).then( ( validation ) => {
+			if ( ! isMounted ) {
+				return;
+			}
+			if ( validation ) {
+				setPhoneValidation( validation );
+			} else {
+				setIsPhoneValidationUnavailable( true );
+			}
+		} );
+
+		return () => {
+			isMounted = false;
+		};
+	}, [ isSavingUser, phoneValidation, paymentSettings ] );
+
+	// Client 11.1.0 checkout-page-save-user.js:184-223: while opted in, an invalid or not yet validated number blocks
+	// the checkout through the validation store, hidden until the shopper leaves the field or places the order. A
+	// validation script that failed to load does not block the checkout.
+	useEffect( () => {
+		const validation = dispatch( 'wc/store/validation' );
+		if (
+			isOfferApplicable &&
+			isSavingUser &&
+			isPhoneValid !== true &&
+			! ( isPhoneValid === null && isPhoneValidationUnavailable )
+		) {
+			validation.setValidationErrors( {
+				[ WOOPAY_PHONE_ERROR_ID ]: {
+					message: __(
+						'Please enter a valid mobile phone number.',
+						'woocommerce'
+					),
+					hidden: ! isPhoneTouched,
+				},
+			} );
+			return;
+		}
+
+		validation.clearValidationError( WOOPAY_PHONE_ERROR_ID );
+	}, [
+		isOfferApplicable,
+		isSavingUser,
+		isPhoneValid,
+		isPhoneValidationUnavailable,
+		isPhoneTouched,
+	] );
+
+	useEffect(
+		() => () =>
+			dispatch( 'wc/store/validation' ).clearValidationError(
+				WOOPAY_PHONE_ERROR_ID
+			),
+		[]
+	);
+
+	// Client 11.1.0 checkout-page-save-user.js:169-174 records this once the number is valid.
+	useEffect( () => {
+		if ( isPhoneValid ) {
+			recordWooPaymentsUserEvent(
+				paymentSettings,
+				'checkout_woopay_save_my_info_mobile_enter'
+			);
+		}
+	}, [ isPhoneValid, paymentSettings ] );
 	// A stored opt-in no longer applies once the shopper picks another method or is a WooPay user: clear it.
 	useEffect( () => {
 		if ( ! isOfferApplicable && hasSentUserData.current ) {
@@ -776,18 +901,6 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 			persistWooPaySaveUser( paymentSettings, false, '', true );
 		}
 	}, [ isOfferApplicable, paymentSettings ] );
-
-	// Client 11.1.0 checkout-page-save-user.js:169-174 records this once the phone is valid; native has no phone validation (R2).
-	const recordMobileEnter = ( nextPhone ) => {
-		const hasPhone = Boolean( nextPhone && nextPhone.trim() );
-		if ( hasPhone && ! hasPhoneForMobileEnter.current ) {
-			recordWooPaymentsUserEvent(
-				paymentSettings,
-				'checkout_woopay_save_my_info_mobile_enter'
-			);
-		}
-		hasPhoneForMobileEnter.current = hasPhone;
-	};
 
 	const updateSaveUser = ( checked, nextPhone = phone ) => {
 		setIsSavingUser( checked );
@@ -801,12 +914,11 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 				status: checked ? 'checked' : 'unchecked',
 			}
 		);
-		recordMobileEnter( checked ? nextPhone : '' );
 		hasSentUserData.current = checked;
 		persistWooPaySaveUser(
 			paymentSettings,
 			checked,
-			checked ? nextPhone : '',
+			checked ? normalizeWooPayPhone( nextPhone ) : '',
 			! checked
 		);
 	};
@@ -888,22 +1000,51 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 						<input
 							type="tel"
 							id="woopay_user_phone_field_full"
-							name="woopay_user_phone_field[full]"
 							autoComplete="tel"
 							value={ phone }
+							aria-invalid={
+								phoneError && ! phoneError.hidden
+									? 'true'
+									: undefined
+							}
+							aria-describedby={
+								phoneError && ! phoneError.hidden
+									? 'validate-error-invalid-woopay-phone-number'
+									: undefined
+							}
 							onChange={ ( event ) =>
 								setPhone( event.target.value )
 							}
 							onBlur={ () => {
-								recordMobileEnter( phone );
+								setIsPhoneTouched( true );
+								if ( isPhoneValid === false ) {
+									return;
+								}
 								hasSentUserData.current = true;
 								persistWooPaySaveUser(
 									paymentSettings,
 									true,
-									phone
+									fullPhone
 								);
 							} }
 						/>
+						{ /* The number WooPay receives, with its country code, as the client's phone input posts. */ }
+						<input
+							type="hidden"
+							name="woopay_user_phone_field[full]"
+							value={ fullPhone }
+							readOnly
+						/>
+						{ phoneError && ! phoneError.hidden ? (
+							<div
+								className="wc-block-components-validation-error"
+								role="alert"
+							>
+								<p id="validate-error-invalid-woopay-phone-number">
+									{ phoneError.message }
+								</p>
+							</div>
+						) : null }
 						<WooPaySaveUserAdditionalInfo />
 						<WooPaySaveUserAgreement
 							paymentSettings={ paymentSettings }
