@@ -8,6 +8,9 @@ import {
 	screen,
 	waitFor,
 } from '@testing-library/react';
+// user-event resolves another @testing-library/dom than @testing-library/react configures, so its events are not
+// wrapped in act(); the tests wrap each interaction, as other Blocks tests do.
+import userEvent from '@testing-library/user-event';
 import { createElement, useEffect, useReducer } from '@wordpress/element';
 import { Skeleton } from '@woocommerce/base-components/skeleton';
 import { useSelect } from '@wordpress/data';
@@ -524,12 +527,14 @@ describe( 'wc-payment-method-woopayments', () => {
 		};
 	}
 
-	it( 'opens the card brand popover as a dialog, focuses it and returns focus on Escape', () => {
+	it( 'opens the card brand popover as a dialog, focuses it and returns focus on Escape', async () => {
+		const user = userEvent.setup();
 		const { trigger } = renderCardBrandTrigger();
 
 		expect( trigger ).toHaveAttribute( 'aria-haspopup', 'dialog' );
-		trigger.focus();
-		fireEvent.keyDown( trigger, { key: 'Enter' } );
+		await act( () => user.tab() );
+		expect( trigger ).toHaveFocus();
+		await act( () => user.keyboard( '{Enter}' ) );
 
 		const dialog = screen.getByRole( 'dialog', {
 			name: 'Supported credit card brands',
@@ -540,19 +545,22 @@ describe( 'wc-payment-method-woopayments', () => {
 			'Visa, Mastercard, American Express, Discover, JCB, Union Pay'
 		);
 
-		fireEvent.keyDown( dialog, { key: 'Escape' } );
+		await act( () => user.keyboard( '{Escape}' ) );
 
 		expect( screen.queryByRole( 'dialog' ) ).not.toBeInTheDocument();
 		expect( trigger ).toHaveFocus();
 	} );
 
-	it( 'closes the card brand popover on an outside click and removes the listeners it added', () => {
+	it( 'closes the card brand popover on an outside click and removes the listeners it added', async () => {
+		const user = userEvent.setup();
 		const { trigger } = renderCardBrandTrigger();
 		const listeners = spyOnPopoverListeners();
 
-		fireEvent.click( trigger );
+		await act( () => user.click( trigger ) );
 		expect( screen.getByRole( 'dialog' ) ).toBeInTheDocument();
 
+		// Bare mousedown events: user-event's press would also move focus to the pressed element, which would hide
+		// whether the outside-click close itself leaves focus off the trigger.
 		fireEvent.mouseDown( screen.getByRole( 'dialog' ) );
 		expect( screen.getByRole( 'dialog' ) ).toBeInTheDocument();
 
@@ -565,11 +573,12 @@ describe( 'wc-payment-method-woopayments', () => {
 		listeners.restore();
 	} );
 
-	it( 'removes the card brand popover listeners when it unmounts while open', () => {
+	it( 'removes the card brand popover listeners when it unmounts while open', async () => {
+		const user = userEvent.setup();
 		const { trigger, unmount } = renderCardBrandTrigger();
 		const listeners = spyOnPopoverListeners();
 
-		fireEvent.click( trigger );
+		await act( () => user.click( trigger ) );
 		unmount();
 
 		expect( listeners.added() ).toHaveLength( 2 );
@@ -668,6 +677,7 @@ describe( 'wc-payment-method-woopayments', () => {
 	} );
 
 	it( 'records WooPay save-info checkbox events and leaves the offer to the email check', async () => {
+		const user = userEvent.setup();
 		// The validation script the section loads on opt-in (phone-validation.js), already present here.
 		window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
 		window.fetch = jest.fn().mockResolvedValue( {
@@ -702,24 +712,18 @@ describe( 'wc-payment-method-woopayments', () => {
 			} )
 		);
 
+		const saveMyInfo = await screen.findByRole( 'checkbox', {
+			name: 'Securely save my information for 1-click checkout',
+		} );
 		await waitFor( () => {
-			expect(
-				screen.getByRole( 'checkbox', {
-					name: 'Securely save my information for 1-click checkout',
-				} )
-			).toBeChecked();
+			expect( saveMyInfo ).toBeChecked();
 		} );
 
-		fireEvent.click(
-			screen.getByRole( 'checkbox', {
-				name: 'Securely save my information for 1-click checkout',
-			} )
-		);
-		fireEvent.click(
-			screen.getByRole( 'checkbox', {
-				name: 'Securely save my information for 1-click checkout',
-			} )
-		);
+		await act( () => user.click( saveMyInfo ) );
+		expect( saveMyInfo ).not.toBeChecked();
+
+		await act( () => user.click( saveMyInfo ) );
+		expect( saveMyInfo ).toBeChecked();
 
 		await waitFor( () => {
 			const events = window.fetch.mock.calls
@@ -1011,20 +1015,23 @@ describe( 'wc-payment-method-woopayments', () => {
 	it.each( [
 		[
 			'the shopper unchecks save my info',
-			() =>
-				fireEvent.click(
-					screen.getByRole( 'checkbox', {
-						name: 'Securely save my information for 1-click checkout',
-					} )
+			( user ) =>
+				act( () =>
+					user.click(
+						screen.getByRole( 'checkbox', {
+							name: 'Securely save my information for 1-click checkout',
+						} )
+					)
 				),
 		],
 		[
 			'another payment method is chosen',
-			() => setActivePaymentMethod( 'woocommerce_payments_klarna' ),
+			async () => setActivePaymentMethod( 'woocommerce_payments_klarna' ),
 		],
 	] )(
 		'still clears a stored WooPay opt-in after a failed update when %s',
 		async ( description, withdraw ) => {
+			const user = userEvent.setup();
 			window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
 			renderSaveUserSection();
 			const phoneField = await screen.findByLabelText(
@@ -1040,13 +1047,14 @@ describe( 'wc-payment-method-woopayments', () => {
 			} );
 			await settleSaveUserRequest();
 
-			withdraw();
+			await withdraw( user );
 
 			expect( getStoredPhones().pop() ).toBe( 'empty' );
 		}
 	);
 
 	it( 'sends the WooPay clear again after a failed clear', async () => {
+		const user = userEvent.setup();
 		window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
 		renderSaveUserSection();
 		const phoneField = await screen.findByLabelText(
@@ -1057,10 +1065,12 @@ describe( 'wc-payment-method-woopayments', () => {
 		const before = getStoredPhones().length;
 		failNextSaveUserRequest( () => Promise.resolve( saveUserFailure ) );
 
-		fireEvent.click(
-			screen.getByRole( 'checkbox', {
-				name: 'Securely save my information for 1-click checkout',
-			} )
+		await act( () =>
+			user.click(
+				screen.getByRole( 'checkbox', {
+					name: 'Securely save my information for 1-click checkout',
+				} )
+			)
 		);
 		await settleSaveUserRequest();
 		setActivePaymentMethod( 'woocommerce_payments_klarna' );
@@ -1092,6 +1102,7 @@ describe( 'wc-payment-method-woopayments', () => {
 	} );
 
 	it( 'loads the phone validation script only when the shopper opts in', async () => {
+		const user = userEvent.setup();
 		const settings = jest.requireMock( '@woocommerce/settings' );
 		const defaultData = settings.getPaymentMethodData();
 		// Keys from WooPaymentsWooPaySessionService::get_save_user_checkout_data().
@@ -1111,7 +1122,7 @@ describe( 'wc-payment-method-woopayments', () => {
 			);
 		expect( getScript() ).toBeNull();
 
-		fireEvent.click( checkbox );
+		await act( () => user.click( checkbox ) );
 
 		expect( getScript() ).not.toBeNull();
 		settings.getPaymentMethodData.mockImplementation( () => defaultData );
@@ -1140,18 +1151,20 @@ describe( 'wc-payment-method-woopayments', () => {
 	} );
 
 	it( 'clears the stored WooPay opt-in when the shopper unchecks save my info', async () => {
+		const user = userEvent.setup();
 		renderSaveUserSection();
 		const checkbox = await screen.findByRole( 'checkbox', {
 			name: 'Securely save my information for 1-click checkout',
 		} );
 
-		fireEvent.click( checkbox );
+		await act( () => user.click( checkbox ) );
 
 		const requests = getSaveUserRequests();
 		expect( requests[ requests.length - 1 ].get( 'empty' ) ).toBe( '1' );
 	} );
 
 	it( 'shows the WooPay terms and privacy agreement under save my info and records link clicks', async () => {
+		const user = userEvent.setup();
 		// Client 11.1.0 client/components/woopay/save-user/agreement.js,
 		// rendered in the checked save-details form (checkout-page-save-user.js:402-403).
 		window.fetch = jest.fn().mockResolvedValue( {
@@ -1208,8 +1221,8 @@ describe( 'wc-payment-method-woopayments', () => {
 			expect( link ).toHaveAttribute( 'rel', 'noopener noreferrer' );
 		} );
 
-		fireEvent.click( termsLink );
-		fireEvent.click( privacyLink );
+		await act( () => user.click( termsLink ) );
+		await act( () => user.click( privacyLink ) );
 
 		const trackedNames = () =>
 			window.fetch.mock.calls
@@ -1230,10 +1243,12 @@ describe( 'wc-payment-method-woopayments', () => {
 			] )
 		);
 
-		fireEvent.click(
-			screen.getByRole( 'checkbox', {
-				name: 'Securely save my information for 1-click checkout',
-			} )
+		await act( () =>
+			user.click(
+				screen.getByRole( 'checkbox', {
+					name: 'Securely save my information for 1-click checkout',
+				} )
+			)
 		);
 
 		await waitFor( () => {
@@ -1244,6 +1259,7 @@ describe( 'wc-payment-method-woopayments', () => {
 	} );
 
 	it( 'shows the WooPay additional-information line above the agreement under save my info', async () => {
+		const user = userEvent.setup();
 		// Client 11.1.0 client/components/woopay/save-user/additional-information.js,
 		// rendered directly before the agreement (checkout-page-save-user.js:402-403).
 		window.fetch = jest.fn().mockResolvedValue( {
@@ -1299,10 +1315,12 @@ describe( 'wc-payment-method-woopayments', () => {
 			agreement,
 		] );
 
-		fireEvent.click(
-			screen.getByRole( 'checkbox', {
-				name: 'Securely save my information for 1-click checkout',
-			} )
+		await act( () =>
+			user.click(
+				screen.getByRole( 'checkbox', {
+					name: 'Securely save my information for 1-click checkout',
+				} )
+			)
 		);
 
 		await waitFor( () => {
@@ -1391,29 +1409,35 @@ describe( 'wc-payment-method-woopayments', () => {
 		expect( event.defaultPrevented ).toBe( true );
 	} );
 
-	it( 'copies the test card number with the Clipboard API', () => {
-		// Clipboard.writeText() returns a Promise<void> (https://developer.mozilla.org/docs/Web/API/Clipboard/writeText).
-		const writeText = jest.fn().mockResolvedValue( undefined );
+	// userEvent.setup() puts its own navigator.clipboard stub in place, so each test sets up the user first and then
+	// installs the clipboard it needs.
+	const setClipboard = ( clipboard ) =>
 		Object.defineProperty( window.navigator, 'clipboard', {
-			value: {
-				writeText,
-			},
+			value: clipboard,
 			configurable: true,
 		} );
+
+	it( 'copies the test card number with the Clipboard API', async () => {
+		const user = userEvent.setup();
+		// Clipboard.writeText() returns a Promise<void> (https://developer.mozilla.org/docs/Web/API/Clipboard/writeText).
+		const writeText = jest.fn().mockResolvedValue( undefined );
+		setClipboard( { writeText } );
 		const button = renderWooPaymentsContent();
 
-		fireEvent.click( button );
+		await act( () => user.click( button ) );
 
 		expect( writeText ).toHaveBeenCalledWith( '4242 4242 4242 4242' );
 	} );
 
-	it( 'shows the test card number in a prompt when the Clipboard API is unavailable', () => {
+	it( 'shows the test card number in a prompt when the Clipboard API is unavailable', async () => {
+		const user = userEvent.setup();
+		setClipboard( undefined );
 		const prompt = jest
 			.spyOn( window, 'prompt' )
 			.mockImplementation( () => null );
 		const button = renderWooPaymentsContent();
 
-		fireEvent.click( button );
+		await act( () => user.click( button ) );
 
 		expect( prompt ).toHaveBeenCalledWith(
 			'Copy test card number:',
@@ -1424,21 +1448,15 @@ describe( 'wc-payment-method-woopayments', () => {
 	} );
 
 	it( 'does not announce a copy the clipboard rejected', async () => {
+		const user = userEvent.setup();
 		// Clipboard.writeText() rejects when the write is not allowed (https://developer.mozilla.org/docs/Web/API/Clipboard/writeText).
 		const writeText = jest
 			.fn()
 			.mockRejectedValue( new Error( 'NotAllowedError' ) );
-		Object.defineProperty( window.navigator, 'clipboard', {
-			value: {
-				writeText,
-			},
-			configurable: true,
-		} );
+		setClipboard( { writeText } );
 		const button = renderWooPaymentsContent();
 
-		fireEvent.click( button );
-		await Promise.resolve();
-		await Promise.resolve();
+		await act( () => user.click( button ) );
 
 		expect( writeText ).toHaveBeenCalled();
 		expect( button ).not.toHaveClass( 'state--success' );
@@ -1447,21 +1465,28 @@ describe( 'wc-payment-method-woopayments', () => {
 
 	it( 'shows and clears the copied state after copying the test card number', async () => {
 		jest.useFakeTimers();
-		// Clipboard.writeText() returns a Promise<void> (https://developer.mozilla.org/docs/Web/API/Clipboard/writeText).
-		const writeText = jest.fn().mockResolvedValue( undefined );
-		Object.defineProperty( window.navigator, 'clipboard', {
-			value: {
-				writeText,
-			},
-			configurable: true,
+		const user = userEvent.setup( {
+			advanceTimers: jest.advanceTimersByTime,
 		} );
+		// Clipboard.writeText() returns a Promise<void> (https://developer.mozilla.org/docs/Web/API/Clipboard/writeText),
+		// held here until the test lets the write finish.
+		let finishWrite;
+		const write = new Promise( ( resolve ) => {
+			finishWrite = resolve;
+		} );
+		const writeText = jest.fn( () => write );
+		setClipboard( { writeText } );
 		const button = renderWooPaymentsContent();
 
-		fireEvent.click( button );
+		await act( () => user.click( button ) );
 
+		expect( writeText ).toHaveBeenCalledWith( '4242 4242 4242 4242' );
 		expect( button ).not.toHaveClass( 'state--success' );
-		await Promise.resolve();
-		await Promise.resolve();
+		expect( screen.getByRole( 'status' ) ).toHaveTextContent( '' );
+
+		finishWrite();
+		// The bundle's success callback was chained on the write first, so it has run once this await resumes.
+		await write;
 
 		expect( button ).toHaveClass( 'state--success' );
 		expect( screen.getByRole( 'status' ) ).toHaveTextContent(
@@ -2173,18 +2198,16 @@ describe( 'wc-payment-method-woopayments', () => {
 		const elements = jest.fn( () => ( {
 			create,
 		} ) );
-		const originalStyleSheets = document.styleSheets;
-		Object.defineProperty( document, 'styleSheets', {
-			configurable: true,
-			value: [
-				{
-					href: 'https://fonts.wp.com/inter.css',
-				},
-				{
-					href: 'https://example.test/theme.css',
-				},
-			],
-		} );
+		// The page's stylesheets as document.styleSheets lists them: CSSStyleSheet objects carrying their href
+		// (https://developer.mozilla.org/docs/Web/API/CSSStyleSheet). The suite's restoreAllMocks() puts jsdom's back.
+		jest.spyOn( document, 'styleSheets', 'get' ).mockReturnValue( [
+			{
+				href: 'https://fonts.wp.com/inter.css',
+			},
+			{
+				href: 'https://example.test/theme.css',
+			},
+		] );
 		window.localStorage.setItem(
 			'wcpay_appearance_blocks_checkout',
 			JSON.stringify( {
@@ -2233,11 +2256,6 @@ describe( 'wc-payment-method-woopayments', () => {
 				loader: 'never',
 			} )
 		);
-
-		Object.defineProperty( document, 'styleSheets', {
-			configurable: true,
-			value: originalStyleSheets,
-		} );
 	} );
 
 	it( 'normalizes modern computed CSS colors before passing them to Stripe Elements', () => {
@@ -2413,27 +2431,59 @@ describe( 'wc-payment-method-woopayments', () => {
 		expect( appearance.variables.fontSizeBase ).toBe( '13px' );
 	} );
 
-	it( 'uses cart-block selectors when extracting BNPL messaging appearance', () => {
+	it( 'reads the cart quantity input, not the checkout email field, for BNPL messaging appearance', () => {
+		// Cart block markup (cart-line-items quantity selector), plus a checkout-style email field as the decoy the
+		// checkout extraction would read.
 		document.body.innerHTML = `
 			<div class="wp-block-woocommerce-cart">
 				<div class="wc-block-cart">
 					<div class="wc-block-components-quantity-selector">
-						<input class="wc-block-components-quantity-selector__input" />
+						<input type="number" class="wc-block-components-quantity-selector__input" value="1" />
 					</div>
 				</div>
-				<div class="wc-block-components-text-input">Cart total</div>
+				<div class="wc-block-components-text-input">
+					<input type="email" id="email" value="shopper@example.test" />
+				</div>
 			</div>
 		`;
-		const querySelector = jest.spyOn( document, 'querySelector' );
+		// getAppearance() reads the clone of the chosen input, which keeps its class and type but not its id.
+		jest.spyOn( window, 'getComputedStyle' ).mockImplementation(
+			( element ) => ( {
+				getPropertyValue: ( property ) => {
+					let style = {};
+					if (
+						element.matches?.(
+							'.wc-block-components-quantity-selector__input'
+						)
+					) {
+						style = {
+							color: 'rgb(10, 20, 30)',
+							'font-size': '15px',
+						};
+					} else if ( element.matches?.( 'input[type="email"]' ) ) {
+						style = {
+							color: 'rgb(200, 0, 0)',
+							'font-size': '22px',
+						};
+					}
 
-		getAppearance( 'bnpl_cart_block' );
+					return style[ property ] || '';
+				},
+			} )
+		);
 
-		expect( querySelector ).toHaveBeenCalledWith(
-			'.wc-block-cart .wc-block-components-quantity-selector .wc-block-components-quantity-selector__input'
-		);
-		expect( querySelector ).not.toHaveBeenCalledWith(
-			'.wc-block-components-text-input #email'
-		);
+		const appearance = getAppearance( 'bnpl_cart_block' );
+
+		expect( appearance.rules[ '.Input' ] ).toMatchObject( {
+			color: 'rgb(10, 20, 30)',
+			fontSize: '15px',
+		} );
+		expect( appearance.rules[ '.Input--invalid' ] ).toMatchObject( {
+			color: 'rgb(10, 20, 30)',
+		} );
+		expect( appearance.rules[ '.Tab' ] ).toMatchObject( {
+			color: 'rgb(10, 20, 30)',
+		} );
 	} );
 
 	it( 'persists valid Blocks appearance to the shared WooPay shopper endpoint once', async () => {
