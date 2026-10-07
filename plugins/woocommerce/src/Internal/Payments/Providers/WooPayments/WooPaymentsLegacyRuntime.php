@@ -14,7 +14,7 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
 /**
  * Centralizes access to the transitional WooPayments plugin runtime.
  *
- * @since 11.0.0
+ * @since 11.2.0
  * @internal Transitional internal component for the native payments runtime.
  */
 class WooPaymentsLegacyRuntime {

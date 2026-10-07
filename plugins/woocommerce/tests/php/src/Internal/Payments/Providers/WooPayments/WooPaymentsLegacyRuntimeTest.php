@@ -391,6 +391,11 @@ class WooPaymentsLegacyRuntimeTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a runtime with injected WooPayments account data.
 	 *
+	 * The payload is the client's wcpay_account_data cache entry: the account fields sit under 'data' (client 11.1.0
+	 * includes/class-database-cache.php:197-204), among them account_id and details_submitted. The client accepts only
+	 * details_submitted === true (includes/class-wc-payments-account.php:338-342); the string and numeric forms the tests
+	 * also pass are defensive inputs for the lenient check core's PaymentsController made before native payments.
+	 *
 	 * @param mixed $account_data Account data payload.
 	 * @return WooPaymentsLegacyRuntime
 	 */
