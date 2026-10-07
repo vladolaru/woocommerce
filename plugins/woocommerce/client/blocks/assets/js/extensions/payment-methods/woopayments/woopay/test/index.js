@@ -2,13 +2,7 @@
 /**
  * External dependencies
  */
-import {
-	act,
-	fireEvent,
-	render,
-	screen,
-	waitFor,
-} from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createElement } from '@wordpress/element';
 import { registerExpressPaymentMethod } from '@woocommerce/blocks-registry';
@@ -89,6 +83,7 @@ const nativeContentWindow = Object.getOwnPropertyDescriptor(
 );
 let navigate;
 let getComputedStyleSpy;
+let user;
 
 describe( 'wc-payment-method-woopayments-woopay', () => {
 	afterEach( () => {
@@ -131,6 +126,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 	beforeEach( () => {
 		navigate = jest.fn();
 		__test__.setNavigate( navigate );
+		user = userEvent.setup();
 	} );
 
 	it( 'registers a branded WooPay express button and opens the OTP iframe on click', async () => {
@@ -169,7 +165,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 		expect( button.querySelector( '.button-content' ) ).not.toBeNull();
 		expect( button.querySelector( 'svg' ) ).not.toBeNull();
 
-		fireEvent.click( button );
+		await user.click( button );
 
 		// Client 11.1.0 has no stored-session shortcut: with first-party auth
 		// off the click always opens the OTP iframe
@@ -263,7 +259,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 		const expressRegistration =
 			registerExpressPaymentMethod.mock.calls[ 0 ][ 0 ];
 		render( createElement( expressRegistration.content.type ) );
-		fireEvent.click( screen.getByRole( 'button', { name: 'WooPay' } ) );
+		await user.click( screen.getByRole( 'button', { name: 'WooPay' } ) );
 		await waitFor( () => {
 			expect(
 				document.querySelector( '.woopay-otp-iframe' )
@@ -326,7 +322,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 			).toBe( true );
 		} );
 
-		fireEvent.click( screen.getByRole( 'button', { name: 'WooPay' } ) );
+		await user.click( screen.getByRole( 'button', { name: 'WooPay' } ) );
 
 		await waitFor( () => {
 			const events = window.fetch.mock.calls
@@ -417,7 +413,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 
 		render( createElement( expressRegistration.content.type ) );
 
-		fireEvent.click( screen.getByRole( 'link', { name: 'WooPay' } ) );
+		await user.click( screen.getByRole( 'link', { name: 'WooPay' } ) );
 		await waitFor( () => {
 			expect(
 				window.fetch.mock.calls.some(
@@ -503,7 +499,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 
 		render( createElement( expressRegistration.content.type ) );
 
-		fireEvent.click( screen.getByRole( 'link', { name: 'WooPay' } ) );
+		await user.click( screen.getByRole( 'link', { name: 'WooPay' } ) );
 		await waitFor( () => {
 			expect(
 				window.fetch.mock.calls.some(
@@ -696,10 +692,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 		} );
 		window.fetch.mockClear();
 
-		fireEvent.click( screen.getByRole( 'button', { name: 'WooPay' } ) );
-		await act( async () => {
-			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
-		} );
+		await user.click( screen.getByRole( 'button', { name: 'WooPay' } ) );
 
 		expect( document.querySelector( '.woopay-otp-iframe' ) ).toBeNull();
 		expect(
@@ -719,9 +712,8 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 			registerExpressPaymentMethod.mock.calls[ 0 ][ 0 ];
 		render( createElement( expressRegistration.content.type ) );
 		const button = screen.getByRole( 'button', { name: 'WooPay' } );
-		button.focus();
 
-		fireEvent.click( button );
+		await user.click( button );
 
 		await waitFor( () => {
 			expect( button ).toHaveAttribute( 'aria-busy', 'true' );
@@ -733,12 +725,10 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 		// The still-enabled button refuses a second activation while the first is pending.
 		const requestCount = window.fetch.mock.calls.length;
 		expect( requestCount ).toBeGreaterThan( 0 );
-		fireEvent.click( button );
-		await act( async () => {
-			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
-		} );
+		await user.click( button );
 
 		expect( window.fetch ).toHaveBeenCalledTimes( requestCount );
+		expect( button ).toHaveFocus();
 	} );
 
 	// Client 11.1.0 wraps the button in `#wcpay-woopay-button`, swaps its content
@@ -768,7 +758,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 		expect( wrapper ).toContainElement( button );
 		expect( button ).not.toHaveClass( 'is-loading' );
 
-		fireEvent.click( button );
+		await user.click( button );
 
 		await waitFor( () => {
 			expect( button ).toHaveClass( 'woopay-express-button is-loading' );
@@ -823,7 +813,9 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 			const expressRegistration =
 				registerExpressPaymentMethod.mock.calls[ 0 ][ 0 ];
 			render( createElement( expressRegistration.content.type ) );
-			fireEvent.click( screen.getByRole( 'button', { name: 'WooPay' } ) );
+			await user.click(
+				screen.getByRole( 'button', { name: 'WooPay' } )
+			);
 			await waitFor( () => {
 				expect(
 					document.querySelector( '.woopay-otp-iframe' )
@@ -1129,7 +1121,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 				document.querySelector( '.woopay-otp-iframe' )
 			).not.toBeNull();
 
-			fireEvent.keyUp( document, { key: 'Escape' } );
+			await user.keyboard( '{Escape}' );
 		} );
 
 		// Client express-checkout-iframe.js:298-302.
@@ -1139,12 +1131,12 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 			iframe.dispatchEvent( new window.Event( 'load' ) );
 			expect( document.body.style.overflow ).toBe( 'hidden' );
 
-			fireEvent.keyUp( document, { key: 'Enter' } );
+			await user.keyboard( '{Enter}' );
 			expect(
 				document.querySelector( '.woopay-otp-iframe' )
 			).not.toBeNull();
 
-			fireEvent.keyUp( document, { key: 'Escape' } );
+			await user.keyboard( '{Escape}' );
 			expect( document.querySelector( '.woopay-otp-iframe' ) ).toBeNull();
 			expect(
 				document.querySelector( '.woopay-otp-iframe-wrapper' )
@@ -1162,8 +1154,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 					registerExpressPaymentMethod.mock.calls[ 0 ][ 0 ];
 				render( createElement( expressRegistration.content.type ) );
 				const button = screen.getByRole( 'button', { name: 'WooPay' } );
-				button.focus();
-				fireEvent.click( button );
+				await user.click( button );
 				await waitFor( () => {
 					expect(
 						document.querySelector( '.woopay-otp-iframe' )
@@ -1191,14 +1182,11 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 					'the close_modal message',
 					() => sendWooPayMessage( { action: 'close_modal' } ),
 				],
-				[
-					'Escape',
-					async () => fireEvent.keyUp( document, { key: 'Escape' } ),
-				],
+				[ 'Escape', () => user.keyboard( '{Escape}' ) ],
 				[
 					'a click on the backdrop',
-					async () =>
-						fireEvent.click(
+					() =>
+						user.click(
 							document.querySelector(
 								'.woopay-otp-iframe-wrapper'
 							)
@@ -1218,31 +1206,40 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 				}
 			);
 
-			// A browser takes focus away from a focused control that becomes disabled (the HTML "focus fixup rule"), and
-			// the WooPay button is disabled while it loads, before the dialog opens (seen in Chromium: focusout from the
-			// loading button, then focus on the iframe). jsdom keeps focus on a disabled control and cannot blur it, so the
-			// test moves focus to another element of the page at that point instead.
+			// Focus can leave the WooPay button while it loads, before the dialog opens: the shopper can move it while the
+			// requests run. The test holds the platform identity request the dialog waits for, moves focus to another
+			// element of the page while the button is loading, and only then lets the dialog open.
 			describe( 'when the loading button loses focus before the dialog opens', () => {
 				it.each( [
 					[
 						'the close_modal message',
 						() => sendWooPayMessage( { action: 'close_modal' } ),
 					],
-					[
-						'Escape',
-						async () =>
-							fireEvent.keyUp( document, { key: 'Escape' } ),
-					],
+					[ 'Escape', () => user.keyboard( '{Escape}' ) ],
 					[
 						'the Close button',
-						async () =>
-							fireEvent.click(
+						() =>
+							user.click(
 								screen.getByRole( 'button', { name: 'Close' } )
 							),
 					],
 				] )(
 					'still gives focus back to the WooPay button when closed by %s',
 					async ( label, close ) => {
+						// Without the tk_ai cookie the dialog waits for the platform get_identity request
+						// (tracks.js getTracksIdentity()), held here until focus has moved.
+						document.cookie =
+							'tk_ai=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC';
+						let answerIdentity;
+						window.fetch = jest.fn( ( url, options ) =>
+							options?.body?.get?.( 'action' ) === 'get_identity'
+								? new Promise( ( resolve ) => {
+										answerIdentity = resolve;
+								  } )
+								: Promise.resolve( {
+										json: () => Promise.resolve( {} ),
+								  } )
+						);
 						registerWooPay();
 						const expressRegistration =
 							registerExpressPaymentMethod.mock.calls[ 0 ][ 0 ];
@@ -1252,15 +1249,23 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 						const button = screen.getByRole( 'button', {
 							name: 'WooPay',
 						} );
-						button.focus();
-						fireEvent.click( button );
+						await user.click( button );
 						expect( button ).toHaveAttribute(
 							'aria-disabled',
 							'true'
 						);
+						expect(
+							document.querySelector( '.woopay-otp-iframe' )
+						).toBeNull();
 						const elsewhere = document.createElement( 'input' );
 						document.body.appendChild( elsewhere );
-						elsewhere.focus();
+						await user.click( elsewhere );
+						expect( elsewhere ).toHaveFocus();
+						// fetch() resolves with a Response whose ok is false for an HTTP error
+						// (https://developer.mozilla.org/docs/Web/API/Response/ok); the dialog then opens without an identity.
+						await act( async () => {
+							answerIdentity( { ok: false } );
+						} );
 						await waitFor( () => {
 							expect(
 								document.querySelector( '.woopay-otp-iframe' )
@@ -1291,18 +1296,14 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 						// The keys as a browser delivers them: keydown and keypress on the Close button, whose Enter
 						// activation clicks it, then keyup on the element focused by then.
 						'Enter on the Close button',
-						async ( user ) => {
+						async () => {
 							screen
 								.getByRole( 'button', { name: 'Close' } )
 								.focus();
 							await user.keyboard( '{Enter}' );
 						},
 					],
-					[
-						'Escape',
-						async () =>
-							fireEvent.keyUp( document, { key: 'Escape' } ),
-					],
+					[ 'Escape', () => user.keyboard( '{Escape}' ) ],
 					[
 						'the close_modal message',
 						() => sendWooPayMessage( { action: 'close_modal' } ),
@@ -1310,7 +1311,6 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 				] )(
 					'gives focus to the new WooPay button when closed by %s',
 					async ( label, close ) => {
-						const user = userEvent.setup();
 						registerWooPay();
 						const expressRegistration =
 							registerExpressPaymentMethod.mock.calls[ 0 ][ 0 ];
@@ -1320,8 +1320,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 						const opener = screen.getByRole( 'button', {
 							name: 'WooPay',
 						} );
-						opener.focus();
-						fireEvent.click( opener );
+						await user.click( opener );
 						await waitFor( () => {
 							expect(
 								document.querySelector( '.woopay-otp-iframe' )
@@ -1340,7 +1339,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 						} );
 						expect( replacement ).not.toBe( opener );
 
-						await close( user );
+						await close();
 
 						expect( screen.queryByRole( 'dialog' ) ).toBeNull();
 						expect( replacement ).toHaveFocus();
@@ -1394,7 +1393,6 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 				] )(
 					'closes on %s from the Close button and gives focus back to the WooPay button',
 					async ( label, keys ) => {
-						const user = userEvent.setup();
 						const button = await openFromFocusedButton();
 						tabOutOf(
 							document.querySelector( '.woopay-otp-iframe' )
@@ -1432,7 +1430,8 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 				await sendWooPayMessage( { action: 'close_modal' } );
 				expect( button ).toHaveFocus();
 				const email = document.getElementById( 'email' );
-				email.focus();
+				await user.click( email );
+				expect( email ).toHaveFocus();
 
 				// A fetch() that cannot reach the server rejects with a TypeError
 				// (https://developer.mozilla.org/docs/Web/API/Window/fetch#exceptions).
