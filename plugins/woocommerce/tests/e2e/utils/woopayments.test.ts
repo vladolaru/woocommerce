@@ -150,8 +150,7 @@ test( 'requireTestModeAccount refuses a live account', async () => {
 	);
 } );
 
-// The platform responses core passes through unchanged (`WooPaymentsPaymentDetailsRestController`): a
-// PaymentIntent with its `charges` list and a Charge, as recorded in
+// The provider fields used below come from the recorded PaymentIntent and Charge responses in
 // `tests/php/src/Internal/Payments/Providers/WooPayments/Fixtures/rec-t3-manual-capture.json`.
 const SETTLED_INTENT = {
 	status: 'succeeded',
@@ -174,13 +173,15 @@ const SETTLED_CHARGE = {
 };
 
 /**
- * The routes of one settled card payment for order 501, with single intent or
- * charge fields replaced.
+ * The routes of one settled card payment for order 501, with single order,
+ * intent or charge fields replaced.
  */
 function settledCardPaymentRoutes( {
+	order = {},
 	intent = {},
 	charge = {},
 }: {
+	order?: Record< string, unknown >;
 	intent?: Record< string, unknown >;
 	charge?: Record< string, unknown >;
 } = {} ): Record< string, unknown > {
@@ -194,6 +195,7 @@ function settledCardPaymentRoutes( {
 				{ key: '_charge_id', value: 'ch_exact' },
 				{ key: '_payment_method_id', value: 'pm_exact' },
 			],
+			...order,
 		},
 		'wc/v3/payments/payment_intents/pi_exact': {
 			...SETTLED_INTENT,
@@ -252,8 +254,13 @@ for ( const { name, intent, charge } of [
 	} );
 }
 
-// A 9.99 amount on one side of a 10.99 order.
-for ( const { name, intent, charge, mismatch } of [
+// A 9.99 amount where everything else says 10.99.
+for ( const { name, order, intent, charge, mismatch } of [
+	{
+		name: 'order',
+		order: { total: '9.99' },
+		mismatch: /"orderAmountMinor": 999/,
+	},
 	{
 		name: 'intent',
 		intent: { amount: 999 },
@@ -267,7 +274,7 @@ for ( const { name, intent, charge, mismatch } of [
 ] ) {
 	test( `expectSettledCardPayment refuses a settled payment whose ${ name } has the wrong amount`, async () => {
 		const restApi = fakeApiClient(
-			settledCardPaymentRoutes( { intent, charge } )
+			settledCardPaymentRoutes( { order, intent, charge } )
 		);
 
 		await expect(
