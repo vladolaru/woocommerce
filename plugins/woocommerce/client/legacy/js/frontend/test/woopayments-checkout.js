@@ -4218,6 +4218,7 @@ describe( 'WooPayments checkout', () => {
 				initWooPayNonce: 'init-nonce',
 				woopayIsCountryAvailable: true,
 				woopayOtpIframeTitle: 'WooPay SMS code verification',
+				woopayOtpCloseLabel: 'Close',
 				woopayUnavailableMessage: 'WooPay is unavailable at this time.',
 				...configOverrides,
 			} );
@@ -4643,7 +4644,7 @@ describe( 'WooPayments checkout', () => {
 			jest.spyOn( iframe, 'focus' );
 
 			expect( wrapper.getAttribute( 'aria-label' ) ).toBe( iframe.title );
-			expect( closeButton ).not.toBeNull();
+			expect( closeButton.textContent ).toBe( 'Close' );
 
 			input.dispatchEvent( new window.FocusEvent( 'focusin', { bubbles: true } ) );
 			expect( iframe.focus ).toHaveBeenCalled();

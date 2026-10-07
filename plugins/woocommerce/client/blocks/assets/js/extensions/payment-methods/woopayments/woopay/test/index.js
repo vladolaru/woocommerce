@@ -729,6 +729,16 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 		expect( button ).toHaveAttribute( 'aria-disabled', 'true' );
 		expect( button ).not.toBeDisabled();
 		expect( button ).toHaveFocus();
+
+		// The still-enabled button refuses a second activation while the first is pending.
+		const requestCount = window.fetch.mock.calls.length;
+		expect( requestCount ).toBeGreaterThan( 0 );
+		fireEvent.click( button );
+		await act( async () => {
+			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+		} );
+
+		expect( window.fetch ).toHaveBeenCalledTimes( requestCount );
 	} );
 
 	// Client 11.1.0 wraps the button in `#wcpay-woopay-button`, swaps its content
