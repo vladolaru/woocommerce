@@ -212,6 +212,33 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should not load WooPay on an archive whose term ID equals the post ID of a page with a product_page shortcode.
+	 */
+	public function test_enqueue_frontend_assets_skips_an_archive_whose_term_id_matches_a_product_page(): void {
+		$service                            = new RecordingWooPaySessionService();
+		$service->woopay_enabled            = true;
+		$service->should_show_woopay_button = true;
+		$this->sut                          = $this->create_controller( true, true, $service );
+		$term_id                            = self::factory()->category->create( array( 'name' => 'Empty archive' ) );
+		// A product shortcode page whose post ID is the category's term ID (import_id asks wp_insert_post() for that ID).
+		$page_id = wp_insert_post(
+			array(
+				'import_id'    => $term_id,
+				'post_type'    => 'page',
+				'post_status'  => 'publish',
+				'post_title'   => 'Product page with the term ID',
+				'post_content' => '[product_page id="1"]',
+			)
+		);
+		$this->assertSame( $term_id, $page_id, 'The fixture needs a page whose ID equals the term ID.' );
+		$this->go_to( get_category_link( $term_id ) );
+
+		$this->sut->enqueue_frontend_assets();
+
+		$this->assertFalse( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
+	}
+
+	/**
 	 * @testdox Should enqueue classic WooPay save-user assets on checkout even when the express button is hidden.
 	 */
 	public function test_enqueue_frontend_assets_preserves_classic_save_user_when_checkout_button_is_hidden(): void {

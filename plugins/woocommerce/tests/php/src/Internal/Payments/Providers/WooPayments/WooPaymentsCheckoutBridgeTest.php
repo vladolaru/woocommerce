@@ -2399,8 +2399,9 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$data = $this->create_bridge_for_express_handlers()->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 
 		$this->assertTrue( current_user_can( 'pay_for_order', $order->get_id() ) );
-		$this->assertArrayNotHasKey( 'order_id', $data );
-		$this->assertArrayNotHasKey( 'billing_email', $data );
+		foreach ( array( 'order_id', 'pay_for_order', 'key', 'billing_email' ) as $order_pay_key ) {
+			$this->assertArrayNotHasKey( $order_pay_key, $data );
+		}
 	}
 
 	/**
