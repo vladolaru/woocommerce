@@ -661,7 +661,7 @@ jobs:
     name: 'Evaluate Project Job Statuses'
     runs-on: ${{ github.event.pull_request.user.login == 'woocommercebot' && fromJSON('{"group":"WooCommerce Release Checks"}') || 'ubuntu-latest' }}
     timeout-minutes: 5
-    needs: [ 'project-jobs', 'woocommerce-plugin-build-artifact', 'project-lint-jobs', 'project-test-jobs', 'validate-changelog', 'validate-markdown', 'validate-syncpack', 'woopayments-native-secretless' ]
+    needs: [ 'identify-jobs-to-run', 'project-jobs', 'woocommerce-plugin-build-artifact', 'project-lint-jobs', 'project-test-jobs', 'validate-changelog', 'validate-markdown', 'validate-syncpack', 'woopayments-native-secretless' ]
     # This job must run for all trigger types (not just PRs) so that alert-on-failure can access its outputs
     if: ${{ !cancelled() }}
     outputs:
@@ -688,9 +688,11 @@ jobs:
             exit 1
           fi
 
-          # Skipped when no code changed or on reusable-workflow runs.
+          # Skipped is accepted only where the job is meant to skip: reusable-workflow runs, and pull requests whose
+          # analysis found no code to validate.
           woopayments_native_result="${{ needs.woopayments-native-secretless.result }}"
-          if [[ $woopayments_native_result != "success" && $woopayments_native_result != "skipped" ]]; then
+          woopayments_native_may_skip="${{ inputs.trigger != '' || ( github.event_name == 'pull_request' && needs.identify-jobs-to-run.result == 'success' && needs.identify-jobs-to-run.outputs.needs-code-validation != 'true' ) }}"
+          if [[ $woopayments_native_result != "success" && ! ( $woopayments_native_result == "skipped" && $woopayments_native_may_skip == "true" ) ]]; then
             echo "WooPayments native secretless e2e was not successful: $woopayments_native_result"
             exit 1
           fi

@@ -365,7 +365,7 @@ class InitTest extends WC_Unit_Test_Case {
 			\Automattic\Jetpack\Constants::clear_single_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' );
 		}
 
-		$this->assertSame( array( 'mock-extension-2' ), array_values( $native_keys ) );
+		$this->assertSame( array( 'mock-extension-2' ), $native_keys );
 		$this->assertContains( 'woocommerce-payments', $merged_keys );
 	}
 
