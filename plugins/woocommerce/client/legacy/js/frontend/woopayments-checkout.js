@@ -2061,7 +2061,7 @@
 				if ( typeof window.Stripe === 'function' ) {
 					window.clearInterval( timer );
 					resolve( window.Stripe );
-				} else if ( waited >= 600 * 1000 ) {
+				} else if ( waited > 600 * 1000 ) {
 					window.clearInterval( timer );
 					reject( new Error( 'Stripe object not found' ) );
 				}

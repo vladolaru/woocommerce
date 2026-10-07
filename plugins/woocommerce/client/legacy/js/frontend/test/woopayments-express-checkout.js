@@ -468,16 +468,17 @@ describe( 'WooPayments express checkout', () => {
 	} );
 
 	test( 'mounts Stripe ECE once Stripe.js loads after the express script', async () => {
+		jest.useFakeTimers();
 		const loadedStripe = window.Stripe;
 		delete window.Stripe;
 		require( '../woopayments-express-checkout' );
 
 		bodyEventHandlers.updated_checkout();
-		await flushPromises();
+		await jest.advanceTimersByTimeAsync( 300 );
 		expect( expressElement.mount ).not.toHaveBeenCalled();
 
 		window.Stripe = loadedStripe;
-		await new Promise( ( resolve ) => setTimeout( resolve, 150 ) );
+		await jest.advanceTimersByTimeAsync( 100 );
 
 		expect( expressElement.mount ).toHaveBeenCalledWith(
 			'#wcpay-express-checkout-element'

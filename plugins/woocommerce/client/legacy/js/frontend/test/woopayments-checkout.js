@@ -1665,13 +1665,17 @@ describe( 'WooPayments checkout', () => {
 	} );
 
 	test( 'confirms a PaymentIntent hash once Stripe.js loads', async () => {
+		jest.useFakeTimers();
 		const loadedStripe = window.Stripe;
 		delete window.Stripe;
 		setPaymentIntentConfirmationHash();
 
 		require( '../woopayments-checkout' );
+		await jest.advanceTimersByTimeAsync( 300 );
+		expect( stripeMock.handleNextAction ).not.toHaveBeenCalled();
+
 		window.Stripe = loadedStripe;
-		await new Promise( ( resolve ) => setTimeout( resolve, 150 ) );
+		await jest.advanceTimersByTimeAsync( 100 );
 
 		expect( stripeMock.handleNextAction ).toHaveBeenCalledWith( {
 			clientSecret: 'pi_native_secret_abc',

@@ -26,7 +26,7 @@ export const waitForStripe = () =>
 			if ( typeof window.Stripe === 'function' ) {
 				window.clearInterval( timer );
 				resolve( window.Stripe );
-			} else if ( waited >= STRIPE_MAX_WAIT ) {
+			} else if ( waited > STRIPE_MAX_WAIT ) {
 				window.clearInterval( timer );
 				reject(
 					new StripeWaitTimeoutError( 'Stripe object not found' )

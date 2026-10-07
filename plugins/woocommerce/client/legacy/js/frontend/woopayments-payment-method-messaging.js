@@ -160,7 +160,7 @@
 				if ( typeof window.Stripe === 'function' ) {
 					window.clearInterval( timer );
 					resolve( window.Stripe );
-				} else if ( waited >= 600 * 1000 ) {
+				} else if ( waited > 600 * 1000 ) {
 					window.clearInterval( timer );
 					reject( new Error( 'Stripe object not found' ) );
 				}
@@ -340,13 +340,16 @@
 			return;
 		}
 
+		function mountAndBind() {
+			paymentMessageElement = initializeBnplSiteMessaging( config );
+			bindProductEvents( config, paymentMessageElement );
+		}
+
 		// Client 11.1.0 product-details/bnpl-site-messaging/index.js:81 awaits api.getStripe(), which waits for Stripe.js.
-		waitForStripe().then(
-			function () {
-				paymentMessageElement = initializeBnplSiteMessaging( config );
-				bindProductEvents( config, paymentMessageElement );
-			},
-			function () {}
-		);
+		if ( typeof window.Stripe === 'function' ) {
+			mountAndBind();
+		} else {
+			waitForStripe().then( mountAndBind, function () {} );
+		}
 	} );
 } )( jQuery, window, document );

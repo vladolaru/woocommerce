@@ -1364,11 +1364,12 @@ describe( 'wc-payment-method-woopayments', () => {
 			renderCardWithPaymentSetup();
 			expect( mount ).not.toHaveBeenCalled();
 
+			// Minimal Stripe double: stripe.elements().create( 'payment' ) with on() and mount(), as client 11.1.0
+			// classic/payment-processing.js:282-300 uses it.
 			window.Stripe = jest.fn( () => ( {
 				elements: jest.fn( () => ( {
 					create: jest.fn( () => ( { on: jest.fn(), mount } ) ),
 				} ) ),
-				createPaymentMethod: jest.fn().mockResolvedValue( {} ),
 			} ) );
 			await act( async () => {
 				jest.advanceTimersByTime( 100 );
@@ -1393,6 +1394,8 @@ describe( 'wc-payment-method-woopayments', () => {
 		it( 'shows the PaymentElement load error and refuses to submit', async () => {
 			const handlers = {};
 			const submit = jest.fn().mockResolvedValue( {} );
+			// Minimal Stripe double: the element's on() captures the handlers, as client 11.1.0
+			// blocks/payment-processor.js:296 subscribes onLoadError.
 			window.Stripe = jest.fn( () => ( {
 				elements: jest.fn( () => ( {
 					create: jest.fn( () => ( {
@@ -1403,19 +1406,16 @@ describe( 'wc-payment-method-woopayments', () => {
 					} ) ),
 					submit,
 				} ) ),
-				createPaymentMethod: jest.fn().mockResolvedValue( {} ),
 			} ) );
 
 			const runPaymentSetup = renderCardWithPaymentSetup();
 			await waitFor( () => {
 				expect( handlers.loaderror ).toEqual( expect.any( Function ) );
 			} );
-			// Payload of the Payment Element loaderror event (Stripe.js reference, element.on('loaderror')).
+			// Synthetic loaderror event: client 11.1.0 blocks/payment-elements.js:108-120 reads only event.error.message.
 			act( () => {
 				handlers.loaderror( {
-					elementType: 'payment',
 					error: {
-						type: 'invalid_request_error',
 						message: 'The payment form could not be loaded.',
 					},
 				} );
@@ -2653,7 +2653,7 @@ describe( 'wc-payment-method-woopayments', () => {
 
 		const confirmation = runSavedTokenConfirmation();
 		await act( async () => {
-			jest.advanceTimersByTime( 600 * 1000 );
+			jest.advanceTimersByTime( 600 * 1000 + 100 );
 		} );
 
 		await expect( confirmation ).resolves.toEqual( {

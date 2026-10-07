@@ -137,6 +137,7 @@ describe( 'WooPayments BNPL payment method messaging', () => {
 	} );
 
 	afterEach( () => {
+		jest.useRealTimers();
 		delete global.jQuery;
 		delete window.jQuery;
 		delete window.Stripe;
@@ -146,6 +147,8 @@ describe( 'WooPayments BNPL payment method messaging', () => {
 
 	test( 'mounts the product-page Stripe payment method messaging element', async () => {
 		require( '../woopayments-payment-method-messaging' );
+		// Stripe.js is already loaded, so the element mounts in the ready callback, before any other event.
+		expect( mountElement ).toHaveBeenCalled();
 		await flushPromises();
 
 		expect( window.Stripe ).toHaveBeenCalledWith( 'pk_test', {
@@ -167,15 +170,16 @@ describe( 'WooPayments BNPL payment method messaging', () => {
 	} );
 
 	test( 'mounts the messaging element once Stripe.js loads after the messaging script', async () => {
+		jest.useFakeTimers();
 		const loadedStripe = window.Stripe;
 		delete window.Stripe;
 
 		require( '../woopayments-payment-method-messaging' );
-		await flushPromises();
+		await jest.advanceTimersByTimeAsync( 300 );
 		expect( mountElement ).not.toHaveBeenCalled();
 
 		window.Stripe = loadedStripe;
-		await new Promise( ( resolve ) => setTimeout( resolve, 150 ) );
+		await jest.advanceTimersByTimeAsync( 100 );
 
 		expect( mountElement ).toHaveBeenCalledWith(
 			'#payment-method-message'

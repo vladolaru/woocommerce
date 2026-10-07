@@ -1153,7 +1153,11 @@ const WooPaymentsContent = ( {
 	}, [ isCardMethod ] );
 
 	useEffect( () => {
-		if ( isStripeLoaded ) {
+		if (
+			isStripeLoaded ||
+			! paymentSettings.publishableKey ||
+			! paymentSettings.isCoreNativeCheckoutAvailable
+		) {
 			return undefined;
 		}
 
@@ -1166,7 +1170,11 @@ const WooPaymentsContent = ( {
 		return () => {
 			isMounted = false;
 		};
-	}, [ isStripeLoaded ] );
+	}, [
+		isStripeLoaded,
+		paymentSettings.publishableKey,
+		paymentSettings.isCoreNativeCheckoutAvailable,
+	] );
 
 	useEffect( () => {
 		if (
