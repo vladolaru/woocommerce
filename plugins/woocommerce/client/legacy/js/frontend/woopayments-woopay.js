@@ -1953,6 +1953,9 @@
 		updateSaveUserVisibility();
 	} );
 	$( document.body ).on( 'updated_cart_totals', function () {
+		// Client 11.1.0 woopay/express-button/index.js:95-106 renders the button again on both refresh events: a cart
+		// update replaces the markup it lived in.
+		renderWooPayExpressButton();
 		if ( config.isWooPayDirectCheckoutEnabled ) {
 			attachDirectCheckoutListeners();
 		}

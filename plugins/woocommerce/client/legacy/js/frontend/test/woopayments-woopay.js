@@ -569,6 +569,22 @@ describe( 'WooPayments WooPay checkout', () => {
 			rectSpy.mockRestore();
 		} );
 
+		test( 'renders the WooPay button again after a classic cart refresh replaces it', () => {
+			require( '../woopayments-woopay' );
+			expect(
+				document.querySelector( '#wcpay-woopay-button button' )
+			).not.toBeNull();
+
+			// WooCommerce's cart.js replaces the cart markup, the button container included, on updated_cart_totals.
+			document.getElementById( 'wcpay-woopay-button' ).innerHTML =
+				'<div class="woopay-express-button is-placeholder"></div>';
+			bodyEventHandlers.updated_cart_totals();
+
+			expect(
+				document.querySelector( '#wcpay-woopay-button button' )
+			).not.toBeNull();
+		} );
+
 		test( 'renders the cached preferred WooPay card on the express button', () => {
 			const rectSpy = jest
 				.spyOn( window.HTMLElement.prototype, 'getBoundingClientRect' )
