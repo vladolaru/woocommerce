@@ -123,7 +123,7 @@ class MultiCurrencyPriceCalculatorTest extends WC_Unit_Test_Case {
 			'large quotient with an excess'     => array( 'large quotient with an excess', 'GBP', '0.7', '0.01', 0.0, '999999.99', 'product', true, '700000.00' ),
 			'exact 0.05 step'                   => array( 'exact 0.05 step', 'GBP', '0.7', '0.05', 0.0, '10.50', 'product', true, '7.35' ),
 			'nine-digit rate just above a cent' => array( 'nine-digit rate just above a cent', 'GBP', '3.00000003', '0.01', 0.0, '666666.67', 'product', true, '2000000.04' ),
-			'rate one float step above 1'       => array( 'rate one float step above 1', 'GBP', '1.000000000000005', '100', 0.0, '100.00', 'product', true, '200.00' ),
+			'14-digit rate just above 1'        => array( '14-digit rate just above 1', 'GBP', '1.0000000000001', '100', 0.0, '100.00', 'product', true, '200.00' ),
 			'exact 0.25 step'                   => array( 'exact 0.25 step', 'GBP', '0.1', '0.25', 0.0, '10.00', 'product', true, '1.00' ),
 			'excess above a 0.25 step'          => array( 'excess above a 0.25 step', 'GBP', '0.1000000001', '0.25', 0.0, '10.00', 'product', true, '1.25' ),
 			'exact 0.5 step'                    => array( 'exact 0.5 step', 'GBP', '0.5', '0.5', 0.0, '3.00', 'product', true, '1.50' ),
@@ -156,6 +156,24 @@ class MultiCurrencyPriceCalculatorTest extends WC_Unit_Test_Case {
 		} finally {
 			ini_set( 'serialize_precision', (string) $serialize_precision ); // phpcs:ignore WordPress.PHP.IniSet.Risky -- Restores the setting.
 		}
+	}
+
+	/**
+	 * @testdox Should read a malformed stored step as a whole step, the value the renderer is sent.
+	 */
+	public function test_reads_a_malformed_stored_step_as_the_renderer_does(): void {
+		$calculator = new MultiCurrencyPriceCalculator( $this->create_localization() );
+
+		$this->assertSame( 11.0, $calculator->get_price( '10.2', 'product', $this->create_currency( 'GBP', 1.0, false, '1,00' ) ) );
+	}
+
+	/**
+	 * @testdox Should keep the float ceil for a price past whole-step counting instead of searching forever.
+	 */
+	public function test_keeps_the_float_ceil_past_whole_step_counting(): void {
+		$calculator = new MultiCurrencyPriceCalculator( $this->create_localization() );
+
+		$this->assertSame( 1.0E+14, $calculator->get_price( '100000000000000', 'product', $this->create_currency( 'GBP', 1.0, false, '0.01' ) ) );
 	}
 
 	/**

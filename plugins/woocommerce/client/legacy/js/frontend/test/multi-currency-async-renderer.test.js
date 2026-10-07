@@ -485,9 +485,9 @@ describe( 'MultiCurrencyAsyncPriceRenderer', () => {
 			'2000000.04',
 		],
 		[
-			'rate one float step above 1',
+			'14-digit rate just above 1',
 			'GBP',
-			'1.000000000000005',
+			'1.0000000000001',
 			'100',
 			0.0,
 			'100.00',
@@ -588,6 +588,37 @@ describe( 'MultiCurrencyAsyncPriceRenderer', () => {
 			expect( renderer.convertPrice( price, type ) ).toBe( expected );
 		}
 	);
+
+	test( 'uses a cached config only when it carries the canonical decimal strings', () => {
+		const withDecimals = {
+			...mockConfig,
+			currencies: {
+				USD: {
+					...mockConfig.currencies.USD,
+					rate_decimal: '1',
+					rounding_decimal: '0',
+				},
+			},
+		};
+		window.sessionStorage.setItem(
+			'wcpay_mc_async_config',
+			JSON.stringify( { data: withDecimals, timestamp: Date.now() } )
+		);
+		expect( renderer.getCachedConfig() ).not.toBeNull();
+
+		// A config cached before the strings existed would compute on different digits than the server.
+		const old = {
+			...mockConfig,
+			currencies: { USD: { ...mockConfig.currencies.USD } },
+		};
+		window.sessionStorage.setItem(
+			'wcpay_mc_async_config',
+			JSON.stringify( { data: old, timestamp: Date.now() } )
+		);
+		expect( renderer.getCachedConfig() ).toBeNull();
+
+		window.sessionStorage.removeItem( 'wcpay_mc_async_config' );
+	} );
 
 	test( 'computes with the canonical decimal strings when the config has them', () => {
 		renderer.config = {

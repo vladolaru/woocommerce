@@ -414,7 +414,7 @@ class MultiCurrencyFrontendProjectionService {
 			'charm'            => (float) $currency->get_charm(),
 			// The canonical decimal strings the renderer computes with, so it rounds on the same digits as the server.
 			'rate_decimal'     => $currency->get_rate_decimal(),
-			'rounding_decimal' => $currency->get_rounding(),
+			'rounding_decimal' => $currency->get_rounding_decimal(),
 		);
 	}
 

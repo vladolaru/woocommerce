@@ -15,7 +15,9 @@
 	// Prices are worked out on exact decimals, as the client's decimal.js-light renderer does, so a half cent rounds up as the
 	// server's round() does. A decimal is a BigInt of units and a scale: 12.345 is 12345n at 3.
 	function toDecimal( value ) {
-		var match = /^\s*([+-]?)(\d*)(?:\.(\d*))?(?:e([+-]?\d+))?\s*$/i.exec( String( value ) );
+		var match = /^\s*([+-]?)(\d*)(?:\.(\d*))?(?:e([+-]?\d+))?\s*$/i.exec(
+			String( value )
+		);
 		if ( ! match || ( '' === match[ 2 ] && ! match[ 3 ] ) ) {
 			return { units: BigInt( 0 ), scale: 0 };
 		}
@@ -37,7 +39,10 @@
 	}
 
 	function rescale( decimal, scale ) {
-		return { units: decimal.units * pow10( scale - decimal.scale ), scale: scale };
+		return {
+			units: decimal.units * pow10( scale - decimal.scale ),
+			scale: scale,
+		};
 	}
 
 	function multiply( a, b ) {
@@ -46,7 +51,10 @@
 
 	function add( a, b ) {
 		var scale = Math.max( a.scale, b.scale );
-		return { units: rescale( a, scale ).units + rescale( b, scale ).units, scale: scale };
+		return {
+			units: rescale( a, scale ).units + rescale( b, scale ).units,
+			scale: scale,
+		};
 	}
 
 	// Round to a number of decimals, half away from zero (decimal.js ROUND_HALF_UP).
@@ -82,10 +90,18 @@
 	function toFixed( decimal, decimals ) {
 		var rounded = roundHalfUp( decimal, decimals );
 		var negative = rounded.units < BigInt( 0 );
-		var digits = ( negative ? -rounded.units : rounded.units ).toString().padStart( decimals + 1, '0' );
+		var digits = ( negative ? -rounded.units : rounded.units )
+			.toString()
+			.padStart( decimals + 1, '0' );
 		var integerPart = digits.slice( 0, digits.length - decimals );
 
-		return ( negative ? '-' : '' ) + integerPart + ( decimals > 0 ? '.' + digits.slice( digits.length - decimals ) : '' );
+		return (
+			( negative ? '-' : '' ) +
+			integerPart +
+			( decimals > 0
+				? '.' + digits.slice( digits.length - decimals )
+				: '' )
+		);
 	}
 
 	function forEachElement( elements, callback ) {
@@ -150,12 +166,16 @@
 			}
 
 			if ( ! asyncConfig || ! asyncConfig.apiUrl ) {
-				return Promise.reject( new Error( 'Missing async price config URL' ) );
+				return Promise.reject(
+					new Error( 'Missing async price config URL' )
+				);
 			}
 
 			return window.fetch( asyncConfig.apiUrl ).then( ( response ) => {
 				if ( ! response.ok ) {
-					throw new Error( 'Config fetch failed: ' + response.status );
+					throw new Error(
+						'Config fetch failed: ' + response.status
+					);
 				}
 
 				return response.json().then( ( config ) => {
@@ -174,7 +194,17 @@
 				}
 
 				var entry = JSON.parse( raw );
-				if ( Date.now() - entry.timestamp > SESSION_CACHE_TTL_MS ) {
+				// A config cached before the canonical decimal strings would compute on different digits than the server.
+				var currencies = ( entry.data && entry.data.currencies ) || {};
+				var hasDecimals = Object.keys( currencies ).every(
+					function ( code ) {
+						return undefined !== currencies[ code ].rate_decimal;
+					}
+				);
+				if (
+					! hasDecimals ||
+					Date.now() - entry.timestamp > SESSION_CACHE_TTL_MS
+				) {
 					window.sessionStorage.removeItem( SESSION_CACHE_KEY );
 					return null;
 				}
@@ -225,21 +255,42 @@
 
 			var selectedCode = this.config.selected_currency;
 			var currency = this.config.currencies[ selectedCode ];
-			var effectiveCurrency = currency || this.config.currencies[ this.config.default_currency ];
+			var effectiveCurrency =
+				currency ||
+				this.config.currencies[ this.config.default_currency ];
 			var converted = toDecimal( price );
 
 			if ( currency && selectedCode !== this.config.default_currency ) {
-				converted = multiply( converted, toDecimal( undefined !== currency.rate_decimal ? currency.rate_decimal : currency.rate ) );
+				converted = multiply(
+					converted,
+					toDecimal(
+						undefined !== currency.rate_decimal
+							? currency.rate_decimal
+							: currency.rate
+					)
+				);
 
 				if ( 'product' === type || 'shipping' === type ) {
-					var rounding = toDecimal( undefined !== currency.rounding_decimal ? currency.rounding_decimal : currency.rounding );
-					converted = rounding.units > BigInt( 0 )
-						? ceilToStep( converted, rounding )
-						: roundHalfUp( converted, currency.decimals );
+					var rounding = toDecimal(
+						undefined !== currency.rounding_decimal
+							? currency.rounding_decimal
+							: currency.rounding
+					);
+					converted =
+						rounding.units > BigInt( 0 )
+							? ceilToStep( converted, rounding )
+							: roundHalfUp( converted, currency.decimals );
 
-					var charmOnlyProducts = false !== this.config.charm_only_products;
-					if ( 'product' === type || ( 'shipping' === type && ! charmOnlyProducts ) ) {
-						converted = add( converted, toDecimal( currency.charm ) );
+					var charmOnlyProducts =
+						false !== this.config.charm_only_products;
+					if (
+						'product' === type ||
+						( 'shipping' === type && ! charmOnlyProducts )
+					) {
+						converted = add(
+							converted,
+							toDecimal( currency.charm )
+						);
 					}
 				} else {
 					converted = roundHalfUp( converted, currency.decimals );
@@ -292,22 +343,30 @@
 
 			switch ( currency.symbol_pos ) {
 				case 'right':
-					bdi.appendChild( document.createTextNode( formattedNumber ) );
+					bdi.appendChild(
+						document.createTextNode( formattedNumber )
+					);
 					bdi.appendChild( symbolSpan );
 					break;
 				case 'right_space':
-					bdi.appendChild( document.createTextNode( formattedNumber ) );
+					bdi.appendChild(
+						document.createTextNode( formattedNumber )
+					);
 					bdi.appendChild( document.createTextNode( '\u00a0' ) );
 					bdi.appendChild( symbolSpan );
 					break;
 				case 'left_space':
 					bdi.appendChild( symbolSpan );
 					bdi.appendChild( document.createTextNode( '\u00a0' ) );
-					bdi.appendChild( document.createTextNode( formattedNumber ) );
+					bdi.appendChild(
+						document.createTextNode( formattedNumber )
+					);
 					break;
 				default:
 					bdi.appendChild( symbolSpan );
-					bdi.appendChild( document.createTextNode( formattedNumber ) );
+					bdi.appendChild(
+						document.createTextNode( formattedNumber )
+					);
 			}
 
 			return bdi;
@@ -330,7 +389,10 @@
 			var selectedCode = this.config.selected_currency;
 			var selectedCurrency = this.config.currencies[ selectedCode ];
 
-			if ( ! selectedCurrency || selectedCode === this.config.default_currency ) {
+			if (
+				! selectedCurrency ||
+				selectedCode === this.config.default_currency
+			) {
 				return this.config.currencies[ this.config.default_currency ];
 			}
 
@@ -347,26 +409,28 @@
 				'[data-wcpay-price]:not(.wcpay-price-converted)'
 			);
 
-			forEachElement(
-				elements,
-				( el ) => {
-					var price = el.getAttribute( 'data-wcpay-price' );
-					var type = el.getAttribute( 'data-wcpay-price-type' ) || 'product';
-					var converted = this.convertPrice( price, type );
-					var skeleton = el.querySelector( '.wcpay-price-skeleton' );
-					var placeholder = el.querySelector( '.wcpay-price-placeholder' );
+			forEachElement( elements, ( el ) => {
+				var price = el.getAttribute( 'data-wcpay-price' );
+				var type =
+					el.getAttribute( 'data-wcpay-price-type' ) || 'product';
+				var converted = this.convertPrice( price, type );
+				var skeleton = el.querySelector( '.wcpay-price-skeleton' );
+				var placeholder = el.querySelector(
+					'.wcpay-price-placeholder'
+				);
 
-					if ( skeleton ) {
-						skeleton.parentNode.removeChild( skeleton );
-					}
-					if ( placeholder ) {
-						placeholder.parentNode.removeChild( placeholder );
-					}
-
-					el.appendChild( this.buildPriceBdi( converted, effectiveCurrency ) );
-					el.classList.add( 'wcpay-price-converted' );
+				if ( skeleton ) {
+					skeleton.parentNode.removeChild( skeleton );
 				}
-			);
+				if ( placeholder ) {
+					placeholder.parentNode.removeChild( placeholder );
+				}
+
+				el.appendChild(
+					this.buildPriceBdi( converted, effectiveCurrency )
+				);
+				el.classList.add( 'wcpay-price-converted' );
+			} );
 
 			this.convertScreenReaderText();
 		}
@@ -387,60 +451,69 @@
 				'[data-wcpay-sr-type]:not(.wcpay-sr-converted)'
 			);
 
-			forEachElement(
-				elements,
-				( el ) => {
-					var type = el.getAttribute( 'data-wcpay-sr-type' );
+			forEachElement( elements, ( el ) => {
+				var type = el.getAttribute( 'data-wcpay-sr-type' );
 
-					if ( 'sale_original' === type || 'sale_current' === type ) {
-						var template = srConfig[ type ];
-						var rawPrice = el.getAttribute( 'data-wcpay-sr-price' );
+				if ( 'sale_original' === type || 'sale_current' === type ) {
+					var template = srConfig[ type ];
+					var rawPrice = el.getAttribute( 'data-wcpay-sr-price' );
 
-						if ( ! template || null === rawPrice ) {
-							return;
-						}
-
-						var converted = this.convertPrice( rawPrice, 'product' );
-						var priceText = this.buildPriceText( converted, effectiveCurrency );
-						el.textContent = template.replace( '%1$s', priceText ).replace( '%s', priceText );
-						el.classList.add( 'wcpay-sr-converted' );
-					} else if ( 'range' === type ) {
-						var from = el.getAttribute( 'data-wcpay-sr-price-from' );
-						var to = el.getAttribute( 'data-wcpay-sr-price-to' );
-
-						if ( ! srConfig.range || null === from || null === to ) {
-							return;
-						}
-
-						var fromText = this.buildPriceText(
-							this.convertPrice( from, 'product' ),
-							effectiveCurrency
-						);
-						var toText = this.buildPriceText(
-							this.convertPrice( to, 'product' ),
-							effectiveCurrency
-						);
-
-						el.textContent = srConfig.range
-							.replace( '%1$s', fromText )
-							.replace( '%2$s', toText );
-						el.classList.add( 'wcpay-sr-converted' );
+					if ( ! template || null === rawPrice ) {
+						return;
 					}
+
+					var converted = this.convertPrice( rawPrice, 'product' );
+					var priceText = this.buildPriceText(
+						converted,
+						effectiveCurrency
+					);
+					el.textContent = template
+						.replace( '%1$s', priceText )
+						.replace( '%s', priceText );
+					el.classList.add( 'wcpay-sr-converted' );
+				} else if ( 'range' === type ) {
+					var from = el.getAttribute( 'data-wcpay-sr-price-from' );
+					var to = el.getAttribute( 'data-wcpay-sr-price-to' );
+
+					if ( ! srConfig.range || null === from || null === to ) {
+						return;
+					}
+
+					var fromText = this.buildPriceText(
+						this.convertPrice( from, 'product' ),
+						effectiveCurrency
+					);
+					var toText = this.buildPriceText(
+						this.convertPrice( to, 'product' ),
+						effectiveCurrency
+					);
+
+					el.textContent = srConfig.range
+						.replace( '%1$s', fromText )
+						.replace( '%2$s', toText );
+					el.classList.add( 'wcpay-sr-converted' );
 				}
-			);
+			} );
 		}
 
 		syncCurrencySwitchers() {
-			var selectedCode = this.config ? this.config.selected_currency : null;
+			var selectedCode = this.config
+				? this.config.selected_currency
+				: null;
 			if ( ! selectedCode ) {
 				return;
 			}
 
-			var selects = document.querySelectorAll( 'select.js-woopayments-currency-switcher' );
+			var selects = document.querySelectorAll(
+				'select.js-woopayments-currency-switcher'
+			);
 			forEachElement( selects, function ( select ) {
-				var hasOption = Array.prototype.some.call( select.options, function ( option ) {
-					return option.value === selectedCode;
-				} );
+				var hasOption = Array.prototype.some.call(
+					select.options,
+					function ( option ) {
+						return option.value === selectedCode;
+					}
+				);
 
 				if ( hasOption && select.value !== selectedCode ) {
 					select.value = selectedCode;
@@ -458,15 +531,26 @@
 
 				mutations.forEach( function ( mutation ) {
 					forEachElement( mutation.addedNodes, function ( node ) {
-						if ( hasNewPrices || node.nodeType !== window.Node.ELEMENT_NODE ) {
+						if (
+							hasNewPrices ||
+							node.nodeType !== window.Node.ELEMENT_NODE
+						) {
 							return;
 						}
 
 						if (
-							node.matches( '[data-wcpay-price]:not(.wcpay-price-converted)' ) ||
-							node.querySelector( '[data-wcpay-price]:not(.wcpay-price-converted)' ) ||
-							node.matches( '[data-wcpay-sr-type]:not(.wcpay-sr-converted)' ) ||
-							node.querySelector( '[data-wcpay-sr-type]:not(.wcpay-sr-converted)' )
+							node.matches(
+								'[data-wcpay-price]:not(.wcpay-price-converted)'
+							) ||
+							node.querySelector(
+								'[data-wcpay-price]:not(.wcpay-price-converted)'
+							) ||
+							node.matches(
+								'[data-wcpay-sr-type]:not(.wcpay-sr-converted)'
+							) ||
+							node.querySelector(
+								'[data-wcpay-sr-type]:not(.wcpay-sr-converted)'
+							)
 						) {
 							hasNewPrices = true;
 						}
@@ -475,7 +559,10 @@
 
 				if ( hasNewPrices ) {
 					window.clearTimeout( this.debounceTimer );
-					this.debounceTimer = window.setTimeout( () => this.convertAllPrices(), 50 );
+					this.debounceTimer = window.setTimeout(
+						() => this.convertAllPrices(),
+						50
+					);
 				}
 			} );
 
@@ -491,10 +578,12 @@
 			}
 
 			this.wcEventHandler = () => this.convertAllPrices();
-			window.jQuery( document.body ).on(
-				'updated_cart_totals updated_checkout updated_wc_div',
-				this.wcEventHandler
-			);
+			window
+				.jQuery( document.body )
+				.on(
+					'updated_cart_totals updated_checkout updated_wc_div',
+					this.wcEventHandler
+				);
 		}
 
 		showErrorState() {
@@ -504,39 +593,43 @@
 				'[data-wcpay-price]:not(.wcpay-price-converted)'
 			);
 
-			forEachElement(
-				elements,
-				( el ) => {
-					var skeleton = el.querySelector( '.wcpay-price-skeleton' );
-					var rawPrice = el.getAttribute( 'data-wcpay-price' );
+			forEachElement( elements, ( el ) => {
+				var skeleton = el.querySelector( '.wcpay-price-skeleton' );
+				var rawPrice = el.getAttribute( 'data-wcpay-price' );
 
-					if ( defaultCurrency && null !== rawPrice ) {
-						try {
-							var formatted = this.formatPrice( toDecimal( rawPrice ), defaultCurrency );
-							var placeholder = el.querySelector( '.wcpay-price-placeholder' );
+				if ( defaultCurrency && null !== rawPrice ) {
+					try {
+						var formatted = this.formatPrice(
+							toDecimal( rawPrice ),
+							defaultCurrency
+						);
+						var placeholder = el.querySelector(
+							'.wcpay-price-placeholder'
+						);
 
-							if ( skeleton ) {
-								skeleton.parentNode.removeChild( skeleton );
-							}
-							if ( placeholder ) {
-								placeholder.parentNode.removeChild( placeholder );
-							}
-
-							el.appendChild( this.buildPriceBdi( formatted, defaultCurrency ) );
-							el.classList.add( 'wcpay-price-converted' );
-							return;
-						} catch ( error ) {
-							// Fall back to visual error state below.
+						if ( skeleton ) {
+							skeleton.parentNode.removeChild( skeleton );
 						}
-					}
+						if ( placeholder ) {
+							placeholder.parentNode.removeChild( placeholder );
+						}
 
-					if ( skeleton ) {
-						skeleton.classList.remove( 'wcpay-price-skeleton' );
-						skeleton.classList.add( 'wcpay-price-error' );
-						skeleton.textContent = '\u2014';
+						el.appendChild(
+							this.buildPriceBdi( formatted, defaultCurrency )
+						);
+						el.classList.add( 'wcpay-price-converted' );
+						return;
+					} catch ( error ) {
+						// Fall back to visual error state below.
 					}
 				}
-			);
+
+				if ( skeleton ) {
+					skeleton.classList.remove( 'wcpay-price-skeleton' );
+					skeleton.classList.add( 'wcpay-price-error' );
+					skeleton.textContent = '\u2014';
+				}
+			} );
 		}
 
 		destroy() {
@@ -546,10 +639,12 @@
 			}
 
 			if ( this.wcEventHandler && 'undefined' !== typeof window.jQuery ) {
-				window.jQuery( document.body ).off(
-					'updated_cart_totals updated_checkout updated_wc_div',
-					this.wcEventHandler
-				);
+				window
+					.jQuery( document.body )
+					.off(
+						'updated_cart_totals updated_checkout updated_wc_div',
+						this.wcEventHandler
+					);
 			}
 
 			window.clearTimeout( this.debounceTimer );
@@ -566,7 +661,8 @@
 	}
 
 	if ( typeof window !== 'undefined' ) {
-		window.MultiCurrencyAsyncPriceRenderer = MultiCurrencyAsyncPriceRenderer;
+		window.MultiCurrencyAsyncPriceRenderer =
+			MultiCurrencyAsyncPriceRenderer;
 
 		if ( getGlobalConfig() ) {
 			var renderer = new MultiCurrencyAsyncPriceRenderer();
@@ -574,13 +670,22 @@
 				ready: new Promise( function ( resolve ) {
 					function initializeRenderer() {
 						renderer.init().then( function () {
-							var selectedCurrency = renderer.config && renderer.config.selected_currency;
-							resolve( typeof selectedCurrency === 'string' ? selectedCurrency.toLowerCase() : '' );
+							var selectedCurrency =
+								renderer.config &&
+								renderer.config.selected_currency;
+							resolve(
+								typeof selectedCurrency === 'string'
+									? selectedCurrency.toLowerCase()
+									: ''
+							);
 						} );
 					}
 
 					if ( 'loading' === document.readyState ) {
-						document.addEventListener( 'DOMContentLoaded', initializeRenderer );
+						document.addEventListener(
+							'DOMContentLoaded',
+							initializeRenderer
+						);
 					} else {
 						initializeRenderer();
 					}
@@ -588,4 +693,4 @@
 			};
 		}
 	}
-}() );
+} )();

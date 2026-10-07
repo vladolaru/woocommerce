@@ -119,7 +119,7 @@ class MultiCurrencyPriceCalculator {
 	 * @return float
 	 */
 	private function get_adjusted_price( float $price, bool $apply_charm_pricing, MultiCurrencyCurrency $currency, $source_price, string $rate ): float {
-		$rounding = (string) $currency->get_rounding();
+		$rounding = $currency->get_rounding_decimal();
 
 		if ( 0.0 === (float) $rounding ) {
 			$price = round( $price, $this->get_currency_decimals( $currency ) );
@@ -138,11 +138,11 @@ class MultiCurrencyPriceCalculator {
 	 * Ceil a converted price to the next rounding step on exact decimals, as the async renderer does.
 	 *
 	 * Both sides compute on the same canonical strings: the price as the storefront markup sends it, the rate from
-	 * MultiCurrencyCurrency::get_rate_decimal() and the stored rounding step (the public config's rate_decimal and rounding_decimal).
+	 * MultiCurrencyCurrency::get_rate_decimal() and get_rounding_decimal() (the public config's rate_decimal and rounding_decimal).
 	 * The client's server ceils in floats and can charge a step above the price shown (includes/multi-currency/MultiCurrency.php:1695-1700).
 	 *
 	 * @param float  $converted    Converted price, used to start the search.
-	 * @param string $rounding     Rounding step, as stored.
+	 * @param string $rounding     Rounding step, as its canonical decimal string.
 	 * @param mixed  $source_price Price before conversion.
 	 * @param string $rate         Rate, as its canonical decimal string.
 	 * @return float
@@ -152,7 +152,8 @@ class MultiCurrencyPriceCalculator {
 		$steps   = ceil( $converted / $step );
 		$product = self::multiply_decimals( self::to_decimal( is_numeric( $source_price ) ? wc_float_to_string( (float) $source_price ) : null ), self::to_decimal( $rate ) );
 		$unit    = self::to_decimal( $rounding );
-		if ( null === $product || null === $unit ) {
+		// Past 2^53 a float no longer counts whole steps one by one, so the exact search could not move; prices that large keep the float ceil.
+		if ( null === $product || null === $unit || $steps >= 9007199254740992 ) {
 			return $steps * $step;
 		}
 

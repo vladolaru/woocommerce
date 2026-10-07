@@ -68,9 +68,12 @@ class MultiCurrencyCurrencyTest extends WC_Unit_Test_Case {
 		$currency = new MultiCurrencyCurrency( $this->create_localization(), 'GBP', 0.1 );
 		$this->assertSame( '0.1', $currency->get_rate_decimal() );
 
-		$currency->set_rate( ' 0.90000000 ' );
-		$this->assertSame( '0.90000000', $currency->get_rate_decimal(), 'A stored option string is kept as the merchant saved it.' );
+		$currency->set_rate( '0.90000000' );
+		$this->assertSame( '0.9', $currency->get_rate_decimal() );
 		$this->assertSame( 0.9, $currency->get_rate() );
+
+		$currency->set_rounding( '1,00' );
+		$this->assertSame( '1', $currency->get_rounding_decimal(), 'The step is read as the server reads the stored value.' );
 
 		$currency->set_rate( 0.123456789012345678 );
 		$this->assertSame( wc_float_to_string( 0.123456789012345678 ), $currency->get_rate_decimal() );

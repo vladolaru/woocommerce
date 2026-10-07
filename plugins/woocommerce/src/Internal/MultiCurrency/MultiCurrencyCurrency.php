@@ -154,12 +154,23 @@ class MultiCurrencyCurrency implements \JsonSerializable {
 	}
 
 	/**
+	 * Get the rounding step as a decimal string, read as the server reads the stored value.
+	 *
+	 * The canonical step for the server's step rounding and the public config's rounding_decimal.
+	 *
+	 * @return string
+	 */
+	public function get_rounding_decimal(): string {
+		return (string) wc_float_to_string( (float) $this->get_rounding() );
+	}
+
+	/**
 	 * Set the currency conversion rate.
 	 *
-	 * @param mixed $rate Conversion rate, as a numeric string or a number.
+	 * @param mixed $rate Conversion rate.
 	 */
 	public function set_rate( $rate ): void {
-		$this->rate_decimal = is_string( $rate ) && is_numeric( trim( $rate ) ) ? trim( $rate ) : (string) wc_float_to_string( (float) $rate );
+		$this->rate_decimal = (string) wc_float_to_string( (float) $rate );
 		$this->rate         = (float) $this->rate_decimal;
 	}
 

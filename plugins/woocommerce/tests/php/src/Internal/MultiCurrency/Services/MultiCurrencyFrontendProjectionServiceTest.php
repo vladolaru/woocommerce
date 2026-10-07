@@ -148,7 +148,7 @@ class MultiCurrencyFrontendProjectionServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( -0.1, $config['currencies']['GBP']['charm'] );
 		// The renderer computes with the canonical strings; the numbers stay for configs served before them.
 		$this->assertSame( '0.82', $config['currencies']['GBP']['rate_decimal'] );
-		$this->assertSame( '0.50', $config['currencies']['GBP']['rounding_decimal'] );
+		$this->assertSame( '0.5', $config['currencies']['GBP']['rounding_decimal'] );
 	}
 
 	/**
