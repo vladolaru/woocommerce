@@ -617,6 +617,51 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A switch waiting on the WooPayments version on a site that blocks plugin updates tells the merchant to update WooPayments (blocked: $blocked).
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $blocked Whether the site disallows automatic file changes.
+	 */
+	public function test_blocked_plugin_update_explains_the_waiting_switch( bool $blocked ): void {
+		$this->fake_plugin_active();
+		$this->fake_current_user_caps( true );
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter(
+			'file_mod_allowed',
+			static function ( $allowed, $context ) use ( $blocked ) {
+				return 'automatic_updater' === $context ? ! $blocked : $allowed;
+			},
+			10,
+			2
+		);
+		$job = new class() extends WooPaymentsCutoverReconciliationJob {
+			/** @return array<string,mixed>|null */
+			public function classify_for_admin_notice(): ?array {
+				return array(
+					'state'                  => WooPaymentsCutoverState::DEFERRED,
+					'deferred_codes'         => array( 'woopayments_plugin_version_unsupported' ),
+					'informational_outcomes' => array(),
+				);
+			}
+
+			/** Do not emit reconnect information. */
+			public function consume_reconnect_notice(): bool {
+				return false;
+			}
+		};
+
+		$notice = $this->render_admin_notices( $this->create_cutover_controller( null, $job ) );
+
+		$this->assertStringContainsString( 'Switch in progress', $notice );
+		if ( $blocked ) {
+			$this->assertStringContainsString( 'Update WooPayments to continue the switch.', $notice );
+		} else {
+			$this->assertStringNotContainsString( 'Update WooPayments', $notice );
+		}
+	}
+
+	/**
 	 * @testdox Active job states show only the switch-in-progress notice.
 	 * @testWith ["pending"]
 	 *           ["running"]

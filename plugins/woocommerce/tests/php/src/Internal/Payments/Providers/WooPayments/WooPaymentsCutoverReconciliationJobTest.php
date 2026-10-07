@@ -2339,8 +2339,12 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			/** @var int */
 			public int $upgrade_count = 0;
 
-			/** Refresh controlled update metadata. */
+			/** @var int */
+			public int $metadata_refreshes = 0;
+
+			/** Record any update preparation. */
 			protected function refresh_plugin_update_metadata(): void {
+				++$this->metadata_refreshes;
 			}
 
 			/**
@@ -2358,7 +2362,14 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$preflight = $this->create_preflight_with_failures( array( 'woopayments_plugin_version_unsupported' ), false, false, array(), 'woocommerce-payments/woocommerce-payments.php' );
 		$sut       = $this->create_job( true, $preflight, $job );
 		// DISALLOW_FILE_MODS and hosts set this policy through wp_is_file_mod_allowed(); the upgrader classes do not check it.
-		add_filter( 'file_mod_allowed', '__return_false' );
+		add_filter(
+			'file_mod_allowed',
+			static function ( $allowed, $context ) {
+				return 'automatic_updater' === $context ? false : $allowed;
+			},
+			10,
+			2
+		);
 
 		$sut->enqueue( 'merchant' );
 		$pending = $this->require_state_store()->get_record();
@@ -2371,6 +2382,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsCutoverState::DEFERRED, $deferred['state'] );
 		$this->assertSame( array( 'woopayments_plugin_version_unsupported' ), $deferred['deferred_codes'] );
 		$this->assertSame( 0, $job->upgrade_count );
+		$this->assertSame( 0, $job->metadata_refreshes, 'Nothing is prepared for an update the site forbids.' );
 	}
 
 	/**
