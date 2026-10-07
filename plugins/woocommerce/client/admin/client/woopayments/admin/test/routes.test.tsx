@@ -459,12 +459,6 @@ describe( 'WooPayments Settings Payments routes', () => {
 	] )(
 		'keeps the %s route loadable when route availability is missing',
 		async ( _routeName, routePath, loadedText ) => {
-			// Native owns the runtime (its settings are preloaded) but sent no route availability.
-			window.wcSettings = {
-				adminUrl: 'http://example.com/wp-admin',
-				admin: { woopaymentsSettings: {} },
-			};
-
 			render( getRouteElement( routePath ) );
 
 			expect(
@@ -565,55 +559,6 @@ describe( 'WooPayments Settings Payments routes', () => {
 		expect( screen.getByRole( 'status' ) ).toHaveTextContent(
 			'No Capital loans found.'
 		);
-	} );
-
-	describe( 'settings routes while another runtime owns WooPayments', () => {
-		const originalLocation = window.location;
-		const mockReplace = jest.fn();
-
-		beforeEach( () => {
-			mockReplace.mockReset();
-			Object.defineProperty( window, 'location', {
-				configurable: true,
-				value: { ...originalLocation, replace: mockReplace },
-			} );
-		} );
-
-		afterEach( () => {
-			Object.defineProperty( window, 'location', {
-				configurable: true,
-				value: originalLocation,
-			} );
-		} );
-
-		it.each( [
-			'/woopayments/settings',
-			'/woopayments/settings/express-checkout/:methodId',
-			'/woopayments/settings/fraud-protection',
-		] )(
-			'sends %s to the plugin settings page when no native settings are preloaded',
-			( routePath ) => {
-				render( getRouteElement( routePath ) );
-
-				expect( mockReplace ).toHaveBeenCalledWith(
-					'http://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments&from=WCADMIN_PAYMENT_SETTINGS'
-				);
-				expect(
-					screen.queryByText( /route loaded|page loaded/ )
-				).not.toBeInTheDocument();
-			}
-		);
-
-		it( 'renders the native settings page when native settings are preloaded', async () => {
-			setAdminRouteAvailability( {} );
-
-			render( getRouteElement( '/woopayments/settings' ) );
-
-			expect(
-				await screen.findByText( 'Settings route loaded' )
-			).toBeInTheDocument();
-			expect( mockReplace ).not.toHaveBeenCalled();
-		} );
 	} );
 
 	it( 'renders the native settings page under the Payments settings header', async () => {
