@@ -4,6 +4,11 @@ const STRIPE_WAIT_INTERVAL = 100;
 const STRIPE_MAX_WAIT = 600 * 1000;
 
 /**
+ * Raised when Stripe.js has not defined `window.Stripe` within the wait limit.
+ */
+export class StripeWaitTimeoutError extends Error {}
+
+/**
  * Resolve with `window.Stripe` once Stripe.js has defined it.
  *
  * @return {Promise<Function>} Rejects when Stripe.js has not loaded within the client's wait limit.
@@ -23,7 +28,9 @@ export const waitForStripe = () =>
 				resolve( window.Stripe );
 			} else if ( waited >= STRIPE_MAX_WAIT ) {
 				window.clearInterval( timer );
-				reject( new Error( 'Stripe object not found' ) );
+				reject(
+					new StripeWaitTimeoutError( 'Stripe object not found' )
+				);
 			}
 		}, STRIPE_WAIT_INTERVAL );
 	} );

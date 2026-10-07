@@ -25,7 +25,7 @@ import {
 	getFontRulesFromPage,
 } from './upe-styles';
 import { recordWooPaymentsUserEvent } from './tracks';
-import { waitForStripe } from './wait-for-stripe';
+import { StripeWaitTimeoutError, waitForStripe } from './wait-for-stripe';
 import {
 	handleWooPayEmailInput,
 	shouldHandleWooPayEmailInput,
@@ -399,7 +399,13 @@ const handleConfirmationResponse = async (
 	// Like client 11.1.0 confirm-card-payment.js, every failure after the order exists returns an error response
 	// with its message: a throw from an observer reaches the shopper only as Blocks' generic notice.
 	try {
-		const stripeClient = getStripeClient();
+		let stripeClient = getStripeClient();
+
+		// Client 11.1.0 api.confirmIntent() reaches Stripe through getStripe(), which waits for Stripe.js.
+		if ( ! stripeClient && paymentSettings.publishableKey ) {
+			await waitForStripe();
+			stripeClient = getStripeClient();
+		}
 
 		if ( ! stripeClient ) {
 			return getErrorResponse( emitResponse, confirmationErrorMessage );
@@ -456,9 +462,13 @@ const handleConfirmationResponse = async (
 
 		return getSuccessResponse( emitResponse, {}, redirectUrl );
 	} catch ( error ) {
+		// The client shows error.message as is; native shows its translated message when there is none and when
+		// Stripe.js never loads, instead of the client's English "Stripe object not found".
 		return getErrorResponse(
 			emitResponse,
-			error?.message || confirmationErrorMessage
+			error instanceof StripeWaitTimeoutError
+				? confirmationErrorMessage
+				: error?.message || confirmationErrorMessage
 		);
 	}
 };

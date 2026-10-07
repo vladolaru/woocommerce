@@ -2577,6 +2577,7 @@ describe( 'wc-payment-method-woopayments', () => {
 	};
 
 	it( 'shows the server message when the order update fails after a successful next action', async () => {
+		// Next-action result shape read by client 11.1.0 client/checkout/api/index.js:220-245 (paymentIntent.id).
 		window.Stripe = jest.fn( () => ( {
 			handleNextAction: jest.fn().mockResolvedValue( {
 				paymentIntent: {
@@ -2601,6 +2602,7 @@ describe( 'wc-payment-method-woopayments', () => {
 	} );
 
 	it( 'shows the Stripe.js message when the next action rejects', async () => {
+		// Synthetic rejection: client 11.1.0 confirm-card-payment.js:36-40 shows a rejected confirmation's error.message.
 		window.Stripe = jest.fn( () => ( {
 			handleNextAction: jest
 				.fn()
@@ -2617,11 +2619,44 @@ describe( 'wc-payment-method-woopayments', () => {
 		} );
 	} );
 
-	it( 'reports a confirmation error instead of success when Stripe.js is missing', async () => {
+	it( 'confirms once Stripe.js loads during a saved-card confirmation', async () => {
+		delete window.Stripe;
+		window.fetch = jest.fn().mockResolvedValue( {
+			json: jest.fn().mockResolvedValue( {
+				return_url: 'https://example.test/checkout/order-received/123/',
+			} ),
+		} );
+
+		const confirmation = runSavedTokenConfirmation();
+		// Next-action result shape read by client 11.1.0 client/checkout/api/index.js:220-245 (paymentIntent.id).
+		window.Stripe = jest.fn( () => ( {
+			handleNextAction: jest.fn().mockResolvedValue( {
+				paymentIntent: {
+					id: 'pi_123',
+				},
+			} ),
+		} ) );
+
+		await expect( confirmation ).resolves.toEqual( {
+			type: 'success',
+			redirectUrl: 'https://example.test/checkout/order-received/123/',
+			meta: {
+				paymentMethodData: {},
+			},
+		} );
+	} );
+
+	it( 'reports a confirmation error instead of success when Stripe.js never loads', async () => {
+		jest.useFakeTimers();
 		delete window.Stripe;
 		window.fetch = jest.fn();
 
-		await expect( runSavedTokenConfirmation() ).resolves.toEqual( {
+		const confirmation = runSavedTokenConfirmation();
+		await act( async () => {
+			jest.advanceTimersByTime( 600 * 1000 );
+		} );
+
+		await expect( confirmation ).resolves.toEqual( {
 			type: 'error',
 			message: 'There was a problem confirming your payment.',
 			messageContext: 'payments',
