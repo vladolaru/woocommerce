@@ -189,14 +189,14 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 	 */
 	public function official_activation_request_provider(): array {
 		return array(
-			'bulk plugins screen'                => array(
+			'bulk plugins screen'                   => array(
 				array(
 					'action'  => 'activate-selected',
 					'checked' => array( 'another-plugin/another-plugin.php', NativePaymentsRuntimeArbiter::PLUGIN_FILE ),
 				),
 				array(),
 			),
-			'bulk bottom selector'               => array(
+			'bulk bottom selector'                  => array(
 				array(
 					'action'  => '-1',
 					'action2' => 'activate-selected',
@@ -204,7 +204,7 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 				),
 				array(),
 			),
-			'plugin installer ajax'              => array(
+			'plugin installer ajax'                 => array(
 				array(
 					'action' => 'activate-plugin',
 					'plugin' => NativePaymentsRuntimeArbiter::PLUGIN_FILE,
@@ -212,32 +212,39 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 				),
 				array(),
 			),
-			'plugins REST item'                  => array(
+			'plugins REST item'                     => array(
 				array(),
 				array(
 					'REQUEST_METHOD' => 'PUT',
 					'REQUEST_URI'    => '/wp-json/wp/v2/plugins/woocommerce-payments%2Fwoocommerce-payments',
 				),
 			),
-			'plugins REST collection'            => array(
+			'plugins REST collection'               => array(
 				array( 'rest_route' => '/wp/v2/plugins' ),
 				array( 'REQUEST_METHOD' => 'POST' ),
 			),
-			'WooCommerce plugins activate route' => array(
+			'WooCommerce plugins activate route'    => array(
 				array(),
 				array(
 					'REQUEST_METHOD' => 'POST',
 					'REQUEST_URI'    => '/wp-json/wc-admin/plugins/activate',
 				),
 			),
-			'WooCommerce plugins install route'  => array(
+			'WooCommerce plugins install route'     => array(
 				array( 'rest_route' => '/wc-admin/plugins/install' ),
 				array( 'REQUEST_METHOD' => 'POST' ),
 			),
-			'WooCommerce PluginsInstaller URL'   => array(
+			'WooCommerce PluginsInstaller URL'      => array(
 				array(
 					'plugin_action' => 'install-activate',
 					'plugins'       => 'jetpack,woocommerce-payments',
+				),
+				array(),
+			),
+			'WooCommerce PluginsInstaller activate' => array(
+				array(
+					'plugin_action' => 'activate',
+					'plugins'       => 'woocommerce-payments',
 				),
 				array(),
 			),
@@ -258,8 +265,9 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 
 		$this->register_legacy_facades();
 
-		$this->assertFalse( class_exists( 'WC_Payments', false ), 'WP-CLI must be able to activate the standalone plugin without a class collision.' );
-		$this->assertFalse( class_exists( 'WC_Payments_Features', false ), 'WP-CLI must retain the plugin feature-class name for an activation sandbox.' );
+		// Probing with autoload: a recognized activation registers no autoloader, so even a probe declares nothing.
+		$this->assertFalse( class_exists( 'WC_Payments' ), 'WP-CLI must be able to activate the standalone plugin without a class collision.' );
+		$this->assertFalse( class_exists( 'WC_Payments_Features' ), 'WP-CLI must retain the plugin feature-class name for an activation sandbox.' );
 	}
 
 	/**
@@ -358,6 +366,36 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( class_exists( 'WC_Payments' ), 'Unrelated activation requests should retain native WooPayments compatibility.' );
 		$this->assertTrue( class_exists( 'WC_Payments_Features' ), 'Unrelated activation requests should retain native WooPayments feature compatibility.' );
+	}
+
+	/**
+	 * @testdox WooCommerce's plugin job status routes are not activations and keep the native facades.
+	 * @dataProvider plugin_status_route_provider
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * @param string $route Status route.
+	 */
+	public function test_plugin_status_routes_keep_native_facades( string $route ): void {
+		$_REQUEST = array( 'rest_route' => $route ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reproducing a REST request.
+		$_SERVER  = array_merge( $_SERVER, array( 'REQUEST_METHOD' => 'POST' ) );
+
+		$this->register_legacy_facades();
+
+		$this->assertTrue( class_exists( 'WC_Payments' ) );
+		$this->assertTrue( class_exists( 'WC_Payments_Features' ) );
+	}
+
+	/**
+	 * WooCommerce plugin job status routes.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function plugin_status_route_provider(): array {
+		return array(
+			'activation status' => array( '/wc-admin/plugins/activate/status' ),
+			'install status'    => array( '/wc-admin/plugins/install/status/job_1' ),
+		);
 	}
 
 	/**
