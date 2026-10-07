@@ -116,7 +116,7 @@ class WooPaymentsExpressCheckoutService {
 	}
 
 	/**
-	 * Get express checkout params for Apple Pay and Google Pay.
+	 * Get express checkout params for Apple Pay, Google Pay and Amazon Pay.
 	 *
 	 * @param string $context Express checkout context.
 	 * @return array<string,mixed>

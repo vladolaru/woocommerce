@@ -41,7 +41,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 	private const WOOPAY_SCRIPT_HANDLE = 'wc-payment-method-woopayments-woopay';
 
 	/**
-	 * Blocks Apple Pay and Google Pay express payment method script handle.
+	 * Blocks Apple Pay, Google Pay and Amazon Pay express payment method script handle.
 	 */
 	private const EXPRESS_CHECKOUT_SCRIPT_HANDLE = 'wc-payment-method-woopayments-express-checkout';
 
@@ -396,7 +396,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 	}
 
 	/**
-	 * Tell whether Apple Pay and Google Pay Blocks assets should be loaded.
+	 * Tell whether the Apple Pay, Google Pay and Amazon Pay Blocks assets should be loaded.
 	 *
 	 * @return bool
 	 */
