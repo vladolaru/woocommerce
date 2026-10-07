@@ -825,7 +825,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	public function test_queue_store_setup_sync_adds_one_update_sync(): void {
 		$api_client = $this->create_api_client( array( 'is_available', 'send_store_setup' ) );
 		$api_client->method( 'is_available' )->willReturn( true );
-		$api_client->expects( $this->once() )->method( 'send_store_setup' )->willReturn( array( 'result' => 'success' ) );
+		$api_client->expects( $this->once() )->method( 'send_store_setup' );
 		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ), new WooPaymentsActionSchedulerService(), $api_client );
 		$service->register();
 		$service->schedule_recurring_actions();

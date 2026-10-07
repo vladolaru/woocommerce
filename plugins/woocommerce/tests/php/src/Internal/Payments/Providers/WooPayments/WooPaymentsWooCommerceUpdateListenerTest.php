@@ -87,9 +87,9 @@ class WooPaymentsWooCommerceUpdateListenerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Registering the listener resolves none of the services, so requests without an update pay for one hook.
+	 * @testdox Registering the listener runs none of the update duties; they wait for a WooCommerce update.
 	 */
-	public function test_registration_resolves_no_service(): void {
+	public function test_registration_runs_no_update_duty(): void {
 		$this->account_service->expects( $this->never() )->method( 'clear_cache' );
 		$this->operational_queue->expects( $this->never() )->method( 'queue_store_setup_sync' );
 		$this->woopay_extension_sync->expects( $this->never() )->method( 'remove_legacy_schedule_action_name_on_update' );
