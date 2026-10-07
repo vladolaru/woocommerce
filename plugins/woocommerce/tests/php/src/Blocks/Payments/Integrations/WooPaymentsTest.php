@@ -491,6 +491,43 @@ class WooPaymentsTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * @testdox Should load the full Blocks payment stack on admin requests, where the block editor previews the cart and checkout.
+	 */
+	public function test_get_payment_method_script_handles_loads_the_full_stack_in_admin(): void {
+		set_current_screen( 'edit-page' );
+
+		$asset_api = $this->getMockBuilder( AssetApi::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'register_script', 'register_style' ) )
+			->getMock();
+		$asset_api->method( 'register_style' )->willReturnCallback(
+			function ( string $handle ): void {
+				wp_register_style( $handle, false, array(), 'test' );
+			}
+		);
+		$bridge = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'should_expose_checkout_surface' ) )
+			->getMock();
+		$bridge->method( 'should_expose_checkout_surface' )->willReturn( true );
+		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'can_process_payments' ) )
+			->getMock();
+		$provider->method( 'can_process_payments' )->willReturn( true );
+
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $this->create_woopay_session_service( true ), $this->create_express_checkout_service( true ) );
+		$handles     = $integration->get_payment_method_script_handles();
+		set_current_screen( 'front' );
+
+		$this->assertSame(
+			array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-woopay', 'wc-payment-method-woopayments-express-checkout', 'wc-payment-method-woopayments-fraud-scripts' ),
+			$handles
+		);
+		$this->assertTrue( wp_style_is( 'wc-payment-method-woopayments', 'enqueued' ) );
+	}
+
+	/**
 	 * @testdox Should keep the card stack and Stripe.js off the Blocks cart when no express or WooPay button renders there, and keep the fraud scripts.
 	 *
 	 * A separate process, because an earlier test can define WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT for the rest of the run.

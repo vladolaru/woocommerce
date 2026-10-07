@@ -415,7 +415,10 @@ final class WooPayments extends AbstractPaymentMethodType {
 	}
 
 	/**
-	 * Tell whether the current request renders the Blocks cart or checkout.
+	 * Tell whether the current request renders the Blocks cart or checkout, or is an admin request.
+	 *
+	 * Admin requests count, because the block editor previews the cart and checkout with every payment method, so it
+	 * loads the full Blocks payment stack.
 	 *
 	 * @return bool
 	 */
@@ -432,6 +435,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 *
 	 * The cart renders no regular payment method, so it needs no card script, card style, Stripe.js or FingerprintJS of its own.
 	 * Express, WooPay and BNPL messaging declare what they need themselves. Requests that cannot be identified keep the card stack.
+	 * Admin requests answer no for the same reason the surface check above answers yes: the block editor keeps the full stack.
 	 *
 	 * @return bool
 	 */
