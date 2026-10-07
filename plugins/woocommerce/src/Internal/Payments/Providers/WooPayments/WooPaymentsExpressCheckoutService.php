@@ -149,7 +149,7 @@ class WooPaymentsExpressCheckoutService {
 			),
 			'has_subscription'            => $this->context_has_subscription( $context ),
 			'is_manual_capture'           => $this->is_truthy_gateway_setting( 'manual_capture' ),
-			'isShopperTrackingEnabled'    => $tracking_enabled,
+			// Snake case only, as client 11.1.0 adds it to these params (class-woopay-tracker.php:672).
 			'is_shopper_tracking_enabled' => $tracking_enabled,
 			'button'                      => $this->get_button_settings( $context ),
 			'login_confirmation'          => $this->get_login_confirmation_settings( $context ),

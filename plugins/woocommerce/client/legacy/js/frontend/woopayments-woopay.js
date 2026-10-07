@@ -456,15 +456,11 @@
 	}
 
 	function getTrackingAjaxUrl() {
-		return config.ajaxUrl || config.ajax_url;
+		return config.ajaxUrl;
 	}
 
 	function getTrackingNonce() {
-		if ( config.platformTrackerNonce || config.platform_tracker_nonce ) {
-			return config.platformTrackerNonce || config.platform_tracker_nonce;
-		}
-
-		return config.nonce && config.nonce.platform_tracker;
+		return config.platformTrackerNonce;
 	}
 
 	function recordUserEvent( eventName, eventProperties ) {
@@ -475,7 +471,6 @@
 		if (
 			! eventName ||
 			config.isShopperTrackingEnabled === false ||
-			config.is_shopper_tracking_enabled === false ||
 			! ajaxUrl ||
 			! nonce ||
 			! window.fetch ||

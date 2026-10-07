@@ -80,10 +80,9 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		'woopayAgreementText',
 		'woopayTermsOfServiceLabel',
 		'woopayPrivacyPolicyLabel',
-		// The Blocks readers fall back to the same text (index.js WooPaySaveUserSection) or read isShopperTrackingEnabled (tracks.js).
+		// The Blocks readers fall back to the same text (index.js WooPaySaveUserSection).
 		'woopaySaveUserLabel',
 		'woopayPhoneLabel',
-		'is_shopper_tracking_enabled',
 	);
 
 	/**

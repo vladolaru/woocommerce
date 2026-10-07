@@ -667,15 +667,13 @@
 	}
 
 	function recordUserEvent( eventName, eventProperties ) {
-		var ajaxUrl = config.ajaxUrl || config.ajax_url;
-		var nonce =
-			config.platformTrackerNonce || config.platform_tracker_nonce;
+		var ajaxUrl = config.ajaxUrl;
+		var nonce = config.platformTrackerNonce;
 		var body;
 
 		if (
 			! eventName ||
 			config.isShopperTrackingEnabled === false ||
-			config.is_shopper_tracking_enabled === false ||
 			! ajaxUrl ||
 			! nonce ||
 			! window.fetch ||
@@ -2936,10 +2934,8 @@
 	// events to — from the tk_ai cookie when present, otherwise through
 	// the platform's get_identity bridge. Never rejects.
 	function getTracksIdentity() {
-		var ajaxUrl = baseConfig.ajaxUrl || baseConfig.ajax_url;
-		var nonce =
-			baseConfig.platformTrackerNonce ||
-			baseConfig.platform_tracker_nonce;
+		var ajaxUrl = baseConfig.ajaxUrl;
+		var nonce = baseConfig.platformTrackerNonce;
 		var cookieIdentity = getTracksIdentityCookieValue();
 		var body;
 

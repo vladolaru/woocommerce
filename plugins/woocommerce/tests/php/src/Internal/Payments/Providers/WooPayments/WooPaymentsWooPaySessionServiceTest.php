@@ -2561,7 +2561,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertArrayHasKey( 'platformTrackerNonce', $config );
 		$this->assertSame( admin_url( 'admin-ajax.php' ), $config['ajaxUrl'] );
 		$this->assertArrayHasKey( 'isShopperTrackingEnabled', $config );
-		$this->assertArrayHasKey( 'is_shopper_tracking_enabled', $config );
+		$this->assertArrayNotHasKey( 'is_shopper_tracking_enabled', $config );
 	}
 
 	/**

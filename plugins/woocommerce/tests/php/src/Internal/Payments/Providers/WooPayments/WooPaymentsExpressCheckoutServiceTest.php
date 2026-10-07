@@ -1298,7 +1298,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( '55', $params['button']['height'] );
 		$this->assertSame( '6', $params['button']['radius'] );
 		$this->assertSame( 'large', $params['button']['size'] );
-		$this->assertTrue( $params['isShopperTrackingEnabled'] );
+		$this->assertArrayNotHasKey( 'isShopperTrackingEnabled', $params );
 		$this->assertTrue( $params['is_shopper_tracking_enabled'] );
 		$this->assertArrayHasKey( 'platform_tracker', $params['nonce'] );
 		$this->assertArrayHasKey( 'tokenized_cart_nonce', $params['nonce'] );
@@ -1358,7 +1358,6 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 			false
 		)->get_express_checkout_params( 'checkout' );
 
-		$this->assertFalse( $params['isShopperTrackingEnabled'] );
 		$this->assertFalse( $params['is_shopper_tracking_enabled'] );
 	}
 

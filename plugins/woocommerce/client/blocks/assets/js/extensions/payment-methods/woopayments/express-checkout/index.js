@@ -64,8 +64,7 @@ let availabilityStripe = null;
 const getTrackingSettings = () => ( {
 	...settings,
 	ajaxUrl: params.ajax_url,
-	isShopperTrackingEnabled: params.isShopperTrackingEnabled,
-	is_shopper_tracking_enabled: params.is_shopper_tracking_enabled,
+	isShopperTrackingEnabled: params.is_shopper_tracking_enabled,
 	platformTrackerNonce: params?.nonce?.platform_tracker,
 } );
 

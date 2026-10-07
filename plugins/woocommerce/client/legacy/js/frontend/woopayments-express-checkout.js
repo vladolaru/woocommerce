@@ -729,22 +729,14 @@
 		return cachedStripe;
 	}
 
-	function getTrackingNonce() {
-		return (
-			( config.nonce && config.nonce.platform_tracker ) ||
-			config.platformTrackerNonce ||
-			config.platform_tracker_nonce
-		);
-	}
-
+	// wcpayExpressCheckoutParams carries the client 11.1.0 snake_case keys (WooPaymentsExpressCheckoutService).
 	function recordUserEvent( eventName, eventProperties ) {
-		var ajaxUrl = config.ajax_url || config.ajaxUrl;
-		var nonce = getTrackingNonce();
+		var ajaxUrl = config.ajax_url;
+		var nonce = config.nonce && config.nonce.platform_tracker;
 		var body;
 
 		if (
 			! eventName ||
-			config.isShopperTrackingEnabled === false ||
 			config.is_shopper_tracking_enabled === false ||
 			! ajaxUrl ||
 			! nonce ||
@@ -1433,7 +1425,7 @@
 		body.append( 'is_changing_payment', 'false' );
 
 		return window
-			.fetch( config.ajax_url || config.ajaxUrl, {
+			.fetch( config.ajax_url, {
 				method: 'POST',
 				credentials: 'same-origin',
 				body: body,

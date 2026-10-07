@@ -1172,7 +1172,6 @@ class WooPaymentsWooPaySessionService {
 			'ajaxUrl'                           => admin_url( 'admin-ajax.php' ),
 			'platformTrackerNonce'              => wp_create_nonce( 'platform_tracks_nonce' ),
 			'isShopperTrackingEnabled'          => $this->get_frontend_tracking_controller()->is_shopper_tracking_enabled(),
-			'is_shopper_tracking_enabled'       => $this->get_frontend_tracking_controller()->is_shopper_tracking_enabled(),
 			'woopayHost'                        => $this->get_woopay_url(),
 			'testMode'                          => $this->get_account_service()->is_test_mode_enabled(),
 			'wcpayVersionNumber'                => WooPaymentsClientVersion::VERSION,
