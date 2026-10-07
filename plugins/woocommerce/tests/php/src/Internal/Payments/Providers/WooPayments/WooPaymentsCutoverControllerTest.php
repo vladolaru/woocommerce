@@ -24,6 +24,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPlatformConnectionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Automattic\WooCommerce\RestApi\UnitTests\Helpers\OrderHelper;
+use Automattic\WooCommerce\Utilities\OrderUtil;
 use WC_Unit_Test_Case;
 use WC_Payment_Token_CC;
 
@@ -950,6 +952,59 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->sut->guard_woopayments_activation();
 
 		$this->assertTrue( true );
+	}
+
+	/**
+	 * @testdox The activation guard looks for WooPayments orders with one scan, finding canonical and prefixed gateways, with HPOS on or off.
+	 * @testWith [true, ""]
+	 *           [true, "woocommerce_payments"]
+	 *           [true, "woocommerce_payments_sepa_debit"]
+	 *           [false, ""]
+	 *           [false, "woocommerce_payments"]
+	 *           [false, "woocommerce_payments_sepa_debit"]
+	 *
+	 * @param bool   $hpos       Whether orders live in the HPOS tables.
+	 * @param string $gateway_id Payment method of the store's one order, or empty for no WooPayments order.
+	 */
+	public function test_native_activation_guard_scans_orders_once( bool $hpos, string $gateway_id ): void {
+		$hpos_was_enabled = OrderUtil::custom_orders_table_usage_is_enabled();
+		OrderHelper::toggle_cot_feature_and_usage( $hpos );
+		$order       = null;
+		$order_scans = 0;
+		$count_scans = static function ( $query ) use ( &$order_scans ) {
+			if ( is_string( $query ) && 1 === preg_match( '/payment_method/', $query ) ) {
+				++$order_scans;
+			}
+			return $query;
+		};
+
+		try {
+			delete_option( 'woocommerce_woocommerce_payments_version' );
+			$order = wc_create_order();
+			$order->set_payment_method( '' === $gateway_id ? 'bacs' : $gateway_id );
+			$order->save();
+			$this->enable_native_runtime_owner();
+			$this->fake_wp_die_handler();
+			add_filter( 'query', $count_scans );
+
+			$blocked = false;
+			try {
+				$this->sut->guard_woopayments_activation();
+			} catch ( WooPaymentsCutoverBlockedException $exception ) {
+				$blocked = true;
+			}
+			remove_filter( 'query', $count_scans );
+
+			$this->assertSame( '' === $gateway_id, $blocked, 'Only a store without a WooPayments order is refused.' );
+			$this->assertSame( 1, $order_scans, 'Activation requests scan the order table once.' );
+		} finally {
+			remove_filter( 'query', $count_scans );
+			// Storage cannot switch back while this order exists only in the posts tables.
+			if ( $order instanceof \WC_Order ) {
+				$order->delete( true );
+			}
+			OrderHelper::toggle_cot_feature_and_usage( $hpos_was_enabled );
+		}
 	}
 
 	/**

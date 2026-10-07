@@ -444,22 +444,11 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the store contains a WooPayments order without loading a collection.
+	 * Tell whether the store contains a WooPayments order, canonical or prefixed gateway, in one scan.
 	 *
 	 * @return bool
 	 */
 	private function store_has_woopayments_order(): bool {
-		$canonical_order_ids = wc_get_orders(
-			array(
-				'payment_method' => self::WOOPAYMENTS_GATEWAY_ID,
-				'limit'          => 1,
-				'return'         => 'ids',
-			)
-		);
-		if ( ! empty( $canonical_order_ids ) ) {
-			return true;
-		}
-
 		global $wpdb;
 		$gateway_prefix = $wpdb->esc_like( self::WOOPAYMENTS_GATEWAY_PREFIX ) . '%';
 
@@ -467,14 +456,16 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			$table_name = OrdersTableDataStore::get_orders_table_name();
 			// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table_name is a trusted WooCommerce table name.
 			$query = $wpdb->prepare(
-				"SELECT id FROM {$table_name} WHERE payment_method LIKE %s LIMIT 1",
+				"SELECT id FROM {$table_name} WHERE payment_method = %s OR payment_method LIKE %s LIMIT 1",
+				self::WOOPAYMENTS_GATEWAY_ID,
 				$gateway_prefix
 			);
 			// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		} else {
 			$query = $wpdb->prepare(
-				"SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = %s AND meta_value LIKE %s LIMIT 1",
+				"SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = %s AND ( meta_value = %s OR meta_value LIKE %s ) LIMIT 1",
 				'_payment_method',
+				self::WOOPAYMENTS_GATEWAY_ID,
 				$gateway_prefix
 			);
 		}
