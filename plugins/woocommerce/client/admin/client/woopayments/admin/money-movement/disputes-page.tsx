@@ -804,7 +804,7 @@ export const WooPaymentsDisputesPage = () => {
 					// Client 11.1.0 `disputes/index.tsx:215`: the pager counts what the summary counts.
 					total={ summaryCount ?? ( totalCount || disputes.length ) }
 					isLoading={ isLoading }
-					// Client 11.1.0 `disputes/index.tsx:527-551`: the disputes card has no search.
+					// Client 11.1.0 `disputes/index.tsx:453-475`: the disputes card has no search.
 					title={ __( 'Disputes', 'woocommerce' ) }
 					summary={ summaryItems }
 					// Client 11.1.0 `disputes/index.tsx:139-146`: the action column is the numeric one.
