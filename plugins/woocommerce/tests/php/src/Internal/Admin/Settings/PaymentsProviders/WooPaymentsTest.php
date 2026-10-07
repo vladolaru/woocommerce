@@ -242,7 +242,10 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 * @testdox Should keep the plugin's settings page while the WooPayments plugin owns the runtime.
 	 */
 	public function test_get_settings_url_keeps_plugin_settings_page_while_plugin_owns_runtime(): void {
-		$fake_gateway = new FakePaymentGateway( 'woocommerce_payments', array( 'settings_url' => 'https://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments' ) );
+		// The plugin gateway's own settings link: client 11.1.0 WC_Payment_Gateway_WCPay::get_settings_url()
+		// (includes/class-wc-payment-gateway-wcpay.php:793-794) returns WC_Payments_Admin_Settings::get_settings_url()
+		// (includes/admin/class-wc-payments-admin-settings.php:32-36, :336-337); `marker` proves it is passed through.
+		$fake_gateway = new FakePaymentGateway( 'woocommerce_payments', array( 'settings_url' => 'https://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments&marker=plugin' ) );
 		$this->mockable_proxy->register_function_mocks(
 			array(
 				'class_exists' => function ( $class_name ) {
@@ -253,7 +256,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 
 		// The gateway's own link, as PaymentGateway::get_settings_url() returns it (with the Payments settings `from`).
 		$this->assertSame(
-			'https://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments&from=' . Payments::FROM_PAYMENTS_SETTINGS,
+			'https://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments&marker=plugin&from=' . Payments::FROM_PAYMENTS_SETTINGS,
 			$this->sut->get_settings_url( $fake_gateway )
 		);
 	}

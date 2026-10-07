@@ -438,24 +438,63 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should leave the plugin's own settings page and other native routes alone while the plugin owns the runtime.
+	 * @testdox Should leave $_dataName alone while the plugin owns the runtime.
+	 * @dataProvider provider_requests_left_alone_on_plugin_stores
+	 *
+	 * @param array<string,string> $request Query request.
 	 */
-	public function test_leaves_the_plugin_settings_section_alone_while_the_plugin_owns_the_runtime(): void {
+	public function test_leaves_requests_alone_while_the_plugin_owns_the_runtime( array $request ): void {
 		$this->set_admin_user();
 		$sut = $this->create_redirecting_controller( false, false, false, true );
 
-		$this->assertSame(
-			'',
-			$this->run_shell_redirect_for_request(
-				$sut,
+		$this->assertSame( '', $this->run_shell_redirect_for_request( $sut, $request ) );
+	}
+
+	/**
+	 * Requests a plugin-owned store keeps: the plugin's own settings section (the redirect target, so no loop), other
+	 * native routes, and the plugin's own WC Admin routes.
+	 *
+	 * @return array<string,array{0:array<string,string>}>
+	 */
+	public function provider_requests_left_alone_on_plugin_stores(): array {
+		return array(
+			'the plugin settings section'        => array(
 				array(
 					'page'    => 'wc-settings',
 					'tab'     => 'checkout',
 					'section' => 'woocommerce_payments',
-				)
-			)
+				),
+			),
+			'a native transactions route'        => array(
+				array(
+					'page' => 'wc-settings',
+					'tab'  => 'checkout',
+					'path' => '/woopayments/transactions',
+				),
+			),
+			'the plugin WC Admin settings route' => array(
+				array(
+					'page' => 'wc-admin',
+					'path' => '/payments/settings',
+				),
+			),
+			'the plugin WC Admin deposits route' => array(
+				array(
+					'page' => 'wc-admin',
+					'path' => '/payments/deposits',
+				),
+			),
 		);
-		$this->assertSame( '', $this->run_shell_redirect( $this->create_redirecting_controller( false, false, false, true ), '/woopayments/transactions' ) );
+	}
+
+	/**
+	 * @testdox Should not redirect a native settings route on a store no payments runtime owns.
+	 */
+	public function test_does_not_redirect_native_settings_without_a_runtime_owner(): void {
+		$this->set_admin_user();
+		$sut = $this->create_redirecting_controller( false, false, false, false );
+
+		$this->assertSame( '', $this->run_shell_redirect( $sut, '/woopayments/settings' ) );
 	}
 
 	/**
