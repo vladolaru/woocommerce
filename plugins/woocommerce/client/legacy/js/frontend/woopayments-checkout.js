@@ -3041,6 +3041,7 @@
 		var iframeWrapper;
 		var iframe;
 		var iframeArrow;
+		var closeButton;
 		var errorMessage;
 		var searchParams;
 		var isSkipWoopayCookieSet;
@@ -3077,6 +3078,15 @@
 			iframe = document.createElement( 'iframe' );
 			iframe.title = baseConfig.woopayOtpIframeTitle || '';
 			iframe.classList.add( 'woopay-otp-iframe' );
+			// Named after the iframe it holds, with a keyboard way out, as the express dialog
+			// (woopayments-woopay.js expressCheckoutIframe()) and the Blocks email check are.
+			if ( iframe.title ) {
+				iframeWrapper.setAttribute( 'aria-label', iframe.title );
+			}
+			closeButton = document.createElement( 'button' );
+			closeButton.type = 'button';
+			closeButton.classList.add( 'woopay-otp-iframe-close' );
+			closeButton.textContent = baseConfig.woopayOtpCloseLabel || '';
 			// Keep twentytwenty.intrinsicRatioVideos from resizing the iframe.
 			iframe.classList.add( 'intrinsic-ignore' );
 
@@ -3219,14 +3229,23 @@
 
 			iframeWrapper.insertBefore( iframeArrow, null );
 			iframeWrapper.insertBefore( iframe, null );
+			iframeWrapper.insertBefore( closeButton, null );
 
 			errorMessage = document.createElement( 'div' );
 			errorMessage.textContent = baseConfig.woopayUnavailableMessage || '';
 			errorMessage.classList.add( 'wc-block-checkout__guest-checkout-notice' );
 
+			// aria-modal: focus that leaves the open dialog goes back to its iframe.
+			function onFocusIn( event ) {
+				if ( ! iframeWrapper.contains( event.target ) ) {
+					iframe.focus();
+				}
+			}
+
 			function closeIframe( focus ) {
 				window.removeEventListener( 'resize', getWindowSize );
 				window.removeEventListener( 'resize', setPopoverPosition );
+				document.removeEventListener( 'focusin', onFocusIn );
 
 				iframeWrapper.remove();
 				iframe.classList.remove( 'open' );
@@ -3283,6 +3302,7 @@
 					baseConfig.woopayHost + '/otp/?' + urlParams.toString();
 
 				parentDiv.insertBefore( iframeWrapper, null );
+				document.addEventListener( 'focusin', onFocusIn );
 
 				setPopoverPosition();
 
@@ -3293,8 +3313,10 @@
 				parentDiv.insertBefore( errorMessage, null );
 			}
 
+			// Only while the dialog is open: Escape elsewhere (a select2 list, an address suggestion) must not move focus
+			// to the email field. The Blocks email check guards the same way.
 			document.addEventListener( 'keyup', function ( event ) {
-				if ( event.key === 'Escape' ) {
+				if ( event.key === 'Escape' && iframeWrapper.isConnected ) {
 					closeIframe();
 				}
 			} );

@@ -4568,6 +4568,37 @@ describe( 'WooPayments checkout', () => {
 			).toBe( 'WooPay is unavailable at this time.' );
 		} );
 
+		test( 'leaves focus alone on Escape while the OTP dialog is closed', async () => {
+			const input = await setupWooPayEmailInput();
+			jest.spyOn( input, 'focus' );
+
+			document.dispatchEvent(
+				new window.KeyboardEvent( 'keyup', { key: 'Escape' } )
+			);
+
+			expect( input.focus ).not.toHaveBeenCalled();
+		} );
+
+		test( 'labels the OTP dialog, gives it a close button and keeps focus inside', async () => {
+			const input = await setupWooPayEmailInput();
+			await typeEmail( input, 'shopper@example.com' );
+			const wrapper = document.querySelector( '.woopay-otp-iframe-wrapper' );
+			const iframe = wrapper.querySelector( '.woopay-otp-iframe' );
+			const closeButton = wrapper.querySelector(
+				'button.woopay-otp-iframe-close'
+			);
+			jest.spyOn( iframe, 'focus' );
+
+			expect( wrapper.getAttribute( 'aria-label' ) ).toBe( iframe.title );
+			expect( closeButton ).not.toBeNull();
+
+			input.dispatchEvent( new window.FocusEvent( 'focusin', { bubbles: true } ) );
+			expect( iframe.focus ).toHaveBeenCalled();
+
+			closeButton.click();
+			expect( document.querySelector( '.woopay-otp-iframe-wrapper' ) ).toBeNull();
+		} );
+
 		test.each( [
 			[
 				'a close_modal message',
