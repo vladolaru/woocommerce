@@ -1214,6 +1214,53 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A Start the switch click that queues nothing is logged and tells the merchant to retry instead of landing silently on the plugins screen.
+	 */
+	public function test_click_that_queues_nothing_is_logged_and_reported(): void {
+		$this->fake_plugin_active();
+		$this->fake_current_user_caps( true );
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		$this->fake_wp_die_handler();
+		$job        = new class() extends WooPaymentsCutoverReconciliationJob {
+			/**
+			 * Queue nothing, as when another request holds the cutover lease.
+			 *
+			 * @param string $source Trigger source.
+			 */
+			public function enqueue( string $source ): bool {
+				unset( $source );
+				return false;
+			}
+		};
+		$controller = $this->create_cutover_controller( null, $job );
+		$_GET[ WooPaymentsCutoverController::QUERY_ACTION ] = WooPaymentsCutoverController::ACTION_DISABLE;
+		$_GET[ WooPaymentsCutoverController::NONCE_NAME ]   = wp_create_nonce( WooPaymentsCutoverController::NONCE_ACTION );
+		$logged = array();
+		$logger = static function ( $message, $level ) use ( &$logged ) {
+			$logged[] = array( $level, $message );
+			return $message;
+		};
+		add_filter( 'woocommerce_logger_log_message', $logger, 10, 2 );
+		$this->register_exit_mock( static fn() => null );
+		add_filter( 'wp_redirect', '__return_empty_string' );
+
+		$message = null;
+		try {
+			$controller->handle_admin_init();
+		} catch ( WooPaymentsCutoverBlockedException $exception ) {
+			$message = $exception->getMessage();
+		} finally {
+			remove_filter( 'woocommerce_logger_log_message', $logger, 10 );
+			remove_filter( 'wp_redirect', '__return_empty_string' );
+		}
+
+		$this->assertSame( 'Action failed. Please refresh the page and retry.', $message );
+		$errors = array_filter( $logged, static fn( array $entry ): bool => 'error' === $entry[0] && false !== strpos( $entry[1], 'switch' ) );
+		// The message filter runs once per log handler, so count distinct lines.
+		$this->assertCount( 1, array_unique( array_column( $errors, 1 ) ), 'One error line records the click that started nothing.' );
+	}
+
+	/**
 	 * @testdox An invalid merchant action nonce dies before any cutover work is queued.
 	 */
 	public function test_invalid_cutover_action_nonce_dies_before_enqueue(): void {
