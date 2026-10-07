@@ -15,7 +15,7 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 /**
  * Loads the legacy WooPayments facades while the native runtime owns payments.
  *
- * @since 11.0.0
+ * @since 11.2.0
  * @internal Transitional compatibility boundary scheduled for removal in WooCommerce 12.0.0.
  */
 class LegacyFacadeLoader implements RegisterHooksInterface {
@@ -49,7 +49,7 @@ class LegacyFacadeLoader implements RegisterHooksInterface {
 	/**
 	 * Schedule the facade declarations after every active plugin file has loaded.
 	 *
-	 * @since 11.0.0
+	 * @since 11.2.0
 	 */
 	public function register() {
 		if ( did_action( 'plugins_loaded' ) ) {
@@ -68,7 +68,7 @@ class LegacyFacadeLoader implements RegisterHooksInterface {
 	 * WooPayments activation get no facades at all, since a consumer probing the class earlier in the same request would
 	 * otherwise declare it before the plugin does.
 	 *
-	 * @since 11.0.0
+	 * @since 11.2.0
 	 */
 	public function load(): void {
 		if ( ! $this->arbiter->should_native_register() ) {

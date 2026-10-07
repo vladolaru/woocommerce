@@ -21,7 +21,7 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Owns the WooPayments plugin-to-native cutover UX.
  *
- * @since 11.0.0
+ * @since 11.2.0
  * @internal Transitional internal component for the native payments runtime.
  */
 class WooPaymentsCutoverController implements RegisterHooksInterface {
@@ -479,7 +479,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		/**
 		 * Filters whether the WooPayments native soft cutover notice is enabled.
 		 *
-		 * @since 11.0.0
+		 * @since 11.2.0
 		 *
 		 * @param bool $enabled Whether the soft cutover notice is enabled.
 		 */
@@ -495,7 +495,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		/**
 		 * Filters whether mandatory WooPayments native cutover is enabled.
 		 *
-		 * @since 11.0.0
+		 * @since 11.2.0
 		 *
 		 * @param bool $enabled Whether mandatory cutover is enabled.
 		 */

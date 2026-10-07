@@ -50,7 +50,7 @@ defined( 'ABSPATH' ) || exit;
  * - class-wc-payments-remediate-canceled-auth-fees.php: OBSOLETE. Already ported as
  *   WooPaymentsCanceledAuthorizationFeeRemediationService.
  *
- * @since 11.0.0
+ * @since 11.2.0
  * @internal Transitional internal component for the native payments runtime.
  */
 class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
