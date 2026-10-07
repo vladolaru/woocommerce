@@ -643,10 +643,12 @@ const shouldRenderWooPaySaveUser = ( paymentSettings = defaultSettings ) => {
 const getWooPaySourceUrl = () =>
 	getSetting( 'storePages', {} )?.checkout?.permalink || '';
 
+// Client 11.1.0 checkout-page-save-user.js:116-144: `empty` clears the stored opt-in; otherwise the details are stored.
 const persistWooPaySaveUser = async (
 	paymentSettings = defaultSettings,
 	isSavingUser,
-	phone
+	phone,
+	shouldClear = false
 ) => {
 	if ( ! paymentSettings.woopaySessionNonce || ! window.fetch ) {
 		return;
@@ -654,11 +656,15 @@ const persistWooPaySaveUser = async (
 
 	const body = new window.URLSearchParams();
 	body.append( '_wpnonce', paymentSettings.woopaySessionNonce );
-	body.append( 'save_user_in_woopay', isSavingUser ? 'true' : 'false' );
-	body.append( 'woopay_source_url', getWooPaySourceUrl() );
-	body.append( 'woopay_is_blocks', 'true' );
-	body.append( 'woopay_viewport', getWooPayViewport() );
-	body.append( 'woopay_user_phone_field[full]', phone || '' );
+	if ( shouldClear ) {
+		body.append( 'empty', '1' );
+	} else {
+		body.append( 'save_user_in_woopay', isSavingUser ? 'true' : 'false' );
+		body.append( 'woopay_source_url', getWooPaySourceUrl() );
+		body.append( 'woopay_is_blocks', 'true' );
+		body.append( 'woopay_viewport', getWooPayViewport() );
+		body.append( 'woopay_user_phone_field[full]', phone || '' );
+	}
 
 	await window.fetch(
 		buildWooPayAjaxUrl( paymentSettings, 'set_woopay_phone_number' ),
@@ -728,7 +734,33 @@ const WooPaySaveUserAgreement = ( { paymentSettings } ) => (
 	</div>
 );
 
+// Client 11.1.0 use-woopay-user.js: the WooPay email check announces a WooPay user with this window event.
+const useIsWooPayUser = () => {
+	const [ isWooPayUser, setIsWooPayUser ] = useState( false );
+
+	useEffect( () => {
+		const handleUserCheck = ( event ) =>
+			setIsWooPayUser( Boolean( event?.detail?.isRegisteredUser ) );
+
+		window.addEventListener( 'woopayUserCheck', handleUserCheck );
+		return () =>
+			window.removeEventListener( 'woopayUserCheck', handleUserCheck );
+	}, [] );
+
+	return isWooPayUser;
+};
+
 const WooPaySaveUserSection = ( { paymentSettings } ) => {
+	// Client 11.1.0 checkout-page-save-user.js:52-58, :274-302: the offer applies only while WooPayments is the
+	// selected method and the shopper is not a WooPay user.
+	const isWooPaymentsChosen = useSelect(
+		( select ) =>
+			select( 'wc/store/payment' ).getActivePaymentMethod() ===
+			'woocommerce_payments'
+	);
+	const isWooPayUser = useIsWooPayUser();
+	const isOfferApplicable = isWooPaymentsChosen && ! isWooPayUser;
+	const hasSentUserData = useRef( false );
 	const initialIsSavingUser = useRef(
 		Boolean( paymentSettings.PRE_CHECK_SAVE_MY_INFO )
 	);
@@ -737,13 +769,13 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 	);
 	const [ phone, setPhone ] = useState( getWooPayInitialPhone );
 	const hasPhoneForMobileEnter = useRef( false );
-	// The former fallbacks for woopaySaveUserLabel and woopayPhoneLabel, which carried the same
-	// text (WooPaymentsWooPaySessionService::get_woopay_frontend_config()); the Blocks data drops them.
-	const saveUserLabel = __(
-		'Securely save my information for 1-click checkout',
-		'woocommerce'
-	);
-	const phoneLabel = __( 'Mobile phone number', 'woocommerce' );
+	// A stored opt-in no longer applies once the shopper picks another method or is a WooPay user: clear it.
+	useEffect( () => {
+		if ( ! isOfferApplicable && hasSentUserData.current ) {
+			hasSentUserData.current = false;
+			persistWooPaySaveUser( paymentSettings, false, '', true );
+		}
+	}, [ isOfferApplicable, paymentSettings ] );
 
 	useEffect( () => {
 		recordWooPaymentsUserEvent(
@@ -784,12 +816,26 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 			}
 		);
 		recordMobileEnter( checked ? nextPhone : '' );
+		hasSentUserData.current = checked;
 		persistWooPaySaveUser(
 			paymentSettings,
 			checked,
-			checked ? nextPhone : ''
+			checked ? nextPhone : '',
+			! checked
 		);
 	};
+
+	if ( ! isOfferApplicable ) {
+		return null;
+	}
+
+	// The former fallbacks for woopaySaveUserLabel and woopayPhoneLabel, which carried the same
+	// text (WooPaymentsWooPaySessionService::get_woopay_frontend_config()); the Blocks data drops them.
+	const saveUserLabel = __(
+		'Securely save my information for 1-click checkout',
+		'woocommerce'
+	);
+	const phoneLabel = __( 'Mobile phone number', 'woocommerce' );
 
 	return (
 		<div className="woopay-save-new-user-container">
@@ -864,6 +910,7 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 							}
 							onBlur={ () => {
 								recordMobileEnter( phone );
+								hasSentUserData.current = true;
 								persistWooPaySaveUser(
 									paymentSettings,
 									true,

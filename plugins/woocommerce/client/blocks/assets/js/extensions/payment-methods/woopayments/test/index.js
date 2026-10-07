@@ -170,9 +170,14 @@ const OriginalResizeObserver = window.ResizeObserver;
  */
 
 describe( 'wc-payment-method-woopayments', () => {
+	// The Blocks payment store selectors the bundle reads (wc/store/payment getActivePaymentMethod, getPaymentMethodData).
+	let activePaymentMethod;
+
 	beforeEach( () => {
+		activePaymentMethod = 'woocommerce_payments';
 		useSelect.mockImplementation( ( callback ) =>
 			callback( () => ( {
+				getActivePaymentMethod: () => activePaymentMethod,
 				getPaymentMethodData: () => ( {
 					payment_method: 'woocommerce_payments',
 					'wc-woocommerce_payments-payment-token': '12',
@@ -619,13 +624,101 @@ describe( 'wc-payment-method-woopayments', () => {
 			.filter( ( [ url ] ) =>
 				String( url ).includes( 'set_woopay_phone_number' )
 			)
-			.map( ( [ , options ] ) => options.body );
+			.map( ( [ , options ] ) => options.body )
+			.filter( ( body ) => ! body.has( 'empty' ) );
 		expect( saveUserBodies.length ).toBeGreaterThan( 0 );
 		saveUserBodies.forEach( ( body ) => {
 			expect( body.get( 'woopay_source_url' ) ).toBe(
 				'https://example.test/checkout/'
 			);
 		} );
+	} );
+
+	const renderSaveUserSection = () => {
+		window.fetch = jest.fn().mockResolvedValue( {
+			json: jest.fn().mockResolvedValue( { success: true } ),
+		} );
+		document.body.innerHTML = `
+			<div class="wc-block-checkout">
+				<div class="wp-block-woocommerce-checkout-payment-block"></div>
+			</div>
+			<input id="billing-phone" value="5551234567" />
+		`;
+		const registration = registerWooPayments();
+		const content = registration.content;
+
+		return render(
+			createElement( content.type, {
+				...content.props,
+				eventRegistration: {
+					onPaymentSetup: jest.fn(),
+					onCheckoutSuccess: jest.fn(),
+				},
+				emitResponse: {
+					responseTypes: { SUCCESS: 'success', ERROR: 'error' },
+					noticeContexts: { PAYMENTS: 'payments' },
+				},
+			} )
+		);
+	};
+
+	const getSaveUserRequests = () =>
+		window.fetch.mock.calls
+			.filter( ( [ url ] ) =>
+				String( url ).includes( 'set_woopay_phone_number' )
+			)
+			.map( ( [ , options ] ) => options.body );
+
+	it( 'hides WooPay save my info while another payment method is selected', async () => {
+		activePaymentMethod = 'woocommerce_payments_klarna';
+		renderSaveUserSection();
+
+		await waitFor( () => {
+			expect( document.querySelector( '#remember-me' ) ).not.toBeNull();
+		} );
+		expect(
+			screen.queryByRole( 'checkbox', {
+				name: 'Securely save my information for 1-click checkout',
+			} )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'hides WooPay save my info for a WooPay user and clears the stored opt-in', async () => {
+		renderSaveUserSection();
+		const phoneField = await screen.findByLabelText(
+			'Mobile phone number'
+		);
+		fireEvent.blur( phoneField );
+		expect( getSaveUserRequests().length ).toBe( 1 );
+
+		// Dispatched by the WooPay email check (woopay/email-input-iframe.js) for a known WooPay user.
+		act( () => {
+			window.dispatchEvent(
+				new window.CustomEvent( 'woopayUserCheck', {
+					detail: { isRegisteredUser: true },
+				} )
+			);
+		} );
+
+		await waitFor( () => {
+			expect(
+				screen.queryByLabelText( 'Mobile phone number' )
+			).not.toBeInTheDocument();
+		} );
+		const requests = getSaveUserRequests();
+		expect( requests[ requests.length - 1 ].get( 'empty' ) ).toBe( '1' );
+	} );
+
+	it( 'clears the stored WooPay opt-in when the shopper unchecks save my info', async () => {
+		renderSaveUserSection();
+		const checkbox = await screen.findByRole( 'checkbox', {
+			name: 'Securely save my information for 1-click checkout',
+		} );
+
+		fireEvent.click( checkbox );
+
+		const requests = getSaveUserRequests();
+		expect( requests[ requests.length - 1 ].get( 'empty' ) ).toBe( '1' );
 	} );
 
 	it( 'shows the WooPay terms and privacy agreement under save my info and records link clicks', async () => {

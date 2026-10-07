@@ -26,6 +26,8 @@
 	var cardDisplayWidthThreshold = 220;
 	var directCheckoutLoggedIn = false;
 	var hasPhoneForMobileEnter = false;
+	var hasSentSaveUserData = false;
+	var isWooPayUser = false;
 	var proceedToCheckoutSelector =
 		'.wc-proceed-to-checkout .checkout-button,' +
 		'.wp-block-woocommerce-proceed-to-checkout-block,' +
@@ -1629,6 +1631,50 @@
 		} );
 	}
 
+	// Client 11.1.0 checkout-page-save-user.js:52-58, :274-302 with use-selected-payment-method.js and use-woopay-user.js:
+	// the offer applies only while WooPayments is selected with a new card and the shopper is not a WooPay user.
+	function isSaveUserOfferApplicable() {
+		var selectedMethod = document.querySelector(
+			'input[name="payment_method"]:checked'
+		);
+		var newTokenRadio = document.querySelector(
+			'#wc-woocommerce_payments-payment-token-new'
+		);
+		var isNewCardChosen = newTokenRadio
+			? newTokenRadio.checked
+			: ! document.querySelector(
+					'[type=radio][name="wc-woocommerce_payments-payment-token"]'
+			  );
+
+		return !! (
+			selectedMethod &&
+			selectedMethod.value === 'woocommerce_payments' &&
+			isNewCardChosen &&
+			! isWooPayUser
+		);
+	}
+
+	// A hidden offer posts nothing with the order, and an opt-in already sent is cleared.
+	function updateSaveUserVisibility() {
+		var container = document.getElementById( 'wcpay-woopay-save-user' );
+		var isApplicable = isSaveUserOfferApplicable();
+
+		if ( ! container ) {
+			return;
+		}
+
+		container.hidden = ! isApplicable;
+		container
+			.querySelectorAll( 'input' )
+			.forEach( function ( input ) {
+				input.disabled = ! isApplicable;
+			} );
+
+		if ( ! isApplicable && hasSentSaveUserData ) {
+			sendWooPayPhoneData( true );
+		}
+	}
+
 	function sendWooPayPhoneData( empty ) {
 		var checkbox = document.querySelector(
 			'input[name="save_user_in_woopay"]'
@@ -1653,6 +1699,7 @@
 			recordUserEvent( 'checkout_woopay_save_my_info_mobile_enter' );
 		}
 		hasPhoneForMobileEnter = hasPhone;
+		hasSentSaveUserData = ! empty;
 
 		postWooPayAjax( 'set_woopay_phone_number', {
 			_wpnonce: config.woopaySessionNonce || '',
@@ -1801,16 +1848,33 @@
 			recordUserEvent( 'checkout_save_my_info_click', {
 				status: checkbox.checked ? 'checked' : 'unchecked',
 			} );
-			sendWooPayPhoneData( false );
+			// Unchecking clears the stored opt-in, as the client's empty request does.
+			sendWooPayPhoneData( ! checkbox.checked );
 		} );
 		phoneField.addEventListener( 'blur', function () {
 			sendWooPayPhoneData( false );
 		} );
+		updateSaveUserVisibility();
 	}
 
 	$( document.body ).on( 'updated_checkout', function () {
 		renderWooPayExpressButton();
 		renderWooPaySaveUserFields();
+	} );
+	$( document.body ).on( 'payment_method_selected', updateSaveUserVisibility );
+	document.addEventListener( 'change', function ( event ) {
+		if (
+			event.target &&
+			( event.target.name === 'payment_method' ||
+				event.target.name === 'wc-woocommerce_payments-payment-token' )
+		) {
+			updateSaveUserVisibility();
+		}
+	} );
+	// Dispatched by the WooPay email check in the classic checkout script.
+	window.addEventListener( 'woopayUserCheck', function ( event ) {
+		isWooPayUser = !! ( event.detail && event.detail.isRegisteredUser );
+		updateSaveUserVisibility();
 	} );
 	$( document.body ).on( 'updated_cart_totals', function () {
 		if ( config.isWooPayDirectCheckoutEnabled ) {

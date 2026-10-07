@@ -944,6 +944,97 @@ describe( 'WooPayments WooPay checkout', () => {
 		expect( additionalInfo.closest( '[hidden]' ) ).not.toBeNull();
 	} );
 
+	const getSaveUserContainer = () =>
+		document.getElementById( 'wcpay-woopay-save-user' );
+
+	const getSaveUserPosts = () =>
+		global.jQuery.post.mock.calls
+			.filter( ( [ url ] ) => url.includes( 'set_woopay_phone_number' ) )
+			.map( ( [ , data ] ) => data );
+
+	test( 'hides WooPay save my info and posts none of its fields while a saved card is chosen', () => {
+		document
+			.querySelector( 'form.checkout' )
+			.insertAdjacentHTML(
+				'beforeend',
+				'<input type="radio" id="wc-woocommerce_payments-payment-token-12" ' +
+					'name="wc-woocommerce_payments-payment-token" value="12" checked />' +
+					'<input type="radio" id="wc-woocommerce_payments-payment-token-new" ' +
+					'name="wc-woocommerce_payments-payment-token" value="new" />'
+			);
+
+		require( '../woopayments-woopay' );
+
+		expect( getSaveUserContainer().hidden ).toBe( true );
+		expect(
+			document.querySelector( 'input[name="save_user_in_woopay"]' )
+				.disabled
+		).toBe( true );
+
+		const newCard = document.getElementById(
+			'wc-woocommerce_payments-payment-token-new'
+		);
+		newCard.checked = true;
+		newCard.dispatchEvent( new window.Event( 'change', { bubbles: true } ) );
+
+		expect( getSaveUserContainer().hidden ).toBe( false );
+	} );
+
+	test( 'hides WooPay save my info for another payment method and clears the stored opt-in', async () => {
+		document
+			.querySelector( 'form.checkout' )
+			.insertAdjacentHTML(
+				'beforeend',
+				'<input type="radio" name="payment_method" value="woocommerce_payments_klarna" />'
+			);
+
+		require( '../woopayments-woopay' );
+		document
+			.querySelector( 'input[name="woopay_user_phone_field[full]"]' )
+			.dispatchEvent( new window.Event( 'blur', { bubbles: true } ) );
+		await flushPromises();
+
+		const klarna = document.querySelector(
+			'input[value="woocommerce_payments_klarna"]'
+		);
+		klarna.checked = true;
+		klarna.dispatchEvent( new window.Event( 'change', { bubbles: true } ) );
+		await flushPromises();
+
+		expect( getSaveUserContainer().hidden ).toBe( true );
+		const posts = getSaveUserPosts();
+		expect( posts[ posts.length - 1 ].empty ).toBe( 'true' );
+	} );
+
+	test( 'hides WooPay save my info once the email check finds a WooPay user', () => {
+		require( '../woopayments-woopay' );
+
+		// Dispatched by the classic WooPay email check (woopayments-checkout.js) for a known WooPay user.
+		window.dispatchEvent(
+			new window.CustomEvent( 'woopayUserCheck', {
+				detail: { isRegisteredUser: true },
+			} )
+		);
+
+		expect( getSaveUserContainer().hidden ).toBe( true );
+	} );
+
+	test( 'clears the stored WooPay opt-in when the shopper unchecks save my info', async () => {
+		require( '../woopayments-woopay' );
+		const saveCheckbox = document.querySelector(
+			'input[name="save_user_in_woopay"]'
+		);
+
+		saveCheckbox.checked = false;
+		saveCheckbox.dispatchEvent(
+			new window.Event( 'change', { bubbles: true } )
+		);
+		await flushPromises();
+
+		const posts = getSaveUserPosts();
+		expect( posts[ posts.length - 1 ].empty ).toBe( 'true' );
+	} );
+
 	test( 'shows the WooPay phone field only while save my info is checked', () => {
 		// Client 11.1.0 checkout-page-save-user.js renders the phone field
 		// inside the save-details form, which exists only while checked.
