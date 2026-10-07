@@ -211,10 +211,17 @@ async function fillBlocksCheckoutDetails(
 ): Promise< void > {
 	const shipping = page.getByRole( 'group', { name: 'Shipping address' } );
 	const billing = page.getByRole( 'group', { name: 'Billing address' } );
+	// The checkout block hydrates client-side; wait for an address group before choosing one.
+	await expect( shipping.or( billing ).first() ).toBeVisible();
 	const address = ( await shipping.isVisible() ) ? shipping : billing;
 	const country = address.getByRole( 'combobox', {
 		name: 'Country/Region',
 	} );
+	// Wait for the editable form or the saved address's Edit button, as the zero-total spec's
+	// ensureContactAndBillingDetails() does, so an unhydrated form is not read as a saved address.
+	await expect(
+		country.or( address.getByRole( 'button', { name: /edit/i } ) ).first()
+	).toBeVisible();
 
 	// A shopper who has checked out before arrives with the address already
 	// resolved: the group still renders, collapsed behind an Edit button, with

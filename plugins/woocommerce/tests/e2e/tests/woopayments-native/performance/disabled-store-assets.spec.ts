@@ -66,6 +66,29 @@ async function readHtml(
 	return await response.text();
 }
 
+// Positive control: the empty results below prove nothing unless the extractor finds native tags in markup shaped as
+// WordPress prints it (wp_print_script_tag(), wp_print_inline_script_tag() and style_loader_tag ids).
+test(
+	'the native asset extractor finds script, inline data and stylesheet tags',
+	{ tag: [ tags.WOOPAYMENTS_NATIVE ] },
+	() => {
+		const sample = [
+			'<link rel="canonical" href="https://example.test/product/woopayments-hoodie/" />',
+			"<link rel='stylesheet' id='wc-payment-method-woopayments-css' href='https://example.test/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments.css?ver=1' media='all' />",
+			'<script id="wc-payment-method-woopayments-js-extra">var x = 1;</script>',
+			'<script src="https://js.stripe.com/v3/" id="stripe-js"></script>',
+			'<script src="https://example.test/wp-includes/js/jquery/jquery.min.js" id="jquery-core-js"></script>',
+		].join( '\n' );
+
+		expect( nativeAssetReferences( sample ) ).toEqual( [
+			'wc-payment-method-woopayments-css',
+			'https://example.test/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments.css?ver=1',
+			'wc-payment-method-woopayments-js-extra',
+			'https://js.stripe.com/v3/',
+		] );
+	}
+);
+
 test.describe( 'Native payments disabled store assets', () => {
 	let initialNativePaymentsState: string;
 

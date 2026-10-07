@@ -211,21 +211,28 @@ async function payThroughWooPay(
 		{ timeout: RETURN_TIMEOUT_MS }
 	);
 
+	// The hosted page's cookie banner can appear at any point and swallows clicks until it fades out, so Playwright
+	// closes it whenever it shows up before an action.
+	const cookieBanner = page.getByRole( 'button', {
+		name: 'Close and accept',
+	} );
+	await page.addLocatorHandler( cookieBanner, async () => {
+		await cookieBanner.click();
+		await expect( cookieBanner ).toBeHidden();
+	} );
+
 	// Hosted checkout: Stripe's split card fields, each in its own frame,
 	// then the platform's review step before the order is placed.
 	await fillStripeField( page, /card number/i, TEST_CARDS.basic.number );
 	await fillStripeField( page, /expiration/i, TEST_CARDS.basic.expiry );
 	await fillStripeField( page, /CVC/i, TEST_CARDS.basic.cvc );
-	const cookieBanner = page.getByRole( 'button', {
-		name: 'Close and accept',
+	// A new WooPay account has no saved address; the platform asks for one. Wait for the page to settle on either the
+	// review button or the address prompt before deciding.
+	const reviewButton = page.getByRole( 'button', {
+		name: 'Review your order',
 	} );
-	if ( await cookieBanner.isVisible() ) {
-		await cookieBanner.click();
-		// The banner fades out and swallows clicks until it is gone.
-		await expect( cookieBanner ).toBeHidden();
-	}
-	// A new WooPay account has no saved address; the platform asks for one.
 	const addAddress = page.getByRole( 'button', { name: 'Add new address' } );
+	await expect( reviewButton.or( addAddress ).first() ).toBeVisible();
 	if ( await addAddress.isVisible() ) {
 		await addAddress.click();
 		const form = page.getByRole( 'dialog' );
@@ -249,7 +256,7 @@ async function payThroughWooPay(
 		await form.getByRole( 'button', { name: 'Add', exact: true } ).click();
 		await expect( form ).toBeHidden();
 	}
-	await page.getByRole( 'button', { name: 'Review your order' } ).click();
+	await reviewButton.click();
 	await page.getByRole( 'button', { name: /^Place order for/ } ).click();
 
 	await page.waitForURL( /\/order-received\/[1-9]\d*/, {

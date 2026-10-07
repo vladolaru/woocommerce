@@ -221,9 +221,10 @@ async function expectZeroTotal( blockScope: Locator ): Promise< void > {
 	// an address is known, "Total" after), so match the shared word rather
 	// than either surface's exact phrasing.
 	await expect( totalRow ).toContainText( /total/i );
+	// Anchored, so a sub-unit total such as $0.50 does not pass as zero.
 	await expect(
 		totalRow.locator( '.wc-block-components-totals-item__value' )
-	).toHaveText( /(^|\D)0(?:[.,]00)?(\D|$)/ );
+	).toHaveText( /^\D*0(?:[.,]00)?\D*$/ );
 }
 
 /**

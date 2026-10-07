@@ -165,11 +165,16 @@ async function createProduct(
 async function emptyCart( page: Page ): Promise< void > {
 	await page.goto( 'cart/' );
 	const emptyNotice = page.getByText( 'Your cart is currently empty!' );
+	const removeButtons = page.getByLabel( /Remove .* from cart/i );
+	// The cart block hydrates client-side; wait for one of its two terminal states before deciding, as the zero-total
+	// spec's resetCustomerCart() does.
+	await expect(
+		emptyNotice.or( removeButtons.first() ).first()
+	).toBeVisible();
 	if ( await emptyNotice.isVisible() ) {
 		return;
 	}
 
-	const removeButtons = page.getByLabel( /Remove .* from cart/i );
 	while ( ( await removeButtons.count() ) > 0 ) {
 		await removeButtons.first().click();
 		await expect( removeButtons ).toHaveCount( 0, { timeout: 15_000 } );
