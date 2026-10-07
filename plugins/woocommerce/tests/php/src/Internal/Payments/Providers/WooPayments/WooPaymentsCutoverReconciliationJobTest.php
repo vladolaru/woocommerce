@@ -4822,6 +4822,32 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A record still pointing at a replaced action is repaired under the lease to the action that is scheduled now.
+	 */
+	public function test_register_with_a_replaced_attempt_records_the_scheduled_action(): void {
+		$sut = $this->require_sut();
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$replacement_id = $this->require_scheduler()->schedule( time(), $pending['generation'], 1 );
+		$this->assertGreaterThan( 0, $replacement_id );
+		$this->assertNotSame( $pending['action_id'], $replacement_id );
+
+		$lease_events = $this->capture_lease_write_events(
+			function () use ( $sut ): void {
+				$sut->register();
+			}
+		);
+
+		$this->assertContains( 'INSERT', array_column( $lease_events, 'write' ), 'The stale record must be repaired under the lease.' );
+		$repaired = $this->require_state_store()->get_record();
+		$this->assertIsArray( $repaired );
+		$this->assertSame( $replacement_id, $repaired['action_id'] );
+		$this->assertSame( 1, $this->count_cutover_actions(), 'The repair records the scheduled action instead of adding another.' );
+	}
+
+	/**
 	 * @testdox Registration recovers a stale running claim into one immediately due deferred attempt.
 	 */
 	public function test_register_recovers_stale_running_state(): void {
