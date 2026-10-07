@@ -709,6 +709,28 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 		).toBe( false );
 	} );
 
+	it( 'keeps the WooPay button focusable and marks it busy while it loads', async () => {
+		getMockPaymentMethodSettings().isWoopayFirstPartyAuthEnabled = false;
+		// The WooPay requests stay pending, so the button stays in its loading state.
+		window.fetch = jest.fn( () => new Promise( () => {} ) );
+
+		registerWooPay();
+		const expressRegistration =
+			registerExpressPaymentMethod.mock.calls[ 0 ][ 0 ];
+		render( createElement( expressRegistration.content.type ) );
+		const button = screen.getByRole( 'button', { name: 'WooPay' } );
+		button.focus();
+
+		fireEvent.click( button );
+
+		await waitFor( () => {
+			expect( button ).toHaveAttribute( 'aria-busy', 'true' );
+		} );
+		expect( button ).toHaveAttribute( 'aria-disabled', 'true' );
+		expect( button ).not.toBeDisabled();
+		expect( button ).toHaveFocus();
+	} );
+
 	// Client 11.1.0 wraps the button in `#wcpay-woopay-button`, swaps its content
 	// for a spinner and adds `is-loading` while the first-party session request
 	// runs (client/checkout/woopay/express-button/woopay-express-checkout-button.js:108-114,232-234,449-469).
@@ -1222,7 +1244,10 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 						} );
 						button.focus();
 						fireEvent.click( button );
-						expect( button ).toBeDisabled();
+						expect( button ).toHaveAttribute(
+							'aria-disabled',
+							'true'
+						);
 						const elsewhere = document.createElement( 'input' );
 						document.body.appendChild( elsewhere );
 						elsewhere.focus();

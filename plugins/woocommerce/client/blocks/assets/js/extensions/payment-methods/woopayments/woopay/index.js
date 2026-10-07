@@ -705,6 +705,7 @@ const WooPayExpressContent = () => {
 			: 'woopay-express-button',
 		'aria-label': ariaLabel,
 		'aria-disabled': isLoading || undefined,
+		'aria-busy': isLoading || undefined,
 		'data-type': buttonType,
 		'data-theme': buttonSettings.theme || 'dark',
 		'data-size': normalizeButtonSize( buttonSettings ),
@@ -727,7 +728,9 @@ const WooPayExpressContent = () => {
 					{ buttonContent }
 				</a>
 			) : (
-				<button { ...buttonProps } disabled={ isLoading } type="button">
+				// Not `disabled`: disabling the focused button would drop keyboard focus to the document. aria-disabled and
+				// the isLoadingRef guard in initWooPay() refuse repeat clicks instead, as on the link variant.
+				<button { ...buttonProps } type="button">
 					{ buttonContent }
 				</button>
 			) }
