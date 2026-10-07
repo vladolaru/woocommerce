@@ -2778,6 +2778,7 @@ describe( 'WooPayments checkout', () => {
 		await flushPromises();
 		expectClassicCheckoutUiState( true );
 
+		// Minimal synthetic success: client 11.1.0 classic/payment-processing.js:479-483 reads paymentMethod.id.
 		resolvePaymentMethod( { paymentMethod: { id: 'pm_native' } } );
 		await flushPromises();
 
@@ -2788,6 +2789,37 @@ describe( 'WooPayments checkout', () => {
 		);
 		expect( checkoutFormState.processing ).toBe( false );
 		expect( unmarkOrder ).toBeLessThan(
+			global.jQuery.checkoutFormResult.trigger.mock.invocationCallOrder[
+				submitCall
+			]
+		);
+	} );
+
+	test( 'unmarks the checkout form before resubmitting a declined card with the error sentinel', async () => {
+		// Stripe createPaymentMethod error shape consumed by client 11.1.0 classic/payment-processing.js:473-478
+		// (upe-utils.js:179-196 appendPaymentMethodErrorDataToForm reads code, decline_code, message and type).
+		stripeMock.createPaymentMethod.mockResolvedValueOnce( {
+			error: {
+				type: 'card_error',
+				code: 'card_declined',
+				decline_code: 'generic_decline',
+				message: 'Your card was declined.',
+			},
+		} );
+
+		require( '../woopayments-checkout' );
+		checkoutFormEventHandlers.checkout_place_order_woocommerce_payments();
+		await flushPromises();
+
+		const submitCall = global.jQuery.checkoutFormResult.trigger.mock.calls.findIndex(
+			( [ event ] ) => event === 'submit'
+		);
+		expect( submitCall ).toBeGreaterThan( -1 );
+		expect( checkoutFormState.processing ).toBe( false );
+		expect(
+			global.jQuery.checkoutFormResult.removeClass.mock
+				.invocationCallOrder[ 0 ]
+		).toBeLessThan(
 			global.jQuery.checkoutFormResult.trigger.mock.invocationCallOrder[
 				submitCall
 			]
