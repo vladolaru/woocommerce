@@ -1729,43 +1729,6 @@
 		return updateElementsForCart( cartData );
 	}
 
-	function refreshIapiProductPreview() {
-		var selectedProduct = getSelectedProduct();
-		var product = filterSelectedProduct( selectedProduct );
-		var selection = JSON.stringify( selectedProduct );
-		var requestId;
-
-		if ( ! product ) {
-			iapiPreviewRequestId++;
-			return;
-		}
-
-		requestId = ++iapiPreviewRequestId;
-		iapiLastSelection = selection;
-		return requestIapiProductPreview( product ).then(
-			function ( cartData ) {
-				if ( requestId !== iapiPreviewRequestId ) {
-					return;
-				}
-
-				if ( selection !== JSON.stringify( getSelectedProduct() ) ) {
-					return refreshIapiProductPreview();
-				}
-
-				return applyProductPreview( cartData );
-			},
-			function () {
-				if ( requestId !== iapiPreviewRequestId ) {
-					return;
-				}
-
-				if ( selection !== JSON.stringify( getSelectedProduct() ) ) {
-					return refreshIapiProductPreview();
-				}
-			}
-		);
-	}
-
 	function watchIapiVariationSelection() {
 		var form;
 		var variationSelectors;
@@ -1799,6 +1762,7 @@
 			new window.MutationObserver( function () {
 				var selection = JSON.stringify( getSelectedProduct() );
 
+				// Client 11.1.0 wc-product-page.js:31-60: one re-price path for both forms, update-button-data.
 				window.clearTimeout( iapiSelectionRefreshTimer );
 				iapiSelectionRefreshTimer = window.setTimeout( function () {
 					selection = JSON.stringify( getSelectedProduct() );
@@ -1808,7 +1772,7 @@
 						return;
 					}
 
-					refreshIapiProductPreview();
+					updateButtonData();
 				}, 250 );
 			} ).observe( selector, {
 				subtree: true,
@@ -1963,12 +1927,22 @@
 			return Promise.resolve();
 		}
 
+		// The variation observer is installed once the first mount settles, so a selection that changed while this
+		// request was pending re-prices again here instead of leaving the wallet on the earlier selection.
+		function hasSelectionChanged() {
+			return iapiLastSelection !== JSON.stringify( getSelectedProduct() );
+		}
+
 		return requestIapiProductPreview( product )
 			.then( function ( cartData ) {
 				var wasMounted = Boolean( elements );
 
 				if ( requestId !== iapiPreviewRequestId ) {
 					return;
+				}
+
+				if ( hasSelectionChanged() ) {
+					return updateButtonData();
 				}
 
 				unblockExpressButton();
@@ -1993,9 +1967,15 @@
 				} );
 			} )
 			.catch( function () {
-				if ( requestId === iapiPreviewRequestId ) {
-					hideExpressButton();
+				if ( requestId !== iapiPreviewRequestId ) {
+					return;
 				}
+
+				if ( hasSelectionChanged() ) {
+					return updateButtonData();
+				}
+
+				hideExpressButton();
 			} );
 	}
 
@@ -3186,7 +3166,7 @@
 					resolvedProductCurrency = localizedProductCurrency;
 					productCurrencyResolutionPromise = null;
 					if ( ! serverProductDataPricesForm() ) {
-						return refreshIapiProductPreview();
+						return updateButtonData();
 					}
 					cachedCartData = config.product;
 				} else {
@@ -3204,14 +3184,14 @@
 						initialProductSelection !==
 						JSON.stringify( getSelectedProduct() )
 					) {
-						return refreshIapiProductPreview();
+						return updateButtonData();
 					}
 
 					if (
 						resolvedProductCurrency !== localizedProductCurrency ||
 						! serverProductDataPricesForm()
 					) {
-						return refreshIapiProductPreview();
+						return updateButtonData();
 					}
 
 					cachedCartData = config.product;

@@ -2070,6 +2070,83 @@ describe( 'WooPayments express checkout', () => {
 		);
 	} );
 
+	async function changeIapiVariation( value ) {
+		document.querySelector(
+			'.wp-block-woocommerce-add-to-cart-with-options-variation-selector-attribute'
+		).innerHTML =
+			'<input type="hidden" name="attribute_pa_color" value="' +
+			value +
+			'" />';
+		await Promise.resolve();
+		jest.advanceTimersByTime( 250 );
+		await jest.advanceTimersByTimeAsync( 0 );
+	}
+
+	test( 'blocks the wallet while an IAPI variation change re-prices it and releases it after', async () => {
+		jest.useFakeTimers();
+		setProductPage( { iapi: true } );
+		window.wcpayExpressCheckoutParams.product = {
+			displayItems: [ { label: 'Variable Widget', amount: 2500 } ],
+			total: { label: 'Variable Widget', amount: 2500, pending: true },
+			needs_shipping: false,
+			currency: 'usd',
+			country_code: 'US',
+			product_type: 'variable',
+		};
+		// Store API cart fields the preview reads (needs_shipping, totals.total_price, totals.currency_code).
+		window.wp.apiFetch.mockResolvedValue( {
+			needs_shipping: false,
+			totals: { total_price: '4000', currency_code: 'USD' },
+		} );
+
+		require( '../woopayments-express-checkout' );
+		await jest.advanceTimersByTimeAsync( 0 );
+		containerJQuery.block.mockClear();
+		containerJQuery.unblock.mockClear();
+
+		await changeIapiVariation( 'red' );
+
+		// Client 11.1.0 wc-product-page.js:31-60 routes the observer to update-button-data, which blocks the button
+		// and releases it once the new amount reached Elements (shortcode-buttons-express/index.js:597-674).
+		expect( containerJQuery.block ).toHaveBeenCalledTimes( 1 );
+		expect( containerJQuery.unblock ).toHaveBeenCalled();
+		expect(
+			containerJQuery.unblock.mock.invocationCallOrder[ 0 ]
+		).toBeGreaterThan( containerJQuery.block.mock.invocationCallOrder[ 0 ] );
+	} );
+
+	test( 'hides the wallet when an IAPI variation change leaves a free cart', async () => {
+		jest.useFakeTimers();
+		setProductPage( { iapi: true } );
+		window.wcpayExpressCheckoutParams.product = {
+			displayItems: [ { label: 'Variable Widget', amount: 2500 } ],
+			total: { label: 'Variable Widget', amount: 2500, pending: true },
+			needs_shipping: false,
+			currency: 'usd',
+			country_code: 'US',
+			product_type: 'variable',
+		};
+		window.wp.apiFetch.mockResolvedValue( {
+			needs_shipping: false,
+			totals: { total_price: '4000', currency_code: 'USD' },
+		} );
+
+		require( '../woopayments-express-checkout' );
+		await jest.advanceTimersByTimeAsync( 0 );
+		expressHandlers.ready( { availablePaymentMethods: { applePay: true } } );
+
+		window.wp.apiFetch.mockResolvedValue( {
+			needs_shipping: false,
+			totals: { total_price: '0', currency_code: 'USD' },
+		} );
+		await changeIapiVariation( 'free' );
+
+		expect(
+			document.getElementById( 'wcpay-express-checkout-element' ).style
+				.display
+		).toBe( 'none' );
+	} );
+
 	test( 'does not retain an ephemeral IAPI preview session for a later product click', async () => {
 		const resolveClick = jest.fn();
 		jest.useFakeTimers();
