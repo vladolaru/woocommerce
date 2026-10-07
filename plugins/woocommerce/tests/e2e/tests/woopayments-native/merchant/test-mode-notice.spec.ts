@@ -397,16 +397,20 @@ async function openOrderEditScreen(
 }
 
 /**
- * Whether the order script created a React root on the notice mount. It does
- * so only when it has a notice to render, and `createRoot()` marks the node
- * synchronously, before React commits anything, so this reads the script's
- * decision without waiting on React's asynchronous render.
+ * The test-mode flag the server localized for the order script, which renders
+ * the notice only when it is set. The script's rendering is covered by its
+ * Jest tests; this reads the server's per-order decision.
  */
-function hasReactRoot( mount: Locator ): Promise< boolean > {
-	return mount.evaluate( ( node ) =>
-		Object.keys( node ).some( ( key ) =>
-			key.startsWith( '__reactContainer$' )
-		)
+function projectedTestMode( page: Page ): Promise< unknown > {
+	return page.evaluate(
+		() =>
+			(
+				window as typeof window & {
+					woocommerceWooPaymentsOrderStatusChange?: {
+						test_mode?: unknown;
+					};
+				}
+			 ).woocommerceWooPaymentsOrderStatusChange?.test_mode
 	);
 }
 
@@ -504,12 +508,7 @@ test(
 						page,
 						testOrderId
 					);
-					// Calibrates the readiness check the live and unmarked
-					// orders rely on below.
-					expect(
-						await hasReactRoot( testMount ),
-						'the order script must mount a notice root for a test-mode order'
-					).toBe( true );
+					expect( await projectedTestMode( page ) ).toBe( true );
 					await expect
 						.poll( () => sightedText( testMount ) )
 						.toBe( ORDER_NOTICE_TEXT );
@@ -532,8 +531,8 @@ test(
 							orderId
 						);
 						expect(
-							await hasReactRoot( mount ),
-							`the order script must not mount a notice root for order ${ orderId }`
+							await projectedTestMode( page ),
+							`order ${ orderId } must not be projected as a test-mode order`
 						).toBe( false );
 						await expect( mount ).toBeEmpty();
 						await expect(
