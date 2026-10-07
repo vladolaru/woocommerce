@@ -150,13 +150,40 @@ test( 'requireTestModeAccount refuses a live account', async () => {
 	);
 } );
 
+// The platform responses core passes through unchanged (`WooPaymentsPaymentDetailsRestController`): a
+// PaymentIntent with its `charges` list and a Charge, as recorded in
+// `tests/php/src/Internal/Payments/Providers/WooPayments/Fixtures/rec-t3-manual-capture.json`.
+const SETTLED_INTENT = {
+	status: 'succeeded',
+	amount: 1099,
+	currency: 'usd',
+	payment_method: 'pm_exact',
+	charges: { data: [ { id: 'ch_exact' } ] },
+};
+const SETTLED_CHARGE = {
+	status: 'succeeded',
+	captured: true,
+	amount: 1099,
+	currency: 'usd',
+	payment_intent: 'pi_exact',
+	payment_method: 'pm_exact',
+	payment_method_details: {
+		type: 'card',
+		card: { brand: 'visa', last4: '4242' },
+	},
+};
+
 /**
- * The routes of one settled card payment for order 501, with `overrides`
- * replacing whole routes.
+ * The routes of one settled card payment for order 501, with single intent or
+ * charge fields replaced.
  */
-function settledCardPaymentRoutes(
-	overrides: Record< string, unknown > = {}
-): Record< string, unknown > {
+function settledCardPaymentRoutes( {
+	intent = {},
+	charge = {},
+}: {
+	intent?: Record< string, unknown >;
+	charge?: Record< string, unknown >;
+} = {} ): Record< string, unknown > {
 	return {
 		'wc/v3/orders/501': {
 			total: '10.99',
@@ -169,26 +196,13 @@ function settledCardPaymentRoutes(
 			],
 		},
 		'wc/v3/payments/payment_intents/pi_exact': {
-			status: 'succeeded',
-			amount: 1099,
-			currency: 'usd',
-			payment_method: 'pm_exact',
-			charges: { data: [ { id: 'ch_exact' } ] },
+			...SETTLED_INTENT,
+			...intent,
 		},
-		'wc/v3/payments/charges/ch_exact': {
-			status: 'succeeded',
-			captured: true,
-			amount: 1099,
-			currency: 'usd',
-			payment_intent: 'pi_exact',
-			payment_method: 'pm_exact',
-			payment_method_details: {
-				type: 'card',
-				card: { brand: 'visa', last4: '4242' },
-			},
-		},
+		'wc/v3/payments/charges/ch_exact': { ...SETTLED_CHARGE, ...charge },
+		// The client reads the timeline's `data` list (`client/data/timeline/resolvers.js:19`) and its
+		// `captured` events (`client/payment-details/timeline/map-events.js:899`).
 		'wc/v3/payments/timeline/pi_exact': { data: [ { type: 'captured' } ] },
-		...overrides,
 	};
 }
 
@@ -213,72 +227,54 @@ test( 'expectSettledCardPayment converges on one settled card payment graph', as
 	expect( settled.captureOccurrenceCount ).toBe( 1 );
 } );
 
-test( 'expectSettledCardPayment refuses a payment that never settles', async () => {
-	// Authorized, not captured: the poll must run out rather than return.
-	const restApi = fakeApiClient(
-		settledCardPaymentRoutes( {
-			'wc/v3/payments/payment_intents/pi_exact': {
-				status: 'requires_capture',
-				amount: 1099,
-				currency: 'usd',
-				payment_method: 'pm_exact',
-				charges: { data: [ { id: 'ch_exact' } ] },
-			},
-			'wc/v3/payments/charges/ch_exact': {
-				status: 'succeeded',
-				captured: false,
-				amount: 1099,
-				currency: 'usd',
-				payment_intent: 'pi_exact',
-				payment_method: 'pm_exact',
-				payment_method_details: {
-					type: 'card',
-					card: { brand: 'visa', last4: '4242' },
-				},
-			},
-		} )
-	);
+// Each case breaks one fact of a settled payment.
+for ( const { name, intent, charge } of [
+	{
+		name: 'an intent still awaiting capture',
+		intent: { status: 'requires_capture' },
+	},
+	{ name: 'a charge that was not captured', charge: { captured: false } },
+	{ name: 'a charge still pending', charge: { status: 'pending' } },
+] ) {
+	test( `expectSettledCardPayment never settles on ${ name }`, async () => {
+		const restApi = fakeApiClient(
+			settledCardPaymentRoutes( { intent, charge } )
+		);
 
-	await expect(
-		expectSettledCardPayment( restApi, 501, SETTLED_CARD_PAYMENT, {
-			budgetMs: 50,
-			intervalMs: 10,
-		} )
-	).rejects.toThrow(
-		'Order 501 never reached a stable settled card payment within 50ms.'
-	);
-} );
+		await expect(
+			expectSettledCardPayment( restApi, 501, SETTLED_CARD_PAYMENT, {
+				budgetMs: 50,
+				intervalMs: 10,
+			} )
+		).rejects.toThrow(
+			'Order 501 never reached a stable settled card payment within 50ms.'
+		);
+	} );
+}
 
-test( 'expectSettledCardPayment refuses a settled payment for the wrong amount', async () => {
-	// The charge settled for 9.99 against a 10.99 order.
-	const restApi = fakeApiClient(
-		settledCardPaymentRoutes( {
-			'wc/v3/payments/payment_intents/pi_exact': {
-				status: 'succeeded',
-				amount: 999,
-				currency: 'usd',
-				payment_method: 'pm_exact',
-				charges: { data: [ { id: 'ch_exact' } ] },
-			},
-			'wc/v3/payments/charges/ch_exact': {
-				status: 'succeeded',
-				captured: true,
-				amount: 999,
-				currency: 'usd',
-				payment_intent: 'pi_exact',
-				payment_method: 'pm_exact',
-				payment_method_details: {
-					type: 'card',
-					card: { brand: 'visa', last4: '4242' },
-				},
-			},
-		} )
-	);
+// A 9.99 amount on one side of a 10.99 order.
+for ( const { name, intent, charge, mismatch } of [
+	{
+		name: 'intent',
+		intent: { amount: 999 },
+		mismatch: /"intentAmount": 999/,
+	},
+	{
+		name: 'charge',
+		charge: { amount: 999 },
+		mismatch: /"chargeAmount": 999/,
+	},
+] ) {
+	test( `expectSettledCardPayment refuses a settled payment whose ${ name } has the wrong amount`, async () => {
+		const restApi = fakeApiClient(
+			settledCardPaymentRoutes( { intent, charge } )
+		);
 
-	await expect(
-		expectSettledCardPayment( restApi, 501, SETTLED_CARD_PAYMENT, {
-			budgetMs: 5_000,
-			intervalMs: 10,
-		} )
-	).rejects.toThrow( /"intentAmount": 999/ );
-} );
+		await expect(
+			expectSettledCardPayment( restApi, 501, SETTLED_CARD_PAYMENT, {
+				budgetMs: 5_000,
+				intervalMs: 10,
+			} )
+		).rejects.toThrow( mismatch );
+	} );
+}
