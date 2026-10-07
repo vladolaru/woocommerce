@@ -2559,6 +2559,8 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( '<termsOfService/>', $config['woopayAgreementText'] );
 		$this->assertStringContainsString( '<privacyPolicy/>', $config['woopayAgreementText'] );
 		$this->assertArrayHasKey( 'platformTrackerNonce', $config );
+		$this->assertSame( rest_url( 'wc/v3/payments/tracks' ), $config['tracksUrl'] );
+		$this->assertNotFalse( wp_verify_nonce( $config['tracksRestNonce'], 'wp_rest' ) );
 		$this->assertSame( admin_url( 'admin-ajax.php' ), $config['ajaxUrl'] );
 		$this->assertArrayHasKey( 'isShopperTrackingEnabled', $config );
 		$this->assertArrayNotHasKey( 'is_shopper_tracking_enabled', $config );

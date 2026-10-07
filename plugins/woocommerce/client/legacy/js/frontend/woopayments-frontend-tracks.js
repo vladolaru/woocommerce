@@ -19,14 +19,15 @@
 	function recordUserEvent( eventName, eventProperties ) {
 		var body = new window.FormData();
 		body.append( 'tracksNonce', params.nonce );
-		body.append( 'action', 'platform_tracks' );
 		body.append( 'tracksEventName', eventName );
 		body.append( 'tracksEventProp', JSON.stringify( eventProperties || {} ) );
 
+		// The REST nonce keeps a logged-in shopper's session, which the Tracks nonce is tied to.
 		window
-			.fetch( params.ajaxUrl, {
+			.fetch( params.tracksUrl, {
 				method: 'POST',
 				credentials: 'same-origin',
+				headers: params.restNonce ? { 'X-WP-Nonce': params.restNonce } : {},
 				body: body,
 			} )
 			.catch( function () {} );

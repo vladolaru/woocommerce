@@ -11,7 +11,8 @@ describe( 'WooPayments frontend Tracks queue', () => {
 		originalFetch = window.fetch;
 		window.fetch = jest.fn().mockResolvedValue( {} );
 		window.wc_woopayments_frontend_tracks_params = {
-			ajaxUrl: '/wp-admin/admin-ajax.php',
+			tracksUrl: 'https://example.test/wp-json/wc/v3/payments/tracks',
+			restNonce: 'rest-nonce',
 			nonce: 'tracks-nonce',
 			events: [
 				{
@@ -35,7 +36,8 @@ describe( 'WooPayments frontend Tracks queue', () => {
 		delete window.wc_woopayments_frontend_tracks_params;
 	} );
 
-	it( 'posts each queued event once to the platform_tracks action, like client 11.1.0 frontend-tracks', () => {
+	// The client 11.1.0 frontend-tracks body, posted to the shopper Tracks REST route with the REST nonce header.
+	it( 'posts each queued event once to the shopper Tracks route, with the client 11.1.0 body', () => {
 		loadScript();
 		loadScript();
 
@@ -43,26 +45,27 @@ describe( 'WooPayments frontend Tracks queue', () => {
 		const sent = window.fetch.mock.calls.map( ( [ url, init ] ) => [
 			url,
 			init.method,
+			init.headers,
 			Object.fromEntries( init.body.entries() ),
 		] );
 		expect( sent ).toEqual( [
 			[
-				'/wp-admin/admin-ajax.php',
+				'https://example.test/wp-json/wc/v3/payments/tracks',
 				'POST',
+				{ 'X-WP-Nonce': 'rest-nonce' },
 				{
 					tracksNonce: 'tracks-nonce',
-					action: 'platform_tracks',
 					tracksEventName: 'product_page_view',
 					tracksEventProp:
 						'{"theme_type":"short_code","record_event_data":{"is_admin_event":false,"track_on_all_stores":true}}',
 				},
 			],
 			[
-				'/wp-admin/admin-ajax.php',
+				'https://example.test/wp-json/wc/v3/payments/tracks',
 				'POST',
+				{ 'X-WP-Nonce': 'rest-nonce' },
 				{
 					tracksNonce: 'tracks-nonce',
-					action: 'platform_tracks',
 					tracksEventName: 'pay_for_order_page_view',
 					tracksEventProp: '{}',
 				},
@@ -71,6 +74,14 @@ describe( 'WooPayments frontend Tracks queue', () => {
 		expect( window.wc_woopayments_frontend_tracks_params.events ).toEqual(
 			[]
 		);
+	} );
+
+	it( 'sends no REST nonce header when the page has none', () => {
+		delete window.wc_woopayments_frontend_tracks_params.restNonce;
+
+		loadScript();
+
+		expect( window.fetch.mock.calls[ 0 ][ 1 ].headers ).toEqual( {} );
 	} );
 
 	it( 'sends nothing when the queue is empty', () => {

@@ -97,13 +97,14 @@ describe( 'WooPayments checkout', () => {
 		).not.toHaveBeenCalledWith( 'submit' );
 	}
 
+	const TRACKS_URL = 'https://example.test/wp-json/wc/v3/payments/tracks';
+
+	function getTrackingRequests() {
+		return window.fetch.mock.calls.filter( ( [ url ] ) => url === TRACKS_URL );
+	}
+
 	function getTrackingEvents() {
-		return window.fetch.mock.calls
-			.filter(
-				( [ url, options ] ) =>
-					url === 'https://example.test/admin-ajax.php' &&
-					options.body.get( 'action' ) === 'platform_tracks'
-			)
+		return getTrackingRequests()
 			.map( ( [ , options ] ) => ( {
 				name: options.body.get( 'tracksEventName' ),
 				props: JSON.parse( options.body.get( 'tracksEventProp' ) ),
@@ -419,6 +420,8 @@ describe( 'WooPayments checkout', () => {
 		window.wcpay_core_checkout_config = {
 			accountId: 'acct_test',
 			ajaxUrl: 'https://example.test/admin-ajax.php',
+			tracksUrl: TRACKS_URL,
+			tracksRestNonce: 'rest-nonce',
 			cartTotal: '5000',
 			currency: 'GBP',
 			gatewayId: 'woocommerce_payments',
@@ -3262,6 +3265,16 @@ describe( 'WooPayments checkout', () => {
 				},
 			] )
 		);
+		getTrackingRequests().forEach( ( [ , options ] ) => {
+			expect( options ).toEqual(
+				expect.objectContaining( {
+					method: 'POST',
+					headers: { 'X-WP-Nonce': 'rest-nonce' },
+				} )
+			);
+			expect( options.body.get( 'tracksNonce' ) ).toBe( 'tracks-nonce' );
+			expect( options.body.has( 'action' ) ).toBe( false );
+		} );
 	} );
 
 	test( 'remounts the payment element after checkout updates replace the payment markup', () => {
@@ -4179,14 +4192,7 @@ describe( 'WooPayments checkout', () => {
 		}
 
 		function getTrackedEventNames() {
-			return window.fetch.mock.calls
-				.filter(
-					( [ url, options ] ) =>
-						url === 'https://example.test/admin-ajax.php' &&
-						options &&
-						options.body &&
-						options.body.get( 'action' ) === 'platform_tracks'
-				)
+			return getTrackingRequests()
 				.map( ( [ , options ] ) =>
 					options.body.get( 'tracksEventName' )
 				);

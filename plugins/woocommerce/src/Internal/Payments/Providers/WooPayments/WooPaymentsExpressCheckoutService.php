@@ -130,9 +130,11 @@ class WooPaymentsExpressCheckoutService {
 
 		$params = array(
 			'ajax_url'                    => admin_url( 'admin-ajax.php' ),
+			'tracks_url'                  => $this->get_frontend_tracking_controller()->get_tracks_rest_url(),
 			'wc_ajax_url'                 => \WC_AJAX::get_endpoint( '%%endpoint%%' ),
 			'nonce'                       => array(
 				'platform_tracker'             => wp_create_nonce( 'platform_tracks_nonce' ),
+				'tracks_rest'                  => wp_create_nonce( 'wp_rest' ),
 				'tokenized_cart_nonce'         => wp_create_nonce( WooPaymentsTokenizedCartSessionController::TOKENIZED_CART_NONCE_ACTION ),
 				'tokenized_cart_session_nonce' => wp_create_nonce( 'woopayments_tokenized_cart_session_nonce' ),
 				'store_api_nonce'              => wp_create_nonce( 'wc_store_api' ),

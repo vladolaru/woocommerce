@@ -66,6 +66,8 @@ const getTrackingSettings = () => ( {
 	ajaxUrl: params.ajax_url,
 	isShopperTrackingEnabled: params.is_shopper_tracking_enabled,
 	platformTrackerNonce: params?.nonce?.platform_tracker,
+	tracksUrl: params?.tracks_url,
+	tracksRestNonce: params?.nonce?.tracks_rest,
 } );
 
 const clampButtonHeight = ( height ) => {

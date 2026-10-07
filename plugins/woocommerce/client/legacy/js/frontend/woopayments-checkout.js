@@ -667,14 +667,14 @@
 	}
 
 	function recordUserEvent( eventName, eventProperties ) {
-		var ajaxUrl = config.ajaxUrl;
+		var tracksUrl = config.tracksUrl;
 		var nonce = config.platformTrackerNonce;
 		var body;
 
 		if (
 			! eventName ||
 			config.isShopperTrackingEnabled === false ||
-			! ajaxUrl ||
+			! tracksUrl ||
 			! nonce ||
 			! window.fetch ||
 			! window.FormData
@@ -684,17 +684,20 @@
 
 		body = new window.FormData();
 		body.append( 'tracksNonce', nonce );
-		body.append( 'action', 'platform_tracks' );
 		body.append( 'tracksEventName', eventName );
 		body.append(
 			'tracksEventProp',
 			JSON.stringify( eventProperties || {} )
 		);
 
+		// The REST nonce keeps a logged-in shopper's session, which the Tracks nonce is tied to.
 		window
-			.fetch( ajaxUrl, {
+			.fetch( tracksUrl, {
 				method: 'POST',
 				credentials: 'same-origin',
+				headers: config.tracksRestNonce
+					? { 'X-WP-Nonce': config.tracksRestNonce }
+					: {},
 				body: body,
 			} )
 			.catch( function () {} );

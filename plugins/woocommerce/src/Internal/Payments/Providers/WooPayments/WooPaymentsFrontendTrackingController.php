@@ -15,6 +15,9 @@ use Throwable;
 use WC_Tracks;
 use WC_Tracks_Client;
 use WC_Tracks_Event;
+use WP_Error;
+use WP_REST_Request;
+use WP_REST_Response;
 use WP_User;
 
 /**
@@ -143,6 +146,16 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	private const FRONTEND_EVENTS_SCRIPT_HANDLE = 'wc-woopayments-frontend-tracks';
 
 	/**
+	 * REST namespace of the shopper Tracks route, the provider's.
+	 */
+	private const REST_NAMESPACE = 'wc/v3';
+
+	/**
+	 * Shopper Tracks REST route.
+	 */
+	private const REST_ROUTE = '/payments/tracks';
+
+	/**
 	 * Page-view events queued during render for the footer script to send.
 	 *
 	 * @var array<int,array{event:string,properties:array<string,mixed>}>
@@ -196,6 +209,84 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 				add_action( $hook, $callback );
 			}
 		}
+
+		if ( false === has_action( 'rest_api_init', array( $this, 'register_rest_routes' ) ) ) {
+			add_action( 'rest_api_init', array( $this, 'register_rest_routes' ) );
+		}
+	}
+
+	/**
+	 * Register the shopper Tracks REST route the native scripts post to; `platform_tracks` stays as an AJAX alias.
+	 *
+	 * @internal
+	 */
+	public function register_rest_routes(): void {
+		register_rest_route(
+			self::REST_NAMESPACE,
+			self::REST_ROUTE,
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( $this, 'handle_rest_tracks' ),
+				'permission_callback' => array( $this, 'check_rest_tracks_nonce' ),
+				'args'                => array(
+					'tracksNonce'     => array(
+						'type'     => 'string',
+						'required' => true,
+					),
+					'tracksEventName' => array(
+						'type'     => 'string',
+						'required' => true,
+						'enum'     => array_merge( array_keys( self::SHOPPER_EVENTS ), array_keys( self::SHOPPER_EVENT_ALIASES ) ),
+					),
+					'tracksEventProp' => array(
+						'type'    => 'string',
+						'default' => '{}',
+					),
+				),
+			)
+		);
+	}
+
+	/**
+	 * Get the shopper Tracks REST route URL the native scripts post to.
+	 *
+	 * @return string
+	 */
+	public function get_tracks_rest_url(): string {
+		return rest_url( self::REST_NAMESPACE . self::REST_ROUTE );
+	}
+
+	/**
+	 * Check the platform Tracks nonce of a REST request, as the AJAX action does.
+	 *
+	 * @internal
+	 *
+	 * @param WP_REST_Request $request REST request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return true|WP_Error
+	 */
+	public function check_rest_tracks_nonce( WP_REST_Request $request ) {
+		$nonce = $request->get_param( 'tracksNonce' );
+		if ( is_string( $nonce ) && false !== wp_verify_nonce( $nonce, 'platform_tracks_nonce' ) ) {
+			return true;
+		}
+
+		return new WP_Error( 'rest_forbidden', __( 'You aren’t authorized to do that.', 'woocommerce' ), array( 'status' => 403 ) );
+	}
+
+	/**
+	 * Record a shopper event posted to the REST route.
+	 *
+	 * @internal
+	 *
+	 * @param WP_REST_Request $request REST request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_REST_Response
+	 */
+	public function handle_rest_tracks( WP_REST_Request $request ): WP_REST_Response {
+		$response = $this->get_tracks_response( $request->get_params() );
+
+		return new WP_REST_Response( $response['data'], $response['status_code'] );
 	}
 
 	/**
@@ -426,8 +517,9 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 			self::FRONTEND_EVENTS_SCRIPT_HANDLE,
 			'wc_woopayments_frontend_tracks_params',
 			array(
-				'ajaxUrl'           => admin_url( 'admin-ajax.php' ),
 				'nonce'             => wp_create_nonce( 'platform_tracks_nonce' ),
+				'tracksUrl'         => $this->get_tracks_rest_url(),
+				'restNonce'         => wp_create_nonce( 'wp_rest' ),
 				'events'            => $this->frontend_events,
 				'proceedToCheckout' => $this->proceed_to_checkout,
 			)

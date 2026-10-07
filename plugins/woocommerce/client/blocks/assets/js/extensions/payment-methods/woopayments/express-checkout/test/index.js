@@ -35,6 +35,7 @@ jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 
 const baseExpressCheckoutParams = {
 	ajax_url: 'https://example.test/admin-ajax.php',
+	tracks_url: 'https://example.test/wp-json/wc/v3/payments/tracks',
 	enabled_methods: [ 'payment_request' ],
 	button_context: 'checkout',
 	store_name: 'Test Store',
@@ -44,6 +45,7 @@ const baseExpressCheckoutParams = {
 		tokenized_cart_nonce: 'cart-nonce',
 		tokenized_cart_session_nonce: 'cart-session-nonce',
 		platform_tracker: 'tracks-nonce',
+		tracks_rest: 'rest-nonce',
 	},
 	checkout: {
 		currency_code: 'usd',
@@ -485,10 +487,10 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			} )
 		);
 
-	const getPlatformTracksRequests = () =>
+	const getTracksRequests = () =>
 		( window.fetch?.mock?.calls || [] ).filter(
-			( [ , options ] ) =>
-				options?.body?.get?.( 'action' ) === 'platform_tracks'
+			( [ url ] ) =>
+				url === 'https://example.test/wp-json/wc/v3/payments/tracks'
 		);
 
 	it( 'registers separate Apple Pay and Google Pay express methods', () => {
@@ -3038,7 +3040,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			expect( expressElement.mount ).toHaveBeenCalled();
 		} );
 
-		expect( getPlatformTracksRequests() ).toHaveLength( 0 );
+		expect( getTracksRequests() ).toHaveLength( 0 );
 	} );
 
 	it( 'records Google Pay load and click tracking events', async () => {
@@ -3062,7 +3064,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			expressHandlers.click( { resolve: jest.fn() } );
 		} );
 
-		const requests = getPlatformTracksRequests();
+		const requests = getTracksRequests();
 
 		expect( requests ).toHaveLength( 2 );
 		expect(
@@ -3075,6 +3077,17 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				JSON.parse( options.body.get( 'tracksEventProp' ) )
 			)
 		).toEqual( [ { source: 'checkout' }, { source: 'checkout' } ] );
+		// `getTrackingSettings` maps `tracks_url` and `nonce.tracks_rest` onto the shared recorder.
+		requests.forEach( ( [ , options ] ) => {
+			expect( options ).toEqual(
+				expect.objectContaining( {
+					method: 'POST',
+					headers: { 'X-WP-Nonce': 'rest-nonce' },
+				} )
+			);
+			expect( options.body.get( 'tracksNonce' ) ).toBe( 'tracks-nonce' );
+			expect( options.body.has( 'action' ) ).toBe( false );
+		} );
 		expect( onClick ).toHaveBeenCalled();
 	} );
 
@@ -3099,6 +3112,6 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			expressHandlers.click( { resolve: jest.fn() } );
 		} );
 
-		expect( getPlatformTracksRequests() ).toHaveLength( 0 );
+		expect( getTracksRequests() ).toHaveLength( 0 );
 	} );
 } );

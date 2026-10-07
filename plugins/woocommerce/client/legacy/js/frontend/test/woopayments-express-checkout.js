@@ -187,6 +187,7 @@ describe( 'WooPayments express checkout', () => {
 	function getBaseConfig() {
 		return {
 			ajax_url: 'https://example.test/admin-ajax.php',
+			tracks_url: 'https://example.test/wp-json/wc/v3/payments/tracks',
 			enabled_methods: [ 'payment_request' ],
 			button_context: 'checkout',
 			has_block: false,
@@ -196,6 +197,7 @@ describe( 'WooPayments express checkout', () => {
 				tokenized_cart_nonce: 'cart-nonce',
 				tokenized_cart_session_nonce: 'cart-session-nonce',
 				platform_tracker: 'tracks-nonce',
+				tracks_rest: 'rest-nonce',
 			},
 			checkout: {
 				currency_code: 'usd',
@@ -349,16 +351,13 @@ describe( 'WooPayments express checkout', () => {
 		};
 	}
 
-	function getPlatformTracksRequests() {
+	function getTracksRequests() {
 		return (
 			( window.fetch && window.fetch.mock && window.fetch.mock.calls ) ||
 			[]
 		).filter(
-			( [ , options ] ) =>
-				options &&
-				options.body &&
-				options.body.get &&
-				options.body.get( 'action' ) === 'platform_tracks'
+			( [ url ] ) =>
+				url === 'https://example.test/wp-json/wc/v3/payments/tracks'
 		);
 	}
 
@@ -576,15 +575,19 @@ describe( 'WooPayments express checkout', () => {
 			},
 		} );
 
-		const requests = getPlatformTracksRequests();
+		const requests = getTracksRequests();
 
 		expect( requests ).toHaveLength( 1 );
-		expect( requests[ 0 ][ 0 ] ).toBe(
-			'https://example.test/admin-ajax.php'
+		expect( requests[ 0 ][ 1 ] ).toEqual(
+			expect.objectContaining( {
+				method: 'POST',
+				headers: { 'X-WP-Nonce': 'rest-nonce' },
+			} )
 		);
 		expect( requests[ 0 ][ 1 ].body.get( 'tracksNonce' ) ).toBe(
 			'tracks-nonce'
 		);
+		expect( requests[ 0 ][ 1 ].body.has( 'action' ) ).toBe( false );
 		expect( requests[ 0 ][ 1 ].body.get( 'tracksEventName' ) ).toBe(
 			'applepay_button_load'
 		);
@@ -608,7 +611,7 @@ describe( 'WooPayments express checkout', () => {
 			resolve: resolveClick,
 		} );
 
-		const requests = getPlatformTracksRequests();
+		const requests = getTracksRequests();
 
 		expect( requests ).toHaveLength( 1 );
 		expect( requests[ 0 ][ 1 ].body.get( 'tracksEventName' ) ).toBe(
@@ -645,7 +648,7 @@ describe( 'WooPayments express checkout', () => {
 			resolve: jest.fn(),
 		} );
 
-		expect( getPlatformTracksRequests() ).toHaveLength( 0 );
+		expect( getTracksRequests() ).toHaveLength( 0 );
 	} );
 
 	test( 'mounts Stripe ECE with Amazon Pay when server config enables it', async () => {

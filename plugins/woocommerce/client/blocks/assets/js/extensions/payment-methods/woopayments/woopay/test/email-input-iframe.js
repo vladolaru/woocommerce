@@ -20,6 +20,8 @@ const baseSettings = {
 	testMode: true,
 	wcAjaxUrl: '/?wc-ajax=%%endpoint%%',
 	ajaxUrl: 'https://example.test/admin-ajax.php',
+	tracksUrl: 'https://example.test/wp-json/wc/v3/payments/tracks',
+	tracksRestNonce: 'rest-nonce',
 	platformTrackerNonce: 'tracks-nonce',
 	isShopperTrackingEnabled: true,
 	woopayHost: WOOPAY_HOST,
@@ -72,11 +74,7 @@ describe( 'WooPay email input (blocks)', () => {
 
 	const getTrackedEventNames = () =>
 		window.fetch.mock.calls
-			.filter(
-				( [ url, options ] ) =>
-					url === baseSettings.ajaxUrl &&
-					options?.body?.get( 'action' ) === 'platform_tracks'
-			)
+			.filter( ( [ url ] ) => url === baseSettings.tracksUrl )
 			.map( ( [ , options ] ) => options.body.get( 'tracksEventName' ) );
 
 	const typeEmail = async ( input, email ) => {
@@ -127,7 +125,8 @@ describe( 'WooPay email input (blocks)', () => {
 			[ `${ WOOPAY_HOST }/wp-json/platform-checkout/v1/user/exists?` ]: {
 				body: { 'user-exists': true },
 			},
-			// platform_tracks: wp_send_json_success() (includes/class-woopay-tracker.php:122).
+			// The only admin-ajax read here is get_identity: wp_send_json_success() (includes/class-woopay-tracker.php:128-134).
+			// This default carries no identity.
 			[ baseSettings.ajaxUrl ]: { body: { success: true } },
 		};
 		window.fetch = jest.fn( ( url ) => {

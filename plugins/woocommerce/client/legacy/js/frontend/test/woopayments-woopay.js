@@ -79,13 +79,14 @@ describe( 'WooPayments WooPay checkout', () => {
 		}
 	}
 
+	const TRACKS_URL = 'https://example.test/wp-json/wc/v3/payments/tracks';
+
+	function getTrackingRequests() {
+		return window.fetch.mock.calls.filter( ( [ url ] ) => url === TRACKS_URL );
+	}
+
 	function getTrackingEvents() {
-		return window.fetch.mock.calls
-			.filter(
-				( [ url, options ] ) =>
-					url === 'https://example.test/admin-ajax.php' &&
-					options.body.get( 'action' ) === 'platform_tracks'
-			)
+		return getTrackingRequests()
 			.map( ( [ , options ] ) => ( {
 				name: options.body.get( 'tracksEventName' ),
 				props: JSON.parse( options.body.get( 'tracksEventProp' ) ),
@@ -157,6 +158,8 @@ describe( 'WooPayments WooPay checkout', () => {
 		window.$ = jQueryMock;
 		window.wcpay_core_woopay_config = {
 			ajaxUrl: 'https://example.test/admin-ajax.php',
+			tracksUrl: TRACKS_URL,
+			tracksRestNonce: 'rest-nonce',
 			forceNetworkSavedCards: true,
 			initWooPayNonce: 'init-nonce',
 			isWooPayEnabled: true,
@@ -251,6 +254,16 @@ describe( 'WooPayments WooPay checkout', () => {
 				},
 			] )
 		);
+		getTrackingRequests().forEach( ( [ , options ] ) => {
+			expect( options ).toEqual(
+				expect.objectContaining( {
+					method: 'POST',
+					headers: { 'X-WP-Nonce': 'rest-nonce' },
+				} )
+			);
+			expect( options.body.get( 'tracksNonce' ) ).toBe( 'tracks-nonce' );
+			expect( options.body.has( 'action' ) ).toBe( false );
+		} );
 	} );
 
 	test( 'does not record WooPay tracking when shopper tracking is disabled', async () => {

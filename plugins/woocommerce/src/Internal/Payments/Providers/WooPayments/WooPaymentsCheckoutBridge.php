@@ -580,6 +580,8 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			'isWooPayGlobalThemeSupportEnabled'        => false,
 			'isShopperTrackingEnabled'                 => $this->get_frontend_tracking_controller()->is_shopper_tracking_enabled( false, true ),
 			'platformTrackerNonce'                     => wp_create_nonce( 'platform_tracks_nonce' ),
+			'tracksUrl'                                => $this->get_frontend_tracking_controller()->get_tracks_rest_url(),
+			'tracksRestNonce'                          => wp_create_nonce( 'wp_rest' ),
 			'woopayHost'                               => $this->get_woopay_session_service()->get_woopay_url(),
 			'accountIdForIntentConfirmation'           => $account_id_for_intent_confirmation,
 			'wcpayVersionNumber'                       => WooPaymentsClientVersion::VERSION,

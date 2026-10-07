@@ -17,6 +17,8 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
+		global $wp_rest_server;
+		$wp_rest_server = null; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Later tests build a fresh server.
 		remove_all_actions( 'wp_ajax_platform_tracks' );
 		remove_all_actions( 'wp_ajax_nopriv_platform_tracks' );
 		remove_all_actions( 'wp_ajax_get_identity' );
@@ -56,6 +58,74 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		$this->assertFalse( has_action( 'wp_ajax_nopriv_platform_tracks', array( $sut, 'handle_tracks' ) ) );
 		$this->assertFalse( has_action( 'wp_ajax_get_identity', array( $sut, 'handle_tracks_identity' ) ) );
 		$this->assertFalse( has_action( 'wp_ajax_nopriv_get_identity', array( $sut, 'handle_tracks_identity' ) ) );
+	}
+
+	/**
+	 * The shopper recorder's REST route (the Tracks event source scheme the owner approved on 2026-10-07), registered
+	 * only while native owns the runtime; the platform_tracks AJAX action stays as an alias for pages and scripts that
+	 * still post there.
+	 *
+	 * @testdox Should register the shopper Tracks REST route only while native owns the runtime.
+	 */
+	public function test_registers_the_tracks_rest_route_only_when_native_owns_the_runtime(): void {
+		$native = $this->create_controller( true );
+		$native->register();
+		$plugin = $this->create_controller( false );
+		$plugin->register();
+
+		try {
+			$this->assertSame( 10, has_action( 'rest_api_init', array( $native, 'register_rest_routes' ) ) );
+			$this->assertFalse( has_action( 'rest_api_init', array( $plugin, 'register_rest_routes' ) ) );
+			$this->assertArrayHasKey( '/wc/v3/payments/tracks', $this->get_rest_routes_after_init() );
+		} finally {
+			remove_action( 'rest_api_init', array( $native, 'register_rest_routes' ) );
+		}
+	}
+
+	/**
+	 * @testdox Should record a declared event posted to the REST route, and refuse an unknown event or a bad nonce.
+	 */
+	public function test_rest_route_records_declared_events_only(): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		$sut = $this->create_controller( true );
+		add_action( 'rest_api_init', array( $sut, 'register_rest_routes' ) );
+		$this->get_rest_routes_after_init();
+		remove_action( 'rest_api_init', array( $sut, 'register_rest_routes' ) );
+		$post = static function ( array $params ): \WP_REST_Response {
+			$request = new \WP_REST_Request( 'POST', '/wc/v3/payments/tracks' );
+			$request->set_body_params( $params );
+
+			return rest_get_server()->dispatch( $request );
+		};
+
+		\WC_Tracks_Footer_Pixel::clear_events();
+		$recorded = $post(
+			array(
+				'tracksNonce'     => wp_create_nonce( 'platform_tracks_nonce' ),
+				'tracksEventName' => 'cart_page_view',
+				'tracksEventProp' => wp_json_encode( array( 'theme_type' => 'blocks' ) ),
+			)
+		);
+		$events   = \WC_Tracks_Footer_Pixel::get_events();
+		\WC_Tracks_Footer_Pixel::clear_events();
+		$unknown = $post(
+			array(
+				'tracksNonce'     => wp_create_nonce( 'platform_tracks_nonce' ),
+				'tracksEventName' => 'free_text_event',
+			)
+		);
+		$forged  = $post(
+			array(
+				'tracksNonce'     => 'not-a-nonce',
+				'tracksEventName' => 'cart_page_view',
+			)
+		);
+
+		$this->assertSame( 200, $recorded->get_status(), wp_json_encode( $recorded->get_data() ) );
+		$this->assertSame( 'wcpay_cart_page_view', $events[0]->_en ?? null, wp_json_encode( $events ) );
+		$this->assertSame( 400, $unknown->get_status() );
+		$this->assertSame( 403, $forged->get_status() );
 	}
 
 	/**
@@ -462,6 +532,9 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		$params = json_decode( $matches[1], true );
 		$this->assertSame( array(), $params['events'] );
 		$this->assertSame( array( 'woopayDirectCheckout' => true ), $params['proceedToCheckout'] );
+		$this->assertSame( rest_url( 'wc/v3/payments/tracks' ), $params['tracksUrl'] );
+		$this->assertArrayHasKey( 'restNonce', $params );
+		$this->assertArrayNotHasKey( 'ajaxUrl', $params );
 	}
 
 	/**
@@ -604,6 +677,18 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 			'current script'     => array( 'proceed_to_checkout_button_click' ),
 			'page cached before' => array( 'wcpay_proceed_to_checkout_button_click' ),
 		);
+	}
+
+	/**
+	 * Build a fresh REST server, which fires rest_api_init, and return its routes.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_rest_routes_after_init(): array {
+		global $wp_rest_server;
+		$wp_rest_server = null; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- A fresh server runs rest_api_init again.
+
+		return rest_get_server()->get_routes();
 	}
 
 	/**

@@ -1171,6 +1171,8 @@ class WooPaymentsWooPaySessionService {
 			'forceNetworkSavedCards'            => $this->get_account_service()->is_network_saved_cards_enabled() || $this->should_use_stripe_platform_on_checkout_page(),
 			'ajaxUrl'                           => admin_url( 'admin-ajax.php' ),
 			'platformTrackerNonce'              => wp_create_nonce( 'platform_tracks_nonce' ),
+			'tracksUrl'                         => $this->get_frontend_tracking_controller()->get_tracks_rest_url(),
+			'tracksRestNonce'                   => wp_create_nonce( 'wp_rest' ),
 			'isShopperTrackingEnabled'          => $this->get_frontend_tracking_controller()->is_shopper_tracking_enabled(),
 			'woopayHost'                        => $this->get_woopay_url(),
 			'testMode'                          => $this->get_account_service()->is_test_mode_enabled(),

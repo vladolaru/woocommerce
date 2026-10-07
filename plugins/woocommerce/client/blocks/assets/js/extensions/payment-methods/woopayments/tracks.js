@@ -1,5 +1,5 @@
 /**
- * Record a WooPayments shopper event through the platform_tracks bridge.
+ * Record a WooPayments shopper event through the shopper Tracks REST route.
  *
  * @param {Object} paymentSettings Payment method settings.
  * @param {string} eventName       Event name without the wcpay_ prefix.
@@ -18,23 +18,26 @@ export const recordWooPaymentsUserEvent = (
 		return;
 	}
 
-	const ajaxUrl = paymentSettings?.ajaxUrl;
+	const tracksUrl = paymentSettings?.tracksUrl;
 	const nonce = paymentSettings?.platformTrackerNonce;
 
-	if ( ! ajaxUrl || ! nonce ) {
+	if ( ! tracksUrl || ! nonce ) {
 		return;
 	}
 
 	const body = new window.FormData();
 	body.append( 'tracksNonce', nonce );
-	body.append( 'action', 'platform_tracks' );
 	body.append( 'tracksEventName', eventName );
 	body.append( 'tracksEventProp', JSON.stringify( eventProperties ) );
 
 	window
-		.fetch( ajaxUrl, {
+		.fetch( tracksUrl, {
 			method: 'POST',
 			credentials: 'same-origin',
+			// The REST nonce keeps a logged-in shopper's session, which the Tracks nonce is tied to.
+			headers: paymentSettings?.tracksRestNonce
+				? { 'X-WP-Nonce': paymentSettings.tracksRestNonce }
+				: {},
 			body,
 		} )
 		.catch( () => {} );

@@ -301,7 +301,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 				'track_on_all_stores' => true,
 			),
 		);
-		$this->assertSame( admin_url( 'admin-ajax.php' ), $params['ajaxUrl'] );
+		$this->assertSame( rest_url( 'wc/v3/payments/tracks' ), $params['tracksUrl'] );
 		$this->assertSame( 1, wp_verify_nonce( $params['nonce'], 'platform_tracks_nonce' ) );
 		$this->assertSame(
 			array(
@@ -917,6 +917,8 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'Securely save my information for 1-click checkout', $config['woopaySaveUserLabel'] );
 		$this->assertSame( 'Mobile phone number', $config['woopayPhoneLabel'] );
 		$this->assertTrue( $config['isShopperTrackingEnabled'] );
+		$this->assertSame( rest_url( 'wc/v3/payments/tracks' ), $config['tracksUrl'] );
+		$this->assertNotFalse( wp_verify_nonce( $config['tracksRestNonce'], 'wp_rest' ) );
 		$this->assertFalse( $config['usesLegacySetupIntentBridge'] );
 		$this->assertFalse( $config['usesLegacyOrderStatusBridge'] );
 		$this->assertTrue( $config['usesNativeSetupIntentBridge'] );
@@ -2144,6 +2146,8 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		'woopayOtpCloseLabel',             // woopay/email-input-iframe.js:420, woopay/express-checkout-iframe.js:187.
 		'woopayUnavailableMessage',        // woopay/email-input-iframe.js:432.
 		'woopayExpressUnavailableMessage', // woopay/express-checkout-iframe.js:254.
+		'tracksUrl',                       // tracks.js:21, the shopper Tracks REST route.
+		'tracksRestNonce',                 // tracks.js:38-39, the REST nonce sent with it.
 	);
 
 	/**

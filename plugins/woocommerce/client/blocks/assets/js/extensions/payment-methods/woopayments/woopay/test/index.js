@@ -35,6 +35,8 @@ jest.mock( '@woocommerce/settings', () => {
 		platformTrackerNonce: 'tracks-nonce',
 		isShopperTrackingEnabled: true,
 		ajaxUrl: 'https://example.test/wp-admin/admin-ajax.php',
+		tracksUrl: 'https://example.test/wp-json/wc/v3/payments/tracks',
+		tracksRestNonce: 'rest-nonce',
 		wcAjaxUrl: '/?wc-ajax=%%endpoint%%',
 		woopayButton: {
 			type: 'default',
@@ -315,7 +317,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 				window.fetch.mock.calls.some(
 					( [ url, options ] ) =>
 						url ===
-							'https://example.test/wp-admin/admin-ajax.php' &&
+							'https://example.test/wp-json/wc/v3/payments/tracks' &&
 						options.body.get( 'tracksEventName' ) ===
 							'woopay_button_load'
 				)
@@ -324,18 +326,17 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 
 		await user.click( screen.getByRole( 'button', { name: 'WooPay' } ) );
 
+		const getTracksRequests = () =>
+			window.fetch.mock.calls.filter(
+				( [ url ] ) =>
+					url === 'https://example.test/wp-json/wc/v3/payments/tracks'
+			);
+
 		await waitFor( () => {
-			const events = window.fetch.mock.calls
-				.filter(
-					( [ url, options ] ) =>
-						url ===
-							'https://example.test/wp-admin/admin-ajax.php' &&
-						options.body.get( 'action' ) === 'platform_tracks'
-				)
-				.map( ( [ , options ] ) => ( {
-					name: options.body.get( 'tracksEventName' ),
-					props: JSON.parse( options.body.get( 'tracksEventProp' ) ),
-				} ) );
+			const events = getTracksRequests().map( ( [ , options ] ) => ( {
+				name: options.body.get( 'tracksEventName' ),
+				props: JSON.parse( options.body.get( 'tracksEventProp' ) ),
+			} ) );
 
 			expect( events ).toEqual(
 				expect.arrayContaining( [
@@ -349,6 +350,16 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 					},
 				] )
 			);
+		} );
+		getTracksRequests().forEach( ( [ , options ] ) => {
+			expect( options ).toEqual(
+				expect.objectContaining( {
+					method: 'POST',
+					headers: { 'X-WP-Nonce': 'rest-nonce' },
+				} )
+			);
+			expect( options.body.get( 'tracksNonce' ) ).toBe( 'tracks-nonce' );
+			expect( options.body.has( 'action' ) ).toBe( false );
 		} );
 	} );
 
@@ -684,7 +695,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 				window.fetch.mock.calls.some(
 					( [ url, options ] ) =>
 						url ===
-							'https://example.test/wp-admin/admin-ajax.php' &&
+							'https://example.test/wp-json/wc/v3/payments/tracks' &&
 						options.body.get( 'tracksEventName' ) ===
 							'woopay_button_load'
 				)

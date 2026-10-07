@@ -132,6 +132,8 @@ jest.mock( '@woocommerce/settings', () => {
 			},
 		},
 		ajaxUrl: 'https://example.test/wp-admin/admin-ajax.php',
+		tracksUrl: 'https://example.test/wp-json/wc/v3/payments/tracks',
+		tracksRestNonce: 'rest-nonce',
 	};
 
 	return {
@@ -380,12 +382,18 @@ describe( 'wc-payment-method-woopayments', () => {
 		await setupResult;
 
 		const trackingRequest = window.fetch.mock.calls.find(
-			( [ url, options ] ) =>
-				url === 'https://example.test/wp-admin/admin-ajax.php' &&
-				options.body.get( 'action' ) === 'platform_tracks'
+			( [ url ] ) =>
+				url === 'https://example.test/wp-json/wc/v3/payments/tracks'
 		);
 
 		expect( trackingRequest ).toBeDefined();
+		expect( trackingRequest[ 1 ] ).toEqual(
+			expect.objectContaining( {
+				method: 'POST',
+				headers: { 'X-WP-Nonce': 'rest-nonce' },
+			} )
+		);
+		expect( trackingRequest[ 1 ].body.has( 'action' ) ).toBe( false );
 		expect( trackingRequest[ 1 ].body.get( 'tracksNonce' ) ).toBe(
 			'tracks-nonce'
 		);
@@ -402,7 +410,7 @@ describe( 'wc-payment-method-woopayments', () => {
 
 		recordWooPaymentsUserEvent(
 			{
-				ajaxUrl: 'https://example.test/wp-admin/admin-ajax.php',
+				tracksUrl: 'https://example.test/wp-json/wc/v3/payments/tracks',
 				platformTrackerNonce: 'tracks-nonce',
 				isShopperTrackingEnabled: false,
 			},
@@ -728,10 +736,9 @@ describe( 'wc-payment-method-woopayments', () => {
 		await waitFor( () => {
 			const events = window.fetch.mock.calls
 				.filter(
-					( [ url, options ] ) =>
+					( [ url ] ) =>
 						url ===
-							'https://example.test/wp-admin/admin-ajax.php' &&
-						options.body.get( 'action' ) === 'platform_tracks'
+						'https://example.test/wp-json/wc/v3/payments/tracks'
 				)
 				.map( ( [ , options ] ) => ( {
 					name: options.body.get( 'tracksEventName' ),
@@ -1227,10 +1234,9 @@ describe( 'wc-payment-method-woopayments', () => {
 		const trackedNames = () =>
 			window.fetch.mock.calls
 				.filter(
-					( [ url, options ] ) =>
+					( [ url ] ) =>
 						url ===
-							'https://example.test/wp-admin/admin-ajax.php' &&
-						options.body.get( 'action' ) === 'platform_tracks'
+						'https://example.test/wp-json/wc/v3/payments/tracks'
 				)
 				.map( ( [ , options ] ) =>
 					options.body.get( 'tracksEventName' )
