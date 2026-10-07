@@ -23,11 +23,11 @@
 			"allow_missing": true
 		},
 		"classic-card.css": {
-			"raw_growth_bytes": 2633,
-			"gzip_growth_bytes": 747
+			"raw_growth_bytes": 2780,
+			"gzip_growth_bytes": 778
 		},
 		"woopay-direct-checkout.js": {
-			"raw_bytes": 27769,
+			"raw_bytes": 28321,
 			"gzip_bytes": 10391
 		},
 		"woopay.js": {
