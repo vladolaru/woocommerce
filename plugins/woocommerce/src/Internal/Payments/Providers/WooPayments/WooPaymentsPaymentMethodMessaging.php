@@ -476,7 +476,13 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 			),
 		);
 
-		foreach ( $product->get_children() as $variation_id ) {
+		$variation_ids = $product->get_children();
+		if ( ! empty( $variation_ids ) ) {
+			// Load the variations' posts and meta in one go instead of once per variation below.
+			_prime_post_caches( $variation_ids );
+		}
+
+		foreach ( $variation_ids as $variation_id ) {
 			$variation = wc_get_product( $variation_id );
 			if ( $variation instanceof WC_Product ) {
 				$product_variations[ (string) $variation_id ] = array(
