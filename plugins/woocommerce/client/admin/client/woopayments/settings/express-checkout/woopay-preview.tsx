@@ -96,13 +96,13 @@ const getFontRules = ( value: unknown ): FontRule[] =>
 				.map( ( item ) => ( { cssSrc: getString( item.cssSrc ) } ) )
 		: [];
 
+// Client 11.1.0 `woopay-preview.js:428` concatenates the preloaded REST root, which also works on Plain permalinks.
 const getFileUrl = ( fileId: string ) => {
-	const bootstrap = getWooPaymentsSettingsBootstrap();
-	const restUrl =
-		getString( bootstrap.restUrl ) ||
-		`${ window.location.origin }/wp-json/`;
+	const restUrl = getString( getWooPaymentsSettingsBootstrap().restUrl );
 
-	return `${ restUrl.replace( /\/$/, '' ) }/wc/v3/payments/file/${ fileId }`;
+	return restUrl
+		? `${ restUrl.replace( /\/$/, '' ) }/wc/v3/payments/file/${ fileId }`
+		: '';
 };
 
 const getThemedStyles = ( appearance?: WooPayAppearance ): ThemedStyles => {
@@ -397,10 +397,12 @@ const getStoreHeader = ( {
 	storeName: string;
 	themedHeaderText?: CSSProperties;
 } ) => {
-	if ( storeLogo ) {
+	const storeLogoUrl = storeLogo ? getFileUrl( storeLogo ) : '';
+
+	if ( storeLogoUrl ) {
 		return (
 			<img
-				src={ getFileUrl( storeLogo ) }
+				src={ storeLogoUrl }
 				alt={ __( 'Store logo', 'woocommerce' ) }
 			/>
 		);

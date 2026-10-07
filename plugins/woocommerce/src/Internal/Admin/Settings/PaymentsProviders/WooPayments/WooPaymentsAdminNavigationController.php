@@ -481,6 +481,8 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		// Plugin 11.1.0 `class-wc-payments-admin.php:930-935,1046`: the list exports send it as `user_email`, the address the platform emails the file to.
 		$current_user                                        = wp_get_current_user();
 		$settings['woopaymentsSettings']['currentUserEmail'] = $current_user->user_email ? $current_user->user_email : get_option( 'admin_email' );
+		// Plugin 11.1.0 `class-wc-payments-admin.php:1048`: the REST root for file URLs, which also works on Plain permalinks.
+		$settings['woopaymentsSettings']['restUrl'] = get_rest_url( null, '' );
 
 		$current_path = $this->get_request_scalar( $_GET, 'path' ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only route check.
 		// Plugin 11.1.0 has the Overview's account data in the page, so the page renders before any request.

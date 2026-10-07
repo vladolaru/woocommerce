@@ -264,6 +264,20 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should preload the REST root the settings page builds file URLs from.
+	 *
+	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:1048` (`restUrl`, for stores on Plain permalinks), which
+	 * `client/settings/express-checkout-settings/woopay-preview.js:428` concatenates for the store logo.
+	 */
+	public function test_preloads_rest_url_for_file_urls(): void {
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		$sut          = $this->create_controller( true );
+
+		$this->assertSame( get_rest_url( null, '' ), $sut->preload_shared_settings( array() )['woopaymentsSettings']['restUrl'] );
+	}
+
+	/**
 	 * @testdox Should preload whether manual capture is on, which shows the Uncaptured transactions tab.
 	 *
 	 * Source: plugin 11.1.0 `client/transactions/index.tsx:63-72` (`getIsManualCaptureEnabled`).
