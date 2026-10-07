@@ -84,9 +84,6 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 */
 	public const QUERY_ACTION = 'wc_woopayments_cutover_action';
 
-	/** Legacy query parameter retained for URL compatibility. */
-	public const QUERY_STATUS = 'wc_woopayments_cutover_status';
-
 	/**
 	 * Admin action that dismisses a completion notice.
 	 *
@@ -107,20 +104,6 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @var string
 	 */
 	public const DISMISS_NONCE_ACTION = 'woocommerce_woopayments_cutover_dismiss_notice';
-
-	/**
-	 * Legacy status value retained for URL compatibility.
-	 *
-	 * @var string
-	 */
-	public const STATUS_DISABLED = 'disabled';
-
-	/**
-	 * Legacy blocked value retained for URL compatibility.
-	 *
-	 * @var string
-	 */
-	public const STATUS_BLOCKED = 'blocked';
 
 	/** WooPayments' canonical payment gateway identity. */
 	private const WOOPAYMENTS_GATEWAY_ID = 'woocommerce_payments';
@@ -289,19 +272,6 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		}
 
 		$this->output_reconciliation_notice();
-	}
-
-	/**
-	 * Tell whether the soft cutover notice should be shown.
-	 *
-	 * @return bool
-	 */
-	public function should_show_soft_cutover_notice(): bool {
-		if ( ! $this->is_start_eligible() ) {
-			return false;
-		}
-		$this->reconciliation_job->classify_for_admin_notice();
-		return $this->reconciliation_job->should_offer_start();
 	}
 
 	/**

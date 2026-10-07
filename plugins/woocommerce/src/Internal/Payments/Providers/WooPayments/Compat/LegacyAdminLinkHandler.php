@@ -106,32 +106,20 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( false === has_action( 'admin_init', array( $this, 'handle_request' ) ) ) {
-			add_action( 'admin_init', array( $this, 'handle_request' ) );
-		}
+		add_action( 'admin_init', array( $this, 'handle_request' ) );
 
-		if ( false === has_action( 'admin_init', array( $this, 'handle_login_request' ) ) ) {
-			add_action( 'admin_init', array( $this, 'handle_login_request' ) );
-		}
+		add_action( 'admin_init', array( $this, 'handle_login_request' ) );
 
-		if ( false === has_action( 'admin_init', array( $this, 'handle_reconnect_wpcom_request' ) ) ) {
-			add_action( 'admin_init', array( $this, 'handle_reconnect_wpcom_request' ) );
-		}
+		add_action( 'admin_init', array( $this, 'handle_reconnect_wpcom_request' ) );
 
 		// Priority 9 runs before the legacy route redirect, which would otherwise leave the connect page first.
-		if ( false === has_action( 'admin_init', array( $this, 'handle_kyc_reminder_return' ) ) ) {
-			add_action( 'admin_init', array( $this, 'handle_kyc_reminder_return' ), 9 );
-		}
+		add_action( 'admin_init', array( $this, 'handle_kyc_reminder_return' ), 9 );
 
 		// Priority 9 also finalizes a hosted KYC return before the legacy route redirect sends it on to Overview.
-		if ( false === has_action( 'admin_init', array( $this, 'handle_hosted_kyc_return' ) ) ) {
-			add_action( 'admin_init', array( $this, 'handle_hosted_kyc_return' ), 9 );
-		}
+		add_action( 'admin_init', array( $this, 'handle_hosted_kyc_return' ), 9 );
 
 		// The Capital controller loads only for REST requests, after admin_init, so its own hook never ran.
-		if ( false === has_action( 'admin_init', array( $this, 'handle_loan_offer_request' ) ) ) {
-			add_action( 'admin_init', array( $this, 'handle_loan_offer_request' ), 12 );
-		}
+		add_action( 'admin_init', array( $this, 'handle_loan_offer_request' ), 12 );
 	}
 
 	/**

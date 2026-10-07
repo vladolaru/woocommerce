@@ -1577,7 +1577,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 		$this->assertNull( $sut->classify_for_admin_notice() );
 		$this->assertSame( 0, $preflight->scans, 'Every admin page would otherwise scan Action Scheduler, order meta and tables.' );
-		$this->assertNull( $sut->get_state_record() );
+		$this->assertNull( $this->require_state_store()->get_record() );
 	}
 
 	/**

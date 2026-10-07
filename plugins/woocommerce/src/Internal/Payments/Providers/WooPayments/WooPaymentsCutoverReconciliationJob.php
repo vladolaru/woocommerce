@@ -21,9 +21,6 @@ defined( 'ABSPATH' ) || exit;
  */
 class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 
-	/** State option name. */
-	public const STATE_OPTION = WooPaymentsCutoverStateStore::OPTION_NAME;
-
 	/** Autoloaded admin-notice Stripe Billing classification, keyed by record revision. */
 	public const ADMIN_CLASSIFICATION_OPTION = 'woocommerce_woopayments_cutover_admin_classification';
 
@@ -2093,17 +2090,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 */
 	protected function write_log_error( string $message, array $context ): void {
 		wc_get_logger()->error( $message, $context );
-	}
-
-	/**
-	 * Read the current validated state record.
-	 *
-	 * @since 11.2.0
-	 *
-	 * @return array<string,mixed>|null
-	 */
-	public function get_state_record(): ?array {
-		return $this->state_store->get_record();
 	}
 
 	/**

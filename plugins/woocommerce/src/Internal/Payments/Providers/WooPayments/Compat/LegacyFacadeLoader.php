@@ -57,9 +57,7 @@ class LegacyFacadeLoader implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( false === has_action( 'plugins_loaded', array( $this, 'load' ) ) ) {
-			add_action( 'plugins_loaded', array( $this, 'load' ), 0 );
-		}
+		add_action( 'plugins_loaded', array( $this, 'load' ), 0 );
 	}
 
 	/**

@@ -78,15 +78,11 @@ class WooPaymentsWooPayVerifiedEmailRestoreService implements RegisterHooksInter
 		}
 		self::$registered_instance = $this;
 
-		if ( false === has_action( self::RESTORE_CUSTOMER_ID_HOOK, array( $this, 'restore_order_customer_id' ) ) ) {
-			add_action( self::RESTORE_CUSTOMER_ID_HOOK, array( $this, 'restore_order_customer_id' ), 10, 1 );
-		}
+		add_action( self::RESTORE_CUSTOMER_ID_HOOK, array( $this, 'restore_order_customer_id' ), 10, 1 );
 		foreach ( array( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION ) as $option_name ) {
 			foreach ( array( 'add', 'update', 'delete' ) as $operation ) {
 				$hook_name = "{$operation}_option_{$option_name}";
-				if ( false === has_action( $hook_name, array( $this, 'handle_native_runtime_option_change' ) ) ) {
-					add_action( $hook_name, array( $this, 'handle_native_runtime_option_change' ), 10, 0 );
-				}
+				add_action( $hook_name, array( $this, 'handle_native_runtime_option_change' ), 10, 0 );
 			}
 		}
 	}
@@ -127,9 +123,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreService implements RegisterHooksInter
 
 		if ( ! did_action( self::ORDER_CRUD_READY_HOOK ) ) {
 			$this->pending_drain_blog_ids[ get_current_blog_id() ] = true;
-			if ( false === has_action( self::ORDER_CRUD_READY_HOOK, array( $this, 'drain_current_blog' ) ) ) {
-				add_action( self::ORDER_CRUD_READY_HOOK, array( $this, 'drain_current_blog' ), 10, 0 );
-			}
+			add_action( self::ORDER_CRUD_READY_HOOK, array( $this, 'drain_current_blog' ), 10, 0 );
 			return;
 		}
 

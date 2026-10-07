@@ -342,7 +342,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		}
 		$multisite_blog_ids       = $this->multisite_blog_ids;
 		$this->multisite_blog_ids = array();
-		unset( $_GET[ WooPaymentsCutoverController::QUERY_ACTION ], $_GET[ WooPaymentsCutoverController::NONCE_NAME ], $_GET[ WooPaymentsCutoverController::QUERY_STATUS ], $_GET[ WooPaymentsCutoverController::QUERY_NOTICE ] );
+		unset( $_GET[ WooPaymentsCutoverController::QUERY_ACTION ], $_GET[ WooPaymentsCutoverController::NONCE_NAME ], $_GET[ WooPaymentsCutoverController::QUERY_NOTICE ] );
 		delete_transient( 'woocommerce_woopayments_native_cutover_status' );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'woocommerce_woocommerce_payments_version' );
@@ -408,8 +408,9 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_current_user_caps( true );
 		$this->enable_ready_cutover();
 
-		$this->assertTrue(
-			$this->sut->should_show_soft_cutover_notice(),
+		$this->assertStringContainsString(
+			'Start the switch',
+			$this->render_admin_notices( $this->sut ),
 			'The notice should show only when the merchant can safely disable the plugin.'
 		);
 	}
@@ -424,7 +425,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 
 		$controller = $this->create_cutover_controller( null, null, false );
 
-		$this->assertFalse( $controller->should_show_soft_cutover_notice() );
+		$this->assertStringNotContainsString( 'Start the switch', $this->render_admin_notices( $controller ) );
 		$this->assertFalse( $controller->disable_woopayments_plugin() );
 	}
 
@@ -436,11 +437,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_current_user_caps( true );
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		$job = new class() extends WooPaymentsCutoverReconciliationJob {
-			/** @return array<string,mixed>|null */
-			public function get_state_record(): ?array {
-				return null;
-			}
-
 			/** @return array<string,mixed>|null */
 			public function classify_for_admin_notice(): ?array {
 				return null;
@@ -682,16 +678,11 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			}
 
 			/** @return array<string,mixed>|null */
-			public function get_state_record(): ?array {
+			public function classify_for_admin_notice(): ?array {
 				return array(
 					'state'                  => $this->state,
 					'informational_outcomes' => array(),
 				);
-			}
-
-			/** @return array<string,mixed>|null */
-			public function classify_for_admin_notice(): ?array {
-				return $this->get_state_record();
 			}
 
 			/** Do not emit reconnect information. */
@@ -894,7 +885,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_mandatory_activation_guard_allows_reactivation_when_plugin_evidence_exists(): void {
 		$this->enable_ready_cutover();
 		add_filter( WooPaymentsCutoverController::FILTER_MANDATORY_CUTOVER_ENABLED, '__return_true' );
-		$controller = $this->create_cutover_controller( null, $this->create_completed_cutover_job() );
+		$controller = $this->create_cutover_controller();
 
 		$controller->guard_woopayments_activation();
 
@@ -1038,11 +1029,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_woocommerce_payments_version' );
 		$this->enable_native_runtime_owner();
 		$job = new class() extends WooPaymentsCutoverReconciliationJob {
-			/** @return array<string,mixed>|null */
-			public function get_state_record(): ?array {
-				return null;
-			}
-
 			/**
 			 * Return whether lifecycle work is job-owned.
 			 *
@@ -1088,11 +1074,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_wp_die_handler();
 		add_filter( WooPaymentsCutoverController::FILTER_MANDATORY_CUTOVER_ENABLED, '__return_true' );
 		$job        = new class() extends WooPaymentsCutoverReconciliationJob {
-			/** Return active durable work. */
-			public function get_state_record(): ?array {
-				return array( 'state' => WooPaymentsCutoverState::DEFERRED );
-			}
-
 			/** Return an external lifecycle event. */
 			public function is_internal_plugin_lifecycle_change(): bool {
 				return false;
@@ -1136,7 +1117,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_wp_die_handler();
 		$this->enable_ready_cutover();
 		delete_option( 'woocommerce_woocommerce_payments_version' );
-		$controller = $this->create_cutover_controller( null, $this->create_completed_cutover_job() );
+		$controller = $this->create_cutover_controller();
 
 		$this->expectException( WooPaymentsCutoverBlockedException::class );
 
@@ -1694,11 +1675,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			$admin_navigation_controller ?? $this->create_admin_navigation_controller( true )
 		);
 		$job             = $job ?? new class() extends WooPaymentsCutoverReconciliationJob {
-			/** Return no durable state. */
-			public function get_state_record(): ?array {
-				return null;
-			}
-
 			/** Return no durable state after notice classification. */
 			public function classify_for_admin_notice(): ?array {
 				return null;
@@ -1756,21 +1732,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			/** Return an eligible platform account. */
 			public function is_native_eligible(): bool {
 				return true;
-			}
-		};
-	}
-
-	/** Create a durable completed-state double for activation-guard tests. */
-	private function create_completed_cutover_job(): WooPaymentsCutoverReconciliationJob {
-		return new class() extends WooPaymentsCutoverReconciliationJob {
-			/** Return one completed generation. */
-			public function get_state_record(): ?array {
-				return array( 'state' => WooPaymentsCutoverState::DONE );
-			}
-
-			/** Return an external lifecycle event. */
-			public function is_internal_plugin_lifecycle_change(): bool {
-				return false;
 			}
 		};
 	}
