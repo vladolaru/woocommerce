@@ -285,11 +285,16 @@ async function expectMultiCurrencySurfaceLoaded( page: Page ): Promise< void > {
 		page.getByRole( 'heading', { name: 'Store settings' } )
 	).toBeVisible();
 	// Loading states must settle; both the currencies list and the store
-	// settings section render explicit pending copy.
-	await expect( page.getByText( 'Loading currencies…' ) ).toHaveCount( 0 );
-	await expect( page.getByText( 'Loading store settings…' ) ).toHaveCount(
+	// settings section render explicit pending copy. The page content is
+	// checked, not the whole document: WordPress's screen-reader live region
+	// keeps the last loading announcement after loading ends.
+	const pageContent = page.locator( '#wpbody-content' );
+	await expect( pageContent.getByText( 'Loading currencies…' ) ).toHaveCount(
 		0
 	);
+	await expect(
+		pageContent.getByText( 'Loading store settings…' )
+	).toHaveCount( 0 );
 	// Client 11.1.0 multi-currency/client/data/resolvers.js:31,65: a failed
 	// read is reported only by these snackbars.
 	await expect(
