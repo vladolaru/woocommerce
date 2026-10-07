@@ -221,8 +221,14 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->sut                          = $this->create_controller( true, true, $service );
 
 		$this->set_checkout_shortcode_page();
+		// The source URL is the page permalink core's Blocks settings use, not wc_get_checkout_url() and its filter.
+		$filter_checkout_url = static function (): string {
+			return 'https://example.test/filtered-checkout/';
+		};
+		add_filter( 'woocommerce_get_checkout_url', $filter_checkout_url );
 
 		$this->sut->enqueue_frontend_assets();
+		remove_filter( 'woocommerce_get_checkout_url', $filter_checkout_url );
 
 		$this->assertTrue( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
 		$this->assertTrue( wp_style_is( 'wc-woopayments-woopay', 'enqueued' ) );

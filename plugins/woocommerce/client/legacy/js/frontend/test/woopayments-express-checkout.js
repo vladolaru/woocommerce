@@ -2,9 +2,9 @@
  * @jest-environment jest-fixed-jsdom
  */
 
-// Stand-in for the wp-i18n script the page loads (@wordpress/i18n __, _n and sprintf; its sprintf wraps sprintf-js,
-// @wordpress/i18n src/sprintf.ts). It returns the English source strings and fills only the placeholders these scripts
-// use: %s, %d and positional %1$s; escapes, flags and widths are not modelled.
+// Stand-in for the wp-i18n script the page loads (@wordpress/i18n __, _n and sprintf). It returns the English source
+// strings and fills only the placeholders these scripts use: %s, %d and positional %1$s; escapes, flags and widths
+// are not modelled.
 function createI18nStub() {
 	return {
 		__: ( text ) => text,
@@ -504,7 +504,7 @@ describe( 'WooPayments express checkout', () => {
 
 	test( 'keeps one Stripe instance across checkout refreshes and replaces the wallet element', async () => {
 		// One Elements group and Express Checkout Element per initialization, as client 11.1.0
-		// shortcode-buttons-express/index.js:227-270 creates them, with the unmount it calls on a re-render (:337-338).
+		// shortcode-buttons-express/index.js:227-270 creates them; native unmounts the previous element first.
 		const firstElement = {
 			mount: jest.fn(),
 			on: jest.fn(),

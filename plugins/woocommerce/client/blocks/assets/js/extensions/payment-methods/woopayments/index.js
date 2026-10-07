@@ -706,7 +706,7 @@ const persistWooPaySaveUser = async (
 	shouldClear = false
 ) => {
 	if ( ! paymentSettings.woopaySessionNonce || ! window.fetch ) {
-		return;
+		return false;
 	}
 
 	const body = new window.URLSearchParams();
@@ -721,9 +721,9 @@ const persistWooPaySaveUser = async (
 		body.append( 'woopay_user_phone_field[full]', phone || '' );
 	}
 
-	// Nothing waits on this request; a failed one leaves the session as it was, which the next change retries.
+	// Resolves whether the request went through; a failed one leaves the session as it was.
 	try {
-		await window.fetch(
+		const response = await window.fetch(
 			buildWooPayAjaxUrl( paymentSettings, 'set_woopay_phone_number' ),
 			{
 				method: 'POST',
@@ -735,7 +735,10 @@ const persistWooPaySaveUser = async (
 				body,
 			}
 		);
-	} catch ( error ) {}
+		return Boolean( response ) && response.ok !== false;
+	} catch ( error ) {
+		return false;
+	}
 };
 
 // Client 11.1.0 client/components/woopay/save-user/additional-information.js.
@@ -854,7 +857,8 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 	);
 	const isWooPayUser = useIsWooPayUser();
 	const isOfferApplicable = isWooPaymentsChosen && ! isWooPayUser;
-	const hasSentUserData = useRef( false );
+	// What the session holds as far as this section knows: null (nothing stored), 'empty' or the stored number.
+	const storedUserData = useRef( null );
 	const initialIsSavingUser = useRef(
 		Boolean( paymentSettings.PRE_CHECK_SAVE_MY_INFO )
 	);
@@ -943,25 +947,40 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 		[]
 	);
 
-	// Client 11.1.0 checkout-page-save-user.js:184-223, :274-302 keeps the session in step with the offer: a stored
-	// opt-in is cleared once the shopper picks another method or is a WooPay user, and stored again while the box is
-	// checked and the number valid, so returning to WooPayments restores it.
+	// Client 11.1.0 checkout-page-save-user.js:115-144, :155-160, :184-223, :274-302 keeps the session in step from one
+	// place: the number is stored whenever the box is checked and the number valid (so each valid change, and a return to
+	// WooPayments, stores it again), and a stored opt-in is cleared on uncheck or once the offer stops applying. Only a
+	// change of what should be stored sends a request; a failed one is sent again on the next change.
 	useEffect( () => {
-		if ( ! isOfferApplicable ) {
-			if ( hasSentUserData.current ) {
-				hasSentUserData.current = false;
-				persistWooPaySaveUser( paymentSettings, false, '', true );
-			}
-			return;
-		}
-
 		const canStore =
 			isPhoneValid === true ||
 			( isPhoneValid === null && isPhoneValidationUnavailable );
-		if ( isSavingUser && canStore && ! hasSentUserData.current ) {
-			hasSentUserData.current = true;
-			persistWooPaySaveUser( paymentSettings, true, fullPhone );
+		let next = null;
+
+		if ( isOfferApplicable && isSavingUser ) {
+			next = canStore ? fullPhone : null;
+		} else if (
+			storedUserData.current &&
+			storedUserData.current !== 'empty'
+		) {
+			next = 'empty';
 		}
+
+		if ( next === null || next === storedUserData.current ) {
+			return;
+		}
+
+		storedUserData.current = next;
+		persistWooPaySaveUser(
+			paymentSettings,
+			next !== 'empty',
+			next === 'empty' ? '' : next,
+			next === 'empty'
+		).then( ( isStored ) => {
+			if ( ! isStored && storedUserData.current === next ) {
+				storedUserData.current = null;
+			}
+		} );
 	}, [
 		isOfferApplicable,
 		isSavingUser,
@@ -992,13 +1011,6 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 			{
 				status: checked ? 'checked' : 'unchecked',
 			}
-		);
-		hasSentUserData.current = checked;
-		persistWooPaySaveUser(
-			paymentSettings,
-			checked,
-			checked ? normalizeWooPayPhone( nextPhone ) : '',
-			! checked
 		);
 	};
 
@@ -1094,18 +1106,7 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 							onChange={ ( event ) =>
 								setPhone( event.target.value )
 							}
-							onBlur={ () => {
-								setIsPhoneTouched( true );
-								if ( isPhoneValid === false ) {
-									return;
-								}
-								hasSentUserData.current = true;
-								persistWooPaySaveUser(
-									paymentSettings,
-									true,
-									fullPhone
-								);
-							} }
+							onBlur={ () => setIsPhoneTouched( true ) }
 						/>
 						{ /* The number WooPay receives, with its country code, as the client's phone input posts. */ }
 						<input

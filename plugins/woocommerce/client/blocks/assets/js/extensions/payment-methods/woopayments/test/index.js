@@ -188,9 +188,25 @@ describe( 'wc-payment-method-woopayments', () => {
 		act( () => storeListeners.forEach( ( listener ) => listener() ) );
 	};
 
+	// The validation store (wc/store/validation): errors set through dispatch are what getValidationError() returns.
+	let validationErrors;
+
 	beforeEach( () => {
 		activePaymentMethod = 'woocommerce_payments';
 		storeListeners.clear();
+		validationErrors = {};
+		mockValidationActions.setValidationErrors.mockImplementation(
+			( errors ) => {
+				Object.assign( validationErrors, errors );
+				storeListeners.forEach( ( listener ) => listener() );
+			}
+		);
+		mockValidationActions.clearValidationError.mockImplementation(
+			( id ) => {
+				delete validationErrors[ id ];
+				storeListeners.forEach( ( listener ) => listener() );
+			}
+		);
 		useSelect.mockImplementation( ( callback ) => {
 			const [ , rerender ] = useReducer( ( count ) => count + 1, 0 );
 
@@ -201,7 +217,7 @@ describe( 'wc-payment-method-woopayments', () => {
 
 			return callback( () => ( {
 				getActivePaymentMethod: () => activePaymentMethod,
-				getValidationError: () => undefined,
+				getValidationError: ( id ) => validationErrors[ id ],
 				getPaymentMethodData: () => ( {
 					payment_method: 'woocommerce_payments',
 					'wc-woocommerce_payments-payment-token': '12',
@@ -802,6 +818,89 @@ describe( 'wc-payment-method-woopayments', () => {
 			getPhoneErrorCalls().pop()[ 0 ][ 'invalid-woopay-phone-number' ]
 				.hidden
 		).toBe( false );
+	} );
+
+	it( 'shows the WooPay phone error under the field once the shopper leaves it', async () => {
+		window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
+		renderSaveUserSection();
+		const phoneField = await screen.findByLabelText(
+			'Mobile phone number'
+		);
+
+		fireEvent.change( phoneField, { target: { value: '123' } } );
+		expect( screen.queryByRole( 'alert' ) ).not.toBeInTheDocument();
+
+		fireEvent.blur( phoneField );
+
+		expect( screen.getByRole( 'alert' ) ).toHaveTextContent(
+			'Please enter a valid mobile phone number.'
+		);
+		expect( phoneField ).toHaveAttribute( 'aria-invalid', 'true' );
+	} );
+
+	it( 'blocks the checkout while the phone validation script loads and not after it fails to load', async () => {
+		const settings = jest.requireMock( '@woocommerce/settings' );
+		const defaultData = settings.getPaymentMethodData();
+		settings.getPaymentMethodData.mockImplementation( () => ( {
+			...defaultData,
+			woopayPhoneValidationScriptUrl:
+				'https://example.test/failing-phone-validation.js',
+		} ) );
+		renderSaveUserSection();
+		await screen.findByLabelText( 'Mobile phone number' );
+
+		expect( validationErrors ).toHaveProperty(
+			'invalid-woopay-phone-number'
+		);
+
+		act( () => {
+			document
+				.querySelector(
+					'script[src="https://example.test/failing-phone-validation.js"]'
+				)
+				.dispatchEvent( new window.Event( 'error' ) );
+		} );
+
+		await waitFor( () => {
+			expect( validationErrors ).not.toHaveProperty(
+				'invalid-woopay-phone-number'
+			);
+		} );
+		settings.getPaymentMethodData.mockImplementation( () => defaultData );
+	} );
+
+	it( 'stores each valid WooPay phone change without waiting for blur', async () => {
+		window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
+		renderSaveUserSection();
+		const phoneField = await screen.findByLabelText(
+			'Mobile phone number'
+		);
+
+		fireEvent.change( phoneField, { target: { value: '2015550123' } } );
+		fireEvent.change( phoneField, { target: { value: '2015550188' } } );
+
+		const requests = getSaveUserRequests();
+		expect(
+			requests[ requests.length - 1 ].get(
+				'woopay_user_phone_field[full]'
+			)
+		).toBe( '+12015550188' );
+	} );
+
+	it( 'sends the WooPay opt-in again after a failed request when the number changes', async () => {
+		window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
+		renderSaveUserSection();
+		const phoneField = await screen.findByLabelText(
+			'Mobile phone number'
+		);
+		window.fetch.mockRejectedValueOnce( new Error( 'offline' ) );
+
+		fireEvent.change( phoneField, { target: { value: '2015550123' } } );
+		await act( async () => {} );
+		const failedCount = getSaveUserRequests().length;
+		fireEvent.change( phoneField, { target: { value: '2015550188' } } );
+
+		expect( getSaveUserRequests().length ).toBe( failedCount + 1 );
 	} );
 
 	it( 'clears the WooPay phone error for a valid number', async () => {

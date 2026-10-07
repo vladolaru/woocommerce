@@ -1719,9 +1719,10 @@
 		);
 	}
 
-	// Client 11.1.0 checkout-page-save-user.js:176-181, :389-398: the classic message shows for an invalid number, and
-	// for any number not known to be valid once the shopper places the order; it does not stop the submission.
-	function updateWooPayPhoneError( isPlacingOrder ) {
+	// Client 11.1.0 checkout-page-save-user.js:176-181, :389-398: the classic message shows for an invalid number, on
+	// blur and when the shopper places the order; it does not stop the submission. Without the validation script the
+	// number cannot be judged, so nothing shows.
+	function updateWooPayPhoneError() {
 		var checkbox = document.querySelector(
 			'input[name="save_user_in_woopay"]'
 		);
@@ -1738,10 +1739,7 @@
 			checkbox &&
 			checkbox.checked &&
 			isSaveUserOfferApplicable() &&
-			( isValid === false ||
-				( isPlacingOrder &&
-					isValid === null &&
-					window.wcWooPaymentsPhoneValidation ) )
+			isValid === false
 		);
 	}
 
@@ -1909,7 +1907,7 @@
 			}
 			loadPhoneValidation().then( function () {
 				syncWooPayPhone();
-				updateWooPayPhoneError( false );
+				updateWooPayPhoneError();
 			} );
 		}
 
@@ -1919,15 +1917,15 @@
 				status: checkbox.checked ? 'checked' : 'unchecked',
 			} );
 			validateWhenOptedIn();
-			updateWooPayPhoneError( false );
+			updateWooPayPhoneError();
 		} );
 		phoneField.addEventListener( 'input', syncWooPayPhone );
 		phoneField.addEventListener( 'blur', function () {
 			syncWooPayPhone();
-			updateWooPayPhoneError( false );
+			updateWooPayPhoneError();
 		} );
 		$( form ).on( 'checkout_place_order', function () {
-			updateWooPayPhoneError( true );
+			updateWooPayPhoneError();
 		} );
 		updateSaveUserVisibility();
 		validateWhenOptedIn();

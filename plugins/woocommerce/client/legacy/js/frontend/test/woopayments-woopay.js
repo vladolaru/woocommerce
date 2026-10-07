@@ -2,9 +2,9 @@
  * @jest-environment jest-fixed-jsdom
  */
 
-// Stand-in for the wp-i18n script the page loads (@wordpress/i18n __, _n and sprintf; its sprintf wraps sprintf-js,
-// @wordpress/i18n src/sprintf.ts). It returns the English source strings and fills only the placeholders these scripts
-// use: %s, %d and positional %1$s; escapes, flags and widths are not modelled.
+// Stand-in for the wp-i18n script the page loads (@wordpress/i18n __, _n and sprintf). It returns the English source
+// strings and fills only the placeholders these scripts use: %s, %d and positional %1$s; escapes, flags and widths
+// are not modelled.
 function createI18nStub() {
 	return {
 		__: ( text ) => text,
@@ -713,7 +713,7 @@ describe( 'WooPayments WooPay checkout', () => {
 		} );
 
 		test( 'renders WooPay save-my-info fields and posts the full number with the order', async () => {
-			// Localized by WooPaymentsWooPaySessionController::get_classic_woopay_config() from wc_get_checkout_url().
+			// Localized by WooPaymentsWooPaySessionController::get_classic_woopay_config(), the checkout page permalink.
 			window.wcpay_core_woopay_config.woopaySourceUrl =
 				'https://example.test/checkout/';
 			window.history.pushState( {}, '', '/checkout/?utm_source=a-long-campaign' );
@@ -1103,6 +1103,37 @@ describe( 'WooPayments WooPay checkout', () => {
 		expect(
 			document.querySelector( 'input[name="woopay_user_phone_field[full]"]' )
 				.value
+		).toBe( '+12015550123' );
+	} );
+
+	test( 'shows the WooPay phone error when the order is placed and lets the order go on', () => {
+		// Stand-in for the validation script (phone-validation.js, core's validatePhoneNumber).
+		window.wcWooPaymentsPhoneValidation = {
+			validatePhoneNumber: ( number ) => number === '+12015550123',
+		};
+		require( '../woopayments-woopay' );
+		document.getElementById( 'woopay_user_phone_field_full' ).value = '123';
+		const placeOrder = global.jQuery(
+			document.querySelector( 'form.checkout' )
+		).on.mock.calls.find( ( [ event ] ) => event === 'checkout_place_order' )[ 1 ];
+
+		// Client 11.1.0 checkout-page-save-user.js:176-181 shows the message and does not cancel the submission.
+		expect( placeOrder() ).not.toBe( false );
+		expect(
+			document.getElementById( 'validate-error-invalid-woopay-phone-number' )
+				.hidden
+		).toBe( false );
+	} );
+
+	test( 'keeps the posted WooPay number current as the shopper types', () => {
+		require( '../woopayments-woopay' );
+		const phoneField = document.getElementById( 'woopay_user_phone_field_full' );
+
+		phoneField.value = '(201) 555-0123';
+		phoneField.dispatchEvent( new window.Event( 'input', { bubbles: true } ) );
+
+		expect(
+			getPostedCheckoutFields()[ 'woopay_user_phone_field[full]' ]
 		).toBe( '+12015550123' );
 	} );
 
