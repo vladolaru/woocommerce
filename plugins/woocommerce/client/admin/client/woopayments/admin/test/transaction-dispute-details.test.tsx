@@ -1,7 +1,9 @@
 /**
  * External dependencies
  */
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { getHistory } from '@woocommerce/navigation';
+import { recordEvent } from '@woocommerce/tracks';
 import userEvent from '@testing-library/user-event';
 
 /**
@@ -150,6 +152,47 @@ describe( 'WooPaymentsTransactionDisputeDetails Visa compliance', () => {
 		expect(
 			screen.getByRole( 'link', { name: 'Continue with challenge' } )
 		).toBeInTheDocument();
+	} );
+
+	// Client 11.1.0 `dispute-awaiting-response-details.tsx:382-417`: the wc-admin `Link` moves to the
+	// challenge page through `getHistory()`, after the Tracks event.
+	it( 'opens the challenge page in the app on a plain click, after its Tracks event', () => {
+		const push = jest
+			.spyOn( getHistory(), 'push' )
+			.mockImplementation( () => undefined );
+		( recordEvent as jest.Mock ).mockClear();
+
+		try {
+			renderDetails(
+				makeDispute( {
+					id: 'dp_fraud_1',
+					reason: 'fraudulent',
+					enhanced_eligibility_types: [],
+				} )
+			);
+			const challenge = screen.getByRole( 'link', {
+				name: 'Challenge dispute',
+			} );
+
+			expect( fireEvent.click( challenge, { metaKey: true } ) ).toBe(
+				true
+			);
+			expect( push ).not.toHaveBeenCalled();
+
+			expect( fireEvent.click( challenge ) ).toBe( false );
+			expect( recordEvent ).toHaveBeenLastCalledWith(
+				'wcpay_dispute_challenge_clicked',
+				{ dispute_id: 'dp_fraud_1', status: 'needs_response' }
+			);
+			expect( push ).toHaveBeenCalledWith(
+				'admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fdisputes%2Fchallenge&id=dp_fraud_1'
+			);
+			expect(
+				( recordEvent as jest.Mock ).mock.invocationCallOrder[ 1 ]
+			).toBeLessThan( push.mock.invocationCallOrder[ 0 ] );
+		} finally {
+			push.mockRestore();
+		}
 	} );
 
 	it( 'does not gate or disclose the fee for other disputes', () => {

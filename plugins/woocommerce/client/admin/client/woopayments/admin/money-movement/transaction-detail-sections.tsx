@@ -57,7 +57,10 @@ import {
 	StatusChip,
 	type StatusChipType,
 } from '../overview/components/status-chip';
-import { getSettingsPaymentsProviderRouteUrl } from '../utils';
+import {
+	getSettingsPaymentsProviderRouteUrl,
+	handleSettingsPaymentsProviderRouteClick,
+} from '../utils';
 import { HelpPopover } from '../overview/components/help-popover';
 import './transaction-details.scss';
 
@@ -118,14 +121,14 @@ const CustomerLink = ( {
 	}
 
 	const email = getCustomerEmail( transaction );
+	const searchRoute = addQueryArgs( '/woopayments/transactions', {
+		search: email ? `${ name } (${ email })` : name,
+	} );
 
 	return (
 		<a
-			href={ getSettingsPaymentsProviderRouteUrl(
-				addQueryArgs( '/woopayments/transactions', {
-					search: email ? `${ name } (${ email })` : name,
-				} )
-			) }
+			href={ getSettingsPaymentsProviderRouteUrl( searchRoute ) }
+			onClick={ handleSettingsPaymentsProviderRouteClick( searchRoute ) }
 		>
 			{ name }
 		</a>

@@ -34,11 +34,14 @@ export const formatCapitalPercent = ( value: number ) =>
  *
  * @param loanId The Stripe loan ID.
  */
+export const getCapitalLoanTransactionsRoute = ( loanId: string ) =>
+	`/woopayments/transactions?type=charge&filter=advanced&loan_id_is=${ encodeURIComponent(
+		loanId
+	) }`;
+
 export const getCapitalLoanTransactionsUrl = ( loanId: string ) =>
 	getSettingsPaymentsProviderRouteUrl(
-		`/woopayments/transactions?type=charge&filter=advanced&loan_id_is=${ encodeURIComponent(
-			loanId
-		) }`
+		getCapitalLoanTransactionsRoute( loanId )
 	);
 
 /**

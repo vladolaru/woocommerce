@@ -46,6 +46,7 @@ import { usePersistedHiddenFields } from './view-preferences';
 import {
 	getSettingsPaymentsProviderAdminPath,
 	getSettingsPaymentsProviderRouteUrl,
+	handleSettingsPaymentsProviderRouteClick,
 } from '../utils';
 
 // Client 11.1.0 `data/transactions/hooks.ts:104-116`.
@@ -328,6 +329,10 @@ export const WooPaymentsBlockedTransactions = () => {
 		setIsDownloading( false );
 	};
 
+	const getDetailsRoute = ( item: FraudOutcomeTransaction ) =>
+		getTransactionDetailsRoute( {
+			id: item.payment_intent?.id || String( item.order_id ),
+		} );
 	const fields = COLUMNS.map( ( { key, label, sort } ) => ( {
 		id: key,
 		label,
@@ -343,11 +348,10 @@ export const WooPaymentsBlockedTransactions = () => {
 			) : (
 				<a
 					href={ getSettingsPaymentsProviderRouteUrl(
-						getTransactionDetailsRoute( {
-							id:
-								item.payment_intent?.id ||
-								String( item.order_id ),
-						} )
+						getDetailsRoute( item )
+					) }
+					onClick={ handleSettingsPaymentsProviderRouteClick(
+						getDetailsRoute( item )
 					) }
 				>
 					{ key === 'amount'

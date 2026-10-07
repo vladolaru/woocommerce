@@ -31,7 +31,10 @@ import {
 	getAmountForCurrency,
 	getSelectedBalanceCurrency,
 } from '../utils';
-import { getSettingsPaymentsProviderRouteUrl } from '../../utils';
+import {
+	getSettingsPaymentsProviderRouteUrl,
+	handleSettingsPaymentsProviderRouteClick,
+} from '../../utils';
 import { getPayoutStatusLabel } from '../../payout-status';
 import { formatExplicitCurrency } from '../../currency';
 import { getPayoutScheduleText, PayoutSchedule } from './payout-schedule';
@@ -100,6 +103,9 @@ const FailedPayoutNotice = ( { accountLink }: { accountLink?: string } ) => {
 	);
 };
 
+const getPayoutDetailsRoute = ( payout: WooPaymentsDeposit ) =>
+	`/woopayments/payouts/details?id=${ encodeURIComponent( payout.id ) }`;
+
 // Client 11.1.0 `components/deposits-overview/recent-deposits-list.tsx`.
 const RecentPayoutsList = ( {
 	payouts,
@@ -123,9 +129,10 @@ const RecentPayoutsList = ( {
 							<Icon icon={ calendar } size={ 17 } />
 							<a
 								href={ getSettingsPaymentsProviderRouteUrl(
-									`/woopayments/payouts/details?id=${ encodeURIComponent(
-										payout.id
-									) }`
+									getPayoutDetailsRoute( payout )
+								) }
+								onClick={ handleSettingsPaymentsProviderRouteClick(
+									getPayoutDetailsRoute( payout )
 								) }
 							>
 								{ formatPayoutSiteDate( payout ) }

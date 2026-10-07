@@ -71,6 +71,7 @@ import {
 import { StatusChip } from './overview/components/status-chip';
 import {
 	getSettingsPaymentsProviderRouteUrl,
+	handleSettingsPaymentsProviderRouteClick,
 	navigateToSettingsPaymentsProviderRoute,
 } from './utils';
 import { WooPaymentsTestModeNotice } from './test-mode-notice';
@@ -100,10 +101,8 @@ const PAYOUT_TYPE_LABELS: Record< string, string > = {
 	deposit: __( 'Payout', 'woocommerce' ),
 	withdrawal: __( 'Withdrawal', 'woocommerce' ),
 };
-const getPayoutDetailsUrl = ( payout: WooPaymentsDeposit ) =>
-	getSettingsPaymentsProviderRouteUrl(
-		`/woopayments/payouts/details?id=${ encodeURIComponent( payout.id ) }`
-	);
+const getPayoutDetailsRoute = ( payout: WooPaymentsDeposit ) =>
+	`/woopayments/payouts/details?id=${ encodeURIComponent( payout.id ) }`;
 
 /**
  * A payouts list cell that opens the payout details.
@@ -121,7 +120,7 @@ const PayoutCell = ( {
 	children?: ReactNode;
 } ) => (
 	<ClickableCell
-		href={ getPayoutDetailsUrl( item ) }
+		route={ getPayoutDetailsRoute( item ) }
 		onClick={ () => recordEvent( 'wcpay_deposits_row_click' ) }
 	>
 		{ children }
@@ -219,7 +218,7 @@ export const WooPaymentsPayouts = () => {
 				...DETAILS_FIELD_BASE,
 				render: ( { item }: { item: WooPaymentsDeposit } ) => (
 					<DetailsLink
-						href={ getPayoutDetailsUrl( item ) }
+						route={ getPayoutDetailsRoute( item ) }
 						label={ sprintf(
 							/* translators: %s: payout ID. */
 							__( 'See details for payout %s', 'woocommerce' ),
@@ -246,11 +245,16 @@ export const WooPaymentsPayouts = () => {
 					: ( false as const ),
 				render: ( { item }: { item: WooPaymentsDeposit } ) => (
 					<a
-						href={ getPayoutDetailsUrl( item ) }
-						// Client 11.1.0 `deposits/list/index.tsx:116-121`.
-						onClick={ () =>
-							recordEvent( 'wcpay_deposits_row_click' )
-						}
+						href={ getSettingsPaymentsProviderRouteUrl(
+							getPayoutDetailsRoute( item )
+						) }
+						// Client 11.1.0 `deposits/list/index.tsx:128-135`.
+						onClick={ ( event ) => {
+							recordEvent( 'wcpay_deposits_row_click' );
+							handleSettingsPaymentsProviderRouteClick(
+								getPayoutDetailsRoute( item )
+							)( event );
+						} }
 					>
 						{ formatPayoutSiteDate( item ) }
 						<span className="screen-reader-text">

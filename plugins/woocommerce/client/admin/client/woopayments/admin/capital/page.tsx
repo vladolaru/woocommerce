@@ -18,6 +18,7 @@ import type {
 import {
 	ActiveLoanSummary,
 	formatCapitalPercent,
+	getCapitalLoanTransactionsRoute,
 	getCapitalLoanTransactionsUrl,
 } from './active-loan-summary';
 import {
@@ -25,6 +26,7 @@ import {
 	formatSiteDateTime,
 	getErrorMessage,
 } from '../money-movement/utils';
+import { handleSettingsPaymentsProviderRouteClick } from '../utils';
 import { WooPaymentsTestModeNotice } from '../test-mode-notice';
 import { StatusChip } from '../overview/components/status-chip';
 import { LiveStatusMessage } from '../money-movement/table';
@@ -77,6 +79,9 @@ const LoanActionLink = ( { loan }: { loan: WooPaymentsCapitalLoan } ) => (
 	<a
 		className="woocommerce-woopayments-capital__loan-action"
 		href={ getLoanTransactionsUrl( loan ) }
+		onClick={ handleSettingsPaymentsProviderRouteClick(
+			getCapitalLoanTransactionsRoute( loan.stripe_loan_id )
+		) }
 	>
 		{ __( 'View transactions', 'woocommerce' ) }
 		<span className="screen-reader-text">

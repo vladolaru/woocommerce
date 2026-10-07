@@ -54,6 +54,7 @@ import { usePersistedHiddenFields } from './view-preferences';
 import {
 	getSettingsPaymentsProviderAdminPath,
 	getSettingsPaymentsProviderRouteUrl,
+	handleSettingsPaymentsProviderRouteClick,
 } from '../utils';
 import { SpotlightPromotion } from '../../promotions/spotlight';
 import { getWooPaymentsSettingsBootstrap } from '../../settings/bootstrap';
@@ -166,11 +167,9 @@ const AuthorizationCell = ( {
 	children?: ReactNode;
 } ) => (
 	<ClickableCell
-		href={ getSettingsPaymentsProviderRouteUrl(
-			getTransactionDetailsRoute( {
-				payment_intent_id: getAuthorizationPaymentIntentId( item ),
-			} )
-		) }
+		route={ getTransactionDetailsRoute( {
+			payment_intent_id: getAuthorizationPaymentIntentId( item ),
+		} ) }
 	>
 		{ children }
 	</ClickableCell>
@@ -546,12 +545,17 @@ export const WooPaymentsTransactionsPage = () => {
 					return orderLabel;
 				}
 
+				const detailsRoute = getTransactionDetailsRoute( {
+					payment_intent_id: paymentIntentId,
+				} );
+
 				return (
 					<a
 						href={ getSettingsPaymentsProviderRouteUrl(
-							getTransactionDetailsRoute( {
-								payment_intent_id: paymentIntentId,
-							} )
+							detailsRoute
+						) }
+						onClick={ handleSettingsPaymentsProviderRouteClick(
+							detailsRoute
 						) }
 						aria-label={ sprintf(
 							/* translators: %s: order ID. */

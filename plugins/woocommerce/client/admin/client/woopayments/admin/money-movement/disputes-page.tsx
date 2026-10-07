@@ -284,9 +284,7 @@ const DisputeCell = ( {
 	children?: ReactNode;
 } ) => (
 	<ClickableCell
-		href={ getSettingsPaymentsProviderRouteUrl(
-			getTransactionDetailsRoute( item )
-		) }
+		route={ getTransactionDetailsRoute( item ) }
 		onClick={ () => recordDisputeRowClick( item ) }
 	>
 		{ children }
@@ -344,9 +342,7 @@ export const WooPaymentsDisputesPage = () => {
 				...DETAILS_FIELD_BASE,
 				render: ( { item }: { item: WooPaymentsDisputeListRow } ) => (
 					<DetailsLink
-						href={ getSettingsPaymentsProviderRouteUrl(
-							getTransactionDetailsRoute( item )
-						) }
+						route={ getTransactionDetailsRoute( item ) }
 						label={ sprintf(
 							/* translators: 1: dispute reason, 2: dispute ID. */
 							__(

@@ -66,7 +66,10 @@ import {
 	getErrorMessage,
 } from './utils';
 import { WC_ASSET_URL } from '~/utils/admin-settings';
-import { getSettingsPaymentsProviderRouteUrl } from '../utils';
+import {
+	getSettingsPaymentsProviderRouteUrl,
+	handleSettingsPaymentsProviderRouteClick,
+} from '../utils';
 import { useGetSettings } from '../../settings/data/hooks';
 import { OrderLink } from './transactions-list-fields';
 import {
@@ -219,6 +222,9 @@ const CustomerDetails = ( { dispute }: { dispute: WooPaymentsDispute } ) => {
 	const billing = charge?.billing_details;
 	const name = billing?.name || dispute.order?.customer_name || '';
 	const email = billing?.email || dispute.order?.customer_email || '';
+	const searchRoute = addQueryArgs( '/woopayments/transactions', {
+		search: email ? `${ name } (${ email })` : name,
+	} );
 	const address = ( billing?.formatted_address || '' )
 		.split( /<br\s*\/?>/i )
 		.map( ( line ) => line.replace( /<[^>]*>/g, '' ).trim() )
@@ -241,11 +247,10 @@ const CustomerDetails = ( { dispute }: { dispute: WooPaymentsDispute } ) => {
 					name ? (
 						<a
 							href={ getSettingsPaymentsProviderRouteUrl(
-								addQueryArgs( '/woopayments/transactions', {
-									search: email
-										? `${ name } (${ email })`
-										: name,
-								} )
+								searchRoute
+							) }
+							onClick={ handleSettingsPaymentsProviderRouteClick(
+								searchRoute
 							) }
 						>
 							{ name }

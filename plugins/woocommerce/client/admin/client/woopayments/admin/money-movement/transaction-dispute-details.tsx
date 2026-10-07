@@ -25,7 +25,7 @@ import { Icon, backup, lock, pencil } from '@wordpress/icons';
 import { recordEvent } from '@woocommerce/tracks';
 import NoticeOutlineIcon from 'gridicons/dist/notice-outline';
 import moment from 'moment';
-import type { ElementType, ReactNode } from 'react';
+import type { ElementType, MouseEvent, ReactNode } from 'react';
 
 /**
  * Internal dependencies
@@ -49,7 +49,10 @@ import {
 	getDisputeId,
 	getErrorMessage,
 } from './utils';
-import { getSettingsPaymentsProviderRouteUrl } from '../utils';
+import {
+	getSettingsPaymentsProviderRouteUrl,
+	handleSettingsPaymentsProviderRouteClick,
+} from '../utils';
 import { HelpPopover } from '../overview/components/help-popover';
 import {
 	DisputeSteps,
@@ -853,12 +856,15 @@ const RespondToDisputeActions = ( {
 					<a
 						className="components-button is-primary"
 						href={ getDisputeChallengeUrl( disputeId ) }
-						onClick={ () =>
+						onClick={ ( event ) => {
 							recordEvent( 'wcpay_dispute_challenge_clicked', {
 								dispute_id: disputeId,
 								status: dispute.status,
-							} )
-						}
+							} );
+							handleSettingsPaymentsProviderRouteClick(
+								getDisputeChallengeRoute( disputeId )
+							)( event );
+						} }
 					>
 						{ challengeLabel }
 					</a>
@@ -1009,15 +1015,18 @@ const ResolvedDisputeActions = ( {
 						<Button
 							variant="secondary"
 							href={ getDisputeChallengeUrl( disputeId ) }
-							onClick={ () =>
+							onClick={ ( event: MouseEvent< HTMLElement > ) => {
 								recordEvent(
 									'wcpay_view_submitted_evidence_clicked',
 									{
 										dispute_id: disputeId,
 										status: dispute.status,
 									}
-								)
-							}
+								);
+								handleSettingsPaymentsProviderRouteClick(
+									getDisputeChallengeRoute( disputeId )
+								)( event );
+							} }
 						>
 							{ [ 'won', 'lost' ].includes( dispute.status || '' )
 								? __( 'View dispute details', 'woocommerce' )

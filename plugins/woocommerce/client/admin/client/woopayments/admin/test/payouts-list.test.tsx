@@ -4,6 +4,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fireEvent, render, screen, within } from '@testing-library/react';
+import { getHistory } from '@woocommerce/navigation';
 import { recordEvent } from '@woocommerce/tracks';
 import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
@@ -235,5 +236,57 @@ describe( 'WooPayments payouts list columns', () => {
 		expect( recordEvent ).toHaveBeenCalledWith(
 			'wcpay_deposits_row_click'
 		);
+	} );
+
+	// Client 11.1.0 `components/clickable-cell` and `components/details-link` wrap the cells in the
+	// wc-admin `Link`, which pushes the URL through `getHistory()` instead of loading the page again.
+	it( 'opens the payout details in the app on a plain click, and leaves modified clicks to the browser', async () => {
+		const push = jest
+			.spyOn( getHistory(), 'push' )
+			.mockImplementation( () => undefined );
+		( recordEvent as jest.Mock ).mockClear();
+
+		try {
+			render(
+				<MemoryRouter initialEntries={ [ '/woopayments/payouts' ] }>
+					<WooPaymentsPayouts />
+				</MemoryRouter>
+			);
+
+			await screen.findByText( 'Payout history loaded.' );
+			const [ latest ] = RECORDED;
+			const detailsPath = `admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fpayouts%2Fdetails&id=${ latest.id }`;
+			const cell = within( getCell( latest.id, 'amount' ) ).getByRole(
+				'link'
+			);
+
+			// `fireEvent` returns false when the default navigation was prevented.
+			expect( fireEvent.click( cell, { metaKey: true } ) ).toBe( true );
+			expect( fireEvent.click( cell, { ctrlKey: true } ) ).toBe( true );
+			expect( push ).not.toHaveBeenCalled();
+			expect( recordEvent ).toHaveBeenCalledTimes( 2 );
+
+			( recordEvent as jest.Mock ).mockClear();
+			expect( fireEvent.click( cell ) ).toBe( false );
+			expect( recordEvent ).toHaveBeenCalledWith(
+				'wcpay_deposits_row_click'
+			);
+			expect( push ).toHaveBeenCalledWith( detailsPath );
+			expect(
+				( recordEvent as jest.Mock ).mock.invocationCallOrder[ 0 ]
+			).toBeLessThan( push.mock.invocationCallOrder[ 0 ] );
+
+			push.mockClear();
+			expect(
+				fireEvent.click(
+					within( getCell( latest.id, 'details' ) ).getByRole(
+						'link'
+					)
+				)
+			).toBe( false );
+			expect( push ).toHaveBeenCalledWith( detailsPath );
+		} finally {
+			push.mockRestore();
+		}
 	} );
 } );

@@ -25,7 +25,10 @@ import {
 	getTransactionSourceLabel,
 	getTransactionTypeLabel,
 } from './utils';
-import { getSettingsPaymentsProviderRouteUrl } from '../utils';
+import {
+	getSettingsPaymentsProviderRouteUrl,
+	handleSettingsPaymentsProviderRouteClick,
+} from '../utils';
 import { payoutStatusLabels } from '../payout-status';
 import { formatCurrencyName } from '../currency';
 
@@ -200,21 +203,21 @@ export const PaymentSource = ( {
  * Client 11.1.0 `components/clickable-cell`. An empty cell has nothing to click.
  *
  * @param props          The component props.
- * @param props.href     The details URL; without it the cell is plain text.
- * @param props.onClick  Called on a click, such as for the client's Tracks event.
+ * @param props.route    The details route path; without it the cell is plain text.
+ * @param props.onClick  Called on a click before the details open, such as for the client's Tracks event.
  * @param props.children The cell content.
  */
 export const ClickableCell = ( {
-	href,
+	route,
 	onClick,
 	children,
 }: {
-	href?: string;
+	route?: string;
 	onClick?: MouseEventHandler< HTMLAnchorElement >;
 	children?: ReactNode;
 } ) => {
 	if (
-		! href ||
+		! route ||
 		children === '' ||
 		children === null ||
 		children === undefined
@@ -225,9 +228,12 @@ export const ClickableCell = ( {
 	return (
 		<a
 			className="woocommerce-woopayments-money-movement__clickable-cell"
-			href={ href }
+			href={ getSettingsPaymentsProviderRouteUrl( route ) }
 			tabIndex={ -1 }
-			onClick={ onClick }
+			onClick={ ( event ) => {
+				onClick?.( event );
+				handleSettingsPaymentsProviderRouteClick( route )( event );
+			} }
 		>
 			{ children }
 		</a>
@@ -238,19 +244,20 @@ export const ClickableCell = ( {
  * The info icon link that starts a disputes or payouts row. Client 11.1.0 `components/details-link`.
  *
  * @param props       The component props.
- * @param props.href  The details URL.
+ * @param props.route The details route path.
  * @param props.label The link's accessible name.
  */
 export const DetailsLink = ( {
-	href,
+	route,
 	label,
 }: {
-	href: string;
+	route: string;
 	label: string;
 } ) => (
 	<a
 		className="woocommerce-woopayments-money-movement__details-link"
-		href={ href }
+		href={ getSettingsPaymentsProviderRouteUrl( route ) }
+		onClick={ handleSettingsPaymentsProviderRouteClick( route ) }
 		aria-label={ label }
 	>
 		<Icon icon={ info } size={ 18 } />
@@ -275,14 +282,12 @@ export const DETAILS_FIELD_BASE = {
 
 // Client 11.1.0 `transactions/list/index.tsx:327-339`: loan disbursements, network costs and loan
 // repayments without a charge open no details.
-const getTransactionDetailsUrl = ( item: WooPaymentsTransactionListRow ) =>
+const getRowDetailsRoute = ( item: WooPaymentsTransactionListRow ) =>
 	item.type === 'financing_payout' ||
 	item.type === 'network_costs' ||
 	( item.type === 'financing_paydown' && ! item.charge_id )
 		? undefined
-		: getSettingsPaymentsProviderRouteUrl(
-				getTransactionDetailsRoute( item )
-		  );
+		: getTransactionDetailsRoute( item );
 
 const CustomerLink = ( {
 	item,
@@ -349,12 +354,15 @@ const PayoutDate = ( { item }: FieldRenderProps ) => {
 	}
 
 	if ( item.deposit_id && item.available_on ) {
+		const payoutRoute = `/woopayments/payouts/details?id=${ encodeURIComponent(
+			item.deposit_id
+		) }`;
+
 		return (
 			<a
-				href={ getSettingsPaymentsProviderRouteUrl(
-					`/woopayments/payouts/details?id=${ encodeURIComponent(
-						item.deposit_id
-					) }`
+				href={ getSettingsPaymentsProviderRouteUrl( payoutRoute ) }
+				onClick={ handleSettingsPaymentsProviderRouteClick(
+					payoutRoute
 				) }
 			>
 				{ formatSiteDateTime( item.available_on, false ) }
@@ -516,7 +524,7 @@ export const getTransactionListFields = (
 			enableSorting: false,
 			filterBy: false as const,
 			render: ( { item }: FieldRenderProps ) => (
-				<ClickableCell href={ getTransactionDetailsUrl( item ) }>
+				<ClickableCell route={ getRowDetailsRoute( item ) }>
 					{ item.transaction_id || '-' }
 				</ClickableCell>
 			),
@@ -537,7 +545,7 @@ export const getTransactionListFields = (
 				item.date || item.created || '',
 			// Client 11.1.0 `transactions/list/index.tsx:453`: site date and time formats.
 			render: ( { item }: FieldRenderProps ) => (
-				<ClickableCell href={ getTransactionDetailsUrl( item ) }>
+				<ClickableCell route={ getRowDetailsRoute( item ) }>
 					{ formatSiteDateTime( item.date || item.created ) }
 				</ClickableCell>
 			),
@@ -558,9 +566,9 @@ export const getTransactionListFields = (
 				const typeLabel = getTransactionTypeLabel(
 					getTransactionListType( item )
 				);
-				const detailsUrl = getTransactionDetailsUrl( item );
+				const detailsRoute = getRowDetailsRoute( item );
 
-				if ( ! detailsUrl ) {
+				if ( ! detailsRoute ) {
 					return typeLabel;
 				}
 
@@ -569,7 +577,12 @@ export const getTransactionListFields = (
 				return (
 					<a
 						className="woocommerce-woopayments-money-movement__clickable-cell"
-						href={ detailsUrl }
+						href={ getSettingsPaymentsProviderRouteUrl(
+							detailsRoute
+						) }
+						onClick={ handleSettingsPaymentsProviderRouteClick(
+							detailsRoute
+						) }
 						aria-label={ sprintf(
 							/* translators: 1: transaction type, 2: transaction ID. */
 							__(
@@ -592,7 +605,7 @@ export const getTransactionListFields = (
 			enableSorting: false,
 			filterBy: false as const,
 			render: ( { item }: FieldRenderProps ) => (
-				<ClickableCell href={ getTransactionDetailsUrl( item ) }>
+				<ClickableCell route={ getRowDetailsRoute( item ) }>
 					{ getTransactionChannelLabel( item.channel ) }
 				</ClickableCell>
 			),
@@ -602,7 +615,7 @@ export const getTransactionListFields = (
 			label: __( 'Paid currency', 'woocommerce' ),
 			filterBy: false as const,
 			render: ( { item }: FieldRenderProps ) => (
-				<ClickableCell href={ getTransactionDetailsUrl( item ) }>
+				<ClickableCell route={ getRowDetailsRoute( item ) }>
 					{ toUpperCase( item.customer_currency ) }
 				</ClickableCell>
 			),
@@ -612,7 +625,7 @@ export const getTransactionListFields = (
 			label: __( 'Amount paid', 'woocommerce' ),
 			filterBy: false as const,
 			render: ( { item }: FieldRenderProps ) => (
-				<ClickableCell href={ getTransactionDetailsUrl( item ) }>
+				<ClickableCell route={ getRowDetailsRoute( item ) }>
 					{ formatAmount(
 						item.customer_amount ?? undefined,
 						item.customer_currency ?? undefined
@@ -625,7 +638,7 @@ export const getTransactionListFields = (
 			label: __( 'Payout currency', 'woocommerce' ),
 			filterBy: false as const,
 			render: ( { item }: FieldRenderProps ) => (
-				<ClickableCell href={ getTransactionDetailsUrl( item ) }>
+				<ClickableCell route={ getRowDetailsRoute( item ) }>
 					{ toUpperCase( item.currency ) }
 				</ClickableCell>
 			),
@@ -638,7 +651,7 @@ export const getTransactionListFields = (
 			getValue: ( { item }: FieldRenderProps ) =>
 				getTransactionListAmount( item ) ?? '',
 			render: ( { item }: FieldRenderProps ) => (
-				<ClickableCell href={ getTransactionDetailsUrl( item ) }>
+				<ClickableCell route={ getRowDetailsRoute( item ) }>
 					<ConvertedAmount item={ item } />
 				</ClickableCell>
 			),
@@ -651,7 +664,7 @@ export const getTransactionListFields = (
 			getValue: ( { item }: FieldRenderProps ) =>
 				getTransactionListFees( item ) ?? '',
 			render: ( { item }: FieldRenderProps ) => (
-				<ClickableCell href={ getTransactionDetailsUrl( item ) }>
+				<ClickableCell route={ getRowDetailsRoute( item ) }>
 					{ formatAmount(
 						getTransactionListFees( item ),
 						item.currency
@@ -667,7 +680,7 @@ export const getTransactionListFields = (
 			filterBy: false as const,
 			getValue: ( { item }: FieldRenderProps ) => item.net ?? '',
 			render: ( { item }: FieldRenderProps ) => (
-				<ClickableCell href={ getTransactionDetailsUrl( item ) }>
+				<ClickableCell route={ getRowDetailsRoute( item ) }>
 					{ formatExplicitCurrency( item.net, item.currency ) }
 				</ClickableCell>
 			),
@@ -732,7 +745,7 @@ export const getTransactionListFields = (
 				const text = getTransactionListPaymentMethod( item );
 
 				return item.source && text !== '-' ? (
-					<ClickableCell href={ getTransactionDetailsUrl( item ) }>
+					<ClickableCell route={ getRowDetailsRoute( item ) }>
 						<PaymentSource
 							source={ item.source }
 							detail={ getTransactionListPaymentMethodDetail(
@@ -770,7 +783,7 @@ export const getTransactionListFields = (
 			enableSorting: false,
 			filterBy: false as const,
 			render: ( { item }: FieldRenderProps ) => (
-				<ClickableCell href={ getTransactionDetailsUrl( item ) }>
+				<ClickableCell route={ getRowDetailsRoute( item ) }>
 					{ item.customer_country || '-' }
 				</ClickableCell>
 			),
@@ -781,7 +794,7 @@ export const getTransactionListFields = (
 			enableSorting: false,
 			filterBy: false as const,
 			render: ( { item }: FieldRenderProps ) => (
-				<ClickableCell href={ getTransactionDetailsUrl( item ) }>
+				<ClickableCell route={ getRowDetailsRoute( item ) }>
 					{ getRiskLevelLabel( item.risk_level ) }
 				</ClickableCell>
 			),
