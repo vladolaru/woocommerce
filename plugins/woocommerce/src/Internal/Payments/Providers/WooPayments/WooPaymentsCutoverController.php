@@ -641,7 +641,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 						// The job cannot update the plugin itself where the site blocks file changes, so retries alone never finish.
 						if ( WooPaymentsCutoverState::DEFERRED === $record['state'] && in_array( 'woopayments_plugin_version_unsupported', (array) ( $record['deferred_codes'] ?? array() ), true ) && ! wp_is_file_mod_allowed( 'automatic_updater' ) ) {
 							?>
-						<div class="notice notice-warning"><p><?php esc_html_e( 'The switch needs a newer version of the WooPayments extension, and this site does not let WordPress update plugins. Update WooPayments to continue the switch.', 'woocommerce' ); ?></p></div>
+						<div class="notice notice-warning"><p><?php esc_html_e( 'The switch needs a newer version of the WooPayments extension, but this site does not allow automatic plugin updates. Update WooPayments to continue the switch.', 'woocommerce' ); ?></p></div>
 							<?php
 						}
 				}
