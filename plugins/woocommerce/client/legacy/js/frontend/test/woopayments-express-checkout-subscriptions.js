@@ -31,8 +31,9 @@ const createWpHooks = () => {
 	};
 };
 
-// Stand-in for the wp-i18n script the page loads (@wordpress/i18n __, _n and sprintf), returning the English source
-// strings with positional and sequential placeholders filled.
+// Stand-in for the wp-i18n script the page loads (@wordpress/i18n __, _n and sprintf; its sprintf wraps sprintf-js,
+// @wordpress/i18n src/sprintf.ts). It returns the English source strings and fills only the placeholders these scripts
+// use: %s, %d and positional %1$s; escapes, flags and widths are not modelled.
 function createI18nStub() {
 	return {
 		__: ( text ) => text,
@@ -46,13 +47,15 @@ function createI18nStub() {
 	};
 }
 
-// Marks every translated string, so a test can tell the wp-i18n path from an English literal.
+// Marks strings translated in the woocommerce domain, so a test can tell the wp-i18n path from an English literal.
 function createMarkingI18nStub() {
 	const stub = createI18nStub();
+	const mark = ( text, domain ) =>
+		domain === 'woocommerce' ? '[fr] ' + text : text;
 	return Object.assign( {}, stub, {
-		__: ( text ) => '[fr] ' + text,
-		_n: ( single, plural, number ) =>
-			'[fr] ' + ( number === 1 ? single : plural ),
+		__: ( text, domain ) => mark( text, domain ),
+		_n: ( single, plural, number, domain ) =>
+			mark( number === 1 ? single : plural, domain ),
 	} );
 }
 
@@ -537,6 +540,34 @@ describe( 'ECE WC Subscriptions compatibility', () => {
 			expect( item.item_data ).toContainEqual( {
 				name: '[fr] Recurring total',
 				value: '[fr] [fr] $7.58 / [fr] month on 2026-03-19',
+			} );
+
+			const quarterly = hooks.applyFilters(
+				'wcpay.express-checkout.map-line-items',
+				buildTrialCart( {
+					items: [
+						buildTrialSubscriptionItem( {
+							name: 'Quarterly box',
+							signUpFees: '200',
+							lineSubtotal: '200',
+							lineTotal: '200',
+						} ),
+					],
+					totalPrice: '217',
+					subscriptions: [
+						buildSubscriptionSchedule( {
+							billingInterval: 3,
+							totalPrice: '758',
+							totalItems: '700',
+							totalTax: '58',
+						} ),
+					],
+				} )
+			).items[ 0 ];
+			// The plural period comes from _n( '%d month', '%d months' ), as client wc-subscriptions.js:210-226.
+			expect( quarterly.item_data ).toContainEqual( {
+				name: '[fr] Recurring total',
+				value: '[fr] [fr] $7.58 / [fr] 3 months on 2026-03-19',
 			} );
 		} );
 
