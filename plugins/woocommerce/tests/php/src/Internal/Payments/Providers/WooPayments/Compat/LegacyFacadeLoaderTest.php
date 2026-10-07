@@ -406,6 +406,14 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 	private function register_legacy_facades( bool $native_owns = true ): void {
 		$this->assertTrue( class_exists( LegacyFacadeLoader::class ), 'The native runtime should provide a dedicated legacy facade loader.' );
 
+		// A process whose bootstrap found native payments enabled already registered the production loader for an ordinary
+		// request; the request under test replaces it, as it would be the only loader in that request.
+		foreach ( spl_autoload_functions() as $autoloader ) {
+			if ( is_array( $autoloader ) && $autoloader[0] instanceof LegacyFacadeLoader ) {
+				spl_autoload_unregister( $autoloader );
+			}
+		}
+
 		$arbiter = $this->createMock( NativePaymentsRuntimeArbiter::class );
 		$arbiter->method( 'should_native_register' )->willReturn( $native_owns );
 
