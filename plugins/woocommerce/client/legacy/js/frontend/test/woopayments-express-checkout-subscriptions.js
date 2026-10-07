@@ -31,6 +31,31 @@ const createWpHooks = () => {
 	};
 };
 
+// Stand-in for the wp-i18n script the page loads (@wordpress/i18n __, _n and sprintf), returning the English source
+// strings with positional and sequential placeholders filled.
+function createI18nStub() {
+	return {
+		__: ( text ) => text,
+		_n: ( single, plural, number ) => ( number === 1 ? single : plural ),
+		sprintf: ( format, ...args ) => {
+			let next = 0;
+			return format.replace( /%(?:(\d+)\$)?[sd]/g, ( match, position ) =>
+				String( position ? args[ Number( position ) - 1 ] : args[ next++ ] )
+			);
+		},
+	};
+}
+
+// Marks every translated string, so a test can tell the wp-i18n path from an English literal.
+function createMarkingI18nStub() {
+	const stub = createI18nStub();
+	return Object.assign( {}, stub, {
+		__: ( text ) => '[fr] ' + text,
+		_n: ( single, plural, number ) =>
+			'[fr] ' + ( number === 1 ? single : plural ),
+	} );
+}
+
 let applyFilters;
 
 beforeAll( () => {
@@ -38,7 +63,7 @@ beforeAll( () => {
 	const jQueryMock = jest.fn( () => ( { on: jest.fn() } ) );
 
 	global.jQuery = jQueryMock;
-	window.wp = { hooks };
+	window.wp = { hooks, i18n: createI18nStub() };
 	// Required by transformPrice, which the total-amount filter calls. The block surface flag keeps the script from
 	// mounting a button; its filters are registered on load.
 	window.wcpayExpressCheckoutParams = {
@@ -477,6 +502,44 @@ describe( 'ECE WC Subscriptions compatibility', () => {
 	} );
 
 	describe( 'map-line-items filter', () => {
+		it( 'translates the recurring labels, period and placeholders', () => {
+			const hooks = createWpHooks();
+			window.wp = { hooks, i18n: createMarkingI18nStub() };
+			jest.isolateModules( () => {
+				require( '../woopayments-express-checkout' );
+			} );
+			const cart = buildTrialCart( {
+				items: [
+					buildTrialSubscriptionItem( {
+						name: 'Physical subscription',
+						signUpFees: '200',
+						lineSubtotal: '200',
+						lineTotal: '200',
+					} ),
+				],
+				totalPrice: '217',
+				subscriptions: [
+					buildSubscriptionSchedule( {
+						totalPrice: '758',
+						totalItems: '700',
+						totalTax: '58',
+					} ),
+				],
+			} );
+
+			const item = hooks.applyFilters(
+				'wcpay.express-checkout.map-line-items',
+				cart
+			).items[ 0 ];
+
+			expect( item.name ).toBe( 'Physical subscription ([fr] recurring)' );
+			// '%1$s on %2$s' and '%1$s / %2$s' are translated too, so each adds its own marker.
+			expect( item.item_data ).toContainEqual( {
+				name: '[fr] Recurring total',
+				value: '[fr] [fr] $7.58 / [fr] month on 2026-03-19',
+			} );
+		} );
+
 		it( 'adds recurring metadata to trial items with sign-up fee without replacing prices', () => {
 			const cart = buildTrialCart( {
 				items: [

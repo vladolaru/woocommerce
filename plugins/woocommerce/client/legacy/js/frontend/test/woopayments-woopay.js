@@ -2,6 +2,31 @@
  * @jest-environment jest-fixed-jsdom
  */
 
+// Stand-in for the wp-i18n script the page loads (@wordpress/i18n __, _n and sprintf), returning the English source
+// strings with positional and sequential placeholders filled.
+function createI18nStub() {
+	return {
+		__: ( text ) => text,
+		_n: ( single, plural, number ) => ( number === 1 ? single : plural ),
+		sprintf: ( format, ...args ) => {
+			let next = 0;
+			return format.replace( /%(?:(\d+)\$)?[sd]/g, ( match, position ) =>
+				String( position ? args[ Number( position ) - 1 ] : args[ next++ ] )
+			);
+		},
+	};
+}
+
+// Marks every translated string, so a test can tell the wp-i18n path from an English literal.
+function createMarkingI18nStub() {
+	const stub = createI18nStub();
+	return Object.assign( {}, stub, {
+		__: ( text ) => '[fr] ' + text,
+		_n: ( single, plural, number ) =>
+			'[fr] ' + ( number === 1 ? single : plural ),
+	} );
+}
+
 describe( 'WooPayments WooPay checkout', () => {
 	// jsdom defines `contentWindow` as an accessor on HTMLIFrameElement.prototype; tests that stub it put jsdom's back.
 	const nativeContentWindow = Object.getOwnPropertyDescriptor(
@@ -83,6 +108,7 @@ describe( 'WooPayments WooPay checkout', () => {
 
 	beforeEach( () => {
 		jest.resetModules();
+		window.wp = Object.assign( {}, window.wp, { i18n: createI18nStub() } );
 		bodyEventHandlers = {};
 		if ( document.body.wooPayDirectCheckoutHandler ) {
 			document.body.removeEventListener(
@@ -493,6 +519,30 @@ describe( 'WooPayments WooPay checkout', () => {
 				document.querySelector( '.woopay-otp-iframe' )
 			).not.toBeNull();
 
+		} );
+
+		test( 'translates the preferred-card accessible name and the brand', () => {
+			const rectSpy = jest
+				.spyOn( window.HTMLElement.prototype, 'getBoundingClientRect' )
+				.mockReturnValue( { width: 220 } );
+			window.wp.i18n = createMarkingI18nStub();
+			window.localStorage.setItem(
+				'woopay_preferred_card',
+				JSON.stringify( {
+					brand: 'unionpay',
+					last4: '4242',
+				} )
+			);
+
+			require( '../woopayments-woopay' );
+
+			// Client 11.1.0 woopay-express-checkout-button.js:40, :437-441.
+			expect(
+				document
+					.querySelector( '#wcpay-woopay-button button' )
+					.getAttribute( 'aria-label' )
+			).toBe( '[fr] WooPay with [fr] UnionPay ending in 4242' );
+			rectSpy.mockRestore();
 		} );
 
 		test( 'renders the cached preferred WooPay card on the express button', () => {

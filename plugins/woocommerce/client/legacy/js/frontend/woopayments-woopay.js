@@ -7,6 +7,9 @@
 		window.wcpay_core_woopay_config ||
 		window.wcpay_core_checkout_config ||
 		{};
+	// Shopper-facing strings, translated through the wp-i18n dependency like client 11.1.0's @wordpress/i18n imports.
+	var __ = window.wp.i18n.__;
+	var sprintf = window.wp.i18n.sprintf;
 	var navigate = function ( url ) {
 		window.location.href = url;
 	};
@@ -35,13 +38,15 @@
 		union_pay: 'unionpay',
 	};
 	var brandDisplayNames = {
-		amex: 'American Express',
-		diners: 'Diners Club',
-		discover: 'Discover',
-		jcb: 'JCB',
-		mastercard: 'Mastercard',
-		unionpay: 'Union Pay',
-		visa: 'Visa',
+		// Client 11.1.0 woopay-express-checkout-button.js:34-45.
+		amex: __( 'American Express', 'woocommerce' ),
+		cartes_bancaires: __( 'Cartes Bancaires', 'woocommerce' ),
+		diners: __( 'Diners Club', 'woocommerce' ),
+		discover: __( 'Discover', 'woocommerce' ),
+		jcb: __( 'JCB', 'woocommerce' ),
+		mastercard: __( 'Mastercard', 'woocommerce' ),
+		unionpay: __( 'UnionPay', 'woocommerce' ),
+		visa: __( 'Visa', 'woocommerce' ),
 	};
 	var wooPayIconDark =
 		'<svg aria-hidden="true" focusable="false" viewBox="0 0 109 28" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M69.496 5.785v16.42h2.766v-6.179h4.37c1.104 0 2.059-.23 2.865-.689.807-.46 1.424-1.075 1.852-1.846.428-.788.642-1.65.642-2.585 0-.936-.214-1.79-.642-2.56a4.714 4.714 0 0 0-1.852-1.872c-.79-.46-1.745-.69-2.864-.69h-7.137Zm2.766 7.804h4c.56 0 1.054-.107 1.482-.32.445-.23.79-.55 1.037-.96.247-.41.37-.878.37-1.403 0-.526-.123-.993-.37-1.404a2.386 2.386 0 0 0-1.037-.935c-.428-.23-.922-.345-1.482-.345h-4v5.367Zm15.693 8.912c-1.02 0-1.934-.246-2.74-.739-.808-.508-1.441-1.23-1.902-2.166-.445-.936-.667-2.043-.667-3.323 0-1.264.222-2.364.667-3.3.46-.951 1.094-1.682 1.901-2.19.807-.51 1.72-.764 2.741-.764.823 0 1.597.206 2.321.616a4.761 4.761 0 0 1 1.556 1.352v-1.672h2.47v11.89h-2.47v-1.667a5.231 5.231 0 0 1-1.556 1.372 4.695 4.695 0 0 1-2.32.591Zm2.692-9.675c.53.311.924.673 1.185 1.084v4.757c-.26.423-.656.79-1.185 1.101-.642.361-1.3.542-1.976.542-1.053 0-1.893-.37-2.519-1.108-.609-.755-.913-1.731-.913-2.93 0-.787.132-1.485.395-2.092a3.327 3.327 0 0 1 1.21-1.428c.527-.345 1.136-.517 1.827-.517.675 0 1.334.197 1.976.59Zm6.422 11.817c.115.066.271.115.469.148.197.032.395.049.592.049.395 0 .725-.082.988-.246.264-.164.478-.435.642-.813l.625-1.442-4.897-12.024h2.642l3.556 9.035 3.556-9.035h2.667l-5.803 14.106c0 .017-.008.025-.024.025v.05c-.264.607-.585 1.099-.964 1.476a3.337 3.337 0 0 1-1.284.813c-.477.164-1.02.246-1.63.246a6.98 6.98 0 0 1-1.53-.172l.395-2.216ZM39.45 5.512c-4.856 0-8.575 3.614-8.575 8.502 0 4.888 3.743 8.478 8.575 8.478 4.832 0 8.527-3.614 8.551-8.478 0-4.888-3.719-8.502-8.551-8.502Zm0 11.76c-1.824 0-3.08-1.369-3.08-3.258 0-1.89 1.256-3.283 3.08-3.283s3.08 1.394 3.08 3.283-1.233 3.259-3.08 3.259Zm-30.463 5.22c1.919 0 3.458-.945 4.619-3.117l2.582-4.818v4.085c0 2.41 1.563 3.85 3.98 3.85 1.894 0 3.292-.827 4.642-3.117l5.946-10.013c1.302-2.196.378-3.85-2.488-3.85-1.54 0-2.534.496-3.434 2.173l-4.098 7.675V8.535c0-2.03-.971-3.022-2.772-3.022-1.42 0-2.558.614-3.434 2.314l-3.861 7.533V8.606c0-2.172-.9-3.093-3.08-3.093H3.136c-1.682 0-2.534.779-2.534 2.22 0 1.44.9 2.266 2.534 2.266H4.96v8.62c0 2.432 1.634 3.873 4.027 3.873Zm40.221-8.478c0-4.888 3.719-8.502 8.551-8.502 4.832 0 8.551 3.637 8.551 8.502 0 4.864-3.719 8.478-8.55 8.478-4.833 0-8.552-3.59-8.552-8.478Zm5.495 0c0 1.889 1.208 3.259 3.056 3.259 1.824 0 3.08-1.37 3.08-3.26 0-1.888-1.256-3.282-3.08-3.282s-3.056 1.394-3.056 3.283Z" fill="#fff"/></svg>';
@@ -321,7 +326,8 @@
 			iframe.src = getWooPayConnectUrl();
 			iframe.height = 0;
 			iframe.width = 0;
-			iframe.title = 'WooPay Connect';
+			// Client 11.1.0 woopay/connect/woopay-connect-iframe.js:98-101.
+			iframe.title = __( 'WooPay Connect Direct Checkout', 'woocommerce' );
 			iframe.style.border = 'none';
 			iframe.style.display = 'block';
 			iframe.style.visibility = 'hidden';
@@ -1495,10 +1501,10 @@
 	function getWooPayButtonLabel( type ) {
 		var labels = config.woopayButtonLabels || {};
 		var defaultLabels = {
-			default: 'WooPay',
-			buy: 'Buy with WooPay',
-			donate: 'Donate with WooPay',
-			book: 'Book with WooPay',
+			default: __( 'WooPay', 'woocommerce' ),
+			buy: __( 'Buy with WooPay', 'woocommerce' ),
+			donate: __( 'Donate with WooPay', 'woocommerce' ),
+			book: __( 'Book with WooPay', 'woocommerce' ),
 		};
 
 		return labels[ type ] || defaultLabels[ type ] || defaultLabels.default;
@@ -1608,10 +1614,12 @@
 		button.setAttribute(
 			'aria-label',
 			displayedCard
-				? 'WooPay with ' +
-				  getPreferredCardDisplayName( displayedCard ) +
-				  ' ending in ' +
-				  displayedCard.last4
+				? sprintf(
+						/* translators: %1$s: card brand name (e.g. "Visa"), %2$s: last four digits of the card. */
+						__( 'WooPay with %1$s ending in %2$s', 'woocommerce' ),
+						getPreferredCardDisplayName( displayedCard ),
+						displayedCard.last4
+				  )
 				: getWooPayButtonLabel( type )
 		);
 		button.innerHTML = getWooPayButtonContent( settings, displayedCard );

@@ -870,10 +870,11 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			wp_register_script(
 				self::CLASSIC_WOOPAY_SCRIPT_HANDLE,
 				WC()->plugin_url() . '/assets/js/frontend/woopayments-woopay' . $suffix . '.js',
-				array( 'jquery' ),
+				array( 'jquery', 'wp-i18n' ),
 				WC_VERSION,
 				true
 			);
+			wp_set_script_translations( self::CLASSIC_WOOPAY_SCRIPT_HANDLE, 'woocommerce' );
 		}
 
 		if ( ! wp_style_is( self::CLASSIC_WOOPAY_STYLE_HANDLE, 'registered' ) ) {

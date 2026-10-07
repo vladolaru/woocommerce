@@ -4,11 +4,37 @@
 
 const { server, http, HttpResponse } = require( './msw-setup' );
 
-const loadModule = ( params ) => {
+// Stand-in for the wp-i18n script the page loads (@wordpress/i18n __, _n and sprintf), returning the English source
+// strings with positional and sequential placeholders filled.
+function createI18nStub() {
+	return {
+		__: ( text ) => text,
+		_n: ( single, plural, number ) => ( number === 1 ? single : plural ),
+		sprintf: ( format, ...args ) => {
+			let next = 0;
+			return format.replace( /%(?:(\d+)\$)?[sd]/g, ( match, position ) =>
+				String( position ? args[ Number( position ) - 1 ] : args[ next++ ] )
+			);
+		},
+	};
+}
+
+// Marks every translated string, so a test can tell the wp-i18n path from an English literal.
+function createMarkingI18nStub() {
+	const stub = createI18nStub();
+	return Object.assign( {}, stub, {
+		__: ( text ) => '[fr] ' + text,
+		_n: ( single, plural, number ) =>
+			'[fr] ' + ( number === 1 ? single : plural ),
+	} );
+}
+
+const loadModule = ( params, i18n = createI18nStub() ) => {
 	let exported;
 	let navigate;
 
 	jest.isolateModules( () => {
+		window.wp = Object.assign( {}, window.wp, { i18n } );
 		window.wcpayExpressCheckoutParams = params;
 		exported = require( '../woopayments-express-checkout' ).__test__;
 		navigate = jest.fn();
@@ -229,6 +255,17 @@ describe( 'woopayments-express-checkout', () => {
 				amount: 500,
 				name: 'Shipping',
 			} );
+		} );
+
+		it( 'translates the shipping line label', () => {
+			const { getDisplayItems } = loadModule(
+				baseParams(),
+				createMarkingI18nStub()
+			);
+
+			expect( getDisplayItems( cartResponse() )[ 1 ].name ).toBe(
+				'[fr] Shipping'
+			);
 		} );
 
 		it( 'returns no line items when they add up to more than the total', () => {

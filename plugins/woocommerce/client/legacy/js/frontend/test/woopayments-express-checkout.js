@@ -2,6 +2,21 @@
  * @jest-environment jest-fixed-jsdom
  */
 
+// Stand-in for the wp-i18n script the page loads (@wordpress/i18n __, _n and sprintf), returning the English source
+// strings with positional and sequential placeholders filled.
+function createI18nStub() {
+	return {
+		__: ( text ) => text,
+		_n: ( single, plural, number ) => ( number === 1 ? single : plural ),
+		sprintf: ( format, ...args ) => {
+			let next = 0;
+			return format.replace( /%(?:(\d+)\$)?[sd]/g, ( match, position ) =>
+				String( position ? args[ Number( position ) - 1 ] : args[ next++ ] )
+			);
+		},
+	};
+}
+
 describe( 'WooPayments express checkout', () => {
 	// The Express Checkout Element `ready` event in a browser with no wallet: `availablePaymentMethods` is an object
 	// of booleans, one per button (link, applePay, googlePay, paypal, amazonPay, klarna), deprecated but still sent
@@ -354,6 +369,7 @@ describe( 'WooPayments express checkout', () => {
 		window.$ = jQueryMock;
 		window.wp = {
 			apiFetch: jest.fn().mockResolvedValue( getCartResponse() ),
+			i18n: createI18nStub(),
 		};
 		window.wcpayExpressCheckoutParams = getBaseConfig();
 		originalFetch = window.fetch;

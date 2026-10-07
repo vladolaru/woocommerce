@@ -3,6 +3,11 @@
 	'use strict';
 
 	var config = window.wcpayExpressCheckoutParams || {};
+	// Shopper-facing strings, translated through the wp-i18n dependency like client 11.1.0's @wordpress/i18n
+	// imports (transformers/wc-to-stripe.js, compatibility/wc-subscriptions.js).
+	var __ = window.wp.i18n.__;
+	var _n = window.wp.i18n._n;
+	var sprintf = window.wp.i18n.sprintf;
 	var cachedCartData = null;
 	var elements = null;
 	var expressElement = null;
@@ -39,8 +44,10 @@
 	// More than 9 options will prevent the UI from behaving correctly.
 	var SHIPPING_RATES_UPPER_LIMIT_COUNT = 9;
 
-	var GENERIC_PAYMENT_ERROR_MESSAGE =
-		'Unable to process this payment, please try again.';
+	var GENERIC_PAYMENT_ERROR_MESSAGE = __(
+		'Unable to process this payment, please try again.',
+		'woocommerce'
+	);
 	// Marks the error notices setError() adds, so a later wallet error replaces them and no other error.
 	var WALLET_ERROR_ATTRIBUTE = 'data-woopayments-wallet-error';
 	var ERRORS_BEFORE_PERSISTENCE = [
@@ -501,15 +508,16 @@
 		var from = ( elementCurrency || '' ).toUpperCase();
 		var to = cartData.totals.currency_code.toUpperCase();
 
-		return (
-			'This express payment started in ' +
-			from +
-			' and cannot switch to ' +
-			to +
-			' for the address you selected. Choose a different shipping ' +
-			'address, or use the regular checkout to pay in ' +
-			to +
-			'.'
+		// Client 11.1.0 express-checkout/event-handlers.js:59-70.
+		return sprintf(
+			/* translators: %1$s: currency the express payment started in, %2$s: currency required by the selected address. */
+			__(
+				// eslint-disable-next-line max-len -- One translatable string, kept whole for string extraction.
+				'This express payment started in %1$s and cannot switch to %2$s for the address you selected. Choose a different shipping address, or use the regular checkout to pay in %2$s.',
+				'woocommerce'
+			),
+			from,
+			to
 		);
 	}
 
@@ -1512,7 +1520,10 @@
 				// When a wallet sheet is closed, Stripe resolves without an
 				// error but the intent status stays requires_action.
 				if ( intent.status === 'requires_action' ) {
-					paymentError = 'Payment requires additional action.';
+					paymentError = __(
+						'Payment requires additional action.',
+						'woocommerce'
+					);
 				}
 
 				return requestOrderStatusUpdate( confirmation, intent.id ).then(
@@ -2148,7 +2159,7 @@
 						: shippingAmount,
 					totals
 				),
-				name: 'Shipping',
+				name: __( 'Shipping', 'woocommerce' ),
 			} );
 		}
 
@@ -2164,7 +2175,7 @@
 						: discountsAmount,
 					totals
 				),
-				name: 'Discount',
+				name: __( 'Discount', 'woocommerce' ),
 			} );
 		}
 
@@ -2177,21 +2188,21 @@
 						: feesAmount,
 					totals
 				),
-				name: 'Fees',
+				name: __( 'Fees', 'woocommerce' ),
 			} );
 		}
 
 		if ( taxAmount && ! includeTax ) {
 			displayItems.push( {
 				amount: transformPrice( taxAmount, totals ),
-				name: 'Tax',
+				name: __( 'Tax', 'woocommerce' ),
 			} );
 		}
 
 		if ( refundAmount ) {
 			displayItems.push( {
 				amount: -transformPrice( refundAmount, totals ),
-				name: 'Refund',
+				name: __( 'Refund', 'woocommerce' ),
 			} );
 		}
 
@@ -2526,19 +2537,46 @@
 		};
 	}
 
+	// Client 11.1.0 compatibility/wc-subscriptions.js:208-238.
 	function getLocalizedBillingPeriod( period, interval ) {
-		var plurals = {
-			day: 'days',
-			week: 'weeks',
-			month: 'months',
-			year: 'years',
-		};
+		var plurals;
+		var singulars;
 
 		if ( interval > 1 ) {
-			return interval + ' ' + ( plurals[ period ] || period + 's' );
+			plurals = {
+				day: sprintf(
+					/* translators: %d: number of days between subscription renewals. */
+					_n( '%d day', '%d days', interval, 'woocommerce' ),
+					interval
+				),
+				week: sprintf(
+					/* translators: %d: number of weeks between subscription renewals. */
+					_n( '%d week', '%d weeks', interval, 'woocommerce' ),
+					interval
+				),
+				month: sprintf(
+					/* translators: %d: number of months between subscription renewals. */
+					_n( '%d month', '%d months', interval, 'woocommerce' ),
+					interval
+				),
+				year: sprintf(
+					/* translators: %d: number of years between subscription renewals. */
+					_n( '%d year', '%d years', interval, 'woocommerce' ),
+					interval
+				),
+			};
+
+			return plurals[ period ] || interval + ' ' + period + 's';
 		}
 
-		return period;
+		singulars = {
+			day: __( 'day', 'woocommerce' ),
+			week: __( 'week', 'woocommerce' ),
+			month: __( 'month', 'woocommerce' ),
+			year: __( 'year', 'woocommerce' ),
+		};
+
+		return singulars[ period ] || period;
 	}
 
 	// What `??` does; this script keeps to the syntax it already uses.
@@ -2563,11 +2601,12 @@
 			  parts[ 1 ]
 			: whole;
 
-		return (
+		return sprintf(
+			/* translators: %1$s: formatted price (e.g. "$7.58"), %2$s: billing period (e.g. "month", "2 months"). */
+			__( '%1$s / %2$s', 'woocommerce' ),
 			valueOr( totals.currency_prefix, '' ) +
-			formatted +
-			valueOr( totals.currency_suffix, '' ) +
-			' / ' +
+				formatted +
+				valueOr( totals.currency_suffix, '' ),
 			getLocalizedBillingPeriod(
 				subscription.billing_period,
 				valueOr( subscription.billing_interval, 1 )
@@ -2584,7 +2623,7 @@
 	 */
 	function mapSubscriptionLineItems( cartData ) {
 		var subscriptions = getSubscriptionSchedules( cartData );
-		var recurringTotalLabel = 'Recurring total';
+		var recurringTotalLabel = __( 'Recurring total', 'woocommerce' );
 		var isZeroTotalCart;
 		var modifiedItems;
 		var recurringTotal;
@@ -2650,14 +2689,21 @@
 					{},
 					item,
 					{
-						name: item.name + ' (recurring)',
+						name:
+							item.name +
+							' (' +
+							__( 'recurring', 'woocommerce' ) +
+							')',
 						item_data: ( item.item_data || [] ).concat( [
 							{
 								name: recurringTotalLabel,
-								value:
-									formatRecurringTotal( subscription ) +
-									' on ' +
-									subscription.next_payment_date,
+								value: sprintf(
+									/* translators: %1$s: recurring price with period (e.g. "$7.58 / month"),
+									%2$s: date (e.g. "May 9, 2026"). */
+									__( '%1$s on %2$s', 'woocommerce' ),
+									formatRecurringTotal( subscription ),
+									subscription.next_payment_date
+								),
 							},
 						] ),
 					},
@@ -2891,8 +2937,10 @@
 		}
 
 		if ( ! product ) {
-			productAddToCartErrorMessage =
-				'Unable to add this product to the cart.';
+			productAddToCartErrorMessage = __(
+				'Unable to add this product to the cart.',
+				'woocommerce'
+			);
 			return false;
 		}
 
@@ -2903,7 +2951,7 @@
 			function ( error ) {
 				productAddToCartErrorMessage =
 					( error && error.message ) ||
-					'Unable to add this product to the cart.';
+					__( 'Unable to add this product to the cart.', 'woocommerce' );
 				setError( productAddToCartErrorMessage );
 				unblockPage();
 				// Client 11.1.0 shortcode-buttons-express/index.js:323-342: the wallet goes away; the next product form
@@ -2926,7 +2974,7 @@
 	function getPendingShippingRate() {
 		return {
 			id: 'pending',
-			displayName: 'Pending',
+			displayName: __( 'Pending', 'woocommerce' ),
 			amount: 0,
 		};
 	}
@@ -3283,8 +3331,14 @@
 						? ( window.wc_add_to_cart_variation_params &&
 								window.wc_add_to_cart_variation_params
 									.i18n_unavailable_text ) ||
-								'Sorry, this product is unavailable. Please choose a different combination.'
-						: 'Please select your product options before proceeding.'
+								__(
+									'Sorry, this product is unavailable. Please choose a different combination.',
+									'woocommerce'
+								)
+						: __(
+								'Please select your product options before proceeding.',
+								'woocommerce'
+						  )
 				);
 				return;
 			}

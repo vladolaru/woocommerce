@@ -294,10 +294,11 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 				WC()->plugin_url() . '/assets/js/frontend/woopayments-express-checkout' . $suffix . '.js',
 				// wp-hooks on every surface: the extension filters (WooCommerce Subscriptions, Deposits, Product Bundles) run
 				// through it, as the client 11.1.0 bundle that imports @wordpress/hooks does.
-				array( 'jquery', self::STRIPE_SCRIPT_HANDLE, 'wp-api-fetch', 'wp-hooks' ),
+				array( 'jquery', self::STRIPE_SCRIPT_HANDLE, 'wp-api-fetch', 'wp-hooks', 'wp-i18n' ),
 				defined( 'WC_VERSION' ) ? WC_VERSION : '',
 				true
 			);
+			wp_set_script_translations( self::CLASSIC_EXPRESS_CHECKOUT_SCRIPT_HANDLE, 'woocommerce' );
 		}
 
 		if ( ! wp_style_is( self::CLASSIC_EXPRESS_CHECKOUT_STYLE_HANDLE, 'registered' ) ) {
