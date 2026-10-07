@@ -99,9 +99,9 @@ class WooPaymentsPostKycActivationEmail extends WC_Email {
 
 		if ( class_exists( '\WC_Tracks' ) ) {
 			if ( $sent ) {
-				\WC_Tracks::record_event( 'wcpay_post_kyc_activation_email_sent', array( 'stage' => $stage ) );
+				WooPaymentsTracks::record_wcadmin_event( 'wcpay_post_kyc_activation_email_sent', array( 'stage' => $stage ) );
 			} elseif ( $this->is_enabled() && $this->get_recipient() ) {
-				\WC_Tracks::record_event( 'wcpay_post_kyc_activation_email_send_failed', array( 'stage' => $stage ) );
+				WooPaymentsTracks::record_wcadmin_event( 'wcpay_post_kyc_activation_email_send_failed', array( 'stage' => $stage ) );
 			}
 		}
 

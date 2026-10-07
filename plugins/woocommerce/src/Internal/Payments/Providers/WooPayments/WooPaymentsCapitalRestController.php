@@ -254,7 +254,7 @@ class WooPaymentsCapitalRestController implements RegisterHooksInterface {
 
 			if ( '' !== $url ) {
 				// Plugin 11.1.0 `WC_Payments_Redirect_Service::redirect_to_capital_view_offer_page()`.
-				wc_admin_record_tracks_event( 'wcpay_capital_view_offer_redirect' );
+				WooPaymentsTracks::record_wcadmin_event( 'wcpay_capital_view_offer_redirect' );
 				return $url;
 			}
 		} catch ( WooPaymentsApiException $exception ) {

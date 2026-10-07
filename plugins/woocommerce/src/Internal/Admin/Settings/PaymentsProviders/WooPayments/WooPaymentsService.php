@@ -22,6 +22,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTracks;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Exception;
 use WP_Error;
@@ -2173,15 +2174,13 @@ class WooPaymentsService {
 		}
 
 		set_transient( self::REFERRAL_CODE_TRANSIENT, $referral_code, 30 * DAY_IN_SECONDS );
-		if ( function_exists( 'wc_admin_record_tracks_event' ) ) {
-			wc_admin_record_tracks_event(
-				'wcpay_account_referral',
-				array(
-					'referral_code' => $referral_code,
-					'referrer'      => wp_get_referer(),
-				)
-			);
-		}
+		WooPaymentsTracks::record_wcadmin_event(
+			'wcpay_account_referral',
+			array(
+				'referral_code' => $referral_code,
+				'referrer'      => wp_get_referer(),
+			)
+		);
 
 		return Utils::wc_payments_settings_url( self::ONBOARDING_PATH_BASE, array( 'from' => self::FROM_REFERRAL ) );
 	}

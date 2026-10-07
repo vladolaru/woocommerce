@@ -438,7 +438,7 @@ class WooPaymentsAdminNoticeService {
 		}
 		if ( 'test_to_live' === $notice_id && 'cta' === $action ) {
 			// Client 11.1.0 test-to-live handle_cta() records without a dismissal marker: the notice clears once live.
-			\WC_Tracks::record_event( 'wcpay_test_to_live_notice_cta_clicked', array( 'path' => $this->account_service->has_live_account() ? 'switch_mode' : 'onboarding' ) );
+			WooPaymentsTracks::record_wcadmin_event( 'wcpay_test_to_live_notice_cta_clicked', array( 'path' => $this->account_service->has_live_account() ? 'switch_mode' : 'onboarding' ) );
 			return true;
 		}
 
@@ -493,34 +493,34 @@ class WooPaymentsAdminNoticeService {
 		$stage_properties = array( 'stage' => $stage );
 		switch ( $notice_action ) {
 			case 'test_to_live:shown':
-				\WC_Tracks::record_event( 'wcpay_test_to_live_notice_shown' );
+				WooPaymentsTracks::record_wcadmin_event( 'wcpay_test_to_live_notice_shown' );
 				break;
 			case 'test_to_live:dismiss':
-				\WC_Tracks::record_event( 'wcpay_test_to_live_notice_dismissed' );
+				WooPaymentsTracks::record_wcadmin_event( 'wcpay_test_to_live_notice_dismissed' );
 				break;
 			case 'test_to_live:snooze':
-				\WC_Tracks::record_event( 'wcpay_test_to_live_notice_snoozed' );
+				WooPaymentsTracks::record_wcadmin_event( 'wcpay_test_to_live_notice_snoozed' );
 				break;
 			case 'one_and_done:shown':
-				\WC_Tracks::record_event( 'wcpay_one_and_done_notice_shown' );
+				WooPaymentsTracks::record_wcadmin_event( 'wcpay_one_and_done_notice_shown' );
 				break;
 			case 'one_and_done:dismiss':
-				\WC_Tracks::record_event( 'wcpay_one_and_done_notice_dismissed' );
+				WooPaymentsTracks::record_wcadmin_event( 'wcpay_one_and_done_notice_dismissed' );
 				break;
 			case 'one_and_done:snooze':
-				\WC_Tracks::record_event( 'wcpay_one_and_done_notice_snoozed' );
+				WooPaymentsTracks::record_wcadmin_event( 'wcpay_one_and_done_notice_snoozed' );
 				break;
 			case 'one_and_done:cta':
-				\WC_Tracks::record_event( 'wcpay_one_and_done_notice_cta_clicked', array( 'destination' => 'marketing' ) );
+				WooPaymentsTracks::record_wcadmin_event( 'wcpay_one_and_done_notice_cta_clicked', array( 'destination' => 'marketing' ) );
 				break;
 			case 'post_kyc_activation:shown':
-				\WC_Tracks::record_event( 'wcpay_post_kyc_activation_notice_shown', $stage_properties );
+				WooPaymentsTracks::record_wcadmin_event( 'wcpay_post_kyc_activation_notice_shown', $stage_properties );
 				break;
 			case 'post_kyc_activation:dismiss':
-				\WC_Tracks::record_event( 'wcpay_post_kyc_activation_notice_dismissed', $stage_properties );
+				WooPaymentsTracks::record_wcadmin_event( 'wcpay_post_kyc_activation_notice_dismissed', $stage_properties );
 				break;
 			case 'post_kyc_activation:cta':
-				\WC_Tracks::record_event( 'wcpay_post_kyc_activation_notice_cta_clicked', $stage_properties );
+				WooPaymentsTracks::record_wcadmin_event( 'wcpay_post_kyc_activation_notice_cta_clicked', $stage_properties );
 				break;
 		}
 	}

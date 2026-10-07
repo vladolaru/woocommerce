@@ -481,7 +481,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 	public function capture( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
 		$outcome = $this->get_gateway_adapter()->capture( $context, $idempotency_key );
 		// Plugin 11.1.0 records this after every capture attempt (`WC_Payment_Gateway_WCPay::capture_charge()`).
-		wc_admin_record_tracks_event( 'wcpay_merchant_captured_auth' );
+		WooPaymentsTracks::record_wcadmin_event( 'wcpay_merchant_captured_auth' );
 
 		return $outcome;
 	}

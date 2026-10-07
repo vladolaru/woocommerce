@@ -1970,7 +1970,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		if ( is_wp_error( $result ) && 'native_payment_refund_locked' !== $result->get_error_code() ) {
 			$this->record_refund_failure( $order, $refund_amount, $result );
 		} elseif ( true === $result && ! $is_zero_refund ) {
-			wc_admin_record_tracks_event( 'wcpay_edit_order_refund_success' );
+			WooPaymentsTracks::record_wcadmin_event( 'wcpay_edit_order_refund_success' );
 		}
 
 		return $result;
@@ -2018,7 +2018,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$order->add_order_note( $note );
 		$order->update_meta_data( '_wcpay_refund_status', 'failed' );
 		$order->save();
-		wc_admin_record_tracks_event( 'wcpay_edit_order_refund_failure', array( 'reason' => $tracks_reason ) );
+		WooPaymentsTracks::record_wcadmin_event( 'wcpay_edit_order_refund_failure', array( 'reason' => $tracks_reason ) );
 	}
 
 	/**

@@ -214,7 +214,59 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		$this->assertArrayNotHasKey( '_dr', $pixel_args );
 		$this->assertArrayNotHasKey( '_dl', $pixel_args );
 		$this->assertSame( 'Shopper browser', $pixel_args['_via_ua'] );
-		$this->assertArrayHasKey( 'wcpay_version', $pixel_args );
+	}
+
+	/**
+	 * Native events name their source instead of a plugin version (the Tracks event source scheme the owner approved
+	 * on 2026-10-07): `payments_runtime` is `woocommerce_core`, and `wcpay_version`, which client 11.1.0 fills with the
+	 * plugin version (`class-woopay-tracker.php:395`), is not sent; `wc_version` from core's blog details stays.
+	 *
+	 * @testdox Should mark a recorded shopper event as native WooCommerce core, whatever the browser sends.
+	 */
+	public function test_shopper_event_names_the_native_runtime_and_no_plugin_version(): void {
+		$captured_url = '';
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		add_filter( 'wp_doing_ajax', '__return_true' );
+		add_filter(
+			'pre_http_request',
+			static function ( $preempt, $parsed_args, $url ) use ( &$captured_url ) {
+				unset( $preempt, $parsed_args );
+				$captured_url = $url;
+
+				// The response array WP_Http::request() returns (wp-includes/class-wp-http.php).
+				return array(
+					'headers'  => array(),
+					'body'     => '',
+					'response' => array(
+						'code'    => 200,
+						'message' => 'OK',
+					),
+					'cookies'  => array(),
+					'filename' => null,
+				);
+			},
+			10,
+			3
+		);
+
+		$response = $this->create_controller( true, $this->create_account_service( true ) )->get_tracks_response(
+			array(
+				'tracksNonce'     => wp_create_nonce( 'platform_tracks_nonce' ),
+				'tracksEventName' => 'pay_for_order_page_view',
+				'tracksEventProp' => wp_json_encode(
+					array(
+						'payments_runtime' => 'woopayments_plugin',
+						'wcpay_version'    => '9.9.9',
+					)
+				),
+			)
+		);
+
+		$this->assertTrue( $response['success'] );
+		parse_str( (string) wp_parse_url( $captured_url, PHP_URL_QUERY ), $pixel_args );
+		$this->assertSame( 'woocommerce_core', $pixel_args['payments_runtime'] ?? null );
+		$this->assertArrayNotHasKey( 'wcpay_version', $pixel_args );
+		$this->assertNotEmpty( $pixel_args['wc_version'] ?? null );
 	}
 
 	/**

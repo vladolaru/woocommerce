@@ -407,14 +407,15 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 			$this->get_tracks_identity( $user->ID ),
 			$blog_details,
 			array(
-				'_en'           => $event_name,
-				'_ts'           => WC_Tracks_Client::build_timestamp(),
-				'blog_url'      => get_option( 'siteurl' ),
-				'user_lang'     => $user->get( 'WPLANG' ),
-				'test_mode'     => $this->get_account_service()->is_test_mode_enabled() ? 1 : 0,
-				'wcpay_version' => defined( 'WC_VERSION' ) ? WC_VERSION : '',
+				'_en'       => $event_name,
+				'_ts'       => WC_Tracks_Client::build_timestamp(),
+				'blog_url'  => get_option( 'siteurl' ),
+				'user_lang' => $user->get( 'WPLANG' ),
+				'test_mode' => $this->get_account_service()->is_test_mode_enabled() ? 1 : 0,
 			)
 		);
+		// The source property is set here, so a value the browser sent cannot change it.
+		$event = WooPaymentsTracks::with_runtime( $event );
 
 		foreach ( $event as $key => $value ) {
 			if ( null === $value ) {

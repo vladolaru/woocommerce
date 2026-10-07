@@ -55,7 +55,8 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 	 * `name(`; a `static-ClassName` string matches `ClassName::name(`. `prefix` is prepended to
 	 * the resolved literal to form the wire name.
 	 *
-	 * `wc_admin_record_tracks_event`, `record_tracks_event` and `WC_Tracks::record_event` all
+	 * `wc_admin_record_tracks_event`, `record_tracks_event`, `WC_Tracks::record_event` and
+	 * `WooPaymentsTracks::record_wcadmin_event` all
 	 * carry `prefix => ''` here even though `WC_Tracks::record_event()` itself prepends `wcadmin_`
 	 * on the wire: the fixture's own `wire_name` for that same call shape is already the bare call
 	 * name, unprefixed (`extract-tracks.php`'s `$PHP_RECORDERS` table), so both sides agree and the
@@ -90,6 +91,10 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 		),
 		'record_event'                 => array(
 			'object' => 'static-WC_Tracks',
+			'prefix' => '',
+		),
+		'record_wcadmin_event'         => array(
+			'object' => 'static-WooPaymentsTracks',
 			'prefix' => '',
 		),
 	);
@@ -213,6 +218,58 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( array(), $stale, "These allowances are now recorded natively; remove the entry:\n" . implode( "\n", $stale ) );
+	}
+
+	/**
+	 * Server-side native WooPayments events go through `WooPaymentsTracks`, which marks them as sent by WooCommerce
+	 * core (the event source scheme the owner approved on 2026-10-07); a direct call to core's Tracks would send an
+	 * event without that source.
+	 *
+	 * @testdox Should record native server-side Tracks events only through WooPaymentsTracks.
+	 */
+	public function test_native_php_records_core_tracks_only_through_the_helper(): void {
+		$plugin_path = WC()->plugin_path();
+		$roots       = array_map(
+			static function ( string $root ) use ( $plugin_path ): string {
+				return $plugin_path . '/' . $root;
+			},
+			self::PHP_SCAN_ROOTS
+		);
+		$direct      = array();
+
+		foreach ( $this->native_collect_files( $roots, array( 'php' ) ) as $file ) {
+			if ( 'WooPaymentsTracks.php' === basename( $file ) ) {
+				continue;
+			}
+
+			$tokens   = $this->native_strip_trivia( $this->native_tokenize( $file ) );
+			$function = '';
+			foreach ( $tokens as $index => $token ) {
+				if ( is_array( $token ) && T_FUNCTION === $token[0] && is_array( $tokens[ $index + 1 ] ?? null ) ) {
+					$function = $tokens[ $index + 1 ][1];
+				}
+				if ( ! is_array( $token ) || T_STRING !== $token[0] || '(' !== ( $tokens[ $index + 1 ] ?? null ) ) {
+					continue;
+				}
+				// Trunk's NOX onboarding recorder sends core events that predate native WooPayments.
+				if ( 'WooPaymentsService.php' === basename( $file ) && 'record_event' === $function ) {
+					continue;
+				}
+
+				$previous             = $tokens[ $index - 1 ] ?? null;
+				$owner                = $tokens[ $index - 2 ] ?? null;
+				$is_core_record_event = 'record_event' === $token[1] && is_array( $previous ) && T_DOUBLE_COLON === $previous[0]
+					&& is_array( $owner ) && 'WC_Tracks' === ltrim( $owner[1], '\\' );
+				$is_admin_helper      = 'wc_admin_record_tracks_event' === $token[1]
+					&& ! ( is_array( $previous ) && in_array( $previous[0], array( T_OBJECT_OPERATOR, T_DOUBLE_COLON, T_FUNCTION ), true ) );
+
+				if ( $is_core_record_event || $is_admin_helper ) {
+					$direct[] = substr( $file, strlen( $plugin_path ) + 1 ) . ':' . $token[2];
+				}
+			}
+		}
+
+		$this->assertSame( array(), $direct, 'Record native Tracks events through WooPaymentsTracks::record_wcadmin_event().' );
 	}
 
 	/**

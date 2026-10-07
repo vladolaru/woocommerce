@@ -859,9 +859,7 @@ class WooPaymentsPmPromotionsService {
 	 * @return void
 	 */
 	private function record_tracks_event( string $event_name, array $properties ): void {
-		if ( function_exists( 'wc_admin_record_tracks_event' ) ) {
-			wc_admin_record_tracks_event( $event_name, $properties );
-		}
+		WooPaymentsTracks::record_wcadmin_event( $event_name, $properties );
 	}
 
 	/**

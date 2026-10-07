@@ -618,7 +618,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 			$order->save();
 
 			if ( 'succeeded' !== $status ) {
-				wc_admin_record_tracks_event( 'wcpay_merchant_captured_auth' );
+				WooPaymentsTracks::record_wcadmin_event( 'wcpay_merchant_captured_auth' );
 				// The client first records the authorization: on hold, with the authorized note (class-wc-rest-payments-orders-controller.php:217, class-wc-payments-order-service.php:1612-1628).
 				$this->apply_terminal_lifecycle_event( $order, $intent, $intent_id, PaymentLifecycleEvent::STATUS_AUTHORIZED );
 			}

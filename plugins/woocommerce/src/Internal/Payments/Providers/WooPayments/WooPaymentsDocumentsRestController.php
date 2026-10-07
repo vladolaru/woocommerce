@@ -390,11 +390,7 @@ class WooPaymentsDocumentsRestController implements RegisterHooksInterface {
 	 * @param string $document_id Document ID.
 	 */
 	private function record_document_download( string $document_id ): void {
-		if ( ! function_exists( 'wc_admin_record_tracks_event' ) ) {
-			return;
-		}
-
-		wc_admin_record_tracks_event(
+		WooPaymentsTracks::record_wcadmin_event(
 			'wcpay_document_downloaded',
 			array(
 				'document_id' => $document_id,

@@ -2071,7 +2071,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		}
 
 		try {
-			\WC_Tracks::record_event( 'woocommerce_woopayments_cutover_diagnostic', array( 'condition' => $code ) );
+			WooPaymentsTracks::record_wcadmin_event( 'woocommerce_woopayments_cutover_diagnostic', array( 'condition' => $code ) );
 		} catch ( \Throwable $error ) {
 			return;
 		}

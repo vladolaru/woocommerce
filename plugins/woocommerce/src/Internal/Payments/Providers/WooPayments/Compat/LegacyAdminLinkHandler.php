@@ -18,8 +18,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCapitalRestController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTrackingInfoService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTracks;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -176,15 +176,13 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 			$description = 'weekly-' . $week;
 		}
 
-		if ( function_exists( 'wc_admin_record_tracks_event' ) ) {
-			wc_admin_record_tracks_event(
-				'wcpay_kyc_reminder_merchant_returned',
-				array(
-					'offset'      => $offset,
-					'description' => $description,
-				)
-			);
-		}
+		WooPaymentsTracks::record_wcadmin_event(
+			'wcpay_kyc_reminder_merchant_returned',
+			array(
+				'offset'      => $offset,
+				'description' => $description,
+			)
+		);
 
 		// The plugin continues with from=WCPAY_KYC_REMINDER (11.1.0 `redirect_to_wcpay_connect()`), which native onboarding keeps for attribution.
 		$from         = array( 'from' => 'WCPAY_KYC_REMINDER' );
@@ -385,14 +383,10 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 	 * @param \Automattic\Jetpack\Connection\Manager $manager Jetpack connection manager.
 	 */
 	private function record_wpcom_connection_start( $manager ): void {
-		if ( ! function_exists( 'wc_admin_record_tracks_event' ) ) {
-			return;
-		}
-
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- The caller verified the nonce.
 		$from = isset( $_GET['from'] ) ? sanitize_text_field( wp_unslash( $_GET['from'] ) ) : '';
 
-		wc_admin_record_tracks_event(
+		WooPaymentsTracks::record_wcadmin_event(
 			'wcpay_account_connect_wpcom_connection_start',
 			array_merge(
 				array(
@@ -400,7 +394,6 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 					'from'              => $from,
 					'is_test_mode'      => $this->account_service->is_test_mode_enabled(),
 					'jetpack_connected' => $manager->is_connected() && $manager->has_connected_owner(),
-					'wcpay_version'     => WooPaymentsClientVersion::VERSION,
 					'woo_country_code'  => WC()->countries->get_base_country(),
 				),
 				$this->tracking_info->get_tracking_info() ?? array()

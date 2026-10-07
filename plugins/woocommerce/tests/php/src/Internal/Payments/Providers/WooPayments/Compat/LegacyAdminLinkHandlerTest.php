@@ -13,7 +13,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\LegacyAdminLinkHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCapitalRestController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTrackingInfoService;
 use PHPUnit\Framework\MockObject\MockObject;
 use WC_Unit_Test_Case;
@@ -350,8 +349,9 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 
 		$properties = $recorded->events['wcadmin_wcpay_account_connect_wpcom_connection_start'];
 		$this->assertSame( 'fixture-host-7', $properties['hosting_provider'] );
-		// The plugin merges the tracking info after its defaults, so a platform key wins.
-		$this->assertSame( 'platform-override', $properties['wcpay_version'] );
+		// Native events carry no plugin version, not even one the platform's tracking info sends.
+		$this->assertArrayNotHasKey( 'wcpay_version', $properties );
+		$this->assertSame( 'woocommerce_core', $properties['payments_runtime'] );
 		$this->assertTrue( $properties['is_reconnect'] );
 		$this->assertSame( 'WCPAY_OVERVIEW', $properties['from'] );
 		$this->assertTrue( $properties['is_test_mode'] );
@@ -374,7 +374,8 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 
 		$properties = $recorded->events['wcadmin_wcpay_account_connect_wpcom_connection_start'];
 		$this->assertArrayNotHasKey( 'hosting_provider', $properties );
-		$this->assertSame( WooPaymentsClientVersion::VERSION, $properties['wcpay_version'] );
+		$this->assertArrayNotHasKey( 'wcpay_version', $properties );
+		$this->assertSame( 'woocommerce_core', $properties['payments_runtime'] );
 	}
 
 	/**
