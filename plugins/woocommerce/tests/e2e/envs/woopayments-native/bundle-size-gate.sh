@@ -77,6 +77,14 @@ plugin_assets = {
     "woopay-direct-checkout.js": "dist/woopay-direct-checkout.js",
     "blocks-common.js": None,
     "blocks-woopay-common.js": None,
+    "blocks-woopay.css": None,
+    "woopay-phone-validation.js": None,
+    "product-details.js": "dist/product-details.js",
+    "product-details.css": "dist/product-details.css",
+    "cart-block.js": "dist/cart-block.js",
+    "cart-block.css": "dist/cart-block.css",
+    "success.js": "dist/success.js",
+    "success.css": None,
     "page-blocks-checkout.js": ["dist/blocks-checkout.js", "dist/woopay.js"],
     "page-blocks-cart.js": ["dist/blocks-checkout.js", "dist/cart-block.js"],
     "multi-currency-admin.js": "dist/multi-currency.js",
@@ -105,6 +113,8 @@ CORE_ADMIN_CHUNKS = "plugins/woocommerce/assets/client/admin/chunks/"
 FINGERPRINTJS = "plugins/woocommerce/assets/js/fingerprintjs/fp.umd.min.js"
 # The client bundles its fraud-scripts loader into its Blocks card bundle; native ships it as its own handle.
 BLOCKS_FRAUD_SCRIPTS = "plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-fraud-scripts.js"
+# The client bundles its appearance code into its classic checkout script; native ships it as the card script's dependency.
+CLASSIC_APPEARANCE = "plugins/woocommerce/assets/js/frontend/utils/woopayments-appearance.min.js"
 CORE_BLOCKS = "plugins/woocommerce/assets/client/blocks/"
 # Code the Blocks card, WooPay and express scripts share ships once, in two chunks those scripts depend on. Each
 # chunk is its own asset, the per-script assets leave it out, and the page assets count every file once.
@@ -113,11 +123,12 @@ BLOCKS_WOOPAY = CORE_BLOCKS + "wc-payment-method-woopayments-woopay.js"
 BLOCKS_EXPRESS = CORE_BLOCKS + "wc-payment-method-woopayments-express-checkout.js"
 BLOCKS_COMMON = CORE_BLOCKS + "wc-payment-method-woopayments-common.js"
 BLOCKS_WOOPAY_COMMON = CORE_BLOCKS + "wc-payment-method-woopayments-woopay-common.js"
+MESSAGING = "plugins/woocommerce/assets/js/frontend/woopayments-payment-method-messaging.min.js"
 CART_BLOCK_MESSAGING = CORE_BLOCKS + "wc-woopayments-cart-block-payment-method-messaging.js"
 core_assets = {
     "settings-main.js": CORE_ADMIN_CHUNKS + "settings-payments-woopayments.js",
     "settings-main.css": CORE_ADMIN_CHUNKS + "settings-payments-woopayments.style.css",
-    "classic-card.js": ["plugins/woocommerce/assets/js/frontend/woopayments-checkout.min.js", FINGERPRINTJS],
+    "classic-card.js": ["plugins/woocommerce/assets/js/frontend/woopayments-checkout.min.js", FINGERPRINTJS, CLASSIC_APPEARANCE],
     "classic-card.css": "plugins/woocommerce/assets/css/woopayments-checkout.css",
     "blocks-card.js": [BLOCKS_CARD, FINGERPRINTJS, BLOCKS_FRAUD_SCRIPTS],
     "blocks-card.css": "plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments.css",
@@ -127,11 +138,23 @@ core_assets = {
     "blocks-express-checkout.js": BLOCKS_EXPRESS,
     "blocks-express-checkout.css": "plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-express-checkout.css",
     "woopay.js": BLOCKS_WOOPAY,
+    # The client's woopay.css holds its save-user styles for both checkouts; native keeps the classic save-user and
+    # WooPay button styles in this stylesheet, the Blocks save-user styles in blocks-card.css and the Blocks WooPay
+    # button styles in blocks-woopay.css (the client's are in its blocks-checkout.css).
     "woopay.css": "plugins/woocommerce/assets/css/woopayments-woopay.css",
     "woopay-express-button.js": "plugins/woocommerce/assets/js/frontend/woopayments-woopay.min.js",
     "woopay-direct-checkout.js": "plugins/woocommerce/assets/js/frontend/woopayments-woopay.min.js",
     "blocks-common.js": BLOCKS_COMMON,
     "blocks-woopay-common.js": BLOCKS_WOOPAY_COMMON,
+    "blocks-woopay.css": CORE_BLOCKS + "wc-payment-method-woopayments-woopay.css",
+    # Loaded only once the shopper opts in to saving their details with WooPay.
+    "woopay-phone-validation.js": CORE_BLOCKS + "wc-woopayments-phone-validation.js",
+    "product-details.js": MESSAGING,
+    "product-details.css": "plugins/woocommerce/assets/css/woopayments-payment-method-messaging.css",
+    "cart-block.js": CART_BLOCK_MESSAGING,
+    "cart-block.css": CORE_BLOCKS + "wc-woopayments-cart-block-payment-method-messaging.css",
+    "success.js": "plugins/woocommerce/assets/js/frontend/woopayments-order-success.min.js",
+    "success.css": "plugins/woocommerce/assets/css/woopayments-order-success.css",
     # The Blocks checkout with WooPay and express checkout, and the Blocks cart with express checkout.
     "page-blocks-checkout.js": [BLOCKS_CARD, BLOCKS_WOOPAY, BLOCKS_EXPRESS, BLOCKS_COMMON, BLOCKS_WOOPAY_COMMON, FINGERPRINTJS, BLOCKS_FRAUD_SCRIPTS],
     "page-blocks-cart.js": [BLOCKS_EXPRESS, BLOCKS_COMMON, BLOCKS_FRAUD_SCRIPTS, CART_BLOCK_MESSAGING],

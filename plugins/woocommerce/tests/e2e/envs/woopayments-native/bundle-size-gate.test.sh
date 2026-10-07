@@ -54,17 +54,20 @@ assert_json "$WORK_DIR/plugin-capture.json" 'data["assets"]["frontend-tracks.js"
 
 # --- capture: wc-core profile (auto-detected from the plugins/woocommerce layout) ---
 core_repo="$WORK_DIR/wc-core"
-mkdir -p "$core_repo/plugins/woocommerce/assets/js/frontend" "$core_repo/plugins/woocommerce/assets/js/fingerprintjs"
+mkdir -p "$core_repo/plugins/woocommerce/assets/js/frontend/utils" "$core_repo/plugins/woocommerce/assets/js/fingerprintjs"
 # Unminified sources sit next to the minified files stores serve; only the .min.js counts.
 printf 'console.log("classic-core-unminified-source");\n' > "$core_repo/plugins/woocommerce/assets/js/frontend/woopayments-checkout.js"
 printf 'console.log("classic-core");\n' > "$core_repo/plugins/woocommerce/assets/js/frontend/woopayments-checkout.min.js"
+printf 'var appearance=1;\n' > "$core_repo/plugins/woocommerce/assets/js/frontend/utils/woopayments-appearance.min.js"
 printf 'var fp=1;\n' > "$core_repo/plugins/woocommerce/assets/js/fingerprintjs/fp.umd.min.js"
 bash "$GATE" capture --repo "$core_repo" --out "$WORK_DIR/core-capture.json" > /dev/null
 assert_json "$WORK_DIR/core-capture.json" 'data["profile"] == "wc-core"'
-# The client bundles FingerprintJS into its card script, so native's card entry sums both files, each gzipped on its own.
+# The client bundles FingerprintJS and its appearance code into its card script, so native's card entry sums the three
+# files, each gzipped on its own.
 core_min="$core_repo/plugins/woocommerce/assets/js/frontend/woopayments-checkout.min.js"
 core_fp="$core_repo/plugins/woocommerce/assets/js/fingerprintjs/fp.umd.min.js"
-assert_json "$WORK_DIR/core-capture.json" 'data["assets"]["classic-card.js"]["status"] == "present" and data["assets"]["classic-card.js"]["path"] == ["plugins/woocommerce/assets/js/frontend/woopayments-checkout.min.js", "plugins/woocommerce/assets/js/fingerprintjs/fp.umd.min.js"] and data["assets"]["classic-card.js"]["raw_bytes"] == len(open("'"$core_min"'", "rb").read()) + len(open("'"$core_fp"'", "rb").read()) and data["assets"]["classic-card.js"]["gzip_bytes"] == len(__import__("gzip").compress(open("'"$core_min"'", "rb").read(), compresslevel=9)) + len(__import__("gzip").compress(open("'"$core_fp"'", "rb").read(), compresslevel=9))'
+core_appearance="$core_repo/plugins/woocommerce/assets/js/frontend/utils/woopayments-appearance.min.js"
+assert_json "$WORK_DIR/core-capture.json" 'data["assets"]["classic-card.js"]["status"] == "present" and data["assets"]["classic-card.js"]["path"] == ["plugins/woocommerce/assets/js/frontend/woopayments-checkout.min.js", "plugins/woocommerce/assets/js/fingerprintjs/fp.umd.min.js", "plugins/woocommerce/assets/js/frontend/utils/woopayments-appearance.min.js"] and data["assets"]["classic-card.js"]["raw_bytes"] == sum(len(open(f, "rb").read()) for f in ("'"$core_min"'", "'"$core_fp"'", "'"$core_appearance"'")) and data["assets"]["classic-card.js"]["gzip_bytes"] == sum(len(__import__("gzip").compress(open(f, "rb").read(), compresslevel=9)) for f in ("'"$core_min"'", "'"$core_fp"'", "'"$core_appearance"'"))'
 # A list entry is missing when any of its files is.
 assert_json "$WORK_DIR/core-capture.json" 'data["assets"]["blocks-card.js"]["status"] == "missing"'
 assert_json "$WORK_DIR/core-capture.json" 'data["assets"]["settings-main.css"] == {"status": "missing", "path": "plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments.style.css"}'
@@ -78,7 +81,7 @@ for name in wc-payment-method-woopayments wc-payment-method-woopayments-woopay w
 done
 bash "$GATE" capture --repo "$core_repo" --out "$WORK_DIR/core-capture.json" > /dev/null
 assert_json "$WORK_DIR/core-capture.json" 'data["assets"]["blocks-express-checkout.js"]["raw_bytes"] == len(open("'"$core_blocks"'/wc-payment-method-woopayments-express-checkout.js", "rb").read())'
-assert_json "$WORK_DIR/core-capture.json" 'data["assets"]["page-blocks-checkout.js"]["path"].count("plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-common.js") == 1 and data["assets"]["page-blocks-checkout.js"]["raw_bytes"] == sum(len(open(f, "rb").read()) for f in __import__("glob").glob("'"$core_blocks"'/*.js")) + len(open("'"$core_repo"'/plugins/woocommerce/assets/js/fingerprintjs/fp.umd.min.js", "rb").read())'
+assert_json "$WORK_DIR/core-capture.json" 'data["assets"]["page-blocks-checkout.js"]["path"].count("plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-common.js") == 1 and data["assets"]["page-blocks-checkout.js"]["raw_bytes"] == sum(len(open(f, "rb").read()) for f in __import__("glob").glob("'"$core_blocks"'/*.js")) + len(open("'"$core_fp"'", "rb").read())'
 
 # --- capture: a missing repo directory fails closed ---
 expect_exit 2 'capture on a missing repo fails' bash "$GATE" capture --repo "$WORK_DIR/does-not-exist" --out "$WORK_DIR/missing.json"
