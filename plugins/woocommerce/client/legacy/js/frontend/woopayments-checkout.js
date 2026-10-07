@@ -105,6 +105,40 @@
 		'a',
 	];
 	var classicFooterLinkSelectors = [ '.site-footer a', 'footer a' ];
+	// Client 11.1.0 upe-styles/index.js:187 (classic checkout container) and the '.Container' properties it may set
+	// (borderOutlineBackgroundProps).
+	var classicContainerSelectors = [ '.woocommerce-checkout-review-order-table' ];
+	var classicContainerStyleProps = [
+		'backgroundColor',
+		'border',
+		'borderTop',
+		'borderRight',
+		'borderBottom',
+		'borderLeft',
+		'borderRadius',
+		'borderWidth',
+		'borderColor',
+		'borderStyle',
+		'borderTopWidth',
+		'borderTopColor',
+		'borderTopStyle',
+		'borderRightWidth',
+		'borderRightColor',
+		'borderRightStyle',
+		'borderBottomWidth',
+		'borderBottomColor',
+		'borderBottomStyle',
+		'borderLeftWidth',
+		'borderLeftColor',
+		'borderLeftStyle',
+		'borderTopLeftRadius',
+		'borderTopRightRadius',
+		'borderBottomRightRadius',
+		'borderBottomLeftRadius',
+		'outline',
+		'outlineOffset',
+		'boxShadow',
+	];
 	var checkoutBillingFieldIds = [
 		'billing_first_name',
 		'billing_last_name',
@@ -1483,6 +1517,11 @@
 			rules: Object.assign( {}, appearance.rules, {
 				'.Link': Object.assign( {}, linkRules, { color: linkColor } ),
 				'.Footer-link': { color: footerLinkColor },
+				// Client 11.1.0 upe-styles/index.js:855-860.
+				'.Container': getElementStyles(
+					queryFirst( classicContainerSelectors ),
+					classicContainerStyleProps
+				),
 			} ),
 		} );
 	}

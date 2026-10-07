@@ -802,6 +802,13 @@ const getWooPayAppearance = ( appearance, selectors, scope ) => {
 			...appearance.rules,
 			'.Link': { ...linkRules, color: linkColor },
 			'.Footer-link': { color: footerLinkColor },
+			// Client 11.1.0 upe-styles/index.js:855-860.
+			'.Container': getFieldStyles(
+				selectors.containerSelectors,
+				'.Container',
+				null,
+				scope
+			),
 		},
 	};
 };
