@@ -2332,6 +2332,48 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A site that disallows file modifications defers the switch with the version code and never runs the updater.
+	 */
+	public function test_disallowed_file_modifications_defer_without_running_the_updater(): void {
+		$job       = new class() extends WooPaymentsCutoverReconciliationJob {
+			/** @var int */
+			public int $upgrade_count = 0;
+
+			/** Refresh controlled update metadata. */
+			protected function refresh_plugin_update_metadata(): void {
+			}
+
+			/**
+			 * Record any unexpected core update call.
+			 *
+			 * @param string $plugin_file Active WooPayments plugin file.
+			 * @return bool
+			 */
+			protected function upgrade_woopayments_plugin_file( string $plugin_file ): bool {
+				unset( $plugin_file );
+				++$this->upgrade_count;
+				return true;
+			}
+		};
+		$preflight = $this->create_preflight_with_failures( array( 'woopayments_plugin_version_unsupported' ), false, false, array(), 'woocommerce-payments/woocommerce-payments.php' );
+		$sut       = $this->create_job( true, $preflight, $job );
+		// DISALLOW_FILE_MODS and hosts set this policy through wp_is_file_mod_allowed(); the upgrader classes do not check it.
+		add_filter( 'file_mod_allowed', '__return_false' );
+
+		$sut->enqueue( 'merchant' );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$sut->handle_reconcile( $pending['generation'], 1 );
+
+		$deferred = $this->require_state_store()->get_record();
+		$this->assertIsArray( $deferred );
+		$this->assertSame( WooPaymentsCutoverState::DEFERRED, $deferred['state'] );
+		$this->assertSame( array( 'woopayments_plugin_version_unsupported' ), $deferred['deferred_codes'] );
+		$this->assertSame( 0, $job->upgrade_count );
+	}
+
+	/**
 	 * @testdox A contending WordPress core upgrader lock defers without running the updater.
 	 */
 	public function test_contending_plugin_update_lock_defers_without_running_the_updater(): void {

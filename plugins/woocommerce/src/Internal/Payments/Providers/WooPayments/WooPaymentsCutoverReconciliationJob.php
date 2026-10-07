@@ -1874,9 +1874,17 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Update the resolved active WooPayments plugin with WordPress core APIs.
 	 *
+	 * Runs only where the site allows automatic file changes: the upgrader classes do not check DISALLOW_FILE_MODS or the
+	 * `file_mod_allowed` filter, so this asks the same question core's background updater asks first.
+	 *
 	 * @return bool True only when WordPress reports a completed plugin upgrade.
 	 */
 	private function update_woopayments_plugin(): bool {
+		if ( ! wp_is_file_mod_allowed( 'automatic_updater' ) ) {
+			$this->log_error( 'WooPayments cutover cannot update the WooPayments plugin because this site does not allow file changes.' );
+			return false;
+		}
+
 		$plugin_file = $this->preflight_service->get_active_woopayments_plugin_file();
 		if ( '' === $plugin_file ) {
 			$this->log_error( 'WooPayments cutover could not resolve the active plugin file for updating.' );
