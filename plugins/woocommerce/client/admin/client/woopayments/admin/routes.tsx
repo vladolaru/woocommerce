@@ -12,7 +12,10 @@ import type { ReactNode } from 'react';
  */
 import { ProviderRouteLoading } from '~/settings-payments/components/provider-route-loading';
 import { getSettingsPaymentsProviderRouteUrl } from './utils';
-import '../tracks-runtime';
+import { registerPaymentsRuntimeTracksPropertyWhenPreloaded } from '../tracks-runtime';
+
+// A native link on a store the plugin owns also loads these routes, so the core preload decides.
+registerPaymentsRuntimeTracksPropertyWhenPreloaded();
 
 // Share the chunk name with the Payments settings tab in `settings-payments/index.tsx`
 // so the settings page ships once instead of in two identical chunks.

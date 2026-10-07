@@ -32,7 +32,7 @@ import { recordEvent } from '@woocommerce/tracks';
  * Internal dependencies
  */
 import { WOOPAYMENTS_SETTINGS_HEADING_ID } from '~/settings-payments/constants';
-import '../tracks-runtime';
+import { registerPaymentsRuntimeTracksPropertyWhenPreloaded } from '../tracks-runtime';
 import {
 	getSettingsPaymentsProviderRouteUrl,
 	handleSettingsPaymentsProviderRouteClick,
@@ -122,6 +122,9 @@ import { getWooPaymentsDocumentsAccount } from '../admin/documents/data';
 import type { WooPaymentsVatDetails } from '../admin/documents/types';
 import './settings-page-only.scss';
 import './style.scss';
+
+// The settings embed can render this page outside the native routes.
+registerPaymentsRuntimeTracksPropertyWhenPreloaded();
 
 const PROVIDER_NAME = 'WooPayments';
 const VAT_DETAILS_MODAL_QUERY_PARAM = 'woopayments-vat-details-modal';

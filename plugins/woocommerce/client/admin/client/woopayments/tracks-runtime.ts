@@ -52,7 +52,8 @@ export const addPaymentsRuntimeProperty = (
 };
 
 /**
- * Register the filter once per page; each native entry bundles its own copy of this module.
+ * Register the filter once per page; each native entry bundles its own copy of this module. Call it only where native
+ * owns the runtime: the plugin's own `wcadmin_wcpay_*` events carry the same names.
  */
 export const registerPaymentsRuntimeTracksProperty = () => {
 	if ( hasFilter( EVENT_PROPERTIES_FILTER, FILTER_NAMESPACE ) ) {
@@ -66,4 +67,19 @@ export const registerPaymentsRuntimeTracksProperty = () => {
 	);
 };
 
-registerPaymentsRuntimeTracksProperty();
+/**
+ * Register the filter on a Payments settings page only when core preloaded `woopaymentsSettings`, which it does only
+ * while native owns the runtime (`WooPaymentsAdminNavigationController::preload_shared_settings()`). A native route
+ * reached on a plugin-owned store has no preload.
+ */
+export const registerPaymentsRuntimeTracksPropertyWhenPreloaded = () => {
+	const preloaded = (
+		window as typeof window & {
+			wcSettings?: { admin?: { woopaymentsSettings?: unknown } };
+		}
+	 ).wcSettings?.admin?.woopaymentsSettings;
+
+	if ( isRecord( preloaded ) ) {
+		registerPaymentsRuntimeTracksProperty();
+	}
+};
