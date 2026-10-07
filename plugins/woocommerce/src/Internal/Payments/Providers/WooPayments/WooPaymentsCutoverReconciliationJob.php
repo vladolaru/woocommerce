@@ -1397,31 +1397,88 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			return;
 		}
 
+		$paused_site_marker = null;
 		try {
 			if ( ! $this->is_network_generation_ready( $generation ) ) {
 				return;
 			}
 
-			$deactivated = ! $this->preflight_service->is_woopayments_network_active();
-			if ( ! $deactivated ) {
-				try {
-					$this->internal_plugin_lifecycle_change = true;
-					$deactivated                            = $this->preflight_service->deactivate_woopayments_plugin();
-				} catch ( \Throwable $error ) {
-					$this->log_error( 'WooPayments network cutover plugin deactivation failed.', array( 'error' => $error->getMessage() ) );
-					$deactivated = false;
-				} finally {
-					$this->internal_plugin_lifecycle_change = false;
-				}
+			// A paused site never runs its own claim, so its Stripe Billing marker is checked here, before the plugin leaves every site.
+			$paused_site_marker = $this->paused_site_has_stripe_billing_marker();
+			if ( false === $paused_site_marker ) {
+				$this->deactivate_network_plugin_for_generation( $generation );
 			}
-			if ( ! $deactivated ) {
-				return;
-			}
-
-			$this->schedule_network_ownership_verification( $generation );
 		} finally {
 			$this->release_network_lease( $network_token );
 		}
+
+		// Propagation takes the network lease itself; when it cannot, the sites waiting at the barrier retry and check again.
+		if ( true === $paused_site_marker ) {
+			$this->propagate_network_exclusion( $generation, 'legacy_stripe_billing_subscriptions_present' );
+		}
+	}
+
+	/**
+	 * Deactivate the network-active plugin for a completed barrier, then schedule every site's ownership verification.
+	 *
+	 * @param int $generation Completed network barrier generation.
+	 */
+	private function deactivate_network_plugin_for_generation( int $generation ): void {
+		$deactivated = ! $this->preflight_service->is_woopayments_network_active();
+		if ( ! $deactivated ) {
+			try {
+				$this->internal_plugin_lifecycle_change = true;
+				$deactivated                            = $this->preflight_service->deactivate_woopayments_plugin();
+			} catch ( \Throwable $error ) {
+				$this->log_error( 'WooPayments network cutover plugin deactivation failed.', array( 'error' => $error->getMessage() ) );
+				$deactivated = false;
+			} finally {
+				$this->internal_plugin_lifecycle_change = false;
+			}
+		}
+		if ( ! $deactivated ) {
+			return;
+		}
+
+		$this->schedule_network_ownership_verification( $generation );
+	}
+
+	/**
+	 * Tell whether an archived, spam or deleted site of the network has the Stripe Billing marker.
+	 *
+	 * @return bool|null True or false, or null when a site could not be checked, so the barrier waits.
+	 */
+	private function paused_site_has_stripe_billing_marker(): ?bool {
+		$current_blog_id = get_current_blog_id();
+		foreach ( $this->get_current_network_site_ids() as $site_id ) {
+			if ( $this->is_site_runnable( $site_id ) ) {
+				continue;
+			}
+			if ( get_current_blog_id() !== $site_id ) {
+				switch_to_blog( $site_id );
+			}
+			try {
+				$this->preflight_service->invalidate_current_blog_memoization();
+				if ( in_array( 'legacy_stripe_billing_subscriptions_present', $this->normalize_codes( $this->preflight_service->get_reconciliation_failures() ), true ) ) {
+					return true;
+				}
+			} catch ( \Throwable $error ) {
+				$this->log_error(
+					'WooPayments network cutover could not check a paused site before deactivating the plugin.',
+					array(
+						'site_id' => $site_id,
+						'error'   => $error->getMessage(),
+					)
+				);
+				return null;
+			} finally {
+				if ( get_current_blog_id() !== $current_blog_id ) {
+					restore_current_blog();
+				}
+			}
+		}
+
+		return false;
 	}
 
 	/**

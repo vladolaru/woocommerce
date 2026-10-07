@@ -2894,6 +2894,99 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A paused site with bundled Stripe Billing subscriptions keeps the network from switching: the barrier excludes every site instead of deactivating the plugin.
+	 * @group multisite
+	 */
+	public function test_network_barrier_checks_paused_sites_for_the_stripe_billing_marker(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+
+		$main_site_id     = get_current_blog_id();
+		$second_site_id   = $this->create_cutover_multisite_site( 'cutover-live-peer-marker.example.org' );
+		$archived_site_id = $this->create_cutover_multisite_site( 'cutover-archived-peer-marker.example.org' );
+		update_blog_status( $archived_site_id, 'archived', '1' );
+		$failures_by_site   = array( $archived_site_id => array( 'legacy_stripe_billing_subscriptions_present' ) );
+		$deactivation_calls = 0;
+		$preflight          = new class( $failures_by_site, $deactivation_calls ) extends WooPaymentsCutoverPreflightService {
+			/** @var array<int,string[]> */
+			private array $failures_by_site;
+
+			/** @var int */
+			private int $deactivation_calls;
+
+			/**
+			 * @param array<int,string[]> $failures_by_site   Controlled failures.
+			 * @param int                 $deactivation_calls Deactivation calls.
+			 */
+			public function __construct( array $failures_by_site, int &$deactivation_calls ) {
+				$this->failures_by_site   = $failures_by_site;
+				$this->deactivation_calls =& $deactivation_calls;
+			}
+
+			/** @return string[] */
+			public function get_reconciliation_failures(): array {
+				return $this->failures_by_site[ get_current_blog_id() ] ?? array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Network-active until the barrier deactivates it. */
+			public function is_woopayments_network_active(): bool {
+				return 0 === $this->deactivation_calls;
+			}
+
+			/** Record one network deactivation. */
+			public function deactivate_woopayments_plugin(): bool {
+				++$this->deactivation_calls;
+				return true;
+			}
+		};
+		$sut                = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization() );
+
+		try {
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$main_pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_pending );
+			$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
+			$sut->handle_reconcile( $main_pending['generation'], 1 );
+			switch_to_blog( $second_site_id );
+			$second_pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $second_pending );
+			$this->require_scheduler()->cancel( $second_pending['generation'], 1 );
+			$sut->handle_reconcile( $second_pending['generation'], 1 );
+			restore_current_blog();
+
+			$this->assertSame( 0, $deactivation_calls, 'The plugin must stay on every site while a paused site holds bundled Stripe Billing subscriptions.' );
+			foreach ( array( $main_site_id, $second_site_id, $archived_site_id ) as $site_id ) {
+				switch_to_blog( $site_id );
+				$record = $this->require_state_store()->get_record();
+				restore_current_blog();
+				$this->assertIsArray( $record );
+				$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $record['state'], "Site $site_id must be excluded with the network." );
+				$this->assertSame( array( 'legacy_stripe_billing_subscriptions_present' ), $record['deferred_codes'] );
+			}
+		} finally {
+			if ( get_current_blog_id() !== $main_site_id ) {
+				restore_current_blog();
+			}
+			foreach ( array( $second_site_id, $archived_site_id ) as $site_id ) {
+				switch_to_blog( $site_id );
+				$this->cleanup_state();
+				restore_current_blog();
+				wpmu_delete_blog( $site_id, true );
+			}
+		}
+	}
+
+	/**
 	 * @testdox The admin notice classification of a network record runs the network-wide preflight once and reuses it within the hour.
 	 * @group multisite
 	 */
