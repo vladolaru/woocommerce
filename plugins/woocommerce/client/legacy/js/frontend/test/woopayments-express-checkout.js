@@ -2082,7 +2082,7 @@ describe( 'WooPayments express checkout', () => {
 		await jest.advanceTimersByTimeAsync( 0 );
 	}
 
-	test( 'blocks the wallet while an IAPI variation change re-prices it and releases it after', async () => {
+	test( 'keeps the wallet blocked until the newest IAPI variation re-price answers', async () => {
 		jest.useFakeTimers();
 		setProductPage( { iapi: true } );
 		window.wcpayExpressCheckoutParams.product = {
@@ -2093,7 +2093,8 @@ describe( 'WooPayments express checkout', () => {
 			country_code: 'US',
 			product_type: 'variable',
 		};
-		// Store API cart fields the preview reads (needs_shipping, totals.total_price, totals.currency_code).
+		// Store API cart fields the preview reads: needs_shipping, totals.total_price and totals.currency_code
+		// (src/StoreApi/Schemas/V1/CartSchema.php).
 		window.wp.apiFetch.mockResolvedValue( {
 			needs_shipping: false,
 			totals: { total_price: '4000', currency_code: 'USD' },
@@ -2103,16 +2104,42 @@ describe( 'WooPayments express checkout', () => {
 		await jest.advanceTimersByTimeAsync( 0 );
 		containerJQuery.block.mockClear();
 		containerJQuery.unblock.mockClear();
+		elements.update.mockClear();
+
+		const redPreview = createDeferred();
+		const greenPreview = createDeferred();
+		window.wp.apiFetch
+			.mockReturnValueOnce( redPreview.promise )
+			.mockReturnValueOnce( greenPreview.promise );
 
 		await changeIapiVariation( 'red' );
-
+		await changeIapiVariation( 'green' );
 		// Client 11.1.0 wc-product-page.js:31-60 routes the observer to update-button-data, which blocks the button
-		// and releases it once the new amount reached Elements (shortcode-buttons-express/index.js:597-674).
-		expect( containerJQuery.block ).toHaveBeenCalledTimes( 1 );
-		expect( containerJQuery.unblock ).toHaveBeenCalled();
-		expect(
-			containerJQuery.unblock.mock.invocationCallOrder[ 0 ]
-		).toBeGreaterThan( containerJQuery.block.mock.invocationCallOrder[ 0 ] );
+		// and unblocks it once the cart response arrives, before updating Elements (shortcode-buttons-express/index.js
+		// :597-674, unblock at :627, update at :653).
+		expect( containerJQuery.block ).toHaveBeenCalled();
+		expect( containerJQuery.unblock ).not.toHaveBeenCalled();
+
+		greenPreview.resolve( {
+			needs_shipping: false,
+			totals: { total_price: '6000', currency_code: 'USD' },
+		} );
+		await flushMicrotasks();
+		expect( containerJQuery.unblock ).toHaveBeenCalledTimes( 1 );
+		expect( elements.update ).toHaveBeenLastCalledWith(
+			expect.objectContaining( { amount: 6000 } )
+		);
+
+		// The older red answer lands last: it neither releases again nor re-prices (register row 243).
+		redPreview.resolve( {
+			needs_shipping: false,
+			totals: { total_price: '5000', currency_code: 'USD' },
+		} );
+		await flushMicrotasks();
+		expect( containerJQuery.unblock ).toHaveBeenCalledTimes( 1 );
+		expect( elements.update ).not.toHaveBeenCalledWith(
+			expect.objectContaining( { amount: 5000 } )
+		);
 	} );
 
 	test( 'hides the wallet when an IAPI variation change leaves a free cart', async () => {
@@ -2126,6 +2153,7 @@ describe( 'WooPayments express checkout', () => {
 			country_code: 'US',
 			product_type: 'variable',
 		};
+		// Store API cart fields, as in the test above (src/StoreApi/Schemas/V1/CartSchema.php).
 		window.wp.apiFetch.mockResolvedValue( {
 			needs_shipping: false,
 			totals: { total_price: '4000', currency_code: 'USD' },
