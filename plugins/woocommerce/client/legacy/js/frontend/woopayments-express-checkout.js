@@ -10,7 +10,6 @@
 	var sprintf = window.wp.i18n.sprintf;
 	var cachedCartData = null;
 	var cachedStripe = null;
-	var cachedStripeKey = '';
 	var elements = null;
 	var expressElement = null;
 	var tokenizedCartSession = null;
@@ -716,22 +715,15 @@
 			betas.push( 'link_autofill_modal_beta_1' );
 		}
 
-		// Client 11.1.0 checkout/api/index.js:79-110 keeps one instance per page; every Stripe() call adds a controller
-		// frame, so a refresh on each checkout update would pile them up.
-		var cacheKey = [
-			config.stripe.publishableKey,
-			config.stripe.accountId,
-			config.stripe.locale,
-			betas.join( ',' ),
-		].join( '|' );
-
-		if ( ! cachedStripe || cachedStripeKey !== cacheKey ) {
+		// The script reuses its Stripe instance, following the client 11.1.0 API-instance cache (checkout/api/index.js
+		// :79-110): every Stripe() call adds a controller frame, so one per checkout update would pile them up. The
+		// localized config does not change during the page, so neither does the instance.
+		if ( ! cachedStripe ) {
 			cachedStripe = window.Stripe( config.stripe.publishableKey, {
 				locale: config.stripe.locale || 'auto',
 				stripeAccount: config.stripe.accountId,
 				betas: betas,
 			} );
-			cachedStripeKey = cacheKey;
 		}
 
 		return cachedStripe;

@@ -501,7 +501,30 @@ describe( 'WooPayments express checkout', () => {
 		);
 	} );
 
-	test( 'keeps one Stripe instance across checkout refreshes', async () => {
+	test( 'keeps one Stripe instance across checkout refreshes and replaces the wallet element', async () => {
+		// One Elements group and Express Checkout Element per initialization, as client 11.1.0
+		// shortcode-buttons-express/index.js:227-270 creates them, with the unmount it calls on a re-render (:337-338).
+		const firstElement = {
+			mount: jest.fn(),
+			on: jest.fn(),
+			unmount: jest.fn(),
+		};
+		const secondElement = {
+			mount: jest.fn(),
+			on: jest.fn(),
+			unmount: jest.fn(),
+		};
+		stripe.elements
+			.mockReturnValueOnce(
+				Object.assign( {}, elements, {
+					create: jest.fn( () => firstElement ),
+				} )
+			)
+			.mockReturnValueOnce(
+				Object.assign( {}, elements, {
+					create: jest.fn( () => secondElement ),
+				} )
+			);
 		require( '../woopayments-express-checkout' );
 
 		await bodyEventHandlers.updated_checkout();
@@ -511,7 +534,10 @@ describe( 'WooPayments express checkout', () => {
 
 		// Client 11.1.0 checkout/api/index.js:79-110 creates the instance once and returns it after that.
 		expect( window.Stripe ).toHaveBeenCalledTimes( 1 );
-		expect( stripe.elements ).toHaveBeenCalledTimes( 2 );
+		expect( firstElement.unmount ).toHaveBeenCalled();
+		expect( secondElement.mount ).toHaveBeenCalledWith(
+			'#wcpay-express-checkout-element'
+		);
 	} );
 
 	test( 'records only available Apple Pay load tracking events', async () => {

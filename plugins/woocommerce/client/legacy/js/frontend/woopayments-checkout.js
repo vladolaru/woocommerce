@@ -1039,8 +1039,8 @@
 		return options;
 	}
 
-	// The wallet keeps its Stripe instance across renders (one per page, as client 11.1.0 checkout/api/index.js:79-110);
-	// only its Elements are rebuilt.
+	// The wallet reuses its Stripe instance across renders, following the client 11.1.0 API-instance cache
+	// (checkout/api/index.js:79-110); only its Elements are rebuilt.
 	function resetExpressButtonState( state ) {
 		if ( state.element && state.element.unmount ) {
 			state.element.unmount();
