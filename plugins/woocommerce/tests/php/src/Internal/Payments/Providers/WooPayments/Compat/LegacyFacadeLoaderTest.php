@@ -156,7 +156,7 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 		$this->register_legacy_facades();
 
 		define( 'WP_SANDBOX_SCRAPING', true );
-		require __DIR__ . '/Fixtures/woocommerce-payments-activation-bootstrap.inc';
+		require __DIR__ . '/Fixtures/woocommerce-payments-activation-bootstrap.fixture';
 
 		$this->assertSame( 'plugin', \WC_Payments::DECLARATION_OWNER, 'The activation sandbox must retain authority to declare the plugin bootstrap class.' );
 		$this->assertSame( 'plugin', \WC_Payments_Features::DECLARATION_OWNER, 'The activation sandbox must retain authority to declare the plugin feature class.' );
@@ -331,7 +331,7 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 
 		// An activation path no request shape reveals (an Action Scheduler activation callback, activate_plugin() from code).
 		define( 'WP_SANDBOX_SCRAPING', true );
-		require __DIR__ . '/Fixtures/woocommerce-payments-activation-bootstrap.inc';
+		require __DIR__ . '/Fixtures/woocommerce-payments-activation-bootstrap.fixture';
 
 		$this->assertSame( 'plugin', \WC_Payments::DECLARATION_OWNER );
 		$this->assertSame( 'plugin', \WC_Payments_Features::DECLARATION_OWNER );
@@ -348,7 +348,7 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 		$this->assertTrue( class_exists( 'WC_Payments' ), 'A consumer probe declares the bootstrap facade.' );
 		$this->assertFalse( class_exists( 'WC_Payments_Features', false ), 'The bootstrap facade must not pull in the feature facade.' );
 
-		require __DIR__ . '/Fixtures/woocommerce-payments-main-file.inc';
+		require __DIR__ . '/Fixtures/woocommerce-payments-main-file.fixture';
 
 		$this->assertSame( 'plugin', \WC_Payments_Features::DECLARATION_OWNER );
 	}

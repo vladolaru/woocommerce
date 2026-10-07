@@ -16,9 +16,9 @@ class LegacyWooPaymentsCompatibilityPlacementTest extends WC_Unit_Test_Case {
 	public function test_scanner_recognizes_sanctioned_declarations(): void {
 		$plugin_directory = WC()->plugin_path();
 		$expected_symbols = array(
-			$plugin_directory . '/src/Internal/Payments/Providers/WooPayments/Compat/legacy/class-wc-payments.php'          => array( 'WC_Payments' ),
-			$plugin_directory . '/src/Internal/Payments/Providers/WooPayments/Compat/legacy/class-wc-payments-features.php' => array( 'WC_Payments_Features' ),
-			$plugin_directory . '/src/Internal/MultiCurrency/Compat/legacy/MultiCurrency.php'                              => array( 'WCPay\\MultiCurrency\\MultiCurrency' ),
+			$plugin_directory . '/includes/legacy/woopayments-compat/class-wc-payments.php'                => array( 'WC_Payments' ),
+			$plugin_directory . '/includes/legacy/woopayments-compat/class-wc-payments-features.php'       => array( 'WC_Payments_Features' ),
+			$plugin_directory . '/includes/legacy/woopayments-multi-currency-compat/MultiCurrency.php'     => array( 'WCPay\\MultiCurrency\\MultiCurrency' ),
 		);
 
 		foreach ( $expected_symbols as $file => $symbols ) {
@@ -46,32 +46,41 @@ PHP;
 	}
 
 	/**
-	 * @testdox Plugin-shaped compatibility declarations stay inside explicit Compat boundaries.
+	 * Composer's optimized classmaps (the Jetpack autoloader's included) map every class in a scanned tree whatever its
+	 * namespace, so a facade there would be declared on first use on every store, plugin-owned ones included.
+	 *
+	 * @testdox Plugin-shaped compatibility declarations live only in the legacy compat folders, outside every tree Composer scans.
 	 */
-	public function test_plugin_shaped_declarations_stay_inside_compat_boundaries(): void {
+	public function test_plugin_shaped_declarations_live_outside_every_composer_scanned_tree(): void {
 		$plugin_directory = WC()->plugin_path();
+		$sanctioned       = array( '/includes/legacy/woopayments-compat/', '/includes/legacy/woopayments-multi-currency-compat/' );
 		$violations       = array();
 
-		foreach ( array( 'src', 'includes' ) as $source_directory ) {
+		// src/ and includes/rest-api/ are scanned for production installs and the release zip, tests/php/src/ for development ones.
+		foreach ( array( 'src', 'includes', 'tests/php/src' ) as $source_directory ) {
 			$iterator = new \RecursiveIteratorIterator( new \RecursiveDirectoryIterator( $plugin_directory . '/' . $source_directory ) );
 
 			foreach ( $iterator as $file ) {
-				if ( ! $file instanceof \SplFileInfo || ! $file->isFile() || 'php' !== $file->getExtension() ) {
+				// Composer's classmap generator reads .php and .inc files.
+				if ( ! $file instanceof \SplFileInfo || ! $file->isFile() || ! in_array( $file->getExtension(), array( 'php', 'inc' ), true ) ) {
 					continue;
 				}
 
-				$path = str_replace( '\\', '/', $file->getPathname() );
-				if ( false !== strpos( $path, '/Compat/' ) ) {
-					continue;
+				$path     = str_replace( '\\', '/', $file->getPathname() );
+				$relative = substr( $path, strlen( $plugin_directory ) );
+				foreach ( $sanctioned as $folder ) {
+					if ( 0 === strpos( $relative, $folder ) ) {
+						continue 2;
+					}
 				}
 
 				foreach ( $this->get_plugin_shaped_declarations( $file->getPathname() ) as $declaration ) {
-					$violations[] = substr( $path, strlen( $plugin_directory ) + 1 ) . ': ' . $declaration;
+					$violations[] = ltrim( $relative, '/' ) . ': ' . $declaration;
 				}
 			}
 		}
 
-		$this->assertSame( array(), $violations, 'Plugin-shaped compatibility declarations must stay in a removable Compat directory.' );
+		$this->assertSame( array(), $violations, 'Plugin-shaped declarations must live in includes/legacy/woopayments-compat/ or includes/legacy/woopayments-multi-currency-compat/; test fixtures use the .fixture extension.' );
 	}
 
 	/**

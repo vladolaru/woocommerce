@@ -96,7 +96,8 @@ class LegacyFacadeLoader implements RegisterHooksInterface {
 	 */
 	public function autoload_facade( string $class_name ): void {
 		if ( isset( self::FACADE_FILES[ $class_name ] ) ) {
-			require_once __DIR__ . '/legacy/' . self::FACADE_FILES[ $class_name ];
+			// The facades live outside every Composer-scanned tree, so only this loader can declare them.
+			require_once WC_ABSPATH . 'includes/legacy/woopayments-compat/' . self::FACADE_FILES[ $class_name ];
 		}
 	}
 

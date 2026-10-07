@@ -218,7 +218,7 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 		$this->load_subscriptions();
 		$this->arrange_ownership( false, false, NativePaymentsState::CONNECTED );
 		if ( ! class_exists( 'WC_Payments', false ) ) {
-			require_once WC_ABSPATH . 'src/Internal/Payments/Providers/WooPayments/Compat/legacy/class-wc-payments.php';
+			require_once WC_ABSPATH . 'includes/legacy/woopayments-compat/class-wc-payments.php';
 		}
 		$this->setExpectedDeprecated( 'WC_Payments::get_gateway' );
 

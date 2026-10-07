@@ -107,7 +107,8 @@ class LegacyMultiCurrencyFacadeLoader implements RegisterHooksInterface {
 		}
 
 		if ( ! class_exists( 'WCPay\\MultiCurrency\\MultiCurrency', false ) ) {
-			require_once __DIR__ . '/legacy/MultiCurrency.php';
+			// The facade lives outside every Composer-scanned tree, so only this loader can declare it.
+			require_once WC_ABSPATH . 'includes/legacy/woopayments-multi-currency-compat/MultiCurrency.php';
 		}
 	}
 

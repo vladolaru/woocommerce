@@ -1,6 +1,6 @@
 # WooPayments legacy facade compatibility
 
-This folder is the removable boundary for plugin-owned compatibility surfaces that existing WooPayments links and Woo extensions still depend on. `LegacyFacadeLoader` loads global symbols only when the core-native runtime owns payments; the standalone WooPayments plugin retains every symbol while it owns the runtime. `LegacyAdminLinkHandler` accepts platform-issued `wcpay-link-handler` admin links under the same ownership rule. The plugin-shaped `WCPay\MultiCurrency` namespace lives in the separate [multi-currency compatibility boundary](../../../../MultiCurrency/Compat/README.md).
+This folder is the removable boundary for plugin-owned compatibility surfaces that existing WooPayments links and Woo extensions still depend on. `LegacyFacadeLoader` loads global symbols only when the core-native runtime owns payments; the standalone WooPayments plugin retains every symbol while it owns the runtime. `LegacyAdminLinkHandler` accepts platform-issued `wcpay-link-handler` admin links under the same ownership rule. The facade class files live in `includes/legacy/woopayments-compat/` (see the placement invariant). The plugin-shaped `WCPay\MultiCurrency` namespace lives in the separate [multi-currency compatibility boundary](../../../../MultiCurrency/Compat/README.md).
 
 ## Contract
 
@@ -20,13 +20,13 @@ WordPress sandbox-includes a plugin before adding it to the active-plugin list a
 
 ## Placement invariant
 
-`LegacyWooPaymentsCompatibilityPlacementTest` scans production PHP under `src/` and `includes/` and rejects global `WC_Payments*` or namespaced `WCPay\` type declarations outside a `Compat/` directory. It also requires exactly one composition-root registration for each compatibility loader and a removal README for each boundary. When a boundary is removed, update its expected loader and README entries in the same removal commit; do not relax the `Compat/` placement rule.
+`LegacyWooPaymentsCompatibilityPlacementTest` requires every global `WC_Payments*` or namespaced `WCPay\` type declaration to live in `includes/legacy/woopayments-compat/` or `includes/legacy/woopayments-multi-currency-compat/`, outside every tree Composer scans for its classmaps: `src/` and `includes/rest-api/`, and `tests/php/src/` for development installs. The Jetpack autoloader's optimized classmap, built on every `composer install` and for the release zip, maps each class it finds in those trees whatever its namespace, so a facade placed there would be declared on first use on every store, plugin-owned ones included; outside them, only the loaders can declare the facades. Test fixtures that declare plugin-shaped names use the `.fixture` extension, which Composer does not scan. The test also requires exactly one composition-root registration for each compatibility loader and a removal README for each boundary. When a boundary is removed, update its expected loader and README entries in the same removal commit; do not move the facades back into a scanned tree.
 
 ## Removal
 
 These compatibility surfaces are scheduled for removal in WooCommerce 12.0.0 after supported extensions no longer depend on the plugin-owned symbols and the platform no longer emits legacy admin links. Remove these pieces together:
 
-- This production `Compat/` folder.
+- This production `Compat/` folder and the facade files in `includes/legacy/woopayments-compat/`.
 - The `LegacyFacadeLoader` registration line in `includes/class-woocommerce.php`.
 - The `LegacyAdminLinkHandler::class` root in `WooPaymentsProvider`.
 - The `LegacyAdminLinkHandler` bootstrap-root expectations in `tests/php/src/Internal/Payments/NativePaymentsBootstrapTest.php`.
