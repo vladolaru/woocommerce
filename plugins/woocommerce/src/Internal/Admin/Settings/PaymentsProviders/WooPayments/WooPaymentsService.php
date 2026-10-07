@@ -3300,10 +3300,11 @@ class WooPaymentsService {
 	/**
 	 * Drop the data only the initial onboarding uses, like client 11.1.0 cleanup_on_account_onboarded().
 	 *
-	 * Recommended payment methods serve only the initial onboarding. Native caches no onboarding fields.
+	 * The client also drops its business types cache, which native never fills.
 	 */
 	private function clear_native_onboarding_data(): void {
 		$this->proxy->call_function( 'delete_transient', NativeWooPaymentsGateway::RECOMMENDED_PAYMENT_METHODS_CACHE_KEY );
+		$this->get_native_account_service()->clear_onboarding_fields_cache();
 	}
 
 	/**

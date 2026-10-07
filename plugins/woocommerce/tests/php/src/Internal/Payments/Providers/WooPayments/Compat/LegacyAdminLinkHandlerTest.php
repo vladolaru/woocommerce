@@ -775,6 +775,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 			)
 		);
 		delete_option( 'wcpay_kyc_submitted_date' );
+		$this->seed_onboarding_data();
 		$_GET = $this->get_hosted_kyc_return_query( 'state_kyc', 'live' );
 		$this->sut->register();
 		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
@@ -801,6 +802,9 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 		$this->assertFalse( get_transient( 'test_drive_account_settings_for_live_account' ) );
 		$this->assertSame( array( 'is_existing_stripe_account' => false ), get_option( '_wcpay_onboarding_stripe_connected' ) );
 		$this->assertNotFalse( get_option( 'wcpay_kyc_submitted_date', false ) );
+		// Plugin 11.1.0 cleanup_on_account_onboarded() (class-wc-payments-onboarding-service.php:967-985) after a completed KYC.
+		$this->assertFalse( get_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' ) );
+		$this->assertFalse( get_option( 'wcpay_onboarding_fields_data' ) );
 	}
 
 	/**
@@ -813,7 +817,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 	public function test_hosted_kyc_return_with_connection_error_redirects_to_onboarding(): void {
 		$this->account_service->expects( $this->once() )->method( 'clear_cache' );
 		set_transient( 'wcpay_stripe_onboarding_state', 'state_kyc', DAY_IN_SECONDS );
-		set_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods', array( 'payment_methods' => array( array( 'id' => 'card' ) ) ), DAY_IN_SECONDS );
+		$this->seed_onboarding_data();
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'no' ) );
 		$_GET = array( 'wcpay-connection-error' => '1' ) + $this->get_hosted_kyc_return_query( 'state_kyc', 'test' );
 		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
@@ -836,6 +840,15 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'yes', $settings['test_mode'] );
 		$this->assertFalse( get_transient( 'wcpay_stripe_onboarding_state' ) );
 		$this->assertNotFalse( get_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' ) );
+		$this->assertNotFalse( get_option( 'wcpay_onboarding_fields_data' ) );
+	}
+
+	/**
+	 * Cache the data only the initial onboarding uses: recommended payment methods and onboarding fields.
+	 */
+	private function seed_onboarding_data(): void {
+		set_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods', array( 'payment_methods' => array( array( 'id' => 'card' ) ) ), DAY_IN_SECONDS );
+		update_option( 'wcpay_onboarding_fields_data', array( 'data' => array( '__locale' => 'en_US' ) ) );
 	}
 
 	/**

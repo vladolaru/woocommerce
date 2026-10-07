@@ -1832,6 +1832,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_finish_native_onboarding_kyc_session_clears_recommended_payment_methods_cache(): void {
 		set_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods', array( 'payment_methods' => array( array( 'id' => 'card' ) ) ), DAY_IN_SECONDS );
+		update_option( 'wcpay_onboarding_fields_data', array( 'data' => array( '__locale' => 'en_US' ) ) );
 		$fresh_account = array(
 			'account_id'        => 'acct_finalized_native',
 			'is_live'           => true,
@@ -1846,6 +1847,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 
 		// Client 11.1.0 class-wc-payments-onboarding-service.php:980-985, called from finalize_embedded_connection() (class-wc-payments-account.php:2336).
 		$this->assertFalse( get_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' ) );
+		$this->assertFalse( get_option( 'wcpay_onboarding_fields_data' ) );
 	}
 
 	/**
