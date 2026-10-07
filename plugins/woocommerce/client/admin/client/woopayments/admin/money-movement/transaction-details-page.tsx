@@ -674,8 +674,9 @@ export const WooPaymentsTransactionDetailsPage = () => {
 						transactionId
 					);
 
-					// Client 11.1.0 payment-details/charge-details/index.tsx:47-61: the payment's own URL.
-					if ( charge.payment_intent ) {
+					// Client 11.1.0 payment-details/charge-details/index.tsx:47-63: the payment's own URL, only from
+					// the page still showing this charge.
+					if ( charge.payment_intent && shouldUpdate() ) {
 						navigateToSettingsPaymentsProviderRoute(
 							`/woopayments/transactions/details?id=${ encodeURIComponent(
 								charge.payment_intent

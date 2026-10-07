@@ -2875,6 +2875,270 @@ describe( 'WooPayments money movement pages', () => {
 		expect( mockGetAuthorizationsSummary ).toHaveBeenCalledTimes( 3 );
 	} );
 
+	// Client 11.1.0 `components/capture-authorization-button/index.tsx:33-49`: every Capture button is disabled while
+	// the store-wide `isRequesting` (`data/authorizations/hooks.ts:80-91`) is set, so one capture runs at a time.
+	it( 'disables every Capture button while one capture is in flight', async () => {
+		let resolveCapture: ( value: unknown ) => void = () => undefined;
+		const capturePromise = new Promise( ( resolve ) => {
+			resolveCapture = resolve;
+		} );
+
+		mockGetAuthorizations.mockResolvedValue( {
+			data: [
+				{
+					payment_intent_id: 'pi_first',
+					order_id: 101,
+					created: '2026-06-12T10:30:00Z',
+					amount: 5000,
+					currency: 'usd',
+				},
+				{
+					payment_intent_id: 'pi_second',
+					order_id: 102,
+					created: '2026-06-12T11:30:00Z',
+					amount: 2500,
+					currency: 'usd',
+				},
+			],
+			total_count: 2,
+		} );
+		mockGetAuthorizationsSummary.mockResolvedValue( {
+			count: 2,
+			total: 7500,
+			currency: 'usd',
+		} );
+		mockCaptureAuthorization.mockReturnValueOnce(
+			capturePromise as Promise< never >
+		);
+
+		render(
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/transactions?view=uncaptured',
+				] }
+			>
+				<WooPaymentsTransactionsPage />
+			</MemoryRouter>
+		);
+
+		const firstCaptureButton = await screen.findByRole( 'button', {
+			name: 'Capture authorization for order #101',
+		} );
+		await userEvent.click( firstCaptureButton );
+
+		expect(
+			await screen.findByRole( 'button', {
+				name: 'Capturing authorization for order #101',
+			} )
+		).toBeDisabled();
+		const secondCaptureButton = screen.getByRole( 'button', {
+			name: 'Capture authorization for order #102',
+		} );
+		expect( secondCaptureButton ).toBeDisabled();
+
+		await userEvent.click( secondCaptureButton );
+		expect( mockCaptureAuthorization ).not.toHaveBeenCalledWith(
+			102,
+			'pi_second'
+		);
+		expect(
+			screen.getByRole( 'button', {
+				name: 'Capturing authorization for order #101',
+			} )
+		).toBeDisabled();
+
+		await act( async () => {
+			resolveCapture( { id: 'pi_first', status: 'succeeded' } );
+			await capturePromise;
+		} );
+
+		await waitFor( () =>
+			expect(
+				screen.getByRole( 'button', {
+					name: 'Capture authorization for order #101',
+				} )
+			).toBeEnabled()
+		);
+		expect(
+			screen.getByRole( 'button', {
+				name: 'Capture authorization for order #102',
+			} )
+		).toBeEnabled();
+	} );
+
+	describe( 'when the merchant changes page around a capture', () => {
+		const authorizationRow = (
+			paymentIntentId: string,
+			orderId: number
+		) => ( {
+			payment_intent_id: paymentIntentId,
+			order_id: orderId,
+			created: '2026-06-12T10:30:00Z',
+			amount: 5000,
+			currency: 'usd',
+		} );
+		const pageTwoRoute =
+			'/woopayments/transactions?view=uncaptured&paged=2';
+		let resolveStalePageOne: ( value: unknown ) => void;
+		let stalePageOneRequested: boolean;
+
+		// Page 1 answers at once the first time and is held after that; page 2 always answers at once.
+		beforeEach( () => {
+			stalePageOneRequested = false;
+			const stalePageOne = new Promise( ( resolve ) => {
+				resolveStalePageOne = resolve;
+			} );
+			let pageOneLoaded = false;
+
+			mockGetAuthorizations.mockImplementation( ( query = {} ) => {
+				if ( query.page === 2 ) {
+					return Promise.resolve( {
+						data: [ authorizationRow( 'pi_page_two', 201 ) ],
+						total_count: 30,
+					} );
+				}
+
+				if ( ! pageOneLoaded ) {
+					pageOneLoaded = true;
+
+					return Promise.resolve( {
+						data: [ authorizationRow( 'pi_page_one', 101 ) ],
+						total_count: 30,
+					} );
+				}
+
+				stalePageOneRequested = true;
+
+				return stalePageOne as Promise< never >;
+			} );
+			mockGetAuthorizationsSummary.mockImplementation( ( query = {} ) =>
+				Promise.resolve( {
+					count: query.page === 1 && stalePageOneRequested ? 29 : 30,
+					total: 150000,
+					currency: 'usd',
+				} )
+			);
+		} );
+
+		const renderUncapturedPage = () =>
+			render(
+				<MemoryRouter
+					initialEntries={ [
+						'/woopayments/transactions?view=uncaptured',
+					] }
+				>
+					<RouteChangeButton to={ pageTwoRoute } />
+					<WooPaymentsTransactionsPage />
+				</MemoryRouter>
+			);
+
+		const expectPageTwoOnScreen = () => {
+			expect(
+				screen.getByRole( 'button', {
+					name: 'Capture authorization for order #201',
+				} )
+			).toBeInTheDocument();
+			expect(
+				screen.queryByRole( 'button', {
+					name: 'Capture authorization for order #199',
+				} )
+			).not.toBeInTheDocument();
+			expect(
+				screen.getByTestId( 'money-movement-dataviews' )
+			).toHaveAttribute( 'data-total-items', '30' );
+			expect(
+				screen.getByText( summaryItem( '30 authorization(s)' ) )
+			).toBeInTheDocument();
+		};
+
+		// Client 11.1.0 `data/authorizations/actions.ts:222-233` invalidates the list and summary after a capture,
+		// and `reducer.ts:45-51` keeps results per query, so the page on screen re-resolves its own query.
+		it( 'keeps the new page when a capture started on the old page settles', async () => {
+			let resolveCapture: ( value: unknown ) => void = () => undefined;
+			const capturePromise = new Promise( ( resolve ) => {
+				resolveCapture = resolve;
+			} );
+			mockCaptureAuthorization.mockReturnValueOnce(
+				capturePromise as Promise< never >
+			);
+
+			renderUncapturedPage();
+
+			const captureButton = await screen.findByRole( 'button', {
+				name: 'Capture authorization for order #101',
+			} );
+			await userEvent.click( captureButton );
+			await userEvent.click(
+				screen.getByRole( 'button', {
+					name: 'Load another transaction',
+				} )
+			);
+			expect(
+				await screen.findByRole( 'button', {
+					name: 'Capture authorization for order #201',
+				} )
+			).toBeInTheDocument();
+
+			await act( async () => {
+				resolveCapture( { id: 'pi_page_one', status: 'succeeded' } );
+				await capturePromise;
+			} );
+			await act( async () => {
+				resolveStalePageOne( {
+					data: [ authorizationRow( 'pi_stale', 199 ) ],
+					total_count: 29,
+				} );
+			} );
+			await waitFor( () =>
+				expect( mockCreateSuccessNotice ).toHaveBeenCalledWith(
+					'Payment for order #101 captured successfully.'
+				)
+			);
+
+			expectPageTwoOnScreen();
+		} );
+
+		it( 'keeps the new page when the refresh after a capture resolves late', async () => {
+			mockCaptureAuthorization.mockResolvedValueOnce( {
+				id: 'pi_page_one',
+				status: 'succeeded',
+			} );
+
+			renderUncapturedPage();
+
+			const captureButton = await screen.findByRole( 'button', {
+				name: 'Capture authorization for order #101',
+			} );
+			await userEvent.click( captureButton );
+			await waitFor( () => expect( stalePageOneRequested ).toBe( true ) );
+
+			await userEvent.click(
+				screen.getByRole( 'button', {
+					name: 'Load another transaction',
+				} )
+			);
+			expect(
+				await screen.findByRole( 'button', {
+					name: 'Capture authorization for order #201',
+				} )
+			).toBeInTheDocument();
+
+			await act( async () => {
+				resolveStalePageOne( {
+					data: [ authorizationRow( 'pi_stale', 199 ) ],
+					total_count: 29,
+				} );
+			} );
+			await waitFor( () =>
+				expect( mockCreateSuccessNotice ).toHaveBeenCalledWith(
+					'Payment for order #101 captured successfully.'
+				)
+			);
+
+			expectPageTwoOnScreen();
+		} );
+	} );
+
 	it( 'announces loaded disputes and routes actionable rows to transaction details', async () => {
 		mockGetDisputes.mockResolvedValue( {
 			data: [
@@ -8074,6 +8338,49 @@ describe( 'WooPayments money movement pages', () => {
 			expect( mockGetPaymentIntent ).toHaveBeenCalledWith( 'pi_test' )
 		);
 		expect( mockGetTransaction ).not.toHaveBeenCalled();
+	} );
+
+	// Client 11.1.0 payment-details/charge-details/index.tsx:47-63 redirects from an effect of the mounted page, so a
+	// charge link the merchant already left never replaces their history entry.
+	it( 'does not redirect a charge link the merchant left before the charge loaded', async () => {
+		let resolveCharge: ( value: unknown ) => void = () => undefined;
+		const chargePromise = new Promise( ( resolve ) => {
+			resolveCharge = resolve;
+		} );
+		mockGetCharge.mockReturnValueOnce( chargePromise as Promise< never > );
+		mockGetTimeline.mockResolvedValue( { data: [] } );
+		mockHistoryReplace.mockReset();
+
+		const page = render(
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/transactions/details?id=ch_left',
+				] }
+			>
+				<WooPaymentsTransactionDetailsPage />
+			</MemoryRouter>
+		);
+
+		await waitFor( () =>
+			expect( mockGetCharge ).toHaveBeenCalledWith( 'ch_left' )
+		);
+		page.unmount();
+
+		await act( async () => {
+			resolveCharge( {
+				id: 'ch_left',
+				payment_intent: 'pi_left',
+				balance_transaction: 'txn_left',
+				type: 'charge',
+				amount: 5000,
+				currency: 'usd',
+				created: 1781712000,
+			} );
+			await chargePromise;
+		} );
+
+		expect( mockHistoryReplace ).not.toHaveBeenCalled();
+		expect( mockHistoryPush ).not.toHaveBeenCalled();
 	} );
 
 	it( 'uses the WordPress site timezone and locale for timeline dates', () => {

@@ -220,10 +220,13 @@ export const WooPaymentsTransactionsPage = () => {
 	const uncapturedCountRequestIdRef = useRef( 0 );
 	const [ isLoading, setIsLoading ] = useState( true );
 	const [ hasLoadError, setHasLoadError ] = useState( false );
-	// The payment intent whose capture is in flight.
+	// The payment intent whose capture is in flight; the ref also guards clicks before the next render.
 	const [ pendingCapture, setPendingCapture ] = useState< string | null >(
 		null
 	);
+	const pendingCaptureRef = useRef< string | null >( null );
+	// Bumped for every list query, so a refresh started for an older query is dropped.
+	const queryGenerationRef = useRef( 0 );
 	const { visibleFields, saveFields } = usePersistedHiddenFields(
 		'wc_payments_transactions_uncaptured_hidden_columns',
 		AUTHORIZATION_FIELDS,
@@ -368,9 +371,13 @@ export const WooPaymentsTransactionsPage = () => {
 		},
 		[ resourceQuery ]
 	);
+	const loadMoneyMovementRef = useRef( loadMoneyMovement );
 
 	useEffect( () => {
 		let isMounted = true;
+
+		queryGenerationRef.current += 1;
+		loadMoneyMovementRef.current = loadMoneyMovement;
 
 		if ( ! isUncaptured ) {
 			return;
@@ -416,6 +423,10 @@ export const WooPaymentsTransactionsPage = () => {
 		);
 	};
 	const handleCapture = async ( authorization: WooPaymentsAuthorization ) => {
+		if ( pendingCaptureRef.current ) {
+			return;
+		}
+
 		const paymentIntentId =
 			getAuthorizationPaymentIntentId( authorization );
 		const orderId = Number( getAuthorizationOrderId( authorization ) );
@@ -440,15 +451,23 @@ export const WooPaymentsTransactionsPage = () => {
 			return;
 		}
 
+		pendingCaptureRef.current = paymentIntentId;
 		setPendingCapture( paymentIntentId );
 
 		try {
 			await captureWooPaymentsAuthorization( orderId, paymentIntentId );
+
+			// Refresh the list on screen now, which may be another page, sort or filter than the one clicked.
+			const generation = queryGenerationRef.current;
 			await Promise.all( [
-				loadMoneyMovement( { setLoading: false } ),
+				loadMoneyMovementRef.current( {
+					setLoading: false,
+					isCurrent: () =>
+						isMountedRef.current &&
+						generation === queryGenerationRef.current,
+				} ),
 				loadUncapturedCount(),
 			] );
-			setPendingCapture( null );
 			getNotices().createSuccessNotice(
 				sprintf(
 					/* translators: %s: order ID. */
@@ -460,7 +479,6 @@ export const WooPaymentsTransactionsPage = () => {
 				)
 			);
 		} catch ( error ) {
-			setPendingCapture( null );
 			getNotices().createErrorNotice(
 				sprintf(
 					/* translators: 1: action name, 2: order ID, 3: error message. */
@@ -479,6 +497,9 @@ export const WooPaymentsTransactionsPage = () => {
 					)
 				)
 			);
+		} finally {
+			pendingCaptureRef.current = null;
+			setPendingCapture( null );
 		}
 	};
 
@@ -599,13 +620,14 @@ export const WooPaymentsTransactionsPage = () => {
 				const isCapturing =
 					pendingCapture === getAuthorizationPaymentIntentId( item );
 
-				// Client 11.1.0 `components/capture-authorization-button`: one secondary "Capture".
+				// Client 11.1.0 `components/capture-authorization-button/index.tsx:33-49`: one secondary "Capture",
+				// busy on its own row and disabled on every row while any capture runs.
 				return (
 					<Button
 						variant="secondary"
 						__next40pxDefaultSize
 						isBusy={ isCapturing }
-						disabled={ isCapturing }
+						disabled={ pendingCapture !== null }
 						onClick={ () => handleCapture( item ) }
 						aria-label={
 							isCapturing
