@@ -65,6 +65,21 @@ jest.mock( '@woocommerce/settings', () => {
 				},
 			},
 		},
+		// A split method that publishes only what differs from the carrier of the shared config
+		// (WooPayments::get_payment_method_data()).
+		woocommerce_payments_ideal: {
+			sharedConfigFrom: 'woocommerce_payments',
+			title: 'iDEAL',
+			gatewayId: 'woocommerce_payments_ideal',
+			paymentMethodTypes: [ 'ideal' ],
+			paymentMethodsConfig: {
+				ideal: {
+					title: 'iDEAL',
+					isReusable: false,
+					countries: [ 'NL' ],
+				},
+			},
+		},
 	};
 
 	return {
@@ -119,7 +134,46 @@ describe( 'wc-payment-method-woopayments per-method registration', () => {
 			registerPaymentMethod.mock.calls.map(
 				( [ paymentMethod ] ) => paymentMethod.name
 			)
-		).toEqual( [ 'woocommerce_payments', 'woocommerce_payments_klarna' ] );
+		).toEqual( [
+			'woocommerce_payments',
+			'woocommerce_payments_klarna',
+			'woocommerce_payments_ideal',
+		] );
+	} );
+
+	it( 'gives a split method the shared config of the method that carries it', () => {
+		registerPaymentMethod.mockClear();
+		registerWooPayments();
+
+		const idealPaymentMethod = registerPaymentMethod.mock.calls
+			.map( ( [ paymentMethod ] ) => paymentMethod )
+			.find(
+				( paymentMethod ) =>
+					paymentMethod.name === 'woocommerce_payments_ideal'
+			);
+
+		// isCoreNativeCheckoutAvailable and supports come from the card method's data; the country is iDEAL's own.
+		expect( idealPaymentMethod.supports.features ).toEqual( [
+			'products',
+		] );
+		expect(
+			idealPaymentMethod.canMakePayment( {
+				paymentMethods: [
+					'woocommerce_payments',
+					'woocommerce_payments_ideal',
+				],
+				billingAddress: { country: 'NL' },
+			} )
+		).toBe( true );
+		expect(
+			idealPaymentMethod.canMakePayment( {
+				paymentMethods: [
+					'woocommerce_payments',
+					'woocommerce_payments_ideal',
+				],
+				billingAddress: { country: 'BE' },
+			} )
+		).toBe( false );
 	} );
 
 	it( 'hides a split method when the Store API excludes its gateway ID', () => {
