@@ -199,14 +199,14 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 * Queue a shopper page view for the footer script, like the plugin's `maybe_record_wcpay_shopper_event()` (11.1.0).
 	 *
 	 * Nothing is recorded during render, so no Tracks identity cookie or outbound request touches a cacheable page.
-	 * Only store-wide checks run here, including WooPay, which the plugin's frontend sender checks through
-	 * `isShopperTrackingEnabled`; the AJAX recorder applies the per-visitor ones.
+	 * Only store-wide checks run here; the AJAX recorder applies the per-visitor ones. Page views are recorded on every
+	 * store (client PR 6870, PR 8821), so WooPay is not checked here, unlike client 11.1.0 since PR 11199.
 	 *
 	 * @param string              $event_name Event name without the wcpay_ prefix.
 	 * @param array<string,mixed> $properties Event properties.
 	 */
 	public function queue_user_event( string $event_name, array $properties = array() ): void {
-		if ( ! $this->is_store_tracking_enabled() || ! $this->is_woopay_tracking_enabled() ) {
+		if ( ! $this->is_store_tracking_enabled() ) {
 			return;
 		}
 
@@ -225,7 +225,8 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	/**
 	 * Have the footer script record cart "Proceed to checkout" clicks, like the plugin's cart script (11.1.0 `client/cart/index.js`).
 	 *
-	 * Armed only when the AJAX recorder would keep the event: the store-wide checks and WooPay, as for the queued page views.
+	 * Armed only when the AJAX recorder would keep the event: the store-wide checks and WooPay, since the event is not
+	 * recorded on every store and the recorder drops it while WooPay is off.
 	 *
 	 * @param callable $is_woopay_direct_checkout_enabled Returns whether WooPay direct checkout is enabled; called only once armed.
 	 */

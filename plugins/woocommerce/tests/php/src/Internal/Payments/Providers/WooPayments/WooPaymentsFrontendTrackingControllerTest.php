@@ -324,9 +324,13 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should queue nothing when WooPay is off, as client 11.1.0's frontend sender drops page views when isShopperTrackingEnabled is false.
+	 * A recorded departure from client 11.1.0, which computes isShopperTrackingEnabled with the
+	 * WooPay check (`class-woopay-tracker.php:660-674`, PR 11199), so its sender drops the page views that PR 6870 and
+	 * PR 8821 meant to record on every store. Native queues them; they carry track_on_all_stores.
+	 *
+	 * @testdox Should queue page views when WooPay is off, since they are recorded on every store.
 	 */
-	public function test_queue_user_event_is_a_no_op_when_woopay_is_off(): void {
+	public function test_queue_user_event_queues_page_views_when_woopay_is_off(): void {
 		update_option( 'woocommerce_default_country', 'US:CA' );
 		update_option( 'woocommerce_allow_tracking', 'yes' );
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
@@ -341,7 +345,11 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 
 		$sut->queue_user_event( 'cart_page_view', array( 'theme_type' => 'blocks' ) );
 
-		$this->assertFalse( has_action( 'wp_footer', array( $sut, 'enqueue_frontend_events_script' ) ) );
+		try {
+			$this->assertSame( 10, has_action( 'wp_footer', array( $sut, 'enqueue_frontend_events_script' ) ) );
+		} finally {
+			remove_action( 'wp_footer', array( $sut, 'enqueue_frontend_events_script' ) );
+		}
 		$this->assertTrue( $sut->is_shopper_tracking_enabled( false, true ) );
 	}
 

@@ -916,7 +916,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$this->assertSame( array(), $config['woopayFontRules'] );
 		$this->assertSame( 'Securely save my information for 1-click checkout', $config['woopaySaveUserLabel'] );
 		$this->assertSame( 'Mobile phone number', $config['woopayPhoneLabel'] );
-		$this->assertArrayHasKey( 'isShopperTrackingEnabled', $config );
+		$this->assertTrue( $config['isShopperTrackingEnabled'] );
 		$this->assertFalse( $config['usesLegacySetupIntentBridge'] );
 		$this->assertFalse( $config['usesLegacyOrderStatusBridge'] );
 		$this->assertTrue( $config['usesNativeSetupIntentBridge'] );
@@ -3122,7 +3122,12 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			->onlyMethods( array( 'is_shopper_tracking_enabled', 'record_user_event' ) )
 			->getMock();
 
-		$controller->method( 'is_shopper_tracking_enabled' )->willReturn( true );
+		// The page flag asks the store-level question only: not an admin event, recorded on every store.
+		$controller->method( 'is_shopper_tracking_enabled' )->willReturnCallback(
+			static function ( bool $is_admin_event = false, bool $track_on_all_stores = false ): bool {
+				return ! $is_admin_event && $track_on_all_stores;
+			}
+		);
 
 		return $controller;
 	}
