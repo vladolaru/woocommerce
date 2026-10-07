@@ -15,7 +15,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Da
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\Definition\TodosDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\GeneralSettings;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\PaymentSettings;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsModel;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\TodosModel;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\FeaturesEligibilityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\PaymentMethodsEligibilityService;
@@ -169,7 +168,7 @@ class OptionalModulesServicesTest extends WalletTestCase {
 	 * The inputs that give every positional boolean of the todos eligibility service a known value, so a shifted argument
 	 * in the real services file changes the result. The defaults are the first scenario of `data_todo_wirings()`.
 	 *
-	 * @param array<string, mixed> $overrides Inputs to replace: `country`, `stay_updated`, `any_pay_later`, `pay_later`,
+	 * @param array<string, mixed> $overrides Inputs to replace: `country`, `any_pay_later`, `pay_later`,
 	 *                                        `buttons` and `installments`.
 	 * @return array<string, mixed>
 	 */
@@ -177,7 +176,6 @@ class OptionalModulesServicesTest extends WalletTestCase {
 		return array_merge(
 			array(
 				'country'       => 'MX',
-				'stay_updated'  => true,
 				'any_pay_later' => false,
 				'pay_later'     => array(
 					'product'  => true,
@@ -205,8 +203,6 @@ class OptionalModulesServicesTest extends WalletTestCase {
 		$inputs  = $this->todo_inputs( $inputs );
 		$general = $this->mock( GeneralSettings::class );
 		$general->shouldReceive( 'get_merchant_country' )->andReturn( $inputs['country'] );
-		$settings = $this->mock( SettingsModel::class );
-		$settings->shouldReceive( 'get_stay_updated' )->andReturn( $inputs['stay_updated'] );
 
 		$container = $this->wallet_only_container(
 			array(
@@ -218,7 +214,6 @@ class OptionalModulesServicesTest extends WalletTestCase {
 				'settings.service.merchant_capabilities' => array(
 					FeaturesDefinition::FEATURE_INSTALLMENTS => $inputs['installments'],
 				),
-				'settings.data.settings'                 => $settings,
 				'settings.data.general'                  => $general,
 				'button.helper.messages-apply'           => $this->mock( MessagesApply::class ),
 			)

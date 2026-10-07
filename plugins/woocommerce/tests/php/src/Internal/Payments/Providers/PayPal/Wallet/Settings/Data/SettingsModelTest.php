@@ -193,21 +193,7 @@ class SettingsModelTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should read a stored value of any known shape as a bool for the stay updated setting.
-	 *
-	 * @dataProvider data_bool_like_values
-	 *
-	 * @param mixed $stored_value The stored value.
-	 * @param bool  $expected     Expected getter return value.
-	 */
-	public function test_get_stay_updated_coerces_stored_value( $stored_value, bool $expected ): void {
-		$model = $this->build_model_with( 'stay_updated', $stored_value );
-
-		$this->assertSame( $expected, $model->get_stay_updated() );
-	}
-
-	/**
-	 * The two keys core does not read: the stored value is part of the stored format, so a load and a save must hand it
+	 * The three keys core does not read: the stored value is part of the stored format, so a load and a save must hand it
 	 * back exactly as it was stored, whatever its shape.
 	 *
 	 * @testdox Should keep a stored save_card_details value as it is when the model saves.
@@ -244,6 +230,30 @@ class SettingsModelTest extends WalletTestCase {
 	}
 
 	/**
+	 * @testdox Should keep a stored stay_updated value as it is when the model saves, so the extension keeps the merchant's choice.
+	 *
+	 * @dataProvider data_bool_like_values
+	 *
+	 * @param mixed $stored_value Any of the shapes the option has been seen to hold.
+	 */
+	public function test_stay_updated_keeps_its_stored_value_through_a_save( $stored_value ): void {
+		$this->build_model_with( 'stay_updated', $stored_value )->save();
+
+		$stored = get_option( self::OPTION );
+
+		$this->assertIsArray( $stored );
+		$this->assertArrayHasKey( 'stay_updated', $stored );
+		$this->assertSame( $stored_value, $stored['stay_updated'] );
+	}
+
+	/**
+	 * @testdox Should not offer a stay updated getter, since core does not act on the setting.
+	 */
+	public function test_stay_updated_has_no_getter(): void {
+		$this->assertFalse( method_exists( SettingsModel::class, 'get_stay_updated' ) );
+	}
+
+	/**
 	 * Each field has its own declared default. They are what the model falls back to when the option is empty, which is
 	 * what a migration tool that clears or recreates the option leaves behind.
 	 *
@@ -258,7 +268,6 @@ class SettingsModelTest extends WalletTestCase {
 			'enable_contact_module defaults to true'   => array( 'get_enable_contact_module', true ),
 			'enable_pay_now defaults to false'         => array( 'get_enable_pay_now', false ),
 			'enable_logging defaults to false'         => array( 'get_enable_logging', false ),
-			'stay_updated defaults to true'            => array( 'get_stay_updated', true ),
 		);
 	}
 
@@ -277,12 +286,13 @@ class SettingsModelTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should keep the declared defaults of save_card_details and payment_level_processing when the stored option is empty.
+	 * @testdox Should keep the declared defaults of save_card_details, payment_level_processing and stay_updated when the stored option is empty.
 	 */
 	public function test_stored_format_keys_hold_their_defaults_when_option_is_empty(): void {
 		$data = $this->build_model_with_empty_option()->to_array();
 
 		$this->assertFalse( $data['save_card_details'] );
 		$this->assertTrue( $data['payment_level_processing'] );
+		$this->assertTrue( $data['stay_updated'] );
 	}
 }

@@ -106,7 +106,7 @@ class SettingsModel extends AbstractDataModel {
 			'save_card_details'        => false,
 			'enable_pay_now'           => false,
 			'enable_logging'           => false,
-			'stay_updated'             => true,
+			'stay_updated'             => true, // The extension's "Stay updated" choice; kept for the stored format, core does not read it.
 			'payment_level_processing' => true,
 
 			// Array of string values.
@@ -506,18 +506,12 @@ class SettingsModel extends AbstractDataModel {
 	}
 
 	/**
-	 * Gets the Stay Updated setting.
+	 * Sets the extension's "Stay updated" choice.
 	 *
-	 * @return bool True if Stay Updated is enabled, false otherwise.
-	 */
-	public function get_stay_updated(): bool {
-		return $this->sanitizer->sanitize_bool( $this->data['stay_updated'] ?? true );
-	}
-
-	/**
-	 * Sets the Stay Updated setting.
+	 * Kept for the stored format; the legacy settings migration writes it. Core has no getter and does not act on it.
 	 *
-	 * @param bool $save Whether to save the Stay Updated.
+	 * @param bool $save Whether the merchant chose to stay updated.
+	 * @return void
 	 */
 	public function set_stay_updated( bool $save ): void {
 		$this->data['stay_updated'] = $this->sanitizer->sanitize_bool( $save );

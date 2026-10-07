@@ -80,7 +80,6 @@ export const useSettings = () => {
 	const [ payNowExperience, setPayNowExperience ] =
 		usePersistent( 'enablePayNow' );
 	const [ logging, setLogging ] = usePersistent( 'enableLogging' );
-	const [ stayUpdated, setStayUpdated ] = usePersistent( 'stayUpdated' );
 
 	const [ paymentLevelProcessing, setPaymentLevelProcessing ] = usePersistent(
 		'paymentLevelProcessing'
@@ -104,8 +103,6 @@ export const useSettings = () => {
 		setPayNowExperience,
 		logging,
 		setLogging,
-		stayUpdated,
-		setStayUpdated,
 		subtotalAdjustment,
 		setSubtotalAdjustment,
 		instantPaymentsOnly,

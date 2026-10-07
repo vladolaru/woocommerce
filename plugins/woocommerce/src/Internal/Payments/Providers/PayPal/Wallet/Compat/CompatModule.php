@@ -104,50 +104,6 @@ class CompatModule implements ServiceModule, ExecutableModule {
 			}
 		);
 
-		/**
-		 * Automatically enable Pay Later messaging for Canadian stores during plugin update.
-		 *
-		 * This action runs during plugin updates to automatically enable Pay Later messaging for stores
-		 * that meet the following criteria:
-		 * - Store Country is set as Canada
-		 * - The "Stay updated" checkbox is enabled
-		 *
-		 * When all conditions are met, this will:
-		 * - Enable Pay Later messaging
-		 * - Enable Pay Later Payment Method
-		 * - Add default messaging locations (product, cart, checkout) to existing selections
-		 *
-		 * @hook woocommerce_paypal_payments_gateway_migrate
-		 */
-		add_action(
-			'woocommerce_paypal_payments_gateway_migrate',
-			static function () use ( $c ) {
-				// Check if the "Stay updated" checkbox is enabled (checked in either old or new UI).
-				$settings_model = $c->get( 'settings.data.settings' );
-				assert( $settings_model instanceof SettingsModel );
-
-				$settings = $c->get( 'wcgateway.settings' );
-				assert( $settings instanceof Settings );
-
-				// Store Country is set as Canada.
-				if ( $c->get( 'api.shop.country' ) !== 'CA' || ! $settings_model->get_stay_updated() ) {
-					return;
-				}
-
-				// Enable Pay Later messaging.
-				$selected_locations = $settings->has( 'pay_later_messaging_locations' ) ? $settings->get( 'pay_later_messaging_locations' ) : array();
-				$settings->set( 'pay_later_messaging_enabled', true );
-				$settings->set( 'pay_later_messaging_locations', array_unique( array_merge( $selected_locations, array( 'product', 'cart', 'checkout' ) ) ) );
-				$settings->persist();
-
-				// Enable Pay Later Payment Method.
-				$payment_settings = $c->get( 'settings.data.payment' );
-				assert( $payment_settings instanceof PaymentSettings );
-				$payment_settings->set_paylater_enabled( true );
-				$payment_settings->save();
-			}
-		);
-
 		return true;
 	}
 

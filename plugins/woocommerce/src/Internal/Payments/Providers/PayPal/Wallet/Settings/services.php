@@ -514,9 +514,6 @@ return array(
 		// TODO: This "merchant_capabilities" service is only used here. Could it be merged to make the code cleaner and less segmented?
 		$capabilities = $container->get( 'settings.service.merchant_capabilities' );
 
-		$settings_model = $container->get( 'settings.data.settings' );
-		assert( $settings_model instanceof SettingsModel );
-
 		$messages_apply = $container->get( 'button.helper.messages-apply' );
 		assert( $messages_apply instanceof MessagesApply );
 
@@ -533,7 +530,7 @@ return array(
 			true
 		);
 
-		$is_working_capital_eligible = $container->get( 'settings.data.general' )->get_merchant_country() === 'US' && $settings_model->get_stay_updated();
+		$is_working_capital_eligible = $container->get( 'settings.data.general' )->get_merchant_country() === 'US';
 
 		/**
 		 * Initializes TodosEligibilityService with eligibility conditions for various PayPal features.
@@ -552,7 +549,7 @@ return array(
 		 * @param bool $is_paypal_buttons_block_checkout_eligible - Show if PayPal buttons are not enabled on blocks checkout.
 		 * @param bool $is_paypal_buttons_product_eligible - Show if PayPal buttons are not enabled on product page.
 		 * @param bool $is_enable_installments_eligible - Show if merchant has installments capability and merchant country is MX.
-		 * @param bool $is_working_capital_eligible - Show if feature flag is enabled, merchant country is US and "Stay Updated" is turned On.
+		 * @param bool $is_working_capital_eligible - Show if feature flag is enabled and merchant country is US.
 		 */
 		return new TodosEligibilityService(
 			$is_pay_later_messaging_enabled_for_any_location,                                             // Enable Pay Later messaging.

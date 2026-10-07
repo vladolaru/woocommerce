@@ -14,7 +14,6 @@ use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\PartnersEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\PartnerAttribution;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\OnboardingProfile;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsModel;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\TodosModel;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Endpoint\RestEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Enum\InstallationPathEnum;
@@ -39,7 +38,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\En
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Enum\SellerTypeEnum;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\GeneralSettings;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\PaymentSettings;
-use Throwable;
 
 /**
  * Class SettingsModule
@@ -447,39 +445,6 @@ class SettingsModule implements ServiceModule, ExecutableModule {
 				assert( $country_resolver instanceof MerchantDataResolver );
 
 				$country_resolver->ensure_country_resolved();
-			}
-		);
-
-		add_action(
-			'woocommerce_paypal_payments_gateway_migrate',
-			/**
-			 * Migrates payment level processing setting during plugin update.
-			 *
-			 * For merchants updating from version 3.3.2 or older, disables Level 2/3
-			 * processing if they previously opted out of automatic updates (stay_updated=false).
-			 * Merchants who opted into updates inherit the default enabled state.
-			 *
-			 * @param false|string $previous_version The previously installed plugin version,
-			 *                                       or false on first installation.
-			 */
-			static function ( $previous_version ) use ( $container ): void {
-				// Only run this migration logic when updating from version 3.3.2 or older.
-				if ( $previous_version && version_compare( $previous_version, '3.3.2', 'gt' ) ) {
-					return;
-				}
-
-				try {
-					$settings_model = $container->get( 'settings.data.settings' );
-					assert( $settings_model instanceof SettingsModel );
-
-					if ( ! $settings_model->get_stay_updated() ) {
-						$settings_model->set_payment_level_processing( false );
-						$settings_model->save();
-					}
-				} catch ( Throwable $error ) {
-					// Something failed - ignore the error and assume there is no migration data.
-					return;
-				}
 			}
 		);
 

@@ -378,11 +378,6 @@ class SettingsProviderTest extends WalletTestCase {
 				'model_method'    => 'get_enable_logging',
 				'expected_value'  => self::EXPECTED_VALUE_BOOL,
 			),
-			array(
-				'provider_method' => 'stay_updated',
-				'model_method'    => 'get_stay_updated',
-				'expected_value'  => self::EXPECTED_VALUE_BOOL,
-			),
 		);
 	}
 

@@ -454,15 +454,6 @@ class SettingsProvider {
 	}
 
 	/**
-	 * Gets the Stay Updated setting.
-	 *
-	 * @return bool True if Stay Updated is enabled, false otherwise.
-	 */
-	public function stay_updated(): bool {
-		return $this->settings_model->get_stay_updated();
-	}
-
-	/**
 	 * Returns the styling options for a specified location. The location name recognizes
 	 * legacy and modern naming.
 	 *

@@ -208,7 +208,7 @@ class SettingsTabMigrationTest extends WalletTestCase {
 		$this->assertSame( 'always-3d-secure', $stored['three_d_secure'] );
 		$this->assertTrue( $stored['enable_logging'] );
 		$this->assertFalse( $stored['stay_updated'] );
-		$this->assertFalse( $stored['payment_level_processing'], 'Turning stay_updated off also turns payment level processing off' );
+		$this->assertTrue( $stored['payment_level_processing'], 'Core does not tie payment level processing to stay_updated' );
 	}
 
 	/**

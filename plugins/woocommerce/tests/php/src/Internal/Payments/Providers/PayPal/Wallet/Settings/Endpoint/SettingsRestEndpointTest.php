@@ -170,7 +170,7 @@ class SettingsRestEndpointTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should convert the flag settings of a request to booleans and ignore keys it does not know.
+	 * @testdox Should convert the flag settings of a request to booleans and ignore keys it does not know, stayUpdated among them.
 	 */
 	public function test_flags_are_converted_to_booleans_and_unknown_keys_are_ignored(): void {
 		$this->post(
@@ -185,7 +185,7 @@ class SettingsRestEndpointTest extends WalletTestCase {
 		$stored = $this->stored();
 		$this->assertTrue( $stored['authorize_only'] );
 		$this->assertTrue( $stored['enable_logging'] );
-		$this->assertFalse( $stored['stay_updated'] );
+		$this->assertTrue( $stored['stay_updated'], 'The stored stay_updated keeps its default; the endpoint does not write it' );
 		$this->assertArrayNotHasKey( 'notASettingOfOurs', $stored );
 	}
 
@@ -207,6 +207,7 @@ class SettingsRestEndpointTest extends WalletTestCase {
 		$this->assertSame( 'Acme', $data['data']['brandName'] );
 		$this->assertTrue( $data['data']['authorizeOnly'] );
 		$this->assertArrayNotHasKey( 'brand_name', $data['data'] );
+		$this->assertArrayNotHasKey( 'stayUpdated', $data['data'] );
 	}
 
 	/**

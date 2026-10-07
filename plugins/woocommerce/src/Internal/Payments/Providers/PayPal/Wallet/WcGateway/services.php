@@ -828,7 +828,7 @@ return array(
 			true
 		);
 
-		$is_working_capital_eligible = $container->get( 'api.shop.country' ) === 'US' && $settings_provider->stay_updated();
+		$is_working_capital_eligible = $container->get( 'api.shop.country' ) === 'US';
 
 		if ( ! $settings_provider->merchant_connected() || ! $is_working_capital_feature_flag_enabled || ! $is_working_capital_eligible ) {
 			return array();
@@ -919,9 +919,6 @@ return array(
 		$settings = $container->get( 'wcgateway.settings' );
 		assert( $settings instanceof Settings );
 
-		$settings_model = $container->get( 'settings.data.settings' );
-		assert( $settings_model instanceof SettingsModel );
-
 		$messages_apply = $container->get( 'button.helper.messages-apply' );
 		assert( $messages_apply instanceof MessagesApply );
 
@@ -948,7 +945,7 @@ return array(
 				Note::E_WC_ADMIN_NOTE_INFORMATIONAL,
 				'ppcp-working-capital-inbox-note',
 				Note::E_WC_ADMIN_NOTE_UNACTIONED,
-				$is_working_capital_feature_flag_enabled && $container->get( 'api.shop.country' ) === 'US' && $settings_model->get_stay_updated(),
+				$is_working_capital_feature_flag_enabled && $container->get( 'api.shop.country' ) === 'US',
 				new InboxNoteAction(
 					'learn_more',
 					__( 'Learn More', 'woocommerce' ),

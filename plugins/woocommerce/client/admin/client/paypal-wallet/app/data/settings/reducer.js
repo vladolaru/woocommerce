@@ -44,7 +44,6 @@ const defaultPersistent = Object.freeze( {
 	enableContactModule: false, // Enable the "Custom Shipping Contact" feature
 	enablePayNow: false, // Enable Pay Now experience
 	enableLogging: false, // Enable debug logging
-	stayUpdated: false, // Enable to get the latest PayPal features
 	paymentLevelProcessing: false,
 } );
 
