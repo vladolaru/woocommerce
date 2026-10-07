@@ -7,7 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFr
 use WP_UnitTestCase;
 
 /**
- * Tests for the shared WooPayments frontend assets and the current-surface lookup.
+ * Tests for the shared WooPayments frontend assets and the current-page lookup.
  */
 class WooPaymentsFrontendAssetsTest extends WP_UnitTestCase {
 
@@ -60,6 +60,23 @@ class WooPaymentsFrontendAssetsTest extends WP_UnitTestCase {
 		$this->assertSame( $term_id, get_queried_object_id() );
 		$this->assertNull( WooPaymentsFrontendAssets::get_current_post() );
 		$this->assertFalse( WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/checkout' ) );
+	}
+
+	/**
+	 * @testdox Inside a secondary loop the loop's post answers, as client 11.1.0's has_block() without a post does.
+	 */
+	public function test_secondary_loop_post_answers_like_has_block(): void {
+		$host_id = self::factory()->post->create( array( 'post_type' => 'page' ) );
+		$loop_id = self::factory()->post->create(
+			array(
+				'post_content' => '<!-- wp:woocommerce/checkout --><div class="wp-block-woocommerce-checkout"></div><!-- /wp:woocommerce/checkout -->',
+			)
+		);
+		$this->go_to( get_permalink( $host_id ) );
+		$GLOBALS['post'] = get_post( $loop_id ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- The post of a secondary loop.
+
+		$this->assertSame( has_block( 'woocommerce/checkout' ), WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/checkout' ) );
+		$this->assertTrue( WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/checkout' ) );
 	}
 
 	/**

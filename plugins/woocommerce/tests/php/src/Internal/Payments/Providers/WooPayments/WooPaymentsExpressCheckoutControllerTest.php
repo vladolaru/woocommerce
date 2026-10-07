@@ -146,6 +146,30 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should not load express checkout on an archive whose term ID equals a checkout page's post ID.
+	 */
+	public function test_enqueue_frontend_assets_skips_an_archive_whose_term_id_matches_a_checkout_page(): void {
+		$this->sut = $this->create_controller( true, true );
+		$term_id   = self::factory()->category->create( array( 'name' => 'Empty archive' ) );
+		// A checkout page whose post ID is the category's term ID (import_id asks wp_insert_post() for that ID).
+		$page_id = wp_insert_post(
+			array(
+				'import_id'    => $term_id,
+				'post_type'    => 'page',
+				'post_status'  => 'publish',
+				'post_title'   => 'Checkout with the term ID',
+				'post_content' => '[woocommerce_checkout]',
+			)
+		);
+		$this->assertSame( $term_id, $page_id, 'The fixture needs a page whose ID equals the term ID.' );
+		$this->go_to( get_category_link( $term_id ) );
+
+		$this->sut->enqueue_frontend_assets();
+
+		$this->assertFalse( wp_script_is( 'wc-woopayments-express-checkout', 'enqueued' ) );
+	}
+
+	/**
 	 * @testdox Should enqueue express checkout assets with pay-for-order context on order-pay pages.
 	 */
 	public function test_enqueue_frontend_assets_loads_on_order_pay_page(): void {

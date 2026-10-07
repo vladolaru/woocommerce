@@ -36,6 +36,8 @@ final class WooPaymentsFrontendAssets {
 
 	/**
 	 * Register Stripe.js for every native WooPayments surface that needs it, unless the handle is already registered.
+	 *
+	 * @since 11.2.0
 	 */
 	public static function register_stripe_script(): void {
 		if ( wp_script_is( self::STRIPE_SCRIPT_HANDLE, 'registered' ) ) {
@@ -65,24 +67,25 @@ final class WooPaymentsFrontendAssets {
 	}
 
 	/**
-	 * Get the post the current request renders: the queried post, or else the global post.
+	 * Get the post the current request renders: the global post, which has_block() reads when given no post, as client
+	 * 11.1.0's surface checks call it. On a singular page it is the queried post; on an archive, the loop's first post.
 	 *
-	 * The queried object comes first only when it is a post: on an archive it is a term, whose ID is not a post ID. Without
-	 * one, the global post answers, as has_block() does when given no post.
+	 * Blocks a pattern or reusable block references are not resolved, as has_block() does not resolve them.
+	 *
+	 * @since 11.2.0
 	 *
 	 * @return \WP_Post|null
 	 */
 	public static function get_current_post(): ?\WP_Post {
-		$post = $GLOBALS['wp_query'] instanceof \WP_Query ? get_queried_object() : null;
-		if ( ! $post instanceof \WP_Post ) {
-			$post = get_post();
-		}
+		$post = get_post();
 
 		return $post instanceof \WP_Post ? $post : null;
 	}
 
 	/**
 	 * Tell whether the post the current request renders contains a block.
+	 *
+	 * @since 11.2.0
 	 *
 	 * @param string $block_name Block name.
 	 * @return bool
@@ -95,6 +98,8 @@ final class WooPaymentsFrontendAssets {
 
 	/**
 	 * Tell whether the post the current request renders contains a shortcode.
+	 *
+	 * @since 11.2.0
 	 *
 	 * @param string $tag Shortcode tag.
 	 * @return bool
