@@ -32,6 +32,7 @@ import { recordEvent } from '@woocommerce/tracks';
  * Internal dependencies
  */
 import { WOOPAYMENTS_SETTINGS_HEADING_ID } from '~/settings-payments/constants';
+import '../tracks-runtime';
 import {
 	getSettingsPaymentsProviderRouteUrl,
 	handleSettingsPaymentsProviderRouteClick,

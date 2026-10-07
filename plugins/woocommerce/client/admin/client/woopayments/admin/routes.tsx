@@ -12,6 +12,7 @@ import { __, sprintf } from '@wordpress/i18n';
 import { registerSettingsPaymentsProviderRoute } from '~/settings-payments/provider-routes';
 import { ProviderRouteLoading } from '~/settings-payments/components/provider-route-loading';
 import { getSettingsPaymentsProviderRouteUrl } from './utils';
+import '../tracks-runtime';
 
 // Share the chunk name with the Payments settings tab in `settings-payments/index.tsx`
 // so the settings page ships once instead of in two identical chunks.

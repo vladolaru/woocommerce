@@ -10,6 +10,7 @@ import { recordEvent } from '@woocommerce/tracks';
  * Internal dependencies
  */
 import { getSettingsPaymentsProviderRouteUrl } from '~/woopayments/admin/utils';
+import '~/woopayments/tracks-runtime';
 
 // The PHP task `WooPaymentsGoLiveTask` decides visibility and copy; this fill only handles the click.
 const GO_LIVE_TASK_ID = 'go-live-payments';

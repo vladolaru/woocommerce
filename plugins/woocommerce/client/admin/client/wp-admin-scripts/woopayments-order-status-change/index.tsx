@@ -38,6 +38,7 @@ import { RefundConfirmationModal } from './refund-confirmation-modal';
 import { WooPaymentsOrderDisputeNotice } from './order-dispute-notice';
 import { WooPaymentsOrderTestModeNotice } from './order-test-mode-notice';
 import type { WooPaymentsOrderStatusChangeConfig } from './types';
+import '../../woopayments/tracks-runtime';
 
 const CONTAINER_CLASS_NAME = 'woocommerce-woopayments-order-status-change';
 const PAYMENT_DETAILS_CONTAINER_ID =
