@@ -758,61 +758,8 @@ class WooPaymentsTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * @testdox Split methods publish only what differs from the first active method, which carries the shared config.
-	 */
-	public function test_split_methods_publish_the_shared_config_once(): void {
-		$data = $this->get_split_payment_method_data(
-			array(
-				'card'   => true,
-				'klarna' => true,
-				'ideal'  => true,
-			)
-		);
-
-		$this->assertSame(
-			array(
-				'publishableKey'     => 'pk_test_shared',
-				'title'              => 'Card',
-				'paymentMethodTypes' => array( 'card' ),
-				'cardOnly'           => true,
-				'gatewayId'          => 'woocommerce_payments',
-			),
-			$data['woocommerce_payments']
-		);
-		$this->assertSame(
-			array(
-				'sharedConfigFrom'   => 'woocommerce_payments',
-				'title'              => 'Klarna',
-				'paymentMethodTypes' => array( 'klarna' ),
-				'gatewayId'          => 'woocommerce_payments_klarna',
-				// A key only the carrier has is cleared, so the merge in the Blocks script does not hand it over.
-				'cardOnly'           => null,
-			),
-			$data['woocommerce_payments_klarna']
-		);
-		$this->assertSame( 'woocommerce_payments', $data['woocommerce_payments_ideal']['sharedConfigFrom'] );
-	}
-
-	/**
-	 * @testdox The first active split method carries the shared config when the card method is not available.
-	 */
-	public function test_first_active_split_method_carries_the_shared_config_without_card(): void {
-		$data = $this->get_split_payment_method_data(
-			array(
-				'card'   => false,
-				'klarna' => true,
-				'ideal'  => true,
-			)
-		);
-
-		$this->assertArrayNotHasKey( 'sharedConfigFrom', $data['woocommerce_payments_klarna'] );
-		$this->assertSame( 'pk_test_shared', $data['woocommerce_payments_klarna']['publishableKey'] );
-		$this->assertSame( 'woocommerce_payments_klarna', $data['woocommerce_payments_ideal']['sharedConfigFrom'] );
-		$this->assertArrayNotHasKey( 'publishableKey', $data['woocommerce_payments_ideal'] );
-	}
-
-	/**
 	 * @testdox Blocks integration publication honors the registry availability filter.
+	 */
 	public function test_get_payment_method_integrations_honors_registry_availability_filter(): void {
 		add_filter(
 			'wcpay_upe_available_payment_methods',
@@ -1082,62 +1029,6 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		}
 
 		return $loaded;
-	}
-
-	/**
-	 * Get each split integration's published data, with each gateway's availability as given.
-	 *
-	 * @param array<string,bool> $availability Availability by payment method ID, in registration order.
-	 * @return array<string,array<string,mixed>> Published data by integration name.
-	 */
-	private function get_split_payment_method_data( array $availability ): array {
-		$asset_api = $this->getMockBuilder( AssetApi::class )
-			->disableOriginalConstructor()
-			->getMock();
-		$bridge    = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_blocks_payment_method_data', 'should_expose_checkout_surface' ) )
-			->getMock();
-		$bridge->method( 'should_expose_checkout_surface' )->willReturn( true );
-		// Shared keys plus the per-method keys WooPaymentsCheckoutBridge::get_blocks_payment_method_data() varies by method.
-		$bridge->method( 'get_blocks_payment_method_data' )->willReturnCallback(
-			static function ( $supports, $definition ): array {
-				$id   = null === $definition ? 'card' : $definition->get_id();
-				$data = array(
-					'publishableKey'     => 'pk_test_shared',
-					'title'              => 'card' === $id ? 'Card' : ucfirst( $id ),
-					'paymentMethodTypes' => array( $id ),
-				);
-				if ( 'card' === $id ) {
-					$data['cardOnly'] = true;
-				}
-				return $data;
-			}
-		);
-		$registry = new WooPaymentsPaymentMethodRegistry();
-		$gateways = array();
-		foreach ( $availability as $method_id => $is_available ) {
-			$gateway = $this->getMockBuilder( NativeWooPaymentsGateway::class )
-				->setConstructorArgs( array( $registry->get( $method_id ) ) )
-				->onlyMethods( array( 'is_available' ) )
-				->getMock();
-			$gateway->method( 'is_available' )->willReturn( $is_available );
-			$gateways[] = $gateway;
-		}
-		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'can_process_payments', 'get_payment_gateways', 'get_gateway_for_method' ) )
-			->getMock();
-		$provider->method( 'can_process_payments' )->willReturn( true );
-		$provider->method( 'get_payment_gateways' )->willReturn( $gateways );
-
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
-		$data        = array();
-		foreach ( $integration->get_payment_method_integrations() as $payment_method ) {
-			$data[ $payment_method->get_name() ] = $payment_method->get_payment_method_data();
-		}
-
-		return $data;
 	}
 
 	/**

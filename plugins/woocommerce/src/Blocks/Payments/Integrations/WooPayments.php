@@ -236,68 +236,9 @@ final class WooPayments extends AbstractPaymentMethodType {
 	/**
 	 * Returns an array of key=>value pairs of data made available to the payment methods script.
 	 *
-	 * Split methods share most of the config, so one integration carries it whole and the others publish only the keys
-	 * whose values differ, plus `sharedConfigFrom` naming the carrier; the Blocks script merges the two.
-	 *
 	 * @return array<string,mixed>
 	 */
 	public function get_payment_method_data() {
-		$carrier = $this->get_shared_config_carrier();
-		if ( null === $carrier || $carrier === $this ) {
-			return $this->get_full_payment_method_data();
-		}
-
-		$shared = $this->shared_config;
-		if ( null === $shared ) {
-			return $this->get_full_payment_method_data();
-		}
-		if ( ! $shared->offsetExists( 'carrier_data' ) ) {
-			$shared->offsetSet( 'carrier_data', $carrier->get_full_payment_method_data() );
-		}
-		$carrier_data = $shared->offsetGet( 'carrier_data' );
-		$full_data    = $this->get_full_payment_method_data();
-		$data         = array( 'sharedConfigFrom' => $carrier->get_name() );
-		foreach ( $full_data as $key => $value ) {
-			if ( ! array_key_exists( $key, $carrier_data ) || $value !== $carrier_data[ $key ] ) {
-				$data[ $key ] = $value;
-			}
-		}
-		// A key only the carrier has must not reach this method through the merge.
-		foreach ( array_keys( array_diff_key( $carrier_data, $full_data ) ) as $key ) {
-			$data[ $key ] = null;
-		}
-
-		return $data;
-	}
-
-	/**
-	 * Get the integration that carries the shared config: the first active one of the registration.
-	 *
-	 * @return WooPayments|null Null outside split registrations or when no integration is active.
-	 */
-	private function get_shared_config_carrier(): ?WooPayments {
-		if ( null === $this->shared_config || empty( $this->shared_config['integrations'] ) ) {
-			return null;
-		}
-		if ( ! $this->shared_config->offsetExists( 'carrier' ) ) {
-			$this->shared_config['carrier'] = null;
-			foreach ( $this->shared_config['integrations'] as $integration ) {
-				if ( $integration->is_active() ) {
-					$this->shared_config['carrier'] = $integration;
-					break;
-				}
-			}
-		}
-
-		return $this->shared_config['carrier'];
-	}
-
-	/**
-	 * Get this integration's complete payment method data.
-	 *
-	 * @return array<string,mixed>
-	 */
-	private function get_full_payment_method_data(): array {
 		$data       = $this->checkout_bridge->get_blocks_payment_method_data( $this->get_card_gateway_supports(), $this->payment_gateway ? $this->payment_gateway->get_payment_method_definition() : null, $this->shared_config );
 		$gateway_id = null === $this->payment_gateway ? OrderPaymentStore::GATEWAY_ID : $this->payment_gateway->id;
 		$data       = array_merge(
@@ -346,13 +287,9 @@ final class WooPayments extends AbstractPaymentMethodType {
 			return array( $this );
 		}
 
-		/**
-		 * Holder the integrations of this registration share.
-		 *
-		 * @var \ArrayObject<string,mixed> $shared_config
-		 */
-		$shared_config                 = new \ArrayObject();
-		$integrations                  = array_map(
+		$shared_config = new \ArrayObject();
+
+		return array_map(
 			function ( NativeWooPaymentsGateway $gateway ) use ( $shared_config ): WooPayments {
 				$integration                = new self(
 					$this->asset_api,
@@ -368,9 +305,6 @@ final class WooPayments extends AbstractPaymentMethodType {
 			},
 			$gateways
 		);
-		$shared_config['integrations'] = $integrations;
-
-		return $integrations;
 	}
 
 	/**

@@ -1748,23 +1748,10 @@ export const getWooPaymentsPaymentMethod = (
 	};
 };
 
-// A split method publishes only what differs from the method that carries the shared config
-// (WooPayments::get_payment_method_data()); its own keys win over the shared ones.
-const withSharedConfig = ( paymentMethodData ) =>
-	paymentMethodData?.sharedConfigFrom
-		? {
-				...getPaymentMethodData(
-					paymentMethodData.sharedConfigFrom,
-					{}
-				),
-				...paymentMethodData,
-		  }
-		: paymentMethodData;
-
 const registerWooPayments = () => {
 	const paymentMethods = getWooPaymentsGatewayIds()
 		.map( ( paymentMethodId ) =>
-			withSharedConfig( getPaymentMethodData( paymentMethodId, null ) )
+			getPaymentMethodData( paymentMethodId, null )
 		)
 		.filter( Boolean )
 		.map( getWooPaymentsPaymentMethod );
