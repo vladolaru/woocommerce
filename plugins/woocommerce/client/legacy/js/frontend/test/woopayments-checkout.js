@@ -2675,6 +2675,53 @@ describe( 'WooPayments checkout', () => {
 		).toBe( 'pm_native' );
 	} );
 
+	test( 'creates the card payment method on the platform account when network saved cards are forced', async () => {
+		window.wcpay_core_checkout_config.paymentMethodsConfig.card.forceNetworkSavedCards = true;
+
+		require( '../woopayments-checkout' );
+		checkoutFormEventHandlers.checkout_place_order_woocommerce_payments();
+		await flushPromises();
+
+		// Client 11.1.0 api/index.js:79-95 creates the platform instance with the locale only.
+		expect( window.Stripe ).toHaveBeenCalledWith( 'pk_test', {
+			locale: 'en-US',
+		} );
+		expect(
+			global.jQuery.checkoutFormFields[ 'wcpay-is-platform-payment-method' ]
+				.value
+		).toBe( 'true' );
+	} );
+
+	test( 'marks a connected-account card payment method as not created on the platform', async () => {
+		require( '../woopayments-checkout' );
+		checkoutFormEventHandlers.checkout_place_order_woocommerce_payments();
+		await flushPromises();
+
+		expect(
+			global.jQuery.checkoutFormFields[ 'wcpay-is-platform-payment-method' ]
+				.value
+		).toBe( 'false' );
+	} );
+
+	test( 'confirms on the connected account while the card element uses the platform account', async () => {
+		window.wcpay_core_checkout_config.paymentMethodsConfig.card.forceNetworkSavedCards = true;
+
+		require( '../woopayments-checkout' );
+		setPaymentIntentConfirmationHash();
+		windowEventHandlers.hashchange();
+		await flushPromises();
+
+		// Client 11.1.0 api/index.js confirmIntent() confirms through getStripe( true ), the connected account.
+		expect( window.Stripe ).toHaveBeenLastCalledWith( 'pk_test', {
+			locale: 'en-US',
+			stripeAccount: 'acct_test',
+			betas: [ 'card_country_event_beta_1', 'link_autofill_modal_beta_1' ],
+		} );
+		expect( stripeMock.handleNextAction ).toHaveBeenCalledWith( {
+			clientSecret: 'pi_native_secret_abc',
+		} );
+	} );
+
 	test( 'intercepts and resubmits the order-pay form with a created payment method', async () => {
 		document.body.innerHTML =
 			'<form id="order_review">' +

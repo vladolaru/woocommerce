@@ -18,6 +18,8 @@
 		'woocommerce_payments_payment_method_error';
 	var gatewayId = config.gatewayId || defaultGatewayId;
 	var stripe = null;
+	var isPlatformStripe = false;
+	var accountStripe = null;
 	var elements = null;
 	var paymentElement = null;
 	var paymentElementGatewayId = null;
@@ -599,6 +601,37 @@
 		}
 
 		return betas;
+	}
+
+	// Client 11.1.0 api/index.js getStripeForUPE(): the selected method's forceNetworkSavedCards picks the platform
+	// account, so the card can be saved for WooPay; the platform instance gets no account and no betas (:79-95).
+	function shouldUsePlatformStripe() {
+		var methodsConfig = config.paymentMethodsConfig || {};
+		var methodConfig = methodsConfig[ getStripePaymentMethodTypes()[ 0 ] ];
+
+		return Boolean(
+			methodConfig && 'forceNetworkSavedCards' in methodConfig
+				? methodConfig.forceNetworkSavedCards
+				: config.forceNetworkSavedCards
+		);
+	}
+
+	function createAccountStripe() {
+		return window.Stripe( config.publishableKey, {
+			locale: config.locale || 'auto',
+			stripeAccount: config.accountId || undefined,
+			betas: getStripeBetas(),
+		} );
+	}
+
+	// Intent confirmation always runs on the connected account (client confirmIntent() uses getStripe( true )).
+	function getAccountStripe() {
+		if ( stripe && ! isPlatformStripe ) {
+			return stripe;
+		}
+
+		accountStripe = accountStripe || createAccountStripe();
+		return accountStripe;
 	}
 
 	function getStripePaymentMethodTypes() {
@@ -1494,6 +1527,13 @@
 			'wcpay-fraud-prevention-token',
 			getFraudPreventionToken()
 		);
+		// Read by NativeWooPaymentsGateway through WooPaymentsPlatformPaymentMethodContext::CHECKOUT_FIELD; a saved
+		// token was never created on the platform here.
+		ensureHiddenField(
+			form,
+			'wcpay-is-platform-payment-method',
+			( paymentMethod || error ) && isPlatformStripe ? 'true' : 'false'
+		);
 	}
 
 	function getSetupIntentData( response ) {
@@ -1985,6 +2025,7 @@
 		}
 
 		stripe = null;
+		isPlatformStripe = false;
 		elements = null;
 		paymentElement = null;
 		paymentElementContainer = null;
@@ -2076,11 +2117,12 @@
 			return;
 		}
 
-		stripe = window.Stripe( config.publishableKey, {
-			locale: config.locale || 'auto',
-			stripeAccount: config.accountId || undefined,
-			betas: getStripeBetas(),
-		} );
+		isPlatformStripe = shouldUsePlatformStripe();
+		stripe = isPlatformStripe
+			? window.Stripe( config.publishableKey, {
+					locale: config.locale || 'auto',
+			  } )
+			: createAccountStripe();
 		elements = stripe.elements( getStripeElementsOptions() );
 		paymentElement = elements.create(
 			'payment',
@@ -2432,30 +2474,24 @@
 		}
 
 		function confirmWithStripe() {
-			stripe =
-				stripe ||
-				window.Stripe( config.publishableKey, {
-					locale: config.locale || 'auto',
-					stripeAccount: config.accountId || undefined,
-					betas: getStripeBetas(),
-				} );
+			var confirmationStripe = getAccountStripe();
 
 			if ( confirmation.type === 'si' ) {
-				if ( confirmation.confirmationToken && stripe.confirmSetup ) {
-					confirmationPromise = stripe.confirmSetup( {
+				if ( confirmation.confirmationToken && confirmationStripe.confirmSetup ) {
+					confirmationPromise = confirmationStripe.confirmSetup( {
 						clientSecret: confirmation.clientSecret,
 						confirmParams: {
 							confirmation_token: confirmation.confirmationToken,
 						},
 						redirect: 'if_required',
 					} );
-				} else if ( stripe.handleNextAction ) {
-					confirmationPromise = stripe.handleNextAction( {
+				} else if ( confirmationStripe.handleNextAction ) {
+					confirmationPromise = confirmationStripe.handleNextAction( {
 						clientSecret: confirmation.clientSecret,
 					} );
 				}
-			} else if ( stripe.handleNextAction ) {
-				confirmationPromise = stripe.handleNextAction( {
+			} else if ( confirmationStripe.handleNextAction ) {
+				confirmationPromise = confirmationStripe.handleNextAction( {
 					clientSecret: confirmation.clientSecret,
 				} );
 			}
