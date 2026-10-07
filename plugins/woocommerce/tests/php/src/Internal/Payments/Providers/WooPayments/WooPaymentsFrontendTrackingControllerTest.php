@@ -576,6 +576,37 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0 sends `wcpay_proceed_to_checkout_button_click` (cart/index.js:10) and its recorder adds `wcpay_`
+	 * again; native records the single-prefixed name (the event source scheme the owner approved on 2026-10-07). A page
+	 * cached before the change still sends the doubled name, which records under the corrected one.
+	 *
+	 * @testdox Should record the cart Proceed to checkout click under its single-prefixed name.
+	 * @dataProvider provider_proceed_to_checkout_sent_names
+	 *
+	 * @param string $sent_name Event name the browser sends.
+	 */
+	public function test_tracks_response_records_proceed_to_checkout_single_prefixed( string $sent_name ): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+
+		$recorded = $this->record_through_tracks_response( $this->create_controller( true ), $sent_name, array( 'woopay_direct_checkout' => false ) );
+
+		$this->assertSame( 'wcpay_proceed_to_checkout_button_click', $recorded['events'][0]->_en ?? null );
+	}
+
+	/**
+	 * Proceed to checkout names the browser may send.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function provider_proceed_to_checkout_sent_names(): array {
+		return array(
+			'current script'     => array( 'proceed_to_checkout_button_click' ),
+			'page cached before' => array( 'wcpay_proceed_to_checkout_button_click' ),
+		);
+	}
+
+	/**
 	 * Post an event to the shopper recorder and collect what it records into core's footer pixel queue.
 	 *
 	 * @param WooPaymentsFrontendTrackingController $sut        Controller under test.

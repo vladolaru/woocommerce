@@ -55,7 +55,8 @@
 				return;
 			}
 
-			recordUserEvent( 'wcpay_proceed_to_checkout_button_click', {
+			// Client 11.1.0 sends `wcpay_proceed_to_checkout_button_click`, which its recorder prefixes again.
+			recordUserEvent( 'proceed_to_checkout_button_click', {
 				woopay_direct_checkout:
 					!! proceedToCheckout.woopayDirectCheckout &&
 					! /(?:^|;\s*)skip_woopay=1(?:;|$)/.test( document.cookie ),

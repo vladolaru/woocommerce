@@ -109,6 +109,7 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 	 * @var array<string,string>
 	 */
 	private const ALLOWED_DIFFERENCES = array(
+		'wcpay_wcpay_proceed_to_checkout_button_click'   => 'Tracks event source scheme (owner, 2026-10-07): native records the corrected wcpay_proceed_to_checkout_button_click; the doubled prefix is a client bug.',
 		'wcadmin_payments_transactions_risk_review_list_review_button_click' => 'plan.md T.7 Step 6 (d): dead code in client 11.1.0 (RiskReviewList is not mounted).',
 		'wcadmin_wcpay_connect_account_clicked'          => 'plan.md T.7 Step 6 (d): superseded by NOX (settings_payments_* onboarding events).',
 		'wcadmin_wcpay_connect_account_kyc_modal_opened' => 'plan.md T.7 Step 6 (d): superseded by NOX (settings_payments_* onboarding events).',

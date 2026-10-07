@@ -67,7 +67,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 			'all_stores' => false,
 			'properties' => array(),
 		),
-		'wcpay_proceed_to_checkout_button_click'     => array(
+		'proceed_to_checkout_button_click'           => array(
 			'all_stores' => false,
 			'properties' => array( 'woopay_direct_checkout' => 'bool' ),
 		),
@@ -123,6 +123,16 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 			'all_stores' => false,
 			'properties' => array( 'source' => self::BUTTON_SOURCES ),
 		),
+	);
+
+	/**
+	 * Names the browser may still send for a declared event, mapped to the event.
+	 *
+	 * Client 11.1.0 sends `wcpay_proceed_to_checkout_button_click` and records it with a second `wcpay_` prefix; native
+	 * records the single-prefixed name, and a page cached before the change still sends the old one.
+	 */
+	private const SHOPPER_EVENT_ALIASES = array(
+		'wcpay_proceed_to_checkout_button_click' => 'proceed_to_checkout_button_click',
 	);
 
 	/**
@@ -230,6 +240,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 		}
 
 		$event_name = sanitize_text_field( (string) $request['tracksEventName'] );
+		$event_name = self::SHOPPER_EVENT_ALIASES[ $event_name ] ?? $event_name;
 		if ( ! isset( self::SHOPPER_EVENTS[ $event_name ] ) ) {
 			return $this->error_response( __( 'No valid event name or type.', 'woocommerce' ), 400 );
 		}

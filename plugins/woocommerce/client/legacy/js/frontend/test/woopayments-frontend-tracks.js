@@ -133,7 +133,7 @@ describe( 'WooPayments frontend Tracks queue', () => {
 
 			const expected = [
 				[
-					'wcpay_proceed_to_checkout_button_click',
+					'proceed_to_checkout_button_click',
 					'{"woopay_direct_checkout":false}',
 				],
 			];
@@ -155,7 +155,7 @@ describe( 'WooPayments frontend Tracks queue', () => {
 
 			expect( click( '.checkout-button' ) ).toEqual( [
 				[
-					'wcpay_proceed_to_checkout_button_click',
+					'proceed_to_checkout_button_click',
 					'{"woopay_direct_checkout":true}',
 				],
 			] );
@@ -163,7 +163,7 @@ describe( 'WooPayments frontend Tracks queue', () => {
 			document.cookie = 'skip_woopay=1';
 			expect( click( '.checkout-button' ) ).toEqual( [
 				[
-					'wcpay_proceed_to_checkout_button_click',
+					'proceed_to_checkout_button_click',
 					'{"woopay_direct_checkout":false}',
 				],
 			] );
