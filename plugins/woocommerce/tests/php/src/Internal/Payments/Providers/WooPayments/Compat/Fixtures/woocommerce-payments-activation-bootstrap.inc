@@ -1,6 +1,10 @@
 <?php
 /**
  * Minimal WooPayments activation-sandbox declaration fixture.
+ *
+ * Declares both plugin-owned names, a superset of the real activation include: client 11.1.0 woocommerce-payments.php:28
+ * declares WC_Payments_Features at file scope, and WC_Payments only in wcpay_init() (:163-165). A test that loads this
+ * fixture proves that neither name was taken by a facade.
  */
 
 declare( strict_types = 1 );
