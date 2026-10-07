@@ -13,6 +13,7 @@ import {
 	useState,
 } from '@wordpress/element';
 import { useSelect } from '@wordpress/data';
+import { StoreNotice } from '@woocommerce/blocks-components';
 import FingerprintJS from '@fingerprintjs/fingerprintjs';
 
 /**
@@ -35,6 +36,10 @@ const defaultLabel = __( 'Card', 'woocommerce' );
 const testModeBadgeLabel = __( 'Test Mode', 'woocommerce' );
 const saveUserRoots = new WeakMap();
 const copyTestNumberSuccessDuration = 2000;
+// Client 11.1.0 client/checkout/api/index.js:57-71 waits up to 600 seconds for Stripe.js, checking every 100 ms,
+// because page optimizers can defer it past the checkout render.
+const STRIPE_WAIT_INTERVAL = 100;
+const STRIPE_MAX_WAIT = 600 * 1000;
 const EMPTY_BILLING_DATA = {};
 
 // The buyer *device* fingerprint the platform's risk rules score on — the
@@ -1054,6 +1059,11 @@ const WooPaymentsContent = ( {
 	const { onPaymentSetup, onCheckoutSuccess } = eventRegistration || {};
 	const wrapperRef = useRef( null );
 	const [ isStripeReady, setIsStripeReady ] = useState( false );
+	const [ isStripeLoaded, setIsStripeLoaded ] = useState(
+		() => typeof window.Stripe === 'function'
+	);
+	const [ loadErrorMessage, setLoadErrorMessage ] = useState( '' );
+	const hasLoadError = useRef( false );
 	const [ showSkeleton, setShowSkeleton ] = useState( true );
 	// Unset until the first observation, so nothing is reserved before the width is known.
 	const [ cardRowCount, setCardRowCount ] = useState( null );
@@ -1136,9 +1146,29 @@ const WooPaymentsContent = ( {
 	}, [ isCardMethod ] );
 
 	useEffect( () => {
+		if ( isStripeLoaded ) {
+			return undefined;
+		}
+
+		let waited = 0;
+		const timer = window.setInterval( () => {
+			waited += STRIPE_WAIT_INTERVAL;
+			if ( typeof window.Stripe === 'function' ) {
+				window.clearInterval( timer );
+				setIsStripeLoaded( true );
+			} else if ( waited >= STRIPE_MAX_WAIT ) {
+				window.clearInterval( timer );
+			}
+		}, STRIPE_WAIT_INTERVAL );
+
+		return () => window.clearInterval( timer );
+	}, [ isStripeLoaded ] );
+
+	useEffect( () => {
 		if (
 			! elementContainer.current ||
-			! paymentSettings.isCoreNativeCheckoutAvailable
+			! paymentSettings.isCoreNativeCheckoutAvailable ||
+			! isStripeLoaded
 		) {
 			return;
 		}
@@ -1167,8 +1197,13 @@ const WooPaymentsContent = ( {
 			paymentElementOptions
 		);
 		paymentElement.current.on( 'ready', () => setIsStripeReady( true ) );
+		// Client 11.1.0 client/checkout/blocks/payment-processor.js:250-253, :296 and payment-elements.js:108-120.
+		paymentElement.current.on( 'loaderror', ( event ) => {
+			hasLoadError.current = true;
+			setLoadErrorMessage( event?.error?.message || '' );
+		} );
 		paymentElement.current.mount( elementContainer.current );
-	}, [ paymentSettings, shouldSavePayment ] );
+	}, [ isStripeLoaded, paymentSettings, shouldSavePayment ] );
 
 	useEffect( () => {
 		renderWooPaySaveUserSection( paymentSettings );
@@ -1198,76 +1233,88 @@ const WooPaymentsContent = ( {
 					getFraudPreventionToken( paymentSettings ),
 			};
 
-			if ( stripe.current && elements.current ) {
-				if ( typeof elements.current.submit === 'function' ) {
-					const submitResult = await elements.current.submit();
-					if ( submitResult?.error ) {
-						paymentMethodData[ 'wcpay-payment-method-error-code' ] =
-							submitResult.error.code || '';
-						paymentMethodData[
-							'wcpay-payment-method-error-message'
-						] = submitResult.error.message || '';
+			// Client 11.1.0 client/checkout/blocks/payment-processor.js:133-140 refuses a Payment Element that failed
+			// to load; one that never mounted (Stripe.js missing) has no payment method to submit either.
+			if (
+				hasLoadError.current ||
+				! stripe.current ||
+				! elements.current
+			) {
+				return getErrorResponse(
+					emitResponseRef.current,
+					__(
+						'Invalid or missing payment details. Please ensure the provided payment method is correctly entered.',
+						'woocommerce'
+					)
+				);
+			}
 
-						return {
-							type: emitResponseRef.current.responseTypes.ERROR,
-							message:
-								submitResult.error.message ||
-								__(
-									'There was a problem validating your payment details.',
-									'woocommerce'
-								),
-						};
-					}
-				}
-
-				const result = await stripe.current.createPaymentMethod( {
-					elements: elements.current,
-					params: {
-						billing_details: getBillingDetails( billingData ),
-					},
-				} );
-
-				if ( result.error ) {
-					// Return success with the error sentinel so the checkout
-					// request goes through and the attempt is recorded as a
-					// failed order carrying the decline reason.
-					paymentMethodData[ 'wcpay-payment-method' ] =
-						PAYMENT_METHOD_ERROR_SENTINEL;
+			if ( typeof elements.current.submit === 'function' ) {
+				const submitResult = await elements.current.submit();
+				if ( submitResult?.error ) {
 					paymentMethodData[ 'wcpay-payment-method-error-code' ] =
-						result.error.code || '';
-					paymentMethodData[
-						'wcpay-payment-method-error-decline-code'
-					] = result.error.decline_code || '';
+						submitResult.error.code || '';
 					paymentMethodData[ 'wcpay-payment-method-error-message' ] =
-						result.error.message || '';
-					paymentMethodData[ 'wcpay-payment-method-error-type' ] =
-						result.error.type || '';
-					paymentMethodData[ 'wcpay-fingerprint' ] =
-						await getDeviceFingerprint();
+						submitResult.error.message || '';
 
-					return getSuccessResponse(
-						emitResponseRef.current,
-						paymentMethodData
-					);
+					return {
+						type: emitResponseRef.current.responseTypes.ERROR,
+						message:
+							submitResult.error.message ||
+							__(
+								'There was a problem validating your payment details.',
+								'woocommerce'
+							),
+					};
 				}
+			}
 
-				if ( ! result.paymentMethod ) {
-					return getErrorResponse(
-						emitResponseRef.current,
-						__(
-							'There was a problem validating your payment details.',
-							'woocommerce'
-						)
-					);
-				}
+			const result = await stripe.current.createPaymentMethod( {
+				elements: elements.current,
+				params: {
+					billing_details: getBillingDetails( billingData ),
+				},
+			} );
 
+			if ( result.error ) {
+				// Return success with the error sentinel so the checkout
+				// request goes through and the attempt is recorded as a
+				// failed order carrying the decline reason.
 				paymentMethodData[ 'wcpay-payment-method' ] =
-					result.paymentMethod.id || '';
-				// The device fingerprint — never the Stripe card fingerprint,
-				// which is a different signal entirely.
+					PAYMENT_METHOD_ERROR_SENTINEL;
+				paymentMethodData[ 'wcpay-payment-method-error-code' ] =
+					result.error.code || '';
+				paymentMethodData[ 'wcpay-payment-method-error-decline-code' ] =
+					result.error.decline_code || '';
+				paymentMethodData[ 'wcpay-payment-method-error-message' ] =
+					result.error.message || '';
+				paymentMethodData[ 'wcpay-payment-method-error-type' ] =
+					result.error.type || '';
 				paymentMethodData[ 'wcpay-fingerprint' ] =
 					await getDeviceFingerprint();
+
+				return getSuccessResponse(
+					emitResponseRef.current,
+					paymentMethodData
+				);
 			}
+
+			if ( ! result.paymentMethod ) {
+				return getErrorResponse(
+					emitResponseRef.current,
+					__(
+						'There was a problem validating your payment details.',
+						'woocommerce'
+					)
+				);
+			}
+
+			paymentMethodData[ 'wcpay-payment-method' ] =
+				result.paymentMethod.id || '';
+			// The device fingerprint — never the Stripe card fingerprint,
+			// which is a different signal entirely.
+			paymentMethodData[ 'wcpay-fingerprint' ] =
+				await getDeviceFingerprint();
 
 			return getSuccessResponse(
 				emitResponseRef.current,
@@ -1312,6 +1359,13 @@ const WooPaymentsContent = ( {
 						__html: getTestingInstructions( paymentSettings ),
 					} }
 				/>
+			) : null }
+			{ loadErrorMessage ? (
+				<div className="wc-block-components-notices">
+					<StoreNotice status="error" isDismissible={ false }>
+						{ loadErrorMessage }
+					</StoreNotice>
+				</div>
 			) : null }
 			<div
 				ref={ wrapperRef }

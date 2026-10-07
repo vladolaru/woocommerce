@@ -76,6 +76,12 @@ jest.mock( '@woocommerce/settings', () => {
 	};
 } );
 
+// The bundle loads StoreNotice from the wc-blocks-components script at runtime; its package entry pulls in every
+// Blocks data store, which needs the full settings fixture, so the tests render a plain stand-in.
+jest.mock( '@woocommerce/blocks-components', () => ( {
+	StoreNotice: ( { children } ) => <div role="alert">{ children }</div>,
+} ) );
+
 jest.mock( '@wordpress/data', () => ( {
 	useSelect: jest.fn( ( callback ) =>
 		callback( () => ( {

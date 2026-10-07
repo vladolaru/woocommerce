@@ -138,6 +138,12 @@ jest.mock( '@woocommerce/settings', () => {
 	};
 } );
 
+// The bundle loads StoreNotice from the wc-blocks-components script at runtime; its package entry pulls in every
+// Blocks data store, which needs the full settings fixture, so the tests render a plain stand-in.
+jest.mock( '@woocommerce/blocks-components', () => ( {
+	StoreNotice: ( { children } ) => <div role="alert">{ children }</div>,
+} ) );
+
 jest.mock( '@wordpress/data', () => ( {
 	useSelect: jest.fn(),
 } ) );
@@ -262,46 +268,16 @@ describe( 'wc-payment-method-woopayments', () => {
 
 	it( 'submits wcpay-payment-method metadata for a new card method', async () => {
 		window.wcpayFraudPreventionToken = 'fraud-token-123';
-		const registration = registerWooPayments();
-		let setupResult;
-		const onPaymentSetup = jest.fn( ( callback ) => {
-			setupResult = callback();
-		} );
-		const emitResponse = {
-			responseTypes: {
-				SUCCESS: 'success',
-				ERROR: 'error',
-			},
-			noticeContexts: {
-				PAYMENTS: 'payments',
-			},
-		};
+		const harness = await setUpNewCardPayment();
 
-		const content = registration.content;
-
-		render(
-			createElement( content.type, {
-				...content.props,
-				eventRegistration: {
-					onPaymentSetup,
-					onCheckoutSuccess: jest.fn(),
-				},
-				emitResponse,
-			} )
-		);
-
-		await waitFor( () => {
-			expect( onPaymentSetup ).toHaveBeenCalled();
-		} );
-
-		await expect( setupResult ).resolves.toEqual( {
+		await expect( harness.setupCallbacks[ 0 ]() ).resolves.toEqual( {
 			type: 'success',
 			meta: {
 				paymentMethodData: {
-					'wcpay-payment-method': '',
+					'wcpay-payment-method': 'pm_123',
 					'wcpay-payment-method-error-code': '',
 					'wcpay-payment-method-error-message': '',
-					'wcpay-fingerprint': '',
+					'wcpay-fingerprint': 'device_fp_123',
 					'wcpay-is-platform-payment-method': 'true',
 					'wcpay-fraud-prevention-token': 'fraud-token-123',
 				},
@@ -1349,6 +1325,113 @@ describe( 'wc-payment-method-woopayments', () => {
 		);
 		expect( paymentElementContainer ).not.toBeNull();
 		expect( mount ).toHaveBeenCalledWith( paymentElementContainer );
+	} );
+
+	describe( 'Stripe.js loading', () => {
+		const renderCardWithPaymentSetup = () => {
+			let paymentSetup;
+			const registration = registerWooPayments();
+			const content = registration.content;
+			render(
+				createElement( content.type, {
+					...content.props,
+					eventRegistration: {
+						onPaymentSetup: jest.fn( ( callback ) => {
+							paymentSetup = callback;
+						} ),
+						onCheckoutSuccess: jest.fn(),
+					},
+					emitResponse: {
+						responseTypes: {
+							SUCCESS: 'success',
+							ERROR: 'error',
+						},
+						noticeContexts: {
+							PAYMENTS: 'payments',
+						},
+					},
+				} )
+			);
+
+			return () => paymentSetup();
+		};
+
+		it( 'mounts the card PaymentElement once Stripe.js loads after the checkout renders', async () => {
+			jest.useFakeTimers();
+			const mount = jest.fn();
+			delete window.Stripe;
+
+			renderCardWithPaymentSetup();
+			expect( mount ).not.toHaveBeenCalled();
+
+			window.Stripe = jest.fn( () => ( {
+				elements: jest.fn( () => ( {
+					create: jest.fn( () => ( { on: jest.fn(), mount } ) ),
+				} ) ),
+				createPaymentMethod: jest.fn().mockResolvedValue( {} ),
+			} ) );
+			await act( async () => {
+				jest.advanceTimersByTime( 100 );
+			} );
+
+			expect( mount ).toHaveBeenCalledTimes( 1 );
+		} );
+
+		it( 'refuses to submit while the card PaymentElement is not mounted', async () => {
+			delete window.Stripe;
+
+			const runPaymentSetup = renderCardWithPaymentSetup();
+
+			await expect( runPaymentSetup() ).resolves.toEqual( {
+				type: 'error',
+				message:
+					'Invalid or missing payment details. Please ensure the provided payment method is correctly entered.',
+				messageContext: 'payments',
+			} );
+		} );
+
+		it( 'shows the PaymentElement load error and refuses to submit', async () => {
+			const handlers = {};
+			const submit = jest.fn().mockResolvedValue( {} );
+			window.Stripe = jest.fn( () => ( {
+				elements: jest.fn( () => ( {
+					create: jest.fn( () => ( {
+						on: jest.fn( ( event, handler ) => {
+							handlers[ event ] = handler;
+						} ),
+						mount: jest.fn(),
+					} ) ),
+					submit,
+				} ) ),
+				createPaymentMethod: jest.fn().mockResolvedValue( {} ),
+			} ) );
+
+			const runPaymentSetup = renderCardWithPaymentSetup();
+			await waitFor( () => {
+				expect( handlers.loaderror ).toEqual( expect.any( Function ) );
+			} );
+			// Payload of the Payment Element loaderror event (Stripe.js reference, element.on('loaderror')).
+			act( () => {
+				handlers.loaderror( {
+					elementType: 'payment',
+					error: {
+						type: 'invalid_request_error',
+						message: 'The payment form could not be loaded.',
+					},
+				} );
+			} );
+
+			expect(
+				screen.getByText( 'The payment form could not be loaded.' )
+			).toBeInTheDocument();
+			await expect( runPaymentSetup() ).resolves.toEqual( {
+				type: 'error',
+				message:
+					'Invalid or missing payment details. Please ensure the provided payment method is correctly entered.',
+				messageContext: 'payments',
+			} );
+			expect( submit ).not.toHaveBeenCalled();
+		} );
 	} );
 
 	describe( 'reserved Payment Element space', () => {
