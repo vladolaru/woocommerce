@@ -2987,6 +2987,82 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The admin notice classification of a network record runs the network-wide preflight once and reuses it within the hour.
+	 * @group multisite
+	 */
+	public function test_network_notice_classification_reuses_the_hourly_result(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+
+		$main_site_id   = get_current_blog_id();
+		$second_site_id = $this->create_cutover_multisite_site( 'cutover-notice-cache.example.org' );
+		$preflight_runs = 0;
+		$preflight      = new class( $preflight_runs ) extends WooPaymentsCutoverPreflightService {
+			/** @var int */
+			private int $preflight_runs;
+
+			/**
+			 * @param int $preflight_runs Counter of full preflight runs.
+			 */
+			public function __construct( int &$preflight_runs ) {
+				$this->preflight_runs =& $preflight_runs;
+			}
+
+			/** @return string[] */
+			public function get_reconciliation_failures(): array {
+				++$this->preflight_runs;
+				return array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Return network activation. */
+			public function is_woopayments_network_active(): bool {
+				return true;
+			}
+		};
+		$sut            = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization() );
+
+		try {
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $pending );
+			$this->assertTrue( $pending['network_cutover'] );
+			$this->require_scheduler()->cancel( $pending['generation'], 1 );
+			$awaiting                 = $pending;
+			$awaiting['revision']     = $pending['revision'] + 1;
+			$awaiting['current_step'] = 'awaiting_merchant_start';
+			$awaiting['action_id']    = 0;
+			$this->assertTrue( $this->require_state_store()->compare_and_set_record( $pending, $awaiting ) );
+			delete_option( 'woocommerce_woopayments_cutover_admin_classification' );
+
+			$preflight_runs = 0;
+			$sut->classify_for_admin_notice();
+			$first_page = $preflight_runs;
+			$sut->classify_for_admin_notice();
+
+			$this->assertGreaterThan( 0, $first_page, 'The first admin page classifies the network.' );
+			$this->assertSame( $first_page, $preflight_runs, 'The next admin page reuses the classification instead of scanning every site again.' );
+		} finally {
+			if ( get_current_blog_id() !== $main_site_id ) {
+				restore_current_blog();
+			}
+			switch_to_blog( $second_site_id );
+			$this->cleanup_state();
+			restore_current_blog();
+			wpmu_delete_blog( $second_site_id, true );
+		}
+	}
+
+	/**
 	 * @testdox A network cutover schedules the canceled-authorization fee remediation on every site, at that site's ownership verification.
 	 * @group multisite
 	 */
@@ -3370,7 +3446,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$this->assertSame( $second_excluded, $sut->classify_for_admin_notice(), 'A visit to the clear site must remain excluded while another site still has the marker.' );
 
 			$failures_by_site[ $main_site_id ] = array();
-			$awaiting                          = $sut->classify_for_admin_notice();
+			$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $sut->classify_for_admin_notice()['state'], 'The notice reuses the cached network classification.' );
+			$sut->forget_admin_classification();
+			$awaiting = $sut->classify_for_admin_notice();
 			$this->assertIsArray( $awaiting );
 			$this->assertSame( 'awaiting_merchant_start', $awaiting['current_step'] );
 			$this->assertTrue( $sut->enqueue( 'merchant' ) );

@@ -2387,11 +2387,11 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			return false;
 		}
 
-		if ( true === ( $record['network_cutover'] ?? false ) && is_multisite() ) {
-			return ! $this->network_has_stripe_billing_failure();
-		}
 		if ( $for_admin_notice ) {
 			return false === $this->get_admin_stripe_billing_classification( $record );
+		}
+		if ( true === ( $record['network_cutover'] ?? false ) && is_multisite() ) {
+			return ! $this->network_has_stripe_billing_failure();
 		}
 
 		try {
@@ -2410,30 +2410,30 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function record_has_stripe_billing_failure( array $record ): bool {
-		if ( true === ( $record['network_cutover'] ?? false ) && is_multisite() ) {
-			return $this->network_has_stripe_billing_failure();
-		}
-
 		return true === $this->get_admin_stripe_billing_classification( $record );
 	}
 
 	/**
 	 * Classify the Stripe Billing marker for admin notices, reusing the result for one record revision and an hour.
 	 *
-	 * The full preflight scans Action Scheduler and order meta, so it must not run on every admin page. The worker re-checks before it acts.
+	 * The full preflight scans Action Scheduler and order meta, and a network record scans it on every site, so it must not
+	 * run on every admin page. The worker re-checks before it acts.
 	 *
 	 * @param array<string,mixed>|null $record Current record, or null when none exists.
 	 * @return bool|null Whether the marker is present, or null when the preflight failed.
 	 */
 	private function get_admin_stripe_billing_classification( ?array $record ): ?bool {
-		$key    = is_array( $record ) ? $record['generation'] . ':' . $record['revision'] : 'none';
-		$cached = get_option( self::ADMIN_CLASSIFICATION_OPTION, null );
+		$network = is_array( $record ) && true === ( $record['network_cutover'] ?? false ) && is_multisite();
+		$key     = is_array( $record ) ? $record['generation'] . ':' . $record['revision'] . ( $network ? ':network' : '' ) : 'none';
+		$cached  = get_option( self::ADMIN_CLASSIFICATION_OPTION, null );
 		if ( is_array( $cached ) && ( $cached['key'] ?? null ) === $key && is_bool( $cached['present'] ?? null ) && time() < (int) ( $cached['expires_at'] ?? 0 ) ) {
 			return $cached['present'];
 		}
 
 		try {
-			$present = in_array( 'legacy_stripe_billing_subscriptions_present', $this->normalize_codes( $this->preflight_service->get_reconciliation_failures() ), true );
+			$present = $network
+				? $this->network_has_stripe_billing_failure()
+				: in_array( 'legacy_stripe_billing_subscriptions_present', $this->normalize_codes( $this->preflight_service->get_reconciliation_failures() ), true );
 		} catch ( \Throwable $error ) {
 			$this->log_error( 'WooPayments cutover could not classify the admin notice.', array( 'error' => $error->getMessage() ) );
 			return null;
