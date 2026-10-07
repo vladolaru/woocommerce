@@ -30,6 +30,26 @@ function createMarkingI18nStub() {
 	} );
 }
 
+// The fields a browser submits with the classic checkout form: named, enabled, and checked when a checkbox or radio
+// (HTML form submission's successful controls).
+function getPostedCheckoutFields() {
+	const fields = {};
+	Array.from( document.querySelector( 'form.checkout' ).elements ).forEach(
+		( element ) => {
+			if (
+				! element.name ||
+				element.disabled ||
+				( [ 'checkbox', 'radio' ].includes( element.type ) &&
+					! element.checked )
+			) {
+				return;
+			}
+			fields[ element.name ] = element.value;
+		}
+	);
+	return fields;
+}
+
 describe( 'WooPayments WooPay checkout', () => {
 	// jsdom defines `contentWindow` as an accessor on HTMLIFrameElement.prototype; tests that stub it put jsdom's back.
 	const nativeContentWindow = Object.getOwnPropertyDescriptor(
@@ -676,7 +696,7 @@ describe( 'WooPayments WooPay checkout', () => {
 			).toBe( 'Choose product options before using WooPay.' );
 		} );
 
-		test( 'renders WooPay save-my-info fields and persists phone data on blur', async () => {
+		test( 'renders WooPay save-my-info fields and posts the full number with the order', async () => {
 			// Localized by WooPaymentsWooPaySessionController::get_classic_woopay_config() from wc_get_checkout_url().
 			window.wcpay_core_woopay_config.woopaySourceUrl =
 				'https://example.test/checkout/';
@@ -719,18 +739,14 @@ describe( 'WooPayments WooPay checkout', () => {
 		);
 		await flushPromises();
 
-		expect( global.jQuery.post ).toHaveBeenCalledWith(
-			'/?wc-ajax=wcpay_set_woopay_phone_number',
-			expect.objectContaining( {
-				_wpnonce: 'session-nonce',
-				save_user_in_woopay: 'true',
-				woopay_is_blocks: 'false',
-				woopay_source_url: 'https://example.test/checkout/',
-				woopay_user_phone_field: {
-					full: '+12015550123',
-				},
-			} )
-		);
+		// Client 11.1.0 checkout-page-save-user.js:330-360: the classic opt-in travels with the checkout form.
+		expect( getPostedCheckoutFields() ).toMatchObject( {
+			save_user_in_woopay: 'true',
+			woopay_is_blocks: 'false',
+			woopay_source_url: 'https://example.test/checkout/',
+			'woopay_user_phone_field[full]': '+12015550123',
+		} );
+		expect( getSaveUserPosts() ).toEqual( [] );
 		window.history.pushState( {}, '', '/' );
 		expect( getTrackingEvents() ).toContainEqual( {
 			name: 'checkout_woopay_save_my_info_mobile_enter',
@@ -961,6 +977,11 @@ describe( 'WooPayments WooPay checkout', () => {
 			.filter( ( [ url ] ) => url.includes( 'set_woopay_phone_number' ) )
 			.map( ( [ , data ] ) => data );
 
+	const getPostedSaveUserFields = () =>
+		Object.keys( getPostedCheckoutFields() ).filter( ( key ) =>
+			key.includes( 'woopay' )
+		);
+
 	test( 'hides WooPay save my info and posts none of its fields while a saved card is chosen', () => {
 		document
 			.querySelector( 'form.checkout' )
@@ -975,10 +996,7 @@ describe( 'WooPayments WooPay checkout', () => {
 		require( '../woopayments-woopay' );
 
 		expect( getSaveUserContainer().hidden ).toBe( true );
-		expect(
-			document.querySelector( 'input[name="save_user_in_woopay"]' )
-				.disabled
-		).toBe( true );
+		expect( getPostedSaveUserFields() ).toEqual( [] );
 
 		const newCard = document.getElementById(
 			'wc-woocommerce_payments-payment-token-new'
@@ -989,7 +1007,7 @@ describe( 'WooPayments WooPay checkout', () => {
 		expect( getSaveUserContainer().hidden ).toBe( false );
 	} );
 
-	test( 'hides WooPay save my info for another payment method and clears the stored opt-in', async () => {
+	test( 'hides WooPay save my info for another payment method and posts none of its fields', () => {
 		document
 			.querySelector( 'form.checkout' )
 			.insertAdjacentHTML(
@@ -998,21 +1016,18 @@ describe( 'WooPayments WooPay checkout', () => {
 			);
 
 		require( '../woopayments-woopay' );
-		document
-			.querySelector( '#woopay_user_phone_field_full' )
-			.dispatchEvent( new window.Event( 'blur', { bubbles: true } ) );
-		await flushPromises();
+		expect( getPostedSaveUserFields() ).toContain( 'save_user_in_woopay' );
 
 		const klarna = document.querySelector(
 			'input[value="woocommerce_payments_klarna"]'
 		);
 		klarna.checked = true;
 		klarna.dispatchEvent( new window.Event( 'change', { bubbles: true } ) );
-		await flushPromises();
 
 		expect( getSaveUserContainer().hidden ).toBe( true );
-		const posts = getSaveUserPosts();
-		expect( posts[ posts.length - 1 ].empty ).toBe( 'true' );
+		expect( getPostedSaveUserFields() ).toEqual( [] );
+		// Client 11.1.0 checkout-page-save-user.js:158-160: the classic checkout sends no session request.
+		expect( getSaveUserPosts() ).toEqual( [] );
 	} );
 
 	test( 'hides WooPay save my info once the email check finds a WooPay user', () => {
@@ -1028,7 +1043,7 @@ describe( 'WooPayments WooPay checkout', () => {
 		expect( getSaveUserContainer().hidden ).toBe( true );
 	} );
 
-	test( 'clears the stored WooPay opt-in when the shopper unchecks save my info', async () => {
+	test( 'posts no WooPay opt-in once the shopper unchecks save my info', () => {
 		require( '../woopayments-woopay' );
 		const saveCheckbox = document.querySelector(
 			'input[name="save_user_in_woopay"]'
@@ -1038,10 +1053,9 @@ describe( 'WooPayments WooPay checkout', () => {
 		saveCheckbox.dispatchEvent(
 			new window.Event( 'change', { bubbles: true } )
 		);
-		await flushPromises();
 
-		const posts = getSaveUserPosts();
-		expect( posts[ posts.length - 1 ].empty ).toBe( 'true' );
+		expect( getPostedSaveUserFields() ).not.toContain( 'save_user_in_woopay' );
+		expect( getSaveUserPosts() ).toEqual( [] );
 	} );
 
 	test( 'shows the WooPay phone error for an invalid number without stopping the order', () => {

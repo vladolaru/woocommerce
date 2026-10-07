@@ -26,7 +26,6 @@
 	var cardDisplayWidthThreshold = 220;
 	var directCheckoutLoggedIn = false;
 	var hasPhoneForMobileEnter = false;
-	var hasSentSaveUserData = false;
 	var phoneValidationPromise = null;
 	var isWooPayUser = false;
 	var proceedToCheckoutSelector =
@@ -1655,7 +1654,8 @@
 		);
 	}
 
-	// A hidden offer posts nothing with the order, and an opt-in already sent is cleared.
+	// A hidden offer posts nothing with the order. Consent travels with the form only, as on the client's classic
+	// checkout (checkout-page-save-user.js:158-160 sends session requests from Blocks only), so nothing else needs clearing.
 	function updateSaveUserVisibility() {
 		var container = document.getElementById( 'wcpay-woopay-save-user' );
 		var isApplicable = isSaveUserOfferApplicable();
@@ -1670,10 +1670,6 @@
 			.forEach( function ( input ) {
 				input.disabled = ! isApplicable;
 			} );
-
-		if ( ! isApplicable && hasSentSaveUserData ) {
-			sendWooPayPhoneData( true );
-		}
 	}
 
 	// Client 11.1.0 checkout-page-save-user.js:93-111: keep digits and +, and read a number without a country code as US
@@ -1749,7 +1745,9 @@
 		);
 	}
 
-	function sendWooPayPhoneData( empty ) {
+	// The number WooPay receives goes in the posted field with its country code; mobile_enter is recorded once the
+	// number becomes valid (client 11.1.0 checkout-page-save-user.js:169-174).
+	function syncWooPayPhone() {
 		var checkbox = document.querySelector(
 			'input[name="save_user_in_woopay"]'
 		);
@@ -1759,40 +1757,20 @@
 		var fullPhoneField = document.querySelector(
 			'input[name="woopay_user_phone_field[full]"]'
 		);
-		var sourceField = document.querySelector(
-			'input[name="woopay_source_url"]'
+		var isPhoneValid = !! (
+			checkbox &&
+			checkbox.checked &&
+			isWooPayPhoneValid()
 		);
-		var viewportField = document.querySelector(
-			'input[name="woopay_viewport"]'
-		);
-		var fullPhone = phoneField ? normalizeWooPayPhone( phoneField.value ) : '';
-		var isPhoneValid = !! ( checkbox && checkbox.checked && isWooPayPhoneValid() );
 
-		if ( fullPhoneField ) {
-			fullPhoneField.value = fullPhone;
+		if ( fullPhoneField && phoneField ) {
+			fullPhoneField.value = normalizeWooPayPhone( phoneField.value );
 		}
 
-		// Client 11.1.0 checkout-page-save-user.js:169-174 records this once the number is valid.
 		if ( isPhoneValid && ! hasPhoneForMobileEnter ) {
 			recordUserEvent( 'checkout_woopay_save_my_info_mobile_enter' );
 		}
 		hasPhoneForMobileEnter = isPhoneValid;
-		hasSentSaveUserData = ! empty;
-
-		postWooPayAjax( 'set_woopay_phone_number', {
-			_wpnonce: config.woopaySessionNonce || '',
-			empty: empty ? 'true' : '',
-			save_user_in_woopay:
-				checkbox && checkbox.checked ? 'true' : 'false',
-			woopay_source_url: sourceField
-				? sourceField.value
-				: config.woopaySourceUrl || '',
-			woopay_is_blocks: 'false',
-			woopay_viewport: viewportField ? viewportField.value : getWooPayViewport(),
-			woopay_user_phone_field: {
-				full: fullPhone,
-			},
-		} );
 	}
 
 	// Client 11.1.0 client/components/woopay/save-user/additional-information.js.
@@ -1923,12 +1901,14 @@
 		// Client 11.1.0 checkout-page-save-user.js:93-111, :225-232: the number starts from the billing phone.
 		billingPhoneField = document.getElementById( 'billing_phone' );
 		phoneField.value = billingPhoneField ? billingPhoneField.value : '';
+		syncWooPayPhone();
 
 		function validateWhenOptedIn() {
 			if ( ! checkbox.checked ) {
 				return;
 			}
 			loadPhoneValidation().then( function () {
+				syncWooPayPhone();
 				updateWooPayPhoneError( false );
 			} );
 		}
@@ -1938,17 +1918,13 @@
 			recordUserEvent( 'checkout_save_my_info_click', {
 				status: checkbox.checked ? 'checked' : 'unchecked',
 			} );
-			// Unchecking clears the stored opt-in, as the client's empty request does.
-			sendWooPayPhoneData( ! checkbox.checked );
 			validateWhenOptedIn();
 			updateWooPayPhoneError( false );
 		} );
+		phoneField.addEventListener( 'input', syncWooPayPhone );
 		phoneField.addEventListener( 'blur', function () {
+			syncWooPayPhone();
 			updateWooPayPhoneError( false );
-			if ( isWooPayPhoneValid() === false ) {
-				return;
-			}
-			sendWooPayPhoneData( false );
 		} );
 		$( form ).on( 'checkout_place_order', function () {
 			updateWooPayPhoneError( true );
