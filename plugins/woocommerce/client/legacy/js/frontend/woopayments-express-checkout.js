@@ -1256,7 +1256,7 @@
 		];
 	}
 
-	function placeOrder( confirmationTokenId, event ) {
+	function placeOrder( paymentCredentialId, event ) {
 		if ( isPayForOrder() ) {
 			// Keep merchant address and tax fields; only fill missing contact data.
 			var billingAddress = Object.assign(
@@ -1293,7 +1293,7 @@
 					payment_method: 'woocommerce_payments',
 					billing_address: billingAddress,
 					shipping_address: shippingAddress,
-					payment_data: getPaymentData( confirmationTokenId ),
+					payment_data: getPaymentData( paymentCredentialId ),
 					extensions: getPlaceOrderExtensions(),
 				},
 			} ).then(
@@ -1358,7 +1358,7 @@
 									: {}
 						  )
 						: cachedCartData && cachedCartData.shipping_address,
-				payment_data: getPaymentData( confirmationTokenId ),
+				payment_data: getPaymentData( paymentCredentialId ),
 				extensions: getPlaceOrderExtensions(),
 			},
 		} );
@@ -1707,21 +1707,8 @@
 				data: product,
 				parse: false,
 			} ).then( function ( response ) {
-				var nextNonce =
-					response &&
-					response.headers &&
-					typeof response.headers.get === 'function'
-						? response.headers.get( 'Nonce' )
-						: null;
-
-				if ( nextNonce ) {
-					config.nonce = config.nonce || {};
-					config.nonce.store_api_nonce = nextNonce;
-				}
-
-				return response && typeof response.json === 'function'
-					? response.json()
-					: response;
+				// The preview's ephemeral cart session must not replace the shopper's.
+				return normalizeStoreApiResponse( response, false );
 			} );
 		}
 
@@ -2259,15 +2246,6 @@
 	}
 
 	/**
-	 * Tell whether the server sent usable product-page data.
-	 *
-	 * Client 11.1.0 (shortcode-buttons-express/index.js:489-495, :504-512) prices a Product Bundle, and a product the
-	 * server could not price, from an ephemeral cart of the selected product: a bundle's own price leaves out its
-	 * priced-individually items.
-	 *
-	 * @return {boolean} Whether the localized product data can seed the wallet amount.
-	 */
-	/**
 	 * Tell whether the server product data prices what the form would add: the server prices one unit
 	 * (WooPaymentsExpressCheckoutService::get_product_data()), while the quantity field can start above one (a minimum
 	 * quantity, a failed add-to-cart, a browser form restore). Native departure from client 11.1.0, whose first open
@@ -2287,6 +2265,15 @@
 		);
 	}
 
+	/**
+	 * Tell whether the server sent usable product-page data.
+	 *
+	 * Client 11.1.0 (shortcode-buttons-express/index.js:489-495, :504-512) prices a Product Bundle, and a product the
+	 * server could not price, from an ephemeral cart of the selected product: a bundle's own price leaves out its
+	 * priced-individually items.
+	 *
+	 * @return {boolean} Whether the localized product data can seed the wallet amount.
+	 */
 	function hasServerProductData() {
 		return Boolean(
 			config.product &&
@@ -2461,7 +2448,7 @@
 	 * Sum the recurring totals of every subscription schedule in the cart.
 	 *
 	 * @param {Object} cartData Store API cart.
-	 * @return {Object|null} `{ amount, totals }`, or null without a recurring total.
+	 * @return {Object|null} `{ amount, totals, currencyMinorUnit }`, or null without a recurring total.
 	 */
 	function getRecurringCartTotal( cartData ) {
 		var subscriptions = getSubscriptionSchedules( cartData );
@@ -2640,11 +2627,7 @@
 			return cartData;
 		}
 
-		isZeroTotalCart =
-			parseInt(
-				( cartData.totals && cartData.totals.total_price ) || '0',
-				10
-			) === 0;
+		isZeroTotalCart = isZeroTotalTrialCart( cartData );
 		modifiedItems = cartData.items.slice();
 
 		subscriptions.forEach( function ( subscription ) {
@@ -3534,10 +3517,8 @@
 			} );
 		}
 
-		if (
-			getButtonContext() !== 'checkout' ||
-			getButtonContext() === 'pay_for_order'
-		) {
+		// Checkout mounts from updated_checkout below.
+		if ( getButtonContext() !== 'checkout' ) {
 			initializeExpressCheckout();
 		}
 
