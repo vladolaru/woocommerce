@@ -674,8 +674,8 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( '4', get_option( 'woocommerce_native_woopayments_cutover_normalization_version' ), 'The actual normalization runner should complete.' );
 		$verification = $this->require_state_store()->get_record();
 		$this->assertIsArray( $verification );
-		$this->assertSame( WooPaymentsCutoverState::DEFERRED, $verification['state'], 'The controlled preflight cannot deactivate a plugin after actual normalization.' );
-		$this->assertSame( array( 'plugin_deactivation_failed' ), $verification['deferred_codes'], 'The attempt should stop only at the controlled post-normalization deactivation boundary.' );
+		$this->assertSame( WooPaymentsCutoverState::PENDING, $verification['state'], 'With no WooPayments plugin active, the attempt finalizes after actual normalization.' );
+		$this->assertSame( 'verify_native_ownership', $verification['current_step'], 'The attempt should continue to ownership verification.' );
 	}
 
 	/**
@@ -1128,6 +1128,161 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsCutoverState::DONE, $done['state'] );
 		$this->assertSame( 'done', $done['current_step'] );
 		$this->assertSame( 0, $deactivation_calls );
+	}
+
+	/**
+	 * @testdox A claim that finds WooPayments already inactive at finalization continues to ownership verification instead of deferring forever.
+	 */
+	public function test_claim_with_an_already_inactive_plugin_reaches_ownership_verification(): void {
+		$sut = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, false, $this->create_noop_normalization() );
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+
+		$sut->handle_reconcile( $pending['generation'], 1 );
+
+		$verification = $this->require_state_store()->get_record();
+		$this->assertIsArray( $verification );
+		$this->assertSame( WooPaymentsCutoverState::PENDING, $verification['state'] );
+		$this->assertSame( 'verify_native_ownership', $verification['current_step'] );
+		$this->assertSame( array(), $verification['deferred_codes'] );
+	}
+
+	/**
+	 * @testdox Ownership verification schedules the canceled-authorization fee remediation once native owns the site, for a manual deactivation too.
+	 */
+	public function test_ownership_verification_schedules_fee_remediation_for_a_manual_deactivation(): void {
+		$scheduling_calls = 0;
+		$preflight        = $this->create_preflight_with_fee_remediation( $scheduling_calls, true );
+		$sut              = $this->create_job( true, $preflight, null, false, $this->create_noop_normalization() );
+
+		$this->assertTrue( $sut->enqueue_manual_deactivation( 'renamed-wcpay/woocommerce-payments.php', false ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$sut->handle_reconcile( $pending['generation'], 1 );
+		$verification = $this->require_state_store()->get_record();
+		$this->assertIsArray( $verification );
+		$this->assertSame( 'verify_native_ownership', $verification['current_step'] );
+		$this->assertSame( 0, $scheduling_calls, 'Remediation waits until a fresh request sees native ownership.' );
+
+		$this->require_scheduler()->cancel( $verification['generation'], 2 );
+		$this->start_fresh_request();
+		$this->create_job( true, $preflight, null, false, $this->create_noop_normalization() )->handle_reconcile( $verification['generation'], 2 );
+
+		$done = $this->require_state_store()->get_record();
+		$this->assertIsArray( $done );
+		$this->assertSame( WooPaymentsCutoverState::DONE, $done['state'] );
+		$this->assertSame( 1, $scheduling_calls );
+	}
+
+	/**
+	 * @testdox Ownership verification defers instead of finishing when the fee remediation cannot be scheduled.
+	 */
+	public function test_ownership_verification_defers_when_fee_remediation_cannot_be_scheduled(): void {
+		$scheduling_calls = 0;
+		$preflight        = $this->create_preflight_with_fee_remediation( $scheduling_calls, false );
+		$sut              = $this->create_job( true, $preflight, null, false, $this->create_noop_normalization() );
+
+		$this->assertTrue( $sut->enqueue_manual_deactivation( 'renamed-wcpay/woocommerce-payments.php', false ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$sut->handle_reconcile( $pending['generation'], 1 );
+		$verification = $this->require_state_store()->get_record();
+		$this->assertIsArray( $verification );
+		$this->require_scheduler()->cancel( $verification['generation'], 2 );
+		$this->start_fresh_request();
+		$this->create_job( true, $preflight, null, false, $this->create_noop_normalization() )->handle_reconcile( $verification['generation'], 2 );
+
+		$deferred = $this->require_state_store()->get_record();
+		$this->assertIsArray( $deferred );
+		$this->assertSame( WooPaymentsCutoverState::DEFERRED, $deferred['state'] );
+		$this->assertSame( array( 'financial_migrations_unavailable' ), $deferred['deferred_codes'] );
+		$this->assertSame( 1, $scheduling_calls );
+	}
+
+	/**
+	 * Clear the request token so the next job instance runs as a fresh request.
+	 */
+	private function start_fresh_request(): void {
+		$request_token = new \ReflectionProperty( WooPaymentsCutoverReconciliationJob::class, 'request_token' );
+		$request_token->setAccessible( true );
+		$request_token->setValue( null );
+	}
+
+	/**
+	 * Create a normalization runner that changes nothing.
+	 *
+	 * @return WooPaymentsCutoverNormalizationRunner
+	 */
+	private function create_noop_normalization(): WooPaymentsCutoverNormalizationRunner {
+		return new class() extends WooPaymentsCutoverNormalizationRunner {
+			/** @return array{ran:bool,changes:string[]} */
+			public function run(): array {
+				return array(
+					'ran'     => true,
+					'changes' => array(),
+				);
+			}
+		};
+	}
+
+	/**
+	 * Create an all-clear site-local preflight whose fee remediation scheduling is controlled.
+	 *
+	 * @param int  $scheduling_calls Counter of fee remediation scheduling calls.
+	 * @param bool $schedulable      Whether scheduling succeeds.
+	 * @return WooPaymentsCutoverPreflightService
+	 */
+	private function create_preflight_with_fee_remediation( int &$scheduling_calls, bool $schedulable ): WooPaymentsCutoverPreflightService {
+		return new class( $scheduling_calls, $schedulable ) extends WooPaymentsCutoverPreflightService {
+			/** @var int */
+			private int $scheduling_calls;
+
+			/** @var bool */
+			private bool $schedulable;
+
+			/**
+			 * @param int  $scheduling_calls Counter of fee remediation scheduling calls.
+			 * @param bool $schedulable      Whether scheduling succeeds.
+			 */
+			public function __construct( int &$scheduling_calls, bool $schedulable ) {
+				$this->scheduling_calls =& $scheduling_calls;
+				$this->schedulable      = $schedulable;
+			}
+
+			/** @return string[] */
+			public function get_reconciliation_failures(): array {
+				return array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** The plugin is already inactive in these scenarios. */
+			public function deactivate_woopayments_plugin(): bool {
+				return true;
+			}
+
+			/** Count and control the fee remediation scheduling. */
+			public function ensure_fee_remediation_scheduled(): bool {
+				++$this->scheduling_calls;
+				return $this->schedulable;
+			}
+
+			/** Site-local scenario. */
+			public function is_woopayments_network_active(): bool {
+				return false;
+			}
+		};
 	}
 
 	/**

@@ -50,6 +50,9 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 	/** @var bool */
 	private bool $fee_remediation_ready = true;
 
+	/** @var string */
+	private string $fee_remediation_status = 'scheduled';
+
 	/** @var bool */
 	private bool $navigation_ready = true;
 
@@ -355,6 +358,37 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Deactivation succeeds without touching plugins when no WooPayments plugin is active on the site or the network.
+	 */
+	public function test_deactivation_succeeds_when_woopayments_is_already_inactive(): void {
+		update_option( 'active_plugins', array( 'woocommerce/woocommerce.php' ) );
+		$deactivations = 0;
+		add_action(
+			'deactivated_plugin',
+			static function () use ( &$deactivations ): void {
+				++$deactivations;
+			}
+		);
+
+		$this->assertTrue( $this->create_sut()->deactivate_woopayments_plugin() );
+		$this->assertSame( 0, $deactivations );
+	}
+
+	/**
+	 * @testdox Fee remediation scheduling reports failure only when the remediation job cannot be scheduled.
+	 */
+	public function test_fee_remediation_scheduling_reports_unavailable(): void {
+		$sut = $this->create_sut();
+		$this->assertTrue( $sut->ensure_fee_remediation_scheduled() );
+
+		$this->fee_remediation_status = 'not_needed';
+		$this->assertTrue( $sut->ensure_fee_remediation_scheduled() );
+
+		$this->fee_remediation_status = 'unavailable';
+		$this->assertFalse( $sut->ensure_fee_remediation_scheduled() );
+	}
+
+	/**
 	 * Create a headless preflight service with deterministic provider seams.
 	 *
 	 * @param \wpdb|null $database Optional WordPress database connection.
@@ -373,7 +407,11 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 				return $this->fee_remediation_ready;
 			}
 		);
-		$fee_remediation->method( 'ensure_scheduled' )->willReturn( 'scheduled' );
+		$fee_remediation->method( 'ensure_scheduled' )->willReturnCallback(
+			function (): string {
+				return $this->fee_remediation_status;
+			}
+		);
 		$platform_connection = $this->getMockBuilder( WooPaymentsPlatformConnectionService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_cutover_preflight_failures', 'get_cutover_connection_owner_user_token_status' ) )->getMock();
 		$platform_connection->method( 'get_cutover_preflight_failures' )->willReturnCallback(
 			function (): array {

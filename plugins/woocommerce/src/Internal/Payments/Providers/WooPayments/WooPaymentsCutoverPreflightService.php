@@ -460,23 +460,38 @@ class WooPaymentsCutoverPreflightService {
 	}
 
 	/**
-	 * Deactivate WooPayments only after fee remediation is safe to schedule.
+	 * Deactivate WooPayments on the site, or network-wide where it is network-active.
+	 *
+	 * A plugin that is no longer active on the site or the network counts as deactivated: a retry after a crash that
+	 * followed a successful deactivation finds nothing to deactivate.
 	 */
 	public function deactivate_woopayments_plugin(): bool {
 		if ( ! function_exists( 'deactivate_plugins' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}
-		if ( 'unavailable' === $this->get_fee_remediation_service()->ensure_scheduled() ) {
-			wc_get_logger()->error( 'WooPayments could not be deactivated because native WooPayments could not schedule canceled-authorization fee remediation.', array( 'source' => 'woocommerce-woopayments-cutover' ) );
-			return false;
-		}
+		// The lookup scans the same site and network lists as the activity checks, so an empty result means inactive.
 		$plugin_file = $this->get_active_woopayments_plugin_file();
 		if ( '' === $plugin_file ) {
-			wc_get_logger()->error( 'WooPayments could not be deactivated because the active plugin file could not be resolved.', array( 'source' => 'woocommerce-woopayments-cutover' ) );
-			return false;
+			return true;
 		}
 		$this->legacy_proxy->call_function( 'deactivate_plugins', $plugin_file, false, $this->is_woopayments_network_active() );
 		return ! $this->is_woopayments_site_active() && ! $this->is_woopayments_network_active();
+	}
+
+	/**
+	 * Make sure native runs the canceled-authorization fee remediation the plugin left behind on this site.
+	 *
+	 * Called once native owns the site, so the remediation's Action Scheduler callback is registered when it runs.
+	 *
+	 * @return bool False when the remediation is needed but cannot be scheduled.
+	 */
+	public function ensure_fee_remediation_scheduled(): bool {
+		if ( 'unavailable' === $this->get_fee_remediation_service()->ensure_scheduled() ) {
+			wc_get_logger()->error( 'Native WooPayments could not schedule the canceled-authorization fee remediation after the cutover.', array( 'source' => 'woocommerce-woopayments-cutover' ) );
+			return false;
+		}
+
+		return true;
 	}
 
 	/**

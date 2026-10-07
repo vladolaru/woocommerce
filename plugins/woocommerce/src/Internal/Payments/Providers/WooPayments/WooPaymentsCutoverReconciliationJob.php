@@ -1522,6 +1522,11 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			return;
 		}
 		$this->account_service->synchronize_native_payments_state_from_options( false );
+		// Every finalized claim reaches this step on its own site, manual and network ones included, once native owns it.
+		if ( ! $this->preflight_service->ensure_fee_remediation_scheduled() ) {
+			$this->defer( $claimed, array( 'financial_migrations_unavailable' ) );
+			return;
+		}
 
 		$now   = time();
 		$token = $this->state_store->acquire_lease( $now );
