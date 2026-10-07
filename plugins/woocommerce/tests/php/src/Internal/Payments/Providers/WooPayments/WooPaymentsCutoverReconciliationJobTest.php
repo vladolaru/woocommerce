@@ -2840,18 +2840,23 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The network barrier completes over the live sites; an archived, spam or deleted site, whose actions never run, gets no record and holds nothing back.
+	 * @testdox The network barrier completes over the live sites while a $status site keeps its record, and the site finishes on its own once restored.
 	 * @group multisite
+	 * @testWith ["archived"]
+	 *           ["spam"]
+	 *           ["deleted"]
+	 *
+	 * @param string $status Site status whose queue does not run.
 	 */
-	public function test_network_barrier_ignores_sites_whose_actions_never_run(): void {
+	public function test_network_barrier_ignores_sites_whose_actions_never_run( string $status ): void {
 		if ( ! is_multisite() ) {
 			$this->markTestSkipped( 'Test only runs on Multisite.' );
 		}
 
 		$main_site_id     = get_current_blog_id();
 		$second_site_id   = $this->create_cutover_multisite_site( 'cutover-live-peer.example.org' );
-		$archived_site_id = $this->create_cutover_multisite_site( 'cutover-archived-peer.example.org' );
-		update_blog_status( $archived_site_id, 'archived', '1' );
+		$archived_site_id = $this->create_cutover_multisite_site( 'cutover-' . $status . '-peer.example.org' );
+		update_blog_status( $archived_site_id, $status, '1' );
 		$deactivation_calls = 0;
 		$preflight          = new class( $deactivation_calls ) extends WooPaymentsCutoverPreflightService {
 			/** @var int */
@@ -2878,9 +2883,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				return array();
 			}
 
-			/** Return network activation. */
+			/** Network-active until the barrier deactivates it. */
 			public function is_woopayments_network_active(): bool {
-				return true;
+				return 0 === $this->deactivation_calls;
 			}
 
 			/** Record one network deactivation. */
@@ -2896,7 +2901,8 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$main_pending = $this->require_state_store()->get_record();
 			$this->assertIsArray( $main_pending );
 			switch_to_blog( $archived_site_id );
-			$this->assertNull( $this->require_state_store()->get_record(), 'An archived site gets no generation it could never run.' );
+			$parked = $this->require_state_store()->get_record();
+			$this->assertIsArray( $parked, 'The site keeps its record, so it can still finish if restored.' );
 			restore_current_blog();
 
 			$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
@@ -2912,6 +2918,17 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$main_verifying = $this->require_state_store()->get_record();
 			$this->assertIsArray( $main_verifying );
 			$this->assertSame( 'verify_native_ownership', $main_verifying['current_step'] );
+
+			// Restored, the site runs its pending attempt, finds the barrier complete and moves to its own verification.
+			update_blog_status( $archived_site_id, $status, '0' );
+			switch_to_blog( $archived_site_id );
+			$this->require_scheduler()->cancel( $parked['generation'], 1 );
+			$sut->handle_reconcile( $parked['generation'], 1 );
+			$restored = $this->require_state_store()->get_record();
+			$this->assertIsArray( $restored );
+			$this->assertSame( 'verify_native_ownership', $restored['current_step'] );
+			restore_current_blog();
+			$this->assertSame( 1, $deactivation_calls, 'The plugin is not deactivated a second time.' );
 		} finally {
 			if ( get_current_blog_id() !== $main_site_id ) {
 				restore_current_blog();

@@ -755,10 +755,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the live site IDs in the current network.
-	 *
-	 * Archived, spam and deleted sites are left out: their Action Scheduler actions never run, so a generation fanned
-	 * out to them could never reach the network barrier.
+	 * Get site IDs in the current network.
 	 *
 	 * @return int[]
 	 */
@@ -768,9 +765,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				'network_id' => get_current_network_id(),
 				'fields'     => 'ids',
 				'number'     => 0,
-				'archived'   => 0,
-				'spam'       => 0,
-				'deleted'    => 0,
 			)
 		);
 
@@ -1443,6 +1437,11 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	private function is_network_generation_ready( int $generation ): bool {
 		$current_blog_id = get_current_blog_id();
 		foreach ( $this->get_current_network_site_ids() as $site_id ) {
+			// An archived, spam or deleted site's queue does not run, so it cannot hold the barrier. Its record stays: if
+			// the site is restored, its pending attempt runs, finds the barrier complete and verifies on its own.
+			if ( ! $this->is_site_runnable( $site_id ) ) {
+				continue;
+			}
 			if ( get_current_blog_id() !== $site_id ) {
 				switch_to_blog( $site_id );
 			}
@@ -1461,6 +1460,18 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		}
 
 		return true;
+	}
+
+	/**
+	 * Tell whether a network site's scheduled actions run: archived, spam and deleted sites do not serve requests.
+	 *
+	 * @param int $site_id Site ID.
+	 * @return bool
+	 */
+	private function is_site_runnable( int $site_id ): bool {
+		$site = get_site( $site_id );
+
+		return $site instanceof \WP_Site && '1' !== (string) $site->archived && '1' !== (string) $site->spam && '1' !== (string) $site->deleted;
 	}
 
 	/**
