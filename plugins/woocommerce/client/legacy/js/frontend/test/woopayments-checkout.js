@@ -3392,6 +3392,67 @@ describe( 'WooPayments checkout', () => {
 		} );
 	} );
 
+	test( 'renders a selected payment-list wallet from the refreshed amount before updated_checkout fires', async () => {
+		const registrations = preparePaymentListWallets();
+
+		require( '../woopayments-checkout' );
+		// Core inserts the update_order_review fragment, re-inits the payment methods (which renders the selected
+		// custom-button wallet) and only then fires updated_checkout (checkout.js:849, :865).
+		renderRefreshedPaymentFields( {
+			gatewayId: 'woocommerce_payments',
+			currency: 'EUR',
+			cartTotal: 7000,
+			paymentMethodsConfig:
+				window.wcpay_core_checkout_config.paymentMethodsConfig,
+		} );
+		stripeMock.elements.mockClear();
+		await registrations.woocommerce_payments_apple_pay.render(
+			document.createElement( 'div' ),
+			{ submit: jest.fn(), validate: jest.fn() }
+		);
+
+		expect( stripeMock.elements ).toHaveBeenCalledWith(
+			expect.objectContaining( { amount: 7000, currency: 'eur' } )
+		);
+	} );
+
+	test( 'adopts a split gateway that first appears after a checkout update', () => {
+		document.body.innerHTML =
+			'<form class="checkout">' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments" />' +
+			'</form>';
+
+		require( '../woopayments-checkout' );
+		document
+			.querySelector( 'form.checkout' )
+			.insertAdjacentHTML(
+				'beforeend',
+				'<input type="radio" name="payment_method" value="woocommerce_payments_ideal" checked />'
+			);
+		renderRefreshedPaymentFields(
+			Object.assign( {}, window.wcpay_core_checkout_config, {
+				gatewayId: 'woocommerce_payments_ideal',
+				paymentMethodId: 'ideal',
+				paymentMethodTypes: [ 'ideal' ],
+				currency: 'EUR',
+				cartTotal: 7000,
+				paymentMethodsConfig: {
+					ideal: { isReusable: false },
+				},
+			} )
+		);
+		bodyEventHandlers.updated_checkout();
+
+		expect( stripeElementsOptions ).toMatchObject( {
+			paymentMethodTypes: [ 'ideal' ],
+			currency: 'eur',
+		} );
+		expect(
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments_ideal
+		).toEqual( expect.any( Function ) );
+		delete window.wcpay_core_checkout_config_woocommerce_payments_ideal;
+	} );
+
 	function renderTestNumberButton() {
 		document.body.innerHTML +=
 			'<button type="button" class="js-woopayments-copy-test-number">' +

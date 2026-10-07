@@ -30,6 +30,7 @@
 	// the button and gets no navigation, no message and no explanation.
 	var paymentElementLoadError = null;
 	var isWaitingForStripe = false;
+	var checkoutSubmitHandlerGatewayIds = {};
 	var deviceFingerprint = '';
 	var isSubmittingWithPaymentMethod = false;
 	var isSubmittingWithSetupIntent = false;
@@ -163,14 +164,22 @@
 	}
 
 	// Client 11.1.0 includes/class-wc-payments-checkout.php:353-373 merges the refreshed paymentMethodsConfig, currency
-	// and cartTotal into the page config after each update_order_review. Native reads them from the payment fields
-	// WooCommerce re-renders in that fragment (data-wcpay-config, one per WooPayments gateway).
+	// and cartTotal into the page config from a script in the update_order_review fragment, before core re-inits the
+	// payment methods. Native reads them from the payment fields WooCommerce re-renders in that fragment
+	// (data-wcpay-config, one per WooPayments gateway), every time a config is about to be read; a gateway first
+	// rendered after the page loaded adopts its whole config.
 	function mergeRefreshedPaymentFieldsConfig() {
 		document
 			.querySelectorAll( '.wcpay-core-checkout-form[data-wcpay-config]' )
 			.forEach( function ( wrapper ) {
 				var refreshed;
 				var target;
+
+				// Each update_order_review inserts new wrappers, so a wrapper already read has nothing new.
+				if ( wrapper.wcpayConfigMerged ) {
+					return;
+				}
+				wrapper.wcpayConfigMerged = true;
 
 				try {
 					refreshed = JSON.parse(
@@ -180,7 +189,11 @@
 					return;
 				}
 
-				if ( ! refreshed || typeof refreshed !== 'object' ) {
+				if (
+					! refreshed ||
+					typeof refreshed !== 'object' ||
+					! refreshed.gatewayId
+				) {
 					return;
 				}
 
@@ -197,6 +210,9 @@
 				}
 
 				if ( ! target || typeof target !== 'object' ) {
+					window[
+						getGatewayConfigObjectName( refreshed.gatewayId )
+					] = refreshed;
 					return;
 				}
 
@@ -276,6 +292,8 @@
 	}
 
 	function setCurrentGatewayConfig( paymentGatewayId ) {
+		mergeRefreshedPaymentFieldsConfig();
+
 		var nextGatewayId =
 			paymentGatewayId || getSelectedGatewayId() || gatewayId;
 		var nextConfig = getConfigForGateway( nextGatewayId ) || baseConfig;
@@ -1055,6 +1073,8 @@
 
 		customButtonApi.register( paymentGatewayId, {
 			render: function ( container, checkoutApi ) {
+				mergeRefreshedPaymentFieldsConfig();
+
 				var gatewayConfig =
 					getConfigForGateway( paymentGatewayId ) || {};
 				var amount = Number( gatewayConfig.cartTotal || 0 );
@@ -1164,6 +1184,27 @@
 			cleanup: function () {
 				resetExpressButtonState( state );
 			},
+		} );
+	}
+
+	// A gateway can first render after an update_order_review (for example once a currency change makes it available).
+	function registerCheckoutSubmitHandlers() {
+		getKnownGatewayIds().forEach( function ( paymentGatewayId ) {
+			if ( checkoutSubmitHandlerGatewayIds[ paymentGatewayId ] ) {
+				return;
+			}
+
+			checkoutSubmitHandlerGatewayIds[ paymentGatewayId ] = true;
+			$( 'form.checkout' ).on(
+				'checkout_place_order_' + paymentGatewayId,
+				function () {
+					return handleGatewaySubmission(
+						paymentGatewayId,
+						$( 'form.checkout' ),
+						true
+					);
+				}
+			);
 		} );
 	}
 
@@ -3527,6 +3568,8 @@
 
 	$( document.body ).on( 'updated_checkout', function () {
 		mergeRefreshedPaymentFieldsConfig();
+		registerCheckoutSubmitHandlers();
+		registerPaymentListWallets();
 		togglePaymentMethodsForBillingCountry();
 		initializeStripeElement();
 		swapPaymentMethodIconsForTheme();
@@ -3538,18 +3581,7 @@
 		swapPaymentMethodIconsForTheme();
 	} );
 
-	getKnownGatewayIds().forEach( function ( paymentGatewayId ) {
-		$( 'form.checkout' ).on(
-			'checkout_place_order_' + paymentGatewayId,
-			function () {
-				return handleGatewaySubmission(
-					paymentGatewayId,
-					$( 'form.checkout' ),
-					true
-				);
-			}
-		);
-	} );
+	registerCheckoutSubmitHandlers();
 
 	$( 'form#order_review' ).on( 'submit', function () {
 		var paymentGatewayId = getSelectedGatewayId();
