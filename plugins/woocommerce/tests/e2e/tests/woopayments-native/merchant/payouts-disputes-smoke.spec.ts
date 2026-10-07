@@ -48,6 +48,10 @@ const TRANSACTIONS_TERMINAL =
 	/^(Transactions loaded\.|No transactions found\.)$/;
 const DISPUTES_TERMINAL = /^(Disputes loaded\.|No disputes found\.)$/;
 
+// Two hours: past the hour in which the client leaves the Respond by cell
+// empty, with room for the run itself.
+const RESPOND_BY_MARGIN_MS = 2 * 60 * 60 * 1000;
+
 // Client 11.1.0 `disputes/index.tsx:50-148`: the columns without `visible:
 // false`, in order. The first is the client's untitled info-button column
 // (`label: ''`); native titles it for screen readers only.
@@ -236,36 +240,48 @@ async function expectDisputeColumns(
 	expect( newest( 'Order #' ) ).toMatch( /^(\d+|–)$/ );
 
 	// The page the list shows, read from the route; `due_by` is UTC, as the client's `moment.utc()` reads it.
+	const disputesResponse = await restApi.get( DISPUTES_API, {
+		page: 1,
+		pagesize: 25,
+		sort: 'created',
+		direction: 'desc',
+	} );
 	const disputes = (
-		(
-			await restApi.get( DISPUTES_API, {
-				page: 1,
-				pagesize: 25,
-				sort: 'created',
-				direction: 'desc',
-			} )
-		).data as { data: Array< Record< string, unknown > > }
+		disputesResponse.data as { data: Array< Record< string, unknown > > }
 	 ).data;
+	// The store's clock, from the same response, rather than the runner's.
+	const storeNow = Date.parse( String( disputesResponse.headers.date ) );
+	expect(
+		Number.isNaN( storeNow ),
+		'the disputes response must carry the store clock in its Date header'
+	).toBe( false );
+	// The cell is empty within the last hour (`getDisputeRespondBy()`, client
+	// `smartDueDate()`), so only a dispute due later than that is checked.
 	const awaiting = disputes.find(
 		( dispute ) =>
 			[ 'needs_response', 'warning_needs_response' ].includes(
 				String( dispute.status )
 			) &&
 			Date.parse( `${ String( dispute.due_by ).replace( ' ', 'T' ) }Z` ) >
-				Date.now()
+				storeNow + RESPOND_BY_MARGIN_MS
 	);
-	if ( awaiting ) {
+
+	await test.step( 'Respond by shows for a dispute awaiting a response', async ( step ) => {
+		step.skip(
+			! awaiting,
+			'No dispute on the first page awaits a response for more than an hour on the store clock.'
+		);
 		const respondBy = await readRow(
 			rows.filter( {
 				has: page.getByRole( 'link', {
 					name: new RegExp(
-						`dispute ${ String( awaiting.dispute_id ) } `
+						`dispute ${ String( awaiting?.dispute_id ) } `
 					),
 				} ),
 			} )
 		);
 		expect( respondBy( 'Respond by' ) ).not.toBe( '' );
-	}
+	} );
 }
 
 /**

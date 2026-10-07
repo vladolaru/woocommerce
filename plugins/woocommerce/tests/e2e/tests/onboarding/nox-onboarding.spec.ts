@@ -10,6 +10,8 @@ const PROVIDERS_ENDPOINT =
 // Match the WooPayments onboarding endpoint without matching nested step endpoints.
 const ONBOARDING_ENDPOINT =
 	/\/wp-json\/wc-admin\/settings\/payments\/woopayments\/onboarding(\?.*)?$/;
+// The plugin install and activate routes the setup action calls for extension suggestions.
+const PLUGIN_INSTALL_ENDPOINT = /\/wc-admin\/plugins\/(install|activate)\b/;
 const WOO_PAYMENTS_PROVIDER = {
 	_type: 'suggestion',
 	_order: 1,
@@ -171,7 +173,20 @@ test.describe(
 		test( 'can start in-context onboarding from Payments settings', async ( {
 			page,
 		} ) => {
-			expect( WOO_PAYMENTS_PROVIDER.plugin ).not.toHaveProperty( 'slug' );
+			// Native WooPayments ships with WooCommerce, so Set up must open
+			// the onboarding modal without installing or activating a plugin.
+			// Refused here so a regression cannot install one into the store.
+			const pluginInstallRequests: string[] = [];
+			await page.route(
+				( url ) =>
+					PLUGIN_INSTALL_ENDPOINT.test(
+						decodeURIComponent( url.toString() )
+					),
+				async ( route ) => {
+					pluginInstallRequests.push( route.request().url() );
+					await route.abort();
+				}
+			);
 
 			const consoleErrors: string[] = [];
 			page.on( 'console', ( message ) => {
@@ -208,6 +223,7 @@ test.describe(
 			await expect(
 				page.getByText( 'Activate payments', { exact: true } )
 			).toBeVisible();
+			expect( pluginInstallRequests ).toEqual( [] );
 
 			// Guard against runtime failures seen when entering the in-context
 			// onboarding shell without failing on unrelated WordPress admin console noise.

@@ -10,7 +10,7 @@ These pins were last derived from the extension repositories on 2026-09-10.
 | --- | --- | --- | --- | --- |
 | WooCommerce Subscriptions | `7.5.0` | `7.5.0` | `9.2.0` | Native gateway supports, renewal payment method, payment-method changes, and APFS integration where available |
 | WooCommerce Bookings | `2.0.9` | `3.5.3` | `3.10.0` | Native express methods stay unavailable for bookable products and carts |
-| WooCommerce Deposits | `2.2.9` | `2.2.9` | `2.4.7` | Express line items stay hidden and fixed deposits are converted exactly once |
+| WooCommerce Deposits | `2.2.9` | `2.2.9` | `2.4.7` | The product-page express payload drops its line items (and keeps its total) while the cart holds a deposit, and keeps them when the deposit is declined; a fixed deposit added through the cart is converted to the shopper's currency once, on the cart line and in the cart total |
 | WooCommerce Square | `4.7.4` | `4.7.4` | `5.5.0` | Native express methods stay unavailable for Square gift-card products and carts |
 | WooCommerce PayPal Payments | `2.9.6` | `2.9.6` | `4.1.3` | PayPal does not offer Apple Pay or Google Pay alongside native WooPayments |
 

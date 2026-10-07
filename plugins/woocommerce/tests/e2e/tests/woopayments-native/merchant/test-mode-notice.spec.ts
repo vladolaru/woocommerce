@@ -373,7 +373,9 @@ async function createWooPaymentsOrder(
 
 /**
  * Open the order edit screen and wait for the WooPayments order script to
- * finish its first render, so an absent notice is absent rather than late.
+ * finish `initialize()`. The script mounts the notice root, then adds its
+ * status-change container next to the status dropdown, so once that container
+ * exists the notice mount either holds a React root or never will.
  */
 async function openOrderEditScreen(
 	page: Page,
@@ -389,15 +391,23 @@ async function openOrderEditScreen(
 	await expect(
 		page.locator( ORDER_SCRIPT_CONTAINER_SELECTOR ).first()
 	).toBeAttached();
-	await page.evaluate(
-		() =>
-			new Promise< void >( ( resolve ) =>
-				requestAnimationFrame( () => setTimeout( resolve, 0 ) )
-			)
-	);
 	const mount = page.locator( ORDER_NOTICE_MOUNT_SELECTOR );
 	await expect( mount ).toHaveCount( 1 );
 	return mount;
+}
+
+/**
+ * Whether the order script created a React root on the notice mount. It does
+ * so only when it has a notice to render, and `createRoot()` marks the node
+ * synchronously, before React commits anything, so this reads the script's
+ * decision without waiting on React's asynchronous render.
+ */
+function hasReactRoot( mount: Locator ): Promise< boolean > {
+	return mount.evaluate( ( node ) =>
+		Object.keys( node ).some( ( key ) =>
+			key.startsWith( '__reactContainer$' )
+		)
+	);
 }
 
 async function withRoutedPaymentsReads(
@@ -494,6 +504,12 @@ test(
 						page,
 						testOrderId
 					);
+					// Calibrates the readiness check the live and unmarked
+					// orders rely on below.
+					expect(
+						await hasReactRoot( testMount ),
+						'the order script must mount a notice root for a test-mode order'
+					).toBe( true );
 					await expect
 						.poll( () => sightedText( testMount ) )
 						.toBe( ORDER_NOTICE_TEXT );
@@ -515,6 +531,10 @@ test(
 							page,
 							orderId
 						);
+						expect(
+							await hasReactRoot( mount ),
+							`the order script must not mount a notice root for order ${ orderId }`
+						).toBe( false );
 						await expect( mount ).toBeEmpty();
 						await expect(
 							page.getByText( /was in test mode when this order/ )

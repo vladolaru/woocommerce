@@ -1,5 +1,3 @@
-import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
-
 import { expect, tags, test } from '../../../fixtures/fixtures';
 import { ADMIN_STATE_PATH } from '../../../playwright.config';
 
@@ -7,6 +5,7 @@ test.use( { storageState: ADMIN_STATE_PATH } );
 
 const PAYMENTS_SETTINGS_API = 'wc/v3/payments/settings';
 const FIXTURE_AUDIT_API = 'wc-native-payments-e2e/v1/provider-fixture-audit';
+const RUNTIME_STATUS_API = 'wc-native-payments-e2e/v1/status';
 const SETTINGS_PAGE_PATH =
 	'/wp-admin/admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments';
 
@@ -35,55 +34,6 @@ function storeRestPath( url: string, storeBase: string ): string | null {
 	return pathname;
 }
 
-async function proveSecretlessProviderSettingsRoundTrip(
-	restApi: ApiClient,
-	paymentSettings: Record< string, unknown >
-): Promise< void > {
-	if ( process.env.E2E_WOOPAYMENTS_NATIVE_FIXTURE !== 'true' ) {
-		return;
-	}
-	const originalName = paymentSettings.account_business_name;
-	if ( typeof originalName !== 'string' || originalName === '' ) {
-		throw new Error( 'Fixture settings exposed no account business name.' );
-	}
-	const changedName = 'Native CI REST provider proof';
-	try {
-		await restApi.post( PAYMENTS_SETTINGS_API, {
-			account_business_name: changedName,
-		} );
-		const reread = ( await restApi.get( PAYMENTS_SETTINGS_API ) )
-			.data as Record< string, unknown >;
-		expect( reread.account_business_name ).toBe( changedName );
-		const audit = ( await restApi.get( FIXTURE_AUDIT_API ) ).data as Record<
-			string,
-			unknown
-		>;
-		const requests = audit.requests;
-		expect( Array.isArray( requests ) ).toBe( true );
-		expect( requests ).toContainEqual( {
-			method: 'POST',
-			path: '/wpcom/v2/sites/777/wcpay/accounts',
-			query: expect.objectContaining( {
-				token: expect.any( String ),
-				timestamp: expect.any( String ),
-				nonce: expect.any( String ),
-				signature: expect.any( String ),
-			} ),
-			body: {
-				business_name: changedName,
-				test_mode: true,
-			},
-		} );
-	} finally {
-		await restApi.post( PAYMENTS_SETTINGS_API, {
-			account_business_name: originalName,
-		} );
-		const restored = ( await restApi.get( PAYMENTS_SETTINGS_API ) )
-			.data as Record< string, unknown >;
-		expect( restored.account_business_name ).toBe( originalName );
-	}
-}
-
 test(
 	'An authorized merchant opens native WooPayments settings and sees a loaded surface without errors',
 	{ tag: [ tags.WOOPAYMENTS_NATIVE ] },
@@ -92,10 +42,6 @@ test(
 		const paymentSettings = ( await restApi.get( PAYMENTS_SETTINGS_API ) )
 			.data as Record< string, unknown >;
 		expect( paymentSettings.is_wcpay_enabled ).toBe( true );
-		await proveSecretlessProviderSettingsRoundTrip(
-			restApi,
-			paymentSettings
-		);
 
 		const failures: string[] = [];
 		let observedRestResponses = 0;
@@ -136,5 +82,72 @@ test(
 		).toBeVisible();
 		expect( observedRestResponses ).toBeGreaterThan( 0 );
 		expect( failures ).toEqual( [] );
+	}
+);
+
+test(
+	'A business name saved through the WooPayments settings route reaches the platform account',
+	{ tag: [ tags.WOOPAYMENTS_NATIVE ] },
+	async ( { restApi } ) => {
+		// Only the secretless CI fixture records the platform requests the store sends.
+		test.skip(
+			process.env.E2E_WOOPAYMENTS_NATIVE_FIXTURE !== 'true',
+			'Needs the secretless CI provider fixture, which records platform requests.'
+		);
+		const blogId = (
+			( await restApi.get( RUNTIME_STATUS_API ) ).data as Record<
+				string,
+				unknown
+			>
+		 ).wpcom_blog_id;
+		expect(
+			blogId,
+			'the store must report its WordPress.com blog id'
+		).toEqual( expect.any( Number ) );
+		expect( blogId ).toBeGreaterThan( 0 );
+
+		const originalName = (
+			( await restApi.get( PAYMENTS_SETTINGS_API ) ).data as Record<
+				string,
+				unknown
+			>
+		 ).account_business_name;
+		expect(
+			originalName,
+			'the fixture settings must expose an account business name'
+		).toEqual( expect.stringMatching( /\S/ ) );
+		const changedName = 'Native CI REST provider proof';
+		try {
+			await restApi.post( PAYMENTS_SETTINGS_API, {
+				account_business_name: changedName,
+			} );
+			const reread = ( await restApi.get( PAYMENTS_SETTINGS_API ) )
+				.data as Record< string, unknown >;
+			expect( reread.account_business_name ).toBe( changedName );
+			const audit = ( await restApi.get( FIXTURE_AUDIT_API ) )
+				.data as Record< string, unknown >;
+			expect( audit.requests ).toContainEqual( {
+				method: 'POST',
+				path: `/wpcom/v2/sites/${ blogId }/wcpay/accounts`,
+				query: expect.objectContaining( {
+					token: expect.any( String ),
+					timestamp: expect.any( String ),
+					nonce: expect.any( String ),
+					signature: expect.any( String ),
+				} ),
+				body: {
+					business_name: changedName,
+					test_mode: true,
+				},
+			} );
+		} finally {
+			await restApi.post( PAYMENTS_SETTINGS_API, {
+				account_business_name: originalName,
+			} );
+		}
+
+		const restored = ( await restApi.get( PAYMENTS_SETTINGS_API ) )
+			.data as Record< string, unknown >;
+		expect( restored.account_business_name ).toBe( originalName );
 	}
 );

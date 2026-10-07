@@ -362,7 +362,8 @@ export interface SettledCardPayment {
  * makes the diff on a failure name the exact field that diverged, rather
  * than a generic message. Tolerates the provider's 429 `lock_timeout` on any
  * read (routine while a charge is being adjudicated) by continuing the poll
- * until the budget.
+ * until the budget. `polling` shortens the budget and interval for the
+ * helper's own unit tests.
  */
 export async function expectSettledCardPayment(
 	restApi: ApiClient,
@@ -371,9 +372,13 @@ export async function expectSettledCardPayment(
 		amountMinor: number;
 		currency: string;
 		card?: { brand: string; last4: string };
+	},
+	polling: { budgetMs: number; intervalMs: number } = {
+		budgetMs: SETTLE_BUDGET_MS,
+		intervalMs: POLL_INTERVAL_MS,
 	}
 ): Promise< SettledCardPayment > {
-	const deadline = Date.now() + SETTLE_BUDGET_MS;
+	const deadline = Date.now() + polling.budgetMs;
 	let previous = '';
 
 	for (;;) {
@@ -490,11 +495,11 @@ export async function expectSettledCardPayment(
 
 		if ( Date.now() >= deadline ) {
 			throw new Error(
-				`Order ${ orderId } never reached a stable settled card payment within ${ SETTLE_BUDGET_MS }ms.`
+				`Order ${ orderId } never reached a stable settled card payment within ${ polling.budgetMs }ms.`
 			);
 		}
 		await new Promise( ( resolve ) =>
-			setTimeout( resolve, POLL_INTERVAL_MS )
+			setTimeout( resolve, polling.intervalMs )
 		);
 	}
 }

@@ -70,12 +70,6 @@ $wcpay_invoke_private = static function ( object $target, string $method, array 
 	$reflection->setAccessible( true );
 	return $reflection->invokeArgs( $target, $arguments );
 };
-$wcpay_fresh_cart = static function ( array $contents ): WC_Cart {
-	$cart                = new WC_Cart();
-	$cart->cart_contents = $contents;
-	WC()->cart           = $cart;
-	return $cart;
-};
 `;
 
 /**
@@ -96,14 +90,39 @@ test.skip(
 	'The external-extension compatibility profile is opt-in.'
 );
 
+/**
+ * Deposits hides the itemized lines of the product-page express payload while
+ * the cart holds a deposit (`wcpay_payment_request_hide_itemization`, which
+ * reads the cart), and converts a fixed deposit into the shopper's currency
+ * through the `WCPay\MultiCurrency\MultiCurrency` facade.
+ *
+ * The payload is read inside `woocommerce_after_add_to_cart_form` with the
+ * product global set, the only product-page context
+ * `WooPaymentsExpressCheckoutService::get_product_for_product_page()` resolves
+ * under WP-CLI, and the probe fails if the payload comes back empty. The same
+ * product added with the deposit declined is the positive control: its
+ * payload must keep the line items. The deposit is added through
+ * `WC_Cart::add_to_cart()` with the posted `wc_deposit_option` field the
+ * Deposits product form sends, so Deposits computes the line's deposit itself,
+ * and the cart total is read after `calculate_totals()`.
+ */
 test( '@woopayments-extension-compat Deposits hides express line items and converts a fixed deposit once', async () => {
 	const result = await runExtensionCompatProbe< {
 		version: string;
-		displayItemsPresent: boolean;
-		depositAmount: number;
-		cartDepositAmount: number;
+		control: {
+			isDeposit: boolean;
+			displayItemLabels: string[] | null;
+			totalPresent: boolean;
+		};
+		deposit: {
+			isDeposit: boolean;
+			displayItemsPresent: boolean;
+			totalPresent: boolean;
+			lineDepositAmount: number;
+			cartTotal: number;
+		};
 	} >( String.raw`
-if ( ! class_exists( 'WC_Deposits_Product_Manager' ) || ! class_exists( 'WCPay\\MultiCurrency\\MultiCurrency' ) ) {
+if ( ! class_exists( 'WC_Deposits_Product_Manager' ) || ! class_exists( 'WC_Deposits_Cart_Manager' ) || ! class_exists( 'WCPay\\MultiCurrency\\MultiCurrency' ) ) {
 	throw new RuntimeException( 'WooCommerce Deposits or the native multi-currency facade is not active.' );
 }
 
@@ -111,6 +130,12 @@ $product = new WC_Product_Simple();
 $product->set_name( 'Extension compatibility deposit' );
 $product->set_regular_price( '100' );
 $product->set_price( '100' );
+// Virtual and untaxed, so the cart total is the deposit alone: no shipping or tax line can move it.
+$product->set_virtual( true );
+$product->set_tax_status( 'none' );
+$product->update_meta_data( '_wc_deposit_enabled', 'optional' );
+$product->update_meta_data( '_wc_deposit_type', 'fixed' );
+$product->update_meta_data( '_wc_deposit_amount', '10' );
 $product->save();
 $missing_option = new stdClass();
 $rate_options   = array(
@@ -121,11 +146,6 @@ $rate_options   = array(
 );
 
 try {
-	$product->update_meta_data( '_wc_deposit_enabled', 'yes' );
-	$product->update_meta_data( '_wc_deposit_type', 'fixed' );
-	$product->update_meta_data( '_wc_deposit_amount', '10' );
-	$product->save();
-
 	update_option( 'woocommerce_currency', 'USD' );
 	update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 	update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
@@ -133,31 +153,80 @@ try {
 	add_filter( 'wcpay_multi_currency_override_selected_currency', static fn() => 'EUR', PHP_INT_MAX );
 	$state_builder = wc_get_container()->get( Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory::class )->create();
 	$state_builder->reset();
-	$deposit_amount = (float) WC_Deposits_Product_Manager::get_deposit_amount( $product, 0, 'order' );
 
-	$GLOBALS['product'] = $product;
-	$cart               = $wcpay_fresh_cart(
-		array(
-			'deposit' => array(
-				'data'           => $product,
-				'quantity'       => 1,
-				'is_deposit'     => true,
-				'deposit_amount' => $deposit_amount,
-				'full_amount'    => 100,
-			),
-		)
-	);
-	$express            = wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService::class );
-	$product_data        = $wcpay_invoke_private( $express, 'get_product_data' );
-	$cart_contents       = $cart->get_cart();
+	wc_load_cart();
+	$cart = WC()->cart;
+	if ( ! $cart instanceof WC_Cart ) {
+		throw new RuntimeException( 'The cart could not be loaded.' );
+	}
+	$express = wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService::class );
+
+	// Empty the cart, then add the product the way the Deposits product form posts it.
+	$add_to_cart = static function ( string $deposit_option ) use ( $cart, $product ): array {
+		$cart->empty_cart();
+		$_POST['wc_deposit_option'] = $deposit_option;
+		try {
+			$cart_item_key = $cart->add_to_cart( $product->get_id(), 1 );
+		} finally {
+			unset( $_POST['wc_deposit_option'] );
+		}
+		if ( ! is_string( $cart_item_key ) || '' === $cart_item_key ) {
+			throw new RuntimeException( 'The cart refused the product: ' . wp_json_encode( wc_get_notices() ) );
+		}
+		$cart->calculate_totals();
+		return $cart->get_cart_item( $cart_item_key );
+	};
+
+	// The product-page payload, read where the product page renders the express buttons.
+	$product_page_payload = static function () use ( $express, $product, $wcpay_invoke_private ): array {
+		$previous_product   = $GLOBALS['product'] ?? null;
+		$GLOBALS['product'] = $product;
+		$payload            = null;
+		$capture            = static function () use ( &$payload, $express, $wcpay_invoke_private ): void {
+			$payload = $wcpay_invoke_private( $express, 'get_product_data' );
+		};
+		add_action( 'woocommerce_after_add_to_cart_form', $capture, PHP_INT_MAX );
+		ob_start();
+		try {
+			do_action( 'woocommerce_after_add_to_cart_form' );
+		} finally {
+			ob_end_clean();
+			remove_action( 'woocommerce_after_add_to_cart_form', $capture, PHP_INT_MAX );
+			$GLOBALS['product'] = $previous_product;
+		}
+		if ( ! is_array( $payload ) || array() === $payload ) {
+			throw new RuntimeException( 'The product-page express payload is empty, so the probe did not reach a product-page context.' );
+		}
+		return $payload;
+	};
+
+	$control_item    = $add_to_cart( 'no' );
+	$control_payload = $product_page_payload();
+	$deposit_item    = $add_to_cart( 'yes' );
+	$deposit_payload = $product_page_payload();
 
 	return array(
-		'version'           => $wcpay_extension_version( 'deposits' ),
-		'displayItemsPresent' => array_key_exists( 'displayItems', $product_data ),
-		'depositAmount'     => $deposit_amount,
-		'cartDepositAmount' => (float) $cart_contents['deposit']['deposit_amount'],
+		'version' => $wcpay_extension_version( 'deposits' ),
+		'control' => array(
+			'isDeposit'         => ! empty( $control_item['is_deposit'] ),
+			'displayItemLabels' => isset( $control_payload['displayItems'] ) && is_array( $control_payload['displayItems'] ) ? array_values( array_map( static fn( $item ) => (string) ( $item['label'] ?? '' ), $control_payload['displayItems'] ) ) : null,
+			'totalPresent'      => isset( $control_payload['total'] ),
+		),
+		'deposit' => array(
+			'isDeposit'           => ! empty( $deposit_item['is_deposit'] ),
+			'displayItemsPresent' => array_key_exists( 'displayItems', $deposit_payload ),
+			'totalPresent'        => isset( $deposit_payload['total'] ),
+			'lineDepositAmount'   => (float) ( $deposit_item['deposit_amount'] ?? -1 ),
+			'cartTotal'           => (float) $cart->get_total( 'edit' ),
+		),
 	);
 } finally {
+	if ( WC()->cart instanceof WC_Cart ) {
+		WC()->cart->empty_cart();
+	}
+	if ( WC()->session instanceof WC_Session_Handler ) {
+		WC()->session->destroy_session();
+	}
 	foreach ( $rate_options as $option_name => $option_value ) {
 		if ( $missing_option === $option_value ) {
 			delete_option( $option_name );
@@ -170,7 +239,23 @@ try {
 ` );
 
 	expect( [ '2.2.9', '2.4.7' ] ).toContain( result.version );
-	expect( result.displayItemsPresent ).toBe( false );
-	expect( result.depositAmount ).toBeCloseTo( 8, 8 );
-	expect( result.cartDepositAmount ).toBeCloseTo( 8, 8 );
+
+	// Positive control: with the deposit declined the cart holds no deposit,
+	// and the product-page payload keeps its line items.
+	expect( result.control.isDeposit ).toBe( false );
+	expect( result.control.totalPresent ).toBe( true );
+	expect( result.control.displayItemLabels ).toEqual( [
+		'Extension compatibility deposit',
+	] );
+
+	// With a deposit in the cart, the same payload drops only its line items.
+	expect( result.deposit.isDeposit ).toBe( true );
+	expect( result.deposit.totalPresent ).toBe( true );
+	expect( result.deposit.displayItemsPresent ).toBe( false );
+
+	// The fixed 10 USD deposit at the 0.8 EUR rate: 8 EUR, on the cart line
+	// Deposits computed and in the cart total. Not converted (10) and not
+	// converted twice (6.4).
+	expect( result.deposit.lineDepositAmount ).toBeCloseTo( 8, 8 );
+	expect( result.deposit.cartTotal ).toBeCloseTo( 8, 8 );
 } );
