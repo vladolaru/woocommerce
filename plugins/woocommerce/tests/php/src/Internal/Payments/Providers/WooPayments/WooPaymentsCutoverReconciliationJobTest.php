@@ -455,9 +455,14 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A switch held for eligibility past the retry window closes on its next attempt even when eligibility has returned.
+	 * @testdox A switch held for eligibility past the retry window ($markers) closes on its next attempt even when eligibility has returned.
+	 * @testWith ["both markers"]
+	 *           ["the ineligibility deferral only"]
+	 *           ["the eligibility_withdrawn outcome only"]
+	 *
+	 * @param string $markers Which eligibility markers the aged claim keeps.
 	 */
-	public function test_expired_held_switch_does_not_complete_on_the_old_click(): void {
+	public function test_expired_held_switch_does_not_complete_on_the_old_click( string $markers ): void {
 		$this->arrange_plugin_era_store();
 		$preflight = $this->create_plugin_deactivating_preflight();
 		$origin    = $this->create_state_writing_job( true, $preflight );
@@ -473,6 +478,16 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$aged               = $deferred;
 		$aged['revision']   = $deferred['revision'] + 1;
 		$aged['started_at'] = time() - DAY_IN_SECONDS - 1;
+		if ( 'the ineligibility deferral only' === $markers ) {
+			$aged['informational_outcomes'] = array_values(
+				array_filter(
+					$aged['informational_outcomes'],
+					static fn( $outcome ): bool => array( 'code' => 'eligibility_withdrawn' ) !== $outcome
+				)
+			);
+		} elseif ( 'the eligibility_withdrawn outcome only' === $markers ) {
+			$aged['deferred_codes'] = array();
+		}
 		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $deferred, $aged ) );
 		$this->require_scheduler()->cancel( $aged['generation'], 2 );
 		$this->set_native_eligibility( true );
@@ -482,8 +497,39 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$closed = $this->require_state_store()->get_record();
 		$this->assertIsArray( $closed );
 		$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $closed['state'] );
-		$this->assertSame( array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ), get_option( 'active_plugins' ), 'A day-old click must not switch the store.' );
+		$this->assertSame( array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ), get_option( 'active_plugins' ), 'A claim held for eligibility past the window closes instead of switching the store.' );
 		$this->assertSame( NativePaymentsState::AVAILABLE, get_option( NativePaymentsState::OPTION_NAME ), 'The tier follows the account again, so the start notice can offer a fresh switch.' );
+	}
+
+	/**
+	 * @testdox A first attempt that runs on time logs no delay warning.
+	 */
+	public function test_on_time_first_attempt_logs_no_delay_warning(): void {
+		$this->arrange_plugin_era_store();
+		$job    = new class() extends WooPaymentsCutoverReconciliationJob {
+			/** @var array<int,array<string,mixed>> */
+			public array $logged_warnings = array();
+
+			/**
+			 * Capture warnings.
+			 *
+			 * @param string              $message Warning message.
+			 * @param array<string,mixed> $context Warning context.
+			 */
+			protected function write_log_warning( string $message, array $context ): void {
+				$this->logged_warnings[] = array_merge( array( 'message' => $message ), $context );
+			}
+		};
+		$origin = $this->create_job( true, $this->create_plugin_deactivating_preflight(), $job, true, $this->create_noop_normalization(), true, wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$this->assertTrue( $origin->enqueue( 'merchant' ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+
+		$origin->handle_reconcile( $pending['generation'], 1 );
+
+		$this->assertSame( 'verify_native_ownership', $this->require_state_store()->get_record()['current_step'] ?? null );
+		$this->assertSame( array(), $job->logged_warnings );
 	}
 
 	/**
@@ -2954,6 +3000,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		foreach ( array( $main_site_id, $second_site_id ) as $site_id ) {
 			switch_to_blog( $site_id );
+			// The account cache envelope (data, fetched, errored, consecutive_errors): client 11.1.0 includes/class-database-cache.php:377-382.
 			update_option(
 				'wcpay_account_data',
 				array(
@@ -4742,6 +4789,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		update_option( 'active_plugins', array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) );
 		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
+		// The account cache envelope (data, fetched, errored, consecutive_errors): client 11.1.0 includes/class-database-cache.php:377-382.
 		update_option(
 			'wcpay_account_data',
 			array(
