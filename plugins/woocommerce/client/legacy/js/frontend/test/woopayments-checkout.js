@@ -3553,6 +3553,7 @@ describe( 'WooPayments checkout', () => {
 	} );
 
 	test( 'does not announce a copy the clipboard rejected', async () => {
+		// Clipboard.writeText() rejects when the write is not allowed (https://developer.mozilla.org/docs/Web/API/Clipboard/writeText).
 		const writeText = jest
 			.fn()
 			.mockRejectedValue( new Error( 'NotAllowedError' ) );

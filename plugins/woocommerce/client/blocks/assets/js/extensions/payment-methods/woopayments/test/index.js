@@ -478,30 +478,54 @@ describe( 'wc-payment-method-woopayments', () => {
 		expect( createPaymentMethod ).not.toHaveBeenCalled();
 	} );
 
-	// Stand-in for core's PaymentMethodLabel (base/components/cart-checkout/payment-method-label/index.tsx): the text
-	// followed by the icon element.
+	// Stand-in for core's PaymentMethodLabel (base/components/cart-checkout/payment-method-label/index.tsx): the icon
+	// element followed by the text.
 	const PaymentMethodLabel = ( { text, icon } ) => (
 		<span>
-			{ text }
 			{ icon }
+			{ text }
 		</span>
 	);
 
 	function renderCardBrandTrigger() {
 		const registration = registerWooPayments();
 		const LabelComponent = registration.label.type;
-		render(
+		const view = render(
 			createElement( LabelComponent, {
 				components: { PaymentMethodLabel },
 			} )
 		);
-		return screen.getByRole( 'button', {
-			name: 'Show all supported credit card brands',
-		} );
+		return {
+			trigger: screen.getByRole( 'button', {
+				name: 'Show all supported credit card brands',
+			} ),
+			unmount: view.unmount,
+		};
+	}
+
+	// The document listeners the open popover added, so a test can require that exactly those are removed.
+	function spyOnPopoverListeners() {
+		const added = jest.spyOn( document, 'addEventListener' );
+		const removed = jest.spyOn( document, 'removeEventListener' );
+		const listenersFor = ( spy ) =>
+			spy.mock.calls
+				.filter( ( [ type ] ) =>
+					[ 'keydown', 'mousedown' ].includes( type )
+				)
+				.map( ( [ type, listener ] ) => [ type, listener ] );
+
+		return {
+			added: () => listenersFor( added ),
+			removed: () => listenersFor( removed ),
+			restore: () => {
+				added.mockRestore();
+				removed.mockRestore();
+			},
+		};
 	}
 
 	it( 'opens the card brand popover as a dialog, focuses it and returns focus on Escape', () => {
-		const trigger = renderCardBrandTrigger();
+		const { trigger } = renderCardBrandTrigger();
 
 		expect( trigger ).toHaveAttribute( 'aria-haspopup', 'dialog' );
 		trigger.focus();
@@ -522,12 +546,9 @@ describe( 'wc-payment-method-woopayments', () => {
 		expect( trigger ).toHaveFocus();
 	} );
 
-	it( 'closes the card brand popover on an outside click and stops listening once closed', () => {
-		const trigger = renderCardBrandTrigger();
-		const removeEventListener = jest.spyOn(
-			document,
-			'removeEventListener'
-		);
+	it( 'closes the card brand popover on an outside click and removes the listeners it added', () => {
+		const { trigger } = renderCardBrandTrigger();
+		const listeners = spyOnPopoverListeners();
 
 		fireEvent.click( trigger );
 		expect( screen.getByRole( 'dialog' ) ).toBeInTheDocument();
@@ -539,15 +560,21 @@ describe( 'wc-payment-method-woopayments', () => {
 
 		expect( screen.queryByRole( 'dialog' ) ).not.toBeInTheDocument();
 		expect( trigger ).not.toHaveFocus();
-		expect( removeEventListener ).toHaveBeenCalledWith(
-			'keydown',
-			expect.any( Function )
-		);
-		expect( removeEventListener ).toHaveBeenCalledWith(
-			'mousedown',
-			expect.any( Function )
-		);
-		removeEventListener.mockRestore();
+		expect( listeners.added() ).toHaveLength( 2 );
+		expect( listeners.removed() ).toEqual( listeners.added() );
+		listeners.restore();
+	} );
+
+	it( 'removes the card brand popover listeners when it unmounts while open', () => {
+		const { trigger, unmount } = renderCardBrandTrigger();
+		const listeners = spyOnPopoverListeners();
+
+		fireEvent.click( trigger );
+		unmount();
+
+		expect( listeners.added() ).toHaveLength( 2 );
+		expect( listeners.removed() ).toEqual( listeners.added() );
+		listeners.restore();
 	} );
 
 	it( 'shows the test mode badge in the payment method label', () => {
@@ -911,6 +938,22 @@ describe( 'wc-payment-method-woopayments', () => {
 				: body.get( 'woopay_user_phone_field[full]' )
 		);
 
+	// Fails the next save-user request only; Tracks events share window.fetch and must not take the failure.
+	const failNextSaveUserRequest = ( failure ) => {
+		const succeed = window.fetch.getMockImplementation();
+		let failed = false;
+		window.fetch.mockImplementation( ( url, options ) => {
+			if (
+				! failed &&
+				String( url ).includes( 'set_woopay_phone_number' )
+			) {
+				failed = true;
+				return failure();
+			}
+			return succeed( url, options );
+		} );
+	};
+
 	// Lets the persistence promise settle so a failed request is recorded before the next change.
 	const settleSaveUserRequest = () =>
 		act( async () => {
@@ -947,7 +990,7 @@ describe( 'wc-payment-method-woopayments', () => {
 			const phoneField = await screen.findByLabelText(
 				'Mobile phone number'
 			);
-			window.fetch.mockImplementationOnce( failure );
+			failNextSaveUserRequest( failure );
 
 			fireEvent.change( phoneField, {
 				target: { value: '2015550123' },
@@ -991,7 +1034,7 @@ describe( 'wc-payment-method-woopayments', () => {
 				target: { value: '2015550123' },
 			} );
 			await settleSaveUserRequest();
-			window.fetch.mockResolvedValueOnce( saveUserFailure );
+			failNextSaveUserRequest( () => Promise.resolve( saveUserFailure ) );
 			fireEvent.change( phoneField, {
 				target: { value: '2015550188' },
 			} );
@@ -1002,6 +1045,31 @@ describe( 'wc-payment-method-woopayments', () => {
 			expect( getStoredPhones().pop() ).toBe( 'empty' );
 		}
 	);
+
+	it( 'sends the WooPay clear again after a failed clear', async () => {
+		window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
+		renderSaveUserSection();
+		const phoneField = await screen.findByLabelText(
+			'Mobile phone number'
+		);
+		fireEvent.change( phoneField, { target: { value: '2015550123' } } );
+		await settleSaveUserRequest();
+		const before = getStoredPhones().length;
+		failNextSaveUserRequest( () => Promise.resolve( saveUserFailure ) );
+
+		fireEvent.click(
+			screen.getByRole( 'checkbox', {
+				name: 'Securely save my information for 1-click checkout',
+			} )
+		);
+		await settleSaveUserRequest();
+		setActivePaymentMethod( 'woocommerce_payments_klarna' );
+
+		expect( getStoredPhones().slice( before ) ).toEqual( [
+			'empty',
+			'empty',
+		] );
+	} );
 
 	it( 'clears the WooPay phone error for a valid number', async () => {
 		window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
@@ -1356,6 +1424,7 @@ describe( 'wc-payment-method-woopayments', () => {
 	} );
 
 	it( 'does not announce a copy the clipboard rejected', async () => {
+		// Clipboard.writeText() rejects when the write is not allowed (https://developer.mozilla.org/docs/Web/API/Clipboard/writeText).
 		const writeText = jest
 			.fn()
 			.mockRejectedValue( new Error( 'NotAllowedError' ) );
