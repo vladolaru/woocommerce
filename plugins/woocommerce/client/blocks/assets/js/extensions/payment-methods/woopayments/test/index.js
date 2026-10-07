@@ -8,7 +8,7 @@ import {
 	screen,
 	waitFor,
 } from '@testing-library/react';
-import { createElement } from '@wordpress/element';
+import { createElement, useEffect, useReducer } from '@wordpress/element';
 import { Skeleton } from '@woocommerce/base-components/skeleton';
 import { useSelect } from '@wordpress/data';
 import { registerExpressPaymentMethod } from '@woocommerce/blocks-registry';
@@ -180,11 +180,25 @@ const OriginalResizeObserver = window.ResizeObserver;
 describe( 'wc-payment-method-woopayments', () => {
 	// The Blocks payment store selectors the bundle reads (wc/store/payment getActivePaymentMethod, getPaymentMethodData).
 	let activePaymentMethod;
+	// Components re-render when the store changes, as with the real useSelect subscription.
+	const storeListeners = new Set();
+	const setActivePaymentMethod = ( method ) => {
+		activePaymentMethod = method;
+		act( () => storeListeners.forEach( ( listener ) => listener() ) );
+	};
 
 	beforeEach( () => {
 		activePaymentMethod = 'woocommerce_payments';
-		useSelect.mockImplementation( ( callback ) =>
-			callback( () => ( {
+		storeListeners.clear();
+		useSelect.mockImplementation( ( callback ) => {
+			const [ , rerender ] = useReducer( ( count ) => count + 1, 0 );
+
+			useEffect( () => {
+				storeListeners.add( rerender );
+				return () => storeListeners.delete( rerender );
+			}, [] );
+
+			return callback( () => ( {
 				getActivePaymentMethod: () => activePaymentMethod,
 				getValidationError: () => undefined,
 				getPaymentMethodData: () => ( {
@@ -193,8 +207,8 @@ describe( 'wc-payment-method-woopayments', () => {
 					token: '12',
 					isSavedToken: true,
 				} ),
-			} ) )
-		);
+			} ) );
+		} );
 	} );
 
 	afterEach( () => {
@@ -632,6 +646,9 @@ describe( 'wc-payment-method-woopayments', () => {
 			] );
 		} );
 
+		expect(
+			document.querySelector( 'input[name="woopay_source_url"]' )
+		).toHaveValue( 'https://example.test/checkout/' );
 		// Client 11.1.0 checkout-page-save-user.js:118-124 sends the checkout permalink, not the browser URL.
 		const saveUserBodies = window.fetch.mock.calls
 			.filter( ( [ url ] ) =>
@@ -698,11 +715,11 @@ describe( 'wc-payment-method-woopayments', () => {
 
 	it( 'hides WooPay save my info for a WooPay user and clears the stored opt-in', async () => {
 		renderSaveUserSection();
-		const phoneField = await screen.findByLabelText(
-			'Mobile phone number'
-		);
-		fireEvent.blur( phoneField );
-		expect( getSaveUserRequests().length ).toBe( 1 );
+		await screen.findByLabelText( 'Mobile phone number' );
+		// A checked box with a usable number is stored when the section mounts (checkout-page-save-user.js:184-196).
+		expect(
+			getSaveUserRequests().some( ( body ) => ! body.has( 'empty' ) )
+		).toBe( true );
 
 		// Dispatched by the WooPay email check (woopay/email-input-iframe.js) for a known WooPay user.
 		act( () => {
@@ -795,6 +812,28 @@ describe( 'wc-payment-method-woopayments', () => {
 
 		expect( getScript() ).not.toBeNull();
 		settings.getPaymentMethodData.mockImplementation( () => defaultData );
+	} );
+
+	it( 'clears the WooPay opt-in for another method and stores it again back on WooPayments', async () => {
+		window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
+		renderSaveUserSection();
+		const phoneField = await screen.findByLabelText(
+			'Mobile phone number'
+		);
+		fireEvent.change( phoneField, { target: { value: '2015550123' } } );
+
+		setActivePaymentMethod( 'woocommerce_payments_klarna' );
+		let requests = getSaveUserRequests();
+		expect( requests[ requests.length - 1 ].get( 'empty' ) ).toBe( '1' );
+
+		setActivePaymentMethod( 'woocommerce_payments' );
+		requests = getSaveUserRequests();
+		const last = requests[ requests.length - 1 ];
+		expect( last.has( 'empty' ) ).toBe( false );
+		expect( last.get( 'save_user_in_woopay' ) ).toBe( 'true' );
+		expect( last.get( 'woopay_user_phone_field[full]' ) ).toBe(
+			'+12015550123'
+		);
 	} );
 
 	it( 'clears the stored WooPay opt-in when the shopper unchecks save my info', async () => {

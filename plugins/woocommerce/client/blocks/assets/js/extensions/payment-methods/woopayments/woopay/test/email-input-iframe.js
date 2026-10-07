@@ -405,6 +405,14 @@ describe( 'WooPay email input (blocks)', () => {
 			'checkout_woopay_save_my_info_offered',
 			'checkout_save_my_info_click',
 		] );
+		const clickEvent = window.fetch.mock.calls.find(
+			( [ , options ] ) =>
+				options?.body?.get( 'tracksEventName' ) ===
+				'checkout_save_my_info_click'
+		);
+		expect(
+			JSON.parse( clickEvent[ 1 ].body.get( 'tracksEventProp' ) )
+		).toEqual( { status: 'checked' } );
 	} );
 
 	test( 'sends the session data to the iframe on load when first-party auth is on', async () => {

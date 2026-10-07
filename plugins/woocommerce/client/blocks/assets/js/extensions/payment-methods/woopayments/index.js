@@ -666,18 +666,21 @@ const persistWooPaySaveUser = async (
 		body.append( 'woopay_user_phone_field[full]', phone || '' );
 	}
 
-	await window.fetch(
-		buildWooPayAjaxUrl( paymentSettings, 'set_woopay_phone_number' ),
-		{
-			method: 'POST',
-			credentials: 'same-origin',
-			headers: {
-				'Content-Type':
-					'application/x-www-form-urlencoded; charset=UTF-8',
-			},
-			body,
-		}
-	);
+	// Nothing waits on this request; a failed one leaves the session as it was, which the next change retries.
+	try {
+		await window.fetch(
+			buildWooPayAjaxUrl( paymentSettings, 'set_woopay_phone_number' ),
+			{
+				method: 'POST',
+				credentials: 'same-origin',
+				headers: {
+					'Content-Type':
+						'application/x-www-form-urlencoded; charset=UTF-8',
+				},
+				body,
+			}
+		);
+	} catch ( error ) {}
 };
 
 // Client 11.1.0 client/components/woopay/save-user/additional-information.js.
@@ -885,6 +888,34 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 		[]
 	);
 
+	// Client 11.1.0 checkout-page-save-user.js:184-223, :274-302 keeps the session in step with the offer: a stored
+	// opt-in is cleared once the shopper picks another method or is a WooPay user, and stored again while the box is
+	// checked and the number valid, so returning to WooPayments restores it.
+	useEffect( () => {
+		if ( ! isOfferApplicable ) {
+			if ( hasSentUserData.current ) {
+				hasSentUserData.current = false;
+				persistWooPaySaveUser( paymentSettings, false, '', true );
+			}
+			return;
+		}
+
+		const canStore =
+			isPhoneValid === true ||
+			( isPhoneValid === null && isPhoneValidationUnavailable );
+		if ( isSavingUser && canStore && ! hasSentUserData.current ) {
+			hasSentUserData.current = true;
+			persistWooPaySaveUser( paymentSettings, true, fullPhone );
+		}
+	}, [
+		isOfferApplicable,
+		isSavingUser,
+		isPhoneValid,
+		isPhoneValidationUnavailable,
+		fullPhone,
+		paymentSettings,
+	] );
+
 	// Client 11.1.0 checkout-page-save-user.js:169-174 records this once the number is valid.
 	useEffect( () => {
 		if ( isPhoneValid ) {
@@ -894,13 +925,6 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 			);
 		}
 	}, [ isPhoneValid, paymentSettings ] );
-	// A stored opt-in no longer applies once the shopper picks another method or is a WooPay user: clear it.
-	useEffect( () => {
-		if ( ! isOfferApplicable && hasSentUserData.current ) {
-			hasSentUserData.current = false;
-			persistWooPaySaveUser( paymentSettings, false, '', true );
-		}
-	}, [ isOfferApplicable, paymentSettings ] );
 
 	const updateSaveUser = ( checked, nextPhone = phone ) => {
 		setIsSavingUser( checked );

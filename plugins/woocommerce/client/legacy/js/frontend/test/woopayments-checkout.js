@@ -4449,6 +4449,7 @@ describe( 'WooPayments checkout', () => {
 		} );
 
 		test( 'records a pre-checked save-my-info box with the offer for an unknown email', async () => {
+			// WooPay user-exists answer read by client 11.1.0 checkout/woopay/email-input-iframe.js:411-415.
 			fetchResponses[
 				`${ WOOPAY_HOST }/wp-json/platform-checkout/v1/user/exists?`
 			] = { body: { 'user-exists': false } };
@@ -4463,6 +4464,16 @@ describe( 'WooPayments checkout', () => {
 				'checkout_woopay_save_my_info_offered',
 				'checkout_save_my_info_click',
 			] );
+			const clickEvent = window.fetch.mock.calls.find(
+				( [ , options ] ) =>
+					options &&
+					options.body &&
+					options.body.get( 'tracksEventName' ) ===
+						'checkout_save_my_info_click'
+			);
+			expect(
+				JSON.parse( clickEvent[ 1 ].body.get( 'tracksEventProp' ) )
+			).toEqual( { status: 'checked' } );
 			delete window.wcpay_core_woopay_config;
 		} );
 
