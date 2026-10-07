@@ -224,14 +224,14 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register hooks.
+	 * Register the admin notice and click hooks.
+	 *
+	 * The plugin lifecycle hooks are registered by WooPaymentsCutoverPluginLifecycleListener, which loads on every request
+	 * class where a plugin can change, and call this controller's handlers.
 	 */
 	public function register() {
 		add_action( 'admin_init', array( $this, 'handle_admin_init' ) );
 		add_action( 'admin_notices', array( $this, 'output_admin_notices' ) );
-		add_action( 'activate_' . NativePaymentsRuntimeArbiter::PLUGIN_FILE, array( $this, 'guard_woopayments_activation' ) );
-		add_action( 'activated_plugin', array( $this, 'handle_plugin_activated' ), 10, 2 );
-		add_action( 'deactivated_plugin', array( $this, 'handle_plugin_deactivated' ), 10, 2 );
 	}
 
 	/**

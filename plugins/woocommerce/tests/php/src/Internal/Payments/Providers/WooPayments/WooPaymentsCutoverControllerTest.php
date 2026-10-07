@@ -385,14 +385,15 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		}
 	}
 
-	/** @testdox Lifecycle guards register only on WordPress's exact WooPayments activation and deactivation hooks. */
-	public function test_registers_exact_plugin_lifecycle_hooks(): void {
+	/** @testdox The controller registers the admin notice and click hooks; the plugin lifecycle hooks belong to the listener that loads on every request class. */
+	public function test_registers_admin_hooks_only(): void {
 		$this->sut->register();
 		try {
-			$this->assertSame( 10, has_action( 'activate_' . NativePaymentsRuntimeArbiter::PLUGIN_FILE, array( $this->sut, 'guard_woopayments_activation' ) ) );
-			$this->assertSame( 10, has_action( 'activated_plugin', array( $this->sut, 'handle_plugin_activated' ) ) );
-			$this->assertSame( 10, has_action( 'deactivated_plugin', array( $this->sut, 'handle_plugin_deactivated' ) ) );
-			$this->assertFalse( has_action( 'activate_plugin', array( $this->sut, 'guard_woopayments_activation' ) ) );
+			$this->assertSame( 10, has_action( 'admin_init', array( $this->sut, 'handle_admin_init' ) ) );
+			$this->assertSame( 10, has_action( 'admin_notices', array( $this->sut, 'output_admin_notices' ) ) );
+			$this->assertFalse( has_action( 'activate_' . NativePaymentsRuntimeArbiter::PLUGIN_FILE, array( $this->sut, 'guard_woopayments_activation' ) ) );
+			$this->assertFalse( has_action( 'activated_plugin', array( $this->sut, 'handle_plugin_activated' ) ) );
+			$this->assertFalse( has_action( 'deactivated_plugin', array( $this->sut, 'handle_plugin_deactivated' ) ) );
 		} finally {
 			remove_action( 'admin_init', array( $this->sut, 'handle_admin_init' ) );
 			remove_action( 'admin_notices', array( $this->sut, 'output_admin_notices' ) );

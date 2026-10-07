@@ -301,6 +301,15 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 			$matrix[ $state ]['cli'] = $matrix[ $state ]['cron'];
 		}
 
+		// WordPress fires the plugin lifecycle hooks in whatever request activates or deactivates a plugin: wp-admin, admin-ajax,
+		// the plugin REST routes, Action Scheduler and WP-CLI. The client registers its lifecycle callbacks on every request
+		// (client 11.1.0 `woocommerce-payments.php:67-68`); the listener resolves the cutover controller only when a plugin changes.
+		foreach ( array( NativePaymentsState::AVAILABLE, NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ) as $state ) {
+			foreach ( array( 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
+				$matrix[ $state ][ $request ][] = WooPaymentsCutoverPluginLifecycleListener::class;
+			}
+		}
+
 		// Renewals, their emails and saved-card hooks run on any request of a connected or active store, with or
 		// without the gateway enabled, as in the client (client 11.1.0 `includes/class-wc-payments.php:611,649`).
 		foreach ( array( NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ) as $state ) {

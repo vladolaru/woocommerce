@@ -21,6 +21,8 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderContract;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminRestRouteRegistrar;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPluginLifecycleListener;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverNormalizationRunner;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
@@ -137,6 +139,27 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The plugin lifecycle listener loads on every request class where WordPress can activate or deactivate a plugin.
+	 */
+	public function test_plugin_lifecycle_listener_loads_wherever_plugins_change(): void {
+		$sut       = $this->make_bootstrap();
+		$roots_for = new ReflectionMethod( NativePaymentsBootstrap::class, 'roots_for' );
+		$roots_for->setAccessible( true );
+
+		// activate_plugin() and deactivate_plugins() fire the lifecycle hooks in any request that calls them: wp-admin,
+		// admin-ajax, the wp/v2/plugins and wc-admin REST routes, Action Scheduler (cron) and WP-CLI.
+		foreach ( array( NativePaymentsState::AVAILABLE, NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ) as $state ) {
+			foreach ( array( 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
+				$this->assertContains( WooPaymentsCutoverPluginLifecycleListener::class, $roots_for->invoke( $sut, $state, $request ), "The $state $request request must load the plugin lifecycle listener." );
+			}
+			// The controller owns the admin notices and the click, so it stays on admin requests.
+			foreach ( array( 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
+				$this->assertNotContains( WooPaymentsCutoverController::class, $roots_for->invoke( $sut, $state, $request ), "The $state $request request must not resolve the cutover controller." );
+			}
+		}
+	}
+
+	/**
 	 * @testdox The gateway provider is resolved only when WooCommerce builds its gateway list.
 	 */
 	public function test_gateway_provider_is_resolved_only_by_the_gateway_list(): void {
@@ -228,7 +251,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	/** @return array<string,array{string,string,array<int,string>}> */
 	public static function page_request_cron_root_gaps(): array {
 		return array(
-			'available front' => array( NativePaymentsState::AVAILABLE, 'front', array( WooPaymentsCutoverReconciliationJob::class ) ),
+			'available front' => array( NativePaymentsState::AVAILABLE, 'front', array( WooPaymentsCutoverReconciliationJob::class, WooPaymentsCutoverPluginLifecycleListener::class ) ),
 			'active front'    => array(
 				NativePaymentsState::ACTIVE,
 				'front',
@@ -237,6 +260,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 					WooPaymentsCutoverReconciliationJob::class,
 					self::WCPAY . 'WooPaymentsCanceledAuthorizationFeeRemediationService',
 					self::WCPAY . 'WooPaymentsLoanApprovedNote',
+					WooPaymentsCutoverPluginLifecycleListener::class,
 					self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
 					self::WCPAY . 'WooPaymentsSellingLocationsFraudSync',
 				),
@@ -383,7 +407,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 		$this->assertNotContains( WooPaymentsMerchantRestController::class, $matrix[ NativePaymentsState::AVAILABLE ]['admin'] );
 		$this->assertNotContains( WooPaymentsAdminRestRouteRegistrar::class, $matrix[ NativePaymentsState::AVAILABLE ]['admin'] );
-		$this->assertArrayNotHasKey( 'rest', $matrix[ NativePaymentsState::AVAILABLE ] );
+		$this->assertNotContains( WooPaymentsMerchantRestController::class, $matrix[ NativePaymentsState::AVAILABLE ]['rest'] ?? array() );
 		$this->assertContains( WooPaymentsMerchantRestController::class, $matrix[ NativePaymentsState::CONNECTED ]['rest'] );
 		$this->assertNotContains( WooPaymentsMerchantRestController::class, $matrix[ NativePaymentsState::CONNECTED ]['admin'] );
 		$this->assertContains( WooPaymentsAdminRestRouteRegistrar::class, $matrix[ NativePaymentsState::CONNECTED ]['admin'] );

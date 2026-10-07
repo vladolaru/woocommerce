@@ -880,6 +880,7 @@ test.describe( 'WooPayments transition: rollback round trip', () => {
 				)
 				.toBe( 'done' );
 			expect( status.plugin_active ).toBe( false );
+			const doneGeneration = status.record?.generation ?? 0;
 			await expect
 				.poll( () => readRuntimeOwner( restApi ), { timeout: 60_000 } )
 				.toBe( 'native' );
@@ -921,6 +922,14 @@ test.describe( 'WooPayments transition: rollback round trip', () => {
 				await readRollbackSnapshot( orderId ),
 				'plugin-reactivated'
 			);
+			// WP-CLI activates the plugin outside wp-admin; the cutover still
+			// records the rollback and offers the switch again.
+			const reopened = ( await readCutoverStatus( 0 ) ).record;
+			expect( reopened?.state ).toBe( 'pending' );
+			expect( reopened?.current_step ).toBe( 'awaiting_merchant_start' );
+			expect( reopened?.generation ?? 0 ).toBeGreaterThan(
+				doneGeneration
+			);
 
 			// And forward again: deactivating the plugin hands back to native.
 			await wpCLI( [
@@ -937,6 +946,21 @@ test.describe( 'WooPayments transition: rollback round trip', () => {
 				await readRollbackSnapshot( orderId ),
 				'plugin-deactivated'
 			);
+			// The WP-CLI deactivation queues the reconciliation the click
+			// would, and it completes the reopened generation.
+			await expect
+				.poll(
+					async () => {
+						await rescheduleReconciliationActionsToNow();
+						await triggerActionSchedulerQueue( baseURL! );
+						const record = ( await readCutoverStatus( 0 ) ).record;
+						return record?.generation === reopened?.generation
+							? record?.state ?? null
+							: null;
+					},
+					{ timeout: 3 * 60_000, intervals: [ 1000, 3000, 5000 ] }
+				)
+				.toBe( 'done' );
 		}
 	);
 } );
