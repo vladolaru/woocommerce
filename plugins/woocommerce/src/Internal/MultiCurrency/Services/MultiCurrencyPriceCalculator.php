@@ -144,7 +144,10 @@ class MultiCurrencyPriceCalculator {
 			return $price;
 		}
 
-		return ceil( $price / $rounding ) * $rounding;
+		// Round the quotient before ceiling so binary float noise cannot add a step: 3.00 at a 0.1 rate is 0.30000000000000004 / 0.1 =
+		// 3.0000000000000004, which would ceil to 0.40 where the async renderer's exact decimals show 0.30 (better than the client,
+		// whose float ceil has the same split; includes/multi-currency/MultiCurrency.php:1695-1700).
+		return ceil( round( $price / $rounding, 8 ) ) * $rounding;
 	}
 
 	/**

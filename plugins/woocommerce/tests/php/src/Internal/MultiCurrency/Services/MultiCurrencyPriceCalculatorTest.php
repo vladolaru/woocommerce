@@ -69,6 +69,50 @@ class MultiCurrencyPriceCalculatorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should charge the price the async renderer shows: $label.
+	 *
+	 * @dataProvider rendered_price_provider
+	 *
+	 * @param string $label             Case label.
+	 * @param string $code              Currency code.
+	 * @param float  $rate              Exchange rate.
+	 * @param string $rounding          Rounding step.
+	 * @param float  $charm             Charm.
+	 * @param string $price             Price in the store currency.
+	 * @param string $type              Price type.
+	 * @param bool   $charm_on_products Whether charm applies to products only.
+	 * @param string $rendered          Price the renderer shows, as plain digits.
+	 */
+	public function test_charges_the_rendered_price( string $label, string $code, float $rate, string $rounding, float $charm, string $price, string $type, bool $charm_on_products, string $rendered ): void {
+		unset( $label );
+		$calculator = new MultiCurrencyPriceCalculator( $this->create_localization() );
+		$currency   = $this->create_currency( $code, $rate, false, $rounding, $charm );
+		$decimals   = 'JPY' === $code ? 0 : 2;
+
+		$this->assertSame( $rendered, number_format( $calculator->get_price( $price, $type, $currency, $charm_on_products ), $decimals, '.', '' ) );
+	}
+
+	/**
+	 * Cases shared with the async renderer test (client/legacy/js/frontend/test/multi-currency-async-renderer.test.js), whose expected
+	 * values are the client renderer's output (client 11.1.0 includes/multi-currency/client/async-renderer/index.ts:233-301).
+	 *
+	 * @return array<string,array{string,string,float,string,float,string,string,bool,string}>
+	 */
+	public function rendered_price_provider(): array {
+		return array(
+			'product, rounding 1, charm -0.01' => array( 'product, rounding 1, charm -0.01', 'EUR', 0.85, '1', -0.01, '10.00', 'product', true, '8.99' ),
+			'half cent, rounding 0'            => array( 'half cent, rounding 0', 'GBP', 0.5, '0', 0.0, '20.15', 'product', true, '10.08' ),
+			'step crossing, rounding 0.10'     => array( 'step crossing, rounding 0.10', 'GBP', 0.1, '0.1', 0.0, '3.00', 'product', true, '0.30' ),
+			'shipping, charm on products only' => array( 'shipping, charm on products only', 'GBP', 0.82, '0.5', -0.1, '10.00', 'shipping', true, '8.50' ),
+			'shipping, charm on shipping too'  => array( 'shipping, charm on shipping too', 'GBP', 0.82, '0.5', -0.1, '10.00', 'shipping', false, '8.40' ),
+			'coupon, half cent'                => array( 'coupon, half cent', 'GBP', 0.5, '0.5', -0.1, '20.15', 'coupon', true, '10.08' ),
+			'zero-decimal currency'            => array( 'zero-decimal currency', 'JPY', 151.0, '0', 0.0, '10.50', 'product', true, '1586' ),
+			'charm below zero clamps to zero'  => array( 'charm below zero clamps to zero', 'GBP', 0.5, '0', -1.0, '1.00', 'product', true, '0.00' ),
+			'rate written with an exponent'    => array( 'rate written with an exponent', 'BTC', 1e-7, '0', 0.0, '123456789', 'product', true, '12.35' ),
+		);
+	}
+
+	/**
 	 * @testdox Should round precise price types without charm.
 	 *
 	 * @dataProvider precise_price_type_provider
