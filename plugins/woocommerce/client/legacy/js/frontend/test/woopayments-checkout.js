@@ -4566,6 +4566,11 @@ describe( 'WooPayments checkout', () => {
 					'.wc-block-checkout__guest-checkout-notice'
 				).textContent
 			).toBe( 'WooPay is unavailable at this time.' );
+			expect(
+				input.parentNode
+					.querySelector( '.wc-block-checkout__guest-checkout-notice' )
+					.getAttribute( 'role' )
+			).toBe( 'alert' );
 		} );
 
 		test( 'leaves focus alone on Escape while the OTP dialog is closed', async () => {

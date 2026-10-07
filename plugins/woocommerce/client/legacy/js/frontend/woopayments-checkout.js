@@ -3234,6 +3234,8 @@
 			errorMessage = document.createElement( 'div' );
 			errorMessage.textContent = baseConfig.woopayUnavailableMessage || '';
 			errorMessage.classList.add( 'wc-block-checkout__guest-checkout-notice' );
+			// Announced when it appears; client 11.1.0 inserts a plain div here.
+			errorMessage.setAttribute( 'role', 'alert' );
 
 			// aria-modal: focus that leaves the open dialog goes back to its iframe.
 			function onFocusIn( event ) {

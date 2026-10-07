@@ -810,6 +810,11 @@ describe( 'WooPay email input (blocks)', () => {
 			).textContent
 		).toBe( 'WooPay is unavailable at this time.' );
 		expect(
+			document.querySelector(
+				'.wc-block-checkout__guest-checkout-notice'
+			)
+		).toHaveAttribute( 'role', 'alert' );
+		expect(
 			document.querySelector( '.wc-block-components-spinner' )
 		).toBeNull();
 	} );

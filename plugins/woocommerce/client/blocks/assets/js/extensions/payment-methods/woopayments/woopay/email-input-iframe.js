@@ -431,6 +431,8 @@ export const handleWooPayEmailInput = async ( field, paymentSettings ) => {
 	const errorMessage = document.createElement( 'div' );
 	errorMessage.textContent = paymentSettings.woopayUnavailableMessage || '';
 	errorMessage.classList.add( 'wc-block-checkout__guest-checkout-notice' );
+	// Announced when it appears; client 11.1.0 inserts a plain div here.
+	errorMessage.setAttribute( 'role', 'alert' );
 
 	// Focus goes back to the email field on every close that takes it from the dialog, the failure closes included; client
 	// 11.1.0 gives it back only on the closes that ask for it (email-input-iframe.js:234-243), and the page loses it otherwise.
