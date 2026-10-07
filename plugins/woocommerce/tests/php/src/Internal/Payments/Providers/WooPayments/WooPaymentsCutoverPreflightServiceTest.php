@@ -303,6 +303,26 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The operational queue scan reads one row per hook and group, however many actions share them.
+	 */
+	public function test_operational_action_discovery_reads_one_row_per_hook_and_group(): void {
+		$first_id = 0;
+		for ( $i = 1; $i <= 3; $i++ ) {
+			$action_id = as_schedule_single_action( time() + HOUR_IN_SECONDS, 'wcpay_preflight_service_test', array( 'order_id' => $i ), 'woocommerce-payments', true );
+			$this->assertIsInt( $action_id );
+			$first_id = 0 === $first_id ? $action_id : $first_id;
+		}
+		$other_group_id = as_schedule_single_action( time() + HOUR_IN_SECONDS, 'wcpay_preflight_service_test', array( 'order_id' => 4 ), 'other-group', true );
+		$this->assertIsInt( $other_group_id );
+
+		$actions = $this->create_sut()->get_queued_plugin_actions();
+
+		$this->assertCount( 2, $actions, 'A store with thousands of queued plugin actions must not read each one.' );
+		$this->assertSame( array( $first_id, $other_group_id ), array_column( $actions, 'action_id' ) );
+		$this->assertSame( array( 'woocommerce-payments', 'other-group' ), array_column( $actions, 'group' ) );
+	}
+
+	/**
 	 * @testdox An Action Scheduler query failure remains an operational cutover blocker.
 	 * @dataProvider operational_action_query_failure_provider
 	 *

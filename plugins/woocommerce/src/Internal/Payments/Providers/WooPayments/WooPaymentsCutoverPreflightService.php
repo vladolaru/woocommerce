@@ -355,9 +355,11 @@ class WooPaymentsCutoverPreflightService {
 	}
 
 	/**
-	 * Get pending or running plugin-prefixed Action Scheduler actions.
+	 * Get pending or running plugin-prefixed Action Scheduler actions, one per hook and group.
 	 *
-	 * @return array<int,array{action_id:int,hook:string,group:string}> Actions ordered by ID.
+	 * Callers only decide by hook and group, so a queue of thousands of same-hook actions is read as one row.
+	 *
+	 * @return array<int,array{action_id:int,hook:string,group:string}> The lowest action ID of each hook and group, ordered by it.
 	 */
 	public function get_queued_plugin_actions(): array {
 		$wpdb = $this->get_database();
@@ -374,7 +376,7 @@ class WooPaymentsCutoverPreflightService {
 			);
 		}
 		$query   = $wpdb->prepare(
-			'SELECT actions.action_id, actions.hook, action_groups.slug AS action_group FROM %i AS actions LEFT JOIN %i AS action_groups ON actions.group_id = action_groups.group_id WHERE actions.status IN ( %s, %s ) AND ( actions.hook LIKE %s OR actions.hook LIKE %s ) ORDER BY actions.action_id ASC',
+			'SELECT MIN( actions.action_id ) AS action_id, actions.hook, action_groups.slug AS action_group FROM %i AS actions LEFT JOIN %i AS action_groups ON actions.group_id = action_groups.group_id WHERE actions.status IN ( %s, %s ) AND ( actions.hook LIKE %s OR actions.hook LIKE %s ) GROUP BY actions.hook, action_groups.slug ORDER BY action_id ASC',
 			$wpdb->actionscheduler_actions,
 			$wpdb->actionscheduler_groups,
 			\ActionScheduler_Store::STATUS_PENDING,
