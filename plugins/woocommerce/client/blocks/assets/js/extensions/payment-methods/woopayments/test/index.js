@@ -478,23 +478,30 @@ describe( 'wc-payment-method-woopayments', () => {
 		expect( createPaymentMethod ).not.toHaveBeenCalled();
 	} );
 
-	it( 'opens the card brand popover as a dialog, focuses it and returns focus on Escape', () => {
+	// Stand-in for core's PaymentMethodLabel (base/components/cart-checkout/payment-method-label/index.tsx): the text
+	// followed by the icon element.
+	const PaymentMethodLabel = ( { text, icon } ) => (
+		<span>
+			{ text }
+			{ icon }
+		</span>
+	);
+
+	function renderCardBrandTrigger() {
 		const registration = registerWooPayments();
 		const LabelComponent = registration.label.type;
-		const PaymentMethodLabel = ( { text, icon } ) => (
-			<span>
-				{ text }
-				{ icon }
-			</span>
-		);
 		render(
 			createElement( LabelComponent, {
 				components: { PaymentMethodLabel },
 			} )
 		);
-		const trigger = screen.getByRole( 'button', {
+		return screen.getByRole( 'button', {
 			name: 'Show all supported credit card brands',
 		} );
+	}
+
+	it( 'opens the card brand popover as a dialog, focuses it and returns focus on Escape', () => {
+		const trigger = renderCardBrandTrigger();
 
 		expect( trigger ).toHaveAttribute( 'aria-haspopup', 'dialog' );
 		trigger.focus();
@@ -504,8 +511,10 @@ describe( 'wc-payment-method-woopayments', () => {
 			name: 'Supported credit card brands',
 		} );
 		expect( dialog ).toHaveFocus();
-		// The two brands past the first four in the fixture.
-		expect( dialog ).toHaveAccessibleDescription( 'JCB, Union Pay' );
+		// The trigger's name replaces its images' alt text, so the dialog names every brand.
+		expect( dialog ).toHaveAccessibleDescription(
+			'Visa, Mastercard, American Express, Discover, JCB, Union Pay'
+		);
 
 		fireEvent.keyDown( dialog, { key: 'Escape' } );
 
@@ -513,15 +522,37 @@ describe( 'wc-payment-method-woopayments', () => {
 		expect( trigger ).toHaveFocus();
 	} );
 
+	it( 'closes the card brand popover on an outside click and stops listening once closed', () => {
+		const trigger = renderCardBrandTrigger();
+		const removeEventListener = jest.spyOn(
+			document,
+			'removeEventListener'
+		);
+
+		fireEvent.click( trigger );
+		expect( screen.getByRole( 'dialog' ) ).toBeInTheDocument();
+
+		fireEvent.mouseDown( screen.getByRole( 'dialog' ) );
+		expect( screen.getByRole( 'dialog' ) ).toBeInTheDocument();
+
+		fireEvent.mouseDown( document.body );
+
+		expect( screen.queryByRole( 'dialog' ) ).not.toBeInTheDocument();
+		expect( trigger ).not.toHaveFocus();
+		expect( removeEventListener ).toHaveBeenCalledWith(
+			'keydown',
+			expect.any( Function )
+		);
+		expect( removeEventListener ).toHaveBeenCalledWith(
+			'mousedown',
+			expect.any( Function )
+		);
+		removeEventListener.mockRestore();
+	} );
+
 	it( 'shows the test mode badge in the payment method label', () => {
 		const registration = registerWooPayments();
 		const LabelComponent = registration.label.type;
-		const PaymentMethodLabel = ( { text, icon } ) => (
-			<span className="wc-block-components-payment-method-label wc-block-components-payment-method-label--with-icon">
-				{ text }
-				{ icon }
-			</span>
-		);
 
 		render(
 			createElement( LabelComponent, {

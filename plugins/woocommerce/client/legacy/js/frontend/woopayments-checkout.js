@@ -1873,7 +1873,8 @@
 		}
 	}
 
-	function createCardBrandPopover( label, logos, icons ) {
+	// The trigger's label replaces its images' alt text, so the description names every brand, not just the hidden ones.
+	function createCardBrandPopover( label, logos, icons, allIcons ) {
 		var popover = document.createElement( 'span' );
 		var description = document.createElement( 'span' );
 		var handlers = {};
@@ -1894,7 +1895,7 @@
 
 		description.id = popover.id + '-description';
 		description.className = 'screen-reader-text';
-		description.textContent = icons
+		description.textContent = allIcons
 			.map( function ( icon ) {
 				return icon.alt || icon.id || '';
 			} )
@@ -2040,7 +2041,7 @@
 				closeCardBrandPopover( popover, logos );
 				return;
 			}
-			createCardBrandPopover( label, logos, additionalIcons );
+			createCardBrandPopover( label, logos, additionalIcons, icons );
 		} );
 
 		logos.addEventListener( 'keydown', function ( event ) {

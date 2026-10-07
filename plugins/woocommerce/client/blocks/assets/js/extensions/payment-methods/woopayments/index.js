@@ -124,9 +124,9 @@ const TestModeBadge = ( { paymentSettings } ) => {
 	return <span className="test-mode badge">{ testModeBadgeLabel }</span>;
 };
 
-// Mirrors the classic card-brand popover (woopayments-checkout.js openCardBrandPopover()): a dialog trigger, the
-// brands named for screen readers, focus moved into the dialog, and Escape or an outside click closing it with focus
-// back on the trigger.
+// Mirrors the classic card-brand popover (woopayments-checkout.js createCardBrandPopover() and updateCardBrandLogos()):
+// a dialog trigger, every brand named for screen readers, focus moved into the dialog, and Escape (focus back on the
+// trigger) or an outside click closing it.
 const CardBrandIcons = ( { paymentSettings } ) => {
 	const cardBrandIcons = getCardBrandIcons( paymentSettings );
 	const [ isPopoverOpen, setIsPopoverOpen ] = useState( false );
@@ -240,7 +240,7 @@ const CardBrandIcons = ( { paymentSettings } ) => {
 						id={ `${ popoverId }-description` }
 						className="screen-reader-text"
 					>
-						{ additionalIcons
+						{ cardBrandIcons
 							.map( ( icon ) => icon.alt || icon.id || '' )
 							.filter( Boolean )
 							.join( ', ' ) }

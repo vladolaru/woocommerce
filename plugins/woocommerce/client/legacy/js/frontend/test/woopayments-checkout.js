@@ -3634,7 +3634,9 @@ describe( 'WooPayments checkout', () => {
 			document.getElementById(
 				popover.getAttribute( 'aria-describedby' )
 			).textContent
-		).toBe( 'JCB, Union Pay' );
+		).toBe(
+			'Visa, Mastercard, American Express, Discover, JCB, Union Pay'
+		);
 		expect( document.activeElement ).toBe( popover );
 		expect(
 			Array.from( popover.querySelectorAll( 'img' ) ).map(
