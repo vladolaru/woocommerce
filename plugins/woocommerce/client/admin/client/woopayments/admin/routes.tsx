@@ -181,6 +181,49 @@ const LoadingFallback = () => (
 	<ProviderRouteLoading providerName="WooPayments" />
 );
 
+/**
+ * Core preloads the native settings only while native owns the WooPayments runtime
+ * (`WooPaymentsAdminNavigationController::register()`), so their absence means the plugin owns it.
+ */
+const isNativeRuntimeOwner = () =>
+	( globalThis as WooPaymentsRouteWindow ).wcSettings?.admin
+		?.woopaymentsSettings !== undefined;
+
+// The plugin gateway's settings page, the URL `WooPayments::get_settings_url()` gives while the plugin owns the runtime.
+const getPluginSettingsUrl = () => {
+	const adminUrl = window.wcSettings?.adminUrl || '';
+	const separator = adminUrl.endsWith( '/' ) || adminUrl === '' ? '' : '/';
+
+	return `${ adminUrl }${ separator }admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments&from=WCADMIN_PAYMENT_SETTINGS`;
+};
+
+/**
+ * Renders a native settings route only while native owns the runtime; otherwise a bookmark or a stale link goes to
+ * the plugin's settings page instead of a native page with nothing preloaded.
+ *
+ * @param props          The component props.
+ * @param props.children The settings route chunk.
+ */
+const WooPaymentsSettingsRoute = ( {
+	children,
+}: {
+	children: JSX.Element;
+} ) => {
+	const isOwner = isNativeRuntimeOwner();
+
+	useEffect( () => {
+		if ( ! isOwner ) {
+			window.location.replace( getPluginSettingsUrl() );
+		}
+	}, [ isOwner ] );
+
+	if ( ! isOwner ) {
+		return <LoadingFallback />;
+	}
+
+	return <Suspense fallback={ <LoadingFallback /> }>{ children }</Suspense>;
+};
+
 const WooPaymentsAdminAreaUnavailable = () => {
 	const fallbackPath = getFallbackRoutePath();
 	const fallbackLabel =
@@ -326,9 +369,9 @@ registerSettingsPaymentsProviderRoute( {
 	path: '/woopayments/settings',
 	order: 90,
 	element: (
-		<Suspense fallback={ <LoadingFallback /> }>
+		<WooPaymentsSettingsRoute>
 			<WooPaymentsSettingsChunk />
-		</Suspense>
+		</WooPaymentsSettingsRoute>
 	),
 } );
 
@@ -337,9 +380,9 @@ registerSettingsPaymentsProviderRoute( {
 	path: '/woopayments/settings/express-checkout/:methodId',
 	order: 91,
 	element: (
-		<Suspense fallback={ <LoadingFallback /> }>
+		<WooPaymentsSettingsRoute>
 			<WooPaymentsExpressCheckoutSettingsChunk />
-		</Suspense>
+		</WooPaymentsSettingsRoute>
 	),
 } );
 
@@ -348,9 +391,9 @@ registerSettingsPaymentsProviderRoute( {
 	path: '/woopayments/settings/fraud-protection',
 	order: 92,
 	element: (
-		<Suspense fallback={ <LoadingFallback /> }>
+		<WooPaymentsSettingsRoute>
 			<WooPaymentsFraudProtectionSettingsChunk />
-		</Suspense>
+		</WooPaymentsSettingsRoute>
 	),
 } );
 
