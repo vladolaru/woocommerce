@@ -501,6 +501,19 @@ describe( 'WooPayments express checkout', () => {
 		);
 	} );
 
+	test( 'keeps one Stripe instance across checkout refreshes', async () => {
+		require( '../woopayments-express-checkout' );
+
+		await bodyEventHandlers.updated_checkout();
+		await flushPromises();
+		await bodyEventHandlers.updated_checkout();
+		await flushPromises();
+
+		// Client 11.1.0 checkout/api/index.js:79-110 creates the instance once and returns it after that.
+		expect( window.Stripe ).toHaveBeenCalledTimes( 1 );
+		expect( stripe.elements ).toHaveBeenCalledTimes( 2 );
+	} );
+
 	test( 'records only available Apple Pay load tracking events', async () => {
 		require( '../woopayments-express-checkout' );
 

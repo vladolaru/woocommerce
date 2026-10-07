@@ -768,6 +768,26 @@ describe( 'WooPayments checkout', () => {
 		expect( checkoutApi.submit ).toHaveBeenCalled();
 	} );
 
+	test( 'keeps one Stripe instance per payment-list wallet across renders', async () => {
+		const registrations = preparePaymentListWallets();
+
+		require( '../woopayments-checkout' );
+		window.Stripe.mockClear();
+		const container = document.createElement( 'div' );
+		const checkoutApi = { submit: jest.fn(), validate: jest.fn() };
+		await registrations.woocommerce_payments_apple_pay.render(
+			container,
+			checkoutApi
+		);
+		await registrations.woocommerce_payments_apple_pay.render(
+			container,
+			checkoutApi
+		);
+
+		expect( window.Stripe ).toHaveBeenCalledTimes( 1 );
+		expect( stripeMock.elements ).toHaveBeenCalledTimes( 2 );
+	} );
+
 	test( 'submits payment-list wallet credentials through the active order-pay form', async () => {
 		const registrations = preparePaymentListWallets();
 		const expressHandlers = {};

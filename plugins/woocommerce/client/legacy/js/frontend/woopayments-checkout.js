@@ -1039,6 +1039,8 @@
 		return options;
 	}
 
+	// The wallet keeps its Stripe instance across renders (one per page, as client 11.1.0 checkout/api/index.js:79-110);
+	// only its Elements are rebuilt.
 	function resetExpressButtonState( state ) {
 		if ( state.element && state.element.unmount ) {
 			state.element.unmount();
@@ -1046,7 +1048,6 @@
 
 		state.element = null;
 		state.elements = null;
-		state.stripe = null;
 	}
 
 	function registerPaymentListWallet( paymentGatewayId ) {
@@ -1094,11 +1095,13 @@
 				}
 
 				try {
-					state.stripe = window.Stripe( gatewayConfig.publishableKey, {
-						locale: gatewayConfig.locale || 'auto',
-						stripeAccount: gatewayConfig.accountId || undefined,
-						betas: getStripeBetas(),
-					} );
+					state.stripe =
+						state.stripe ||
+						window.Stripe( gatewayConfig.publishableKey, {
+							locale: gatewayConfig.locale || 'auto',
+							stripeAccount: gatewayConfig.accountId || undefined,
+							betas: getStripeBetas(),
+						} );
 					state.elements = state.stripe.elements( {
 						mode: 'payment',
 						amount: amount,
