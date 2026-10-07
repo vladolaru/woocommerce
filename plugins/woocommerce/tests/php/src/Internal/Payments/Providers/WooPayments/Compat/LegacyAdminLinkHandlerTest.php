@@ -805,13 +805,15 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Plugin 11.1.0 `finalize_connection()` (class-wc-payments-account.php:2417-2424): a return with `wcpay-connection-error`
-	 * still enables the gateway, then sends the merchant back to the connect page to finish KYC.
+	 * still enables the gateway, then sends the merchant back to the connect page to finish KYC. The onboarding data cleanup
+	 * (:2427-2428) runs only after that branch, so the recommended payment methods stay cached for the resumed onboarding.
 	 *
 	 * @testdox A hosted KYC return that left KYC early enables the gateway in test mode and sends the merchant back to onboarding, like plugin 11.1.0.
 	 */
 	public function test_hosted_kyc_return_with_connection_error_redirects_to_onboarding(): void {
 		$this->account_service->expects( $this->once() )->method( 'clear_cache' );
 		set_transient( 'wcpay_stripe_onboarding_state', 'state_kyc', DAY_IN_SECONDS );
+		set_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods', array( 'payment_methods' => array( array( 'id' => 'card' ) ) ), DAY_IN_SECONDS );
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'no' ) );
 		$_GET = array( 'wcpay-connection-error' => '1' ) + $this->get_hosted_kyc_return_query( 'state_kyc', 'test' );
 		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
@@ -833,6 +835,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'yes', $settings['enabled'] );
 		$this->assertSame( 'yes', $settings['test_mode'] );
 		$this->assertFalse( get_transient( 'wcpay_stripe_onboarding_state' ) );
+		$this->assertNotFalse( get_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' ) );
 	}
 
 	/**

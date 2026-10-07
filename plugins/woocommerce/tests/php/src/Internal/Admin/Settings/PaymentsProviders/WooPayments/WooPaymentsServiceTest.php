@@ -1849,14 +1849,14 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native hosted KYC return drops the cached recommended payment methods, like client 11.1.0 finalize_connection().
+	 * @testdox A completed native hosted KYC return drops the cached recommended payment methods, like client 11.1.0 finalize_connection().
 	 */
 	public function test_finalize_native_hosted_kyc_connection_clears_recommended_payment_methods_cache(): void {
 		set_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods', array( 'payment_methods' => array( array( 'id' => 'card' ) ) ), DAY_IN_SECONDS );
 
-		$this->sut->finalize_native_hosted_kyc_connection( false );
+		$this->sut->finalize_native_hosted_kyc_connection( false, true );
 
-		// Client 11.1.0 class-wc-payments-account.php:2428 runs cleanup_on_account_onboarded() on the hosted return.
+		// Client 11.1.0 class-wc-payments-account.php:2428 runs cleanup_on_account_onboarded() on a completed hosted return.
 		$this->assertFalse( get_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' ) );
 	}
 

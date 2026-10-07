@@ -3246,6 +3246,7 @@ class WooPaymentsService {
 			}
 
 			$this->apply_native_kyc_connection( $is_live );
+			$this->clear_native_onboarding_data();
 
 			$response['params'] = array(
 				'promo'                    => isset( $response['promotion_id'] ) && is_scalar( $response['promotion_id'] ) ? (string) $response['promotion_id'] : '',
@@ -3263,12 +3264,19 @@ class WooPaymentsService {
 	/**
 	 * Apply a KYC return from the platform's hosted onboarding, like client 11.1.0 finalize_connection() after its state check.
 	 *
+	 * Like the client (class-wc-payments-account.php:2417-2428), a merchant who left KYC early keeps the onboarding data.
+	 *
 	 * @since 11.2.0
 	 *
-	 * @param bool $is_live Whether the returned account is live.
+	 * @param bool $is_live         Whether the returned account is live.
+	 * @param bool $is_kyc_complete Whether the merchant finished KYC rather than leaving it early.
 	 */
-	public function finalize_native_hosted_kyc_connection( bool $is_live ): void {
+	public function finalize_native_hosted_kyc_connection( bool $is_live, bool $is_kyc_complete ): void {
 		$this->apply_native_kyc_connection( $is_live );
+
+		if ( $is_kyc_complete ) {
+			$this->clear_native_onboarding_data();
+		}
 	}
 
 	/**
@@ -3280,9 +3288,6 @@ class WooPaymentsService {
 		$this->enable_native_gateway_after_kyc_finalization( $is_live );
 		$this->restore_native_test_drive_payment_methods();
 
-		// Client 11.1.0 cleanup_on_account_onboarded(): recommended methods serve only the initial onboarding. Native caches no onboarding fields.
-		$this->proxy->call_function( 'delete_transient', NativeWooPaymentsGateway::RECOMMENDED_PAYMENT_METHODS_CACHE_KEY );
-
 		// Flag the new connection for the Overview's wcpay_stripe_connected Tracks event, as the plugin does.
 		$this->proxy->call_function( 'update_option', '_wcpay_onboarding_stripe_connected', array( 'is_existing_stripe_account' => false ), false );
 
@@ -3290,6 +3295,15 @@ class WooPaymentsService {
 		if ( $is_live && ! $this->proxy->call_function( 'get_option', self::KYC_SUBMITTED_DATE_OPTION ) ) {
 			$this->proxy->call_function( 'update_option', self::KYC_SUBMITTED_DATE_OPTION, $this->proxy->call_function( 'time' ), false );
 		}
+	}
+
+	/**
+	 * Drop the data only the initial onboarding uses, like client 11.1.0 cleanup_on_account_onboarded().
+	 *
+	 * Recommended payment methods serve only the initial onboarding. Native caches no onboarding fields.
+	 */
+	private function clear_native_onboarding_data(): void {
+		$this->proxy->call_function( 'delete_transient', NativeWooPaymentsGateway::RECOMMENDED_PAYMENT_METHODS_CACHE_KEY );
 	}
 
 	/**

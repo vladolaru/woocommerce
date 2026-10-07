@@ -220,7 +220,7 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 
 		delete_transient( self::ONBOARDING_STATE_TRANSIENT );
 		$this->account_service->clear_cache();
-		wc_get_container()->get( WooPaymentsService::class )->finalize_native_hosted_kyc_connection( 'live' === $mode );
+		wc_get_container()->get( WooPaymentsService::class )->finalize_native_hosted_kyc_connection( 'live' === $mode, ! $connection_error );
 
 		$params['from'] = WooPaymentsOnboardingSource::FROM_STRIPE;
 		if ( $connection_error ) {
