@@ -13,6 +13,7 @@ use WP_REST_Server;
 use WP_REST_Response;
 use WP_REST_Request;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\PaymentSettings;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\Definition\PaymentMethodsDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\Definition\PaymentMethodsDependenciesDefinition;
 
@@ -216,7 +217,8 @@ class PaymentRestEndpoint extends RestEndpoint {
 				continue;
 			}
 
-			if ( isset( $new_data['enabled'] ) ) {
+			// The Payments list owns the PayPal gateway's on/off state; a stale value from this app must not override it.
+			if ( isset( $new_data['enabled'] ) && PayPalGateway::ID !== $key ) {
 				$this->payment_settings->toggle_method_state( $key, $new_data['enabled'] );
 			}
 

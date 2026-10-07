@@ -90,6 +90,12 @@
 			display: flex;
 			align-items: center;
 		}
+
+		.ppcp--method-toggle-note {
+			@include font(12, 16, 400);
+			margin: 8px 0 0;
+			color: $color-text-tertiary;
+		}
 	}
 }
 

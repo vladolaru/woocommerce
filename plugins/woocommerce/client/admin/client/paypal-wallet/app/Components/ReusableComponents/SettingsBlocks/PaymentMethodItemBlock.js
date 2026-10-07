@@ -11,6 +11,8 @@ const PaymentMethodItemBlock = ( {
 	onSelect,
 	isSelected,
 	isDisabled,
+	isToggleLocked = false,
+	toggleNote = null,
 	disabledMessage,
 	warningMessages,
 	warningSeverity,
@@ -66,7 +68,7 @@ const PaymentMethodItemBlock = ( {
 							__nextHasNoMarginBottom
 							checked={ isSelected }
 							onChange={ onSelect }
-							disabled={ isDisabled }
+							disabled={ isDisabled || isToggleLocked }
 							aria-label={ `Enable ${ paymentMethod.itemTitle }` }
 						/>
 						{ hasWarning && ! isDisabled && isSelected && (
@@ -87,6 +89,9 @@ const PaymentMethodItemBlock = ( {
 						</Button>
 					) }
 				</div>
+				{ toggleNote && (
+					<p className="ppcp--method-toggle-note">{ toggleNote }</p>
+				) }
 			</div>
 		</SettingsBlock>
 	);

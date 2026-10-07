@@ -94,6 +94,50 @@ class PaymentRestEndpointTest extends WalletTestCase {
 	}
 
 	/**
+	 * The stored on/off states of the PayPal gateway, each against a request asking for the opposite.
+	 *
+	 * @return array<string, array{0: string, 1: bool}>
+	 */
+	public function data_paypal_gateway_states(): array {
+		return array(
+			'stored on, request off' => array( 'yes', false ),
+			'stored off, request on' => array( 'no', true ),
+		);
+	}
+
+	/**
+	 * @testdox Should leave the PayPal gateway's on/off state to the Payments list and still store its title.
+	 * @dataProvider data_paypal_gateway_states
+	 *
+	 * @param string $stored    The stored enabled value.
+	 * @param bool   $requested The enabled value the request carries.
+	 */
+	public function test_update_ignores_the_paypal_gateway_enabled_state( string $stored, bool $requested ): void {
+		$this->set_wallet_option( self::OPTION, array() );
+		$this->set_wallet_option(
+			'woocommerce_ppcp-gateway_settings',
+			array(
+				'enabled' => $stored,
+				'title'   => 'PayPal',
+			)
+		);
+
+		$this->post(
+			$this->create_endpoint(),
+			array(
+				'ppcp-gateway' => array(
+					'enabled' => $requested,
+					'title'   => 'Pay with PayPal',
+				),
+			)
+		);
+
+		$settings = get_option( 'woocommerce_ppcp-gateway_settings' );
+		$this->assertSame( $stored, $settings['enabled'] );
+		$this->assertSame( 'Pay with PayPal', $settings['title'] );
+	}
+
+	/**
 	 * @testdox Should leave a Fastlane watermark value the extension stored as it is when a request changes something else.
 	 */
 	public function test_update_leaves_a_stored_fastlane_watermark_alone(): void {
