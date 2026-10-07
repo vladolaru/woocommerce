@@ -10,6 +10,7 @@ import {
 	ActiveLoanSummary,
 	getActiveCapitalLoanId,
 } from '../capital/active-loan-summary';
+import { expectPlainClickRoutesInApp } from './helpers/in-app-route-click';
 
 // Client 11.1.0 `components/active-loan-summary/__tests__/index.test.js` fixture, with the platform's fractional withhold rate.
 const details = {
@@ -121,6 +122,10 @@ describe( 'ActiveLoanSummary', () => {
 		).toHaveAttribute(
 			'href',
 			'https://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions&type=charge&filter=advanced&loan_id_is=flxln_123456'
+		);
+		expectPlainClickRoutesInApp(
+			screen.getByRole( 'link', { name: 'View transactions' } ),
+			'admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions&type=charge&filter=advanced&loan_id_is=flxln_123456'
 		);
 	} );
 

@@ -24,6 +24,7 @@ jest.mock( '../money-movement/data', () => ( {
 const VISA_ACKNOWLEDGEMENT =
 	'By checking this box, you acknowledge that challenging this Visa compliance dispute incurs a $500 USD network fee, which will be refunded if you win the dispute.';
 
+// A partial `Dispute`, client 11.1.0 `types/disputes.d.ts:86-136`, with its `EvidenceDetails` (`:13-30`).
 const makeDispute = (
 	overrides: Partial< WooPaymentsDispute > = {}
 ): WooPaymentsDispute => ( {

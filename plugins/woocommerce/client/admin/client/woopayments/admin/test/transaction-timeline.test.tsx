@@ -10,6 +10,7 @@ import { render, screen, within } from '@testing-library/react';
  */
 import { WooPaymentsTransactionTimeline } from '../money-movement/transaction-timeline';
 import type { WooPaymentsTimelineEvent } from '../money-movement/types';
+import { expectPlainClickRoutesInApp } from './helpers/in-app-route-click';
 
 // Recorded read-only from the native :8889 store; see the fixture's `_meta`.
 const recordedEurCapture: {
@@ -285,6 +286,10 @@ describe( 'WooPaymentsTransactionTimeline captured payments', () => {
 			expect.stringContaining(
 				'path=%2Fwoopayments%2Fpayouts%2Fdetails&id=dummy_po_5eaada696b281'
 			)
+		);
+		expectPlainClickRoutesInApp(
+			screen.getByRole( 'link', { name: 'April 2, 2020 payout' } ),
+			'admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fpayouts%2Fdetails&id=dummy_po_5eaada696b281'
 		);
 		expect(
 			getRow( 'A payment of $63.00 was successfully charged.' ).body
@@ -992,6 +997,12 @@ describe( 'WooPaymentsTransactionTimeline financing paydowns', () => {
 			expect.stringContaining(
 				'path=%2Fwoopayments%2Ftransactions&type=charge&filter=advanced&loan_id_is=flxln_1KOKzdR4ByxURRrFX9A65q40'
 			)
+		);
+		expectPlainClickRoutesInApp(
+			screen.getByRole( 'link', {
+				name: 'Loan flxln_1KOKzdR4ByxURRrFX9A65q40',
+			} ),
+			'admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions&type=charge&filter=advanced&loan_id_is=flxln_1KOKzdR4ByxURRrFX9A65q40'
 		);
 
 		rerender(

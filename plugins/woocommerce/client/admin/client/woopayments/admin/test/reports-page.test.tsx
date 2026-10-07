@@ -19,6 +19,7 @@ import { downloadCSVFile } from '@woocommerce/csv-export';
 /**
  * Internal dependencies
  */
+import { expectPlainClickRoutesInApp } from './helpers/in-app-route-click';
 import { WooPaymentsReportsPage } from '../reports/page';
 import {
 	getWooPaymentsReportsBalanceSummary,
@@ -1202,6 +1203,10 @@ describe( 'WooPaymentsReportsPage', () => {
 		).toHaveAttribute(
 			'href',
 			'http://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions%2Fdetails&id=txn_123&transaction_type=charge'
+		);
+		expectPlainClickRoutesInApp(
+			screen.getByRole( 'link', { name: 'txn_123' } ),
+			'admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions%2Fdetails&id=txn_123&transaction_type=charge'
 		);
 		expect( screen.getByRole( 'link', { name: '99' } ) ).toHaveAttribute(
 			'href',

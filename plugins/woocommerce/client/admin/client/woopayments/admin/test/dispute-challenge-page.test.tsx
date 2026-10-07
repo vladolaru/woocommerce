@@ -30,6 +30,7 @@ import {
 	getTestModeNoticeText,
 	mockAccountMode,
 } from './helpers/test-mode-account';
+import { expectPlainClickRoutesInApp } from './helpers/in-app-route-click';
 
 jest.mock( '@woocommerce/tracks', () => ( {
 	recordEvent: jest.fn(),
@@ -299,6 +300,10 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		expect(
 			screen.queryByRole( 'button', { name: 'Back' } )
 		).not.toBeInTheDocument();
+		expectPlainClickRoutesInApp(
+			screen.getByRole( 'link', { name: 'Cancel' } ),
+			'admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fdisputes%2Fdetails&id=dp_test'
+		);
 	} );
 
 	it( 'should render an actionable evidence form with enabled controls', async () => {
@@ -1562,6 +1567,14 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		).toHaveAttribute(
 			'href',
 			expect.stringContaining( 'path=%2Fwoopayments%2Fdisputes' )
+		);
+		expectPlainClickRoutesInApp(
+			screen.getByRole( 'link', { name: 'Disputes area' } ),
+			'admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fdisputes'
+		);
+		expectPlainClickRoutesInApp(
+			screen.getByRole( 'link', { name: 'Return to disputes' } ),
+			'admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fdisputes'
 		);
 		expect(
 			screen.getByRole( 'heading', { name: 'Useful resources' } )

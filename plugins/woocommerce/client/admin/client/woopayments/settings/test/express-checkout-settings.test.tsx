@@ -405,6 +405,33 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 		).toBe( true );
 	} );
 
+	it( 'adds the loading text to a status region that is already on the page while the method settings load', () => {
+		// The method settings suspend, as while their code chunk loads, so the Suspense fallback shows.
+		mockUsePaymentRequestEnabledSettings.mockImplementation( () => {
+			throw new Promise( () => {} );
+		} );
+
+		const records = recordMutations( () => {
+			render(
+				<WooPaymentsExpressCheckoutSettings methodId="payment_request" />
+			);
+		} );
+
+		const region = screen.getByText( 'Loading WooPayments settings…', {
+			selector: '[aria-live="polite"]',
+		} );
+		expect(
+			wasTextAddedToExistingNode(
+				records,
+				region,
+				'Loading WooPayments settings…'
+			)
+		).toBe( true );
+		expect(
+			screen.queryByRole( 'button', { name: 'Save changes' } )
+		).not.toBeInTheDocument();
+	} );
+
 	it( 'does not render writable controls when settings failed to load', () => {
 		mockUseGetSettings.mockReturnValue( {} );
 

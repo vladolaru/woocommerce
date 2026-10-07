@@ -4977,6 +4977,14 @@ describe( 'WooPaymentsSettingsPage', () => {
 			'src',
 			'https://woocommerce.survey.fm/woopay-disabled-merchants-feedback-triggered'
 		);
+		// The loading message sits in a status region that stays mounted once the form loads.
+		const loadingStatus = within( dialog ).getByRole( 'status' );
+		expect( loadingStatus ).toHaveTextContent( 'Loading feedback form…' );
+		fireEvent.load(
+			within( dialog ).getByTitle( 'WooPay disable feedback' )
+		);
+		expect( loadingStatus ).toBeInTheDocument();
+		expect( loadingStatus.textContent ).toBe( '' );
 	} );
 
 	// Owner decision N-280, a recorded improvement over client 11.1.0: the terms text goes only after a save.
