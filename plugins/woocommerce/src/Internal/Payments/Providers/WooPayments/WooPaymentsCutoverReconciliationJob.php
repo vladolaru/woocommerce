@@ -1530,7 +1530,13 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		}
 		$this->account_service->synchronize_native_payments_state_from_options( false );
 		// Every finalized claim reaches this step on its own site, manual and network ones included, once native owns it.
-		if ( ! $this->preflight_service->ensure_fee_remediation_scheduled() ) {
+		try {
+			$remediation_scheduled = $this->preflight_service->ensure_fee_remediation_scheduled();
+		} catch ( \Throwable $error ) {
+			$this->log_error( 'WooPayments cutover could not schedule the canceled-authorization fee remediation.', array( 'error' => $error->getMessage() ) );
+			$remediation_scheduled = false;
+		}
+		if ( ! $remediation_scheduled ) {
 			$this->defer( $claimed, array( 'financial_migrations_unavailable' ) );
 			return;
 		}

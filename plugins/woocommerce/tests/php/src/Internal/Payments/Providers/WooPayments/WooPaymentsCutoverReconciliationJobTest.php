@@ -1206,11 +1206,15 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Ownership verification defers instead of finishing when the fee remediation cannot be scheduled.
+	 * @testdox Ownership verification defers instead of finishing when the fee remediation cannot be scheduled, or its scheduling throws.
+	 * @testWith [false]
+	 *           [true]
+	 *
+	 * @param bool $throws Whether scheduling throws instead of reporting unavailable.
 	 */
-	public function test_ownership_verification_defers_when_fee_remediation_cannot_be_scheduled(): void {
+	public function test_ownership_verification_defers_when_fee_remediation_cannot_be_scheduled( bool $throws ): void {
 		$scheduling_calls = 0;
-		$preflight        = $this->create_preflight_with_fee_remediation( $scheduling_calls, false );
+		$preflight        = $this->create_preflight_with_fee_remediation( $scheduling_calls, false, $throws );
 		$sut              = $this->create_job( true, $preflight, null, false, $this->create_noop_normalization() );
 
 		$this->assertTrue( $sut->enqueue_manual_deactivation( 'renamed-wcpay/woocommerce-payments.php', false ) );
@@ -1262,23 +1266,29 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 *
 	 * @param int  $scheduling_calls Counter of fee remediation scheduling calls.
 	 * @param bool $schedulable      Whether scheduling succeeds.
+	 * @param bool $throws           Whether scheduling throws.
 	 * @return WooPaymentsCutoverPreflightService
 	 */
-	private function create_preflight_with_fee_remediation( int &$scheduling_calls, bool $schedulable ): WooPaymentsCutoverPreflightService {
-		return new class( $scheduling_calls, $schedulable ) extends WooPaymentsCutoverPreflightService {
+	private function create_preflight_with_fee_remediation( int &$scheduling_calls, bool $schedulable, bool $throws = false ): WooPaymentsCutoverPreflightService {
+		return new class( $scheduling_calls, $schedulable, $throws ) extends WooPaymentsCutoverPreflightService {
 			/** @var int */
 			private int $scheduling_calls;
 
 			/** @var bool */
 			private bool $schedulable;
 
+			/** @var bool */
+			private bool $throws;
+
 			/**
 			 * @param int  $scheduling_calls Counter of fee remediation scheduling calls.
 			 * @param bool $schedulable      Whether scheduling succeeds.
+			 * @param bool $throws           Whether scheduling throws.
 			 */
-			public function __construct( int &$scheduling_calls, bool $schedulable ) {
+			public function __construct( int &$scheduling_calls, bool $schedulable, bool $throws ) {
 				$this->scheduling_calls =& $scheduling_calls;
 				$this->schedulable      = $schedulable;
+				$this->throws           = $throws;
 			}
 
 			/** @return string[] */
@@ -1303,6 +1313,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			/** Count and control the fee remediation scheduling. */
 			public function ensure_fee_remediation_scheduled(): bool {
 				++$this->scheduling_calls;
+				if ( $this->throws ) {
+					throw new \RuntimeException( 'Controlled scheduling failure.' );
+				}
 				return $this->schedulable;
 			}
 
