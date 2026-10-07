@@ -89,6 +89,7 @@ describe( 'WooPayments settings store', () => {
 		const statuses = {
 			card_payments: { status: 'active', requirements: [] },
 		};
+		// The client's wrapped save response (client 11.1.0 `client/data/settings/actions.js:190-200`).
 		store.apiFetch.mockResolvedValueOnce( {
 			data: {
 				woopay_last_disable_date: '2026-06-20',
@@ -121,12 +122,34 @@ describe( 'WooPayments settings store', () => {
 		] );
 	} );
 
+	it( 'reports the save as pending until the REST request settles', async () => {
+		const store = await setupStore();
+		await loadSettings( store, { is_wcpay_enabled: true } );
+		let settleSave: ( response: unknown ) => void = () => undefined;
+		store.apiFetch.mockReturnValueOnce(
+			new Promise( ( resolve ) => {
+				settleSave = resolve;
+			} )
+		);
+
+		const save = store.dispatch().saveSettings();
+		await Promise.resolve();
+
+		expect( store.select().isSavingSettings() ).toBe( true );
+
+		settleSave( { is_wcpay_enabled: true } );
+		await expect( save ).resolves.toBe( true );
+
+		expect( store.select().isSavingSettings() ).toBe( false );
+	} );
+
 	it( 'accepts an unwrapped REST settings response when saving', async () => {
 		const store = await setupStore();
 		await loadSettings( store, { is_wcpay_enabled: true } );
 		const statuses = {
 			card_payments: { status: 'active', requirements: [] },
 		};
+		// Core answers the save with the settings themselves (`WooPaymentsMerchantRestController::update_native_settings()`).
 		store.apiFetch.mockResolvedValueOnce( {
 			payment_method_statuses: statuses,
 		} );
@@ -142,6 +165,7 @@ describe( 'WooPayments settings store', () => {
 	it( 'keeps the submitted WooPay choice when the save response reports WooPay off for an ineligible account', async () => {
 		const store = await setupStore();
 		await loadSettings( store, { is_woopay_enabled: true } );
+		// Core reports WooPay as on only while the account is eligible (`WooPaymentsSettingsService::get_settings()`).
 		store.apiFetch.mockResolvedValueOnce( {
 			data: { is_woopay_enabled: false },
 		} );
@@ -157,6 +181,8 @@ describe( 'WooPayments settings store', () => {
 		const store = await setupStore();
 		await loadSettings( store, { is_wcpay_enabled: true } );
 		store.dispatch().updateIsDebugLogEnabled( true );
+		// Client 11.1.0 `client/data/settings/__tests__/actions.test.js:220-236`; core's rejected-field errors carry the
+		// same `data.details` map (`WooPaymentsSettingsService`, `wcpay_server_error`).
 		const error = {
 			server_error:
 				'The statement descriptor contains invalid characters.',
@@ -185,6 +211,8 @@ describe( 'WooPayments settings store', () => {
 	it( 'shows the raw server error notice when saving fails without field-level details', async () => {
 		const store = await setupStore();
 		await loadSettings( store, { is_wcpay_enabled: true } );
+		// Core's account-update rejection body is `{ server_error }` (`update_native_settings()`); an empty details map
+		// counts as no field details.
 		store.apiFetch.mockRejectedValueOnce( {
 			server_error: 'The request could not be completed.',
 			data: { details: {} },
