@@ -148,9 +148,10 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		$roots_for->setAccessible( true );
 
 		// activate_plugin() and deactivate_plugins() fire the lifecycle hooks in any request that calls them: wp-admin,
-		// admin-ajax, the wp/v2/plugins and wc-admin REST routes, Action Scheduler (cron) and WP-CLI.
+		// admin-ajax, the wp/v2/plugins and wc-admin REST routes, Action Scheduler (cron), WP-CLI, and XML-RPC (front),
+		// where Jetpack's remote plugin management runs.
 		foreach ( array( NativePaymentsState::AVAILABLE, NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ) as $state ) {
-			foreach ( array( 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
+			foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
 				$this->assertContains( WooPaymentsCutoverPluginLifecycleListener::class, $roots_for->invoke( $sut, $state, $request ), "The $state $request request must load the plugin lifecycle listener." );
 			}
 			// The controller owns the admin notices and the click, so it stays on admin requests.
@@ -270,7 +271,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	/** @return array<string,array{string,string,array<int,string>}> */
 	public static function page_request_cron_root_gaps(): array {
 		return array(
-			'available front' => array( NativePaymentsState::AVAILABLE, 'front', array( WooPaymentsCutoverReconciliationJob::class, WooPaymentsCutoverPluginLifecycleListener::class ) ),
+			'available front' => array( NativePaymentsState::AVAILABLE, 'front', array( WooPaymentsCutoverReconciliationJob::class ) ),
 			'active front'    => array(
 				NativePaymentsState::ACTIVE,
 				'front',
@@ -279,7 +280,6 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 					WooPaymentsCutoverReconciliationJob::class,
 					self::WCPAY . 'WooPaymentsCanceledAuthorizationFeeRemediationService',
 					self::WCPAY . 'WooPaymentsLoanApprovedNote',
-					WooPaymentsCutoverPluginLifecycleListener::class,
 					self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
 					self::WCPAY . 'WooPaymentsSellingLocationsFraudSync',
 				),
@@ -459,7 +459,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	 * The recording container clamps the stored tier with its own copy of the rule; the real clamp is checked by
 	 * NativePaymentsStateTest::test_get_state_clamps_connected_tiers_while_plugin_is_active.
 	 *
-	 * @testdox A plugin-owned site with an available effective tier registers nothing, not even shadow mode, by default.
+	 * @testdox A plugin-owned site with an available effective tier registers only the plugin lifecycle listener, not shadow mode, by default.
 	 */
 	public function test_plugin_owner_registers_no_shadow_mode_by_default(): void {
 		$container = $this->make_container( NativePaymentsState::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
@@ -467,7 +467,8 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 		$sut->register( $container, '__return_false' );
 
-		$this->assertSame( $this->expected_events( array() ), $container->events );
+		// A plugin deactivated over XML-RPC (Jetpack remote management, a front request) must still start the switch.
+		$this->assertSame( $this->expected_events( array( WooPaymentsCutoverPluginLifecycleListener::class ) ), $container->events );
 		$this->assertNotContains( NativePaymentsShadowMode::class, $container->resolved );
 	}
 
@@ -479,7 +480,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 		$sut->register( $container, '__return_false' );
 
-		$this->assertSame( $this->expected_events( array( NativePaymentsShadowMode::class ) ), $container->events );
+		$this->assertSame( $this->expected_events( array( WooPaymentsCutoverPluginLifecycleListener::class, NativePaymentsShadowMode::class ) ), $container->events );
 	}
 
 	/**
