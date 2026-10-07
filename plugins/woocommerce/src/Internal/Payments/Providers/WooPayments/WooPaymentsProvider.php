@@ -332,6 +332,9 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 				// finishes on the init of any request; each must drop the stored checkout appearance version, as the client's
 				// hooks on every request do (client 11.1.0 `includes/class-wc-payments.php:378-383`).
 				$matrix[ $state ][ $request ][] = WooPaymentsFrontendStylesService::class;
+				// The client refreshes the account and syncs the store setup on its own update (client 11.1.0
+				// `includes/class-wc-payments-account.php:143-147`); for native, a WooCommerce update is that event.
+				$matrix[ $state ][ $request ][] = WooPaymentsWooCommerceUpdateListener::class;
 				// The gateway settings can be written directly (classic toggle, REST, WP-CLI); keep the tier in step.
 				if ( 'front' !== $request ) {
 					$matrix[ $state ][ $request ][] = WooPaymentsGatewaySettingsSynchronizer::class;

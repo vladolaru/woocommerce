@@ -28,6 +28,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPayPreflightGuard;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookReliabilityService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooCommerceUpdateListener;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow\NativePaymentsShadowMode;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use ReflectionMethod;
@@ -156,6 +157,24 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 			foreach ( array( 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
 				$this->assertNotContains( WooPaymentsCutoverController::class, $roots_for->invoke( $sut, $state, $request ), "The $state $request request must not resolve the cutover controller." );
 			}
+		}
+	}
+
+	/**
+	 * @testdox The WooCommerce update listener loads on every request of a connected or active store, since an update finishes on the init of any request.
+	 */
+	public function test_woocommerce_update_listener_loads_on_every_connected_request(): void {
+		$sut       = $this->make_bootstrap();
+		$roots_for = new ReflectionMethod( NativePaymentsBootstrap::class, 'roots_for' );
+		$roots_for->setAccessible( true );
+
+		foreach ( array( NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ) as $state ) {
+			foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
+				$this->assertContains( WooPaymentsWooCommerceUpdateListener::class, $roots_for->invoke( $sut, $state, $request ), "The $state $request request must load the WooCommerce update listener." );
+			}
+		}
+		foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
+			$this->assertNotContains( WooPaymentsWooCommerceUpdateListener::class, $roots_for->invoke( $sut, NativePaymentsState::AVAILABLE, $request ), "A store without an account has nothing to refresh on a $request request." );
 		}
 	}
 

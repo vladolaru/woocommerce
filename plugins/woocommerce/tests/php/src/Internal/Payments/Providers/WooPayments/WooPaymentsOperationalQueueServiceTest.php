@@ -96,7 +96,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$service->register();
 
 		$this->assertSame( 10, has_action( 'wcpay_store_setup_sync', array( $service, 'handle_wcpay_store_setup_sync' ) ) );
-		// Native never fires the plugin's update hook (no plugin version); the recurring sync carries the store setup.
+		// Native never fires the plugin's update hook (no plugin version); a WooCommerce update queues the sync instead.
 		$this->assertFalse( has_action( 'woocommerce_woocommerce_payments_updated', array( $service, 'handle_wcpay_store_setup_sync' ) ) );
 		$this->assertSame( 10, has_action( 'wcpay_update_saved_payment_method', array( $service, 'handle_wcpay_update_saved_payment_method' ) ) );
 		$this->assertSame( 10, has_action( 'wcpay_add_fee_breakdown_to_order_notes', array( $service, 'handle_wcpay_add_fee_breakdown_to_order_notes' ) ) );
@@ -817,6 +817,44 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 				)
 			)
 		);
+	}
+
+	/**
+	 * @testdox A WooCommerce update queues one store setup sync beside the recurring one, and that sync sends the snapshot.
+	 */
+	public function test_queue_store_setup_sync_adds_one_update_sync(): void {
+		$api_client = $this->create_api_client( array( 'is_available', 'send_store_setup' ) );
+		$api_client->method( 'is_available' )->willReturn( true );
+		$api_client->expects( $this->once() )->method( 'send_store_setup' )->willReturn( array( 'result' => 'success' ) );
+		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ), new WooPaymentsActionSchedulerService(), $api_client );
+		$service->register();
+		$service->schedule_recurring_actions();
+
+		$service->queue_store_setup_sync();
+		$service->queue_store_setup_sync();
+
+		$pending = as_get_scheduled_actions(
+			array(
+				'hook'   => WooPaymentsOperationalQueueService::STORE_SETUP_SYNC_ACTION,
+				'group'  => WooPaymentsActionSchedulerService::GROUP_ID,
+				'status' => ActionScheduler_Store::STATUS_PENDING,
+			),
+			'ids'
+		);
+		$this->assertCount( 2, $pending, 'The recurring sync and one sync for the update, however often the update asks.' );
+		$update_sync = as_get_scheduled_actions(
+			array(
+				'hook'   => WooPaymentsOperationalQueueService::STORE_SETUP_SYNC_ACTION,
+				'args'   => array( 'woocommerce_updated' ),
+				'group'  => WooPaymentsActionSchedulerService::GROUP_ID,
+				'status' => ActionScheduler_Store::STATUS_PENDING,
+			),
+			'ids'
+		);
+		$this->assertCount( 1, $update_sync );
+		$update_sync = array_values( $update_sync );
+
+		\ActionScheduler::store()->fetch_action( (string) $update_sync[0] )->execute();
 	}
 
 	/**

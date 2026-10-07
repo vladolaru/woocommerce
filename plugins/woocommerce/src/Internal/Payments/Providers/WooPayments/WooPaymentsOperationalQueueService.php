@@ -553,6 +553,16 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Queue one store setup sync for a WooCommerce update, as the client syncs on its own update (client 11.1.0
+	 * `includes/class-wc-payments-account.php:147`).
+	 *
+	 * The update sync carries its own argument, so the always-pending recurring sync does not absorb it.
+	 */
+	public function queue_store_setup_sync(): void {
+		$this->scheduler->schedule_job( self::STORE_SETUP_SYNC_ACTION, array( 'woocommerce_updated' ) );
+	}
+
+	/**
 	 * Send the current store setup state to the WooPayments API.
 	 *
 	 * @internal
