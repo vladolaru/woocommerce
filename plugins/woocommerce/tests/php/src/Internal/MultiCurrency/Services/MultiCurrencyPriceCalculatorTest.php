@@ -69,7 +69,7 @@ class MultiCurrencyPriceCalculatorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should charge the price the async renderer shows: $label.
+	 * @testdox Should return the price the async renderer shows: $label.
 	 *
 	 * @dataProvider rendered_price_provider
 	 *
@@ -109,6 +109,17 @@ class MultiCurrencyPriceCalculatorTest extends WC_Unit_Test_Case {
 			'zero-decimal currency'            => array( 'zero-decimal currency', 'JPY', 151.0, '0', 0.0, '10.50', 'product', true, '1586' ),
 			'charm below zero clamps to zero'  => array( 'charm below zero clamps to zero', 'GBP', 0.5, '0', -1.0, '1.00', 'product', true, '0.00' ),
 			'rate written with an exponent'    => array( 'rate written with an exponent', 'BTC', 1e-7, '0', 0.0, '123456789', 'product', true, '12.35' ),
+			// Step boundaries, run through the client renderer: a real excess, however small, takes the next step; float noise does not.
+			'excess above a 0.01 step'         => array( 'excess above a 0.01 step', 'GBP', 0.10000000001, '0.01', 0.0, '3.00', 'product', true, '0.31' ),
+			'excess above a 0.10 step'         => array( 'excess above a 0.10 step', 'GBP', 0.1000000001, '0.1', 0.0, '3.00', 'product', true, '0.40' ),
+			'excess above a 1 step'            => array( 'excess above a 1 step', 'GBP', 0.3333333334, '1', 0.0, '3.00', 'product', true, '2.00' ),
+			'excess above a 100 step'          => array( 'excess above a 100 step', 'GBP', 0.3333333334, '100', 0.0, '300.00', 'product', true, '200.00' ),
+			'excess above a 100 step, JPY'     => array( 'excess above a 100 step, JPY', 'JPY', 150.000000001, '100', 0.0, '100.00', 'product', true, '15100' ),
+			'JPY with a 100 step'              => array( 'JPY with a 100 step', 'JPY', 151.0, '100', 0.0, '10.50', 'product', true, '1600' ),
+			'just below a 0.10 step'           => array( 'just below a 0.10 step', 'GBP', 0.1, '0.1', 0.0, '2.99', 'product', true, '0.30' ),
+			'large exact quotient, 0.01 step'  => array( 'large exact quotient, 0.01 step', 'GBP', 0.3, '0.01', 0.0, '1000000.00', 'product', true, '300000.00' ),
+			'large quotient with an excess'    => array( 'large quotient with an excess', 'GBP', 0.7, '0.01', 0.0, '999999.99', 'product', true, '700000.00' ),
+			'exact 0.05 step'                  => array( 'exact 0.05 step', 'GBP', 0.7, '0.05', 0.0, '10.50', 'product', true, '7.35' ),
 		);
 	}
 

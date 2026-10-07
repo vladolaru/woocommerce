@@ -21,6 +21,12 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 class MultiCurrencyPriceCalculator {
 
 	/**
+	 * Relative float noise tolerated when ceiling to a rounding step: about 45 units in the last place, far above the few that a
+	 * multiplication and a division add, and far below any excess a stored rate can express.
+	 */
+	private const STEP_NOISE = 1e-14;
+
+	/**
 	 * Localization service.
 	 *
 	 * @var MultiCurrencyLocalizationInterface
@@ -144,10 +150,17 @@ class MultiCurrencyPriceCalculator {
 			return $price;
 		}
 
-		// Round the quotient before ceiling so binary float noise cannot add a step: 3.00 at a 0.1 rate is 0.30000000000000004 / 0.1 =
-		// 3.0000000000000004, which would ceil to 0.40 where the async renderer's exact decimals show 0.30 (better than the client,
-		// whose float ceil has the same split; includes/multi-currency/MultiCurrency.php:1695-1700).
-		return ceil( round( $price / $rounding, 8 ) ) * $rounding;
+		// The async renderer ceils on exact decimals; floats add a few units of the last place, so 3.00 at a 0.1 rate gives
+		// 0.30000000000000004 / 0.1 = 3.0000000000000004 and a plain ceil charges 0.40 where 0.30 was shown (the client's float ceil has
+		// the same split; includes/multi-currency/MultiCurrency.php:1695-1700). Treat a quotient within float noise of a whole step as
+		// that step; any larger excess, however small, still takes the next step, as on the renderer.
+		$quotient = $price / $rounding;
+		$nearest  = round( $quotient );
+		if ( abs( $quotient - $nearest ) <= max( 1.0, abs( $quotient ) ) * self::STEP_NOISE ) {
+			$quotient = $nearest;
+		}
+
+		return ceil( $quotient ) * $rounding;
 	}
 
 	/**
