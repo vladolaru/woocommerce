@@ -280,6 +280,8 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 						WooPaymentsExpressCheckoutController::class,
 						WooPaymentsExpressCheckoutStoreApiExtension::class,
 						WooPaymentsExpressCheckoutCurrencyGuard::class,
+						// The shopper scripts post Tracks events to its REST route.
+						WooPaymentsFrontendTrackingController::class,
 					)
 				),
 				'cron'  => array_merge(

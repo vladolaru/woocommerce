@@ -349,6 +349,18 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertContains( self::WCPAY . 'WooPaymentsExpressCheckoutStoreApiExtension', $matrix[ NativePaymentsState::ACTIVE ]['rest'] );
 	}
 
+	/**
+	 * The native shopper scripts post their Tracks events to the REST route this controller registers, in a request
+	 * of its own; without the controller among the REST roots the route does not exist there.
+	 *
+	 * @testdox Registers the shopper Tracks controller on active REST requests, where its route is served.
+	 */
+	public function test_provider_matrix_serves_the_shopper_tracks_route_on_active_rest(): void {
+		$matrix = WooPaymentsProvider::get_bootstrap_root_matrix();
+
+		$this->assertContains( self::WCPAY . 'WooPaymentsFrontendTrackingController', $matrix[ NativePaymentsState::ACTIVE ]['rest'] );
+	}
+
 	/** @testdox Registers the WooPay preflight guard only for active REST requests. */
 	public function test_provider_matrix_bounds_woopay_preflight_guard_to_active_rest(): void {
 		$matrix = WooPaymentsProvider::get_bootstrap_root_matrix();
