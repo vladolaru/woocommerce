@@ -5,11 +5,11 @@ import { Card, CardBody } from '@wordpress/components';
 import { lazy, Suspense, useEffect } from '@wordpress/element';
 import { decodeEntities } from '@wordpress/html-entities';
 import { __, sprintf } from '@wordpress/i18n';
+import type { ReactNode } from 'react';
 
 /**
  * Internal dependencies
  */
-import { registerSettingsPaymentsProviderRoute } from '~/settings-payments/provider-routes';
 import { ProviderRouteLoading } from '~/settings-payments/components/provider-route-loading';
 import { getSettingsPaymentsProviderRouteUrl } from './utils';
 import '../tracks-runtime';
@@ -322,168 +322,132 @@ const WooPaymentsReportsRoute = () => {
 	return <WooPaymentsReportsUnavailable />;
 };
 
-registerSettingsPaymentsProviderRoute( {
-	id: 'woopayments-settings',
-	path: '/woopayments/settings',
-	order: 90,
-	element: (
-		<Suspense fallback={ <LoadingFallback /> }>
-			<WooPaymentsSettingsChunk />
-		</Suspense>
-	),
-} );
-
-registerSettingsPaymentsProviderRoute( {
-	id: 'woopayments-express-checkout-settings',
-	path: '/woopayments/settings/express-checkout/:methodId',
-	order: 91,
-	element: (
-		<Suspense fallback={ <LoadingFallback /> }>
-			<WooPaymentsExpressCheckoutSettingsChunk />
-		</Suspense>
-	),
-} );
-
-registerSettingsPaymentsProviderRoute( {
-	id: 'woopayments-fraud-protection-settings',
-	path: '/woopayments/settings/fraud-protection',
-	order: 92,
-	element: (
-		<Suspense fallback={ <LoadingFallback /> }>
-			<WooPaymentsFraudProtectionSettingsChunk />
-		</Suspense>
-	),
-} );
-
-registerSettingsPaymentsProviderRoute( {
-	id: 'woopayments-overview',
-	path: '/woopayments/overview',
-	order: 100,
-	element: (
-		<WooPaymentsProtectedRoute path="/woopayments/overview">
-			<WooPaymentsOverviewChunk />
-		</WooPaymentsProtectedRoute>
-	),
-} );
-
-registerSettingsPaymentsProviderRoute( {
-	id: 'woopayments-payouts',
-	path: '/woopayments/payouts',
-	order: 110,
-	element: (
-		<WooPaymentsProtectedRoute path="/woopayments/payouts">
-			<WooPaymentsPayoutsChunk />
-		</WooPaymentsProtectedRoute>
-	),
-} );
-
-registerSettingsPaymentsProviderRoute( {
-	id: 'woopayments-payout-details',
-	path: '/woopayments/payouts/details',
-	order: 111,
-	element: (
-		<WooPaymentsProtectedRoute path="/woopayments/payouts/details">
-			<WooPaymentsPayoutDetailsChunk />
-		</WooPaymentsProtectedRoute>
-	),
-} );
-
-registerSettingsPaymentsProviderRoute( {
-	id: 'woopayments-transactions',
-	path: '/woopayments/transactions',
-	order: 120,
-	element: (
-		<WooPaymentsProtectedRoute path="/woopayments/transactions">
-			<WooPaymentsTransactionsChunk />
-		</WooPaymentsProtectedRoute>
-	),
-} );
-
-registerSettingsPaymentsProviderRoute( {
-	id: 'woopayments-transaction-details',
-	path: '/woopayments/transactions/details',
-	order: 121,
-	element: (
-		<WooPaymentsProtectedRoute path="/woopayments/transactions/details">
-			<WooPaymentsTransactionDetailsChunk />
-		</WooPaymentsProtectedRoute>
-	),
-} );
-
-registerSettingsPaymentsProviderRoute( {
-	id: 'woopayments-reports',
-	path: '/woopayments/reports',
-	order: 122,
-	element: (
-		<>
-			<WooPaymentsDocumentTitle path="/woopayments/reports" />
-			<WooPaymentsReportsRoute />
-		</>
-	),
-} );
-
-registerSettingsPaymentsProviderRoute( {
-	id: 'woopayments-disputes',
-	path: '/woopayments/disputes',
-	order: 123,
-	element: (
-		<WooPaymentsProtectedRoute path="/woopayments/disputes">
-			<WooPaymentsDisputesChunk />
-		</WooPaymentsProtectedRoute>
-	),
-} );
-
-registerSettingsPaymentsProviderRoute( {
-	id: 'woopayments-dispute-details',
-	path: '/woopayments/disputes/details',
-	order: 124,
-	element: (
-		<WooPaymentsProtectedRoute path="/woopayments/disputes/details">
-			<WooPaymentsDisputeDetailsChunk />
-		</WooPaymentsProtectedRoute>
-	),
-} );
-
-registerSettingsPaymentsProviderRoute( {
-	id: 'woopayments-dispute-challenge',
-	path: '/woopayments/disputes/challenge',
-	order: 125,
-	element: (
-		<WooPaymentsProtectedRoute path="/woopayments/disputes/challenge">
-			<WooPaymentsDisputeChallengeChunk />
-		</WooPaymentsProtectedRoute>
-	),
-} );
-
-registerSettingsPaymentsProviderRoute( {
-	id: 'woopayments-card-readers',
-	path: '/woopayments/card-readers',
-	order: 126,
-	element: (
-		<WooPaymentsProtectedRoute path="/woopayments/card-readers">
-			<WooPaymentsCardReadersChunk />
-		</WooPaymentsProtectedRoute>
-	),
-} );
-
-registerSettingsPaymentsProviderRoute( {
-	id: 'woopayments-capital',
-	path: '/woopayments/loans',
-	order: 127,
-	element: (
-		<WooPaymentsProtectedRoute path="/woopayments/loans">
-			<WooPaymentsCapitalChunk />
-		</WooPaymentsProtectedRoute>
-	),
-} );
-
-registerSettingsPaymentsProviderRoute( {
-	id: 'woopayments-documents',
-	path: '/woopayments/documents',
-	order: 128,
-	element: (
-		<WooPaymentsProtectedRoute path="/woopayments/documents">
-			<WooPaymentsDocumentsChunk />
-		</WooPaymentsProtectedRoute>
-	),
-} );
+/**
+ * The WooPayments routes of the Payments settings app, which reads them once this chunk loads, in this order.
+ */
+export const woopaymentsProviderRoutes: Array< {
+	path: string;
+	element: ReactNode;
+} > = [
+	{
+		path: '/woopayments/settings',
+		element: (
+			<Suspense fallback={ <LoadingFallback /> }>
+				<WooPaymentsSettingsChunk />
+			</Suspense>
+		),
+	},
+	{
+		path: '/woopayments/settings/express-checkout/:methodId',
+		element: (
+			<Suspense fallback={ <LoadingFallback /> }>
+				<WooPaymentsExpressCheckoutSettingsChunk />
+			</Suspense>
+		),
+	},
+	{
+		path: '/woopayments/settings/fraud-protection',
+		element: (
+			<Suspense fallback={ <LoadingFallback /> }>
+				<WooPaymentsFraudProtectionSettingsChunk />
+			</Suspense>
+		),
+	},
+	{
+		path: '/woopayments/overview',
+		element: (
+			<WooPaymentsProtectedRoute path="/woopayments/overview">
+				<WooPaymentsOverviewChunk />
+			</WooPaymentsProtectedRoute>
+		),
+	},
+	{
+		path: '/woopayments/payouts',
+		element: (
+			<WooPaymentsProtectedRoute path="/woopayments/payouts">
+				<WooPaymentsPayoutsChunk />
+			</WooPaymentsProtectedRoute>
+		),
+	},
+	{
+		path: '/woopayments/payouts/details',
+		element: (
+			<WooPaymentsProtectedRoute path="/woopayments/payouts/details">
+				<WooPaymentsPayoutDetailsChunk />
+			</WooPaymentsProtectedRoute>
+		),
+	},
+	{
+		path: '/woopayments/transactions',
+		element: (
+			<WooPaymentsProtectedRoute path="/woopayments/transactions">
+				<WooPaymentsTransactionsChunk />
+			</WooPaymentsProtectedRoute>
+		),
+	},
+	{
+		path: '/woopayments/transactions/details',
+		element: (
+			<WooPaymentsProtectedRoute path="/woopayments/transactions/details">
+				<WooPaymentsTransactionDetailsChunk />
+			</WooPaymentsProtectedRoute>
+		),
+	},
+	{
+		path: '/woopayments/reports',
+		element: (
+			<>
+				<WooPaymentsDocumentTitle path="/woopayments/reports" />
+				<WooPaymentsReportsRoute />
+			</>
+		),
+	},
+	{
+		path: '/woopayments/disputes',
+		element: (
+			<WooPaymentsProtectedRoute path="/woopayments/disputes">
+				<WooPaymentsDisputesChunk />
+			</WooPaymentsProtectedRoute>
+		),
+	},
+	{
+		path: '/woopayments/disputes/details',
+		element: (
+			<WooPaymentsProtectedRoute path="/woopayments/disputes/details">
+				<WooPaymentsDisputeDetailsChunk />
+			</WooPaymentsProtectedRoute>
+		),
+	},
+	{
+		path: '/woopayments/disputes/challenge',
+		element: (
+			<WooPaymentsProtectedRoute path="/woopayments/disputes/challenge">
+				<WooPaymentsDisputeChallengeChunk />
+			</WooPaymentsProtectedRoute>
+		),
+	},
+	{
+		path: '/woopayments/card-readers',
+		element: (
+			<WooPaymentsProtectedRoute path="/woopayments/card-readers">
+				<WooPaymentsCardReadersChunk />
+			</WooPaymentsProtectedRoute>
+		),
+	},
+	{
+		path: '/woopayments/loans',
+		element: (
+			<WooPaymentsProtectedRoute path="/woopayments/loans">
+				<WooPaymentsCapitalChunk />
+			</WooPaymentsProtectedRoute>
+		),
+	},
+	{
+		path: '/woopayments/documents',
+		element: (
+			<WooPaymentsProtectedRoute path="/woopayments/documents">
+				<WooPaymentsDocumentsChunk />
+			</WooPaymentsProtectedRoute>
+		),
+	},
+];

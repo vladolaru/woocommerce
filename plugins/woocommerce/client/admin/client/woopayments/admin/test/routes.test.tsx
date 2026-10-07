@@ -10,10 +10,7 @@ import apiFetch from '@wordpress/api-fetch';
 /**
  * Internal dependencies
  */
-import {
-	getSettingsPaymentsProviderRoutes,
-	resetSettingsPaymentsProviderRoutesForTesting,
-} from '~/settings-payments/provider-routes';
+import { woopaymentsProviderRoutes } from '../routes';
 import { SettingsPaymentsWooPaymentsWrapper } from '~/settings-payments';
 
 jest.mock( '@wordpress/api-fetch', () => jest.fn() );
@@ -89,7 +86,7 @@ const setAdminRouteAvailability = (
 };
 
 const getRouteElement = ( routePath: string ) => {
-	const route = getSettingsPaymentsProviderRoutes().find(
+	const route = woopaymentsProviderRoutes.find(
 		( { path: registeredPath } ) => registeredPath === routePath
 	);
 
@@ -120,11 +117,6 @@ const expectRouteUnavailable = ( routePath: string ) => {
 };
 
 describe( 'WooPayments Settings Payments routes', () => {
-	beforeAll( async () => {
-		resetSettingsPaymentsProviderRoutesForTesting();
-		await import( '../routes' );
-	} );
-
 	beforeEach( () => {
 		window.wcSettings = {
 			adminUrl: 'http://example.com/wp-admin',
@@ -137,104 +129,32 @@ describe( 'WooPayments Settings Payments routes', () => {
 		mockApiFetch.mockReset();
 	} );
 
-	afterAll( () => {
-		resetSettingsPaymentsProviderRoutesForTesting();
-	} );
-
-	it( 'registers WooPayments under the Settings Payments route seam', () => {
-		const routes = getSettingsPaymentsProviderRoutes();
-
-		expect( routes ).toHaveLength( 15 );
+	it( 'lists the WooPayments routes the Payments settings app reads, in order', () => {
 		expect(
-			routes.map( ( { id, path: routePath, order } ) => ( {
-				id,
-				path: routePath,
-				order,
-			} ) )
+			woopaymentsProviderRoutes.map(
+				( { path: routePath } ) => routePath
+			)
 		).toEqual( [
-			{
-				id: 'woopayments-settings',
-				path: '/woopayments/settings',
-				order: 90,
-			},
-			{
-				id: 'woopayments-express-checkout-settings',
-				path: '/woopayments/settings/express-checkout/:methodId',
-				order: 91,
-			},
-			{
-				id: 'woopayments-fraud-protection-settings',
-				path: '/woopayments/settings/fraud-protection',
-				order: 92,
-			},
-			{
-				id: 'woopayments-overview',
-				path: '/woopayments/overview',
-				order: 100,
-			},
-			{
-				id: 'woopayments-payouts',
-				path: '/woopayments/payouts',
-				order: 110,
-			},
-			{
-				id: 'woopayments-payout-details',
-				path: '/woopayments/payouts/details',
-				order: 111,
-			},
-			{
-				id: 'woopayments-transactions',
-				path: '/woopayments/transactions',
-				order: 120,
-			},
-			{
-				id: 'woopayments-transaction-details',
-				path: '/woopayments/transactions/details',
-				order: 121,
-			},
-			{
-				id: 'woopayments-reports',
-				path: '/woopayments/reports',
-				order: 122,
-			},
-			{
-				id: 'woopayments-disputes',
-				path: '/woopayments/disputes',
-				order: 123,
-			},
-			{
-				id: 'woopayments-dispute-details',
-				path: '/woopayments/disputes/details',
-				order: 124,
-			},
-			{
-				id: 'woopayments-dispute-challenge',
-				path: '/woopayments/disputes/challenge',
-				order: 125,
-			},
-			{
-				id: 'woopayments-card-readers',
-				path: '/woopayments/card-readers',
-				order: 126,
-			},
-			{
-				id: 'woopayments-capital',
-				path: '/woopayments/loans',
-				order: 127,
-			},
-			{
-				id: 'woopayments-documents',
-				path: '/woopayments/documents',
-				order: 128,
-			},
+			'/woopayments/settings',
+			'/woopayments/settings/express-checkout/:methodId',
+			'/woopayments/settings/fraud-protection',
+			'/woopayments/overview',
+			'/woopayments/payouts',
+			'/woopayments/payouts/details',
+			'/woopayments/transactions',
+			'/woopayments/transactions/details',
+			'/woopayments/reports',
+			'/woopayments/disputes',
+			'/woopayments/disputes/details',
+			'/woopayments/disputes/challenge',
+			'/woopayments/card-readers',
+			'/woopayments/loans',
+			'/woopayments/documents',
 		] );
-		routes.forEach( ( route ) => {
+		woopaymentsProviderRoutes.forEach( ( route ) => {
 			expect( route.element ).toBeDefined();
 		} );
-		expect(
-			routes.some( ( route ) => /^\/payments\//.test( route.path ) )
-		).toBe( false );
-		expect( JSON.stringify( routes ) ).not.toContain(
+		expect( JSON.stringify( woopaymentsProviderRoutes ) ).not.toContain(
 			'wc-pay-welcome-page'
 		);
 	} );
@@ -252,7 +172,7 @@ describe( 'WooPayments Settings Payments routes', () => {
 			},
 		};
 
-		const route = getSettingsPaymentsProviderRoutes().find(
+		const route = woopaymentsProviderRoutes.find(
 			( { path: routePath } ) => routePath === '/woopayments/reports'
 		);
 
@@ -531,7 +451,7 @@ describe( 'WooPayments Settings Payments routes', () => {
 				data: [],
 			} );
 
-		const route = getSettingsPaymentsProviderRoutes().find(
+		const route = woopaymentsProviderRoutes.find(
 			( { path: routePath } ) => routePath === '/woopayments/loans'
 		);
 

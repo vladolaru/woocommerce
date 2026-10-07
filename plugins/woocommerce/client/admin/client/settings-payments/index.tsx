@@ -22,7 +22,6 @@ import { Header } from './components/header/header';
 import { BackButton } from './components/buttons/back-button';
 import { ListPlaceholder } from '~/settings-payments/components/list-placeholder';
 import { ProviderRouteLoading } from '~/settings-payments/components/provider-route-loading';
-import { getSettingsPaymentsProviderRoutes } from '~/settings-payments/provider-routes';
 import { WOOPAYMENTS_SETTINGS_HEADING_ID } from '~/settings-payments/constants';
 import './settings-payments-main.scss';
 
@@ -342,8 +341,10 @@ export const SettingsPaymentsChequeWrapper = () =>
 		chunkComponent: SettingsPaymentsChequeChunk,
 	} );
 
-let nativeProviderRoutesLoaded = false;
-let nativeProviderRoutesRequest: Promise< void > | undefined;
+type NativeProviderRoute = { path: string; element: ReactNode };
+
+let nativeProviderRoutes: NativeProviderRoute[] | undefined;
+let nativeProviderRoutesRequest: Promise< NativeProviderRoute[] > | undefined;
 
 /**
  * Loads the Core-owned WooPayments routes once, only when a Payments path needs them.
@@ -351,10 +352,12 @@ let nativeProviderRoutesRequest: Promise< void > | undefined;
 const loadNativeProviderRoutes = () => {
 	if ( ! nativeProviderRoutesRequest ) {
 		nativeProviderRoutesRequest = import(
-			/* webpackChunkName: "settings-payments-woopayments-routes" */ './register-provider-routes'
+			/* webpackChunkName: "settings-payments-woopayments-routes" */ '~/woopayments/admin/routes'
 		)
-			.then( () => {
-				nativeProviderRoutesLoaded = true;
+			.then( ( { woopaymentsProviderRoutes } ) => {
+				nativeProviderRoutes = woopaymentsProviderRoutes;
+
+				return woopaymentsProviderRoutes;
 			} )
 			.catch( ( error ) => {
 				// Let the next mount try again.
@@ -377,13 +380,12 @@ const needsNativeProviderRoutes = ( pathname: string ) =>
 const SettingsPaymentsRoutes = () => {
 	// The router's location also updates on in-app navigation, so this covers direct loads and pushes alike.
 	const { pathname } = useLocation();
-	const [ hasNativeProviderRoutes, setHasNativeProviderRoutes ] = useState(
-		nativeProviderRoutesLoaded
-	);
+	const [ providerRoutes, setProviderRoutes ] =
+		useState( nativeProviderRoutes );
 	// A failed load (offline, broken build) falls back to the other routes instead of loading forever.
 	const [ hasLoadFailed, setHasLoadFailed ] = useState( false );
 	const isLoadingNativeProviderRoutes =
-		! hasNativeProviderRoutes &&
+		! providerRoutes &&
 		! hasLoadFailed &&
 		needsNativeProviderRoutes( pathname );
 
@@ -394,9 +396,9 @@ const SettingsPaymentsRoutes = () => {
 
 		let isMounted = true;
 		loadNativeProviderRoutes().then(
-			() => {
+			( routes ) => {
 				if ( isMounted ) {
-					setHasNativeProviderRoutes( true );
+					setProviderRoutes( routes );
 				}
 			},
 			() => {
@@ -414,8 +416,6 @@ const SettingsPaymentsRoutes = () => {
 	if ( isLoadingNativeProviderRoutes ) {
 		return <ProviderRouteLoading providerName="WooPayments" />;
 	}
-
-	const providerRoutes = getSettingsPaymentsProviderRoutes();
 
 	return (
 		<Routes>
@@ -435,9 +435,9 @@ const SettingsPaymentsRoutes = () => {
 				path="/offline/cheque"
 				element={ <SettingsPaymentsChequeWrapper /> }
 			/>
-			{ providerRoutes.map( ( route ) => (
+			{ providerRoutes?.map( ( route ) => (
 				<Route
-					key={ route.id }
+					key={ route.path }
 					path={ route.path }
 					element={ route.element }
 				/>

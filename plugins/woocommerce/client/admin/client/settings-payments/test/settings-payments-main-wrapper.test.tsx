@@ -1,17 +1,16 @@
 const mockNativeRoutesLoaded = jest.fn();
 
-jest.mock( '~/settings-payments/register-provider-routes', () => {
+jest.mock( '~/woopayments/admin/routes', () => {
 	mockNativeRoutesLoaded();
-	const { registerSettingsPaymentsProviderRoute } = jest.requireActual(
-		'~/settings-payments/provider-routes'
-	);
-	registerSettingsPaymentsProviderRoute( {
-		id: 'test-native-overview',
-		path: '/woopayments/overview',
-		element: <div>Native overview page</div>,
-	} );
 
-	return {};
+	return {
+		woopaymentsProviderRoutes: [
+			{
+				path: '/woopayments/overview',
+				element: <div>Native overview page</div>,
+			},
+		],
+	};
 } );
 jest.mock( '~/settings-payments/settings-payments-main', () => ( {
 	__esModule: true,
@@ -69,7 +68,7 @@ describe( 'SettingsPaymentsMainWrapper native provider routes', () => {
 	// The first fresh load transforms every module; keep that cost out of the first test's timeout.
 	beforeAll( async () => {
 		await loadModules();
-		await import( '~/settings-payments/register-provider-routes' );
+		await import( '~/woopayments/admin/routes' );
 	}, 30000 );
 
 	beforeEach( () => {
