@@ -13,15 +13,13 @@ export const recordWooPaymentsUserEvent = (
 	if (
 		! eventName ||
 		paymentSettings?.isShopperTrackingEnabled === false ||
-		// Only the express checkout params carry the snake_case key, as the client's do.
 		! window.fetch
 	) {
 		return;
 	}
 
 	const ajaxUrl = paymentSettings?.ajaxUrl;
-	const nonce =
-		paymentSettings?.platformTrackerNonce;
+	const nonce = paymentSettings?.platformTrackerNonce;
 
 	if ( ! ajaxUrl || ! nonce ) {
 		return;
@@ -67,8 +65,7 @@ export const getTracksIdentity = async ( paymentSettings ) => {
 	}
 
 	const ajaxUrl = paymentSettings?.ajaxUrl;
-	const nonce =
-		paymentSettings?.platformTrackerNonce;
+	const nonce = paymentSettings?.platformTrackerNonce;
 
 	if ( ! ajaxUrl || ! nonce || ! window.fetch ) {
 		return undefined;
