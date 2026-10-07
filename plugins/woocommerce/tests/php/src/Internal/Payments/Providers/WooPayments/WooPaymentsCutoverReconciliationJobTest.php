@@ -3071,7 +3071,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		foreach ( array( $main_site_id, $second_site_id ) as $site_id ) {
 			switch_to_blog( $site_id );
-			// The account cache envelope (data, fetched, errored, consecutive_errors): client 11.1.0 includes/class-database-cache.php:377-382.
+			// The account cache envelope (data, fetched, errored, consecutive_errors): client 11.1.0 includes/class-database-cache.php:377-382; the account_id and is_live fields: includes/class-wc-payments-account.php:164-171, :757-759.
 			update_option(
 				'wcpay_account_data',
 				array(
@@ -4860,7 +4860,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		update_option( 'active_plugins', array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) );
 		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
-		// The account cache envelope (data, fetched, errored, consecutive_errors): client 11.1.0 includes/class-database-cache.php:377-382.
+		// The account cache envelope (data, fetched, errored, consecutive_errors): client 11.1.0 includes/class-database-cache.php:377-382; the account_id and is_live fields: includes/class-wc-payments-account.php:164-171, :757-759.
 		update_option(
 			'wcpay_account_data',
 			array(
