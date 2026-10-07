@@ -131,6 +131,32 @@ class MultiCurrencyPriceCalculatorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should decide a step on the operands the renderer receives, whatever form the price arrives in.
+	 */
+	public function test_decides_a_step_on_the_operands_the_renderer_receives(): void {
+		$calculator = new MultiCurrencyPriceCalculator( $this->create_localization() );
+		$at_rate_1  = $this->create_currency( 'GBP', 1.0, false, '0.1' );
+		$at_rate_01 = $this->create_currency( 'GBP', 0.1, false, '0.1' );
+
+		// The storefront sends the renderer the price as a string cast of the float (wc_price() and the async price markup), so a computed
+		// 0.1 + 0.2 arrives as "0.3" and renders 0.30 on the client renderer.
+		$this->assertSame( '0.30', number_format( $calculator->get_price( 0.1 + 0.2, 'product', $at_rate_1 ), 2, '.', '' ) );
+		$this->assertSame( '0.30', number_format( $calculator->get_adjusted_amount( 0.1 + 0.2, $at_rate_1 ), 2, '.', '' ) );
+		$this->assertSame( '0.30', number_format( $calculator->get_price( 3, 'product', $at_rate_01 ), 2, '.', '' ) );
+		// An exponent rate on the exact path: 10000000 at 1e-7 is exactly one 1 step, which the client renderer shows as 1.00.
+		$this->assertSame( '1.00', number_format( $calculator->get_price( '10000000', 'product', $this->create_currency( 'BTC', 1e-7, false, '1' ) ), 2, '.', '' ) );
+
+		// The rate reaches the renderer as JSON, read back as the shortest JavaScript number, so the server setting does not change it.
+		$serialize_precision = ini_get( 'serialize_precision' );
+		ini_set( 'serialize_precision', '17' ); // phpcs:ignore WordPress.PHP.IniSet.Risky -- Restored below; the case is a host with this setting.
+		try {
+			$this->assertSame( '0.30', number_format( $calculator->get_price( '3.00', 'product', $at_rate_01 ), 2, '.', '' ) );
+		} finally {
+			ini_set( 'serialize_precision', (string) $serialize_precision ); // phpcs:ignore WordPress.PHP.IniSet.Risky -- Restores the setting.
+		}
+	}
+
+	/**
 	 * @testdox Should round precise price types without charm.
 	 *
 	 * @dataProvider precise_price_type_provider

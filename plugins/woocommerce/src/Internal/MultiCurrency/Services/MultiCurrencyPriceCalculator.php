@@ -146,6 +146,7 @@ class MultiCurrencyPriceCalculator {
 	 * Away from a whole step the float quotient decides. Near one, where float error could tip the ceil either way (3.00 at a 0.1 rate
 	 * is 0.30000000000000004 in floats, and the client's float ceil charges 0.40 where 0.30 was shown; includes/multi-currency/
 	 * MultiCurrency.php:1695-1700), the next step is taken only when the source price times the rate exactly exceeds the nearest step.
+	 * Unlike the client renderer's decimal.js-light, which keeps 20 significant digits, the comparison is exact, as the native renderer is.
 	 *
 	 * @param float  $converted    Converted price.
 	 * @param string $rounding     Rounding step, as stored.
@@ -161,8 +162,9 @@ class MultiCurrencyPriceCalculator {
 			return ceil( $quotient ) * $step;
 		}
 
-		$product = self::multiply_decimals( self::to_decimal( $source_price ), self::to_decimal( $rate ) );
-		$bound   = self::multiply_decimals( self::to_decimal( $nearest ), self::to_decimal( $rounding ) );
+		// The same operands the renderer gets: the price as the storefront sends it, the rate and step as shortest numbers.
+		$product = self::multiply_decimals( self::to_decimal( self::price_as_sent( $source_price ) ), self::to_decimal( self::shortest_number( $rate ) ) );
+		$bound   = self::multiply_decimals( self::to_decimal( self::shortest_number( $nearest ) ), self::to_decimal( self::shortest_number( $step ) ) );
 		if ( null === $product || null === $bound ) {
 			return ceil( $quotient ) * $step;
 		}
@@ -171,18 +173,58 @@ class MultiCurrencyPriceCalculator {
 	}
 
 	/**
-	 * Read a non-negative number as decimal digits and a power of ten, using the shortest form of a float, as the renderer receives it.
+	 * The price as the storefront sends it to the renderer: a string cast of the float (wc_price() and the async price markup).
 	 *
-	 * @param mixed $value Number or numeric string.
+	 * @param mixed $price Price before conversion.
+	 * @return string|null The sent form, or null when not numeric.
+	 */
+	private static function price_as_sent( $price ): ?string {
+		if ( ! is_numeric( $price ) ) {
+			return null;
+		}
+
+		return self::with_decimal_point( (string) (float) $price );
+	}
+
+	/**
+	 * The shortest number that reads back as the same float, as JavaScript writes a number the renderer reads from JSON.
+	 *
+	 * It does not depend on the serialize_precision setting, which only changes how many digits JSON spells out.
+	 *
+	 * @param float $value Number.
+	 * @return string The shortest round-trip form.
+	 */
+	private static function shortest_number( float $value ): string {
+		for ( $digits = 1; $digits < 17; $digits++ ) {
+			$candidate = self::with_decimal_point( sprintf( '%.' . $digits . 'G', $value ) );
+			if ( (float) $candidate === $value ) {
+				return $candidate;
+			}
+		}
+
+		return self::with_decimal_point( sprintf( '%.17G', $value ) );
+	}
+
+	/**
+	 * Use a dot as the decimal point; float formatting follows the locale on PHP 7.4.
+	 *
+	 * @param string $number Formatted number.
+	 * @return string
+	 */
+	private static function with_decimal_point( string $number ): string {
+		$point = localeconv()['decimal_point'] ?? '.';
+
+		return '.' === $point ? $number : str_replace( $point, '.', $number );
+	}
+
+	/**
+	 * Read a non-negative number string as decimal digits and a power of ten.
+	 *
+	 * @param string|null $value Number string.
 	 * @return array{0:string,1:int}|null Digits without leading zeros and their exponent, or null when not a non-negative number.
 	 */
-	private static function to_decimal( $value ): ?array {
-		if ( is_int( $value ) ) {
-			$value = (string) $value;
-		} elseif ( is_float( $value ) ) {
-			$value = wp_json_encode( $value );
-		}
-		if ( ! is_string( $value ) || ! preg_match( '/^(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/', trim( $value ), $parts ) || '' === $parts[1] . ( $parts[2] ?? '' ) ) {
+	private static function to_decimal( ?string $value ): ?array {
+		if ( null === $value || ! preg_match( '/^(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/', trim( $value ), $parts ) || '' === $parts[1] . ( $parts[2] ?? '' ) ) {
 			return null;
 		}
 
