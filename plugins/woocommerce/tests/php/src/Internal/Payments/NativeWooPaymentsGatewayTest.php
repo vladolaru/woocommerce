@@ -5544,7 +5544,6 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$_POST['wcpay-confirmation-token']           = 'ctoken_express';
 		$_POST['wcpay-express-payment-method-types'] = wp_json_encode( array( 'card', 'amazon_pay', 'unknown_method', array( 'nested' ) ) );
 		$_POST['wcpay-express-checkout-context']     = 'pay_for_order';
-		$_POST['wcpay-is-platform-payment-method']   = 'true';
 
 		$gateway->process_payment( $order->get_id() );
 
@@ -5552,7 +5551,6 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'ctoken_express', $service->last_checkout_context->get_payment_method_id() );
 		$this->assertSame( array( 'card', 'amazon_pay' ), $service->last_checkout_context->get_provider_data()[ WooPaymentsExpressPaymentMethodTypes::PROVIDER_DATA_KEY ] );
 		$this->assertSame( 'pay_for_order', $service->last_checkout_context->get_provider_data()[ WooPaymentsExpressPaymentMethodTypes::PROVIDER_CONTEXT_KEY ] );
-		$this->assertTrue( $service->last_checkout_context->get_provider_data()['is_platform_payment_method'] );
 	}
 
 	/**

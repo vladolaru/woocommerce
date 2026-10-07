@@ -3273,10 +3273,20 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			do_action( 'woocommerce_payments_save_user_in_woopay' );
 		}
 
+		$express_types_value = $this->sanitize_post_string( WooPaymentsExpressPaymentMethodTypes::CHECKOUT_FIELD );
+		$token_value         = $this->sanitize_post_string( 'wc-' . $this->id . '-payment-token' );
+
+		// Client 11.1.0 woopay/services/class-checkout-service.php:65-83 never treats an express payment, a saved
+		// payment method or a non-card method as platform-created. The browser field only says which account
+		// tokenized a new card, so it counts only for that case.
+		$platform_value = ( '' === $express_types_value && ( '' === $token_value || 'new' === $token_value ) && 'card' === $this->payment_method_definition->get_id() )
+			? $this->sanitize_post_string( WooPaymentsPlatformPaymentMethodContext::CHECKOUT_FIELD )
+			: '';
+
 		$provider_data = array_merge(
-			WooPaymentsPlatformPaymentMethodContext::provider_data_from_checkout_value( $this->sanitize_post_string( WooPaymentsPlatformPaymentMethodContext::CHECKOUT_FIELD ) ),
+			WooPaymentsPlatformPaymentMethodContext::provider_data_from_checkout_value( $platform_value ),
 			WooPaymentsPlatformPaymentMethodContext::provider_data_from_save_user_value( $save_user_in_woopay ),
-			WooPaymentsExpressPaymentMethodTypes::provider_data_from_checkout_value( $this->sanitize_post_string( WooPaymentsExpressPaymentMethodTypes::CHECKOUT_FIELD ) ),
+			WooPaymentsExpressPaymentMethodTypes::provider_data_from_checkout_value( $express_types_value ),
 			WooPaymentsExpressPaymentMethodTypes::provider_context_from_checkout_value( $this->sanitize_post_string( WooPaymentsExpressPaymentMethodTypes::CONTEXT_FIELD ) ),
 			array(
 				'cvc_confirmation'          => $this->sanitize_post_string( $cvc_key ),

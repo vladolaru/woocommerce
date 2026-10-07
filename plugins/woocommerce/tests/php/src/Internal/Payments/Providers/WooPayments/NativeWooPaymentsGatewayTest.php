@@ -316,6 +316,59 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Submissions for the platform-payment-method checks.
+	 *
+	 * @return array<string,array{string,array<string,string>,bool}>
+	 */
+	public function platform_payment_method_submission_provider(): array {
+		return array(
+			'new card created on the platform'          => array( 'card', array( 'wcpay-is-platform-payment-method' => 'true' ), true ),
+			'new card created on the connected account' => array( 'card', array( 'wcpay-is-platform-payment-method' => 'false' ), false ),
+			'saved card'                                => array(
+				'card',
+				array(
+					'wcpay-is-platform-payment-method' => 'true',
+					'wc-woocommerce_payments-payment-token' => '12',
+				),
+				false,
+			),
+			'express payment'                           => array(
+				'card',
+				array(
+					'wcpay-is-platform-payment-method'   => 'true',
+					'wcpay-express-payment-method-types' => 'apple_pay',
+				),
+				false,
+			),
+			'non-card method'                           => array( 'klarna', array( 'wcpay-is-platform-payment-method' => 'true' ), false ),
+		);
+	}
+
+	/**
+	 * @testdox Only a new card checkout should be treated as a platform-created payment method, like the client's checkout service.
+	 * @dataProvider platform_payment_method_submission_provider
+	 *
+	 * @param string               $payment_method_id Payment method definition ID.
+	 * @param array<string,string> $post              Submitted checkout fields.
+	 * @param bool                 $expected          Expected platform flag.
+	 */
+	public function test_checkout_provider_data_limits_the_platform_payment_method_flag( string $payment_method_id, array $post, bool $expected ): void {
+		$registry = new WooPaymentsPaymentMethodRegistry();
+		$sut      = new NativeWooPaymentsGateway( $registry->get( $payment_method_id ) );
+		$method   = new \ReflectionMethod( NativeWooPaymentsGateway::class, 'get_checkout_provider_data' );
+		$method->setAccessible( true );
+		$original_post = $_POST; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Saved to restore the fixture.
+
+		try {
+			$_POST = array_merge( $_POST, $post ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Test fixture.
+
+			$this->assertSame( $expected, $method->invoke( $sut )['is_platform_payment_method'] );
+		} finally {
+			$_POST = $original_post;
+		}
+	}
+
+	/**
 	 * @testdox Should use the custom place-order button contract for payment-list wallets.
 	 */
 	public function test_payment_list_wallets_use_custom_place_order_button_without_ordinary_fields(): void {
