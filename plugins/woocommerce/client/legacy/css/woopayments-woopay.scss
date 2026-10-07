@@ -292,3 +292,10 @@ the script centers it with inline top/left on wide viewports. */
 		}
 	}
 }
+
+@media (prefers-reduced-motion: reduce) {
+
+	.woopay-otp-iframe {
+		transition: none;
+	}
+}

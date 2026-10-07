@@ -48,3 +48,10 @@
 		margin-bottom: 1em;
 	}
 }
+
+@media (prefers-reduced-motion: reduce) {
+
+	.wcpay-express-checkout-wrapper #wcpay-express-checkout-element {
+		transition: none;
+	}
+}

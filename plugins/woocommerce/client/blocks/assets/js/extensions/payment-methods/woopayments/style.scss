@@ -371,3 +371,15 @@
 		}
 	}
 }
+
+@media (prefers-reduced-motion: reduce) {
+
+	// Not `none`: the skeleton unmounts on transitionend, which a 1ms transition still fires.
+	.wcpay-core-blocks-payment-element-skeleton {
+		transition-duration: 1ms;
+	}
+
+	.woopay-otp-iframe {
+		transition: none;
+	}
+}

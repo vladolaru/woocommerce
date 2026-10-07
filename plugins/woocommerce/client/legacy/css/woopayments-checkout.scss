@@ -354,3 +354,16 @@
 		}
 	}
 }
+
+/* stylelint-disable selector-id-pattern */
+@media (prefers-reduced-motion: reduce) {
+
+	#billing_email_field .wc-block-components-spinner::after {
+		animation: none;
+	}
+
+	.woopay-otp-iframe {
+		transition: none;
+	}
+}
+/* stylelint-enable selector-id-pattern */
