@@ -3132,8 +3132,8 @@
 					followingDay.toUTCString();
 			}
 
-			// Tracks the iframe header state; the default must match the
-			// platform's default.
+			// Client 11.1.0's name (email-input-iframe.js:85): it switches the iframe header for the viewport, tells
+			// WooPay, and keeps page scrolling locked while the iframe is open. The header default must match the platform's.
 			function getWindowSize() {
 				if (
 					( wooPayFullScreenModalBreakpoint <= window.innerWidth &&

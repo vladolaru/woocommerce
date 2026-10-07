@@ -352,7 +352,13 @@
 		return wooPayConnectPostMessagePromise;
 	}
 
-	function sendWooPayConnectMessage( message, callbackName, fallback, timeout ) {
+	// With shouldTimeOut, the fallback answers when WooPay does not reply within the connect timeout.
+	function sendWooPayConnectMessage(
+		message,
+		callbackName,
+		fallback,
+		shouldTimeOut
+	) {
 		attachWooPayConnectListener();
 
 		return new Promise( function ( resolve ) {
@@ -371,7 +377,7 @@
 				resolve( value );
 			};
 
-			if ( timeout ) {
+			if ( shouldTimeOut ) {
 				timeoutId = window.setTimeout( function () {
 					resolveWooPayConnectCallback( callbackName, fallback );
 				}, wooPayConnectTimeout );
@@ -513,6 +519,8 @@
 		);
 	}
 
+	// Client 11.1.0's name (woopay-express-checkout-button.js:124): when it answers no, it also shows the error and ends
+	// the WooPay request.
 	function canAddProductToCart() {
 		var form = getProductFormElement();
 		var button;
@@ -1036,7 +1044,8 @@
 			iframeWrapper.setAttribute( 'aria-label', iframe.title );
 		}
 
-		// Tracks the iframe header state; the default must match the platform's.
+		// Client 11.1.0's name (email-input-iframe.js:85): it switches the iframe header for the viewport, tells WooPay, and
+		// keeps page scrolling locked while the iframe is open. The header default must match the platform's.
 		function getWindowSize() {
 			if (
 				( fullScreenModalBreakpoint <= window.innerWidth &&
