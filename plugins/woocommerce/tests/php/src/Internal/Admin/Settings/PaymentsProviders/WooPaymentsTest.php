@@ -219,6 +219,13 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_settings_url_points_to_native_routed_settings_page(): void {
 		$fake_gateway = new FakePaymentGateway( 'woocommerce_payments' );
+		$this->mockable_proxy->register_function_mocks(
+			array(
+				'class_exists' => function ( $class_name ) {
+					return 'WC_Payments' !== $class_name && class_exists( $class_name );
+				},
+			)
+		);
 
 		$url = $this->sut->get_settings_url( $fake_gateway );
 
@@ -226,6 +233,28 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'path=/woopayments/settings', rawurldecode( $url ) );
 		$this->assertStringContainsString( 'from=' . Payments::FROM_PAYMENTS_SETTINGS, rawurldecode( $url ) );
 		$this->assertStringNotContainsString( 'section=', rawurldecode( $url ) );
+	}
+
+	/**
+	 * At the merge base the provider had no override, so a plugin store keeps the plugin gateway's own settings page
+	 * (PaymentGateway::get_settings_url()); the native routes are not registered while the plugin owns the runtime.
+	 *
+	 * @testdox Should keep the plugin's settings page while the WooPayments plugin owns the runtime.
+	 */
+	public function test_get_settings_url_keeps_plugin_settings_page_while_plugin_owns_runtime(): void {
+		$fake_gateway = new FakePaymentGateway( 'woocommerce_payments', array( 'settings_url' => 'https://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments' ) );
+		$this->mockable_proxy->register_function_mocks(
+			array(
+				'class_exists' => function ( $class_name ) {
+					return 'WC_Payments' === $class_name || class_exists( $class_name );
+				},
+			)
+		);
+
+		$url = rawurldecode( $this->sut->get_settings_url( $fake_gateway ) );
+
+		$this->assertStringContainsString( 'section=woocommerce_payments', $url );
+		$this->assertStringNotContainsString( 'path=/woopayments/settings', $url );
 	}
 
 	/**

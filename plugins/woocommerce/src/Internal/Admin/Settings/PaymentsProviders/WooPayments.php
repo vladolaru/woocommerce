@@ -89,12 +89,18 @@ class WooPayments extends PaymentGateway {
 	/**
 	 * Get the settings URL for the WooPayments payment gateway.
 	 *
+	 * While the WooPayments plugin owns the runtime, the native settings routes are not served, so the plugin gateway's
+	 * own settings page is kept.
+	 *
 	 * @param WC_Payment_Gateway $payment_gateway The payment gateway object.
 	 *
 	 * @return string The settings URL for the payment gateway.
 	 */
 	public function get_settings_url( WC_Payment_Gateway $payment_gateway ): string {
-		unset( $payment_gateway );
+		$legacy_runtime = $this->get_legacy_runtime();
+		if ( null !== $legacy_runtime && $legacy_runtime->is_loaded() ) {
+			return parent::get_settings_url( $payment_gateway );
+		}
 
 		return Utils::wc_payments_settings_url(
 			'/woopayments/settings',
