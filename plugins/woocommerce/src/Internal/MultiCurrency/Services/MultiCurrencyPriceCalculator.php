@@ -21,12 +21,6 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 class MultiCurrencyPriceCalculator {
 
 	/**
-	 * Relative distance from a whole rounding step within which the step is decided on exact decimals. Float error in
-	 * price * rate / step is a few units in the last place (about 1e-15), so beyond this the float ceil is already right.
-	 */
-	private const NEAR_STEP = 1e-9;
-
-	/**
 	 * Localization service.
 	 *
 	 * @var MultiCurrencyLocalizationInterface
@@ -68,7 +62,7 @@ class MultiCurrencyPriceCalculator {
 			? 'product' === $type
 			: in_array( $type, array( 'product', 'shipping' ), true );
 
-		return $this->get_adjusted_price( $converted_price, $apply_charm_pricing, $currency, $price, $currency->get_rate() );
+		return $this->get_adjusted_price( $converted_price, $apply_charm_pricing, $currency, $price, $currency->get_rate_decimal() );
 	}
 
 	/**
@@ -79,7 +73,7 @@ class MultiCurrencyPriceCalculator {
 	 * @return float
 	 */
 	public function get_adjusted_amount( $amount, MultiCurrencyCurrency $currency ): float {
-		return $this->get_adjusted_price( (float) $amount, true, $currency, $amount, 1.0 );
+		return $this->get_adjusted_price( (float) $amount, true, $currency, $amount, '1' );
 	}
 
 	/**
@@ -121,10 +115,10 @@ class MultiCurrencyPriceCalculator {
 	 * @param bool                  $apply_charm_pricing Whether charm applies.
 	 * @param MultiCurrencyCurrency $currency            Target currency.
 	 * @param mixed                 $source_price        Price before conversion.
-	 * @param float                 $rate                Rate the price was converted at.
+	 * @param string                $rate                Rate the price was converted at, as its canonical decimal string.
 	 * @return float
 	 */
-	private function get_adjusted_price( float $price, bool $apply_charm_pricing, MultiCurrencyCurrency $currency, $source_price, float $rate ): float {
+	private function get_adjusted_price( float $price, bool $apply_charm_pricing, MultiCurrencyCurrency $currency, $source_price, string $rate ): float {
 		$rounding = (string) $currency->get_rounding();
 
 		if ( 0.0 === (float) $rounding ) {
@@ -141,80 +135,50 @@ class MultiCurrencyPriceCalculator {
 	}
 
 	/**
-	 * Ceil a converted price to the next rounding step, as the async renderer does on exact decimals.
+	 * Ceil a converted price to the next rounding step on exact decimals, as the async renderer does.
 	 *
-	 * Away from a whole step the float quotient decides. Near one, where float error could tip the ceil either way (3.00 at a 0.1 rate
-	 * is 0.30000000000000004 in floats, and the client's float ceil charges 0.40 where 0.30 was shown; includes/multi-currency/
-	 * MultiCurrency.php:1695-1700), the next step is taken only when the source price times the rate exactly exceeds the nearest step.
-	 * Unlike the client renderer's decimal.js-light, which keeps 20 significant digits, the comparison is exact, as the native renderer is.
+	 * Both sides compute on the same canonical strings: the price as the storefront markup sends it, the rate from
+	 * MultiCurrencyCurrency::get_rate_decimal() and the stored rounding step (the public config's rate_decimal and rounding_decimal).
+	 * The client's server ceils in floats and can charge a step above the price shown (includes/multi-currency/MultiCurrency.php:1695-1700).
 	 *
-	 * @param float  $converted    Converted price.
+	 * @param float  $converted    Converted price, used to start the search.
 	 * @param string $rounding     Rounding step, as stored.
 	 * @param mixed  $source_price Price before conversion.
-	 * @param float  $rate         Rate the price was converted at.
+	 * @param string $rate         Rate, as its canonical decimal string.
 	 * @return float
 	 */
-	private function ceil_price( float $converted, string $rounding, $source_price, float $rate ): float {
-		$step     = (float) $rounding;
-		$quotient = $converted / $step;
-		$nearest  = round( $quotient );
-		if ( abs( $quotient - $nearest ) > max( 1.0, abs( $quotient ) ) * self::NEAR_STEP ) {
-			return ceil( $quotient ) * $step;
+	private function ceil_price( float $converted, string $rounding, $source_price, string $rate ): float {
+		$step    = (float) $rounding;
+		$steps   = ceil( $converted / $step );
+		$product = self::multiply_decimals( self::to_decimal( is_numeric( $source_price ) ? wc_float_to_string( (float) $source_price ) : null ), self::to_decimal( $rate ) );
+		$unit    = self::to_decimal( $rounding );
+		if ( null === $product || null === $unit ) {
+			return $steps * $step;
 		}
 
-		// The same operands the renderer gets: the price as the storefront sends it, the rate and step as shortest numbers.
-		$product = self::multiply_decimals( self::to_decimal( self::price_as_sent( $source_price ) ), self::to_decimal( self::shortest_number( $rate ) ) );
-		$bound   = self::multiply_decimals( self::to_decimal( self::shortest_number( $nearest ) ), self::to_decimal( self::shortest_number( $step ) ) );
-		if ( null === $product || null === $bound ) {
-			return ceil( $quotient ) * $step;
+		// The float ceil is within a step of the exact one: settle on the smallest whole number of steps that covers the product.
+		while ( $steps > 0 && self::steps_cover( $steps - 1, $unit, $product ) ) {
+			--$steps;
+		}
+		while ( ! self::steps_cover( $steps, $unit, $product ) ) {
+			++$steps;
 		}
 
-		return ( 0 < self::compare_decimals( $product, $bound ) ? $nearest + 1 : $nearest ) * $step;
+		return $steps * $step;
 	}
 
 	/**
-	 * The price as the storefront sends it to the renderer: a string cast of the float (wc_price() and the async price markup).
+	 * Tell whether a whole number of steps reaches the product.
 	 *
-	 * @param mixed $price Price before conversion.
-	 * @return string|null The sent form, or null when not numeric.
+	 * @param float                 $steps   Number of steps, a whole number.
+	 * @param array{0:string,1:int} $unit    One step.
+	 * @param array{0:string,1:int} $product Price times rate.
+	 * @return bool
 	 */
-	private static function price_as_sent( $price ): ?string {
-		if ( ! is_numeric( $price ) ) {
-			return null;
-		}
+	private static function steps_cover( float $steps, array $unit, array $product ): bool {
+		$total = self::multiply_decimals( array( sprintf( '%.0f', $steps ), 0 ), $unit );
 
-		return self::with_decimal_point( (string) (float) $price );
-	}
-
-	/**
-	 * The shortest number that reads back as the same float, as JavaScript writes a number the renderer reads from JSON.
-	 *
-	 * It does not depend on the serialize_precision setting, which only changes how many digits JSON spells out.
-	 *
-	 * @param float $value Number.
-	 * @return string The shortest round-trip form.
-	 */
-	private static function shortest_number( float $value ): string {
-		for ( $digits = 1; $digits < 17; $digits++ ) {
-			$candidate = self::with_decimal_point( sprintf( '%.' . $digits . 'G', $value ) );
-			if ( (float) $candidate === $value ) {
-				return $candidate;
-			}
-		}
-
-		return self::with_decimal_point( sprintf( '%.17G', $value ) );
-	}
-
-	/**
-	 * Use a dot as the decimal point; float formatting follows the locale on PHP 7.4.
-	 *
-	 * @param string $number Formatted number.
-	 * @return string
-	 */
-	private static function with_decimal_point( string $number ): string {
-		$point = localeconv()['decimal_point'] ?? '.';
-
-		return '.' === $point ? $number : str_replace( $point, '.', $number );
+		return null !== $total && 0 <= self::compare_decimals( $total, $product );
 	}
 
 	/**
