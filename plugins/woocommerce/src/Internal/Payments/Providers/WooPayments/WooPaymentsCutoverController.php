@@ -318,6 +318,11 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function output_admin_notices(): void {
+		// Only store managers can act on the switch, and classifying it can be costly on a network.
+		if ( ! $this->legacy_proxy->call_function( 'current_user_can', 'manage_woocommerce' ) ) {
+			return;
+		}
+
 		$this->output_reconciliation_notice();
 	}
 

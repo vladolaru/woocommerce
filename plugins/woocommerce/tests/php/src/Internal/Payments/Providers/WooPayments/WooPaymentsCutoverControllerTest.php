@@ -759,9 +759,13 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		};
 		$controller = $this->create_cutover_controller( null, $job );
 
+		$this->fake_current_user_caps( false );
+		$non_manager = $this->render_admin_notices( $controller );
+		$this->fake_current_user_caps( true );
 		$first  = $this->render_admin_notices( $controller );
 		$second = $this->render_admin_notices( $controller );
 
+		$this->assertSame( '', trim( $non_manager ), 'A user who cannot manage the store sees no switch notice and leaves the reconnect information for one who can.' );
 		$this->assertStringContainsString( 'The connection owner is no longer available. Reconnect this site to continue the switch.', $first );
 		$this->assertStringNotContainsString( 'Reconnect this site', $second );
 	}
@@ -804,6 +808,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			}
 		};
 
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 		$notice = $this->render_admin_notices( $this->create_cutover_controller( null, $job ) );
 
 		$this->assertStringNotContainsString( 'Switch in progress', $notice );
