@@ -4804,6 +4804,26 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Every request that runs Action Scheduler while a switch waits on its scheduled attempt takes no coordination lease.
+	 */
+	public function test_register_with_a_scheduled_attempt_does_not_write_a_lease(): void {
+		$sut = $this->require_sut();
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->assertGreaterThan( 0, $pending['action_id'] );
+
+		$lease_events = $this->capture_lease_write_events(
+			function () use ( $sut ): void {
+				$sut->register();
+			}
+		);
+
+		$this->assertSame( array(), $lease_events, 'Nothing needs repair, so the request must not write the lease option.' );
+		$this->assertSame( $pending, $this->require_state_store()->get_record() );
+	}
+
+	/**
 	 * @testdox Registration recovers a stale running claim into one immediately due deferred attempt.
 	 */
 	public function test_register_recovers_stale_running_state(): void {

@@ -2177,6 +2177,11 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			return;
 		}
 
+		// This runs on every request, so a waiting attempt that is still scheduled is read, never leased.
+		if ( WooPaymentsCutoverState::RUNNING !== $record['state'] && $record['action_id'] > 0 && $record['action_id'] === $this->scheduler->get_scheduled_action_id( $record['generation'], $record['attempt'] + 1 ) ) {
+			return;
+		}
+
 		$token = $this->state_store->acquire_lease( $now );
 		if ( null === $token ) {
 			return;
