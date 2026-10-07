@@ -223,6 +223,29 @@ class PayPalTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should show the PayPal icon on the row when native owns the site.
+	 */
+	public function test_native_owned_row_uses_the_paypal_icon(): void {
+		$this->pin_native_ownership();
+		$gateway       = $this->fake_ppcp_gateway();
+		$gateway->icon = 'https://example.com/extension-icon.svg';
+
+		$this->assertSame( plugins_url( 'assets/images/onboarding/icons/paypal.svg', WC_PLUGIN_FILE ), $this->sut->get_icon( $gateway ) );
+	}
+
+	/**
+	 * @testdox Should leave the icon of the extension's row untouched when native does not own the site.
+	 */
+	public function test_non_native_row_keeps_its_icon(): void {
+		add_filter( PayPalWalletRuntimeArbiter::FILTER_ENABLED, '__return_false' );
+		wc_get_container()->get( PayPalWalletRuntimeArbiter::class )->invalidate();
+		$gateway       = $this->fake_ppcp_gateway();
+		$gateway->icon = 'https://example.com/extension-icon.svg';
+
+		$this->assertSame( 'https://example.com/extension-icon.svg', $this->sut->get_icon( $gateway ) );
+	}
+
+	/**
 	 * @testdox Should leave title and plugin details untouched when native does not own the site.
 	 */
 	public function test_non_native_row_is_unchanged(): void {
@@ -412,6 +435,7 @@ class PayPalTest extends WC_Unit_Test_Case {
 			$settings    = $this->sut->get_settings_url( $gateway );
 			$title       = $this->sut->get_title( $gateway );
 			$details     = $this->sut->get_plugin_details( $gateway );
+			$icon        = $this->sut->get_icon( $gateway );
 		} finally {
 			$this->swap_wallet_container( $previous );
 		}
@@ -423,6 +447,7 @@ class PayPalTest extends WC_Unit_Test_Case {
 		$this->assertSame( $url, $settings );
 		$this->assertSame( 'PayPal Wallet', $title );
 		$this->assertSame( '', $details['file'], 'The placeholder row has no plugin to deactivate' );
+		$this->assertSame( plugins_url( 'assets/images/onboarding/icons/paypal.svg', WC_PLUGIN_FILE ), $icon );
 	}
 
 	/**

@@ -37,6 +37,23 @@ class PayPal extends PaymentGateway {
 	}
 
 	/**
+	 * Get the provider icon URL, using the PayPal icon when core provides the gateway.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @param WC_Payment_Gateway $payment_gateway The payment gateway object.
+	 *
+	 * @return string The provider icon URL of the payment gateway.
+	 */
+	public function get_icon( WC_Payment_Gateway $payment_gateway ): string {
+		if ( $this->is_core_provided( $payment_gateway ) ) {
+			return plugins_url( 'assets/images/onboarding/icons/paypal.svg', WC_PLUGIN_FILE );
+		}
+
+		return parent::get_icon( $payment_gateway );
+	}
+
+	/**
 	 * Get the plugin details, with no plugin file when core provides the gateway (so it cannot be deactivated).
 	 *
 	 * @since 11.3.0
