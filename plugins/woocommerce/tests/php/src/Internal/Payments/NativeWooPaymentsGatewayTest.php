@@ -6152,6 +6152,33 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should turn the express gateways off in the block editor before the Checkout block lists enabled gateways.
+	 */
+	public function test_block_editor_turns_express_gateways_off(): void {
+		$registry = new WooPaymentsPaymentMethodRegistry();
+		$gateways = array();
+		foreach ( array( 'card', 'apple_pay', 'klarna' ) as $payment_method_id ) {
+			$gateway          = new NativeWooPaymentsGateway( $registry->get( $payment_method_id ) );
+			$gateway->enabled = 'yes';
+			$gateways[]       = $gateway;
+		}
+		$wc_gateways = WC()->payment_gateways();
+		$previous    = $wc_gateways->payment_gateways;
+		// WC_Payment_Gateways::payment_gateways() returns this public list.
+		$wc_gateways->payment_gateways = $gateways;
+
+		try {
+			// The Checkout block reads the enabled gateways at the default priority (PaymentUtils::get_enabled_payment_gateways()).
+			$this->assertSame( 1, has_action( 'enqueue_block_editor_assets', array( NativeWooPaymentsGateway::class, 'handle_enqueue_block_editor_assets' ) ) );
+			NativeWooPaymentsGateway::handle_enqueue_block_editor_assets();
+		} finally {
+			$wc_gateways->payment_gateways = $previous;
+		}
+
+		$this->assertSame( array( 'yes', 'no', 'yes' ), array_column( $gateways, 'enabled' ) );
+	}
+
+	/**
 	 * @testdox Should print no saved payment methods list for a customer without saved methods, and the list otherwise.
 	 */
 	public function test_saved_payment_methods_list_needs_saved_methods(): void {

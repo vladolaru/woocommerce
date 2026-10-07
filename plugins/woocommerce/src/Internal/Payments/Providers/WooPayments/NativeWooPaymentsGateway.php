@@ -310,6 +310,27 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		if ( OrderPaymentStore::GATEWAY_ID === $this->id && false === has_action( 'set_logged_in_cookie', array( self::class, 'handle_set_logged_in_cookie' ) ) ) {
 			add_action( 'set_logged_in_cookie', array( self::class, 'handle_set_logged_in_cookie' ) );
 		}
+
+		if ( OrderPaymentStore::GATEWAY_ID === $this->id && false === has_action( 'enqueue_block_editor_assets', array( self::class, 'handle_enqueue_block_editor_assets' ) ) ) {
+			add_action( 'enqueue_block_editor_assets', array( self::class, 'handle_enqueue_block_editor_assets' ), 1 );
+		}
+	}
+
+	/**
+	 * Turn the express checkout gateways off for the block editor, before the Checkout block lists the enabled gateways.
+	 *
+	 * The Blocks express methods register under other names than their gateway IDs, so the Checkout block would warn that
+	 * enabled gateways are incompatible. Port of client 11.1.0 `disable_express_checkout_in_block_editor()`
+	 * (class-wc-payments.php:1543-1560), at the same priority 1; the hook fires only in the block editor.
+	 *
+	 * @internal
+	 */
+	public static function handle_enqueue_block_editor_assets(): void {
+		foreach ( WC()->payment_gateways()->payment_gateways() as $gateway ) {
+			if ( $gateway instanceof self && $gateway->payment_method_supports( self::PAYMENT_METHOD_CAPABILITY_EXPRESS_CHECKOUT ) ) {
+				$gateway->enabled = 'no';
+			}
+		}
 	}
 
 	/**
