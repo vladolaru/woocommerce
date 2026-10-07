@@ -337,7 +337,22 @@ class WooPaymentsCutoverStateStore {
 	 * @return bool
 	 */
 	private function add_lease( array $lease ): bool {
-		return add_option( self::LEASE_OPTION_NAME, $lease, '', false );
+		global $wpdb;
+
+		// Not add_option(): it trusts this request's notoptions cache and upserts, so it could take over a lease taken since.
+		$value    = maybe_serialize( $lease );
+		$inserted = $wpdb->query(
+			$wpdb->prepare(
+				"INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, %s)",
+				self::LEASE_OPTION_NAME,
+				$value,
+				wp_determine_option_autoload_value( self::LEASE_OPTION_NAME, $lease, $value, false )
+			)
+		);
+		wp_cache_delete( self::LEASE_OPTION_NAME, 'options' );
+		wp_cache_delete( 'notoptions', 'options' );
+
+		return 1 === $inserted;
 	}
 
 	/**

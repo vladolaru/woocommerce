@@ -2033,16 +2033,13 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	public function test_reconnect_notice_check_takes_no_lease_when_nothing_is_due(): void {
 		$sut = $this->create_job( true );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
-		$leases = 0;
-		$count  = static function () use ( &$leases ): void {
-			++$leases;
-		};
-		add_action( 'add_option_' . WooPaymentsCutoverStateStore::LEASE_OPTION_NAME, $count );
+		$lease_events = $this->capture_lease_write_events(
+			function () use ( $sut ): void {
+				$this->assertFalse( $sut->consume_reconnect_notice() );
+			}
+		);
 
-		$this->assertFalse( $sut->consume_reconnect_notice() );
-		remove_action( 'add_option_' . WooPaymentsCutoverStateStore::LEASE_OPTION_NAME, $count );
-
-		$this->assertSame( 0, $leases, 'Every admin page renders this check while a switch is pending.' );
+		$this->assertSame( array(), $lease_events, 'Every admin page renders this check while a switch is pending.' );
 	}
 
 	/** @testdox Consuming reconnect information cannot revise or fence a live worker claim. */
@@ -3112,19 +3109,20 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 			restore_current_blog();
 
-			$peer_leases = 0;
-			$observer    = static function ( string $option ) use ( &$peer_leases, $second_site_id ): void {
-				if ( WooPaymentsCutoverStateStore::LEASE_OPTION_NAME === $option && get_current_blog_id() === $second_site_id ) {
-					++$peer_leases;
+			$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
+			$lease_events = $this->capture_lease_write_events(
+				static function () use ( $sut, $main_pending ): void {
+					$sut->handle_reconcile( $main_pending['generation'], 1 );
 				}
-			};
-			add_action( 'added_option', $observer, 10, 1 );
-			try {
-				$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
-				$sut->handle_reconcile( $main_pending['generation'], 1 );
-			} finally {
-				remove_action( 'added_option', $observer, 10 );
-			}
+			);
+			$peer_leases = count(
+				array_filter(
+					$lease_events,
+					static function ( array $event ) use ( $second_site_id ): bool {
+						return 'INSERT' === $event['write'] && $second_site_id === $event['blog_id'];
+					}
+				)
+			);
 
 			$main_waiting = $this->require_state_store()->get_record();
 			$this->assertIsArray( $main_waiting );
@@ -5684,24 +5682,28 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	/**
 	 * Capture real writes to the option-backed coordination lease.
 	 *
+	 * The lease is written with direct SQL rather than the options API, so the writes are read from the queries themselves.
+	 *
 	 * @param callable():void $operation Operation whose lease writes should be observed.
-	 * @return array<int,string> Option lifecycle hooks observed for the lease.
+	 * @return array<int,array{write:string,blog_id:int}> Lease writes (INSERT, UPDATE or DELETE) with the blog they hit.
 	 */
 	private function capture_lease_write_events( callable $operation ): array {
 		$events   = array();
-		$observer = static function ( string $option ) use ( &$events ): void {
-			if ( WooPaymentsCutoverStateStore::LEASE_OPTION_NAME === $option ) {
-				$events[] = current_filter();
+		$observer = static function ( $query ) use ( &$events ) {
+			if ( is_string( $query ) && false !== strpos( $query, WooPaymentsCutoverStateStore::LEASE_OPTION_NAME ) && 1 === preg_match( '/^\s*(INSERT|UPDATE|DELETE)\b/i', $query, $verb ) ) {
+				$events[] = array(
+					'write'   => strtoupper( $verb[1] ),
+					'blog_id' => get_current_blog_id(),
+				);
 			}
+			return $query;
 		};
-		add_action( 'added_option', $observer, 10, 1 );
-		add_action( 'deleted_option', $observer, 10, 1 );
+		add_filter( 'query', $observer );
 
 		try {
 			$operation();
 		} finally {
-			remove_action( 'added_option', $observer, 10 );
-			remove_action( 'deleted_option', $observer, 10 );
+			remove_filter( 'query', $observer );
 		}
 
 		return $events;

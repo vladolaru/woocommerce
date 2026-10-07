@@ -320,6 +320,35 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A worker whose request missed the lease cannot take it over from a worker that took it since.
+	 */
+	public function test_lease_acquisition_after_a_missed_read_keeps_the_other_workers_lease(): void {
+		global $wpdb;
+		$sut   = $this->require_sut();
+		$now   = 1_700_000_000;
+		$name  = WooPaymentsCutoverStateStore::LEASE_OPTION_NAME;
+		$other = array(
+			'token'      => 'other-worker',
+			'expires_at' => $now + WooPaymentsCutoverStateStore::LEASE_TTL,
+		);
+
+		$this->assertFalse( get_option( $name ) );
+		$this->assertArrayHasKey( $name, (array) wp_cache_get( 'notoptions', 'options' ), 'The missed read should be cached in notoptions.' );
+		$wpdb->insert(
+			$wpdb->options,
+			array(
+				'option_name'  => $name,
+				'option_value' => maybe_serialize( $other ),
+				'autoload'     => 'off',
+			)
+		);
+
+		$this->assertNull( $sut->acquire_lease( $now + 1 ), 'A live lease taken behind the missed read must exclude this worker.' );
+		$this->assertSame( maybe_serialize( $other ), $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $name ) ), 'The other worker must keep its lease.' );
+		$this->assertIsString( $sut->acquire_lease( $now + WooPaymentsCutoverStateStore::LEASE_TTL + 1 ), 'Once that lease expires, this worker can recover it.' );
+	}
+
+	/**
 	 * @testdox Releasing a stale token cannot remove the current worker's lease.
 	 */
 	public function test_release_lease_ignores_a_stale_owner_token(): void {
