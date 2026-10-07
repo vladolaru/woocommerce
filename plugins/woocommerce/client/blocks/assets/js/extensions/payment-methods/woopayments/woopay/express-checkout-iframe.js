@@ -79,9 +79,9 @@ const showErrorMessage = ( paymentSettings, context, message ) => {
  * @param {string}                emailSelector   Selector of the email field to prefill from.
  * @param {Function}              navigate        Navigates the page to a URL.
  * @param {Element|Function|null} opener          The control that gets focus back on close, or a function that returns
- *                                                it when the dialog closes. The express button passes one: it is
- *                                                disabled while it loads, which takes focus away from it before the
- *                                                dialog opens, and Blocks may replace it while the dialog is open.
+ *                                                it when the dialog closes. The express button passes one: Blocks may
+ *                                                replace it while the dialog is open, and the shopper may move focus
+ *                                                away while it loads.
  */
 export const expressCheckoutIframe = async (
 	paymentSettings,
