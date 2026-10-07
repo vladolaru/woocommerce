@@ -736,7 +736,7 @@ const persistWooPaySaveUser = async (
 			}
 		);
 		return Boolean( response ) && response.ok !== false;
-	} catch ( error ) {
+	} catch {
 		return false;
 	}
 };
@@ -1002,7 +1002,7 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 		}
 	}, [ isPhoneValid, paymentSettings ] );
 
-	const updateSaveUser = ( checked, nextPhone = phone ) => {
+	const updateSaveUser = ( checked ) => {
 		setIsSavingUser( checked );
 		if ( ! checked ) {
 			setPhone( '' );
@@ -1052,7 +1052,7 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 									if ( checked ) {
 										setPhone( nextPhone );
 									}
-									updateSaveUser( checked, nextPhone );
+									updateSaveUser( checked );
 								} }
 								name="save_user_in_woopay"
 								id="save_user_in_woopay"
