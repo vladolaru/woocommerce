@@ -2883,6 +2883,8 @@ describe( 'WooPayments money movement pages', () => {
 			resolveCapture = resolve;
 		} );
 
+		// Partial rows of client 11.1.0 `types/authorizations.d.ts:9-20` (`Authorization`), in a list response
+		// with `total_count`; the summary is `AuthorizationsSummary` (`:30-34`).
 		mockGetAuthorizations.mockResolvedValue( {
 			data: [
 				{
@@ -2948,6 +2950,7 @@ describe( 'WooPayments money movement pages', () => {
 		).toBeDisabled();
 
 		await act( async () => {
+			// `CaptureAuthorizationApiResponse`, client 11.1.0 `types/authorizations.d.ts:49-51`.
 			resolveCapture( { id: 'pi_first', status: 'succeeded' } );
 			await capturePromise;
 		} );
@@ -2966,7 +2969,122 @@ describe( 'WooPayments money movement pages', () => {
 		).toBeEnabled();
 	} );
 
+	describe( 'the capture guard on the uncaptured list', () => {
+		// Partial `Authorization` rows, client 11.1.0 `types/authorizations.d.ts:9-20`; the summary is
+		// `AuthorizationsSummary` (`:30-34`).
+		beforeEach( () => {
+			mockGetAuthorizations.mockResolvedValue( {
+				data: [
+					{
+						payment_intent_id: 'pi_first',
+						order_id: 101,
+						created: '2026-06-12T10:30:00Z',
+						amount: 5000,
+						currency: 'usd',
+					},
+				],
+				total_count: 1,
+			} );
+			mockGetAuthorizationsSummary.mockResolvedValue( {
+				count: 1,
+				total: 5000,
+				currency: 'usd',
+			} );
+		} );
+
+		const renderUncaptured = () =>
+			render(
+				<MemoryRouter
+					initialEntries={ [
+						'/woopayments/transactions?view=uncaptured',
+					] }
+				>
+					<WooPaymentsTransactionsPage />
+				</MemoryRouter>
+			);
+
+		it( 'sends one capture for two clicks that land before the page re-renders', async () => {
+			let resolveCapture: ( value: unknown ) => void = () => undefined;
+			const capturePromise = new Promise( ( resolve ) => {
+				resolveCapture = resolve;
+			} );
+			mockCaptureAuthorization.mockReturnValue(
+				capturePromise as Promise< never >
+			);
+
+			renderUncaptured();
+
+			const captureButton = await screen.findByRole( 'button', {
+				name: 'Capture authorization for order #101',
+			} );
+
+			// Both clicks reach the handler: the button is only disabled once React renders the pending state.
+			act( () => {
+				captureButton.click();
+				captureButton.click();
+			} );
+
+			expect( mockCaptureAuthorization ).toHaveBeenCalledTimes( 1 );
+			expect( mockCaptureAuthorization ).toHaveBeenCalledWith(
+				101,
+				'pi_first'
+			);
+
+			await act( async () => {
+				// `CaptureAuthorizationApiResponse`, client 11.1.0 `types/authorizations.d.ts:49-51`.
+				resolveCapture( { id: 'pi_first', status: 'succeeded' } );
+				await capturePromise;
+			} );
+			await waitFor( () =>
+				expect( mockCreateSuccessNotice ).toHaveBeenCalledWith(
+					'Payment for order #101 captured successfully.'
+				)
+			);
+			expect( mockCaptureAuthorization ).toHaveBeenCalledTimes( 1 );
+		} );
+
+		it( 'lets the merchant retry a capture on the same row after it fails', async () => {
+			mockCaptureAuthorization
+				.mockRejectedValueOnce( new Error( 'The card was declined.' ) )
+				// `CaptureAuthorizationApiResponse`, client 11.1.0 `types/authorizations.d.ts:49-51`.
+				.mockResolvedValueOnce( {
+					id: 'pi_first',
+					status: 'succeeded',
+				} );
+
+			renderUncaptured();
+
+			await userEvent.click(
+				await screen.findByRole( 'button', {
+					name: 'Capture authorization for order #101',
+				} )
+			);
+			await waitFor( () =>
+				expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+					'Unable to capture authorization for order #101. The card was declined.'
+				)
+			);
+
+			await userEvent.click(
+				await screen.findByRole( 'button', {
+					name: 'Capture authorization for order #101',
+				} )
+			);
+			await waitFor( () =>
+				expect( mockCreateSuccessNotice ).toHaveBeenCalledWith(
+					'Payment for order #101 captured successfully.'
+				)
+			);
+
+			expect( mockCaptureAuthorization.mock.calls ).toEqual( [
+				[ 101, 'pi_first' ],
+				[ 101, 'pi_first' ],
+			] );
+		} );
+	} );
+
 	describe( 'when the merchant changes page around a capture', () => {
+		// A partial `Authorization`, client 11.1.0 `types/authorizations.d.ts:9-20`.
 		const authorizationRow = (
 			paymentIntentId: string,
 			orderId: number
@@ -2982,9 +3100,15 @@ describe( 'WooPayments money movement pages', () => {
 		let resolveStalePageOne: ( value: unknown ) => void;
 		let stalePageOneRequested: boolean;
 
-		// Page 1 answers at once the first time and is held after that; page 2 always answers at once.
+		let pageTwoRequests: number;
+
+		// Page 1 answers at once the first time and is held after that. Page 2 answers at once; any later read
+		// of it, which only a refresh after a capture makes, returns a changed page so the refresh shows.
+		// List responses carry `data` and `total_count`; summaries are `AuthorizationsSummary`, client 11.1.0
+		// `types/authorizations.d.ts:30-34`.
 		beforeEach( () => {
 			stalePageOneRequested = false;
+			pageTwoRequests = 0;
 			const stalePageOne = new Promise( ( resolve ) => {
 				resolveStalePageOne = resolve;
 			} );
@@ -2992,10 +3116,26 @@ describe( 'WooPayments money movement pages', () => {
 
 			mockGetAuthorizations.mockImplementation( ( query = {} ) => {
 				if ( query.page === 2 ) {
-					return Promise.resolve( {
-						data: [ authorizationRow( 'pi_page_two', 201 ) ],
-						total_count: 30,
-					} );
+					pageTwoRequests += 1;
+
+					return Promise.resolve(
+						pageTwoRequests === 1
+							? {
+									data: [
+										authorizationRow( 'pi_page_two', 201 ),
+									],
+									total_count: 30,
+							  }
+							: {
+									data: [
+										authorizationRow(
+											'pi_page_two_b',
+											202
+										),
+									],
+									total_count: 29,
+							  }
+					);
 				}
 
 				if ( ! pageOneLoaded ) {
@@ -3013,7 +3153,11 @@ describe( 'WooPayments money movement pages', () => {
 			} );
 			mockGetAuthorizationsSummary.mockImplementation( ( query = {} ) =>
 				Promise.resolve( {
-					count: query.page === 1 && stalePageOneRequested ? 29 : 30,
+					count:
+						( query.page === 1 && stalePageOneRequested ) ||
+						( query.page === 2 && pageTwoRequests > 1 )
+							? 29
+							: 30,
 					total: 150000,
 					currency: 'usd',
 				} )
@@ -3032,10 +3176,10 @@ describe( 'WooPayments money movement pages', () => {
 				</MemoryRouter>
 			);
 
-		const expectPageTwoOnScreen = () => {
+		const expectPageTwoOnScreen = ( orderId: number, count: number ) => {
 			expect(
 				screen.getByRole( 'button', {
-					name: 'Capture authorization for order #201',
+					name: `Capture authorization for order #${ orderId }`,
 				} )
 			).toBeInTheDocument();
 			expect(
@@ -3045,9 +3189,9 @@ describe( 'WooPayments money movement pages', () => {
 			).not.toBeInTheDocument();
 			expect(
 				screen.getByTestId( 'money-movement-dataviews' )
-			).toHaveAttribute( 'data-total-items', '30' );
+			).toHaveAttribute( 'data-total-items', String( count ) );
 			expect(
-				screen.getByText( summaryItem( '30 authorization(s)' ) )
+				screen.getByText( summaryItem( `${ count } authorization(s)` ) )
 			).toBeInTheDocument();
 		};
 
@@ -3080,6 +3224,7 @@ describe( 'WooPayments money movement pages', () => {
 			).toBeInTheDocument();
 
 			await act( async () => {
+				// `CaptureAuthorizationApiResponse`, client 11.1.0 `types/authorizations.d.ts:49-51`.
 				resolveCapture( { id: 'pi_page_one', status: 'succeeded' } );
 				await capturePromise;
 			} );
@@ -3095,10 +3240,13 @@ describe( 'WooPayments money movement pages', () => {
 				)
 			);
 
-			expectPageTwoOnScreen();
+			// The capture settled on page 2, so page 2 is read again and its changed rows and total show.
+			expectPageTwoOnScreen( 202, 29 );
+			expect( pageTwoRequests ).toBe( 2 );
 		} );
 
 		it( 'keeps the new page when the refresh after a capture resolves late', async () => {
+			// `CaptureAuthorizationApiResponse`, client 11.1.0 `types/authorizations.d.ts:49-51`.
 			mockCaptureAuthorization.mockResolvedValueOnce( {
 				id: 'pi_page_one',
 				status: 'succeeded',
@@ -3135,7 +3283,9 @@ describe( 'WooPayments money movement pages', () => {
 				)
 			);
 
-			expectPageTwoOnScreen();
+			// The refresh read page 1, the page on screen when the capture settled; page 2 loaded once.
+			expectPageTwoOnScreen( 201, 30 );
+			expect( pageTwoRequests ).toBe( 1 );
 		} );
 	} );
 
@@ -8367,6 +8517,9 @@ describe( 'WooPayments money movement pages', () => {
 		page.unmount();
 
 		await act( async () => {
+			// A partial `Charge`, client 11.1.0 `types/charges.d.ts:59-94` (`id`, `amount`, `created`, `currency`,
+			// `payment_intent`; `balance_transaction` as its unexpanded id, which native's `WooPaymentsCharge`
+			// accepts). `type` is not in the client type; native reads it when it normalizes a charge.
 			resolveCharge( {
 				id: 'ch_left',
 				payment_intent: 'pi_left',
