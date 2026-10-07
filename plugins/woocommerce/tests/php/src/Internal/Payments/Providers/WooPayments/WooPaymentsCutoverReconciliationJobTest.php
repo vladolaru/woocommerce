@@ -2905,8 +2905,32 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				++$this->deactivation_calls;
 				return true;
 			}
+
+			/** @var array<int,int> */
+			public array $remediation_by_site = array();
+
+			/** Count remediation scheduling per site. */
+			public function ensure_fee_remediation_scheduled(): bool {
+				$site_id                               = get_current_blog_id();
+				$this->remediation_by_site[ $site_id ] = ( $this->remediation_by_site[ $site_id ] ?? 0 ) + 1;
+				return true;
+			}
 		};
-		$sut                = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization() );
+		$normalization      = new class() extends WooPaymentsCutoverNormalizationRunner {
+			/** @var array<int,int> */
+			public array $runs_by_site = array();
+
+			/** Count normalization per site. */
+			public function run(): array {
+				$site_id                        = get_current_blog_id();
+				$this->runs_by_site[ $site_id ] = ( $this->runs_by_site[ $site_id ] ?? 0 ) + 1;
+				return array(
+					'ran'     => true,
+					'changes' => array(),
+				);
+			}
+		};
+		$sut                = $this->create_job( true, $preflight, null, true, $normalization );
 
 		try {
 			$this->assertTrue( $sut->enqueue( 'merchant' ) );
@@ -2939,8 +2963,16 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$restored = $this->require_state_store()->get_record();
 			$this->assertIsArray( $restored );
 			$this->assertSame( 'verify_native_ownership', $restored['current_step'] );
+			$this->require_scheduler()->cancel( $restored['generation'], 2 );
+			$this->start_fresh_request();
+			$this->create_job( true, $preflight, null, false, $normalization )->handle_reconcile( $restored['generation'], 2 );
+			$done = $this->require_state_store()->get_record();
+			$this->assertIsArray( $done );
+			$this->assertSame( WooPaymentsCutoverState::DONE, $done['state'] );
 			restore_current_blog();
 			$this->assertSame( 1, $deactivation_calls, 'The plugin is not deactivated a second time.' );
+			$this->assertSame( 1, $normalization->runs_by_site[ $archived_site_id ] ?? 0, 'The restored site runs its own normalization.' );
+			$this->assertSame( 1, $preflight->remediation_by_site[ $archived_site_id ] ?? 0, 'The restored site schedules its own fee remediation.' );
 		} finally {
 			if ( get_current_blog_id() !== $main_site_id ) {
 				restore_current_blog();
@@ -3157,6 +3189,82 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$this->cleanup_state();
 			restore_current_blog();
 			wpmu_delete_blog( $second_site_id, true );
+		}
+	}
+
+	/**
+	 * @testdox A site archived after fan-out whose callback still runs and finds an exclusion excludes itself and its peers.
+	 * @group multisite
+	 */
+	public function test_archived_site_callback_excludes_itself_and_its_peers(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+
+		$main_site_id     = get_current_blog_id();
+		$archived_site_id = $this->create_cutover_multisite_site( 'cutover-archived-exclusion.example.org' );
+		$failures_by_site = array(
+			$main_site_id     => array(),
+			$archived_site_id => array( 'legacy_stripe_billing_subscriptions_present' ),
+		);
+		$preflight        = new class( $failures_by_site ) extends WooPaymentsCutoverPreflightService {
+			/** @var array<int,string[]> */
+			private array $failures_by_site;
+
+			/**
+			 * @param array<int,string[]> $failures_by_site Controlled failures.
+			 */
+			public function __construct( array &$failures_by_site ) {
+				$this->failures_by_site =& $failures_by_site;
+			}
+
+			/** @return string[] */
+			public function get_reconciliation_failures(): array {
+				return $this->failures_by_site[ get_current_blog_id() ] ?? array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Return network activation. */
+			public function is_woopayments_network_active(): bool {
+				return true;
+			}
+		};
+		$sut              = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization() );
+
+		try {
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			update_blog_status( $archived_site_id, 'archived', '1' );
+			// A super admin request, or a worker already running, can still run the archived site's callback.
+			switch_to_blog( $archived_site_id );
+			$pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $pending );
+			$this->assertGreaterThan( 0, $this->require_scheduler()->get_scheduled_action_id( $pending['generation'], 1 ), 'The fan-out scheduled the site before it was archived.' );
+			$this->require_scheduler()->cancel( $pending['generation'], 1 );
+			$sut->handle_reconcile( $pending['generation'], 1 );
+			$own = $this->require_state_store()->get_record();
+			$this->assertIsArray( $own );
+			$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $own['state'], 'The archived site excludes its own record.' );
+			restore_current_blog();
+
+			$peer = $this->require_state_store()->get_record();
+			$this->assertIsArray( $peer );
+			$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $peer['state'] );
+		} finally {
+			if ( get_current_blog_id() !== $main_site_id ) {
+				restore_current_blog();
+			}
+			switch_to_blog( $archived_site_id );
+			$this->cleanup_state();
+			restore_current_blog();
+			wpmu_delete_blog( $archived_site_id, true );
 		}
 	}
 
