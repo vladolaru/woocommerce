@@ -2546,7 +2546,6 @@ describe( 'WooPayments money movement pages', () => {
 				status: 'succeeded',
 			} );
 			await capturePromise;
-			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
 		} );
 
 		await waitFor( () =>
@@ -2560,49 +2559,66 @@ describe( 'WooPayments money movement pages', () => {
 		);
 	} );
 
-	it( 'reloads uncaptured summary data after a successful authorization action', async () => {
-		mockGetAuthorizations
-			.mockResolvedValueOnce( {
-				data: [
-					{
-						payment_intent_id: 'pi_auth',
-						order_id: 123,
-						created: '2026-06-12T10:30:00Z',
-						amount: 5000,
-						currency: 'usd',
-					},
-				],
-				total_count: 1,
-			} )
-			.mockResolvedValueOnce( {
-				data: [],
-				total_count: 0,
-			} );
-		mockGetAuthorizationsSummary
-			.mockResolvedValueOnce( {
-				count: 1,
-				total: 5000,
-				currency: 'usd',
-			} )
-			.mockResolvedValueOnce( {
-				count: 1,
-				total: 5000,
-				currency: 'usd',
-			} )
-			.mockResolvedValueOnce( {
-				count: 0,
-				total: 0,
-				currency: 'usd',
-			} )
-			.mockResolvedValueOnce( {
-				count: 0,
-				total: 0,
-				currency: 'usd',
-			} );
-		mockCaptureAuthorization.mockResolvedValueOnce( {
-			id: 'pi_auth',
-			status: 'succeeded',
+	/**
+	 * The uncaptured reads answer from the store's state: one authorization until the capture lands, none after.
+	 * Rows are partial `Authorization`s (client 11.1.0 `types/authorizations.d.ts:9-20`), summaries are
+	 * `AuthorizationsSummary` (`:30-34`) and the capture result is `CaptureAuthorizationApiResponse` (`:49-51`).
+	 * A list response carries only `data` (`GetAuthorizationsApiResponse`, `:45-47`; native returns the platform's
+	 * response as is, `WooPaymentsAuthorizationsRestController.php:120-122`), so the list total comes from the summary.
+	 *
+	 * @param options               Options.
+	 * @param options.globalSummary Answers the tab's global count read (`{}`); the list summary otherwise.
+	 */
+	const mockUncapturedStore = ( {
+		globalSummary,
+	}: {
+		globalSummary?: ( captured: boolean ) => Promise< unknown >;
+	} = {} ) => {
+		let captured = false;
+		const summary = () =>
+			Promise.resolve(
+				captured
+					? { count: 0, total: 0, currency: 'usd' }
+					: { count: 1, total: 5000, currency: 'usd' }
+			);
+
+		mockGetAuthorizations.mockImplementation( () =>
+			Promise.resolve(
+				captured
+					? { data: [] }
+					: {
+							data: [
+								{
+									payment_intent_id: 'pi_auth',
+									order_id: 123,
+									created: '2026-06-12T10:30:00Z',
+									amount: 5000,
+									currency: 'usd',
+								},
+							],
+					  }
+			)
+		);
+		mockGetAuthorizationsSummary.mockImplementation(
+			( query = {} ) =>
+				( Object.keys( query ).length === 0 && globalSummary
+					? globalSummary( captured )
+					: summary() ) as ReturnType<
+					typeof mockGetAuthorizationsSummary
+				>
+		);
+		mockCaptureAuthorization.mockImplementation( () => {
+			captured = true;
+
+			return Promise.resolve( {
+				id: 'pi_auth',
+				status: 'succeeded',
+			} ) as ReturnType< typeof mockCaptureAuthorization >;
 		} );
+	};
+
+	it( 'reloads uncaptured summary data after a successful authorization action', async () => {
+		mockUncapturedStore();
 
 		render(
 			<MemoryRouter
@@ -2627,10 +2643,6 @@ describe( 'WooPayments money movement pages', () => {
 			);
 		} );
 
-		await waitFor( () => {
-			expect( mockGetAuthorizations ).toHaveBeenCalledTimes( 2 );
-			expect( mockGetAuthorizationsSummary ).toHaveBeenCalledTimes( 4 );
-		} );
 		expect(
 			await screen.findByText( summaryItem( '0 authorization(s)' ) )
 		).toBeInTheDocument();
@@ -2674,36 +2686,13 @@ describe( 'WooPayments money movement pages', () => {
 			resolveRefreshedCount = resolve;
 		} );
 
-		mockGetAuthorizations
-			.mockResolvedValueOnce( {
-				data: [
-					{
-						payment_intent_id: 'pi_auth',
-						order_id: 123,
-						created: '2026-06-12T10:30:00Z',
-						amount: 5000,
-						currency: 'usd',
-					},
-				],
-				total_count: 1,
-			} )
-			.mockResolvedValueOnce( { data: [], total_count: 0 } );
-		mockGetAuthorizationsSummary
-			.mockResolvedValueOnce( {
-				count: 1,
-				total: 5000,
-				currency: 'usd',
-			} )
-			.mockReturnValueOnce( initialCountPromise )
-			.mockResolvedValueOnce( {
-				count: 0,
-				total: 0,
-				currency: 'usd',
-			} )
-			.mockReturnValueOnce( refreshedCountPromise );
-		mockCaptureAuthorization.mockResolvedValueOnce( {
-			id: 'pi_auth',
-			status: 'succeeded',
+		let isRefreshedCountRequested = false;
+		mockUncapturedStore( {
+			globalSummary: ( captured ) => {
+				isRefreshedCountRequested = captured;
+
+				return captured ? refreshedCountPromise : initialCountPromise;
+			},
 		} );
 
 		render(
@@ -2722,9 +2711,7 @@ describe( 'WooPayments money movement pages', () => {
 		await act( async () => {
 			await userEvent.click( captureButton );
 		} );
-		await waitFor( () =>
-			expect( mockGetAuthorizationsSummary ).toHaveBeenCalledTimes( 4 )
-		);
+		await waitFor( () => expect( isRefreshedCountRequested ).toBe( true ) );
 
 		await act( async () => {
 			resolveRefreshedCount( {
@@ -2752,42 +2739,19 @@ describe( 'WooPayments money movement pages', () => {
 	} );
 
 	it( 'shows an unavailable uncaptured count when the newest refresh fails', async () => {
-		mockGetAuthorizations
-			.mockResolvedValueOnce( {
-				data: [
-					{
-						payment_intent_id: 'pi_auth',
-						order_id: 123,
-						created: '2026-06-12T10:30:00Z',
-						amount: 5000,
-						currency: 'usd',
-					},
-				],
-				total_count: 1,
-			} )
-			.mockResolvedValueOnce( { data: [], total_count: 0 } );
-		mockGetAuthorizationsSummary
-			.mockResolvedValueOnce( {
-				count: 1,
-				total: 5000,
-				currency: 'usd',
-			} )
-			.mockResolvedValueOnce( {
-				count: 1,
-				total: 5000,
-				currency: 'usd',
-			} )
-			.mockResolvedValueOnce( {
-				count: 0,
-				total: 0,
-				currency: 'usd',
-			} )
-			.mockRejectedValueOnce(
-				new Error( 'Global authorization count unavailable.' )
-			);
-		mockCaptureAuthorization.mockResolvedValueOnce( {
-			id: 'pi_auth',
-			status: 'succeeded',
+		mockUncapturedStore( {
+			globalSummary: ( captured ) =>
+				captured
+					? Promise.reject(
+							new Error(
+								'Global authorization count unavailable.'
+							)
+					  )
+					: Promise.resolve( {
+							count: 1,
+							total: 5000,
+							currency: 'usd',
+					  } ),
 		} );
 
 		render(
@@ -2835,7 +2799,6 @@ describe( 'WooPayments money movement pages', () => {
 					currency: 'usd',
 				},
 			],
-			total_count: 1,
 		} );
 		mockGetAuthorizationsSummary.mockResolvedValue( {
 			count: 1,
@@ -2845,6 +2808,12 @@ describe( 'WooPayments money movement pages', () => {
 		mockCaptureAuthorization.mockReturnValueOnce(
 			capturePromise as Promise< never >
 		);
+
+		// The tab's global count is the summary read with an empty query.
+		const getGlobalCountReads = () =>
+			mockGetAuthorizationsSummary.mock.calls.filter(
+				( [ query ] ) => Object.keys( query ?? {} ).length === 0
+			).length;
 
 		const mountedPage = render(
 			<MemoryRouter
@@ -2865,14 +2834,25 @@ describe( 'WooPayments money movement pages', () => {
 			} )
 		);
 		mountedPage.unmount();
+		const globalCountReadsAtUnmount = getGlobalCountReads();
+		expect( globalCountReadsAtUnmount ).toBeGreaterThan( 0 );
 
-		await act( async () => {
-			resolveCapture( { id: 'pi_auth', status: 'succeeded' } );
-			await capturePromise;
-			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
-		} );
+		jest.useFakeTimers();
+		try {
+			await act( async () => {
+				resolveCapture( { id: 'pi_auth', status: 'succeeded' } );
+				await capturePromise;
+				await jest.runAllTimersAsync();
+			} );
+		} finally {
+			jest.useRealTimers();
+		}
 
-		expect( mockGetAuthorizationsSummary ).toHaveBeenCalledTimes( 3 );
+		// The capture finished, so its refresh step ran, and it read no global count.
+		expect( mockCreateSuccessNotice ).toHaveBeenCalledWith(
+			'Payment for order #123 captured successfully.'
+		);
+		expect( getGlobalCountReads() ).toBe( globalCountReadsAtUnmount );
 	} );
 
 	// Client 11.1.0 `components/capture-authorization-button/index.tsx:33-49`: every Capture button is disabled while
@@ -2883,8 +2863,9 @@ describe( 'WooPayments money movement pages', () => {
 			resolveCapture = resolve;
 		} );
 
-		// Partial rows of client 11.1.0 `types/authorizations.d.ts:9-20` (`Authorization`), in a list response
-		// with `total_count`; the summary is `AuthorizationsSummary` (`:30-34`).
+		// Partial rows of client 11.1.0 `types/authorizations.d.ts:9-20` (`Authorization`) in a list response with
+		// only `data` (`GetAuthorizationsApiResponse`, `:45-47`; native returns the platform's response as is,
+		// `WooPaymentsAuthorizationsRestController.php:120-122`); the summary is `AuthorizationsSummary` (`:30-34`).
 		mockGetAuthorizations.mockResolvedValue( {
 			data: [
 				{
@@ -2902,7 +2883,6 @@ describe( 'WooPayments money movement pages', () => {
 					currency: 'usd',
 				},
 			],
-			total_count: 2,
 		} );
 		mockGetAuthorizationsSummary.mockResolvedValue( {
 			count: 2,
@@ -2983,7 +2963,6 @@ describe( 'WooPayments money movement pages', () => {
 						currency: 'usd',
 					},
 				],
-				total_count: 1,
 			} );
 			mockGetAuthorizationsSummary.mockResolvedValue( {
 				count: 1,
@@ -3104,8 +3083,9 @@ describe( 'WooPayments money movement pages', () => {
 
 		// Page 1 answers at once the first time and is held after that. Page 2 answers at once; any later read
 		// of it, which only a refresh after a capture makes, returns a changed page so the refresh shows.
-		// List responses carry `data` and `total_count`; summaries are `AuthorizationsSummary`, client 11.1.0
-		// `types/authorizations.d.ts:30-34`.
+		// List responses carry only `data` (client 11.1.0 `types/authorizations.d.ts:45-47`; native returns the
+		// platform's response as is, `WooPaymentsAuthorizationsRestController.php:120-122`), so the list total comes
+		// from the summary, an `AuthorizationsSummary` (`:30-34`).
 		beforeEach( () => {
 			stalePageOneRequested = false;
 			pageTwoRequests = 0;
@@ -3124,7 +3104,6 @@ describe( 'WooPayments money movement pages', () => {
 									data: [
 										authorizationRow( 'pi_page_two', 201 ),
 									],
-									total_count: 30,
 							  }
 							: {
 									data: [
@@ -3133,7 +3112,6 @@ describe( 'WooPayments money movement pages', () => {
 											202
 										),
 									],
-									total_count: 29,
 							  }
 					);
 				}
@@ -3143,7 +3121,6 @@ describe( 'WooPayments money movement pages', () => {
 
 					return Promise.resolve( {
 						data: [ authorizationRow( 'pi_page_one', 101 ) ],
-						total_count: 30,
 					} );
 				}
 
@@ -3231,7 +3208,6 @@ describe( 'WooPayments money movement pages', () => {
 			await act( async () => {
 				resolveStalePageOne( {
 					data: [ authorizationRow( 'pi_stale', 199 ) ],
-					total_count: 29,
 				} );
 			} );
 			await waitFor( () =>
@@ -3274,7 +3250,6 @@ describe( 'WooPayments money movement pages', () => {
 			await act( async () => {
 				resolveStalePageOne( {
 					data: [ authorizationRow( 'pi_stale', 199 ) ],
-					total_count: 29,
 				} );
 			} );
 			await waitFor( () =>

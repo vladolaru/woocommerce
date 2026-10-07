@@ -5,9 +5,7 @@ import directApiFetch from '@wordpress/api-fetch';
 
 jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 
-const mockCreateSuccessNotice = jest.fn();
 const mockCreateErrorNotice = jest.fn();
-const mockGetSettings = jest.fn();
 const mockRegister = jest.fn();
 
 jest.mock( '@wordpress/data', () => ( {
@@ -19,7 +17,6 @@ jest.mock( '@wordpress/data', () => ( {
 	dispatch: jest.fn( ( storeName: string ) => {
 		if ( storeName === 'core/notices' ) {
 			return {
-				createSuccessNotice: mockCreateSuccessNotice,
 				createErrorNotice: mockCreateErrorNotice,
 			};
 		}
@@ -30,9 +27,6 @@ jest.mock( '@wordpress/data', () => ( {
 		};
 	} ),
 	register: mockRegister,
-	select: jest.fn( () => ( {
-		getSettings: mockGetSettings,
-	} ) ),
 	useDispatch: jest.fn(),
 	useSelect: jest.fn(),
 } ) );
@@ -41,11 +35,10 @@ const mockDirectApiFetch = directApiFetch as jest.MockedFunction<
 	typeof directApiFetch
 >;
 
+// The settings save and resolve flows run against the registered store in settings-store.test.ts.
 describe( 'WooPayments settings data store', () => {
 	beforeEach( () => {
-		mockCreateSuccessNotice.mockReset();
 		mockCreateErrorNotice.mockReset();
-		mockGetSettings.mockReset();
 		mockRegister.mockReset();
 		mockDirectApiFetch.mockReset();
 		delete (
@@ -68,193 +61,6 @@ describe( 'WooPayments settings data store', () => {
 		expect( STORE_NAME ).toBe( 'wc/payments/settings' );
 		expect( store.name ).toBe( 'wc/payments/settings' );
 		expect( mockRegister ).not.toHaveBeenCalled();
-	} );
-
-	it( 'resolves settings from the preserved WooPayments settings endpoint', async () => {
-		const { getSettings } = await import( '../data/resolvers' );
-		const resolver = getSettings();
-
-		expect( resolver.next().value ).toEqual( {
-			type: 'API_FETCH',
-			request: {
-				path: '/wc/v3/payments/settings',
-			},
-		} );
-	} );
-
-	it( 'saves settings to the preserved WooPayments settings endpoint', async () => {
-		const settings = {
-			is_wcpay_enabled: true,
-			enabled_payment_method_ids: [ 'card' ],
-		};
-		const response = {
-			data: {
-				woopay_last_disable_date: '2026-06-20',
-				payment_method_statuses: {
-					card_payments: {
-						status: 'active',
-						requirements: [],
-					},
-				},
-			},
-		};
-		mockGetSettings.mockReturnValue( settings );
-
-		const { saveSettings } = await import( '../data/actions' );
-		const action = saveSettings();
-
-		action.next();
-
-		expect( action.next().value ).toEqual( {
-			type: 'API_FETCH',
-			request: {
-				path: '/wc/v3/payments/settings',
-				method: 'post',
-				data: settings,
-			},
-		} );
-
-		expect( action.next( response ).value ).toEqual( {
-			type: 'SET_SETTINGS',
-			data: {
-				...settings,
-				woopay_last_disable_date: '2026-06-20',
-				payment_method_statuses: {
-					card_payments: {
-						status: 'active',
-						requirements: [],
-					},
-				},
-			},
-		} );
-		action.next();
-		action.next();
-		const result = action.next();
-
-		expect( result.value ).toBe( true );
-		expect( mockCreateSuccessNotice ).toHaveBeenCalledWith(
-			'Settings saved.'
-		);
-	} );
-
-	it( 'keeps the submitted WooPay choice when the save response reports WooPay off for an ineligible account', async () => {
-		const settings = {
-			is_woopay_enabled: true,
-			enabled_payment_method_ids: [ 'card' ],
-		};
-		mockGetSettings.mockReturnValue( settings );
-
-		const { saveSettings } = await import( '../data/actions' );
-		const action = saveSettings();
-
-		action.next();
-		action.next();
-
-		expect(
-			action.next( { data: { is_woopay_enabled: false } } ).value
-		).toEqual( {
-			type: 'SET_SETTINGS',
-			data: expect.objectContaining( { is_woopay_enabled: true } ),
-		} );
-	} );
-
-	it( 'accepts unwrapped REST settings responses when saving settings', async () => {
-		const settings = {
-			is_wcpay_enabled: true,
-			enabled_payment_method_ids: [ 'card' ],
-		};
-		mockGetSettings.mockReturnValue( settings );
-
-		const { saveSettings } = await import( '../data/actions' );
-		const action = saveSettings();
-
-		action.next();
-		action.next();
-		action.next( {
-			payment_method_statuses: {
-				card_payments: {
-					status: 'active',
-					requirements: [],
-				},
-			},
-		} );
-		action.next();
-		action.next();
-		const result = action.next();
-
-		expect( result.value ).toBe( true );
-		expect( mockCreateSuccessNotice ).toHaveBeenCalledWith(
-			'Settings saved.'
-		);
-	} );
-
-	it( 'suppresses the raw server error notice when saving settings fails with field-level details', async () => {
-		const settings = {
-			is_wcpay_enabled: true,
-		};
-		const error = {
-			server_error:
-				'The statement descriptor contains invalid characters.',
-			data: {
-				details: {
-					account_statement_descriptor: {
-						message:
-							'The statement descriptor contains invalid characters.',
-					},
-				},
-			},
-		};
-		mockGetSettings.mockReturnValue( settings );
-
-		const { saveSettings } = await import( '../data/actions' );
-		const action = saveSettings();
-
-		action.next();
-		action.next();
-		let result = action.throw( error );
-		while ( ! result.done ) {
-			result = action.next();
-		}
-
-		expect( result.value ).toBe( false );
-		expect( mockCreateErrorNotice ).toHaveBeenCalledTimes( 1 );
-		expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
-			'Error saving settings.'
-		);
-	} );
-
-	it( 'shows the raw server error notice when saving settings fails without field-level details', async () => {
-		const settings = {
-			is_wcpay_enabled: true,
-		};
-		const error = {
-			server_error: 'The request could not be completed.',
-			data: {
-				details: {},
-			},
-		};
-		mockGetSettings.mockReturnValue( settings );
-
-		const { saveSettings } = await import( '../data/actions' );
-		const action = saveSettings();
-
-		action.next();
-		action.next();
-		let result = action.throw( error );
-		while ( ! result.done ) {
-			result = action.next();
-		}
-
-		expect( result.value ).toBe( false );
-		expect( mockCreateErrorNotice ).toHaveBeenCalledTimes( 2 );
-		expect( mockCreateErrorNotice ).toHaveBeenNthCalledWith(
-			1,
-			'Error saving settings.'
-		);
-		expect( mockCreateErrorNotice ).toHaveBeenNthCalledWith(
-			2,
-			'The request could not be completed.'
-		);
 	} );
 
 	it( 'saves allowlisted options through the preserved option endpoint', async () => {

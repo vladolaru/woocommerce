@@ -632,6 +632,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 		// between tests.
 		mockTourKitConfigs.length = 0;
 		settingsWindow.wcSettings = initialWcSettings;
+		jest.useRealTimers();
 	} );
 
 	it( 'renders the native settings manager sections', () => {
@@ -5190,6 +5191,11 @@ describe( 'WooPaymentsSettingsPage', () => {
 	} );
 
 	it( 'does not open WooPay feedback when the last disable date is recent', async () => {
+		// Five days after the last disable, inside the seven-day feedback throttle.
+		jest.useFakeTimers( {
+			now: new Date( '2026-06-20T12:00:00Z' ),
+			doNotFake: [ 'setTimeout', 'queueMicrotask', 'nextTick' ],
+		} );
 		let isWooPayEnabled = true;
 		const setWooPayEnabled = jest.fn( ( value: boolean ) => {
 			isWooPayEnabled = value;
@@ -5197,7 +5203,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 		mockUseGetSettings.mockImplementation( () => ( {
 			account_country: 'US',
 			is_woopay_enabled: isWooPayEnabled,
-			woopay_last_disable_date: new Date().toISOString().slice( 0, 10 ),
+			woopay_last_disable_date: '2026-06-15',
 			available_payment_method_ids: [
 				'card',
 				'link',

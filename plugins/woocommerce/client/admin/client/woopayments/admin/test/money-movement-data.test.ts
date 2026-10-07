@@ -37,28 +37,23 @@ jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 
 const mockApiFetch = apiFetch as jest.MockedFunction< typeof apiFetch >;
 
-const getCurrentUserTimezone = () => {
-	const offset = -new Date().getTimezoneOffset();
-	const sign = offset >= 0 ? '+' : '-';
-	const absoluteOffset = Math.abs( offset );
-
-	return `${ sign }${ String( Math.floor( absoluteOffset / 60 ) ).padStart(
-		2,
-		'0'
-	) }:${ String( absoluteOffset % 60 ).padStart( 2, '0' ) }`;
-};
-
 describe( 'WooPayments money movement data helpers', () => {
 	beforeEach( () => {
 		mockApiFetch.mockReset();
 		mockApiFetch.mockResolvedValue( {} );
 	} );
 
+	afterEach( () => {
+		jest.restoreAllMocks();
+	} );
+
 	it( 'preserves transactions endpoint paths and query names', async () => {
 		const readerSummaryAbortController = new AbortController();
-		const encodedUserTimezone = encodeURIComponent(
-			getCurrentUserTimezone()
+		// A browser at UTC-05:30, so the offset carries a sign and minutes.
+		jest.spyOn( Date.prototype, 'getTimezoneOffset' ).mockReturnValue(
+			330
 		);
+		const encodedUserTimezone = '-05%3A30';
 
 		await getWooPaymentsTransactions( {
 			page: 2,
