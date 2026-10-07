@@ -179,7 +179,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @var bool
 	 */
-	private bool $current_user_can_cutover = false;
+	private array $granted_cutover_capabilities = array();
 
 	/**
 	 * Deactivate plugin calls recorded by the legacy proxy mock.
@@ -880,19 +880,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Mandatory cutover allows WooPayments reactivation when plugin-era evidence exists.
-	 */
-	public function test_mandatory_activation_guard_allows_reactivation_when_plugin_evidence_exists(): void {
-		$this->enable_ready_cutover();
-		add_filter( WooPaymentsCutoverController::FILTER_MANDATORY_CUTOVER_ENABLED, '__return_true' );
-		$controller = $this->create_cutover_controller();
-
-		$controller->guard_woopayments_activation();
-
-		$this->assertTrue( true, 'A completed mandatory cutover must still permit a rollback when the store has WooPayments plugin evidence.' );
-	}
-
-	/**
 	 * @testdox Native WooPayments should block a first-time standalone plugin activation.
 	 */
 	public function test_native_activation_guard_blocks_a_store_without_woopayments_plugin_evidence(): void {
@@ -1068,60 +1055,84 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Mandatory activation guard stays open until a cutover generation is durably complete.
+	 * @testdox Starting the switch needs manage_woocommerce plus the plugin capability for the plugin's scope: $scope with the given capabilities queues $expected.
+	 * @dataProvider provider_start_capabilities
+	 *
+	 * @param string   $scope        Where WooPayments is active: site or network.
+	 * @param string[] $capabilities Capabilities the user has.
+	 * @param string[] $expected     Sources the job is asked to queue.
 	 */
-	public function test_mandatory_activation_guard_stays_open_before_done(): void {
-		$this->fake_wp_die_handler();
-		add_filter( WooPaymentsCutoverController::FILTER_MANDATORY_CUTOVER_ENABLED, '__return_true' );
+	public function test_starting_the_switch_requires_the_capabilities_for_the_plugin_scope( string $scope, array $capabilities, array $expected ): void {
+		$this->fake_plugin_active( 'site' === $scope, 'network' === $scope );
+		$this->fake_current_user_capabilities( $capabilities );
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		$job        = new class() extends WooPaymentsCutoverReconciliationJob {
-			/** Return an external lifecycle event. */
-			public function is_internal_plugin_lifecycle_change(): bool {
-				return false;
+			/** @var string[] */
+			public array $sources = array();
+
+			/**
+			 * @param string $source Trigger source.
+			 */
+			public function enqueue( string $source ): bool {
+				$this->sources[] = $source;
+				return true;
 			}
 		};
 		$controller = $this->create_cutover_controller( null, $job );
 
-		$controller->guard_woopayments_activation();
+		$controller->disable_woopayments_plugin();
 
-		$this->assertTrue( true, 'WooPayments reactivation remains a merchant option until cutover completes.' );
+		$this->assertSame( $expected, $job->sources );
 	}
 
 	/**
-	 * @testdox Mandatory activation guard remains default-off when native preflight is ready.
+	 * Capability combinations for starting the switch.
+	 *
+	 * @return array<string,array{0:string,1:string[],2:string[]}>
 	 */
-	public function test_mandatory_activation_guard_remains_default_off_when_preflight_is_ready(): void {
-		$this->fake_wp_die_handler();
-		$this->enable_ready_cutover();
-
-		$this->sut->guard_woopayments_activation();
-
-		$this->assertTrue( true, 'Mandatory cutover must still require an explicit rollout filter.' );
+	public function provider_start_capabilities(): array {
+		return array(
+			'site, store manager without activate_plugins' => array( 'site', array( 'manage_woocommerce' ), array() ),
+			'site, activate_plugins without store manager' => array( 'site', array( 'activate_plugins' ), array() ),
+			'site, both capabilities'                      => array( 'site', array( 'manage_woocommerce', 'activate_plugins' ), array( 'merchant' ) ),
+			'network, without manage_network_plugins'      => array( 'network', array( 'manage_woocommerce', 'activate_plugins' ), array() ),
+			'network, with manage_network_plugins'         => array( 'network', array( 'manage_woocommerce', 'manage_network_plugins' ), array( 'merchant' ) ),
+		);
 	}
 
 	/**
-	 * @testdox Mandatory cutover rollout default is fail-closed.
+	 * @testdox With mandatory cutover $label, an admin page on a store still running the plugin queues $expected.
+	 * @testWith ["on", true, ["mandatory"]]
+	 *           ["off by default", false, []]
+	 *
+	 * @param string   $label     Readable case name.
+	 * @param bool     $mandatory Whether the mandatory cutover filter is turned on.
+	 * @param string[] $expected  Sources the job is asked to queue.
 	 */
-	public function test_mandatory_cutover_rollout_default_is_fail_closed(): void {
-		$this->fake_wp_die_handler();
+	public function test_mandatory_cutover_queues_the_switch_only_when_turned_on( string $label, bool $mandatory, array $expected ): void {
+		unset( $label );
+		$this->fake_plugin_active();
 		$this->enable_ready_cutover();
+		if ( $mandatory ) {
+			add_filter( WooPaymentsCutoverController::FILTER_MANDATORY_CUTOVER_ENABLED, '__return_true' );
+		}
+		$job        = new class() extends WooPaymentsCutoverReconciliationJob {
+			/** @var string[] */
+			public array $sources = array();
 
-		$this->assertFalse( WooPaymentsCutoverController::DEFAULT_MANDATORY_CUTOVER_ENABLED );
-		$this->sut->guard_woopayments_activation();
-		$this->assertTrue( true, 'Mandatory cutover remains fail-closed until the release rollout default is explicitly flipped.' );
-	}
+			/**
+			 * @param string $source Trigger source.
+			 */
+			public function enqueue( string $source ): bool {
+				$this->sources[] = $source;
+				return true;
+			}
+		};
+		$controller = $this->create_cutover_controller( null, $job );
 
-	/**
-	 * @testdox A completed mandatory cutover blocks a first-time plugin activation.
-	 */
-	public function test_mandatory_completed_cutover_blocks_a_first_time_plugin_activation(): void {
-		$this->fake_wp_die_handler();
-		$this->enable_ready_cutover();
-		delete_option( 'woocommerce_woocommerce_payments_version' );
-		$controller = $this->create_cutover_controller();
+		$controller->handle_admin_init();
 
-		$this->expectException( WooPaymentsCutoverBlockedException::class );
-
-		$controller->guard_woopayments_activation();
+		$this->assertSame( $expected, $job->sources );
 	}
 
 	/**
@@ -2046,7 +2057,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 					}
 				},
 				'current_user_can'   => fn( $capability ) => in_array( $capability, array( 'manage_woocommerce', 'activate_plugins', 'manage_network_plugins' ), true )
-					? $this->current_user_can_cutover
+					? in_array( $capability, $this->granted_cutover_capabilities, true )
 					: current_user_can( $capability ),
 			)
 		);
@@ -2215,7 +2226,16 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 * @param bool $can_cutover Whether the user can perform cutover actions.
 	 */
 	private function fake_current_user_caps( bool $can_cutover ): void {
-		$this->current_user_can_cutover = $can_cutover;
+		$this->granted_cutover_capabilities = $can_cutover ? array( 'manage_woocommerce', 'activate_plugins', 'manage_network_plugins' ) : array();
+	}
+
+	/**
+	 * Grant exactly these cutover-relevant capabilities to the current user.
+	 *
+	 * @param string[] $capabilities Granted among manage_woocommerce, activate_plugins and manage_network_plugins.
+	 */
+	private function fake_current_user_capabilities( array $capabilities ): void {
+		$this->granted_cutover_capabilities = $capabilities;
 	}
 
 	/**
