@@ -1324,9 +1324,20 @@ const WooPaymentsContent = ( {
 				);
 			}
 
+			// The status after the button announces the copy (WooPaymentsCheckoutBridge::get_card_testing_instructions()).
+			const status = button.parentNode?.querySelector(
+				'.js-woopayments-copy-test-number-status'
+			);
+			if ( status ) {
+				status.textContent = status.dataset.copiedMessage || '';
+			}
+
 			button.classList.add( 'state--success' );
 			window.setTimeout( () => {
 				button.classList.remove( 'state--success' );
+				if ( status ) {
+					status.textContent = '';
+				}
 			}, copyTestNumberSuccessDuration );
 		};
 

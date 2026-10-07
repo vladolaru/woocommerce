@@ -121,7 +121,8 @@ jest.mock( '@woocommerce/settings', () => {
 					},
 				],
 				testingInstructions:
-					'Use test card <button type="button" class="js-woopayments-copy-test-number" aria-label="Click to copy the test number to clipboard" title="Copy to clipboard"><i></i><span>4242 4242 4242 4242</span></button> or refer to our <a href="https://woocommerce.com/document/woopayments/testing-and-troubleshooting/testing/#test-cards" target="_blank">testing guide</a>.',
+					// Markup of WooPaymentsCheckoutBridge::get_card_testing_instructions().
+					'Use test card <button type="button" class="js-woopayments-copy-test-number" title="Copy to clipboard"><i></i><span>4242 4242 4242 4242</span></button><span class="js-woopayments-copy-test-number-status screen-reader-text" role="status" aria-live="polite" data-copied-message="Copied to clipboard."></span> or refer to our <a href="https://woocommerce.com/document/woopayments/testing-and-troubleshooting/testing/#test-cards" target="_blank">testing guide</a>.',
 			},
 			link: {
 				isReusable: false,
@@ -1062,8 +1063,9 @@ describe( 'wc-payment-method-woopayments', () => {
 			} )
 		);
 
+		// The visible number names the button (WCAG 2.5.3).
 		return screen.getByRole( 'button', {
-			name: 'Click to copy the test number to clipboard',
+			name: '4242 4242 4242 4242',
 		} );
 	}
 
@@ -1129,10 +1131,14 @@ describe( 'wc-payment-method-woopayments', () => {
 		fireEvent.click( button );
 
 		expect( button ).toHaveClass( 'state--success' );
+		expect( screen.getByRole( 'status' ) ).toHaveTextContent(
+			'Copied to clipboard.'
+		);
 
 		jest.advanceTimersByTime( 2000 );
 
 		expect( button ).not.toHaveClass( 'state--success' );
+		expect( screen.getByRole( 'status' ) ).toHaveTextContent( '' );
 	} );
 
 	it( 'does not register WooPay express from the card payment method bundle', () => {

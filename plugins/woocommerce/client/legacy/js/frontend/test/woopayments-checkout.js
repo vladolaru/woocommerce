@@ -3480,10 +3480,13 @@ describe( 'WooPayments checkout', () => {
 		delete window.wcpay_core_checkout_config_woocommerce_payments_ideal;
 	} );
 
+	// Markup of WooPaymentsCheckoutBridge::get_card_testing_instructions().
 	function renderTestNumberButton() {
 		document.body.innerHTML +=
 			'<button type="button" class="js-woopayments-copy-test-number">' +
-			'<i></i><span>4242 4242 4242 4242</span></button>';
+			'<i></i><span>4242 4242 4242 4242</span></button>' +
+			'<span class="js-woopayments-copy-test-number-status screen-reader-text" role="status" ' +
+			'aria-live="polite" data-copied-message="Copied to clipboard."></span>';
 
 		return document.querySelector( '.js-woopayments-copy-test-number' );
 	}
@@ -3556,12 +3559,17 @@ describe( 'WooPayments checkout', () => {
 		require( '../woopayments-checkout' );
 
 		button.click();
+		const status = document.querySelector(
+			'.js-woopayments-copy-test-number-status'
+		);
 
 		expect( button.classList.contains( 'state--success' ) ).toBe( true );
+		expect( status.textContent ).toBe( 'Copied to clipboard.' );
 
 		jest.advanceTimersByTime( 2000 );
 
 		expect( button.classList.contains( 'state--success' ) ).toBe( false );
+		expect( status.textContent ).toBe( '' );
 	} );
 
 	test( 'preserves the test-mode badge while hydrating accessible card brand icons', () => {

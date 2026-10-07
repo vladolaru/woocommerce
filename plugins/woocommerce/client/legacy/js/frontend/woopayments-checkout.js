@@ -612,6 +612,7 @@
 		var button;
 		var testNumber;
 		var icon;
+		var status;
 
 		if ( ! ( event.target instanceof window.Element ) ) {
 			return;
@@ -640,9 +641,22 @@
 			window.prompt( 'Copy test card number:', testNumber );
 		}
 
+		// The status after the button announces the copy (WooPaymentsCheckoutBridge::get_card_testing_instructions()).
+		status = button.parentNode
+			? button.parentNode.querySelector(
+					'.js-woopayments-copy-test-number-status'
+			  )
+			: null;
+		if ( status ) {
+			status.textContent = status.getAttribute( 'data-copied-message' ) || '';
+		}
+
 		button.classList.add( 'state--success' );
 		window.setTimeout( function () {
 			button.classList.remove( 'state--success' );
+			if ( status ) {
+				status.textContent = '';
+			}
 		}, copyTestNumberSuccessDuration );
 	}
 

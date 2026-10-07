@@ -1569,11 +1569,13 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 */
 	private function get_card_testing_instructions(): string {
 		$test_card_number = $this->get_test_card_for_country( $this->get_account_country() );
+		// The visible number names the button (client 11.1.0 replaces it with an aria-label), and a polite status
+		// announces the copy, as the Multibanco copy buttons do (WooPaymentsOrderSuccessPage).
 		$test_card_button = sprintf(
-			'<button type="button" class="js-woopayments-copy-test-number" aria-label="%1$s" title="%2$s"><i></i><span>%3$s</span></button>',
-			esc_attr__( 'Click to copy the test number to clipboard', 'woocommerce' ),
+			'<button type="button" class="js-woopayments-copy-test-number" title="%1$s"><i></i><span>%2$s</span></button><span class="js-woopayments-copy-test-number-status screen-reader-text" role="status" aria-live="polite" data-copied-message="%3$s"></span>',
 			esc_attr__( 'Copy to clipboard', 'woocommerce' ),
-			esc_html( $test_card_number )
+			esc_html( $test_card_number ),
+			esc_attr__( 'Copied to clipboard.', 'woocommerce' )
 		);
 		$testing_guide    = sprintf(
 			'<a href="%1$s" target="_blank">%2$s</a>',

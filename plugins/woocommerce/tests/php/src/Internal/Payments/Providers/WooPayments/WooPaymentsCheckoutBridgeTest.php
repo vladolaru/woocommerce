@@ -831,7 +831,9 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( '/assets/images/payment-methods/visa-color.svg', $config['paymentMethodsConfig']['card']['cardBrandIcons'][0]['src'] );
 		$this->assertStringContainsString( '4000 0064 2000 0001', $config['paymentMethodsConfig']['card']['testingInstructions'] );
 		$this->assertStringContainsString( 'js-woopayments-copy-test-number', $config['paymentMethodsConfig']['card']['testingInstructions'] );
-		$this->assertStringContainsString( 'Click to copy the test number to clipboard', $config['paymentMethodsConfig']['card']['testingInstructions'] );
+		$this->assertStringNotContainsString( 'aria-label', $config['paymentMethodsConfig']['card']['testingInstructions'] );
+		$this->assertStringContainsString( 'role="status"', $config['paymentMethodsConfig']['card']['testingInstructions'] );
+		$this->assertStringContainsString( 'data-copied-message="Copied to clipboard."', $config['paymentMethodsConfig']['card']['testingInstructions'] );
 		$this->assertStringContainsString( 'testing guide', $config['paymentMethodsConfig']['card']['testingInstructions'] );
 		$this->assertArrayHasKey( 'enabledBillingFields', $config );
 		$this->assertArrayHasKey( 'currency', $config );
