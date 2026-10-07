@@ -4,7 +4,7 @@ import { Button } from '@wordpress/components';
 import PaymentMethodIcons from '../../../ReusableComponents/PaymentMethodIcons';
 import { Separator } from '../../../ReusableComponents/Elements';
 import Accordion from '../../../ReusableComponents/AccordionSection';
-import { CommonHooks, OnboardingHooks } from '../../../../data';
+import { CommonHooks } from '../../../../data';
 import BusyStateWrapper from '../../../ReusableComponents/BusyStateWrapper';
 import HelpSection from '../../../ReusableComponents/HelpSection';
 import OnboardingHeader from '../Components/OnboardingHeader';
@@ -32,14 +32,8 @@ const WelcomeFeatures = () => {
 };
 
 const StepWelcome = ( { onNext } ) => {
-	const { storeCountry, ownBrandOnly } = CommonHooks.useWooSettings();
-	const { canUseCardPayments } = OnboardingHooks.useFlags();
-
-	const { icons } = usePaymentConfig(
-		storeCountry,
-		canUseCardPayments,
-		ownBrandOnly
-	);
+	const { storeCountry } = CommonHooks.useWooSettings();
+	const { icons } = usePaymentConfig( storeCountry );
 
 	const onboardingHeaderDescription = __(
 		'Your all-in-one integration for PayPal checkout solutions that enable buyers to pay via PayPal, Pay Later, and more.',
@@ -72,11 +66,7 @@ const StepWelcome = ( { onNext } ) => {
 				</BusyStateWrapper>
 			</div>
 			<Separator className="ppcp-r-page-welcome-mode-separator" />
-			<WelcomeDocs
-				useAcdc={ canUseCardPayments }
-				storeCountry={ storeCountry }
-				ownBrandOnly={ ownBrandOnly }
-			/>
+			<WelcomeDocs storeCountry={ storeCountry } />
 			<Separator text={ __( 'or', 'woocommerce' ) } />
 			<Accordion
 				title={ __( 'See advanced options', 'woocommerce' ) }

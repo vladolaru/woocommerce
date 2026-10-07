@@ -3,7 +3,7 @@ import { __ } from '@wordpress/i18n';
 import PricingDescription from './PricingDescription';
 import PaymentFlow from './PaymentFlow';
 
-const WelcomeDocs = ( { useAcdc, storeCountry, ownBrandOnly } ) => {
+const WelcomeDocs = ( { storeCountry } ) => {
 	return (
 		<div className="ppcp-r-welcome-docs">
 			<h2 className="ppcp-r-welcome-docs__title">
@@ -12,11 +12,7 @@ const WelcomeDocs = ( { useAcdc, storeCountry, ownBrandOnly } ) => {
 					'woocommerce'
 				) }
 			</h2>
-			<PaymentFlow
-				useAcdc={ useAcdc }
-				storeCountry={ storeCountry }
-				ownBrandOnly={ ownBrandOnly }
-			/>
+			<PaymentFlow storeCountry={ storeCountry } />
 			<PricingDescription />
 		</div>
 	);

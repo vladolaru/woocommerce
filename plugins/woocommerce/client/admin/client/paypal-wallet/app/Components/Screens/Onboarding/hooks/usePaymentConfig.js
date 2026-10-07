@@ -9,14 +9,10 @@ import {
 	PayInThree,
 } from '../Components/PaymentOptions';
 
-// List of all payment icons and which requirements they have.
+// List of all payment icons, and the countries they are limited to.
 const PAYMENT_ICONS = [
-	{ name: 'paypal', always: true },
-	{ name: 'venmo', isOwnBrand: true, onlyAcdc: false, countries: [ 'US' ] },
-	{ name: 'visa', isOwnBrand: false, onlyAcdc: false },
-	{ name: 'mastercard', isOwnBrand: false, onlyAcdc: false },
-	{ name: 'amex', isOwnBrand: false, onlyAcdc: false },
-	{ name: 'discover', isOwnBrand: false, onlyAcdc: false },
+	{ name: 'paypal' },
+	{ name: 'venmo', countries: [ 'US' ] },
 ];
 
 // Default configuration, used for all countries, unless they override individual attributes below.
@@ -62,45 +58,24 @@ const getCheckoutDescription = ( country ) =>
 		  );
 
 /**
- * Filters payment icons based on country and configuration.
+ * Filters payment icons based on country.
  *
- * @param {string}  country     - The country code
- * @param {boolean} includeAcdc - Whether to include advanced card payment methods
- * @param {boolean} onlyBranded - Whether to show only branded payment methods
+ * @param {string} country - The country code
  * @return {string[]} List of icon names
  */
-const getRelevantIcons = ( country, includeAcdc, onlyBranded ) =>
+const getRelevantIcons = ( country ) =>
 	PAYMENT_ICONS.filter(
-		( { always, isOwnBrand, onlyAcdc, countries = [] } ) => {
-			if ( always ) {
-				return true;
-			}
-
-			if ( onlyBranded && ! isOwnBrand ) {
-				return false;
-			}
-
-			if ( ! includeAcdc && onlyAcdc ) {
-				return false;
-			}
-
-			return ! countries.length || countries.includes( country );
-		}
+		( { countries = [] } ) =>
+			! countries.length || countries.includes( country )
 	).map( ( icon ) => icon.name );
 
 /**
  * Custom hook that generates payment configuration based on merchant settings.
  *
- * @param {string}  country            - Merchant country code
- * @param {boolean} canUseCardPayments - Whether merchant can use card payments
- * @param {boolean} ownBrandOnly       - Whether to show only branded payment methods
+ * @param {string} country - Merchant country code
  * @return {Object} Complete payment configuration
  */
-export const usePaymentConfig = (
-	country,
-	canUseCardPayments,
-	ownBrandOnly
-) => {
+export const usePaymentConfig = ( country ) => {
 	return useMemo( () => {
 		// Merge country-specific config with default.
 		const countryConfig = COUNTRY_CONFIGS[ country ] || {};
@@ -110,11 +85,7 @@ export const usePaymentConfig = (
 		const learnMoreConfig = learnMoreLinks[ country ] || {};
 
 		// Get icons appropriate for this configuration.
-		const icons = getRelevantIcons(
-			country,
-			canUseCardPayments,
-			ownBrandOnly
-		);
+		const icons = getRelevantIcons( country );
 
 		// Return the complete configuration.
 		return {
@@ -128,5 +99,5 @@ export const usePaymentConfig = (
 			learnMoreConfig,
 			icons,
 		};
-	}, [ country, canUseCardPayments, ownBrandOnly ] );
+	}, [ country ] );
 };

@@ -30,15 +30,13 @@ const DefaultMethodsSection = ( {
 /**
  * Displays the payment method details, tailored to the defined merchant.
  *
- * @param {Object}  props
- * @param {boolean} props.useAcdc      Whether the merchant can use card payments.
- * @param {string}  props.storeCountry The merchant's store country. 2-character ISO code.
- * @param {boolean} props.ownBrandOnly Whether to show only PayPal's own payment methods.
+ * @param {Object} props
+ * @param {string} props.storeCountry The merchant's store country. 2-character ISO code.
  * @return {React.ReactElement} The payment options component.
  */
-const PaymentFlow = ( { useAcdc, storeCountry, ownBrandOnly } ) => {
+const PaymentFlow = ( { storeCountry } ) => {
 	const { includedMethods, learnMoreConfig, paypalCheckoutDescription } =
-		usePaymentConfig( storeCountry, useAcdc, ownBrandOnly );
+		usePaymentConfig( storeCountry );
 
 	return (
 		<div className="ppcp-r-welcome-docs__wrapper">
