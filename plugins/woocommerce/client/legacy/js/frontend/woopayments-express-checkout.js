@@ -659,6 +659,35 @@
 		return options;
 	}
 
+	function hasPublishableKey() {
+		return Boolean( config.stripe && config.stripe.publishableKey );
+	}
+
+	// Client 11.1.0 client/checkout/api/index.js:57-71 waits up to 600 seconds for Stripe.js, checking every 100 ms,
+	// because page optimizers can defer it past the page render.
+	function waitForStripe() {
+		return new Promise( function ( resolve, reject ) {
+			var waited = 0;
+			var timer;
+
+			if ( typeof window.Stripe === 'function' ) {
+				resolve( window.Stripe );
+				return;
+			}
+
+			timer = window.setInterval( function () {
+				waited += 100;
+				if ( typeof window.Stripe === 'function' ) {
+					window.clearInterval( timer );
+					resolve( window.Stripe );
+				} else if ( waited >= 600 * 1000 ) {
+					window.clearInterval( timer );
+					reject( new Error( 'Stripe object not found' ) );
+				}
+			}, 100 );
+		} );
+	}
+
 	function getStripe() {
 		if (
 			! window.Stripe ||
@@ -3212,6 +3241,15 @@
 		) {
 			hideExpressButton();
 			return;
+		}
+
+		// Client 11.1.0 shortcode-buttons-express/index.js:227 awaits api.getStripe(), which waits for Stripe.js.
+		if ( hasPublishableKey() && typeof window.Stripe !== 'function' ) {
+			try {
+				await waitForStripe();
+			} catch ( error ) {
+				return;
+			}
 		}
 
 		stripe = getStripe();

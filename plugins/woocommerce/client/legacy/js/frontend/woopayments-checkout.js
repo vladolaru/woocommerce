@@ -27,6 +27,7 @@
 	// it is set; without it a shopper whose payment form failed to load presses
 	// the button and gets no navigation, no message and no explanation.
 	var paymentElementLoadError = null;
+	var isWaitingForStripe = false;
 	var deviceFingerprint = '';
 	var isSubmittingWithPaymentMethod = false;
 	var isSubmittingWithSetupIntent = false;
@@ -2002,6 +2003,31 @@
 		document.body.dispatchEvent( new Event( 'wc-credit-card-form-init' ) );
 	}
 
+	// Client 11.1.0 client/checkout/api/index.js:57-71 waits up to 600 seconds for Stripe.js, checking every 100 ms,
+	// because page optimizers can defer it past the checkout render.
+	function waitForStripe() {
+		return new Promise( function ( resolve, reject ) {
+			var waited = 0;
+			var timer;
+
+			if ( typeof window.Stripe === 'function' ) {
+				resolve( window.Stripe );
+				return;
+			}
+
+			timer = window.setInterval( function () {
+				waited += 100;
+				if ( typeof window.Stripe === 'function' ) {
+					window.clearInterval( timer );
+					resolve( window.Stripe );
+				} else if ( waited >= 600 * 1000 ) {
+					window.clearInterval( timer );
+					reject( new Error( 'Stripe object not found' ) );
+				}
+			}, 100 );
+		} );
+	}
+
 	function initializeStripeElement() {
 		setCurrentGatewayConfig();
 		var container = getGatewayPaymentContainer( gatewayId );
@@ -2013,9 +2039,24 @@
 		if (
 			! container ||
 			! config.isCoreNativeCheckoutAvailable ||
-			! config.publishableKey ||
-			! window.Stripe
+			! config.publishableKey
 		) {
+			return;
+		}
+
+		if ( typeof window.Stripe !== 'function' ) {
+			if ( ! isWaitingForStripe ) {
+				isWaitingForStripe = true;
+				waitForStripe().then(
+					function () {
+						isWaitingForStripe = false;
+						initializeStripeElement();
+					},
+					function () {
+						isWaitingForStripe = false;
+					}
+				);
+			}
 			return;
 		}
 
@@ -2362,157 +2403,168 @@
 		consumeConfirmationHash();
 		blockConfirmationUi();
 
-		if ( ! config.publishableKey || ! window.Stripe ) {
+		if ( ! config.publishableKey ) {
 			setError( config.confirmationErrorMessage || '' );
 			return;
 		}
 
-		stripe =
-			stripe ||
-			window.Stripe( config.publishableKey, {
-				locale: config.locale || 'auto',
-				stripeAccount: config.accountId || undefined,
-				betas: getStripeBetas(),
+		// Client 11.1.0 api.confirmIntent() reaches Stripe through getStripe(), which waits for Stripe.js.
+		if ( typeof window.Stripe === 'function' ) {
+			confirmWithStripe();
+		} else {
+			waitForStripe().then( confirmWithStripe, function () {
+				setError( config.confirmationErrorMessage || '' );
 			} );
+		}
 
-		if ( confirmation.type === 'si' ) {
-			if ( confirmation.confirmationToken && stripe.confirmSetup ) {
-				confirmationPromise = stripe.confirmSetup( {
-					clientSecret: confirmation.clientSecret,
-					confirmParams: {
-						confirmation_token: confirmation.confirmationToken,
-					},
-					redirect: 'if_required',
+		function confirmWithStripe() {
+			stripe =
+				stripe ||
+				window.Stripe( config.publishableKey, {
+					locale: config.locale || 'auto',
+					stripeAccount: config.accountId || undefined,
+					betas: getStripeBetas(),
 				} );
+
+			if ( confirmation.type === 'si' ) {
+				if ( confirmation.confirmationToken && stripe.confirmSetup ) {
+					confirmationPromise = stripe.confirmSetup( {
+						clientSecret: confirmation.clientSecret,
+						confirmParams: {
+							confirmation_token: confirmation.confirmationToken,
+						},
+						redirect: 'if_required',
+					} );
+				} else if ( stripe.handleNextAction ) {
+					confirmationPromise = stripe.handleNextAction( {
+						clientSecret: confirmation.clientSecret,
+					} );
+				}
 			} else if ( stripe.handleNextAction ) {
 				confirmationPromise = stripe.handleNextAction( {
 					clientSecret: confirmation.clientSecret,
 				} );
 			}
-		} else if ( stripe.handleNextAction ) {
-			confirmationPromise = stripe.handleNextAction( {
-				clientSecret: confirmation.clientSecret,
-			} );
-		}
 
-		if ( ! confirmationPromise ) {
-			setError( config.confirmationErrorMessage || '' );
-			return;
-		}
-
-		confirmationPromise.then(
-			function ( result ) {
-				if ( ! result || typeof result !== 'object' ) {
-					setError( config.confirmationErrorMessage || '' );
-					return;
-				}
-
-				if ( result.error ) {
-					setError( getConfirmationErrorMessage( result.error ) );
-
-					// Report the failed authentication to the server so the
-					// order is marked failed synchronously (stock released,
-					// failure note recorded) instead of staying
-					// pending-payment until a webhook maybe arrives.
-					failedIntentId =
-						( result.error.payment_intent &&
-							result.error.payment_intent.id ) ||
-						( result.error.setup_intent &&
-							result.error.setup_intent.id ) ||
-						'';
-					if ( failedIntentId ) {
-						updateOrderStatusAfterConfirmation(
-							confirmation,
-							failedIntentId,
-							shouldSaveAfterConfirmation
-						);
-					}
-
-					if ( isRetrySafePaymentIntentError( result.error ) ) {
-						releaseConfirmationUi();
-					}
-					return;
-				}
-
-				intentId = getConfirmedIntentId( confirmation, result );
-				if ( ! intentId ) {
-					setError( config.confirmationErrorMessage || '' );
-					return;
-				}
-
-				updateOrderStatusAfterConfirmation(
-					confirmation,
-					intentId,
-					shouldSaveAfterConfirmation
-				)
-					.done( function ( response ) {
-						var resultResponse;
-						var returnUrl;
-
-						try {
-							resultResponse =
-								typeof response === 'string'
-									? JSON.parse( response )
-									: response;
-						} catch ( error ) {
-							setError( config.confirmationErrorMessage || '' );
-							return;
-						}
-
-						if (
-							! resultResponse ||
-							typeof resultResponse !== 'object'
-						) {
-							setError( config.confirmationErrorMessage || '' );
-							return;
-						}
-
-						if ( resultResponse.error ) {
-							setError(
-								getConfirmationErrorMessage(
-									resultResponse.error
-								)
-							);
-							return;
-						}
-
-						returnUrl =
-							typeof resultResponse.return_url === 'string'
-								? resultResponse.return_url.trim()
-								: '';
-						if ( ! returnUrl ) {
-							setError( config.confirmationErrorMessage || '' );
-							return;
-						}
-
-						try {
-							returnUrl = new window.URL(
-								returnUrl,
-								window.location.href
-							);
-						} catch ( error ) {
-							setError( config.confirmationErrorMessage || '' );
-							return;
-						}
-						if (
-							returnUrl.protocol !== 'http:' &&
-							returnUrl.protocol !== 'https:'
-						) {
-							setError( config.confirmationErrorMessage || '' );
-							return;
-						}
-
-						releaseConfirmationUi();
-						window.location.href = returnUrl.href;
-					} )
-					.fail( function () {
-						setError( config.confirmationErrorMessage || '' );
-					} );
-			},
-			function ( error ) {
-				setError( getConfirmationErrorMessage( error ) );
+			if ( ! confirmationPromise ) {
+				setError( config.confirmationErrorMessage || '' );
+				return;
 			}
-		);
+
+			confirmationPromise.then(
+				function ( result ) {
+					if ( ! result || typeof result !== 'object' ) {
+						setError( config.confirmationErrorMessage || '' );
+						return;
+					}
+
+					if ( result.error ) {
+						setError( getConfirmationErrorMessage( result.error ) );
+
+						// Report the failed authentication to the server so the
+						// order is marked failed synchronously (stock released,
+						// failure note recorded) instead of staying
+						// pending-payment until a webhook maybe arrives.
+						failedIntentId =
+							( result.error.payment_intent &&
+								result.error.payment_intent.id ) ||
+							( result.error.setup_intent &&
+								result.error.setup_intent.id ) ||
+							'';
+						if ( failedIntentId ) {
+							updateOrderStatusAfterConfirmation(
+								confirmation,
+								failedIntentId,
+								shouldSaveAfterConfirmation
+							);
+						}
+
+						if ( isRetrySafePaymentIntentError( result.error ) ) {
+							releaseConfirmationUi();
+						}
+						return;
+					}
+
+					intentId = getConfirmedIntentId( confirmation, result );
+					if ( ! intentId ) {
+						setError( config.confirmationErrorMessage || '' );
+						return;
+					}
+
+					updateOrderStatusAfterConfirmation(
+						confirmation,
+						intentId,
+						shouldSaveAfterConfirmation
+					)
+						.done( function ( response ) {
+							var resultResponse;
+							var returnUrl;
+
+							try {
+								resultResponse =
+									typeof response === 'string'
+										? JSON.parse( response )
+										: response;
+							} catch ( error ) {
+								setError( config.confirmationErrorMessage || '' );
+								return;
+							}
+
+							if (
+								! resultResponse ||
+								typeof resultResponse !== 'object'
+							) {
+								setError( config.confirmationErrorMessage || '' );
+								return;
+							}
+
+							if ( resultResponse.error ) {
+								setError(
+									getConfirmationErrorMessage(
+										resultResponse.error
+									)
+								);
+								return;
+							}
+
+							returnUrl =
+								typeof resultResponse.return_url === 'string'
+									? resultResponse.return_url.trim()
+									: '';
+							if ( ! returnUrl ) {
+								setError( config.confirmationErrorMessage || '' );
+								return;
+							}
+
+							try {
+								returnUrl = new window.URL(
+									returnUrl,
+									window.location.href
+								);
+							} catch ( error ) {
+								setError( config.confirmationErrorMessage || '' );
+								return;
+							}
+							if (
+								returnUrl.protocol !== 'http:' &&
+								returnUrl.protocol !== 'https:'
+							) {
+								setError( config.confirmationErrorMessage || '' );
+								return;
+							}
+
+							releaseConfirmationUi();
+							window.location.href = returnUrl.href;
+						} )
+						.fail( function () {
+							setError( config.confirmationErrorMessage || '' );
+						} );
+				},
+				function ( error ) {
+					setError( getConfirmationErrorMessage( error ) );
+				}
+			);
+		}
 	}
 
 	/**

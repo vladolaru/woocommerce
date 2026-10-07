@@ -467,6 +467,23 @@ describe( 'WooPayments express checkout', () => {
 		);
 	} );
 
+	test( 'mounts Stripe ECE once Stripe.js loads after the express script', async () => {
+		const loadedStripe = window.Stripe;
+		delete window.Stripe;
+		require( '../woopayments-express-checkout' );
+
+		bodyEventHandlers.updated_checkout();
+		await flushPromises();
+		expect( expressElement.mount ).not.toHaveBeenCalled();
+
+		window.Stripe = loadedStripe;
+		await new Promise( ( resolve ) => setTimeout( resolve, 150 ) );
+
+		expect( expressElement.mount ).toHaveBeenCalledWith(
+			'#wcpay-express-checkout-element'
+		);
+	} );
+
 	test( 'records only available Apple Pay load tracking events', async () => {
 		require( '../woopayments-express-checkout' );
 

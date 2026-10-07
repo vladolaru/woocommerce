@@ -1649,6 +1649,35 @@ describe( 'WooPayments checkout', () => {
 		} );
 	} );
 
+	test( 'mounts the payment element once Stripe.js loads after the checkout script', async () => {
+		jest.useFakeTimers();
+		const loadedStripe = window.Stripe;
+		delete window.Stripe;
+
+		require( '../woopayments-checkout' );
+		expect( mountPaymentElement ).not.toHaveBeenCalled();
+
+		window.Stripe = loadedStripe;
+		jest.advanceTimersByTime( 100 );
+		await Promise.resolve();
+
+		expect( mountPaymentElement ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	test( 'confirms a PaymentIntent hash once Stripe.js loads', async () => {
+		const loadedStripe = window.Stripe;
+		delete window.Stripe;
+		setPaymentIntentConfirmationHash();
+
+		require( '../woopayments-checkout' );
+		window.Stripe = loadedStripe;
+		await new Promise( ( resolve ) => setTimeout( resolve, 150 ) );
+
+		expect( stripeMock.handleNextAction ).toHaveBeenCalledWith( {
+			clientSecret: 'pi_native_secret_abc',
+		} );
+	} );
+
 	test( 'handles PaymentIntent confirmation hashes through next actions', async () => {
 		window.location.hash =
 			'#wcpay-confirm-pi:123:pi_native_secret_abc:nonce';

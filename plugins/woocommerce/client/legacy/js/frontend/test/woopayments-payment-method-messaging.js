@@ -166,6 +166,22 @@ describe( 'WooPayments BNPL payment method messaging', () => {
 		);
 	} );
 
+	test( 'mounts the messaging element once Stripe.js loads after the messaging script', async () => {
+		const loadedStripe = window.Stripe;
+		delete window.Stripe;
+
+		require( '../woopayments-payment-method-messaging' );
+		await flushPromises();
+		expect( mountElement ).not.toHaveBeenCalled();
+
+		window.Stripe = loadedStripe;
+		await new Promise( ( resolve ) => setTimeout( resolve, 150 ) );
+
+		expect( mountElement ).toHaveBeenCalledWith(
+			'#payment-method-message'
+		);
+	} );
+
 	test( 'updates product messaging and checks availability when quantity changes', async () => {
 		require( '../woopayments-payment-method-messaging' );
 		await flushPromises();
