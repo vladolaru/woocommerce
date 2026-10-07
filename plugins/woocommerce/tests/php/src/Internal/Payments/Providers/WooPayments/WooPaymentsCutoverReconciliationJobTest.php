@@ -2894,6 +2894,72 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A network start that schedules the current site while a peer's lease is busy is accepted, and the first attempt adds the peer.
+	 * @group multisite
+	 */
+	public function test_network_start_with_a_busy_peer_is_accepted_and_repaired(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+
+		$main_site_id   = get_current_blog_id();
+		$second_site_id = $this->create_cutover_multisite_site( 'cutover-busy-peer.example.org' );
+		$preflight      = new class() extends WooPaymentsCutoverPreflightService {
+			/** @return string[] */
+			public function get_reconciliation_failures(): array {
+				return array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Return network activation. */
+			public function is_woopayments_network_active(): bool {
+				return true;
+			}
+		};
+		$sut            = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization() );
+
+		try {
+			switch_to_blog( $second_site_id );
+			$busy = $this->require_state_store()->acquire_lease( time() );
+			$this->assertIsString( $busy );
+			restore_current_blog();
+
+			$this->assertTrue( $sut->enqueue( 'merchant' ), 'The current site has durable work, so the click is accepted.' );
+			$main_pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_pending );
+			$this->assertGreaterThan( 0, $main_pending['action_id'] );
+			switch_to_blog( $second_site_id );
+			$this->assertNull( $this->require_state_store()->get_record(), 'The busy peer was skipped.' );
+			$this->require_state_store()->release_lease( $busy );
+			restore_current_blog();
+
+			$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
+			$sut->handle_reconcile( $main_pending['generation'], 1 );
+			switch_to_blog( $second_site_id );
+			$repaired = $this->require_state_store()->get_record();
+			restore_current_blog();
+			$this->assertIsArray( $repaired, 'The first attempt adds the skipped peer.' );
+			$this->assertSame( $main_pending['generation'], $repaired['generation'] );
+		} finally {
+			if ( get_current_blog_id() !== $main_site_id ) {
+				restore_current_blog();
+			}
+			switch_to_blog( $second_site_id );
+			$this->cleanup_state();
+			restore_current_blog();
+			wpmu_delete_blog( $second_site_id, true );
+		}
+	}
+
+	/**
 	 * @testdox A paused site with bundled Stripe Billing subscriptions keeps the network from switching: the barrier excludes every site instead of deactivating the plugin.
 	 * @group multisite
 	 */

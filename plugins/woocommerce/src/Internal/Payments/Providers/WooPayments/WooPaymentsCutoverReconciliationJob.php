@@ -636,7 +636,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @param string      $source              Trigger source.
 	 * @param string|null $origin_plugin_file  Exact deactivated plugin path.
 	 * @param string|null $origin_plugin_scope Site or network scope.
-	 * @return bool True when every site owns scheduled durable work.
+	 * @return bool True when at least one site owns scheduled durable work; the first attempt's fan-out repair adds any site skipped here.
 	 */
 	private function enqueue_network_generation( string $source, ?string $origin_plugin_file, ?string $origin_plugin_scope ): bool {
 		$site_ids = $this->get_current_network_site_ids();
@@ -650,7 +650,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 
 		$current_blog_id      = get_current_blog_id();
 		$network_main_site_id = get_main_site_id( get_current_network_id() );
-		$scheduled_everywhere = false;
+		$scheduled_somewhere  = false;
 		$propagate_exclusion  = null;
 		try {
 			$maximum_generation   = 0;
@@ -686,8 +686,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$generation                 = ! $manual_supersedes_terminal && $highest_active_generation >= $maximum_generation ? max( 1, $highest_active_generation ) : $maximum_generation + 1;
 			if ( isset( $excluded_generations[ $generation ] ) ) {
 				$propagate_exclusion = $excluded_generations[ $generation ];
-			} else {
-				$scheduled_everywhere = true;
 			}
 
 			if ( null === $propagate_exclusion ) {
@@ -697,20 +695,23 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 					}
 					$site_token = $network_main_site_id === $site_id ? null : $this->state_store->acquire_lease( time() );
 					try {
+						// A peer whose lease is busy is skipped; the first attempt's fan-out repair adds it.
 						if ( $network_main_site_id !== $site_id && null === $site_token ) {
-							$scheduled_everywhere = false;
 							continue;
 						}
 						$record = $this->state_store->get_record();
 						if ( is_array( $record ) && $generation === $record['generation'] && true === ( $record['network_cutover'] ?? false ) ) {
 							if ( null !== $origin_plugin_file && null !== $origin_plugin_scope && in_array( $record['state'], array( WooPaymentsCutoverState::PENDING, WooPaymentsCutoverState::DEFERRED ), true ) ) {
-								$scheduled_everywhere = $this->replace_pending_with_manual_origin( $record, $source, $origin_plugin_file, $origin_plugin_scope, time() ) && $scheduled_everywhere;
+								$scheduled_somewhere = $this->replace_pending_with_manual_origin( $record, $source, $origin_plugin_file, $origin_plugin_scope, time() ) || $scheduled_somewhere;
 							} elseif ( null !== $origin_plugin_file && null !== $origin_plugin_scope && WooPaymentsCutoverState::RUNNING === $record['state'] ) {
-								$scheduled_everywhere = $this->replace_running_with_manual_origin( $record, $source, $origin_plugin_file, $origin_plugin_scope, time() ) && $scheduled_everywhere;
+								$scheduled_somewhere = $this->replace_running_with_manual_origin( $record, $source, $origin_plugin_file, $origin_plugin_scope, time() ) || $scheduled_somewhere;
 							} elseif ( WooPaymentsCutoverState::PENDING === $record['state'] && 'awaiting_merchant_start' === $record['current_step'] ) {
-								$scheduled_everywhere = $this->start_awaiting_generation( $record, $source, time() ) && $scheduled_everywhere;
+								$scheduled_somewhere = $this->start_awaiting_generation( $record, $source, time() ) || $scheduled_somewhere;
 							} elseif ( in_array( $record['state'], array( WooPaymentsCutoverState::PENDING, WooPaymentsCutoverState::DEFERRED ), true ) ) {
-								$scheduled_everywhere = $this->ensure_record_scheduled( $record, time() ) && $scheduled_everywhere;
+								$scheduled_somewhere = $this->ensure_record_scheduled( $record, time() ) || $scheduled_somewhere;
+							} else {
+								// A running attempt of this generation is durable work already.
+								$scheduled_somewhere = true;
 							}
 							continue;
 						}
@@ -728,7 +729,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 						} else {
 							$stored = $this->state_store->save_record( $pending );
 						}
-						$scheduled_everywhere = $stored && $this->ensure_record_scheduled( $pending, $now ) && $scheduled_everywhere;
+						$scheduled_somewhere = ( $stored && $this->ensure_record_scheduled( $pending, $now ) ) || $scheduled_somewhere;
 					} finally {
 						if ( is_string( $site_token ) ) {
 							$this->state_store->release_lease( $site_token );
@@ -743,7 +744,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$this->release_network_lease( $network_token );
 		}
 
-		return null !== $propagate_exclusion ? $this->propagate_network_exclusion( $generation, $propagate_exclusion ) : $scheduled_everywhere;
+		return null !== $propagate_exclusion ? $this->propagate_network_exclusion( $generation, $propagate_exclusion ) : $scheduled_somewhere;
 	}
 
 	/**
