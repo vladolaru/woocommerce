@@ -4448,6 +4448,24 @@ describe( 'WooPayments checkout', () => {
 			] );
 		} );
 
+		test( 'records a pre-checked save-my-info box with the offer for an unknown email', async () => {
+			fetchResponses[
+				`${ WOOPAY_HOST }/wp-json/platform-checkout/v1/user/exists?`
+			] = { body: { 'user-exists': false } };
+			// Localized by WooPaymentsWooPaySessionController::get_classic_woopay_config() (get_save_user_checkout_data()).
+			window.wcpay_core_woopay_config = { PRE_CHECK_SAVE_MY_INFO: true };
+			const input = await setupWooPayEmailInput();
+
+			await typeEmail( input, 'new@example.com' );
+
+			expect( getTrackedEventNames() ).toEqual( [
+				'checkout_email_address_woopay_check',
+				'checkout_woopay_save_my_info_offered',
+				'checkout_save_my_info_click',
+			] );
+			delete window.wcpay_core_woopay_config;
+		} );
+
 		test( 'hands the WooPay session back through init_woopay and redirects once', async () => {
 			const input = await setupWooPayEmailInput();
 			await typeEmail( input, 'shopper@example.com' );

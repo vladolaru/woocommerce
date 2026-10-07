@@ -1836,13 +1836,8 @@
 		sourceField.value = config.woopaySourceUrl || '';
 		viewportField.value = getWooPayViewport();
 
-		recordUserEvent( 'checkout_woopay_save_my_info_offered' );
-		if ( checkbox.checked ) {
-			recordUserEvent( 'checkout_save_my_info_click', {
-				status: 'checked',
-			} );
-		}
-
+		// The offer and a pre-checked box are recorded by the WooPay email check when it finds no WooPay user, as in
+		// client 11.1.0 checkout/woopay/email-input-iframe.js:411-427, not again when the fields render.
 		checkbox.addEventListener( 'change', function () {
 			fields.hidden = ! checkbox.checked;
 			recordUserEvent( 'checkout_save_my_info_click', {

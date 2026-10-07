@@ -3360,9 +3360,11 @@
 						} else if ( data.code !== 'rest_invalid_param' ) {
 							recordUserEvent( 'checkout_woopay_save_my_info_offered' );
 
+							// Client 11.1.0 reads window.woopayCheckout; native localizes the flag with the WooPay config.
 							if (
-								window.woopayCheckout &&
-								window.woopayCheckout.PRE_CHECK_SAVE_MY_INFO
+								window.wcpay_core_woopay_config &&
+								window.wcpay_core_woopay_config
+									.PRE_CHECK_SAVE_MY_INFO
 							) {
 								recordUserEvent( 'checkout_save_my_info_click', {
 									status: 'checked',

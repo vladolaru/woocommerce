@@ -394,8 +394,8 @@ describe( 'WooPay email input (blocks)', () => {
 		fetchResponses[
 			`${ WOOPAY_HOST }/wp-json/platform-checkout/v1/user/exists?`
 		] = { body: { 'user-exists': false } };
-		window.woopayCheckout = { PRE_CHECK_SAVE_MY_INFO: true };
-		const input = await setup();
+		// Native carries the flag in the Blocks payment settings (WooPaymentsWooPaySessionService::get_save_user_checkout_data()).
+		const input = await setup( { PRE_CHECK_SAVE_MY_INFO: true } );
 
 		await typeEmail( input, 'new@example.com' );
 
@@ -405,7 +405,6 @@ describe( 'WooPay email input (blocks)', () => {
 			'checkout_woopay_save_my_info_offered',
 			'checkout_save_my_info_click',
 		] );
-		delete window.woopayCheckout;
 	} );
 
 	test( 'sends the session data to the iframe on load when first-party auth is on', async () => {

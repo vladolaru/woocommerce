@@ -1084,7 +1084,7 @@ describe( 'WooPayments WooPay checkout', () => {
 		);
 	} );
 
-	test( 'records WooPay save-info offer and checkbox events', () => {
+	test( 'records WooPay save-info checkbox events and leaves the offer to the email check', () => {
 		require( '../woopayments-woopay' );
 
 		const saveCheckbox = document.querySelector(
@@ -1096,22 +1096,18 @@ describe( 'WooPayments WooPay checkout', () => {
 			new window.Event( 'change', { bubbles: true, cancelable: true } )
 		);
 
-		expect( getTrackingEvents() ).toEqual(
-			expect.arrayContaining( [
-				{
-					name: 'checkout_woopay_save_my_info_offered',
-					props: {},
-				},
-				{
-					name: 'checkout_save_my_info_click',
-					props: { status: 'checked' },
-				},
-				{
-					name: 'checkout_save_my_info_click',
-					props: { status: 'unchecked' },
-				},
-			] )
-		);
+		// The offer and the pre-checked state are recorded by the WooPay email check in woopayments-checkout.js, as in
+		// client 11.1.0 email-input-iframe.js:411-427, not when the fields render.
+		expect(
+			getTrackingEvents().filter( ( event ) =>
+				event.name.includes( 'save_my_info' )
+			)
+		).toEqual( [
+			{
+				name: 'checkout_save_my_info_click',
+				props: { status: 'unchecked' },
+			},
+		] );
 	} );
 
 	describe( 'direct checkout', () => {

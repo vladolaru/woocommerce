@@ -532,7 +532,7 @@ describe( 'wc-payment-method-woopayments', () => {
 		);
 	} );
 
-	it( 'records WooPay save-info offer and checkbox events', async () => {
+	it( 'records WooPay save-info checkbox events and leaves the offer to the email check', async () => {
 		window.fetch = jest.fn().mockResolvedValue( {
 			json: jest.fn().mockResolvedValue( { success: true } ),
 		} );
@@ -597,26 +597,21 @@ describe( 'wc-payment-method-woopayments', () => {
 					props: JSON.parse( options.body.get( 'tracksEventProp' ) ),
 				} ) );
 
-			expect( events ).toEqual(
-				expect.arrayContaining( [
-					{
-						name: 'checkout_woopay_save_my_info_offered',
-						props: {},
-					},
-					{
-						name: 'checkout_save_my_info_click',
-						props: { status: 'checked' },
-					},
-					{
-						name: 'checkout_save_my_info_click',
-						props: { status: 'unchecked' },
-					},
-					{
-						name: 'checkout_woopay_save_my_info_mobile_enter',
-						props: {},
-					},
-				] )
-			);
+			// The offer is recorded by the WooPay email check (client 11.1.0 email-input-iframe.js:411-427), not here.
+			expect( events ).toEqual( [
+				{
+					name: 'checkout_save_my_info_click',
+					props: { status: 'unchecked' },
+				},
+				{
+					name: 'checkout_save_my_info_click',
+					props: { status: 'checked' },
+				},
+				{
+					name: 'checkout_woopay_save_my_info_mobile_enter',
+					props: {},
+				},
+			] );
 		} );
 
 		// Client 11.1.0 checkout-page-save-user.js:118-124 sends the checkout permalink, not the browser URL.

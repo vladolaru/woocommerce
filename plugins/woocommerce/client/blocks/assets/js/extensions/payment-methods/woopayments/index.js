@@ -777,20 +777,6 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 		}
 	}, [ isOfferApplicable, paymentSettings ] );
 
-	useEffect( () => {
-		recordWooPaymentsUserEvent(
-			paymentSettings,
-			'checkout_woopay_save_my_info_offered'
-		);
-		if ( initialIsSavingUser.current ) {
-			recordWooPaymentsUserEvent(
-				paymentSettings,
-				'checkout_save_my_info_click',
-				{ status: 'checked' }
-			);
-		}
-	}, [ paymentSettings ] );
-
 	// Client 11.1.0 checkout-page-save-user.js:169-174 records this once the phone is valid; native has no phone validation (R2).
 	const recordMobileEnter = ( nextPhone ) => {
 		const hasPhone = Boolean( nextPhone && nextPhone.trim() );
