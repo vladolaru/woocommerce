@@ -320,7 +320,8 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 	 * @testdox Should register the no-op refresh-ui Store API cart update callback when express checkout is available.
 	 */
 	public function test_registers_refresh_ui_update_callback(): void {
-		$this->sut = $this->create_extension( true );
+		$_SERVER['REQUEST_URI'] = '/wp-json/wc/store/v1/cart/extensions';
+		$this->sut              = $this->create_extension( true );
 		$this->sut->register_refresh_ui_update_callback();
 
 		$callback = StoreApi::container()->get( ExtendSchema::class )->get_update_callback( 'woopayments/express-checkout/refresh-ui' );
@@ -333,8 +334,9 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 	 * @testdox Should answer refresh-ui cart extension requests with the cart only after the callback registers.
 	 */
 	public function test_refresh_ui_cart_extensions_request(): void {
-		$this->sut = $this->create_extension( true );
-		$request   = new \WP_REST_Request( 'POST', '/wc/store/v1/cart/extensions' );
+		$_SERVER['REQUEST_URI'] = '/wp-json/wc/store/v1/cart/extensions';
+		$this->sut              = $this->create_extension( true );
+		$request                = new \WP_REST_Request( 'POST', '/wc/store/v1/cart/extensions' );
 		$request->set_header( 'Nonce', wp_create_nonce( 'wc_store_api' ) );
 		$request->set_body_params( array( 'namespace' => 'woopayments/express-checkout/refresh-ui' ) );
 
@@ -356,7 +358,8 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 	 * @param bool     $available Whether express checkout is available.
 	 */
 	public function test_does_not_register_refresh_ui_update_callback_when_guard_fails( callable $arrange, bool $available ): void {
-		$this->sut = $this->create_extension( true, true, false, $available );
+		$_SERVER['REQUEST_URI'] = '/wp-json/wc/store/v1/cart/extensions';
+		$this->sut              = $this->create_extension( true, true, false, $available );
 		$arrange();
 
 		$this->sut->register_refresh_ui_update_callback();
@@ -373,6 +376,13 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 	public function provider_refresh_ui_registration_guards(): array {
 		return array(
 			'express checkout unavailable'  => array( static function (): void {}, false ),
+			// The Cart and Checkout blocks preload the cart inside the page request; only Store API requests run the callback.
+			'shop page request'             => array(
+				static function (): void {
+					$_SERVER['REQUEST_URI'] = '/checkout/';
+				},
+				true,
+			),
 			'cron request'                  => array(
 				static function (): void {
 					add_filter( 'wp_doing_cron', '__return_true' );

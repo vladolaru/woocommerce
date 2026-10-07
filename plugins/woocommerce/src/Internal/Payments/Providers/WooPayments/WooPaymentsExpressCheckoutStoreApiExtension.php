@@ -87,7 +87,8 @@ class WooPaymentsExpressCheckoutStoreApiExtension implements RegisterHooksInterf
 	 * Register the no-op Store API cart update callback the express checkout frontend calls to refresh the blocks UI.
 	 */
 	public function register_refresh_ui_update_callback(): void {
-		if ( ! function_exists( 'woocommerce_store_api_register_update_callback' ) || ! $this->is_express_checkout_hooks_request() ) {
+		// The callback answers Store API cart/extensions requests only, so page requests skip the availability read.
+		if ( ! function_exists( 'woocommerce_store_api_register_update_callback' ) || ! $this->is_express_checkout_hooks_request() || ! WC()->is_store_api_request() ) {
 			return;
 		}
 
