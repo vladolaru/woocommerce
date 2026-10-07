@@ -2106,24 +2106,38 @@
 			return true;
 		}
 
+		// Client 11.1.0 classic/payment-processing.js:82-108, :449-497: block the form before tokenizing, so core's
+		// checkout.js ignores another click while the form has `processing`; release it on failure; drop
+		// `processing` just before the intentional resubmit, which core would otherwise ignore.
+		form.addClass( 'processing' ).block( {
+			message: null,
+			overlayCSS: {
+				background: '#fff',
+				opacity: 0.6,
+			},
+		} );
+
+		function submitWithPaymentFields( paymentMethod, error ) {
+			appendPaymentFields( form, paymentMethod, error );
+			isSubmittingWithPaymentMethod = true;
+			form.removeClass( 'processing' ).trigger( 'submit' );
+		}
+
 		createPaymentMethod()
 			.then( function ( result ) {
 				if ( result.error ) {
 					// Submit with the error sentinel so the server records a
 					// failed order carrying the decline reason; the failure
 					// message is surfaced from the server response.
-					appendPaymentFields( form, null, result.error );
-					isSubmittingWithPaymentMethod = true;
-					form.trigger( 'submit' );
+					submitWithPaymentFields( null, result.error );
 					return;
 				}
 
-				appendPaymentFields( form, result.paymentMethod, null );
 				setError( '' );
-				isSubmittingWithPaymentMethod = true;
-				form.trigger( 'submit' );
+				submitWithPaymentFields( result.paymentMethod, null );
 			} )
 			.catch( function ( error ) {
+				form.removeClass( 'processing' ).unblock();
 				appendPaymentFields( form, null, error );
 				setError( error && error.message ? error.message : '' );
 				$( document.body ).trigger( 'checkout_error', [

@@ -2708,6 +2708,70 @@ describe( 'WooPayments checkout', () => {
 		);
 	} );
 
+	test( 'blocks the checkout form while the card is tokenized and unmarks it just before the resubmit', async () => {
+		let resolvePaymentMethod;
+		stripeMock.createPaymentMethod.mockImplementationOnce(
+			() =>
+				new Promise( ( resolve ) => {
+					resolvePaymentMethod = resolve;
+				} )
+		);
+
+		require( '../woopayments-checkout' );
+
+		expect(
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
+		).toBe( false );
+		// Core's checkout.js ignores a submit while the form has `processing`, so a second click waits.
+		expectClassicCheckoutUiState( true );
+		await flushPromises();
+		expectClassicCheckoutUiState( true );
+
+		resolvePaymentMethod( { paymentMethod: { id: 'pm_native' } } );
+		await flushPromises();
+
+		const unmarkOrder = global.jQuery.checkoutFormResult.removeClass.mock
+			.invocationCallOrder[ 0 ];
+		const submitCall = global.jQuery.checkoutFormResult.trigger.mock.calls.findIndex(
+			( [ event ] ) => event === 'submit'
+		);
+		expect( checkoutFormState.processing ).toBe( false );
+		expect( unmarkOrder ).toBeLessThan(
+			global.jQuery.checkoutFormResult.trigger.mock.invocationCallOrder[
+				submitCall
+			]
+		);
+	} );
+
+	test( 'releases the order-pay form when tokenization fails', async () => {
+		document.body.innerHTML =
+			'<form id="order_review">' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
+			'<div id="wcpay-core-payment-element"></div>' +
+			'</form>';
+		window.wcpay_core_checkout_config.isOrderPay = true;
+		// Synthetic failure: client 11.1.0 classic/payment-processing.js:494-497 unblocks the form on any thrown error.
+		submitElements.mockImplementationOnce( () =>
+			Promise.reject( new Error( 'Your card number is incomplete.' ) )
+		);
+
+		require( '../woopayments-checkout' );
+		// Core's checkout.js submitOrder() blocks form#order_review on every submit (blockOnSubmit).
+		global.jQuery.orderPayFormResult.block();
+		orderPayFormEventHandlers.submit.call(
+			document.getElementById( 'order_review' )
+		);
+		await flushPromises();
+
+		expect( orderPayFormState ).toEqual( {
+			processing: false,
+			blocked: false,
+		} );
+		expect( global.jQuery.orderPayFormResult.trigger ).not.toHaveBeenCalledWith(
+			'submit'
+		);
+	} );
+
 	test( 'adds the fraud-prevention token before submitting the order-pay form', async () => {
 		// T.3 Task 3 (`plan-task-t3.md`, carried from the revised T.1 Batch 9):
 		// `appendPaymentFields()` calls `ensureHiddenField( form,
