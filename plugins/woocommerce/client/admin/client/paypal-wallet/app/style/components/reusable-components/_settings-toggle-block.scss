@@ -8,12 +8,6 @@
 		justify-content: space-between;
 	}
 
-	&__switch {
-		.components-base-control__field > div {
-			display: block;
-		}
-	}
-
 	&__content-label {
 		@include font(14, 20, 600);
 		display: block;

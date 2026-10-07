@@ -1,4 +1,5 @@
-import { ToggleControl, Icon, Button } from '@wordpress/components';
+import { __, sprintf } from '@wordpress/i18n';
+import { FormToggle, Icon, Button } from '@wordpress/components';
 import { cog } from '@wordpress/icons';
 
 import WarningMessages from '../../Screens/Settings/Components/Payment/WarningMessages';
@@ -64,12 +65,17 @@ const PaymentMethodItemBlock = ( {
 				</p>
 				<div className="ppcp--method-footer">
 					<div className="ppcp--method-toggle-wrapper">
-						<ToggleControl
-							__nextHasNoMarginBottom
+						<FormToggle
 							checked={ isSelected }
-							onChange={ onSelect }
+							onChange={ ( event ) =>
+								onSelect( event.target.checked )
+							}
 							disabled={ isDisabled || isToggleLocked }
-							aria-label={ `Enable ${ paymentMethod.itemTitle }` }
+							aria-label={ sprintf(
+								/* translators: %s: payment method name, such as Venmo. */
+								__( 'Enable %s', 'woocommerce' ),
+								paymentMethod.itemTitle
+							) }
 						/>
 						{ hasWarning && ! isDisabled && isSelected && (
 							<WarningMessages
@@ -83,7 +89,11 @@ const PaymentMethodItemBlock = ( {
 							className="ppcp--method-settings"
 							disabled={ isDisabled }
 							onClick={ onTriggerModal }
-							aria-label={ `Configure ${ paymentMethod.itemTitle } settings` }
+							aria-label={ sprintf(
+								/* translators: %s: payment method name, such as PayPal. */
+								__( 'Configure %s settings', 'woocommerce' ),
+								paymentMethod.itemTitle
+							) }
 						>
 							<Icon icon={ cog } />
 						</Button>

@@ -12,6 +12,7 @@ import '@wordpress/a11y';
 import '@wordpress/api-fetch';
 import '@wordpress/blob';
 import '@wordpress/components';
+import '@wordpress/compose';
 import '@wordpress/data';
 import '@wordpress/element';
 import '@wordpress/i18n';
