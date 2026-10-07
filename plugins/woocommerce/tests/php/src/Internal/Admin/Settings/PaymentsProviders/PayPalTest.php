@@ -246,6 +246,29 @@ class PayPalTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should describe the native-owned row by the payment methods it offers, not the gateway's shopper-facing text.
+	 */
+	public function test_native_owned_row_describes_the_wallet_methods(): void {
+		$this->pin_native_ownership();
+		$gateway              = $this->fake_ppcp_gateway();
+		$gateway->description = 'Pay via PayPal.';
+
+		$this->assertSame( 'Offer PayPal, Pay Later, and Venmo (US only) at checkout.', $this->sut->get_description( $gateway ) );
+	}
+
+	/**
+	 * @testdox Should leave the description of the extension's row untouched when native does not own the site.
+	 */
+	public function test_non_native_row_keeps_its_description(): void {
+		add_filter( PayPalWalletRuntimeArbiter::FILTER_ENABLED, '__return_false' );
+		wc_get_container()->get( PayPalWalletRuntimeArbiter::class )->invalidate();
+		$gateway              = $this->fake_ppcp_gateway();
+		$gateway->description = 'Pay via PayPal.';
+
+		$this->assertSame( 'Pay via PayPal.', $this->sut->get_description( $gateway ) );
+	}
+
+	/**
 	 * @testdox Should leave title and plugin details untouched when native does not own the site.
 	 */
 	public function test_non_native_row_is_unchanged(): void {
@@ -436,6 +459,7 @@ class PayPalTest extends WC_Unit_Test_Case {
 			$title       = $this->sut->get_title( $gateway );
 			$details     = $this->sut->get_plugin_details( $gateway );
 			$icon        = $this->sut->get_icon( $gateway );
+			$description = $this->sut->get_description( $gateway );
 		} finally {
 			$this->swap_wallet_container( $previous );
 		}
@@ -448,6 +472,7 @@ class PayPalTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'PayPal Wallet', $title );
 		$this->assertSame( '', $details['file'], 'The placeholder row has no plugin to deactivate' );
 		$this->assertSame( plugins_url( 'assets/images/onboarding/icons/paypal.svg', WC_PLUGIN_FILE ), $icon );
+		$this->assertSame( 'Offer PayPal, Pay Later, and Venmo (US only) at checkout.', $description );
 	}
 
 	/**

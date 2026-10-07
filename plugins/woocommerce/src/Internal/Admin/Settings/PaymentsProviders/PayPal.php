@@ -37,6 +37,26 @@ class PayPal extends PaymentGateway {
 	}
 
 	/**
+	 * Get the provider description, naming the wallet's payment methods when core provides the gateway.
+	 *
+	 * The wallet gateway gives its merchant-facing description only on admin page loads,
+	 * so the Payments list, which loads over REST, would otherwise show the shopper-facing one.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @param WC_Payment_Gateway $payment_gateway The payment gateway object.
+	 *
+	 * @return string
+	 */
+	public function get_description( WC_Payment_Gateway $payment_gateway ): string {
+		if ( $this->is_core_provided( $payment_gateway ) ) {
+			return __( 'Offer PayPal, Pay Later, and Venmo (US only) at checkout.', 'woocommerce' );
+		}
+
+		return parent::get_description( $payment_gateway );
+	}
+
+	/**
 	 * Get the provider icon URL, using the PayPal icon when core provides the gateway.
 	 *
 	 * @since 11.3.0
