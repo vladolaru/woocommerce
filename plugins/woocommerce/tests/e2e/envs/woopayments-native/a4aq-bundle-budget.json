@@ -69,11 +69,6 @@
 			"raw_bytes": 3306,
 			"gzip_bytes": 1013
 		},
-		"success.css": {
-			"allow_new": true,
-			"raw_bytes": 4311,
-			"gzip_bytes": 977
-		},
 		"woopay-phone-validation.js": {
 			"allow_new": true,
 			"raw_bytes": 9411,

@@ -84,9 +84,9 @@ plugin_assets = {
     "cart-block.js": "dist/cart-block.js",
     "cart-block.css": "dist/cart-block.css",
     "success.js": "dist/success.js",
-    "success.css": None,
-    "page-blocks-checkout.js": ["dist/blocks-checkout.js", "dist/woopay.js"],
-    "page-blocks-cart.js": ["dist/blocks-checkout.js", "dist/cart-block.js"],
+    "success.css": "assets/css/success.css",
+    "page-blocks-checkout.js": ["dist/blocks-checkout.js", "dist/woopay.js", "dist/woopay-express-button.js"],
+    "page-blocks-cart.js": ["dist/blocks-checkout.js", "dist/woopay-express-button.js", "dist/cart.js", "dist/cart-block.js"],
     "multi-currency-admin.js": "dist/multi-currency.js",
     "multi-currency-admin.css": "dist/multi-currency.css",
     "multi-currency-analytics.js": "dist/multi-currency-analytics.js",
@@ -155,9 +155,12 @@ core_assets = {
     "cart-block.css": CORE_BLOCKS + "wc-woopayments-cart-block-payment-method-messaging.css",
     "success.js": "plugins/woocommerce/assets/js/frontend/woopayments-order-success.min.js",
     "success.css": "plugins/woocommerce/assets/css/woopayments-order-success.css",
-    # The Blocks checkout with WooPay and express checkout, and the Blocks cart with express checkout.
+    # Every script each side loads on first view of the Blocks checkout and the Blocks cart, each file counted once,
+    # with WooPay and Apple Pay/Google Pay buttons on, payment method messaging on, WooPay direct checkout off,
+    # shopper tracking off, and before the shopper opts in to saving their details. The client also loads its
+    # cart.js on every cart page; native has no cart-page script in this configuration.
     "page-blocks-checkout.js": [BLOCKS_CARD, BLOCKS_WOOPAY, BLOCKS_EXPRESS, BLOCKS_COMMON, BLOCKS_WOOPAY_COMMON, FINGERPRINTJS, BLOCKS_FRAUD_SCRIPTS],
-    "page-blocks-cart.js": [BLOCKS_EXPRESS, BLOCKS_COMMON, BLOCKS_FRAUD_SCRIPTS, CART_BLOCK_MESSAGING],
+    "page-blocks-cart.js": [BLOCKS_WOOPAY, BLOCKS_EXPRESS, BLOCKS_COMMON, BLOCKS_WOOPAY_COMMON, BLOCKS_FRAUD_SCRIPTS, CART_BLOCK_MESSAGING],
     "multi-currency-admin.js": "plugins/woocommerce/assets/client/admin/wp-admin-scripts/multi-currency-settings.js",
     "multi-currency-admin.css": "plugins/woocommerce/assets/client/admin/multi-currency-settings/style.css",
     "multi-currency-analytics.js": None,
