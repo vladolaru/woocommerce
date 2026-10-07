@@ -499,6 +499,109 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The recorder takes only the shopper events native scripts send, each with its declared properties (the request
+	 * schema the owner decided on 2026-10-07; client 11.1.0 `class-woopay-tracker.php:93-120` forwards any name and any
+	 * property).
+	 *
+	 * @testdox Should refuse an event name no native script sends, and record nothing.
+	 */
+	public function test_tracks_response_refuses_an_unknown_event(): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+
+		$recorded = $this->record_through_tracks_response( $this->create_controller( true ), 'free_text_event', array() );
+
+		$this->assertSame( 400, $recorded['response']['status_code'] );
+		$this->assertSame( array(), $recorded['events'] );
+	}
+
+	/**
+	 * @testdox Should drop properties the event does not declare and values outside a declared set.
+	 */
+	public function test_tracks_response_keeps_only_declared_properties(): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+
+		$button   = $this->record_through_tracks_response(
+			$this->create_controller( true ),
+			'woopay_button_click',
+			array(
+				'source' => 'checkout',
+				'email'  => 'shopper@example.com',
+			)
+		);
+		$save     = $this->record_through_tracks_response( $this->create_controller( true ), 'checkout_save_my_info_click', array( 'status' => 'maybe' ) );
+		$checkout = $this->record_through_tracks_response(
+			$this->create_controller( true ),
+			'checkout_page_view',
+			array(
+				'theme_type'     => 'blocks',
+				'woopay_enabled' => 'true',
+			)
+		);
+
+		$this->assertSame( 'checkout', $button['events'][0]->source );
+		$this->assertObjectNotHasProperty( 'email', $button['events'][0] );
+		$this->assertObjectNotHasProperty( 'status', $save['events'][0] );
+		$this->assertSame( 'blocks', $checkout['events'][0]->theme_type );
+		$this->assertTrue( (bool) $checkout['events'][0]->woopay_enabled );
+	}
+
+	/**
+	 * Page views are recorded on every store (client PR 6870, PR 8821); WooPay events only while WooPay is on, and a
+	 * browser cannot claim otherwise through `record_event_data`.
+	 *
+	 * @testdox Should record a page view but refuse a WooPay event while WooPay is off, whatever the browser claims.
+	 */
+	public function test_tracks_response_applies_the_per_event_gate_while_woopay_is_off(): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		$account_service = $this->create_account_service( true, true, false );
+
+		$page_view = $this->record_through_tracks_response( $this->create_controller( true, $account_service ), 'cart_page_view', array( 'theme_type' => 'blocks' ) );
+		$woopay    = $this->record_through_tracks_response(
+			$this->create_controller( true, $account_service ),
+			'woopay_button_click',
+			array(
+				'source'            => 'checkout',
+				'record_event_data' => array(
+					'is_admin_event'      => true,
+					'track_on_all_stores' => true,
+				),
+			)
+		);
+
+		$this->assertSame( 'wcpay_cart_page_view', $page_view['events'][0]->_en ?? null );
+		$this->assertSame( array(), $woopay['events'] );
+	}
+
+	/**
+	 * Post an event to the shopper recorder and collect what it records into core's footer pixel queue.
+	 *
+	 * @param WooPaymentsFrontendTrackingController $sut        Controller under test.
+	 * @param string                                $event_name Event name the browser sends.
+	 * @param array<string,mixed>                   $properties Event properties the browser sends.
+	 * @return array{response:array<string,mixed>,events:array<int,\WC_Tracks_Event>}
+	 */
+	private function record_through_tracks_response( WooPaymentsFrontendTrackingController $sut, string $event_name, array $properties ): array {
+		\WC_Tracks_Footer_Pixel::clear_events();
+		$response = $sut->get_tracks_response(
+			array(
+				'tracksNonce'     => wp_create_nonce( 'platform_tracks_nonce' ),
+				'tracksEventName' => $event_name,
+				'tracksEventProp' => wp_json_encode( $properties ),
+			)
+		);
+		$events   = \WC_Tracks_Footer_Pixel::get_events();
+		\WC_Tracks_Footer_Pixel::clear_events();
+
+		return array(
+			'response' => $response,
+			'events'   => $events,
+		);
+	}
+
+	/**
 	 * Create the controller under test.
 	 *
 	 * @param bool                           $native_register Whether native runtime owns WooPayments.
@@ -520,9 +623,10 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @param bool $test_mode       Whether the account is in test mode.
 	 * @param bool $gateway_enabled Whether the WooPayments gateway is enabled.
+	 * @param bool $woopay_enabled  Whether WooPay is enabled.
 	 * @return WooPaymentsAccountService
 	 */
-	private function create_account_service( bool $test_mode, bool $gateway_enabled = true ): WooPaymentsAccountService {
+	private function create_account_service( bool $test_mode, bool $gateway_enabled = true, bool $woopay_enabled = true ): WooPaymentsAccountService {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'can_process_payments', 'get_cached_account_data', 'get_gateway_setting', 'is_test_mode_enabled', 'is_gateway_enabled' ) )
@@ -538,7 +642,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		);
 		$account_service->method( 'get_gateway_setting' )->willReturnMap(
 			array(
-				array( 'platform_checkout', 'no', 'yes' ),
+				array( 'platform_checkout', 'no', $woopay_enabled ? 'yes' : 'no' ),
 			)
 		);
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );

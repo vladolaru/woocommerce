@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use WC_Unit_Test_Case;
 
 /**
@@ -218,6 +219,36 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( array(), $stale, "These allowances are now recorded natively; remove the entry:\n" . implode( "\n", $stale ) );
+	}
+
+	/**
+	 * The shopper recorder accepts only the events its schema declares, so the schema and the shopper scripts must
+	 * agree: a name a script sends but the schema lacks would be refused, and a declared name nothing sends is dead.
+	 *
+	 * @testdox Should declare every event the shopper scripts send, and only events something sends.
+	 */
+	public function test_shopper_recorder_schema_matches_the_shopper_scripts(): void {
+		$declared = array();
+		foreach ( array_keys( ( new \ReflectionClassConstant( WooPaymentsFrontendTrackingController::class, 'SHOPPER_EVENTS' ) )->getValue() ) as $name ) {
+			$declared[ 'wcpay_' . $name ] = true;
+		}
+
+		$plugin_path = WC()->plugin_path();
+		$sent        = array();
+		foreach ( $this->native_client_scan_paths( $plugin_path ) as $file ) {
+			$path = str_replace( '\\', '/', $file );
+			if ( false === strpos( $path, '/client/legacy/js/frontend/' ) && false === strpos( $path, '/client/blocks/' ) ) {
+				continue;
+			}
+			foreach ( $this->native_js_tracks_wire_names( $file ) as $name ) {
+				if ( 0 === strpos( $name, 'wcpay_' ) ) {
+					$sent[ $name ] = true;
+				}
+			}
+		}
+
+		$this->assertSame( array(), array_keys( array_diff_key( $sent, $declared ) ), 'Shopper script events the recorder schema does not declare.' );
+		$this->assertSame( array(), array_keys( array_diff_key( $declared, $this->native_tracks_wire_names() ) ), 'Declared shopper events nothing sends.' );
 	}
 
 	/**

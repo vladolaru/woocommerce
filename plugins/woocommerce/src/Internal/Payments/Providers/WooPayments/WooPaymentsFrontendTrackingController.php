@@ -27,6 +27,109 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 
 	private const USER_EVENT_PREFIX = 'wcpay';
 
+	/**
+	 * Button locations the WooPay and express checkout buttons report as `source`.
+	 */
+	private const BUTTON_SOURCES = array( 'product', 'cart', 'checkout', 'pay_for_order' );
+
+	/**
+	 * Shopper events the browser may record, without the `wcpay_` prefix.
+	 *
+	 * Each declares whether it is recorded on every store or only while WooPay is on (client PR 6870 and PR 8821 for
+	 * the page views; the Apple Pay and Google Pay events get theirs from the `wcpay_tracks_event_properties` callback,
+	 * client PR 9793) and its properties: `bool`, `string`, or the list of allowed values. Anything else is dropped.
+	 */
+	private const SHOPPER_EVENTS = array(
+		'checkout_page_view'                         => array(
+			'all_stores' => true,
+			'properties' => array(
+				'theme_type'     => array( 'short_code', 'blocks' ),
+				'woopay_enabled' => 'bool',
+			),
+		),
+		'cart_page_view'                             => array(
+			'all_stores' => true,
+			'properties' => array( 'theme_type' => array( 'short_code', 'blocks' ) ),
+		),
+		'product_page_view'                          => array(
+			'all_stores' => true,
+			'properties' => array( 'theme_type' => array( 'short_code', 'blocks' ) ),
+		),
+		'pay_for_order_page_view'                    => array(
+			'all_stores' => true,
+			'properties' => array(),
+		),
+		'order_success_page_view'                    => array(
+			'all_stores' => true,
+			'properties' => array(),
+		),
+		'checkout_place_order_button_click'          => array(
+			'all_stores' => false,
+			'properties' => array(),
+		),
+		'wcpay_proceed_to_checkout_button_click'     => array(
+			'all_stores' => false,
+			'properties' => array( 'woopay_direct_checkout' => 'bool' ),
+		),
+		'checkout_email_address_woopay_check'        => array(
+			'all_stores' => false,
+			'properties' => array(),
+		),
+		'checkout_woopay_save_my_info_offered'       => array(
+			'all_stores' => false,
+			'properties' => array(),
+		),
+		'checkout_save_my_info_click'                => array(
+			'all_stores' => false,
+			'properties' => array( 'status' => array( 'checked', 'unchecked' ) ),
+		),
+		'checkout_woopay_save_my_info_mobile_enter'  => array(
+			'all_stores' => false,
+			'properties' => array(),
+		),
+		'checkout_save_my_info_tos_click'            => array(
+			'all_stores' => false,
+			'properties' => array(),
+		),
+		'checkout_save_my_info_privacy_policy_click' => array(
+			'all_stores' => false,
+			'properties' => array(),
+		),
+		'woopay_skipped'                             => array(
+			'all_stores' => false,
+			'properties' => array(),
+		),
+		'woopay_button_load'                         => array(
+			'all_stores' => false,
+			'properties' => array( 'source' => self::BUTTON_SOURCES ),
+		),
+		'woopay_button_click'                        => array(
+			'all_stores' => false,
+			'properties' => array( 'source' => self::BUTTON_SOURCES ),
+		),
+		'applepay_button_load'                       => array(
+			'all_stores' => false,
+			'properties' => array( 'source' => self::BUTTON_SOURCES ),
+		),
+		'applepay_button_click'                      => array(
+			'all_stores' => false,
+			'properties' => array( 'source' => self::BUTTON_SOURCES ),
+		),
+		'gpay_button_load'                           => array(
+			'all_stores' => false,
+			'properties' => array( 'source' => self::BUTTON_SOURCES ),
+		),
+		'gpay_button_click'                          => array(
+			'all_stores' => false,
+			'properties' => array( 'source' => self::BUTTON_SOURCES ),
+		),
+	);
+
+	/**
+	 * Longest string property value the recorder keeps.
+	 */
+	private const MAX_PROPERTY_LENGTH = 100;
+
 	private const FRONTEND_EVENTS_SCRIPT_HANDLE = 'wc-woopayments-frontend-tracks';
 
 	/**
@@ -126,6 +229,11 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 			return $this->error_response( __( 'No valid event name or type.', 'woocommerce' ), 403 );
 		}
 
+		$event_name = sanitize_text_field( (string) $request['tracksEventName'] );
+		if ( ! isset( self::SHOPPER_EVENTS[ $event_name ] ) ) {
+			return $this->error_response( __( 'No valid event name or type.', 'woocommerce' ), 400 );
+		}
+
 		$properties = array();
 		if ( isset( $request['tracksEventProp'] ) && is_scalar( $request['tracksEventProp'] ) ) {
 			$encoded_properties = wc_clean( (string) $request['tracksEventProp'] );
@@ -137,13 +245,50 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 			}
 		}
 
-		$this->record_user_event( sanitize_text_field( (string) $request['tracksEventName'] ), $properties );
+		$event      = self::SHOPPER_EVENTS[ $event_name ];
+		$properties = $this->get_declared_properties( $event['properties'], $properties );
+		if ( $event['all_stores'] ) {
+			$properties['record_event_data'] = array( 'track_on_all_stores' => true );
+		}
+
+		$this->record_user_event( $event_name, $properties );
 
 		return array(
 			'success'     => true,
 			'status_code' => 200,
 			'data'        => array(),
 		);
+	}
+
+	/**
+	 * Keep the properties an event declares, coerced to their declared type and length.
+	 *
+	 * @param array<string,string|string[]> $declared   Declared properties: `bool`, `string`, or the allowed values.
+	 * @param array<string,mixed>           $properties Properties the browser sent.
+	 * @return array<string,mixed>
+	 */
+	private function get_declared_properties( array $declared, array $properties ): array {
+		$kept = array();
+		foreach ( $declared as $key => $type ) {
+			if ( ! isset( $properties[ $key ] ) || ! is_scalar( $properties[ $key ] ) ) {
+				continue;
+			}
+
+			if ( 'bool' === $type ) {
+				$value = filter_var( $properties[ $key ], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE );
+				if ( null !== $value ) {
+					$kept[ $key ] = $value;
+				}
+				continue;
+			}
+
+			$value = substr( sanitize_text_field( (string) $properties[ $key ] ), 0, self::MAX_PROPERTY_LENGTH );
+			if ( 'string' === $type || ( is_array( $type ) && in_array( $value, $type, true ) ) ) {
+				$kept[ $key ] = $value;
+			}
+		}
+
+		return $kept;
 	}
 
 	/**
