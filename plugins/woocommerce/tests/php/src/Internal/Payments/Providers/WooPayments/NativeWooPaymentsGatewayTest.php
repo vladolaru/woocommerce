@@ -324,6 +324,14 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		return array(
 			'new card created on the platform'          => array( 'card', array( 'wcpay-is-platform-payment-method' => 'true' ), true ),
 			'new card created on the connected account' => array( 'card', array( 'wcpay-is-platform-payment-method' => 'false' ), false ),
+			'new card chosen over saved cards'          => array(
+				'card',
+				array(
+					'wcpay-is-platform-payment-method' => 'true',
+					'wc-woocommerce_payments-payment-token' => 'new',
+				),
+				true,
+			),
 			'saved card'                                => array(
 				'card',
 				array(

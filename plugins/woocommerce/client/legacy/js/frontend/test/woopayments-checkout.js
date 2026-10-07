@@ -499,6 +499,9 @@ describe( 'WooPayments checkout', () => {
 				};
 				return elementsMock;
 			} ),
+			// Minimal Stripe.js result shapes, reduced to the ids the script reads, as client 11.1.0 does:
+			// createPaymentMethod -> paymentMethod.id (classic/payment-processing.js:479-483); next actions and
+			// confirmations -> paymentIntent.id / setupIntent.id (checkout/api/index.js:220-245).
 			createPaymentMethod: jest.fn( () =>
 				Promise.resolve( {
 					paymentMethod: { id: 'pm_native' },
@@ -2683,12 +2686,14 @@ describe( 'WooPayments checkout', () => {
 	// the shared Elements double and the Stripe result shapes of stripeMock above.
 	function useSeparateStripeAccounts() {
 		const platformStripe = Object.assign( {}, stripeMock, {
+			elements: jest.fn( stripeMock.elements ),
 			createPaymentMethod: jest.fn( () =>
 				Promise.resolve( { paymentMethod: { id: 'pm_platform' } } )
 			),
 			handleNextAction: jest.fn(),
 		} );
 		const connectedStripe = Object.assign( {}, stripeMock, {
+			elements: jest.fn( stripeMock.elements ),
 			createPaymentMethod: jest.fn( () =>
 				Promise.resolve( { paymentMethod: { id: 'pm_connected' } } )
 			),
@@ -2712,6 +2717,8 @@ describe( 'WooPayments checkout', () => {
 		expect( window.Stripe ).toHaveBeenCalledWith( 'pk_test', {
 			locale: 'en-US',
 		} );
+		expect( platformStripe.elements ).toHaveBeenCalled();
+		expect( connectedStripe.elements ).not.toHaveBeenCalled();
 		expect( platformStripe.createPaymentMethod ).toHaveBeenCalled();
 		expect( connectedStripe.createPaymentMethod ).not.toHaveBeenCalled();
 		expect(
