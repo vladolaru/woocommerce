@@ -339,7 +339,7 @@ class WooPaymentsExpressCheckoutService {
 
 			$this->pay_for_order_supported = $order instanceof \WC_Order
 				&& $order->needs_payment()
-				&& WooPaymentsOrderPayAccess::can_pay_with_key( $order, $this->get_pay_for_order_key() )
+				&& WooPaymentsOrderPayAccess::can_pay_with_key( $order, WooPaymentsOrderPayAccess::get_request_order_key() )
 				&& WooPaymentsOrderPayAccess::store_api_states_order_total( $order );
 		}
 
@@ -1049,7 +1049,7 @@ class WooPaymentsExpressCheckoutService {
 		return array(
 			'order_id'      => $order->get_id(),
 			'pay_for_order' => $this->get_pay_for_order_flag(),
-			'key'           => $this->get_pay_for_order_key(),
+			'key'           => WooPaymentsOrderPayAccess::get_request_order_key(),
 			'billing_email' => WooPaymentsOrderPayAccess::may_put_shopper_email_in_page() ? WooPaymentsOrderPayAccess::get_billing_email_for_current_visitor( $order ) : '',
 		);
 	}
@@ -1083,19 +1083,6 @@ class WooPaymentsExpressCheckoutService {
 		}
 
 		return 0;
-	}
-
-	/**
-	 * Get the current order-pay key.
-	 *
-	 * @return string
-	 */
-	private function get_pay_for_order_key(): string {
-		if ( ! isset( $_GET['key'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-			return '';
-		}
-
-		return sanitize_text_field( wp_unslash( $_GET['key'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 	}
 
 	/**

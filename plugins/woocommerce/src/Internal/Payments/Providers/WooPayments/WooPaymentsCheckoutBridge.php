@@ -1379,7 +1379,10 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		// element, and this bridge must produce the same element.
 		if ( 0 < $order_id && ! $this->is_changing_payment_method_for_subscription() ) {
 			$order = wc_get_order( $order_id );
-			if ( $order instanceof \WC_Order && current_user_can( 'pay_for_order', $order->get_id() ) ) {
+			// The pay link's key as well as the capability: core grants pay_for_order on a guest order to anyone, and the
+			// Checkout block publishes this data before the order-pay endpoint checks the key (client 11.1.0 checks only
+			// the capability, class-wc-payments-checkout.php:257-266).
+			if ( $order instanceof \WC_Order && WooPaymentsOrderPayAccess::can_pay_with_key( $order, WooPaymentsOrderPayAccess::get_request_order_key() ) ) {
 				$currency = '' !== $order->get_currency() ? strtoupper( $order->get_currency() ) : strtoupper( get_woocommerce_currency() );
 
 				return array(

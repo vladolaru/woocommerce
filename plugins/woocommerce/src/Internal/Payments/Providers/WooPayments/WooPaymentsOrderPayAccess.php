@@ -35,6 +35,18 @@ final class WooPaymentsOrderPayAccess {
 	}
 
 	/**
+	 * Get the order key the current request's pay link carries, or an empty string.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return string
+	 */
+	public static function get_request_order_key(): string {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only pay link value; callers check it against the order.
+		return isset( $_GET['key'] ) && is_string( $_GET['key'] ) ? sanitize_text_field( wp_unslash( $_GET['key'] ) ) : '';
+	}
+
+	/**
 	 * Tell whether the Store API order route states the order's total in the order's currency and amount.
 	 *
 	 * The route labels its totals with the active currency and price decimals (CurrencyFormatter.php:44-46) but writes them

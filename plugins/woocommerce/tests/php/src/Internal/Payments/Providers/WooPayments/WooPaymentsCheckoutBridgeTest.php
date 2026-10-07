@@ -540,6 +540,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$order->save();
 		wp_set_current_user( $customer_id );
 		set_query_var( 'order-pay', $order->get_id() );
+		$_GET['key'] = $order->get_order_key();
 
 		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
 		$account_service = $this->create_account_service_for_bridge(
@@ -1264,6 +1265,60 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should publish a guest order's pay context only to a pay link that carries the order key.
+	 *
+	 * @testWith ["", false]
+	 *           ["wrong_key", false]
+	 *           ["order_key", true]
+	 *
+	 * @param string $key           The pay link's key: none, a wrong one, or the order's ("order_key").
+	 * @param bool   $expects_order Whether the order's pay context is published.
+	 */
+	public function test_guest_order_pay_context_needs_the_order_key( string $key, bool $expects_order ): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		// No customer: core grants pay_for_order on such an order to every visitor (wc-user-functions.php).
+		$order = wc_create_order();
+		$order->set_currency( 'EUR' );
+		$order->set_total( '12.34' );
+		$order->save();
+		wp_set_current_user( 0 );
+		set_query_var( 'order-pay', $order->get_id() );
+		if ( '' !== $key ) {
+			$_GET['key'] = 'order_key' === $key ? $order->get_order_key() : $key;
+		}
+
+		$legacy_runtime = $this->create_legacy_runtime_for_bridge();
+		$legacy_runtime->method( 'get_gateway_prepared_customer_data' )->willReturn( array() );
+		$bridge = new WooPaymentsCheckoutBridge();
+		$bridge->init(
+			$legacy_runtime,
+			$this->create_account_service_for_bridge(
+				true,
+				array(
+					'country'      => 'US',
+					'capabilities' => array( 'card_payments' => 'active' ),
+				)
+			),
+			$this->create_woopay_session_service_for_bridge( false ),
+			$this->create_frontend_styles_service_for_bridge(),
+			$this->create_frontend_tracking_controller_for_bridge()
+		);
+
+		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+
+		$this->assertTrue( current_user_can( 'pay_for_order', $order->get_id() ) );
+		if ( $expects_order ) {
+			$this->assertSame( $order->get_id(), $config['orderId'] );
+			$this->assertSame( 'EUR', $config['currency'] );
+			$this->assertSame( 1234, $config['cartTotal'] );
+		} else {
+			$this->assertArrayNotHasKey( 'orderId', $config );
+			$this->assertArrayNotHasKey( 'isOrderPay', $config );
+			$this->assertSame( 'USD', $config['currency'] );
+		}
+	}
+
+	/**
 	 * @testdox Should use one authorized order-pay context for payment configuration and eligibility.
 	 */
 	public function test_get_payment_fields_js_config_uses_order_pay_context(): void {
@@ -1276,6 +1331,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$order->save();
 		wp_set_current_user( $customer_id );
 		set_query_var( 'order-pay', $order->get_id() );
+		$_GET['key'] = $order->get_order_key();
 
 		$legacy_runtime = $this->create_legacy_runtime_for_bridge();
 		$legacy_runtime->method( 'get_gateway_prepared_customer_data' )->willReturn( array() );
@@ -1843,6 +1899,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 				$order->set_total( '12.34' );
 				$order->save();
 				set_query_var( 'order-pay', $order->get_id() );
+				$_GET['key'] = $order->get_order_key();
 			} else {
 				if ( 'update_order_review refresh' === $surface ) {
 					add_filter( 'wp_doing_ajax', '__return_true' );
@@ -1871,7 +1928,8 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 					$other_order->set_total( '56.78' );
 					$other_order->save();
 					set_query_var( 'order-pay', $other_order->get_id() );
-					$field = 'orderId';
+					$_GET['key'] = $other_order->get_order_key();
+					$field       = 'orderId';
 					break;
 				case 'the shopper':
 					wp_set_current_user( self::factory()->user->create( array( 'role' => 'customer' ) ) );
