@@ -1368,10 +1368,31 @@ const WooPaymentsContent = ( {
 			event.preventDefault();
 			button.querySelector( 'i' )?.setAttribute( 'aria-hidden', 'true' );
 
+			// The status after the button announces the copy (WooPaymentsCheckoutBridge::get_card_testing_instructions()).
+			const showCopied = () => {
+				const status = button.parentNode?.querySelector(
+					'.js-woopayments-copy-test-number-status'
+				);
+				if ( status ) {
+					status.textContent = status.dataset.copiedMessage || '';
+				}
+
+				button.classList.add( 'state--success' );
+				window.setTimeout( () => {
+					button.classList.remove( 'state--success' );
+					if ( status ) {
+						status.textContent = '';
+					}
+				}, copyTestNumberSuccessDuration );
+			};
+
+			// Success shows only once the clipboard write resolves; the prompt fallback leaves the copy to the shopper.
 			if (
 				typeof window.navigator?.clipboard?.writeText === 'function'
 			) {
-				window.navigator.clipboard.writeText( testNumber );
+				Promise.resolve(
+					window.navigator.clipboard.writeText( testNumber )
+				).then( showCopied, () => {} );
 			} else if ( typeof window.prompt === 'function' ) {
 				// eslint-disable-next-line no-alert
 				window.prompt(
@@ -1379,22 +1400,6 @@ const WooPaymentsContent = ( {
 					testNumber
 				);
 			}
-
-			// The status after the button announces the copy (WooPaymentsCheckoutBridge::get_card_testing_instructions()).
-			const status = button.parentNode?.querySelector(
-				'.js-woopayments-copy-test-number-status'
-			);
-			if ( status ) {
-				status.textContent = status.dataset.copiedMessage || '';
-			}
-
-			button.classList.add( 'state--success' );
-			window.setTimeout( () => {
-				button.classList.remove( 'state--success' );
-				if ( status ) {
-					status.textContent = '';
-				}
-			}, copyTestNumberSuccessDuration );
 		};
 
 		document.addEventListener( 'click', copyTestNumber );

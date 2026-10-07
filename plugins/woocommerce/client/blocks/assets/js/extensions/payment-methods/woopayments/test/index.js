@@ -1235,7 +1235,8 @@ describe( 'wc-payment-method-woopayments', () => {
 	}
 
 	it( 'prevents the default action when copying the test card number', () => {
-		const writeText = jest.fn();
+		// Clipboard.writeText() returns a Promise<void> (https://developer.mozilla.org/docs/Web/API/Clipboard/writeText).
+		const writeText = jest.fn().mockResolvedValue( undefined );
 		Object.defineProperty( window.navigator, 'clipboard', {
 			value: {
 				writeText,
@@ -1254,7 +1255,8 @@ describe( 'wc-payment-method-woopayments', () => {
 	} );
 
 	it( 'copies the test card number with the Clipboard API', () => {
-		const writeText = jest.fn();
+		// Clipboard.writeText() returns a Promise<void> (https://developer.mozilla.org/docs/Web/API/Clipboard/writeText).
+		const writeText = jest.fn().mockResolvedValue( undefined );
 		Object.defineProperty( window.navigator, 'clipboard', {
 			value: {
 				writeText,
@@ -1280,11 +1282,14 @@ describe( 'wc-payment-method-woopayments', () => {
 			'Copy test card number:',
 			'4242 4242 4242 4242'
 		);
+		expect( button ).not.toHaveClass( 'state--success' );
+		expect( screen.getByRole( 'status' ) ).toHaveTextContent( '' );
 	} );
 
-	it( 'shows and clears the copied state after copying the test card number', () => {
-		jest.useFakeTimers();
-		const writeText = jest.fn();
+	it( 'does not announce a copy the clipboard rejected', async () => {
+		const writeText = jest
+			.fn()
+			.mockRejectedValue( new Error( 'NotAllowedError' ) );
 		Object.defineProperty( window.navigator, 'clipboard', {
 			value: {
 				writeText,
@@ -1294,6 +1299,31 @@ describe( 'wc-payment-method-woopayments', () => {
 		const button = renderWooPaymentsContent();
 
 		fireEvent.click( button );
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect( writeText ).toHaveBeenCalled();
+		expect( button ).not.toHaveClass( 'state--success' );
+		expect( screen.getByRole( 'status' ) ).toHaveTextContent( '' );
+	} );
+
+	it( 'shows and clears the copied state after copying the test card number', async () => {
+		jest.useFakeTimers();
+		// Clipboard.writeText() returns a Promise<void> (https://developer.mozilla.org/docs/Web/API/Clipboard/writeText).
+		const writeText = jest.fn().mockResolvedValue( undefined );
+		Object.defineProperty( window.navigator, 'clipboard', {
+			value: {
+				writeText,
+			},
+			configurable: true,
+		} );
+		const button = renderWooPaymentsContent();
+
+		fireEvent.click( button );
+
+		expect( button ).not.toHaveClass( 'state--success' );
+		await Promise.resolve();
+		await Promise.resolve();
 
 		expect( button ).toHaveClass( 'state--success' );
 		expect( screen.getByRole( 'status' ) ).toHaveTextContent(

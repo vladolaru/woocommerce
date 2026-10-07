@@ -3492,7 +3492,8 @@ describe( 'WooPayments checkout', () => {
 	}
 
 	test( 'prevents the default action when copying the test card number', () => {
-		const writeText = jest.fn();
+		// Clipboard.writeText() returns a Promise<void> (https://developer.mozilla.org/docs/Web/API/Clipboard/writeText).
+		const writeText = jest.fn().mockResolvedValue( undefined );
 		Object.defineProperty( window.navigator, 'clipboard', {
 			value: {
 				writeText,
@@ -3513,7 +3514,8 @@ describe( 'WooPayments checkout', () => {
 	} );
 
 	test( 'copies the test card number with the Clipboard API', () => {
-		const writeText = jest.fn();
+		// Clipboard.writeText() returns a Promise<void> (https://developer.mozilla.org/docs/Web/API/Clipboard/writeText).
+		const writeText = jest.fn().mockResolvedValue( undefined );
 		Object.defineProperty( window.navigator, 'clipboard', {
 			value: {
 				writeText,
@@ -3543,11 +3545,43 @@ describe( 'WooPayments checkout', () => {
 			'Copy test card number:',
 			'4242 4242 4242 4242'
 		);
+		expect( button.classList.contains( 'state--success' ) ).toBe( false );
+		expect(
+			document.querySelector( '.js-woopayments-copy-test-number-status' )
+				.textContent
+		).toBe( '' );
 	} );
 
-	test( 'shows and clears the copied state after copying the test card number', () => {
+	test( 'does not announce a copy the clipboard rejected', async () => {
+		const writeText = jest
+			.fn()
+			.mockRejectedValue( new Error( 'NotAllowedError' ) );
+		Object.defineProperty( window.navigator, 'clipboard', {
+			value: {
+				writeText,
+			},
+			configurable: true,
+		} );
+		const button = renderTestNumberButton();
+
+		require( '../woopayments-checkout' );
+
+		button.click();
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect( writeText ).toHaveBeenCalled();
+		expect( button.classList.contains( 'state--success' ) ).toBe( false );
+		expect(
+			document.querySelector( '.js-woopayments-copy-test-number-status' )
+				.textContent
+		).toBe( '' );
+	} );
+
+	test( 'shows and clears the copied state after copying the test card number', async () => {
 		jest.useFakeTimers();
-		const writeText = jest.fn();
+		// Clipboard.writeText() returns a Promise<void> (https://developer.mozilla.org/docs/Web/API/Clipboard/writeText).
+		const writeText = jest.fn().mockResolvedValue( undefined );
 		Object.defineProperty( window.navigator, 'clipboard', {
 			value: {
 				writeText,
@@ -3562,6 +3596,10 @@ describe( 'WooPayments checkout', () => {
 		const status = document.querySelector(
 			'.js-woopayments-copy-test-number-status'
 		);
+
+		expect( button.classList.contains( 'state--success' ) ).toBe( false );
+		await Promise.resolve();
+		await Promise.resolve();
 
 		expect( button.classList.contains( 'state--success' ) ).toBe( true );
 		expect( status.textContent ).toBe( 'Copied to clipboard.' );

@@ -632,32 +632,38 @@
 			icon.setAttribute( 'aria-hidden', 'true' );
 		}
 
+		// Success shows only once the clipboard write resolves; the prompt fallback leaves the copy to the shopper.
 		if (
 			window.navigator.clipboard &&
 			typeof window.navigator.clipboard.writeText === 'function'
 		) {
-			window.navigator.clipboard.writeText( testNumber );
+			Promise.resolve(
+				window.navigator.clipboard.writeText( testNumber )
+			).then( showCopied, function () {} );
 		} else if ( typeof window.prompt === 'function' ) {
 			window.prompt( 'Copy test card number:', testNumber );
 		}
 
 		// The status after the button announces the copy (WooPaymentsCheckoutBridge::get_card_testing_instructions()).
-		status = button.parentNode
-			? button.parentNode.querySelector(
-					'.js-woopayments-copy-test-number-status'
-			  )
-			: null;
-		if ( status ) {
-			status.textContent = status.getAttribute( 'data-copied-message' ) || '';
-		}
-
-		button.classList.add( 'state--success' );
-		window.setTimeout( function () {
-			button.classList.remove( 'state--success' );
+		function showCopied() {
+			status = button.parentNode
+				? button.parentNode.querySelector(
+						'.js-woopayments-copy-test-number-status'
+				  )
+				: null;
 			if ( status ) {
-				status.textContent = '';
+				status.textContent =
+					status.getAttribute( 'data-copied-message' ) || '';
 			}
-		}, copyTestNumberSuccessDuration );
+
+			button.classList.add( 'state--success' );
+			window.setTimeout( function () {
+				button.classList.remove( 'state--success' );
+				if ( status ) {
+					status.textContent = '';
+				}
+			}, copyTestNumberSuccessDuration );
+		}
 	}
 
 	function recordUserEvent( eventName, eventProperties ) {
