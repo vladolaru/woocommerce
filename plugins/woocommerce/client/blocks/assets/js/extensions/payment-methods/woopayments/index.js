@@ -857,7 +857,8 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 	);
 	const isWooPayUser = useIsWooPayUser();
 	const isOfferApplicable = isWooPaymentsChosen && ! isWooPayUser;
-	// What the session holds as far as this section knows: null (nothing stored), 'empty' or the stored number.
+	// What the session holds as far as this section knows: null (nothing stored), 'empty', the stored number, or
+	// 'unknown' after a failed request.
 	const storedUserData = useRef( null );
 	const initialIsSavingUser = useRef(
 		Boolean( paymentSettings.PRE_CHECK_SAVE_MY_INFO )
@@ -950,7 +951,8 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 	// Client 11.1.0 checkout-page-save-user.js:115-144, :155-160, :184-223, :274-302 keeps the session in step from one
 	// place: the number is stored whenever the box is checked and the number valid (so each valid change, and a return to
 	// WooPayments, stores it again), and a stored opt-in is cleared on uncheck or once the offer stops applying. Only a
-	// change of what should be stored sends a request; a failed one is sent again on the next change.
+	// change of what should be stored sends a request. After a failed request the session may still hold an earlier
+	// opt-in, so it counts as unknown: the next change sends again, and an uncheck still clears.
 	useEffect( () => {
 		const canStore =
 			isPhoneValid === true ||
@@ -978,7 +980,7 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 			next === 'empty'
 		).then( ( isStored ) => {
 			if ( ! isStored && storedUserData.current === next ) {
-				storedUserData.current = null;
+				storedUserData.current = 'unknown';
 			}
 		} );
 	}, [

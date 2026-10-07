@@ -747,8 +747,12 @@ describe( 'wc-payment-method-woopayments', () => {
 		} );
 	} );
 
+	// fetch() resolves with a Response whose ok is false for an HTTP error (https://developer.mozilla.org/docs/Web/API/Response/ok).
+	const saveUserFailure = { ok: false, status: 500 };
+
 	const renderSaveUserSection = () => {
 		window.fetch = jest.fn().mockResolvedValue( {
+			ok: true,
 			json: jest.fn().mockResolvedValue( { success: true } ),
 		} );
 		document.body.innerHTML = `
@@ -900,39 +904,104 @@ describe( 'wc-payment-method-woopayments', () => {
 		settings.getPaymentMethodData.mockImplementation( () => defaultData );
 	} );
 
-	it( 'stores each valid WooPay phone change without waiting for blur', async () => {
+	const getStoredPhones = () =>
+		getSaveUserRequests().map( ( body ) =>
+			body.has( 'empty' )
+				? 'empty'
+				: body.get( 'woopay_user_phone_field[full]' )
+		);
+
+	// Lets the persistence promise settle so a failed request is recorded before the next change.
+	const settleSaveUserRequest = () =>
+		act( async () => {
+			await Promise.resolve();
+			await Promise.resolve();
+		} );
+
+	it( 'stores each valid WooPay phone change once, without waiting for blur', async () => {
 		window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
 		renderSaveUserSection();
 		const phoneField = await screen.findByLabelText(
 			'Mobile phone number'
 		);
+		const before = getStoredPhones().length;
 
 		fireEvent.change( phoneField, { target: { value: '2015550123' } } );
 		fireEvent.change( phoneField, { target: { value: '2015550188' } } );
+		fireEvent.blur( phoneField );
 
-		const requests = getSaveUserRequests();
-		expect(
-			requests[ requests.length - 1 ].get(
-				'woopay_user_phone_field[full]'
-			)
-		).toBe( '+12015550188' );
+		expect( getStoredPhones().slice( before ) ).toEqual( [
+			'+12015550123',
+			'+12015550188',
+		] );
 	} );
 
-	it( 'sends the WooPay opt-in again after a failed request when the number changes', async () => {
-		window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
-		renderSaveUserSection();
-		const phoneField = await screen.findByLabelText(
-			'Mobile phone number'
-		);
-		window.fetch.mockRejectedValueOnce( new Error( 'offline' ) );
+	it.each( [
+		[ 'rejected', () => Promise.reject( new Error( 'offline' ) ) ],
+		[ 'HTTP error', () => Promise.resolve( saveUserFailure ) ],
+	] )(
+		'sends the same WooPay number again after a %s request',
+		async ( description, failure ) => {
+			window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
+			renderSaveUserSection();
+			const phoneField = await screen.findByLabelText(
+				'Mobile phone number'
+			);
+			window.fetch.mockImplementationOnce( failure );
 
-		fireEvent.change( phoneField, { target: { value: '2015550123' } } );
-		await act( async () => {} );
-		const failedCount = getSaveUserRequests().length;
-		fireEvent.change( phoneField, { target: { value: '2015550188' } } );
+			fireEvent.change( phoneField, {
+				target: { value: '2015550123' },
+			} );
+			await settleSaveUserRequest();
+			const before = getStoredPhones().length;
+			fireEvent.change( phoneField, { target: { value: '123' } } );
+			fireEvent.change( phoneField, {
+				target: { value: '2015550123' },
+			} );
 
-		expect( getSaveUserRequests().length ).toBe( failedCount + 1 );
-	} );
+			expect( getStoredPhones().slice( before ) ).toEqual( [
+				'+12015550123',
+			] );
+		}
+	);
+
+	it.each( [
+		[
+			'the shopper unchecks save my info',
+			() =>
+				fireEvent.click(
+					screen.getByRole( 'checkbox', {
+						name: 'Securely save my information for 1-click checkout',
+					} )
+				),
+		],
+		[
+			'another payment method is chosen',
+			() => setActivePaymentMethod( 'woocommerce_payments_klarna' ),
+		],
+	] )(
+		'still clears a stored WooPay opt-in after a failed update when %s',
+		async ( description, withdraw ) => {
+			window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
+			renderSaveUserSection();
+			const phoneField = await screen.findByLabelText(
+				'Mobile phone number'
+			);
+			fireEvent.change( phoneField, {
+				target: { value: '2015550123' },
+			} );
+			await settleSaveUserRequest();
+			window.fetch.mockResolvedValueOnce( saveUserFailure );
+			fireEvent.change( phoneField, {
+				target: { value: '2015550188' },
+			} );
+			await settleSaveUserRequest();
+
+			withdraw();
+
+			expect( getStoredPhones().pop() ).toBe( 'empty' );
+		}
+	);
 
 	it( 'clears the WooPay phone error for a valid number', async () => {
 		window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
