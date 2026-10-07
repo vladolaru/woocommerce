@@ -704,7 +704,9 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			$this->payment_method_definition,
 			$is_add_payment_method_page ? null : array( $this, 'saved_payment_methods' )
 		);
-		if ( ! $is_add_payment_method_page ) {
+		// A guest gets the checkbox only when saving is forced (a subscription), as in client 11.1.0
+		// (class-wc-payments-checkout.php:513-516): no token can be stored for a guest.
+		if ( ! $is_add_payment_method_page && ( is_user_logged_in() || $this->cart_contains_subscription() || $this->is_subscription_change_payment_form() ) ) {
 			$this->save_payment_method_checkbox();
 		}
 	}

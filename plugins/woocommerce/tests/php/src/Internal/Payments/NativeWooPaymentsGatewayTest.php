@@ -5991,6 +5991,18 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_payment_fields_delegate_to_checkout_bridge(): void {
 		add_filter( 'woocommerce_is_checkout', '__return_true' );
+		// A customer with a saved card: core lists it with the new-card option, and the save checkbox follows.
+		$customer_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		wp_set_current_user( $customer_id );
+		$token = new \WC_Payment_Token_CC();
+		$token->set_token( 'pm_test_saved' );
+		$token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$token->set_card_type( 'visa' );
+		$token->set_last4( '4242' );
+		$token->set_expiry_month( '12' );
+		$token->set_expiry_year( '2040' );
+		$token->set_user_id( $customer_id );
+		$token->save();
 
 		$service           = new RecordingPaymentProcessingService();
 		$received_supports = null;
@@ -6149,6 +6161,46 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( 1, substr_count( $output, 'id="wc-woocommerce_payments-new-payment-method"' ) );
 		$this->assertStringContainsString( 'style="display:none;"', $output );
 		$this->assertMatchesRegularExpression( '/<input[^>]+id="wc-woocommerce_payments-new-payment-method"[^>]+type="checkbox"[^>]+checked[^>]*>/', $output );
+	}
+
+	/**
+	 * @testdox Should print neither the saved methods list nor the save checkbox for a guest outside a subscription.
+	 */
+	public function test_payment_fields_offer_a_guest_no_saving(): void {
+		add_filter( 'woocommerce_is_checkout', '__return_true' );
+		wp_set_current_user( 0 );
+		$bridge = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'render_payment_fields' ) )
+			->getMock();
+		$bridge->method( 'render_payment_fields' )->willReturnCallback(
+			static function ( array $supports, $payment_method_definition = null, ?callable $render_saved_payment_methods = null ): void {
+				unset( $supports, $payment_method_definition );
+				if ( null !== $render_saved_payment_methods ) {
+					$render_saved_payment_methods();
+				}
+			}
+		);
+
+		$output = '';
+		try {
+			$this->with_gateway_settings(
+				array( 'saved_cards' => 'yes' ),
+				function () use ( $bridge, &$output ): void {
+					$gateway = new NativeWooPaymentsGateway();
+					$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), $bridge );
+
+					ob_start();
+					$gateway->payment_fields();
+					$output = (string) ob_get_clean();
+				}
+			);
+		} finally {
+			remove_filter( 'woocommerce_is_checkout', '__return_true' );
+		}
+
+		$this->assertStringNotContainsString( 'wc-saved-payment-methods', $output );
+		$this->assertStringNotContainsString( 'wc-woocommerce_payments-new-payment-method', $output );
 	}
 
 	/**
@@ -6342,6 +6394,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		RecordedPublicFraudServices::answer();
 		$this->ensure_wcs_subscription_detector_double();
 		$order = $this->create_order();
+		// Changing a subscription's payment method is a My Account flow; a guest gets no save control at all.
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'customer' ) ) );
 
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
 		$_GET['change_payment_method']          = (string) ( $order->get_id() + 1 );
