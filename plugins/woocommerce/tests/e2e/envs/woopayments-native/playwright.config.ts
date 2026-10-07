@@ -30,6 +30,10 @@ export default {
 	globalSetup: `${ __dirname }/readonly-global-setup.ts`,
 	reporter,
 	retries: 0,
+	// One worker for the whole run, not only per project: specs in different projects toggle store-wide state (the
+	// native payments state, WooPay on or off), and a run that selects several projects would otherwise run them side
+	// by side.
+	workers: 1,
 	projects: [
 		{
 			name: readonlyProjectName,
