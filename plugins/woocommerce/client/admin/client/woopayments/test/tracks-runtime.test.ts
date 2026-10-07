@@ -61,10 +61,20 @@ describe( 'payments_runtime on admin Tracks events', () => {
 			payment_intent_id: 'pi_test',
 			payments_runtime: 'woocommerce_core',
 		} );
-		expect(
-			filterEvent( 'wcadmin_page_view', { path: 'payments_disputes' } )
-		).toEqual( {
-			path: 'payments_disputes',
+	} );
+
+	// The page view paths the native list pages record (`money-movement/`, `reports/page.tsx`).
+	it.each( [
+		'payments_transactions',
+		'payments_transactions_uncaptured',
+		'payments_transactions_blocked',
+		'payments_disputes',
+		'payments_reports',
+	] )( 'marks the native %s page view', ( path ) => {
+		registerPaymentsRuntimeTracksProperty();
+
+		expect( filterEvent( 'wcadmin_page_view', { path } ) ).toEqual( {
+			path,
 			payments_runtime: 'woocommerce_core',
 		} );
 	} );
@@ -80,6 +90,12 @@ describe( 'payments_runtime on admin Tracks events', () => {
 		expect(
 			filterEvent( 'wcadmin_page_view', { path: 'home_screen' } )
 		).toEqual( { path: 'home_screen' } );
+		// Trunk's WooPayments welcome page (`payments-welcome/index.tsx`).
+		expect(
+			filterEvent( 'wcadmin_page_view', {
+				path: 'payments_connect_core_test',
+			} )
+		).toEqual( { path: 'payments_connect_core_test' } );
 		expect(
 			filterEvent( 'wcadmin_settings_payments_pageview', {} )
 		).toEqual( {} );

@@ -14,17 +14,35 @@ export const PAYMENTS_RUNTIME = 'woocommerce_core';
 const isRecord = ( value: unknown ): value is Record< string, unknown > =>
 	typeof value === 'object' && value !== null && ! Array.isArray( value );
 
+// The native list pages record the client's own page view paths; trunk's `payments_connect_core_test`
+// welcome page view does not match.
+const NATIVE_PAGE_VIEW_PATH_PREFIXES = [
+	'payments_transactions',
+	'payments_disputes',
+	'payments_reports',
+];
+
 // The native WooPayments admin events keep the client's names; trunk's own payments events
 // (such as `payments_task_stepper_view`) do not match.
 const isWooPaymentsAdminEvent = (
 	eventName: string,
 	properties: Record< string, unknown >
-) =>
-	eventName.startsWith( 'wcadmin_wcpay_' ) ||
-	eventName.startsWith( 'wcadmin_payments_transactions_' ) ||
-	( eventName === 'wcadmin_page_view' &&
-		typeof properties.path === 'string' &&
-		properties.path.startsWith( 'payments_' ) );
+) => {
+	if ( eventName === 'wcadmin_page_view' ) {
+		const { path } = properties;
+		return (
+			typeof path === 'string' &&
+			NATIVE_PAGE_VIEW_PATH_PREFIXES.some( ( prefix ) =>
+				path.startsWith( prefix )
+			)
+		);
+	}
+
+	return (
+		eventName.startsWith( 'wcadmin_wcpay_' ) ||
+		eventName.startsWith( 'wcadmin_payments_transactions_' )
+	);
+};
 
 /**
  * Mark a native WooPayments admin event as recorded by the WooCommerce core runtime.
