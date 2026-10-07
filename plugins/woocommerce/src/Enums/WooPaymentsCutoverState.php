@@ -14,10 +14,10 @@ namespace Automattic\WooCommerce\Enums;
  */
 final class WooPaymentsCutoverState {
 
-	/** The job is waiting for its first action. */
+	/** The job is waiting for its next action, or for the merchant to start it (current_step awaiting_merchant_start). */
 	public const PENDING = 'pending';
 
-	/** The job currently owns the reconciliation lease. */
+	/** The job claimed an attempt and is running it; the record's lease_expires_at is when repair_schedule() may recover it. */
 	public const RUNNING = 'running';
 
 	/** The job is waiting for a scheduled retry. */

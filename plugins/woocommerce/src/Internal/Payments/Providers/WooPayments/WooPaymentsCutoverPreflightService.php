@@ -287,7 +287,9 @@ class WooPaymentsCutoverPreflightService {
 	/**
 	 * Get pending or running plugin-prefixed Action Scheduler actions, one per hook and group.
 	 *
-	 * Callers only decide by hook and group, so a queue of thousands of same-hook actions is read as one row.
+	 * Callers only decide by hook and group, so a queue of thousands of same-hook actions is read as one row. On a database
+	 * without identifier placeholders or a failed query, returns one sentinel row (action_id 0) whose hook is one of the
+	 * *_HOOK constants, which blocks the switch.
 	 *
 	 * @return array<int,array{action_id:int,hook:string,group:string}> The lowest action ID of each hook and group, ordered by it.
 	 */

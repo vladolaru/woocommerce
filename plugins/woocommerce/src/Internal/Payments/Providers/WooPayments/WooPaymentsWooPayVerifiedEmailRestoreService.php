@@ -112,7 +112,9 @@ class WooPaymentsWooPayVerifiedEmailRestoreService implements RegisterHooksInter
 	}
 
 	/**
-	 * Restore every detached order on the current blog.
+	 * Restore every detached order on the current blog once no runtime owns payments (native ownership was lost); otherwise do nothing.
+	 *
+	 * Before the order CRUD hook has fired, it defers to that hook and runs there.
 	 *
 	 * @since 11.2.0
 	 */

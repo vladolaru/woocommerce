@@ -45,7 +45,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/** Feature-seeding extension action fired before plugin deactivation. */
 	public const ACTION_SEED_FEATURES = 'woocommerce_woopayments_cutover_seed_features';
 
-	/** Maximum age of a running heartbeat before registration recovers it. */
+	/** Time a claimed attempt may run before repair_schedule() recovers it as stale; fixed at claim, there is no heartbeat. */
 	public const RUNNING_TIMEOUT = 15 * MINUTE_IN_SECONDS;
 
 	/** Fast retry delay during the first day. */
@@ -434,7 +434,9 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Classify a local Stripe Billing marker before admin notice rendering.
+	 * Classify the Stripe Billing marker for the admin notices and return the record to render.
+	 *
+	 * Not read-only: it may exclude, supersede or create the record before returning it.
 	 *
 	 * @return array<string,mixed>|null Current durable record.
 	 */
@@ -545,7 +547,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Record a manager's dismissal of a completion notice on the durable record.
+	 * Record a manager's dismissal of a cutover notice (completion or bundled exclusion) on the durable record.
 	 *
 	 * @param string $notice One of the NOTICE_* constants.
 	 * @return bool True only for the request that recorded the dismissal.
@@ -1816,7 +1818,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$updated['revision']               = $record['revision'] + 1;
 			$updated['updated_at']             = $now;
 			$updated['informational_outcomes'] = $this->merge_information_outcomes( $record['informational_outcomes'], $outcomes );
-			$updated                           = $this->append_step( $updated, 'observed_diagnostic', $now, array( 'outcomes' => $outcomes ) );
+			$updated                           = $this->append_step( $updated, 'recorded_outcomes', $now, array( 'outcomes' => $outcomes ) );
 
 			return $this->state_store->compare_and_set_record( $record, $updated ) ? $updated : null;
 		} finally {

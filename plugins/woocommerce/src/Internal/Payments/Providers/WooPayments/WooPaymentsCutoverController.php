@@ -41,7 +41,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	public const FILTER_SOFT_CUTOVER_ENABLED = 'woocommerce_woopayments_soft_cutover_enabled';
 
 	/**
-	 * Filter that controls mandatory WooPayments auto-deactivation and activation blocking.
+	 * Filter that controls mandatory WooPayments auto-deactivation.
 	 *
 	 * @var string
 	 */
@@ -85,21 +85,21 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	public const QUERY_ACTION = 'wc_woopayments_cutover_action';
 
 	/**
-	 * Admin action that dismisses a completion notice.
+	 * Admin action that dismisses a cutover notice (completion or bundled exclusion).
 	 *
 	 * @var string
 	 */
 	public const ACTION_DISMISS_NOTICE = 'dismiss_notice';
 
 	/**
-	 * Query argument naming the completion notice to dismiss.
+	 * Query argument naming the cutover notice to dismiss.
 	 *
 	 * @var string
 	 */
 	public const QUERY_NOTICE = 'wc_woopayments_cutover_notice';
 
 	/**
-	 * Nonce action for completion notice dismissals.
+	 * Nonce action for cutover notice dismissals.
 	 *
 	 * @var string
 	 */
@@ -210,7 +210,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Persist a store manager's dismissal of a completion notice, then return to the same page.
+	 * Persist a store manager's dismissal of a cutover notice (completion or bundled exclusion), then return to the same page.
 	 */
 	private function dismiss_completion_notice(): void {
 		$nonce = isset( $_GET[ self::NONCE_NAME ] ) ? sanitize_text_field( wp_unslash( $_GET[ self::NONCE_NAME ] ) ) : '';
@@ -239,7 +239,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Build the nonce-protected dismiss link for a completion notice.
+	 * Build the nonce-protected dismiss link for a cutover notice.
 	 *
 	 * @param string $notice One of the WooPaymentsCutoverReconciliationJob::NOTICE_* constants.
 	 * @return string
@@ -348,7 +348,10 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Guard WooPayments activation after mandatory cutover or on a fresh native-owned store.
+	 * Refuse activating WooPayments on a store that never ran the plugin while native owns payments.
+	 *
+	 * A store with plugin evidence (a recorded plugin version, a WooPayments order or token) may activate it, which is the
+	 * rollback after a switch.
 	 *
 	 * @internal
 	 */

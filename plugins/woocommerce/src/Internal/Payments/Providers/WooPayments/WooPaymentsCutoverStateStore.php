@@ -32,7 +32,7 @@ class WooPaymentsCutoverStateStore {
 	/** Current persisted record schema. */
 	public const SCHEMA_VERSION = 1;
 
-	/** Maximum lease age before another request may recover the job. */
+	/** Maximum age of the record-write lease before another request may take it over. */
 	public const LEASE_TTL = 5 * MINUTE_IN_SECONDS;
 
 	/** Maximum number of diagnostic steps retained in one record. */
