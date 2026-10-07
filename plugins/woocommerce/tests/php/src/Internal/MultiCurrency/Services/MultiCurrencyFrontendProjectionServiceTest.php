@@ -134,7 +134,7 @@ class MultiCurrencyFrontendProjectionServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'USD', $config['selected_currency'] );
 		$this->assertTrue( $config['charm_only_products'] );
 		$this->assertSame(
-			array( 'code', 'symbol', 'rate', 'decimals', 'decimal_sep', 'thousand_sep', 'symbol_pos', 'rounding', 'charm' ),
+			array( 'code', 'symbol', 'rate', 'decimals', 'decimal_sep', 'thousand_sep', 'symbol_pos', 'rounding', 'charm', 'rate_decimal', 'rounding_decimal' ),
 			array_keys( $config['currencies']['GBP'] )
 		);
 		$this->assertSame( 'GBP', $config['currencies']['GBP']['code'] );
@@ -146,6 +146,9 @@ class MultiCurrencyFrontendProjectionServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'right_space', $config['currencies']['GBP']['symbol_pos'] );
 		$this->assertSame( 0.5, $config['currencies']['GBP']['rounding'] );
 		$this->assertSame( -0.1, $config['currencies']['GBP']['charm'] );
+		// The renderer computes with the canonical strings; the numbers stay for configs served before them.
+		$this->assertSame( '0.82', $config['currencies']['GBP']['rate_decimal'] );
+		$this->assertSame( '0.50', $config['currencies']['GBP']['rounding_decimal'] );
 	}
 
 	/**

@@ -40,6 +40,13 @@ class MultiCurrencyCurrency implements \JsonSerializable {
 	private float $rate;
 
 	/**
+	 * Conversion rate as a decimal string, the canonical form of the rate.
+	 *
+	 * @var string
+	 */
+	private string $rate_decimal;
+
+	/**
 	 * Currency charm amount after conversion and rounding.
 	 *
 	 * @var float|null
@@ -92,10 +99,10 @@ class MultiCurrencyCurrency implements \JsonSerializable {
 	) {
 		$this->localization_service = $localization_service;
 		$this->code                 = strtoupper( $code );
-		$this->rate                 = $rate;
-		$this->is_default           = $is_default;
-		$this->last_updated         = $last_updated;
-		$this->is_zero_decimal      = 0 === (int) $this->localization_service->get_currency_format( $this->code )['num_decimals'];
+		$this->set_rate( $rate );
+		$this->is_default      = $is_default;
+		$this->last_updated    = $last_updated;
+		$this->is_zero_decimal = 0 === (int) $this->localization_service->get_currency_format( $this->code )['num_decimals'];
 	}
 
 	/**
@@ -135,12 +142,25 @@ class MultiCurrencyCurrency implements \JsonSerializable {
 	}
 
 	/**
+	 * Get the conversion rate as a decimal string.
+	 *
+	 * This string is the canonical rate: the float from get_rate() is read from it, never the reverse. The server's step rounding and
+	 * the storefront's async renderer both work from it (the public config's rate_decimal), so they compute on the same digits.
+	 *
+	 * @return string
+	 */
+	public function get_rate_decimal(): string {
+		return $this->rate_decimal;
+	}
+
+	/**
 	 * Set the currency conversion rate.
 	 *
-	 * @param mixed $rate Conversion rate.
+	 * @param mixed $rate Conversion rate, as a numeric string or a number.
 	 */
 	public function set_rate( $rate ): void {
-		$this->rate = (float) $rate;
+		$this->rate_decimal = is_string( $rate ) && is_numeric( trim( $rate ) ) ? trim( $rate ) : (string) wc_float_to_string( (float) $rate );
+		$this->rate         = (float) $this->rate_decimal;
 	}
 
 	/**

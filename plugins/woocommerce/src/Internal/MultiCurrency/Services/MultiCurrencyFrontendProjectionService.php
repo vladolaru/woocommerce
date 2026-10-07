@@ -403,15 +403,18 @@ class MultiCurrencyFrontendProjectionService {
 		}
 
 		return array(
-			'code'         => $currency_code,
-			'symbol'       => get_woocommerce_currency_symbol( $currency_code ),
-			'rate'         => $currency->get_rate(),
-			'decimals'     => $decimals,
-			'decimal_sep'  => $decimal_sep,
-			'thousand_sep' => $thousand_sep,
-			'symbol_pos'   => $symbol_pos,
-			'rounding'     => (float) $currency->get_rounding(),
-			'charm'        => (float) $currency->get_charm(),
+			'code'             => $currency_code,
+			'symbol'           => get_woocommerce_currency_symbol( $currency_code ),
+			'rate'             => $currency->get_rate(),
+			'decimals'         => $decimals,
+			'decimal_sep'      => $decimal_sep,
+			'thousand_sep'     => $thousand_sep,
+			'symbol_pos'       => $symbol_pos,
+			'rounding'         => (float) $currency->get_rounding(),
+			'charm'            => (float) $currency->get_charm(),
+			// The canonical decimal strings the renderer computes with, so it rounds on the same digits as the server.
+			'rate_decimal'     => $currency->get_rate_decimal(),
+			'rounding_decimal' => $currency->get_rounding(),
 		);
 	}
 

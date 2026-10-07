@@ -190,6 +190,21 @@ describe( 'MultiCurrencyAsyncPriceRenderer', () => {
 		expect( renderer.convertPrice( price, type ) ).toBe( expected );
 	} );
 
+	test( 'computes with the canonical decimal strings when the config has them', () => {
+		renderer.config = {
+			default_currency: 'USD',
+			selected_currency: 'GBP',
+			charm_only_products: true,
+			currencies: {
+				USD: mockConfig.currencies.USD,
+				// The numbers stay for configs served before the strings; the strings win.
+				GBP: { ...currency( 'GBP', 0.5, 2, 0.5, 0 ), rate_decimal: '0.1', rounding_decimal: '0.10' },
+			},
+		};
+
+		expect( renderer.convertPrice( '3.00', 'product' ) ).toBe( '0.30' );
+	} );
+
 	test( 'publishes the selected currency after its single async renderer initialization', async () => {
 		const originalFetch = window.fetch;
 		jest.resetModules();

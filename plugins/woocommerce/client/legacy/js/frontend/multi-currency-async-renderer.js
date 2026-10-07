@@ -229,10 +229,10 @@
 			var converted = toDecimal( price );
 
 			if ( currency && selectedCode !== this.config.default_currency ) {
-				converted = multiply( converted, toDecimal( currency.rate ) );
+				converted = multiply( converted, toDecimal( undefined !== currency.rate_decimal ? currency.rate_decimal : currency.rate ) );
 
 				if ( 'product' === type || 'shipping' === type ) {
-					var rounding = toDecimal( currency.rounding );
+					var rounding = toDecimal( undefined !== currency.rounding_decimal ? currency.rounding_decimal : currency.rounding );
 					converted = rounding.units > BigInt( 0 )
 						? ceilToStep( converted, rounding )
 						: roundHalfUp( converted, currency.decimals );
