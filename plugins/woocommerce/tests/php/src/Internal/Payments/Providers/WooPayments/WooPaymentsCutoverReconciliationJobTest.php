@@ -1182,7 +1182,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 */
 	public function test_ownership_verification_schedules_fee_remediation_for_a_manual_deactivation(): void {
 		$scheduling_calls = 0;
-		$preflight        = $this->create_preflight_with_fee_remediation( $scheduling_calls, true );
+		$schedulable      = true;
+		$throws           = false;
+		$preflight        = $this->create_preflight_with_fee_remediation( $scheduling_calls, $schedulable, $throws );
 		$sut              = $this->create_job( true, $preflight, null, false, $this->create_noop_normalization() );
 
 		$this->assertTrue( $sut->enqueue_manual_deactivation( 'renamed-wcpay/woocommerce-payments.php', false ) );
@@ -1206,7 +1208,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Ownership verification defers instead of finishing when the fee remediation cannot be scheduled, or its scheduling throws.
+	 * @testdox Ownership verification defers instead of finishing when the fee remediation cannot be scheduled, or its scheduling throws, and finishes once it can.
 	 * @testWith [false]
 	 *           [true]
 	 *
@@ -1214,7 +1216,8 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 */
 	public function test_ownership_verification_defers_when_fee_remediation_cannot_be_scheduled( bool $throws ): void {
 		$scheduling_calls = 0;
-		$preflight        = $this->create_preflight_with_fee_remediation( $scheduling_calls, false, $throws );
+		$schedulable      = false;
+		$preflight        = $this->create_preflight_with_fee_remediation( $scheduling_calls, $schedulable, $throws );
 		$sut              = $this->create_job( true, $preflight, null, false, $this->create_noop_normalization() );
 
 		$this->assertTrue( $sut->enqueue_manual_deactivation( 'renamed-wcpay/woocommerce-payments.php', false ) );
@@ -1233,6 +1236,21 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsCutoverState::DEFERRED, $deferred['state'] );
 		$this->assertSame( array( 'financial_migrations_unavailable' ), $deferred['deferred_codes'] );
 		$this->assertSame( 1, $scheduling_calls );
+
+		// Scheduling works again: the retries finish the switch without another merchant action.
+		$schedulable = true;
+		$throws      = false;
+		$record      = $deferred;
+		for ( $step = 0; $step < 4 && WooPaymentsCutoverState::DONE !== $record['state']; ++$step ) {
+			$next_attempt = $record['attempt'] + 1;
+			$this->require_scheduler()->cancel( $record['generation'], $next_attempt );
+			$this->start_fresh_request();
+			$this->create_job( true, $preflight, null, false, $this->create_noop_normalization() )->handle_reconcile( $record['generation'], $next_attempt );
+			$record = $this->require_state_store()->get_record();
+			$this->assertIsArray( $record );
+		}
+		$this->assertSame( WooPaymentsCutoverState::DONE, $record['state'] );
+		$this->assertSame( 2, $scheduling_calls, 'The remediation is scheduled once more, by the verification that finishes.' );
 	}
 
 	/**
@@ -1269,7 +1287,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @param bool $throws           Whether scheduling throws.
 	 * @return WooPaymentsCutoverPreflightService
 	 */
-	private function create_preflight_with_fee_remediation( int &$scheduling_calls, bool $schedulable, bool $throws = false ): WooPaymentsCutoverPreflightService {
+	private function create_preflight_with_fee_remediation( int &$scheduling_calls, bool &$schedulable, bool &$throws ): WooPaymentsCutoverPreflightService {
 		return new class( $scheduling_calls, $schedulable, $throws ) extends WooPaymentsCutoverPreflightService {
 			/** @var int */
 			private int $scheduling_calls;
@@ -1285,10 +1303,10 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			 * @param bool $schedulable      Whether scheduling succeeds.
 			 * @param bool $throws           Whether scheduling throws.
 			 */
-			public function __construct( int &$scheduling_calls, bool $schedulable, bool $throws ) {
+			public function __construct( int &$scheduling_calls, bool &$schedulable, bool &$throws ) {
 				$this->scheduling_calls =& $scheduling_calls;
-				$this->schedulable      = $schedulable;
-				$this->throws           = $throws;
+				$this->schedulable      =& $schedulable;
+				$this->throws           =& $throws;
 			}
 
 			/** @return string[] */
@@ -2816,6 +2834,105 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				restore_current_blog();
 				wpmu_delete_blog( $site_id, true );
 			}
+		}
+	}
+
+	/**
+	 * @testdox A network cutover schedules the canceled-authorization fee remediation on every site, at that site's ownership verification.
+	 * @group multisite
+	 */
+	public function test_network_cutover_schedules_fee_remediation_on_every_site(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+
+		$main_site_id      = get_current_blog_id();
+		$second_site_id    = $this->create_cutover_multisite_site( 'cutover-remediation-peer.example.org' );
+		$scheduled_by_site = array();
+		$preflight         = new class( $scheduled_by_site ) extends WooPaymentsCutoverPreflightService {
+			/** @var array<int,int> */
+			private array $scheduled_by_site;
+
+			/**
+			 * @param array<int,int> $scheduled_by_site Remediation scheduling calls per site.
+			 */
+			public function __construct( array &$scheduled_by_site ) {
+				$this->scheduled_by_site =& $scheduled_by_site;
+			}
+
+			/** @return string[] */
+			public function get_reconciliation_failures(): array {
+				return array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Return network activation. */
+			public function is_woopayments_network_active(): bool {
+				return true;
+			}
+
+			/** Deactivate once, network-wide. */
+			public function deactivate_woopayments_plugin(): bool {
+				return true;
+			}
+
+			/** Count remediation scheduling per site. */
+			public function ensure_fee_remediation_scheduled(): bool {
+				$site_id                             = get_current_blog_id();
+				$this->scheduled_by_site[ $site_id ] = ( $this->scheduled_by_site[ $site_id ] ?? 0 ) + 1;
+				return true;
+			}
+		};
+		$sut               = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization() );
+
+		try {
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			foreach ( array( $main_site_id, $second_site_id ) as $site_id ) {
+				switch_to_blog( $site_id );
+				$pending = $this->require_state_store()->get_record();
+				$this->assertIsArray( $pending );
+				$this->require_scheduler()->cancel( $pending['generation'], 1 );
+				$sut->handle_reconcile( $pending['generation'], 1 );
+				restore_current_blog();
+			}
+			$this->assertSame( array(), $scheduled_by_site, 'Nothing is scheduled while the plugin still owns the network.' );
+
+			foreach ( array( $main_site_id, $second_site_id ) as $site_id ) {
+				switch_to_blog( $site_id );
+				$verification = $this->require_state_store()->get_record();
+				$this->assertIsArray( $verification );
+				$this->assertSame( 'verify_native_ownership', $verification['current_step'] );
+				$this->require_scheduler()->cancel( $verification['generation'], 2 );
+				$this->start_fresh_request();
+				$this->create_job( true, $preflight, null, false, $this->create_noop_normalization() )->handle_reconcile( $verification['generation'], 2 );
+				$done = $this->require_state_store()->get_record();
+				$this->assertIsArray( $done );
+				$this->assertSame( WooPaymentsCutoverState::DONE, $done['state'] );
+				restore_current_blog();
+			}
+			$this->assertSame(
+				array(
+					$main_site_id   => 1,
+					$second_site_id => 1,
+				),
+				$scheduled_by_site
+			);
+		} finally {
+			if ( get_current_blog_id() !== $main_site_id ) {
+				restore_current_blog();
+			}
+			switch_to_blog( $second_site_id );
+			$this->cleanup_state();
+			restore_current_blog();
+			wpmu_delete_blog( $second_site_id, true );
 		}
 	}
 
