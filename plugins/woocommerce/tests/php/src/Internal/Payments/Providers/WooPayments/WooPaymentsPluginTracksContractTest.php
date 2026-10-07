@@ -236,6 +236,16 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 
 		$plugin_path = WC()->plugin_path();
 		$sent        = array();
+		// Page views PHP queues for the footer script, which posts each one by its queued name.
+		$php_roots = array_map(
+			static function ( string $root ) use ( $plugin_path ): string {
+				return $plugin_path . '/' . $root;
+			},
+			self::PHP_SCAN_ROOTS
+		);
+		foreach ( $this->native_php_tracks_wire_names( $this->native_collect_files( $php_roots, array( 'php' ) ), array( 'queue_user_event' => self::PHP_RECORDERS['queue_user_event'] ) ) as $name ) {
+			$sent[ $name ] = true;
+		}
 		foreach ( $this->native_client_scan_paths( $plugin_path ) as $file ) {
 			$path = str_replace( '\\', '/', $file );
 			if ( false === strpos( $path, '/client/legacy/js/frontend/' ) && false === strpos( $path, '/client/blocks/' ) ) {
@@ -364,11 +374,13 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 	/**
 	 * Collect wire names from PHP recorder call sites in the given files.
 	 *
-	 * @param array<int,string> $files Absolute PHP file paths.
+	 * @param array<int,string>                                          $files Absolute PHP file paths.
+	 * @param array<string,array{object:bool|string,prefix:string}>|null $recorders Recorders to scan for; all by default.
 	 * @return array<int,string>
 	 */
-	private function native_php_tracks_wire_names( array $files ): array {
-		$names = array();
+	private function native_php_tracks_wire_names( array $files, ?array $recorders = null ): array {
+		$recorders = $recorders ?? self::PHP_RECORDERS;
+		$names     = array();
 
 		foreach ( $files as $path ) {
 			$tokens = $this->native_tokenize( $path );
@@ -376,10 +388,10 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 
 			for ( $index = 0; $index < $count; $index++ ) {
 				$token = $tokens[ $index ];
-				if ( ! is_array( $token ) || T_STRING !== $token[0] || ! isset( self::PHP_RECORDERS[ $token[1] ] ) ) {
+				if ( ! is_array( $token ) || T_STRING !== $token[0] || ! isset( $recorders[ $token[1] ] ) ) {
 					continue;
 				}
-				$spec = self::PHP_RECORDERS[ $token[1] ];
+				$spec = $recorders[ $token[1] ];
 
 				$preceding_index = $index - 1;
 				while ( $preceding_index >= 0 && is_array( $tokens[ $preceding_index ] ) && T_WHITESPACE === $tokens[ $preceding_index ][0] ) {

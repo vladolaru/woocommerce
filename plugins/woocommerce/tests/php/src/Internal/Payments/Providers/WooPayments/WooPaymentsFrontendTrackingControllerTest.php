@@ -289,7 +289,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Native events name their source instead of a plugin version (the Tracks event source scheme the owner approved
 	 * on 2026-10-07): `payments_runtime` is `woocommerce_core`, and `wcpay_version`, which client 11.1.0 fills with the
-	 * plugin version (`class-woopay-tracker.php:395`), is not sent; `wc_version` from core's blog details stays.
+	 * plugin version (`class-woopay-tracker.php:380`), is not sent; `wc_version` from core's blog details stays.
 	 *
 	 * @testdox Should mark a recorded shopper event as native WooCommerce core, whatever the browser sends.
 	 */
