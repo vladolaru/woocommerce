@@ -341,6 +341,14 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertContains( self::WCPAY . 'WooPaymentsOrderTrackingService', $active_front, 'Active shopper order creation must retain tracking hooks.' );
 	}
 
+	/** @testdox Registers the express checkout Store API cart extension on active page requests, where the Cart and Checkout blocks preload the cart. */
+	public function test_provider_matrix_registers_the_cart_extension_on_active_pages(): void {
+		$matrix = WooPaymentsProvider::get_bootstrap_root_matrix();
+
+		$this->assertContains( self::WCPAY . 'WooPaymentsExpressCheckoutStoreApiExtension', $matrix[ NativePaymentsState::ACTIVE ]['front'] );
+		$this->assertContains( self::WCPAY . 'WooPaymentsExpressCheckoutStoreApiExtension', $matrix[ NativePaymentsState::ACTIVE ]['rest'] );
+	}
+
 	/** @testdox Registers the WooPay preflight guard only for active REST requests. */
 	public function test_provider_matrix_bounds_woopay_preflight_guard_to_active_rest(): void {
 		$matrix = WooPaymentsProvider::get_bootstrap_root_matrix();

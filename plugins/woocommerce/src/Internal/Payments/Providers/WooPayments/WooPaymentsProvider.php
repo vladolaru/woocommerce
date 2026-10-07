@@ -238,6 +238,10 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 						WooPaymentsWooPayOrderStatusSync::class,
 						WooPaymentsWooPayExtensionSync::class,
 						WooPaymentsExpressCheckoutController::class,
+						// The Cart and Checkout blocks preload the Store API cart inside the page request (Blocks Cart.php:263),
+						// so its wcpay extension data must exist there too; client 11.1.0 registers it on every request
+						// (class-wc-payments.php:697-709).
+						WooPaymentsExpressCheckoutStoreApiExtension::class,
 						WooPaymentsPaymentMethodMessaging::class,
 						WooPaymentsApplePayDomainService::class,
 						WooPaymentsFrontendTrackingController::class,
