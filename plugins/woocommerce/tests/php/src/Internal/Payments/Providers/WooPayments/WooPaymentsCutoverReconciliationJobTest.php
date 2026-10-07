@@ -2721,6 +2721,92 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The network barrier completes over the live sites; an archived, spam or deleted site, whose actions never run, gets no record and holds nothing back.
+	 * @group multisite
+	 */
+	public function test_network_barrier_ignores_sites_whose_actions_never_run(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+
+		$main_site_id     = get_current_blog_id();
+		$second_site_id   = $this->create_cutover_multisite_site( 'cutover-live-peer.example.org' );
+		$archived_site_id = $this->create_cutover_multisite_site( 'cutover-archived-peer.example.org' );
+		update_blog_status( $archived_site_id, 'archived', '1' );
+		$deactivation_calls = 0;
+		$preflight          = new class( $deactivation_calls ) extends WooPaymentsCutoverPreflightService {
+			/** @var int */
+			private int $deactivation_calls;
+
+			/**
+			 * @param int $deactivation_calls Deactivation calls.
+			 */
+			public function __construct( int &$deactivation_calls ) {
+				$this->deactivation_calls =& $deactivation_calls;
+			}
+
+			/** @return string[] */
+			public function get_reconciliation_failures(): array {
+				return array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Return network activation. */
+			public function is_woopayments_network_active(): bool {
+				return true;
+			}
+
+			/** Record one network deactivation. */
+			public function deactivate_woopayments_plugin(): bool {
+				++$this->deactivation_calls;
+				return true;
+			}
+		};
+		$sut                = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization() );
+
+		try {
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$main_pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_pending );
+			switch_to_blog( $archived_site_id );
+			$this->assertNull( $this->require_state_store()->get_record(), 'An archived site gets no generation it could never run.' );
+			restore_current_blog();
+
+			$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
+			$sut->handle_reconcile( $main_pending['generation'], 1 );
+			switch_to_blog( $second_site_id );
+			$second_pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $second_pending );
+			$this->require_scheduler()->cancel( $second_pending['generation'], 1 );
+			$sut->handle_reconcile( $second_pending['generation'], 1 );
+			restore_current_blog();
+
+			$this->assertSame( 1, $deactivation_calls, 'The last live site completes the barrier.' );
+			$main_verifying = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_verifying );
+			$this->assertSame( 'verify_native_ownership', $main_verifying['current_step'] );
+		} finally {
+			if ( get_current_blog_id() !== $main_site_id ) {
+				restore_current_blog();
+			}
+			foreach ( array( $second_site_id, $archived_site_id ) as $site_id ) {
+				switch_to_blog( $site_id );
+				$this->cleanup_state();
+				restore_current_blog();
+				wpmu_delete_blog( $site_id, true );
+			}
+		}
+	}
+
+	/**
 	 * @testdox A completed network barrier moves every site to the active tier before ownership verification runs.
 	 *
 	 * Source: data/task-1.4-dormancy-design.md:84-96 (cutover completion is an authoritative state writer); the

@@ -755,7 +755,10 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get site IDs in the current network.
+	 * Get the live site IDs in the current network.
+	 *
+	 * Archived, spam and deleted sites are left out: their Action Scheduler actions never run, so a generation fanned
+	 * out to them could never reach the network barrier.
 	 *
 	 * @return int[]
 	 */
@@ -765,6 +768,9 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				'network_id' => get_current_network_id(),
 				'fields'     => 'ids',
 				'number'     => 0,
+				'archived'   => 0,
+				'spam'       => 0,
+				'deleted'    => 0,
 			)
 		);
 
