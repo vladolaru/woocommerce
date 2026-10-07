@@ -21,10 +21,10 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 class MultiCurrencyPriceCalculator {
 
 	/**
-	 * Relative float noise tolerated when ceiling to a rounding step: about 45 units in the last place, far above the few that a
-	 * multiplication and a division add, and far below any excess a stored rate can express.
+	 * Relative distance from a whole rounding step within which the step is decided on exact decimals. Float error in
+	 * price * rate / step is a few units in the last place (about 1e-15), so beyond this the float ceil is already right.
 	 */
-	private const STEP_NOISE = 1e-14;
+	private const NEAR_STEP = 1e-9;
 
 	/**
 	 * Localization service.
@@ -68,7 +68,7 @@ class MultiCurrencyPriceCalculator {
 			? 'product' === $type
 			: in_array( $type, array( 'product', 'shipping' ), true );
 
-		return $this->get_adjusted_price( $converted_price, $apply_charm_pricing, $currency );
+		return $this->get_adjusted_price( $converted_price, $apply_charm_pricing, $currency, $price, $currency->get_rate() );
 	}
 
 	/**
@@ -79,7 +79,7 @@ class MultiCurrencyPriceCalculator {
 	 * @return float
 	 */
 	public function get_adjusted_amount( $amount, MultiCurrencyCurrency $currency ): float {
-		return $this->get_adjusted_price( (float) $amount, true, $currency );
+		return $this->get_adjusted_price( (float) $amount, true, $currency, $amount, 1.0 );
 	}
 
 	/**
@@ -120,15 +120,17 @@ class MultiCurrencyPriceCalculator {
 	 * @param float                 $price               Converted price.
 	 * @param bool                  $apply_charm_pricing Whether charm applies.
 	 * @param MultiCurrencyCurrency $currency            Target currency.
+	 * @param mixed                 $source_price        Price before conversion.
+	 * @param float                 $rate                Rate the price was converted at.
 	 * @return float
 	 */
-	private function get_adjusted_price( float $price, bool $apply_charm_pricing, MultiCurrencyCurrency $currency ): float {
-		$rounding = (float) $currency->get_rounding();
+	private function get_adjusted_price( float $price, bool $apply_charm_pricing, MultiCurrencyCurrency $currency, $source_price, float $rate ): float {
+		$rounding = (string) $currency->get_rounding();
 
-		if ( 0.0 === $rounding ) {
+		if ( 0.0 === (float) $rounding ) {
 			$price = round( $price, $this->get_currency_decimals( $currency ) );
 		} else {
-			$price = $this->ceil_price( $price, $rounding );
+			$price = $this->ceil_price( $price, $rounding, $source_price, $rate );
 		}
 
 		if ( $apply_charm_pricing ) {
@@ -139,28 +141,104 @@ class MultiCurrencyPriceCalculator {
 	}
 
 	/**
-	 * Ceil a price to the next rounding step.
+	 * Ceil a converted price to the next rounding step, as the async renderer does on exact decimals.
 	 *
-	 * @param float $price    Price.
-	 * @param float $rounding Rounding step.
+	 * Away from a whole step the float quotient decides. Near one, where float error could tip the ceil either way (3.00 at a 0.1 rate
+	 * is 0.30000000000000004 in floats, and the client's float ceil charges 0.40 where 0.30 was shown; includes/multi-currency/
+	 * MultiCurrency.php:1695-1700), the next step is taken only when the source price times the rate exactly exceeds the nearest step.
+	 *
+	 * @param float  $converted    Converted price.
+	 * @param string $rounding     Rounding step, as stored.
+	 * @param mixed  $source_price Price before conversion.
+	 * @param float  $rate         Rate the price was converted at.
 	 * @return float
 	 */
-	private function ceil_price( float $price, float $rounding ): float {
-		if ( 0.0 === $rounding ) {
-			return $price;
-		}
-
-		// The async renderer ceils on exact decimals; floats add a few units of the last place, so 3.00 at a 0.1 rate gives
-		// 0.30000000000000004 / 0.1 = 3.0000000000000004 and a plain ceil charges 0.40 where 0.30 was shown (the client's float ceil has
-		// the same split; includes/multi-currency/MultiCurrency.php:1695-1700). Treat a quotient within float noise of a whole step as
-		// that step; any larger excess, however small, still takes the next step, as on the renderer.
-		$quotient = $price / $rounding;
+	private function ceil_price( float $converted, string $rounding, $source_price, float $rate ): float {
+		$step     = (float) $rounding;
+		$quotient = $converted / $step;
 		$nearest  = round( $quotient );
-		if ( abs( $quotient - $nearest ) <= max( 1.0, abs( $quotient ) ) * self::STEP_NOISE ) {
-			$quotient = $nearest;
+		if ( abs( $quotient - $nearest ) > max( 1.0, abs( $quotient ) ) * self::NEAR_STEP ) {
+			return ceil( $quotient ) * $step;
 		}
 
-		return ceil( $quotient ) * $rounding;
+		$product = self::multiply_decimals( self::to_decimal( $source_price ), self::to_decimal( $rate ) );
+		$bound   = self::multiply_decimals( self::to_decimal( $nearest ), self::to_decimal( $rounding ) );
+		if ( null === $product || null === $bound ) {
+			return ceil( $quotient ) * $step;
+		}
+
+		return ( 0 < self::compare_decimals( $product, $bound ) ? $nearest + 1 : $nearest ) * $step;
+	}
+
+	/**
+	 * Read a non-negative number as decimal digits and a power of ten, using the shortest form of a float, as the renderer receives it.
+	 *
+	 * @param mixed $value Number or numeric string.
+	 * @return array{0:string,1:int}|null Digits without leading zeros and their exponent, or null when not a non-negative number.
+	 */
+	private static function to_decimal( $value ): ?array {
+		if ( is_int( $value ) ) {
+			$value = (string) $value;
+		} elseif ( is_float( $value ) ) {
+			$value = wp_json_encode( $value );
+		}
+		if ( ! is_string( $value ) || ! preg_match( '/^(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/', trim( $value ), $parts ) || '' === $parts[1] . ( $parts[2] ?? '' ) ) {
+			return null;
+		}
+
+		$fraction = $parts[2] ?? '';
+		$digits   = ltrim( $parts[1] . $fraction, '0' );
+
+		return array( '' === $digits ? '0' : $digits, (int) ( $parts[3] ?? 0 ) - strlen( $fraction ) );
+	}
+
+	/**
+	 * Multiply two decimals exactly.
+	 *
+	 * @param array{0:string,1:int}|null $a First decimal.
+	 * @param array{0:string,1:int}|null $b Second decimal.
+	 * @return array{0:string,1:int}|null The product, or null when either is null.
+	 */
+	private static function multiply_decimals( ?array $a, ?array $b ): ?array {
+		if ( null === $a || null === $b ) {
+			return null;
+		}
+
+		$x      = array_map( 'intval', str_split( strrev( $a[0] ) ) );
+		$y      = array_map( 'intval', str_split( strrev( $b[0] ) ) );
+		$result = array_fill( 0, count( $x ) + count( $y ), 0 );
+		foreach ( $x as $i => $xi ) {
+			foreach ( $y as $j => $yj ) {
+				$result[ $i + $j ] += $xi * $yj;
+			}
+		}
+		$count = count( $result );
+		for ( $k = 0; $k < $count - 1; $k++ ) {
+			$result[ $k + 1 ] += intdiv( $result[ $k ], 10 );
+			$result[ $k ]     %= 10;
+		}
+		$digits = ltrim( strrev( implode( '', $result ) ), '0' );
+
+		return array( '' === $digits ? '0' : $digits, $a[1] + $b[1] );
+	}
+
+	/**
+	 * Compare two decimals.
+	 *
+	 * @param array{0:string,1:int} $a First decimal.
+	 * @param array{0:string,1:int} $b Second decimal.
+	 * @return int Negative, zero or positive as $a is less than, equal to or greater than $b.
+	 */
+	private static function compare_decimals( array $a, array $b ): int {
+		$exponent = min( $a[1], $b[1] );
+		$x        = ltrim( $a[0] . str_repeat( '0', $a[1] - $exponent ), '0' );
+		$y        = ltrim( $b[0] . str_repeat( '0', $b[1] - $exponent ), '0' );
+
+		if ( strlen( $x ) !== strlen( $y ) ) {
+			return strlen( $x ) <=> strlen( $y );
+		}
+
+		return strcmp( $x, $y ) <=> 0;
 	}
 
 	/**
