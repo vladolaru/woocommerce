@@ -135,6 +135,16 @@ class WooPaymentsCutoverPluginLifecycleListenerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A malformed plugin value on the activation hook is ignored without reaching the guard or failing.
+	 */
+	public function test_malformed_activation_value_skips_the_guard(): void {
+		$this->controller->expects( $this->never() )->method( 'guard_woopayments_activation' );
+
+		// Called directly: core's own activate_plugin callbacks (Packages.php) do not accept a malformed value either.
+		$this->sut->guard_woopayments_activation( array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) );
+	}
+
+	/**
 	 * @testdox The listener registers on the generic activation hook and the two plugin lifecycle hooks.
 	 */
 	public function test_registers_the_lifecycle_hooks(): void {
