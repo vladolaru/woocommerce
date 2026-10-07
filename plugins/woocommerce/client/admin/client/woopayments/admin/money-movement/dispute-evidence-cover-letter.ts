@@ -9,6 +9,10 @@ import { dateI18n, getSettings as getDateSettings } from '@wordpress/date';
  * Internal dependencies
  */
 import type { WooPaymentsDispute } from './types';
+import {
+	getWooPaymentsAmountFromMinorUnits,
+	isWooPaymentsZeroDecimalProviderCurrency,
+} from '../../currency';
 import type { EvidenceField } from './dispute-evidence-fields';
 
 type CoverLetterMerchantDetails = {
@@ -859,6 +863,18 @@ const BODY_GENERATORS: Record<
 	unrecognized: generateBodyUnrecognized,
 };
 
+/**
+ * The dispute amount in major units with the currency's decimals. Client 11.1.0 `cover-letter-generator.ts:740` divides
+ * by 100 for every currency, which states a zero-decimal amount a hundred times too small.
+ *
+ * @param amount   Amount in the currency's smallest unit.
+ * @param currency Currency code.
+ */
+const formatRefundAmount = ( amount: number, currency: string ) =>
+	getWooPaymentsAmountFromMinorUnits( amount, currency ).toFixed(
+		isWooPaymentsZeroDecimalProviderCurrency( currency ) ? 0 : 2
+	);
+
 export const generateDisputeCoverLetter = ( {
 	dispute,
 	merchantName = __( '<Your Business Name>', 'woocommerce' ),
@@ -898,8 +914,9 @@ export const generateDisputeCoverLetter = ( {
 			__( '<Delivery/Service Date>', 'woocommerce' )
 		),
 		refundAmount: dispute.amount
-			? `${ ( dispute.amount / 100 ).toFixed(
-					2
+			? `${ formatRefundAmount(
+					dispute.amount,
+					dispute.currency ?? ''
 			  ) } ${ dispute.currency?.toUpperCase() }`
 			: __( '[Refund Amount]', 'woocommerce' ),
 		refundStatus,

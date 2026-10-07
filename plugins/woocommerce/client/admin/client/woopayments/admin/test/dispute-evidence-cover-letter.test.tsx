@@ -314,6 +314,23 @@ describe( 'Dispute cover letter bodies', () => {
 		);
 	} );
 
+	// Client 11.1.0 `cover-letter-generator.ts:740` divides by 100 for every currency; a zero-decimal amount is
+	// already in major units, and this letter goes to the cardholder's bank.
+	it( 'states a zero-decimal refund amount in major units', () => {
+		expect(
+			generateDisputeCoverLetter( {
+				...baseInput,
+				dispute: makeDispute( {
+					reason: 'credit_not_processed',
+					created: undefined,
+					amount: 1000,
+					currency: 'jpy',
+				} ),
+				refundStatus: 'refund_has_been_issued',
+			} )
+		).toContain( 'for the amount of 1000 JPY.' );
+	} );
+
 	it( 'uses the credit not processed bodies for each refund status', () => {
 		expect(
 			letterFor( 'credit_not_processed', {
