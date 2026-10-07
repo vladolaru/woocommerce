@@ -124,9 +124,50 @@ const TestModeBadge = ( { paymentSettings } ) => {
 	return <span className="test-mode badge">{ testModeBadgeLabel }</span>;
 };
 
+// Mirrors the classic card-brand popover (woopayments-checkout.js openCardBrandPopover()): a dialog trigger, the
+// brands named for screen readers, focus moved into the dialog, and Escape or an outside click closing it with focus
+// back on the trigger.
 const CardBrandIcons = ( { paymentSettings } ) => {
 	const cardBrandIcons = getCardBrandIcons( paymentSettings );
 	const [ isPopoverOpen, setIsPopoverOpen ] = useState( false );
+	const triggerRef = useRef( null );
+	const popoverRef = useRef( null );
+
+	useEffect( () => {
+		if ( ! isPopoverOpen ) {
+			return undefined;
+		}
+
+		popoverRef.current?.focus();
+
+		const close = ( returnFocus ) => {
+			setIsPopoverOpen( false );
+			if ( returnFocus ) {
+				triggerRef.current?.focus();
+			}
+		};
+		const onKeyDown = ( event ) => {
+			if ( event.key === 'Escape' ) {
+				event.preventDefault();
+				close( true );
+			}
+		};
+		const onMouseDown = ( event ) => {
+			if (
+				! popoverRef.current?.contains( event.target ) &&
+				! triggerRef.current?.contains( event.target )
+			) {
+				close( false );
+			}
+		};
+
+		document.addEventListener( 'keydown', onKeyDown );
+		document.addEventListener( 'mousedown', onMouseDown );
+		return () => {
+			document.removeEventListener( 'keydown', onKeyDown );
+			document.removeEventListener( 'mousedown', onMouseDown );
+		};
+	}, [ isPopoverOpen ] );
 
 	if ( ! cardBrandIcons.length ) {
 		return null;
@@ -137,15 +178,20 @@ const CardBrandIcons = ( { paymentSettings } ) => {
 	const hasAdditionalIcons = additionalIcons.length > 0;
 	const popoverId = 'wcpay-core-payment-methods-popover';
 	const togglePopover = () => setIsPopoverOpen( ( isOpen ) => ! isOpen );
-	const closePopover = () => setIsPopoverOpen( false );
 
 	return (
 		<div className="payment-methods--logos">
 			<div
 				{ ...( hasAdditionalIcons
 					? {
+							ref: triggerRef,
 							role: 'button',
 							tabIndex: 0,
+							'aria-haspopup': 'dialog',
+							'aria-label': __(
+								'Show all supported credit card brands',
+								'woocommerce'
+							),
 							'aria-expanded': isPopoverOpen,
 							'aria-controls': popoverId,
 							onClick: togglePopover,
@@ -156,9 +202,6 @@ const CardBrandIcons = ( { paymentSettings } ) => {
 								) {
 									event.preventDefault();
 									togglePopover();
-								}
-								if ( event.key === 'Escape' ) {
-									closePopover();
 								}
 							},
 					  }
@@ -182,14 +225,26 @@ const CardBrandIcons = ( { paymentSettings } ) => {
 			</div>
 			{ hasAdditionalIcons && isPopoverOpen ? (
 				<div
+					ref={ popoverRef }
 					id={ popoverId }
 					className="logo-popover payment-methods--logos-popover"
 					role="dialog"
+					tabIndex={ -1 }
 					aria-label={ __(
 						'Supported credit card brands',
 						'woocommerce'
 					) }
+					aria-describedby={ `${ popoverId }-description` }
 				>
+					<span
+						id={ `${ popoverId }-description` }
+						className="screen-reader-text"
+					>
+						{ additionalIcons
+							.map( ( icon ) => icon.alt || icon.id || '' )
+							.filter( Boolean )
+							.join( ', ' ) }
+					</span>
 					{ additionalIcons.map( ( icon ) => (
 						<img
 							key={ icon.id || icon.src }

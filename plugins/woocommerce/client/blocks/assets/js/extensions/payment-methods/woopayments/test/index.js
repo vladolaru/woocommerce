@@ -462,6 +462,41 @@ describe( 'wc-payment-method-woopayments', () => {
 		expect( createPaymentMethod ).not.toHaveBeenCalled();
 	} );
 
+	it( 'opens the card brand popover as a dialog, focuses it and returns focus on Escape', () => {
+		const registration = registerWooPayments();
+		const LabelComponent = registration.label.type;
+		const PaymentMethodLabel = ( { text, icon } ) => (
+			<span>
+				{ text }
+				{ icon }
+			</span>
+		);
+		render(
+			createElement( LabelComponent, {
+				components: { PaymentMethodLabel },
+			} )
+		);
+		const trigger = screen.getByRole( 'button', {
+			name: 'Show all supported credit card brands',
+		} );
+
+		expect( trigger ).toHaveAttribute( 'aria-haspopup', 'dialog' );
+		trigger.focus();
+		fireEvent.keyDown( trigger, { key: 'Enter' } );
+
+		const dialog = screen.getByRole( 'dialog', {
+			name: 'Supported credit card brands',
+		} );
+		expect( dialog ).toHaveFocus();
+		// The two brands past the first four in the fixture.
+		expect( dialog ).toHaveAccessibleDescription( 'JCB, Union Pay' );
+
+		fireEvent.keyDown( dialog, { key: 'Escape' } );
+
+		expect( screen.queryByRole( 'dialog' ) ).not.toBeInTheDocument();
+		expect( trigger ).toHaveFocus();
+	} );
+
 	it( 'shows the test mode badge in the payment method label', () => {
 		const registration = registerWooPayments();
 		const LabelComponent = registration.label.type;
