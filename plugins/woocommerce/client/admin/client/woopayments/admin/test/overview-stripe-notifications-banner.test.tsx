@@ -128,13 +128,7 @@ const bannerProps = () =>
 
 const renderWithBanner = async () => {
 	render( <WooPaymentsOverviewPage /> );
-	// The banner is a React.lazy chunk; the first test in the file pays its cold import, which exceeds the
-	// default 1s wait on loaded CI runners.
-	await screen.findByTestId(
-		'stripe-notification-banner',
-		{},
-		{ timeout: 10000 }
-	);
+	await screen.findByTestId( 'stripe-notification-banner' );
 	return bannerProps();
 };
 
@@ -151,6 +145,12 @@ const getBannerWrapper = () =>
 		.closest( '.stripe-notifications-banner-wrapper' ) as HTMLElement;
 
 describe( 'WooPayments Overview Stripe notifications banner', () => {
+	// The banner is a React.lazy chunk. Its cold import can outlast a test's timeout on a loaded CI runner, so load
+	// the module once here; every render then resolves the lazy import from the module registry.
+	beforeAll( async () => {
+		await import( '../overview/components/stripe-notifications-banner' );
+	}, 30000 );
+
 	beforeEach( () => {
 		jest.clearAllMocks();
 		mockBannerProps = null;

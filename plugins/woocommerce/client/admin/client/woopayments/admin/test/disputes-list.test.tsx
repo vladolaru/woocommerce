@@ -332,6 +332,11 @@ describe( 'WooPayments disputes list columns', () => {
 	} );
 
 	it( 'opens the payment details from the info link and every clickable cell, like the client', async () => {
+		// The recorded due date, 2026-10-07 23:59:59 UTC, must stay in the future for its cell to render a link.
+		jest.useFakeTimers( {
+			now: new Date( '2026-09-29T15:00:00Z' ),
+			doNotFake: [ 'setTimeout', 'queueMicrotask', 'nextTick' ],
+		} );
 		setMockUserPreferences( { wc_payments_disputes_hidden_columns: [] } );
 		renderPage();
 		await screen.findByText( 'Disputes loaded.' );
