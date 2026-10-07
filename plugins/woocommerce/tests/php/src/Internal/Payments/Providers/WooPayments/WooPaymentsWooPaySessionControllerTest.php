@@ -213,6 +213,11 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 
 	/**
 	 * @testdox Should not load WooPay on an archive whose term ID equals the post ID of a page with a product_page shortcode.
+	 *
+	 * A prior test can permanently define WOOCOMMERCE_CHECKOUT in the parent process.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_enqueue_frontend_assets_skips_an_archive_whose_term_id_matches_a_product_page(): void {
 		$service                            = new RecordingWooPaySessionService();
