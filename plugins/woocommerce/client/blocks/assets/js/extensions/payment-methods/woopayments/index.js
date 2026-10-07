@@ -389,66 +389,76 @@ const handleConfirmationResponse = async (
 		return getSuccessResponse( emitResponse, {} );
 	}
 
-	const stripeClient = getStripeClient();
+	const confirmationErrorMessage = __(
+		'There was a problem confirming your payment.',
+		'woocommerce'
+	);
 
-	if ( ! stripeClient ) {
-		return getSuccessResponse( emitResponse, {} );
-	}
+	// Like client 11.1.0 confirm-card-payment.js, every failure after the order exists returns an error response
+	// with its message: a throw from an observer reaches the shopper only as Blocks' generic notice.
+	try {
+		const stripeClient = getStripeClient();
 
-	let result;
+		if ( ! stripeClient ) {
+			return getErrorResponse( emitResponse, confirmationErrorMessage );
+		}
 
-	if ( confirmation.type === 'si' ) {
-		result = confirmation.confirmationToken
-			? await stripeClient.confirmSetup( {
-					clientSecret: confirmation.clientSecret,
-					confirmParams: {
-						confirmation_token: confirmation.confirmationToken,
-					},
-					redirect: 'if_required',
-			  } )
-			: await stripeClient.handleNextAction( {
-					clientSecret: confirmation.clientSecret,
-			  } );
-	} else {
-		result = await stripeClient.handleNextAction( {
-			clientSecret: confirmation.clientSecret,
-		} );
-	}
+		let result;
 
-	const intentId =
-		result.paymentIntent?.id ||
-		result.setupIntent?.id ||
-		result.error?.payment_intent?.id ||
-		result.error?.setup_intent?.id ||
-		confirmation.intentId;
+		if ( confirmation.type === 'si' ) {
+			result = confirmation.confirmationToken
+				? await stripeClient.confirmSetup( {
+						clientSecret: confirmation.clientSecret,
+						confirmParams: {
+							confirmation_token: confirmation.confirmationToken,
+						},
+						redirect: 'if_required',
+				  } )
+				: await stripeClient.handleNextAction( {
+						clientSecret: confirmation.clientSecret,
+				  } );
+		} else {
+			result = await stripeClient.handleNextAction( {
+				clientSecret: confirmation.clientSecret,
+			} );
+		}
 
-	if ( result.error ) {
-		// Let the server record the failed confirmation without waiting for it; the shopper sees Stripe's error.
-		updateOrderStatusAfterConfirmation(
+		const intentId =
+			result.paymentIntent?.id ||
+			result.setupIntent?.id ||
+			result.error?.payment_intent?.id ||
+			result.error?.setup_intent?.id ||
+			confirmation.intentId;
+
+		if ( result.error ) {
+			// Let the server record the failed confirmation without waiting for it; the shopper sees Stripe's error.
+			updateOrderStatusAfterConfirmation(
+				confirmation,
+				intentId,
+				shouldSavePaymentMethod,
+				paymentSettings
+			).catch( () => {} );
+
+			return getErrorResponse(
+				emitResponse,
+				result.error.message || confirmationErrorMessage
+			);
+		}
+
+		const redirectUrl = await updateOrderStatusAfterConfirmation(
 			confirmation,
 			intentId,
 			shouldSavePaymentMethod,
 			paymentSettings
-		).catch( () => {} );
+		);
 
+		return getSuccessResponse( emitResponse, {}, redirectUrl );
+	} catch ( error ) {
 		return getErrorResponse(
 			emitResponse,
-			result.error.message ||
-				__(
-					'There was a problem confirming your payment.',
-					'woocommerce'
-				)
+			error?.message || confirmationErrorMessage
 		);
 	}
-
-	const redirectUrl = await updateOrderStatusAfterConfirmation(
-		confirmation,
-		intentId,
-		shouldSavePaymentMethod,
-		paymentSettings
-	);
-
-	return getSuccessResponse( emitResponse, {}, redirectUrl );
 };
 
 const shouldUsePlatformStripeForCard = ( paymentSettings = defaultSettings ) =>

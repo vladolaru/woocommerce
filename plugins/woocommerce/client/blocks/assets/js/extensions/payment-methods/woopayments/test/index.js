@@ -2452,6 +2452,100 @@ describe( 'wc-payment-method-woopayments', () => {
 		expect( requestBody.get( 'is_changing_payment' ) ).toBe( 'false' );
 	} );
 
+	const runSavedTokenConfirmation = async () => {
+		const registration = registerWooPayments();
+		let checkoutSuccessResult;
+		const onCheckoutSuccess = jest.fn( ( callback ) => {
+			checkoutSuccessResult = callback( {
+				processingResponse: {
+					paymentDetails: {
+						redirect:
+							'#wcpay-confirm-pi:123:pi_123_secret_abc:nonce_123',
+					},
+				},
+			} );
+		} );
+		const savedTokenComponent = registration.savedTokenComponent;
+
+		render(
+			createElement( savedTokenComponent.type, {
+				...savedTokenComponent.props,
+				eventRegistration: {
+					onPaymentSetup: jest.fn(),
+					onCheckoutSuccess,
+				},
+				emitResponse: {
+					responseTypes: {
+						SUCCESS: 'success',
+						ERROR: 'error',
+					},
+					noticeContexts: {
+						PAYMENTS: 'payments',
+					},
+				},
+			} )
+		);
+
+		await waitFor( () => {
+			expect( onCheckoutSuccess ).toHaveBeenCalled();
+		} );
+
+		return checkoutSuccessResult;
+	};
+
+	it( 'shows the server message when the order update fails after a successful next action', async () => {
+		window.Stripe = jest.fn( () => ( {
+			handleNextAction: jest.fn().mockResolvedValue( {
+				paymentIntent: {
+					id: 'pi_123',
+				},
+			} ),
+		} ) );
+		// Error shape of the update_order_status AJAX action (WooPaymentsCheckoutAjaxController::get_update_order_status_response()).
+		window.fetch = jest.fn().mockResolvedValue( {
+			json: jest.fn().mockResolvedValue( {
+				error: {
+					message: 'We could not update your order.',
+				},
+			} ),
+		} );
+
+		await expect( runSavedTokenConfirmation() ).resolves.toEqual( {
+			type: 'error',
+			message: 'We could not update your order.',
+			messageContext: 'payments',
+		} );
+	} );
+
+	it( 'shows the Stripe.js message when the next action rejects', async () => {
+		window.Stripe = jest.fn( () => ( {
+			handleNextAction: jest
+				.fn()
+				.mockRejectedValue(
+					new Error( 'The authentication frame failed to load.' )
+				),
+		} ) );
+		window.fetch = jest.fn();
+
+		await expect( runSavedTokenConfirmation() ).resolves.toEqual( {
+			type: 'error',
+			message: 'The authentication frame failed to load.',
+			messageContext: 'payments',
+		} );
+	} );
+
+	it( 'reports a confirmation error instead of success when Stripe.js is missing', async () => {
+		delete window.Stripe;
+		window.fetch = jest.fn();
+
+		await expect( runSavedTokenConfirmation() ).resolves.toEqual( {
+			type: 'error',
+			message: 'There was a problem confirming your payment.',
+			messageContext: 'payments',
+		} );
+		expect( window.fetch ).not.toHaveBeenCalled();
+	} );
+
 	it( 'confirms full #wcpay-confirm-si redirects with confirmation tokens', async () => {
 		window.history.pushState(
 			{},
