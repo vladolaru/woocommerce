@@ -43,11 +43,7 @@ const SettingsApp = () => {
 	const [ activePanel, setActivePanel ] = useState( getQuery().panel );
 
 	const removeUnsupportedArgs = () => {
-		const urlWasCleaned = cleanUrlQueryParams( [
-			'page',
-			'tab',
-			'section',
-		] );
+		const urlWasCleaned = cleanUrlQueryParams( [ 'page', 'tab', 'path' ] );
 
 		if ( urlWasCleaned ) {
 			setActivePanel( '' );
