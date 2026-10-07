@@ -83,6 +83,9 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		// The Blocks readers fall back to the same text (index.js WooPaySaveUserSection).
 		'woopaySaveUserLabel',
 		'woopayPhoneLabel',
+		// The Blocks card method translates its own brand labels (index.js:191-194, :233-236).
+		'cardBrandPopoverLabel',
+		'cardBrandLogosLabel',
 	);
 
 	/**
@@ -583,6 +586,8 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			'icon'                                     => '',
 			'isExpressCheckoutInPaymentMethodsEnabled' => $this->is_express_checkout_in_payment_methods_enabled(),
 			'confirmationErrorMessage'                 => __( 'There was a problem confirming your payment.', 'woocommerce' ),
+			'cardBrandPopoverLabel'                    => __( 'Supported credit card brands', 'woocommerce' ),
+			'cardBrandLogosLabel'                      => __( 'Show all supported credit card brands', 'woocommerce' ),
 			'fraudPreventionToken'                     => $this->get_fraud_prevention_token(),
 		);
 		if ( 0 < $payment_context['order_id'] ) {

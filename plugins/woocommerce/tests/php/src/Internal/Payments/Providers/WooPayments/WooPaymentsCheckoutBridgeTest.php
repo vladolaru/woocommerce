@@ -792,6 +792,33 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The classic card form names its brand logos and brand popover for screen readers (woopayments-checkout.js:1893,
+	 * :1966); the labels come from the config so they are translated.
+	 *
+	 * @testdox Should send translated labels for the card brand logos and popover.
+	 */
+	public function test_get_payment_fields_js_config_translates_card_brand_labels(): void {
+		$legacy_runtime = $this->create_legacy_runtime_for_bridge();
+		$legacy_runtime->method( 'can_handle_checkout_bridge_callbacks' )->willReturn( true );
+
+		$bridge = new WooPaymentsCheckoutBridge();
+		$bridge->init( $legacy_runtime, $this->create_account_service_for_bridge( true ), $this->create_woopay_session_service_for_bridge( true ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$translate = static function ( $translation, $text ) {
+			return 'Supported credit card brands' === $text || 'Show all supported credit card brands' === $text ? 'translated: ' . $text : $translation;
+		};
+		add_filter( 'gettext', $translate, 10, 2 );
+
+		try {
+			$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		} finally {
+			remove_filter( 'gettext', $translate, 10 );
+		}
+
+		$this->assertSame( 'translated: Supported credit card brands', $config['cardBrandPopoverLabel'] ?? null );
+		$this->assertSame( 'translated: Show all supported credit card brands', $config['cardBrandLogosLabel'] ?? null );
+	}
+
+	/**
 	 * @testdox Should preserve the card checkout config shape and filter it through wcpay_payment_fields_js_config.
 	 */
 	public function test_get_payment_fields_js_config_preserves_card_checkout_shape(): void {
@@ -2139,6 +2166,8 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		'woopayPrivacyPolicyLabel',
 		'woopaySaveUserLabel',
 		'woopayPhoneLabel',
+		'cardBrandPopoverLabel',
+		'cardBrandLogosLabel',
 		'is_shopper_tracking_enabled',
 	);
 
