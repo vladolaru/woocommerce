@@ -18,6 +18,28 @@ function createI18nStub() {
 	};
 }
 
+// Stand-in for jQuery BlockUI's page-level `$.blockUI( options )` / `$.unblockUI()`, loaded by WooCommerce's
+// `woocommerce` script (`wc-jquery-blockui`, includes/class-wc-frontend-scripts.php). The page has one overlay: a new
+// block replaces the one up and a single unblock removes it (js/jquery-blockui/jquery.blockUI.js, install() :265-267,
+// remove() :488-489); neither returns anything useful. The stand-in keeps only that state, so tests read whether the
+// page is locked, not how many calls got it there.
+function createPageLock() {
+	let locked = false;
+	let overlayOptions;
+
+	return {
+		blockUI: ( options ) => {
+			locked = true;
+			overlayOptions = options;
+		},
+		unblockUI: () => {
+			locked = false;
+		},
+		isLocked: () => locked,
+		getOverlayOptions: () => overlayOptions,
+	};
+}
+
 describe( 'WooPayments express checkout', () => {
 	// The Express Checkout Element `ready` event in a browser with no wallet: `availablePaymentMethods` is an object
 	// of booleans, one per button (link, applePay, googlePay, paypal, amazonPay, klarna), deprecated but still sent
@@ -41,6 +63,7 @@ describe( 'WooPayments express checkout', () => {
 	let expressElement;
 	let expressHandlers;
 	let originalFetch;
+	let pageLock;
 	let stripe;
 	let triggeredFieldEvents;
 
@@ -360,10 +383,9 @@ describe( 'WooPayments express checkout', () => {
 		};
 		window.alert = jest.fn();
 		const jQueryMock = createJQueryMock();
-		// jQuery BlockUI's page-level `$.blockUI( options )` / `$.unblockUI()`, loaded by WooCommerce's `woocommerce`
-		// script (`wc-jquery-blockui`, includes/class-wc-frontend-scripts.php); both return nothing useful.
-		jQueryMock.blockUI = jest.fn();
-		jQueryMock.unblockUI = jest.fn();
+		pageLock = createPageLock();
+		jQueryMock.blockUI = pageLock.blockUI;
+		jQueryMock.unblockUI = pageLock.unblockUI;
 		global.jQuery = jQueryMock;
 		global.$ = jQueryMock;
 		window.jQuery = jQueryMock;
@@ -4586,8 +4608,54 @@ describe( 'WooPayments express checkout', () => {
 			await flushPromises();
 		}
 
+		// The Store API cart answers in the currency the chosen address maps to (cart.md "Cart Response",
+		// totals.currency_code); the sheet stays in the currency the Element booted with.
+		function getCartInCurrency( currency ) {
+			return Object.assign( getCartResponse(), {
+				totals: {
+					total_price: '5000',
+					currency_code: currency,
+				},
+				shipping_rates: [],
+			} );
+		}
+
+		// Store API checkout success: payment_result.redirect_url (src/StoreApi/Schemas/V1/CheckoutSchema.php:187-191).
+		function getOrderPageCheckoutResponse() {
+			return {
+				payment_result: {
+					payment_status: 'success',
+					redirect_url: 'https://example.test/checkout/order-received/77/',
+					payment_details: [],
+				},
+			};
+		}
+
+		// Express Checkout Element `confirm` event with billingDetails (https://docs.stripe.com/js.md,
+		// "expressCheckoutElement.on('confirm', handler)").
+		function confirmPayment() {
+			return expressHandlers.confirm( {
+				billingDetails: {
+					email: 'shopper@example.test',
+					name: 'Ada Lovelace',
+				},
+			} );
+		}
+
+		// `shippingratechange`: shippingRate, resolve, reject (https://docs.stripe.com/js.md, "Handle shippingratechange event").
+		function changeShippingRate( reject ) {
+			return expressHandlers.shippingratechange( {
+				shippingRate: { id: 'flat_rate:1', amount: 500, displayName: 'Flat rate' },
+				resolve: jest.fn(),
+				reject,
+			} );
+		}
+
 		test( 'locks the page when the shopper opens the sheet on a product page and unlocks it on cancel', async () => {
-			const resolveClick = jest.fn();
+			let lockedWhenSheetOpened = false;
+			const resolveClick = jest.fn( () => {
+				lockedWhenSheetOpened = pageLock.isLocked();
+			} );
 			setProductPage();
 			// Store API add-item answer for the tokenized cart (docs/apis/store-api/resources-endpoints/cart.md, "Add Item").
 			window.wp.apiFetch.mockResolvedValue(
@@ -4611,17 +4679,15 @@ describe( 'WooPayments express checkout', () => {
 				resolve: resolveClick,
 			} );
 
-			expect( window.jQuery.blockUI ).toHaveBeenCalledTimes( 1 );
-			expect( window.jQuery.blockUI ).toHaveBeenCalledWith( PAGE_LOCK_OPTIONS );
-			expect(
-				window.jQuery.blockUI.mock.invocationCallOrder[ 0 ]
-			).toBeLessThan( resolveClick.mock.invocationCallOrder[ 0 ] );
-			expect( window.jQuery.unblockUI ).not.toHaveBeenCalled();
+			// The one ordering the shopper sees: the page is already locked when the sheet is told to open.
+			expect( lockedWhenSheetOpened ).toBe( true );
+			expect( pageLock.isLocked() ).toBe( true );
+			expect( pageLock.getOverlayOptions() ).toEqual( PAGE_LOCK_OPTIONS );
 
 			expressHandlers.cancel();
 			await flushPromises();
 
-			expect( window.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
+			expect( pageLock.isLocked() ).toBe( false );
 		} );
 
 		test( 'locks the page when the shopper opens the sheet on classic checkout', async () => {
@@ -4632,7 +4698,8 @@ describe( 'WooPayments express checkout', () => {
 				resolve: jest.fn(),
 			} );
 
-			expect( window.jQuery.blockUI ).toHaveBeenCalledWith( PAGE_LOCK_OPTIONS );
+			expect( pageLock.isLocked() ).toBe( true );
+			expect( pageLock.getOverlayOptions() ).toEqual( PAGE_LOCK_OPTIONS );
 		} );
 
 		test( 'does not lock the page when the click asks the shopper to log in', async () => {
@@ -4651,7 +4718,7 @@ describe( 'WooPayments express checkout', () => {
 			} );
 
 			expect( confirmDialog ).toHaveBeenCalled();
-			expect( window.jQuery.blockUI ).not.toHaveBeenCalled();
+			expect( pageLock.isLocked() ).toBe( false );
 			confirmDialog.mockRestore();
 		} );
 
@@ -4668,17 +4735,11 @@ describe( 'WooPayments express checkout', () => {
 				} );
 			await mountCheckoutWallet();
 			await expressHandlers.click( { resolve: jest.fn() } );
+			expect( pageLock.isLocked() ).toBe( true );
 
-			// Express Checkout Element `confirm` event with billingDetails (https://docs.stripe.com/js.md,
-			// "expressCheckoutElement.on('confirm', handler)").
-			await expressHandlers.confirm( {
-				billingDetails: {
-					email: 'shopper@example.test',
-					name: 'Ada Lovelace',
-				},
-			} );
+			await confirmPayment();
 
-			expect( window.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
+			expect( pageLock.isLocked() ).toBe( false );
 			expect(
 				document.querySelector( '.woocommerce-notices-wrapper' ).textContent
 			).toBe( 'Your card was declined.' );
@@ -4697,21 +4758,8 @@ describe( 'WooPayments express checkout', () => {
 			await expressHandlers.click( { resolve: jest.fn() } );
 			await flushPromises();
 
-			expect( window.jQuery.blockUI ).toHaveBeenCalledTimes( 1 );
-			expect( window.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
+			expect( pageLock.isLocked() ).toBe( false );
 		} );
-
-		// The Store API cart answers in the currency the chosen address maps to (cart.md "Cart Response",
-		// totals.currency_code); the sheet stays in the currency the Element booted with.
-		function getCartInCurrency( currency ) {
-			return Object.assign( getCartResponse(), {
-				totals: {
-					total_price: '5000',
-					currency_code: currency,
-				},
-				shipping_rates: [],
-			} );
-		}
 
 		test( 'unlocks the page when the address chosen in the sheet needs another currency', async () => {
 			const rejectShipping = jest.fn();
@@ -4720,6 +4768,7 @@ describe( 'WooPayments express checkout', () => {
 				.mockResolvedValueOnce( getCartInCurrency( 'EUR' ) );
 			await mountCheckoutWallet();
 			await expressHandlers.click( { resolve: jest.fn() } );
+			expect( pageLock.isLocked() ).toBe( true );
 
 			// `shippingaddresschange`: name, address, resolve, reject
 			// (https://docs.stripe.com/js/elements_object/express_checkout_element_shippingaddresschange_event).
@@ -4736,7 +4785,7 @@ describe( 'WooPayments express checkout', () => {
 			} );
 
 			expect( rejectShipping ).toHaveBeenCalled();
-			expect( window.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
+			expect( pageLock.isLocked() ).toBe( false );
 		} );
 
 		test( 'unlocks the page when the rate chosen in the sheet needs another currency', async () => {
@@ -4746,33 +4795,19 @@ describe( 'WooPayments express checkout', () => {
 				.mockResolvedValueOnce( getCartInCurrency( 'EUR' ) );
 			await mountCheckoutWallet();
 			await expressHandlers.click( { resolve: jest.fn() } );
+			expect( pageLock.isLocked() ).toBe( true );
 
-			// `shippingratechange`: shippingRate, resolve, reject (https://docs.stripe.com/js.md, "Handle shippingratechange event").
-			await expressHandlers.shippingratechange( {
-				shippingRate: { id: 'flat_rate:1', amount: 500, displayName: 'Flat rate' },
-				resolve: jest.fn(),
-				reject: rejectRate,
-			} );
+			await changeShippingRate( rejectRate );
 
 			expect( rejectRate ).toHaveBeenCalled();
-			expect( window.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
+			expect( pageLock.isLocked() ).toBe( false );
 		} );
 
 		test.each( [
-			[
-				'straight to the order page',
-				// Store API checkout success: payment_result.redirect_url (src/StoreApi/Schemas/V1/CheckoutSchema.php:187-191).
-				() => ( {
-					payment_result: {
-						payment_status: 'success',
-						redirect_url: 'https://example.test/checkout/order-received/77/',
-						payment_details: [],
-					},
-				} ),
-			],
+			[ 'straight away', getOrderPageCheckoutResponse ],
 			[ 'after confirming a 3DS payment', () => getConfirmationCheckoutResponse( 77 ) ],
 		] )(
-			'locks the page again before leaving %s',
+			'leaves for the order %s with the page locked',
 			async ( path, getCheckoutResponse ) => {
 				const navigate = jest.fn();
 				// stripe.handleNextAction() resolves with `{ paymentIntent }` or `{ error }` (https://docs.stripe.com/js.md,
@@ -4791,22 +4826,39 @@ describe( 'WooPayments express checkout', () => {
 				await flushPromises();
 				await expressHandlers.click( { resolve: jest.fn() } );
 
-				await expressHandlers.confirm( {
-					billingDetails: {
-						email: 'shopper@example.test',
-						name: 'Ada Lovelace',
-					},
-				} );
+				await confirmPayment();
 
 				expect( navigate ).toHaveBeenCalledWith(
 					'https://example.test/checkout/order-received/77/'
 				);
-				expect( window.jQuery.blockUI ).toHaveBeenCalledTimes( 2 );
-				expect(
-					window.jQuery.blockUI.mock.invocationCallOrder[ 1 ]
-				).toBeLessThan( navigate.mock.invocationCallOrder[ 0 ] );
+				expect( pageLock.isLocked() ).toBe( true );
 			}
 		);
+
+		// A rejected rate change keeps the sheet open on the rate it had (https://docs.stripe.com/js.md, "Handle
+		// shippingratechange event"), so the shopper can still pay after the currency mismatch unlocked the page.
+		test( 'locks the page again before leaving when a currency mismatch had unlocked it', async () => {
+			const navigate = jest.fn();
+			window.wp.apiFetch
+				.mockResolvedValueOnce( getCartResponse() )
+				.mockResolvedValueOnce( getCartInCurrency( 'EUR' ) )
+				.mockResolvedValueOnce( getOrderPageCheckoutResponse() );
+			require( '../woopayments-express-checkout' ).__test__.setNavigate(
+				navigate
+			);
+			await bodyEventHandlers.updated_checkout();
+			await flushPromises();
+			await expressHandlers.click( { resolve: jest.fn() } );
+			await changeShippingRate( jest.fn() );
+			expect( pageLock.isLocked() ).toBe( false );
+
+			await confirmPayment();
+
+			expect( navigate ).toHaveBeenCalledWith(
+				'https://example.test/checkout/order-received/77/'
+			);
+			expect( pageLock.isLocked() ).toBe( true );
+		} );
 
 		// The back-forward cache restores the page as it was left, overlay included, when the shopper goes Back from the
 		// order page (`pageshow` with `persisted`, https://developer.mozilla.org/docs/Web/API/PageTransitionEvent).
@@ -4814,44 +4866,34 @@ describe( 'WooPayments express checkout', () => {
 			const navigate = jest.fn();
 			window.wp.apiFetch
 				.mockResolvedValueOnce( getCartResponse() )
-				// Store API checkout success: payment_result.redirect_url (src/StoreApi/Schemas/V1/CheckoutSchema.php:187-191).
-				.mockResolvedValueOnce( {
-					payment_result: {
-						payment_status: 'success',
-						redirect_url: 'https://example.test/checkout/order-received/77/',
-						payment_details: [],
-					},
-				} );
+				.mockResolvedValueOnce( getOrderPageCheckoutResponse() );
 			require( '../woopayments-express-checkout' ).__test__.setNavigate(
 				navigate
 			);
 			await bodyEventHandlers.updated_checkout();
 			await flushPromises();
 			await expressHandlers.click( { resolve: jest.fn() } );
-			await expressHandlers.confirm( {
-				billingDetails: {
-					email: 'shopper@example.test',
-					name: 'Ada Lovelace',
-				},
-			} );
+			await confirmPayment();
 			expect( navigate ).toHaveBeenCalled();
-			expect( window.jQuery.unblockUI ).not.toHaveBeenCalled();
+			expect( pageLock.isLocked() ).toBe( true );
 
 			window.dispatchEvent(
 				new window.PageTransitionEvent( 'pageshow', { persisted: false } )
 			);
-			expect( window.jQuery.unblockUI ).not.toHaveBeenCalled();
+			expect( pageLock.isLocked() ).toBe( true );
 
 			window.dispatchEvent(
 				new window.PageTransitionEvent( 'pageshow', { persisted: true } )
 			);
-			expect( window.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
+			expect( pageLock.isLocked() ).toBe( false );
 
-			// Only the lock the payment put up is released: a later restore leaves other page locks alone.
+			// Only the lock the payment put up is released: once it is gone, a later restore leaves another script's
+			// page lock alone.
+			window.jQuery.blockUI( { message: 'Another script is busy' } );
 			window.dispatchEvent(
 				new window.PageTransitionEvent( 'pageshow', { persisted: true } )
 			);
-			expect( window.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
+			expect( pageLock.isLocked() ).toBe( true );
 		} );
 
 		// Register row 238 (kept): without jQuery BlockUI on the page the lock and unlock do nothing, and the sheet

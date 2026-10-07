@@ -350,6 +350,28 @@ const getPaymentMethodInterfaceProps = ( cart = blocksCart ) => ( {
 	shippingData: getPaymentMethodInterfaceShippingData( cart ),
 } );
 
+// Stand-in for jQuery BlockUI's page-level `$.blockUI( options )` / `$.unblockUI()`, loaded by WooCommerce's
+// `woocommerce` script (`wc-jquery-blockui`, includes/class-wc-frontend-scripts.php). The page has one overlay: a new
+// block replaces the one up and a single unblock removes it (client/legacy/js/jquery-blockui/jquery.blockUI.js,
+// install() :265-267, remove() :488-489); neither returns anything useful. The stand-in keeps only that state, so tests
+// read whether the page is locked, not how many calls got it there.
+const createPageLock = () => {
+	let locked = false;
+	let overlayOptions;
+
+	return {
+		blockUI: ( options ) => {
+			locked = true;
+			overlayOptions = options;
+		},
+		unblockUI: () => {
+			locked = false;
+		},
+		isLocked: () => locked,
+		getOverlayOptions: () => overlayOptions,
+	};
+};
+
 describe( 'wc-payment-method-woopayments-express-checkout', () => {
 	let expressElement;
 	let expressHandlers;
@@ -2449,9 +2471,9 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 
 	// Client 11.1.0 locks the page with jQuery BlockUI when a wallet button is clicked and unlocks it when the sheet is
 	// canceled or the payment fails (block-buttons/hooks/use-express-checkout.js:47-63, :141-143; event-handlers.js:290-326).
-	// BlockUI's page API, `$.blockUI( options )` and `$.unblockUI()`, comes with WooCommerce's `woocommerce` script
-	// (`wc-jquery-blockui`, includes/class-wc-frontend-scripts.php).
 	describe( 'the page lock while a wallet sheet is open', () => {
+		let pageLock;
+
 		const openGooglePaySheet = async ( props = {} ) => {
 			registerExpressCheckout();
 			renderExpressPaymentMethod(
@@ -2476,7 +2498,11 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		};
 
 		beforeEach( () => {
-			window.jQuery = { blockUI: jest.fn(), unblockUI: jest.fn() };
+			pageLock = createPageLock();
+			window.jQuery = {
+				blockUI: pageLock.blockUI,
+				unblockUI: pageLock.unblockUI,
+			};
 		} );
 
 		afterEach( () => {
@@ -2486,25 +2512,26 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		it( 'locks the page when a wallet button is clicked', async () => {
 			await openGooglePaySheet();
 
-			expect( window.jQuery.blockUI ).toHaveBeenCalledWith( {
+			expect( pageLock.isLocked() ).toBe( true );
+			expect( pageLock.getOverlayOptions() ).toEqual( {
 				message: null,
 				overlayCSS: {
 					background: '#fff',
 					opacity: 0.6,
 				},
 			} );
-			expect( window.jQuery.unblockUI ).not.toHaveBeenCalled();
 		} );
 
 		it( 'unlocks the page when the wallet sheet is canceled', async () => {
 			await openGooglePaySheet();
+			expect( pageLock.isLocked() ).toBe( true );
 
 			// Express Checkout Element `cancel` event (https://docs.stripe.com/js/elements_object/express_checkout_element_cancel_event).
 			act( () => {
 				expressHandlers.cancel();
 			} );
 
-			expect( window.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
+			expect( pageLock.isLocked() ).toBe( false );
 		} );
 
 		it( 'unlocks the page and shows the error when the payment fails', async () => {
@@ -2517,6 +2544,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				data: { status: 400 },
 			} );
 			await openGooglePaySheet( { setExpressPaymentError } );
+			expect( pageLock.isLocked() ).toBe( true );
 
 			// Express Checkout Element `confirm` event with billingDetails (https://docs.stripe.com/js.md,
 			// "expressCheckoutElement.on('confirm', handler)").
@@ -2530,7 +2558,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				} );
 			} );
 
-			expect( window.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
+			expect( pageLock.isLocked() ).toBe( false );
 			expect( setExpressPaymentError ).toHaveBeenCalledWith(
 				'Your card was declined.'
 			);
@@ -2580,10 +2608,10 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		} );
 
 		// Client 11.1.0 completePayment() locks the page with jQuery BlockUI before it navigates
-		// (block-buttons/hooks/use-express-checkout.js:52-55, event-handlers.js:290-298, :316-318). BlockUI's page-level
-		// `$.blockUI( options )` and `$.unblockUI()` come with WooCommerce's `woocommerce` script (`wc-jquery-blockui`,
-		// includes/class-wc-frontend-scripts.php) and return nothing useful.
+		// (block-buttons/hooks/use-express-checkout.js:52-55, event-handlers.js:290-298, :316-318).
 		describe( 'with jQuery BlockUI on the page', () => {
+			let pageLock;
+
 			// Store API checkout success (src/StoreApi/Schemas/V1/CheckoutSchema.php:160-193) naming the order page.
 			const answerWithOrderPage = () =>
 				apiFetch.mockResolvedValueOnce( {
@@ -2599,7 +2627,11 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				} );
 
 			beforeEach( () => {
-				window.jQuery = { blockUI: jest.fn(), unblockUI: jest.fn() };
+				pageLock = createPageLock();
+				window.jQuery = {
+					blockUI: pageLock.blockUI,
+					unblockUI: pageLock.unblockUI,
+				};
 			} );
 
 			afterEach( () => {
@@ -2622,13 +2654,10 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 
 				await confirmGooglePay();
 
-				expect( window.jQuery.blockUI ).toHaveBeenCalledTimes( 1 );
 				expect( navigate ).toHaveBeenCalledWith(
 					'http://localhost/checkout/order-received/77/?key=wc_order_abc'
 				);
-				expect(
-					window.jQuery.blockUI.mock.invocationCallOrder[ 0 ]
-				).toBeLessThan( navigate.mock.invocationCallOrder[ 0 ] );
+				expect( pageLock.isLocked() ).toBe( true );
 			} );
 
 			// Client 11.1.0: a throw from `window.location = url` is inside onConfirmHandler()'s try, so abortPayment() shows
@@ -2645,11 +2674,8 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 
 				await confirmGooglePay( { setExpressPaymentError } );
 
-				expect( window.jQuery.blockUI ).toHaveBeenCalledTimes( 1 );
-				expect( window.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
-				expect(
-					window.jQuery.unblockUI.mock.invocationCallOrder[ 0 ]
-				).toBeGreaterThan( navigate.mock.invocationCallOrder[ 0 ] );
+				expect( navigate ).toHaveBeenCalled();
+				expect( pageLock.isLocked() ).toBe( false );
 				expect( setExpressPaymentError ).toHaveBeenCalledWith(
 					"Failed to set the 'href' property on 'Location': 'http://[' is not a valid URL."
 				);
@@ -2661,29 +2687,32 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				answerWithOrderPage();
 
 				await confirmGooglePay();
-				expect( window.jQuery.blockUI ).toHaveBeenCalledTimes( 1 );
+				expect( navigate ).toHaveBeenCalled();
+				expect( pageLock.isLocked() ).toBe( true );
 
 				window.dispatchEvent(
 					new window.PageTransitionEvent( 'pageshow', {
 						persisted: false,
 					} )
 				);
-				expect( window.jQuery.unblockUI ).not.toHaveBeenCalled();
+				expect( pageLock.isLocked() ).toBe( true );
 
 				window.dispatchEvent(
 					new window.PageTransitionEvent( 'pageshow', {
 						persisted: true,
 					} )
 				);
-				expect( window.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
+				expect( pageLock.isLocked() ).toBe( false );
 
-				// Only the overlay these wallets put up is removed: a later restore leaves other page locks alone.
+				// Only the overlay these wallets put up is removed: once it is gone, a later restore leaves another
+				// script's page lock alone.
+				window.jQuery.blockUI( { message: 'Another script is busy' } );
 				window.dispatchEvent(
 					new window.PageTransitionEvent( 'pageshow', {
 						persisted: true,
 					} )
 				);
-				expect( window.jQuery.unblockUI ).toHaveBeenCalledTimes( 1 );
+				expect( pageLock.isLocked() ).toBe( true );
 			} );
 
 			it( 'leaves the page usable when the payment fails', async () => {
@@ -2697,7 +2726,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 
 				await confirmGooglePay();
 
-				expect( window.jQuery.blockUI ).not.toHaveBeenCalled();
+				expect( pageLock.isLocked() ).toBe( false );
 				expect( navigate ).not.toHaveBeenCalled();
 			} );
 		} );
@@ -2827,9 +2856,12 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				}
 			);
 
-			it( 'locks the page once the payment is confirmed, before it leaves for the order', async () => {
-				// jQuery BlockUI's page-level `$.blockUI( options )` (`wc-jquery-blockui`, includes/class-wc-frontend-scripts.php).
-				window.jQuery = { blockUI: jest.fn() };
+			it( 'leaves for the order with the page locked once the payment is confirmed', async () => {
+				const pageLock = createPageLock();
+				window.jQuery = {
+					blockUI: pageLock.blockUI,
+					unblockUI: pageLock.unblockUI,
+				};
 				answerOrderStatusUpdate( {
 					return_url:
 						'http://localhost/checkout/order-received/77/?key=wc_order_abc',
@@ -2838,15 +2870,11 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				try {
 					await confirmGooglePay();
 
-					expect( window.jQuery.blockUI ).toHaveBeenCalledTimes( 1 );
-					expect(
-						window.jQuery.blockUI.mock.invocationCallOrder[ 0 ]
-					).toBeGreaterThan(
-						stripe.handleNextAction.mock.invocationCallOrder[ 0 ]
+					expect( stripe.handleNextAction ).toHaveBeenCalled();
+					expect( navigate ).toHaveBeenCalledWith(
+						'http://localhost/checkout/order-received/77/?key=wc_order_abc'
 					);
-					expect(
-						window.jQuery.blockUI.mock.invocationCallOrder[ 0 ]
-					).toBeLessThan( navigate.mock.invocationCallOrder[ 0 ] );
+					expect( pageLock.isLocked() ).toBe( true );
 				} finally {
 					delete window.jQuery;
 				}
