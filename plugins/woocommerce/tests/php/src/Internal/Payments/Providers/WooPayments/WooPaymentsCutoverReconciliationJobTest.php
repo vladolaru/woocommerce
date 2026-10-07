@@ -3063,6 +3063,96 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A network worker leaves a peer whose attempt is still scheduled alone, and reschedules one whose action was lost.
+	 * @group multisite
+	 * @testWith [false]
+	 *           [true]
+	 *
+	 * @param bool $peer_action_lost Whether the peer's scheduled action disappeared before the worker ran.
+	 */
+	public function test_network_fanout_repair_writes_only_peers_that_need_it( bool $peer_action_lost ): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+
+		$main_site_id   = get_current_blog_id();
+		$second_site_id = $this->create_cutover_multisite_site( 'cutover-scheduled-peer.example.org' );
+		$preflight      = new class() extends WooPaymentsCutoverPreflightService {
+			/** @return string[] */
+			public function get_reconciliation_failures(): array {
+				return array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Return network activation. */
+			public function is_woopayments_network_active(): bool {
+				return true;
+			}
+		};
+		$sut            = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization() );
+
+		try {
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$main_pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_pending );
+			switch_to_blog( $second_site_id );
+			$second_pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $second_pending );
+			$this->assertGreaterThan( 0, $second_pending['action_id'], 'The fan-out scheduled the peer attempt.' );
+			if ( $peer_action_lost ) {
+				$this->require_scheduler()->cancel( $second_pending['generation'], 1 );
+			}
+			restore_current_blog();
+
+			$peer_leases = 0;
+			$observer    = static function ( string $option ) use ( &$peer_leases, $second_site_id ): void {
+				if ( WooPaymentsCutoverStateStore::LEASE_OPTION_NAME === $option && get_current_blog_id() === $second_site_id ) {
+					++$peer_leases;
+				}
+			};
+			add_action( 'added_option', $observer, 10, 1 );
+			try {
+				$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
+				$sut->handle_reconcile( $main_pending['generation'], 1 );
+			} finally {
+				remove_action( 'added_option', $observer, 10 );
+			}
+
+			$main_waiting = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_waiting );
+			$this->assertSame( array( 'network_barrier' ), $main_waiting['deferred_codes'], 'The worker passed fan-out repair and waits at the barrier.' );
+			switch_to_blog( $second_site_id );
+			$second_after = $this->require_state_store()->get_record();
+			$this->assertIsArray( $second_after );
+			if ( $peer_action_lost ) {
+				$this->assertSame( 1, $peer_leases, 'The lost attempt is rescheduled under the peer lease.' );
+				$this->assertGreaterThan( 0, $second_after['action_id'] );
+				$this->assertSame( $second_after['action_id'], $this->require_scheduler()->get_scheduled_action_id( $second_after['generation'], 1 ) );
+			} else {
+				$this->assertSame( 0, $peer_leases, 'Nothing on the peer needed repair, so its lease is never written.' );
+				$this->assertSame( $second_pending, $second_after );
+			}
+			restore_current_blog();
+		} finally {
+			if ( get_current_blog_id() !== $main_site_id ) {
+				restore_current_blog();
+			}
+			switch_to_blog( $second_site_id );
+			$this->cleanup_state();
+			restore_current_blog();
+			wpmu_delete_blog( $second_site_id, true );
+		}
+	}
+
+	/**
 	 * @testdox A network cutover schedules the canceled-authorization fee remediation on every site, at that site's ownership verification.
 	 * @group multisite
 	 */

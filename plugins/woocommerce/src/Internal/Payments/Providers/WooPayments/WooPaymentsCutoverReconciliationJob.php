@@ -1097,12 +1097,16 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$highest_origin_file     = null;
 			$highest_origin_scope    = null;
 			$highest_origin_conflict = false;
+			$sites_to_repair         = array();
 			foreach ( $this->get_current_network_site_ids() as $site_id ) {
 				if ( get_current_blog_id() !== $site_id ) {
 					switch_to_blog( $site_id );
 				}
 				try {
 					$record = $this->state_store->get_record();
+					if ( ! $this->is_settled_network_peer( $record, $claimed['generation'] ) ) {
+						$sites_to_repair[] = $site_id;
+					}
 					if ( is_array( $record ) && $record['generation'] > $highest_generation ) {
 						$highest_generation      = $record['generation'];
 						$highest_phase           = WooPaymentsCutoverState::PENDING === $record['state'] && 'awaiting_merchant_start' === $record['current_step'] ? 'awaiting_merchant_start' : 'active';
@@ -1166,7 +1170,8 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				);
 			}
 
-			foreach ( $this->get_current_network_site_ids() as $site_id ) {
+			// Only sites the read-only pass found unsettled are written, so a steady network takes no site leases.
+			foreach ( $sites_to_repair as $site_id ) {
 				if ( get_current_blog_id() !== $site_id ) {
 					switch_to_blog( $site_id );
 				}
@@ -2178,7 +2183,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		}
 
 		// This runs on every request, so a waiting attempt that is still scheduled is read, never leased.
-		if ( WooPaymentsCutoverState::RUNNING !== $record['state'] && $record['action_id'] > 0 && $record['action_id'] === $this->scheduler->get_scheduled_action_id( $record['generation'], $record['attempt'] + 1 ) ) {
+		if ( WooPaymentsCutoverState::RUNNING !== $record['state'] && $this->is_recorded_attempt_scheduled( $record ) ) {
 			return;
 		}
 
@@ -2220,6 +2225,34 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		} finally {
 			$this->state_store->release_lease( $token );
 		}
+	}
+
+	/**
+	 * Tell whether the record's next attempt is scheduled under the action id the record already holds.
+	 *
+	 * @param array<string,mixed> $record Current record.
+	 * @return bool
+	 */
+	private function is_recorded_attempt_scheduled( array $record ): bool {
+		return $record['action_id'] > 0 && $record['action_id'] === $this->scheduler->get_scheduled_action_id( $record['generation'], $record['attempt'] + 1 );
+	}
+
+	/**
+	 * Tell whether a site's record already belongs to the network generation and needs no fan-out repair.
+	 *
+	 * @param array<string,mixed>|null $record     Site record, or null when none exists.
+	 * @param int                      $generation Network generation being repaired.
+	 * @return bool
+	 */
+	private function is_settled_network_peer( ?array $record, int $generation ): bool {
+		if ( ! is_array( $record ) || $record['generation'] !== $generation || true !== ( $record['network_cutover'] ?? false ) ) {
+			return false;
+		}
+		if ( ! in_array( $record['state'], array( WooPaymentsCutoverState::PENDING, WooPaymentsCutoverState::DEFERRED ), true ) ) {
+			return true;
+		}
+
+		return 'awaiting_merchant_start' !== $record['current_step'] && $this->is_recorded_attempt_scheduled( $record );
 	}
 
 	/**
