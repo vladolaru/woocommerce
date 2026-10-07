@@ -954,6 +954,10 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			array(
 				'wcAjaxUrl'                => \WC_AJAX::get_endpoint( '%%endpoint%%' ),
 				'confirmationErrorMessage' => __( 'There was a problem processing the payment. Please try again.', 'woocommerce' ),
+				// The save-user source URL is the checkout page, as client 11.1.0 checkout-page-save-user.js:118-124 sends
+				// wcSettings.storePages.checkout.permalink: a full browser URL can carry query strings and exceed the
+				// 500-character limit of Stripe metadata.
+				'woopaySourceUrl'          => wc_get_checkout_url(),
 			),
 			$config,
 			$this->session_service->get_save_user_checkout_data()

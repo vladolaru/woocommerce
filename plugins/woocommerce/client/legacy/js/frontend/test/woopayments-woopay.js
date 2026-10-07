@@ -673,6 +673,10 @@ describe( 'WooPayments WooPay checkout', () => {
 		} );
 
 		test( 'renders WooPay save-my-info fields and persists phone data on blur', async () => {
+			// Localized by WooPaymentsWooPaySessionController::get_classic_woopay_config() from wc_get_checkout_url().
+			window.wcpay_core_woopay_config.woopaySourceUrl =
+				'https://example.test/checkout/';
+			window.history.pushState( {}, '', '/checkout/?utm_source=a-long-campaign' );
 			require( '../woopayments-woopay' );
 
 		const saveCheckbox = document.querySelector(
@@ -712,11 +716,13 @@ describe( 'WooPayments WooPay checkout', () => {
 				_wpnonce: 'session-nonce',
 				save_user_in_woopay: 'true',
 				woopay_is_blocks: 'false',
+				woopay_source_url: 'https://example.test/checkout/',
 				woopay_user_phone_field: {
 					full: '+15555550123',
 				},
 			} )
 		);
+		window.history.pushState( {}, '', '/' );
 		expect( getTrackingEvents() ).toContainEqual( {
 			name: 'checkout_woopay_save_my_info_mobile_enter',
 			props: {},

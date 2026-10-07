@@ -1659,7 +1659,9 @@
 			empty: empty ? 'true' : '',
 			save_user_in_woopay:
 				checkbox && checkbox.checked ? 'true' : 'false',
-			woopay_source_url: sourceField ? sourceField.value : window.location.href,
+			woopay_source_url: sourceField
+				? sourceField.value
+				: config.woopaySourceUrl || '',
 			woopay_is_blocks: 'false',
 			woopay_viewport: viewportField ? viewportField.value : getWooPayViewport(),
 			woopay_user_phone_field: {
@@ -1783,7 +1785,8 @@
 
 		checkbox.checked = !! config.PRE_CHECK_SAVE_MY_INFO;
 		fields.hidden = ! checkbox.checked;
-		sourceField.value = window.location.href;
+		// Client 11.1.0 checkout-page-save-user.js:118-124: the checkout page, not the browser URL.
+		sourceField.value = config.woopaySourceUrl || '';
 		viewportField.value = getWooPayViewport();
 
 		recordUserEvent( 'checkout_woopay_save_my_info_offered' );

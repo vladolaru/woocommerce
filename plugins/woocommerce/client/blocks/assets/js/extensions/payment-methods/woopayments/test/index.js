@@ -131,11 +131,20 @@ jest.mock( '@woocommerce/settings', () => {
 
 	return {
 		getPaymentMethodData: jest.fn( () => paymentMethodData ),
-		getSetting: jest.fn( ( setting, defaultValue ) =>
-			setting === 'paymentMethodData'
-				? { woocommerce_payments: paymentMethodData }
-				: defaultValue
-		),
+		getSetting: jest.fn( ( setting, defaultValue ) => {
+			if ( setting === 'paymentMethodData' ) {
+				return { woocommerce_payments: paymentMethodData };
+			}
+
+			// Blocks settings shape of the store pages (src/Blocks/Assets/AssetDataRegistry.php storePages, get_store_pages()).
+			if ( setting === 'storePages' ) {
+				return {
+					checkout: { permalink: 'https://example.test/checkout/' },
+				};
+			}
+
+			return defaultValue;
+		} ),
 	};
 } );
 
@@ -602,6 +611,19 @@ describe( 'wc-payment-method-woopayments', () => {
 						props: {},
 					},
 				] )
+			);
+		} );
+
+		// Client 11.1.0 checkout-page-save-user.js:118-124 sends the checkout permalink, not the browser URL.
+		const saveUserBodies = window.fetch.mock.calls
+			.filter( ( [ url ] ) =>
+				String( url ).includes( 'set_woopay_phone_number' )
+			)
+			.map( ( [ , options ] ) => options.body );
+		expect( saveUserBodies.length ).toBeGreaterThan( 0 );
+		saveUserBodies.forEach( ( body ) => {
+			expect( body.get( 'woopay_source_url' ) ).toBe(
+				'https://example.test/checkout/'
 			);
 		} );
 	} );

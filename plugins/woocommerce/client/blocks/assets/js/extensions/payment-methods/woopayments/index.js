@@ -638,6 +638,11 @@ const shouldRenderWooPaySaveUser = ( paymentSettings = defaultSettings ) => {
 	);
 };
 
+// Client 11.1.0 checkout-page-save-user.js:118-124 sends the checkout page permalink, never the browser URL, which can
+// carry query strings and exceed the 500-character limit of Stripe metadata.
+const getWooPaySourceUrl = () =>
+	getSetting( 'storePages', {} )?.checkout?.permalink || '';
+
 const persistWooPaySaveUser = async (
 	paymentSettings = defaultSettings,
 	isSavingUser,
@@ -650,7 +655,7 @@ const persistWooPaySaveUser = async (
 	const body = new window.URLSearchParams();
 	body.append( '_wpnonce', paymentSettings.woopaySessionNonce );
 	body.append( 'save_user_in_woopay', isSavingUser ? 'true' : 'false' );
-	body.append( 'woopay_source_url', window.location.href );
+	body.append( 'woopay_source_url', getWooPaySourceUrl() );
 	body.append( 'woopay_is_blocks', 'true' );
 	body.append( 'woopay_viewport', getWooPayViewport() );
 	body.append( 'woopay_user_phone_field[full]', phone || '' );
@@ -836,7 +841,7 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 						<input
 							type="hidden"
 							name="woopay_source_url"
-							value={ window.location.href }
+							value={ getWooPaySourceUrl() }
 							readOnly
 						/>
 						<input
