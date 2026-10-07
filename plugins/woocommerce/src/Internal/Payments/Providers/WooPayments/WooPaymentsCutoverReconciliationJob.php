@@ -955,6 +955,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				$this->hold_ineligible_claim( $claimed );
 				return;
 			}
+			$this->log_late_first_attempt( $claimed );
 			$failures = $this->normalize_codes( $this->preflight_service->get_reconciliation_failures() );
 			if ( in_array( 'legacy_stripe_billing_subscriptions_present', $failures, true ) ) {
 				if ( true === ( $claimed['network_cutover'] ?? false ) ) {
@@ -1031,10 +1032,11 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether a switch held back past the fast retry window is still waiting on the merchant's old click.
+	 * Tell whether a switch held back past the fast retry window for eligibility is still waiting on the merchant's old click.
 	 *
-	 * Held means deferred for eligibility, or never attempted because the job was not loaded (the tier went disabled).
-	 * A day-old click must not fire a switch the merchant stopped expecting; the start notice offers a fresh one.
+	 * Held means deferred because the account was not eligible. A first attempt that simply ran late is not held: the
+	 * merchant's click is the decision and everything after it is automatic, so the switch proceeds once native runs,
+	 * however long the queue or a disabled tier delayed it.
 	 *
 	 * @param array<string,mixed> $claimed Exact running state owned by this worker.
 	 * @return bool
@@ -1044,8 +1046,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			return false;
 		}
 
-		return 1 === $claimed['attempt']
-			|| in_array( self::INELIGIBLE_CODE, $claimed['deferred_codes'], true )
+		return in_array( self::INELIGIBLE_CODE, $claimed['deferred_codes'], true )
 			|| $this->has_information_outcome( $claimed['informational_outcomes'], array( 'code' => 'eligibility_withdrawn' ) );
 	}
 
@@ -2053,6 +2054,37 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 */
 	private function log_error( string $message, array $context = array() ): void {
 		$this->write_log_error( $message, array_merge( $context, array( 'source' => self::LOG_SOURCE ) ) );
+	}
+
+	/**
+	 * Warn when a switch's first attempt runs past the fast retry window, so day-late switches are visible in the logs.
+	 *
+	 * @param array<string,mixed> $claimed Exact running state owned by this worker.
+	 */
+	private function log_late_first_attempt( array $claimed ): void {
+		$delay_seconds = time() - (int) $claimed['started_at'];
+		if ( 1 !== $claimed['attempt'] || $delay_seconds < self::FAST_RETRY_WINDOW ) {
+			return;
+		}
+
+		$this->write_log_warning(
+			sprintf( 'WooPayments cutover: generation %1$d proceeds with its first attempt %2$ds after the merchant started it', (int) $claimed['generation'], $delay_seconds ),
+			array(
+				'source'        => self::LOG_SOURCE,
+				'generation'    => (int) $claimed['generation'],
+				'delay_seconds' => $delay_seconds,
+			)
+		);
+	}
+
+	/**
+	 * Write a cutover warning to the WooCommerce logger.
+	 *
+	 * @param string              $message Warning message.
+	 * @param array<string,mixed> $context Warning context.
+	 */
+	protected function write_log_warning( string $message, array $context ): void {
+		wc_get_logger()->warning( $message, $context );
 	}
 
 	/**

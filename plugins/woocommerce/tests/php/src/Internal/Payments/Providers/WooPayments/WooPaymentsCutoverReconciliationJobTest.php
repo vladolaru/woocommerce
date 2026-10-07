@@ -487,12 +487,35 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A switch never attempted within the retry window, because the job was not loaded, closes instead of finishing on the old click.
+	 * @testdox A first attempt that runs a day after the merchant's click still finishes the switch, and logs a warning for the delay.
 	 */
-	public function test_switch_first_attempted_after_the_retry_window_closes(): void {
+	public function test_switch_first_attempted_after_the_retry_window_still_finishes(): void {
 		$this->arrange_plugin_era_store();
-		$preflight = $this->create_plugin_deactivating_preflight();
-		$origin    = $this->create_state_writing_job( true, $preflight );
+		$preflight     = $this->create_plugin_deactivating_preflight();
+		$normalization = new class() extends WooPaymentsCutoverNormalizationRunner {
+			/** @return array{ran:bool,changes:string[]} */
+			public function run(): array {
+				return array(
+					'ran'     => true,
+					'changes' => array( 'no_changes' ),
+				);
+			}
+		};
+		$job           = new class() extends WooPaymentsCutoverReconciliationJob {
+			/** @var array<int,array<string,mixed>> */
+			public array $logged_warnings = array();
+
+			/**
+			 * Capture warnings.
+			 *
+			 * @param string              $message Warning message.
+			 * @param array<string,mixed> $context Warning context.
+			 */
+			protected function write_log_warning( string $message, array $context ): void {
+				$this->logged_warnings[] = array_merge( array( 'message' => $message ), $context );
+			}
+		};
+		$origin        = $this->create_job( true, $preflight, $job, true, $normalization, true, wc_get_container()->get( WooPaymentsAccountService::class ) );
 		$this->assertTrue( $origin->enqueue( 'merchant' ) );
 		$pending = $this->require_state_store()->get_record();
 		$this->assertIsArray( $pending );
@@ -504,10 +527,15 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 		$origin->handle_reconcile( $aged['generation'], 1 );
 
-		$closed = $this->require_state_store()->get_record();
-		$this->assertIsArray( $closed );
-		$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $closed['state'] );
-		$this->assertSame( array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ), get_option( 'active_plugins' ) );
+		$verification = $this->require_state_store()->get_record();
+		$this->assertIsArray( $verification );
+		$this->assertSame( WooPaymentsCutoverState::PENDING, $verification['state'], 'The click is the decision; a late queue does not ask the merchant again.' );
+		$this->assertSame( 'verify_native_ownership', $verification['current_step'] );
+		$this->assertSame( array(), get_option( 'active_plugins' ) );
+		$this->assertCount( 1, $job->logged_warnings );
+		$this->assertSame( 'woocommerce-woopayments-cutover', $job->logged_warnings[0]['source'] );
+		$this->assertSame( $aged['generation'], $job->logged_warnings[0]['generation'] );
+		$this->assertGreaterThanOrEqual( DAY_IN_SECONDS, $job->logged_warnings[0]['delay_seconds'] );
 	}
 
 	/**
