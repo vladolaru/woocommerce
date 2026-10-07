@@ -308,7 +308,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 		);
 
 		if ( $this->is_base_gateway_integration() && $this->should_enqueue_express_checkout_assets() ) {
-			$data['expressCheckoutParams'] = $this->express_checkout_service->get_express_checkout_params( $this->get_express_checkout_context() );
+			$data['expressCheckoutParams'] = $this->express_checkout_service->get_express_checkout_params( $this->get_button_context() );
 		}
 
 		return $data;
@@ -424,16 +424,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 			return true;
 		}
 
-		$post = get_queried_object();
-		if ( ! $post instanceof \WP_Post ) {
-			$post = get_post();
-		}
-
-		if ( ! $post instanceof \WP_Post ) {
-			return false;
-		}
-
-		return has_block( 'woocommerce/cart', $post ) || has_block( 'woocommerce/checkout', $post );
+		return WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/cart' ) || WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/checkout' );
 	}
 
 	/**
@@ -449,14 +440,8 @@ final class WooPayments extends AbstractPaymentMethodType {
 			return false;
 		}
 
-		$post = get_queried_object();
-		if ( ! $post instanceof \WP_Post ) {
-			$post = get_post();
-		}
-		$post = $post instanceof \WP_Post ? $post : null;
-
-		$is_cart     = ( function_exists( 'is_cart' ) && is_cart() ) || ( null !== $post && has_block( 'woocommerce/cart', $post ) );
-		$is_checkout = ( function_exists( 'is_checkout' ) && is_checkout() ) || ( null !== $post && has_block( 'woocommerce/checkout', $post ) );
+		$is_cart     = is_cart() || WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/cart' );
+		$is_checkout = is_checkout() || WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/checkout' );
 
 		return $is_cart && ! $is_checkout;
 	}
@@ -469,7 +454,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 	private function should_enqueue_woopay_assets(): bool {
 		return $this->is_active() &&
 			$this->is_blocks_cart_or_checkout_surface() &&
-			$this->woopay_session_service->should_show_woopay_button( $this->get_woopay_context() );
+			$this->woopay_session_service->should_show_woopay_button( $this->get_button_context() );
 	}
 
 	/**
@@ -480,24 +465,15 @@ final class WooPayments extends AbstractPaymentMethodType {
 	private function should_enqueue_express_checkout_assets(): bool {
 		return $this->is_active() &&
 			$this->is_blocks_cart_or_checkout_surface() &&
-			$this->express_checkout_service->should_show_payment_request_button( $this->get_express_checkout_context() );
+			$this->express_checkout_service->should_show_payment_request_button( $this->get_button_context() );
 	}
 
 	/**
-	 * Get the current WooPay Blocks context.
+	 * Get the WooPay and express checkout button context of the current Blocks page.
 	 *
 	 * @return string
 	 */
-	private function get_woopay_context(): string {
-		return function_exists( 'is_cart' ) && is_cart() ? 'cart' : 'checkout';
-	}
-
-	/**
-	 * Get the current express checkout Blocks context.
-	 *
-	 * @return string
-	 */
-	private function get_express_checkout_context(): string {
-		return function_exists( 'is_cart' ) && is_cart() ? 'cart' : 'checkout';
+	private function get_button_context(): string {
+		return is_cart() ? 'cart' : 'checkout';
 	}
 }

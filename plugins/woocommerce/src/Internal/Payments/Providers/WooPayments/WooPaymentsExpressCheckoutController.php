@@ -291,7 +291,7 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 				// wp-hooks on every surface: the extension filters (WooCommerce Subscriptions, Deposits, Product Bundles) run
 				// through it, as the client 11.1.0 bundle that imports @wordpress/hooks does.
 				array( 'jquery', WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE, 'wp-api-fetch', 'wp-hooks', 'wp-i18n' ),
-				defined( 'WC_VERSION' ) ? WC_VERSION : '',
+				WC_VERSION,
 				true
 			);
 			wp_set_script_translations( self::CLASSIC_EXPRESS_CHECKOUT_SCRIPT_HANDLE, 'woocommerce' );
@@ -302,7 +302,7 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 				self::CLASSIC_EXPRESS_CHECKOUT_STYLE_HANDLE,
 				WC()->plugin_url() . '/assets/css/woopayments-express-checkout.css',
 				array(),
-				defined( 'WC_VERSION' ) ? WC_VERSION : ''
+				WC_VERSION
 			);
 			wp_style_add_data( self::CLASSIC_EXPRESS_CHECKOUT_STYLE_HANDLE, 'rtl', 'replace' );
 		}
@@ -324,7 +324,7 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 
 		return $this->is_checkout_surface() ||
 			$this->is_product_surface() ||
-			( function_exists( 'is_cart' ) && is_cart() );
+			is_cart();
 	}
 
 	/**
@@ -333,30 +333,9 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_checkout_surface(): bool {
-		if ( function_exists( 'is_checkout' ) && is_checkout() ) {
-			return true;
-		}
-
-		$post_id = function_exists( 'get_queried_object_id' ) ? get_queried_object_id() : 0;
-		$post    = $post_id ? get_post( $post_id ) : null;
-
-		if ( ! $post instanceof \WP_Post ) {
-			$post = get_queried_object();
-		}
-
-		if ( ! $post instanceof \WP_Post ) {
-			$post = get_post();
-		}
-
-		if ( ! $post instanceof \WP_Post ) {
-			return false;
-		}
-
-		if ( function_exists( 'has_block' ) && has_block( 'woocommerce/checkout', $post ) ) {
-			return true;
-		}
-
-		return has_shortcode( $post->post_content, 'woocommerce_checkout' );
+		return is_checkout() ||
+			WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/checkout' ) ||
+			WooPaymentsFrontendAssets::current_post_has_shortcode( 'woocommerce_checkout' );
 	}
 
 	/**
@@ -365,7 +344,7 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_product_surface(): bool {
-		if ( function_exists( 'is_product' ) && is_product() ) {
+		if ( is_product() ) {
 			return true;
 		}
 
@@ -377,18 +356,7 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 			}
 		}
 
-		$post_id = function_exists( 'get_queried_object_id' ) ? get_queried_object_id() : 0;
-		$post    = $post_id ? get_post( $post_id ) : null;
-
-		if ( ! $post instanceof \WP_Post ) {
-			$post = get_queried_object();
-		}
-
-		if ( ! $post instanceof \WP_Post ) {
-			$post = get_post();
-		}
-
-		return $post instanceof \WP_Post && has_shortcode( $post->post_content, 'product_page' );
+		return WooPaymentsFrontendAssets::current_post_has_shortcode( 'product_page' );
 	}
 
 	/**
@@ -397,22 +365,7 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_block_cart_or_checkout_surface(): bool {
-		$post_id = function_exists( 'get_queried_object_id' ) ? get_queried_object_id() : 0;
-		$post    = $post_id ? get_post( $post_id ) : null;
-
-		if ( ! $post instanceof \WP_Post ) {
-			$post = get_queried_object();
-		}
-
-		if ( ! $post instanceof \WP_Post ) {
-			$post = get_post();
-		}
-
-		if ( ! $post instanceof \WP_Post ) {
-			return false;
-		}
-
-		return has_block( 'woocommerce/cart', $post ) || has_block( 'woocommerce/checkout', $post );
+		return WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/cart' ) || WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/checkout' );
 	}
 
 	/**
@@ -433,7 +386,7 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 			return 'checkout';
 		}
 
-		if ( function_exists( 'is_cart' ) && is_cart() ) {
+		if ( is_cart() ) {
 			return 'cart';
 		}
 

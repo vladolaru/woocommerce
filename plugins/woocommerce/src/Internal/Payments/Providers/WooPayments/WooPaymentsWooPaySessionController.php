@@ -980,10 +980,10 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			return false;
 		}
 
-		return ( function_exists( 'is_checkout' ) && is_checkout() ) ||
-			( function_exists( 'is_cart' ) && is_cart() ) ||
-			( function_exists( 'is_product' ) && is_product() ) ||
-			$this->is_product_page_shortcode_surface();
+		return is_checkout() ||
+			is_cart() ||
+			is_product() ||
+			WooPaymentsFrontendAssets::current_post_has_shortcode( 'product_page' );
 	}
 
 	/**
@@ -1000,7 +1000,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 		}
 
 		return wp_script_is( 'wc-cart-fragments', 'enqueued' ) &&
-			! ( ( function_exists( 'is_checkout' ) && is_checkout() ) || $this->current_surface_has_block( 'woocommerce/checkout' ) );
+			! ( is_checkout() || WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/checkout' ) );
 	}
 
 	/**
@@ -1009,7 +1009,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_cart_surface(): bool {
-		return ( function_exists( 'is_cart' ) && is_cart() ) || $this->current_surface_has_block( 'woocommerce/cart' );
+		return is_cart() || WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/cart' );
 	}
 
 	/**
@@ -1018,32 +1018,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_block_cart_or_checkout_surface(): bool {
-		return $this->current_surface_has_block( 'woocommerce/cart' ) || $this->current_surface_has_block( 'woocommerce/checkout' );
-	}
-
-	/**
-	 * Tell whether the current request contains a given block.
-	 *
-	 * @param string $block_name Block name.
-	 * @return bool
-	 */
-	private function current_surface_has_block( string $block_name ): bool {
-		$post_id = function_exists( 'get_queried_object_id' ) ? get_queried_object_id() : 0;
-		$post    = $post_id ? get_post( $post_id ) : null;
-
-		if ( ! $post instanceof \WP_Post ) {
-			$post = get_queried_object();
-		}
-
-		if ( ! $post instanceof \WP_Post ) {
-			$post = get_post();
-		}
-
-		if ( ! $post instanceof \WP_Post ) {
-			return false;
-		}
-
-		return has_block( $block_name, $post );
+		return WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/cart' ) || WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/checkout' );
 	}
 
 	/**
@@ -1059,15 +1034,15 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			return 'pay_for_order';
 		}
 
-		if ( ( function_exists( 'is_product' ) && is_product() ) || $this->is_product_page_shortcode_surface() ) {
+		if ( is_product() || WooPaymentsFrontendAssets::current_post_has_shortcode( 'product_page' ) ) {
 			return 'product';
 		}
 
-		if ( function_exists( 'is_checkout' ) && is_checkout() ) {
+		if ( is_checkout() ) {
 			return 'checkout';
 		}
 
-		return function_exists( 'is_cart' ) && is_cart() ? 'cart' : 'checkout';
+		return is_cart() ? 'cart' : 'checkout';
 	}
 
 	/**
@@ -1076,17 +1051,6 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_order_pay_surface(): bool {
-		return function_exists( 'is_checkout' ) && is_checkout() && is_wc_endpoint_url( 'order-pay' );
-	}
-
-	/**
-	 * Tell whether the current post contains a product_page shortcode.
-	 *
-	 * @return bool
-	 */
-	private function is_product_page_shortcode_surface(): bool {
-		$post = get_post();
-
-		return $post instanceof \WP_Post && has_shortcode( $post->post_content, 'product_page' );
+		return is_checkout() && is_wc_endpoint_url( 'order-pay' );
 	}
 }

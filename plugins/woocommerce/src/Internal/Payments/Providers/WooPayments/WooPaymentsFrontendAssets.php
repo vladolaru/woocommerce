@@ -65,6 +65,47 @@ final class WooPaymentsFrontendAssets {
 	}
 
 	/**
+	 * Get the post the current request renders: the queried post, or else the global post.
+	 *
+	 * The queried object comes first only when it is a post: on an archive it is a term, whose ID is not a post ID. Without
+	 * one, the global post answers, as has_block() does when given no post.
+	 *
+	 * @return \WP_Post|null
+	 */
+	public static function get_current_post(): ?\WP_Post {
+		$post = $GLOBALS['wp_query'] instanceof \WP_Query ? get_queried_object() : null;
+		if ( ! $post instanceof \WP_Post ) {
+			$post = get_post();
+		}
+
+		return $post instanceof \WP_Post ? $post : null;
+	}
+
+	/**
+	 * Tell whether the post the current request renders contains a block.
+	 *
+	 * @param string $block_name Block name.
+	 * @return bool
+	 */
+	public static function current_post_has_block( string $block_name ): bool {
+		$post = self::get_current_post();
+
+		return null !== $post && has_block( $block_name, $post );
+	}
+
+	/**
+	 * Tell whether the post the current request renders contains a shortcode.
+	 *
+	 * @param string $tag Shortcode tag.
+	 * @return bool
+	 */
+	public static function current_post_has_shortcode( string $tag ): bool {
+		$post = self::get_current_post();
+
+		return null !== $post && has_shortcode( $post->post_content, $tag );
+	}
+
+	/**
 	 * URL of the phone validation script the Blocks and classic WooPay save-user sections load when the shopper opts in.
 	 *
 	 * It is not registered as a handle: nothing loads it with the page.
