@@ -937,6 +937,26 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		).resolves.toBe( false );
 	} );
 
+	it( 'waits for Stripe.js before probing wallet availability', async () => {
+		jest.useFakeTimers();
+		availablePaymentMethods = { applePay: true };
+		const loadedStripe = window.Stripe;
+		delete window.Stripe;
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+
+		const availability = applePayRegistration.canMakePayment( {
+			cart: blocksCart,
+		} );
+		window.Stripe = loadedStripe;
+		jest.advanceTimersByTime( 100 );
+		jest.useRealTimers();
+
+		await expect( availability ).resolves.toBe( true );
+	} );
+
 	it( 'does not reuse availability for ordinary and subscription carts', async () => {
 		availablePaymentMethods = { applePay: true };
 		registerExpressCheckout();

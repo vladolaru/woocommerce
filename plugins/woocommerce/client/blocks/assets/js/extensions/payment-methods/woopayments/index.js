@@ -25,6 +25,7 @@ import {
 	getFontRulesFromPage,
 } from './upe-styles';
 import { recordWooPaymentsUserEvent } from './tracks';
+import { waitForStripe } from './wait-for-stripe';
 import {
 	handleWooPayEmailInput,
 	shouldHandleWooPayEmailInput,
@@ -36,10 +37,6 @@ const defaultLabel = __( 'Card', 'woocommerce' );
 const testModeBadgeLabel = __( 'Test Mode', 'woocommerce' );
 const saveUserRoots = new WeakMap();
 const copyTestNumberSuccessDuration = 2000;
-// Client 11.1.0 client/checkout/api/index.js:57-71 waits up to 600 seconds for Stripe.js, checking every 100 ms,
-// because page optimizers can defer it past the checkout render.
-const STRIPE_WAIT_INTERVAL = 100;
-const STRIPE_MAX_WAIT = 600 * 1000;
 const EMPTY_BILLING_DATA = {};
 
 // The buyer *device* fingerprint the platform's risk rules score on — the
@@ -1150,18 +1147,15 @@ const WooPaymentsContent = ( {
 			return undefined;
 		}
 
-		let waited = 0;
-		const timer = window.setInterval( () => {
-			waited += STRIPE_WAIT_INTERVAL;
-			if ( typeof window.Stripe === 'function' ) {
-				window.clearInterval( timer );
-				setIsStripeLoaded( true );
-			} else if ( waited >= STRIPE_MAX_WAIT ) {
-				window.clearInterval( timer );
-			}
-		}, STRIPE_WAIT_INTERVAL );
+		let isMounted = true;
+		waitForStripe().then(
+			() => isMounted && setIsStripeLoaded( true ),
+			() => {}
+		);
 
-		return () => window.clearInterval( timer );
+		return () => {
+			isMounted = false;
+		};
 	}, [ isStripeLoaded ] );
 
 	useEffect( () => {

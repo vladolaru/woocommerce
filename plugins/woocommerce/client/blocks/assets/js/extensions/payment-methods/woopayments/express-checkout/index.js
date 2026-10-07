@@ -17,6 +17,7 @@ import { addQueryArgs } from '@wordpress/url';
  * Internal dependencies
  */
 import { recordWooPaymentsUserEvent } from '../tracks';
+import { waitForStripe } from '../wait-for-stripe';
 import { getBlocksCheckoutAppearance } from '../upe-styles';
 import { transformPrice } from './transform-price';
 import { registerSubscriptionsCompatibility } from './compatibility/wc-subscriptions';
@@ -573,10 +574,16 @@ const getStripe = () => {
 };
 
 const checkAvailablePaymentMethods = ( cart ) => {
-	const stripe = getStripe();
-
-	if ( ! stripe ) {
+	if ( ! params?.stripe?.publishableKey ) {
 		return Promise.resolve( {} );
+	}
+
+	// Client 11.1.0 checkPaymentMethodIsAvailable.ts:163 probes through loadStripeForExpressCheckout(), which waits for Stripe.js.
+	if ( typeof window.Stripe !== 'function' ) {
+		return waitForStripe().then(
+			() => checkAvailablePaymentMethods( cart ),
+			() => ( {} )
+		);
 	}
 
 	const options = getAvailabilityElementsOptions( cart );
@@ -597,6 +604,7 @@ const checkAvailablePaymentMethods = ( cart ) => {
 		return availabilityCache.get( cacheKey );
 	}
 
+	const stripe = getStripe();
 	const availabilityPromise = new Promise( ( resolve ) => {
 		let container;
 		let expressElement;
