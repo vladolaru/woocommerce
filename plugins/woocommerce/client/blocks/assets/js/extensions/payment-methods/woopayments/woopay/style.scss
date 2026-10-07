@@ -131,11 +131,13 @@
 		opacity: 1;
 	}
 
-	&:not(:disabled):not(.is-placeholder):hover {
+	// The loading button stays enabled to keep focus, so hover excludes aria-disabled as well as disabled.
+
+	&:not(:disabled):not([aria-disabled="true"]):not(.is-placeholder):hover {
 		cursor: pointer;
 	}
 
-	&[data-theme="dark"]:not(:disabled):not(.is-placeholder):hover {
+	&[data-theme="dark"]:not(:disabled):not([aria-disabled="true"]):not(.is-placeholder):hover {
 		background: #9a5bff;
 		border-color: #9a5bff;
 	}
@@ -146,7 +148,7 @@
 		outline-offset: 2px;
 	}
 
-	&[data-theme="light-outline"]:not(:disabled):not(.is-placeholder):hover {
+	&[data-theme="light-outline"]:not(:disabled):not([aria-disabled="true"]):not(.is-placeholder):hover {
 		background: #e0e0e0;
 	}
 
