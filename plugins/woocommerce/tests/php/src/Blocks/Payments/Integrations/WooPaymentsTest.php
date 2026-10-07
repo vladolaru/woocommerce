@@ -33,7 +33,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 	public function tearDown(): void {
 		remove_all_filters( 'wcpay_upe_available_payment_methods' );
 
-		foreach ( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-woopay', 'wc-payment-method-woopayments-express-checkout', 'wc-payment-method-woopayments-fraud-scripts' ) as $handle ) {
+		foreach ( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-woopay', 'wc-payment-method-woopayments-express-checkout', 'wc-payment-method-woopayments-fraud-scripts', 'wc-payment-method-woopayments-common', 'wc-payment-method-woopayments-woopay-common' ) as $handle ) {
 			wp_dequeue_style( $handle );
 			wp_deregister_style( $handle );
 			wp_dequeue_script( $handle );
@@ -44,6 +44,15 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		wp_reset_postdata();
 		$this->reset_cart_checkout_page_cache();
 		parent::tearDown();
+	}
+
+	/**
+	 * Registers a script the mocked asset API was asked for, so the integration sees it as registered.
+	 *
+	 * @param string $handle Script handle.
+	 */
+	public function register_script_for_real( string $handle ): void {
+		wp_register_script( $handle, false, array(), '1.0', true );
 	}
 
 	/**
@@ -156,8 +165,9 @@ class WooPaymentsTest extends WP_UnitTestCase {
 			->onlyMethods( array( 'register_script', 'register_style' ) )
 			->getMock();
 		$asset_api
-			->expects( $this->exactly( 2 ) )
+			->expects( $this->exactly( 4 ) )
 			->method( 'register_script' )
+			->willReturnCallback( array( $this, 'register_script_for_real' ) )
 			->withConsecutive(
 				array(
 					'wc-payment-method-woopayments-fraud-scripts',
@@ -166,9 +176,21 @@ class WooPaymentsTest extends WP_UnitTestCase {
 					false,
 				),
 				array(
+					'wc-payment-method-woopayments-common',
+					'assets/client/blocks/wc-payment-method-woopayments-common.js',
+					array(),
+					false,
+				),
+				array(
+					'wc-payment-method-woopayments-woopay-common',
+					'assets/client/blocks/wc-payment-method-woopayments-woopay-common.js',
+					array(),
+					false,
+				),
+				array(
 					'wc-payment-method-woopayments',
 					'assets/client/blocks/wc-payment-method-woopayments.js',
-					array( 'stripe', 'wc-blocks-checkout' ),
+					array( 'stripe', 'wc-blocks-checkout', 'wc-payment-method-woopayments-common', 'wc-payment-method-woopayments-woopay-common' ),
 				)
 			);
 		$asset_api
@@ -215,8 +237,9 @@ class WooPaymentsTest extends WP_UnitTestCase {
 			->onlyMethods( array( 'register_script', 'register_style' ) )
 			->getMock();
 		$asset_api
-			->expects( $this->exactly( 3 ) )
+			->expects( $this->exactly( 5 ) )
 			->method( 'register_script' )
+			->willReturnCallback( array( $this, 'register_script_for_real' ) )
 			->withConsecutive(
 				array(
 					'wc-payment-method-woopayments-fraud-scripts',
@@ -225,14 +248,26 @@ class WooPaymentsTest extends WP_UnitTestCase {
 					false,
 				),
 				array(
+					'wc-payment-method-woopayments-common',
+					'assets/client/blocks/wc-payment-method-woopayments-common.js',
+					array(),
+					false,
+				),
+				array(
+					'wc-payment-method-woopayments-woopay-common',
+					'assets/client/blocks/wc-payment-method-woopayments-woopay-common.js',
+					array(),
+					false,
+				),
+				array(
 					'wc-payment-method-woopayments',
 					'assets/client/blocks/wc-payment-method-woopayments.js',
-					array( 'stripe', 'wc-blocks-checkout' ),
+					array( 'stripe', 'wc-blocks-checkout', 'wc-payment-method-woopayments-common', 'wc-payment-method-woopayments-woopay-common' ),
 				),
 				array(
 					'wc-payment-method-woopayments-woopay',
 					'assets/client/blocks/wc-payment-method-woopayments-woopay.js',
-					array( 'wc-blocks-checkout' ),
+					array( 'wc-blocks-checkout', 'wc-payment-method-woopayments-common', 'wc-payment-method-woopayments-woopay-common' ),
 				)
 			);
 		$asset_api
@@ -287,8 +322,9 @@ class WooPaymentsTest extends WP_UnitTestCase {
 			->onlyMethods( array( 'register_script', 'register_style' ) )
 			->getMock();
 		$asset_api
-			->expects( $this->exactly( 3 ) )
+			->expects( $this->exactly( 5 ) )
 			->method( 'register_script' )
+			->willReturnCallback( array( $this, 'register_script_for_real' ) )
 			->withConsecutive(
 				array(
 					'wc-payment-method-woopayments-fraud-scripts',
@@ -297,14 +333,26 @@ class WooPaymentsTest extends WP_UnitTestCase {
 					false,
 				),
 				array(
+					'wc-payment-method-woopayments-common',
+					'assets/client/blocks/wc-payment-method-woopayments-common.js',
+					array(),
+					false,
+				),
+				array(
+					'wc-payment-method-woopayments-woopay-common',
+					'assets/client/blocks/wc-payment-method-woopayments-woopay-common.js',
+					array(),
+					false,
+				),
+				array(
 					'wc-payment-method-woopayments',
 					'assets/client/blocks/wc-payment-method-woopayments.js',
-					array( 'stripe', 'wc-blocks-checkout' ),
+					array( 'stripe', 'wc-blocks-checkout', 'wc-payment-method-woopayments-common', 'wc-payment-method-woopayments-woopay-common' ),
 				),
 				array(
 					'wc-payment-method-woopayments-express-checkout',
 					'assets/client/blocks/wc-payment-method-woopayments-express-checkout.js',
-					array( 'stripe', 'wc-blocks-checkout' ),
+					array( 'stripe', 'wc-blocks-checkout', 'wc-payment-method-woopayments-common' ),
 				)
 			);
 		$asset_api
@@ -481,6 +529,9 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$loaded = $this->get_dependency_closure( $dependencies );
 		$this->assertContains( 'stripe', $loaded );
 		$this->assertTrue( wp_script_is( 'stripe', 'registered' ) );
+		// A webpack entry runs only once its shared chunks have loaded; the cart skips the WooPay email check chunk.
+		$this->assertContains( 'wc-payment-method-woopayments-common', $loaded );
+		$this->assertNotContains( 'wc-payment-method-woopayments-woopay-common', $loaded );
 		$this->assertNotContains( 'wc-payment-method-woopayments', $loaded );
 		$this->assertNotContains( 'wc-woopayments-fingerprintjs', $loaded );
 		$this->assertTrue( wp_style_is( 'wc-payment-method-woopayments-express-checkout', 'enqueued' ) );
@@ -502,6 +553,8 @@ class WooPaymentsTest extends WP_UnitTestCase {
 
 		$this->assertSame( array( 'wc-payment-method-woopayments-woopay', 'wc-payment-method-woopayments-fraud-scripts' ), $dependencies );
 		$loaded = $this->get_dependency_closure( $dependencies );
+		$this->assertContains( 'wc-payment-method-woopayments-common', $loaded );
+		$this->assertContains( 'wc-payment-method-woopayments-woopay-common', $loaded );
 		$this->assertNotContains( 'wc-payment-method-woopayments', $loaded );
 		$this->assertNotContains( 'stripe', $loaded );
 		$this->assertNotContains( 'wc-woopayments-fingerprintjs', $loaded );
@@ -521,6 +574,8 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$this->assertSame( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-fraud-scripts' ), $dependencies );
 		$loaded = $this->get_dependency_closure( $dependencies );
 		$this->assertContains( 'stripe', $loaded );
+		$this->assertContains( 'wc-payment-method-woopayments-common', $loaded );
+		$this->assertContains( 'wc-payment-method-woopayments-woopay-common', $loaded );
 		// The card script's built asset file lists FingerprintJS (a build external); the integration's part is registering its handle.
 		$this->assertTrue( wp_script_is( 'wc-woopayments-fingerprintjs', 'registered' ) );
 		$this->assertTrue( wp_style_is( 'wc-payment-method-woopayments', 'enqueued' ) );

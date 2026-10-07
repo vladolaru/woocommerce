@@ -75,6 +75,10 @@ plugin_assets = {
     "woopay.css": "dist/woopay.css",
     "woopay-express-button.js": "dist/woopay-express-button.js",
     "woopay-direct-checkout.js": "dist/woopay-direct-checkout.js",
+    "blocks-common.js": None,
+    "blocks-woopay-common.js": None,
+    "page-blocks-checkout.js": ["dist/blocks-checkout.js", "dist/woopay.js"],
+    "page-blocks-cart.js": ["dist/blocks-checkout.js", "dist/cart-block.js"],
     "multi-currency-admin.js": "dist/multi-currency.js",
     "multi-currency-admin.css": "dist/multi-currency.css",
     "multi-currency-analytics.js": "dist/multi-currency-analytics.js",
@@ -101,22 +105,36 @@ CORE_ADMIN_CHUNKS = "plugins/woocommerce/assets/client/admin/chunks/"
 FINGERPRINTJS = "plugins/woocommerce/assets/js/fingerprintjs/fp.umd.min.js"
 # The client bundles its fraud-scripts loader into its Blocks card bundle; native ships it as its own handle.
 BLOCKS_FRAUD_SCRIPTS = "plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-fraud-scripts.js"
+CORE_BLOCKS = "plugins/woocommerce/assets/client/blocks/"
+# Code the Blocks card, WooPay and express scripts share ships once, in two chunks those scripts depend on. Each
+# chunk is its own asset, the per-script assets leave it out, and the page assets count every file once.
+BLOCKS_CARD = CORE_BLOCKS + "wc-payment-method-woopayments.js"
+BLOCKS_WOOPAY = CORE_BLOCKS + "wc-payment-method-woopayments-woopay.js"
+BLOCKS_EXPRESS = CORE_BLOCKS + "wc-payment-method-woopayments-express-checkout.js"
+BLOCKS_COMMON = CORE_BLOCKS + "wc-payment-method-woopayments-common.js"
+BLOCKS_WOOPAY_COMMON = CORE_BLOCKS + "wc-payment-method-woopayments-woopay-common.js"
+CART_BLOCK_MESSAGING = CORE_BLOCKS + "wc-woopayments-cart-block-payment-method-messaging.js"
 core_assets = {
     "settings-main.js": CORE_ADMIN_CHUNKS + "settings-payments-woopayments.js",
     "settings-main.css": CORE_ADMIN_CHUNKS + "settings-payments-woopayments.style.css",
     "classic-card.js": ["plugins/woocommerce/assets/js/frontend/woopayments-checkout.min.js", FINGERPRINTJS],
     "classic-card.css": "plugins/woocommerce/assets/css/woopayments-checkout.css",
-    "blocks-card.js": ["plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments.js", FINGERPRINTJS, BLOCKS_FRAUD_SCRIPTS],
+    "blocks-card.js": [BLOCKS_CARD, FINGERPRINTJS, BLOCKS_FRAUD_SCRIPTS],
     "blocks-card.css": "plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments.css",
     "express-checkout.js": "plugins/woocommerce/assets/js/frontend/woopayments-express-checkout.min.js",
     "express-checkout.css": "plugins/woocommerce/assets/css/woopayments-express-checkout.css",
     "frontend-tracks.js": "plugins/woocommerce/assets/js/frontend/woopayments-frontend-tracks.min.js",
-    "blocks-express-checkout.js": "plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-express-checkout.js",
+    "blocks-express-checkout.js": BLOCKS_EXPRESS,
     "blocks-express-checkout.css": "plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-express-checkout.css",
-    "woopay.js": "plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-woopay.js",
+    "woopay.js": BLOCKS_WOOPAY,
     "woopay.css": "plugins/woocommerce/assets/css/woopayments-woopay.css",
     "woopay-express-button.js": "plugins/woocommerce/assets/js/frontend/woopayments-woopay.min.js",
     "woopay-direct-checkout.js": "plugins/woocommerce/assets/js/frontend/woopayments-woopay.min.js",
+    "blocks-common.js": BLOCKS_COMMON,
+    "blocks-woopay-common.js": BLOCKS_WOOPAY_COMMON,
+    # The Blocks checkout with WooPay and express checkout, and the Blocks cart with express checkout.
+    "page-blocks-checkout.js": [BLOCKS_CARD, BLOCKS_WOOPAY, BLOCKS_EXPRESS, BLOCKS_COMMON, BLOCKS_WOOPAY_COMMON, FINGERPRINTJS, BLOCKS_FRAUD_SCRIPTS],
+    "page-blocks-cart.js": [BLOCKS_EXPRESS, BLOCKS_COMMON, BLOCKS_FRAUD_SCRIPTS, CART_BLOCK_MESSAGING],
     "multi-currency-admin.js": "plugins/woocommerce/assets/client/admin/wp-admin-scripts/multi-currency-settings.js",
     "multi-currency-admin.css": "plugins/woocommerce/assets/client/admin/multi-currency-settings/style.css",
     "multi-currency-analytics.js": None,

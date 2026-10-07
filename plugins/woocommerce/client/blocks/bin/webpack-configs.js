@@ -373,6 +373,13 @@ const getFrontConfig = ( options = {} ) => {
 	};
 };
 
+// The WooPayments Blocks entries whose shared code is split into chunks (see getPaymentsConfig()).
+const WOOPAYMENTS_SHARED_CHUNK_ENTRIES = [
+	'wc-payment-method-woopayments',
+	'wc-payment-method-woopayments-woopay',
+	'wc-payment-method-woopayments-express-checkout',
+];
+
 /**
  * Build config for built-in payment gateway integrations.
  *
@@ -447,6 +454,28 @@ const getPaymentsConfig = ( options = {} ) => {
 				automaticNameDelimiter: '--',
 				cacheGroups: {
 					...getCacheGroups(),
+					// The WooPayments card, WooPay and express scripts load together on the checkout block. Code they share
+					// ships once, in chunks src/Blocks/Payments/Integrations/WooPayments.php registers as their
+					// dependencies: the common helpers for all three, and the WooPay email check for card and WooPay only,
+					// so the cart page (express alone) does not load it.
+					woopaymentsCommon: {
+						test: /woopayments[\\/](upe-styles|tracks|wait-for-stripe)\.js$|woopayments-appearance\.js$/,
+						chunks: ( chunk ) =>
+							WOOPAYMENTS_SHARED_CHUNK_ENTRIES.includes(
+								chunk.name
+							),
+						name: 'wc-payment-method-woopayments-common',
+						enforce: true,
+					},
+					woopaymentsWooPayCommon: {
+						test: /woopayments[\\/]woopay[\\/]email-input-iframe\.js$/,
+						chunks: ( chunk ) =>
+							WOOPAYMENTS_SHARED_CHUNK_ENTRIES.includes(
+								chunk.name
+							),
+						name: 'wc-payment-method-woopayments-woopay-common',
+						enforce: true,
+					},
 				},
 			},
 		},

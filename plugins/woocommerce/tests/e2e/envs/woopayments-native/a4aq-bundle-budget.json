@@ -7,8 +7,8 @@
 		},
 		"blocks-express-checkout.js": {
 			"allow_new": true,
-			"raw_bytes": 40709,
-			"gzip_bytes": 12860
+			"raw_bytes": 26038,
+			"gzip_bytes": 8649
 		},
 		"multi-currency-analytics.js": {
 			"allow_missing": true
@@ -31,8 +31,8 @@
 			"gzip_bytes": 10391
 		},
 		"woopay.js": {
-			"raw_growth_bytes": 20548,
-			"gzip_growth_bytes": 7139
+			"raw_growth_bytes": 3271,
+			"gzip_growth_bytes": 2145
 		},
 		"admin-capital.js": {
 			"raw_bytes": 10437,
@@ -53,6 +53,16 @@
 		"admin-shared.css": {
 			"raw_bytes": 162886,
 			"gzip_bytes": 20422
+		},
+		"blocks-common.js": {
+			"allow_new": true,
+			"raw_bytes": 17044,
+			"gzip_bytes": 5685
+		},
+		"blocks-woopay-common.js": {
+			"allow_new": true,
+			"raw_bytes": 9334,
+			"gzip_bytes": 3694
 		}
 	}
 }

@@ -55,6 +55,16 @@ final class WooPayments extends AbstractPaymentMethodType {
 	private const EXPRESS_CHECKOUT_SCRIPT_HANDLE = 'wc-payment-method-woopayments-express-checkout';
 
 	/**
+	 * Code the card, WooPay and express scripts share, built as one chunk (client/blocks/bin/webpack-configs.js).
+	 */
+	private const COMMON_SCRIPT_HANDLE = 'wc-payment-method-woopayments-common';
+
+	/**
+	 * The WooPay email check the card and WooPay scripts share, built as one chunk.
+	 */
+	private const WOOPAY_COMMON_SCRIPT_HANDLE = 'wc-payment-method-woopayments-woopay-common';
+
+	/**
 	 * Payment method name defined by payment methods extending this class.
 	 *
 	 * @var string
@@ -179,7 +189,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 			$this->asset_api->register_script(
 				self::PAYMENT_METHOD_SCRIPT_HANDLE,
 				'assets/client/blocks/wc-payment-method-woopayments.js',
-				array( self::STRIPE_SCRIPT_HANDLE, self::CHECKOUT_BLOCKS_SCRIPT_HANDLE )
+				array_merge( array( self::STRIPE_SCRIPT_HANDLE, self::CHECKOUT_BLOCKS_SCRIPT_HANDLE ), $this->register_common_scripts( true ) )
 			);
 			$this->asset_api->register_style(
 				self::PAYMENT_METHOD_SCRIPT_HANDLE,
@@ -196,7 +206,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 			$this->asset_api->register_script(
 				self::WOOPAY_SCRIPT_HANDLE,
 				'assets/client/blocks/wc-payment-method-woopayments-woopay.js',
-				array( self::CHECKOUT_BLOCKS_SCRIPT_HANDLE )
+				array_merge( array( self::CHECKOUT_BLOCKS_SCRIPT_HANDLE ), $this->register_common_scripts( true ) )
 			);
 			$this->asset_api->register_style(
 				self::WOOPAY_SCRIPT_HANDLE,
@@ -214,7 +224,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 			$this->asset_api->register_script(
 				self::EXPRESS_CHECKOUT_SCRIPT_HANDLE,
 				'assets/client/blocks/wc-payment-method-woopayments-express-checkout.js',
-				array( self::STRIPE_SCRIPT_HANDLE, self::CHECKOUT_BLOCKS_SCRIPT_HANDLE )
+				array_merge( array( self::STRIPE_SCRIPT_HANDLE, self::CHECKOUT_BLOCKS_SCRIPT_HANDLE ), $this->register_common_scripts( false ) )
 			);
 			$this->asset_api->register_style(
 				self::EXPRESS_CHECKOUT_SCRIPT_HANDLE,
@@ -304,6 +314,27 @@ final class WooPayments extends AbstractPaymentMethodType {
 			},
 			$gateways
 		);
+	}
+
+	/**
+	 * Register the shared chunks a WooPayments Blocks script needs; each script waits for them before it runs.
+	 *
+	 * @param bool $with_woopay_email_check Whether the script also needs the WooPay email check chunk.
+	 * @return string[] The shared chunk handles to list as the script's dependencies.
+	 */
+	private function register_common_scripts( bool $with_woopay_email_check ): array {
+		$handles = array( self::COMMON_SCRIPT_HANDLE => 'assets/client/blocks/wc-payment-method-woopayments-common.js' );
+		if ( $with_woopay_email_check ) {
+			$handles[ self::WOOPAY_COMMON_SCRIPT_HANDLE ] = 'assets/client/blocks/wc-payment-method-woopayments-woopay-common.js';
+		}
+
+		foreach ( $handles as $handle => $path ) {
+			if ( ! wp_script_is( $handle, 'registered' ) ) {
+				$this->asset_api->register_script( $handle, $path, array(), false );
+			}
+		}
+
+		return array_keys( $handles );
 	}
 
 	/**

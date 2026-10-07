@@ -70,6 +70,16 @@ assert_json "$WORK_DIR/core-capture.json" 'data["assets"]["blocks-card.js"]["sta
 assert_json "$WORK_DIR/core-capture.json" 'data["assets"]["settings-main.css"] == {"status": "missing", "path": "plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments.style.css"}'
 assert_json "$WORK_DIR/core-capture.json" 'data["assets"]["frontend-tracks.js"] == {"status": "missing", "path": "plugins/woocommerce/assets/js/frontend/woopayments-frontend-tracks.min.js"}'
 
+# --- capture: the Blocks scripts' shared chunks count once per page and stay out of the per-script assets ---
+core_blocks="$core_repo/plugins/woocommerce/assets/client/blocks"
+mkdir -p "$core_blocks"
+for name in wc-payment-method-woopayments wc-payment-method-woopayments-woopay wc-payment-method-woopayments-express-checkout wc-payment-method-woopayments-common wc-payment-method-woopayments-woopay-common wc-payment-method-woopayments-fraud-scripts; do
+	printf 'console.log("%s");\n' "$name" > "$core_blocks/$name.js"
+done
+bash "$GATE" capture --repo "$core_repo" --out "$WORK_DIR/core-capture.json" > /dev/null
+assert_json "$WORK_DIR/core-capture.json" 'data["assets"]["blocks-express-checkout.js"]["raw_bytes"] == len(open("'"$core_blocks"'/wc-payment-method-woopayments-express-checkout.js", "rb").read())'
+assert_json "$WORK_DIR/core-capture.json" 'data["assets"]["page-blocks-checkout.js"]["path"].count("plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-common.js") == 1 and data["assets"]["page-blocks-checkout.js"]["raw_bytes"] == sum(len(open(f, "rb").read()) for f in __import__("glob").glob("'"$core_blocks"'/*.js")) + len(open("'"$core_repo"'/plugins/woocommerce/assets/js/fingerprintjs/fp.umd.min.js", "rb").read())'
+
 # --- capture: a missing repo directory fails closed ---
 expect_exit 2 'capture on a missing repo fails' bash "$GATE" capture --repo "$WORK_DIR/does-not-exist" --out "$WORK_DIR/missing.json"
 
