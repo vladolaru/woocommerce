@@ -478,8 +478,13 @@ jobs:
 
   woopayments-native-secretless:
     name: 'WooPayments native secretless e2e'
+    needs: [ 'identify-jobs-to-run' ]
+    # Runs when code changed, as project-test-jobs does; reusable-workflow runs (nightly and release checks) skip it.
+    if: ${{ !cancelled() && inputs.trigger == '' && ( github.event_name != 'pull_request' || needs.identify-jobs-to-run.outputs.needs-code-validation == 'true' ) }}
     runs-on: 'ubuntu-latest'
     timeout-minutes: 35
+    permissions:
+      contents: read
     env:
       WCPAY_RUNTIME: 'native'
       E2E_WOOPAYMENTS_NATIVE: 'true'
@@ -551,7 +556,7 @@ jobs:
         run: |
           reference_zip="$RUNNER_TEMP/woocommerce-payments-11.1.0.zip"
           reference_dir="$RUNNER_TEMP/woocommerce-payments-11.1.0"
-          curl --fail --location --silent --show-error https://github.com/Automattic/woocommerce-payments/releases/download/11.1.0/woocommerce-payments.zip --output "$reference_zip"
+          curl --fail --location --silent --show-error --retry 3 --retry-all-errors --retry-delay 5 https://github.com/Automattic/woocommerce-payments/releases/download/11.1.0/woocommerce-payments.zip --output "$reference_zip"
           echo 'd655a77f24f638a3a57edbfd192c6d9e1196970b23320d289a48fc443ca7ffb1  '"$reference_zip" | sha256sum --check
           mkdir -p "$reference_dir"
           unzip -q "$reference_zip" -d "$reference_dir"
@@ -578,6 +583,8 @@ jobs:
     if: ${{ !cancelled() && github.event_name == 'pull_request' && github.repository == 'woocommerce/woocommerce' && github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: 'ubuntu-latest'
     timeout-minutes: 45
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -681,8 +688,9 @@ jobs:
             exit 1
           fi
 
+          # Skipped when no code changed or on reusable-workflow runs.
           woopayments_native_result="${{ needs.woopayments-native-secretless.result }}"
-          if [[ $woopayments_native_result != "success" ]]; then
+          if [[ $woopayments_native_result != "success" && $woopayments_native_result != "skipped" ]]; then
             echo "WooPayments native secretless e2e was not successful: $woopayments_native_result"
             exit 1
           fi
