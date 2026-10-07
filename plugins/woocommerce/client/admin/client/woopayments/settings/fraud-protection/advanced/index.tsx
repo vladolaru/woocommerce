@@ -27,7 +27,10 @@ import type { KeyboardEvent, ReactNode } from 'react';
  */
 import '../../../../settings-payments/settings-payments-body.scss';
 import { getCurrency } from '../../../admin/currency-format';
-import { SettingsBusyState } from '../../settings-busy-state';
+import {
+	SettingsBusyState,
+	useDeferredStatusText,
+} from '../../settings-busy-state';
 import { SettingsSaveBar, SettingsSection } from '../../settings-shell';
 import { SettingsSubpage } from '../../settings-subpage';
 import {
@@ -699,6 +702,15 @@ export const FraudProtectionAdvancedSettingsPage = () => {
 		updateAdvancedFraudProtectionSettings,
 	] = useAdvancedFraudProtectionSettings() as AdvancedFraudProtectionSetting;
 	const [ isDirty, setIsDirty ] = useState( false );
+	const loadingStatus = useDeferredStatusText(
+		isLoading ? __( 'Loading fraud protection rules', 'woocommerce' ) : ''
+	);
+	// One region in both branches below, so it stays on the page while the rules load and after.
+	const loadingStatusRegion = (
+		<div className="screen-reader-text" role="status" aria-live="polite">
+			{ loadingStatus }
+		</div>
+	);
 	const [ validationError, setValidationError ] = useState< string | null >(
 		null
 	);
@@ -814,17 +826,8 @@ export const FraudProtectionAdvancedSettingsPage = () => {
 	if ( isLoading ) {
 		return (
 			<AdvancedFraudProtectionSubpage isBusy>
+				{ loadingStatusRegion }
 				<AdvancedFraudSettingsSection>
-					<div
-						className="screen-reader-text"
-						role="status"
-						aria-live="polite"
-					>
-						{ __(
-							'Loading fraud protection rules',
-							'woocommerce'
-						) }
-					</div>
 					<div className="woopayments-fraud-protection-advanced__rules">
 						{ Object.keys( ADVANCED_RULE_CARD_VIEW_EVENTS ).map(
 							( cardId ) => (
@@ -848,6 +851,7 @@ export const FraudProtectionAdvancedSettingsPage = () => {
 
 	return (
 		<AdvancedFraudProtectionSubpage>
+			{ loadingStatusRegion }
 			<SettingsBusyState isBusy={ Boolean( isSaving ) }>
 				<AdvancedFraudSettingsSection>
 					{ validationError && (

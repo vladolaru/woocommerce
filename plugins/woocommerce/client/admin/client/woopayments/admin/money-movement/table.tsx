@@ -5,40 +5,16 @@ import { Button } from '@wordpress/components';
 import { dispatch } from '@wordpress/data';
 import { __ } from '@wordpress/i18n';
 import { download } from '@wordpress/icons';
-import type { HTMLAttributes, ReactNode } from 'react';
-
-const getLiveStatusAttributes = ( {
-	isError,
-	isLive,
-}: {
-	isError: boolean;
-	isLive: boolean;
-} ): Pick<
-	HTMLAttributes< HTMLParagraphElement >,
-	'aria-atomic' | 'aria-live' | 'role'
-> => {
-	if ( ! isLive ) {
-		return {};
-	}
-
-	return {
-		role: isError ? 'alert' : 'status',
-		'aria-live': isError ? 'assertive' : 'polite',
-		'aria-atomic': true,
-	};
-};
+import type { ReactNode } from 'react';
 
 export const StatusMessage = ( {
 	isError = false,
-	isLive = false,
 	children,
 }: {
 	isError?: boolean;
-	isLive?: boolean;
 	children: ReactNode;
 } ) => (
 	<p
-		{ ...getLiveStatusAttributes( { isError, isLive } ) }
 		className={
 			isError
 				? 'woocommerce-woopayments-money-movement__status is-error'
@@ -49,21 +25,40 @@ export const StatusMessage = ( {
 	</p>
 );
 
+/**
+ * The page's spoken status. The polite status region stays mounted and keeps its role, so screen readers
+ * announce each change of its text; an error goes to a separate alert, mounted with the error, rather than
+ * flipping the status region's role in the same render its text changes.
+ *
+ * @param props           The component props.
+ * @param props.isError   Whether the message is an error.
+ * @param props.className The class of the message; screen-reader-only by default.
+ * @param props.children  The message.
+ */
 export const LiveStatusMessage = ( {
 	isError = false,
+	className = 'screen-reader-text',
 	children,
 }: {
 	isError?: boolean;
+	className?: string;
 	children: ReactNode;
 } ) => (
-	<p
-		className="screen-reader-text"
-		role={ isError ? 'alert' : 'status' }
-		aria-live={ isError ? 'assertive' : 'polite' }
-		aria-atomic="true"
-	>
-		{ children }
-	</p>
+	<>
+		<p
+			className={ isError ? 'screen-reader-text' : className }
+			role="status"
+			aria-live="polite"
+			aria-atomic="true"
+		>
+			{ isError ? null : children }
+		</p>
+		{ isError && (
+			<p className={ className } role="alert">
+				{ children }
+			</p>
+		) }
+	</>
 );
 
 /**

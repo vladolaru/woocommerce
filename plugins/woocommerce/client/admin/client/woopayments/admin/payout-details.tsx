@@ -37,6 +37,7 @@ import {
 	formatExplicitCurrency,
 	getErrorMessage,
 } from './money-movement/utils';
+import { LiveStatusMessage } from './money-movement/table';
 import { WooPaymentsTransactionsList } from './money-movement/transactions-list';
 import { WooPaymentsTestModeNotice } from './test-mode-notice';
 import './style.scss';
@@ -430,13 +431,9 @@ export const WooPaymentsPayoutDetailsPage = () => {
 		>
 			{ /* Client 11.1.0 deposits/details/index.tsx:317. */ }
 			<WooPaymentsTestModeNotice currentPage="deposits" isDetailsView />
-			<p
-				className="screen-reader-text"
-				role={ errorMessage ? 'alert' : 'status' }
-				aria-live={ errorMessage ? 'assertive' : 'polite' }
-			>
+			<LiveStatusMessage isError={ !! errorMessage }>
 				{ liveStatusMessage }
-			</p>
+			</LiveStatusMessage>
 			{ /* Client 11.1.0 deposits/details/index.tsx:319-323. */ }
 			{ isLoading && <SummaryListPlaceholder numberOfItems={ 2 } /> }
 			{ /* Client 11.1.0 deposits/details/index.tsx:135-144; the live region above carries the reason. */ }

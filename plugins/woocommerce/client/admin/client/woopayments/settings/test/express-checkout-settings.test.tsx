@@ -12,6 +12,10 @@ import { getHistory } from '@woocommerce/navigation';
  * Internal dependencies
  */
 import { WooPaymentsExpressCheckoutSettings } from '../express-checkout/express-checkout-settings';
+import {
+	recordMutations,
+	wasTextAddedToExistingNode,
+} from './helpers/live-region';
 
 jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 jest.mock( '@wordpress/a11y', () => ( { speak: jest.fn() } ) );
@@ -373,6 +377,32 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 		expect(
 			screen.queryByRole( 'button', { name: 'Save changes' } )
 		).not.toBeInTheDocument();
+	} );
+
+	it( 'adds the loading text to a status region that is already on the page', () => {
+		mockUseSettings.mockReturnValue( {
+			isLoading: true,
+			isSaving: false,
+			isDirty: false,
+			saveSettings: mockSaveSettings,
+		} );
+
+		const records = recordMutations( () => {
+			render(
+				<WooPaymentsExpressCheckoutSettings methodId="payment_request" />
+			);
+		} );
+
+		const region = screen.getByText( 'Loading WooPayments settings…', {
+			selector: '[aria-live="polite"]',
+		} );
+		expect(
+			wasTextAddedToExistingNode(
+				records,
+				region,
+				'Loading WooPayments settings…'
+			)
+		).toBe( true );
 	} );
 
 	it( 'does not render writable controls when settings failed to load', () => {

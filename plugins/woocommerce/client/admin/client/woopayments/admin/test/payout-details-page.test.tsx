@@ -948,8 +948,15 @@ describe( 'WooPayments payout details admin surface', () => {
 		).not.toBeInTheDocument();
 	} );
 
-	it( 'announces payout detail errors', async () => {
-		mockGetDeposit.mockRejectedValue( new Error( 'Payout unavailable.' ) );
+	// The polite status region stays a status region, and the error gets its own alert, mounted with the
+	// error, so screen readers announce it instead of missing a role flip on the same node.
+	it( 'announces payout detail errors in a new alert while the status region stays polite', async () => {
+		let failLoad: ( error: Error ) => void = () => undefined;
+		mockGetDeposit.mockReturnValue(
+			new Promise( ( resolve, reject ) => {
+				failLoad = reject;
+			} )
+		);
 		mockGetTransactionsSummary.mockResolvedValue( {} );
 
 		render(
@@ -960,9 +967,21 @@ describe( 'WooPayments payout details admin surface', () => {
 			</MemoryRouter>
 		);
 
-		expect( await screen.findByRole( 'alert' ) ).toHaveTextContent(
-			'Payout unavailable.'
-		);
+		const status = screen.getByText( 'Loading payout details…', {
+			selector: '[role="status"]',
+		} );
+		expect( screen.queryByRole( 'alert' ) ).not.toBeInTheDocument();
+
+		await act( async () => {
+			failLoad( new Error( 'Payout unavailable.' ) );
+		} );
+
+		const alert = await screen.findByRole( 'alert' );
+		expect( alert ).toHaveTextContent( 'Payout unavailable.' );
+		expect( alert ).not.toBe( status );
+		expect( status ).toBeInTheDocument();
+		expect( status ).toHaveAttribute( 'role', 'status' );
+		expect( status ).toHaveAttribute( 'aria-live', 'polite' );
 	} );
 
 	// Client 11.1.0 deposits/details/index.tsx:319-323: the core summary placeholder while loading.

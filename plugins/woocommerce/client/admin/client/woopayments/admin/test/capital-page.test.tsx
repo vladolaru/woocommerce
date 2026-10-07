@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import apiFetch from '@wordpress/api-fetch';
 
 /**
@@ -325,13 +325,32 @@ describe( 'WooPaymentsCapitalPage', () => {
 		);
 	} );
 
-	it( 'announces loading errors', async () => {
-		mockApiFetch.mockRejectedValue( new Error( 'Capital unavailable.' ) );
+	it( 'announces loading errors in a new alert while the status region stays polite', async () => {
+		let failLoad: () => void = () => undefined;
+		const gate = new Promise< void >( ( resolve ) => {
+			failLoad = resolve;
+		} );
+		mockApiFetch.mockImplementation( () =>
+			gate.then( () => {
+				throw new Error( 'Capital unavailable.' );
+			} )
+		);
 
 		render( <WooPaymentsCapitalPage /> );
 
-		expect( await screen.findByRole( 'alert' ) ).toHaveTextContent(
-			'Capital unavailable.'
-		);
+		const status = screen.getByRole( 'status' );
+		expect( status ).toHaveTextContent( 'Loading Capital Loans…' );
+		expect( screen.queryByRole( 'alert' ) ).not.toBeInTheDocument();
+
+		await act( async () => {
+			failLoad();
+		} );
+
+		const alert = await screen.findByRole( 'alert' );
+		expect( alert ).toHaveTextContent( 'Capital unavailable.' );
+		expect( alert ).not.toBe( status );
+		expect( status ).toBeInTheDocument();
+		expect( status ).toHaveAttribute( 'role', 'status' );
+		expect( status ).toHaveAttribute( 'aria-live', 'polite' );
 	} );
 } );

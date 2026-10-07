@@ -11,7 +11,10 @@ import { __ } from '@wordpress/i18n';
 import { AccountModeNotice } from '../account-mode-notice';
 import { ApplePayDomainErrorNotice } from '../apple-pay-domain-error-notice';
 import { SaveSettingsSection } from '../save-settings-section';
-import { SettingsBusyState } from '../settings-busy-state';
+import {
+	SettingsBusyState,
+	useDeferredStatusText,
+} from '../settings-busy-state';
 import { SettingsSubpage } from '../settings-subpage';
 import {
 	asSettingsRecord,
@@ -86,6 +89,9 @@ export const WooPaymentsExpressCheckoutSettings = ( {
 	const settings = asSettingsRecord( useGetSettings() );
 	const hasSettings = Object.keys( settings ).length > 0;
 	const isDevModeEnabled = Boolean( useDevMode() );
+	const loadingStatus = useDeferredStatusText(
+		isLoading ? __( 'Loading WooPayments settings…', 'woocommerce' ) : ''
+	);
 
 	if ( ! isExpressCheckoutMethodId( methodId ) ) {
 		return (
@@ -104,15 +110,7 @@ export const WooPaymentsExpressCheckoutSettings = ( {
 	let content;
 
 	if ( isLoading ) {
-		content = (
-			<p
-				className="woopayments-express-checkout-settings__loading"
-				aria-live="polite"
-			>
-				<Spinner />
-				{ __( 'Loading WooPayments settings…', 'woocommerce' ) }
-			</p>
-		);
+		content = null;
 	} else if ( ! hasSettings ) {
 		content = (
 			<Notice status="error" isDismissible={ false }>
@@ -161,6 +159,22 @@ export const WooPaymentsExpressCheckoutSettings = ( {
 			{ ! isLoading && (
 				<AccountModeNotice isDevModeEnabled={ isDevModeEnabled } />
 			) }
+			<p
+				className={
+					loadingStatus
+						? 'woopayments-express-checkout-settings__loading'
+						: 'screen-reader-text'
+				}
+				role="status"
+				aria-live="polite"
+			>
+				{ loadingStatus && (
+					<>
+						<Spinner />
+						{ loadingStatus }
+					</>
+				) }
+			</p>
 			{ content }
 		</SettingsSubpage>
 	);

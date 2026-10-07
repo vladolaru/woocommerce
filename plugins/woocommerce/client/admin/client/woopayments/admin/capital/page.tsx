@@ -27,6 +27,7 @@ import {
 } from '../money-movement/utils';
 import { WooPaymentsTestModeNotice } from '../test-mode-notice';
 import { StatusChip } from '../overview/components/status-chip';
+import { LiveStatusMessage } from '../money-movement/table';
 import { getWooPaymentsSettingsBootstrap } from '../../settings/bootstrap';
 
 // Client 11.1.0 `capital/index.tsx:82-84, 118, 157`: loan dates in the site date format.
@@ -222,17 +223,16 @@ export const WooPaymentsCapitalPage = () => {
 				aria-busy={ isLoading }
 			>
 				<h2>{ __( 'Capital Loans', 'woocommerce' ) }</h2>
-				<p
+				<LiveStatusMessage
+					isError={ !! errorMessage }
 					className={
 						hasLoans
 							? 'screen-reader-text'
 							: 'woocommerce-woopayments-capital__status'
 					}
-					role={ errorMessage ? 'alert' : 'status' }
-					aria-live={ errorMessage ? 'assertive' : 'polite' }
 				>
 					{ statusMessage }
-				</p>
+				</LiveStatusMessage>
 			</section>
 			{ summary.details && ! errorMessage && (
 				<CapitalActiveLoanSummary summary={ summary } loans={ loans } />

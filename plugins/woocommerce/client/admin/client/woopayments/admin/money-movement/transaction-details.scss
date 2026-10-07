@@ -562,6 +562,10 @@
 			height: 0;
 			transition: transform 0.15s ease;
 			width: 0;
+
+			@media screen and (prefers-reduced-motion: reduce) {
+				transition: none;
+			}
 		}
 	}
 

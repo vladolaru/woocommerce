@@ -11,6 +11,7 @@ import { __, sprintf } from '@wordpress/i18n';
 import { getWooPaymentsCardReaders } from './data';
 import type { WooPaymentsCardReader } from './types';
 import { StatusChip } from '../overview/components/status-chip';
+import { LiveStatusMessage } from '../money-movement/table';
 
 const getErrorMessage = ( error: unknown ) => {
 	if ( error instanceof Error && error.message ) {
@@ -108,17 +109,16 @@ export const WooPaymentsCardReadersPage = () => {
 							'WooCommerce'
 						) }
 					</p>
-					<p
+					<LiveStatusMessage
+						isError={ !! errorMessage }
 						className={
 							hasLoadedReaders
 								? 'screen-reader-text'
 								: 'woocommerce-woopayments-card-readers__status'
 						}
-						role={ errorMessage ? 'alert' : 'status' }
-						aria-live={ errorMessage ? 'assertive' : 'polite' }
 					>
 						{ statusMessage }
-					</p>
+					</LiveStatusMessage>
 					{ hasLoadedReaders && (
 						<table className="woocommerce-woopayments-card-readers__table">
 							<thead>

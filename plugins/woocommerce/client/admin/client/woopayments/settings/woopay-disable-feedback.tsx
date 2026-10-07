@@ -9,6 +9,7 @@ import { __ } from '@wordpress/i18n';
  * Internal dependencies
  */
 import WooPayLogoImage from './express-checkout/assets/woopay-preview-logo.svg';
+import { useDeferredStatusText } from './settings-busy-state';
 
 export const WOOPAY_DISABLE_FEEDBACK_URL =
 	'https://woocommerce.survey.fm/woopay-disabled-merchants-feedback-triggered';
@@ -19,6 +20,9 @@ export const WooPayDisableFeedback = ( {
 	onRequestClose: () => void;
 } ) => {
 	const [ isLoading, setIsLoading ] = useState( true );
+	const loadingStatus = useDeferredStatusText(
+		isLoading ? __( 'Loading feedback form…', 'woocommerce' ) : ''
+	);
 
 	return (
 		<Modal
@@ -38,15 +42,22 @@ export const WooPayDisableFeedback = ( {
 			className="woopayments-woopay-disable-feedback"
 		>
 			<div className="woopayments-woopay-disable-feedback__body">
-				{ isLoading && (
-					<p
-						className="woopayments-woopay-disable-feedback__status"
-						aria-live="polite"
-					>
-						<Spinner />
-						{ __( 'Loading feedback form…', 'woocommerce' ) }
-					</p>
-				) }
+				<p
+					className={
+						loadingStatus
+							? 'woopayments-woopay-disable-feedback__status'
+							: 'screen-reader-text'
+					}
+					role="status"
+					aria-live="polite"
+				>
+					{ loadingStatus && (
+						<>
+							<Spinner />
+							{ loadingStatus }
+						</>
+					) }
+				</p>
 				<iframe
 					title={ __( 'WooPay disable feedback', 'woocommerce' ) }
 					src={ WOOPAY_DISABLE_FEEDBACK_URL }

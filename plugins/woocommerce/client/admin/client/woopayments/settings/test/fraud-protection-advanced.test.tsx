@@ -22,6 +22,10 @@ import {
 	Outcomes,
 	Rules,
 } from '../fraud-protection/advanced/constants';
+import {
+	recordMutations,
+	wasTextAddedToExistingNode,
+} from './helpers/live-region';
 
 const mockCreateErrorNotice = jest.fn();
 const mockSaveSettings = jest.fn();
@@ -322,6 +326,29 @@ describe( 'FraudProtectionAdvancedSettingsPage', () => {
 				name: 'Enable AVS Mismatch filter',
 			} )
 		).not.toBeInTheDocument();
+	} );
+
+	it( 'adds the loading text to a status region that is already on the page', () => {
+		mockUseSettings.mockReturnValue( {
+			isLoading: true,
+			isSaving: false,
+			isDirty: false,
+			saveSettings: mockSaveSettings,
+		} );
+
+		const records = recordMutations( () => {
+			render( <FraudProtectionAdvancedSettingsPage /> );
+		} );
+
+		const region = screen.getByRole( 'status' );
+		expect( region ).toHaveTextContent( 'Loading fraud protection rules' );
+		expect(
+			wasTextAddedToExistingNode(
+				records,
+				region,
+				'Loading fraud protection rules'
+			)
+		).toBe( true );
 	} );
 
 	it( 'marks the advanced fraud settings surface busy while saving', () => {
