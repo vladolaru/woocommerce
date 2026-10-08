@@ -43,13 +43,6 @@ class PaymentProcessingService {
 	private PaymentOperationIdempotency $idempotency;
 
 	/**
-	 * Payment exception policy.
-	 *
-	 * @var PaymentExceptionPolicy
-	 */
-	private PaymentExceptionPolicy $exception_policy;
-
-	/**
 	 * Payments logger.
 	 *
 	 * @var WC_Logger_Interface|null
@@ -75,18 +68,15 @@ class PaymentProcessingService {
 	 * @param OrderPaymentStore            $order_payment_store Order payment store.
 	 * @param OrderPaymentLifecycleService $lifecycle_service  Order payment lifecycle service.
 	 * @param PaymentOperationIdempotency  $idempotency          Payment operation idempotency service.
-	 * @param PaymentExceptionPolicy       $exception_policy     Payment exception policy.
 	 */
 	final public function init(
 		OrderPaymentStore $order_payment_store,
 		OrderPaymentLifecycleService $lifecycle_service,
-		PaymentOperationIdempotency $idempotency,
-		PaymentExceptionPolicy $exception_policy
+		PaymentOperationIdempotency $idempotency
 	): void {
 		$this->order_payment_store = $order_payment_store;
 		$this->lifecycle_service   = $lifecycle_service;
 		$this->idempotency         = $idempotency;
-		$this->exception_policy    = $exception_policy;
 	}
 
 	/**
@@ -424,7 +414,7 @@ class PaymentProcessingService {
 			try {
 				$provider_outcome = $provider->refund( $context, $idempotency_key );
 			} catch ( Throwable $exception ) {
-				$provider_outcome = $this->exception_policy->to_failed_outcome( $exception );
+				$provider_outcome = $this->failed_outcome_from_throwable( $exception );
 				$this->log_provider_failure( $order, 'refund', $idempotency_key, $exception );
 			}
 			$outcome = $provider_outcome;
@@ -695,7 +685,7 @@ class PaymentProcessingService {
 		try {
 			return $provider->charge( $context, $idempotency_key );
 		} catch ( Throwable $exception ) {
-			$outcome = $this->exception_policy->to_failed_outcome( $exception );
+			$outcome = $this->failed_outcome_from_throwable( $exception );
 			$this->log_provider_failure( $context->get_order(), 'charge', $idempotency_key, $exception );
 
 			return $outcome;
@@ -764,7 +754,7 @@ class PaymentProcessingService {
 					? $provider->capture( $context, $idempotency_key )
 					: $provider->cancel( $context, $idempotency_key );
 			} catch ( Throwable $exception ) {
-				$provider_outcome = $this->exception_policy->to_failed_outcome( $exception );
+				$provider_outcome = $this->failed_outcome_from_throwable( $exception );
 				$this->log_provider_failure( $order, $operation, $idempotency_key, $exception );
 			}
 			$outcome = $provider_outcome;
@@ -787,6 +777,28 @@ class PaymentProcessingService {
 		} finally {
 			$this->order_payment_store->release_order_payment_lock( $order, $profile, $lock_token );
 		}
+	}
+
+	/**
+	 * Build the failed outcome for a provider operation that threw.
+	 *
+	 * The error code comes from the exception's get_error_code() when it has one.
+	 *
+	 * @param Throwable $exception Throwable from the provider.
+	 * @return PaymentOutcome
+	 */
+	private function failed_outcome_from_throwable( Throwable $exception ): PaymentOutcome {
+		return new PaymentOutcome(
+			PaymentOutcome::STATUS_FAILED,
+			'',
+			'',
+			'',
+			'',
+			array(
+				PaymentOutcome::DATA_ERROR_CODE    => is_callable( array( $exception, 'get_error_code' ) ) ? (string) $exception->get_error_code() : '',
+				PaymentOutcome::DATA_ERROR_MESSAGE => $exception->getMessage(),
+			)
+		);
 	}
 
 	/**

@@ -6,7 +6,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
-use Automattic\WooCommerce\Internal\Payments\PaymentExceptionPolicy;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationIdempotency;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
@@ -34,6 +33,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
+use Exception;
 use RuntimeException;
 use WC_Order;
 use WC_Order_Refund;
@@ -489,6 +489,29 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A provider exception during a refund fails the refund with the exception message.
+	 */
+	public function test_refund_provider_exception_fails_with_the_exception_message(): void {
+		$order = $this->create_woopayments_order( '10.00' );
+		$this->create_local_refund( $order, 2.5, 'Adjustment' );
+
+		// phpcs:disable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
+		$provider = new class( new PaymentOutcome( PaymentOutcome::STATUS_FAILED ) ) extends RecordingProvider {
+			public function refund( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+				unset( $context, $idempotency_key );
+				throw new Exception( 'Processor unavailable.' );
+			}
+		};
+		// phpcs:enable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
+
+		$result = $this->sut->process_refund( PaymentContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.5, 'Adjustment' ), $provider );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'native_payment_refund_failed', $result->get_error_code(), 'An exception without an error code fails with the default refund code.' );
+		$this->assertSame( 'Processor unavailable.', $result->get_error_message() );
+	}
+
+	/**
 	 * @testdox Provider throwables emit one structured operation log with idempotency correlation.
 	 * @dataProvider provider_failure_operations
 	 *
@@ -548,8 +571,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$sut->init(
 			$this->store,
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			$this->idempotency,
-			wc_get_container()->get( PaymentExceptionPolicy::class )
+			$this->idempotency
 		);
 
 		switch ( $operation ) {
@@ -4478,8 +4500,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$sut->init(
 			$this->store,
 			$lifecycle_service,
-			$this->idempotency,
-			wc_get_container()->get( PaymentExceptionPolicy::class )
+			$this->idempotency
 		);
 
 		return $sut;

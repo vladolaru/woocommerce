@@ -15,6 +15,9 @@ namespace Automattic\WooCommerce\Internal\Payments;
  * lets the processing service and gateway registry consume the same provider
  * without duplicate interface declarations on each implementation.
  *
+ * When charge(), capture(), cancel() or refund() throws, the operation fails with the exception message as its
+ * error message and, when the exception has a get_error_code() method, that code as its error code.
+ *
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
