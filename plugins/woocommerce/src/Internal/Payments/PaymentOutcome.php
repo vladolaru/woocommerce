@@ -250,9 +250,9 @@ class PaymentOutcome {
 	/**
 	 * Request-scoped provider effect plan.
 	 *
-	 * @var ProviderOperationEffectPlanInterface|null
+	 * @var object|null
 	 */
-	private ?ProviderOperationEffectPlanInterface $effect_plan = null;
+	private ?object $effect_plan = null;
 
 	/**
 	 * Constructor.
@@ -370,12 +370,12 @@ class PaymentOutcome {
 	/**
 	 * Return a copy carrying a request-scoped provider effect plan.
 	 *
-	 * The plan stays out of outcome data, so it is never serialized or saved with the outcome.
+	 * Request-scoped data the provider hands from its call to its own effect appliers; the runtime carries it and never reads it.
 	 *
-	 * @param ProviderOperationEffectPlanInterface $effect_plan Provider effect plan.
+	 * @param object $effect_plan Provider effect plan.
 	 * @return self
 	 */
-	public function with_effect_plan( ProviderOperationEffectPlanInterface $effect_plan ): self {
+	public function with_effect_plan( object $effect_plan ): self {
 		$outcome              = clone $this;
 		$outcome->effect_plan = $effect_plan;
 
@@ -385,9 +385,9 @@ class PaymentOutcome {
 	/**
 	 * Get the request-scoped provider effect plan.
 	 *
-	 * @return ProviderOperationEffectPlanInterface|null
+	 * @return object|null
 	 */
-	public function get_effect_plan(): ?ProviderOperationEffectPlanInterface {
+	public function get_effect_plan(): ?object {
 		return $this->effect_plan;
 	}
 }

@@ -7,15 +7,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectPlanInterface;
-
 /**
  * Immutable request-scoped plan for WooPayments order effects.
  *
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsOrderEffectPlan implements ProviderOperationEffectPlanInterface {
+class WooPaymentsOrderEffectPlan {
 
 	/**
 	 * PaymentIntent effect plan.
