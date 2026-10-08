@@ -739,7 +739,7 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 		$container = wc_get_container();
 		$arbiter   = $container->get( NativePaymentsRuntimeArbiter::class );
 		$state     = $container->get( WooPaymentsSetupTier::class );
-		$matrix    = WooPaymentsProvider::get_bootstrap_root_matrix();
+		$matrix    = WooPaymentsProvider::get_classes_by_setup_tier();
 		update_option( 'woocommerce_woopayments_builtin_enabled', 'yes' );
 		update_option( 'active_plugins', array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) );
 		update_option(
@@ -761,14 +761,14 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 		$state->invalidate();
 
 		$this->assertSame( WooPaymentsSetupTier::DISABLED, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'An upgraded plugin store only has the seeded default.' );
-		$this->assertSame( WooPaymentsSetupTier::DISABLED, $state->get_state() );
+		$this->assertSame( WooPaymentsSetupTier::DISABLED, $state->get_effective_tier() );
 		$this->assertArrayNotHasKey( WooPaymentsSetupTier::DISABLED, $matrix, 'The disabled tier loads no switch controller.' );
 
 		wc_update_11205_seed_woopayments_setup_tier();
 		$state->invalidate();
 
 		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
-		$this->assertContains( WooPaymentsCutoverController::class, $matrix[ $state->get_state() ]['admin'] );
+		$this->assertContains( WooPaymentsCutoverController::class, $matrix[ $state->get_effective_tier() ]['admin'] );
 
 		delete_option( WooPaymentsSetupTier::OPTION_NAME );
 		update_option( 'active_plugins', array() );

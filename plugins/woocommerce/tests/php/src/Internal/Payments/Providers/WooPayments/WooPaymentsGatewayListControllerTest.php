@@ -87,7 +87,7 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should be a bootstrap root wherever the WooPayments gateway is registered, and nowhere else.
 	 */
 	public function test_is_rooted_with_every_gateway_registration(): void {
-		foreach ( WooPaymentsProvider::get_bootstrap_root_matrix() as $state => $request_groups ) {
+		foreach ( WooPaymentsProvider::get_classes_by_setup_tier() as $state => $request_groups ) {
 			foreach ( $request_groups as $request_type => $roots ) {
 				$this->assertSame(
 					in_array( WooPaymentsProvider::class, $roots, true ),
@@ -96,7 +96,7 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 				);
 			}
 		}
-		$this->assertContains( WooPaymentsGatewayListController::class, WooPaymentsProvider::get_bootstrap_root_matrix()[ WooPaymentsSetupTier::ACTIVE ]['rest'] );
+		$this->assertContains( WooPaymentsGatewayListController::class, WooPaymentsProvider::get_classes_by_setup_tier()[ WooPaymentsSetupTier::ACTIVE ]['rest'] );
 	}
 
 	/**

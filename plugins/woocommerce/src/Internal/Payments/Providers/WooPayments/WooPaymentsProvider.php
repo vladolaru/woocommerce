@@ -112,7 +112,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 	 *
 	 * @return array<string,array<string,array<int,class-string>>> Root classes in registration order.
 	 */
-	public static function get_bootstrap_root_matrix(): array {
+	public static function get_classes_by_setup_tier(): array {
 		$connected_rest_controllers = WooPaymentsAdminRestRouteRegistrar::get_connected_controller_roots();
 		$connected_admin            = array(
 			WooPaymentsCutoverController::class,

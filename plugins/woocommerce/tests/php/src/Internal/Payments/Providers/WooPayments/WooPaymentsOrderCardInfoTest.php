@@ -34,7 +34,7 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 	 * @testdox The card info provider loads on every request once WooPayments is connected or active, as the client registers it everywhere.
 	 */
 	public function test_card_info_provider_loads_wherever_an_order_can_render(): void {
-		$matrix = WooPaymentsProvider::get_bootstrap_root_matrix();
+		$matrix = WooPaymentsProvider::get_classes_by_setup_tier();
 		foreach ( array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
 			foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron' ) as $request ) {
 				$this->assertContains( WooPaymentsOrderCardInfo::class, $matrix[ $state ][ $request ], "{$state} {$request}" );

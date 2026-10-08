@@ -20,7 +20,7 @@ class WooPaymentsLogEntryFormatTest extends WC_Unit_Test_Case {
 	 * @testdox Loads on every request type of a connected or active store, where WooPayments writes log lines.
 	 */
 	public function test_loads_on_every_request_of_a_connected_store(): void {
-		$matrix = WooPaymentsProvider::get_bootstrap_root_matrix();
+		$matrix = WooPaymentsProvider::get_classes_by_setup_tier();
 
 		foreach ( array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
 			foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {

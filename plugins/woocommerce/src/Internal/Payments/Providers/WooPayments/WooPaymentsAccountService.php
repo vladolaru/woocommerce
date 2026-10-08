@@ -163,7 +163,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 *
 	 * @var WooPaymentsSetupTier|null
 	 */
-	private ?WooPaymentsSetupTier $native_payments_state = null;
+	private ?WooPaymentsSetupTier $setup_tier = null;
 
 	/**
 	 * Native payments runtime arbiter.
@@ -200,18 +200,18 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 *
 	 * @param LegacyProxy                                 $legacy_proxy                  Legacy proxy.
 	 * @param WooPaymentsGatewaySettingsSynchronizer|null $gateway_settings_synchronizer Optional split settings repository.
-	 * @param WooPaymentsSetupTier|null                   $native_payments_state         Optional durable native payments state store.
+	 * @param WooPaymentsSetupTier|null                   $setup_tier         Optional durable native payments state store.
 	 * @param NativePaymentsRuntimeArbiter|null           $runtime_arbiter               Optional native payments runtime arbiter.
 	 */
 	final public function init(
 		LegacyProxy $legacy_proxy,
 		?WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer = null,
-		?WooPaymentsSetupTier $native_payments_state = null,
+		?WooPaymentsSetupTier $setup_tier = null,
 		?NativePaymentsRuntimeArbiter $runtime_arbiter = null
 	): void {
 		$this->legacy_proxy                  = $legacy_proxy;
 		$this->gateway_settings_synchronizer = $gateway_settings_synchronizer;
-		$this->native_payments_state         = $native_payments_state;
+		$this->setup_tier                    = $setup_tier;
 		$this->runtime_arbiter               = $runtime_arbiter;
 	}
 
@@ -799,7 +799,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 			true !== ( $cache_contents['errored'] ?? null ) &&
 			is_array( $cache_contents['data'] ?? null )
 		) {
-			$this->synchronize_native_payments_state( $cache_contents['data'], $this->runtime_arbiter->is_plugin_runtime_active() );
+			$this->sync_setup_tier( $cache_contents['data'], $this->runtime_arbiter->is_plugin_runtime_active() );
 		}
 	}
 
@@ -824,10 +824,10 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 *
 	 * @since 11.2.0
 	 *
-	 * @param bool $plugin_runtime_active Whether the standalone plugin owns the runtime; false once the caller has deactivated it.
+	 * @param bool $extension_owns_payments Whether the standalone plugin owns the runtime; false once the caller has deactivated it.
 	 */
-	public function synchronize_native_payments_state_from_options( bool $plugin_runtime_active ): void {
-		if ( null === $this->native_payments_state || null === $this->runtime_arbiter ) {
+	public function sync_setup_tier_from_options( bool $extension_owns_payments ): void {
+		if ( null === $this->setup_tier || null === $this->runtime_arbiter ) {
 			return;
 		}
 
@@ -838,7 +838,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 			return;
 		}
 
-		$this->synchronize_native_payments_state( is_array( $cache_contents ) ? ( $cache_contents['data'] ?? null ) : null, $plugin_runtime_active );
+		$this->sync_setup_tier( is_array( $cache_contents ) ? ( $cache_contents['data'] ?? null ) : null, $extension_owns_payments );
 	}
 
 	/**
@@ -851,7 +851,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 *
 	 * @param mixed $cache_contents Account cache contents the plugin wrote.
 	 */
-	public function synchronize_after_plugin_account_cache_write( $cache_contents ): void {
+	public function sync_setup_tier_from_extension_account_cache( $cache_contents ): void {
 		if (
 			null === $this->runtime_arbiter ||
 			! $this->runtime_arbiter->is_plugin_runtime_active() ||
@@ -862,7 +862,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 			return;
 		}
 
-		$this->synchronize_native_payments_state( $cache_contents['data'], true );
+		$this->sync_setup_tier( $cache_contents['data'], true );
 	}
 
 	/**
@@ -871,20 +871,20 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * Missing account data preserves the prior state unless native is disabled or the plugin owns the runtime.
 	 *
 	 * @param mixed $account_data          Last persisted account data.
-	 * @param bool  $plugin_runtime_active Whether the standalone plugin owns the runtime.
+	 * @param bool  $extension_owns_payments Whether the standalone plugin owns the runtime.
 	 */
-	private function synchronize_native_payments_state( $account_data, bool $plugin_runtime_active ): void {
-		if ( null === $this->native_payments_state || null === $this->runtime_arbiter ) {
+	private function sync_setup_tier( $account_data, bool $extension_owns_payments ): void {
+		if ( null === $this->setup_tier || null === $this->runtime_arbiter ) {
 			return;
 		}
 
 		if ( ! $this->runtime_arbiter->is_native_runtime_enabled() || ( is_array( $account_data ) && ! $this->is_native_eligible_account_data( $account_data ) ) ) {
-			$this->native_payments_state->write_state( WooPaymentsSetupTier::DISABLED );
+			$this->setup_tier->write_tier( WooPaymentsSetupTier::DISABLED );
 			return;
 		}
 
-		if ( $plugin_runtime_active || array() === $account_data ) {
-			$this->native_payments_state->write_state( WooPaymentsSetupTier::AVAILABLE );
+		if ( $extension_owns_payments || array() === $account_data ) {
+			$this->setup_tier->write_tier( WooPaymentsSetupTier::AVAILABLE );
 			return;
 		}
 
@@ -898,7 +898,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		}
 
 		$settings = $this->get_gateway_settings();
-		$this->native_payments_state->write_state(
+		$this->setup_tier->write_tier(
 			'yes' === ( $settings['enabled'] ?? null ) ? WooPaymentsSetupTier::ACTIVE : WooPaymentsSetupTier::CONNECTED
 		);
 	}

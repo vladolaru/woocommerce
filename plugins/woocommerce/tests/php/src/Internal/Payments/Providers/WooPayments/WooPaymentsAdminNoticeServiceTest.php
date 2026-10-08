@@ -31,7 +31,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	 * @testdox The notice service should stay out of every native bootstrap root.
 	 */
 	public function test_notice_service_is_absent_from_native_bootstrap_roots(): void {
-		foreach ( WooPaymentsProvider::get_bootstrap_root_matrix() as $state => $request_groups ) {
+		foreach ( WooPaymentsProvider::get_classes_by_setup_tier() as $state => $request_groups ) {
 			foreach ( $request_groups as $request => $roots ) {
 				$this->assertNotContains( WooPaymentsAdminNoticeService::class, $roots, $state . ' ' . $request . ' requests must not bootstrap the notice service.' );
 			}

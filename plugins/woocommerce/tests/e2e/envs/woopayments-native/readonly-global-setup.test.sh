@@ -35,8 +35,8 @@ grep -Fq '$physical_account_cache = get_option( "wcpay_account_data", null )' <<
 grep -Fq '$account_cache["fetched"] = max( 0, time() - 1 );' <<< "$*"
 [[ "$*" == *'WooPayments native CI account fixture is not connected.'*'$account_cache["fetched"] = max( 0, time() - 1 );'*'update_option( "wcpay_account_data", $account_cache, false );'* ]]
 grep -Fq 'finally' <<< "$*"
-grep -Fq '$native_payments_state = wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier::class );' <<< "$*"
-grep -Fq 'if ( ! $native_payments_state->write_state( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier::ACTIVE ) ) { throw new RuntimeException( "WooPayments native CI active state could not be seeded." ); }' <<< "$*"
+grep -Fq '$setup_tier = wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier::class );' <<< "$*"
+grep -Fq 'if ( ! $setup_tier->write_tier( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier::ACTIVE ) ) { throw new RuntimeException( "WooPayments native CI active state could not be seeded." ); }' <<< "$*"
 [[ "$*" == *'wcpay_account_data'* ]]
 [[ "$*" == *'account_id'* ]]
 [[ "$*" == *'readonly-preconditions-seeded'* ]]

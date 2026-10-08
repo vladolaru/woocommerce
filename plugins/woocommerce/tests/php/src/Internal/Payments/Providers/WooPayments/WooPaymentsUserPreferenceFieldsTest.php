@@ -90,7 +90,7 @@ class WooPaymentsUserPreferenceFieldsTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Loads only on connected and active admin and REST requests, never on dormant tiers.
 	 */
 	public function test_bootstrap_matrix_bounds_registration_to_connected_admin_and_rest(): void {
-		foreach ( WooPaymentsProvider::get_bootstrap_root_matrix() as $state => $request_groups ) {
+		foreach ( WooPaymentsProvider::get_classes_by_setup_tier() as $state => $request_groups ) {
 			foreach ( $request_groups as $request_type => $roots ) {
 				$expected = in_array( $state, array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true )
 					&& in_array( $request_type, array( 'admin', 'rest' ), true );
@@ -98,6 +98,6 @@ class WooPaymentsUserPreferenceFieldsTest extends WC_REST_Unit_Test_Case {
 				$this->assertSame( $expected, in_array( WooPaymentsUserPreferenceFields::class, $roots, true ), $state . ' ' . $request_type );
 			}
 		}
-		$this->assertArrayHasKey( 'rest', WooPaymentsProvider::get_bootstrap_root_matrix()[ WooPaymentsSetupTier::CONNECTED ] );
+		$this->assertArrayHasKey( 'rest', WooPaymentsProvider::get_classes_by_setup_tier()[ WooPaymentsSetupTier::CONNECTED ] );
 	}
 }

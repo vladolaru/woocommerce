@@ -198,7 +198,7 @@ class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
 	 *
 	 * This proves the two owning services hook the preserved names when registered directly; that
 	 * the cron request tier of the bootstrap matrix actually resolves and registers them
-	 * (`WooPaymentsProvider::get_bootstrap_root_matrix()`) is owned by `NativePaymentsBootstrapTest`.
+	 * (`WooPaymentsProvider::get_classes_by_setup_tier()`) is owned by `NativePaymentsBootstrapTest`.
 	 */
 	public function test_native_handles_preserved_action_scheduler_hooks(): void {
 		wc_get_container()->get( WooPaymentsOperationalQueueService::class )->register();

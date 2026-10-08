@@ -61,6 +61,6 @@ class WooPaymentsSetupTierSyncController implements RegisterHooksInterface {
 	 * @param mixed $account_cache Account cache the extension wrote.
 	 */
 	private function sync_setup_tier( $account_cache ): void {
-		wc_get_container()->get( WooPaymentsAccountService::class )->synchronize_after_plugin_account_cache_write( $account_cache );
+		wc_get_container()->get( WooPaymentsAccountService::class )->sync_setup_tier_from_extension_account_cache( $account_cache );
 	}
 }

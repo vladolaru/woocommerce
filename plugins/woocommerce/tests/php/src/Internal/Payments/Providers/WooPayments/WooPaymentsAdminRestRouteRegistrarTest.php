@@ -65,7 +65,7 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 		set_current_screen( 'edit-page' );
 
 		try {
-			$roots = WooPaymentsProvider::get_bootstrap_root_matrix()[ WooPaymentsSetupTier::CONNECTED ]['admin'];
+			$roots = WooPaymentsProvider::get_classes_by_setup_tier()[ WooPaymentsSetupTier::CONNECTED ]['admin'];
 			$register_roots->invoke( $bootstrap, $container, $roots );
 			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising WordPress's internal REST initialization boundary.
 			do_action( 'rest_api_init', $this->server );
@@ -212,7 +212,7 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 						}
 
 						/** Return the effective native state. */
-						public function get_state(): string {
+						public function get_effective_tier(): string {
 							return $this->state;
 						}
 					};

@@ -94,7 +94,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 *
 	 * @var WooPaymentsSetupTier
 	 */
-	private WooPaymentsSetupTier $native_payments_state;
+	private WooPaymentsSetupTier $setup_tier;
 
 	/**
 	 * Cutover state store.
@@ -112,11 +112,11 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 * @internal
 	 *
 	 * @param NativePaymentsRuntimeArbiter $arbiter               Runtime owner arbiter.
-	 * @param WooPaymentsSetupTier         $native_payments_state Native payments state store.
+	 * @param WooPaymentsSetupTier         $setup_tier Native payments state store.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsSetupTier $native_payments_state ): void {
-		$this->arbiter               = $arbiter;
-		$this->native_payments_state = $native_payments_state;
+	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsSetupTier $setup_tier ): void {
+		$this->arbiter    = $arbiter;
+		$this->setup_tier = $setup_tier;
 	}
 
 	/**
@@ -146,7 +146,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function has_support_diagnostics(): bool {
-		return in_array( $this->native_payments_state->get_stored_state(), array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true )
+		return in_array( $this->setup_tier->get_stored_tier(), array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true )
 			|| $this->arbiter->is_plugin_runtime_active()
 			|| $this->arbiter->is_kill_switch_active()
 			|| null !== $this->get_cutover_state_store()->get_record();

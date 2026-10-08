@@ -52,7 +52,7 @@ final class WooPaymentsSetupTier {
 	 *
 	 * @var array<int,string>
 	 */
-	private array $states = array();
+	private array $tiers = array();
 
 	/**
 	 * The provider's classes by setup tier and request type, read once per request.
@@ -79,18 +79,18 @@ final class WooPaymentsSetupTier {
 	 *
 	 * @return string One of the state constants.
 	 */
-	public function get_state(): string {
-		$state = $this->get_stored_state();
+	public function get_effective_tier(): string {
+		$tier  = $this->get_stored_tier();
 		$owner = $this->runtime_arbiter->get_runtime_owner();
 		if ( NativePaymentsRuntimeArbiter::OWNER_NONE === $owner ) {
 			return self::DISABLED;
 		}
 
-		if ( NativePaymentsRuntimeArbiter::OWNER_EXTENSION === $owner && in_array( $state, array( self::CONNECTED, self::ACTIVE ), true ) ) {
+		if ( NativePaymentsRuntimeArbiter::OWNER_EXTENSION === $owner && in_array( $tier, array( self::CONNECTED, self::ACTIVE ), true ) ) {
 			return self::AVAILABLE;
 		}
 
-		return $state;
+		return $tier;
 	}
 
 	/**
@@ -111,16 +111,16 @@ final class WooPaymentsSetupTier {
 			$classes[] = WooPaymentsSetupTierSyncController::class;
 		}
 
-		$state = $this->get_state();
-		if ( self::DISABLED === $state ) {
+		$tier = $this->get_effective_tier();
+		if ( self::DISABLED === $tier ) {
 			return $classes;
 		}
 
 		if ( null === $this->classes_by_setup_tier ) {
-			$this->classes_by_setup_tier = WooPaymentsProvider::get_bootstrap_root_matrix();
+			$this->classes_by_setup_tier = WooPaymentsProvider::get_classes_by_setup_tier();
 		}
 
-		return array_merge( $classes, $this->classes_by_setup_tier[ $state ][ $request_type ] ?? array() );
+		return array_merge( $classes, $this->classes_by_setup_tier[ $tier ][ $request_type ] ?? array() );
 	}
 
 	/**
@@ -132,14 +132,14 @@ final class WooPaymentsSetupTier {
 	 *
 	 * @return string One of the state constants.
 	 */
-	public function get_stored_state(): string {
+	public function get_stored_tier(): string {
 		$blog_id = get_current_blog_id();
-		if ( ! array_key_exists( $blog_id, $this->states ) ) {
-			$stored_state             = get_option( self::OPTION_NAME, self::DISABLED );
-			$this->states[ $blog_id ] = $this->is_valid_state( $stored_state ) ? $stored_state : self::DISABLED;
+		if ( ! array_key_exists( $blog_id, $this->tiers ) ) {
+			$stored_tier             = get_option( self::OPTION_NAME, self::DISABLED );
+			$this->tiers[ $blog_id ] = $this->is_valid_tier( $stored_tier ) ? $stored_tier : self::DISABLED;
 		}
 
-		return $this->states[ $blog_id ];
+		return $this->tiers[ $blog_id ];
 	}
 
 	/**
@@ -147,32 +147,32 @@ final class WooPaymentsSetupTier {
 	 *
 	 * @since 11.2.0
 	 *
-	 * @param string $state State to persist.
+	 * @param string $tier State to persist.
 	 * @return bool Whether the exact autoloaded state was read back.
 	 */
-	public function write_state( string $state ): bool {
-		if ( ! $this->is_valid_state( $state ) ) {
+	public function write_tier( string $tier ): bool {
+		if ( ! $this->is_valid_tier( $tier ) ) {
 			return false;
 		}
 
 		// Every account refresh re-syncs the state; an unchanged autoloaded value needs no write or reread.
-		if ( get_option( self::OPTION_NAME, null ) === $state && array_key_exists( self::OPTION_NAME, wp_load_alloptions() ) ) {
-			$this->states[ get_current_blog_id() ] = $state;
+		if ( get_option( self::OPTION_NAME, null ) === $tier && array_key_exists( self::OPTION_NAME, wp_load_alloptions() ) ) {
+			$this->tiers[ get_current_blog_id() ] = $tier;
 			return true;
 		}
 
-		update_option( self::OPTION_NAME, $state, true );
+		update_option( self::OPTION_NAME, $tier, true );
 		wp_set_option_autoload_values( array( self::OPTION_NAME => true ) );
 		wp_cache_delete( self::OPTION_NAME, 'options' );
 
-		$stored_state = get_option( self::OPTION_NAME, null );
-		$autoloaded   = array_key_exists( self::OPTION_NAME, wp_load_alloptions( true ) );
-		if ( $stored_state !== $state || ! $autoloaded ) {
-			$this->log_write_failure( $state, $stored_state, $autoloaded );
+		$stored_tier = get_option( self::OPTION_NAME, null );
+		$autoloaded  = array_key_exists( self::OPTION_NAME, wp_load_alloptions( true ) );
+		if ( $stored_tier !== $tier || ! $autoloaded ) {
+			$this->log_write_failure( $tier, $stored_tier, $autoloaded );
 			return false;
 		}
 
-		$this->states[ get_current_blog_id() ] = $state;
+		$this->tiers[ get_current_blog_id() ] = $tier;
 		return true;
 	}
 
@@ -184,22 +184,22 @@ final class WooPaymentsSetupTier {
 	 * @param int|null $blog_id Blog ID, or null for the current blog.
 	 */
 	public function invalidate( ?int $blog_id = null ): void {
-		unset( $this->states[ $blog_id ?? get_current_blog_id() ] );
+		unset( $this->tiers[ $blog_id ?? get_current_blog_id() ] );
 	}
 
 	/**
 	 * Log a state write whose readback did not match, with the requested and stored values.
 	 *
-	 * @param string $requested_state State that was written.
-	 * @param mixed  $stored_state    Value read back from the option.
+	 * @param string $requested_tier State that was written.
+	 * @param mixed  $stored_tier    Value read back from the option.
 	 * @param bool   $autoloaded      Whether the option is autoloaded.
 	 */
-	private function log_write_failure( string $requested_state, $stored_state, bool $autoloaded ): void {
+	private function log_write_failure( string $requested_tier, $stored_tier, bool $autoloaded ): void {
 		wc_get_logger()->error(
 			sprintf(
 				'Native payments state write failed: requested %1$s, stored %2$s, autoloaded %3$s.',
-				$requested_state,
-				(string) wp_json_encode( $stored_state ),
+				$requested_tier,
+				(string) wp_json_encode( $stored_tier ),
 				$autoloaded ? 'yes' : 'no'
 			),
 			array( 'source' => 'native-payments' )
@@ -209,10 +209,10 @@ final class WooPaymentsSetupTier {
 	/**
 	 * Tell whether a value is an exact native state.
 	 *
-	 * @param mixed $state Candidate state.
+	 * @param mixed $tier Candidate state.
 	 * @return bool
 	 */
-	private function is_valid_state( $state ): bool {
-		return is_string( $state ) && in_array( $state, array( self::DISABLED, self::AVAILABLE, self::CONNECTED, self::ACTIVE ), true );
+	private function is_valid_tier( $tier ): bool {
+		return is_string( $tier ) && in_array( $tier, array( self::DISABLED, self::AVAILABLE, self::CONNECTED, self::ACTIVE ), true );
 	}
 }

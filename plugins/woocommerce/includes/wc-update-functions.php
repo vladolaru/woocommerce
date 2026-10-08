@@ -3836,10 +3836,11 @@ function wc_update_11204_seed_multi_currency_feature(): void {
  * @return void
  */
 function wc_update_11205_seed_woopayments_setup_tier(): void {
-	$container = wc_get_container();
-	if ( ! $container->get( NativePaymentsRuntimeArbiter::class )->is_plugin_runtime_active() ) {
+	$container               = wc_get_container();
+	$extension_owns_payments = $container->get( NativePaymentsRuntimeArbiter::class )->is_plugin_runtime_active();
+	if ( ! $extension_owns_payments ) {
 		return;
 	}
 
-	$container->get( WooPaymentsAccountService::class )->synchronize_native_payments_state_from_options( true );
+	$container->get( WooPaymentsAccountService::class )->sync_setup_tier_from_options( $extension_owns_payments );
 }

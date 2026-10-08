@@ -258,7 +258,7 @@ class WooPaymentsSellingLocationsFraudSyncTest extends WC_Unit_Test_Case {
 	 * @testdox Should register on admin, REST, cron and WP-CLI requests of connected and active stores.
 	 */
 	public function test_registers_on_every_settings_writer_tier(): void {
-		$matrix = WooPaymentsProvider::get_bootstrap_root_matrix();
+		$matrix = WooPaymentsProvider::get_classes_by_setup_tier();
 
 		foreach ( array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
 			foreach ( array( 'admin', 'rest', 'cron', 'cli' ) as $request ) {

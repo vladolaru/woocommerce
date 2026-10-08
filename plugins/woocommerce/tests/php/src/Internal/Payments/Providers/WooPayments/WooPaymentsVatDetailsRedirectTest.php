@@ -65,7 +65,7 @@ class WooPaymentsVatDetailsRedirectTest extends WC_Unit_Test_Case {
 	 * @testdox Loads on front-end requests of a connected or active store, where template_redirect fires.
 	 */
 	public function test_loads_on_front_end_requests_of_a_connected_store(): void {
-		$matrix = WooPaymentsProvider::get_bootstrap_root_matrix();
+		$matrix = WooPaymentsProvider::get_classes_by_setup_tier();
 
 		foreach ( array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
 			$this->assertContains( WooPaymentsVatDetailsRedirect::class, $matrix[ $state ]['front'], $state );

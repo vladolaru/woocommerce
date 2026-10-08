@@ -1104,7 +1104,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
 		$state = wc_get_container()->get( WooPaymentsSetupTier::class );
 		$state->invalidate();
-		$this->assertTrue( $state->write_state( WooPaymentsSetupTier::AVAILABLE ), 'The store starts native-owned without an account.' );
+		$this->assertTrue( $state->write_tier( WooPaymentsSetupTier::AVAILABLE ), 'The store starts native-owned without an account.' );
 		$fixture = $this->arrange_native_nox_picks(
 			array( 'card' => true ),
 			array( 'upe_enabled_payment_method_ids' => array( 'card' ) ),
@@ -1116,7 +1116,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( 'yes', get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['enabled'], 'Session creation enabled the card gateway.' );
 		$this->assertFalse( wc_get_container()->get( WooPaymentsAccountService::class )->has_account(), 'The platform created no account yet.' );
-		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $state->get_state(), 'Without an account the store stays below the active tier.' );
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $state->get_effective_tier(), 'Without an account the store stays below the active tier.' );
 	}
 
 	/**
@@ -1911,7 +1911,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
 		$state = wc_get_container()->get( WooPaymentsSetupTier::class );
 		$state->invalidate();
-		$this->assertTrue( $state->write_state( WooPaymentsSetupTier::CONNECTED ), 'The store starts native-owned and connected.' );
+		$this->assertTrue( $state->write_tier( WooPaymentsSetupTier::CONNECTED ), 'The store starts native-owned and connected.' );
 		$this->arrange_native_finalize_projection(
 			array( $this->get_native_finalize_projection_account( array( 'is_live' => $is_live ) ) ),
 			array( 'card' => true ),
@@ -1938,7 +1938,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $response->get_data()['success'] );
 		$this->assertSame( 'yes', $settings['enabled'] );
 		$this->assertSame( $is_live ? 'no' : 'yes', $settings['test_mode'] );
-		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $state->get_state() );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $state->get_effective_tier() );
 		$this->assertSame(
 			array(
 				'promo'                    => $promo,

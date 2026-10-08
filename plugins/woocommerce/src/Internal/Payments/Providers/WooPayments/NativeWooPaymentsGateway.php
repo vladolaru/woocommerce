@@ -566,7 +566,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return false;
 		}
 		// Only the active tier wires the checkout, redirect-return and express handlers; a stale tier must not offer a half-wired checkout.
-		if ( WooPaymentsSetupTier::ACTIVE !== wc_get_container()->get( WooPaymentsSetupTier::class )->get_state() ) {
+		if ( WooPaymentsSetupTier::ACTIVE !== wc_get_container()->get( WooPaymentsSetupTier::class )->get_effective_tier() ) {
 			return false;
 		}
 		if ( 'card' !== $this->get_payment_method_id() && ! $this->get_account_service()->is_gateway_enabled() ) {

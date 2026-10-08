@@ -1405,7 +1405,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			 *
 			 * @param bool $plugin_runtime_active Whether the plugin owns the runtime.
 			 */
-			public function synchronize_native_payments_state_from_options( bool $plugin_runtime_active ): void {
+			public function sync_setup_tier_from_options( bool $plugin_runtime_active ): void {
 				unset( $plugin_runtime_active );
 				++$this->sync_calls;
 			}
@@ -5820,10 +5820,10 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
 		$state = wc_get_container()->get( WooPaymentsSetupTier::class );
 		$state->invalidate();
-		$effective_state = $state->get_state();
+		$effective_state = $state->get_effective_tier();
 
 		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $effective_state );
-		$this->assertContains( WooPaymentsProvider::class, WooPaymentsProvider::get_bootstrap_root_matrix()[ $effective_state ]['front'] ?? array() );
+		$this->assertContains( WooPaymentsProvider::class, WooPaymentsProvider::get_classes_by_setup_tier()[ $effective_state ]['front'] ?? array() );
 	}
 
 	/**

@@ -65,7 +65,7 @@ class ApiTest extends WC_Unit_Test_Case {
 	 */
 	public function test_registers_bundled_integrations_without_resolving_woopayments_below_active_tier( string $state ): void {
 		$woopayments_resolutions = 0;
-		$this->state->write_state( $state );
+		$this->state->write_tier( $state );
 		$this->register_blocks_integrations(
 			static function () use ( &$woopayments_resolutions ): WooPayments {
 				++$woopayments_resolutions;
@@ -98,7 +98,7 @@ class ApiTest extends WC_Unit_Test_Case {
 			$this->createMock( WooPaymentsWooPaySessionService::class ),
 			$this->createMock( WooPaymentsExpressCheckoutService::class )
 		);
-		$this->state->write_state( WooPaymentsSetupTier::ACTIVE );
+		$this->state->write_tier( WooPaymentsSetupTier::ACTIVE );
 		$this->register_blocks_integrations(
 			static function () use ( &$woopayments_resolutions, $woopayments ): WooPayments {
 				++$woopayments_resolutions;

@@ -142,7 +142,7 @@ class Api {
 			Package::container()->get( CashOnDelivery::class )
 		);
 
-		if ( WooPaymentsSetupTier::ACTIVE !== wc_get_container()->get( WooPaymentsSetupTier::class )->get_state() ) {
+		if ( WooPaymentsSetupTier::ACTIVE !== wc_get_container()->get( WooPaymentsSetupTier::class )->get_effective_tier() ) {
 			return;
 		}
 

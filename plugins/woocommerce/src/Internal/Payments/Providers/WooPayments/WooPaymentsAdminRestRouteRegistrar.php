@@ -59,11 +59,11 @@ final class WooPaymentsAdminRestRouteRegistrar implements RegisterHooksInterface
 		/**
 		 * Effective native state store.
 		 *
-		 * @var WooPaymentsSetupTier $state_store
+		 * @var WooPaymentsSetupTier $setup_tier
 		 */
-		$state_store = $this->container->get( WooPaymentsSetupTier::class );
+		$setup_tier = $this->container->get( WooPaymentsSetupTier::class );
 
-		foreach ( self::get_controller_roots_for_state( $state_store->get_state() ) as $root ) {
+		foreach ( self::get_controller_roots_for_state( $setup_tier->get_effective_tier() ) as $root ) {
 			/**
 			 * Deferred route controller.
 			 *

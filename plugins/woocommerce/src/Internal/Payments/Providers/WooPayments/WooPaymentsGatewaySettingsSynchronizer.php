@@ -39,7 +39,7 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	 *
 	 * @var WooPaymentsSetupTier|null
 	 */
-	private ?WooPaymentsSetupTier $native_payments_state = null;
+	private ?WooPaymentsSetupTier $setup_tier = null;
 
 	/**
 	 * Native payments runtime arbiter.
@@ -62,12 +62,12 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsSetupTier         $native_payments_state Durable native payments state store.
+	 * @param WooPaymentsSetupTier         $setup_tier Durable native payments state store.
 	 * @param NativePaymentsRuntimeArbiter $runtime_arbiter       Native payments runtime arbiter.
 	 */
-	final public function init( WooPaymentsSetupTier $native_payments_state, NativePaymentsRuntimeArbiter $runtime_arbiter ): void { // phpcs:ignore Generic.CodeAnalysis.UnnecessaryFinalModifier.Found -- Required by WooCommerce injection method rules.
-		$this->native_payments_state = $native_payments_state;
-		$this->runtime_arbiter       = $runtime_arbiter;
+	final public function init( WooPaymentsSetupTier $setup_tier, NativePaymentsRuntimeArbiter $runtime_arbiter ): void { // phpcs:ignore Generic.CodeAnalysis.UnnecessaryFinalModifier.Found -- Required by WooCommerce injection method rules.
+		$this->setup_tier      = $setup_tier;
+		$this->runtime_arbiter = $runtime_arbiter;
 	}
 
 	/**
@@ -133,7 +133,7 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 				'failed_option_names'           => array( self::SETTINGS_OPTION ),
 			);
 		}
-		$this->synchronize_native_payments_state( $settings );
+		$this->sync_setup_tier( $settings );
 
 		$split_projection      = $this->synchronize_split_settings( $settings, $canonical_projection_is_stable );
 		$updated_split_options = $split_projection['updated_options'];
@@ -221,7 +221,7 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 			return;
 		}
 
-		$this->synchronize_native_payments_state( is_array( $value ) ? $value : array() );
+		$this->sync_setup_tier( is_array( $value ) ? $value : array() );
 	}
 
 	/**
@@ -229,22 +229,22 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	 *
 	 * @param array<string,mixed> $settings Persisted canonical settings.
 	 */
-	private function synchronize_native_payments_state( array $settings ): void {
-		if ( null === $this->native_payments_state || null === $this->runtime_arbiter ) {
+	private function sync_setup_tier( array $settings ): void {
+		if ( null === $this->setup_tier || null === $this->runtime_arbiter ) {
 			return;
 		}
 
 		if ( ! $this->runtime_arbiter->is_native_runtime_enabled() ) {
-			$this->native_payments_state->write_state( WooPaymentsSetupTier::DISABLED );
+			$this->setup_tier->write_tier( WooPaymentsSetupTier::DISABLED );
 			return;
 		}
 
-		$current_state = $this->native_payments_state->get_state();
+		$current_state = $this->setup_tier->get_effective_tier();
 		if ( ! in_array( $current_state, array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true ) ) {
 			return;
 		}
 
-		$this->native_payments_state->write_state(
+		$this->setup_tier->write_tier(
 			'yes' === ( $settings['enabled'] ?? null ) ? WooPaymentsSetupTier::ACTIVE : WooPaymentsSetupTier::CONNECTED
 		);
 	}

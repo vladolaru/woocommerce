@@ -170,7 +170,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->fake_plugin( false );
 		update_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION, '1', true );
 		$this->set_native_state( WooPaymentsSetupTier::CONNECTED );
-		$this->assertSame( WooPaymentsSetupTier::DISABLED, wc_get_container()->get( WooPaymentsSetupTier::class )->get_state(), 'The kill switch should clamp the effective state.' );
+		$this->assertSame( WooPaymentsSetupTier::DISABLED, wc_get_container()->get( WooPaymentsSetupTier::class )->get_effective_tier(), 'The kill switch should clamp the effective state.' );
 		$sut = $this->get_sut();
 		$this->remove_status_hooks( $sut );
 

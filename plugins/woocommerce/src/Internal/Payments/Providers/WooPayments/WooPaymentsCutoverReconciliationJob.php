@@ -1056,7 +1056,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		} else {
 			$this->exclude( $claimed, self::INELIGIBLE_CODE );
 		}
-		$this->account_service->synchronize_native_payments_state_from_options( true );
+		$this->account_service->sync_setup_tier_from_options( true );
 		$this->log_error( 'WooPayments cutover closed without switching: it was held past the retry window while the account was not eligible for native payments.', array( 'generation' => $claimed['generation'] ) );
 	}
 
@@ -1302,7 +1302,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			return;
 		}
 
-		$this->account_service->synchronize_native_payments_state_from_options( false );
+		$this->account_service->sync_setup_tier_from_options( false );
 		$this->schedule_ownership_verification( $claimed, $outcomes );
 	}
 
@@ -1561,7 +1561,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				$verification['request_origin_token'] = self::$request_token;
 				$verification                         = $this->append_step( $verification, 'verify_builtin_ownership', $now );
 				if ( $this->state_store->compare_and_set_record( $record, $verification ) ) {
-					$this->account_service->synchronize_native_payments_state_from_options( false );
+					$this->account_service->sync_setup_tier_from_options( false );
 					$this->scheduler->cancel( $generation, $record['attempt'] + 1 );
 					$this->ensure_record_scheduled( $verification, $now );
 				}
@@ -1593,7 +1593,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$this->defer( $claimed, array( 'builtin_ownership_unverified' ) );
 			return;
 		}
-		$this->account_service->synchronize_native_payments_state_from_options( false );
+		$this->account_service->sync_setup_tier_from_options( false );
 		// Every finalized claim reaches this step on its own site, manual and network ones included, once native owns it.
 		try {
 			$remediation_scheduled = $this->preflight_service->ensure_fee_remediation_scheduled();

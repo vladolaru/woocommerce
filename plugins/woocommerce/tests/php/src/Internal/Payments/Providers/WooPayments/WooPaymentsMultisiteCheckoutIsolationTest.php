@@ -430,7 +430,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 		update_option( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, 'yes' );
 		delete_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION );
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
-		wc_get_container()->get( WooPaymentsSetupTier::class )->write_state( WooPaymentsSetupTier::ACTIVE );
+		wc_get_container()->get( WooPaymentsSetupTier::class )->write_tier( WooPaymentsSetupTier::ACTIVE );
 	}
 
 	/**
