@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
@@ -38,9 +37,9 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	/**
 	 * Durable native payments state store.
 	 *
-	 * @var NativePaymentsState|null
+	 * @var WooPaymentsSetupTier|null
 	 */
-	private ?NativePaymentsState $native_payments_state = null;
+	private ?WooPaymentsSetupTier $native_payments_state = null;
 
 	/**
 	 * Native payments runtime arbiter.
@@ -63,10 +62,10 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsState          $native_payments_state Durable native payments state store.
+	 * @param WooPaymentsSetupTier         $native_payments_state Durable native payments state store.
 	 * @param NativePaymentsRuntimeArbiter $runtime_arbiter       Native payments runtime arbiter.
 	 */
-	final public function init( NativePaymentsState $native_payments_state, NativePaymentsRuntimeArbiter $runtime_arbiter ): void { // phpcs:ignore Generic.CodeAnalysis.UnnecessaryFinalModifier.Found -- Required by WooCommerce injection method rules.
+	final public function init( WooPaymentsSetupTier $native_payments_state, NativePaymentsRuntimeArbiter $runtime_arbiter ): void { // phpcs:ignore Generic.CodeAnalysis.UnnecessaryFinalModifier.Found -- Required by WooCommerce injection method rules.
 		$this->native_payments_state = $native_payments_state;
 		$this->runtime_arbiter       = $runtime_arbiter;
 	}
@@ -236,17 +235,17 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 		}
 
 		if ( ! $this->runtime_arbiter->is_native_runtime_enabled() ) {
-			$this->native_payments_state->write_state( NativePaymentsState::DISABLED );
+			$this->native_payments_state->write_state( WooPaymentsSetupTier::DISABLED );
 			return;
 		}
 
 		$current_state = $this->native_payments_state->get_state();
-		if ( ! in_array( $current_state, array( NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ), true ) ) {
+		if ( ! in_array( $current_state, array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true ) ) {
 			return;
 		}
 
 		$this->native_payments_state->write_state(
-			'yes' === ( $settings['enabled'] ?? null ) ? NativePaymentsState::ACTIVE : NativePaymentsState::CONNECTED
+			'yes' === ( $settings['enabled'] ?? null ) ? WooPaymentsSetupTier::ACTIVE : WooPaymentsSetupTier::CONNECTED
 		);
 	}
 

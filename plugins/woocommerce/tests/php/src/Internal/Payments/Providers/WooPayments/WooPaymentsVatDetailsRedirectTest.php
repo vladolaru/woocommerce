@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsVatDetailsRedirect;
 use WC_Unit_Test_Case;
@@ -67,10 +67,10 @@ class WooPaymentsVatDetailsRedirectTest extends WC_Unit_Test_Case {
 	public function test_loads_on_front_end_requests_of_a_connected_store(): void {
 		$matrix = WooPaymentsProvider::get_bootstrap_root_matrix();
 
-		foreach ( array( NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ) as $state ) {
+		foreach ( array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
 			$this->assertContains( WooPaymentsVatDetailsRedirect::class, $matrix[ $state ]['front'], $state );
 		}
-		$this->assertNotContains( WooPaymentsVatDetailsRedirect::class, $matrix[ NativePaymentsState::AVAILABLE ]['front'] ?? array(), 'A store without an account has no VAT details to show.' );
+		$this->assertNotContains( WooPaymentsVatDetailsRedirect::class, $matrix[ WooPaymentsSetupTier::AVAILABLE ]['front'] ?? array(), 'A store without an account has no VAT details to show.' );
 	}
 
 	/**

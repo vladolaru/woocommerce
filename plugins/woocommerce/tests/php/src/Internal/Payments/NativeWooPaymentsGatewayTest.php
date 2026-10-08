@@ -8,7 +8,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -91,8 +91,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	private function activate_native_tier(): void {
 		$this->make_native_own_payments();
-		update_option( NativePaymentsState::OPTION_NAME, NativePaymentsState::ACTIVE, true );
-		wc_get_container()->get( NativePaymentsState::class )->invalidate();
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::ACTIVE, true );
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 	}
 
 	/**
@@ -101,7 +101,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	public function tearDown(): void {
 		remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
-		wc_get_container()->get( NativePaymentsState::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		remove_all_actions( 'woocommerce_checkout_subscription_created' );
 		remove_all_actions( 'woocommerce_scheduled_subscription_payment_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		remove_all_actions( 'woocommerce_scheduled_subscription_payment_woocommerce_payments_amazon_pay' );

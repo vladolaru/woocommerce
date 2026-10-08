@@ -90,10 +90,10 @@ test(
 );
 
 test.describe( 'Native payments disabled store assets', () => {
-	let initialNativePaymentsState: string;
+	let initialWooPaymentsSetupTier: string;
 
 	test.beforeAll( async () => {
-		initialNativePaymentsState = (
+		initialWooPaymentsSetupTier = (
 			await wpCLI( [
 				'wp',
 				'eval',
@@ -111,7 +111,7 @@ test.describe( 'Native payments disabled store assets', () => {
 
 	test.afterAll( async () => {
 		if (
-			initialNativePaymentsState === NATIVE_PAYMENTS_STATE_ABSENT_MARKER
+			initialWooPaymentsSetupTier === NATIVE_PAYMENTS_STATE_ABSENT_MARKER
 		) {
 			await wpCLI( [
 				'wp',
@@ -125,7 +125,7 @@ test.describe( 'Native payments disabled store assets', () => {
 				'option',
 				'update',
 				NATIVE_PAYMENTS_STATE_OPTION,
-				initialNativePaymentsState,
+				initialWooPaymentsSetupTier,
 			] );
 		}
 	} );

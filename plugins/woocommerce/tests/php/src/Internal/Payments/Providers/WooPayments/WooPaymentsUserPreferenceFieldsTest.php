@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Admin\WCAdminUser;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsUserPreferenceFields;
 use WC_REST_Unit_Test_Case;
@@ -92,12 +92,12 @@ class WooPaymentsUserPreferenceFieldsTest extends WC_REST_Unit_Test_Case {
 	public function test_bootstrap_matrix_bounds_registration_to_connected_admin_and_rest(): void {
 		foreach ( WooPaymentsProvider::get_bootstrap_root_matrix() as $state => $request_groups ) {
 			foreach ( $request_groups as $request_type => $roots ) {
-				$expected = in_array( $state, array( NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ), true )
+				$expected = in_array( $state, array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true )
 					&& in_array( $request_type, array( 'admin', 'rest' ), true );
 
 				$this->assertSame( $expected, in_array( WooPaymentsUserPreferenceFields::class, $roots, true ), $state . ' ' . $request_type );
 			}
 		}
-		$this->assertArrayHasKey( 'rest', WooPaymentsProvider::get_bootstrap_root_matrix()[ NativePaymentsState::CONNECTED ] );
+		$this->assertArrayHasKey( 'rest', WooPaymentsProvider::get_bootstrap_root_matrix()[ WooPaymentsSetupTier::CONNECTED ] );
 	}
 }

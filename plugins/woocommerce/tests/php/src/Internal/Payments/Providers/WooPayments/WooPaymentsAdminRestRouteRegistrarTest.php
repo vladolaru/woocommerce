@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Container;
 use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminRestRouteRegistrar;
@@ -52,21 +52,20 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 
 		$previous_screen = $current_screen;
 		$controller      = $this->create_payment_details_controller();
-		$fixture         = $this->create_container( NativePaymentsState::CONNECTED, $controller );
+		$fixture         = $this->create_container( WooPaymentsSetupTier::CONNECTED, $controller );
 		$container       = $fixture['container'];
 		$runtime         = $fixture['runtime'];
 		$bootstrap       = new NativePaymentsBootstrap(
-			array( WooPaymentsProvider::class, 'get_bootstrap_root_matrix' ),
+			static fn( $container, string $request_type ): array => $container->get( WooPaymentsSetupTier::class )->get_classes_for_request( $request_type ),
+			static fn( $container ): bool => $container->get( NativePaymentsRuntimeArbiter::class )->should_native_register(),
 			static fn(): array => array()
 		);
-		$roots_for       = new ReflectionMethod( NativePaymentsBootstrap::class, 'roots_for' );
 		$register_roots  = new ReflectionMethod( NativePaymentsBootstrap::class, 'register_roots' );
-		$roots_for->setAccessible( true );
 		$register_roots->setAccessible( true );
 		set_current_screen( 'edit-page' );
 
 		try {
-			$roots = $roots_for->invoke( $bootstrap, NativePaymentsState::CONNECTED, 'admin' );
+			$roots = WooPaymentsProvider::get_bootstrap_root_matrix()[ WooPaymentsSetupTier::CONNECTED ]['admin'];
 			$register_roots->invoke( $bootstrap, $container, $roots );
 			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising WordPress's internal REST initialization boundary.
 			do_action( 'rest_api_init', $this->server );
@@ -100,11 +99,11 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 		try {
 			$registrar->register_rest_controllers();
 
-			$expected = array( NativePaymentsState::class );
-			if ( in_array( $state, array( NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ), true ) ) {
+			$expected = array( WooPaymentsSetupTier::class );
+			if ( in_array( $state, array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true ) ) {
 				$expected = array_merge( $expected, WooPaymentsAdminRestRouteRegistrar::get_connected_controller_roots() );
 			}
-			if ( NativePaymentsState::ACTIVE === $state ) {
+			if ( WooPaymentsSetupTier::ACTIVE === $state ) {
 				$expected[] = WooPaymentsWooPaySessionController::class;
 			}
 
@@ -118,9 +117,9 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 	/** @return array<string,array{string}> */
 	public static function effective_state_provider(): array {
 		return array(
-			'available' => array( NativePaymentsState::AVAILABLE ),
-			'connected' => array( NativePaymentsState::CONNECTED ),
-			'active'    => array( NativePaymentsState::ACTIVE ),
+			'available' => array( WooPaymentsSetupTier::AVAILABLE ),
+			'connected' => array( WooPaymentsSetupTier::CONNECTED ),
+			'active'    => array( WooPaymentsSetupTier::ACTIVE ),
 		);
 	}
 
@@ -198,7 +197,7 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 					return $this->registrar;
 				}
 
-				if ( NativePaymentsState::class === $id ) {
+				if ( WooPaymentsSetupTier::class === $id ) {
 					return new class( $this->state ) {
 						/** @var string */
 						private $state;

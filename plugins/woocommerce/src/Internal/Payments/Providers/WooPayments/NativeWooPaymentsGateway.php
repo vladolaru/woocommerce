@@ -11,7 +11,6 @@ use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
@@ -567,7 +566,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return false;
 		}
 		// Only the active tier wires the checkout, redirect-return and express handlers; a stale tier must not offer a half-wired checkout.
-		if ( NativePaymentsState::ACTIVE !== wc_get_container()->get( NativePaymentsState::class )->get_state() ) {
+		if ( WooPaymentsSetupTier::ACTIVE !== wc_get_container()->get( WooPaymentsSetupTier::class )->get_state() ) {
 			return false;
 		}
 		if ( 'card' !== $this->get_payment_method_id() && ! $this->get_account_service()->is_gateway_enabled() ) {

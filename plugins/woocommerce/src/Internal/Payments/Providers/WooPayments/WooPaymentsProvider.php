@@ -11,7 +11,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNoticesPassthrough;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -205,11 +204,11 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 		);
 
 		$matrix = array(
-			NativePaymentsState::AVAILABLE => array(
+			WooPaymentsSetupTier::AVAILABLE => array(
 				'admin' => array( WooPaymentsCutoverController::class, WooPaymentsCutoverReconciliationJob::class ),
 				'cron'  => array( WooPaymentsCutoverReconciliationJob::class ),
 			),
-			NativePaymentsState::CONNECTED => array(
+			WooPaymentsSetupTier::CONNECTED => array(
 				// The VAT details link lands on a front-end URL (client 11.1.0 `includes/class-wc-payments-vat-redirect-service.php:25`).
 				'front' => array_merge( $gateway_prefix, array( WooPaymentsVatDetailsRedirect::class ) ),
 				'admin' => array_merge( $gateway_prefix, $connected_admin ),
@@ -217,7 +216,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 				'rest'  => array_merge( $gateway_prefix, $connected_rest ),
 				'cron'  => array_merge( $gateway_prefix, $connected_cron ),
 			),
-			NativePaymentsState::ACTIVE    => array(
+			WooPaymentsSetupTier::ACTIVE    => array(
 				'front' => array_merge(
 					$gateway_prefix,
 					array(
@@ -294,7 +293,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 
 		// WP-CLI runs Action Scheduler queues and cron on many hosts, so it gets the cron roots. The client attaches its
 		// scheduled-action handlers whenever it loads (client 11.1.0 `includes/class-wc-payments.php:603,657`).
-		foreach ( array( NativePaymentsState::AVAILABLE, NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ) as $state ) {
+		foreach ( array( WooPaymentsSetupTier::AVAILABLE, WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
 			$matrix[ $state ]['cli'] = $matrix[ $state ]['cron'];
 		}
 
@@ -302,7 +301,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 		// the plugin REST routes, Action Scheduler, WP-CLI, and XML-RPC (a front request), where Jetpack's remote plugin
 		// management runs. The client registers its lifecycle callbacks on every request (client 11.1.0
 		// `woocommerce-payments.php:67-68`); the listener resolves the cutover controller only when a plugin changes.
-		foreach ( array( NativePaymentsState::AVAILABLE, NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ) as $state ) {
+		foreach ( array( WooPaymentsSetupTier::AVAILABLE, WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
 			foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
 				$matrix[ $state ][ $request ][] = WooPaymentsCutoverPluginLifecycleListener::class;
 			}
@@ -310,7 +309,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 
 		// Renewals, their emails and saved-card hooks run on any request of a connected or active store, with or
 		// without the gateway enabled, as in the client (client 11.1.0 `includes/class-wc-payments.php:611,649`).
-		foreach ( array( NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ) as $state ) {
+		foreach ( array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
 			foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
 				$matrix[ $state ][ $request ][] = WooPaymentsSubscriptionRenewalHooks::class;
 				// Every request that can write a WooPayments log line numbers it under one request id, as the client's logger

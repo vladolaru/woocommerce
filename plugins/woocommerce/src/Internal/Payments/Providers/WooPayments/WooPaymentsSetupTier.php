@@ -1,19 +1,24 @@
 <?php
 /**
- * NativePaymentsState class file.
+ * WooPaymentsSetupTier class file.
  */
 
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Internal\Payments;
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
+
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 
 /**
- * Stores the durable native WooPayments dormancy tier.
+ * Stores the built-in WooPayments setup tier, reports the effective tier and lists the classes each request type loads for it.
+ *
+ * The effective tier is `disabled` while no WooPayments runtime is enabled and at most `available` while the WooPayments
+ * extension owns payments.
  *
  * @since 11.2.0
  * @internal
  */
-final class NativePaymentsState {
+final class WooPaymentsSetupTier {
 
 	/** The persisted state option. */
 	public const OPTION_NAME = 'woocommerce_woopayments_setup_tier';
@@ -50,6 +55,13 @@ final class NativePaymentsState {
 	private array $states = array();
 
 	/**
+	 * The provider's classes by setup tier and request type, read once per request.
+	 *
+	 * @var array<string,array<string,array<int,class-string>>>|null
+	 */
+	private ?array $classes_by_setup_tier = null;
+
+	/**
 	 * Initialize the state store.
 	 *
 	 * @internal
@@ -79,6 +91,36 @@ final class NativePaymentsState {
 		}
 
 		return $state;
+	}
+
+	/**
+	 * Get the classes a request type registers for WooPayments, in registration order.
+	 *
+	 * While the WooPayments extension owns payments, the setup tier sync controller comes first on every request type, so
+	 * a store the extension owns leaves the `disabled` tier when the extension writes its account cache. A `disabled` tier
+	 * lists nothing else and reads no provider class list.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string $request_type Request type: front, admin, ajax, rest, cron or cli.
+	 * @return array<int,class-string>
+	 */
+	public function get_classes_for_request( string $request_type ): array {
+		$classes = array();
+		if ( $this->runtime_arbiter->is_plugin_runtime_active() ) {
+			$classes[] = WooPaymentsSetupTierSyncController::class;
+		}
+
+		$state = $this->get_state();
+		if ( self::DISABLED === $state ) {
+			return $classes;
+		}
+
+		if ( null === $this->classes_by_setup_tier ) {
+			$this->classes_by_setup_tier = WooPaymentsProvider::get_bootstrap_root_matrix();
+		}
+
+		return array_merge( $classes, $this->classes_by_setup_tier[ $state ][ $request_type ] ?? array() );
 	}
 
 	/**

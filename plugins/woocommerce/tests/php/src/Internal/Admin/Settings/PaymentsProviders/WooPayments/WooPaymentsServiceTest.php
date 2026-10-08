@@ -16,7 +16,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
@@ -267,7 +267,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'wcpay_tracks_event_properties' );
 		remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
-		wc_get_container()->get( NativePaymentsState::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		$this->clear_rest_server();
 
 		parent::tearDown();
@@ -1102,9 +1102,9 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	public function test_kyc_session_without_an_account_keeps_the_store_out_of_the_active_tier(): void {
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
-		$state = wc_get_container()->get( NativePaymentsState::class );
+		$state = wc_get_container()->get( WooPaymentsSetupTier::class );
 		$state->invalidate();
-		$this->assertTrue( $state->write_state( NativePaymentsState::AVAILABLE ), 'The store starts native-owned without an account.' );
+		$this->assertTrue( $state->write_state( WooPaymentsSetupTier::AVAILABLE ), 'The store starts native-owned without an account.' );
 		$fixture = $this->arrange_native_nox_picks(
 			array( 'card' => true ),
 			array( 'upe_enabled_payment_method_ids' => array( 'card' ) ),
@@ -1116,7 +1116,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( 'yes', get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['enabled'], 'Session creation enabled the card gateway.' );
 		$this->assertFalse( wc_get_container()->get( WooPaymentsAccountService::class )->has_account(), 'The platform created no account yet.' );
-		$this->assertSame( NativePaymentsState::AVAILABLE, $state->get_state(), 'Without an account the store stays below the active tier.' );
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $state->get_state(), 'Without an account the store stays below the active tier.' );
 	}
 
 	/**
@@ -1909,9 +1909,9 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	public function test_native_kyc_finalize_route_enables_gateway_like_client( array $finalize_response, bool $is_live, string $promo ): void {
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
-		$state = wc_get_container()->get( NativePaymentsState::class );
+		$state = wc_get_container()->get( WooPaymentsSetupTier::class );
 		$state->invalidate();
-		$this->assertTrue( $state->write_state( NativePaymentsState::CONNECTED ), 'The store starts native-owned and connected.' );
+		$this->assertTrue( $state->write_state( WooPaymentsSetupTier::CONNECTED ), 'The store starts native-owned and connected.' );
 		$this->arrange_native_finalize_projection(
 			array( $this->get_native_finalize_projection_account( array( 'is_live' => $is_live ) ) ),
 			array( 'card' => true ),
@@ -1938,7 +1938,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $response->get_data()['success'] );
 		$this->assertSame( 'yes', $settings['enabled'] );
 		$this->assertSame( $is_live ? 'no' : 'yes', $settings['test_mode'] );
-		$this->assertSame( NativePaymentsState::ACTIVE, $state->get_state() );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $state->get_state() );
 		$this->assertSame(
 			array(
 				'promo'                    => $promo,

@@ -18,7 +18,7 @@ use Automattic\WooCommerce\Blocks\Payments\Integrations\PayPal;
 use Automattic\WooCommerce\Blocks\Payments\Integrations\WooPayments;
 use Automattic\WooCommerce\Blocks\Payments\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
@@ -30,8 +30,8 @@ use WC_Unit_Test_Case;
  */
 class ApiTest extends WC_Unit_Test_Case {
 
-	/** @var NativePaymentsState */
-	private NativePaymentsState $state;
+	/** @var WooPaymentsSetupTier */
+	private WooPaymentsSetupTier $state;
 
 	/**
 	 * Set up test fixtures.
@@ -40,7 +40,7 @@ class ApiTest extends WC_Unit_Test_Case {
 		parent::setUp();
 
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-		$this->state = wc_get_container()->get( NativePaymentsState::class );
+		$this->state = wc_get_container()->get( WooPaymentsSetupTier::class );
 		$this->state->invalidate();
 	}
 
@@ -51,7 +51,7 @@ class ApiTest extends WC_Unit_Test_Case {
 		Package::container( true );
 		Package::init();
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
-		delete_option( NativePaymentsState::OPTION_NAME );
+		delete_option( WooPaymentsSetupTier::OPTION_NAME );
 		$this->state->invalidate();
 		parent::tearDown();
 	}
@@ -98,7 +98,7 @@ class ApiTest extends WC_Unit_Test_Case {
 			$this->createMock( WooPaymentsWooPaySessionService::class ),
 			$this->createMock( WooPaymentsExpressCheckoutService::class )
 		);
-		$this->state->write_state( NativePaymentsState::ACTIVE );
+		$this->state->write_state( WooPaymentsSetupTier::ACTIVE );
 		$this->register_blocks_integrations(
 			static function () use ( &$woopayments_resolutions, $woopayments ): WooPayments {
 				++$woopayments_resolutions;
@@ -125,9 +125,9 @@ class ApiTest extends WC_Unit_Test_Case {
 	 */
 	public static function non_active_states(): array {
 		return array(
-			'disabled'  => array( NativePaymentsState::DISABLED ),
-			'available' => array( NativePaymentsState::AVAILABLE ),
-			'connected' => array( NativePaymentsState::CONNECTED ),
+			'disabled'  => array( WooPaymentsSetupTier::DISABLED ),
+			'available' => array( WooPaymentsSetupTier::AVAILABLE ),
+			'connected' => array( WooPaymentsSetupTier::CONNECTED ),
 		);
 	}
 

@@ -20,7 +20,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocaliza
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySelectedCurrencyPersistenceService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
@@ -138,9 +138,9 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		update_option( 'active_plugins', array() );
-		update_option( NativePaymentsState::OPTION_NAME, NativePaymentsState::ACTIVE );
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::ACTIVE );
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
-		wc_get_container()->get( NativePaymentsState::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 
 		wc_get_container()->replace( WooPaymentsHttpClient::class, $this->fake_http_client() );
 		wc_get_container()->reset_all_resolved();
@@ -196,15 +196,15 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 	 * Invalidate the singleton native state and undo any container replacement a probe made, so no
 	 * later test observes state this test put in place (gate: `NativePaymentsBootstrapTest` and
 	 * friends stay clean). The enabling filter and the stored option are undone first, the way
-	 * `NativePaymentsStateTest` does, so nothing left in `parent::tearDown()` can re-cache `active`
+	 * `WooPaymentsSetupTierTest` does, so nothing left in `parent::tearDown()` can re-cache `active`
 	 * for the next test.
 	 */
 	public function tearDown(): void {
 		try {
 			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-			delete_option( NativePaymentsState::OPTION_NAME );
+			delete_option( WooPaymentsSetupTier::OPTION_NAME );
 			wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
-			wc_get_container()->get( NativePaymentsState::class )->invalidate();
+			wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 			$this->reset_container_replacements();
 			wc_get_container()->reset_all_resolved();
 		} finally {

@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewayListController;
@@ -96,7 +96,7 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 				);
 			}
 		}
-		$this->assertContains( WooPaymentsGatewayListController::class, WooPaymentsProvider::get_bootstrap_root_matrix()[ NativePaymentsState::ACTIVE ]['rest'] );
+		$this->assertContains( WooPaymentsGatewayListController::class, WooPaymentsProvider::get_bootstrap_root_matrix()[ WooPaymentsSetupTier::ACTIVE ]['rest'] );
 	}
 
 	/**
@@ -167,7 +167,7 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 	 * @testdox The Settings > Payments providers REST route of an active native store lists the WooPayments card gateway and none of its split gateways, as the client does.
 	 */
 	public function test_providers_rest_route_lists_only_the_main_woopayments_gateway(): void {
-		$this->arrange_native_owner( NativePaymentsState::ACTIVE );
+		$this->arrange_native_owner( WooPaymentsSetupTier::ACTIVE );
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 		$this->run_bootstrap( '__return_true' );
 		$this->reload_payment_gateways();
@@ -186,7 +186,7 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Checkout lists every WooPayments gateway at the saved position of the card gateway, in the provider's order, as the client does.
 	 */
 	public function test_checkout_places_the_woopayments_block_at_the_saved_card_gateway_position(): void {
-		$this->arrange_native_owner( NativePaymentsState::ACTIVE );
+		$this->arrange_native_owner( WooPaymentsSetupTier::ACTIVE );
 		$this->run_bootstrap( '__return_false' );
 		update_option(
 			'woocommerce_gateway_order',
@@ -210,7 +210,7 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Checkout lists the WooPayments gateways first when no gateway order is saved, as the client does.
 	 */
 	public function test_checkout_lists_the_woopayments_block_first_without_a_saved_order(): void {
-		$this->arrange_native_owner( NativePaymentsState::ACTIVE );
+		$this->arrange_native_owner( WooPaymentsSetupTier::ACTIVE );
 		$this->run_bootstrap( '__return_false' );
 		delete_option( 'woocommerce_gateway_order' );
 
@@ -226,7 +226,7 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Checkout lists the WooPayments gateways before the saved gateways when the saved order lacks the card gateway, as the client does.
 	 */
 	public function test_checkout_lists_the_woopayments_block_first_when_the_saved_order_lacks_the_card_gateway(): void {
-		$this->arrange_native_owner( NativePaymentsState::ACTIVE );
+		$this->arrange_native_owner( WooPaymentsSetupTier::ACTIVE );
 		$this->run_bootstrap( '__return_false' );
 		update_option(
 			'woocommerce_gateway_order',
@@ -345,9 +345,9 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 	private function arrange_native_owner( string $state ): void {
 		update_option( 'active_plugins', array_values( array_diff( (array) get_option( 'active_plugins', array() ), array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) ) ) );
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-		update_option( NativePaymentsState::OPTION_NAME, $state, true );
+		update_option( WooPaymentsSetupTier::OPTION_NAME, $state, true );
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
-		wc_get_container()->get( NativePaymentsState::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 	}
 
 	/**
@@ -357,7 +357,8 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 	 */
 	private function run_bootstrap( callable $is_rest_api_request ): void {
 		( new NativePaymentsBootstrap(
-			array( WooPaymentsProvider::class, 'get_bootstrap_root_matrix' ),
+			static fn( $container, string $request_type ): array => $container->get( WooPaymentsSetupTier::class )->get_classes_for_request( $request_type ),
+			static fn( $container ): bool => $container->get( NativePaymentsRuntimeArbiter::class )->should_native_register(),
 			static fn(): array => array()
 		) )->register( wc_get_container(), $is_rest_api_request );
 	}

@@ -7,7 +7,7 @@ use Automattic\WooCommerce\Enums\WooPaymentsCutoverState;
 use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
@@ -268,7 +268,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 			delete_option( 'wcpay_account_data' );
 			delete_option( 'woocommerce_currency' );
 			delete_option( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
-			delete_option( NativePaymentsState::OPTION_NAME );
+			delete_option( WooPaymentsSetupTier::OPTION_NAME );
 			wp_set_current_user( 0 );
 			wc_get_container()->reset_all_resolved();
 			wpmu_delete_blog( $secondary_blog_id, true );
@@ -430,7 +430,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 		update_option( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, 'yes' );
 		delete_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION );
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
-		wc_get_container()->get( NativePaymentsState::class )->write_state( NativePaymentsState::ACTIVE );
+		wc_get_container()->get( WooPaymentsSetupTier::class )->write_state( WooPaymentsSetupTier::ACTIVE );
 	}
 
 	/**

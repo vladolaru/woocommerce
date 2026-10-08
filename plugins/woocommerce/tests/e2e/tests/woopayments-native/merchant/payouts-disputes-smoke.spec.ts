@@ -22,7 +22,7 @@ const SUBSCRIPTIONS_CONTRACT_ID =
 const ADMIN_AUTH_CONTRACT_ID =
 	'default::setup::tests/e2e/specs/auth.setup.ts:41::authenticate as admin';
 
-// `wc/v3/payments/settings` only registers once `NativePaymentsState` reads back
+// `wc/v3/payments/settings` only registers once `WooPaymentsSetupTier` reads back
 // `connected` or `active` (WooPaymentsAdminRestRouteRegistrar::get_controller_roots_for_state());
 // the extension-compat project never runs the readonly project's global setup that seeds this
 // for its own case, so this store-configuration precondition is set up and restored here,
@@ -383,10 +383,10 @@ test.describe( 'WooCommerce Subscriptions extension compatibility', () => {
 		'E2E_WOOPAYMENTS_EXTENSION_COMPAT is required with a real WooCommerce Subscriptions installation.'
 	);
 
-	let initialNativePaymentsState: string;
+	let initialWooPaymentsSetupTier: string;
 
 	test.beforeAll( async () => {
-		initialNativePaymentsState = (
+		initialWooPaymentsSetupTier = (
 			await wpCLI( [
 				'wp',
 				'eval',
@@ -404,7 +404,7 @@ test.describe( 'WooCommerce Subscriptions extension compatibility', () => {
 
 	test.afterAll( async () => {
 		if (
-			initialNativePaymentsState === NATIVE_PAYMENTS_STATE_ABSENT_MARKER
+			initialWooPaymentsSetupTier === NATIVE_PAYMENTS_STATE_ABSENT_MARKER
 		) {
 			await wpCLI( [
 				'wp',
@@ -418,7 +418,7 @@ test.describe( 'WooCommerce Subscriptions extension compatibility', () => {
 				'option',
 				'update',
 				NATIVE_PAYMENTS_STATE_OPTION,
-				initialNativePaymentsState,
+				initialWooPaymentsSetupTier,
 			] );
 		}
 	} );

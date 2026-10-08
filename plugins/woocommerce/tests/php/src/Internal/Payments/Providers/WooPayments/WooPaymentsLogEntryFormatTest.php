@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogEntryFormat;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use WC_Unit_Test_Case;
@@ -22,7 +22,7 @@ class WooPaymentsLogEntryFormatTest extends WC_Unit_Test_Case {
 	public function test_loads_on_every_request_of_a_connected_store(): void {
 		$matrix = WooPaymentsProvider::get_bootstrap_root_matrix();
 
-		foreach ( array( NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ) as $state ) {
+		foreach ( array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
 			foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
 				$this->assertContains( WooPaymentsLogEntryFormat::class, $matrix[ $state ][ $request ], "{$state} {$request}" );
 			}

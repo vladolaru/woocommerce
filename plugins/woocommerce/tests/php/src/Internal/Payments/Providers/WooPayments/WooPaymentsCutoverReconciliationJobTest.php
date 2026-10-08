@@ -13,7 +13,7 @@ use ActionScheduler_Store;
 use Automattic\WooCommerce\Enums\WooPaymentsCutoverState;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverActionScheduler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
@@ -111,13 +111,13 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$this->cleanup_state();
 		}
 		remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-		delete_option( NativePaymentsState::OPTION_NAME );
+		delete_option( WooPaymentsSetupTier::OPTION_NAME );
 		delete_option( 'wcpay_account_data' );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'active_plugins' );
 		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
-		wc_get_container()->get( NativePaymentsState::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 
 		parent::tearDown();
 	}
@@ -383,12 +383,12 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$verification = $this->require_state_store()->get_record();
 		$this->assertIsArray( $verification );
 		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'] );
-		$this->assertSame( NativePaymentsState::ACTIVE, get_option( NativePaymentsState::OPTION_NAME ), 'The deactivating request must leave the tier the next request bootstraps from.' );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'The deactivating request must leave the tier the next request bootstraps from.' );
 		$this->assert_next_front_request_registers_native_gateway();
 
 		$this->run_ownership_verification_in_a_fresh_request( $verification, $preflight );
 
-		$this->assertSame( NativePaymentsState::ACTIVE, get_option( NativePaymentsState::OPTION_NAME ) );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
 		$this->assert_next_front_request_registers_native_gateway();
 	}
 
@@ -449,7 +449,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $closed['state'] );
 		$this->assertSame( array( 'builtin_ineligible' ), $closed['deferred_codes'] );
 		$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $closed['generation'], 2 ) );
-		$this->assertSame( NativePaymentsState::DISABLED, get_option( NativePaymentsState::OPTION_NAME ) );
+		$this->assertSame( WooPaymentsSetupTier::DISABLED, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
 		$this->assertSame( array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ), get_option( 'active_plugins' ), 'Closing the switch must never leave the store without a payments runtime.' );
 	}
 
@@ -497,7 +497,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $closed );
 		$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $closed['state'] );
 		$this->assertSame( array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ), get_option( 'active_plugins' ), 'A claim held for eligibility past the window closes instead of switching the store.' );
-		$this->assertSame( NativePaymentsState::AVAILABLE, get_option( NativePaymentsState::OPTION_NAME ), 'The tier follows the account again, so the start notice can offer a fresh switch.' );
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'The tier follows the account again, so the start notice can offer a fresh switch.' );
 	}
 
 	/**
@@ -638,11 +638,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$origin->handle_reconcile( $pending['generation'], 1 );
 		$verification = $this->require_state_store()->get_record();
 		$this->assertIsArray( $verification );
-		update_option( NativePaymentsState::OPTION_NAME, NativePaymentsState::AVAILABLE );
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::AVAILABLE );
 
 		$this->run_ownership_verification_in_a_fresh_request( $verification, $preflight );
 
-		$this->assertSame( NativePaymentsState::ACTIVE, get_option( NativePaymentsState::OPTION_NAME ) );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
 		$this->assert_next_front_request_registers_native_gateway();
 	}
 
@@ -3721,11 +3721,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				false
 			);
 			update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
-			update_option( NativePaymentsState::OPTION_NAME, NativePaymentsState::AVAILABLE );
+			update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::AVAILABLE );
 			restore_current_blog();
 		}
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
-		wc_get_container()->get( NativePaymentsState::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		$preflight     = new class() extends WooPaymentsCutoverPreflightService {
 			/** @return string[] */
 			public function get_reconciliation_failures(): array {
@@ -3768,7 +3768,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$this->assertIsArray( $main_pending );
 			$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
 			$sut->handle_reconcile( $main_pending['generation'], 1 );
-			$this->assertSame( NativePaymentsState::AVAILABLE, get_option( NativePaymentsState::OPTION_NAME ), 'No site may leave the plugin tier before the whole network finalizes.' );
+			$this->assertSame( WooPaymentsSetupTier::AVAILABLE, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'No site may leave the plugin tier before the whole network finalizes.' );
 
 			switch_to_blog( $second_site_id );
 			$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
@@ -3781,7 +3781,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				$this->assertIsArray( $verification );
 				$this->assertSame( WooPaymentsCutoverState::PENDING, $verification['state'], "Site {$site_id} must still await ownership verification." );
 				$this->assertSame( 'verify_builtin_ownership', $verification['current_step'] );
-				$this->assertSame( NativePaymentsState::ACTIVE, get_option( NativePaymentsState::OPTION_NAME ), "Site {$site_id} must register the native gateway as soon as the network deactivates the plugin." );
+				$this->assertSame( WooPaymentsSetupTier::ACTIVE, get_option( WooPaymentsSetupTier::OPTION_NAME ), "Site {$site_id} must register the native gateway as soon as the network deactivates the plugin." );
 				restore_current_blog();
 			}
 		} finally {
@@ -5687,9 +5687,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			false
 		);
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
-		update_option( NativePaymentsState::OPTION_NAME, NativePaymentsState::AVAILABLE );
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::AVAILABLE );
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
-		wc_get_container()->get( NativePaymentsState::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		$this->assertTrue( wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->is_plugin_runtime_active() );
 	}
 
@@ -5803,7 +5803,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$request_token->setAccessible( true );
 		$request_token->setValue( null );
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
-		wc_get_container()->get( NativePaymentsState::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		$this->require_scheduler()->cancel( $verification['generation'], $verification['attempt'] + 1 );
 
 		$this->create_state_writing_job( false, $preflight )->handle_reconcile( $verification['generation'], $verification['attempt'] + 1 );
@@ -5818,11 +5818,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 */
 	private function assert_next_front_request_registers_native_gateway(): void {
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
-		$state = wc_get_container()->get( NativePaymentsState::class );
+		$state = wc_get_container()->get( WooPaymentsSetupTier::class );
 		$state->invalidate();
 		$effective_state = $state->get_state();
 
-		$this->assertSame( NativePaymentsState::ACTIVE, $effective_state );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $effective_state );
 		$this->assertContains( WooPaymentsProvider::class, WooPaymentsProvider::get_bootstrap_root_matrix()[ $effective_state ]['front'] ?? array() );
 	}
 

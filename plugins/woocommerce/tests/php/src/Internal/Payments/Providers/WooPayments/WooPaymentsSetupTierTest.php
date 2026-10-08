@@ -1,28 +1,27 @@
 <?php
 /**
- * NativePaymentsState tests.
+ * WooPaymentsSetupTier tests.
  *
  * @package WooCommerce\Tests\Internal\Payments
  */
 
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Tests\Internal\Payments;
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for NativePaymentsState and its authoritative writers.
+ * Tests for WooPaymentsSetupTier and its authoritative writers.
  */
-class NativePaymentsStateTest extends WC_Unit_Test_Case {
+class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 
-	/** @var NativePaymentsState */
-	private NativePaymentsState $state;
+	/** @var WooPaymentsSetupTier */
+	private WooPaymentsSetupTier $state;
 
 	/** @var WooPaymentsAccountService */
 	private WooPaymentsAccountService $account_service;
@@ -42,7 +41,7 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 		delete_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION );
 
 		$container                   = wc_get_container();
-		$this->state                 = $container->get( NativePaymentsState::class );
+		$this->state                 = $container->get( WooPaymentsSetupTier::class );
 		$this->account_service       = $container->get( WooPaymentsAccountService::class );
 		$this->settings_synchronizer = $container->get( WooPaymentsGatewaySettingsSynchronizer::class );
 		$container->get( NativePaymentsRuntimeArbiter::class )->invalidate();
@@ -55,10 +54,10 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
-		remove_all_filters( 'pre_update_option_' . NativePaymentsState::OPTION_NAME );
+		remove_all_filters( 'pre_update_option_' . WooPaymentsSetupTier::OPTION_NAME );
 		remove_all_filters( 'pre_update_option_wcpay_account_data' );
-		remove_all_filters( 'option_' . NativePaymentsState::OPTION_NAME );
-		delete_option( NativePaymentsState::OPTION_NAME );
+		remove_all_filters( 'option_' . WooPaymentsSetupTier::OPTION_NAME );
+		delete_option( WooPaymentsSetupTier::OPTION_NAME );
 		delete_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION );
 		delete_option( 'wcpay_account_data' );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
@@ -74,13 +73,13 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 	 * @testdox State persistence accepts exact tiers, rejects unknown values, and verifies readback.
 	 */
 	public function test_write_state_validates_and_verifies_persistence(): void {
-		$this->assertTrue( $this->state->write_state( NativePaymentsState::CONNECTED ) );
-		$this->assertSame( NativePaymentsState::CONNECTED, get_option( NativePaymentsState::OPTION_NAME ) );
+		$this->assertTrue( $this->state->write_state( WooPaymentsSetupTier::CONNECTED ) );
+		$this->assertSame( WooPaymentsSetupTier::CONNECTED, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
 		$this->assertFalse( $this->state->write_state( 'CONNECTED' ) );
 
-		add_filter( 'pre_update_option_' . NativePaymentsState::OPTION_NAME, '__return_false' );
-		$this->assertFalse( $this->state->write_state( NativePaymentsState::ACTIVE ) );
-		$this->assertSame( NativePaymentsState::CONNECTED, $this->state->get_state() );
+		add_filter( 'pre_update_option_' . WooPaymentsSetupTier::OPTION_NAME, '__return_false' );
+		$this->assertFalse( $this->state->write_state( WooPaymentsSetupTier::ACTIVE ) );
+		$this->assertSame( WooPaymentsSetupTier::CONNECTED, $this->state->get_state() );
 	}
 
 	/**
@@ -88,11 +87,11 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 	 */
 	public function test_write_state_logs_a_failed_write(): void {
 		$logger = RecordingWcLogger::install();
-		$this->assertTrue( $this->state->write_state( NativePaymentsState::CONNECTED ) );
+		$this->assertTrue( $this->state->write_state( WooPaymentsSetupTier::CONNECTED ) );
 
 		// The filter turns the written value into false, so false is what reads back.
-		add_filter( 'pre_update_option_' . NativePaymentsState::OPTION_NAME, '__return_false' );
-		$this->assertFalse( $this->state->write_state( NativePaymentsState::ACTIVE ) );
+		add_filter( 'pre_update_option_' . WooPaymentsSetupTier::OPTION_NAME, '__return_false' );
+		$this->assertFalse( $this->state->write_state( WooPaymentsSetupTier::ACTIVE ) );
 
 		$this->assertSame(
 			array( array( 'error', 'Native payments state write failed: requested active, stored false, autoloaded yes.', 'native-payments' ) ),
@@ -104,12 +103,12 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 	 * @testdox Rewriting an existing tier repairs its option to autoload even when the value is unchanged.
 	 */
 	public function test_write_state_repairs_autoload_for_an_existing_same_value(): void {
-		delete_option( NativePaymentsState::OPTION_NAME );
-		add_option( NativePaymentsState::OPTION_NAME, NativePaymentsState::ACTIVE, '', false );
-		$this->assertArrayNotHasKey( NativePaymentsState::OPTION_NAME, wp_load_alloptions( true ) );
+		delete_option( WooPaymentsSetupTier::OPTION_NAME );
+		add_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::ACTIVE, '', false );
+		$this->assertArrayNotHasKey( WooPaymentsSetupTier::OPTION_NAME, wp_load_alloptions( true ) );
 
-		$this->assertTrue( $this->state->write_state( NativePaymentsState::ACTIVE ) );
-		$this->assertArrayHasKey( NativePaymentsState::OPTION_NAME, wp_load_alloptions( true ) );
+		$this->assertTrue( $this->state->write_state( WooPaymentsSetupTier::ACTIVE ) );
+		$this->assertArrayHasKey( WooPaymentsSetupTier::OPTION_NAME, wp_load_alloptions( true ) );
 	}
 
 	/**
@@ -117,14 +116,25 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 	 */
 	public function test_write_state_runs_no_query_when_the_autoloaded_tier_is_unchanged(): void {
 		global $wpdb;
-		$this->assertTrue( $this->state->write_state( NativePaymentsState::ACTIVE ) );
+		$this->assertTrue( $this->state->write_state( WooPaymentsSetupTier::ACTIVE ) );
 		wp_load_alloptions( true );
 
 		$queries = $wpdb->num_queries;
-		$this->assertTrue( $this->state->write_state( NativePaymentsState::ACTIVE ) );
+		$this->assertTrue( $this->state->write_state( WooPaymentsSetupTier::ACTIVE ) );
 
 		$this->assertSame( 0, $wpdb->num_queries - $queries, 'Client 11.1.0 Database_Cache::write_to_cache() stops at update_option() and a cache delete.' );
-		$this->assertSame( NativePaymentsState::ACTIVE, $this->state->get_state() );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->state->get_state() );
+	}
+
+	/**
+	 * @testdox A disabled tier on a store the built-in WooPayments owns lists no class for any request type.
+	 */
+	public function test_disabled_tier_lists_no_class_for_any_request_type(): void {
+		$this->state->write_state( WooPaymentsSetupTier::DISABLED );
+
+		foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request_type ) {
+			$this->assertSame( array(), $this->state->get_classes_for_request( $request_type ), $request_type );
+		}
 	}
 
 	/**
@@ -132,21 +142,21 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_state_memoizes_reads_until_invalidated(): void {
 		$reads = 0;
-		update_option( NativePaymentsState::OPTION_NAME, NativePaymentsState::AVAILABLE );
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::AVAILABLE );
 		add_filter(
-			'option_' . NativePaymentsState::OPTION_NAME,
+			'option_' . WooPaymentsSetupTier::OPTION_NAME,
 			static function ( $value ) use ( &$reads ) {
 				++$reads;
 				return $value;
 			}
 		);
 
-		$this->assertSame( NativePaymentsState::AVAILABLE, $this->state->get_state() );
-		$this->assertSame( NativePaymentsState::AVAILABLE, $this->state->get_state() );
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->state->get_state() );
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->state->get_state() );
 		$this->assertSame( 1, $reads );
 
 		$this->state->invalidate();
-		$this->assertSame( NativePaymentsState::AVAILABLE, $this->state->get_state() );
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->state->get_state() );
 		$this->assertSame( 2, $reads );
 	}
 
@@ -157,14 +167,14 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 	 * @param string $stored_state Stored connected tier.
 	 */
 	public function test_get_state_clamps_connected_tiers_while_plugin_is_active( string $stored_state ): void {
-		update_option( NativePaymentsState::OPTION_NAME, $stored_state );
+		update_option( WooPaymentsSetupTier::OPTION_NAME, $stored_state );
 		$this->state->invalidate();
 		$this->assertSame( $stored_state, $this->state->get_state() );
 
 		update_option( 'active_plugins', array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) );
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
 
-		$this->assertSame( NativePaymentsState::AVAILABLE, $this->state->get_state() );
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->state->get_state() );
 	}
 
 	/**
@@ -174,12 +184,12 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 	 * @param string $stored_state Stored native payments tier.
 	 */
 	public function test_get_state_returns_disabled_without_overwriting_the_stored_state_when_no_runtime_owns_the_site( string $stored_state ): void {
-		update_option( NativePaymentsState::OPTION_NAME, $stored_state );
+		update_option( WooPaymentsSetupTier::OPTION_NAME, $stored_state );
 		$this->state->invalidate();
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
 
-		$this->assertSame( NativePaymentsState::DISABLED, $this->state->get_state() );
-		$this->assertSame( $stored_state, get_option( NativePaymentsState::OPTION_NAME ) );
+		$this->assertSame( WooPaymentsSetupTier::DISABLED, $this->state->get_state() );
+		$this->assertSame( $stored_state, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
 	}
 
 	/**
@@ -188,18 +198,18 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_state_memoizes_per_blog(): void {
 		$this->skipWithoutMultisite();
-		update_option( NativePaymentsState::OPTION_NAME, NativePaymentsState::AVAILABLE );
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::AVAILABLE );
 		$this->state->invalidate();
-		$this->assertSame( NativePaymentsState::AVAILABLE, $this->state->get_state() );
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->state->get_state() );
 
 		$blog_id = self::factory()->blog->create();
 		try {
 			switch_to_blog( $blog_id );
-			update_option( NativePaymentsState::OPTION_NAME, NativePaymentsState::CONNECTED );
-			$this->assertSame( NativePaymentsState::CONNECTED, $this->state->get_state() );
+			update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::CONNECTED );
+			$this->assertSame( WooPaymentsSetupTier::CONNECTED, $this->state->get_state() );
 			restore_current_blog();
 
-			$this->assertSame( NativePaymentsState::AVAILABLE, $this->state->get_state() );
+			$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->state->get_state() );
 		} finally {
 			while ( ms_is_switched() ) {
 				restore_current_blog();
@@ -216,8 +226,8 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 	 */
 	public function provide_connected_tiers(): array {
 		return array(
-			'connected' => array( NativePaymentsState::CONNECTED ),
-			'active'    => array( NativePaymentsState::ACTIVE ),
+			'connected' => array( WooPaymentsSetupTier::CONNECTED ),
+			'active'    => array( WooPaymentsSetupTier::ACTIVE ),
 		);
 	}
 
@@ -228,10 +238,10 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 	 */
 	public function provide_native_payments_states(): array {
 		return array(
-			'disabled'  => array( NativePaymentsState::DISABLED ),
-			'available' => array( NativePaymentsState::AVAILABLE ),
-			'connected' => array( NativePaymentsState::CONNECTED ),
-			'active'    => array( NativePaymentsState::ACTIVE ),
+			'disabled'  => array( WooPaymentsSetupTier::DISABLED ),
+			'available' => array( WooPaymentsSetupTier::AVAILABLE ),
+			'connected' => array( WooPaymentsSetupTier::CONNECTED ),
+			'active'    => array( WooPaymentsSetupTier::ACTIVE ),
 		);
 	}
 
@@ -242,10 +252,10 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'no' ) );
 
 		$this->account_service->cache_account_data( array( 'account_id' => 'acct_123' ) );
-		$this->assertSame( NativePaymentsState::CONNECTED, $this->state->get_state() );
+		$this->assertSame( WooPaymentsSetupTier::CONNECTED, $this->state->get_state() );
 
 		$this->account_service->overwrite_cache_with_no_account();
-		$this->assertSame( NativePaymentsState::AVAILABLE, $this->state->get_state() );
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->state->get_state() );
 	}
 
 	/**
@@ -254,28 +264,28 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 	public function test_account_writer_preserves_state_for_failed_persistence_and_deletion(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
 		$this->account_service->cache_account_data( array( 'account_id' => 'acct_123' ) );
-		$this->assertSame( NativePaymentsState::ACTIVE, $this->state->get_state() );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->state->get_state() );
 
 		add_filter( 'pre_update_option_wcpay_account_data', '__return_false' );
 		$this->account_service->overwrite_cache_with_no_account();
-		$this->assertSame( NativePaymentsState::ACTIVE, $this->state->get_state() );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->state->get_state() );
 
 		remove_all_filters( 'pre_update_option_wcpay_account_data' );
 		$this->account_service->clear_cache();
-		$this->assertSame( NativePaymentsState::ACTIVE, $this->state->get_state() );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->state->get_state() );
 	}
 
 	/**
 	 * @testdox Canonical settings enable only for exact yes and otherwise return active accounts to connected.
 	 */
 	public function test_settings_writer_enables_and_disables_an_existing_connection(): void {
-		$this->state->write_state( NativePaymentsState::CONNECTED );
+		$this->state->write_state( WooPaymentsSetupTier::CONNECTED );
 
 		$this->settings_synchronizer->persist( array( 'enabled' => 'yes' ) );
-		$this->assertSame( NativePaymentsState::ACTIVE, $this->state->get_state() );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->state->get_state() );
 
 		$this->settings_synchronizer->persist( array( 'enabled' => 'YES' ) );
-		$this->assertSame( NativePaymentsState::CONNECTED, $this->state->get_state() );
+		$this->assertSame( WooPaymentsSetupTier::CONNECTED, $this->state->get_state() );
 	}
 
 	/**
@@ -289,13 +299,13 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 				'native_payments' => array( 'eligible' => false ),
 			)
 		);
-		$this->assertSame( NativePaymentsState::DISABLED, $this->state->get_state() );
+		$this->assertSame( WooPaymentsSetupTier::DISABLED, $this->state->get_state() );
 
-		$this->state->write_state( NativePaymentsState::ACTIVE );
+		$this->state->write_state( WooPaymentsSetupTier::ACTIVE );
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
 		update_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION, true );
 		$this->account_service->cache_account_data( array( 'account_id' => 'acct_456' ) );
-		$this->assertSame( NativePaymentsState::DISABLED, $this->state->get_state() );
+		$this->assertSame( WooPaymentsSetupTier::DISABLED, $this->state->get_state() );
 	}
 
 	/**
@@ -303,16 +313,16 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 	 */
 	public function test_plugin_account_cache_write_follows_native_eligibility(): void {
 		$this->make_plugin_own_the_runtime();
-		$this->state->write_state( NativePaymentsState::DISABLED );
+		$this->state->write_state( WooPaymentsSetupTier::DISABLED );
 
 		$this->account_service->synchronize_after_plugin_account_cache_write( $this->plugin_account_cache( array( 'eligible' => true ) ) );
-		$this->assertSame( NativePaymentsState::AVAILABLE, $this->state->get_state(), 'An account the platform made eligible after the upgrade repair must reach the start notice.' );
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->state->get_state(), 'An account the platform made eligible after the upgrade repair must reach the start notice.' );
 
 		$this->account_service->synchronize_after_plugin_account_cache_write( $this->plugin_account_cache( array( 'eligible' => false ) ) );
-		$this->assertSame( NativePaymentsState::DISABLED, $this->state->get_state(), 'Withdrawn eligibility must write disabled again.' );
+		$this->assertSame( WooPaymentsSetupTier::DISABLED, $this->state->get_state(), 'Withdrawn eligibility must write disabled again.' );
 
 		$this->account_service->synchronize_after_plugin_account_cache_write( $this->plugin_account_cache( null ) );
-		$this->assertSame( NativePaymentsState::AVAILABLE, $this->state->get_state(), 'An account without the eligibility block counts as eligible, as in the upgrade repair.' );
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->state->get_state(), 'An account without the eligibility block counts as eligible, as in the upgrade repair.' );
 	}
 
 	/**
@@ -320,7 +330,7 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 	 */
 	public function test_plugin_account_cache_write_ignores_errored_and_empty_writes(): void {
 		$this->make_plugin_own_the_runtime();
-		$this->state->write_state( NativePaymentsState::DISABLED );
+		$this->state->write_state( WooPaymentsSetupTier::DISABLED );
 
 		$errored            = $this->plugin_account_cache( array( 'eligible' => true ) );
 		$errored['errored'] = true;
@@ -334,18 +344,18 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 		);
 		$this->account_service->synchronize_after_plugin_account_cache_write( false );
 
-		$this->assertSame( NativePaymentsState::DISABLED, $this->state->get_state() );
+		$this->assertSame( WooPaymentsSetupTier::DISABLED, $this->state->get_state() );
 	}
 
 	/**
 	 * @testdox A plugin account cache write changes nothing once the plugin no longer owns the runtime.
 	 */
 	public function test_plugin_account_cache_write_needs_the_plugin_runtime(): void {
-		$this->state->write_state( NativePaymentsState::DISABLED );
+		$this->state->write_state( WooPaymentsSetupTier::DISABLED );
 
 		$this->account_service->synchronize_after_plugin_account_cache_write( $this->plugin_account_cache( array( 'eligible' => true ) ) );
 
-		$this->assertSame( NativePaymentsState::DISABLED, $this->state->get_state() );
+		$this->assertSame( WooPaymentsSetupTier::DISABLED, $this->state->get_state() );
 	}
 
 	/**

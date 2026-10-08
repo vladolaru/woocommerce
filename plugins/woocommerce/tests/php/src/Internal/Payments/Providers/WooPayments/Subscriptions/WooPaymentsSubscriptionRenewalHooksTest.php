@@ -5,12 +5,11 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\S
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
 use WC_Order;
 use WC_Unit_Test_Case;
@@ -53,7 +52,7 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 		wc_get_container()->reset_all_replacements();
 		wc_get_container()->reset_all_resolved();
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
-		wc_get_container()->get( NativePaymentsState::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		$GLOBALS['wp_rest_server'] = null;
 
 		$renewal_hooks = new \ReflectionProperty( WooPaymentsSubscriptionRenewalHooks::class, 'attached' );
@@ -94,7 +93,7 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 	 */
 	public function test_connected_store_attaches_the_renewal_root_without_building_the_gateway(): void {
 		$this->load_subscriptions();
-		$this->arrange_ownership( false, true, NativePaymentsState::CONNECTED );
+		$this->arrange_ownership( false, true, WooPaymentsSetupTier::CONNECTED );
 
 		$this->register_native_payments_and_run_init();
 
@@ -136,7 +135,7 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 	 */
 	public function test_scheduled_renewal_reaches_the_native_handler(): void {
 		$this->load_subscriptions();
-		$this->arrange_ownership( false, true, NativePaymentsState::CONNECTED );
+		$this->arrange_ownership( false, true, WooPaymentsSetupTier::CONNECTED );
 		$this->register_native_payments_and_run_init();
 		$gateway = $this->install_spy_gateway();
 		$this->reload_payment_gateways();
@@ -177,7 +176,7 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 		global $wp_filter;
 
 		$this->load_subscriptions();
-		$this->arrange_ownership( false, true, NativePaymentsState::ACTIVE );
+		$this->arrange_ownership( false, true, WooPaymentsSetupTier::ACTIVE );
 		$this->register_native_payments_and_run_init();
 		$gateway = $this->install_spy_gateway();
 		$this->reload_payment_gateways();
@@ -196,7 +195,7 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 		global $wp_actions;
 
 		$this->load_subscriptions();
-		$this->arrange_ownership( false, true, NativePaymentsState::CONNECTED );
+		$this->arrange_ownership( false, true, WooPaymentsSetupTier::CONNECTED );
 		$root = wc_get_container()->get( WooPaymentsSubscriptionRenewalHooks::class );
 		unset( $wp_actions['plugins_loaded'] );
 
@@ -216,7 +215,7 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 	 */
 	public function test_owner_none_gateway_from_the_legacy_facade_attaches_no_handler(): void {
 		$this->load_subscriptions();
-		$this->arrange_ownership( false, false, NativePaymentsState::CONNECTED );
+		$this->arrange_ownership( false, false, WooPaymentsSetupTier::CONNECTED );
 		if ( ! class_exists( 'WC_Payments', false ) ) {
 			require_once WC_ABSPATH . 'includes/legacy/woopayments-compat/class-wc-payments.php';
 		}
@@ -267,7 +266,7 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 		$this->load_subscriptions();
 		require_once __DIR__ . '/../Fixtures/DuplicateSiteSubscriptionsStaging.php';
 		class_alias( \Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\DuplicateSiteSubscriptionsStaging::class, 'WCS_Staging' );
-		$this->arrange_ownership( false, true, NativePaymentsState::ACTIVE );
+		$this->arrange_ownership( false, true, WooPaymentsSetupTier::ACTIVE );
 		$this->register_native_payments_and_run_init();
 		$this->use_order_mode( 'prod' );
 		$items = array( 'line_item_a' );
@@ -290,7 +289,7 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 	 */
 	public function test_subscriptions_copies_leave_out_the_charge_idempotency_key(): void {
 		$this->load_subscriptions( true );
-		$this->arrange_ownership( false, true, NativePaymentsState::ACTIVE );
+		$this->arrange_ownership( false, true, WooPaymentsSetupTier::ACTIVE );
 		$this->register_native_payments_and_run_init();
 
 		foreach ( array( 'subscription', 'parent', 'renewal_order', 'resubscribe_order' ) as $copy_type ) {
@@ -321,7 +320,7 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 	 */
 	public function test_subscriptions_without_the_data_copier_leave_out_the_charge_idempotency_key(): void {
 		$this->load_subscriptions();
-		$this->arrange_ownership( false, true, NativePaymentsState::ACTIVE );
+		$this->arrange_ownership( false, true, WooPaymentsSetupTier::ACTIVE );
 		$this->register_native_payments_and_run_init();
 		$query = 'SELECT `meta_key`, `meta_value` FROM wp_postmeta WHERE `post_id` = 123';
 
@@ -394,17 +393,17 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 	/** @return array<string,array{string}> */
 	public static function native_owned_states(): array {
 		return array(
-			'connected, gateway disabled' => array( NativePaymentsState::CONNECTED ),
-			'active'                      => array( NativePaymentsState::ACTIVE ),
+			'connected, gateway disabled' => array( WooPaymentsSetupTier::CONNECTED ),
+			'active'                      => array( WooPaymentsSetupTier::ACTIVE ),
 		);
 	}
 
 	/** @return array<string,array{string,bool,bool,string}> */
 	public static function stores_without_native_renewals(): array {
 		return array(
-			'plugin-owned, native tier clamped' => array( 'plugin-owned', true, true, NativePaymentsState::ACTIVE ),
-			'plugin-owned, native not enabled'  => array( 'plugin-owned', true, false, NativePaymentsState::DISABLED ),
-			'never set up'                      => array( 'never set up', false, false, NativePaymentsState::DISABLED ),
+			'plugin-owned, native tier clamped' => array( 'plugin-owned', true, true, WooPaymentsSetupTier::ACTIVE ),
+			'plugin-owned, native not enabled'  => array( 'plugin-owned', true, false, WooPaymentsSetupTier::DISABLED ),
+			'never set up'                      => array( 'never set up', false, false, WooPaymentsSetupTier::DISABLED ),
 		);
 	}
 
@@ -533,9 +532,9 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 		}
 		update_option( 'active_plugins', $active_plugins );
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, $native ? '__return_true' : '__return_false' );
-		update_option( NativePaymentsState::OPTION_NAME, $state, true );
+		update_option( WooPaymentsSetupTier::OPTION_NAME, $state, true );
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
-		wc_get_container()->get( NativePaymentsState::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 	}
 
 	/**
@@ -547,7 +546,8 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 
 		$before = isset( $wp_filter['init'] ) ? $wp_filter['init']->callbacks : array();
 		( new NativePaymentsBootstrap(
-			array( WooPaymentsProvider::class, 'get_bootstrap_root_matrix' ),
+			static fn( $container, string $request_type ): array => $container->get( WooPaymentsSetupTier::class )->get_classes_for_request( $request_type ),
+			static fn( $container ): bool => $container->get( NativePaymentsRuntimeArbiter::class )->should_native_register(),
 			static fn(): array => array()
 		) )->register( wc_get_container(), '__return_false' );
 

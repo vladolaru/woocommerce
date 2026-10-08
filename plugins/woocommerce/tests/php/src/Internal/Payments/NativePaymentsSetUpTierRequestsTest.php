@@ -8,7 +8,7 @@ use ActionScheduler_Store;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
@@ -144,7 +144,7 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_active_store_offers_the_gateway_only_when_the_account_can_take_payments( string $label, bool $details_submitted, bool $payments_enabled, bool $available ): void {
 		unset( $label );
-		$this->arrange_native_owner( NativePaymentsState::ACTIVE );
+		$this->arrange_native_owner( WooPaymentsSetupTier::ACTIVE );
 		add_filter(
 			'pre_option_woocommerce_woocommerce_payments_settings',
 			static fn() => array(
@@ -186,7 +186,7 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	 * @testdox A connected store keeps the saved-card hooks on requests that never build the gateway list.
 	 */
 	public function test_connected_store_keeps_the_saved_card_hooks(): void {
-		$this->arrange_native_owner( NativePaymentsState::CONNECTED );
+		$this->arrange_native_owner( WooPaymentsSetupTier::CONNECTED );
 
 		$this->run_bootstrap( '__return_false' );
 
@@ -222,7 +222,7 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	 * @testdox An active store clears the session's processing-order marker on the order-received page of a front request.
 	 */
 	public function test_active_front_request_clears_processing_order_marker_on_order_received(): void {
-		$this->arrange_native_owner( NativePaymentsState::ACTIVE );
+		$this->arrange_native_owner( WooPaymentsSetupTier::ACTIVE );
 
 		$this->run_bootstrap( '__return_false' );
 
@@ -327,7 +327,7 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	 * @testdox The Settings > Payments toggle moves a connected store to active when it creates the settings, and back to connected when it updates them.
 	 */
 	public function test_classic_toggle_keeps_the_tier_in_step_with_the_gateway(): void {
-		$this->arrange_native_owner( NativePaymentsState::CONNECTED );
+		$this->arrange_native_owner( WooPaymentsSetupTier::CONNECTED );
 		// A connected store has an account that can take payments; without one the gateway needs setup and WooCommerce refuses the toggle, as for the client.
 		$api_client = $this->createMock( WooPaymentsApiClient::class );
 		$api_client->method( 'is_available' )->willReturn( true );
@@ -350,17 +350,17 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 
 		$this->toggle_gateway();
 		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_settings' )['enabled'] ?? null );
-		$this->assertSame( NativePaymentsState::ACTIVE, $this->stored_state(), 'Enabling the gateway must make the store active.' );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->stored_state(), 'Enabling the gateway must make the store active.' );
 
 		$this->toggle_gateway();
-		$this->assertSame( NativePaymentsState::CONNECTED, $this->stored_state(), 'Disabling the gateway must make the store connected again.' );
+		$this->assertSame( WooPaymentsSetupTier::CONNECTED, $this->stored_state(), 'Disabling the gateway must make the store connected again.' );
 	}
 
 	/**
 	 * @testdox The payment gateways REST route moves a connected store to active, and back to connected.
 	 */
 	public function test_rest_update_keeps_the_tier_in_step_with_the_gateway(): void {
-		$this->arrange_native_owner( NativePaymentsState::CONNECTED );
+		$this->arrange_native_owner( WooPaymentsSetupTier::CONNECTED );
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
@@ -373,8 +373,8 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 		$this->reload_payment_gateways();
 
 		foreach ( array(
-			true  => NativePaymentsState::ACTIVE,
-			false => NativePaymentsState::CONNECTED,
+			true  => WooPaymentsSetupTier::ACTIVE,
+			false => WooPaymentsSetupTier::CONNECTED,
 		) as $enabled => $expected ) {
 			$request = new \WP_REST_Request( 'PUT', '/wc/v3/payment_gateways/' . WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 			$request->set_body_params( array( 'enabled' => (bool) $enabled ) );
@@ -390,24 +390,24 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_plugin_owned_settings_write_leaves_the_native_tier_alone(): void {
 		update_option( 'active_plugins', array_merge( (array) get_option( 'active_plugins', array() ), array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) ) );
-		update_option( NativePaymentsState::OPTION_NAME, NativePaymentsState::CONNECTED, true );
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::CONNECTED, true );
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
-		wc_get_container()->get( NativePaymentsState::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		add_filter( 'wp_doing_ajax', '__return_true' );
 		$this->run_bootstrap( '__return_false' );
 
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
 		wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class )->handle_settings_updated( array(), array( 'enabled' => 'yes' ) );
 
-		$this->assertSame( NativePaymentsState::CONNECTED, $this->stored_state(), 'The plugin owns this option too; native must not rewrite its tier.' );
+		$this->assertSame( WooPaymentsSetupTier::CONNECTED, $this->stored_state(), 'The plugin owns this option too; native must not rewrite its tier.' );
 	}
 
 	/** @return array<string,array{string,string,string,bool}> */
 	public static function gateway_availability_cases(): array {
 		return array(
-			'connected, gateway disabled'               => array( 'connected', NativePaymentsState::CONNECTED, 'no', false ),
-			'connected, gateway enabled but tier stale' => array( 'stale connected', NativePaymentsState::CONNECTED, 'yes', false ),
-			'active, gateway enabled (fixture control)' => array( 'active', NativePaymentsState::ACTIVE, 'yes', true ),
+			'connected, gateway disabled'               => array( 'connected', WooPaymentsSetupTier::CONNECTED, 'no', false ),
+			'connected, gateway enabled but tier stale' => array( 'stale connected', WooPaymentsSetupTier::CONNECTED, 'yes', false ),
+			'active, gateway enabled (fixture control)' => array( 'active', WooPaymentsSetupTier::ACTIVE, 'yes', true ),
 		);
 	}
 
@@ -422,10 +422,10 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	/** @return array<string,array{string,string,string}> */
 	public static function page_request_action_runs(): array {
 		return array(
-			'connected, ALTERNATE_WP_CRON on a front page' => array( 'connected, ALTERNATE_WP_CRON', NativePaymentsState::CONNECTED, 'alternate_wp_cron' ),
-			'active, ALTERNATE_WP_CRON on a front page'    => array( 'active, ALTERNATE_WP_CRON', NativePaymentsState::ACTIVE, 'alternate_wp_cron' ),
-			'connected, Scheduled Actions Run link (admin)' => array( 'connected, Scheduled Actions Run', NativePaymentsState::CONNECTED, 'admin_run' ),
-			'active, Scheduled Actions Run link (admin)'   => array( 'active, Scheduled Actions Run', NativePaymentsState::ACTIVE, 'admin_run' ),
+			'connected, ALTERNATE_WP_CRON on a front page' => array( 'connected, ALTERNATE_WP_CRON', WooPaymentsSetupTier::CONNECTED, 'alternate_wp_cron' ),
+			'active, ALTERNATE_WP_CRON on a front page'    => array( 'active, ALTERNATE_WP_CRON', WooPaymentsSetupTier::ACTIVE, 'alternate_wp_cron' ),
+			'connected, Scheduled Actions Run link (admin)' => array( 'connected, Scheduled Actions Run', WooPaymentsSetupTier::CONNECTED, 'admin_run' ),
+			'active, Scheduled Actions Run link (admin)'   => array( 'active, Scheduled Actions Run', WooPaymentsSetupTier::ACTIVE, 'admin_run' ),
 		);
 	}
 
@@ -517,60 +517,60 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	/** @return array<string,array{string,string,string,string}> */
 	public static function style_change_requests(): array {
 		return array(
-			'A theme switch in a connected store admin'    => array( 'A theme switch in a connected store admin', NativePaymentsState::CONNECTED, 'admin', 'after_switch_theme' ),
-			'A theme switch in an active store admin'      => array( 'A theme switch in an active store admin', NativePaymentsState::ACTIVE, 'admin', 'after_switch_theme' ),
-			'A global styles save over REST'               => array( 'A global styles save over REST', NativePaymentsState::ACTIVE, 'rest', 'save_post_wp_global_styles' ),
-			'A Customizer save over AJAX'                  => array( 'A Customizer save over AJAX', NativePaymentsState::CONNECTED, 'ajax', 'customize_save_after' ),
-			'A theme switch from WP-CLI'                   => array( 'A theme switch from WP-CLI', NativePaymentsState::ACTIVE, 'cli', 'after_switch_theme' ),
-			'A WooCommerce update finishing in cron'       => array( 'A WooCommerce update finishing in cron', NativePaymentsState::CONNECTED, 'cron', 'woocommerce_updated' ),
-			'A WooCommerce update finishing on a page'     => array( 'A WooCommerce update finishing on a page', NativePaymentsState::CONNECTED, 'front', 'woocommerce_updated' ),
-			'A WooCommerce update on an active store page' => array( 'A WooCommerce update on an active store page', NativePaymentsState::ACTIVE, 'front', 'woocommerce_updated' ),
+			'A theme switch in a connected store admin'    => array( 'A theme switch in a connected store admin', WooPaymentsSetupTier::CONNECTED, 'admin', 'after_switch_theme' ),
+			'A theme switch in an active store admin'      => array( 'A theme switch in an active store admin', WooPaymentsSetupTier::ACTIVE, 'admin', 'after_switch_theme' ),
+			'A global styles save over REST'               => array( 'A global styles save over REST', WooPaymentsSetupTier::ACTIVE, 'rest', 'save_post_wp_global_styles' ),
+			'A Customizer save over AJAX'                  => array( 'A Customizer save over AJAX', WooPaymentsSetupTier::CONNECTED, 'ajax', 'customize_save_after' ),
+			'A theme switch from WP-CLI'                   => array( 'A theme switch from WP-CLI', WooPaymentsSetupTier::ACTIVE, 'cli', 'after_switch_theme' ),
+			'A WooCommerce update finishing in cron'       => array( 'A WooCommerce update finishing in cron', WooPaymentsSetupTier::CONNECTED, 'cron', 'woocommerce_updated' ),
+			'A WooCommerce update finishing on a page'     => array( 'A WooCommerce update finishing on a page', WooPaymentsSetupTier::CONNECTED, 'front', 'woocommerce_updated' ),
+			'A WooCommerce update on an active store page' => array( 'A WooCommerce update on an active store page', WooPaymentsSetupTier::ACTIVE, 'front', 'woocommerce_updated' ),
 		);
 	}
 
 	/** @return array<string,array{string,string,string}> */
 	public static function on_hold_email_requests(): array {
 		return array(
-			'active Store API checkout'    => array( 'active Store API checkout', NativePaymentsState::ACTIVE, 'rest' ),
-			'active deferred email (cron)' => array( 'active deferred email (cron)', NativePaymentsState::ACTIVE, 'cron' ),
-			'active admin resend'          => array( 'active admin resend', NativePaymentsState::ACTIVE, 'admin' ),
-			'connected admin resend'       => array( 'connected admin resend', NativePaymentsState::CONNECTED, 'admin' ),
-			'connected AJAX resend'        => array( 'connected AJAX resend', NativePaymentsState::CONNECTED, 'ajax' ),
-			'connected REST'               => array( 'connected REST', NativePaymentsState::CONNECTED, 'rest' ),
-			'connected cron'               => array( 'connected cron', NativePaymentsState::CONNECTED, 'cron' ),
-			'connected WP-CLI'             => array( 'connected WP-CLI', NativePaymentsState::CONNECTED, 'cli' ),
-			'connected front'              => array( 'connected front', NativePaymentsState::CONNECTED, 'front' ),
+			'active Store API checkout'    => array( 'active Store API checkout', WooPaymentsSetupTier::ACTIVE, 'rest' ),
+			'active deferred email (cron)' => array( 'active deferred email (cron)', WooPaymentsSetupTier::ACTIVE, 'cron' ),
+			'active admin resend'          => array( 'active admin resend', WooPaymentsSetupTier::ACTIVE, 'admin' ),
+			'connected admin resend'       => array( 'connected admin resend', WooPaymentsSetupTier::CONNECTED, 'admin' ),
+			'connected AJAX resend'        => array( 'connected AJAX resend', WooPaymentsSetupTier::CONNECTED, 'ajax' ),
+			'connected REST'               => array( 'connected REST', WooPaymentsSetupTier::CONNECTED, 'rest' ),
+			'connected cron'               => array( 'connected cron', WooPaymentsSetupTier::CONNECTED, 'cron' ),
+			'connected WP-CLI'             => array( 'connected WP-CLI', WooPaymentsSetupTier::CONNECTED, 'cli' ),
+			'connected front'              => array( 'connected front', WooPaymentsSetupTier::CONNECTED, 'front' ),
 		);
 	}
 
 	/** @return array<string,array{string,string,string}> */
 	public static function saved_token_requests(): array {
 		return array(
-			'active cron'     => array( 'active cron', NativePaymentsState::ACTIVE, 'cron' ),
-			'active WP-CLI'   => array( 'active WP-CLI', NativePaymentsState::ACTIVE, 'cli' ),
-			'active admin'    => array( 'active admin', NativePaymentsState::ACTIVE, 'admin' ),
-			'connected cron'  => array( 'connected cron', NativePaymentsState::CONNECTED, 'cron' ),
-			'connected admin' => array( 'connected admin', NativePaymentsState::CONNECTED, 'admin' ),
-			'connected front' => array( 'connected front', NativePaymentsState::CONNECTED, 'front' ),
+			'active cron'     => array( 'active cron', WooPaymentsSetupTier::ACTIVE, 'cron' ),
+			'active WP-CLI'   => array( 'active WP-CLI', WooPaymentsSetupTier::ACTIVE, 'cli' ),
+			'active admin'    => array( 'active admin', WooPaymentsSetupTier::ACTIVE, 'admin' ),
+			'connected cron'  => array( 'connected cron', WooPaymentsSetupTier::CONNECTED, 'cron' ),
+			'connected admin' => array( 'connected admin', WooPaymentsSetupTier::CONNECTED, 'admin' ),
+			'connected front' => array( 'connected front', WooPaymentsSetupTier::CONNECTED, 'front' ),
 		);
 	}
 
 	/** @return array<string,array{string,string,string,bool}> */
 	public static function session_link_requests(): array {
 		return array(
-			'connected front' => array( 'connected front', NativePaymentsState::CONNECTED, 'front', true ),
-			'active front'    => array( 'active front', NativePaymentsState::ACTIVE, 'front', true ),
-			'active admin'    => array( 'active admin', NativePaymentsState::ACTIVE, 'admin', true ),
-			'connected REST'  => array( 'connected REST', NativePaymentsState::CONNECTED, 'rest', false ),
-			'active REST'     => array( 'active REST', NativePaymentsState::ACTIVE, 'rest', false ),
+			'connected front' => array( 'connected front', WooPaymentsSetupTier::CONNECTED, 'front', true ),
+			'active front'    => array( 'active front', WooPaymentsSetupTier::ACTIVE, 'front', true ),
+			'active admin'    => array( 'active admin', WooPaymentsSetupTier::ACTIVE, 'admin', true ),
+			'connected REST'  => array( 'connected REST', WooPaymentsSetupTier::CONNECTED, 'rest', false ),
+			'active REST'     => array( 'active REST', WooPaymentsSetupTier::ACTIVE, 'rest', false ),
 		);
 	}
 
 	/** @return array<string,array{string}> */
 	public static function set_up_states(): array {
 		return array(
-			'connected' => array( NativePaymentsState::CONNECTED ),
-			'active'    => array( NativePaymentsState::ACTIVE ),
+			'connected' => array( WooPaymentsSetupTier::CONNECTED ),
+			'active'    => array( WooPaymentsSetupTier::ACTIVE ),
 		);
 	}
 
@@ -622,9 +622,9 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	 * @return string
 	 */
 	private function stored_state(): string {
-		wp_cache_delete( NativePaymentsState::OPTION_NAME, 'options' );
+		wp_cache_delete( WooPaymentsSetupTier::OPTION_NAME, 'options' );
 		wp_cache_delete( 'alloptions', 'options' );
-		return (string) get_option( NativePaymentsState::OPTION_NAME );
+		return (string) get_option( WooPaymentsSetupTier::OPTION_NAME );
 	}
 
 	/**
@@ -685,9 +685,9 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	private function arrange_native_owner( string $state ): void {
 		update_option( 'active_plugins', array_values( array_diff( (array) get_option( 'active_plugins', array() ), array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) ) ) );
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-		update_option( NativePaymentsState::OPTION_NAME, $state, true );
+		update_option( WooPaymentsSetupTier::OPTION_NAME, $state, true );
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
-		wc_get_container()->get( NativePaymentsState::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 	}
 
 	/**
@@ -697,7 +697,8 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	 */
 	private function run_bootstrap( callable $is_rest_api_request ): void {
 		( new NativePaymentsBootstrap(
-			array( WooPaymentsProvider::class, 'get_bootstrap_root_matrix' ),
+			static fn( $container, string $request_type ): array => $container->get( WooPaymentsSetupTier::class )->get_classes_for_request( $request_type ),
+			static fn( $container ): bool => $container->get( NativePaymentsRuntimeArbiter::class )->should_native_register(),
 			static fn(): array => array()
 		) )->register( wc_get_container(), $is_rest_api_request );
 	}

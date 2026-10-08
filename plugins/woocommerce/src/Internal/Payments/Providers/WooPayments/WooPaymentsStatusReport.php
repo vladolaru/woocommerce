@@ -9,7 +9,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsCurrencyRateProvider;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -93,9 +92,9 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	/**
 	 * Native payments state store.
 	 *
-	 * @var NativePaymentsState
+	 * @var WooPaymentsSetupTier
 	 */
-	private NativePaymentsState $native_payments_state;
+	private WooPaymentsSetupTier $native_payments_state;
 
 	/**
 	 * Cutover state store.
@@ -113,9 +112,9 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 * @internal
 	 *
 	 * @param NativePaymentsRuntimeArbiter $arbiter               Runtime owner arbiter.
-	 * @param NativePaymentsState          $native_payments_state Native payments state store.
+	 * @param WooPaymentsSetupTier         $native_payments_state Native payments state store.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, NativePaymentsState $native_payments_state ): void {
+	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsSetupTier $native_payments_state ): void {
 		$this->arbiter               = $arbiter;
 		$this->native_payments_state = $native_payments_state;
 	}
@@ -147,7 +146,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function has_support_diagnostics(): bool {
-		return in_array( $this->native_payments_state->get_stored_state(), array( NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ), true )
+		return in_array( $this->native_payments_state->get_stored_state(), array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true )
 			|| $this->arbiter->is_plugin_runtime_active()
 			|| $this->arbiter->is_kill_switch_active()
 			|| null !== $this->get_cutover_state_store()->get_record();

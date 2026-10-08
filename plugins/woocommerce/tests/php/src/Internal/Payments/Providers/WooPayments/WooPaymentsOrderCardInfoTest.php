@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Orders\PaymentInfo;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
@@ -35,7 +35,7 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 	 */
 	public function test_card_info_provider_loads_wherever_an_order_can_render(): void {
 		$matrix = WooPaymentsProvider::get_bootstrap_root_matrix();
-		foreach ( array( NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ) as $state ) {
+		foreach ( array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
 			foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron' ) as $request ) {
 				$this->assertContains( WooPaymentsOrderCardInfo::class, $matrix[ $state ][ $request ], "{$state} {$request}" );
 			}

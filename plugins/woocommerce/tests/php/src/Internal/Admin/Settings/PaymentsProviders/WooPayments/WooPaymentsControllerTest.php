@@ -9,7 +9,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
@@ -29,7 +29,7 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 		wc_get_container()->reset_all_replacements();
 		unset( $_GET['woopayments-ref'], $_GET['page'], $_GET['tab'], $_GET['path'], $_GET['section'], $_GET['method'], $_GET['id'], $_GET['wcpay-connection-success'] );
 		delete_transient( 'woopayments_referral_code' );
-		delete_option( NativePaymentsState::OPTION_NAME );
+		delete_option( WooPaymentsSetupTier::OPTION_NAME );
 		remove_all_filters( 'wp_redirect' );
 		wp_set_current_user( 0 );
 
@@ -590,7 +590,7 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 	 */
 	private function set_disabled_native_store(): void {
 		$this->set_admin_user();
-		update_option( NativePaymentsState::OPTION_NAME, NativePaymentsState::DISABLED );
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::DISABLED );
 	}
 
 	/**

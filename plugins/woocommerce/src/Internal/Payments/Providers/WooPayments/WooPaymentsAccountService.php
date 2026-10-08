@@ -9,7 +9,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -162,9 +161,9 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	/**
 	 * Durable native payments state store.
 	 *
-	 * @var NativePaymentsState|null
+	 * @var WooPaymentsSetupTier|null
 	 */
-	private ?NativePaymentsState $native_payments_state = null;
+	private ?WooPaymentsSetupTier $native_payments_state = null;
 
 	/**
 	 * Native payments runtime arbiter.
@@ -201,13 +200,13 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 *
 	 * @param LegacyProxy                                 $legacy_proxy                  Legacy proxy.
 	 * @param WooPaymentsGatewaySettingsSynchronizer|null $gateway_settings_synchronizer Optional split settings repository.
-	 * @param NativePaymentsState|null                    $native_payments_state         Optional durable native payments state store.
+	 * @param WooPaymentsSetupTier|null                   $native_payments_state         Optional durable native payments state store.
 	 * @param NativePaymentsRuntimeArbiter|null           $runtime_arbiter               Optional native payments runtime arbiter.
 	 */
 	final public function init(
 		LegacyProxy $legacy_proxy,
 		?WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer = null,
-		?NativePaymentsState $native_payments_state = null,
+		?WooPaymentsSetupTier $native_payments_state = null,
 		?NativePaymentsRuntimeArbiter $runtime_arbiter = null
 	): void {
 		$this->legacy_proxy                  = $legacy_proxy;
@@ -880,12 +879,12 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		}
 
 		if ( ! $this->runtime_arbiter->is_native_runtime_enabled() || ( is_array( $account_data ) && ! $this->is_native_eligible_account_data( $account_data ) ) ) {
-			$this->native_payments_state->write_state( NativePaymentsState::DISABLED );
+			$this->native_payments_state->write_state( WooPaymentsSetupTier::DISABLED );
 			return;
 		}
 
 		if ( $plugin_runtime_active || array() === $account_data ) {
-			$this->native_payments_state->write_state( NativePaymentsState::AVAILABLE );
+			$this->native_payments_state->write_state( WooPaymentsSetupTier::AVAILABLE );
 			return;
 		}
 
@@ -900,7 +899,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 
 		$settings = $this->get_gateway_settings();
 		$this->native_payments_state->write_state(
-			'yes' === ( $settings['enabled'] ?? null ) ? NativePaymentsState::ACTIVE : NativePaymentsState::CONNECTED
+			'yes' === ( $settings['enabled'] ?? null ) ? WooPaymentsSetupTier::ACTIVE : WooPaymentsSetupTier::CONNECTED
 		);
 	}
 

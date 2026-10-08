@@ -17,7 +17,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDet
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsGatewayRegistry;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderContract;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminRestRouteRegistrar;
@@ -26,6 +26,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverNormalizationRunner;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTierSyncController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPayPreflightGuard;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookReliabilityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooCommerceUpdateListener;
@@ -45,29 +46,33 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	 * A source scan, kept because the laziness shows only in which classes autoload while WooCommerce boots, and this
 	 * test process has loaded them all already. An array callable or a first-class callable would autoload the provider.
 	 *
-	 * @testdox Production composition passes the provider's root lists through closures, so building the bootstrap autoloads no provider class.
+	 * @testdox Production composition passes the provider's class lists through closures, so building the bootstrap autoloads no provider class.
 	 */
 	public function test_production_composition_resolves_provider_roots_lazily(): void {
 		$method       = new ReflectionMethod( \WooCommerce::class, 'init_hooks' );
 		$source_lines = file( $method->getFileName() );
 		$method_body  = implode( '', array_slice( $source_lines, $method->getStartLine() - 1, $method->getEndLine() - $method->getStartLine() + 1 ) );
 
-		foreach ( array( 'get_bootstrap_root_matrix', 'get_multi_currency_provider_roots' ) as $resolver ) {
-			$this->assertMatchesRegularExpression(
-				'/\b(?:fn|function)\s*\([^)]*\)[^;]*?WooPaymentsProvider::' . $resolver . '\(\)/',
-				$method_body,
-				"WooPaymentsProvider::{$resolver}() must be called from inside a closure."
-			);
-		}
+		$this->assertMatchesRegularExpression(
+			'/\b(?:fn|function)\s*\([^)]*\)[^;]*?WooPaymentsSetupTier::class\s*\)->get_classes_for_request\(/',
+			$method_body,
+			'WooPaymentsSetupTier::get_classes_for_request() must be called from inside a closure.'
+		);
+		$this->assertMatchesRegularExpression(
+			'/\b(?:fn|function)\s*\([^)]*\)[^;]*?WooPaymentsProvider::get_multi_currency_provider_roots\(\)/',
+			$method_body,
+			'WooPaymentsProvider::get_multi_currency_provider_roots() must be called from inside a closure.'
+		);
 	}
 
 	/** @testdox Native Payments passes provider roots and REST classification into Multi-Currency registration. */
 	public function test_native_bootstrap_passes_provider_roots_and_rest_classifier_to_multi_currency_registration(): void {
-		$container      = $this->make_container( NativePaymentsState::DISABLED, NativePaymentsRuntimeArbiter::OWNER_BUILTIN, MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
+		$container      = $this->make_container( WooPaymentsSetupTier::DISABLED, NativePaymentsRuntimeArbiter::OWNER_BUILTIN, MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
 		$provider_calls = 0;
 		$rest_calls     = 0;
 		$sut            = new NativePaymentsBootstrap(
 			static fn(): array => array(),
+			static fn(): bool => true,
 			static function () use ( &$provider_calls ): array {
 				++$provider_calls;
 				return array( 'MultiCurrencyProviderRoot' );
@@ -100,13 +105,14 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	public function test_bootstrap_filter_false_short_circuits_all_work(): void {
 		add_filter( NativePaymentsBootstrap::FILTER_BOOTSTRAP_ENABLED, '__return_false' );
 		$matrix_calls = 0;
-		$container    = $this->make_container( NativePaymentsState::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
+		$container    = $this->make_container( WooPaymentsSetupTier::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
 		$rest_calls   = 0;
 		$sut          = new NativePaymentsBootstrap(
 			static function () use ( &$matrix_calls ): array {
 				++$matrix_calls;
-				return WooPaymentsProvider::get_bootstrap_root_matrix();
+				return array();
 			},
+			static fn(): bool => true,
 			static fn(): array => array()
 		);
 
@@ -120,43 +126,39 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array(), $container->events, 'The disabled bootstrap should not resolve any service.' );
 		$this->assertSame( 0, $rest_calls, 'The disabled bootstrap should not classify the request.' );
-		$this->assertSame( 0, $matrix_calls, 'The disabled bootstrap should not ask the provider for its root matrix.' );
+		$this->assertSame( 0, $matrix_calls, 'The disabled bootstrap should not ask the provider for its class lists.' );
 	}
 
 	/**
 	 * @testdox WP-CLI gets the cron roots in every set-up tier, so Action Scheduler runs under WP-CLI reach their handlers.
 	 */
 	public function test_wp_cli_gets_the_cron_roots_in_every_set_up_tier(): void {
-		$sut       = $this->make_bootstrap();
-		$roots_for = new ReflectionMethod( NativePaymentsBootstrap::class, 'roots_for' );
-		$roots_for->setAccessible( true );
+		$matrix = WooPaymentsProvider::get_bootstrap_root_matrix();
 
-		foreach ( array( NativePaymentsState::AVAILABLE, NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ) as $state ) {
-			$cron_roots = $roots_for->invoke( $sut, $state, 'cron' );
+		foreach ( array( WooPaymentsSetupTier::AVAILABLE, WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
+			$cron_roots = ( $matrix[ $state ]['cron'] ?? array() );
 			$this->assertNotEmpty( $cron_roots, "The $state cron cell must not be empty." );
-			$this->assertSame( $cron_roots, $roots_for->invoke( $sut, $state, 'cli' ), "The $state WP-CLI request must register the cron roots." );
+			$this->assertSame( $cron_roots, ( $matrix[ $state ]['cli'] ?? array() ), "The $state WP-CLI request must register the cron roots." );
 		}
-		$this->assertSame( array(), $roots_for->invoke( $sut, NativePaymentsState::DISABLED, 'cli' ), 'A disabled tier registers nothing under WP-CLI.' );
+		$this->assertSame( array(), ( $matrix[ WooPaymentsSetupTier::DISABLED ]['cli'] ?? array() ), 'A disabled tier registers nothing under WP-CLI.' );
 	}
 
 	/**
 	 * @testdox The plugin lifecycle listener loads on every request class where WordPress can activate or deactivate a plugin.
 	 */
 	public function test_plugin_lifecycle_listener_loads_wherever_plugins_change(): void {
-		$sut       = $this->make_bootstrap();
-		$roots_for = new ReflectionMethod( NativePaymentsBootstrap::class, 'roots_for' );
-		$roots_for->setAccessible( true );
+		$matrix = WooPaymentsProvider::get_bootstrap_root_matrix();
 
 		// activate_plugin() and deactivate_plugins() fire the lifecycle hooks in any request that calls them: wp-admin,
 		// admin-ajax, the wp/v2/plugins and wc-admin REST routes, Action Scheduler (cron), WP-CLI, and XML-RPC (front),
 		// where Jetpack's remote plugin management runs.
-		foreach ( array( NativePaymentsState::AVAILABLE, NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ) as $state ) {
+		foreach ( array( WooPaymentsSetupTier::AVAILABLE, WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
 			foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
-				$this->assertContains( WooPaymentsCutoverPluginLifecycleListener::class, $roots_for->invoke( $sut, $state, $request ), "The $state $request request must load the plugin lifecycle listener." );
+				$this->assertContains( WooPaymentsCutoverPluginLifecycleListener::class, ( $matrix[ $state ][ $request ] ?? array() ), "The $state $request request must load the plugin lifecycle listener." );
 			}
 			// The controller owns the admin notices and the click, so it stays on admin requests.
 			foreach ( array( 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
-				$this->assertNotContains( WooPaymentsCutoverController::class, $roots_for->invoke( $sut, $state, $request ), "The $state $request request must not resolve the cutover controller." );
+				$this->assertNotContains( WooPaymentsCutoverController::class, ( $matrix[ $state ][ $request ] ?? array() ), "The $state $request request must not resolve the cutover controller." );
 			}
 		}
 	}
@@ -165,17 +167,15 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	 * @testdox The WooCommerce update listener loads on every request of a connected or active store, since an update finishes on the init of any request.
 	 */
 	public function test_woocommerce_update_listener_loads_on_every_connected_request(): void {
-		$sut       = $this->make_bootstrap();
-		$roots_for = new ReflectionMethod( NativePaymentsBootstrap::class, 'roots_for' );
-		$roots_for->setAccessible( true );
+		$matrix = WooPaymentsProvider::get_bootstrap_root_matrix();
 
-		foreach ( array( NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ) as $state ) {
+		foreach ( array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
 			foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
-				$this->assertContains( WooPaymentsWooCommerceUpdateListener::class, $roots_for->invoke( $sut, $state, $request ), "The $state $request request must load the WooCommerce update listener." );
+				$this->assertContains( WooPaymentsWooCommerceUpdateListener::class, ( $matrix[ $state ][ $request ] ?? array() ), "The $state $request request must load the WooCommerce update listener." );
 			}
 		}
 		foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
-			$this->assertNotContains( WooPaymentsWooCommerceUpdateListener::class, $roots_for->invoke( $sut, NativePaymentsState::AVAILABLE, $request ), "A store without an account has nothing to refresh on a $request request." );
+			$this->assertNotContains( WooPaymentsWooCommerceUpdateListener::class, ( $matrix[ WooPaymentsSetupTier::AVAILABLE ][ $request ] ?? array() ), "A store without an account has nothing to refresh on a $request request." );
 		}
 	}
 
@@ -183,7 +183,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	 * @testdox The gateway provider is resolved only when WooCommerce builds its gateway list.
 	 */
 	public function test_gateway_provider_is_resolved_only_by_the_gateway_list(): void {
-		$container = $this->make_container( NativePaymentsState::CONNECTED, NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
+		$container = $this->make_container( WooPaymentsSetupTier::CONNECTED, NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
 		$sut       = $this->make_bootstrap();
 
 		$sut->register( $container, '__return_false' );
@@ -199,7 +199,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	 * @testdox Keeps cutover normalization out of shopper roots while preserving maintenance ordering.
 	 */
 	public function test_active_provider_matrix_bounds_cutover_normalization_to_maintenance_roots(): void {
-		$active_roots = WooPaymentsProvider::get_bootstrap_root_matrix()[ NativePaymentsState::ACTIVE ];
+		$active_roots = WooPaymentsProvider::get_bootstrap_root_matrix()[ WooPaymentsSetupTier::ACTIVE ];
 
 		$this->assertNotContains( WooPaymentsCutoverNormalizationRunner::class, $active_roots['front'], 'A shopper request must not run cutover normalization.' );
 		$this->assertNotContains( WooPaymentsCutoverNormalizationRunner::class, $active_roots['ajax'], 'An AJAX shopper request must not run cutover normalization.' );
@@ -212,7 +212,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	public function test_provider_matrix_bounds_cutover_reconciliation_to_admin_and_cron_roots(): void {
 		$matrix = WooPaymentsProvider::get_bootstrap_root_matrix();
 
-		foreach ( array( NativePaymentsState::AVAILABLE, NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ) as $state ) {
+		foreach ( array( WooPaymentsSetupTier::AVAILABLE, WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
 			$this->assertContains( WooPaymentsCutoverReconciliationJob::class, $matrix[ $state ]['admin'], $state . ' admin requests must register cutover reconciliation.' );
 			$this->assertContains( WooPaymentsCutoverReconciliationJob::class, $matrix[ $state ]['cron'], $state . ' cron requests must register cutover reconciliation.' );
 
@@ -224,23 +224,13 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 	/** @testdox Should resolve and register each explicit connected REST root once in order. */
 	public function test_register_resolves_connected_rest_roots_once_in_order(): void {
-		$container = $this->make_container( NativePaymentsState::CONNECTED, NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
+		$container = $this->make_container( WooPaymentsSetupTier::CONNECTED, NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
 		$sut       = $this->make_bootstrap();
 
 		$sut->register( $container, '__return_true' );
 
-		$this->assertSame( $this->expected_events( WooPaymentsProvider::get_bootstrap_root_matrix()[ NativePaymentsState::CONNECTED ]['rest'] ), $container->events );
+		$this->assertSame( $this->expected_events( WooPaymentsProvider::get_bootstrap_root_matrix()[ WooPaymentsSetupTier::CONNECTED ]['rest'] ), $container->events );
 		$this->assertSame( array_values( array_unique( $container->resolved ) ), $container->resolved, 'Each explicit root should be resolved once.' );
-	}
-
-	/** @testdox Should make only the independent ownership decisions for a disabled tier. */
-	public function test_register_resolves_no_native_roots_for_disabled_tier(): void {
-		$container = $this->make_container( NativePaymentsState::DISABLED, NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
-		$sut       = $this->make_bootstrap();
-
-		$sut->register( $container, '__return_false' );
-
-		$this->assertSame( $this->expected_events( array() ), $container->events );
 	}
 
 	/**
@@ -271,9 +261,9 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	/** @return array<string,array{string,string,array<int,string>}> */
 	public static function page_request_cron_root_gaps(): array {
 		return array(
-			'available front' => array( NativePaymentsState::AVAILABLE, 'front', array( WooPaymentsCutoverReconciliationJob::class ) ),
+			'available front' => array( WooPaymentsSetupTier::AVAILABLE, 'front', array( WooPaymentsCutoverReconciliationJob::class ) ),
 			'active front'    => array(
-				NativePaymentsState::ACTIVE,
+				WooPaymentsSetupTier::ACTIVE,
 				'front',
 				array(
 					self::WCPAY . 'WooPaymentsCutoverNormalizationRunner',
@@ -285,7 +275,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 				),
 			),
 			'active admin'    => array(
-				NativePaymentsState::ACTIVE,
+				WooPaymentsSetupTier::ACTIVE,
 				'admin',
 				array(
 					self::WCPAY . 'WooPaymentsCanceledAuthorizationFeeRemediationService',
@@ -298,9 +288,9 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	/** @testdox Adds no Action Scheduler listener on a disabled store, on cron and WP-CLI requests, or when the request already has every cron root. */
 	public function test_adds_no_action_scheduler_listener_when_no_cron_root_is_missing(): void {
 		$cases = array(
-			'disabled front'  => array( NativePaymentsState::DISABLED, '__return_false', false ),
-			'available admin' => array( NativePaymentsState::AVAILABLE, '__return_false', true ),
-			'active cron'     => array( NativePaymentsState::ACTIVE, '__return_false', false ),
+			'disabled front'  => array( WooPaymentsSetupTier::DISABLED, '__return_false', false ),
+			'available admin' => array( WooPaymentsSetupTier::AVAILABLE, '__return_false', true ),
+			'active cron'     => array( WooPaymentsSetupTier::ACTIVE, '__return_false', false ),
 		);
 		foreach ( $cases as $label => list( $state, $is_rest, $admin ) ) {
 			if ( 'active cron' === $label ) {
@@ -325,7 +315,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	public function test_provider_matrix_roots_are_registrable_and_listed_once(): void {
 		$matrix = WooPaymentsProvider::get_bootstrap_root_matrix();
 
-		$this->assertEmpty( $matrix[ NativePaymentsState::DISABLED ] ?? array(), 'A disabled store registers no provider root.' );
+		$this->assertEmpty( $matrix[ WooPaymentsSetupTier::DISABLED ] ?? array(), 'A disabled store registers no provider root.' );
 		foreach ( $matrix as $state => $request_groups ) {
 			foreach ( $request_groups as $request => $roots ) {
 				$cell = "$state $request";
@@ -345,8 +335,8 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	/** @testdox Mutation requests retain their required observers. */
 	public function test_provider_matrix_keeps_required_mutation_observers(): void {
 		$matrix         = WooPaymentsProvider::get_bootstrap_root_matrix();
-		$connected_rest = $matrix[ NativePaymentsState::CONNECTED ]['rest'];
-		$active_front   = $matrix[ NativePaymentsState::ACTIVE ]['front'];
+		$connected_rest = $matrix[ WooPaymentsSetupTier::CONNECTED ]['rest'];
+		$active_front   = $matrix[ WooPaymentsSetupTier::ACTIVE ]['front'];
 
 		foreach (
 			array(
@@ -367,8 +357,8 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	public function test_provider_matrix_registers_the_cart_extension_on_active_pages(): void {
 		$matrix = WooPaymentsProvider::get_bootstrap_root_matrix();
 
-		$this->assertContains( self::WCPAY . 'WooPaymentsExpressCheckoutStoreApiExtension', $matrix[ NativePaymentsState::ACTIVE ]['front'] );
-		$this->assertContains( self::WCPAY . 'WooPaymentsExpressCheckoutStoreApiExtension', $matrix[ NativePaymentsState::ACTIVE ]['rest'] );
+		$this->assertContains( self::WCPAY . 'WooPaymentsExpressCheckoutStoreApiExtension', $matrix[ WooPaymentsSetupTier::ACTIVE ]['front'] );
+		$this->assertContains( self::WCPAY . 'WooPaymentsExpressCheckoutStoreApiExtension', $matrix[ WooPaymentsSetupTier::ACTIVE ]['rest'] );
 	}
 
 	/**
@@ -380,7 +370,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	public function test_provider_matrix_serves_the_shopper_tracks_route_on_active_rest(): void {
 		$matrix = WooPaymentsProvider::get_bootstrap_root_matrix();
 
-		$this->assertContains( self::WCPAY . 'WooPaymentsFrontendTrackingController', $matrix[ NativePaymentsState::ACTIVE ]['rest'] );
+		$this->assertContains( self::WCPAY . 'WooPaymentsFrontendTrackingController', $matrix[ WooPaymentsSetupTier::ACTIVE ]['rest'] );
 	}
 
 	/** @testdox Registers the WooPay preflight guard only for active REST requests. */
@@ -389,7 +379,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 		foreach ( $matrix as $state => $request_groups ) {
 			foreach ( $request_groups as $request_type => $roots ) {
-				if ( NativePaymentsState::ACTIVE === $state && 'rest' === $request_type ) {
+				if ( WooPaymentsSetupTier::ACTIVE === $state && 'rest' === $request_type ) {
 					$this->assertContains( WooPaymentsWooPayPreflightGuard::class, $roots );
 					continue;
 				}
@@ -403,17 +393,17 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	public function test_provider_matrix_tiers_merchant_rest_routes(): void {
 		$matrix = WooPaymentsProvider::get_bootstrap_root_matrix();
 
-		$this->assertNotContains( WooPaymentsMerchantRestController::class, $matrix[ NativePaymentsState::AVAILABLE ]['admin'] );
-		$this->assertNotContains( WooPaymentsAdminRestRouteRegistrar::class, $matrix[ NativePaymentsState::AVAILABLE ]['admin'] );
-		$this->assertNotContains( WooPaymentsMerchantRestController::class, $matrix[ NativePaymentsState::AVAILABLE ]['rest'] ?? array() );
-		$this->assertContains( WooPaymentsMerchantRestController::class, $matrix[ NativePaymentsState::CONNECTED ]['rest'] );
-		$this->assertNotContains( WooPaymentsMerchantRestController::class, $matrix[ NativePaymentsState::CONNECTED ]['admin'] );
-		$this->assertContains( WooPaymentsAdminRestRouteRegistrar::class, $matrix[ NativePaymentsState::CONNECTED ]['admin'] );
-		$this->assertNotContains( WooPaymentsAdminRestRouteRegistrar::class, $matrix[ NativePaymentsState::CONNECTED ]['rest'] );
-		$this->assertContains( WooPaymentsMerchantRestController::class, $matrix[ NativePaymentsState::ACTIVE ]['rest'] );
-		$this->assertNotContains( WooPaymentsMerchantRestController::class, $matrix[ NativePaymentsState::ACTIVE ]['admin'] );
-		$this->assertContains( WooPaymentsAdminRestRouteRegistrar::class, $matrix[ NativePaymentsState::ACTIVE ]['admin'] );
-		$this->assertNotContains( WooPaymentsAdminRestRouteRegistrar::class, $matrix[ NativePaymentsState::ACTIVE ]['rest'] );
+		$this->assertNotContains( WooPaymentsMerchantRestController::class, $matrix[ WooPaymentsSetupTier::AVAILABLE ]['admin'] );
+		$this->assertNotContains( WooPaymentsAdminRestRouteRegistrar::class, $matrix[ WooPaymentsSetupTier::AVAILABLE ]['admin'] );
+		$this->assertNotContains( WooPaymentsMerchantRestController::class, $matrix[ WooPaymentsSetupTier::AVAILABLE ]['rest'] ?? array() );
+		$this->assertContains( WooPaymentsMerchantRestController::class, $matrix[ WooPaymentsSetupTier::CONNECTED ]['rest'] );
+		$this->assertNotContains( WooPaymentsMerchantRestController::class, $matrix[ WooPaymentsSetupTier::CONNECTED ]['admin'] );
+		$this->assertContains( WooPaymentsAdminRestRouteRegistrar::class, $matrix[ WooPaymentsSetupTier::CONNECTED ]['admin'] );
+		$this->assertNotContains( WooPaymentsAdminRestRouteRegistrar::class, $matrix[ WooPaymentsSetupTier::CONNECTED ]['rest'] );
+		$this->assertContains( WooPaymentsMerchantRestController::class, $matrix[ WooPaymentsSetupTier::ACTIVE ]['rest'] );
+		$this->assertNotContains( WooPaymentsMerchantRestController::class, $matrix[ WooPaymentsSetupTier::ACTIVE ]['admin'] );
+		$this->assertContains( WooPaymentsAdminRestRouteRegistrar::class, $matrix[ WooPaymentsSetupTier::ACTIVE ]['admin'] );
+		$this->assertNotContains( WooPaymentsAdminRestRouteRegistrar::class, $matrix[ WooPaymentsSetupTier::ACTIVE ]['rest'] );
 	}
 
 	/** @testdox Account refresh roots register the webhook recovery listener before refresh handlers can run. */
@@ -436,72 +426,52 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 	/**
 	 * The recording container clamps the stored tier with its own copy of the rule; the real clamp is checked by
-	 * NativePaymentsStateTest::test_get_state_clamps_connected_tiers_while_plugin_is_active.
+	 * WooPaymentsSetupTierTest::test_get_state_clamps_connected_tiers_while_plugin_is_active.
 	 *
-	 * @testdox A plugin-owned site with an available effective tier registers only the plugin lifecycle listener, not shadow mode, by default.
+	 * @testdox A plugin-owned site with an available effective tier registers only the setup tier sync controller and the plugin lifecycle listener, not shadow mode.
 	 */
 	public function test_plugin_owner_registers_no_shadow_mode_by_default(): void {
-		$container = $this->make_container( NativePaymentsState::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_EXTENSION );
-		$sut       = $this->make_bootstrap( array( NativePaymentsShadowMode::class, 'register_when_enabled' ) );
+		$container = $this->make_container( WooPaymentsSetupTier::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_EXTENSION );
+		$sut       = $this->make_bootstrap();
 
 		$sut->register( $container, '__return_false' );
 
 		// A plugin deactivated over XML-RPC (Jetpack remote management, a front request) must still start the switch.
-		$this->assertSame( $this->expected_events( array( WooPaymentsCutoverPluginLifecycleListener::class ) ), $container->events );
+		$this->assertSame( $this->expected_events( array( WooPaymentsSetupTierSyncController::class, WooPaymentsCutoverPluginLifecycleListener::class ) ), $container->events );
 		$this->assertNotContains( NativePaymentsShadowMode::class, $container->resolved );
-	}
-
-	/** @testdox Should register only the native shadow exception on plugin-owned shopper requests when explicitly enabled. */
-	public function test_plugin_owner_registers_opt_in_shadow_only(): void {
-		add_filter( NativePaymentsShadowMode::FILTER_SHADOW_ENABLED, '__return_true' );
-		$container = $this->make_container( NativePaymentsState::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_EXTENSION );
-		$sut       = $this->make_bootstrap( array( NativePaymentsShadowMode::class, 'register_when_enabled' ) );
-
-		$sut->register( $container, '__return_false' );
-
-		$this->assertSame( $this->expected_events( array( WooPaymentsCutoverPluginLifecycleListener::class, NativePaymentsShadowMode::class ) ), $container->events );
 	}
 
 	/**
 	 * The recording container returns disabled for owner-less sites with its own copy of the rule; the real rule is checked by
-	 * NativePaymentsStateTest::test_get_state_returns_disabled_without_overwriting_the_stored_state_when_no_runtime_owns_the_site.
+	 * WooPaymentsSetupTierTest::test_get_state_returns_disabled_without_overwriting_the_stored_state_when_no_runtime_owns_the_site.
 	 *
 	 * @testdox An owner-less site with a disabled effective tier registers nothing, even with shadow mode enabled.
 	 */
 	public function test_owner_none_registers_nothing_even_with_shadow_mode_enabled(): void {
 		add_filter( NativePaymentsShadowMode::FILTER_SHADOW_ENABLED, '__return_true' );
-		$container = $this->make_container( NativePaymentsState::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_NONE );
-		$sut       = $this->make_bootstrap( array( NativePaymentsShadowMode::class, 'register_when_enabled' ) );
+		$container = $this->make_container( WooPaymentsSetupTier::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_NONE );
+		$sut       = $this->make_bootstrap();
 
 		$sut->register( $container, '__return_false' );
 
 		$this->assertSame( $this->expected_events( array() ), $container->events );
 	}
 
-	/** @testdox The provider's plugin-owner hooks are added only on sites the plugin owns, with nothing resolved from the container. */
-	public function test_plugin_owner_registrar_runs_only_for_the_plugin_owner(): void {
+	/** @testdox The setup tier sync controller is registered, on a disabled tier too, only on sites the plugin owns. */
+	public function test_setup_tier_sync_controller_registers_only_for_the_plugin_owner(): void {
 		$owners = array(
-			NativePaymentsRuntimeArbiter::OWNER_EXTENSION => 1,
-			NativePaymentsRuntimeArbiter::OWNER_BUILTIN   => 0,
-			NativePaymentsRuntimeArbiter::OWNER_NONE      => 0,
+			NativePaymentsRuntimeArbiter::OWNER_EXTENSION => array( WooPaymentsSetupTierSyncController::class ),
+			NativePaymentsRuntimeArbiter::OWNER_BUILTIN   => array(),
+			NativePaymentsRuntimeArbiter::OWNER_NONE      => array(),
 		);
 
-		foreach ( $owners as $owner => $expected_calls ) {
-			$container = $this->make_container( NativePaymentsState::DISABLED, $owner );
-			$calls     = 0;
-			$sut       = new NativePaymentsBootstrap(
-				array( WooPaymentsProvider::class, 'get_bootstrap_root_matrix' ),
-				array( WooPaymentsProvider::class, 'get_multi_currency_provider_roots' ),
-				static function ( $received ) use ( &$calls, $container ): void {
-					self::assertSame( $container, $received );
-					++$calls;
-				}
-			);
+		foreach ( $owners as $owner => $expected_classes ) {
+			$container = $this->make_container( WooPaymentsSetupTier::DISABLED, $owner );
+			$sut       = $this->make_bootstrap();
 
 			$sut->register( $container, '__return_false' );
 
-			$this->assertSame( $expected_calls, $calls, $owner );
-			$this->assertSame( $this->expected_events( array() ), $container->events, $owner );
+			$this->assertSame( $this->expected_events( $expected_classes ), $container->events, $owner );
 		}
 	}
 
@@ -523,7 +493,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_option_template', static fn() => $theme );
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		update_option( 'active_plugins', array_values( array_diff( (array) get_option( 'active_plugins', array() ), array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) ) ) );
-		update_option( NativePaymentsState::OPTION_NAME, $state );
+		update_option( WooPaymentsSetupTier::OPTION_NAME, $state );
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
 		update_option( 'wcpay_multi_currency_enable_storefront_switcher', 'yes' );
@@ -548,7 +518,8 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		add_filter( NativePaymentsBootstrap::FILTER_BOOTSTRAP_ENABLED, $recorder );
 
 		$sut      = new NativePaymentsBootstrap(
-			static fn(): array => WooPaymentsProvider::get_bootstrap_root_matrix(),
+			static fn( $container, string $request_type ): array => $container->get( WooPaymentsSetupTier::class )->get_classes_for_request( $request_type ),
+			static fn( $container ): bool => $container->get( NativePaymentsRuntimeArbiter::class )->should_native_register(),
 			static fn(): array => WooPaymentsProvider::get_multi_currency_provider_roots()
 		);
 		$instance = new \ReflectionProperty( \WooCommerce::class, '_instance' );
@@ -573,7 +544,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		$cases = array();
 		foreach ( array( 'front', 'ajax', 'rest', 'admin', 'cron', 'cli' ) as $request ) {
 			foreach ( array( 'storefront', 'twentytwentyfive' ) as $theme ) {
-				foreach ( array( NativePaymentsState::AVAILABLE, NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ) as $state ) {
+				foreach ( array( WooPaymentsSetupTier::AVAILABLE, WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
 					$cases[ "$request, $theme, $state" ] = array( $request, $theme, $state );
 				}
 			}
@@ -615,16 +586,15 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Build the neutral facade with the WooPayments-owned root matrix.
+	 * Build the bootstrap with the WooPayments setup tier's class lists, as WooCommerce does.
 	 *
-	 * @param callable|null $plugin_owner_registrar Provider-owned hooks for plugin-owned sites.
 	 * @return NativePaymentsBootstrap
 	 */
-	private function make_bootstrap( ?callable $plugin_owner_registrar = null ): NativePaymentsBootstrap {
+	private function make_bootstrap(): NativePaymentsBootstrap {
 		return new NativePaymentsBootstrap(
-			array( WooPaymentsProvider::class, 'get_bootstrap_root_matrix' ),
-			array( WooPaymentsProvider::class, 'get_multi_currency_provider_roots' ),
-			$plugin_owner_registrar
+			static fn( $container, string $request_type ): array => $container->get( WooPaymentsSetupTier::class )->get_classes_for_request( $request_type ),
+			static fn( $container ): bool => $container->get( NativePaymentsRuntimeArbiter::class )->should_native_register(),
+			array( WooPaymentsProvider::class, 'get_multi_currency_provider_roots' )
 		);
 	}
 
@@ -638,8 +608,6 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	private function expected_events( array $roots, array $on_demand_roots = array() ): array {
 		$events = array(
 			'get:' . MultiCurrencyRuntimeArbiter::class,
-			'get:' . NativePaymentsState::class,
-			'get:' . NativePaymentsRuntimeArbiter::class,
 		);
 
 		foreach ( array_merge( $roots, $on_demand_roots ) as $root ) {
@@ -711,12 +679,50 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 			}
 
 			/**
+			 * The real setup tier, reading the case's stored tier and owner, so its class lists are the ones under test.
+			 *
+			 * @return WooPaymentsSetupTier
+			 */
+			private function get_setup_tier(): WooPaymentsSetupTier {
+				if ( ! isset( $this->services[ WooPaymentsSetupTier::class ] ) ) {
+					update_option( WooPaymentsSetupTier::OPTION_NAME, $this->state );
+					$arbiter = new class( $this->owner ) extends NativePaymentsRuntimeArbiter {
+						/** @var string */
+						private $owner;
+
+						/**
+						 * Initialize the owner stub.
+						 *
+						 * @param string $owner Native runtime owner.
+						 */
+						public function __construct( string $owner ) {
+							$this->owner = $owner;
+						}
+
+						/** Return the case's owner. */
+						public function get_runtime_owner(): string {
+							return $this->owner;
+						}
+					};
+					$tier    = new WooPaymentsSetupTier();
+					$tier->init( $arbiter );
+					$this->services[ WooPaymentsSetupTier::class ] = $tier;
+				}
+
+				return $this->services[ WooPaymentsSetupTier::class ];
+			}
+
+			/**
 			 * Resolve a recording service for every explicit root.
 			 *
 			 * @param string $class_name Class name.
 			 * @return object Recording service.
 			 */
 			public function get( string $class_name ) {
+				if ( WooPaymentsSetupTier::class === $class_name ) {
+					return $this->get_setup_tier();
+				}
+
 				$this->resolved[] = $class_name;
 				$this->events[]   = 'get:' . $class_name;
 				if ( MultiCurrencyUsageDetector::class === $class_name ) {
@@ -801,22 +807,6 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 						/** Return the configured native payments owner. */
 						public function get_payments_owner(): string {
 							return $this->owner;
-						}
-
-						/** Return the configured effective native state. */
-						public function get_state(): string {
-							if ( NativePaymentsRuntimeArbiter::OWNER_NONE === $this->owner ) {
-								return NativePaymentsState::DISABLED;
-							}
-
-							if (
-								NativePaymentsRuntimeArbiter::OWNER_EXTENSION === $this->owner &&
-								in_array( $this->state, array( NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ), true )
-							) {
-								return NativePaymentsState::AVAILABLE;
-							}
-
-							return $this->state;
 						}
 
 						/** @var array<int,callable> Provider resolvers handed to the registry. */

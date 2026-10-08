@@ -429,16 +429,17 @@ final class WooCommerce {
 		// connection; the class loads only when WordPress builds its eraser list.
 		add_filter( 'wp_privacy_personal_data_erasers', array( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerDataEraser::class, 'add_eraser' ) );
 		( new Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap(
-			static fn(): array => Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider::get_bootstrap_root_matrix(),
-			static fn(): array => Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider::get_multi_currency_provider_roots(),
-			static function ( $container ): void {
-				$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTierSyncController::class )->register();
-				Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow\NativePaymentsShadowMode::register_when_enabled( $container );
-			}
+			static fn( $container, string $request_type ): array => $container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier::class )->get_classes_for_request( $request_type ),
+			static fn( $container ): bool => $container->get( Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter::class )->should_native_register(),
+			static fn(): array => Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider::get_multi_currency_provider_roots()
 		) )->register(
 			$container,
 			fn(): bool => $this->is_rest_api_request()
 		);
+		// Canary-only comparison of the built-in WooPayments with the WooPayments extension, on stores the extension owns.
+		if ( $container->get( Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter::class )->is_plugin_runtime_active() ) {
+			Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow\NativePaymentsShadowMode::register_when_enabled( $container );
+		}
 		$container->get( Automattic\WooCommerce\Internal\Utilities\LegacyRestApiStub::class )->register();
 		$container->get( LegacySelect2UsageTracker::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\VariationGallery\Telemetry::class )->register();

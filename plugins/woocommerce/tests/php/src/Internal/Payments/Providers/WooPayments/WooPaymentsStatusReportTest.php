@@ -6,7 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Enums\WooPaymentsCutoverState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
@@ -69,8 +69,8 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
 		update_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION, '0', true );
 		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD, true );
-		update_option( NativePaymentsState::OPTION_NAME, NativePaymentsState::DISABLED, true );
-		wc_get_container()->get( NativePaymentsState::class )->invalidate();
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::DISABLED, true );
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		$this->reset_legacy_proxy_mocks();
 
 		parent::tearDown();
@@ -81,7 +81,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	 */
 	public function test_init_resolves_no_diagnostic_collaborator(): void {
 		$sut = new WooPaymentsStatusReport();
-		$sut->init( wc_get_container()->get( NativePaymentsRuntimeArbiter::class ), wc_get_container()->get( NativePaymentsState::class ) );
+		$sut->init( wc_get_container()->get( NativePaymentsRuntimeArbiter::class ), wc_get_container()->get( WooPaymentsSetupTier::class ) );
 
 		foreach ( array( 'account_service', 'frontend_styles_service', 'fee_remediation_service', 'cutover_controller', 'provider_registry_factory', 'cutover_state_store' ) as $property ) {
 			$reflection = new \ReflectionProperty( WooPaymentsStatusReport::class, $property );
@@ -95,7 +95,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	 */
 	public function test_registers_supportability_hooks_even_when_plugin_owns_runtime(): void {
 		$this->fake_plugin( true );
-		$this->set_native_state( NativePaymentsState::AVAILABLE );
+		$this->set_native_state( WooPaymentsSetupTier::AVAILABLE );
 		$sut = $this->get_sut();
 		$this->remove_status_hooks( $sut );
 
@@ -154,7 +154,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	public function test_registers_supportability_hooks_for_a_connected_native_store(): void {
 		$this->fake_plugin( false );
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-		$this->set_native_state( NativePaymentsState::CONNECTED );
+		$this->set_native_state( WooPaymentsSetupTier::CONNECTED );
 		$sut = $this->get_sut();
 		$this->remove_status_hooks( $sut );
 
@@ -169,8 +169,8 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	public function test_registers_supportability_hooks_for_a_killswitched_connected_store(): void {
 		$this->fake_plugin( false );
 		update_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION, '1', true );
-		$this->set_native_state( NativePaymentsState::CONNECTED );
-		$this->assertSame( NativePaymentsState::DISABLED, wc_get_container()->get( NativePaymentsState::class )->get_state(), 'The kill switch should clamp the effective state.' );
+		$this->set_native_state( WooPaymentsSetupTier::CONNECTED );
+		$this->assertSame( WooPaymentsSetupTier::DISABLED, wc_get_container()->get( WooPaymentsSetupTier::class )->get_state(), 'The kill switch should clamp the effective state.' );
 		$sut = $this->get_sut();
 		$this->remove_status_hooks( $sut );
 
@@ -187,7 +187,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	public function test_registers_supportability_hooks_for_a_connected_store_with_the_runtime_off(): void {
 		$this->fake_plugin( false );
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_false' );
-		$this->set_native_state( NativePaymentsState::ACTIVE );
+		$this->set_native_state( WooPaymentsSetupTier::ACTIVE );
 		$sut = $this->get_sut();
 		$this->remove_status_hooks( $sut );
 
@@ -202,7 +202,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	public function test_registers_supportability_hooks_while_the_kill_switch_is_on(): void {
 		$this->fake_plugin( false );
 		update_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION, '1', true );
-		$this->set_native_state( NativePaymentsState::AVAILABLE );
+		$this->set_native_state( WooPaymentsSetupTier::AVAILABLE );
 		$sut = $this->get_sut();
 		$this->remove_status_hooks( $sut );
 
@@ -217,7 +217,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	public function test_registers_supportability_hooks_while_the_kill_switch_is_stored_as_an_array(): void {
 		$this->fake_plugin( false );
 		update_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION, array( 'on' ), true );
-		$this->set_native_state( NativePaymentsState::AVAILABLE );
+		$this->set_native_state( WooPaymentsSetupTier::AVAILABLE );
 		$sut = $this->get_sut();
 		$this->remove_status_hooks( $sut );
 
@@ -232,7 +232,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	public function test_registers_supportability_hooks_when_a_cutover_record_exists(): void {
 		$this->fake_plugin( false );
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-		$this->set_native_state( NativePaymentsState::AVAILABLE );
+		$this->set_native_state( WooPaymentsSetupTier::AVAILABLE );
 		$this->assertTrue(
 			( new WooPaymentsCutoverStateStore() )->save_record(
 				array(
@@ -441,7 +441,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->fake_plugin( false );
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		$this->seed_connected_store();
-		$this->set_native_state( NativePaymentsState::CONNECTED );
+		$this->set_native_state( WooPaymentsSetupTier::CONNECTED );
 		$sut = $this->get_sut();
 		$this->remove_status_hooks( $sut );
 		$sut->register();
@@ -482,7 +482,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->fake_plugin( false );
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		$this->seed_connected_store();
-		$this->set_native_state( NativePaymentsState::CONNECTED );
+		$this->set_native_state( WooPaymentsSetupTier::CONNECTED );
 		$cache_before = get_option( 'wcpay_account_data' );
 		$sut          = $this->get_sut();
 		$this->remove_status_hooks( $sut );
@@ -533,7 +533,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( WooPaymentsCanceledAuthorizationFeeRemediationService::class, $remediation_service );
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 		$sut = new WooPaymentsStatusReport();
-		$sut->init( wc_get_container()->get( NativePaymentsRuntimeArbiter::class ), wc_get_container()->get( NativePaymentsState::class ) );
+		$sut->init( wc_get_container()->get( NativePaymentsRuntimeArbiter::class ), wc_get_container()->get( WooPaymentsSetupTier::class ) );
 
 		$this->assertSame( $expected_message, $sut->$tool_callback() );
 	}
@@ -694,7 +694,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	 */
 	public function test_status_report_leaves_the_client_section_to_the_plugin_while_it_owns_payments(): void {
 		$this->fake_plugin( true );
-		$this->set_native_state( NativePaymentsState::AVAILABLE );
+		$this->set_native_state( WooPaymentsSetupTier::AVAILABLE );
 		$api_client = $this->createMock( WooPaymentsApiClient::class );
 		$api_client->expects( $this->never() )->method( 'get_latest_fraud_ruleset' );
 		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
@@ -984,9 +984,9 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	 * @param string $state Native payments state.
 	 */
 	private function set_native_state( string $state ): void {
-		update_option( NativePaymentsState::OPTION_NAME, $state, true );
+		update_option( WooPaymentsSetupTier::OPTION_NAME, $state, true );
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
-		wc_get_container()->get( NativePaymentsState::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 	}
 
 	/**

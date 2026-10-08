@@ -9,7 +9,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Container;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsMerchantRestController;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -60,9 +59,9 @@ final class WooPaymentsAdminRestRouteRegistrar implements RegisterHooksInterface
 		/**
 		 * Effective native state store.
 		 *
-		 * @var NativePaymentsState $state_store
+		 * @var WooPaymentsSetupTier $state_store
 		 */
-		$state_store = $this->container->get( NativePaymentsState::class );
+		$state_store = $this->container->get( WooPaymentsSetupTier::class );
 
 		foreach ( self::get_controller_roots_for_state( $state_store->get_state() ) as $root ) {
 			/**
@@ -109,12 +108,12 @@ final class WooPaymentsAdminRestRouteRegistrar implements RegisterHooksInterface
 	 * @return array<int,class-string<RegisterHooksInterface>> Route controller classes in registration order.
 	 */
 	private static function get_controller_roots_for_state( string $state ): array {
-		if ( ! in_array( $state, array( NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ), true ) ) {
+		if ( ! in_array( $state, array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true ) ) {
 			return array();
 		}
 
 		$roots = self::get_connected_controller_roots();
-		if ( NativePaymentsState::ACTIVE === $state ) {
+		if ( WooPaymentsSetupTier::ACTIVE === $state ) {
 			$roots[] = WooPaymentsWooPaySessionController::class;
 		}
 

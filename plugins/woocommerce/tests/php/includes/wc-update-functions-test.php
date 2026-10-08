@@ -18,7 +18,7 @@ use Automattic\WooCommerce\Internal\BatchProcessing\BatchProcessingController;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\VariationGallery\Package as VariationGalleryPackage;
@@ -45,7 +45,7 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'active_plugins' );
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
-		wc_get_container()->get( NativePaymentsState::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		parent::tearDown();
 	}
 
@@ -738,7 +738,7 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 
 		$container = wc_get_container();
 		$arbiter   = $container->get( NativePaymentsRuntimeArbiter::class );
-		$state     = $container->get( NativePaymentsState::class );
+		$state     = $container->get( WooPaymentsSetupTier::class );
 		$matrix    = WooPaymentsProvider::get_bootstrap_root_matrix();
 		update_option( 'woocommerce_woopayments_builtin_enabled', 'yes' );
 		update_option( 'active_plugins', array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) );
@@ -756,28 +756,28 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 		);
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
 		// WC_Install::create_options() seeds the disabled default before the update callbacks run.
-		update_option( NativePaymentsState::OPTION_NAME, NativePaymentsState::DISABLED, true );
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::DISABLED, true );
 		$arbiter->invalidate();
 		$state->invalidate();
 
-		$this->assertSame( NativePaymentsState::DISABLED, get_option( NativePaymentsState::OPTION_NAME ), 'An upgraded plugin store only has the seeded default.' );
-		$this->assertSame( NativePaymentsState::DISABLED, $state->get_state() );
-		$this->assertArrayNotHasKey( NativePaymentsState::DISABLED, $matrix, 'The disabled tier loads no switch controller.' );
+		$this->assertSame( WooPaymentsSetupTier::DISABLED, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'An upgraded plugin store only has the seeded default.' );
+		$this->assertSame( WooPaymentsSetupTier::DISABLED, $state->get_state() );
+		$this->assertArrayNotHasKey( WooPaymentsSetupTier::DISABLED, $matrix, 'The disabled tier loads no switch controller.' );
 
 		wc_update_11205_seed_woopayments_setup_tier();
 		$state->invalidate();
 
-		$this->assertSame( NativePaymentsState::AVAILABLE, get_option( NativePaymentsState::OPTION_NAME ) );
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
 		$this->assertContains( WooPaymentsCutoverController::class, $matrix[ $state->get_state() ]['admin'] );
 
-		delete_option( NativePaymentsState::OPTION_NAME );
+		delete_option( WooPaymentsSetupTier::OPTION_NAME );
 		update_option( 'active_plugins', array() );
 		$arbiter->invalidate();
 		$state->invalidate();
 
 		wc_update_11205_seed_woopayments_setup_tier();
 
-		$this->assertFalse( get_option( NativePaymentsState::OPTION_NAME ), 'A store without the active plugin keeps its state for the cutover writers.' );
+		$this->assertFalse( get_option( WooPaymentsSetupTier::OPTION_NAME ), 'A store without the active plugin keeps its state for the cutover writers.' );
 	}
 
 	/**
@@ -813,11 +813,11 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 		);
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
-		wc_get_container()->get( NativePaymentsState::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 
 		wc_update_11205_seed_woopayments_setup_tier();
 
-		$this->assertSame( NativePaymentsState::DISABLED, get_option( NativePaymentsState::OPTION_NAME ) );
+		$this->assertSame( WooPaymentsSetupTier::DISABLED, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
 	}
 
 	/**

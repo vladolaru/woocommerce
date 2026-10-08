@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
@@ -131,23 +131,23 @@ class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
 
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		update_option( 'active_plugins', array() );
-		update_option( NativePaymentsState::OPTION_NAME, NativePaymentsState::ACTIVE );
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::ACTIVE );
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
-		wc_get_container()->get( NativePaymentsState::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 	}
 
 	/**
 	 * Invalidate the singleton native state so no later test observes the `active` state this
 	 * test put it in (gate: `NativePaymentsBootstrapTest` and friends stay clean). The enabling
-	 * filter and the stored option are undone first, the way `NativePaymentsStateTest` does, so
+	 * filter and the stored option are undone first, the way `WooPaymentsSetupTierTest` does, so
 	 * nothing left in `parent::tearDown()` can re-cache `active` for the next test.
 	 */
 	public function tearDown(): void {
 		try {
 			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-			delete_option( NativePaymentsState::OPTION_NAME );
+			delete_option( WooPaymentsSetupTier::OPTION_NAME );
 			wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
-			wc_get_container()->get( NativePaymentsState::class )->invalidate();
+			wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		} finally {
 			parent::tearDown();
 		}
