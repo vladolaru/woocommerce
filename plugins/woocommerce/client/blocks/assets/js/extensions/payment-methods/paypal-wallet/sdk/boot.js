@@ -218,6 +218,7 @@ const ELIGIBILITY_REFRESH_DEBOUNCE_MS = 300;
 			payLaterEnabled: Boolean(
 				config.pay_later_button?.[ target.context ]
 			),
+			venmoEnabled: Boolean( config.venmo_button?.[ target.context ] ),
 		} );
 	}
 

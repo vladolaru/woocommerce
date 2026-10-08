@@ -163,6 +163,7 @@ export function createMethodButton( {
  * @param {OrderCreatorFactory} options.createOrderForFunding - Builds a createOrder function per funding source.
  * @param {Object}              [options.payLaterDetails]     - Pay Later product details.
  * @param {boolean}             [options.payLaterEnabled]     - Whether the merchant offers Pay Later here.
+ * @param {boolean}             [options.venmoEnabled]        - Whether the merchant offers Venmo here.
  * @return {HTMLElement[]} Array of rendered button elements.
  */
 export function renderButtons( {
@@ -172,6 +173,7 @@ export function renderButtons( {
 	createOrderForFunding,
 	payLaterDetails,
 	payLaterEnabled = false,
+	venmoEnabled = false,
 } ) {
 	wrapper.innerHTML = '';
 
@@ -185,6 +187,9 @@ export function renderButtons( {
 		// Eligibility only says the buyer could pay this way; the merchant
 		// setting decides whether it is offered here, and defaults to off.
 		if ( method === FundingSources.PAYLATER && ! payLaterEnabled ) {
+			continue;
+		}
+		if ( method === FundingSources.VENMO && ! venmoEnabled ) {
 			continue;
 		}
 

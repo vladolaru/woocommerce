@@ -81,10 +81,12 @@ class DisabledFundingSources {
 	/**
 	 * Gets disabled funding sources from settings.
 	 *
+	 * Also the SDK v6 manager's rule for whether Venmo is offered in a location.
+	 *
 	 * @param string $context The context.
 	 * @return array
 	 */
-	private function get_sources_from_settings( string $context ): array {
+	public function get_sources_from_settings( string $context ): array {
 		$disabled_funding = array();
 		$methods          = $this->settings_provider->button_styling( $context )->methods;
 

@@ -46,6 +46,7 @@ const baseConfig = ( overrides = {} ) => ( {
 	buttons_enabled: true,
 	supported_features: [ 'products', 'subscriptions' ],
 	pay_later_button: { checkout: true },
+	venmo_button: { checkout: true },
 	...overrides,
 } );
 
@@ -126,6 +127,20 @@ describe( 'checkout-block', () => {
 			loadCheckoutBlock( baseConfig( { buttons_enabled: false } ) );
 
 			expect( mockRegisterExpressPaymentMethod ).not.toHaveBeenCalled();
+		} );
+
+		test( 'registers no Venmo express method when the merchant does not offer Venmo here', () => {
+			loadCheckoutBlock(
+				baseConfig( { venmo_button: { checkout: false } } )
+			);
+
+			const names = mockRegisterExpressPaymentMethod.mock.calls.map(
+				( [ args ] ) => args.name
+			);
+			expect( names ).toEqual( [
+				'ppcp-gateway-paypal',
+				'ppcp-gateway-paylater',
+			] );
 		} );
 
 		test( 'still registers the regular PayPal row when the page location is off', () => {

@@ -17,6 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoi
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint\FrontendLogEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Endpoint\GetOrderEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Helper\Context;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Helper\DisabledFundingSources;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PayLaterBlock\PayLaterBlockModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SavePaymentMethods\Endpoint\CreatePaymentToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SavePaymentMethods\Endpoint\CreatePaymentTokenForGuest;
@@ -150,6 +151,12 @@ class SdkV6Manager {
 	 */
 	private MessagesEligibility $messages_eligibility;
 	/**
+	 * The v5 disabled-funding helper, whose settings rule decides where Venmo is offered.
+	 *
+	 * @var DisabledFundingSources
+	 */
+	private DisabledFundingSources $disabled_funding_sources;
+	/**
 	 * Whether the merchant is connected and the PayPal gateway is on.
 	 *
 	 * @var bool
@@ -188,6 +195,7 @@ class SdkV6Manager {
 	 * @param FreeTrialSubscriptionHelper $free_trial_helper    The free trial helper.
 	 * @param MessageStyleMapper          $message_style_mapper The message style mapper.
 	 * @param MessagesEligibility         $messages_eligibility The messages eligibility.
+	 * @param DisabledFundingSources      $disabled_funding_sources The v5 disabled-funding helper.
 	 * @param bool                        $buttons_available    Whether the merchant is connected and the PayPal gateway is on.
 	 */
 	public function __construct(
@@ -205,23 +213,25 @@ class SdkV6Manager {
 		FreeTrialSubscriptionHelper $free_trial_helper,
 		MessageStyleMapper $message_style_mapper,
 		MessagesEligibility $messages_eligibility,
+		DisabledFundingSources $disabled_funding_sources,
 		bool $buttons_available
 	) {
-		$this->asset_getter         = $asset_getter;
-		$this->version              = $version;
-		$this->environment          = $environment;
-		$this->style_mapper         = $style_mapper;
-		$this->settings_status      = $settings_status;
-		$this->context              = $context;
-		$this->session_handler      = $session_handler;
-		$this->cancel_view          = $cancel_view;
-		$this->final_review_enabled = $final_review_enabled;
-		$this->vaulting_enabled     = $vaulting_enabled;
-		$this->subscription_helper  = $subscription_helper;
-		$this->free_trial_helper    = $free_trial_helper;
-		$this->message_style_mapper = $message_style_mapper;
-		$this->messages_eligibility = $messages_eligibility;
-		$this->buttons_available    = $buttons_available;
+		$this->asset_getter             = $asset_getter;
+		$this->version                  = $version;
+		$this->environment              = $environment;
+		$this->style_mapper             = $style_mapper;
+		$this->settings_status          = $settings_status;
+		$this->context                  = $context;
+		$this->session_handler          = $session_handler;
+		$this->cancel_view              = $cancel_view;
+		$this->final_review_enabled     = $final_review_enabled;
+		$this->vaulting_enabled         = $vaulting_enabled;
+		$this->subscription_helper      = $subscription_helper;
+		$this->free_trial_helper        = $free_trial_helper;
+		$this->message_style_mapper     = $message_style_mapper;
+		$this->messages_eligibility     = $messages_eligibility;
+		$this->disabled_funding_sources = $disabled_funding_sources;
+		$this->buttons_available        = $buttons_available;
 	}
 
 	/**
@@ -805,6 +815,20 @@ class SdkV6Manager {
 	}
 
 	/**
+	 * Whether the Venmo button belongs in a location.
+	 *
+	 * Uses the v5 settings rule (DisabledFundingSources), which v5 applied
+	 * through the SDK URL's disable-funding: the Venmo switch, the location's
+	 * styling choice and the disabled-funding filter.
+	 *
+	 * @param string $location The button location.
+	 * @return bool Whether the button may render.
+	 */
+	private function is_venmo_button_enabled( string $location ): bool {
+		return ! in_array( 'venmo', $this->disabled_funding_sources->get_sources_from_settings( $location ), true );
+	}
+
+	/**
 	 * Whether the Pay Later button belongs in a location.
 	 *
 	 * Mirrors SmartButton::is_pay_later_button_enabled_for_location(). v5 hid
@@ -899,13 +923,16 @@ class SdkV6Manager {
 
 		$button_styles    = array();
 		$pay_later_button = array();
+		$venmo_button     = array();
 		if ( $page_context ) {
 			$button_styles[ $page_context ]    = $this->button_styles( $page_context );
 			$pay_later_button[ $page_context ] = $this->is_pay_later_button_enabled( $page_context );
+			$venmo_button[ $page_context ]     = $this->is_venmo_button_enabled( $page_context );
 		}
 		if ( $this->settings_status->is_smart_button_enabled_for_location( 'mini-cart' ) ) {
 			$button_styles['mini-cart']    = $this->button_styles( 'mini-cart' );
 			$pay_later_button['mini-cart'] = $this->is_pay_later_button_enabled( 'mini-cart' );
+			$venmo_button['mini-cart']     = $this->is_venmo_button_enabled( 'mini-cart' );
 		}
 
 		$messages_settings_location = $this->messages_settings_location();
@@ -1002,6 +1029,7 @@ class SdkV6Manager {
 			),
 			'button_styles'       => $button_styles,
 			'pay_later_button'    => $pay_later_button,
+			'venmo_button'        => $venmo_button,
 			'wrapper'             => '#' . self::WRAPPER_ID,
 			'mini_cart_wrapper'   => '#' . self::MINI_CART_WRAPPER_ID,
 			'messages'            => array(

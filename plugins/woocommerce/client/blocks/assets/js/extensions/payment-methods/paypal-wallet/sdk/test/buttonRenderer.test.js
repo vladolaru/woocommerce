@@ -102,6 +102,32 @@ describe( 'createMethodButton', () => {
 } );
 
 describe( 'renderButtons', () => {
+	test.each( [
+		[ 'skips', false ],
+		[ 'renders', true ],
+	] )(
+		'%s the Venmo button when venmoEnabled is %s, with a valid session',
+		( _verb, venmoEnabled ) => {
+			const wrapper = document.createElement( 'div' );
+			document.body.appendChild( wrapper );
+
+			renderButtons( {
+				wrapper,
+				sessions: { paypal: {}, venmo: {} },
+				styles: {},
+				createOrderForFunding: () => noop,
+				venmoEnabled,
+			} );
+
+			expect( wrapper.querySelector( 'venmo-button' ) !== null ).toBe(
+				venmoEnabled
+			);
+			expect( wrapper.querySelector( 'paypal-button' ) ).not.toBeNull();
+
+			document.body.removeChild( wrapper );
+		}
+	);
+
 	test( 'skips the pay later button when payLaterEnabled is not set, even with a valid session and product details', () => {
 		const wrapper = document.createElement( 'div' );
 		document.body.appendChild( wrapper );

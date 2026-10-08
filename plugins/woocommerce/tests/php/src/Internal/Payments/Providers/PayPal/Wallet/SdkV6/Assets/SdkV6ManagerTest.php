@@ -11,6 +11,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetter;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Helper\Context;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Helper\DisabledFundingSources;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SavePaymentMethods\Endpoint\CreatePaymentToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SavePaymentMethods\Endpoint\CreatePaymentTokenForGuest;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SavePaymentMethods\Endpoint\CreateSetupToken;
@@ -120,6 +121,13 @@ class SdkV6ManagerTest extends WalletTestCase {
 	private $messages_eligibility;
 
 	/**
+	 * The v5 disabled-funding helper mock.
+	 *
+	 * @var DisabledFundingSources&MockInterface
+	 */
+	private $disabled_funding_sources;
+
+	/**
 	 * The WooCommerce cart, customer and countries objects before the test.
 	 *
 	 * @var array
@@ -189,6 +197,9 @@ class SdkV6ManagerTest extends WalletTestCase {
 		$this->messages_eligibility->shouldReceive( 'is_enabled_for_location' )->andReturn( false )->byDefault();
 		$this->messages_eligibility->shouldReceive( 'is_hidden' )->andReturn( false )->byDefault();
 
+		$this->disabled_funding_sources = $this->mock( DisabledFundingSources::class );
+		$this->disabled_funding_sources->shouldReceive( 'get_sources_from_settings' )->andReturn( array() )->byDefault();
+
 		$this->context->shouldReceive( 'location' )->andReturn( '' )->byDefault();
 		$this->context->shouldReceive( 'context' )->andReturn( 'checkout' )->byDefault();
 		$this->context->shouldReceive( 'is_paypal_continuation' )->andReturn( false )->byDefault();
@@ -252,6 +263,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 			$this->free_trial_helper,
 			$this->message_style_mapper,
 			$this->messages_eligibility,
+			$this->disabled_funding_sources,
 			$buttons_available
 		);
 	}
@@ -1126,6 +1138,33 @@ class SdkV6ManagerTest extends WalletTestCase {
 		$this->settings_status->shouldReceive( 'is_smart_button_enabled_for_location' )->with( 'mini-cart' )->andReturn( true );
 
 		$this->assertSame( $enabled, $this->script_data()['buttons_enabled'] );
+	}
+
+	/**
+	 * The v5 rule decides whether Venmo is offered per location: the "Venmo" switch on the Payment methods tab, the
+	 * location's styling choice and the woocommerce_paypal_payments_disabled_funding filter.
+	 *
+	 * @testdox Should offer Venmo per location as the v5 settings rule says: page $page_disabled, mini-cart $mini_cart_disabled.
+	 * @testWith [false, false]
+	 *           [true, false]
+	 *           [false, true]
+	 *
+	 * @param bool $page_disabled      Whether the rule disables Venmo on the page's location.
+	 * @param bool $mini_cart_disabled Whether the rule disables Venmo in the mini-cart.
+	 */
+	public function test_script_data_offers_venmo_per_location_by_the_v5_rule( bool $page_disabled, bool $mini_cart_disabled ): void {
+		$this->stub_page( 'checkout-block' );
+		$this->settings_status->shouldReceive( 'is_smart_button_enabled_for_location' )->andReturn( true );
+		$this->disabled_funding_sources->shouldReceive( 'get_sources_from_settings' )->with( 'checkout-block' )->andReturn( $page_disabled ? array( 'venmo' ) : array() );
+		$this->disabled_funding_sources->shouldReceive( 'get_sources_from_settings' )->with( 'mini-cart' )->andReturn( $mini_cart_disabled ? array( 'venmo' ) : array() );
+
+		$this->assertSame(
+			array(
+				'checkout-block' => ! $page_disabled,
+				'mini-cart'      => ! $mini_cart_disabled,
+			),
+			$this->script_data()['venmo_button']
+		);
 	}
 
 	/**

@@ -104,6 +104,7 @@ return array(
 			$container->get( 'wc-subscriptions.free-trial-subscription-helper' ),
 			$container->get( 'sdk-v6.message-style-mapper' ),
 			$container->get( 'sdk-v6.messages-eligibility' ),
+			$container->get( 'button.helper.disabled-funding-sources' ),
 			$container->get( 'sdk-v6.buttons-available' )
 		);
 	},
