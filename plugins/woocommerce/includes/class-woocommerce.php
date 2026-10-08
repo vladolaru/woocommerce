@@ -428,7 +428,7 @@ final class WooCommerce {
 		// The WooPayments personal-data eraser runs on every native payments tier, since the stored customer data outlives the
 		// connection; the class loads only when WordPress builds its eraser list.
 		add_filter( 'wp_privacy_personal_data_erasers', array( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerDataEraser::class, 'add_eraser' ) );
-		( new Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap(
+		( new Automattic\WooCommerce\Internal\Payments\PaymentsBootstrap(
 			static fn( $container, string $request_type ): array => $container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier::class )->get_classes_for_request( $request_type ),
 			static fn( $container ): bool => $container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter::class )->is_builtin_owner(),
 			static fn(): array => Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider::get_multi_currency_provider_roots()

@@ -194,7 +194,7 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Invalidate the singleton native state and undo any container replacement a probe made, so no
-	 * later test observes state this test put in place (gate: `NativePaymentsBootstrapTest` and
+	 * later test observes state this test put in place (gate: `PaymentsBootstrapTest` and
 	 * friends stay clean). The enabling filter and the stored option are undone first, the way
 	 * `WooPaymentsSetupTierTest` does, so nothing left in `parent::tearDown()` can re-cache `active`
 	 * for the next test.

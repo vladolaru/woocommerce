@@ -278,7 +278,7 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 		}
 		$this->trace_state = $this->get_trace_state();
 
-		add_filter( 'woocommerce_native_payments_bootstrap_enabled', array( $this, 'control_bootstrap' ) );
+		add_filter( 'woocommerce_load_payment_providers', array( $this, 'control_bootstrap' ) );
 		add_filter( 'woocommerce_woopayments_builtin_enabled', array( $this, 'enable_native_runtime' ) );
 		add_filter( 'pre_http_request', array( $this, 'count_http_request' ), PHP_INT_MIN );
 		if ( '' !== $this->trace_state ) {

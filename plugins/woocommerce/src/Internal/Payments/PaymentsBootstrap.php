@@ -1,6 +1,6 @@
 <?php
 /**
- * NativePaymentsBootstrap class file.
+ * PaymentsBootstrap class file.
  */
 
 declare( strict_types = 1 );
@@ -13,7 +13,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyBootstrap;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Selects native payment registrations for the current request.
+ * Registers what WooCommerce's built-in payment provider needs on the current request, and starts Multi-Currency.
  *
  * A listed class that is a payment gateway provider is handed to the gateway registry, which resolves it only when
  * WooCommerce builds its gateway list; it is register()ed as well only when it also registers hooks. Every other listed
@@ -22,10 +22,10 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  * @since 11.2.0
  * @internal
  */
-final class NativePaymentsBootstrap {
+final class PaymentsBootstrap {
 
-	/** Test-only filter controlling the branch-native bootstrap. */
-	public const FILTER_BOOTSTRAP_ENABLED = 'woocommerce_native_payments_bootstrap_enabled';
+	/** Filter that decides whether WooCommerce loads its built-in payment provider on this request. */
+	public const FILTER_LOAD_PAYMENT_PROVIDERS = 'woocommerce_load_payment_providers';
 
 	/**
 	 * Lists the classes a request type registers for the built-in payment provider.
@@ -95,15 +95,14 @@ final class NativePaymentsBootstrap {
 	 */
 	public function register( $container, callable $is_rest_api_request ): void {
 		/**
-		 * Filters whether the branch-native payments bootstrap runs for automated performance comparison.
-		 *
-		 * This internal filter defaults to enabled and is not a merchant-facing kill switch.
+		 * Whether WooCommerce loads its built-in payment provider and the Multi-Currency integration it starts on this request.
+		 * Returning false loads neither.
 		 *
 		 * @since 11.2.0
 		 *
-		 * @param bool $enabled Whether to bootstrap the branch-native payments registrations.
+		 * @param bool $load Whether to load the built-in payment provider and Multi-Currency.
 		 */
-		if ( ! apply_filters( self::FILTER_BOOTSTRAP_ENABLED, true ) ) {
+		if ( ! apply_filters( self::FILTER_LOAD_PAYMENT_PROVIDERS, true ) ) {
 			return;
 		}
 

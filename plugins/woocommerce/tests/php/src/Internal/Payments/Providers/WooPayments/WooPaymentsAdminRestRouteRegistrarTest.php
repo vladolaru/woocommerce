@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Container;
 use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap;
+use Automattic\WooCommerce\Internal\Payments\PaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -55,12 +55,12 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 		$fixture         = $this->create_container( WooPaymentsSetupTier::CONNECTED, $controller );
 		$container       = $fixture['container'];
 		$runtime         = $fixture['runtime'];
-		$bootstrap       = new NativePaymentsBootstrap(
+		$bootstrap       = new PaymentsBootstrap(
 			static fn( $container, string $request_type ): array => $container->get( WooPaymentsSetupTier::class )->get_classes_for_request( $request_type ),
 			static fn( $container ): bool => $container->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner(),
 			static fn(): array => array()
 		);
-		$register_roots  = new ReflectionMethod( NativePaymentsBootstrap::class, 'register_roots' );
+		$register_roots  = new ReflectionMethod( PaymentsBootstrap::class, 'register_roots' );
 		$register_roots->setAccessible( true );
 		set_current_screen( 'edit-page' );
 

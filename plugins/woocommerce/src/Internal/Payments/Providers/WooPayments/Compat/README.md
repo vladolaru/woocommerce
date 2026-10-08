@@ -29,7 +29,7 @@ These compatibility surfaces are scheduled for removal in WooCommerce 12.0.0 aft
 - This production `Compat/` folder and the facade files in `includes/legacy/woopayments-compat/`.
 - The `LegacyFacadeLoader` registration line in `includes/class-woocommerce.php`.
 - The `LegacyAdminLinkHandler::class` root in `WooPaymentsProvider`.
-- The `LegacyAdminLinkHandler` bootstrap-root expectations in `tests/php/src/Internal/Payments/NativePaymentsBootstrapTest.php`.
+- The `LegacyAdminLinkHandler` bootstrap-root expectations in `tests/php/src/Internal/Payments/PaymentsBootstrapTest.php`.
 - The matching `tests/php/src/Internal/Payments/Providers/WooPayments/Compat/` tests and fixtures.
 - This boundary's expected symbols, loader and README entries in `LegacyWooPaymentsCompatibilityPlacementTest`.
 - The plugin class-name aliases registered outside this folder, and their call sites: the `register_legacy_alias()`, `register_legacy_aliases()` and `register_legacy_base_aliases()` methods that `class_alias()` the `WCPay\Core\Server\Request\*` request classes, `WCPay\Core\Server\Response`, `WCPay\Constants\Payment_Type` and `WC_Payments_Email_Failed_Authentication_Retry` (17 names; `git grep -n -e class_alias -e register_legacy_ -- src/Internal/Payments` lists the sites, some of which alias through a list of names).

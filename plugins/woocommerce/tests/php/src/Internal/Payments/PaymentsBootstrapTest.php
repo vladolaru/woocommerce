@@ -1,6 +1,6 @@
 <?php
 /**
- * NativePaymentsBootstrap tests.
+ * PaymentsBootstrap tests.
  */
 
 declare( strict_types = 1 );
@@ -13,7 +13,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap;
+use Automattic\WooCommerce\Internal\Payments\PaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsGatewayRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
@@ -28,9 +28,9 @@ use ReflectionMethod;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for NativePaymentsBootstrap.
+ * Tests for PaymentsBootstrap.
  */
-class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
+class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 	private const WCPAY = 'Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\\';
 
@@ -62,7 +62,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		$container      = $this->make_container( WooPaymentsSetupTier::DISABLED, WooPaymentsRuntimeArbiter::OWNER_BUILTIN, MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
 		$provider_calls = 0;
 		$rest_calls     = 0;
-		$sut            = new NativePaymentsBootstrap(
+		$sut            = new PaymentsBootstrap(
 			static fn(): array => array(),
 			static fn(): bool => true,
 			static function () use ( &$provider_calls ): array {
@@ -95,11 +95,11 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 	/** @testdox Should return before request or container work when the bootstrap filter is false. */
 	public function test_bootstrap_filter_false_short_circuits_all_work(): void {
-		add_filter( NativePaymentsBootstrap::FILTER_BOOTSTRAP_ENABLED, '__return_false' );
+		add_filter( PaymentsBootstrap::FILTER_LOAD_PAYMENT_PROVIDERS, '__return_false' );
 		$matrix_calls = 0;
 		$container    = $this->make_container( WooPaymentsSetupTier::ACTIVE, WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
 		$rest_calls   = 0;
-		$sut          = new NativePaymentsBootstrap(
+		$sut          = new PaymentsBootstrap(
 			static function () use ( &$matrix_calls ): array {
 				++$matrix_calls;
 				return array();
@@ -303,7 +303,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 			}
 		};
 		wc_get_container()->replace( WooPaymentsProvider::class, $provider );
-		$sut = new NativePaymentsBootstrap(
+		$sut = new PaymentsBootstrap(
 			static fn(): array => array( WooPaymentsProvider::class ),
 			static fn( $container ): bool => $container->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner(),
 			static fn(): array => array()
@@ -368,9 +368,9 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 			return $enabled;
 		};
-		add_filter( NativePaymentsBootstrap::FILTER_BOOTSTRAP_ENABLED, $recorder );
+		add_filter( PaymentsBootstrap::FILTER_LOAD_PAYMENT_PROVIDERS, $recorder );
 
-		$sut      = new NativePaymentsBootstrap(
+		$sut      = new PaymentsBootstrap(
 			static fn( $container, string $request_type ): array => $container->get( WooPaymentsSetupTier::class )->get_classes_for_request( $request_type ),
 			static fn( $container ): bool => $container->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner(),
 			static fn(): array => WooPaymentsProvider::get_multi_currency_provider_roots()
@@ -409,10 +409,10 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	/**
 	 * Run the bootstrap as WooCommerce loads it in one request class, with the shared container.
 	 *
-	 * @param NativePaymentsBootstrap $sut     Bootstrap under test.
-	 * @param string                  $request Request class: front, ajax, rest, admin, cron or cli.
+	 * @param PaymentsBootstrap $sut     Bootstrap under test.
+	 * @param string            $request Request class: front, ajax, rest, admin, cron or cli.
 	 */
-	private function register_as( NativePaymentsBootstrap $sut, string $request ): void {
+	private function register_as( PaymentsBootstrap $sut, string $request ): void {
 		$filter = array(
 			'ajax' => 'wp_doing_ajax',
 			'cron' => 'wp_doing_cron',
@@ -441,10 +441,10 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	/**
 	 * Build the bootstrap with the WooPayments setup tier's class lists, as WooCommerce does.
 	 *
-	 * @return NativePaymentsBootstrap
+	 * @return PaymentsBootstrap
 	 */
-	private function make_bootstrap(): NativePaymentsBootstrap {
-		return new NativePaymentsBootstrap(
+	private function make_bootstrap(): PaymentsBootstrap {
+		return new PaymentsBootstrap(
 			static fn( $container, string $request_type ): array => $container->get( WooPaymentsSetupTier::class )->get_classes_for_request( $request_type ),
 			static fn( $container ): bool => $container->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner(),
 			array( WooPaymentsProvider::class, 'get_multi_currency_provider_roots' )

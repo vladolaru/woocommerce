@@ -154,7 +154,7 @@ class WooPaymentsPluginEndpointsContractTest extends WC_REST_Unit_Test_Case {
 
 	/**
 	 * Invalidate the singleton native state so no later test observes the `active` state this
-	 * test put it in (gate: `NativePaymentsBootstrapTest` and friends stay clean). The enabling
+	 * test put it in (gate: `PaymentsBootstrapTest` and friends stay clean). The enabling
 	 * filter and the stored option are undone first, the way `WooPaymentsSetupTierTest` does,
 	 * so nothing left in `parent::tearDown()` can re-cache `active` for the next test.
 	 */

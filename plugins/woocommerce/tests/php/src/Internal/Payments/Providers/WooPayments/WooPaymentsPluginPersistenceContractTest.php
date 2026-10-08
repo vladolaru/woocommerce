@@ -138,7 +138,7 @@ class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Invalidate the singleton native state so no later test observes the `active` state this
-	 * test put it in (gate: `NativePaymentsBootstrapTest` and friends stay clean). The enabling
+	 * test put it in (gate: `PaymentsBootstrapTest` and friends stay clean). The enabling
 	 * filter and the stored option are undone first, the way `WooPaymentsSetupTierTest` does, so
 	 * nothing left in `parent::tearDown()` can re-cache `active` for the next test.
 	 */
@@ -198,7 +198,7 @@ class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
 	 *
 	 * This proves the two owning services hook the preserved names when registered directly; that
 	 * the cron request tier of the bootstrap matrix actually resolves and registers them
-	 * (`WooPaymentsProvider::get_classes_by_setup_tier()`) is owned by `NativePaymentsBootstrapTest`.
+	 * (`WooPaymentsProvider::get_classes_by_setup_tier()`) is owned by `PaymentsBootstrapTest`.
 	 */
 	public function test_native_handles_preserved_action_scheduler_hooks(): void {
 		wc_get_container()->get( WooPaymentsOperationalQueueService::class )->register();
