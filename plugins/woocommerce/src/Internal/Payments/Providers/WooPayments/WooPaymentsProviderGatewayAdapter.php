@@ -263,14 +263,14 @@ class WooPaymentsProviderGatewayAdapter {
 	/**
 	 * Capture an authorized payment through the active WooPayments transport.
 	 *
-	 * @param PaymentOperationContext $context       Payment context.
-	 * @param string                  $operation_key Operation lock key; not sent to the provider.
+	 * @param PaymentOperationContext $context         Payment context.
+	 * @param string                  $idempotency_key Key minted for this call; not sent to the provider.
 	 * @return PaymentOutcome
 	 */
-	public function capture( PaymentOperationContext $context, string $operation_key ): PaymentOutcome {
+	public function capture( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
 		// Like the client, each capture request carries its own key, so a merchant's retry after a
 		// failed capture reaches the provider instead of replaying the stored failure.
-		unset( $operation_key );
+		unset( $idempotency_key );
 
 		$order = $context->get_order();
 		if ( $this->api_client->is_available() ) {
@@ -334,13 +334,13 @@ class WooPaymentsProviderGatewayAdapter {
 	/**
 	 * Cancel an authorized payment through the active WooPayments transport.
 	 *
-	 * @param PaymentOperationContext $context       Payment context.
-	 * @param string                  $operation_key Operation lock key; not sent to the provider.
+	 * @param PaymentOperationContext $context         Payment context.
+	 * @param string                  $idempotency_key Key minted for this call; not sent to the provider.
 	 * @return PaymentOutcome
 	 */
-	public function cancel( PaymentOperationContext $context, string $operation_key ): PaymentOutcome {
+	public function cancel( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
 		// Each cancel request carries its own key, as for capture.
-		unset( $operation_key );
+		unset( $idempotency_key );
 
 		$order = $context->get_order();
 		if ( $this->api_client->is_available() ) {

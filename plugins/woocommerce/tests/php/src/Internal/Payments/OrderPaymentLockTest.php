@@ -161,11 +161,11 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 		$order    = wc_create_order();
 		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
 
-		// A capture claims the lock with its derived key and then runs past the lock TTL.
+		// A capture claims the lock and then runs past the lock TTL.
 		$first_token = $this->sut->claim( $order, $this->persistence_vocabulary, 'capture_key', 'capture' );
 		$this->assertNotNull( $first_token );
 		$this->update_lock_row( '_transient_timeout_' . $lock_key, (string) ( time() - 1 ) );
-		// A second capture of the same amount derives the same key and takes the expired lock over.
+		// A second claim with the same lock value takes the expired lock over.
 		$second_token = $this->sut->claim( $order, $this->persistence_vocabulary, 'capture_key', 'capture' );
 		$this->assertNotNull( $second_token, 'An expired lock must be taken over.' );
 

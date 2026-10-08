@@ -152,13 +152,13 @@ class RecordingProvider implements ProviderInterface, ProviderOutcomeMetadataMap
 	/**
 	 * Capture a previously authorized payment through the provider.
 	 *
-	 * @param PaymentOperationContext $context       Payment context.
-	 * @param string                  $operation_key Deterministic idempotency key.
+	 * @param PaymentOperationContext $context         Payment context.
+	 * @param string                  $idempotency_key Key minted for this call.
 	 * @return PaymentOutcome
 	 */
-	public function capture( PaymentOperationContext $context, string $operation_key ): PaymentOutcome {
+	public function capture( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
 		++$this->capture_calls;
-		$this->last_idempotency_key = $operation_key;
+		$this->last_idempotency_key = $idempotency_key;
 
 		return $this->outcome;
 	}
@@ -166,13 +166,13 @@ class RecordingProvider implements ProviderInterface, ProviderOutcomeMetadataMap
 	/**
 	 * Cancel a previously authorized payment through the provider.
 	 *
-	 * @param PaymentOperationContext $context       Payment context.
-	 * @param string                  $operation_key Deterministic idempotency key.
+	 * @param PaymentOperationContext $context         Payment context.
+	 * @param string                  $idempotency_key Key minted for this call.
 	 * @return PaymentOutcome
 	 */
-	public function cancel( PaymentOperationContext $context, string $operation_key ): PaymentOutcome {
+	public function cancel( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
 		++$this->cancel_calls;
-		$this->last_idempotency_key = $operation_key;
+		$this->last_idempotency_key = $idempotency_key;
 
 		return $this->outcome;
 	}

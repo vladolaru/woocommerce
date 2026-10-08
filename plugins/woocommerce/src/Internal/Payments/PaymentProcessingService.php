@@ -35,29 +35,19 @@ class PaymentProcessingService {
 	private OrderPaymentLifecycleService $lifecycle_service;
 
 	/**
-	 * Payment operation keys.
-	 *
-	 * @var PaymentOperationKeys
-	 */
-	private PaymentOperationKeys $operation_keys;
-
-	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
 	 * @param OrderPaymentLock             $order_payment_lock Order payment lock.
 	 * @param OrderPaymentLifecycleService $lifecycle_service  Order payment lifecycle service.
-	 * @param PaymentOperationKeys         $operation_keys     Payment operation keys.
 	 */
 	final public function init(
 		OrderPaymentLock $order_payment_lock,
-		OrderPaymentLifecycleService $lifecycle_service,
-		PaymentOperationKeys $operation_keys
+		OrderPaymentLifecycleService $lifecycle_service
 	): void {
 		$this->order_payment_lock = $order_payment_lock;
 		$this->lifecycle_service  = $lifecycle_service;
-		$this->operation_keys     = $operation_keys;
 	}
 
 	/**
@@ -76,7 +66,7 @@ class PaymentProcessingService {
 	 */
 	public function process_checkout_outcome( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
 		$order           = $context->get_order();
-		$idempotency_key = $this->operation_keys->mint_attempt_key();
+		$idempotency_key = $this->mint_idempotency_key();
 		$vocabulary      = $provider->get_persistence_vocabulary();
 
 		// A refused checkout claim returns the in-progress outcome without logging.
@@ -350,7 +340,7 @@ class PaymentProcessingService {
 
 		// Like client 11.1.0, each refund call sends its own key, so a retry after a failed refund
 		// reaches the provider instead of replaying the stored failure. The key is also the lock value.
-		$idempotency_key = $this->operation_keys->mint_attempt_key();
+		$idempotency_key = $this->mint_idempotency_key();
 		$lock_token      = $this->order_payment_lock->claim( $order, $vocabulary, $idempotency_key, 'refund' );
 		if ( null === $lock_token ) {
 			$this->order_payment_lock->log_refusal( $order, $vocabulary, 'refund' );
@@ -656,6 +646,19 @@ class PaymentProcessingService {
 	}
 
 	/**
+	 * Mint a fresh key for one checkout attempt, refund, capture or cancel: the order payment lock's value and the provider's request key.
+	 *
+	 * A fresh key per call keeps a retry from replaying an earlier call's cached failure; the application-level guards,
+	 * not the key, prevent a duplicate charge. A provider keeping an ambiguous charge attempt's key sends that key instead.
+	 * Client 11.1.0 mints a UUID v4 Idempotency-Key for each request other than GET and DELETE whose caller supplies none (class-wc-payments-api-client.php:2686-2690, 3114).
+	 *
+	 * @return string
+	 */
+	private function mint_idempotency_key(): string {
+		return wp_generate_uuid4();
+	}
+
+	/**
 	 * Tell whether a zero-total checkout still needs a provider-owned setup operation.
 	 *
 	 * @param PaymentOperationContext $context  Payment context.
@@ -693,12 +696,11 @@ class PaymentProcessingService {
 	 * @throws Throwable When applying an unreferenced unsuccessful provider outcome fails.
 	 */
 	private function run_provider_order_operation( PaymentOperationContext $context, ProviderInterface $provider, string $operation ): PaymentOutcome {
-		$order         = $context->get_order();
-		$amount        = $context->get_amount() ?? (float) $order->get_total();
-		$operation_key = $this->operation_keys->derive_operation_key( $order, $provider->get_id(), $operation, $amount, (string) $order->get_currency() );
-		$vocabulary    = $provider->get_persistence_vocabulary();
+		$order           = $context->get_order();
+		$idempotency_key = $this->mint_idempotency_key();
+		$vocabulary      = $provider->get_persistence_vocabulary();
 
-		$lock_token = $this->order_payment_lock->claim( $order, $vocabulary, $operation_key, $operation );
+		$lock_token = $this->order_payment_lock->claim( $order, $vocabulary, $idempotency_key, $operation );
 		if ( null === $lock_token ) {
 			$this->order_payment_lock->log_refusal( $order, $vocabulary, $operation );
 			return new PaymentOutcome(
@@ -714,11 +716,11 @@ class PaymentProcessingService {
 		try {
 			try {
 				$provider_outcome = 'capture' === $operation
-					? $provider->capture( $context, $operation_key )
-					: $provider->cancel( $context, $operation_key );
+					? $provider->capture( $context, $idempotency_key )
+					: $provider->cancel( $context, $idempotency_key );
 			} catch ( Throwable $exception ) {
 				$provider_outcome = $this->failed_outcome_from_throwable( $exception );
-				$this->log_provider_failure( $order, $operation, $operation_key, $exception );
+				$this->log_provider_failure( $order, $operation, $idempotency_key, $exception );
 			}
 			$outcome = $provider_outcome;
 
@@ -772,7 +774,7 @@ class PaymentProcessingService {
 	 *
 	 * @param WC_Order  $order           Order being processed.
 	 * @param string    $operation       Provider operation.
-	 * @param string    $idempotency_key Operation key: the per-attempt key for charges, the derived key otherwise.
+	 * @param string    $idempotency_key Key minted for this operation.
 	 * @param Throwable $exception       Provider throwable.
 	 */
 	private function log_provider_failure( WC_Order $order, string $operation, string $idempotency_key, Throwable $exception ): void {

@@ -45,7 +45,7 @@ interface ProviderInterface extends PaymentGatewayProviderInterface {
 	 * @param string                  $idempotency_key Key minted fresh for this payment attempt, also the order payment lock
 	 *                                                 token. Retries within the attempt reuse it; a new attempt gets a new key.
 	 *                                                 A provider may send a key it kept on the order from an ambiguous earlier
-	 *                                                 attempt instead, until a definitive outcome (see PaymentOperationKeys).
+	 *                                                 attempt instead, until a definitive outcome.
 	 * @return PaymentOutcome
 	 */
 	public function charge( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome;
@@ -53,24 +53,22 @@ interface ProviderInterface extends PaymentGatewayProviderInterface {
 	/**
 	 * Capture a previously authorized payment through the provider.
 	 *
-	 * @param PaymentOperationContext $context       Payment context.
-	 * @param string                  $operation_key Deterministic operation key: the order payment lock token and log
-	 *                                               correlation ID. Do not send it as the provider request key, or a
-	 *                                               retry after a failure replays that failure.
+	 * @param PaymentOperationContext $context         Payment context.
+	 * @param string                  $idempotency_key Key minted fresh for this call, also the order payment lock's value; the
+	 *                                                 provider may send it as its request key.
 	 * @return PaymentOutcome
 	 */
-	public function capture( PaymentOperationContext $context, string $operation_key ): PaymentOutcome;
+	public function capture( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome;
 
 	/**
 	 * Cancel a previously authorized payment through the provider.
 	 *
-	 * @param PaymentOperationContext $context       Payment context.
-	 * @param string                  $operation_key Deterministic operation key: the order payment lock token and log
-	 *                                               correlation ID. Do not send it as the provider request key, or a
-	 *                                               retry after a failure replays that failure.
+	 * @param PaymentOperationContext $context         Payment context.
+	 * @param string                  $idempotency_key Key minted fresh for this call, also the order payment lock's value; the
+	 *                                                 provider may send it as its request key.
 	 * @return PaymentOutcome
 	 */
-	public function cancel( PaymentOperationContext $context, string $operation_key ): PaymentOutcome;
+	public function cancel( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome;
 
 	/**
 	 * Refund a payment through the provider.
