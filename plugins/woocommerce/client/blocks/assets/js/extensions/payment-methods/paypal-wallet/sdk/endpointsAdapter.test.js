@@ -344,6 +344,21 @@ describe( 'approveOrder', () => {
 		);
 	} );
 
+	// The server created the WC order and its capture failed: a retry would
+	// re-approve the order that failed to pay and send the buyer to checkout.
+	test( 'rejects a failed Pay Now payment without retrying the approval', async () => {
+		const failure = new Error( 'Capture failed.' );
+		failure.paymentFailed = true;
+		postJson.mockRejectedValueOnce( failure );
+
+		await expect(
+			approveOrder( config, 'product', 'paypal', 'ORDER1' )
+		).rejects.toBe( failure );
+
+		expect( postJson ).toHaveBeenCalledTimes( 1 );
+		expect( navigation.assign ).not.toHaveBeenCalled();
+	} );
+
 	test( 'does not request a WC order for Venmo when vaulting is enabled', async () => {
 		postJson.mockResolvedValueOnce( {} );
 

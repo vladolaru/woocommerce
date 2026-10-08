@@ -81,6 +81,22 @@ describe( 'postJson', () => {
 		} );
 	} );
 
+	test( 'flags a failed payment so the caller does not retry it', async () => {
+		global.fetch = jest.fn().mockResolvedValue( {
+			json: async () => ( {
+				success: false,
+				data: { message: 'Capture failed.', payment_failed: true },
+			} ),
+		} );
+
+		await expect(
+			postJson( { endpoint: '/e', nonce: 'n' } )
+		).rejects.toMatchObject( {
+			message: 'Capture failed.',
+			paymentFailed: true,
+		} );
+	} );
+
 	test( 'throws with the status attached when the response is not JSON', async () => {
 		global.fetch = jest.fn().mockResolvedValue( {
 			status: 500,

@@ -279,7 +279,9 @@ export async function approveOrder( config, context, fundingSource, orderId ) {
 	try {
 		data = await postJson( config.ajax.approve_order, body );
 	} catch ( error ) {
-		if ( ! canCreateOrder ) {
+		// A failed payment is not retried: the retry would re-approve the order
+		// that failed to pay and continue to checkout with it.
+		if ( ! canCreateOrder || error.paymentFailed ) {
 			throw error;
 		}
 

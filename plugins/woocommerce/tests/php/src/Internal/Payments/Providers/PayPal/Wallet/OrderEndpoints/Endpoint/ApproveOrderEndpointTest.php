@@ -85,6 +85,13 @@ class ApproveOrderEndpointTest extends WalletTestCase {
 	private $sut;
 
 	/**
+	 * The WooCommerce order creator mock.
+	 *
+	 * @var WooCommerceOrderCreator&MockInterface
+	 */
+	private $order_creator;
+
+	/**
 	 * The WooCommerce session the test replaced, restored on tearDown.
 	 *
 	 * @var mixed
@@ -105,6 +112,7 @@ class ApproveOrderEndpointTest extends WalletTestCase {
 		$this->gateway         = $this->mock( PayPalGateway::class );
 		$this->logger          = $this->mock( LoggerInterface::class );
 		$this->context         = $this->mock( Context::class );
+		$this->order_creator   = $this->mock( WooCommerceOrderCreator::class );
 
 		$this->sut = new ApproveOrderEndpoint(
 			$this->request_data,
@@ -115,7 +123,7 @@ class ApproveOrderEndpointTest extends WalletTestCase {
 			$this->mock( OrderHelper::class ),
 			false,
 			$this->gateway,
-			$this->mock( WooCommerceOrderCreator::class ),
+			$this->order_creator,
 			$this->logger,
 			$this->context
 		);
@@ -211,19 +219,49 @@ class ApproveOrderEndpointTest extends WalletTestCase {
 	/**
 	 * Have the request carry the given PayPal order ID and funding source.
 	 *
-	 * @param string      $order_id       The PayPal order ID.
-	 * @param string|null $funding_source The funding source.
+	 * @param string      $order_id               The PayPal order ID.
+	 * @param string|null $funding_source         The funding source.
+	 * @param bool        $should_create_wc_order Whether the client asks for the WC order (Pay Now on product or cart).
 	 */
-	private function request_for( string $order_id, ?string $funding_source = null ): void {
+	private function request_for( string $order_id, ?string $funding_source = null, bool $should_create_wc_order = false ): void {
 		$this->request_data->shouldReceive( 'read_request' )
 			->with( ApproveOrderEndpoint::nonce() )
 			->andReturn(
 				array(
 					'order_id'               => $order_id,
 					'funding_source'         => $funding_source,
-					'should_create_wc_order' => false,
+					'should_create_wc_order' => $should_create_wc_order,
 				)
 			);
+	}
+
+	/**
+	 * Approve a Pay Now order from a product or cart page, where the endpoint creates the WC order and pays it with
+	 * the gateway, which answers with the given result.
+	 *
+	 * @param array $gateway_result What PayPalGateway::process_payment() returns.
+	 * @return array The decoded response.
+	 */
+	private function approve_pay_now_order( array $gateway_result ): array {
+		$session_id = 'session-7';
+		$order      = $this->paypal_order_with_custom_id( 'pcp_customer_' . $session_id );
+
+		$this->request_for( 'PAY-NOW-ORDER', 'paypal', true );
+		$this->api_endpoint->shouldReceive( 'order' )->with( 'PAY-NOW-ORDER' )->andReturn( $order );
+		$this->session_handler->shouldReceive( 'replace_funding_source' );
+		$this->session_handler->shouldReceive( 'replace_order' );
+		$this->context->shouldReceive( 'is_checkout' )->andReturn( false );
+		$wc_session = $this->use_wc_session( $session_id );
+		$wc_session->shouldReceive( 'set' );
+
+		$wc_order = $this->mock( \WC_Order::class );
+		$wc_order->shouldReceive( 'get_id' )->andReturn( 123 );
+		$wc_order->shouldReceive( 'get_checkout_order_received_url' )->andReturn( 'https://example.org/checkout/order-received/123/' );
+		$this->order_creator->shouldReceive( 'create_from_paypal_order' )->once()->andReturn( $wc_order );
+		$this->gateway->shouldReceive( 'process_payment' )->once()->with( 123 )->andReturn( $gateway_result );
+		$this->logger->shouldReceive( 'error' );
+
+		return $this->run_handler();
 	}
 
 	/**
@@ -316,5 +354,45 @@ class ApproveOrderEndpointTest extends WalletTestCase {
 		$response = $this->run_handler();
 
 		$this->assertTrue( $response['success'] );
+	}
+
+	/**
+	 * A failed capture must not send the shopper to the order-received page: the client shows the gateway's message,
+	 * and the flag tells the v6 client not to retry the approval.
+	 *
+	 * @testdox Should answer with an error carrying the gateway's message when the Pay Now payment fails.
+	 */
+	public function test_pay_now_payment_failure_is_reported_as_an_error(): void {
+		$response = $this->approve_pay_now_order(
+			array(
+				'result'       => 'failure',
+				'redirect'     => 'https://example.org/checkout/',
+				'errorMessage' => 'Capture failed.',
+			)
+		);
+
+		$this->assertFalse( $response['success'] );
+		$this->assertSame( 'Capture failed.', $response['data']['message'] );
+		$this->assertTrue( $response['data']['payment_failed'] );
+		$this->assertArrayNotHasKey( 'order_received_url', $response['data'] );
+	}
+
+	/**
+	 * @testdox Should send the shopper where the gateway says after a Pay Now payment: $redirect.
+	 * @testWith ["https://example.org/checkout/order-received/123/?key=wc_order_abc"]
+	 *           ["https://www.sandbox.paypal.com/checkoutnow?token=PAY-NOW-ORDER"]
+	 *
+	 * @param string $redirect The gateway's redirect: the order-received page, or PayPal when the payer must act.
+	 */
+	public function test_pay_now_success_follows_the_gateway_redirect( string $redirect ): void {
+		$response = $this->approve_pay_now_order(
+			array(
+				'result'   => 'success',
+				'redirect' => $redirect,
+			)
+		);
+
+		$this->assertTrue( $response['success'] );
+		$this->assertSame( $redirect, $response['data']['order_received_url'] );
 	}
 }

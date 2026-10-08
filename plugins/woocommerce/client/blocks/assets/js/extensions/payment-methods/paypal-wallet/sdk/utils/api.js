@@ -65,6 +65,8 @@ export async function postJson( { endpoint, nonce }, body = {} ) {
 		// (expired session); forwarded for v5-parity error rendering.
 		error.errors = json.data?.errors;
 		error.refresh = Boolean( json.data?.refresh );
+		// The approval created the WC order and its payment failed; see approveOrder().
+		error.paymentFailed = Boolean( json.data?.payment_failed );
 		error.status = response.status;
 		throw error;
 	}

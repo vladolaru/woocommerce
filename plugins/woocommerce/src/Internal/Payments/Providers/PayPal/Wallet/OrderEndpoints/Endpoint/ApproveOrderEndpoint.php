@@ -242,8 +242,22 @@ class ApproveOrderEndpoint implements EndpointInterface {
 			$should_create_wc_order = $data['should_create_wc_order'] ?? false;
 			if ( ! $this->final_review_enabled && ! $this->context->is_checkout() && $should_create_wc_order ) {
 				$wc_order = $this->wc_order_creator->create_from_paypal_order( $order, WC()->cart, $data );
-				$this->gateway->process_payment( $wc_order->get_id() );
-				$order_received_url = $wc_order->get_checkout_order_received_url();
+				$result   = $this->gateway->process_payment( $wc_order->get_id() );
+
+				// A failed capture must not reach the order-received page. payment_failed
+				// tells the client not to retry the approval of an order that failed to pay.
+				if ( 'success' !== ( $result['result'] ?? '' ) ) {
+					wp_send_json_error(
+						array(
+							'message'        => $result['errorMessage'] ?? __( 'Payment provider declined the payment, please use a different payment method.', 'woocommerce' ),
+							'payment_failed' => true,
+						)
+					);
+				}
+
+				// The gateway's redirect: the order-received page, or PayPal when the payer must act
+				// (a declined instrument). The clients navigate to whatever URL this key holds.
+				$order_received_url = $result['redirect'] ?? $wc_order->get_checkout_order_received_url();
 
 				wp_send_json_success( array( 'order_received_url' => $order_received_url ) );
 			}
