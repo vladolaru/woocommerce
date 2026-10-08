@@ -289,6 +289,60 @@ describe( 'boot', () => {
 		} );
 	} );
 
+	describe( 'Place order on classic checkout', () => {
+		const PLACE_ORDER = '#place_order';
+
+		/**
+		 * The checkout DOM with PayPal selected, with or without the page
+		 * wrapper PHP prints only when the checkout location is on.
+		 *
+		 * @param {boolean} withWrapper - Whether the checkout wrapper exists.
+		 */
+		function checkoutDom( withWrapper ) {
+			document.body.innerHTML = `
+				${ withWrapper ? `<div id="${ WRAPPER_SELECTOR.slice( 1 ) }"></div>` : '' }
+				<div id="${ MINI_CART_WRAPPER_SELECTOR.slice( 1 ) }"></div>
+				<input type="radio" name="payment_method" value="ppcp-gateway" checked />
+				<button id="place_order">Place order</button>
+			`;
+		}
+
+		const lastPlaceOrderVisibility = () =>
+			mockSetVisible.mock.calls
+				.filter( ( [ selector ] ) => selector === PLACE_ORDER )
+				.pop()?.[ 1 ];
+
+		test( 'keeps Place order when the page has no checkout wrapper, even with PayPal selected', async () => {
+			checkoutDom( false );
+			boot( baseConfig() );
+			await flush();
+
+			expect( lastPlaceOrderVisibility() ).toBe( true );
+		} );
+
+		test( 'keeps Place order when no PayPal button rendered into the wrapper', async () => {
+			checkoutDom( true );
+			mockRenderButtons.mockImplementation( () => [] );
+			boot( baseConfig() );
+			await flush();
+
+			expect( lastPlaceOrderVisibility() ).toBe( true );
+		} );
+
+		test( 'hides Place order once a PayPal button rendered into the wrapper', async () => {
+			checkoutDom( true );
+			mockRenderButtons.mockImplementation( ( { wrapper } ) => {
+				const button = document.createElement( 'paypal-button' );
+				wrapper.appendChild( button );
+				return [ button ];
+			} );
+			boot( baseConfig() );
+			await flush();
+
+			expect( lastPlaceOrderVisibility() ).toBe( false );
+		} );
+	} );
+
 	describe( 'DOM-replacing update events', () => {
 		test.each( [
 			[ 'updated_checkout' ],

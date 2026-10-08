@@ -182,6 +182,57 @@ const ELIGIBILITY_REFRESH_DEBOUNCE_MS = 300;
 	}
 
 	/**
+	 * Whether a saved PayPal token (not "Use a new payment method") is selected.
+	 * Such a payment is charged via the native Place Order button — server-side, or
+	 * through the vault component's in-page approval where eligible — not the v6
+	 * express button, which would start a new PayPal flow instead.
+	 *
+	 * @return {boolean} True when a saved ppcp-gateway token is selected.
+	 */
+	function isSavedPayPalTokenSelected() {
+		const checked = document.querySelector(
+			'input[name="wc-ppcp-gateway-payment-token"]:checked'
+		);
+		return Boolean( checked && checked.value && checked.value !== 'new' );
+	}
+
+	/**
+	 * Hides the native WC place order button while the PayPal gateway
+	 * is selected with a NEW payment method — the v6 PayPal buttons stand in for
+	 * it — and restores it for saved PayPal tokens (charged via Place
+	 * Order) and every other method. Only once a PayPal button is in the page
+	 * wrapper: the script also loads for the mini-cart or messaging with no
+	 * checkout wrapper, and an ineligible buyer gets no button at all. The v6 express button is hidden for a saved
+	 * token so it does not compete with it. Re-run on updated_checkout /
+	 * payment_method_selected / token change because WC rebuilds the #payment DOM
+	 * (and this inline style) on each update.
+	 */
+	function syncPlaceOrderButton() {
+		if (
+			! hasJQuery() ||
+			! [ 'checkout', 'pay-now' ].includes( config.page_context )
+		) {
+			return;
+		}
+
+		const selected = document.querySelector(
+			'input[name="payment_method"]:checked'
+		)?.value;
+		const wrapper =
+			config.wrapper && document.querySelector( config.wrapper );
+		const hasPayPalButton = Boolean( wrapper?.childElementCount );
+		const useExpress =
+			hasPayPalButton &&
+			selected === PAYPAL_GATEWAY_ID &&
+			! isSavedPayPalTokenSelected();
+
+		setVisible( PLACE_ORDER_SELECTOR, ! useExpress, true );
+		if ( config.wrapper ) {
+			setVisible( config.wrapper, useExpress );
+		}
+	}
+
+	/**
 	 * Renders buttons into a target if its wrapper is present and empty.
 	 *
 	 * The SDK and client token are only loaded once a wrapper exists, so
@@ -220,6 +271,9 @@ const ELIGIBILITY_REFRESH_DEBOUNCE_MS = 300;
 			),
 			venmoEnabled: Boolean( config.venmo_button?.[ target.context ] ),
 		} );
+
+		// Place order hides only once a PayPal button is there to replace it.
+		syncPlaceOrderButton();
 	}
 
 	/**
@@ -309,21 +363,6 @@ const ELIGIBILITY_REFRESH_DEBOUNCE_MS = 300;
 	}
 
 	/**
-	 * Whether a saved PayPal token (not "Use a new payment method") is selected.
-	 * Such a payment is charged via the native Place Order button — server-side, or
-	 * through the vault component's in-page approval where eligible — not the v6
-	 * express button, which would start a new PayPal flow instead.
-	 *
-	 * @return {boolean} True when a saved ppcp-gateway token is selected.
-	 */
-	function isSavedPayPalTokenSelected() {
-		const checked = document.querySelector(
-			'input[name="wc-ppcp-gateway-payment-token"]:checked'
-		);
-		return Boolean( checked && checked.value && checked.value !== 'new' );
-	}
-
-	/**
 	 * Serialises refreshEligibility() passes, same chain idiom as render().
 	 *
 	 * It is needed because the debounce coalesces events but cannot stop one pass
@@ -347,35 +386,6 @@ const ELIGIBILITY_REFRESH_DEBOUNCE_MS = 300;
 		queueRefreshEligibility,
 		ELIGIBILITY_REFRESH_DEBOUNCE_MS
 	);
-
-	/**
-	 * Hides the native WC place order button while the PayPal gateway
-	 * is selected with a NEW payment method — the v6 PayPal buttons stand in for
-	 * it — and restores it for saved PayPal tokens (charged via Place
-	 * Order) and every other method. The v6 express button is hidden for a saved
-	 * token so it does not compete with it. Re-run on updated_checkout /
-	 * payment_method_selected / token change because WC rebuilds the #payment DOM
-	 * (and this inline style) on each update.
-	 */
-	function syncPlaceOrderButton() {
-		if (
-			! hasJQuery() ||
-			! [ 'checkout', 'pay-now' ].includes( config.page_context )
-		) {
-			return;
-		}
-
-		const selected = document.querySelector(
-			'input[name="payment_method"]:checked'
-		)?.value;
-		const useExpress =
-			selected === PAYPAL_GATEWAY_ID && ! isSavedPayPalTokenSelected();
-
-		setVisible( PLACE_ORDER_SELECTOR, ! useExpress, true );
-		if ( config.wrapper ) {
-			setVisible( config.wrapper, useExpress );
-		}
-	}
 
 	function initMessagesSafely() {
 		initMessages( config, sdkPageType ).catch( ( error ) => {
