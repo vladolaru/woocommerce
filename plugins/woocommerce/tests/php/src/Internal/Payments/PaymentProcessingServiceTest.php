@@ -613,7 +613,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertCount( 1, $logger->error_calls );
-		$this->assertSame( 'Native payment provider operation threw an exception.', $logger->error_calls[0]['message'] );
+		$this->assertSame( 'Payment provider operation threw an exception.', $logger->error_calls[0]['message'] );
 		$this->assertSame(
 			array(
 				'source'          => 'order-payments',
@@ -2924,7 +2924,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$apply_logs = array_values(
 			array_filter(
 				$fake_logger->error_calls,
-				static fn( array $call ): bool => 0 === strpos( $call['message'], 'Native payment provider operation returned a reconcilable outcome' )
+				static fn( array $call ): bool => 0 === strpos( $call['message'], 'Payment provider operation returned a reconcilable outcome' )
 			)
 		);
 		$this->assertCount( 1, $apply_logs );
@@ -2964,7 +2964,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$mismatch_logs = array_values(
 			array_filter(
 				$fake_logger->error_calls,
-				static fn( array $call ): bool => 'Native payment reconciliation context was not saved: the order already has a different transaction ID.' === $call['message']
+				static fn( array $call ): bool => 'Payment reconciliation context was not saved: the order already has a different transaction ID.' === $call['message']
 			)
 		);
 		$this->assertCount( 1, $mismatch_logs, 'The transaction ID mismatch must be logged on its own line.' );

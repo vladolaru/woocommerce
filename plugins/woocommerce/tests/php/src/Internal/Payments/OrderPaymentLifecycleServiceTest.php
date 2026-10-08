@@ -150,7 +150,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ), 'A skipped success event must not add a completion note.' );
 		$this->assertLogged(
 			'debug',
-			'open WooPayments dispute',
+			'an open dispute',
 			array(
 				'source'     => 'order-payments-webhook',
 				'order_id'   => $order->get_id(),
@@ -269,7 +269,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 0, $this->countOrderNotesMatching( $stale_order, 'Payment complete.' ), 'A skipped success event must not add a completion note.' );
 		$this->assertLogged(
 			'debug',
-			'open WooPayments dispute',
+			'an open dispute',
 			array(
 				'order_id' => $stale_order->get_id(),
 				'reason'   => 'open_dispute',
@@ -333,7 +333,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment complete.' ), 'A replayed success event must not add another completion note.' );
 		$this->assertLogged(
 			'debug',
-			'already persisted success note',
+			'the payment note is already on the order',
 			array(
 				'source'     => 'order-payments-webhook',
 				'order_id'   => $order->get_id(),

@@ -394,8 +394,8 @@ class OrderPaymentLifecycleService {
 	 */
 	private function log_skipped_completed_event( WC_Order $order, PaymentLifecycleEvent $event, string $reason ): void {
 		$message = 'open_dispute' === $reason
-			? 'Native WooPayments completed lifecycle event skipped because an open WooPayments dispute keeps the order on hold.'
-			: 'Native WooPayments completed lifecycle event skipped because an already persisted success note identifies a replay.';
+			? 'Completed payment event skipped: an open dispute keeps the order on hold.'
+			: 'Completed payment event skipped: the payment note is already on the order.';
 
 		wc_get_logger()->debug(
 			$message,

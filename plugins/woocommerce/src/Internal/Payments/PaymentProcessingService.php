@@ -95,7 +95,8 @@ class PaymentProcessingService {
 		$idempotency_key = $this->operation_keys->mint_attempt_key();
 		$vocabulary      = $provider->get_persistence_vocabulary();
 
-		// WooPayments locks checkout too, so this refusal is not logged as a native-only one.
+		// A refused checkout claim is not logged: checkout locking is long-standing, and only the stricter locks on
+		// the other operations log their refusals.
 		$lock_token = $this->order_payment_lock->claim( $order, $vocabulary, $idempotency_key, 'checkout' );
 		if ( null === $lock_token ) {
 			return $this->get_checkout_in_progress_outcome();
@@ -238,7 +239,7 @@ class PaymentProcessingService {
 	private function log_checkout_refused_after_claim( WC_Order $order, string $reason ): void {
 		try {
 			wc_get_logger()->warning(
-				sprintf( 'Native checkout charged nothing: order %1$d changed before this request claimed its payment lock.', $order->get_id() ),
+				sprintf( 'Checkout charged nothing: order %1$d changed before this request claimed its payment lock.', $order->get_id() ),
 				array(
 					'source'   => 'order-payments',
 					'order_id' => $order->get_id(),
@@ -275,7 +276,7 @@ class PaymentProcessingService {
 			if ( '' !== $payment_reference && '' !== $existing_transaction_id && $payment_reference !== $existing_transaction_id ) {
 				// A different transaction ID on the order points to a second payment this order does not link to.
 				wc_get_logger()->error(
-					'Native payment reconciliation context was not saved: the order already has a different transaction ID.',
+					'Payment reconciliation context was not saved: the order already has a different transaction ID.',
 					array(
 						'source'                  => 'order-payments',
 						'order_id'                => $reloaded_order->get_id(),
@@ -328,7 +329,7 @@ class PaymentProcessingService {
 	private function log_post_provider_apply_failure( WC_Order $order, PaymentOutcome $outcome, string $operation, Throwable $exception, bool $reconciliation_persisted ): void {
 		try {
 			wc_get_logger()->error(
-				'Native payment provider operation returned a reconcilable outcome but applying local effects failed; best-effort reconciliation persistence was attempted.',
+				'Payment provider operation returned a reconcilable outcome but applying local effects failed; best-effort reconciliation persistence was attempted.',
 				array(
 					'source'                   => 'order-payments',
 					'order_id'                 => $order->get_id(),
@@ -794,7 +795,7 @@ class PaymentProcessingService {
 	private function log_provider_failure( WC_Order $order, string $operation, string $idempotency_key, Throwable $exception ): void {
 		try {
 			wc_get_logger()->error(
-				'Native payment provider operation threw an exception.',
+				'Payment provider operation threw an exception.',
 				array(
 					'source'          => 'order-payments',
 					'operation'       => $operation,

@@ -195,7 +195,7 @@ final class WooPaymentsSetupTier {
 	private function log_write_failure( string $requested_tier, $stored_tier, bool $autoloaded ): void {
 		wc_get_logger()->error(
 			sprintf(
-				'Native payments state write failed: requested %1$s, stored %2$s, autoloaded %3$s.',
+				'WooPayments setup tier write failed: requested %1$s, stored %2$s, autoloaded %3$s.',
 				$requested_tier,
 				(string) wp_json_encode( $stored_tier ),
 				$autoloaded ? 'yes' : 'no'
