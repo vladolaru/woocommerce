@@ -5748,7 +5748,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$result = $gateway->process_refund( $order->get_id(), 4.25, 'Adjustment' );
 
 		$this->assertWPError( $result );
-		$this->assertSame( 'native_payment_refund_missing_charge', $result->get_error_code() );
+		$this->assertSame( 'order_payment_refund_missing_charge', $result->get_error_code() );
 		$this->assertNull( $service->last_refund_context );
 	}
 
@@ -5844,7 +5844,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			public function process_refund( PaymentOperationContext $context, ProviderInterface $provider ) {
 				parent::process_refund( $context, $provider );
 
-				return new \WP_Error( 'native_payment_refund_locked', 'A payment operation is already in progress for this order.' );
+				return new \WP_Error( 'order_payment_refund_locked', 'A payment operation is already in progress for this order.' );
 			}
 		};
 		$gateway = new NativeWooPaymentsGateway();

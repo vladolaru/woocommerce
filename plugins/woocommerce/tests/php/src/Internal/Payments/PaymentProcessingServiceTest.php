@@ -507,7 +507,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$result = $this->sut->process_refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.5, 'Adjustment' ), $provider );
 
 		$this->assertWPError( $result );
-		$this->assertSame( 'native_payment_refund_failed', $result->get_error_code(), 'An exception without an error code fails with the default refund code.' );
+		$this->assertSame( 'order_payment_refund_failed', $result->get_error_code(), 'An exception without an error code fails with the default refund code.' );
 		$this->assertSame( 'Processor unavailable.', $result->get_error_message() );
 	}
 
@@ -2469,7 +2469,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 0, $provider->refund_calls, 'A refund with no row to link must never reach the provider.' );
 		$this->assertWPError( $result );
-		$this->assertSame( 'native_payment_refund_not_found', $result->get_error_code() );
+		$this->assertSame( 'order_payment_refund_not_found', $result->get_error_code() );
 		$this->assertSame( 'A refund cannot be found for order: ' . $order->get_id(), $result->get_error_message() );
 		$order = wc_get_order( $order->get_id() );
 		$this->assertSame( '', $order->get_meta( '_wcpay_refund_status', true ), 'No refund metadata is written when the row is missing.' );
@@ -3072,7 +3072,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $free_refund );
 		$this->assertSame( array(), $logged_when_free, 'A refund that claims a free lock must log nothing.' );
 		$this->assertWPError( $refused_refund );
-		$this->assertSame( 'native_payment_refund_locked', $refused_refund->get_error_code() );
+		$this->assertSame( 'order_payment_refund_locked', $refused_refund->get_error_code() );
 		$this->assertSame( 1, $provider->refund_calls, 'The refused refund must not reach the provider.' );
 		$this->assertCount( 1, $refusal_entries, 'The refused refund must write exactly one log line.' );
 		$this->assertSame( 'warning', $refusal_entries[0]['level'] );

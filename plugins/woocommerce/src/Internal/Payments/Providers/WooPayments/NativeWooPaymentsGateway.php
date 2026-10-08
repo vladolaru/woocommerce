@@ -1948,7 +1948,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		if ( ! $is_zero_refund && ! $this->can_refund_order( $order ) ) {
-			return new WP_Error( 'native_payment_refund_missing_charge', __( 'This order does not have a WooPayments charge to refund.', 'woocommerce' ) );
+			return new WP_Error( 'order_payment_refund_missing_charge', __( 'This order does not have a WooPayments charge to refund.', 'woocommerce' ) );
 		}
 
 		$result = $this->get_processing_service()->process_refund(
@@ -1959,7 +1959,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		// The order has no refund row to link, so the service refused before the platform call.
 		// Return client 11.1.0's code and message (class-wc-payment-gateway-wcpay.php:3003-3007);
 		// no money moved, so record neither the success event nor a failure.
-		if ( is_wp_error( $result ) && 'native_payment_refund_not_found' === $result->get_error_code() ) {
+		if ( is_wp_error( $result ) && 'order_payment_refund_not_found' === $result->get_error_code() ) {
 			return new WP_Error( 'wcpay_edit_order_refund_not_found', $result->get_error_message() );
 		}
 
@@ -1968,7 +1968,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		// comes from an actual platform refund attempt. A new pre-flight refusal added
 		// inside the service must be excluded here too, or it will start recording
 		// failures for refunds that never reached the provider.
-		if ( is_wp_error( $result ) && 'native_payment_refund_locked' !== $result->get_error_code() ) {
+		if ( is_wp_error( $result ) && 'order_payment_refund_locked' !== $result->get_error_code() ) {
 			$this->record_refund_failure( $order, $refund_amount, $result );
 		} elseif ( true === $result && ! $is_zero_refund ) {
 			WooPaymentsTracks::record_wcadmin_event( 'wcpay_edit_order_refund_success' );

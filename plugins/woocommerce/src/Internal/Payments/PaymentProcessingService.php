@@ -370,7 +370,7 @@ class PaymentProcessingService {
 		$lock_token      = $this->order_payment_lock->claim( $order, $vocabulary, $idempotency_key, 'refund' );
 		if ( null === $lock_token ) {
 			$this->order_payment_lock->log_refusal( $order, $vocabulary, 'refund' );
-			return new WP_Error( 'native_payment_refund_locked', __( 'A payment operation is already in progress for this order.', 'woocommerce' ) );
+			return new WP_Error( 'order_payment_refund_locked', __( 'A payment operation is already in progress for this order.', 'woocommerce' ) );
 		}
 
 		try {
@@ -384,7 +384,7 @@ class PaymentProcessingService {
 			// creates the row first, so only a direct caller without one reaches this.
 			if ( null === $wc_refund_id ) {
 				return new WP_Error(
-					'native_payment_refund_not_found',
+					'order_payment_refund_not_found',
 					/* translators: %1$s: order ID. */
 					sprintf( __( 'A refund cannot be found for order: %1$s', 'woocommerce' ), $order->get_id() )
 				);
@@ -423,7 +423,7 @@ class PaymentProcessingService {
 		$data          = $outcome->get_data();
 		$error_code    = isset( $data[ PaymentOutcome::DATA_ERROR_CODE ] ) && '' !== (string) $data[ PaymentOutcome::DATA_ERROR_CODE ]
 			? (string) $data[ PaymentOutcome::DATA_ERROR_CODE ]
-			: 'native_payment_refund_failed';
+			: 'order_payment_refund_failed';
 		$error_message = isset( $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] )
 			? (string) $data[ PaymentOutcome::DATA_ERROR_MESSAGE ]
 			: __( 'The refund failed.', 'woocommerce' );
