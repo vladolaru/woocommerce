@@ -758,6 +758,39 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A completed-event skip keeps the dispute persisted under the provider's own key when a stale caller saves.
+	 */
+	public function test_success_skip_keeps_the_provider_key_dispute_when_a_stale_caller_saves(): void {
+		$stale_order = $this->create_woopayments_order();
+		$fresh_order = wc_get_order( $stale_order->get_id() );
+		$profile     = $this->createMock( ProviderPersistenceVocabulary::class );
+		$profile->method( 'get_order_lock_key' )->willReturn( 'provider_lifecycle_lock_' . $stale_order->get_id() );
+		$profile->method( 'get_lock_sentinel' )->willReturn( 'provider-lock' );
+		$profile->method( 'get_lock_ttl_seconds' )->willReturn( 60 );
+		$profile->method( 'get_open_dispute_ids_meta_key' )->willReturn( '_provider_open_dispute_ids' );
+
+		$this->assertInstanceOf( WC_Order::class, $fresh_order );
+		$fresh_order->update_meta_data( '_provider_open_dispute_ids', array( 'dp_custom_winner' ) );
+		$fresh_order->update_status( 'on-hold' );
+
+		$stale_order->set_status( 'processing' );
+		$stale_order->update_meta_data( '_provider_open_dispute_ids', array() );
+		$this->assertNotNull( $this->order_payment_store->claim_order_payment_lock_for_operation( $stale_order, $profile, 'pi_custom_stale_save', 'payment operation' ) );
+		try {
+			$this->sut->apply_unlocked( $stale_order, $this->completed_event( 'pi_custom_stale_save' ), $profile );
+			$stale_order->save();
+		} finally {
+			$this->clear_order_payment_lock( $stale_order, $profile );
+		}
+
+		$order = wc_get_order( $stale_order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status(), 'A stale caller must not restore its pre-dispute status.' );
+		$this->assertSame( array( 'dp_custom_winner' ), $order->get_meta( '_provider_open_dispute_ids', true ), 'A stale caller must not erase the dispute persisted under the provider key.' );
+	}
+
+	/**
 	 * @testdox Lifecycle events lock the order with the supplied provider persistence vocabulary.
 	 */
 	public function test_apply_uses_provider_vocabulary_for_locks(): void {

@@ -276,6 +276,59 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox With the real bootstrap, registry and arbiter, the WooPayments gateways leave the gateway list once the built-in WooPayments stops owning payments.
+	 */
+	public function test_gateway_list_follows_the_arbiter_after_the_built_in_runtime_loses_ownership(): void {
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		update_option( 'active_plugins', array_values( array_diff( (array) get_option( 'active_plugins', array() ), array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) ) ) );
+		wc_get_container()->reset_all_resolved();
+		$gateway  = new class() extends \WC_Payment_Gateway {
+			/** Give the gateway the WooPayments ID. */
+			public function __construct() {
+				$this->id = 'woocommerce_payments';
+			}
+		};
+		$provider = new class( true, array( $gateway ), 'woocommerce_payments' ) extends StaticProvider {
+			/** @var int Number of gateway list reads. */
+			public int $gateway_reads = 0;
+
+			/**
+			 * Count each gateway list read.
+			 *
+			 * @return array<int,\WC_Payment_Gateway>
+			 */
+			public function get_payment_gateways(): array {
+				++$this->gateway_reads;
+				return parent::get_payment_gateways();
+			}
+		};
+		wc_get_container()->replace( WooPaymentsProvider::class, $provider );
+		$sut = new NativePaymentsBootstrap(
+			static fn(): array => array( WooPaymentsProvider::class ),
+			static fn( $container ): bool => $container->get( NativePaymentsRuntimeArbiter::class )->should_native_register(),
+			static fn(): array => array()
+		);
+
+		try {
+			$sut->register( wc_get_container(), '__return_false' );
+			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Building the gateway list as WooCommerce does.
+			$this->assertSame( array( $gateway ), apply_filters( 'woocommerce_payment_gateways', array() ), 'The gateway must be listed while the built-in WooPayments owns payments.' );
+			$this->assertSame( 1, $provider->gateway_reads );
+
+			remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+			add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_false' );
+			wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+
+			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Building the gateway list as WooCommerce does.
+			$this->assertSame( array(), apply_filters( 'woocommerce_payment_gateways', array() ), 'The gateway must leave the list once the built-in WooPayments stops owning payments.' );
+			$this->assertSame( 1, $provider->gateway_reads, 'A provider whose check fails must not be asked for its gateways.' );
+		} finally {
+			wc_get_container()->reset_all_replacements();
+			wc_get_container()->reset_all_resolved();
+		}
+	}
+
+	/**
 	 * WooCommerce runs this bootstrap inside its constructor, before WC() has an instance to return, so any WC() call on this
 	 * path constructs WooCommerce again and recurses until PHP gives up. The test reproduces that by clearing the instance;
 	 * a WC() call then re-enters the bootstrap, which the bootstrap filter records.

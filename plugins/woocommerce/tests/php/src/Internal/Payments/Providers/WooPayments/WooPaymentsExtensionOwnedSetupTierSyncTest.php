@@ -112,6 +112,8 @@ class WooPaymentsExtensionOwnedSetupTierSyncTest extends WC_Unit_Test_Case {
 	/**
 	 * An account cache the WooPayments extension writes for an account the built-in WooPayments can serve.
 	 *
+	 * The subset of the cache client 11.1.0 writes that the test needs: the envelope's `data`, `fetched` and `errored` (`includes/class-database-cache.php:377-382`), and the account's `account_id` and `country` (read at `includes/class-wc-payments-account.php:171,2733`).
+	 *
 	 * @param string $account_id Account ID.
 	 * @return array<string,mixed>
 	 */

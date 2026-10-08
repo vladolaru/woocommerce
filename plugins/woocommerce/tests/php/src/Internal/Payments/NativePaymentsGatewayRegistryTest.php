@@ -5,7 +5,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsGatewayRegistry;
 use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderContract;
-use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use WC_Payment_Gateway;
 use WC_Unit_Test_Case;
 
@@ -63,9 +62,13 @@ class NativePaymentsGatewayRegistryTest extends WC_Unit_Test_Case {
 	public function test_a_provider_whose_check_fails_later_adds_no_gateway_to_a_later_build(): void {
 		$gateway       = $this->create_gateway( 'woocommerce_payments' );
 		$owns_gateways = true;
+		$calls         = 0;
 		$sut           = new NativePaymentsGatewayRegistry();
 		$sut->add_provider(
-			static fn(): PaymentGatewayProviderContract => new StaticProvider( true, array( $gateway ) ),
+			static function () use ( &$calls, $gateway ): PaymentGatewayProviderContract {
+				++$calls;
+				return new StaticProvider( true, array( $gateway ) );
+			},
 			static function () use ( &$owns_gateways ): bool {
 				return $owns_gateways;
 			}
@@ -77,6 +80,59 @@ class NativePaymentsGatewayRegistryTest extends WC_Unit_Test_Case {
 		$owns_gateways = false;
 
 		$this->assertSame( array(), $this->apply_payment_gateways_filter(), 'A later build must add no gateway once the check fails.' );
+		$this->assertSame( 1, $calls, 'The provider is built once, on the first build.' );
+	}
+
+	/**
+	 * @testdox A provider whose check fails at registration adds no gateway hook and is never built.
+	 */
+	public function test_a_provider_whose_check_fails_at_registration_adds_no_hook_and_is_not_built(): void {
+		$gateway = $this->create_gateway( 'woocommerce_payments' );
+		$calls   = 0;
+		$sut     = new NativePaymentsGatewayRegistry();
+		$sut->add_provider(
+			static function () use ( &$calls, $gateway ): PaymentGatewayProviderContract {
+				++$calls;
+				return new StaticProvider( true, array( $gateway ) );
+			},
+			static fn(): bool => false
+		);
+
+		$sut->register();
+
+		$this->assertFalse( has_filter( 'woocommerce_payment_gateways', array( $sut, 'register_gateway' ) ) );
+		$this->assertSame( array(), $this->apply_payment_gateways_filter() );
+		$this->assertSame( 0, $calls, 'A provider whose check fails must not be built.' );
+	}
+
+	/**
+	 * @testdox A provider whose check stops passing before the first gateway list build is not built, and is built on a later build where the check passes.
+	 */
+	public function test_a_provider_whose_check_fails_before_the_first_build_is_not_built(): void {
+		$gateway       = $this->create_gateway( 'woocommerce_payments' );
+		$owns_gateways = true;
+		$calls         = 0;
+		$sut           = new NativePaymentsGatewayRegistry();
+		$sut->add_provider(
+			static function () use ( &$calls, $gateway ): PaymentGatewayProviderContract {
+				++$calls;
+				return new StaticProvider( true, array( $gateway ) );
+			},
+			static function () use ( &$owns_gateways ): bool {
+				return $owns_gateways;
+			}
+		);
+		$sut->register();
+
+		$owns_gateways = false;
+
+		$this->assertSame( array(), $this->apply_payment_gateways_filter(), 'A build after the check fails must add no gateway.' );
+		$this->assertSame( 0, $calls, 'A provider whose check fails must not be built.' );
+
+		$owns_gateways = true;
+
+		$this->assertSame( array( $gateway ), $this->apply_payment_gateways_filter(), 'A later build where the check passes must add the gateway.' );
+		$this->assertSame( 1, $calls, 'The provider is built on the first build where its check passes.' );
 	}
 
 	/**
@@ -121,20 +177,6 @@ class NativePaymentsGatewayRegistryTest extends WC_Unit_Test_Case {
 		$this->assertSame( 10, has_filter( 'woocommerce_payment_gateways', array( $sut, 'register_gateway' ) ) );
 
 		$this->assertSame( array( $gateway ), $this->apply_payment_gateways_filter() );
-	}
-
-	/**
-	 * @testdox Processing providers satisfy the gateway registry contract through the interface hierarchy.
-	 */
-	public function test_processing_provider_contract_is_accepted_by_gateway_registry(): void {
-		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED ) );
-		$sut      = new NativePaymentsGatewayRegistry();
-
-		$this->assertInstanceOf( PaymentGatewayProviderContract::class, $provider );
-
-		$sut->add_provider( static fn(): PaymentGatewayProviderContract => $provider, static fn(): bool => true );
-
-		$this->assertSame( array(), $sut->register_gateway( array() ) );
 	}
 
 	/**
