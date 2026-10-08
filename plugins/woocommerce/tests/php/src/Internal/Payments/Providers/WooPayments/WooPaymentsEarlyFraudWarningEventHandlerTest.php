@@ -317,48 +317,75 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Client 11.1.0 resolves the order from the charge with no gateway check (class-wc-payments-webhook-processing-service.php:867-901).
+	 * Client 11.1.0 resolves the order from the charge with no gateway check (class-wc-payments-webhook-processing-service.php:867-901)
+	 * and stores the warning and its private note without a status change (class-wc-payments-order-service.php:720-740).
 	 *
-	 * @testdox Should store a warning on the order its charge resolves to whatever the order's gateway, logging the mismatch once.
+	 * @testdox Should store and resolve a warning on the order its charge resolves to whatever the order's gateway, logging each stored change once.
 	 */
 	public function test_stores_a_warning_on_an_order_of_another_gateway(): void {
 		$order = $this->create_woopayments_order();
 		$order->set_payment_method( 'cheque' );
+		$order->set_status( 'processing' );
 		$order->save();
-		$logger  = RecordingWcLogger::install();
-		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
+		$order_id       = $order->get_id();
+		$baseline_notes = count( wc_get_order_notes( array( 'order_id' => $order_id ) ) );
+		$logger         = RecordingWcLogger::install();
+		$handler        = new WooPaymentsEarlyFraudWarningEventHandler();
 		$handler->init();
+		$mismatch_lines = static fn( string $event_type ): array => array_filter(
+			$logger->lines,
+			static fn( array $line ): bool => 'warning' === $line[0] && 0 === strpos( $line[1], 'order payment method mismatch: order ' . $order_id . ', applied ' . $event_type )
+		);
+		$event          = static fn( bool $actionable ): array => array(
+			'charge'     => 'ch_early_warning',
+			'id'         => 'efw_123',
+			'actionable' => $actionable,
+			'created'    => 123,
+			'fraud_type' => 'made_with_stolen_card',
+		);
 
 		// An update with no stored warning stores nothing, so it logs nothing either.
-		$handler->process(
-			'radar.early_fraud_warning.updated',
-			array(
-				'charge'     => 'ch_early_warning',
-				'id'         => 'efw_123',
-				'actionable' => true,
-				'created'    => 123,
-			)
-		);
-		$handler->process(
-			'radar.early_fraud_warning.created',
-			array(
-				'charge'     => 'ch_early_warning',
-				'id'         => 'efw_123',
-				'actionable' => true,
-				'created'    => 123,
-			)
-		);
+		$handler->process( 'radar.early_fraud_warning.updated', $event( true ) );
 
-		$order = wc_get_order( $order->get_id() );
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'efw_123', $order->get_meta( '_wcpay_early_fraud_warning', true )['efw_id'] ?? null );
-		$this->assertSame( 'cheque', $order->get_payment_method() );
-		$mismatch_lines = array_filter(
-			$logger->lines,
-			static fn( array $line ): bool => 'warning' === $line[0] && 0 === strpos( $line[1], 'order payment method mismatch: order ' . $order->get_id() . ', applied radar.early_fraud_warning.created' )
+		$fresh_order = wc_get_order( $order_id );
+		$this->assertInstanceOf( WC_Order::class, $fresh_order );
+		$this->assertSame( '', $fresh_order->get_meta( '_wcpay_early_fraud_warning', true ) );
+		$this->assertCount( $baseline_notes, wc_get_order_notes( array( 'order_id' => $order_id ) ) );
+		$this->assertCount( 0, array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'order payment method mismatch:' ) ) );
+
+		$handler->process( 'radar.early_fraud_warning.created', $event( true ) );
+
+		$fresh_order = wc_get_order( $order_id );
+		$this->assertInstanceOf( WC_Order::class, $fresh_order );
+		$this->assertSame(
+			array(
+				'efw_id'         => 'efw_123',
+				'efw_actionable' => true,
+				'efw_type'       => 'made_with_stolen_card',
+				'created'        => 123,
+			),
+			$fresh_order->get_meta( '_wcpay_early_fraud_warning', true )
 		);
-		$this->assertCount( 1, $mismatch_lines );
-		$this->assertCount( 1, array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'order payment method mismatch:' ) ), 'The update that stored nothing logs nothing.' );
+		$this->assertSame( 'cheque', $fresh_order->get_payment_method() );
+		$this->assertSame( 'processing', $fresh_order->get_status() );
+		$notes = wc_get_order_notes( array( 'order_id' => $order_id ) );
+		$this->assertCount( $baseline_notes + 1, $notes );
+		$this->assertStringContainsString( 'Made with stolen card', $notes[0]->content );
+		$this->assertFalse( (bool) $notes[0]->customer_note );
+		$this->assertCount( 1, $mismatch_lines( 'radar.early_fraud_warning.created' ) );
+
+		$handler->process( 'radar.early_fraud_warning.updated', $event( false ) );
+
+		$fresh_order = wc_get_order( $order_id );
+		$this->assertInstanceOf( WC_Order::class, $fresh_order );
+		$this->assertFalse( $fresh_order->get_meta( '_wcpay_early_fraud_warning', true )['efw_actionable'] ?? null );
+		$this->assertSame( 'processing', $fresh_order->get_status() );
+		$notes = wc_get_order_notes( array( 'order_id' => $order_id ) );
+		$this->assertCount( $baseline_notes + 2, $notes );
+		$this->assertStringContainsString( 'no longer actionable', $notes[0]->content );
+		$this->assertFalse( (bool) $notes[0]->customer_note );
+		$this->assertCount( 1, $mismatch_lines( 'radar.early_fraud_warning.updated' ) );
+		$this->assertCount( 2, array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'order payment method mismatch:' ) ) );
 	}
 
 	/**
