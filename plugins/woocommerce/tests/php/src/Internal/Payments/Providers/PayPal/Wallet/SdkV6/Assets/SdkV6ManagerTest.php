@@ -228,12 +228,14 @@ class SdkV6ManagerTest extends WalletTestCase {
 	 * @param bool   $final_review_enabled Whether the final review step is on.
 	 * @param string $class_name           The class to build.
 	 * @param bool   $vaulting_enabled     Whether "Save PayPal and Venmo" is on.
+	 * @param bool   $buttons_available    Whether the merchant is connected and the PayPal gateway is on.
 	 * @return SdkV6Manager
 	 */
 	private function create_sut(
 		bool $final_review_enabled = false,
 		string $class_name = SdkV6Manager::class,
-		bool $vaulting_enabled = false
+		bool $vaulting_enabled = false,
+		bool $buttons_available = true
 	): SdkV6Manager {
 		return new $class_name(
 			$this->asset_getter,
@@ -249,7 +251,8 @@ class SdkV6ManagerTest extends WalletTestCase {
 			$this->subscription_helper,
 			$this->free_trial_helper,
 			$this->message_style_mapper,
-			$this->messages_eligibility
+			$this->messages_eligibility,
+			$buttons_available
 		);
 	}
 
@@ -425,6 +428,39 @@ class SdkV6ManagerTest extends WalletTestCase {
 			'free-trial cart needing no payment still enables checkout' => array( false, true, true ),
 			'zero-total non-free-trial cart keeps checkout suppressed'  => array( false, false, false ),
 			'ordinary cart needing payment enables checkout'            => array( true, false, true ),
+		);
+	}
+
+	/**
+	 * Turning PayPal Wallet off on the Payments list, or a lost connection, must take it off every page, even though
+	 * the saved button locations and Pay Later messaging stay on.
+	 *
+	 * @testdox Should not load the SDK when the PayPal gateway is off or the merchant is not connected, whatever the locations say.
+	 */
+	public function test_should_not_load_when_buttons_are_not_available(): void {
+		$this->stub_page( 'checkout', 'checkout' );
+		$this->stub_buttons_everywhere( true );
+		$this->messages_eligibility->shouldReceive( 'is_enabled_for_location' )->andReturn( true );
+
+		$this->assertFalse( $this->create_sut( false, SdkV6Manager::class, false, false )->should_load_on_current_page() );
+	}
+
+	/**
+	 * @testdox Should not place any button wrapper when the PayPal gateway is off or the merchant is not connected.
+	 */
+	public function test_determine_render_places_empty_when_buttons_are_not_available(): void {
+		$this->stub_buttons_everywhere( true );
+		$this->stub_cart( array( 'needs_payment' => true ) );
+
+		$this->assertSame(
+			array(
+				'product'   => false,
+				'cart'      => false,
+				'checkout'  => false,
+				'pay-now'   => false,
+				'mini-cart' => false,
+			),
+			$this->create_sut( false, SdkV6Manager::class, false, false )->determine_render_places()
 		);
 	}
 

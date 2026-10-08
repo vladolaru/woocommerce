@@ -12,6 +12,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetter;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Assets\AssetGetterFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Assets\AddPaymentMethodManager;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Assets\SdkV6Manager;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\Blocks\V6PaymentMethod;
@@ -73,6 +74,15 @@ return array(
 		);
 	},
 
+	// The two checks the v5 button factory makes before it renders anything.
+	'sdk-v6.buttons-available'          => static function ( ContainerInterface $container ): bool {
+		$settings_provider = $container->get( 'settings.settings-provider' );
+		assert( $settings_provider instanceof SettingsProvider );
+
+		return (bool) $container->get( 'settings.flag.is-connected' )
+			&& $settings_provider->gateway_enabled( PayPalGateway::ID );
+	},
+
 	'sdk-v6.manager'                    => static function ( ContainerInterface $container ): SdkV6Manager {
 		$settings_provider = $container->get( 'settings.settings-provider' );
 		assert( $settings_provider instanceof SettingsProvider );
@@ -93,7 +103,8 @@ return array(
 			$container->get( 'wc-subscriptions.helper' ),
 			$container->get( 'wc-subscriptions.free-trial-subscription-helper' ),
 			$container->get( 'sdk-v6.message-style-mapper' ),
-			$container->get( 'sdk-v6.messages-eligibility' )
+			$container->get( 'sdk-v6.messages-eligibility' ),
+			$container->get( 'sdk-v6.buttons-available' )
 		);
 	},
 
@@ -106,7 +117,8 @@ return array(
 			$container->get( 'ppcp.asset-version' ),
 			$container->get( 'settings.environment' ),
 			$container->get( 'button.helper.context' ),
-			$settings_provider->save_paypal_and_venmo()
+			// The save button is a PayPal button too: none while the gateway is off.
+			$settings_provider->save_paypal_and_venmo() && $container->get( 'sdk-v6.buttons-available' )
 		);
 	},
 

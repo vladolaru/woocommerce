@@ -149,6 +149,12 @@ class SdkV6Manager {
 	 * @var MessagesEligibility
 	 */
 	private MessagesEligibility $messages_eligibility;
+	/**
+	 * Whether the merchant is connected and the PayPal gateway is on.
+	 *
+	 * @var bool
+	 */
+	private bool $buttons_available;
 
 	/**
 	 * Memoizes should_load_on_current_page(), asked by every surface that
@@ -182,6 +188,7 @@ class SdkV6Manager {
 	 * @param FreeTrialSubscriptionHelper $free_trial_helper    The free trial helper.
 	 * @param MessageStyleMapper          $message_style_mapper The message style mapper.
 	 * @param MessagesEligibility         $messages_eligibility The messages eligibility.
+	 * @param bool                        $buttons_available    Whether the merchant is connected and the PayPal gateway is on.
 	 */
 	public function __construct(
 		AssetGetter $asset_getter,
@@ -197,7 +204,8 @@ class SdkV6Manager {
 		SubscriptionHelper $subscription_helper,
 		FreeTrialSubscriptionHelper $free_trial_helper,
 		MessageStyleMapper $message_style_mapper,
-		MessagesEligibility $messages_eligibility
+		MessagesEligibility $messages_eligibility,
+		bool $buttons_available
 	) {
 		$this->asset_getter         = $asset_getter;
 		$this->version              = $version;
@@ -213,6 +221,7 @@ class SdkV6Manager {
 		$this->free_trial_helper    = $free_trial_helper;
 		$this->message_style_mapper = $message_style_mapper;
 		$this->messages_eligibility = $messages_eligibility;
+		$this->buttons_available    = $buttons_available;
 	}
 
 	/**
@@ -272,8 +281,9 @@ class SdkV6Manager {
 		// print no v6 wrappers so the classic page hands off cleanly. These render
 		// hooks key on the smart-button locations rather than that method, so they
 		// need this guard explicitly. Every location is returned false (rather than
-		// an empty array) to keep the array shape callers index into.
-		if ( $this->is_subscription_page_without_vaulting() ) {
+		// an empty array) to keep the array shape callers index into. The same
+		// holds when the gateway is off or the merchant is not connected.
+		if ( ! $this->buttons_available || $this->is_subscription_page_without_vaulting() ) {
 			return array(
 				'product'   => false,
 				'cart'      => false,
@@ -370,6 +380,12 @@ class SdkV6Manager {
 	 * The uncached answer for should_load_on_current_page().
 	 */
 	private function resolve_should_load(): bool {
+		// The v5 button factory checks the same two things before it renders
+		// buttons or messages; turning PayPal Wallet off must take it off every page.
+		if ( ! $this->buttons_available ) {
+			return false;
+		}
+
 		// A subscription page with vaulting off and manual renewals off has no v6
 		// path: v6 can only carry a subscription by vaulting. Hand the whole page
 		// back to the v5 stack. Checked before every other gate so it also
