@@ -2226,6 +2226,55 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Reconciliation after a local effect failure never moves a refund row already linked to another provider refund.
+	 */
+	public function test_process_refund_reconciliation_keeps_an_existing_provider_refund_link(): void {
+		$order  = $this->create_woopayments_order( '10.00' );
+		$refund = $this->create_local_refund( $order, 2.50, 'Adjustment' );
+		$refund->update_meta_data( '_wcpay_refund_id', 're_A' );
+		$refund->save_meta_data();
+
+		$provider = new class( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_B' ) ) extends RecordingProvider implements ProviderOperationEffectApplier {
+			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double always throws.
+			/**
+			 * Fail local effect application after the provider refund succeeded.
+			 *
+			 * @param PaymentContext $context   Payment context.
+			 * @param PaymentOutcome $outcome   Provider outcome.
+			 * @param string         $operation Operation name.
+			 * @return PaymentOutcome
+			 * @throws RuntimeException Always.
+			 */
+			public function apply_operation_effects( PaymentContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
+				unset( $context, $outcome, $operation );
+				throw new RuntimeException( 'Local refund effect failed.' );
+			}
+			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+		};
+
+		$fake_logger = $this->create_fake_logger();
+		add_filter(
+			'woocommerce_logging_class',
+			function () use ( $fake_logger ) {
+				return $fake_logger;
+			}
+		);
+
+		$result = $this->sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.50, 'Adjustment' ), $provider );
+
+		remove_all_filters( 'woocommerce_logging_class' );
+
+		$this->assertTrue( $result, 'The provider refund succeeded, so the call must report success.' );
+		$this->assertSame( 1, $provider->refund_calls );
+		$this->assertSame( 're_A', wc_get_order( $refund->get_id() )->get_meta( '_wcpay_refund_id', true ), 'A row linked to another provider refund must keep that link.' );
+		$this->assertCount( 1, $fake_logger->error_calls );
+		$context = $fake_logger->error_calls[0]['context'];
+		$this->assertSame( 'refund', $context['operation'] );
+		$this->assertSame( 're_B', $context['payment_reference'] );
+		$this->assertFalse( $context['reconciliation_persisted'] );
+	}
+
+	/**
 	 * @testdox Two equal-amount partial refunds must reach the provider with distinct idempotency keys.
 	 */
 	public function test_two_equal_amount_partial_refunds_use_distinct_idempotency_keys(): void {
