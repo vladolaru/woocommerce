@@ -148,10 +148,6 @@ class OrderPaymentStore {
 	 */
 	public function log_order_payment_lock_refusal( WC_Order $order, ProviderPersistenceVocabulary $persistence_profile, string $refused_operation, ?string $source = null, array $extra_context = array() ): void {
 		try {
-			if ( ! function_exists( 'wc_get_logger' ) ) {
-				return;
-			}
-
 			$lock_value       = $this->read_lock_transient( $persistence_profile->get_order_lock_key( $order ) );
 			$holder           = $this->read_lock_transient( $this->get_lock_holder_key( $order, $persistence_profile ) );
 			$holder_operation = null;
@@ -203,10 +199,6 @@ class OrderPaymentStore {
 	 */
 	public function log_order_payment_method_mismatch( WC_Order $order, string $applied_operation, ?string $source = null ): void {
 		try {
-			if ( ! function_exists( 'wc_get_logger' ) ) {
-				return;
-			}
-
 			$payment_method = (string) $order->get_payment_method();
 			wc_get_logger()->warning(
 				sprintf(
@@ -294,8 +286,7 @@ class OrderPaymentStore {
 	 * @return bool
 	 */
 	private function lock_lives_in_object_cache(): bool {
-		return ( function_exists( 'wp_using_ext_object_cache' ) && wp_using_ext_object_cache() )
-			|| ( function_exists( 'wp_installing' ) && wp_installing() );
+		return wp_using_ext_object_cache() || wp_installing();
 	}
 
 	/**

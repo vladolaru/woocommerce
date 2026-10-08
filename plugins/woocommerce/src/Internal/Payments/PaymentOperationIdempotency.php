@@ -59,7 +59,7 @@ class PaymentOperationIdempotency {
 	 * @return string
 	 */
 	public function derive_key( WC_Order $order, string $provider_id, string $operation, ?float $amount = null, string $currency = '' ): string {
-		$site_id = function_exists( 'get_current_blog_id' ) ? (int) get_current_blog_id() : 0;
+		$site_id = get_current_blog_id();
 		$parts   = array(
 			'site'      => (string) $site_id,
 			'order'     => (string) $order->get_id(),

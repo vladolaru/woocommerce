@@ -308,12 +308,8 @@ class OrderPaymentLifecycleService {
 
 		$fresh_order = $this->get_fresh_order_from_data_store( $order );
 
-		if ( function_exists( 'wc_get_is_paid_statuses' ) ) {
-			return $order->has_status( wc_get_is_paid_statuses() )
-				|| $fresh_order->has_status( wc_get_is_paid_statuses() );
-		}
-
-		return false;
+		return $order->has_status( wc_get_is_paid_statuses() )
+			|| $fresh_order->has_status( wc_get_is_paid_statuses() );
 	}
 
 	/**
@@ -396,10 +392,6 @@ class OrderPaymentLifecycleService {
 	 * @param string                $reason Skip reason.
 	 */
 	private function log_skipped_completed_event( WC_Order $order, PaymentLifecycleEvent $event, string $reason ): void {
-		if ( ! function_exists( 'wc_get_logger' ) ) {
-			return;
-		}
-
 		$message = 'open_dispute' === $reason
 			? 'Native WooPayments completed lifecycle event skipped because an open WooPayments dispute keeps the order on hold.'
 			: 'Native WooPayments completed lifecycle event skipped because an already persisted success note identifies a replay.';

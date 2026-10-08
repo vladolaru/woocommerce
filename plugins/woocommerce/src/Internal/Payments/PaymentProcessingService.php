@@ -266,10 +266,7 @@ class PaymentProcessingService {
 	 */
 	private function log_checkout_refused_after_claim( WC_Order $order, string $reason ): void {
 		try {
-			$logger = $this->logger ?? ( function_exists( 'wc_get_logger' ) ? wc_get_logger() : null );
-			if ( null === $logger ) {
-				return;
-			}
+			$logger = $this->logger ?? wc_get_logger();
 
 			$logger->warning(
 				sprintf( 'Native checkout charged nothing: order %1$d changed before this request claimed its payment lock.', $order->get_id() ),
@@ -361,10 +358,6 @@ class PaymentProcessingService {
 	 */
 	private function log_post_provider_apply_failure( WC_Order $order, PaymentOutcome $outcome, string $operation, Throwable $exception, bool $reconciliation_persisted ): void {
 		try {
-			if ( ! function_exists( 'wc_get_logger' ) ) {
-				return;
-			}
-
 			wc_get_logger()->error(
 				'Native payment provider operation returned a reconcilable outcome but applying local effects failed; best-effort reconciliation persistence was attempted.',
 				array(
@@ -809,14 +802,7 @@ class PaymentProcessingService {
 	 */
 	private function log_provider_failure( WC_Order $order, string $operation, string $idempotency_key, Throwable $exception ): void {
 		try {
-			$logger = $this->logger;
-			if ( null === $logger ) {
-				if ( ! function_exists( 'wc_get_logger' ) ) {
-					return;
-				}
-
-				$logger = wc_get_logger();
-			}
+			$logger = $this->logger ?? wc_get_logger();
 
 			$logger->error(
 				'Native payment provider operation threw an exception.',

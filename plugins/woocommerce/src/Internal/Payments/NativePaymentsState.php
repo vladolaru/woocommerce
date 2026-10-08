@@ -153,10 +153,6 @@ final class NativePaymentsState {
 	 * @param bool   $autoloaded      Whether the option is autoloaded.
 	 */
 	private function log_write_failure( string $requested_state, $stored_state, bool $autoloaded ): void {
-		if ( ! function_exists( 'wc_get_logger' ) ) {
-			return;
-		}
-
 		wc_get_logger()->error(
 			sprintf(
 				'Native payments state write failed: requested %1$s, stored %2$s, autoloaded %3$s.',
