@@ -13,7 +13,6 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNoticesPassthrough;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsGatewayRegistry;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -616,7 +615,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 					static function ( WooPaymentsPaymentMethodDefinition $definition ): string {
 						$payment_method_id = $definition->get_id();
 
-						return sprintf( 'woocommerce_%s_settings', 'card' === $payment_method_id ? OrderPaymentStore::GATEWAY_ID : OrderPaymentStore::GATEWAY_ID . '_' . $payment_method_id );
+						return sprintf( 'woocommerce_%s_settings', 'card' === $payment_method_id ? WooPaymentsPersistenceVocabulary::GATEWAY_ID : WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_' . $payment_method_id );
 					},
 					$definitions
 				)
@@ -647,11 +646,11 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 	private function normalize_payment_method_id( string $payment_method_or_gateway_id ): string {
 		$payment_method_or_gateway_id = strtolower( trim( $payment_method_or_gateway_id ) );
 
-		if ( OrderPaymentStore::GATEWAY_ID === $payment_method_or_gateway_id || '' === $payment_method_or_gateway_id ) {
+		if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID === $payment_method_or_gateway_id || '' === $payment_method_or_gateway_id ) {
 			return 'card';
 		}
 
-		$gateway_prefix = OrderPaymentStore::GATEWAY_ID . '_';
+		$gateway_prefix = WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_';
 		if ( str_starts_with( $payment_method_or_gateway_id, $gateway_prefix ) ) {
 			return (string) substr( $payment_method_or_gateway_id, strlen( $gateway_prefix ) );
 		}

@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
@@ -79,12 +79,12 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 
 		$main_order = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $main_order );
-		$main_order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$main_order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$main_order->save();
 
 		$split_order = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $split_order );
-		$split_order->set_payment_method( OrderPaymentStore::GATEWAY_ID_PREFIX . 'klarna' );
+		$split_order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'klarna' );
 		$split_order->save();
 
 		$this->assertSame( 10, has_action( 'woocommerce_thankyou', array( $page, 'record_order_success_page_view' ) ) );
@@ -133,7 +133,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		$page  = $this->create_page( true, $tracker );
 		$order = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->save();
 
 		try {
@@ -253,7 +253,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		$page        = $this->create_page( true );
 		$customer_id = $this->factory->user->create( array( 'role' => 'customer' ) );
 		$order       = wc_create_order( array( 'customer_id' => $customer_id ) );
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->save();
 		$myaccount_page_id = $this->factory->post->create( array( 'post_type' => 'page' ) );
 		update_option( 'woocommerce_myaccount_page_id', $myaccount_page_id );
@@ -320,7 +320,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		$page  = $this->create_page( true );
 		$order = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_status( 'on-hold' );
 		$order->save();
 
@@ -402,7 +402,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		} else {
 			$order = wc_create_order();
 			$this->assertInstanceOf( WC_Order::class, $order );
-			$order->set_payment_method( OrderPaymentStore::GATEWAY_ID_PREFIX . $method_id );
+			$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . $method_id );
 			$order->save();
 		}
 		add_filter( 'woocommerce_is_order_received_page', '__return_true' );
@@ -440,7 +440,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		$page  = $this->create_page( true );
 		$order = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->update_meta_data( '_wcpay_express_checkout_payment_method', 'apple_pay' );
 		$order->update_meta_data( 'last4', '4242' );
 		$order->save();
@@ -474,7 +474,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		$page  = $this->create_page( true );
 		$order = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->update_meta_data( '_card_brand', 'visa' );
 		$order->update_meta_data( 'last4', '4242' );
 		$order->save();
@@ -615,7 +615,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 */
 	public function test_skips_email_verification_for_matching_session_paid_intent(): void {
 		$page  = $this->create_page( true );
-		$order = $this->create_thankyou_order( 'processing', OrderPaymentStore::GATEWAY_ID, 'pi_mock' );
+		$order = $this->create_thankyou_order( 'processing', WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_mock' );
 		WC()->session->set( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY, 'pi_mock' );
 		$page->register();
 		$this->registered_pages[] = $page;
@@ -664,16 +664,16 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 */
 	public function email_verification_exception_negative_cases(): array {
 		return array(
-			'false input'              => array( false, 'order-received', true, OrderPaymentStore::GATEWAY_ID, 'pi_mock', true, 'pi_mock' ),
-			'nonboolean input'         => array( 'required', 'order-received', true, OrderPaymentStore::GATEWAY_ID, 'pi_mock', true, 'pi_mock' ),
-			'wrong context'            => array( true, 'checkout', true, OrderPaymentStore::GATEWAY_ID, 'pi_mock', true, 'pi_mock' ),
-			'non-order input'          => array( true, 'order-received', false, OrderPaymentStore::GATEWAY_ID, 'pi_mock', true, 'pi_mock' ),
-			'provider-suffixed method' => array( true, 'order-received', true, OrderPaymentStore::GATEWAY_ID_PREFIX . 'wechat_pay', 'pi_mock', true, 'pi_mock' ),
+			'false input'              => array( false, 'order-received', true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_mock', true, 'pi_mock' ),
+			'nonboolean input'         => array( 'required', 'order-received', true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_mock', true, 'pi_mock' ),
+			'wrong context'            => array( true, 'checkout', true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_mock', true, 'pi_mock' ),
+			'non-order input'          => array( true, 'order-received', false, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_mock', true, 'pi_mock' ),
+			'provider-suffixed method' => array( true, 'order-received', true, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'wechat_pay', 'pi_mock', true, 'pi_mock' ),
 			'other method'             => array( true, 'order-received', true, 'cod', 'pi_mock', true, 'pi_mock' ),
-			'absent session'           => array( true, 'order-received', true, OrderPaymentStore::GATEWAY_ID, 'pi_mock', false, 'pi_mock' ),
-			'empty session intent'     => array( true, 'order-received', true, OrderPaymentStore::GATEWAY_ID, 'pi_mock', true, '' ),
-			'empty order intent'       => array( true, 'order-received', true, OrderPaymentStore::GATEWAY_ID, '', true, 'pi_mock' ),
-			'mismatching intent'       => array( true, 'order-received', true, OrderPaymentStore::GATEWAY_ID, 'pi_order', true, 'pi_session' ),
+			'absent session'           => array( true, 'order-received', true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_mock', false, 'pi_mock' ),
+			'empty session intent'     => array( true, 'order-received', true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_mock', true, '' ),
+			'empty order intent'       => array( true, 'order-received', true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, '', true, 'pi_mock' ),
+			'mismatching intent'       => array( true, 'order-received', true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_order', true, 'pi_session' ),
 		);
 	}
 
@@ -682,7 +682,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 */
 	public function test_replaces_order_received_text_for_failed_orders(): void {
 		$page  = $this->create_page( true );
-		$order = $this->create_thankyou_order( 'failed', OrderPaymentStore::GATEWAY_ID );
+		$order = $this->create_thankyou_order( 'failed', WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 
 		$text = $page->replace_order_received_text_for_failed_orders( 'Thank you.' );
 
@@ -706,7 +706,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 			)
 		);
 		$page       = $this->create_page( true, null, $api_client );
-		$this->create_thankyou_order( 'pending', OrderPaymentStore::GATEWAY_ID_PREFIX . 'wechat_pay', 'pi_wechat' );
+		$this->create_thankyou_order( 'pending', WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'wechat_pay', 'pi_wechat' );
 
 		$this->assertStringContainsString( 'Unfortunately, your order has failed.', $page->replace_order_received_text_for_failed_orders( 'Thank you.' ) );
 	}
@@ -717,7 +717,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	public function test_keeps_order_received_text_when_redirect_intent_is_pending(): void {
 		$api_client = $this->create_api_client_mock( array( 'status' => 'processing' ) );
 		$page       = $this->create_page( true, null, $api_client );
-		$this->create_thankyou_order( 'pending', OrderPaymentStore::GATEWAY_ID_PREFIX . 'wechat_pay', 'pi_wechat' );
+		$this->create_thankyou_order( 'pending', WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'wechat_pay', 'pi_wechat' );
 
 		$this->assertSame( 'Thank you.', $page->replace_order_received_text_for_failed_orders( 'Thank you.' ) );
 
@@ -738,16 +738,16 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		$api_client->expects( $this->never() )->method( 'get_payment_intention' );
 		$page = $this->create_page( true, null, $api_client );
 
-		$this->create_thankyou_order( 'pending', OrderPaymentStore::GATEWAY_ID, 'pi_card' );
+		$this->create_thankyou_order( 'pending', WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_card' );
 		$this->assertSame( 'Thank you.', $page->replace_order_received_text_for_failed_orders( 'Thank you.' ), 'A pending card order is not a redirect return.' );
 
-		$this->create_thankyou_order( 'processing', OrderPaymentStore::GATEWAY_ID_PREFIX . 'wechat_pay', 'pi_wechat' );
+		$this->create_thankyou_order( 'processing', WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'wechat_pay', 'pi_wechat' );
 		$this->assertSame( 'Thank you.', $page->replace_order_received_text_for_failed_orders( 'Thank you.' ), 'A paid order needs no re-check.' );
 
 		$this->create_thankyou_order( 'failed', 'cod' );
 		$this->assertSame( 'Thank you.', $page->replace_order_received_text_for_failed_orders( 'Thank you.' ), 'Other gateways keep their own copy.' );
 
-		$this->create_thankyou_order( 'failed', OrderPaymentStore::GATEWAY_ID );
+		$this->create_thankyou_order( 'failed', WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$_GET['key'] = 'wc_order_wrong';
 		$this->assertSame( 'Thank you.', $page->replace_order_received_text_for_failed_orders( 'Thank you.' ), 'The order key must match.' );
 	}
@@ -763,7 +763,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		$api_client->method( 'is_available' )->willReturn( true );
 		$api_client->method( 'get_payment_intention' )->willThrowException( new WooPaymentsApiException( 'Nope.', 'wcpay_error', 500 ) );
 		$page = $this->create_page( true, null, $api_client );
-		$this->create_thankyou_order( 'pending', OrderPaymentStore::GATEWAY_ID_PREFIX . 'wechat_pay', 'pi_wechat' );
+		$this->create_thankyou_order( 'pending', WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'wechat_pay', 'pi_wechat' );
 
 		$this->assertSame( 'Thank you.', $page->replace_order_received_text_for_failed_orders( 'Thank you.' ) );
 	}
@@ -848,7 +848,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 * @return WC_Order
 	 */
 	private function create_woopay_customer_order( bool $is_woopay = true ): WC_Order {
-		$order = $this->create_thankyou_order( 'processing', OrderPaymentStore::GATEWAY_ID );
+		$order = $this->create_thankyou_order( 'processing', WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_customer_id( self::factory()->user->create( array( 'role' => 'customer' ) ) );
 		if ( $is_woopay ) {
 			$order->add_meta_data( 'is_woopay', '1', true );
@@ -950,7 +950,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	private function create_multibanco_order(): WC_Order {
 		$order = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID_PREFIX . 'multibanco' );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'multibanco' );
 		$order->set_status( 'on-hold' );
 		$order->set_currency( 'EUR' );
 		$order->set_total( '123.45' );

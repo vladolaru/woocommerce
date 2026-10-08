@@ -543,7 +543,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$customer_id = self::factory()->user->create();
 
 		$token = new \WC_Payment_Token_CC();
-		$token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$token->set_user_id( $customer_id );
 		$token->set_token( 'pm_123' );
 		$token->set_card_type( 'visa' );
@@ -577,7 +577,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$customer_id = self::factory()->user->create();
 
 		$token = new \WC_Payment_Token_CC();
-		$token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$token->set_user_id( $customer_id );
 		$token->set_token( 'pm_123' );
 		$token->set_card_type( 'visa' );
@@ -592,7 +592,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$subscription = wc_create_order();
 		$subscription->set_customer_id( $customer_id );
-		$subscription->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$subscription->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$subscription->save();
 
 		$GLOBALS['wcpay_test_renewal_order_ids']                = array( $order->get_id() );
@@ -640,7 +640,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$customer_id = self::factory()->user->create();
 
 		$token = new \WC_Payment_Token_CC();
-		$token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$token->set_user_id( $customer_id );
 		$token->set_token( 'pm_123' );
 		$token->set_card_type( 'visa' );
@@ -674,7 +674,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$customer_id = self::factory()->user->create();
 
 		$old_token = new \WC_Payment_Token_CC();
-		$old_token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$old_token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$old_token->set_user_id( $customer_id );
 		$old_token->set_token( 'pm_old' );
 		$old_token->set_card_type( 'visa' );
@@ -684,7 +684,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$old_token->save();
 
 		$new_token = new \WC_Payment_Token_CC();
-		$new_token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$new_token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$new_token->set_user_id( $customer_id );
 		$new_token->set_token( 'pm_123' );
 		$new_token->set_card_type( 'visa' );
@@ -1199,7 +1199,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		);
 		$order->set_currency( 'EUR' );
 		$order->set_total( '65.00' );
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID_PREFIX . 'sepa_debit' );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'sepa_debit' );
 		$order->set_payment_method_title( 'SEPA Direct Debit' );
 		$order->update_meta_data( '_wcpay_payment_method_details', $checkout_payment_method_details );
 		$order->update_meta_data( '_wcpay_payment_transaction_id', '' );
@@ -1291,7 +1291,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'processing', $order->get_status() );
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID_PREFIX . 'sepa_debit', $order->get_payment_method() );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'sepa_debit', $order->get_payment_method() );
 		$this->assertSame( 'SEPA Direct Debit', $order->get_payment_method_title() );
 		$this->assertSame( 'py_sepa', $order->get_meta( '_charge_id', true ) );
 		$this->assertSame( '', $order->get_meta( '_wcpay_payment_transaction_id', true ) );
@@ -1315,7 +1315,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->set_woopayments_account_country( 'US' );
 		$order = $this->create_woopayments_order();
 		$order->set_billing_country( 'US' );
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID_PREFIX . 'afterpay_clearpay' );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'afterpay_clearpay' );
 		$order->set_payment_method_title( 'Afterpay' );
 		$order->update_meta_data(
 			'_wcpay_payment_method_details',
@@ -1401,7 +1401,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	public function test_payment_intent_succeeded_backfills_completed_non_card_details_when_checkout_stored_placeholders(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		$order = $this->create_woopayments_order();
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID_PREFIX . 'ideal' );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'ideal' );
 		$order->set_payment_method_title( 'iDEAL | Wero' );
 		$order->update_meta_data( '_wcpay_payment_method_details', '[]' );
 		$order->update_meta_data( '_wcpay_payment_transaction_id', '' );
@@ -3618,7 +3618,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 */
 	public function test_charge_refunded_accepts_split_upe_gateway_ids(): void {
 		$order = $this->create_refundable_woopayments_order( '10.00' );
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID_PREFIX . 'sepa_debit' );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'sepa_debit' );
 		$order->save();
 
 		$this->sut->process( $this->create_charge_refunded_event( $order, 1000, 400, 'succeeded' ) );
@@ -4619,7 +4619,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 */
 	private function create_woopayments_order(): WC_Order {
 		$order = wc_create_order();
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_total( '10.00' );
 		$order->save();
 

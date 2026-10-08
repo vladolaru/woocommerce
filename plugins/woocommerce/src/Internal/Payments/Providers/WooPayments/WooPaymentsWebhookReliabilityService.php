@@ -250,7 +250,7 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	 *
 	 * Retried event types are, after any passing failure, and the types safe to apply late are when the order payment
 	 * lock refused them (WooPaymentsEventIngestor::is_retried_lock_refusal()). The holder's lock expires after its TTL
-	 * (OrderPaymentStore::LOCK_TTL_SECONDS), and the delays outlast it: the retries run 1, 11 and 71 minutes after the
+	 * (WooPaymentsPersistenceVocabulary::LOCK_TTL_SECONDS), and the delays outlast it: the retries run 1, 11 and 71 minutes after the
 	 * first refused attempt of the processing job.
 	 *
 	 * @param array<string,mixed> $event   Event payload.

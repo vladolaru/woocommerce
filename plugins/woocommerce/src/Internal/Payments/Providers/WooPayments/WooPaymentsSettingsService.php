@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
@@ -1166,7 +1165,7 @@ class WooPaymentsSettingsService {
 	 * @return bool
 	 */
 	private function is_woopayments_gateway_id( string $gateway_id ): bool {
-		return OrderPaymentStore::GATEWAY_ID === $gateway_id || 0 === strpos( $gateway_id, OrderPaymentStore::GATEWAY_ID_PREFIX );
+		return WooPaymentsPersistenceVocabulary::GATEWAY_ID === $gateway_id || 0 === strpos( $gateway_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX );
 	}
 
 	/**
@@ -1176,12 +1175,12 @@ class WooPaymentsSettingsService {
 	 * @return string
 	 */
 	private function get_duplicate_payment_method_id_for_gateway( string $gateway_id ): string {
-		if ( OrderPaymentStore::GATEWAY_ID === $gateway_id ) {
+		if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID === $gateway_id ) {
 			return 'card';
 		}
 
-		if ( 0 === strpos( $gateway_id, OrderPaymentStore::GATEWAY_ID_PREFIX ) ) {
-			$payment_method_id = substr( $gateway_id, strlen( OrderPaymentStore::GATEWAY_ID_PREFIX ) );
+		if ( 0 === strpos( $gateway_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX ) ) {
+			$payment_method_id = substr( $gateway_id, strlen( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX ) );
 
 			return in_array( $payment_method_id, self::SUPPORTED_PAYMENT_METHOD_IDS, true ) ? $payment_method_id : '';
 		}
@@ -1207,7 +1206,7 @@ class WooPaymentsSettingsService {
 	 * @return bool
 	 */
 	private function is_payment_request_duplicate_gateway( object $gateway, string $gateway_id ): bool {
-		if ( OrderPaymentStore::GATEWAY_ID === $gateway_id ) {
+		if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID === $gateway_id ) {
 			return $this->account_service->is_payment_request_enabled();
 		}
 

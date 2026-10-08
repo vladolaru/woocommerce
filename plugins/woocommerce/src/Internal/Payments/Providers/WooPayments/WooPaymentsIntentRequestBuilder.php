@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
@@ -633,11 +632,11 @@ class WooPaymentsIntentRequestBuilder {
 	 * @return string
 	 */
 	private function payment_method_type_from_gateway_id( string $gateway_id ): string {
-		if ( 0 !== strpos( $gateway_id, OrderPaymentStore::GATEWAY_ID_PREFIX ) ) {
+		if ( 0 !== strpos( $gateway_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX ) ) {
 			return '';
 		}
 
-		$payment_method_id = substr( $gateway_id, strlen( OrderPaymentStore::GATEWAY_ID_PREFIX ) );
+		$payment_method_id = substr( $gateway_id, strlen( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX ) );
 		$definition        = $this->payment_method_registry->get( $payment_method_id );
 
 		return null === $definition ? '' : $definition->get_stripe_payment_method_type();
@@ -697,7 +696,7 @@ class WooPaymentsIntentRequestBuilder {
 	 */
 	private static function redirect_return_url( WC_Order $order, bool $save_payment_method ): string {
 		$query_args = array(
-			'wc_payment_method' => OrderPaymentStore::GATEWAY_ID,
+			'wc_payment_method' => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			'_wpnonce'          => wp_create_nonce( 'wcpay_process_redirect_order_nonce' ),
 		);
 		if ( $save_payment_method ) {

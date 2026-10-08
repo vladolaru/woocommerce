@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\ProviderContract;
@@ -83,7 +82,7 @@ class RecordingProvider implements ProviderContract, ProviderOutcomeMetadataMapp
 	 * @return string
 	 */
 	public function get_id(): string {
-		return OrderPaymentStore::GATEWAY_ID;
+		return WooPaymentsPersistenceVocabulary::GATEWAY_ID;
 	}
 
 	/**

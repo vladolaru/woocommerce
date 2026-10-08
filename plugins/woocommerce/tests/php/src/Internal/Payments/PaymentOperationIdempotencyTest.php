@@ -3,8 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationIdempotency;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use WC_Unit_Test_Case;
 
 /**
@@ -44,8 +44,8 @@ class PaymentOperationIdempotencyTest extends WC_Unit_Test_Case {
 		$sut   = new PaymentOperationIdempotency();
 
 		$this->assertNotSame(
-			$sut->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'capture', 20.00, 'USD' ),
-			$sut->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'cancel', 20.00, 'USD' ),
+			$sut->derive_key( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'capture', 20.00, 'USD' ),
+			$sut->derive_key( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'cancel', 20.00, 'USD' ),
 			'Different operations on the same order need different idempotency keys.'
 		);
 	}
@@ -57,9 +57,9 @@ class PaymentOperationIdempotencyTest extends WC_Unit_Test_Case {
 		$order = wc_create_order();
 		$sut   = new PaymentOperationIdempotency();
 
-		$first       = $sut->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'capture', 4.25, 'USD' );
-		$second      = $sut->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'capture', 5.75, 'USD' );
-		$first_retry = $sut->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'capture', 4.25, 'USD' );
+		$first       = $sut->derive_key( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'capture', 4.25, 'USD' );
+		$second      = $sut->derive_key( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'capture', 5.75, 'USD' );
+		$first_retry = $sut->derive_key( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'capture', 4.25, 'USD' );
 
 		$this->assertNotSame( $first, $second, 'Distinct partial-capture amounts must not collapse to one provider operation.' );
 		$this->assertSame( $first, $first_retry, 'A retry of the same partial capture must retain its provider operation key.' );

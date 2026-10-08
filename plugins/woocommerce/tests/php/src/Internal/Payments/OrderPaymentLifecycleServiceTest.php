@@ -1138,7 +1138,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function create_woopayments_order(): WC_Order {
 		$order = wc_create_order();
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_total( '10.00' );
 		$order->save();
 

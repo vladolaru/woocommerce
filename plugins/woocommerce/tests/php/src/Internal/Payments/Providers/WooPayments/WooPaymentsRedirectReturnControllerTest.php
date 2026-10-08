@@ -441,7 +441,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	public function test_handle_wp_confirms_redirect_method_return( string $method, string $charge_id, bool $use_recorded = false ): void {
 		$customer_id = $use_recorded ? self::factory()->user->create() : 0;
 		$order       = $this->create_order( $use_recorded ? '12.00' : '50.00', $customer_id, true );
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID_PREFIX . $method );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . $method );
 		$order->save();
 
 		$intent_id = 'pi_redirect';
@@ -2072,7 +2072,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			array(
 				array(
 					'hook'                        => 'status',
-					'order_gateway'               => OrderPaymentStore::GATEWAY_ID,
+					'order_gateway'               => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 					'order_title'                 => 'Visa credit card',
 					'order_last4'                 => '4242',
 					'order_card_brand'            => 'visa',
@@ -2085,7 +2085,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 					'order_token_ids'             => $token_ids,
 					'active_token_id'             => $active_token_id,
 					'active_token_provider'       => 'pm_redirect_card',
-					'subscription_gateway'        => OrderPaymentStore::GATEWAY_ID,
+					'subscription_gateway'        => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 					'subscription_title'          => 'Visa credit card',
 					'subscription_token_ids'      => $token_ids,
 					'subscription_payment_method' => 'pm_redirect_card',
@@ -2096,7 +2096,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 				),
 				array(
 					'hook'                        => 'payment_complete',
-					'order_gateway'               => OrderPaymentStore::GATEWAY_ID,
+					'order_gateway'               => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 					'order_title'                 => 'Visa credit card',
 					'order_last4'                 => '4242',
 					'order_card_brand'            => 'visa',
@@ -2109,7 +2109,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 					'order_token_ids'             => $token_ids,
 					'active_token_id'             => $active_token_id,
 					'active_token_provider'       => 'pm_redirect_card',
-					'subscription_gateway'        => OrderPaymentStore::GATEWAY_ID,
+					'subscription_gateway'        => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 					'subscription_title'          => 'Visa credit card',
 					'subscription_token_ids'      => $token_ids,
 					'subscription_payment_method' => 'pm_redirect_card',
@@ -2380,7 +2380,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	 */
 	private function create_order( string $total = '50.00', int $customer_id = 0, bool $with_item = false ): WC_Order {
 		$order = wc_create_order();
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_customer_id( $customer_id );
 		$order->set_currency( 'USD' );
 		if ( $with_item ) {
@@ -2482,7 +2482,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 
 		$this->set_order_received_context( $order );
 		$_GET = array(
-			'wc_payment_method'            => OrderPaymentStore::GATEWAY_ID,
+			'wc_payment_method'            => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			'_wpnonce'                     => wp_create_nonce( 'wcpay_process_redirect_order_nonce' ),
 			'payment_intent'               => $intent_id,
 			'payment_intent_client_secret' => $intent_id . '_secret_example',
@@ -2510,7 +2510,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 
 		$this->set_order_received_context( $order );
 		$_GET = array(
-			'wc_payment_method'          => OrderPaymentStore::GATEWAY_ID,
+			'wc_payment_method'          => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			'_wpnonce'                   => wp_create_nonce( 'wcpay_process_redirect_order_nonce' ),
 			'setup_intent'               => $intent_id,
 			'setup_intent_client_secret' => $intent_id . '_secret_example',

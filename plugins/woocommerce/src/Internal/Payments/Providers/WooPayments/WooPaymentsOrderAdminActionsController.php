@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
@@ -104,13 +103,13 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 * @return mixed
 	 */
 	public function handle_woocommerce_gateway_title( $title, $gateway_id = '' ) {
-		if ( OrderPaymentStore::GATEWAY_ID !== $gateway_id || ! is_admin() ) {
+		if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $gateway_id || ! is_admin() ) {
 			return $title;
 		}
 
 		global $theorder, $post;
 		$order = $theorder instanceof WC_Order ? $theorder : ( $post instanceof \WP_Post ? wc_get_order( $post->ID ) : null );
-		if ( ! $order instanceof WC_Order || OrderPaymentStore::GATEWAY_ID !== $order->get_payment_method() ) {
+		if ( ! $order instanceof WC_Order || WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $order->get_payment_method() ) {
 			return $title;
 		}
 
@@ -246,7 +245,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 */
 	private function is_authorized_woopayments_order( WC_Order $order, bool $require_unpaid ): bool {
 		$gateway_id = (string) $order->get_payment_method();
-		$is_gateway = OrderPaymentStore::GATEWAY_ID === $gateway_id
+		$is_gateway = WooPaymentsPersistenceVocabulary::GATEWAY_ID === $gateway_id
 			|| str_starts_with( $gateway_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX );
 
 		if ( ! $is_gateway || 'requires_capture' !== (string) $order->get_meta( '_intention_status', true ) ) {
@@ -269,14 +268,14 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 				? $this->processing_service->capture(
 					PaymentContext::for_capture(
 						$order,
-						OrderPaymentStore::GATEWAY_ID,
+						WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 						(float) $order->get_total(),
 						$on_status_change ? array( WooPaymentsProviderGatewayAdapter::PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE => true ) : array()
 					),
 					$this->provider
 				)
 				: $this->processing_service->cancel(
-					PaymentContext::for_cancel( $order, OrderPaymentStore::GATEWAY_ID ),
+					PaymentContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ),
 					$this->provider
 				);
 

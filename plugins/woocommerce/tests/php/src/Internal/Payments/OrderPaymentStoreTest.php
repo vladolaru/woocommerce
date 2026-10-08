@@ -91,7 +91,7 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 	public function test_read_payment_surface_returns_stable_payment_projection(): void {
 		$order = wc_create_order();
 		$order->set_currency( 'USD' );
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_transaction_id( 'txn_123' );
 		$order->set_total( '12.34' );
 		$order->update_meta_data( '_intent_id', 'pi_123' );
@@ -112,7 +112,7 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $order->get_id(), $surface['order_id'] );
 		$this->assertSame( $order->get_status(), $surface['status'] );
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $surface['payment_method'] );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $surface['payment_method'] );
 		$this->assertSame( 'txn_123', $surface['transaction_id'] );
 		$this->assertSame( 'USD', $surface['currency'] );
 		$this->assertSame( '12.34', $surface['total'] );
@@ -178,7 +178,7 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( '_provider_payment_id' => 'provider_payment_123' ), $surface['meta'] );
 		$this->sut->lock_order_payment( $order, $profile );
 		$this->assertSame( 'provider-lock', get_transient( 'provider_payment_lock_' . $order->get_id() ) );
-		$this->assertFalse( get_transient( OrderPaymentStore::LOCK_TRANSIENT_PREFIX . $order->get_id() ) );
+		$this->assertFalse( get_transient( WooPaymentsPersistenceVocabulary::LOCK_TRANSIENT_PREFIX . $order->get_id() ) );
 
 		$this->sut->unlock_order_payment( $order, $profile );
 		$this->assertFalse( get_transient( 'provider_payment_lock_' . $order->get_id() ) );

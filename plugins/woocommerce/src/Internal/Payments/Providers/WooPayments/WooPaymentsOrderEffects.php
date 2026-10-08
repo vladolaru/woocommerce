@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 
 /**
@@ -675,10 +674,10 @@ class WooPaymentsOrderEffects {
 	 */
 	private static function payment_method_gateway_id( string $payment_method_type ): string {
 		if ( in_array( $payment_method_type, array( 'card', 'link', 'apple_pay', 'google_pay' ), true ) ) {
-			return OrderPaymentStore::GATEWAY_ID;
+			return WooPaymentsPersistenceVocabulary::GATEWAY_ID;
 		}
 
-		return '' === $payment_method_type ? '' : OrderPaymentStore::GATEWAY_ID_PREFIX . $payment_method_type;
+		return '' === $payment_method_type ? '' : WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . $payment_method_type;
 	}
 
 	/**

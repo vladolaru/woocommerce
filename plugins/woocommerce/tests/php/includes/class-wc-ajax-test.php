@@ -10,10 +10,10 @@ declare( strict_types = 1 );
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Orders\CouponsController;
 use Automattic\WooCommerce\Internal\Orders\TaxesController;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Tests\Internal\Payments\RecordingProvider;
 
@@ -3376,7 +3376,7 @@ class WC_AJAX_Test extends \WP_Ajax_UnitTestCase {
 			 */
 			public function __construct( RecordingProvider $provider ) {
 				$this->provider = $provider;
-				$this->id       = OrderPaymentStore::GATEWAY_ID;
+				$this->id       = WooPaymentsPersistenceVocabulary::GATEWAY_ID;
 				$this->supports = array( 'refunds' );
 			}
 

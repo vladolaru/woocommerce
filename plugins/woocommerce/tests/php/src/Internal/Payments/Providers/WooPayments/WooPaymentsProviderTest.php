@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\ProviderContract;
@@ -60,7 +60,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	 * @testdox Provider identity preserves the WooPayments gateway ID.
 	 */
 	public function test_provider_identity_preserves_woopayments_gateway_id(): void {
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $this->sut->get_id() );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $this->sut->get_id() );
 	}
 
 	/** @testdox Provider exposes its Multi-Currency bootstrap root without core-owned composition knowledge. */
@@ -83,7 +83,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		$profile = $this->sut->get_persistence_profile();
 
 		$this->assertInstanceOf( ProviderPersistenceVocabulary::class, $profile );
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $this->sut->get_id() );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $this->sut->get_id() );
 	}
 
 	/**
@@ -118,7 +118,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	 */
 	public function test_provider_delegates_woopayments_operation_effects(): void {
 		$order           = wc_create_order();
-		$context         = PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_effects' );
+		$context         = PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_effects' );
 		$effect_plan     = WooPaymentsOrderEffectPlan::for_payment_intent( array( 'status' => 'succeeded' ), false );
 		$outcome         = ( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_effects' ) )->with_effect_plan( $effect_plan );
 		$call_sequence   = array();
@@ -192,13 +192,13 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 			static fn( NativeWooPaymentsGateway $gateway ): string => $gateway->id,
 			$gateways
 		);
-		$this->assertContains( OrderPaymentStore::GATEWAY_ID, $gateway_ids );
-		$this->assertContains( OrderPaymentStore::GATEWAY_ID . '_klarna', $gateway_ids );
-		$this->assertContains( OrderPaymentStore::GATEWAY_ID . '_sepa_debit', $gateway_ids );
-		$this->assertContains( OrderPaymentStore::GATEWAY_ID . '_affirm', $gateway_ids );
-		$this->assertContains( OrderPaymentStore::GATEWAY_ID . '_apple_pay', $gateway_ids );
-		$this->assertContains( OrderPaymentStore::GATEWAY_ID . '_google_pay', $gateway_ids );
-		$this->assertNotContains( OrderPaymentStore::GATEWAY_ID . '_link', $gateway_ids );
+		$this->assertContains( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $gateway_ids );
+		$this->assertContains( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_klarna', $gateway_ids );
+		$this->assertContains( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_sepa_debit', $gateway_ids );
+		$this->assertContains( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_affirm', $gateway_ids );
+		$this->assertContains( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_apple_pay', $gateway_ids );
+		$this->assertContains( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_google_pay', $gateway_ids );
+		$this->assertNotContains( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_link', $gateway_ids );
 
 		$klarna_gateway = $provider->get_gateway_for_method( 'klarna' );
 		$link_gateway   = $provider->get_gateway_for_method( 'link' );
@@ -206,7 +206,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $klarna_gateway );
 		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $link_gateway );
 		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $provider->get_gateway_for_method( 'affirm' ) );
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $provider->get_gateway_for_method( 'card' )->id );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $provider->get_gateway_for_method( 'card' )->id );
 		$this->assertSame( 'Klarna', $klarna_gateway->get_title() );
 		$this->assertSame( 'WooPayments (Klarna)', $klarna_gateway->method_title );
 		$this->assertFalse( $klarna_gateway->supports( PaymentGatewayFeature::TOKENIZATION ) );
@@ -283,7 +283,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		);
 		$provider->get_payment_gateways();
 
-		$this->assertNotContains( OrderPaymentStore::GATEWAY_ID . '_bancontact', $gateway_ids, 'A filtered method should not be published to classic checkout.' );
+		$this->assertNotContains( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_bancontact', $gateway_ids, 'A filtered method should not be published to classic checkout.' );
 		$this->assertSame( 1, $filter_calls, 'The request-scoped gateway map should compute availability only once.' );
 	}
 
@@ -301,7 +301,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $provider->get_gateway_for_method( 'card' ) );
 		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $provider->get_gateway_for_method( 'affirm' ) );
 		$this->assertContains(
-			OrderPaymentStore::GATEWAY_ID . '_affirm',
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_affirm',
 			array_map(
 				static fn( NativeWooPaymentsGateway $gateway ): string => $gateway->id,
 				$provider->get_payment_gateways()
@@ -374,7 +374,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	public function test_zero_total_checkout_reaches_charge(): void {
 		$order = wc_create_order();
 
-		$this->assertTrue( $this->sut->supports_zero_amount_setup( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_zero' ) ) );
+		$this->assertTrue( $this->sut->supports_zero_amount_setup( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_zero' ) ) );
 	}
 
 	/**

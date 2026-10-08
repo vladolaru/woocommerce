@@ -22,7 +22,6 @@ class NeutralLayerPlacementTest extends WC_Unit_Test_Case {
 	private const ALLOWED_FILES = array(
 		'NativePaymentsCliCommand.php',
 		'OrderPaymentLifecycleService.php',
-		'OrderPaymentStore.php',
 	);
 
 	/**

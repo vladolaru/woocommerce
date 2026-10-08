@@ -218,7 +218,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			};
 			$processing_service = wc_get_container()->get( PaymentProcessingService::class );
 
-			$this->assertTrue( $processing_service->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 4.00, 'Requested by customer' ), $provider ) );
+			$this->assertTrue( $processing_service->process_refund( PaymentContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 4.00, 'Requested by customer' ), $provider ) );
 			$this->assertInstanceOf( WC_Order_Refund::class, $refund );
 			$synchronous_notes = array_values(
 				array_filter(
@@ -350,7 +350,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 
 		$order = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_currency( strtoupper( (string) $refund_object['currency'] ) );
 		$order->set_total( $amount_string );
 		$order->set_status( 'processing' );
@@ -416,7 +416,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 		};
 		$processing_service = wc_get_container()->get( PaymentProcessingService::class );
 
-		$this->assertTrue( $processing_service->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, $amount, $reason ), $provider ) );
+		$this->assertTrue( $processing_service->process_refund( PaymentContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $amount, $reason ), $provider ) );
 
 		$synchronous_notes = array_values(
 			array_filter(
@@ -501,7 +501,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			}
 		};
 
-		$this->assertTrue( wc_get_container()->get( PaymentProcessingService::class )->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 4.00, 'Requested by customer' ), $provider ) );
+		$this->assertTrue( wc_get_container()->get( PaymentProcessingService::class )->process_refund( PaymentContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 4.00, 'Requested by customer' ), $provider ) );
 
 		$this->sut->process(
 			'charge.refund.updated',
@@ -616,7 +616,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	private function create_refundable_order(): WC_Order {
 		$order = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_currency( 'USD' );
 		$order->set_total( '10.00' );
 		$order->set_status( 'processing' );
@@ -696,7 +696,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	public function test_succeeded_refund_update_is_not_hidden_by_refund_ids_cached_earlier(): void {
 		$refund_object = $this->load_recorded_refund_updated_event( 'afterpay_clearpay_refund_updated_succeeded' );
 		$order         = wc_create_order();
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_currency( strtoupper( (string) $refund_object['currency'] ) );
 		$order->set_total( sprintf( '%.2f', ( (int) $refund_object['amount'] ) / 100 ) );
 		$order->set_status( 'processing' );

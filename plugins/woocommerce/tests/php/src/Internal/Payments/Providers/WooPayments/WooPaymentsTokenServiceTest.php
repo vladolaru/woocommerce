@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
@@ -80,7 +80,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_resolves_payment_method_id_from_owned_token(): void {
 		$user_id = $this->factory()->user->create();
-		$token   = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_saved' );
+		$token   = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_saved' );
 		$sut     = $this->create_service();
 
 		$result = $sut->resolve_payment_method_id_from_token_id( (string) $token->get_id(), $user_id );
@@ -93,7 +93,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_resolves_card_token_without_reading_enabled_method_settings(): void {
 		$user_id = $this->factory()->user->create();
-		$token   = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_saved' );
+		$token   = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_saved' );
 		$sut     = $this->create_service( array(), null, null, $this->create_account_service_that_must_not_read_enabled_methods() );
 
 		$this->assertSame( 'pm_saved', $sut->resolve_payment_method_id_from_token_id( (string) $token->get_id(), $user_id ) );
@@ -105,7 +105,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	public function test_rejects_unowned_or_wrong_gateway_tokens(): void {
 		$user_id       = $this->factory()->user->create();
 		$other_user_id = $this->factory()->user->create();
-		$owned_token   = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_owned' );
+		$owned_token   = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_owned' );
 		$other_gateway = $this->create_card_token( $user_id, 'cheque', 'pm_cheque' );
 		$sut           = $this->create_service();
 
@@ -120,8 +120,8 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	public function test_resolves_payment_method_id_from_order_attached_token(): void {
 		$user_id       = $this->factory()->user->create();
 		$other_user_id = $this->factory()->user->create();
-		$token         = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_attached' );
-		$unattached    = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_unattached' );
+		$token         = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_attached' );
+		$unattached    = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_unattached' );
 		$wrong_gateway = $this->create_card_token( $user_id, 'cheque', 'pm_cheque' );
 		$order         = wc_create_order();
 		$sut           = $this->create_service();
@@ -206,7 +206,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( WC_Payment_Token_CC::class, $token );
 		$this->assertGreaterThan( 0, $token->get_id(), 'Created tokens should be persisted.' );
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $token->get_gateway_id() );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $token->get_gateway_id() );
 		$this->assertSame( $user_id, $token->get_user_id() );
 		$this->assertSame( 'pm_new', $token->get_token() );
 		$this->assertSame( 'visa', $token->get_card_type() );
@@ -221,7 +221,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_reuses_existing_customer_token(): void {
 		$user_id        = $this->factory()->user->create();
-		$existing_token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_existing' );
+		$existing_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_existing' );
 		$sut            = $this->create_service(
 			array(
 				'pm_existing' => array(
@@ -326,7 +326,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_token_only_method_returns_the_token_from_the_explicit_resolution_result(): void {
 		$user_id = $this->factory()->user->create();
-		$token   = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_wrapper_contract' );
+		$token   = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_wrapper_contract' );
 		$sut     = new class( $token ) extends WooPaymentsTokenService {
 			/** @var WC_Payment_Token_CC */
 			private WC_Payment_Token_CC $token;
@@ -451,7 +451,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 					),
 				),
 				WooPaymentsLinkToken::class,
-				OrderPaymentStore::GATEWAY_ID,
+				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'wcpay_link',
 				'get_email',
 				'buyer@example.com',
@@ -504,7 +504,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	public function test_clears_cached_payment_methods_when_native_card_token_is_deleted(): void {
 		$user_id       = $this->factory()->user->create();
 		$other_user_id = $this->factory()->user->create();
-		$native_token  = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_delete' );
+		$native_token  = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_delete' );
 		$other_token   = $this->create_card_token( $user_id, 'cheque', 'pm_cheque' );
 		update_user_meta( $user_id, '_wcpay_payment_methods', array( 'pm_delete' ) );
 		update_user_meta( $other_user_id, '_wcpay_payment_methods', array( 'pm_other' ) );
@@ -529,7 +529,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_detaches_native_card_payment_methods_when_token_is_deleted(): void {
 		$user_id      = $this->factory()->user->create();
-		$native_token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_delete' );
+		$native_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_delete' );
 		$api_client   = new class() extends WooPaymentsApiClient {
 			/**
 			 * Detached payment method IDs.
@@ -588,7 +588,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_does_not_detach_live_payment_methods_from_non_production_admin_screens(): void {
 		$user_id      = $this->factory()->user->create();
-		$native_token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_live' );
+		$native_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_live' );
 		$api_client   = new class() extends WooPaymentsApiClient {
 			/**
 			 * Detached payment method IDs.
@@ -805,7 +805,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->register_card_gateway_id();
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( $user_id );
-		$stale_token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_gone' );
+		$stale_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_gone' );
 
 		$api_client = new class() extends WooPaymentsApiClient {
 			/**
@@ -1265,7 +1265,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->register_card_gateway_id();
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( $user_id );
-		$local_token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_local' );
+		$local_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_local' );
 
 		$customer_service               = $this->create_reconciling_customer_service( 'cus_1', array() );
 		$customer_service->fail_fetches = true;
@@ -1287,7 +1287,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->register_card_gateway_id();
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( $user_id );
-		$local_token                     = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_local' );
+		$local_token                     = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_local' );
 		$customer_service                = $this->create_reconciling_customer_service( 'cus_1', array() );
 		$customer_service->fail_fetches  = true;
 		$customer_service->fetch_failure = self::make_provider_error();
@@ -1440,7 +1440,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->register_card_gateway_id();
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( 0 );
-		$local_token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_local' );
+		$local_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_local' );
 
 		$customer_service = $this->create_reconciling_customer_service( 'cus_1', array( 'card' => array() ) );
 		$this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
@@ -1474,7 +1474,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( $user_id );
 		update_option( 'posts_per_page', 1 );
-		$local_token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_local' );
+		$local_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_local' );
 
 		$customer_service = $this->create_reconciling_customer_service( 'cus_1', array( 'card' => array() ) );
 		$this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
@@ -1504,7 +1504,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card', 'sepa_debit', 'link' ) ) );
 
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
-		apply_filters( 'woocommerce_get_customer_payment_tokens', array(), $user_id, OrderPaymentStore::GATEWAY_ID );
+		apply_filters( 'woocommerce_get_customer_payment_tokens', array(), $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 
 		$this->assertSame(
 			array(
@@ -1521,7 +1521,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_clears_cached_payment_methods_when_native_card_token_becomes_default(): void {
 		$user_id      = $this->factory()->user->create();
-		$native_token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_default' );
+		$native_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_default' );
 		$other_token  = $this->create_card_token( $user_id, 'cheque', 'pm_cheque' );
 		update_user_meta( $user_id, '_wcpay_payment_methods', array( 'pm_default' ) );
 		$this->create_service();
@@ -1544,7 +1544,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_sets_remote_default_payment_method_when_native_card_token_becomes_default(): void {
 		$user_id          = $this->factory()->user->create();
-		$native_token     = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_default' );
+		$native_token     = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_default' );
 		$customer_service = new class() extends WooPaymentsCustomerService {
 			/**
 			 * Customer IDs keyed by WordPress user ID.
@@ -1606,12 +1606,12 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_keeps_only_supported_native_tokens_in_customer_token_lists(): void {
 		$user_id    = $this->factory()->user->create();
-		$card_token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_card' );
+		$card_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card' );
 		$link_token = new WooPaymentsLinkToken();
-		$bank_token = $this->create_echeck_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_bank' );
+		$bank_token = $this->create_echeck_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_bank' );
 		$sepa_token = new WooPaymentsSepaToken();
 
-		$link_token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$link_token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$link_token->set_user_id( $user_id );
 		$link_token->set_token( 'pm_link' );
 		$link_token->set_email( 'buyer@example.com' );
@@ -1634,7 +1634,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->create_service( array(), null, null, $this->create_account_service_with_enabled_methods( array( 'card', 'link', 'sepa_debit' ) ) );
 
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered customer-token filter.
-		$result = apply_filters( 'woocommerce_get_customer_payment_tokens', $input_tokens, $user_id, OrderPaymentStore::GATEWAY_ID );
+		$result = apply_filters( 'woocommerce_get_customer_payment_tokens', $input_tokens, $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered customer-token filter.
 		$sepa_result = apply_filters( 'woocommerce_get_customer_payment_tokens', $sepa_tokens, $user_id, 'woocommerce_payments_sepa_debit' );
 
@@ -1653,9 +1653,9 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_card_gateway_read_leaves_out_link_tokens_while_link_is_disabled(): void {
 		$user_id    = $this->factory()->user->create();
-		$card_token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_card' );
+		$card_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card' );
 		$link_token = new WooPaymentsLinkToken();
-		$link_token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$link_token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$link_token->set_user_id( $user_id );
 		$link_token->set_token( 'pm_link' );
 		$link_token->set_email( 'buyer@example.com' );
@@ -1670,7 +1670,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 				$link_token->get_id() => $link_token,
 			),
 			$user_id,
-			OrderPaymentStore::GATEWAY_ID
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID
 		);
 
 		$this->assertSame( array( $card_token->get_id() ), array_keys( $result ) );
@@ -1685,9 +1685,9 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_card_gateway_read_leaves_out_a_sepa_token_filed_under_the_card_gateway_while_sepa_is_disabled(): void {
 		$user_id    = $this->factory()->user->create();
-		$card_token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_card' );
+		$card_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card' );
 		$sepa_token = new WooPaymentsSepaToken();
-		$sepa_token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$sepa_token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$sepa_token->set_user_id( $user_id );
 		$sepa_token->set_token( 'pm_sepa_under_card' );
 		$sepa_token->set_last4( '6789' );
@@ -1702,7 +1702,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 				$sepa_token->get_id() => $sepa_token,
 			),
 			$user_id,
-			OrderPaymentStore::GATEWAY_ID
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID
 		);
 
 		$this->assertSame( array( $card_token->get_id() ), array_keys( $result ) );
@@ -1736,7 +1736,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_formats_wallet_backed_card_tokens_in_saved_payment_method_lists(): void {
 		$user_id = $this->factory()->user->create();
-		$token   = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_wallet' );
+		$token   = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_wallet' );
 		$token->add_meta_data( '_wcpay_wallet_type', 'apple_pay', true );
 		$token->save();
 		$item = array(
@@ -1840,8 +1840,8 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_attaches_token_to_order(): void {
 		$user_id = $this->factory()->user->create();
-		$token_a = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_order_a' );
-		$token_b = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_order_b' );
+		$token_a = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_order_a' );
+		$token_b = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_order_b' );
 		$order   = wc_create_order();
 		$sut     = $this->create_service();
 
@@ -1862,15 +1862,15 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_syncs_active_token_order_to_related_subscriptions(): void {
 		$user_id      = $this->factory()->user->create();
-		$token_a      = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_subscription_a' );
-		$token_b      = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_subscription_b' );
+		$token_a      = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_subscription_a' );
+		$token_b      = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_subscription_b' );
 		$order        = wc_create_order();
 		$subscription = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertInstanceOf( WC_Order::class, $subscription );
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->save();
-		$subscription->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$subscription->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$subscription->add_payment_token( $token_a );
 		$subscription->save();
 		add_filter(
@@ -1896,7 +1896,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	public function test_syncs_token_to_every_subscription_created_from_one_parent_order(): void {
 		$this->ensure_wcs_subscriptions_for_order_double();
 		$user_id = $this->factory()->user->create();
-		$token   = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_multi' );
+		$token   = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_multi' );
 		$parent  = $this->create_woopayments_order();
 		$monthly = $this->create_woopayments_order();
 		$yearly  = $this->create_woopayments_order();
@@ -2132,14 +2132,14 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		global $wpdb;
 
 		$user_id = $this->factory()->user->create();
-		$first   = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_plugin_first' );
-		$second  = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_plugin_second' );
+		$first   = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_plugin_first' );
+		$second  = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_plugin_second' );
 		WC_Payment_Tokens::set_users_default( $user_id, $second->get_id() );
 		wp_set_current_user( $this->factory()->user->create( array( 'role' => 'administrator' ) ) );
 
 		$customer_service = $this->create_reconciling_customer_service( 'cus_1', array( 'card' => array( $this->card_payment_method( 'pm_plugin_first' ), $this->card_payment_method( 'pm_plugin_second' ) ) ) );
 		$this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
-		$this->assertNotContains( OrderPaymentStore::GATEWAY_ID, WC()->payment_gateways()->get_payment_gateway_ids(), 'The fixture must leave the card gateway unregistered.' );
+		$this->assertNotContains( WooPaymentsPersistenceVocabulary::GATEWAY_ID, WC()->payment_gateways()->get_payment_gateway_ids(), 'The fixture must leave the card gateway unregistered.' );
 
 		$tokens = WC_Payment_Tokens::get_customer_tokens( $user_id );
 
@@ -2159,8 +2159,8 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function create_plugin_era_cards_with_second_default( int $user_id ): array {
 		$this->register_card_gateway_id();
-		$first  = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_plugin_first' );
-		$second = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_plugin_second' );
+		$first  = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_plugin_first' );
+		$second = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_plugin_second' );
 		WC_Payment_Tokens::set_users_default( $user_id, $second->get_id() );
 
 		return array( $first, $second );
@@ -2178,7 +2178,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 				 * Constructor.
 				 */
 				public function __construct() {
-					$this->id = OrderPaymentStore::GATEWAY_ID;
+					$this->id = WooPaymentsPersistenceVocabulary::GATEWAY_ID;
 				}
 			};
 
@@ -2521,7 +2521,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function create_woopayments_order(): WC_Order {
 		$order = wc_create_order();
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->save();
 
 		return $order;
@@ -2558,7 +2558,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function create_sepa_token( int $user_id, string $token_id ): WooPaymentsSepaToken {
 		$token = new WooPaymentsSepaToken();
-		$token->set_gateway_id( OrderPaymentStore::GATEWAY_ID_PREFIX . 'sepa_debit' );
+		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'sepa_debit' );
 		$token->set_user_id( $user_id );
 		$token->set_token( $token_id );
 		$token->set_last4( '6789' );

@@ -451,7 +451,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_lock_refused_succeeded_event_is_retried_past_the_lock_ttl_and_then_applies(): void {
 		$order = wc_create_order();
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_total( '10.00' );
 		$order->save();
 		$payment_store = wc_get_container()->get( OrderPaymentStore::class );
@@ -502,7 +502,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			$this->assertSame( $event, $store->get_event( 'evt_lock_ttl' ) );
 
 			$waited = 0;
-			while ( $waited <= OrderPaymentStore::LOCK_TTL_SECONDS ) {
+			while ( $waited <= WooPaymentsPersistenceVocabulary::LOCK_TTL_SECONDS ) {
 				$scheduler->scheduled_jobs = array();
 				try {
 					$service->process_event( 'evt_lock_ttl' );

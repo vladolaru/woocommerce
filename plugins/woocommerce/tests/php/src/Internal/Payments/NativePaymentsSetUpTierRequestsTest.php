@@ -9,7 +9,7 @@ use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -126,10 +126,10 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 		WC()->payment_gateways()->init();
 
 		$registered = WC()->payment_gateways()->payment_gateways();
-		$this->assertArrayHasKey( OrderPaymentStore::GATEWAY_ID, $registered, 'A connected or active store must register the gateway, as the client does.' );
-		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $registered[ OrderPaymentStore::GATEWAY_ID ] );
+		$this->assertArrayHasKey( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $registered, 'A connected or active store must register the gateway, as the client does.' );
+		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $registered[ WooPaymentsPersistenceVocabulary::GATEWAY_ID ] );
 		$offered = array_keys( WC()->payment_gateways()->get_available_payment_gateways() );
-		$this->assertSame( $available, in_array( OrderPaymentStore::GATEWAY_ID, $offered, true ) );
+		$this->assertSame( $available, in_array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $offered, true ) );
 		$this->assertSame( array(), $this->outbound_requests );
 	}
 
@@ -175,11 +175,11 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 		$this->run_bootstrap( '__return_false' );
 		$this->reload_payment_gateways();
 
-		$gateway = WC()->payment_gateways()->payment_gateways()[ OrderPaymentStore::GATEWAY_ID ] ?? null;
+		$gateway = WC()->payment_gateways()->payment_gateways()[ WooPaymentsPersistenceVocabulary::GATEWAY_ID ] ?? null;
 		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $gateway, 'An active store registers the gateway.' );
 		$this->assertSame( 'yes', $gateway->enabled, 'The card gateway is enabled, as onboarding leaves it.' );
 		$this->assertSame( $available, $gateway->is_available() );
-		$this->assertSame( $available, array_key_exists( OrderPaymentStore::GATEWAY_ID, WC()->payment_gateways()->get_available_payment_gateways() ) );
+		$this->assertSame( $available, array_key_exists( WooPaymentsPersistenceVocabulary::GATEWAY_ID, WC()->payment_gateways()->get_available_payment_gateways() ) );
 	}
 
 	/**
@@ -242,7 +242,7 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 		unset( $label );
 		$token = new WooPaymentsSepaToken();
 		$token->set_token( 'pm_test_sepa' );
-		$token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$token->set_user_id( 1 );
 		$token->set_last4( '3000' );
 		$token->save();
@@ -270,7 +270,7 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	public function test_action_scheduler_run_under_wp_cli_reaches_the_native_handler( string $state ): void {
 		Constants::set_constant( 'WP_CLI', true );
 		$order = new WC_Order();
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->update_meta_data( '_payment_method_id', 'pm_test_cli' );
 		$order->save();
 		$this->arrange_native_owner( $state );
@@ -376,7 +376,7 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 			true  => NativePaymentsState::ACTIVE,
 			false => NativePaymentsState::CONNECTED,
 		) as $enabled => $expected ) {
-			$request = new \WP_REST_Request( 'PUT', '/wc/v3/payment_gateways/' . OrderPaymentStore::GATEWAY_ID );
+			$request = new \WP_REST_Request( 'PUT', '/wc/v3/payment_gateways/' . WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 			$request->set_body_params( array( 'enabled' => (bool) $enabled ) );
 			$response = rest_do_request( $request );
 
@@ -440,7 +440,7 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	public function test_on_hold_email_carries_multibanco_instructions( string $label, string $state, string $request ): void {
 		unset( $label );
 		$order = new WC_Order();
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID_PREFIX . 'multibanco' );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'multibanco' );
 		$order->set_status( 'on-hold' );
 		$order->update_meta_data( '_wcpay_multibanco_reference', '123 456 789' );
 		$order->update_meta_data( '_wcpay_multibanco_entity', '12345' );
@@ -639,7 +639,7 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	 * Press the Settings > Payments enable toggle for the WooPayments gateway through WooCommerce's AJAX handler.
 	 */
 	private function toggle_gateway(): void {
-		$_POST['gateway_id']  = OrderPaymentStore::GATEWAY_ID;
+		$_POST['gateway_id']  = WooPaymentsPersistenceVocabulary::GATEWAY_ID;
 		$_REQUEST['security'] = wp_create_nonce( 'woocommerce-toggle-payment-gateway-enabled' );
 		$die_handler          = static function () {
 			return static function () {

@@ -11,7 +11,6 @@ use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Enums\OrderInternalStatus;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use WP_Error;
 
 /**
@@ -166,7 +165,7 @@ class WooPaymentsAdminNoticeService {
 		if ( false === $has_test_sale ) {
 			$orders = wc_get_orders(
 				array(
-					'payment_method' => OrderPaymentStore::GATEWAY_ID,
+					'payment_method' => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 					'limit'          => 1,
 					'orderby'        => 'none',
 					'return'         => 'ids',
@@ -241,7 +240,7 @@ class WooPaymentsAdminNoticeService {
 				array_filter(
 					array_keys( WC()->payment_gateways()->payment_gateways() ),
 					static function ( string $gateway_id ): bool {
-						return OrderPaymentStore::GATEWAY_ID !== $gateway_id && 0 !== strpos( $gateway_id, OrderPaymentStore::GATEWAY_ID_PREFIX );
+						return WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $gateway_id && 0 !== strpos( $gateway_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX );
 					}
 				)
 			);
@@ -328,7 +327,7 @@ class WooPaymentsAdminNoticeService {
 		 */
 		$order_ids = wc_get_orders(
 			array(
-				'payment_method' => OrderPaymentStore::GATEWAY_ID,
+				'payment_method' => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'limit'          => $limit,
 				'orderby'        => 'none',
 				'return'         => 'ids',

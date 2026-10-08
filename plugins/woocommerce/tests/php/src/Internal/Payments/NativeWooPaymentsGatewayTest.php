@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
@@ -103,9 +103,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( NativePaymentsState::class )->invalidate();
 		remove_all_actions( 'woocommerce_checkout_subscription_created' );
-		remove_all_actions( 'woocommerce_scheduled_subscription_payment_' . OrderPaymentStore::GATEWAY_ID );
+		remove_all_actions( 'woocommerce_scheduled_subscription_payment_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		remove_all_actions( 'woocommerce_scheduled_subscription_payment_woocommerce_payments_amazon_pay' );
-		remove_all_actions( 'woocommerce_subscription_failing_payment_method_updated_' . OrderPaymentStore::GATEWAY_ID );
+		remove_all_actions( 'woocommerce_subscription_failing_payment_method_updated_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		remove_all_actions( 'woocommerce_subscription_failing_payment_method_updated_woocommerce_payments_amazon_pay' );
 		remove_all_filters( 'woocommerce_subscription_payment_meta' );
 		remove_all_actions( 'woocommerce_subscription_validate_payment_meta' );
@@ -146,8 +146,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		unset( $_POST['_wcsnonce'] );
 		unset( $_POST['change_payment_method'] );
 		unset( $_POST['woocommerce_change_payment'] );
-		unset( $_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] );
-		unset( $_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-new-payment-method' ] );
+		unset( $_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] );
+		unset( $_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-new-payment-method' ] );
 		unset( $_POST['update_all_subscriptions_payment_method'] );
 		unset( $_GET['change_payment_method'], $GLOBALS['wcpay_test_subscription_ids'], $GLOBALS['wcpay_test_cart_contains_subscription'] );
 		if ( WC() && WC()->session ) {
@@ -172,7 +172,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			function (): void {
 				$gateway = new NativeWooPaymentsGateway();
 
-				$this->assertSame( OrderPaymentStore::GATEWAY_ID, $gateway->id );
+				$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $gateway->id );
 				$this->assertSame( 'woocommerce_woocommerce_payments_settings', $gateway->get_option_key() );
 				$this->assertSame( 'Card', $gateway->title );
 				$this->assertStringContainsString( '/assets/images/payment-methods/visa-color.svg', $gateway->get_icon() );
@@ -483,7 +483,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$gateway = new NativeWooPaymentsGateway( $definition );
 			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $this->create_account_service_for_country( 'PL', 'p24_payments', true, 'pln' ) );
 
-			$this->assertSame( OrderPaymentStore::GATEWAY_ID_PREFIX . 'p24', $gateway->id );
+			$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'p24', $gateway->id );
 			$availability_by_currency = array(
 				'PLN' => true,
 				'EUR' => true,
@@ -1260,9 +1260,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		};
 
 		$this->assertSame( 10, has_action( 'woocommerce_checkout_subscription_created', array( $gateway, 'maybe_force_subscription_to_manual' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_scheduled_subscription_payment_' . OrderPaymentStore::GATEWAY_ID, array( $gateway, 'scheduled_subscription_payment' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_scheduled_subscription_payment_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( $gateway, 'scheduled_subscription_payment' ) ) );
 		$this->assertSame( 10, has_action( 'woocommerce_scheduled_subscription_payment_woocommerce_payments_amazon_pay', array( $gateway, 'scheduled_subscription_payment' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_subscription_failing_payment_method_updated_' . OrderPaymentStore::GATEWAY_ID, array( $gateway, 'update_failing_payment_method' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_subscription_failing_payment_method_updated_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( $gateway, 'update_failing_payment_method' ) ) );
 		$this->assertSame( 10, has_action( 'woocommerce_subscription_failing_payment_method_updated_woocommerce_payments_amazon_pay', array( $gateway, 'update_failing_payment_method' ) ) );
 		$this->assertSame( 10, has_filter( 'woocommerce_subscription_payment_meta', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'add_subscription_payment_meta' ) ) );
 		$this->assertSame( 10, has_action( 'woocommerce_subscription_validate_payment_meta', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'validate_subscription_payment_meta' ) ) );
@@ -1279,9 +1279,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( 10, has_filter( 'woocommerce_subscriptions_update_payment_via_pay_shortcode', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'update_payment_method_for_subscriptions' ) ) );
 		$this->assertSame( 10, has_action( 'wp_ajax_wcpay_get_user_payment_tokens', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'ajax_get_user_payment_tokens' ) ) );
 
-		remove_action( 'woocommerce_scheduled_subscription_payment_' . OrderPaymentStore::GATEWAY_ID, array( $gateway, 'scheduled_subscription_payment' ) );
+		remove_action( 'woocommerce_scheduled_subscription_payment_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( $gateway, 'scheduled_subscription_payment' ) );
 		remove_action( 'woocommerce_scheduled_subscription_payment_woocommerce_payments_amazon_pay', array( $gateway, 'scheduled_subscription_payment' ) );
-		remove_action( 'woocommerce_subscription_failing_payment_method_updated_' . OrderPaymentStore::GATEWAY_ID, array( $gateway, 'update_failing_payment_method' ) );
+		remove_action( 'woocommerce_subscription_failing_payment_method_updated_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( $gateway, 'update_failing_payment_method' ) );
 		remove_action( 'woocommerce_subscription_failing_payment_method_updated_woocommerce_payments_amazon_pay', array( $gateway, 'update_failing_payment_method' ) );
 	}
 
@@ -1358,7 +1358,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				return $this->requires_manual_renewal;
 			}
 		};
-		$gateway_id   = OrderPaymentStore::GATEWAY_ID_PREFIX . 'bancontact';
+		$gateway_id   = WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'bancontact';
 		$subscription->set_payment_method( $gateway_id );
 		$subscription->save();
 
@@ -1409,13 +1409,13 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				return $this->requires_manual_renewal;
 			}
 		};
-		$subscription->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$subscription->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$subscription->save();
 
 		( new NativeWooPaymentsGateway() )->maybe_force_subscription_to_manual( $subscription );
 
 		$this->assertFalse( $subscription->is_manual() );
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $subscription->get_payment_method() );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $subscription->get_payment_method() );
 		$this->assertSame( '', $subscription->get_meta( '_wcpay_original_payment_method_id', true ) );
 	}
 
@@ -1447,7 +1447,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		global $wp_filter;
 
-		foreach ( array( OrderPaymentStore::GATEWAY_ID, 'woocommerce_payments_amazon_pay' ) as $gateway_id ) {
+		foreach ( array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'woocommerce_payments_amazon_pay' ) as $gateway_id ) {
 			$callbacks = $wp_filter[ 'woocommerce_scheduled_subscription_payment_' . $gateway_id ]->callbacks[10] ?? array();
 			$matches   = array_filter(
 				$callbacks,
@@ -1513,7 +1513,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order   = $this->create_order();
 		$token   = $this->create_card_token( $user_id, 'pm_unusable_saved_method' );
 		$order->set_customer_id( $user_id );
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->add_payment_token( $token );
 		$order->update_meta_data( '_payment_method_id', 'pm_unusable_saved_method' );
 		$order->save();
@@ -1596,7 +1596,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$this->assertCount( 1, $actionable_notes );
 			$this->assertCount( 0, $raw_notes );
 			$this->assertArrayNotHasKey( 'saved_payment_method_display_name', $api_client->last_request_data );
-			$this->assertSame( OrderPaymentStore::GATEWAY_ID, $order->get_payment_method() );
+			$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $order->get_payment_method() );
 			$this->assertSame( 'pm_unusable_saved_method', $order->get_meta( '_payment_method_id', true ) );
 			$order->update_meta_data( '_intention_status', 'processing' );
 			$order->save_meta_data();
@@ -2313,7 +2313,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			);
 
 		$token = new WooPaymentsSepaToken();
-		$token->set_gateway_id( OrderPaymentStore::GATEWAY_ID . '_sepa_debit' );
+		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_sepa_debit' );
 		$token->set_user_id( $user_id );
 		$token->set_token( 'pm_sepa' );
 		$token->set_last4( '3000' );
@@ -2944,7 +2944,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'success', $result['result'] );
 		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
 		$this->assertSame( $order->get_id(), $service->last_checkout_context->get_order_id() );
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $service->last_checkout_context->get_gateway_id() );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $service->last_checkout_context->get_gateway_id() );
 		$this->assertFalse( $service->last_checkout_context->get_provider_data()['is_platform_payment_method'] );
 		$this->assertSame( 'pi_mock', WC()->session->get( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY ) );
 	}
@@ -2974,7 +2974,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_plugin_history_use', '', 'pm_plugin_history', 'cus_plugin_history' );
 		$gateway                   = new NativeWooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
-		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = (string) $token->get_id();
+		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = (string) $token->get_id();
 
 		$result = $gateway->process_payment( $order->get_id() );
 
@@ -3048,8 +3048,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_plugin_subscription_renewal', '', 'pm_plugin_subscription', 'cus_plugin_subscription' );
 		$gateway                   = new NativeWooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
-		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = (string) $token->get_id();
-		$GLOBALS['wcpay_test_renewal_subscription_ids']                    = array( $renewal_order->get_id() => array( $subscription->get_id() ) );
+		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = (string) $token->get_id();
+		$GLOBALS['wcpay_test_renewal_subscription_ids']                                   = array( $renewal_order->get_id() => array( $subscription->get_id() ) );
 
 		try {
 			$result = $gateway->process_payment( $renewal_order->get_id() );
@@ -3161,7 +3161,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$_POST['woocommerce_pay'] = '1';
 		}
 		if ( $should_save ) {
-			$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-new-payment-method' ] = 'true';
+			$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-new-payment-method' ] = 'true';
 		}
 
 		$filtered_payment_url = 'https://example.test/filtered-order-pay/?pay_for_order=true&key=wc_order_test&extension=kept#extension-anchor';
@@ -3372,7 +3372,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'success', $result['result'] );
 		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $service->last_checkout_context->get_gateway_id() );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $service->last_checkout_context->get_gateway_id() );
 		$this->assertSame( '0123456789abcdef', $session->get( WooPaymentsFraudPreventionService::TOKEN_NAME ) );
 	}
 
@@ -3413,7 +3413,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'success', $result['result'] );
 		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID_PREFIX . $payment_method_id, $service->last_checkout_context->get_gateway_id() );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . $payment_method_id, $service->last_checkout_context->get_gateway_id() );
 	}
 
 	/**
@@ -3534,7 +3534,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( 1, $service->checkout_attempt_count );
 		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
 		$this->assertSame( $order->get_id(), $service->last_checkout_context->get_order_id() );
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $service->last_checkout_context->get_gateway_id() );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $service->last_checkout_context->get_gateway_id() );
 		$this->assertSame( '0123456789abcdef', $session->get( WooPaymentsFraudPreventionService::TOKEN_NAME ) );
 	}
 
@@ -3819,7 +3819,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
 		$_POST['woocommerce_change_payment']    = (string) $subscription->get_id();
 
-		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = 'new';
+		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
 
 		$service                     = new RecordingPaymentProcessingService();
 		$service->checkout_exception = new \RuntimeException( 'Subscription hook failed' );
@@ -3956,7 +3956,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order   = $this->create_order();
 		$token   = $this->create_card_token( $user_id, 'pm_renewal_card' );
 		$order->set_customer_id( $user_id );
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->add_payment_token( $token );
 		$order->save();
 		$provider = $this->create_provider_failing_after_charge(
@@ -3997,7 +3997,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order   = $this->create_order();
 		$token   = $this->create_card_token( $user_id, 'pm_renewal_card' );
 		$order->set_customer_id( $user_id );
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->add_payment_token( $token );
 		$order->save();
 		$error    = new \TypeError( 'Argument #1 must be of type array, null given' );
@@ -4170,7 +4170,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
 		$_POST['woocommerce_change_payment']    = (string) $subscription->get_id();
 
-		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = 'new';
+		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
 
 		$service                     = new RecordingPaymentProcessingService();
 		$service->checkout_exception = new \RuntimeException( 'Subscription hook failed' );
@@ -4880,7 +4880,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		}
 		// The outcome the real provider hands the gateway: the codec's mapping enriched with the order effects.
 		$service->checkout_outcome = wc_get_container()->get( WooPaymentsOrderEffectApplier::class )->enrich_outcome_for_lifecycle(
-			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID ),
+			PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ),
 			WooPaymentsIntentCodec::outcome_from_intention( $intent, WooPaymentsIntentMappingContext::for_native( $order->get_id(), $order->get_checkout_order_received_url() ) ),
 			WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false )
 		);
@@ -4970,7 +4970,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$_POST['woocommerce_change_payment'] = (string) $order->get_id();
 		$_GET['change_payment_method']       = (string) $order->get_id();
 
-		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = 'new';
+		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
 		// The outcome branded the subscription before WCS records the change.
 		$order->set_payment_method_title( 'Visa credit card' );
 		$order->save();
@@ -4997,7 +4997,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			array(
 				array(
 					'order_id'   => $order->get_id(),
-					'gateway_id' => OrderPaymentStore::GATEWAY_ID,
+					'gateway_id' => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				),
 			),
 			\WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods
@@ -5027,7 +5027,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
 		$_POST['woocommerce_change_payment']    = (string) $order->get_id();
 
-		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = 'new';
+		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
 
 		$_POST['update_all_subscriptions_payment_method'] = '1';
 
@@ -5038,7 +5038,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( $confirmation_redirect, $result['redirect'] );
 		$this->assertSame( array(), \WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods );
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $order->get_meta( '_delayed_update_payment_method_all', true ) );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $order->get_meta( '_delayed_update_payment_method_all', true ) );
 	}
 
 	/**
@@ -5063,7 +5063,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
 		$_POST['woocommerce_change_payment']    = (string) $order->get_id();
 
-		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = 'new';
+		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
 
 		$result = $gateway->process_payment( $order->get_id() );
 
@@ -5088,7 +5088,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
 		$_POST['woocommerce_change_payment']    = (string) $order->get_id();
 
-		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = 'new';
+		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
 
 		$return_filter_calls = 0;
 		$return_url_filter   = static function () use ( &$return_filter_calls ): string {
@@ -5126,7 +5126,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
 		$_POST['woocommerce_change_payment']    = (string) $order->get_id();
 
-		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = 'new';
+		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
 
 		$return_filter_calls = 0;
 		$return_url_filter   = static function ( string $return_url ) use ( &$return_filter_calls ): string {
@@ -5165,7 +5165,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
 		$_POST['change_payment_method']         = 'zero' === $request_id_type ? '0' : (string) ( $order->get_id() + ( 'mismatch' === $request_id_type ? 1 : 0 ) );
 
-		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = 'new';
+		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
 
 		$gateway->process_payment( $order->get_id() );
 
@@ -5196,8 +5196,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		if ( '' !== $nonce ) {
 			$_POST['_wcsnonce'] = 'valid' === $nonce ? wp_create_nonce( 'wcs_change_payment_method' ) : $nonce;
 		}
-		$_POST['woocommerce_change_payment']                               = (string) $request_id;
-		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = 'new';
+		$_POST['woocommerce_change_payment'] = (string) $request_id;
+		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
 
 		$gateway->process_payment( $order->get_id() );
 
@@ -5230,7 +5230,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
 		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
 		$_POST['woocommerce_change_payment']    = (string) $order->get_id();
-		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = '123';
+		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = '123';
 		// WooCommerce Subscriptions points the return URL at My Account during a change request and then sends the shopper to the subscription.
 		$return_url_filter = static function ( string $return_url, WC_Order $filtered_order ) use ( $order ): string {
 			return $order->get_id() === $filtered_order->get_id() ? 'https://example.test/my-account/' : $return_url;
@@ -5272,7 +5272,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
 		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
 		$_POST['woocommerce_change_payment']    = (string) $order->get_id();
-		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = '123';
+		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = '123';
 
 		try {
 			$gateway->process_payment( $order->get_id() );
@@ -6014,7 +6014,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		wp_set_current_user( $customer_id );
 		$token = new \WC_Payment_Token_CC();
 		$token->set_token( 'pm_test_saved' );
-		$token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$token->set_card_type( 'visa' );
 		$token->set_last4( '4242' );
 		$token->set_expiry_month( '12' );
@@ -6271,7 +6271,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 				$token = new \WC_Payment_Token_CC();
 				$token->set_token( 'pm_test_saved' );
-				$token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+				$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 				$token->set_card_type( 'visa' );
 				$token->set_last4( '4242' );
 				$token->set_expiry_month( '12' );
@@ -6738,7 +6738,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order   = $this->create_order();
 		$token   = $this->create_card_token( $user_id, 'pm_renewal_card' );
 		$order->set_customer_id( $user_id );
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->add_payment_token( $token );
 		$order->save();
 		$provider = $this->create_provider_failing_after_charge(
@@ -7182,7 +7182,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	private function create_card_token( int $user_id, string $payment_method_id ): WC_Payment_Token_CC {
 		$token = new WC_Payment_Token_CC();
-		$token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$token->set_user_id( $user_id );
 		$token->set_token( $payment_method_id );
 		$token->set_card_type( 'visa' );
@@ -7366,7 +7366,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$subscription->save();
 
 		$token = new \WC_Payment_Token_CC();
-		$token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$token->set_user_id( $customer_id );
 		$token->set_token( 'pm_repair_123' );
 		$token->set_card_type( 'visa' );

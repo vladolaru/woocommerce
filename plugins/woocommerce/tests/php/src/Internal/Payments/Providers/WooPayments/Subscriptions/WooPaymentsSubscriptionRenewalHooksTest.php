@@ -6,10 +6,10 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\S
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
 use WC_Order;
@@ -77,7 +77,7 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 
 		$this->register_native_payments_and_run_init();
 
-		foreach ( array( OrderPaymentStore::GATEWAY_ID, OrderPaymentStore::GATEWAY_ID_PREFIX . 'amazon_pay' ) as $gateway_id ) {
+		foreach ( array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'amazon_pay' ) as $gateway_id ) {
 			$this->assertTrue( has_action( 'woocommerce_scheduled_subscription_payment_' . $gateway_id ), "The $gateway_id renewal handler must be attached." );
 			$this->assertTrue( has_action( 'woocommerce_subscription_failing_payment_method_updated_' . $gateway_id ), "The $gateway_id failing-method handler must be attached." );
 		}
@@ -99,7 +99,7 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 		$this->register_native_payments_and_run_init();
 
 		$root = wc_get_container()->get( WooPaymentsSubscriptionRenewalHooks::class );
-		$this->assertSame( 10, has_action( 'woocommerce_scheduled_subscription_payment_' . OrderPaymentStore::GATEWAY_ID, array( $root, 'scheduled_subscription_payment' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_scheduled_subscription_payment_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( $root, 'scheduled_subscription_payment' ) ) );
 		$gateway = new \ReflectionProperty( WooPaymentsSubscriptionRenewalHooks::class, 'gateway' );
 		$gateway->setAccessible( true );
 		$this->assertNull( $gateway->getValue( $root ), 'Registering the renewal hooks must not build the card gateway.' );
@@ -125,7 +125,7 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 			new NativeWooPaymentsGateway();
 		}
 
-		foreach ( array( OrderPaymentStore::GATEWAY_ID, OrderPaymentStore::GATEWAY_ID_PREFIX . 'amazon_pay' ) as $gateway_id ) {
+		foreach ( array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'amazon_pay' ) as $gateway_id ) {
 			$this->assertFalse( has_action( 'woocommerce_scheduled_subscription_payment_' . $gateway_id ), "No native $gateway_id renewal handler may be attached." );
 		}
 		$this->assertFalse( has_filter( 'woocommerce_email_classes', array( NativeWooPaymentsGateway::class, 'add_subscription_emails' ) ), 'The native failed-renewal email must not be registered.' );
@@ -183,7 +183,7 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 		$this->reload_payment_gateways();
 		list( , $renewal_order ) = $this->create_subscription_with_renewal_order();
 
-		$hook = 'woocommerce_scheduled_subscription_payment_' . OrderPaymentStore::GATEWAY_ID;
+		$hook = 'woocommerce_scheduled_subscription_payment_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID;
 		$this->assertSame( 1, array_sum( array_map( 'count', $wp_filter[ $hook ]->callbacks ) ), 'Exactly one renewal callback may be attached.' );
 		do_action( $hook, $renewal_order->get_total(), $renewal_order );
 		$this->assertCount( 1, $gateway->calls, 'A renewal must reach the gateway once.' );
@@ -203,9 +203,9 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 		$root->register();
 
 		$this->assertSame( 11, has_action( 'plugins_loaded', array( $root, 'handle_plugins_loaded' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_scheduled_subscription_payment_' . OrderPaymentStore::GATEWAY_ID ), 'Nothing may attach before Subscriptions has loaded.' );
+		$this->assertFalse( has_action( 'woocommerce_scheduled_subscription_payment_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'Nothing may attach before Subscriptions has loaded.' );
 		$root->handle_plugins_loaded();
-		$this->assertSame( 10, has_action( 'woocommerce_scheduled_subscription_payment_' . OrderPaymentStore::GATEWAY_ID, array( $root, 'scheduled_subscription_payment' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_scheduled_subscription_payment_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( $root, 'scheduled_subscription_payment' ) ) );
 		$this->assertSame( 20, has_filter( 'woocommerce_email_classes', array( NativeWooPaymentsGateway::class, 'add_subscription_emails' ) ) );
 	}
 
@@ -225,7 +225,7 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 		$gateway = \WC_Payments::get_gateway();
 
 		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $gateway );
-		$this->assertFalse( has_action( 'woocommerce_scheduled_subscription_payment_' . OrderPaymentStore::GATEWAY_ID ), 'No native renewal handler may be attached.' );
+		$this->assertFalse( has_action( 'woocommerce_scheduled_subscription_payment_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'No native renewal handler may be attached.' );
 		$this->assertFalse( has_filter( 'woocommerce_email_classes', array( NativeWooPaymentsGateway::class, 'add_subscription_emails' ) ), 'The native failed-renewal email must not be registered.' );
 	}
 
@@ -367,7 +367,7 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 	 */
 	private function create_subscription_paid_in_mode( string $mode ): WC_Order {
 		$parent_order = new WC_Order();
-		$parent_order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$parent_order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		if ( '' !== $mode ) {
 			$parent_order->update_meta_data( '_wcpay_mode', $mode );
 		}
@@ -467,11 +467,11 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 	 */
 	private function create_subscription_with_renewal_order(): array {
 		$subscription = new WC_Order();
-		$subscription->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$subscription->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$subscription->save();
 
 		$renewal_order = new WC_Order();
-		$renewal_order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$renewal_order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$renewal_order->set_total( '12.50' );
 		$renewal_order->set_status( 'pending' );
 		$renewal_order->save();

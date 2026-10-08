@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsAmazonPayToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
@@ -54,11 +53,11 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	private const PAYMENT_METHOD_TYPE_AMAZON_PAY = 'amazon_pay';
 
 	private const GATEWAY_IDS_BY_PAYMENT_METHOD_TYPE = array(
-		self::PAYMENT_METHOD_TYPE_CARD         => OrderPaymentStore::GATEWAY_ID,
-		self::PAYMENT_METHOD_TYPE_CARD_PRESENT => OrderPaymentStore::GATEWAY_ID,
-		self::PAYMENT_METHOD_TYPE_LINK         => OrderPaymentStore::GATEWAY_ID,
-		self::PAYMENT_METHOD_TYPE_SEPA         => OrderPaymentStore::GATEWAY_ID_PREFIX . 'sepa_debit',
-		self::PAYMENT_METHOD_TYPE_AMAZON_PAY   => OrderPaymentStore::GATEWAY_ID_PREFIX . 'amazon_pay',
+		self::PAYMENT_METHOD_TYPE_CARD         => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+		self::PAYMENT_METHOD_TYPE_CARD_PRESENT => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+		self::PAYMENT_METHOD_TYPE_LINK         => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+		self::PAYMENT_METHOD_TYPE_SEPA         => WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'sepa_debit',
+		self::PAYMENT_METHOD_TYPE_AMAZON_PAY   => WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'amazon_pay',
 	);
 
 	private const RECONCILABLE_PAYMENT_METHOD_TYPES = array(
@@ -280,7 +279,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 
 		// Core hides the rows of unregistered gateways from an all-gateways read (get_tokens() reads the same ids just
 		// before this filter), so syncing here would re-create every stored card as a new token.
-		if ( '' === $gateway_id && ! in_array( OrderPaymentStore::GATEWAY_ID, WC_Payment_Gateways::instance()->get_payment_gateway_ids(), true ) ) {
+		if ( '' === $gateway_id && ! in_array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, WC_Payment_Gateways::instance()->get_payment_gateway_ids(), true ) ) {
 			return $tokens;
 		}
 
@@ -521,7 +520,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			return '';
 		}
 
-		if ( $token instanceof WC_Payment_Token_CC && OrderPaymentStore::GATEWAY_ID === $token->get_gateway_id() ) {
+		if ( $token instanceof WC_Payment_Token_CC && WooPaymentsPersistenceVocabulary::GATEWAY_ID === $token->get_gateway_id() ) {
 			return self::PAYMENT_METHOD_TYPE_CARD;
 		}
 
@@ -699,7 +698,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 		}
 
 		$token = new WC_Payment_Token_CC();
-		$token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$token->set_user_id( $user_id );
 		$token->set_token( $provider_token );
 		$token->set_card_type( $card_type );
@@ -1128,7 +1127,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_native_woopayments_card_token( $token ): bool {
-		return $token instanceof WC_Payment_Token_CC && OrderPaymentStore::GATEWAY_ID === $token->get_gateway_id();
+		return $token instanceof WC_Payment_Token_CC && WooPaymentsPersistenceVocabulary::GATEWAY_ID === $token->get_gateway_id();
 	}
 
 	/**

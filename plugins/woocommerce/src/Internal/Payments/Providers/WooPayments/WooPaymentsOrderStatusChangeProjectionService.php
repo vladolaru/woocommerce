@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Order;
 
@@ -79,8 +78,8 @@ class WooPaymentsOrderStatusChangeProjectionService {
 	public function should_offer_confirmation( WC_Order $order ): bool {
 		$payment_method = (string) $order->get_payment_method();
 
-		return OrderPaymentStore::GATEWAY_ID === $payment_method
-			|| str_starts_with( $payment_method, OrderPaymentStore::GATEWAY_ID_PREFIX );
+		return WooPaymentsPersistenceVocabulary::GATEWAY_ID === $payment_method
+			|| str_starts_with( $payment_method, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX );
 	}
 
 	/**

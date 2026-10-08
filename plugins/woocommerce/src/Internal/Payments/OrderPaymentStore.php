@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Throwable;
 use WC_Order;
 use WC_Order_Refund;
@@ -20,51 +19,6 @@ use WC_Abstract_Order;
  * @internal Transitional internal component for the native payments runtime.
  */
 class OrderPaymentStore {
-
-	/**
-	 * Preserved WooPayments gateway ID.
-	 *
-	 * @deprecated 11.0.0 Use the provider persistence profile.
-	 *
-	 * @var string
-	 */
-	const GATEWAY_ID = WooPaymentsPersistenceVocabulary::GATEWAY_ID;
-
-	/**
-	 * Preserved WooPayments split-UPE gateway ID prefix.
-	 *
-	 * @deprecated 11.0.0 Use the provider persistence profile.
-	 *
-	 * @var string
-	 */
-	const GATEWAY_ID_PREFIX = WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX;
-
-	/**
-	 * WooPayments-compatible order processing lock transient prefix.
-	 *
-	 * @deprecated 11.0.0 Use the provider persistence profile.
-	 *
-	 * @var string
-	 */
-	const LOCK_TRANSIENT_PREFIX = WooPaymentsPersistenceVocabulary::LOCK_TRANSIENT_PREFIX;
-
-	/**
-	 * WooPayments-compatible sentinel used when the order is locked without a payment reference.
-	 *
-	 * @deprecated 11.0.0 Use the provider persistence profile.
-	 *
-	 * @var string
-	 */
-	const LOCK_SENTINEL = WooPaymentsPersistenceVocabulary::LOCK_SENTINEL;
-
-	/**
-	 * WooPayments lock time-to-live, in seconds.
-	 *
-	 * @deprecated 11.0.0 Use the provider persistence profile.
-	 *
-	 * @var int
-	 */
-	const LOCK_TTL_SECONDS = WooPaymentsPersistenceVocabulary::LOCK_TTL_SECONDS;
 
 	/**
 	 * Fixed prefix of the warning logged when the lock refuses an operation, so it can be found in logs.

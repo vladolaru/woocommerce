@@ -13,7 +13,6 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcomeApplyException;
@@ -276,7 +275,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$this->payment_method_definition = $payment_method_definition ?? $this->get_default_payment_method_definition();
 		$payment_method_id               = $this->payment_method_definition->get_id();
 
-		$this->id                 = 'card' === $payment_method_id ? OrderPaymentStore::GATEWAY_ID : OrderPaymentStore::GATEWAY_ID . '_' . $payment_method_id;
+		$this->id                 = 'card' === $payment_method_id ? WooPaymentsPersistenceVocabulary::GATEWAY_ID : WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_' . $payment_method_id;
 		$this->title              = $this->payment_method_definition->get_title();
 		$this->method_title       = $this->get_untranslated_method_title();
 		$this->method_description = self::METHOD_DESCRIPTION;
@@ -307,11 +306,11 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$this->maybe_add_classic_checkout_fallback_hooks();
 
 		// Only the card gateway adds it, as the client's main gateway does (client 11.1.0 class-wc-payment-gateway-wcpay.php:559,572-573).
-		if ( OrderPaymentStore::GATEWAY_ID === $this->id && false === has_action( 'set_logged_in_cookie', array( self::class, 'handle_set_logged_in_cookie' ) ) ) {
+		if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID === $this->id && false === has_action( 'set_logged_in_cookie', array( self::class, 'handle_set_logged_in_cookie' ) ) ) {
 			add_action( 'set_logged_in_cookie', array( self::class, 'handle_set_logged_in_cookie' ) );
 		}
 
-		if ( OrderPaymentStore::GATEWAY_ID === $this->id && false === has_action( 'enqueue_block_editor_assets', array( self::class, 'handle_enqueue_block_editor_assets' ) ) ) {
+		if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID === $this->id && false === has_action( 'enqueue_block_editor_assets', array( self::class, 'handle_enqueue_block_editor_assets' ) ) ) {
 			add_action( 'enqueue_block_editor_assets', array( self::class, 'handle_enqueue_block_editor_assets' ), 1 );
 		}
 	}
@@ -353,7 +352,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * Add the classic checkout and order-pay fallback hooks once per request, from the card gateway.
 	 */
 	private function maybe_add_classic_checkout_fallback_hooks(): void {
-		if ( self::$classic_checkout_fallback_hooks_added || OrderPaymentStore::GATEWAY_ID !== $this->id ) {
+		if ( self::$classic_checkout_fallback_hooks_added || WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $this->id ) {
 			return;
 		}
 		self::$classic_checkout_fallback_hooks_added = true;
@@ -746,7 +745,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return string[]
 	 */
 	private function get_card_gateway_supports(): array {
-		if ( OrderPaymentStore::GATEWAY_ID === $this->id ) {
+		if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID === $this->id ) {
 			return $this->supports;
 		}
 
@@ -1304,7 +1303,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return;
 		}
 
-		$payment_method_type = substr( $gateway_id, strlen( OrderPaymentStore::GATEWAY_ID_PREFIX ) );
+		$payment_method_type = substr( $gateway_id, strlen( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX ) );
 		$subscription->update_meta_data( '_wcpay_original_payment_method_id', $gateway_id );
 		$subscription->set_requires_manual_renewal( true );
 		$subscription->save();
@@ -1323,7 +1322,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return bool
 	 */
 	public function is_saved_cards_enabled(): bool {
-		$settings = get_option( 'woocommerce_' . OrderPaymentStore::GATEWAY_ID . '_settings', array() );
+		$settings = get_option( 'woocommerce_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_settings', array() );
 		if ( is_array( $settings ) && array_key_exists( 'saved_cards', $settings ) ) {
 			return 'yes' === $settings['saved_cards'];
 		}
@@ -2873,7 +2872,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return bool
 	 */
 	private function owns_subscription_renewal_hooks(): bool {
-		return OrderPaymentStore::GATEWAY_ID === $this->id
+		return WooPaymentsPersistenceVocabulary::GATEWAY_ID === $this->id
 			&& $this->is_subscriptions_enabled()
 			&& wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->should_native_register();
 	}

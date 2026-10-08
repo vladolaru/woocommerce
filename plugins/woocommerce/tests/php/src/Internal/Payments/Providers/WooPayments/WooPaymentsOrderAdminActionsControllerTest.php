@@ -10,7 +10,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Enums\OrderInternalStatus;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
@@ -138,7 +137,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$theorder = $this->create_order_with_payment_method_title( $method_title );
 
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Core's hook (abstract-wc-payment-gateway.php:384).
-		$this->assertSame( $expected, apply_filters( 'woocommerce_gateway_title', 'Credit card / debit card', OrderPaymentStore::GATEWAY_ID ) );
+		$this->assertSame( $expected, apply_filters( 'woocommerce_gateway_title', 'Credit card / debit card', WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
 	}
 
 	/**
@@ -151,7 +150,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		global $post;
 		$post = new \WP_Post( (object) array( 'ID' => $order->get_id() ) ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
 
-		$this->assertSame( 'Google Pay (WooPayments)', $this->sut->handle_woocommerce_gateway_title( 'Credit card / debit card', OrderPaymentStore::GATEWAY_ID ) );
+		$this->assertSame( 'Google Pay (WooPayments)', $this->sut->handle_woocommerce_gateway_title( 'Credit card / debit card', WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
 	}
 
 	/**
@@ -162,11 +161,11 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		global $theorder;
 		$theorder = $this->create_order_with_payment_method_title( 'Apple Pay (WooPayments)' );
 
-		$this->assertSame( 'Credit card / debit card', $this->sut->handle_woocommerce_gateway_title( 'Credit card / debit card', OrderPaymentStore::GATEWAY_ID ), 'Front end.' );
+		$this->assertSame( 'Credit card / debit card', $this->sut->handle_woocommerce_gateway_title( 'Credit card / debit card', WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'Front end.' );
 
 		set_current_screen( 'woocommerce_page_wc-orders' );
 		$this->assertSame( 'Direct bank transfer', $this->sut->handle_woocommerce_gateway_title( 'Direct bank transfer', 'bacs' ) );
-		$this->assertSame( 'iDEAL', $this->sut->handle_woocommerce_gateway_title( 'iDEAL', OrderPaymentStore::GATEWAY_ID . '_ideal' ) );
+		$this->assertSame( 'iDEAL', $this->sut->handle_woocommerce_gateway_title( 'iDEAL', WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_ideal' ) );
 	}
 
 	/**
@@ -181,7 +180,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		global $theorder;
 		$theorder = $this->create_order_with_payment_method_title( 'Apple Pay (Stripe)', 'stripe' );
 
-		$this->assertSame( 'Credit card / debit card', $this->sut->handle_woocommerce_gateway_title( 'Credit card / debit card', OrderPaymentStore::GATEWAY_ID ) );
+		$this->assertSame( 'Credit card / debit card', $this->sut->handle_woocommerce_gateway_title( 'Credit card / debit card', WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
 	}
 
 	/**
@@ -205,7 +204,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_order_get_payment_method_title', $filter );
 
 		try {
-			$this->assertSame( 'Credit card / debit card', $this->sut->handle_woocommerce_gateway_title( 'Credit card / debit card', OrderPaymentStore::GATEWAY_ID ) );
+			$this->assertSame( 'Credit card / debit card', $this->sut->handle_woocommerce_gateway_title( 'Credit card / debit card', WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
 		} finally {
 			remove_filter( 'woocommerce_order_get_payment_method_title', $filter );
 		}
@@ -231,7 +230,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 * @param string $gateway_id   Payment gateway ID.
 	 * @return WC_Order
 	 */
-	private function create_order_with_payment_method_title( string $method_title, string $gateway_id = OrderPaymentStore::GATEWAY_ID ): WC_Order {
+	private function create_order_with_payment_method_title( string $method_title, string $gateway_id = WooPaymentsPersistenceVocabulary::GATEWAY_ID ): WC_Order {
 		$order = wc_create_order();
 		$order->set_payment_method( $gateway_id );
 		$order->set_payment_method_title( $method_title );
@@ -270,8 +269,8 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 */
 	public static function eligible_gateway_provider(): array {
 		return array(
-			'base gateway'  => array( OrderPaymentStore::GATEWAY_ID ),
-			'split gateway' => array( OrderPaymentStore::GATEWAY_ID . '_link' ),
+			'base gateway'  => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID ),
+			'split gateway' => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_link' ),
 		);
 	}
 
@@ -300,8 +299,8 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	public static function ineligible_order_provider(): array {
 		return array(
 			'other gateway'    => array( 'cod', 'requires_capture', 'on-hold' ),
-			'already captured' => array( OrderPaymentStore::GATEWAY_ID, 'succeeded', 'on-hold' ),
-			'paid order'       => array( OrderPaymentStore::GATEWAY_ID, 'requires_capture', 'processing' ),
+			'already captured' => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'succeeded', 'on-hold' ),
+			'paid order'       => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'requires_capture', 'processing' ),
 		);
 	}
 
@@ -344,7 +343,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( PaymentContext::class, $last_capture_context );
 		$this->assertSame( $order->get_id(), $last_capture_context->get_order_id() );
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $last_capture_context->get_gateway_id() );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $last_capture_context->get_gateway_id() );
 		$this->assertSame( (float) $order->get_total(), $last_capture_context->get_amount() );
 		$this->assertArrayNotHasKey( WooPaymentsProviderGatewayAdapter::PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE, $last_capture_context->get_provider_data() );
 		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
@@ -375,14 +374,14 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( PaymentContext::class, $last_cancel_context );
 		$this->assertSame( $order->get_id(), $last_cancel_context->get_order_id() );
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $last_cancel_context->get_gateway_id() );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $last_cancel_context->get_gateway_id() );
 	}
 
 	/**
 	 * @testdox Completing an authorized order should trigger the same full-total capture path.
 	 */
 	public function test_completed_status_triggers_capture(): void {
-		$order                = $this->create_authorized_order( OrderPaymentStore::GATEWAY_ID, 'requires_capture', 'completed' );
+		$order                = $this->create_authorized_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'requires_capture', 'completed' );
 		$last_capture_context = null;
 		$processing_service   = $this->createMock( PaymentProcessingService::class );
 		$processing_service->expects( $this->once() )
@@ -423,7 +422,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 * @param bool $schedules        Whether the job is scheduled without a new capture note.
 	 */
 	public function test_status_change_capture_schedules_the_fee_details_job( bool $on_status_change, bool $schedules ): void {
-		$order              = $this->create_authorized_order( OrderPaymentStore::GATEWAY_ID, 'requires_capture', $on_status_change ? 'completed' : 'on-hold' );
+		$order              = $this->create_authorized_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'requires_capture', $on_status_change ? 'completed' : 'on-hold' );
 		$processing_service = $this->createMock( PaymentProcessingService::class );
 		$processing_service->method( 'capture' )->willReturn( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_status_capture' ) );
 		$this->sut = $this->create_controller( true, $processing_service );
@@ -474,7 +473,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Cancelling an authorized order should trigger the shared cancel path.
 	 */
 	public function test_cancelled_status_triggers_cancel(): void {
-		$order               = $this->create_authorized_order( OrderPaymentStore::GATEWAY_ID . '_link', 'requires_capture', 'cancelled' );
+		$order               = $this->create_authorized_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_link', 'requires_capture', 'cancelled' );
 		$last_cancel_context = null;
 		$processing_service  = $this->createMock( PaymentProcessingService::class );
 		$processing_service->expects( $this->once() )
@@ -511,7 +510,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		require_once WC_ABSPATH . 'includes/admin/wc-meta-box-functions.php';
 		require_once WC_ABSPATH . 'includes/admin/meta-boxes/class-wc-meta-box-order-data.php';
 
-		$order              = $this->create_authorized_order( OrderPaymentStore::GATEWAY_ID, 'succeeded', OrderStatus::PROCESSING );
+		$order              = $this->create_authorized_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'succeeded', OrderStatus::PROCESSING );
 		$recording_provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_CANCELED, 'pi_authorized' ) );
 		$provider           = new class( $recording_provider ) extends WooPaymentsProvider {
 			/** @var RecordingProvider */
@@ -600,7 +599,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Automatic status actions should ignore captured and other-gateway orders.
 	 */
 	public function test_status_actions_ignore_ineligible_orders(): void {
-		$captured_order     = $this->create_authorized_order( OrderPaymentStore::GATEWAY_ID, 'succeeded', 'completed' );
+		$captured_order     = $this->create_authorized_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'succeeded', 'completed' );
 		$foreign_order      = $this->create_authorized_order( 'cod', 'requires_capture', 'cancelled' );
 		$processing_service = $this->createMock( PaymentProcessingService::class );
 		$processing_service->expects( $this->never() )->method( 'capture' );
@@ -648,7 +647,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox An automatic cancel failure should preserve status, add the generic oracle note, and not escape.
 	 */
 	public function test_automatic_cancel_failure_preserves_status_and_adds_generic_note(): void {
-		$order     = $this->create_authorized_order( OrderPaymentStore::GATEWAY_ID, 'requires_capture', 'cancelled' );
+		$order     = $this->create_authorized_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'requires_capture', 'cancelled' );
 		$provider  = $this->create_fixed_outcome_provider( new PaymentOutcome( PaymentOutcome::STATUS_FAILED, 'pi_authorized' ) );
 		$this->sut = $this->create_controller( true, wc_get_container()->get( PaymentProcessingService::class ), $provider );
 		$this->sut->register();
@@ -667,7 +666,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Automatic capture exceptions should add the generic oracle note without escaping the status hook.
 	 */
 	public function test_automatic_capture_exception_adds_generic_note_without_escaping(): void {
-		$order              = $this->create_authorized_order( OrderPaymentStore::GATEWAY_ID, 'requires_capture', 'completed' );
+		$order              = $this->create_authorized_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'requires_capture', 'completed' );
 		$processing_service = $this->createMock( PaymentProcessingService::class );
 		$processing_service->expects( $this->once() )
 			->method( 'capture' )
@@ -789,7 +788,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		// provider/adapter/API client stack (fed the same recorded response again),
 		// and prove the client's note-once dedup (os:1663) for real.
 		$second_outcome = wc_get_container()->get( PaymentProcessingService::class )->capture(
-			PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID, (float) $order->get_total() ),
+			PaymentContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, (float) $order->get_total() ),
 			$provider
 		);
 
@@ -833,7 +832,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 * @param string $order_status  Order status.
 	 * @return WC_Order
 	 */
-	private function create_authorized_order( string $gateway_id = OrderPaymentStore::GATEWAY_ID, string $intent_status = 'requires_capture', string $order_status = 'on-hold' ): WC_Order {
+	private function create_authorized_order( string $gateway_id = WooPaymentsPersistenceVocabulary::GATEWAY_ID, string $intent_status = 'requires_capture', string $order_status = 'on-hold' ): WC_Order {
 		$order = wc_create_order();
 		$order->set_payment_method( $gateway_id );
 		$order->set_currency( 'USD' );
@@ -877,7 +876,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			 * @return string
 			 */
 			public function get_id(): string {
-				return OrderPaymentStore::GATEWAY_ID;
+				return WooPaymentsPersistenceVocabulary::GATEWAY_ID;
 			}
 
 			/**
@@ -975,7 +974,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 */
 	private function create_recorded_manual_capture_order(): WC_Order {
 		$order = wc_create_order();
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_currency( 'USD' );
 		$order->add_product( \WC_Helper_Product::create_simple_product(), 1 );
 		$order->set_total( '10.99' );

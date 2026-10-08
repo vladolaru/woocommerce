@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -202,7 +201,7 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 		// The plugin tracks Sift orders for the main card gateway only — an
 		// exact gateway-ID match, never the split sub-gateways — so native
 		// must not widen the population Sift trains on.
-		if ( OrderPaymentStore::GATEWAY_ID !== $order->get_payment_method() ) {
+		if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $order->get_payment_method() ) {
 			return;
 		}
 

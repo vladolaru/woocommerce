@@ -3,8 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Subscriptions;
 
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Unit_Test_Case;
 
@@ -31,8 +31,8 @@ class WooPaymentsSubscriptionMethodPolicyTest extends WC_Unit_Test_Case {
 
 		$this->assertSame(
 			array(
-				OrderPaymentStore::GATEWAY_ID,
-				OrderPaymentStore::GATEWAY_ID_PREFIX . 'amazon_pay',
+				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+				WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'amazon_pay',
 			),
 			WooPaymentsSubscriptionMethodPolicy::get_reusable_gateway_ids()
 		);
@@ -79,9 +79,9 @@ class WooPaymentsSubscriptionMethodPolicyTest extends WC_Unit_Test_Case {
 	 */
 	public function provider_reusable_gateway_ids(): array {
 		return array(
-			'base card gateway'          => array( OrderPaymentStore::GATEWAY_ID, true ),
-			'Amazon Pay gateway'         => array( OrderPaymentStore::GATEWAY_ID_PREFIX . 'amazon_pay', true ),
-			'non-reusable split gateway' => array( OrderPaymentStore::GATEWAY_ID_PREFIX . 'bancontact', false ),
+			'base card gateway'          => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, true ),
+			'Amazon Pay gateway'         => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'amazon_pay', true ),
+			'non-reusable split gateway' => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'bancontact', false ),
 			'unrelated gateway'          => array( 'other_gateway', false ),
 		);
 	}
@@ -108,10 +108,10 @@ class WooPaymentsSubscriptionMethodPolicyTest extends WC_Unit_Test_Case {
 	 */
 	public function provider_native_gateway_ids(): array {
 		return array(
-			'base card gateway'  => array( OrderPaymentStore::GATEWAY_ID, true ),
-			'Amazon Pay gateway' => array( OrderPaymentStore::GATEWAY_ID_PREFIX . 'amazon_pay', true ),
-			'split gateway'      => array( OrderPaymentStore::GATEWAY_ID_PREFIX . 'ideal', true ),
-			'unrelated prefix'   => array( OrderPaymentStore::GATEWAY_ID . 'ish', false ),
+			'base card gateway'  => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, true ),
+			'Amazon Pay gateway' => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'amazon_pay', true ),
+			'split gateway'      => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'ideal', true ),
+			'unrelated prefix'   => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID . 'ish', false ),
 			'unrelated gateway'  => array( 'other_gateway', false ),
 		);
 	}

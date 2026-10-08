@@ -1088,7 +1088,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 			),
 			$response->get_data()
 		);
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $order->get_payment_method() );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $order->get_payment_method() );
 		$this->assertSame( 'WooCommerce In-Person Payments', $order->get_payment_method_title() );
 		$this->assertSame( 'pi_terminal', $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( 'ch_terminal', $order->get_meta( '_charge_id', true ) );
@@ -1506,7 +1506,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 409, $response->get_error_data()['status'] );
 		// Client 11.1.0 logs the rejection (class-wc-rest-payments-orders-controller.php:204-205).
 		$this->assertSame( array( array( 'error', 'Payment capture rejected due to failed validation: order id on intent is incorrect or missing.', 'woopayments' ) ), $logger->get_errors() );
-		$this->assertNotSame( OrderPaymentStore::GATEWAY_ID, $order->get_payment_method() );
+		$this->assertNotSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $order->get_payment_method() );
 		$this->assertSame( '', $order->get_meta( '_intent_id', true ) );
 	}
 
@@ -2239,7 +2239,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 			$this->assertSame( array( 'cod', true ), $renewal_at_capture, 'Nothing changes before the capture succeeds.' );
 			$this->assertContains( $token->get_id(), wc_get_order( $order->get_id() )->get_payment_tokens() );
 			$subscription = wc_get_order( $subscription_id );
-			$this->assertSame( OrderPaymentStore::GATEWAY_ID, $subscription->get_payment_method() );
+			$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $subscription->get_payment_method() );
 			$this->assertContains( $token->get_id(), $subscription->get_payment_tokens() );
 			$this->assertSame( $expected_manual, $subscription->is_manual() );
 		} finally {
@@ -2377,7 +2377,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	private function create_card_token( int $user_id ): \WC_Payment_Token_CC {
 		$token = new \WC_Payment_Token_CC();
 		$token->set_token( 'pm_generated' );
-		$token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$token->set_user_id( $user_id );
 		$token->set_card_type( 'visa' );
 		$token->set_last4( '4242' );

@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
@@ -232,7 +232,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order = $this->create_woopayments_order( '0.00' );
 		$order->set_customer_id( $user_id );
 		$order->set_currency( 'EUR' );
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID . '_sepa_debit' );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_sepa_debit' );
 		$order->update_meta_data( '_intent_id', 'seti_sepa_title' );
 		$order->save();
 		$api_client      = new class() extends WooPaymentsApiClient {
@@ -291,11 +291,11 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 		$order    = wc_get_order( $order->get_id() );
-		$tokens   = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID . '_sepa_debit' ) );
+		$tokens   = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_sepa_debit' ) );
 
 		$this->assertSame( 200, $response['status_code'] );
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID . '_sepa_debit', $order->get_payment_method() );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_sepa_debit', $order->get_payment_method() );
 		$this->assertSame( 'SEPA Direct Debit', $order->get_payment_method_title() );
 		$this->assertSame( 'pm_sepa', $order->get_meta( '_payment_method_id', true ) );
 		$this->assertCount( 1, $tokens );
@@ -421,7 +421,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	public function test_saved_recurring_setup_intent_uses_generic_identity_when_display_details_are_unavailable( bool $throw_details_lookup ): void {
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( $user_id );
-		$token        = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_saved_unavailable' );
+		$token        = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_saved_unavailable' );
 		$order        = $this->create_woopayments_order( '0.00' );
 		$subscription = $this->create_woopayments_order( '0.00' );
 		$order->set_customer_id( $user_id );
@@ -525,7 +525,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	public function test_sequential_setup_intent_callbacks_complete_once_and_reuse_same_method_display_details(): void {
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( $user_id );
-		$token        = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_callback_replay' );
+		$token        = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_callback_replay' );
 		$order        = $this->create_woopayments_order( '0.00' );
 		$subscription = $this->create_woopayments_order( '0.00' );
 		$order->set_customer_id( $user_id );
@@ -1876,7 +1876,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			}
 
 			$observed_order = wc_get_order( $order_id );
-			$tokens         = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID ) );
+			$tokens         = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
 			$token          = $tokens[0] ?? null;
 
 			++$payment_complete_observer_count;
@@ -1910,7 +1910,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		}
 
 		$order  = wc_get_order( $order->get_id() );
-		$tokens = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID ) );
+		$tokens = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
 		$token  = $tokens[0] ?? null;
 		$last4  = (string) $recorded_charge['payment_method_details']['card']['last4'];
 
@@ -1923,7 +1923,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertContains( $token->get_id(), $order->get_payment_tokens() );
 		$this->assertSame( array( $token->get_id() ), array_values( $order->get_payment_tokens() ) );
 		$this->assertSame( 1, $payment_complete_observer_count );
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $payment_complete_observations['gateway'] );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $payment_complete_observations['gateway'] );
 		$this->assertSame( 'Visa credit card', $payment_complete_observations['title'] );
 		$this->assertSame( $last4, $payment_complete_observations['last4'] );
 		$this->assertSame( 'visa', $payment_complete_observations['brand'] );
@@ -1951,7 +1951,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		}
 
 		$order        = wc_get_order( $order->get_id() );
-		$tokens       = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID ) );
+		$tokens       = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
 		$active_token = $order instanceof WC_Order ? $token_service->get_active_token_for_order( $order ) : null;
 
 		$this->assertSame( 200, $response['status_code'] );
@@ -2312,7 +2312,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order = $this->create_woopayments_order( '10.00' );
 		$order->set_customer_id( $user_id );
 		$order->set_currency( 'EUR' );
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID . '_sepa_debit' );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_sepa_debit' );
 		$order->update_meta_data( '_intent_id', 'pi_sepa' );
 		$order->save();
 
@@ -2379,7 +2379,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 		$order    = wc_get_order( $order->get_id() );
-		$tokens   = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID . '_sepa_debit' ) );
+		$tokens   = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_sepa_debit' ) );
 		$token    = $tokens[0] ?? null;
 
 		$this->assertInstanceOf( WC_Order::class, $order );
@@ -2416,7 +2416,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$subscription->update_meta_data( '_stripe_customer_id', 'cus_old' );
 		$subscription->save();
 		$old_token = new WC_Payment_Token_CC();
-		$old_token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$old_token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$old_token->set_token( 'pm_old' );
 		$old_token->set_user_id( $user_id );
 		$old_token->set_card_type( 'mastercard' );
@@ -2549,7 +2549,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			remove_action( 'woocommerce_payment_complete', $record_payment_complete, 1 );
 		}
 		$order  = wc_get_order( $order->get_id() );
-		$tokens = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID ) );
+		$tokens = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
 		$token  = $order instanceof WC_Order ? $token_service->get_active_token_for_order( $order ) : null;
 
 		$subscription = wc_get_order( $subscription->get_id() );
@@ -2569,10 +2569,10 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertContains( $old_token->get_id(), $subscription->get_payment_tokens(), 'Historical cards should remain linked to the renewal subscription.' );
 		$this->assertSame( 'pm_native', $subscription->get_meta( '_payment_method_id', true ) );
 		$this->assertSame( 'cus_native', $subscription->get_meta( '_stripe_customer_id', true ) );
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $subscription->get_payment_method() );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $subscription->get_payment_method() );
 		$this->assertSame( 'Visa credit card', $subscription->get_payment_method_title() );
 		$this->assertSame( 1, $payment_complete_observer_count );
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $payment_complete_observations['gateway'] );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $payment_complete_observations['gateway'] );
 		$this->assertSame( 'Visa credit card', $payment_complete_observations['title'] );
 		$this->assertSame( '4242', $payment_complete_observations['last4'] );
 		$this->assertSame( 'visa', $payment_complete_observations['brand'] );
@@ -2584,7 +2584,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( $old_token->get_id(), $token->get_id() ), array_values( $payment_complete_observations['subscription_token'] ) );
 		$this->assertInstanceOf( WC_Payment_Token_CC::class, $payment_complete_observations['active_subscription_token'] );
 		$this->assertSame( 'pm_native', $payment_complete_observations['active_subscription_token']->get_token() );
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $payment_complete_observations['subscription_method'] );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $payment_complete_observations['subscription_method'] );
 		$this->assertSame( 'Visa credit card', $payment_complete_observations['subscription_title'] );
 		$this->assertSame( 'pm_native', $payment_complete_observations['subscription_payment_method_id'] );
 		$this->assertSame( 'cus_native', $payment_complete_observations['subscription_customer_id'] );
@@ -2609,7 +2609,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		}
 		$order        = wc_get_order( $order->get_id() );
 		$subscription = wc_get_order( $subscription->get_id() );
-		$tokens       = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID ) );
+		$tokens       = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
 
 		$this->assertSame( 200, $response['status_code'] );
 		$this->assertSame( 1, $payment_complete_observer_count );
@@ -2642,7 +2642,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order = $this->create_woopayments_order( '0.00' );
 		$order->set_customer_id( $user_id );
 		$order->update_meta_data( '_intent_id', 'seti_native' );
-		$order->update_meta_data( '_delayed_update_payment_method_all', OrderPaymentStore::GATEWAY_ID );
+		$order->update_meta_data( '_delayed_update_payment_method_all', WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->save();
 
 		$api_client    = new class() extends WooPaymentsApiClient {
@@ -2700,7 +2700,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 		$order    = wc_get_order( $order->get_id() );
-		$tokens   = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID ) );
+		$tokens   = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
 		$token    = $tokens[0] ?? null;
 
 		$this->assertInstanceOf( WC_Order::class, $order );
@@ -2711,7 +2711,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			array(
 				array(
 					'order_id'   => $order->get_id(),
-					'gateway_id' => OrderPaymentStore::GATEWAY_ID,
+					'gateway_id' => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				),
 			),
 			\WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods
@@ -2720,7 +2720,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			array(
 				array(
 					'order_id'   => $order->get_id(),
-					'gateway_id' => OrderPaymentStore::GATEWAY_ID,
+					'gateway_id' => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				),
 			),
 			\WC_Subscriptions_Change_Payment_Gateway::$updated_all_payment_methods
@@ -3377,7 +3377,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$sut->get_create_setup_intent_response(
 			array(
 				'_ajax_nonce'          => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
-				'payment_method'       => OrderPaymentStore::GATEWAY_ID . '_sepa_debit',
+				'payment_method'       => WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_sepa_debit',
 				'wcpay-payment-method' => 'pm_sepa_debit',
 			)
 		);
@@ -3820,7 +3820,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 */
 	private function create_woopayments_order( string $total ): WC_Order {
 		$order = new WC_Order();
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_currency( 'USD' );
 		$order->set_total( $total );
 		$order->save();

@@ -3,8 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use WC_Unit_Test_Case;
 
 /**
@@ -20,7 +20,7 @@ class PaymentContextTest extends WC_Unit_Test_Case {
 
 		$context = new PaymentContext(
 			$order,
-			OrderPaymentStore::GATEWAY_ID,
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			'card',
 			array(
 				'capture' => true,
@@ -32,7 +32,7 @@ class PaymentContextTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $order, $context->get_order() );
 		$this->assertSame( $order->get_id(), $context->get_order_id() );
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $context->get_gateway_id() );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $context->get_gateway_id() );
 		$this->assertSame( 'card', $context->get_payment_method_id() );
 		$this->assertNull( $context->get_amount() );
 		$this->assertSame( array( 'capture' => true ), $context->get_payment_data() );
@@ -47,7 +47,7 @@ class PaymentContextTest extends WC_Unit_Test_Case {
 
 		$context = PaymentContext::for_checkout(
 			$order,
-			OrderPaymentStore::GATEWAY_ID,
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			'pm_123',
 			array(
 				'save_payment_method' => true,
@@ -58,7 +58,7 @@ class PaymentContextTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertSame( $order, $context->get_order() );
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $context->get_gateway_id() );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $context->get_gateway_id() );
 		$this->assertSame( 'pm_123', $context->get_payment_method_id() );
 		$this->assertSame( array( 'save_payment_method' => true ), $context->get_payment_data() );
 		$this->assertSame( array( 'confirmation_token' => 'ctoken_123' ), $context->get_provider_data() );
@@ -70,7 +70,7 @@ class PaymentContextTest extends WC_Unit_Test_Case {
 	public function test_refund_factory_exposes_amount_and_reason(): void {
 		$order = wc_create_order();
 
-		$context = PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 7.25, 'Requested by customer' );
+		$context = PaymentContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 7.25, 'Requested by customer' );
 
 		$this->assertSame(
 			array(
@@ -90,7 +90,7 @@ class PaymentContextTest extends WC_Unit_Test_Case {
 
 		$capture = PaymentContext::for_capture(
 			$order,
-			OrderPaymentStore::GATEWAY_ID,
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			4.25,
 			array(
 				'include_level3' => true,
@@ -98,7 +98,7 @@ class PaymentContextTest extends WC_Unit_Test_Case {
 		);
 		$cancel  = PaymentContext::for_cancel(
 			$order,
-			OrderPaymentStore::GATEWAY_ID,
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			array(
 				'source' => 'order_action',
 			)

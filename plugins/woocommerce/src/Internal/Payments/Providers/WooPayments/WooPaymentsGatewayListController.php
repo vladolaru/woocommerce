@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -96,7 +95,7 @@ class WooPaymentsGatewayListController implements RegisterHooksInterface {
 		$canonical_gateway = null;
 
 		foreach ( $gateways as $gateway ) {
-			if ( $gateway instanceof NativeWooPaymentsGateway && OrderPaymentStore::GATEWAY_ID === $gateway->id ) {
+			if ( $gateway instanceof NativeWooPaymentsGateway && WooPaymentsPersistenceVocabulary::GATEWAY_ID === $gateway->id ) {
 				$canonical_gateway = $gateway;
 				break;
 			}
@@ -160,7 +159,7 @@ class WooPaymentsGatewayListController implements RegisterHooksInterface {
 		$ordering = (array) $ordering;
 
 		$woopayments_payment_methods = array_flip( $gateway_ids );
-		$main_gateway_position       = $ordering[ OrderPaymentStore::GATEWAY_ID ] ?? null;
+		$main_gateway_position       = $ordering[ WooPaymentsPersistenceVocabulary::GATEWAY_ID ] ?? null;
 
 		$before = array();
 		$after  = array();

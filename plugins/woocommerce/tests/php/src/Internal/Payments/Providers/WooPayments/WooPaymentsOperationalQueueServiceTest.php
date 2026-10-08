@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProvider
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -141,7 +141,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$service->register();
 		$order = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		// Plugin 11.1.0 `maybe_record_first_live_sale()` matches `Order_Mode::PRODUCTION` (class-wc-payments-order-service.php:305).
 		$order->update_meta_data( '_wcpay_mode', 'prod' );
 		$order->save();
@@ -186,7 +186,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 */
 	public static function provide_one_and_done_cache_invalidations(): array {
 		return array(
-			'second live WooPayments order with positive cache' => array( OrderPaymentStore::GATEWAY_ID, 'prod', '1' ),
+			'second live WooPayments order with positive cache' => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'prod', '1' ),
 			'alternate gateway order with negative cache' => array( 'cod', '', '0' ),
 		);
 	}
@@ -228,7 +228,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ) );
 		$order   = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->update_meta_data( '_wcpay_mode', 'test' );
 		$order->save();
 		update_option( 'wcpay_has_live_sale', '1', false );
@@ -276,12 +276,12 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 */
 	public static function provide_ineligible_order_status_transitions(): array {
 		return array(
-			'test-mode WooPayments order' => array( OrderPaymentStore::GATEWAY_ID, 'test', OrderStatus::PROCESSING, true ),
+			'test-mode WooPayments order' => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'test', OrderStatus::PROCESSING, true ),
 			// The account-mode slug is not an order mode; plugin 11.1.0 matches only `prod`.
-			'account-mode live value'     => array( OrderPaymentStore::GATEWAY_ID, 'live', OrderStatus::PROCESSING, true ),
+			'account-mode live value'     => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'live', OrderStatus::PROCESSING, true ),
 			'wrong payment gateway'       => array( 'cod', 'prod', OrderStatus::PROCESSING, true ),
-			'unpaid order status'         => array( OrderPaymentStore::GATEWAY_ID, 'prod', OrderStatus::PENDING, true ),
-			'invalid order object'        => array( OrderPaymentStore::GATEWAY_ID, 'prod', OrderStatus::PROCESSING, false ),
+			'unpaid order status'         => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'prod', OrderStatus::PENDING, true ),
+			'invalid order object'        => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'prod', OrderStatus::PROCESSING, false ),
 		);
 	}
 

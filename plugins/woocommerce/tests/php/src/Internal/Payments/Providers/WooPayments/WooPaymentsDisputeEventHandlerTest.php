@@ -544,7 +544,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_created_webhook_refused_by_the_order_payment_lock_applies_on_a_second_delivery(): void {
 		$order = $this->create_disputable_order();
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->update_meta_data( '_charge_id', 'ch_lock_contention' );
 		$order->save();
 
@@ -590,7 +590,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_dispute_event_after_created_is_refused_by_a_held_order_payment_lock( string $event_type ): void {
 		$order = $this->create_disputable_order();
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_status( 'on-hold' );
 		$order->update_meta_data( '_charge_id', 'ch_locked_close' );
 		$order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_locked_close' ) );
@@ -638,7 +638,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_dispute_closed_keeps_a_sibling_dispute_opened_before_its_lock(): void {
 		$order = $this->create_disputable_order();
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_status( 'on-hold' );
 		$order->update_meta_data( '_charge_id', 'ch_sibling' );
 		$order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_first' ) );
@@ -712,7 +712,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_dispute_closed_keeps_the_sites_own_email_filters(): void {
 		$order = $this->create_disputable_order();
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_status( 'on-hold' );
 		$order->update_meta_data( '_charge_id', 'ch_site_filter' );
 		$order->save();
@@ -748,7 +748,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$order = $this->create_disputable_order();
 		$order->set_currency( $currency );
 		$order->set_total( 'JPY' === $currency ? '1000' : '10.00' );
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_status( 'on-hold' );
 		$order->update_meta_data( '_charge_id', 'ch_partial_lost' );
 		$order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_partial_lost' ) );

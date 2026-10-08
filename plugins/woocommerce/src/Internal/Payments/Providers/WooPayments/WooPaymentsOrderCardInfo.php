@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 use WC_Order;
@@ -74,7 +73,7 @@ class WooPaymentsOrderCardInfo implements RegisterHooksInterface {
 	 * @return mixed
 	 */
 	public function handle_order_payment_card_info( $card_info, $order ) {
-		if ( ! $order instanceof WC_Order || OrderPaymentStore::GATEWAY_ID !== $order->get_payment_method() ) {
+		if ( ! $order instanceof WC_Order || WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $order->get_payment_method() ) {
 			return $card_info;
 		}
 

@@ -609,7 +609,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 			$payment_captured = 'succeeded' === $status;
 
 			// The client attaches the in-person method and channel before any status change, so the order emails and core's POS email checks see them (class-wc-rest-payments-orders-controller.php:209-215).
-			$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+			$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 			$order->set_payment_method_title( __( 'WooCommerce In-Person Payments', 'woocommerce' ) );
 			$ipp_channel = $this->get_ipp_channel_from_intent( $intent );
 			if ( '' !== $ipp_channel ) {
@@ -1211,7 +1211,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		$status = isset( $intent['status'] ) ? (string) $intent['status'] : '';
 		$charge = $this->get_latest_charge( $intent );
 
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_payment_method_title( __( 'WooCommerce In-Person Payments', 'woocommerce' ) );
 		$order->set_transaction_id( $intent_id );
 		$order->update_meta_data( '_intent_id', $intent_id );
@@ -1302,7 +1302,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 				$subscription->add_payment_token( $token );
 			}
 
-			$subscription->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+			$subscription->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 			if ( ! wcs_is_manual_renewal_required() ) {
 				$subscription->set_requires_manual_renewal( false );
 			}

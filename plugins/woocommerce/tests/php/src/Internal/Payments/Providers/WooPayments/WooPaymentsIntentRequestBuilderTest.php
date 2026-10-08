@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
@@ -159,7 +159,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 		);
 
 		$request = $request_builder->charge_request_data(
-			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID_PREFIX . 'sepa_debit', 'pm_sepa' ),
+			PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'sepa_debit', 'pm_sepa' ),
 			'pm_sepa',
 			'cus_native',
 			false
@@ -183,7 +183,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 		$query_args = array();
 		parse_str( (string) wp_parse_url( (string) $request['return_url'], PHP_URL_QUERY ), $query_args );
 
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $query_args['wc_payment_method'] ?? '' );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $query_args['wc_payment_method'] ?? '' );
 		$this->assertSame( 1, wp_verify_nonce( $query_args['_wpnonce'] ?? '', 'wcpay_process_redirect_order_nonce' ) );
 		$this->assertArrayNotHasKey( 'save_payment_method', $query_args );
 	}
@@ -214,7 +214,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 		);
 
 		$request = $request_builder->charge_request_data(
-			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID_PREFIX . 'p24', 'pm_p24' ),
+			PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'p24', 'pm_p24' ),
 			'pm_p24',
 			'cus_native',
 			false
@@ -254,7 +254,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 		$order->save();
 		$request_builder = new WooPaymentsIntentRequestBuilder();
 		$request_builder->init( $this->createStub( WooPaymentsAccountService::class ), new WooPaymentsOrderDataService(), $this->createStub( WooPaymentsTokenService::class ), new WooPaymentsPaymentMethodRegistry() );
-		$context = PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID_PREFIX . 'afterpay_clearpay', 'pm_afterpay' );
+		$context = PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'afterpay_clearpay', 'pm_afterpay' );
 
 		if ( null === $expected ) {
 			$this->expectException( WooPaymentsApiException::class );
@@ -369,7 +369,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 		return $request_builder->charge_request_data(
 			PaymentContext::for_checkout(
 				$order,
-				OrderPaymentStore::GATEWAY_ID_PREFIX . 'sepa_debit',
+				WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'sepa_debit',
 				'pm_sepa',
 				$payment_data
 			),
@@ -450,7 +450,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 		);
 
 		$request = $request_builder->charge_request_data(
-			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_card' ),
+			PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card' ),
 			'pm_card',
 			'cus_native',
 			false
@@ -471,10 +471,10 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	 * @testdox setup_future_usage is requested only for reusable payment method types.
 	 */
 	public function test_setup_future_usage_respects_payment_method_reusability(): void {
-		$reusable_request = $this->build_save_requested_charge( OrderPaymentStore::GATEWAY_ID_PREFIX . 'card', 'pm_card' );
+		$reusable_request = $this->build_save_requested_charge( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'card', 'pm_card' );
 		$this->assertSame( 'off_session', $reusable_request['setup_future_usage'] ?? null );
 
-		$bnpl_request = $this->build_save_requested_charge( OrderPaymentStore::GATEWAY_ID_PREFIX . 'klarna', 'pm_klarna' );
+		$bnpl_request = $this->build_save_requested_charge( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'klarna', 'pm_klarna' );
 		$this->assertArrayNotHasKey( 'setup_future_usage', $bnpl_request );
 	}
 
@@ -513,7 +513,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 		);
 
 		$request = $request_builder->charge_request_data(
-			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_card' ),
+			PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card' ),
 			'pm_card',
 			'cus_native',
 			false
@@ -526,7 +526,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 		// The setup-intent path (free trials, zero-total subscriptions) must
 		// pair the same mandate with link and carry the dashboard description.
 		$setup_request = $request_builder->setup_intent_request_data(
-			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_card' ),
+			PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card' ),
 			'pm_card',
 			'cus_native',
 			true
@@ -561,7 +561,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 		$provider_data = array( 'save_payment_method_to_platform' => true );
 
 		$charge_request = $request_builder->charge_request_data(
-			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_card', array(), $provider_data ),
+			PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card', array(), $provider_data ),
 			'pm_card',
 			'cus_native',
 			false
@@ -569,7 +569,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $charge_request['save_payment_method_to_platform'] );
 
 		$setup_request = $request_builder->setup_intent_request_data(
-			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_card', array(), $provider_data ),
+			PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card', array(), $provider_data ),
 			'pm_card',
 			'cus_native',
 			false
@@ -577,7 +577,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $setup_request['save_payment_method_to_platform'] );
 
 		$bare_request = $request_builder->charge_request_data(
-			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_card' ),
+			PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card' ),
 			'pm_card',
 			'cus_native',
 			false
@@ -588,7 +588,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 		// session opt-in is present — the plugin derives the flag as
 		// ! is_using_saved_payment_method() && opt-in.
 		$token_request = $request_builder->charge_request_data(
-			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_saved', array( 'payment_token' => '4242' ), $provider_data ),
+			PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_saved', array( 'payment_token' => '4242' ), $provider_data ),
 			'pm_saved',
 			'cus_native',
 			false
@@ -628,7 +628,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 		$request = $request_builder->charge_request_data(
 			PaymentContext::for_checkout(
 				$order,
-				OrderPaymentStore::GATEWAY_ID,
+				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'pm_link',
 				array(),
 				array(
@@ -682,7 +682,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 		$request = $request_builder->charge_request_data(
 			PaymentContext::for_checkout(
 				$order,
-				OrderPaymentStore::GATEWAY_ID,
+				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'pm_card',
 				array(),
 				array(
@@ -725,7 +725,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 		$request = $request_builder->charge_request_data(
 			PaymentContext::for_checkout(
 				$order,
-				OrderPaymentStore::GATEWAY_ID_PREFIX . 'sepa_debit',
+				WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'sepa_debit',
 				'pm_sepa',
 				array(),
 				array(
@@ -768,7 +768,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 		$renewal_request = $request_builder->charge_request_data(
 			PaymentContext::for_checkout(
 				$order,
-				OrderPaymentStore::GATEWAY_ID,
+				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'pm_link',
 				array(),
 				array(
@@ -783,7 +783,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 		$this->assertArrayNotHasKey( 'mandate_data', $renewal_request, 'Merchant-initiated renewals must not fabricate a mandate acceptance.' );
 
 		$checkout_request = $request_builder->charge_request_data(
-			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID_PREFIX . 'sepa_debit', 'pm_sepa' ),
+			PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'sepa_debit', 'pm_sepa' ),
 			'pm_sepa',
 			'cus_native',
 			false
@@ -948,7 +948,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 		return $request_builder->charge_request_data(
 			PaymentContext::for_checkout(
 				$order,
-				OrderPaymentStore::GATEWAY_ID,
+				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'pm_card',
 				array(),
 				$provider_data

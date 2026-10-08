@@ -453,7 +453,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 	 */
 	private function create_card_token( int $user_id, string $payment_method_id ): int {
 		$token = new WC_Payment_Token_CC();
-		$token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$token->set_user_id( $user_id );
 		$token->set_token( $payment_method_id );
 		$token->set_card_type( 'visa' );
@@ -503,7 +503,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 		$order->set_customer_id( $user_id );
 		$order->set_currency( 'primary' === $slug ? 'USD' : 'GBP' );
 		$order->set_total( $total );
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_transaction_id( 'txn_' . $slug );
 		$order->update_meta_data( '_payment_method_id', 'pm_' . $slug );
 		$order->update_meta_data( '_intent_id', 'pi_' . $slug );
@@ -585,7 +585,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 		}
 		$surface = $order_store->read_payment_surface( $order, $profile );
 		$this->assertSame( array( $fixture['token_id'] ), $order->get_payment_tokens() );
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $surface['payment_method'] );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $surface['payment_method'] );
 		$this->assertSame( 'txn_' . $slug, $surface['transaction_id'] );
 		$this->assertSame( 'primary' === $slug ? 'USD' : 'GBP', $surface['currency'] );
 		$this->assertSame( $fixture['total'], $surface['total'] );

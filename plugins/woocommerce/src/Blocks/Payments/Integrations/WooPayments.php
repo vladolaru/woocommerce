@@ -5,11 +5,11 @@ namespace Automattic\WooCommerce\Blocks\Payments\Integrations;
 
 use Automattic\WooCommerce\Blocks\Assets\Api;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionService;
 
@@ -60,7 +60,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 *
 	 * @var string
 	 */
-	protected $name = OrderPaymentStore::GATEWAY_ID;
+	protected $name = WooPaymentsPersistenceVocabulary::GATEWAY_ID;
 
 	/**
 	 * Asset API.
@@ -137,7 +137,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 		$this->woopay_session_service   = $woopay_session_service;
 		$this->express_checkout_service = $express_checkout_service;
 		$this->payment_gateway          = $payment_gateway;
-		$this->name                     = null === $payment_gateway ? OrderPaymentStore::GATEWAY_ID : $payment_gateway->id;
+		$this->name                     = null === $payment_gateway ? WooPaymentsPersistenceVocabulary::GATEWAY_ID : $payment_gateway->id;
 	}
 
 	/**
@@ -240,7 +240,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 */
 	public function get_payment_method_data() {
 		$data       = $this->checkout_bridge->get_blocks_payment_method_data( $this->get_card_gateway_supports(), $this->payment_gateway ? $this->payment_gateway->get_payment_method_definition() : null, $this->shared_config );
-		$gateway_id = null === $this->payment_gateway ? OrderPaymentStore::GATEWAY_ID : $this->payment_gateway->id;
+		$gateway_id = null === $this->payment_gateway ? WooPaymentsPersistenceVocabulary::GATEWAY_ID : $this->payment_gateway->id;
 		$data       = array_merge(
 			$data,
 			array(
@@ -263,7 +263,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 * @return string[]
 	 */
 	private function get_card_gateway_supports(): array {
-		if ( null !== $this->payment_gateway && OrderPaymentStore::GATEWAY_ID === $this->payment_gateway->id ) {
+		if ( null !== $this->payment_gateway && WooPaymentsPersistenceVocabulary::GATEWAY_ID === $this->payment_gateway->id ) {
 			return $this->payment_gateway->supports;
 		}
 
@@ -334,7 +334,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 * @return bool
 	 */
 	private function is_base_gateway_integration(): bool {
-		return OrderPaymentStore::GATEWAY_ID === $this->name;
+		return WooPaymentsPersistenceVocabulary::GATEWAY_ID === $this->name;
 	}
 
 	/**

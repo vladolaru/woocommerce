@@ -9,7 +9,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
@@ -232,7 +231,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 			true !== $required
 			|| 'order-received' !== $context
 			|| ! $order instanceof WC_Order
-			|| OrderPaymentStore::GATEWAY_ID !== $order->get_payment_method()
+			|| WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $order->get_payment_method()
 			|| ! function_exists( 'WC' )
 			|| ! WC()
 			|| ! WC()->session
@@ -263,13 +262,13 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	 */
 	public function replace_order_received_text_for_failed_orders( $text ) {
 		$order = $this->get_order_received_order();
-		if ( null === $order || ! $order->needs_payment() || 0 !== strpos( $order->get_payment_method(), OrderPaymentStore::GATEWAY_ID ) ) {
+		if ( null === $order || ! $order->needs_payment() || 0 !== strpos( $order->get_payment_method(), WooPaymentsPersistenceVocabulary::GATEWAY_ID ) ) {
 			return $text;
 		}
 
 		$should_show_failure = $order->has_status( 'failed' );
 		if ( ! $should_show_failure ) {
-			$payment_method_type = str_replace( OrderPaymentStore::GATEWAY_ID_PREFIX, '', $order->get_payment_method() );
+			$payment_method_type = str_replace( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX, '', $order->get_payment_method() );
 			$intent_id           = (string) $order->get_meta( '_intent_id', true );
 			if ( '' === $intent_id ) {
 				$intent_id = (string) $order->get_transaction_id();
@@ -419,7 +418,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	 */
 	public function record_order_success_page_view( $order_id ): void {
 		$order = wc_get_order( $order_id );
-		if ( ! $order instanceof WC_Order || OrderPaymentStore::GATEWAY_ID !== $order->get_payment_method() ) {
+		if ( ! $order instanceof WC_Order || WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $order->get_payment_method() ) {
 			return;
 		}
 
@@ -463,7 +462,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 		}
 
 		$gateway_id = (string) $order->get_payment_method();
-		if ( OrderPaymentStore::GATEWAY_ID !== $gateway_id && 0 !== strpos( $gateway_id, OrderPaymentStore::GATEWAY_ID_PREFIX ) ) {
+		if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $gateway_id && 0 !== strpos( $gateway_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX ) ) {
 			return $payment_method_title;
 		}
 
@@ -477,9 +476,9 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 			return null === $definition ? $payment_method_title : $this->render_definition_title( $definition, $order, true );
 		}
 
-		$payment_method_id = OrderPaymentStore::GATEWAY_ID === $gateway_id
+		$payment_method_id = WooPaymentsPersistenceVocabulary::GATEWAY_ID === $gateway_id
 			? 'card'
-			: substr( $gateway_id, strlen( OrderPaymentStore::GATEWAY_ID_PREFIX ) );
+			: substr( $gateway_id, strlen( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX ) );
 		if ( 'card' === $payment_method_id ) {
 			return $this->render_card_title( $order, $payment_method_title );
 		}
@@ -500,7 +499,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 		// The assets only style and script WooPayments markup, which client 11.1.0 renders only for its own orders
 		// (includes/class-wc-payments-order-success-page.php:182), although it loads them on every order page (:499-515).
 		$order = $this->get_customer_order_page_order();
-		if ( null === $order || 0 !== strpos( $order->get_payment_method(), OrderPaymentStore::GATEWAY_ID ) ) {
+		if ( null === $order || 0 !== strpos( $order->get_payment_method(), WooPaymentsPersistenceVocabulary::GATEWAY_ID ) ) {
 			return;
 		}
 
@@ -547,7 +546,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 		$order = $order_or_id instanceof WC_Order ? $order_or_id : wc_get_order( $order_or_id );
 		if (
 			! $order instanceof WC_Order
-			|| OrderPaymentStore::GATEWAY_ID_PREFIX . 'multibanco' !== $order->get_payment_method()
+			|| WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'multibanco' !== $order->get_payment_method()
 			|| 'on-hold' !== $order->get_status()
 		) {
 			return;
@@ -657,7 +656,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	 */
 	public function add_multibanco_payment_instructions_to_order_on_hold_email( $order, $sent_to_admin = false, $plain_text = false, $email = '' ): void {
 		unset( $sent_to_admin );
-		if ( ! $email instanceof WC_Email_Customer_On_Hold_Order || ! $order instanceof WC_Order || OrderPaymentStore::GATEWAY_ID_PREFIX . 'multibanco' !== $order->get_payment_method() ) {
+		if ( ! $email instanceof WC_Email_Customer_On_Hold_Order || ! $order instanceof WC_Order || WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'multibanco' !== $order->get_payment_method() ) {
 			return;
 		}
 

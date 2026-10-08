@@ -7,10 +7,10 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsGatewayRegistry;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewayListController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use WC_Payment_Gateway;
 use WC_Unit_Test_Case;
@@ -179,7 +179,7 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 200, $response->get_status() );
 		$provider_ids = array_column( $response->get_data()['providers'], 'id' );
-		$this->assertContains( OrderPaymentStore::GATEWAY_ID, $provider_ids );
+		$this->assertContains( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $provider_ids );
 		$this->assertSame( array(), $this->get_split_gateway_ids( $provider_ids ), 'Split gateways must not be listed as providers of their own.' );
 	}
 
@@ -192,9 +192,9 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 		update_option(
 			'woocommerce_gateway_order',
 			array(
-				'bacs'                        => 0,
-				OrderPaymentStore::GATEWAY_ID => 1,
-				'cheque'                      => 2,
+				'bacs'   => 0,
+				WooPaymentsPersistenceVocabulary::GATEWAY_ID => 1,
+				'cheque' => 2,
 			)
 		);
 
@@ -309,7 +309,7 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 			static fn( WC_Payment_Gateway $gateway ): string => $gateway->id,
 			wc_get_container()->get( WooPaymentsProvider::class )->get_payment_gateways()
 		);
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $ids[0] ?? null, 'The provider must publish the card gateway first.' );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $ids[0] ?? null, 'The provider must publish the card gateway first.' );
 		$this->assertGreaterThan( 1, count( $ids ), 'The provider must publish split gateways, or the order tests prove nothing.' );
 
 		return $ids;
@@ -325,7 +325,7 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 		return array_values(
 			array_filter(
 				$ids,
-				static fn( $id ): bool => is_string( $id ) && str_starts_with( $id, OrderPaymentStore::GATEWAY_ID . '_' )
+				static fn( $id ): bool => is_string( $id ) && str_starts_with( $id, WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_' )
 			)
 		);
 	}

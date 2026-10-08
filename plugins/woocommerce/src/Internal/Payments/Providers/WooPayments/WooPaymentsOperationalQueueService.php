@@ -14,7 +14,6 @@ use Automattic\WooCommerce\Enums\OrderInternalStatus;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
@@ -334,7 +333,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 		$mode           = null;
 		$mode_loaded    = false;
 		if ( $has_cached_one_and_done_eligibility ) {
-			if ( OrderPaymentStore::GATEWAY_ID !== $payment_method ) {
+			if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $payment_method ) {
 				delete_transient( self::ONE_AND_DONE_ELIGIBLE_TRANSIENT );
 			} else {
 				$mode        = $order->get_meta( '_wcpay_mode', true );
@@ -345,7 +344,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 			}
 		}
 
-		if ( $has_live_sale || OrderPaymentStore::GATEWAY_ID !== $payment_method ) {
+		if ( $has_live_sale || WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $payment_method ) {
 			return;
 		}
 
@@ -1077,7 +1076,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 
 		$orders = wc_get_orders(
 			array(
-				'payment_method' => OrderPaymentStore::GATEWAY_ID,
+				'payment_method' => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'limit'          => 1,
 				'return'         => 'ids',
 				'status'         => array( OrderInternalStatus::COMPLETED, OrderInternalStatus::PROCESSING ),
@@ -1219,7 +1218,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	 * @return array<string,mixed>
 	 */
 	private function get_gateway_settings(): array {
-		$settings = get_option( 'woocommerce_' . OrderPaymentStore::GATEWAY_ID . '_settings', array() );
+		$settings = get_option( 'woocommerce_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_settings', array() );
 
 		return is_array( $settings ) ? $settings : array();
 	}

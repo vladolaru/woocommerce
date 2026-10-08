@@ -247,7 +247,7 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 	private function is_woopayments_order( WC_Order $order ): bool {
 		$payment_method = (string) $order->get_payment_method();
 
-		return OrderPaymentStore::GATEWAY_ID === $payment_method || 0 === strpos( $payment_method, OrderPaymentStore::GATEWAY_ID_PREFIX );
+		return WooPaymentsPersistenceVocabulary::GATEWAY_ID === $payment_method || 0 === strpos( $payment_method, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX );
 	}
 
 	/**

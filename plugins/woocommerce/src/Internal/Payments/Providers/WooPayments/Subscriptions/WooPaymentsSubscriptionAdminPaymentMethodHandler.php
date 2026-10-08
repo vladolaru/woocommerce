@@ -7,9 +7,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions;
 
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsAmazonPayToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use WC_Order;
 use WC_Payment_Token;
@@ -338,7 +338,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	 * @return mixed
 	 */
 	public function update_payment_method_for_subscriptions( $update_payment_method, $new_payment_method, $subscription ) {
-		if ( OrderPaymentStore::GATEWAY_ID !== $new_payment_method || ! $subscription instanceof WC_Order ) {
+		if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $new_payment_method || ! $subscription instanceof WC_Order ) {
 			return $update_payment_method;
 		}
 
@@ -346,7 +346,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 			return $update_payment_method;
 		}
 
-		$token_key = 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token';
+		$token_key = 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token';
 		if ( isset( $_POST[ $token_key ] ) && 'new' !== sanitize_text_field( wp_unslash( $_POST[ $token_key ] ) ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
 			return $update_payment_method;
 		}
@@ -397,7 +397,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 		if ( $this->is_wcs_change_payment_method_request( $subscription ) ) {
 			// Client 11.1.0 reads the method the shopper posted (`get_specific_new_payment_method_title()`). For a saved card WCS writes
 			// the note before the payment runs, while the subscription still carries the previous token last.
-			$token_key = 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token';
+			$token_key = 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token';
 			$posted    = isset( $_POST[ $token_key ] ) ? sanitize_text_field( wp_unslash( $_POST[ $token_key ] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Checked by is_wcs_change_payment_method_request().
 			if ( 'new' === $posted ) {
 				return $this->get_new_payment_method_title( $this->get_payment_token( $subscription ), $new_payment_method_title );
@@ -426,13 +426,13 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 		}
 
 		$user_id    = isset( $_POST['user_id'] ) ? absint( $_POST['user_id'] ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Missing
-		$gateway_id = isset( $_POST['gateway_id'] ) ? sanitize_text_field( wp_unslash( $_POST['gateway_id'] ) ) : OrderPaymentStore::GATEWAY_ID; // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		$gateway_id = isset( $_POST['gateway_id'] ) ? sanitize_text_field( wp_unslash( $_POST['gateway_id'] ) ) : WooPaymentsPersistenceVocabulary::GATEWAY_ID; // phpcs:ignore WordPress.Security.NonceVerification.Missing
 		if ( 0 >= $user_id || ! get_user_by( 'id', $user_id ) ) {
 			wp_send_json_success( array( 'tokens' => array() ) );
 		}
 
 		if ( ! WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $gateway_id ) ) {
-			$gateway_id = OrderPaymentStore::GATEWAY_ID;
+			$gateway_id = WooPaymentsPersistenceVocabulary::GATEWAY_ID;
 		}
 
 		wp_send_json_success( array( 'tokens' => $this->get_user_formatted_tokens_array( $user_id, $gateway_id ) ) );
@@ -515,7 +515,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 			return $matches[1];
 		}
 
-		return OrderPaymentStore::GATEWAY_ID;
+		return WooPaymentsPersistenceVocabulary::GATEWAY_ID;
 	}
 
 	/**

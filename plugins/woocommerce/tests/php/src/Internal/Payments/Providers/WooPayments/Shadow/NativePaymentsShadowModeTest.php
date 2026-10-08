@@ -801,7 +801,7 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 	 */
 	private function create_projected_woopayments_order( string $intention_status, string $order_status ): WC_Order {
 		$order = wc_create_order();
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_currency( 'USD' );
 		$order->set_total( '50.00' );
 		$order->set_transaction_id( 'pi_shadow' );

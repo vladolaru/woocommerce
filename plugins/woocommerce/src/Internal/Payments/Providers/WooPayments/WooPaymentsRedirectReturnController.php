@@ -140,7 +140,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( OrderPaymentStore::GATEWAY_ID !== $this->get_query_string( 'wc_payment_method' ) ) {
+		if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $this->get_query_string( 'wc_payment_method' ) ) {
 			return;
 		}
 
@@ -541,7 +541,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	private function is_native_woopayments_order( WC_Order $order ): bool {
 		$payment_method = (string) $order->get_payment_method();
 
-		return OrderPaymentStore::GATEWAY_ID === $payment_method || str_starts_with( $payment_method, OrderPaymentStore::GATEWAY_ID_PREFIX );
+		return WooPaymentsPersistenceVocabulary::GATEWAY_ID === $payment_method || str_starts_with( $payment_method, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX );
 	}
 
 	/**

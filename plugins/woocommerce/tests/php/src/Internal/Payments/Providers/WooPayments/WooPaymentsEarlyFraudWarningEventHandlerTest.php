@@ -1041,7 +1041,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 	private function create_woopayments_order( string $charge_id = 'ch_early_warning' ): WC_Order {
 		$order = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->update_meta_data( '_charge_id', $charge_id );
 		$order->save();
 

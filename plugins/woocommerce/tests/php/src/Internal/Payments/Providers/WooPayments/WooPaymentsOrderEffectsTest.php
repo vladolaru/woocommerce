@@ -3,10 +3,10 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffects;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderMode;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use WC_Unit_Test_Case;
 
 /**
@@ -485,7 +485,7 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertSame( 0, $filter_calls );
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $effects['payment_method_id'] );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $effects['payment_method_id'] );
 		$this->assertSame( 'card', $effects['payment_method_type'] );
 		$this->assertSame( 'apple_pay', $effects['express_checkout_type'] );
 		$this->assertSame( 'apple_pay', $effects['meta']['_wcpay_express_checkout_payment_method'] );
@@ -516,7 +516,7 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $effects['payment_method_id'] );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $effects['payment_method_id'] );
 		$this->assertSame( '4242', $effects['meta']['last4'] );
 		$this->assertSame( 'visa', $effects['meta']['_card_brand'] );
 		$this->assertStringContainsString( '"last4":"4242"', $effects['meta']['_wcpay_payment_method_details'] );

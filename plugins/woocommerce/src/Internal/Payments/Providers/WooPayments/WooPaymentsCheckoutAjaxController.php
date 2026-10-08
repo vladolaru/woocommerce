@@ -9,7 +9,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
@@ -770,13 +769,13 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 			return;
 		}
 
-		\WC_Subscriptions_Change_Payment_Gateway::update_payment_method( $order, OrderPaymentStore::GATEWAY_ID );
+		\WC_Subscriptions_Change_Payment_Gateway::update_payment_method( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 
 		$will_update_all_callback = array( 'WC_Subscriptions_Change_Payment_Gateway', 'will_subscription_update_all_payment_methods' );
 		$update_all_callback      = array( 'WC_Subscriptions_Change_Payment_Gateway', 'update_all_payment_methods_from_subscription' );
 
 		if ( is_callable( $will_update_all_callback ) && is_callable( $update_all_callback ) && (bool) call_user_func( $will_update_all_callback, $order ) ) {
-			call_user_func( $update_all_callback, $order, OrderPaymentStore::GATEWAY_ID );
+			call_user_func( $update_all_callback, $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		}
 	}
 
@@ -965,11 +964,11 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	private function get_payment_method_id_from_request_gateway( array $request ): string {
 		$gateway_id = strtolower( $this->get_request_string( $request, 'payment_method' ) );
 
-		if ( '' === $gateway_id || OrderPaymentStore::GATEWAY_ID === $gateway_id ) {
+		if ( '' === $gateway_id || WooPaymentsPersistenceVocabulary::GATEWAY_ID === $gateway_id ) {
 			return 'card';
 		}
 
-		$gateway_prefix = OrderPaymentStore::GATEWAY_ID . '_';
+		$gateway_prefix = WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_';
 		if ( str_starts_with( $gateway_id, $gateway_prefix ) ) {
 			return (string) substr( $gateway_id, strlen( $gateway_prefix ) );
 		}

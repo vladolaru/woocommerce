@@ -7,7 +7,7 @@ use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
@@ -76,7 +76,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			do_action( 'woocommerce_after_checkout_form', WC()->checkout() );
 			$output = (string) ob_get_clean();
 		} finally {
-			delete_option( 'woocommerce_' . OrderPaymentStore::GATEWAY_ID . '_settings' );
+			delete_option( 'woocommerce_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_settings' );
 			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		}
 		$script_data = (string) wp_scripts()->get_data( 'wc-woopayments-checkout', 'data' );
@@ -105,7 +105,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			/** This action is documented in templates/checkout/form-checkout.php */
 			do_action( 'woocommerce_after_checkout_form', WC()->checkout() );
 		} finally {
-			delete_option( 'woocommerce_' . OrderPaymentStore::GATEWAY_ID . '_settings' );
+			delete_option( 'woocommerce_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_settings' );
 			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_false' );
 			wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
 		}
@@ -565,7 +565,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			do_action( 'woocommerce_pay_order_before_payment' );
 			$output = (string) ob_get_clean();
 		} finally {
-			delete_option( 'woocommerce_' . OrderPaymentStore::GATEWAY_ID . '_settings' );
+			delete_option( 'woocommerce_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_settings' );
 			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		}
 		$script_data = (string) wp_scripts()->get_data( 'wc-woopayments-checkout', 'data' );
@@ -627,7 +627,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			do_action( 'woocommerce_after_checkout_form', WC()->checkout() );
 			ob_get_clean();
 		} finally {
-			delete_option( 'woocommerce_' . OrderPaymentStore::GATEWAY_ID . '_settings' );
+			delete_option( 'woocommerce_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_settings' );
 			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		}
 		$script_data = (string) wp_scripts()->get_data( 'wc-woopayments-checkout', 'data' );
@@ -644,7 +644,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	private function create_card_gateway_for_bridge( WooPaymentsCheckoutBridge $bridge ): NativeWooPaymentsGateway {
 		$this->reset_classic_checkout_fallback_hooks_flag();
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
-		update_option( 'woocommerce_' . OrderPaymentStore::GATEWAY_ID . '_settings', array( 'saved_cards' => 'yes' ) );
+		update_option( 'woocommerce_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_settings', array( 'saved_cards' => 'yes' ) );
 
 		$provider = $this->createMock( WooPaymentsProvider::class );
 		$provider->method( 'can_process_payments' )->willReturn( true );
@@ -1185,7 +1185,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 
 		$p24_config = $sut->get_payment_fields_js_config( self::CARD_SUPPORTS, $registry->get( 'p24' ) )['paymentMethodsConfig']['p24'];
 
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID_PREFIX . 'p24', $p24_config['gatewayId'] );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'p24', $p24_config['gatewayId'] );
 		$this->assertSame( 'Przelewy24 (P24)', $p24_config['title'] );
 		$this->assertStringEndsWith( '/assets/images/payment-methods/p24-color.svg', $p24_config['icon'] );
 		$this->assertStringEndsWith( '/assets/images/payment-methods/p24-color.svg', $p24_config['darkIcon'] );

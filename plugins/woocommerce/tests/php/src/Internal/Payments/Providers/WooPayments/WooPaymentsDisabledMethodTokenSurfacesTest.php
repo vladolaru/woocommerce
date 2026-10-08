@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsAmazonPayToken;
@@ -11,6 +10,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPay
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\StoreApi\Utilities\PaymentUtils;
@@ -30,8 +30,8 @@ use WC_Unit_Test_Case;
  */
 class WooPaymentsDisabledMethodTokenSurfacesTest extends WC_Unit_Test_Case {
 
-	private const SEPA_GATEWAY_ID       = OrderPaymentStore::GATEWAY_ID_PREFIX . 'sepa_debit';
-	private const AMAZON_PAY_GATEWAY_ID = OrderPaymentStore::GATEWAY_ID_PREFIX . 'amazon_pay';
+	private const SEPA_GATEWAY_ID       = WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'sepa_debit';
+	private const AMAZON_PAY_GATEWAY_ID = WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'amazon_pay';
 
 	/**
 	 * Token services created during a test.
@@ -88,7 +88,7 @@ class WooPaymentsDisabledMethodTokenSurfacesTest extends WC_Unit_Test_Case {
 
 		$this->user_id    = $this->factory()->user->create( array( 'role' => 'customer' ) );
 		$this->card_token = new WC_Payment_Token_CC();
-		$this->card_token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$this->card_token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$this->card_token->set_user_id( $this->user_id );
 		$this->card_token->set_token( 'pm_card' );
 		$this->card_token->set_card_type( 'visa' );
@@ -152,7 +152,7 @@ class WooPaymentsDisabledMethodTokenSurfacesTest extends WC_Unit_Test_Case {
 		$this->create_service( array( 'card' ) );
 		$gateways = WC()->payment_gateways()->payment_gateways();
 
-		$this->assertSame( array( $this->card_token->get_id() ), $this->get_rendered_token_ids( $gateways[ OrderPaymentStore::GATEWAY_ID ] ) );
+		$this->assertSame( array( $this->card_token->get_id() ), $this->get_rendered_token_ids( $gateways[ WooPaymentsPersistenceVocabulary::GATEWAY_ID ] ) );
 		$this->assertSame( array( $this->sepa_token->get_id() ), $this->get_rendered_token_ids( $gateways[ self::SEPA_GATEWAY_ID ] ) );
 		$this->assertSame( array( $this->amazon_pay_token->get_id() ), $this->get_rendered_token_ids( $gateways[ self::AMAZON_PAY_GATEWAY_ID ] ) );
 	}
@@ -180,8 +180,8 @@ class WooPaymentsDisabledMethodTokenSurfacesTest extends WC_Unit_Test_Case {
 
 		$fields = $this->get_admin_payment_meta_fields( $handler, $subscription );
 
-		$this->assertSame( array( OrderPaymentStore::GATEWAY_ID, self::AMAZON_PAY_GATEWAY_ID ), array_keys( $fields ), 'Only the card and Amazon Pay gateways get a token field.' );
-		$this->assertSame( array( $this->card_token->get_id() ), $this->get_selectable_token_ids( $subscription, OrderPaymentStore::GATEWAY_ID ) );
+		$this->assertSame( array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, self::AMAZON_PAY_GATEWAY_ID ), array_keys( $fields ), 'Only the card and Amazon Pay gateways get a token field.' );
+		$this->assertSame( array( $this->card_token->get_id() ), $this->get_selectable_token_ids( $subscription, WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
 		$this->assertSame( array( $this->amazon_pay_token->get_id() ), $this->get_selectable_token_ids( $subscription, self::AMAZON_PAY_GATEWAY_ID ) );
 	}
 
@@ -273,7 +273,7 @@ class WooPaymentsDisabledMethodTokenSurfacesTest extends WC_Unit_Test_Case {
 	private function register_gateways(): void {
 		$this->gateway_initializer = static function ( \WC_Payment_Gateways $wc_payment_gateways ): void {
 			$wc_payment_gateways->payment_gateways = array();
-			foreach ( array( OrderPaymentStore::GATEWAY_ID, self::SEPA_GATEWAY_ID, self::AMAZON_PAY_GATEWAY_ID ) as $gateway_id ) {
+			foreach ( array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, self::SEPA_GATEWAY_ID, self::AMAZON_PAY_GATEWAY_ID ) as $gateway_id ) {
 				$gateway = new class( $gateway_id ) extends \WC_Payment_Gateway {
 					/**
 					 * Constructor.

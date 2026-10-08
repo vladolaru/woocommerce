@@ -4,12 +4,12 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderTrackingService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
 use WC_Order;
 use WC_Unit_Test_Case;
@@ -131,7 +131,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 		$scheduler = new RecordingActionSchedulerService();
 		$service   = $this->create_service( new StaticNativeRuntimeArbiter( true ), $scheduler );
 		$order     = $this->create_order(
-			OrderPaymentStore::GATEWAY_ID,
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			array(
 				'_payment_method_id' => 'pm_123',
 			)
@@ -149,7 +149,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 		$scheduler = new RecordingActionSchedulerService();
 		$service   = $this->create_service( new StaticNativeRuntimeArbiter( true ), $scheduler );
 		$order     = $this->create_order(
-			OrderPaymentStore::GATEWAY_ID,
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			array(
 				'_payment_method_id' => 'pm_123',
 				'_wcpay_mode'        => 'test',
@@ -176,7 +176,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 		$scheduler = new RecordingActionSchedulerService();
 		$service   = $this->create_service( new StaticNativeRuntimeArbiter( true ), $scheduler );
 		$order     = $this->create_order(
-			OrderPaymentStore::GATEWAY_ID_PREFIX . 'bancontact',
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'bancontact',
 			array(
 				'_payment_method_id' => 'pm_123',
 				'_wcpay_mode'        => 'test',
@@ -197,7 +197,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 		$scheduler = new RecordingActionSchedulerService();
 		$service   = $this->create_service( new StaticNativeRuntimeArbiter( true ), $scheduler );
 		$order     = $this->create_order(
-			OrderPaymentStore::GATEWAY_ID,
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			array(
 				'_payment_method_id'           => 'pm_123',
 				'_new_order_tracking_complete' => 'yes',
@@ -243,7 +243,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	public function test_skips_scheduling_without_payment_method_id(): void {
 		$scheduler = new RecordingActionSchedulerService();
 		$service   = $this->create_service( new StaticNativeRuntimeArbiter( true ), $scheduler );
-		$order     = $this->create_order( OrderPaymentStore::GATEWAY_ID );
+		$order     = $this->create_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 
 		$this->enable_sift_tracking();
 
@@ -262,7 +262,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 		$scheduler    = new RecordingActionSchedulerService();
 		$service      = $this->create_service( new StaticNativeRuntimeArbiter( true ), $scheduler );
 		$order        = $this->create_order(
-			OrderPaymentStore::GATEWAY_ID,
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			array(
 				'_payment_method_id' => 'pm_123',
 			)
@@ -282,7 +282,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 		$scheduler = new RecordingActionSchedulerService();
 		$service   = $this->create_service( new StaticNativeRuntimeArbiter( true ), $scheduler );
 		$order     = $this->create_order(
-			OrderPaymentStore::GATEWAY_ID,
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			array(
 				'_payment_method_id' => 'pm_123',
 			)
@@ -314,13 +314,13 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 		$scheduler = new RecordingActionSchedulerService();
 		$service   = $this->create_service( new StaticNativeRuntimeArbiter( true ), $scheduler );
 		$parent    = $this->create_order(
-			OrderPaymentStore::GATEWAY_ID,
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			array(
 				'_payment_method_id'  => 'pm_parent',
 				'_stripe_customer_id' => 'cus_parent',
 			)
 		);
-		$order     = $this->create_order( OrderPaymentStore::GATEWAY_ID );
+		$order     = $this->create_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_parent_id( $parent->get_id() );
 		$order->save();
 		$this->enable_sift_tracking();
@@ -339,10 +339,10 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	public function test_repairs_a_stale_payment_method_id_from_the_order_token(): void {
 		$this->make_subscriptions_available();
 		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService() );
-		$parent  = $this->create_order( OrderPaymentStore::GATEWAY_ID, array( '_stripe_customer_id' => 'cus_parent' ) );
-		$order   = $this->create_order( OrderPaymentStore::GATEWAY_ID, array( '_payment_method_id' => 'pm_old' ) );
+		$parent  = $this->create_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( '_stripe_customer_id' => 'cus_parent' ) );
+		$order   = $this->create_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( '_payment_method_id' => 'pm_old' ) );
 		$token   = new \WC_Payment_Token_CC();
-		$token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$token->set_token( 'pm_new' );
 		$token->set_card_type( 'visa' );
 		$token->set_last4( '4242' );
@@ -369,8 +369,8 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	public function test_repair_leaves_other_gateways_orders_alone(): void {
 		$this->make_subscriptions_available();
 		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService() );
-		$parent  = $this->create_order( OrderPaymentStore::GATEWAY_ID, array( '_payment_method_id' => 'pm_parent' ) );
-		$order   = $this->create_order( OrderPaymentStore::GATEWAY_ID . '_sepa_debit' );
+		$parent  = $this->create_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( '_payment_method_id' => 'pm_parent' ) );
+		$order   = $this->create_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_sepa_debit' );
 		$order->set_parent_id( $parent->get_id() );
 		$order->save();
 
@@ -407,7 +407,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_track_new_order_posts_order_data_and_marks_complete(): void {
 		$order      = $this->create_order(
-			OrderPaymentStore::GATEWAY_ID,
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			array(
 				'_payment_method_id'  => 'pm_123',
 				'_stripe_customer_id' => 'cus_123',
@@ -444,7 +444,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_track_update_order_posts_update_without_rewriting_marker(): void {
 		$order      = $this->create_order(
-			OrderPaymentStore::GATEWAY_ID,
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			array(
 				'_payment_method_id'           => 'pm_123',
 				'_new_order_tracking_complete' => 'already-marked',
@@ -470,7 +470,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_track_order_skips_mode_mismatch(): void {
 		$order      = $this->create_order(
-			OrderPaymentStore::GATEWAY_ID,
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			array(
 				'_payment_method_id' => 'pm_123',
 				'_wcpay_mode'        => 'prod',
@@ -490,7 +490,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_track_order_sends_prod_mode_for_live_orders(): void {
 		$order      = $this->create_order(
-			OrderPaymentStore::GATEWAY_ID,
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			array(
 				'_payment_method_id' => 'pm_123',
 				'_wcpay_mode'        => 'prod',
@@ -513,7 +513,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_track_order_skips_account_mode_live_value(): void {
 		$order      = $this->create_order(
-			OrderPaymentStore::GATEWAY_ID,
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			array(
 				'_payment_method_id' => 'pm_123',
 				'_wcpay_mode'        => 'live',

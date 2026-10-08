@@ -12,7 +12,6 @@ use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Throwable;
@@ -937,7 +936,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	private function enqueue_classic_checkout_assets( array $config, array $supports ): void {
 		$this->register_classic_assets( $supports );
 		// The checkout script reads the card gateway's config from the base object, so it is localized once.
-		if ( OrderPaymentStore::GATEWAY_ID === $config['gatewayId'] ) {
+		if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID === $config['gatewayId'] ) {
 			wp_localize_script( self::CLASSIC_SCRIPT_HANDLE, 'wcpay_core_checkout_config', $config );
 			$this->base_classic_config_localized = true;
 		} else {
@@ -1160,10 +1159,10 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 */
 	private function get_gateway_id_for_payment_method_definition( ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null ): string {
 		if ( null === $payment_method_definition || 'card' === $payment_method_definition->get_id() ) {
-			return OrderPaymentStore::GATEWAY_ID;
+			return WooPaymentsPersistenceVocabulary::GATEWAY_ID;
 		}
 
-		return OrderPaymentStore::GATEWAY_ID . '_' . $payment_method_definition->get_id();
+		return WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_' . $payment_method_definition->get_id();
 	}
 
 	/**
@@ -1201,7 +1200,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		$config = array(
 			'card' => array(
 				'id'                     => 'card',
-				'gatewayId'              => OrderPaymentStore::GATEWAY_ID,
+				'gatewayId'              => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'title'                  => __( 'Card', 'woocommerce' ),
 				'label'                  => __( 'Card', 'woocommerce' ),
 				'isReusable'             => true,

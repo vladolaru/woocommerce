@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions;
 
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 
 /**
@@ -75,8 +75,8 @@ final class WooPaymentsSubscriptionMethodPolicy {
 	 */
 	public static function get_reusable_gateway_ids(): array {
 		return array(
-			OrderPaymentStore::GATEWAY_ID,
-			OrderPaymentStore::GATEWAY_ID_PREFIX . 'amazon_pay',
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'amazon_pay',
 		);
 	}
 
@@ -131,6 +131,6 @@ final class WooPaymentsSubscriptionMethodPolicy {
 	 * @since 11.0.0
 	 */
 	public static function is_native_gateway_id( string $gateway_id ): bool {
-		return OrderPaymentStore::GATEWAY_ID === $gateway_id || 0 === strpos( $gateway_id, OrderPaymentStore::GATEWAY_ID_PREFIX );
+		return WooPaymentsPersistenceVocabulary::GATEWAY_ID === $gateway_id || 0 === strpos( $gateway_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX );
 	}
 }

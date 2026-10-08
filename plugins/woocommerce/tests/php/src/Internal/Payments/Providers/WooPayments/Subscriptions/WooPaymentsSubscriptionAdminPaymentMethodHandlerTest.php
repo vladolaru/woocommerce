@@ -3,9 +3,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Subscriptions;
 
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsAmazonPayToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
@@ -21,7 +21,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	/**
 	 * Preserved Amazon Pay gateway ID.
 	 */
-	private const AMAZON_PAY_GATEWAY_ID = OrderPaymentStore::GATEWAY_ID_PREFIX . 'amazon_pay';
+	private const AMAZON_PAY_GATEWAY_ID = WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'amazon_pay';
 
 	/**
 	 * The System Under Test.
@@ -76,7 +76,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	public function test_add_subscription_payment_meta_returns_saved_token_metadata(): void {
 		$user_id      = self::factory()->user->create();
 		$subscription = $this->create_subscription_order( $user_id );
-		$token        = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_saved' );
+		$token        = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_saved' );
 		$subscription->add_payment_token( $token );
 		$subscription->save();
 
@@ -84,14 +84,14 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 
 		$this->assertSame(
 			(string) $token->get_id(),
-			$payment_meta[ OrderPaymentStore::GATEWAY_ID ]['wc_order_tokens']['token']['value'],
+			$payment_meta[ WooPaymentsPersistenceVocabulary::GATEWAY_ID ]['wc_order_tokens']['token']['value'],
 			'The WCS admin meta should point at the active WooPayments token ID.'
 		);
-		$this->assertSame( 'Saved payment method', $payment_meta[ OrderPaymentStore::GATEWAY_ID ]['wc_order_tokens']['token']['label'] );
+		$this->assertSame( 'Saved payment method', $payment_meta[ WooPaymentsPersistenceVocabulary::GATEWAY_ID ]['wc_order_tokens']['token']['label'] );
 		$this->assertSame(
 			10,
 			has_action(
-				'woocommerce_subscription_payment_meta_input_' . OrderPaymentStore::GATEWAY_ID . '_wc_order_tokens_token',
+				'woocommerce_subscription_payment_meta_input_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_wc_order_tokens_token',
 				array( $this->sut, 'render_custom_payment_meta_input' )
 			),
 			'The custom selector renderer should be registered for WCS payment meta.'
@@ -136,7 +136,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 		$this->expectExceptionMessage( 'valid WooPayments saved payment method' );
 
 		$this->sut->validate_subscription_payment_meta(
-			OrderPaymentStore::GATEWAY_ID,
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			array(
 				'wc_order_tokens' => array(
 					'token' => array(
@@ -156,7 +156,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 		$subscription = $this->create_subscription_order( $user_id );
 		$subscription->update_meta_data( '_stripe_customer_id', 'cus_existing' );
 		$subscription->save();
-		$token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_selected' );
+		$token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_selected' );
 
 		$this->sut->save_meta_in_order_tokens( $subscription, 'wc_order_tokens', 'token', (string) $token->get_id() );
 
@@ -189,8 +189,8 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	public function test_save_meta_in_order_tokens_reappends_previously_used_token(): void {
 		$user_id      = self::factory()->user->create();
 		$subscription = $this->create_subscription_order( $user_id );
-		$token_a      = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_a' );
-		$token_b      = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_b' );
+		$token_a      = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_a' );
+		$token_b      = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_b' );
 
 		$this->sut->save_meta_in_order_tokens( $subscription, 'wc_order_tokens', 'token', (string) $token_a->get_id() );
 		$this->sut->save_meta_in_order_tokens( $subscription, 'wc_order_tokens', 'token', (string) $token_b->get_id() );
@@ -228,14 +228,14 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	public function test_update_subscription_token_sets_native_gateway_token_and_payment_meta(): void {
 		$user_id      = self::factory()->user->create();
 		$subscription = $this->create_subscription_order( $user_id );
-		$token        = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_default' );
+		$token        = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_default' );
 
 		$result = $this->sut->update_subscription_token( false, $subscription, $token );
 
 		$subscription = wc_get_order( $subscription->get_id() );
 		$this->assertTrue( $result );
 		$this->assertInstanceOf( WC_Order::class, $subscription );
-		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $subscription->get_payment_method() );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $subscription->get_payment_method() );
 		$this->assertContains( $token->get_id(), array_map( 'absint', $subscription->get_payment_tokens() ) );
 		$this->assertSame( 'pm_default', $subscription->get_meta( '_payment_method_id', true ) );
 	}
@@ -264,8 +264,8 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	public function test_render_custom_payment_meta_input_outputs_token_selector(): void {
 		$user_id      = self::factory()->user->create();
 		$subscription = $this->create_subscription_order( $user_id );
-		$token        = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_rendered' );
-		$field_id     = '_payment_method_meta[' . OrderPaymentStore::GATEWAY_ID . '][wc_order_tokens][token]';
+		$token        = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_rendered' );
+		$field_id     = '_payment_method_meta[' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '][wc_order_tokens][token]';
 
 		ob_start();
 		$this->sut->render_custom_payment_meta_input( $subscription, $field_id, (string) $token->get_id() );
@@ -295,14 +295,14 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 		$subscription = $this->create_subscription_order( $user_id, 'bacs' );
 		$token        = null;
 		if ( 'a saved token' === $tokens ) {
-			$token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_listed' );
+			$token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_listed' );
 		}
 		$this->sut->add_subscription_payment_meta( array(), $subscription );
-		$field_id = '_payment_method_meta[' . OrderPaymentStore::GATEWAY_ID . '][wc_order_tokens][token]';
+		$field_id = '_payment_method_meta[' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '][wc_order_tokens][token]';
 
 		ob_start();
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fired as WooCommerce Subscriptions fires it.
-		do_action( 'woocommerce_subscription_payment_meta_input_' . OrderPaymentStore::GATEWAY_ID . '_wc_order_tokens_token', $subscription, $field_id, null, array() );
+		do_action( 'woocommerce_subscription_payment_meta_input_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_wc_order_tokens_token', $subscription, $field_id, null, array() );
 		$output = (string) ob_get_clean();
 
 		$this->assertStringContainsString( 'name="' . esc_attr( $field_id ) . '"', $output );
@@ -338,7 +338,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	public function test_renders_subscription_payment_method_from_saved_token(): void {
 		$user_id      = self::factory()->user->create();
 		$subscription = $this->create_subscription_order( $user_id );
-		$token        = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_display' );
+		$token        = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_display' );
 		$subscription->add_payment_token( $token );
 		$subscription->save();
 
@@ -411,7 +411,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	public function test_update_payment_method_for_subscriptions_ignores_non_change_payment_requests(): void {
 		$subscription = $this->create_subscription_order( self::factory()->user->create() );
 
-		$result = $this->sut->update_payment_method_for_subscriptions( true, OrderPaymentStore::GATEWAY_ID, $subscription );
+		$result = $this->sut->update_payment_method_for_subscriptions( true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $subscription );
 
 		$this->assertTrue( $result );
 	}
@@ -424,10 +424,10 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 		$_POST        = array(
 			'_wcsnonce'             => wp_create_nonce( 'wcs_change_payment_method' ),
 			'change_payment_method' => (string) $subscription->get_id(),
-			'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' => '123',
+			'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' => '123',
 		);
 
-		$result = $this->sut->update_payment_method_for_subscriptions( true, OrderPaymentStore::GATEWAY_ID, $subscription );
+		$result = $this->sut->update_payment_method_for_subscriptions( true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $subscription );
 
 		$this->assertTrue( $result );
 	}
@@ -440,10 +440,10 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 		$_POST        = array(
 			'_wcsnonce'             => wp_create_nonce( 'wcs_change_payment_method' ),
 			'change_payment_method' => (string) $subscription->get_id(),
-			'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' => 'new',
+			'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' => 'new',
 		);
 
-		$result = $this->sut->update_payment_method_for_subscriptions( true, OrderPaymentStore::GATEWAY_ID, $subscription );
+		$result = $this->sut->update_payment_method_for_subscriptions( true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $subscription );
 
 		$this->assertFalse( $result );
 	}
@@ -456,9 +456,9 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	public function test_saved_card_change_names_the_posted_card(): void {
 		$user_id      = self::factory()->user->create();
 		$subscription = $this->create_subscription_order( $user_id );
-		$posted       = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_posted' );
+		$posted       = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_posted' );
 		$current      = new WC_Payment_Token_CC();
-		$current->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$current->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$current->set_user_id( $user_id );
 		$current->set_token( 'pm_current' );
 		$current->set_card_type( 'mastercard' );
@@ -471,10 +471,10 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 		$_POST = array(
 			'_wcsnonce'             => wp_create_nonce( 'wcs_change_payment_method' ),
 			'change_payment_method' => (string) $subscription->get_id(),
-			'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' => (string) $posted->get_id(),
+			'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' => (string) $posted->get_id(),
 		);
 
-		$title = $this->sut->get_specific_new_payment_method_title( 'Card', OrderPaymentStore::GATEWAY_ID, $subscription );
+		$title = $this->sut->get_specific_new_payment_method_title( 'Card', WooPaymentsPersistenceVocabulary::GATEWAY_ID, $subscription );
 
 		$this->assertSame( 'Visa ending in 4242', $title, 'Client 11.1.0 names the posted token as brand label plus last four (trait-wc-payment-gateway-wcpay-subscriptions.php:154-170), no expiry.' );
 	}
@@ -485,14 +485,14 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	public function test_new_card_change_names_the_gateway_title_and_last_four(): void {
 		$user_id      = self::factory()->user->create();
 		$subscription = $this->create_subscription_order( $user_id );
-		$subscription->add_payment_token( $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_new' ) );
+		$subscription->add_payment_token( $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_new' ) );
 		$_POST = array(
 			'_wcsnonce'             => wp_create_nonce( 'wcs_change_payment_method' ),
 			'change_payment_method' => (string) $subscription->get_id(),
-			'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' => 'new',
+			'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' => 'new',
 		);
 
-		$title = $this->sut->get_specific_new_payment_method_title( 'Card', OrderPaymentStore::GATEWAY_ID, $subscription );
+		$title = $this->sut->get_specific_new_payment_method_title( 'Card', WooPaymentsPersistenceVocabulary::GATEWAY_ID, $subscription );
 
 		$this->assertSame( 'Card ending in 4242', $title, 'Client 11.1.0 trait :1080-1083; live client subscription 26 note "to Card ending in 4242".' );
 	}
@@ -504,7 +504,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	 * @param string $gateway_id Payment gateway ID.
 	 * @return WC_Order
 	 */
-	private function create_subscription_order( int $user_id, string $gateway_id = OrderPaymentStore::GATEWAY_ID ): WC_Order {
+	private function create_subscription_order( int $user_id, string $gateway_id = WooPaymentsPersistenceVocabulary::GATEWAY_ID ): WC_Order {
 		$order = wc_create_order();
 		$order->set_customer_id( $user_id );
 		$order->set_payment_method( $gateway_id );

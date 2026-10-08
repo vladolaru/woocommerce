@@ -8,9 +8,9 @@ use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminNoticeService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use WC_Order;
 use WC_Unit_Test_Case;
@@ -104,7 +104,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		for ( $index = 0; $index < 10; ++$index ) {
 			$this->create_paid_order( 'cod', '', $now - DAY_IN_SECONDS );
 		}
-		$this->create_paid_order( OrderPaymentStore::GATEWAY_ID, 'test', $now - DAY_IN_SECONDS );
+		$this->create_paid_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'test', $now - DAY_IN_SECONDS );
 
 		$account = $this->createMock( WooPaymentsAccountService::class );
 		$account->method( 'has_working_account' )->willReturn( true );
@@ -845,7 +845,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			$this->assertSame( $expected_notice, null !== $notice );
 			$this->assertSame( $expected_cache, get_transient( 'wcpay_one_and_done_eligible' ) );
 			$this->assertNotEmpty( $queries );
-			$this->assertSame( OrderPaymentStore::GATEWAY_ID, $queries[0]['payment_method'] );
+			$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $queries[0]['payment_method'] );
 			$this->assertSame( 2, $queries[0]['limit'] );
 			$this->assertSame( 'none', $queries[0]['orderby'] );
 			$this->assertSame( 'ids', $queries[0]['return'] );
@@ -886,10 +886,10 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	public static function provide_one_and_done_order_cohorts(): array {
 		return array(
 			'zero orders'               => array( array(), false, '0' ),
-			'one order before boundary' => array( array( array( OrderPaymentStore::GATEWAY_ID, 'prod', 6 ) ), false, '0' ),
-			'one order at boundary'     => array( array( array( OrderPaymentStore::GATEWAY_ID, 'prod', 7 ) ), true, '1' ),
-			'test order at boundary'    => array( array( array( OrderPaymentStore::GATEWAY_ID, 'test', 7 ) ), false, '0' ),
-			'account-mode live value'   => array( array( array( OrderPaymentStore::GATEWAY_ID, 'live', 7 ) ), false, '0' ),
+			'one order before boundary' => array( array( array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'prod', 6 ) ), false, '0' ),
+			'one order at boundary'     => array( array( array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'prod', 7 ) ), true, '1' ),
+			'test order at boundary'    => array( array( array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'test', 7 ) ), false, '0' ),
+			'account-mode live value'   => array( array( array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'live', 7 ) ), false, '0' ),
 		);
 	}
 
@@ -899,8 +899,8 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	public function test_one_and_done_two_live_orders_set_permanent_ineligibility(): void {
 		$now = 1700000000;
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
-		$this->create_paid_order( OrderPaymentStore::GATEWAY_ID, 'prod', $now - 8 * DAY_IN_SECONDS );
-		$this->create_paid_order( OrderPaymentStore::GATEWAY_ID, 'prod', $now - DAY_IN_SECONDS );
+		$this->create_paid_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'prod', $now - 8 * DAY_IN_SECONDS );
+		$this->create_paid_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'prod', $now - DAY_IN_SECONDS );
 		$sut          = $this->create_live_notice_service( $now );
 		$queries      = 0;
 		$record_query = static function ( array $args ) use ( &$queries ): array {
@@ -933,7 +933,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	public function test_one_and_done_registered_gateway_limitation( string $gateway_id, bool $expected_notice, bool $expected_permanent ): void {
 		$now = 1700000000;
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
-		$this->create_paid_order( OrderPaymentStore::GATEWAY_ID, 'prod', $now - 7 * DAY_IN_SECONDS );
+		$this->create_paid_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'prod', $now - 7 * DAY_IN_SECONDS );
 		$this->create_paid_order( $gateway_id, '', $now - DAY_IN_SECONDS );
 		$sut          = $this->create_live_notice_service( $now );
 		$queries      = array();
@@ -948,7 +948,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			$this->assertSame( $expected_permanent, (bool) get_option( 'wcpay_one_and_done_permanently_ineligible' ) );
 			$this->assertCount( 2, $queries );
 			$this->assertIsArray( $queries[1]['payment_method'] );
-			$this->assertNotContains( OrderPaymentStore::GATEWAY_ID, $queries[1]['payment_method'] );
+			$this->assertNotContains( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $queries[1]['payment_method'] );
 			$this->assertNotContains( 'removed_gateway', $queries[1]['payment_method'], 'Unregistered historical gateways must not broaden the query.' );
 		} finally {
 			remove_filter( 'woocommerce_order_query_args', $record_query );
@@ -982,7 +982,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$user_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
 		wp_set_current_user( $user_id );
 		update_user_meta( $user_id, $meta_key, $now - $marker_offset );
-		$this->create_paid_order( OrderPaymentStore::GATEWAY_ID, 'prod', $now - 7 * DAY_IN_SECONDS );
+		$this->create_paid_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'prod', $now - 7 * DAY_IN_SECONDS );
 		$sut          = $this->create_live_notice_service( $now );
 		$queries      = 0;
 		$record_query = static function ( array $args ) use ( &$queries ): array {
@@ -1274,7 +1274,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_one_and_done_permanently_ineligible' );
 		delete_transient( 'wcpay_post_kyc_activation_eligible' );
 		delete_transient( 'wcpay_one_and_done_eligible' );
-		$this->create_paid_order( OrderPaymentStore::GATEWAY_ID, 'prod', $now - 7 * DAY_IN_SECONDS );
+		$this->create_paid_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'prod', $now - 7 * DAY_IN_SECONDS );
 		$sut          = $this->create_live_notice_service( $now );
 		$queries      = array();
 		$record_query = static function ( array $args ) use ( &$queries ): array {
@@ -1312,7 +1312,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_has_live_sale' );
 		delete_transient( 'wcpay_post_kyc_activation_eligible' );
 		delete_transient( 'wcpay_one_and_done_eligible' );
-		$this->create_paid_order( OrderPaymentStore::GATEWAY_ID, 'live', $now - 7 * DAY_IN_SECONDS );
+		$this->create_paid_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'live', $now - 7 * DAY_IN_SECONDS );
 		$sut          = $this->create_live_notice_service( $now );
 		$queries      = array();
 		$record_query = static function ( array $args ) use ( &$queries ): array {
@@ -1408,7 +1408,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		set_transient( 'wcpay_one_and_done_eligible', '0', HOUR_IN_SECONDS );
 		$order = \WC_Helper_Order::create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_status( OrderStatus::COMPLETED );
 		$order->update_meta_data( '_wcpay_mode', 'prod' );
 		$order->save();
@@ -1485,7 +1485,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_has_live_sale' );
 		delete_transient( 'wcpay_post_kyc_activation_eligible' );
 		delete_transient( 'wcpay_one_and_done_eligible' );
-		$this->create_paid_order( OrderPaymentStore::GATEWAY_ID, 'prod', $now - 7 * DAY_IN_SECONDS );
+		$this->create_paid_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'prod', $now - 7 * DAY_IN_SECONDS );
 		$sut              = $this->create_live_notice_service( $now );
 		$queried_blog_ids = array();
 		$record_query     = static function ( array $args ) use ( &$queried_blog_ids ): array {
