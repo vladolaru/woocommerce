@@ -8,7 +8,7 @@ use WC_Unit_Test_Case;
 /**
  * Keeps the neutral payments layer provider-agnostic: outside `Providers/WooPayments/`, only the
  * allow-listed files may use or name `Providers\WooPayments` classes (see the
- * `woocommerce-native-payments` skill).
+ * `woocommerce-payments-runtime` skill).
  */
 class PaymentsProviderBoundaryTest extends WC_Unit_Test_Case {
 
@@ -69,7 +69,7 @@ class PaymentsProviderBoundaryTest extends WC_Unit_Test_Case {
 	public function test_only_allowed_files_reference_the_provider(): void {
 		$violations = array_values( array_diff( $this->referencing_files(), self::ALLOWED_FILES ) );
 
-		$this->assertSame( array(), $violations, 'Only the files listed in the woocommerce-native-payments skill may reference Providers\WooPayments from the neutral layer. Route new provider needs through the provider contracts.' );
+		$this->assertSame( array(), $violations, 'Only the files listed in the woocommerce-payments-runtime skill may reference Providers\WooPayments from the neutral layer. Route new provider needs through the provider contracts.' );
 	}
 
 	/**
@@ -78,7 +78,7 @@ class PaymentsProviderBoundaryTest extends WC_Unit_Test_Case {
 	public function test_allowed_files_still_need_the_exception(): void {
 		$stale = array_values( array_diff( self::ALLOWED_FILES, $this->referencing_files() ) );
 
-		$this->assertSame( array(), $stale, 'These files no longer reference Providers\WooPayments: remove them from the allow-list here and in the woocommerce-native-payments skill.' );
+		$this->assertSame( array(), $stale, 'These files no longer reference Providers\WooPayments: remove them from the allow-list here and in the woocommerce-payments-runtime skill.' );
 	}
 
 	/**

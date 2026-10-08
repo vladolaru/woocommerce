@@ -1,5 +1,5 @@
 ---
-name: woocommerce-native-payments
+name: woocommerce-payments-runtime
 description: Invoke when changing code under `plugins/woocommerce/src/Internal/Payments/`. Covers the neutral-layer/provider boundary rule and the WooPaymentsClientVersion bump policy for the native WooPayments runtime.
 ---
 
