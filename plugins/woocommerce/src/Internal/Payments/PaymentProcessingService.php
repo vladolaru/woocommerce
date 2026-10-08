@@ -131,9 +131,9 @@ class PaymentProcessingService {
 	 * Read the order again under the checkout lock, and stop the charge when another request touched its payment since this one loaded it.
 	 *
 	 * The gateway's duplicate-payment checks run before the lock, so two submissions of one order can both pass them.
-	 * The order is read again in place, so the charge and everything after it use what the read returns, including a
-	 * charge key another attempt kept. Compared with what this request loaded: a new paid status answers as already paid;
-	 * any other status change, a new payment reference, or a new kept charge key (a charge whose outcome is unknown)
+	 * The order is read again in place, so the charge and everything after it use what the read returns, including the
+	 * unresolved charge key of another attempt. Compared with what this request loaded: a new paid status answers as already
+	 * paid; any other status change, a new payment reference, or a new unresolved charge key (a charge whose outcome is unknown)
 	 * means another request is at work, so the charge is refused. Client 11.1.0 takes no lock in process_payment()
 	 * (class-wc-payment-gateway-wcpay.php:1251-1268) and would charge again.
 	 *
@@ -146,7 +146,7 @@ class PaymentProcessingService {
 		$loaded_status     = $order->get_status();
 		$loaded_was_paid   = $order->has_status( $paid_statuses );
 		$loaded_references = $this->get_recorded_payment_references( $order, $vocabulary );
-		$loaded_charge_key = $this->get_kept_charge_key( $order, $vocabulary );
+		$loaded_charge_key = $this->get_unresolved_charge_key( $order, $vocabulary );
 
 		$this->lifecycle_service->reread_order_from_data_store( $order );
 
@@ -161,8 +161,8 @@ class PaymentProcessingService {
 			$reason = 'order_status_changed';
 		} elseif ( $this->get_recorded_payment_references( $order, $vocabulary ) !== $loaded_references ) {
 			$reason = 'payment_reference_changed';
-		} elseif ( $this->get_kept_charge_key( $order, $vocabulary ) !== $loaded_charge_key ) {
-			$reason = 'kept_charge_key_changed';
+		} elseif ( $this->get_unresolved_charge_key( $order, $vocabulary ) !== $loaded_charge_key ) {
+			$reason = 'unresolved_charge_key_changed';
 		}
 
 		if ( null === $reason ) {
@@ -189,13 +189,13 @@ class PaymentProcessingService {
 	}
 
 	/**
-	 * Get the charge idempotency key the provider keeps on the order while a charge outcome is unknown.
+	 * Get the charge idempotency key the provider stores on the order while a charge outcome is unknown.
 	 *
 	 * @param WC_Order                               $order   Order object.
 	 * @param ProviderPersistenceVocabularyInterface $vocabulary Provider persistence vocabulary.
-	 * @return string The kept key, or '' when there is none or the provider keeps none.
+	 * @return string The unresolved key, or '' when there is none or the provider stores none.
 	 */
-	private function get_kept_charge_key( WC_Order $order, ProviderPersistenceVocabularyInterface $vocabulary ): string {
+	private function get_unresolved_charge_key( WC_Order $order, ProviderPersistenceVocabularyInterface $vocabulary ): string {
 		$meta_key = $vocabulary->get_charge_idempotency_key_meta_key();
 
 		return '' === $meta_key ? '' : (string) $order->get_meta( $meta_key, true );

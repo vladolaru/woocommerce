@@ -809,7 +809,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 					}
 
 					/**
-					 * Get the order meta key holding a kept charge idempotency key: this provider keeps none.
+					 * Get the order meta key holding an unresolved charge idempotency key: this provider stores none.
 					 *
 					 * @return string
 					 */
@@ -1819,15 +1819,15 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$first_outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_first' ), $provider );
 		$after_first   = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $after_first );
-		$kept_key = (string) $after_first->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true );
+		$unresolved_key = (string) $after_first->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true );
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $first_outcome->get_status() );
 		$this->assertSame( 'failed', $after_first->get_status() );
 		$this->assertSame( '', $after_first->get_meta( '_intent_id', true ) );
-		$this->assertSame( array( $kept_key ), $sent_keys->getArrayCopy(), 'The ambiguous failure must keep the key it sent.' );
+		$this->assertSame( array( $unresolved_key ), $sent_keys->getArrayCopy(), 'The ambiguous failure must keep the key it sent.' );
 
 		$second_outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $second_view, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_second' ), $provider );
 
-		$this->assertSame( array( $kept_key ), $sent_keys->getArrayCopy(), 'A submission loaded before the ambiguous attempt must not send a charge.' );
+		$this->assertSame( array( $unresolved_key ), $sent_keys->getArrayCopy(), 'A submission loaded before the ambiguous attempt must not send a charge.' );
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $second_outcome->get_status() );
 		$this->assertSame( 'A payment operation is already in progress for this order.', $second_outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ] ?? null );
 		$this->assertFalse( get_transient( $this->persistence_vocabulary->get_order_lock_key( $order ) ), 'The refusal must release the lock.' );
@@ -1836,14 +1836,14 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $retry );
 		$this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $retry, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_first' ), $provider );
 
-		$this->assertSame( array( $kept_key, $kept_key ), $sent_keys->getArrayCopy(), 'A submission that loads the order after the ambiguous attempt replays its key.' );
+		$this->assertSame( array( $unresolved_key, $unresolved_key ), $sent_keys->getArrayCopy(), 'A submission that loads the order after the ambiguous attempt replays its key.' );
 	}
 
 	/**
-	 * @testdox A new-card submission refused under the kept key completes the order from the earlier request's intent ($status) and charges nothing.
+	 * @testdox A new-card submission refused under the unresolved key completes the order from the earlier request's intent ($status) and charges nothing.
 	 *
 	 * The first submission's charge gets a 502, so the order keeps its key and the ambiguity record. The shopper resubmits
-	 * with a new card: Stripe refuses the kept key with an idempotency_error, the intents list shows the earlier request's
+	 * with a new card: Stripe refuses the unresolved key with an idempotency_error, the intents list shows the earlier request's
 	 * intent holding the money, and the lifecycle applies it as the late answer. The shopper lands on order-received with
 	 * the "We prevented multiple payments" flag.
 	 *
@@ -1923,7 +1923,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 * The first submission's charge gets a 502, so the order keeps its key and the ambiguity record. The next submission
 	 * loads the order; before it claims the lock, the earlier request's `payment_intent.succeeded` arrives and the webhook
 	 * finds the order by its metadata alone (`WooPaymentsEventIngestor::get_order_from_event_object_metadata()`), so the
-	 * order is paid. Under the lock the order is read again, found paid, and nothing is sent: no charge under the kept key
+	 * order is paid. Under the lock the order is read again, found paid, and nothing is sent: no charge under the unresolved key
 	 * and no lookup.
 	 */
 	public function test_process_checkout_charges_nothing_when_a_webhook_paid_the_order_between_submissions(): void {
@@ -2065,7 +2065,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'completed', $paid->get_status() );
 		$this->assertSame( 'pi_new_card', $paid->get_meta( '_intent_id', true ) );
-		$this->assertCount( 4, $charges, 'Two refused sends under the kept key, then exactly one charge of the new card.' );
+		$this->assertCount( 4, $charges, 'Two refused sends under the unresolved key, then exactly one charge of the new card.' );
 		$this->assertNotSame( $charges[0]['headers']['Idempotency-Key'], $charges[3]['headers']['Idempotency-Key'], 'The new card is charged under a fresh key.' );
 	}
 
@@ -2074,16 +2074,16 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @dataProvider provide_unpaid_changes_by_another_submission
 	 *
-	 * @param string $status   Status another submission writes.
-	 * @param string $kept_key Charge idempotency key another submission keeps on the order.
+	 * @param string $status         Status another submission writes.
+	 * @param string $unresolved_key Charge idempotency key another submission stores on the order.
 	 */
-	public function test_process_checkout_does_not_charge_an_order_another_submission_changed( string $status, string $kept_key ): void {
+	public function test_process_checkout_does_not_charge_an_order_another_submission_changed( string $status, string $unresolved_key ): void {
 		$order  = $this->create_woopayments_order( '10.00' );
 		$loaded = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $loaded );
 
 		$order->set_status( $status );
-		$order->update_meta_data( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, $kept_key );
+		$order->update_meta_data( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, $unresolved_key );
 		$order->save();
 
 		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_second' ) );
@@ -2139,9 +2139,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function provide_unpaid_changes_by_another_submission(): array {
 		return array(
-			'status only'                => array( 'failed', '' ),
-			'kept charge key only'       => array( 'pending', 'key_unknown_outcome' ),
-			'status and kept charge key' => array( 'failed', 'key_unknown_outcome' ),
+			'status only'                      => array( 'failed', '' ),
+			'unresolved charge key only'       => array( 'pending', 'key_unknown_outcome' ),
+			'status and unresolved charge key' => array( 'failed', 'key_unknown_outcome' ),
 		);
 	}
 

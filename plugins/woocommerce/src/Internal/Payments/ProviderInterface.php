@@ -44,8 +44,8 @@ interface ProviderInterface extends PaymentGatewayProviderInterface {
 	 * @param PaymentOperationContext $context         Payment context.
 	 * @param string                  $idempotency_key Key minted fresh for this payment attempt, also the order payment lock
 	 *                                                 token. Retries within the attempt reuse it; a new attempt gets a new key.
-	 *                                                 A provider may send a key it kept on the order from an ambiguous earlier
-	 *                                                 attempt instead, until a definitive outcome.
+	 *                                                 A provider may send instead a key it stored on the order for an earlier
+	 *                                                 attempt whose outcome is still unknown.
 	 * @return PaymentOutcome
 	 */
 	public function charge( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome;
