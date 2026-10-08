@@ -9,6 +9,8 @@ use WC_Order;
 
 /**
  * Sets, clears and reads an order payment lock directly in its transient rows, as another request holding the lock would.
+ *
+ * Lock rows as client 11.1.0 `includes/class-wc-payments-utils.php:996-1026` writes them (transient name, sentinel, reference check, five-minute lifetime, unlock); the `_holder` record is the built-in runtime's own addition.
  */
 trait OrderPaymentLockTestTrait {
 
@@ -59,6 +61,8 @@ trait OrderPaymentLockTestTrait {
 
 	/**
 	 * Tell whether the order payment lock blocks a payment reference: it holds the sentinel or that reference.
+	 *
+	 * Same check as client 11.1.0 `includes/class-wc-payments-utils.php:996-1002`.
 	 *
 	 * @param WC_Order                      $order             Order to check.
 	 * @param ProviderPersistenceVocabulary $vocabulary        Provider persistence vocabulary.

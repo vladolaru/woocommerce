@@ -586,6 +586,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				$expected_idempotency_key = $provider->last_idempotency_key;
 				$this->assertMatchesRegularExpression( '/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/', $expected_idempotency_key );
 				$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+				$this->assertSame( 'https://pay.example.test/code', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null, 'The failed outcome carries the error code the exception provides.' );
 				break;
 
 			case 'refund':
@@ -594,18 +595,21 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				$expected_idempotency_key = $provider->last_idempotency_key;
 				$this->assertMatchesRegularExpression( '/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/', $expected_idempotency_key );
 				$this->assertWPError( $result );
+				$this->assertSame( 'https://pay.example.test/code', $result->get_error_code(), 'The refund fails with the error code the exception provides.' );
 				break;
 
 			case 'capture':
 				$outcome                  = $sut->capture( PaymentContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 4.25 ), $provider );
 				$expected_idempotency_key = $this->idempotency->derive_key( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'capture', 4.25, 'USD' );
 				$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+				$this->assertSame( 'https://pay.example.test/code', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null, 'The failed outcome carries the error code the exception provides.' );
 				break;
 
 			default:
 				$outcome                  = $sut->cancel( PaymentContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider );
 				$expected_idempotency_key = $this->idempotency->derive_key( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'cancel', 10.0, 'USD' );
 				$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+				$this->assertSame( 'https://pay.example.test/code', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null, 'The failed outcome carries the error code the exception provides.' );
 		}
 
 		$this->assertCount( 1, $logger->error_calls );
