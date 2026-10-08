@@ -197,9 +197,9 @@ final class PaymentsBootstrap {
 		/**
 		 * Gateway registry.
 		 *
-		 * @var NativePaymentsGatewayRegistry $registry
+		 * @var ProviderGatewaysController $registry
 		 */
-		$registry = $container->get( NativePaymentsGatewayRegistry::class );
+		$registry = $container->get( ProviderGatewaysController::class );
 		$registry->add_provider(
 			static function () use ( $container, $provider_root ) {
 				/**

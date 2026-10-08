@@ -14,7 +14,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
 use Automattic\WooCommerce\Internal\Payments\PaymentsBootstrap;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsGatewayRegistry;
+use Automattic\WooCommerce\Internal\Payments\ProviderGatewaysController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderContract;
@@ -131,7 +131,7 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 		$sut->register( $container, '__return_false' );
 
 		$this->assertNotContains( WooPaymentsProvider::class, $container->resolved, 'Registering the gateway must not build the provider.' );
-		$resolvers = $container->get( NativePaymentsGatewayRegistry::class )->provider_resolvers;
+		$resolvers = $container->get( ProviderGatewaysController::class )->provider_resolvers;
 		$this->assertCount( 1, $resolvers );
 		$provider = $resolvers[0]();
 		$this->assertSame( WooPaymentsProvider::class, $provider->get_recorded_class_name(), 'The resolver must build the provider root that follows the registry.' );
@@ -465,9 +465,9 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 		foreach ( array_merge( $roots, $on_demand_roots ) as $root ) {
 			if ( is_a( $root, PaymentGatewayProviderContract::class, true ) ) {
-				$events[] = 'get:' . NativePaymentsGatewayRegistry::class;
-				$events[] = 'provider-resolver:' . NativePaymentsGatewayRegistry::class;
-				$events[] = 'register:' . NativePaymentsGatewayRegistry::class;
+				$events[] = 'get:' . ProviderGatewaysController::class;
+				$events[] = 'provider-resolver:' . ProviderGatewaysController::class;
+				$events[] = 'register:' . ProviderGatewaysController::class;
 				continue;
 			}
 			$events[] = 'get:' . $root;

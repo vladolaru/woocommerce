@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsMerchantRestController;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsGatewayRegistry;
+use Automattic\WooCommerce\Internal\Payments\ProviderGatewaysController;
 use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderContract;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminRestRouteRegistrar;
@@ -126,7 +126,7 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 					}
 					$this->assertInstanceOf( RegisterHooksInterface::class, $service, "$cell: $root must register hooks." );
 				}
-				$this->assertNotContains( NativePaymentsGatewayRegistry::class, $roots, "$cell: the bootstrap adds the gateway registry for a listed gateway provider." );
+				$this->assertNotContains( ProviderGatewaysController::class, $roots, "$cell: the bootstrap adds the gateway registry for a listed gateway provider." );
 			}
 		}
 	}

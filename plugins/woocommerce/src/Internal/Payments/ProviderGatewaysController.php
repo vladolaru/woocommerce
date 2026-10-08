@@ -1,6 +1,6 @@
 <?php
 /**
- * NativePaymentsGatewayRegistry class file.
+ * ProviderGatewaysController class file.
  */
 
 declare( strict_types = 1 );
@@ -11,12 +11,14 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WC_Payment_Gateway;
 
 /**
- * Registers native payments gateways when the native runtime owns the site.
+ * Adds the gateways of each payment provider to the WooCommerce gateway list while that provider's check passes.
+ *
+ * Providers resolve lazily, on the first gateway list build that needs them.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
-class NativePaymentsGatewayRegistry implements RegisterHooksInterface {
+class ProviderGatewaysController implements RegisterHooksInterface {
 
 	/**
 	 * Resolved gateway providers, by provider ID.
@@ -67,20 +69,20 @@ class NativePaymentsGatewayRegistry implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( false === has_filter( 'woocommerce_payment_gateways', array( $this, 'register_gateway' ) ) ) {
-			add_filter( 'woocommerce_payment_gateways', array( $this, 'register_gateway' ) );
+		if ( false === has_filter( 'woocommerce_payment_gateways', array( $this, 'add_provider_gateways' ) ) ) {
+			add_filter( 'woocommerce_payment_gateways', array( $this, 'add_provider_gateways' ) );
 		}
 	}
 
 	/**
-	 * Add native payment gateway instances.
+	 * Add the gateways of the providers whose check passes to the gateway list.
 	 *
 	 * A non-array from an earlier callback becomes an empty list, as WooCommerce's own loop loads nothing from null or a string.
 	 *
 	 * @param mixed $gateways Registered gateway classes or instances.
 	 * @return array<int|string,mixed>
 	 */
-	public function register_gateway( $gateways ): array {
+	public function add_provider_gateways( $gateways ): array {
 		if ( ! is_array( $gateways ) ) {
 			$gateways = array();
 		}
