@@ -2229,6 +2229,52 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A $amount refund context carries the amount once for the runtime and once in the payment data, and the provider receives it.
+	 * @dataProvider refund_amount_provider
+	 *
+	 * @param float $amount Refund amount.
+	 */
+	public function test_process_refund_reads_the_amount_the_payment_data_carries( float $amount ): void {
+		$order   = $this->create_woopayments_order( '10.00' );
+		$context = PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $amount, 'Adjustment' );
+		$this->assertSame( $amount, $context->get_amount() );
+		$this->assertSame( $context->get_amount(), $context->get_payment_data()['amount'] ?? null );
+		$this->create_local_refund( $order, $amount, 'Adjustment' );
+
+		// phpcs:disable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
+		$provider = new class( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED ) ) extends RecordingProvider {
+			public ?PaymentOperationContext $refund_context = null;
+
+			public function refund( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
+				$this->refund_context = $context;
+
+				return parent::refund( $context, $idempotency_key );
+			}
+		};
+		// phpcs:enable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
+
+		$this->assertTrue( $this->sut->process_refund( $context, $provider ) );
+		$this->assertSame( 1, $provider->refund_calls );
+		$this->assertInstanceOf( PaymentOperationContext::class, $provider->refund_context );
+		$this->assertSame( $amount, $provider->refund_context->get_amount() );
+		$this->assertSame( $amount, $provider->refund_context->get_payment_data()['amount'] ?? null );
+	}
+
+	/**
+	 * Refund amounts a merchant can enter.
+	 *
+	 * @return array<string,array{0:float}>
+	 */
+	public static function refund_amount_provider(): array {
+		return array(
+			'smallest unit' => array( 0.01 ),
+			'partial'       => array( 2.5 ),
+			'fractional'    => array( 7.25 ),
+			'full'          => array( 10.0 ),
+		);
+	}
+
+	/**
 	 * @testdox Should return true when the provider refund succeeds.
 	 */
 	public function test_process_refund_returns_true_when_provider_succeeds(): void {

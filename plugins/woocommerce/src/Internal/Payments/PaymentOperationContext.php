@@ -84,7 +84,9 @@ class PaymentOperationContext {
 	 * @param WC_Order            $order             Order being charged.
 	 * @param string              $gateway_id        Gateway ID.
 	 * @param string              $payment_method_id Payment method ID.
-	 * @param array<string,mixed> $payment_data      Generic payment-operation data.
+	 * @param array<string,mixed> $payment_data      Generic payment-operation data. The runtime reads 'payment_token': the saved
+	 *                                               payment token ID the shopper chose, or 'new', the value WooCommerce's saved
+	 *                                               payment methods field posts for a new method.
 	 * @param array<string,mixed> $provider_data     Provider-scoped data.
 	 * @return self
 	 */
@@ -94,6 +96,8 @@ class PaymentOperationContext {
 
 	/**
 	 * Create a refund payment context.
+	 *
+	 * The amount and reason are also in the payment data, where providers read them.
 	 *
 	 * @param WC_Order            $order         Order being refunded.
 	 * @param string              $gateway_id    Gateway ID.

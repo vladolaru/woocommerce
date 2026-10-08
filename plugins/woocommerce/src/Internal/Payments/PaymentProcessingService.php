@@ -329,10 +329,9 @@ class PaymentProcessingService {
 	 * @throws Throwable When applying an unreferenced unsuccessful refund outcome fails.
 	 */
 	public function process_refund( PaymentOperationContext $context, ProviderInterface $provider ) {
-		$order        = $context->get_order();
-		$payment_data = $context->get_payment_data();
-		$amount       = isset( $payment_data['amount'] ) ? (float) $payment_data['amount'] : 0.0;
-		$vocabulary   = $provider->get_persistence_vocabulary();
+		$order      = $context->get_order();
+		$amount     = $context->get_amount() ?? 0.0;
+		$vocabulary = $provider->get_persistence_vocabulary();
 
 		if ( '0.00' === sprintf( '%0.2f', $amount ) ) {
 			return true;
