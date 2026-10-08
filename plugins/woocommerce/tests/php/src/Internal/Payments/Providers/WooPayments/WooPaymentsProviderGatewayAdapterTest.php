@@ -5994,7 +5994,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * decline-envelope mapping ({@see self::test_native_charge_decline_envelope_maps_each_card_code})
 	 * and {@see \Automattic\WooCommerce\Tests\Internal\Payments\PaymentProcessingServiceTest::test_woopayments_card_decline_fails_order_with_intent_note_and_allow_meta}'s
 	 * hand-mirrored outcome — by running the recorded REC-1 decline envelope through the real
-	 * {@see PaymentProcessingService::process_checkout}, real {@see WooPaymentsProvider}, this adapter,
+	 * {@see PaymentProcessingService::process_checkout_outcome}, real {@see WooPaymentsProvider}, this adapter,
 	 * the real {@see WooPaymentsApiClient}, and the real {@see WooPaymentsOrderEffectApplier} against a
 	 * FAKEHTTP transport (`Fixtures/rec-1-intention-declines.json`).
 	 *
@@ -6024,14 +6024,15 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$provider = $this->create_provider_over_fake_transport( $http_client, $account_service, $customer_service );
 
-		$result = wc_get_container()->get( PaymentProcessingService::class )->process_checkout(
+		$outcome = wc_get_container()->get( PaymentProcessingService::class )->process_checkout_outcome(
 			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_rec1_checkout' ),
 			$provider
 		);
 
 		$order = wc_get_order( $order->get_id() );
 
-		$this->assertSame( 'failure', $result['result'] );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( $expected_intent_id, $outcome->get_provider_payment_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'failed', $order->get_status() );
 		$this->assertSame( $expected_intent_id, $order->get_meta( '_intent_id', true ), "The $pair declined PaymentIntent id must survive onto the order." );
@@ -7522,7 +7523,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * ({@see self::test_single_card_checkout_without_save_matches_11_1_request_shape}) and the
 	 * order-completion half ({@see \Automattic\WooCommerce\Tests\Internal\Payments\PaymentProcessingServiceTest::test_process_checkout_completes_order_for_completed_outcome})
 	 * by running a real recorded PaymentIntent response through the full production stack:
-	 * {@see PaymentProcessingService::process_checkout} → the real {@see WooPaymentsProvider} → this
+	 * {@see PaymentProcessingService::process_checkout_outcome} → the real {@see WooPaymentsProvider} → this
 	 * adapter → the real {@see WooPaymentsApiClient} → a FAKEHTTP transport queued with REC-BC
 	 * (`Fixtures/rec-t3-basic-card.json`, USD, no currency conversion) and REC-3
 	 * (`Fixtures/rec-3-eur-charge.json`, EUR charge on a USD account), which also joins the
@@ -7572,14 +7573,15 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$provider = $this->create_provider_over_fake_transport( $http_client, $account_service, $customer_service );
 
-		$result = wc_get_container()->get( PaymentProcessingService::class )->process_checkout(
+		$outcome = wc_get_container()->get( PaymentProcessingService::class )->process_checkout_outcome(
 			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card_visa' ),
 			$provider
 		);
 
 		$order = wc_get_order( $order->get_id() );
 
-		$this->assertSame( 'success', $result['result'] );
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( $intent_id, $outcome->get_provider_payment_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'processing', $order->get_status(), "The $pair checkout must pay the physical-product order exactly once." );
 		$this->assertSame( 1, $http_client->request_count, "The $pair checkout must dispatch exactly one intentions request." );
@@ -7702,7 +7704,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		);
 		$provider = $this->create_provider_over_fake_transport( $http_client, $account_service, $customer_service, $token_service, $order_effect_applier );
 
-		$result = wc_get_container()->get( PaymentProcessingService::class )->process_checkout(
+		$outcome = wc_get_container()->get( PaymentProcessingService::class )->process_checkout_outcome(
 			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card_visa', array( 'save_payment_method' => true ) ),
 			$provider
 		);
@@ -7711,7 +7713,8 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$tokens = \WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$token  = reset( $tokens );
 
-		$this->assertSame( 'success', $result['result'] );
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( $recorded['body']['id'], $outcome->get_provider_payment_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 1, $http_client->request_count );
 
@@ -7772,7 +7775,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$provider = $this->create_provider_over_fake_transport( $http_client, $account_service, $customer_service );
 
-		$result = wc_get_container()->get( PaymentProcessingService::class )->process_checkout(
+		$outcome = wc_get_container()->get( PaymentProcessingService::class )->process_checkout_outcome(
 			PaymentOperationContext::for_checkout(
 				$order,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
@@ -7788,7 +7791,8 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$order = wc_get_order( $order->get_id() );
 
-		$this->assertSame( 'success', $result['result'] );
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( 'pi_3UJhOUBzWlxcwgpP0FGWIQQW', $outcome->get_provider_payment_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 1, $http_client->request_count );
 		$this->assertSame( 'pi_3UJhOUBzWlxcwgpP0FGWIQQW', $order->get_meta( '_intent_id', true ) );

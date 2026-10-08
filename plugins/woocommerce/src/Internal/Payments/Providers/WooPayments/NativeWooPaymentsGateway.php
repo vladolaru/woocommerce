@@ -2545,6 +2545,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private static function format_checkout_result( PaymentOperationContext $context, WC_Order $order, PaymentOutcome $outcome ): array {
 		if ( PaymentOutcome::STATUS_FAILED === $outcome->get_status() ) {
 			return array(
+				// 'failure' exactly: the Store API shows a failed payment's notice to the shopper only on that value.
 				'result'         => 'failure',
 				'redirect'       => '',
 				'payment_method' => '',

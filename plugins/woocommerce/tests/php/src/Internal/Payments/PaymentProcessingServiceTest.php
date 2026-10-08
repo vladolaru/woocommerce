@@ -107,12 +107,13 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$result = $this->sut->process_checkout( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_test' ), $provider );
-		$order  = wc_get_order( $order->get_id() );
+		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_test' ), $provider );
+		$order   = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'success', $result['result'] );
-		$this->assertSame( 'pm_test', $result['payment_method'] );
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( 'pi_test', $outcome->get_provider_payment_id() );
+		$this->assertSame( 'pm_test', $outcome->get_payment_method_id() );
 		$this->assertMatchesRegularExpression(
 			'/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/',
 			$provider->last_idempotency_key,
@@ -125,23 +126,24 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should redirect a completed checkout to the order's own order-received URL.
+	 * @testdox Should hand back a completed checkout with no redirect, so the gateway sends the shopper to the order's own order-received URL.
 	 *
-	 * `format_checkout_result()` (`PaymentProcessingService.php`, the `STATUS_COMPLETED` branch around
-	 * line 1120) falls back to `$order->get_checkout_order_received_url()` whenever the outcome carries
-	 * no explicit redirect. This is the URL the shopper's browser is sent to next; the following test
-	 * proves what happens once it actually loads that URL.
+	 * The gateway's `format_checkout_result()` falls back to `$order->get_checkout_order_received_url()`
+	 * whenever the outcome carries no explicit redirect. This is the URL the shopper's browser is sent to
+	 * next; the following test proves what happens once it actually loads that URL.
 	 */
 	public function test_process_checkout_completed_redirects_to_order_received_url(): void {
 		$order    = $this->create_woopayments_order( '10.00' );
 		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_cart_redirect', '', 'pm_cart_redirect', 'cus_cart_redirect' ) );
 
-		$result = $this->sut->process_checkout( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_cart_redirect' ), $provider );
-		$order  = wc_get_order( $order->get_id() );
+		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_cart_redirect' ), $provider );
+		$order   = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'success', $result['result'] );
-		$this->assertSame( $order->get_checkout_order_received_url(), $result['redirect'] );
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( 'pi_cart_redirect', $outcome->get_provider_payment_id() );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_CHECKOUT_REDIRECT, $outcome->get_data() );
+		$this->assertSame( '', $outcome->get_redirect_url() );
 	}
 
 	/**
@@ -167,7 +169,11 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$order->save();
 		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_cart_clear', '', 'pm_cart_clear', 'cus_cart_clear' ) );
 
-		$result = $this->sut->process_checkout( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_cart_clear' ), $provider );
+		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_cart_clear' ), $provider );
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_CHECKOUT_REDIRECT, $outcome->get_data() );
+		$this->assertSame( '', $outcome->get_redirect_url() );
+		$redirect = $order->get_checkout_order_received_url();
 
 		$arbiter = $this->getMockBuilder( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
@@ -181,7 +187,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		// Parse the `order-received` id and `key` from the redirect URL itself (not `get_order_key()`),
 		// exactly as WordPress's query parser would when the shopper's browser requests it.
 		$query_args = array();
-		parse_str( (string) wp_parse_url( $result['redirect'], PHP_URL_QUERY ), $query_args );
+		parse_str( (string) wp_parse_url( $redirect, PHP_URL_QUERY ), $query_args );
 
 		$GLOBALS['wp']->query_vars['order-received'] = (int) ( $query_args['order-received'] ?? 0 );
 		$_GET['key']                                 = $query_args['key'] ?? '';
@@ -316,10 +322,10 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		add_action( 'woocommerce_payment_complete', $observer );
 
 		try {
-			$first_result = $this->sut->process_checkout( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_failed' ), $provider );
+			$first_outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_failed' ), $provider );
 			$this->assertFalse( $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, $provider->idempotency_keys[0] ), 'The failed attempt must release the order payment lock.' );
 
-			$second_result = $this->sut->process_checkout( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_succeeded' ), $provider );
+			$second_outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_succeeded' ), $provider );
 			$this->assertFalse( $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, $provider->idempotency_keys[1] ), 'The successful attempt must release the order payment lock.' );
 		} finally {
 			remove_action( 'woocommerce_payment_complete', $observer );
@@ -338,8 +344,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			);
 		}
 		$this->assertNotSame( $provider->idempotency_keys[0], $provider->idempotency_keys[1], 'A retry must not reuse the failed attempt key.' );
-		$this->assertSame( 'failure', $first_result['result'] );
-		$this->assertSame( 'success', $second_result['result'] );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $first_outcome->get_status() );
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $second_outcome->get_status() );
+		$this->assertSame( 'pi_succeeded', $second_outcome->get_provider_payment_id() );
 		$this->assertSame( 1, $payment_complete_calls, 'The two attempts must apply exactly one paid effect.' );
 		$this->assertTrue( $order->is_paid() );
 		$this->assertSame( 'pi_succeeded', $order->get_meta( '_intent_id', true ) );
@@ -372,11 +379,12 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$result = $this->sut->process_checkout( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_test' ), $provider );
-		$order  = wc_get_order( $order->get_id() );
+		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_test' ), $provider );
+		$order   = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'failure', $result['result'], 'The shopper-facing checkout result must still be a failure.' );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status(), 'The shopper-facing checkout result must still be a failure.' );
+		$this->assertSame( 'pi_blocked_test', $outcome->get_provider_payment_id() );
 		$this->assertSame( 'pending', $order->get_status(), 'A blocked payment must not fail the order; the merchant decides whether to cancel.' );
 		$this->assertSame( 'block', $order->get_meta( '_wcpay_fraud_outcome_status', true ) );
 		$this->assertSame( 'canceled', $order->get_meta( '_intention_status', true ) );
@@ -425,11 +433,12 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$result = $this->sut->process_checkout( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_rec1' ), $provider );
-		$order  = wc_get_order( $order->get_id() );
+		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_rec1' ), $provider );
+		$order   = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'failure', $result['result'] );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'pi_3UJTiNBzWlxcwgpP0GauBpTM', $outcome->get_provider_payment_id() );
 		$this->assertSame( 'failed', $order->get_status() );
 		$this->assertSame( 'pi_3UJTiNBzWlxcwgpP0GauBpTM', $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( '', (string) $order->get_meta( '_charge_id', true ), 'A declined charge has no charge id.' );
@@ -478,7 +487,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->sut->process_checkout( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_test' ), $provider );
+		$this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_test' ), $provider );
 		$order = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
@@ -669,13 +678,15 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$result = $this->sut->process_checkout( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_redirect' ), $provider );
-		$order  = wc_get_order( $order->get_id() );
+		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_redirect' ), $provider );
+		$order   = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'success', $result['result'] );
-		$this->assertSame( 'https://example.test/redirect', $result['redirect'] );
-		$this->assertSame( 'pm_redirect', $result['payment_method'] );
+		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_REDIRECT, $outcome->get_status() );
+		$this->assertSame( 'pi_redirect', $outcome->get_provider_payment_id() );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_CHECKOUT_REDIRECT, $outcome->get_data() );
+		$this->assertSame( 'https://example.test/redirect', $outcome->get_redirect_url() );
+		$this->assertSame( 'pm_redirect', $outcome->get_payment_method_id() );
 		$this->assertSame( 'pending', $order->get_status() );
 		$this->assertSame( 'pi_redirect', $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ) );
@@ -1624,10 +1635,10 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$result = $this->sut->process_checkout( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider );
+		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider );
 
-		$this->assertSame( 'success', $result['result'] );
-		$this->assertSame( '', $result['redirect'] );
+		$this->assertSame( PaymentOutcome::STATUS_PENDING_ASYNC, $outcome->get_status() );
+		$this->assertSame( '', $outcome->get_data()[ PaymentOutcome::DATA_CHECKOUT_REDIRECT ] ?? null );
 	}
 
 	/**
@@ -1640,9 +1651,10 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_test' ) );
 
-		$result = $this->sut->process_checkout( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_test' ), $provider );
+		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_test' ), $provider );
 
-		$this->assertSame( 'failure', $result['result'], 'WooCommerce recognizes failure, not fail; an unrecognized value costs the shopper the decline message.' );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( '', $outcome->get_provider_payment_id() );
 		$this->assertSame( 0, $provider->charge_calls );
 		$this->clear_order_payment_lock( $order, $this->persistence_vocabulary );
 	}
@@ -1656,9 +1668,10 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_test' ) );
 
-		$result = $this->sut->process_checkout( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_test' ), $provider );
+		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_test' ), $provider );
 
-		$this->assertSame( 'failure', $result['result'], 'WooCommerce recognizes failure, not fail; an unrecognized value costs the shopper the decline message.' );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( '', $outcome->get_provider_payment_id() );
 		$this->assertSame( 0, $provider->charge_calls );
 		$this->clear_order_payment_lock( $order, $this->persistence_vocabulary );
 	}
@@ -1680,14 +1693,15 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 		$second  = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_second' ) );
 		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $second_view, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_second' ), $second );
-		$result  = $this->sut->process_checkout( PaymentOperationContext::for_checkout( $third_view, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_second' ), $second );
+		$third   = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $third_view, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_second' ), $second );
 		$order   = wc_get_order( $order->get_id() );
 
 		$this->assertSame( 0, $second->charge_calls, 'An order paid while this request waited for the lock must not be charged again.' );
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
 		$this->assertTrue( $outcome->get_data()[ PaymentOutcome::DATA_ORDER_PAID_BY_ANOTHER_REQUEST ] ?? false );
-		$this->assertSame( 'success', $result['result'] );
-		$this->assertSame( $third_view->get_checkout_order_received_url(), $result['redirect'] );
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $third->get_status() );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_CHECKOUT_REDIRECT, $third->get_data() );
+		$this->assertSame( '', $third->get_redirect_url() );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'pi_first', $order->get_transaction_id() );
 		$this->assertFalse( get_transient( $this->persistence_vocabulary->get_order_lock_key( $order ) ), 'The refusal must release the lock.' );
@@ -1893,12 +1907,13 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_first' ), $provider );
 		$resubmit = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $resubmit );
-		$result = $this->sut->process_checkout( PaymentOperationContext::for_checkout( $resubmit, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_new' ), $provider );
-		$paid   = wc_get_order( $order->get_id() );
+		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $resubmit, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_new' ), $provider );
+		$paid    = wc_get_order( $order->get_id() );
 
 		$this->assertCount( 3, $http_client->requests, 'The new card must not be charged.' );
-		$this->assertSame( 'success', $result['result'] );
-		$this->assertStringContainsString( 'wcpay_previous_successful_intent=yes', $result['redirect'] );
+		$this->assertNotSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'pi_earlier', $outcome->get_provider_payment_id() );
+		$this->assertStringContainsString( 'wcpay_previous_successful_intent=yes', (string) ( $outcome->get_data()[ PaymentOutcome::DATA_CHECKOUT_REDIRECT ] ?? '' ) );
 		$this->assertSame( $order_status, $paid->get_status() );
 		$this->assertSame( 'pi_earlier', $paid->get_meta( '_intent_id', true ) );
 		$this->assertSame( 'pm_earlier', $paid->get_meta( '_payment_method_id', true ) );
@@ -2194,11 +2209,12 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$order    = $this->create_woopayments_order( '0.00' );
 		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_should_not_be_used' ) );
 
-		$result = $this->sut->process_checkout( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_test' ), $provider );
-		$order  = wc_get_order( $order->get_id() );
+		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_test' ), $provider );
+		$order   = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'success', $result['result'] );
+		$this->assertSame( PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT, $outcome->get_status() );
+		$this->assertSame( '', $outcome->get_provider_payment_id() );
 		$this->assertSame( 0, $provider->charge_calls );
 		$this->assertSame( 'completed', $order->get_status() );
 	}
@@ -3291,12 +3307,14 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$result = $this->sut->process_checkout( PaymentOperationContext::for_checkout( $order, 'offline_redirect_provider' ), $provider );
-		$order  = wc_get_order( $order->get_id() );
+		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, 'offline_redirect_provider' ), $provider );
+		$order   = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'success', $result['result'] );
-		$this->assertSame( 'https://offline-provider.example/pay/123', $result['redirect'] );
+		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_REDIRECT, $outcome->get_status() );
+		$this->assertSame( 'remote_payment_123', $outcome->get_provider_payment_id() );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_CHECKOUT_REDIRECT, $outcome->get_data() );
+		$this->assertSame( 'https://offline-provider.example/pay/123', $outcome->get_redirect_url() );
 		$this->assertSame( 'pending', $order->get_status() );
 		$this->assertSame( 'remote_payment_123', $order->get_meta( '_intent_id', true ) );
 	}
@@ -3308,11 +3326,12 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$order    = $this->create_woopayments_order( '12.00' );
 		$provider = new NonStripeProvider( new PaymentOutcome( PaymentOutcome::STATUS_PENDING_ASYNC, 'remote_pending_123' ) );
 
-		$result = $this->sut->process_checkout( PaymentOperationContext::for_checkout( $order, 'offline_redirect_provider' ), $provider );
-		$order  = wc_get_order( $order->get_id() );
+		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, 'offline_redirect_provider' ), $provider );
+		$order   = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'success', $result['result'] );
+		$this->assertSame( PaymentOutcome::STATUS_PENDING_ASYNC, $outcome->get_status() );
+		$this->assertSame( 'remote_pending_123', $outcome->get_provider_payment_id() );
 		$this->assertSame( 'pending', $order->get_status() );
 		$this->assertSame( 'processing', $order->get_meta( '_intention_status', true ) );
 		$this->assertSame( '', $order->get_meta( '_payment_method_id', true ) );
@@ -3503,7 +3522,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			$initial_result = '{"avs_verification":"review"}';
 			$order->add_order_note( $plugin_note );
 
-			$this->sut->process_checkout(
+			$this->sut->process_checkout_outcome(
 				PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_review_replay' ),
 				$this->review_payment_intent_provider( $initial_rules )
 			);
@@ -3526,7 +3545,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				'The seeded WooPayments-catalog rendering must satisfy the equivalent note identity.'
 			);
 
-			$this->sut->process_checkout(
+			$this->sut->process_checkout_outcome(
 				PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_review_replay' ),
 				$this->review_payment_intent_provider( $initial_rules )
 			);
@@ -3555,7 +3574,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				'address_mismatch' => 'block',
 			);
 			$changed_result = '{"avs_verification":"review","address_mismatch":"block"}';
-			$this->sut->process_checkout(
+			$this->sut->process_checkout_outcome(
 				PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_review_replay' ),
 				$this->review_payment_intent_provider( $changed_rules )
 			);
@@ -3589,9 +3608,10 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$order    = $this->create_woopayments_order( '0.00' );
 		$provider = new NonStripeProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'remote_should_not_be_used' ) );
 
-		$result = $this->sut->process_checkout( PaymentOperationContext::for_checkout( $order, 'offline_redirect_provider' ), $provider );
+		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, 'offline_redirect_provider' ), $provider );
 
-		$this->assertSame( 'success', $result['result'] );
+		$this->assertSame( PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT, $outcome->get_status() );
+		$this->assertSame( '', $outcome->get_provider_payment_id() );
 		$this->assertSame( 0, $provider->charge_calls );
 	}
 
@@ -3616,11 +3636,12 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			true
 		);
 
-		$result = $this->sut->process_checkout( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_zero' ), $provider );
-		$order  = wc_get_order( $order->get_id() );
+		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_zero' ), $provider );
+		$order   = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'success', $result['result'] );
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( 'seti_zero', $outcome->get_provider_payment_id() );
 		$this->assertSame( 1, $provider->charge_calls );
 		$this->assertSame( 'seti_zero', $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( 'pm_zero', $order->get_meta( '_payment_method_id', true ) );
@@ -3647,7 +3668,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			true
 		);
 
-		$result = $this->sut->process_checkout(
+		$outcome = $this->sut->process_checkout_outcome(
 			PaymentOperationContext::for_checkout(
 				$order,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
@@ -3656,10 +3677,11 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			),
 			$provider
 		);
-		$order  = wc_get_order( $order->get_id() );
+		$order   = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'success', $result['result'] );
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( 'seti_saved', $outcome->get_provider_payment_id() );
 		$this->assertSame( 1, $provider->charge_calls );
 		$this->assertSame( 'seti_saved', $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( 'pm_saved', $order->get_meta( '_payment_method_id', true ) );

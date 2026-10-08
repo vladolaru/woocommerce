@@ -61,22 +61,6 @@ class PaymentProcessingService {
 	}
 
 	/**
-	 * Process checkout payment through a provider.
-	 *
-	 * @since 11.0.0
-	 *
-	 * @param PaymentOperationContext $context  Payment context.
-	 * @param ProviderInterface       $provider Provider.
-	 * @return array<string,string>
-	 * @throws PaymentOutcomeApplyException When applying a referenced or successful charge outcome fails.
-	 */
-	public function process_checkout( PaymentOperationContext $context, ProviderInterface $provider ): array {
-		$outcome = $this->process_checkout_outcome( $context, $provider );
-
-		return $this->format_checkout_result( $context, $context->get_order(), $outcome );
-	}
-
-	/**
 	 * Process checkout payment through a provider and return the outcome.
 	 *
 	 * Under the order payment lock the context's order is read again in place, so every holder of that object sees the
@@ -1077,43 +1061,6 @@ class PaymentProcessingService {
 				$data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ],
 				static fn( $note_equivalent ): bool => is_string( $note_equivalent ) && '' !== $note_equivalent
 			)
-		);
-	}
-
-	/**
-	 * Format a WooCommerce checkout result from an outcome.
-	 *
-	 * @param PaymentOperationContext $context Payment context.
-	 * @param WC_Order                $order   Order object.
-	 * @param PaymentOutcome          $outcome Provider outcome.
-	 * @return array<string,string>
-	 */
-	private function format_checkout_result( PaymentOperationContext $context, WC_Order $order, PaymentOutcome $outcome ): array {
-		if ( PaymentOutcome::STATUS_FAILED === $outcome->get_status() ) {
-			return array(
-				// 'failure', not 'fail'. WooCommerce recognizes exactly
-				// success, failure, pending and error; the Store API turns a
-				// failed payment's notice into a shopper-visible error only on
-				// an exact 'failure' match, then clears the notice queue. An
-				// unrecognized value skips that conversion, is coerced to
-				// failure for the status, and leaves the shopper a failed
-				// checkout with no reason given.
-				'result'         => 'failure',
-				'redirect'       => '',
-				'payment_method' => '',
-			);
-		}
-
-		$payment_method_id = '' !== $outcome->get_payment_method_id() ? $outcome->get_payment_method_id() : $context->get_payment_method_id();
-		$data              = $outcome->get_data();
-		$redirect          = array_key_exists( PaymentOutcome::DATA_CHECKOUT_REDIRECT, $data )
-			? (string) $data[ PaymentOutcome::DATA_CHECKOUT_REDIRECT ]
-			: ( '' !== $outcome->get_redirect_url() ? $outcome->get_redirect_url() : $order->get_checkout_order_received_url() );
-
-		return array(
-			'result'         => 'success',
-			'redirect'       => $redirect,
-			'payment_method' => $payment_method_id,
 		);
 	}
 }

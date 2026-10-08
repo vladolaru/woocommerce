@@ -56,23 +56,6 @@ class RecordingPaymentProcessingService extends PaymentProcessingService {
 	}
 
 	/**
-	 * Process checkout payment through a provider.
-	 *
-	 * @param PaymentOperationContext $context  Payment context.
-	 * @param ProviderInterface       $provider Provider.
-	 * @return array<string,string>
-	 */
-	public function process_checkout( PaymentOperationContext $context, ProviderInterface $provider ): array {
-		$this->last_checkout_context = $context;
-		++$this->checkout_attempt_count;
-
-		return array(
-			'result'   => 'success',
-			'redirect' => 'https://example.test/order-received',
-		);
-	}
-
-	/**
 	 * Process checkout payment and return the neutral outcome.
 	 *
 	 * @param PaymentOperationContext $context  Payment context.
