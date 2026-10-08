@@ -599,28 +599,28 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 
 		$this->assertCount( 1, $this->get_disputed_intent_notes( $order ) );
 		// The second submit found the note already written; it must still release the lock it took.
-		$store   = wc_get_container()->get( OrderPaymentStore::class );
-		$profile = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
-		$token   = $store->claim_order_payment_lock_for_operation( $order, $profile, 'refund_key', 'refund' );
+		$store      = wc_get_container()->get( OrderPaymentStore::class );
+		$vocabulary = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
+		$token      = $store->claim_order_payment_lock_for_operation( $order, $vocabulary, 'refund_key', 'refund' );
 		$this->assertIsString( $token, 'The already-noted submit must release the order payment lock.' );
-		$store->release_order_payment_lock( $order, $profile, $token );
+		$store->release_order_payment_lock( $order, $vocabulary, $token );
 	}
 
 	/**
 	 * @testdox The dispute note waits for the next submit while another operation holds the order payment lock, and the submit is still refused.
 	 */
 	public function test_disputed_note_is_not_written_while_another_operation_holds_the_order(): void {
-		$order   = $this->create_order_with_disputed_attached_intent();
-		$sut     = $this->create_service( $this->create_session(), $this->create_api_client_answering( $this->create_charged_intent( $order, array( 'disputed' => true ) ) ) );
-		$store   = wc_get_container()->get( OrderPaymentStore::class );
-		$profile = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
-		$token   = $store->claim_order_payment_lock_for_operation( $order, $profile, 'dispute_webhook_dp_held', 'dispute webhook' );
+		$order      = $this->create_order_with_disputed_attached_intent();
+		$sut        = $this->create_service( $this->create_session(), $this->create_api_client_answering( $this->create_charged_intent( $order, array( 'disputed' => true ) ) ) );
+		$store      = wc_get_container()->get( OrderPaymentStore::class );
+		$vocabulary = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
+		$token      = $store->claim_order_payment_lock_for_operation( $order, $vocabulary, 'dispute_webhook_dp_held', 'dispute webhook' );
 		$this->assertIsString( $token );
 		$logger = RecordingWcLogger::install();
 
 		$held_result = $sut->check_payment_intent_attached_to_order_succeeded( wc_get_order( $order->get_id() ), $this->create_gateway() );
 		$held_notes  = $this->get_disputed_intent_notes( $order );
-		$store->release_order_payment_lock( $order, $profile, $token );
+		$store->release_order_payment_lock( $order, $vocabulary, $token );
 		$free_result = $sut->check_payment_intent_attached_to_order_succeeded( wc_get_order( $order->get_id() ), $this->create_gateway() );
 
 		$this->assertInstanceOf( WP_Error::class, $held_result );
@@ -630,9 +630,9 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$this->assertCount( 1, $refusals, 'The refused note is logged like every other lock refusal.' );
 		$this->assertInstanceOf( WP_Error::class, $free_result );
 		$this->assertCount( 1, $this->get_disputed_intent_notes( $order ) );
-		$next_token = $store->claim_order_payment_lock_for_operation( $order, $profile, 'refund_key', 'refund' );
+		$next_token = $store->claim_order_payment_lock_for_operation( $order, $vocabulary, 'refund_key', 'refund' );
 		$this->assertIsString( $next_token, 'The guard must release the lock it took.' );
-		$store->release_order_payment_lock( $order, $profile, $next_token );
+		$store->release_order_payment_lock( $order, $vocabulary, $next_token );
 	}
 
 	/**

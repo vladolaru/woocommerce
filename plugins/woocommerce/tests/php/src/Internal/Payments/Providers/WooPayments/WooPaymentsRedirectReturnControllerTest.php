@@ -1027,8 +1027,8 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$api_client            = new RedirectReturnApiClientStub();
 		$api_client->exception = new WooPaymentsApiException( 'Request timed out.', 'wcpay_http_request_failed', 504 );
 		$store                 = wc_get_container()->get( OrderPaymentStore::class );
-		$profile               = new WooPaymentsPersistenceVocabulary();
-		$lock_token            = $store->claim_order_payment_lock_for_operation( $order, $profile, 'pi_locked_return', $holder );
+		$vocabulary            = new WooPaymentsPersistenceVocabulary();
+		$lock_token            = $store->claim_order_payment_lock_for_operation( $order, $vocabulary, 'pi_locked_return', $holder );
 		$this->assertNotNull( $lock_token );
 		$logger = new RedirectReturnRecordingLogger();
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
@@ -1038,7 +1038,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		try {
 			$this->sut->handle_wp();
 		} finally {
-			$store->release_order_payment_lock( $order, $profile, $lock_token );
+			$store->release_order_payment_lock( $order, $vocabulary, $lock_token );
 		}
 		$reloaded = wc_get_order( $order->get_id() );
 
@@ -1539,8 +1539,8 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			),
 		);
 		$store                      = wc_get_container()->get( OrderPaymentStore::class );
-		$profile                    = new WooPaymentsPersistenceVocabulary();
-		$lock_token                 = $store->claim_order_payment_lock_for_operation( $order, $profile, 'pi_error_locked', 'payment status update' );
+		$vocabulary                 = new WooPaymentsPersistenceVocabulary();
+		$lock_token                 = $store->claim_order_payment_lock_for_operation( $order, $vocabulary, 'pi_error_locked', 'payment status update' );
 		$this->assertNotNull( $lock_token );
 		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_error_locked' );
@@ -1548,7 +1548,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		try {
 			$location = $this->handle_wp_expecting_redirect();
 		} finally {
-			$store->release_order_payment_lock( $order, $profile, $lock_token );
+			$store->release_order_payment_lock( $order, $vocabulary, $lock_token );
 		}
 
 		$this->assertSame( wc_get_checkout_url(), $location );

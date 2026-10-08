@@ -456,9 +456,9 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_total( '10.00' );
 		$order->save();
-		$profile = new WooPaymentsPersistenceVocabulary();
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
 		// A checkout that died after the platform captured keeps the lock until its TTL runs out.
-		$this->hold_order_payment_lock( $order, $profile, 'pi_lock_ttl' );
+		$this->hold_order_payment_lock( $order, $vocabulary, 'pi_lock_ttl' );
 		// Shape read by client 11.1.0 class-wc-payments-webhook-processing-service.php:494-519 (object id, currency,
 		// amount, payment_method, charges.data[0]) and :968-1002 (metadata.order_id for the order lookup); status is
 		// the PaymentIntent's own field (Stripe API PaymentIntent object).
@@ -516,7 +516,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			}
 		} finally {
 			// The holder's TTL has run out by the time this attempt is due.
-			$this->clear_order_payment_lock( $order, $profile );
+			$this->clear_order_payment_lock( $order, $vocabulary );
 		}
 
 		$scheduler->scheduled_jobs = array();

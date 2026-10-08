@@ -738,8 +738,8 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_intent_id', 'pi_must_not_leak' );
 		$order->save();
 
-		$profile = $this->create_provider_profile();
-		$surface = $this->read_payment_surface( $order, $profile );
+		$vocabulary = $this->create_provider_vocabulary();
+		$surface    = $this->read_payment_surface( $order, $vocabulary );
 
 		$this->assertSame( array( '_provider_payment_id' => 'provider_payment_123' ), $surface['meta'] );
 	}
@@ -763,11 +763,11 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 	 *
 	 * @return ProviderPersistenceVocabularyInterface
 	 */
-	private function create_provider_profile(): ProviderPersistenceVocabularyInterface {
-		$profile = $this->createMock( ProviderPersistenceVocabularyInterface::class );
-		$profile->method( 'get_preserved_payment_meta_keys' )->willReturn( array( '_provider_payment_id' ) );
+	private function create_provider_vocabulary(): ProviderPersistenceVocabularyInterface {
+		$vocabulary = $this->createMock( ProviderPersistenceVocabularyInterface::class );
+		$vocabulary->method( 'get_preserved_payment_meta_keys' )->willReturn( array( '_provider_payment_id' ) );
 
-		return $profile;
+		return $vocabulary;
 	}
 	/**
 	 * Create a shadow-mode instance with deterministic provider dependencies.

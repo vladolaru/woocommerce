@@ -80,9 +80,9 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	 * @testdox Provider identity exposes the WooPayments persistence profile.
 	 */
 	public function test_provider_identity_exposes_woopayments_persistence_vocabulary(): void {
-		$profile = $this->sut->get_persistence_vocabulary();
+		$vocabulary = $this->sut->get_persistence_vocabulary();
 
-		$this->assertInstanceOf( ProviderPersistenceVocabularyInterface::class, $profile );
+		$this->assertInstanceOf( ProviderPersistenceVocabularyInterface::class, $vocabulary );
 		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $this->sut->get_id() );
 	}
 

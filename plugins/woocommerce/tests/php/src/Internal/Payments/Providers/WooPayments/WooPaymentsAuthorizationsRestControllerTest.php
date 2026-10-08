@@ -382,10 +382,10 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	 * The real processing service refuses before the provider call and saves nothing, so only the route's save keeps the entry.
 	 */
 	public function test_lock_refused_capture_keeps_one_audit_entry(): void {
-		$order   = $this->create_authorized_order( 'pi_auth' );
-		$store   = wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\OrderPaymentStore::class );
-		$profile = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary();
-		$holder  = $store->claim_order_payment_lock_for_operation( $order, $profile, 'pi_other', 'payment status update' );
+		$order      = $this->create_authorized_order( 'pi_auth' );
+		$store      = wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\OrderPaymentStore::class );
+		$vocabulary = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary();
+		$holder     = $store->claim_order_payment_lock_for_operation( $order, $vocabulary, 'pi_other', 'payment status update' );
 		$this->assertNotNull( $holder );
 		$controller = new WooPaymentsAuthorizationsRestController();
 		$controller->init( $this->create_arbiter( true ), $this->api_client, wc_get_container()->get( PaymentProcessingService::class ), wc_get_container()->get( WooPaymentsProvider::class ) );
@@ -400,7 +400,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_authorization' );
 		$request->set_body_params( array( 'payment_intent_id' => 'pi_auth' ) );
 		$response = $this->server->dispatch( $request );
-		$store->release_order_payment_lock( $order, $profile, (string) $holder );
+		$store->release_order_payment_lock( $order, $vocabulary, (string) $holder );
 
 		$this->assertSame( 'wcpay_capture_error', $response->get_data()['code'] );
 		$this->assertNotSame( 'capture_intention', $this->api_client->last_call['method'] ?? '' );

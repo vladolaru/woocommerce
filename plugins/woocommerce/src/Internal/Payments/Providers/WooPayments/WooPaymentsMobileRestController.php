@@ -522,10 +522,10 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		}
 
 		$store      = wc_get_container()->get( OrderPaymentStore::class );
-		$profile    = new WooPaymentsPersistenceVocabulary();
-		$lock_token = $this->claim_terminal_capture_lock( $store, $order, $profile, $intent_id );
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$lock_token = $this->claim_terminal_capture_lock( $store, $order, $vocabulary, $intent_id );
 		if ( null === $lock_token ) {
-			$store->log_order_payment_lock_refusal( $order, $profile, 'terminal capture' );
+			$store->log_order_payment_lock_refusal( $order, $vocabulary, 'terminal capture' );
 
 			return new WP_Error( 'wcpay_capture_error', __( 'The payment is still being processed. Try again.', 'woocommerce' ), array( 'status' => 409 ) );
 		}
@@ -536,7 +536,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 
 			return $this->capture_terminal_payment_under_lock( $order, $intent_id );
 		} finally {
-			$store->release_order_payment_lock( $order, $profile, $lock_token );
+			$store->release_order_payment_lock( $order, $vocabulary, $lock_token );
 		}
 	}
 
@@ -549,13 +549,13 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 	 *
 	 * @param OrderPaymentStore                $store     Order payment store.
 	 * @param WC_Order                         $order     Order.
-	 * @param WooPaymentsPersistenceVocabulary $profile   Persistence profile.
+	 * @param WooPaymentsPersistenceVocabulary $vocabulary   Persistence profile.
 	 * @param string                           $intent_id Intent ID, the lock value.
 	 * @return string|null Lock token, or null when the lock stayed held.
 	 */
-	private function claim_terminal_capture_lock( OrderPaymentStore $store, WC_Order $order, WooPaymentsPersistenceVocabulary $profile, string $intent_id ): ?string {
+	private function claim_terminal_capture_lock( OrderPaymentStore $store, WC_Order $order, WooPaymentsPersistenceVocabulary $vocabulary, string $intent_id ): ?string {
 		for ( $attempt = 1; ; ++$attempt ) {
-			$lock_token = $store->claim_order_payment_lock_for_operation( $order, $profile, $intent_id, 'terminal capture' );
+			$lock_token = $store->claim_order_payment_lock_for_operation( $order, $vocabulary, $intent_id, 'terminal capture' );
 			if ( null !== $lock_token || self::LOCK_CLAIM_ATTEMPTS === $attempt ) {
 				return $lock_token;
 			}

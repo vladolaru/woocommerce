@@ -1906,20 +1906,20 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$order = $this->create_order( 12.34, 'USD' );
 		$this->set_capturable_terminal_intent( $order );
 		$store        = wc_get_container()->get( OrderPaymentStore::class );
-		$profile      = new WooPaymentsPersistenceVocabulary();
-		$holder_token = $store->claim_order_payment_lock_for_operation( $order, $profile, 'pi_terminal', 'payment status update' );
+		$vocabulary   = new WooPaymentsPersistenceVocabulary();
+		$holder_token = $store->claim_order_payment_lock_for_operation( $order, $vocabulary, 'pi_terminal', 'payment status update' );
 		$this->assertNotNull( $holder_token );
 		$sut = $this->create_lock_waiting_controller(
-			static function ( int $wait ) use ( $store, $order, $profile, $holder_token ): void {
+			static function ( int $wait ) use ( $store, $order, $vocabulary, $holder_token ): void {
 				if ( 2 === $wait ) {
-					$store->release_order_payment_lock( $order, $profile, $holder_token );
+					$store->release_order_payment_lock( $order, $vocabulary, $holder_token );
 				}
 			}
 		);
 
 		$claims_during_capture        = array();
-		$claim                        = static function () use ( $store, $order, $profile, &$claims_during_capture ): void {
-			$claims_during_capture[] = $store->claim_order_payment_lock_for_operation( $order, $profile, 'pi_other', 'competing operation' );
+		$claim                        = static function () use ( $store, $order, $vocabulary, &$claims_during_capture ): void {
+			$claims_during_capture[] = $store->claim_order_payment_lock_for_operation( $order, $vocabulary, 'pi_other', 'competing operation' );
 		};
 		$this->api_client->on_capture = $claim;
 		add_action( 'woocommerce_order_status_completed', $claim );
@@ -1941,7 +1941,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 			$this->api_client->captures
 		);
 		$this->assertSame( 'completed', wc_get_order( $order->get_id() )->get_status() );
-		$this->assertNotNull( $store->claim_order_payment_lock_for_operation( $order, $profile, 'pi_terminal', 'payment status update' ), 'The capture released the lock.' );
+		$this->assertNotNull( $store->claim_order_payment_lock_for_operation( $order, $vocabulary, 'pi_terminal', 'payment status update' ), 'The capture released the lock.' );
 	}
 
 	/**
@@ -1955,12 +1955,12 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$order  = $this->create_order( 12.34, 'USD' );
 		$this->set_capturable_terminal_intent( $order );
 		$store        = wc_get_container()->get( OrderPaymentStore::class );
-		$profile      = new WooPaymentsPersistenceVocabulary();
-		$holder_token = $store->claim_order_payment_lock_for_operation( $order, $profile, 'pi_terminal', 'payment status update' );
+		$vocabulary   = new WooPaymentsPersistenceVocabulary();
+		$holder_token = $store->claim_order_payment_lock_for_operation( $order, $vocabulary, 'pi_terminal', 'payment status update' );
 		$sut          = $this->create_lock_waiting_controller();
 
 		$response = $sut->capture_terminal_payment( $this->make_capture_request( $order ) );
-		$store->release_order_payment_lock( $order, $profile, (string) $holder_token );
+		$store->release_order_payment_lock( $order, $vocabulary, (string) $holder_token );
 
 		$this->assertInstanceOf( WP_Error::class, $response );
 		$this->assertSame( 'wcpay_capture_error', $response->get_error_code() );
@@ -1980,15 +1980,15 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$order = $this->create_order( 12.34, 'USD' );
 		$this->set_capturable_terminal_intent( $order );
 		$store        = wc_get_container()->get( OrderPaymentStore::class );
-		$profile      = new WooPaymentsPersistenceVocabulary();
-		$holder_token = $store->claim_order_payment_lock_for_operation( $order, $profile, 'pi_terminal', 'payment status update' );
+		$vocabulary   = new WooPaymentsPersistenceVocabulary();
+		$holder_token = $store->claim_order_payment_lock_for_operation( $order, $vocabulary, 'pi_terminal', 'payment status update' );
 		$order_id     = $order->get_id();
 		$sut          = $this->create_lock_waiting_controller(
-			static function () use ( $store, $order, $profile, $holder_token, $order_id ): void {
+			static function () use ( $store, $order, $vocabulary, $holder_token, $order_id ): void {
 				$completed = wc_get_order( $order_id );
 				$completed->update_meta_data( '_intention_status', 'succeeded' );
 				$completed->save();
-				$store->release_order_payment_lock( $order, $profile, $holder_token );
+				$store->release_order_payment_lock( $order, $vocabulary, $holder_token );
 			}
 		);
 

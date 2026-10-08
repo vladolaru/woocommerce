@@ -643,13 +643,13 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			 * Finish the admin refund, as the gateway does under the lock, then grant the webhook's claim.
 			 *
 			 * @param WC_Order                               $order     Order being locked.
-			 * @param ProviderPersistenceVocabularyInterface $profile   Persistence profile.
+			 * @param ProviderPersistenceVocabularyInterface $vocabulary   Persistence profile.
 			 * @param string|null                            $reference Payment reference.
 			 * @param string                                 $operation Operation claiming the lock.
 			 * @return string|null
 			 */
-			public function claim_order_payment_lock_for_operation( WC_Order $order, ProviderPersistenceVocabularyInterface $profile, ?string $reference, string $operation ): ?string {
-				unset( $profile, $reference, $operation );
+			public function claim_order_payment_lock_for_operation( WC_Order $order, ProviderPersistenceVocabularyInterface $vocabulary, ?string $reference, string $operation ): ?string {
+				unset( $vocabulary, $reference, $operation );
 				if ( ! $this->admin_refund_linked ) {
 					$this->admin_refund_linked = true;
 					$refund                    = wc_create_refund(
@@ -672,11 +672,11 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			 * Release nothing: the claim above holds no lock.
 			 *
 			 * @param WC_Order                               $order      Order being unlocked.
-			 * @param ProviderPersistenceVocabularyInterface $profile    Persistence profile.
+			 * @param ProviderPersistenceVocabularyInterface $vocabulary    Persistence profile.
 			 * @param string                                 $lock_token Claim token.
 			 */
-			public function release_order_payment_lock( WC_Order $order, ProviderPersistenceVocabularyInterface $profile, string $lock_token ): void {
-				unset( $order, $profile, $lock_token );
+			public function release_order_payment_lock( WC_Order $order, ProviderPersistenceVocabularyInterface $vocabulary, string $lock_token ): void {
+				unset( $order, $vocabulary, $lock_token );
 			}
 		};
 		$handler = new WooPaymentsRefundEventHandler();

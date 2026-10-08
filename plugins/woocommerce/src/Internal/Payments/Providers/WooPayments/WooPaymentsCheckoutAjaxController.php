@@ -530,8 +530,8 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 			$note_type        = null === $note ? null : PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_COMPLETE;
 		}
 
-		$profile = new WooPaymentsPersistenceVocabulary();
-		$meta    = $profile->get_outcome_meta( $outcome );
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$meta       = $vocabulary->get_outcome_meta( $outcome );
 		if ( ( $intent['status'] ?? '' ) !== $provider_status ) {
 			$meta['_intention_status'] = $provider_status;
 		}

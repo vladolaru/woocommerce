@@ -42,7 +42,7 @@ class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
 	 *
 	 * @var string
 	 */
-	private const PERSISTENCE_PROFILE_FILE = 'src/Internal/Payments/Providers/WooPayments/WooPaymentsPersistenceVocabulary.php';
+	private const PERSISTENCE_VOCABULARY_FILE = 'src/Internal/Payments/Providers/WooPayments/WooPaymentsPersistenceVocabulary.php';
 
 	/**
 	 * Calls whose key argument only reads a persisted value.
@@ -274,9 +274,9 @@ class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
 	 * @return array<int,string>
 	 */
 	private function native_literals(): array {
-		$plugin_path  = WC()->plugin_path();
-		$profile_file = $plugin_path . '/' . self::PERSISTENCE_PROFILE_FILE;
-		$roots        = array_map(
+		$plugin_path     = WC()->plugin_path();
+		$vocabulary_file = $plugin_path . '/' . self::PERSISTENCE_VOCABULARY_FILE;
+		$roots           = array_map(
 			static function ( string $root ) use ( $plugin_path ): string {
 				return $plugin_path . '/' . $root;
 			},
@@ -291,7 +291,7 @@ class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
 					continue;
 				}
 
-				if ( $profile_file === $path && ! $this->is_constant_declaration_value( $tokens, $index ) ) {
+				if ( $vocabulary_file === $path && ! $this->is_constant_declaration_value( $tokens, $index ) ) {
 					continue;
 				}
 

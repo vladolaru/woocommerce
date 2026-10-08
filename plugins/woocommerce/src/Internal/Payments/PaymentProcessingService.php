@@ -93,16 +93,16 @@ class PaymentProcessingService {
 	public function process_checkout_outcome( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
 		$order           = $context->get_order();
 		$idempotency_key = $this->idempotency->mint_attempt_key();
-		$profile         = $provider->get_persistence_vocabulary();
+		$vocabulary      = $provider->get_persistence_vocabulary();
 
 		// WooPayments locks checkout too, so this refusal is not logged as a native-only one.
-		$lock_token = $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $profile, $idempotency_key, 'checkout' );
+		$lock_token = $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $vocabulary, $idempotency_key, 'checkout' );
 		if ( null === $lock_token ) {
 			return $this->get_checkout_in_progress_outcome();
 		}
 
 		try {
-			$changed_order_outcome = $this->get_outcome_for_order_changed_before_claim( $order, $profile );
+			$changed_order_outcome = $this->get_outcome_for_order_changed_before_claim( $order, $vocabulary );
 			if ( null !== $changed_order_outcome ) {
 				return $changed_order_outcome;
 			}
@@ -131,7 +131,7 @@ class PaymentProcessingService {
 
 			return $outcome;
 		} finally {
-			$this->order_payment_store->release_order_payment_lock( $order, $profile, $lock_token );
+			$this->order_payment_store->release_order_payment_lock( $order, $vocabulary, $lock_token );
 		}
 	}
 
@@ -164,15 +164,15 @@ class PaymentProcessingService {
 	 * (class-wc-payment-gateway-wcpay.php:1251-1268) and would charge again.
 	 *
 	 * @param WC_Order                               $order   Order as this request loaded it, read again in place.
-	 * @param ProviderPersistenceVocabularyInterface $profile Provider persistence vocabulary.
+	 * @param ProviderPersistenceVocabularyInterface $vocabulary Provider persistence vocabulary.
 	 * @return PaymentOutcome|null The outcome to return instead of charging, or null to charge.
 	 */
-	private function get_outcome_for_order_changed_before_claim( WC_Order $order, ProviderPersistenceVocabularyInterface $profile ): ?PaymentOutcome {
+	private function get_outcome_for_order_changed_before_claim( WC_Order $order, ProviderPersistenceVocabularyInterface $vocabulary ): ?PaymentOutcome {
 		$paid_statuses     = wc_get_is_paid_statuses();
 		$loaded_status     = $order->get_status();
 		$loaded_was_paid   = $order->has_status( $paid_statuses );
-		$loaded_references = $this->get_recorded_payment_references( $order, $profile );
-		$loaded_charge_key = $this->get_kept_charge_key( $order, $profile );
+		$loaded_references = $this->get_recorded_payment_references( $order, $vocabulary );
+		$loaded_charge_key = $this->get_kept_charge_key( $order, $vocabulary );
 
 		$this->lifecycle_service->reread_order_from_data_store( $order );
 
@@ -185,9 +185,9 @@ class PaymentProcessingService {
 		$reason = null;
 		if ( $order->get_status() !== $loaded_status ) {
 			$reason = 'order_status_changed';
-		} elseif ( $this->get_recorded_payment_references( $order, $profile ) !== $loaded_references ) {
+		} elseif ( $this->get_recorded_payment_references( $order, $vocabulary ) !== $loaded_references ) {
 			$reason = 'payment_reference_changed';
-		} elseif ( $this->get_kept_charge_key( $order, $profile ) !== $loaded_charge_key ) {
+		} elseif ( $this->get_kept_charge_key( $order, $vocabulary ) !== $loaded_charge_key ) {
 			$reason = 'kept_charge_key_changed';
 		}
 
@@ -204,13 +204,13 @@ class PaymentProcessingService {
 	 * Get the payment references recorded on an order: its transaction ID and the provider's payment meta.
 	 *
 	 * @param WC_Order                               $order   Order object.
-	 * @param ProviderPersistenceVocabularyInterface $profile Provider persistence vocabulary.
+	 * @param ProviderPersistenceVocabularyInterface $vocabulary Provider persistence vocabulary.
 	 * @return array{0:string,1:string}
 	 */
-	private function get_recorded_payment_references( WC_Order $order, ProviderPersistenceVocabularyInterface $profile ): array {
+	private function get_recorded_payment_references( WC_Order $order, ProviderPersistenceVocabularyInterface $vocabulary ): array {
 		return array(
 			(string) $order->get_transaction_id(),
-			(string) $order->get_meta( $profile->get_payment_reference_meta_key(), true ),
+			(string) $order->get_meta( $vocabulary->get_payment_reference_meta_key(), true ),
 		);
 	}
 
@@ -218,11 +218,11 @@ class PaymentProcessingService {
 	 * Get the charge idempotency key the provider keeps on the order while a charge outcome is unknown.
 	 *
 	 * @param WC_Order                               $order   Order object.
-	 * @param ProviderPersistenceVocabularyInterface $profile Provider persistence vocabulary.
+	 * @param ProviderPersistenceVocabularyInterface $vocabulary Provider persistence vocabulary.
 	 * @return string The kept key, or '' when there is none or the provider keeps none.
 	 */
-	private function get_kept_charge_key( WC_Order $order, ProviderPersistenceVocabularyInterface $profile ): string {
-		$meta_key = $profile->get_charge_idempotency_key_meta_key();
+	private function get_kept_charge_key( WC_Order $order, ProviderPersistenceVocabularyInterface $vocabulary ): string {
+		$meta_key = $vocabulary->get_charge_idempotency_key_meta_key();
 
 		return '' === $meta_key ? '' : (string) $order->get_meta( $meta_key, true );
 	}
@@ -358,7 +358,7 @@ class PaymentProcessingService {
 		$order        = $context->get_order();
 		$payment_data = $context->get_payment_data();
 		$amount       = isset( $payment_data['amount'] ) ? (float) $payment_data['amount'] : 0.0;
-		$profile      = $provider->get_persistence_vocabulary();
+		$vocabulary   = $provider->get_persistence_vocabulary();
 
 		if ( '0.00' === sprintf( '%0.2f', $amount ) ) {
 			return true;
@@ -367,9 +367,9 @@ class PaymentProcessingService {
 		// Like client 11.1.0, each refund call sends its own key, so a retry after a failed refund
 		// reaches the provider instead of replaying the stored failure. The key is also the lock value.
 		$idempotency_key = $this->idempotency->mint_attempt_key();
-		$lock_token      = $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $profile, $idempotency_key, 'refund' );
+		$lock_token      = $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $vocabulary, $idempotency_key, 'refund' );
 		if ( null === $lock_token ) {
-			$this->order_payment_store->log_order_payment_lock_refusal( $order, $profile, 'refund' );
+			$this->order_payment_store->log_order_payment_lock_refusal( $order, $vocabulary, 'refund' );
 			return new WP_Error( 'native_payment_refund_locked', __( 'A payment operation is already in progress for this order.', 'woocommerce' ) );
 		}
 
@@ -409,11 +409,11 @@ class PaymentProcessingService {
 				}
 
 				$outcome                  = $provider_outcome;
-				$reconciliation_persisted = $this->persist_refund_reconciliation_context( $order, $wc_refund_id, $provider_outcome, $profile );
+				$reconciliation_persisted = $this->persist_refund_reconciliation_context( $order, $wc_refund_id, $provider_outcome, $vocabulary );
 				$this->log_post_provider_apply_failure( $order, $provider_outcome, 'refund', $apply_exception, $reconciliation_persisted );
 			}
 		} finally {
-			$this->order_payment_store->release_order_payment_lock( $order, $profile, $lock_token );
+			$this->order_payment_store->release_order_payment_lock( $order, $vocabulary, $lock_token );
 		}
 
 		if ( $outcome->is_successful() ) {
@@ -437,10 +437,10 @@ class PaymentProcessingService {
 	 * @param WC_Order                               $order        Parent order.
 	 * @param int|null                               $wc_refund_id Local refund this call links.
 	 * @param PaymentOutcome                         $outcome      Provider refund outcome.
-	 * @param ProviderPersistenceVocabularyInterface $profile      Provider persistence vocabulary.
+	 * @param ProviderPersistenceVocabularyInterface $vocabulary      Provider persistence vocabulary.
 	 * @return bool Whether the refund identity was persisted.
 	 */
-	private function persist_refund_reconciliation_context( WC_Order $order, ?int $wc_refund_id, PaymentOutcome $outcome, ProviderPersistenceVocabularyInterface $profile ): bool {
+	private function persist_refund_reconciliation_context( WC_Order $order, ?int $wc_refund_id, PaymentOutcome $outcome, ProviderPersistenceVocabularyInterface $vocabulary ): bool {
 		$refund_reference = $outcome->get_provider_payment_id();
 		if ( '' === $refund_reference || null === $wc_refund_id ) {
 			return false;
@@ -452,7 +452,7 @@ class PaymentProcessingService {
 				return false;
 			}
 
-			$meta_key = $profile->get_processed_refund_link_meta_key();
+			$meta_key = $vocabulary->get_processed_refund_link_meta_key();
 			if ( '' === $meta_key ) {
 				return false;
 			}
@@ -712,11 +712,11 @@ class PaymentProcessingService {
 		$order           = $context->get_order();
 		$amount          = $context->get_amount() ?? (float) $order->get_total();
 		$idempotency_key = $this->idempotency->derive_key( $order, $provider->get_id(), $operation, $amount, (string) $order->get_currency() );
-		$profile         = $provider->get_persistence_vocabulary();
+		$vocabulary      = $provider->get_persistence_vocabulary();
 
-		$lock_token = $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $profile, $idempotency_key, $operation );
+		$lock_token = $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $vocabulary, $idempotency_key, $operation );
 		if ( null === $lock_token ) {
-			$this->order_payment_store->log_order_payment_lock_refusal( $order, $profile, $operation );
+			$this->order_payment_store->log_order_payment_lock_refusal( $order, $vocabulary, $operation );
 			return new PaymentOutcome(
 				PaymentOutcome::STATUS_FAILED,
 				'',
@@ -754,7 +754,7 @@ class PaymentProcessingService {
 
 			return $outcome;
 		} finally {
-			$this->order_payment_store->release_order_payment_lock( $order, $profile, $lock_token );
+			$this->order_payment_store->release_order_payment_lock( $order, $vocabulary, $lock_token );
 		}
 	}
 

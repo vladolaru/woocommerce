@@ -409,17 +409,17 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		}
 
 		$store      = wc_get_container()->get( OrderPaymentStore::class );
-		$profile    = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
-		$lock_token = $store->claim_order_payment_lock_for_operation( $order, $profile, 'disputed_intent_note_' . $intent_id, 'disputed intent note' );
+		$vocabulary = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
+		$lock_token = $store->claim_order_payment_lock_for_operation( $order, $vocabulary, 'disputed_intent_note_' . $intent_id, 'disputed intent note' );
 		if ( null === $lock_token ) {
-			$store->log_order_payment_lock_refusal( $order, $profile, 'disputed intent note' );
+			$store->log_order_payment_lock_refusal( $order, $vocabulary, 'disputed intent note' );
 			return;
 		}
 
 		try {
 			$this->write_disputed_intent_note_unless_noted( $this->get_lifecycle_service()->get_fresh_order_from_data_store( $order ), $intent_id );
 		} finally {
-			$store->release_order_payment_lock( $order, $profile, $lock_token );
+			$store->release_order_payment_lock( $order, $vocabulary, $lock_token );
 		}
 	}
 
@@ -662,20 +662,20 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		$note_equivalents = isset( $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] ) && is_array( $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] )
 			? $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ]
 			: array();
-		$profile          = new WooPaymentsPersistenceVocabulary();
+		$vocabulary       = new WooPaymentsPersistenceVocabulary();
 
 		$this->get_lifecycle_service()->apply(
 			$order,
 			new PaymentLifecycleEvent(
 				self::get_lifecycle_status( $outcome ),
 				'' !== $outcome->get_provider_payment_id() ? $outcome->get_provider_payment_id() : null,
-				$profile->get_outcome_meta( $outcome ),
+				$vocabulary->get_outcome_meta( $outcome ),
 				array(),
 				$note,
 				$note_type,
 				$note_equivalents
 			),
-			$profile
+			$vocabulary
 		);
 	}
 
