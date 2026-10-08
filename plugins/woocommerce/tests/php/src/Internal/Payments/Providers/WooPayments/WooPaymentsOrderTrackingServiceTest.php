@@ -3,14 +3,14 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderTrackingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -42,7 +42,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should register preserved order-tracking hooks when native owns runtime.
 	 */
 	public function test_registers_preserved_order_tracking_hooks_when_native_owns_runtime(): void {
-		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ) );
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
 
 		$service->register();
 
@@ -55,7 +55,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should register renewal tracking meta filters when native owns runtime.
 	 */
 	public function test_registers_renewal_tracking_meta_filter_when_native_owns_runtime(): void {
-		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ) );
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
 
 		$service->register();
 
@@ -73,7 +73,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should not register order-tracking hooks when plugin owns runtime.
 	 */
 	public function test_registers_no_order_tracking_hooks_when_plugin_owns_runtime(): void {
-		$service = $this->create_service( new StaticNativeRuntimeArbiter( false ) );
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( false ) );
 
 		$service->register();
 
@@ -86,7 +86,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should not register renewal tracking meta filters when plugin owns runtime.
 	 */
 	public function test_registers_no_renewal_tracking_meta_filter_when_plugin_owns_runtime(): void {
-		$service = $this->create_service( new StaticNativeRuntimeArbiter( false ) );
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( false ) );
 
 		$service->register();
 
@@ -98,7 +98,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should remove tracking completion meta from renewal order data.
 	 */
 	public function test_removes_tracking_complete_meta_from_renewal_order_data(): void {
-		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ) );
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
 
 		$result = $service->handle_wc_subscriptions_renewal_order_data(
 			array(
@@ -115,7 +115,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should remove tracking completion meta from legacy renewal meta queries.
 	 */
 	public function test_removes_tracking_complete_meta_from_legacy_renewal_meta_query(): void {
-		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ) );
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
 		$query   = 'SELECT meta_key, meta_value FROM wp_postmeta WHERE post_id = 123';
 
 		$result = $service->handle_wcs_renewal_order_meta_query( $query );
@@ -129,7 +129,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_skips_scheduling_without_sift_fraud_config(): void {
 		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service( new StaticNativeRuntimeArbiter( true ), $scheduler );
+		$service   = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
 		$order     = $this->create_order(
 			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			array(
@@ -147,7 +147,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_schedules_new_order_tracking_for_untracked_woopayments_orders(): void {
 		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service( new StaticNativeRuntimeArbiter( true ), $scheduler );
+		$service   = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
 		$order     = $this->create_order(
 			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			array(
@@ -174,7 +174,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_does_not_schedule_tracking_for_split_sub_gateway_orders(): void {
 		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service( new StaticNativeRuntimeArbiter( true ), $scheduler );
+		$service   = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
 		$order     = $this->create_order(
 			WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'bancontact',
 			array(
@@ -195,7 +195,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_schedules_update_order_tracking_for_tracked_woopayments_orders(): void {
 		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service( new StaticNativeRuntimeArbiter( true ), $scheduler );
+		$service   = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
 		$order     = $this->create_order(
 			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			array(
@@ -222,7 +222,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_skips_scheduling_for_non_woopayments_orders(): void {
 		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service( new StaticNativeRuntimeArbiter( true ), $scheduler );
+		$service   = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
 		$order     = $this->create_order(
 			'cod',
 			array(
@@ -242,7 +242,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_skips_scheduling_without_payment_method_id(): void {
 		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service( new StaticNativeRuntimeArbiter( true ), $scheduler );
+		$service   = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
 		$order     = $this->create_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 
 		$this->enable_sift_tracking();
@@ -260,7 +260,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 			return array( 'stripe' => array() );
 		};
 		$scheduler    = new RecordingActionSchedulerService();
-		$service      = $this->create_service( new StaticNativeRuntimeArbiter( true ), $scheduler );
+		$service      = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
 		$order        = $this->create_order(
 			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			array(
@@ -280,7 +280,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_skips_scheduling_during_order_tracking_actions(): void {
 		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service( new StaticNativeRuntimeArbiter( true ), $scheduler );
+		$service   = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
 		$order     = $this->create_order(
 			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			array(
@@ -312,7 +312,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	public function test_repairs_an_untokened_order_from_its_parent_and_tracks_it(): void {
 		$this->make_subscriptions_available();
 		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service( new StaticNativeRuntimeArbiter( true ), $scheduler );
+		$service   = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
 		$parent    = $this->create_order(
 			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			array(
@@ -338,7 +338,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_repairs_a_stale_payment_method_id_from_the_order_token(): void {
 		$this->make_subscriptions_available();
-		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService() );
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService() );
 		$parent  = $this->create_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( '_stripe_customer_id' => 'cus_parent' ) );
 		$order   = $this->create_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( '_payment_method_id' => 'pm_old' ) );
 		$token   = new \WC_Payment_Token_CC();
@@ -368,7 +368,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_repair_leaves_other_gateways_orders_alone(): void {
 		$this->make_subscriptions_available();
-		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService() );
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService() );
 		$parent  = $this->create_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( '_payment_method_id' => 'pm_parent' ) );
 		$order   = $this->create_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_sepa_debit' );
 		$order->set_parent_id( $parent->get_id() );
@@ -429,7 +429,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 				false
 			)
 			->willReturn( array( 'result' => 'success' ) );
-		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( true ) );
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( true ) );
 
 		$result = $service->track_new_order_action( $order->get_id() );
 
@@ -455,7 +455,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 			->method( 'track_order' )
 			->with( $this->isType( 'array' ), true )
 			->willReturn( array( 'result' => 'success' ) );
-		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client );
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client );
 
 		$result = $service->track_update_order_action( $order->get_id() );
 
@@ -478,7 +478,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 		);
 		$api_client = $this->create_api_client();
 		$api_client->expects( $this->never() )->method( 'track_order' );
-		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( true ) );
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( true ) );
 
 		$this->assertFalse( $service->track_new_order_action( $order->get_id() ) );
 	}
@@ -501,7 +501,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 			->method( 'track_order' )
 			->with( $this->callback( static fn( array $order_data ): bool => 'prod' === $order_data['_wcpay_mode'] ) )
 			->willReturn( array( 'result' => 'success' ) );
-		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( false ) );
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( false ) );
 
 		$this->assertTrue( $service->track_new_order_action( $order->get_id() ) );
 	}
@@ -521,7 +521,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 		);
 		$api_client = $this->create_api_client();
 		$api_client->expects( $this->never() )->method( 'track_order' );
-		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( false ) );
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( false ) );
 
 		$this->assertFalse( $service->track_new_order_action( $order->get_id() ) );
 	}
@@ -552,7 +552,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Create an order-tracking service.
 	 *
-	 * @param NativePaymentsRuntimeArbiter           $arbiter         Runtime arbiter.
+	 * @param WooPaymentsRuntimeArbiter              $arbiter         Runtime arbiter.
 	 * @param WooPaymentsActionSchedulerService|null $scheduler       Scheduler service.
 	 * @param WooPaymentsApiClient|null              $api_client      API client.
 	 * @param WooPaymentsAccountService|null         $account_service Account service.
@@ -560,7 +560,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsOrderTrackingService
 	 */
 	private function create_service(
-		NativePaymentsRuntimeArbiter $arbiter,
+		WooPaymentsRuntimeArbiter $arbiter,
 		?WooPaymentsActionSchedulerService $scheduler = null,
 		?WooPaymentsApiClient $api_client = null,
 		?WooPaymentsAccountService $account_service = null,

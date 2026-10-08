@@ -10,7 +10,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
@@ -368,7 +367,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @internal
 	 */
 	public function handle_classic_checkout_without_fields(): void {
-		if ( ! wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->should_native_register() ) {
+		if ( ! wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner() ) {
 			return;
 		}
 		// No WooPayments gateway can become available on this page without it (see is_available()), so skip the stack.
@@ -2873,7 +2872,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private function owns_subscription_renewal_hooks(): bool {
 		return WooPaymentsPersistenceVocabulary::GATEWAY_ID === $this->id
 			&& $this->is_subscriptions_enabled()
-			&& wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->should_native_register();
+			&& wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner();
 	}
 
 	/**

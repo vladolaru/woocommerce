@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsMoneyMovementOrderService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use WC_Order;
@@ -20,14 +20,14 @@ trait WooPaymentsMoneyMovementControllerTestTrait {
 	 * Create a runtime arbiter stub.
 	 *
 	 * @param bool $native_register Whether native should own routes.
-	 * @return NativePaymentsRuntimeArbiter
+	 * @return WooPaymentsRuntimeArbiter
 	 */
-	private function create_arbiter( bool $native_register ): NativePaymentsRuntimeArbiter {
-		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+	private function create_arbiter( bool $native_register ): WooPaymentsRuntimeArbiter {
+		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_native_register' ) )
+			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'should_native_register' )->willReturn( $native_register );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
 
 		return $arbiter;
 	}

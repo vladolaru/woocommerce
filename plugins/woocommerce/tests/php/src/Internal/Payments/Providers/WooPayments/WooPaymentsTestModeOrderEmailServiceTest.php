@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTestModeOrderEmailService;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -35,7 +35,7 @@ class WooPaymentsTestModeOrderEmailServiceTest extends WC_Unit_Test_Case {
 		$order->save();
 		$sut = new WooPaymentsTestModeOrderEmailService();
 
-		$sut->init( new StaticNativeRuntimeArbiter( true ) );
+		$sut->init( new StaticWooPaymentsRuntimeArbiter( true ) );
 		$sut->register();
 
 		foreach ( $this->email_ids() as $email_id ) {
@@ -56,7 +56,7 @@ class WooPaymentsTestModeOrderEmailServiceTest extends WC_Unit_Test_Case {
 		$live_order->save();
 		$sut = new WooPaymentsTestModeOrderEmailService();
 
-		$sut->init( new StaticNativeRuntimeArbiter( true ) );
+		$sut->init( new StaticWooPaymentsRuntimeArbiter( true ) );
 		$sut->register();
 
 		$legacy_order = wc_create_order();
@@ -74,7 +74,7 @@ class WooPaymentsTestModeOrderEmailServiceTest extends WC_Unit_Test_Case {
 	public function test_does_not_register_email_filters_when_native_does_not_own_runtime(): void {
 		$sut = new WooPaymentsTestModeOrderEmailService();
 
-		$sut->init( new StaticNativeRuntimeArbiter( false ) );
+		$sut->init( new StaticWooPaymentsRuntimeArbiter( false ) );
 		$sut->register();
 
 		$this->assertFalse( has_filter( 'woocommerce_email_subject_new_order', array( $sut, 'handle_email_subject' ) ) );

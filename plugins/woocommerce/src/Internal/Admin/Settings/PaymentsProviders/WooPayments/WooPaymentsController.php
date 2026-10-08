@@ -4,7 +4,7 @@ declare( strict_types=1 );
 namespace Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 
 defined( 'ABSPATH' ) || exit;
@@ -70,7 +70,7 @@ class WooPaymentsController {
 	 */
 	public function clear_native_onboarding_fields_cache(): void {
 		$container = wc_get_container();
-		if ( ! $container->get( NativePaymentsRuntimeArbiter::class )->should_native_register() ) {
+		if ( ! $container->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner() ) {
 			return;
 		}
 

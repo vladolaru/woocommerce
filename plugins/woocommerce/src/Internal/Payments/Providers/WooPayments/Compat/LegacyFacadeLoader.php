@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat;
 
 use Automattic\Jetpack\Constants;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
@@ -31,18 +31,18 @@ class LegacyFacadeLoader implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Initialize the loader.
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter $arbiter Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter $arbiter Runtime owner arbiter.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter ): void {
 		$this->arbiter = $arbiter;
 	}
 
@@ -71,7 +71,7 @@ class LegacyFacadeLoader implements RegisterHooksInterface {
 	 * @since 11.2.0
 	 */
 	public function load(): void {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 
@@ -199,7 +199,7 @@ class LegacyFacadeLoader implements RegisterHooksInterface {
 			}
 
 			$plugin = ltrim( str_replace( '\\', '/', sanitize_text_field( (string) $candidate ) ), '/' );
-			if ( NativePaymentsRuntimeArbiter::PLUGIN_FILE === $plugin || 'woocommerce-payments' === $plugin || str_ends_with( $plugin, '/' . NativePaymentsRuntimeArbiter::PLUGIN_FILE ) ) {
+			if ( WooPaymentsRuntimeArbiter::PLUGIN_FILE === $plugin || 'woocommerce-payments' === $plugin || str_ends_with( $plugin, '/' . WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ) {
 				return true;
 			}
 		}

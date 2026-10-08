@@ -7,7 +7,7 @@ use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminNoticeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -174,8 +174,8 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$note->set_type( Note::E_WC_ADMIN_NOTE_INFORMATIONAL );
 		$note->save();
 		$active_plugins = get_option( 'active_plugins', array() );
-		update_option( 'active_plugins', array_merge( (array) $active_plugins, array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) ) );
-		$arbiter = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
+		update_option( 'active_plugins', array_merge( (array) $active_plugins, array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ) );
+		$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
 		$arbiter->invalidate();
 		$account = $this->createMock( WooPaymentsAccountService::class );
 		$account->expects( $this->never() )->method( $this->anything() );
@@ -185,7 +185,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$notes      = count( $data_store->get_notes( array( 'per_page' => 100 ) ) );
 
 		try {
-			$this->assertTrue( $arbiter->is_plugin_runtime_active() );
+			$this->assertTrue( $arbiter->is_extension_owner() );
 			$this->assertNull( $sut->get_notice_for_current_user() );
 			$this->assertInstanceOf( \WP_Error::class, $sut->record_action( 'test_to_live', 'dismiss' ) );
 			$this->assertCount( 1, $data_store->get_notes_with_name( 'wc-payments-notes-test-to-live' ), 'No native note may be deleted while the plugin owns payments.' );

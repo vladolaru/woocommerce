@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Compat;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\LegacyFacadeLoader;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
@@ -72,8 +72,8 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 	public function test_native_facade_does_not_report_standalone_runtime_as_loaded(): void {
 		$this->register_legacy_facades();
 
-		$arbiter = $this->createMock( NativePaymentsRuntimeArbiter::class );
-		$arbiter->method( 'is_plugin_runtime_active' )->willReturn( false );
+		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
+		$arbiter->method( 'is_extension_owner' )->willReturn( false );
 
 		$legacy_runtime = new WooPaymentsLegacyRuntime();
 		$legacy_runtime->init( new LegacyProxy(), $arbiter );
@@ -151,7 +151,7 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 	 */
 	public function test_admin_activation_sandbox_can_declare_plugin_facades(): void {
 		$_REQUEST['action'] = 'activate'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reproducing WordPress's already-authorized plugin activation request.
-		$_REQUEST['plugin'] = NativePaymentsRuntimeArbiter::PLUGIN_FILE; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reproducing WordPress's already-authorized plugin activation request.
+		$_REQUEST['plugin'] = WooPaymentsRuntimeArbiter::PLUGIN_FILE; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reproducing WordPress's already-authorized plugin activation request.
 
 		$this->register_legacy_facades();
 
@@ -192,7 +192,7 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 			'bulk plugins screen'                   => array(
 				array(
 					'action'  => 'activate-selected',
-					'checked' => array( 'another-plugin/another-plugin.php', NativePaymentsRuntimeArbiter::PLUGIN_FILE ),
+					'checked' => array( 'another-plugin/another-plugin.php', WooPaymentsRuntimeArbiter::PLUGIN_FILE ),
 				),
 				array(),
 			),
@@ -200,14 +200,14 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 				array(
 					'action'  => '-1',
 					'action2' => 'activate-selected',
-					'checked' => array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ),
+					'checked' => array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ),
 				),
 				array(),
 			),
 			'plugin installer ajax'                 => array(
 				array(
 					'action' => 'activate-plugin',
-					'plugin' => NativePaymentsRuntimeArbiter::PLUGIN_FILE,
+					'plugin' => WooPaymentsRuntimeArbiter::PLUGIN_FILE,
 					'slug'   => 'woocommerce-payments',
 				),
 				array(),
@@ -278,7 +278,7 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 	public function wp_cli_activation_request_provider(): array {
 		return array(
 			'activate slug'             => array( array( 'wp', 'plugin', 'activate', 'woocommerce-payments' ) ),
-			'activate plugin file'      => array( array( 'wp', 'plugin', 'activate', NativePaymentsRuntimeArbiter::PLUGIN_FILE ) ),
+			'activate plugin file'      => array( array( 'wp', 'plugin', 'activate', WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ),
 			'activate all'              => array( array( 'wp', 'plugin', 'activate', '--all' ) ),
 			'install and activate'      => array( array( 'wp', 'plugin', 'install', 'woocommerce-payments', '--activate' ) ),
 			'install network activated' => array( array( 'wp', 'plugin', 'install', 'woocommerce-payments', '--activate-network' ) ),
@@ -414,8 +414,8 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 			}
 		}
 
-		$arbiter = $this->createMock( NativePaymentsRuntimeArbiter::class );
-		$arbiter->method( 'should_native_register' )->willReturn( $native_owns );
+		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_owns );
 
 		$loader = new LegacyFacadeLoader();
 		$loader->init( $arbiter );
@@ -445,8 +445,8 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 				'wc_payments_file'          => class_exists( 'WC_Payments', false ) ? ( new \ReflectionClass( 'WC_Payments' ) )->getFileName() : null,
 				'wc_payments_features_file' => class_exists( 'WC_Payments_Features', false ) ? ( new \ReflectionClass( 'WC_Payments_Features' ) )->getFileName() : null,
 				'autoloaders'               => $autoloaders,
-				'runtime_owner'             => wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->get_runtime_owner(),
-				'native_option'             => get_option( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, null ),
+				'runtime_owner'             => wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->get_runtime_owner(),
+				'native_option'             => get_option( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_OPTION, null ),
 				'version_constant'          => defined( 'WCPAY_VERSION_NUMBER' ) ? constant( 'WCPAY_VERSION_NUMBER' ) : null,
 				'active_plugins'            => get_option( 'active_plugins', array() ),
 			)

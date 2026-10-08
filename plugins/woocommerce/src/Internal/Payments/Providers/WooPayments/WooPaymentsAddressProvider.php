@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\AddressProvider\AbstractAutomatticAddressProvider;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
@@ -36,9 +35,9 @@ class WooPaymentsAddressProvider extends AbstractAutomatticAddressProvider imple
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * WooPayments API client.
@@ -74,11 +73,11 @@ class WooPaymentsAddressProvider extends AbstractAutomatticAddressProvider imple
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter $arbiter         Runtime owner arbiter.
-	 * @param WooPaymentsApiClient         $api_client      WooPayments API client.
-	 * @param WooPaymentsAccountService    $account_service WooPayments account service.
+	 * @param WooPaymentsRuntimeArbiter $arbiter         Runtime owner arbiter.
+	 * @param WooPaymentsApiClient      $api_client      WooPayments API client.
+	 * @param WooPaymentsAccountService $account_service WooPayments account service.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service ): void {
 		$this->arbiter         = $arbiter;
 		$this->api_client      = $api_client;
 		$this->account_service = $account_service;
@@ -88,7 +87,7 @@ class WooPaymentsAddressProvider extends AbstractAutomatticAddressProvider imple
 	 * Register address provider hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

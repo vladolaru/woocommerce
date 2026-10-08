@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionService;
@@ -69,9 +69,9 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * WooPay session service.
@@ -99,12 +99,12 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter    $arbiter         Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter       $arbiter         Runtime owner arbiter.
 	 * @param WooPaymentsWooPaySessionService $session_service WooPay session service.
 	 * @param WooPaymentsApiClient            $api_client      WooPayments API client.
 	 * @param TransientRowLock                $row_lock        Lock held in the database rows of a transient.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsWooPaySessionService $session_service, WooPaymentsApiClient $api_client, TransientRowLock $row_lock ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsWooPaySessionService $session_service, WooPaymentsApiClient $api_client, TransientRowLock $row_lock ): void {
 		$this->arbiter         = $arbiter;
 		$this->session_service = $session_service;
 		$this->api_client      = $api_client;
@@ -115,7 +115,7 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	 * Register WooPay order-status webhook compatibility hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 
@@ -163,7 +163,7 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	 * @since 11.0.0
 	 */
 	public function reconcile_webhook(): void {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 
@@ -181,7 +181,7 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	 * @since 11.2.0
 	 */
 	public function maybe_create_woopay_order_webhook(): void {
-		if ( $this->arbiter->should_native_register() && $this->session_service->is_woopay_enabled() && current_user_can( 'manage_woocommerce' ) ) {
+		if ( $this->arbiter->is_builtin_owner() && $this->session_service->is_woopay_enabled() && current_user_can( 'manage_woocommerce' ) ) {
 			$this->maybe_create_webhook();
 		}
 	}
@@ -197,7 +197,7 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	public function handle_settings_update( $old_value, $value ): void {
 		$was_enabled = is_array( $old_value ) && 'yes' === ( $old_value['platform_checkout'] ?? null );
 		$is_enabled  = is_array( $value ) && 'yes' === ( $value['platform_checkout'] ?? null );
-		if ( $was_enabled && ! $is_enabled && $this->arbiter->should_native_register() ) {
+		if ( $was_enabled && ! $is_enabled && $this->arbiter->is_builtin_owner() ) {
 			$this->remove_woopay_webhooks();
 		}
 	}

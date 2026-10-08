@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCLICommand;
 use WC_Unit_Test_Case;
@@ -32,9 +32,9 @@ class WooPaymentsCLICommandTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_account_data' );
 		delete_option( '_wcpay_feature_customer_multi_currency' );
 		delete_option( self::EXPECTED_LAST_FETCH_OPTION );
-		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
 		$this->reset_legacy_proxy_mocks();
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 
 		parent::tearDown();
 	}
@@ -44,7 +44,7 @@ class WooPaymentsCLICommandTest extends WC_Unit_Test_Case {
 	 */
 	public function test_status_lines_report_runtime_filter_preflight_and_account_summary(): void {
 		$this->fake_plugin( false );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$this->seed_connected_store();
 
 		$lines = wc_get_container()->get( WooPaymentsCLICommand::class )->get_status_lines();
@@ -64,7 +64,7 @@ class WooPaymentsCLICommandTest extends WC_Unit_Test_Case {
 	 */
 	public function test_status_lines_report_rate_provider_availability(): void {
 		$this->fake_plugin( false );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$this->seed_connected_store();
 		wc_get_container()->get( CurrencyRateProviderRegistryFactory::class )->set_provider_registrars( array() );
 
@@ -112,7 +112,7 @@ class WooPaymentsCLICommandTest extends WC_Unit_Test_Case {
 	 * @param bool $active Whether the WooPayments plugin should appear active.
 	 */
 	private function fake_plugin( bool $active ): void {
-		$entry = NativePaymentsRuntimeArbiter::PLUGIN_FILE;
+		$entry = WooPaymentsRuntimeArbiter::PLUGIN_FILE;
 		$this->register_legacy_proxy_function_mocks(
 			array(
 				'get_option'      => function ( $name, $default_value = false ) use ( $active, $entry ) {
@@ -135,6 +135,6 @@ class WooPaymentsCLICommandTest extends WC_Unit_Test_Case {
 				},
 			)
 		);
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 	}
 }

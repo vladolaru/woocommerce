@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -36,9 +35,9 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * WooPayments account service.
@@ -87,14 +86,14 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter          $arbiter                 Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter             $arbiter                 Runtime owner arbiter.
 	 * @param WooPaymentsAccountService             $account_service         WooPayments account service.
 	 * @param WooPaymentsPaymentMethodRegistry      $payment_method_registry WooPayments payment method registry.
 	 * @param WooPaymentsOrderDataService           $order_data_service      WooPayments order data service.
 	 * @param WooPaymentsFrontendStylesService|null $frontend_styles_service Optional shared frontend styles service.
 	 */
 	final public function init(
-		NativePaymentsRuntimeArbiter $arbiter,
+		WooPaymentsRuntimeArbiter $arbiter,
 		WooPaymentsAccountService $account_service,
 		WooPaymentsPaymentMethodRegistry $payment_method_registry,
 		WooPaymentsOrderDataService $order_data_service,
@@ -111,7 +110,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	 * Register BNPL payment method messaging hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

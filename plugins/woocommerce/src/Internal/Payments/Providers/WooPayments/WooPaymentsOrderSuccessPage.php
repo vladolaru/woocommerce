@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
@@ -37,9 +36,9 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Payment-method definition registry.
@@ -111,13 +110,13 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter               $arbiter                 Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter                  $arbiter                 Runtime owner arbiter.
 	 * @param WooPaymentsPaymentMethodRegistry           $payment_method_registry Payment-method definition registry.
 	 * @param WooPaymentsAccountService                  $account_service              WooPayments account service.
 	 * @param WooPaymentsFrontendTrackingController|null $frontend_tracking_controller Optional frontend tracking controller.
 	 * @param WooPaymentsApiClient|null                  $api_client                   Optional API client for the redirect-method intent re-check.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsPaymentMethodRegistry $payment_method_registry, WooPaymentsAccountService $account_service, ?WooPaymentsFrontendTrackingController $frontend_tracking_controller = null, ?WooPaymentsApiClient $api_client = null ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsPaymentMethodRegistry $payment_method_registry, WooPaymentsAccountService $account_service, ?WooPaymentsFrontendTrackingController $frontend_tracking_controller = null, ?WooPaymentsApiClient $api_client = null ): void {
 		$this->arbiter                      = $arbiter;
 		$this->payment_method_registry      = $payment_method_registry;
 		$this->account_service              = $account_service;
@@ -129,7 +128,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	 * Register order-success hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

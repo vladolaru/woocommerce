@@ -90,14 +90,14 @@ class WooPaymentsExtensionOwnedSetupTierSyncTest extends WC_Unit_Test_Case {
 		try {
 			( new \Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap(
 				static fn( $container, string $request_type ): array => $container->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier::class )->get_classes_for_request( $request_type ),
-				static fn( $container ): bool => $container->get( \Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter::class )->should_native_register(),
+				static fn( $container ): bool => $container->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter::class )->is_builtin_owner(),
 				static fn(): array => \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider::get_multi_currency_provider_roots()
 			) )->register(
 				$container,
 				fn(): bool => 'rest' === $request_type
 			);
 			// Canary-only comparison of the built-in WooPayments with the WooPayments extension, on stores the extension owns.
-			if ( $container->get( \Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter::class )->is_plugin_runtime_active() ) {
+			if ( $container->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter::class )->is_extension_owner() ) {
 				\Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow\NativePaymentsShadowMode::register_when_enabled( $container );
 			}
 		} finally {

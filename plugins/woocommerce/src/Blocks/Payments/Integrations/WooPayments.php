@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Blocks\Payments\Integrations;
 
 use Automattic\WooCommerce\Blocks\Assets\Api;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
@@ -72,9 +72,9 @@ final class WooPayments extends AbstractPaymentMethodType {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Checkout bridge.
@@ -122,14 +122,14 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 * Constructor.
 	 *
 	 * @param Api                               $asset_api                 Asset API.
-	 * @param NativePaymentsRuntimeArbiter      $arbiter                   Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter         $arbiter                   Runtime owner arbiter.
 	 * @param WooPaymentsCheckoutBridge         $checkout_bridge           Checkout bridge.
 	 * @param WooPaymentsProvider               $provider                  Native WooPayments provider.
 	 * @param WooPaymentsWooPaySessionService   $woopay_session_service    WooPay session service.
 	 * @param WooPaymentsExpressCheckoutService $express_checkout_service  Express checkout service.
 	 * @param NativeWooPaymentsGateway|null     $payment_gateway           Optional payment gateway instance.
 	 */
-	public function __construct( Api $asset_api, NativePaymentsRuntimeArbiter $arbiter, WooPaymentsCheckoutBridge $checkout_bridge, WooPaymentsProvider $provider, WooPaymentsWooPaySessionService $woopay_session_service, WooPaymentsExpressCheckoutService $express_checkout_service, ?NativeWooPaymentsGateway $payment_gateway = null ) {
+	public function __construct( Api $asset_api, WooPaymentsRuntimeArbiter $arbiter, WooPaymentsCheckoutBridge $checkout_bridge, WooPaymentsProvider $provider, WooPaymentsWooPaySessionService $woopay_session_service, WooPaymentsExpressCheckoutService $express_checkout_service, ?NativeWooPaymentsGateway $payment_gateway = null ) {
 		$this->asset_api                = $asset_api;
 		$this->arbiter                  = $arbiter;
 		$this->checkout_bridge          = $checkout_bridge;
@@ -151,7 +151,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 * @return boolean
 	 */
 	public function is_active() {
-		return $this->arbiter->should_native_register() &&
+		return $this->arbiter->is_builtin_owner() &&
 			$this->provider->can_process_payments() &&
 			$this->checkout_bridge->should_expose_checkout_surface() &&
 			( null === $this->payment_gateway || $this->payment_gateway->is_available() );

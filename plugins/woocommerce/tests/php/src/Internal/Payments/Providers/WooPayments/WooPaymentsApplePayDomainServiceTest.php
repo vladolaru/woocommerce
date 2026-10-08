@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
@@ -684,11 +684,11 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsApplePayDomainService
 	 */
 	private function create_service( bool $native_register = true, bool $live_account = false, ?WooPaymentsFrontendTrackingController $tracker = null, bool $dev_mode = false, ?string $throwing_mode_method = null ): WooPaymentsApplePayDomainService {
-		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_native_register' ) )
+			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'should_native_register' )->willReturn( $native_register );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
 
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
@@ -763,8 +763,8 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 		$current_section  = isset( $query['section'] ) ? (string) $query['section'] : '';
 
 		// Core fires the settings notices only while native owns payments.
-		$arbiter = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$arbiter->invalidate();
 
 		$buffer_level = ob_get_level();
@@ -778,7 +778,7 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 			while ( ob_get_level() > $buffer_level ) {
 				ob_end_clean();
 			}
-			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 			$arbiter->invalidate();
 			$_GET            = $previous_get;
 			$current_section = $previous_section;

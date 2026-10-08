@@ -35,7 +35,7 @@ use Automattic\WooCommerce\Internal\EmailEditor\WCTransactionalEmails\WCEmailPos
 use Automattic\WooCommerce\Internal\EmailEditor\WCTransactionalEmails\WCEmailTemplateSyncBackfill;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\ProductAttributesLookup\DataRegenerator;
 use Automattic\WooCommerce\Internal\ProductAttributesLookup\LookupDataStore;
@@ -3837,7 +3837,7 @@ function wc_update_11204_seed_multi_currency_feature(): void {
  */
 function wc_update_11205_seed_woopayments_setup_tier(): void {
 	$container               = wc_get_container();
-	$extension_owns_payments = $container->get( NativePaymentsRuntimeArbiter::class )->is_plugin_runtime_active();
+	$extension_owns_payments = $container->get( WooPaymentsRuntimeArbiter::class )->is_extension_owner();
 	if ( ! $extension_owns_payments ) {
 		return;
 	}

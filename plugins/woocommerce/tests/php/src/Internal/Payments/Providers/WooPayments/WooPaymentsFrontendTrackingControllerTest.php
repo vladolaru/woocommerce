@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use WC_Unit_Test_Case;
@@ -725,8 +725,8 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsFrontendTrackingController
 	 */
 	private function create_controller( bool $native_register, ?WooPaymentsAccountService $account_service = null ): WooPaymentsFrontendTrackingController {
-		$arbiter = $this->createMock( NativePaymentsRuntimeArbiter::class );
-		$arbiter->method( 'should_native_register' )->willReturn( $native_register );
+		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
 
 		$sut = new WooPaymentsFrontendTrackingController();
 		$sut->init( $arbiter, $account_service ?? $this->create_account_service( true ) );

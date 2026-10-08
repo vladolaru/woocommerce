@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Admin\Suggestions\Incentives;
 
 use Automattic\WooCommerce\Internal\Admin\Suggestions\Incentives\Incentive;
 use Automattic\WooCommerce\Internal\Admin\Suggestions\Incentives\WooPayments;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\LegacyRuntimeProxy;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -314,10 +314,10 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		// Arrange.
 		$this->legacy_runtime->method( 'is_loaded' )->willReturn( false );
 		$this->legacy_runtime->method( 'has_live_cached_account_data' )->willReturn( true );
-		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
-			->onlyMethods( array( 'should_native_register' ) )
+		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
+			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'should_native_register' )->willReturn( true );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
 		$sut = new WooPayments( $this->suggestion_id, $this->legacy_runtime, $arbiter );
 
 		add_filter( 'pre_http_request', $this->response_mock_ref, 10, 3 );
@@ -336,10 +336,10 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		// Arrange.
 		$this->legacy_runtime->method( 'is_loaded' )->willReturn( false );
 		$this->legacy_runtime->method( 'has_live_cached_account_data' )->willReturn( false );
-		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
-			->onlyMethods( array( 'should_native_register' ) )
+		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
+			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'should_native_register' )->willReturn( true );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
 		$sut = new WooPayments( $this->suggestion_id, $this->legacy_runtime, $arbiter );
 
 		add_filter( 'pre_http_request', $this->response_mock_ref, 10, 3 );

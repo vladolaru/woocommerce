@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Caches\OrderCache;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPayVerifiedEmailRestoreService;
 use Automattic\WooCommerce\RestApi\UnitTests\HPOSToggleTrait;
 use Automattic\WooCommerce\Utilities\OrderUtil;
@@ -39,7 +39,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	/**
 	 * Real runtime arbiter supplied to the System Under Test.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
 	private $arbiter;
 
@@ -139,9 +139,9 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 		add_filter( 'wc_allow_changing_orders_storage_while_sync_is_pending', '__return_true' );
 		remove_filter( 'query', array( $this, '_create_temporary_tables' ) );
 		remove_filter( 'query', array( $this, '_drop_temporary_tables' ) );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, array( $this, 'override_native_runtime_enabled' ), PHP_INT_MAX );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, array( $this, 'override_native_runtime_enabled' ), PHP_INT_MAX );
 
-		$this->arbiter = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
+		$this->arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
 		$this->control_plugin_detection();
 		$this->arbiter->invalidate();
 		$this->sut = new WooPaymentsWooPayVerifiedEmailRestoreService();
@@ -154,7 +154,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	public function tearDown(): void {
 		try {
 			$this->remove_service_hooks();
-			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, array( $this, 'override_native_runtime_enabled' ), PHP_INT_MAX );
+			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, array( $this, 'override_native_runtime_enabled' ), PHP_INT_MAX );
 
 			if ( is_multisite() && function_exists( 'ms_is_switched' ) ) {
 				while ( ms_is_switched() ) {
@@ -253,9 +253,9 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	 */
 	public function runtime_owner_provider(): array {
 		return array(
-			'native owner' => array( NativePaymentsRuntimeArbiter::OWNER_BUILTIN ),
-			'no owner'     => array( NativePaymentsRuntimeArbiter::OWNER_NONE ),
-			'plugin owner' => array( NativePaymentsRuntimeArbiter::OWNER_EXTENSION ),
+			'native owner' => array( WooPaymentsRuntimeArbiter::OWNER_BUILTIN ),
+			'no owner'     => array( WooPaymentsRuntimeArbiter::OWNER_NONE ),
+			'plugin owner' => array( WooPaymentsRuntimeArbiter::OWNER_EXTENSION ),
 		);
 	}
 
@@ -485,7 +485,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 		update_option( self::ENABLED_OPTION, 'no' );
 		delete_option( self::KILL_SWITCH_OPTION );
 		$this->arbiter->invalidate();
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $this->arbiter->get_runtime_owner(), 'The fixture must begin with no runtime owner.' );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->arbiter->get_runtime_owner(), 'The fixture must begin with no runtime owner.' );
 		$fixture = $this->create_marked_order_for_owner_transition();
 		$this->arbiter->invalidate();
 		$this->sut->register();
@@ -513,7 +513,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 
 			update_option( self::ENABLED_OPTION, 'yes' );
 
-			$this->assert_arbiter_cached_owner( NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
+			$this->assert_arbiter_cached_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
 			$this->assertSame( 1, $this->count_service_callbacks( self::ORDER_CRUD_READY, 'drain_current_blog' ), 'The queued callback must still be observable before its guarded readiness entry.' );
 			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Enter only the queued service callback without firing unrelated global lifecycle callbacks.
 			$wp_actions[ self::ORDER_CRUD_READY ] = 1;
@@ -613,13 +613,13 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 		$stateful_filter = static function (): bool {
 			return ! (bool) get_option( self::KILL_SWITCH_OPTION, false );
 		};
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, $stateful_filter, PHP_INT_MAX - 1 );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $stateful_filter, PHP_INT_MAX - 1 );
 
 		try {
 			$this->arbiter->invalidate();
 			$this->assertSame( 'no', get_option( self::ENABLED_OPTION ), 'Raw native enablement must remain disabled so the stateful filter determines ownership.' );
 			$this->assertFalse( (bool) get_option( self::KILL_SWITCH_OPTION, false ), 'The kill switch must begin inactive.' );
-			$this->assertTrue( $this->arbiter->is_native_runtime_enabled(), 'The stateful filter must resolve native enablement before the write.' );
+			$this->assertTrue( $this->arbiter->is_builtin_enabled(), 'The stateful filter must resolve native enablement before the write.' );
 			$this->sut->register();
 			$this->assert_arbiter_is_cold();
 
@@ -630,10 +630,10 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 			}
 
 			$this->assertTrue( (bool) get_option( self::KILL_SWITCH_OPTION, false ), 'The real option write must persist the active kill switch before the post-change callback completes.' );
-			$this->assertFalse( $this->arbiter->is_native_runtime_enabled(), 'The stateful filter must read the post-write database state as disabled.' );
+			$this->assertFalse( $this->arbiter->is_builtin_enabled(), 'The stateful filter must read the post-write database state as disabled.' );
 			$this->assert_restored_owner_transition_order( $fixture['order_id'], $fixture['customer_id'] );
 		} finally {
-			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, $stateful_filter, PHP_INT_MAX - 1 );
+			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $stateful_filter, PHP_INT_MAX - 1 );
 		}
 	}
 
@@ -654,7 +654,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	 */
 	public function test_native_to_plugin_owner_change_does_not_drain(): void {
 		update_option( self::ENABLED_OPTION, 'yes' );
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, $this->arbiter->get_runtime_owner(), 'The fixture must begin under native ownership.' );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->arbiter->get_runtime_owner(), 'The fixture must begin under native ownership.' );
 		$fixture             = $this->create_marked_order_for_owner_transition();
 		$this->plugin_active = true;
 		$this->arbiter->invalidate();
@@ -729,11 +729,11 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 			}
 			return $enabled;
 		};
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, $count_post_write_owner_recomputations, PHP_INT_MAX - 1 );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $count_post_write_owner_recomputations, PHP_INT_MAX - 1 );
 		$this->arbiter->invalidate();
 
 		try {
-			$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $this->arbiter->get_runtime_owner(), 'The fixture must begin with no runtime owner.' );
+			$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->arbiter->get_runtime_owner(), 'The fixture must begin with no runtime owner.' );
 			$post_write_owner_recomputation_count = 0;
 			$fixture                              = $this->create_marked_order_for_owner_transition();
 			$this->sut->register();
@@ -747,10 +747,10 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 			}
 
 			$this->assertGreaterThan( 0, $post_write_owner_recomputation_count, 'Every relevant post-write action must recompute the current-blog owner after persistence.' );
-			$this->assert_arbiter_cached_owner( NativePaymentsRuntimeArbiter::OWNER_NONE );
+			$this->assert_arbiter_cached_owner( WooPaymentsRuntimeArbiter::OWNER_NONE );
 			$this->assert_restored_owner_transition_order( $fixture['order_id'], $fixture['customer_id'] );
 		} finally {
-			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, $count_post_write_owner_recomputations, PHP_INT_MAX - 1 );
+			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $count_post_write_owner_recomputations, PHP_INT_MAX - 1 );
 		}
 	}
 
@@ -791,7 +791,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	public function test_unrelated_option_actions_do_not_drain(): void {
 		update_option( self::ENABLED_OPTION, 'yes' );
 		$this->arbiter->invalidate();
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, $this->arbiter->get_runtime_owner(), 'The fixture must warm a native owner before the underlying signal changes.' );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->arbiter->get_runtime_owner(), 'The fixture must warm a native owner before the underlying signal changes.' );
 		$fixture = $this->create_marked_order_for_owner_transition();
 		$this->sut->register();
 		$query_count = 0;
@@ -803,18 +803,18 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 			}
 		);
 		$this->native_enabled_override = false;
-		$this->assertFalse( $this->arbiter->is_native_runtime_enabled(), 'The mutable signal must now resolve native enablement to false without changing the warmed owner cache.' );
-		$this->assert_arbiter_cached_owner( NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
+		$this->assertFalse( $this->arbiter->is_builtin_enabled(), 'The mutable signal must now resolve native enablement to false without changing the warmed owner cache.' );
+		$this->assert_arbiter_cached_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
 
 		add_option( self::UNRELATED_OPTION, 'first' );
 		$this->assertSame( 0, $query_count, 'Adding an unrelated option must not query orders.' );
-		$this->assert_arbiter_cached_owner( NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
+		$this->assert_arbiter_cached_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
 		update_option( self::UNRELATED_OPTION, 'second' );
 		$this->assertSame( 0, $query_count, 'Updating an unrelated option must not query orders.' );
-		$this->assert_arbiter_cached_owner( NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
+		$this->assert_arbiter_cached_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
 		delete_option( self::UNRELATED_OPTION );
 		$this->assertSame( 0, $query_count, 'Deleting an unrelated option must not query orders.' );
-		$this->assert_arbiter_cached_owner( NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
+		$this->assert_arbiter_cached_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
 
 		$this->assert_detached_owner_transition_order( $fixture['order_id'], $fixture['customer_id'] );
 	}
@@ -1135,7 +1135,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 		update_option( self::ENABLED_OPTION, 'no' );
 		delete_option( self::KILL_SWITCH_OPTION );
 		$this->arbiter->invalidate();
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $this->arbiter->get_runtime_owner(), 'The main-site fixture must remain eligible to expose a stale cross-context drain.' );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->arbiter->get_runtime_owner(), 'The main-site fixture must remain eligible to expose a stale cross-context drain.' );
 		$main_customer_id         = self::factory()->user->create();
 		$main_order_id            = $this->create_order( 0, $main_customer_id, true, true );
 		$second_blog_id           = self::factory()->blog->create();
@@ -1167,7 +1167,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 				$second_customer_id = self::factory()->user->create();
 				$second_order_id    = $this->create_order( 0, $second_customer_id, true, true );
 				$this->arbiter->invalidate();
-				$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, $this->arbiter->get_runtime_owner(), 'The second-site fixture must begin under native ownership.' );
+				$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->arbiter->get_runtime_owner(), 'The second-site fixture must begin under native ownership.' );
 				$this->arbiter->invalidate();
 			} finally {
 				restore_current_blog();
@@ -1241,7 +1241,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	 * Control every plugin-ownership detection signal used by the real arbiter.
 	 */
 	private function control_plugin_detection(): void {
-		$plugin_file = NativePaymentsRuntimeArbiter::PLUGIN_FILE;
+		$plugin_file = WooPaymentsRuntimeArbiter::PLUGIN_FILE;
 		$this->register_legacy_proxy_function_mocks(
 			array(
 				'get_option'      => function ( $name, $default_value = false ) use ( $plugin_file ) {
@@ -1272,9 +1272,9 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	 * @param string $runtime_owner Runtime owner.
 	 */
 	private function configure_runtime_owner( string $runtime_owner ): void {
-		$this->plugin_active = NativePaymentsRuntimeArbiter::OWNER_EXTENSION === $runtime_owner;
+		$this->plugin_active = WooPaymentsRuntimeArbiter::OWNER_EXTENSION === $runtime_owner;
 		delete_option( self::KILL_SWITCH_OPTION );
-		update_option( self::ENABLED_OPTION, NativePaymentsRuntimeArbiter::OWNER_BUILTIN === $runtime_owner ? 'yes' : 'no' );
+		update_option( self::ENABLED_OPTION, WooPaymentsRuntimeArbiter::OWNER_BUILTIN === $runtime_owner ? 'yes' : 'no' );
 		$this->arbiter->invalidate();
 	}
 
@@ -1659,8 +1659,8 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	 * @return array<int,string>
 	 */
 	private function read_arbiter_cache(): array {
-		$arbiter  = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
-		$property = new \ReflectionProperty( NativePaymentsRuntimeArbiter::class, 'runtime_owners' );
+		$arbiter  = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
+		$property = new \ReflectionProperty( WooPaymentsRuntimeArbiter::class, 'runtime_owners' );
 		$property->setAccessible( true );
 
 		return (array) $property->getValue( $arbiter );
@@ -1672,8 +1672,8 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	 * @param array<int,string> $snapshot Arbiter-cache snapshot.
 	 */
 	private function restore_arbiter_cache( array $snapshot ): void {
-		$arbiter  = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
-		$property = new \ReflectionProperty( NativePaymentsRuntimeArbiter::class, 'runtime_owners' );
+		$arbiter  = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
+		$property = new \ReflectionProperty( WooPaymentsRuntimeArbiter::class, 'runtime_owners' );
 		$property->setAccessible( true );
 		$property->setValue( $arbiter, $snapshot );
 	}

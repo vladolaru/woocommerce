@@ -39,7 +39,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use WC_Order;
 use WC_Order_Refund;
@@ -9195,7 +9195,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	private function create_real_customer_service( WooPaymentsApiClient $api_client ): WooPaymentsCustomerService {
 		$service = new WooPaymentsCustomerService();
-		$service->init( $api_client, $this->create_account_service( false ), new WooPaymentsSessionService(), new StaticNativeRuntimeArbiter( true ) );
+		$service->init( $api_client, $this->create_account_service( false ), new WooPaymentsSessionService(), new StaticWooPaymentsRuntimeArbiter( true ) );
 
 		return $service;
 	}
@@ -9399,7 +9399,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		};
 
 		$token_service = new WooPaymentsTokenService();
-		$token_service->init( $details_service, new StaticNativeRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$token_service->init( $details_service, new StaticWooPaymentsRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
 
 		return $token_service;
 	}
@@ -9517,7 +9517,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	private function register_token_class_map(): void {
 		$controller = new WooPaymentsTokenClassMapController();
-		$controller->init( new StaticNativeRuntimeArbiter( true ) );
+		$controller->init( new StaticWooPaymentsRuntimeArbiter( true ) );
 		$controller->register();
 	}
 

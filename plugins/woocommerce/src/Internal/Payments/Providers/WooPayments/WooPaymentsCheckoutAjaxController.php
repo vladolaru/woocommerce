@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
@@ -31,9 +30,9 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Native WooPayments API client.
@@ -96,7 +95,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter          $arbiter                 Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter             $arbiter                 Runtime owner arbiter.
 	 * @param WooPaymentsApiClient                  $api_client              Native WooPayments API client.
 	 * @param WooPaymentsCustomerService            $customer_service        WooPayments customer service.
 	 * @param OrderPaymentLifecycleService          $lifecycle_service       Order lifecycle service.
@@ -106,7 +105,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 * @param WooPaymentsOrderEffectApplier|null    $order_effect_applier    Optional order effect applier.
 	 */
 	final public function init(
-		NativePaymentsRuntimeArbiter $arbiter,
+		WooPaymentsRuntimeArbiter $arbiter,
 		WooPaymentsApiClient $api_client,
 		WooPaymentsCustomerService $customer_service,
 		OrderPaymentLifecycleService $lifecycle_service,
@@ -129,7 +128,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 * Register AJAX hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 
@@ -437,7 +436,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function can_handle_callbacks(): bool {
-		return $this->arbiter->should_native_register() && $this->api_client->is_available();
+		return $this->arbiter->is_builtin_owner() && $this->api_client->is_available();
 	}
 
 	/**

@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
@@ -379,11 +379,11 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsStripeBillingModule
 	 */
 	private function register_module( bool $native_owns ): WooPaymentsStripeBillingModule {
-		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_native_register' ) )
+			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'should_native_register' )->willReturn( $native_owns );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_owns );
 
 		$sut = new WooPaymentsStripeBillingModule();
 		$sut->init( $arbiter );

@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
@@ -53,7 +53,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		$this->remove_rest_hook();
-		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
 		$this->reset_legacy_proxy_mocks();
 		wc_get_container()->reset_all_replacements();
 		parent::tearDown();
@@ -64,7 +64,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_registers_no_route_when_plugin_owns_runtime(): void {
 		$this->fake_plugin( true );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 
 		$this->sut->register();
 
@@ -76,7 +76,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_registers_wc_v3_payments_webhook_when_native_owns_runtime(): void {
 		$this->fake_plugin( false );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 
 		$this->sut->register();
 		// The controller registers routes on the REST API initialization hook in production.
@@ -410,7 +410,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$logger     = RecordingWcLogger::install();
 		$controller = new WooPaymentsWebhookRestController();
 		$controller->init(
-			wc_get_container()->get( NativePaymentsRuntimeArbiter::class ),
+			wc_get_container()->get( WooPaymentsRuntimeArbiter::class ),
 			wc_get_container()->get( WooPaymentsEventIngestor::class ),
 			wc_get_container()->get( WooPaymentsLegacyRuntime::class ),
 			wc_get_container()->get( WooPaymentsWebhookReliabilityService::class )
@@ -504,7 +504,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @param bool $active Whether the WooPayments plugin should appear active.
 	 */
 	private function fake_plugin( bool $active ): void {
-		$entry = NativePaymentsRuntimeArbiter::PLUGIN_FILE;
+		$entry = WooPaymentsRuntimeArbiter::PLUGIN_FILE;
 		$this->register_legacy_proxy_function_mocks(
 			array(
 				'get_option'      => function ( $name, $default_value = false ) use ( $active, $entry ) {
@@ -543,7 +543,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->scheduler     = new RecordingActionSchedulerService();
 		$reliability_service = new WooPaymentsWebhookReliabilityService();
 		$reliability_service->init(
-			wc_get_container()->get( NativePaymentsRuntimeArbiter::class ),
+			wc_get_container()->get( WooPaymentsRuntimeArbiter::class ),
 			$this->scheduler,
 			wc_get_container()->get( WooPaymentsFailedEventStore::class ),
 			new StaticFailedEventsProvider(),
@@ -551,7 +551,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		);
 
 		$controller = new WooPaymentsWebhookRestController();
-		$controller->init( wc_get_container()->get( NativePaymentsRuntimeArbiter::class ), $ingestor, $runtime, $reliability_service );
+		$controller->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), $ingestor, $runtime, $reliability_service );
 
 		return $controller;
 	}

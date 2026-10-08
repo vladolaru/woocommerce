@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTo
 use Automattic\WooCommerce\StoreApi\Schemas\ExtendSchema;
 use Automattic\WooCommerce\StoreApi\StoreApi;
 use Automattic\WooCommerce\StoreApi\Utilities\OrderController;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Unit_Test_Case;
 
 /**
@@ -137,7 +137,7 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 			)
 		);
 		$this->sut = new WooPaymentsExpressCheckoutStoreApiExtension();
-		$this->sut->init( new StaticNativeRuntimeArbiter( true ), $service );
+		$this->sut->init( new StaticWooPaymentsRuntimeArbiter( true ), $service );
 
 		$this->assertSame(
 			array( 'express_checkout_methods' => array( 'payment_request' ) ),
@@ -464,7 +464,7 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 			);
 
 		$extension = new WooPaymentsExpressCheckoutStoreApiExtension();
-		$extension->init( new StaticNativeRuntimeArbiter( $native_register ), $express_checkout_service );
+		$extension->init( new StaticWooPaymentsRuntimeArbiter( $native_register ), $express_checkout_service );
 
 		return $extension;
 	}

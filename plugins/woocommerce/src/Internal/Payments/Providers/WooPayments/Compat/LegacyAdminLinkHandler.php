@@ -13,7 +13,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -38,9 +38,9 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Native WooPayments API client.
@@ -82,14 +82,14 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter         $arbiter         Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter            $arbiter         Runtime owner arbiter.
 	 * @param WooPaymentsApiClient                 $api_client      Native WooPayments API client.
 	 * @param WooPaymentsAdminNavigationController $navigation      Native WooPayments admin navigation.
 	 * @param WooPaymentsCapitalRestController     $capital         Capital controller.
 	 * @param WooPaymentsAccountService            $account_service WooPayments account service.
 	 * @param WooPaymentsTrackingInfoService       $tracking_info   Platform tracking info reader.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsAdminNavigationController $navigation, WooPaymentsCapitalRestController $capital, WooPaymentsAccountService $account_service, WooPaymentsTrackingInfoService $tracking_info ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsAdminNavigationController $navigation, WooPaymentsCapitalRestController $capital, WooPaymentsAccountService $account_service, WooPaymentsTrackingInfoService $tracking_info ): void {
 		$this->arbiter         = $arbiter;
 		$this->api_client      = $api_client;
 		$this->navigation      = $navigation;
@@ -102,7 +102,7 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 	 * Register the legacy admin-link hook.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 
@@ -139,7 +139,7 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 	 */
 	public function handle_kyc_reminder_return(): void {
 		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Email links carry no nonce; the capability check guards this read-only redirect.
-		if ( wp_doing_ajax() || ! current_user_can( 'manage_woocommerce' ) || ! $this->arbiter->should_native_register() || ! isset( $_GET['wcpay-connect-redirect'] ) ) {
+		if ( wp_doing_ajax() || ! current_user_can( 'manage_woocommerce' ) || ! $this->arbiter->is_builtin_owner() || ! isset( $_GET['wcpay-connect-redirect'] ) ) {
 			return;
 		}
 
@@ -187,7 +187,7 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 	 */
 	public function handle_hosted_kyc_return(): void {
 		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- The platform return carries no nonce; the stored state secret is the check, like the plugin.
-		if ( wp_doing_ajax() || ! current_user_can( 'manage_woocommerce' ) || ! $this->arbiter->should_native_register() || ! isset( $_GET['wcpay-state'], $_GET['wcpay-mode'] ) ) {
+		if ( wp_doing_ajax() || ! current_user_can( 'manage_woocommerce' ) || ! $this->arbiter->is_builtin_owner() || ! isset( $_GET['wcpay-state'], $_GET['wcpay-mode'] ) ) {
 			return;
 		}
 
@@ -241,7 +241,7 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 	 * Create and redirect to the platform account link requested by a legacy email URL.
 	 */
 	public function handle_request(): void {
-		if ( ! current_user_can( 'manage_woocommerce' ) || ! $this->arbiter->should_native_register() ) {
+		if ( ! current_user_can( 'manage_woocommerce' ) || ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 
@@ -267,7 +267,7 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 	 */
 	public function handle_login_request(): void {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- check_admin_referer() below verifies the nonce.
-		if ( ! isset( $_GET['wcpay-login'] ) || ! current_user_can( 'manage_woocommerce' ) || ! $this->arbiter->should_native_register() ) {
+		if ( ! isset( $_GET['wcpay-login'] ) || ! current_user_can( 'manage_woocommerce' ) || ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 
@@ -309,7 +309,7 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 	 */
 	public function handle_reconnect_wpcom_request(): void {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- check_admin_referer() below verifies the nonce.
-		if ( ! isset( $_GET['wcpay-reconnect-wpcom'] ) || ! current_user_can( 'manage_woocommerce' ) || ! $this->arbiter->should_native_register() ) {
+		if ( ! isset( $_GET['wcpay-reconnect-wpcom'] ) || ! current_user_can( 'manage_woocommerce' ) || ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

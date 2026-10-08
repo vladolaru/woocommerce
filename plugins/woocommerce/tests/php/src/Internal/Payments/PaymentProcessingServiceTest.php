@@ -169,11 +169,11 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 		$result = $this->sut->process_checkout( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_cart_clear' ), $provider );
 
-		$arbiter = $this->getMockBuilder( \Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter::class )
+		$arbiter = $this->getMockBuilder( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_native_register' ) )
+			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'should_native_register' )->willReturn( true );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
 		$tokenized_cart_controller = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenizedCartSessionController();
 		$tokenized_cart_controller->init( $arbiter );
 		$tokenized_cart_controller->register();
@@ -3967,7 +3967,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			}
 		};
 		$token_service   = new WooPaymentsTokenService();
-		$token_service->init( $details_service, new StaticNativeRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$token_service->init( $details_service, new StaticWooPaymentsRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_account_country', 'get_mode' ) )

@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderStatusChangeController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderStatusChangeProjectionService;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -407,7 +407,7 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 	private function create_controller( bool $native_register, bool $asset_available = true ): WooPaymentsOrderStatusChangeController {
 		$controller = new WooPaymentsOrderStatusChangeController();
 		$controller->init(
-			new StaticNativeRuntimeArbiter( $native_register ),
+			new StaticWooPaymentsRuntimeArbiter( $native_register ),
 			wc_get_container()->get( WooPaymentsOrderStatusChangeProjectionService::class )
 		);
 

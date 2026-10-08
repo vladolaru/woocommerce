@@ -3,11 +3,11 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use RuntimeException;
 use WC_Unit_Test_Case;
 
@@ -123,7 +123,7 @@ class WooPaymentsPaymentMethodDetailsServiceTest extends WC_Unit_Test_Case {
 			}
 		};
 		$sut    = new WooPaymentsPaymentMethodDetailsService();
-		$sut->init( $legacy_runtime, $client, new StaticNativeRuntimeArbiter( true ) );
+		$sut->init( $legacy_runtime, $client, new StaticWooPaymentsRuntimeArbiter( true ) );
 
 		$this->assertSame( $details, $sut->get_payment_method_details( 'pm_123' ) );
 		$this->assertSame( array( 'pm_123' ), $client->requested_ids );
@@ -243,14 +243,14 @@ class WooPaymentsPaymentMethodDetailsServiceTest extends WC_Unit_Test_Case {
 				},
 				'get_option'   => function ( $option, $default_value = false ) {
 					if ( 'active_plugins' === $option ) {
-						return array( NativePaymentsRuntimeArbiter::PLUGIN_FILE );
+						return array( WooPaymentsRuntimeArbiter::PLUGIN_FILE );
 					}
 
 					return get_option( $option, $default_value );
 				},
 			)
 		);
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 
 		$this->register_legacy_proxy_static_mocks(
 			array(

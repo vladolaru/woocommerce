@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
@@ -26,9 +25,9 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Shared payment processing service.
@@ -49,11 +48,11 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter $arbiter            Runtime owner arbiter.
-	 * @param PaymentProcessingService     $processing_service Shared payment processing service.
-	 * @param WooPaymentsProvider          $provider           WooPayments provider.
+	 * @param WooPaymentsRuntimeArbiter $arbiter            Runtime owner arbiter.
+	 * @param PaymentProcessingService  $processing_service Shared payment processing service.
+	 * @param WooPaymentsProvider       $provider           WooPayments provider.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, PaymentProcessingService $processing_service, WooPaymentsProvider $provider ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, PaymentProcessingService $processing_service, WooPaymentsProvider $provider ): void {
 		$this->arbiter            = $arbiter;
 		$this->processing_service = $processing_service;
 		$this->provider           = $provider;
@@ -63,7 +62,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 * Register order workflow hooks when native owns the runtime.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

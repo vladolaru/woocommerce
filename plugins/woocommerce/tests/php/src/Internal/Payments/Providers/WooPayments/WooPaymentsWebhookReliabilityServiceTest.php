@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use ActionScheduler;
 use ActionScheduler_Store;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
@@ -58,7 +58,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	public function tearDown(): void {
 		$this->remove_reliability_hooks();
 		$this->unschedule_reliability_actions();
-		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
 		$this->reset_legacy_proxy_mocks();
 		wc_get_container()->reset_all_replacements();
 		foreach ( array( 'evt_1', 'evt_process', 'evt_backlog_1', 'evt_backlog_2', 'evt_backlog_3', 'evt_backlog_4', 'evt_backlog_5' ) as $event_id ) {
@@ -73,7 +73,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_registers_no_actions_when_plugin_owns_runtime(): void {
 		$this->fake_plugin( true );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 
 		$this->sut->register();
 
@@ -87,7 +87,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_registers_preserved_actions_when_native_owns_runtime(): void {
 		$this->fake_plugin( false );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 
 		$this->sut->register();
 
@@ -1009,7 +1009,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 * @param bool $active Whether the WooPayments plugin should appear active.
 	 */
 	private function fake_plugin( bool $active ): void {
-		$entry = NativePaymentsRuntimeArbiter::PLUGIN_FILE;
+		$entry = WooPaymentsRuntimeArbiter::PLUGIN_FILE;
 		$this->register_legacy_proxy_function_mocks(
 			array(
 				'get_option'      => function ( $name, $default_value = false ) use ( $active, $entry ) {
@@ -1050,7 +1050,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		WooPaymentsEventIngestor $ingestor
 	): WooPaymentsWebhookReliabilityService {
 		$service = new WooPaymentsWebhookReliabilityService();
-		$service->init( wc_get_container()->get( NativePaymentsRuntimeArbiter::class ), $scheduler, $store, $provider, $ingestor );
+		$service->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), $scheduler, $store, $provider, $ingestor );
 
 		return $service;
 	}

@@ -10,7 +10,7 @@ namespace Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPa
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
@@ -163,9 +163,9 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * WooPayments account service.
@@ -200,14 +200,14 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter     $arbiter                  Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter        $arbiter                  Runtime owner arbiter.
 	 * @param WooPaymentsAccountService        $account_service          WooPayments account service.
 	 * @param WooPaymentsAdminMenuBadgeService $badge_service            WooPayments admin menu badge service.
 	 * @param WooPaymentsApplePayDomainService $apple_pay_domain_service WooPayments Apple Pay domain service.
 	 * @param WooPaymentsOnboardingRedirect    $onboarding_redirect      WooPayments onboarding redirect.
 	 */
 	final public function init(
-		NativePaymentsRuntimeArbiter $arbiter,
+		WooPaymentsRuntimeArbiter $arbiter,
 		WooPaymentsAccountService $account_service,
 		WooPaymentsAdminMenuBadgeService $badge_service,
 		WooPaymentsApplePayDomainService $apple_pay_domain_service,
@@ -239,7 +239,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	 * Register admin navigation hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 
@@ -658,7 +658,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	 * @return void
 	 */
 	public function redirect_legacy_payment_paths(): void {
-		if ( wp_doing_ajax() || ! current_user_can( self::CAPABILITY ) || ! $this->arbiter->should_native_register() ) {
+		if ( wp_doing_ajax() || ! current_user_can( self::CAPABILITY ) || ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 
@@ -945,7 +945,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	public function add_menu_items(): void {
 		if (
 			! current_user_can( self::CAPABILITY )
-			|| ! $this->arbiter->should_native_register()
+			|| ! $this->arbiter->is_builtin_owner()
 		) {
 			return;
 		}

@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyAccoun
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyApiClientInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\MultiCurrencyProviderAccountResolver;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -32,9 +32,9 @@ class WooPaymentsMultiCurrencyProviderBootstrap implements RegisterHooksInterfac
 	/**
 	 * Runtime ownership arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Legacy WooPayments account adapter.
@@ -84,7 +84,7 @@ class WooPaymentsMultiCurrencyProviderBootstrap implements RegisterHooksInterfac
 	 * @internal
 	 *
 	 * @param MultiCurrencyProviderAccountResolver     $account_resolver          Provider account resolver.
-	 * @param NativePaymentsRuntimeArbiter             $arbiter                   Runtime ownership arbiter.
+	 * @param WooPaymentsRuntimeArbiter                $arbiter                   Runtime ownership arbiter.
 	 * @param WooPaymentsLegacyAccountAdapter          $legacy_account_adapter    Legacy WooPayments account adapter.
 	 * @param WooPaymentsLegacyApiClientAdapter        $legacy_api_client_adapter Legacy WooPayments API client adapter.
 	 * @param WooPaymentsNativeAccountAdapter          $native_account_adapter    Native WooPayments account adapter.
@@ -94,7 +94,7 @@ class WooPaymentsMultiCurrencyProviderBootstrap implements RegisterHooksInterfac
 	 */
 	final public function init(
 		MultiCurrencyProviderAccountResolver $account_resolver,
-		NativePaymentsRuntimeArbiter $arbiter,
+		WooPaymentsRuntimeArbiter $arbiter,
 		WooPaymentsLegacyAccountAdapter $legacy_account_adapter,
 		WooPaymentsLegacyApiClientAdapter $legacy_api_client_adapter,
 		WooPaymentsNativeAccountAdapter $native_account_adapter,
@@ -123,12 +123,12 @@ class WooPaymentsMultiCurrencyProviderBootstrap implements RegisterHooksInterfac
 			add_filter( 'wcpay_payment_fields_js_config', array( $this, 'add_multi_currency_config' ) );
 		}
 
-		if ( $this->arbiter->should_native_register() ) {
+		if ( $this->arbiter->is_builtin_owner() ) {
 			$this->register_adapters( $this->native_account_adapter, $this->native_api_client_adapter );
 			return;
 		}
 
-		if ( ! $this->arbiter->is_plugin_runtime_active() ) {
+		if ( ! $this->arbiter->is_extension_owner() ) {
 			return;
 		}
 

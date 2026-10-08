@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -43,7 +42,7 @@ class WooPaymentsCutoverPluginLifecycleListener implements RegisterHooksInterfac
 	 * @param mixed $plugin Activated plugin path from the public WordPress hook.
 	 */
 	public function guard_woopayments_activation( $plugin = '' ): void {
-		if ( ! is_string( $plugin ) || wp_basename( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) !== wp_basename( $plugin ) ) {
+		if ( ! is_string( $plugin ) || wp_basename( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) !== wp_basename( $plugin ) ) {
 			return;
 		}
 

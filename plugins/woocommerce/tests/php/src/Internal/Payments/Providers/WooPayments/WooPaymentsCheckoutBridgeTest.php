@@ -6,7 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
@@ -51,7 +51,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_after_checkout_form_bootstraps_payment_list_wallets_without_card_fields(): void {
 		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', '1' );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 
 		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
 		$account_service = $this->create_account_service_for_bridge(
@@ -77,7 +77,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			$output = (string) ob_get_clean();
 		} finally {
 			delete_option( 'woocommerce_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_settings' );
-			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		}
 		$script_data = (string) wp_scripts()->get_data( 'wc-woopayments-checkout', 'data' );
 
@@ -96,7 +96,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @testdox Should localize no checkout config from the fallback while the WooPayments plugin owns payments.
 	 */
 	public function test_after_checkout_form_fallback_does_nothing_when_native_does_not_own_payments(): void {
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_false' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_false' );
 		$sut = new WooPaymentsCheckoutBridge();
 		$sut->init( $this->create_legacy_runtime_for_bridge(), $this->create_account_service_for_bridge( true ), $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
 
@@ -106,8 +106,8 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			do_action( 'woocommerce_after_checkout_form', WC()->checkout() );
 		} finally {
 			delete_option( 'woocommerce_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_settings' );
-			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_false' );
-			wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_false' );
+			wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		}
 
 		$this->assertFalse( wp_script_is( 'wc-woopayments-checkout', 'enqueued' ) );
@@ -118,7 +118,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @testdox Should track classic and Blocks checkout page views once with the exact WooPayments contract.
 	 */
 	public function test_tracks_classic_and_blocks_checkout_page_views_once(): void {
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$recorded_events = array();
 		$tracker         = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
 			->disableOriginalConstructor()
@@ -150,7 +150,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		} finally {
 			remove_action( 'woocommerce_after_checkout_form', array( $sut, 'record_classic_checkout_page_view' ) );
 			remove_action( 'woocommerce_blocks_enqueue_checkout_block_scripts_after', array( $sut, 'record_blocks_checkout_page_view' ) );
-			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		}
 
 		$this->assertSame(
@@ -178,7 +178,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @testdox Should track the client 11.1.0 shopper funnel on the cart, product and pay-for-order hooks and on WooPay sign-up.
 	 */
 	public function test_tracks_shopper_funnel_events_on_their_hooks(): void {
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$recorded_events = array();
 		$tracker         = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
 			->disableOriginalConstructor()
@@ -211,7 +211,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 				do_action( $hook ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 			}
 		} finally {
-			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		}
 
 		$this->assertSame(
@@ -232,7 +232,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @testdox Should queue guest page views for the footer script instead of recording them during render, like client 11.1.0.
 	 */
 	public function test_page_views_render_without_recording_and_queue_for_the_footer_script(): void {
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		update_option( 'woocommerce_allow_tracking', 'yes' );
 		update_option( 'woocommerce_default_country', 'US:CA' );
 		wp_set_current_user( 0 );
@@ -249,8 +249,8 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		add_filter( 'wcpay_tracks_event_properties', $count_recorder );
 		add_filter( 'pre_http_request', $count_http );
 
-		$arbiter = $this->createMock( NativePaymentsRuntimeArbiter::class );
-		$arbiter->method( 'should_native_register' )->willReturn( true );
+		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
 		$tracker = new WooPaymentsFrontendTrackingController();
 		$tracker->init(
 			$arbiter,
@@ -290,7 +290,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			remove_action( 'wp_footer', array( $tracker, 'enqueue_frontend_events_script' ) );
 			wp_dequeue_script( 'wc-woopayments-frontend-tracks' );
 			wp_deregister_script( 'wc-woopayments-frontend-tracks' );
-			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		}
 
 		$this->assertSame( 1, preg_match( '/^var wc_woopayments_frontend_tracks_params = (\{.*\});$/s', $localized, $matches ) );
@@ -347,13 +347,13 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @param bool $direct_checkout_enabled Whether WooPay direct checkout is enabled.
 	 */
 	public function test_blocks_cart_arms_proceed_to_checkout_tracking_without_woopay_config( bool $direct_checkout_enabled ): void {
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		update_option( 'woocommerce_allow_tracking', 'yes' );
 		update_option( 'woocommerce_default_country', 'US:CA' );
 		wp_set_current_user( 0 );
 
-		$arbiter = $this->createMock( NativePaymentsRuntimeArbiter::class );
-		$arbiter->method( 'should_native_register' )->willReturn( true );
+		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
 		$tracker = new WooPaymentsFrontendTrackingController();
 		$tracker->init(
 			$arbiter,
@@ -387,7 +387,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			remove_action( 'wp_footer', array( $tracker, 'enqueue_frontend_events_script' ) );
 			wp_dequeue_script( 'wc-woopayments-frontend-tracks' );
 			wp_deregister_script( 'wc-woopayments-frontend-tracks' );
-			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		}
 
 		$this->assertSame( 1, preg_match( '/^var wc_woopayments_frontend_tracks_params = (\{.*\});$/s', $localized, $matches ) );
@@ -411,7 +411,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @testdox Should track classic and Store API order placement before payment with exact oracle guards.
 	 */
 	public function test_tracks_classic_and_store_api_order_placement_before_payment(): void {
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$recorded_events = array();
 		$tracker         = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
 			->disableOriginalConstructor()
@@ -496,7 +496,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			remove_action( 'woocommerce_store_api_checkout_order_processed', array( $sut, 'record_checkout_order_placed' ) );
 			remove_action( 'woocommerce_after_checkout_form', array( $sut, 'record_classic_checkout_page_view' ) );
 			remove_action( 'woocommerce_blocks_enqueue_checkout_block_scripts_after', array( $sut, 'record_blocks_checkout_page_view' ) );
-			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		}
 
 		$this->assertSame(
@@ -532,7 +532,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_order_pay_before_payment_bootstraps_payment_list_wallets_without_card_fields(): void {
 		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', '1' );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$customer_id = self::factory()->user->create( array( 'role' => 'customer' ) );
 		$order       = wc_create_order( array( 'customer_id' => $customer_id ) );
 		$order->set_currency( 'USD' );
@@ -566,7 +566,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			$output = (string) ob_get_clean();
 		} finally {
 			delete_option( 'woocommerce_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_settings' );
-			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		}
 		$script_data = (string) wp_scripts()->get_data( 'wc-woopayments-checkout', 'data' );
 
@@ -612,7 +612,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @testdox Should not relocalize base checkout config after ordinary card fields render.
 	 */
 	public function test_after_checkout_form_does_not_duplicate_rendered_card_config(): void {
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 
 		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
 		$account_service = $this->create_account_service_for_bridge( true );
@@ -628,7 +628,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			ob_get_clean();
 		} finally {
 			delete_option( 'woocommerce_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_settings' );
-			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		}
 		$script_data = (string) wp_scripts()->get_data( 'wc-woopayments-checkout', 'data' );
 
@@ -643,7 +643,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 */
 	private function create_card_gateway_for_bridge( WooPaymentsCheckoutBridge $bridge ): NativeWooPaymentsGateway {
 		$this->reset_classic_checkout_fallback_hooks_flag();
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		update_option( 'woocommerce_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_settings', array( 'saved_cards' => 'yes' ) );
 
 		$provider = $this->createMock( WooPaymentsProvider::class );
@@ -728,7 +728,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		wp_deregister_script( 'woocommerce-tokenization-form' );
 		wp_set_current_user( 0 );
 		$this->reset_classic_checkout_fallback_hooks_flag();
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		parent::tearDown();
 	}
 
@@ -1855,7 +1855,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @param string $changed Which input of the config base changes before the last render.
 	 */
 	public function test_classic_payment_list_builds_the_shared_config_once( string $surface, string $changed ): void {
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
 		$account_service = $this->create_account_service_for_bridge( true );
 		$bridge          = new WooPaymentsCheckoutBridge();
@@ -1934,7 +1934,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		} finally {
 			remove_filter( 'wc_payments_account_id_for_intent_confirmation', $count );
 			remove_filter( 'wcpay_payment_fields_js_config', $filter );
-			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 			remove_filter( 'wp_doing_ajax', '__return_true' );
 			set_query_var( 'order-pay', '' );
 			WC()->cart->empty_cart();

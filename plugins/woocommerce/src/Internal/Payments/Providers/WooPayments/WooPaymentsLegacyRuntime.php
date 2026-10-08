@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 
 /**
@@ -49,19 +48,19 @@ class WooPaymentsLegacyRuntime {
 	/**
 	 * Runtime owner arbiter for container-managed instances.
 	 *
-	 * @var NativePaymentsRuntimeArbiter|null
+	 * @var WooPaymentsRuntimeArbiter|null
 	 */
-	private ?NativePaymentsRuntimeArbiter $arbiter = null;
+	private ?WooPaymentsRuntimeArbiter $arbiter = null;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param LegacyProxy                       $legacy_proxy Legacy proxy.
-	 * @param NativePaymentsRuntimeArbiter|null $arbiter      Runtime owner arbiter. Optional for isolated legacy-runtime adapters.
+	 * @param LegacyProxy                    $legacy_proxy Legacy proxy.
+	 * @param WooPaymentsRuntimeArbiter|null $arbiter      Runtime owner arbiter. Optional for isolated legacy-runtime adapters.
 	 */
-	final public function init( LegacyProxy $legacy_proxy, ?NativePaymentsRuntimeArbiter $arbiter = null ): void {
+	final public function init( LegacyProxy $legacy_proxy, ?WooPaymentsRuntimeArbiter $arbiter = null ): void {
 		$this->legacy_proxy = $legacy_proxy;
 		$this->arbiter      = $arbiter;
 	}
@@ -73,7 +72,7 @@ class WooPaymentsLegacyRuntime {
 	 */
 	public function is_loaded(): bool {
 		try {
-			if ( null !== $this->arbiter && ! $this->arbiter->is_plugin_runtime_active() ) {
+			if ( null !== $this->arbiter && ! $this->arbiter->is_extension_owner() ) {
 				return false;
 			}
 

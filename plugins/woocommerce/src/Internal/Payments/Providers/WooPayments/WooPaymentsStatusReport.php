@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsCurrencyRateProvider;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -50,9 +49,9 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * WooPayments account service.
@@ -111,10 +110,10 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter $arbiter               Runtime owner arbiter.
-	 * @param WooPaymentsSetupTier         $setup_tier Native payments state store.
+	 * @param WooPaymentsRuntimeArbiter $arbiter               Runtime owner arbiter.
+	 * @param WooPaymentsSetupTier      $setup_tier Native payments state store.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsSetupTier $setup_tier ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsSetupTier $setup_tier ): void {
 		$this->arbiter    = $arbiter;
 		$this->setup_tier = $setup_tier;
 	}
@@ -147,7 +146,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 */
 	private function has_support_diagnostics(): bool {
 		return in_array( $this->setup_tier->get_stored_tier(), array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true )
-			|| $this->arbiter->is_plugin_runtime_active()
+			|| $this->arbiter->is_extension_owner()
 			|| $this->arbiter->is_kill_switch_active()
 			|| null !== $this->get_cutover_state_store()->get_record();
 	}
@@ -241,9 +240,9 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 
 		return array(
 			'runtime_owner'           => $this->arbiter->get_runtime_owner(),
-			'builtin_enabled'         => $this->arbiter->is_native_runtime_enabled(),
+			'builtin_enabled'         => $this->arbiter->is_builtin_enabled(),
 			'builtin_enabled_source'  => $this->get_native_enabled_source(),
-			'builtin_enabled_filter'  => NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED,
+			'builtin_enabled_filter'  => WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER,
 			'builtin_enabled_note'    => $this->get_native_enabled_note(),
 			'preflight_failures'      => $this->get_preflight_failures(),
 			'account_id'              => $this->get_account_service()->get_account_id(),
@@ -364,7 +363,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		}
 
 		// While the plugin owns payments it renders this section itself (client 11.1.0 `includes/class-wc-payments-status.php:55-56`).
-		if ( ! $this->arbiter->is_plugin_runtime_active() ) {
+		if ( ! $this->arbiter->is_extension_owner() ) {
 			$this->render_status_table( 'WooPayments', $this->get_client_status_rows() );
 		}
 		$this->render_status_table( 'WooPayments native runtime', $native_rows );
@@ -676,7 +675,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			),
 		);
 
-		if ( $this->arbiter->is_plugin_runtime_active() ) {
+		if ( $this->arbiter->is_extension_owner() ) {
 			$namespaced_tools = array();
 			foreach ( $native_tools as $tool_id => $tool ) {
 				$namespaced_tools[ 'builtin-' . $tool_id ] = $tool;
@@ -909,7 +908,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 * @return string
 	 */
 	private function get_native_enabled_source(): string {
-		return false === has_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED ) ? 'default' : 'filter';
+		return false === has_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER ) ? 'default' : 'filter';
 	}
 
 	/**
@@ -921,8 +920,8 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		return sprintf(
 			/* translators: 1: option name, 2: filter name. */
 			__( 'The %1$s option disables native runtime by default when set to true. The %2$s filter has final authority and is resolved while WooCommerce is being loaded. Use a mu-plugin or earlier bootstrap code to override this value for all native registrations.', 'woocommerce' ),
-			NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION,
-			NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED
+			WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION,
+			WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER
 		);
 	}
 

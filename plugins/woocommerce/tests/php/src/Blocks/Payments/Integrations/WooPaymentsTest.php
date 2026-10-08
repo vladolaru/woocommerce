@@ -10,7 +10,7 @@ use Automattic\WooCommerce\Blocks\Payments\Api;
 use Automattic\WooCommerce\Blocks\Payments\Integrations\WooPayments;
 use Automattic\WooCommerce\Blocks\Payments\PaymentMethodRegistry;
 use Automattic\WooCommerce\Blocks\Utils\CartCheckoutUtils;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
@@ -892,15 +892,15 @@ class WooPaymentsTest extends WP_UnitTestCase {
 	/**
 	 * Create a runtime arbiter mock.
 	 *
-	 * @param bool $should_native_register Whether native should own the runtime.
-	 * @return NativePaymentsRuntimeArbiter
+	 * @param bool $is_builtin_owner Whether native should own the runtime.
+	 * @return WooPaymentsRuntimeArbiter
 	 */
-	private function create_runtime_arbiter( bool $should_native_register = true ): NativePaymentsRuntimeArbiter {
-		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+	private function create_runtime_arbiter( bool $is_builtin_owner = true ): WooPaymentsRuntimeArbiter {
+		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_native_register' ) )
+			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'should_native_register' )->willReturn( $should_native_register );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $is_builtin_owner );
 
 		return $arbiter;
 	}

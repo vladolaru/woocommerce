@@ -7,7 +7,7 @@ defined( 'ABSPATH' ) || exit;
 
 use Automattic\WooCommerce\Admin\WCAdminHelper;
 use Automattic\WooCommerce\Enums\OrderInternalStatus;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderMode;
 use WC_Abstract_Order;
@@ -78,18 +78,18 @@ class WooPayments extends Incentive {
 	/**
 	 * Payments runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter|null
+	 * @var WooPaymentsRuntimeArbiter|null
 	 */
-	private ?NativePaymentsRuntimeArbiter $arbiter;
+	private ?WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Constructor.
 	 *
-	 * @param string                            $suggestion_id  The suggestion ID.
-	 * @param WooPaymentsLegacyRuntime|null     $legacy_runtime WooPayments legacy runtime.
-	 * @param NativePaymentsRuntimeArbiter|null $arbiter        Payments runtime owner arbiter.
+	 * @param string                         $suggestion_id  The suggestion ID.
+	 * @param WooPaymentsLegacyRuntime|null  $legacy_runtime WooPayments legacy runtime.
+	 * @param WooPaymentsRuntimeArbiter|null $arbiter        Payments runtime owner arbiter.
 	 */
-	public function __construct( string $suggestion_id, ?WooPaymentsLegacyRuntime $legacy_runtime = null, ?NativePaymentsRuntimeArbiter $arbiter = null ) {
+	public function __construct( string $suggestion_id, ?WooPaymentsLegacyRuntime $legacy_runtime = null, ?WooPaymentsRuntimeArbiter $arbiter = null ) {
 		parent::__construct( $suggestion_id );
 
 		$this->cache_transient_name                      = self::PREFIX . $suggestion_id . '_cache';
@@ -150,7 +150,7 @@ class WooPayments extends Incentive {
 			return true;
 		}
 
-		return null !== $this->arbiter && $this->arbiter->should_native_register();
+		return null !== $this->arbiter && $this->arbiter->is_builtin_owner();
 	}
 
 	/**

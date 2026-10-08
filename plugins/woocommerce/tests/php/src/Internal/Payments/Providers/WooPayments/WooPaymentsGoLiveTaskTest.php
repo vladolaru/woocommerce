@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Admin\Features\OnboardingTasks\TaskList;
 use Automattic\WooCommerce\Admin\Features\OnboardingTasks\TaskLists;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputesTask;
@@ -160,11 +160,11 @@ class WooPaymentsGoLiveTaskTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsHomeTasks
 	 */
 	private function create_registrar( WooPaymentsAccountService $account_service ): WooPaymentsHomeTasks {
-		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_native_register' ) )
+			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'should_native_register' )->willReturn( true );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
 
 		$registrar = new WooPaymentsHomeTasks();
 		$registrar->init( $arbiter, $account_service, $this->createMock( WooPaymentsAdminMenuBadgeService::class ) );

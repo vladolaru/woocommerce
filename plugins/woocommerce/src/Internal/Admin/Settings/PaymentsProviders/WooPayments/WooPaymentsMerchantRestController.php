@@ -4,7 +4,7 @@ declare( strict_types=1 );
 namespace Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments;
 
 use Automattic\WooCommerce\Internal\RestApiControllerBase;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminNoticeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
@@ -112,9 +112,9 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	/**
 	 * Native payments runtime arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter|null
+	 * @var WooPaymentsRuntimeArbiter|null
 	 */
-	private ?NativePaymentsRuntimeArbiter $runtime_arbiter = null;
+	private ?WooPaymentsRuntimeArbiter $runtime_arbiter = null;
 
 	/**
 	 * Get the WooCommerce REST API namespace for the class.
@@ -203,7 +203,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 *
 	 * @param WooPaymentsService                    $woopayments           The WooPayments-specific Payments settings page service.
 	 * @param WooPaymentsSettingsService|null       $settings_service      Optional native WooPayments settings service.
-	 * @param NativePaymentsRuntimeArbiter|null     $runtime_arbiter       Optional native payments runtime arbiter.
+	 * @param WooPaymentsRuntimeArbiter|null        $runtime_arbiter       Optional native payments runtime arbiter.
 	 * @param WooPaymentsPmPromotionsService|null   $pm_promotions_service Optional native WooPayments PM promotions service.
 	 * @param WooPaymentsOverviewService|null       $overview_service      Optional native WooPayments Overview projection service.
 	 * @param WooPaymentsAccountService|null        $account_service       Optional native WooPayments account service.
@@ -212,7 +212,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 *
 	 * @internal
 	 */
-	final public function init( WooPaymentsService $woopayments, ?WooPaymentsSettingsService $settings_service = null, ?NativePaymentsRuntimeArbiter $runtime_arbiter = null, ?WooPaymentsPmPromotionsService $pm_promotions_service = null, ?WooPaymentsOverviewService $overview_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsAdminNoticeService $admin_notice_service = null, ?WooPaymentsApplePayDomainService $apple_pay_domain_service = null ): void {
+	final public function init( WooPaymentsService $woopayments, ?WooPaymentsSettingsService $settings_service = null, ?WooPaymentsRuntimeArbiter $runtime_arbiter = null, ?WooPaymentsPmPromotionsService $pm_promotions_service = null, ?WooPaymentsOverviewService $overview_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsAdminNoticeService $admin_notice_service = null, ?WooPaymentsApplePayDomainService $apple_pay_domain_service = null ): void {
 		$this->woopayments           = $woopayments;
 		$this->settings_service      = $settings_service;
 		$this->runtime_arbiter       = $runtime_arbiter;
@@ -375,7 +375,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 * @return bool
 	 */
 	private function should_register_native_settings_routes(): bool {
-		return null !== $this->runtime_arbiter && $this->runtime_arbiter->should_native_register();
+		return null !== $this->runtime_arbiter && $this->runtime_arbiter->is_builtin_owner();
 	}
 
 	/**

@@ -8,7 +8,7 @@ use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
@@ -3571,11 +3571,11 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$order->add_meta_data( 'woopay_merchant_customer_id', $user_id, true );
 		$order->save();
 
-		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_runtime_owner' ) )
 			->getMock();
-		$arbiter->method( 'get_runtime_owner' )->willReturn( NativePaymentsRuntimeArbiter::OWNER_NONE );
+		$arbiter->method( 'get_runtime_owner' )->willReturn( WooPaymentsRuntimeArbiter::OWNER_NONE );
 		$restore_service = new WooPaymentsWooPayVerifiedEmailRestoreService();
 		$restore_service->init( $arbiter );
 		$container                = wc_get_container();
@@ -4246,11 +4246,11 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsWooPaySessionController
 	 */
 	private function register_controller( WooPaymentsWooPaySessionService $service ): WooPaymentsWooPaySessionController {
-		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_native_register' ) )
+			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'should_native_register' )->willReturn( true );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
 
 		$controller = new WooPaymentsWooPaySessionController();
 		$controller->init( $arbiter, $service );

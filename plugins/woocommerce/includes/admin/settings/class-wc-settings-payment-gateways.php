@@ -9,7 +9,7 @@ declare( strict_types = 1 );
 
 use Automattic\WooCommerce\Admin\Settings\SettingsSectionRegistry;
 use Automattic\WooCommerce\Internal\Admin\Loader;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -197,7 +197,7 @@ class WC_Settings_Payment_Gateways extends WC_Settings_Page {
 			self::OFFLINE_SECTION_NAME,
 		);
 
-		$native_owns_payments_runtime = wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->should_native_register();
+		$native_owns_payments_runtime = wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner();
 
 		// These sections are optional and can be modified by plugins or themes.
 		$optional_reactified_sections = array(
@@ -306,7 +306,7 @@ class WC_Settings_Payment_Gateways extends WC_Settings_Page {
 	 * Only while native owns payments: the plugin fires this action from its own gateway settings screen.
 	 */
 	private function maybe_fire_woopayments_admin_notices(): void {
-		if ( ! wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->should_native_register() ) {
+		if ( ! wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner() ) {
 			return;
 		}
 

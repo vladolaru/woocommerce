@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\StoreApi\Schemas\V1\CartSchema;
 
@@ -38,9 +37,9 @@ class WooPaymentsExpressCheckoutStoreApiExtension implements RegisterHooksInterf
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Express checkout service.
@@ -54,10 +53,10 @@ class WooPaymentsExpressCheckoutStoreApiExtension implements RegisterHooksInterf
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter      $arbiter                  Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter         $arbiter                  Runtime owner arbiter.
 	 * @param WooPaymentsExpressCheckoutService $express_checkout_service Express checkout service.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsExpressCheckoutService $express_checkout_service ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsExpressCheckoutService $express_checkout_service ): void {
 		$this->arbiter                  = $arbiter;
 		$this->express_checkout_service = $express_checkout_service;
 	}
@@ -66,7 +65,7 @@ class WooPaymentsExpressCheckoutStoreApiExtension implements RegisterHooksInterf
 	 * Register Store API extension hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

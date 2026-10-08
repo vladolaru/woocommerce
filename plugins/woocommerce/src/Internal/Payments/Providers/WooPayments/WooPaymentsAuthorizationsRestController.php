@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
@@ -34,9 +33,9 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Native WooPayments API client.
@@ -64,12 +63,12 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter $arbiter            Runtime owner arbiter.
-	 * @param WooPaymentsApiClient         $api_client         Native WooPayments API client.
-	 * @param PaymentProcessingService     $processing_service Native payment processing service.
-	 * @param WooPaymentsProvider          $provider           WooPayments provider.
+	 * @param WooPaymentsRuntimeArbiter $arbiter            Runtime owner arbiter.
+	 * @param WooPaymentsApiClient      $api_client         Native WooPayments API client.
+	 * @param PaymentProcessingService  $processing_service Native payment processing service.
+	 * @param WooPaymentsProvider       $provider           WooPayments provider.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, PaymentProcessingService $processing_service, WooPaymentsProvider $provider ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, PaymentProcessingService $processing_service, WooPaymentsProvider $provider ): void {
 		$this->arbiter            = $arbiter;
 		$this->api_client         = $api_client;
 		$this->processing_service = $processing_service;
@@ -80,7 +79,7 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 	 * Register REST hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

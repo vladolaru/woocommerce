@@ -6,7 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Admin\Settings\PaymentsProviders
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsMerchantRestController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsOverviewService;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminNoticeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
@@ -58,7 +58,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	private $mock_overview_service;
 
 	/**
-	 * @var MockObject|NativePaymentsRuntimeArbiter
+	 * @var MockObject|WooPaymentsRuntimeArbiter
 	 */
 	private $mock_runtime_arbiter;
 
@@ -105,12 +105,12 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 		$this->mock_overview_service      = $this->getMockBuilder( WooPaymentsOverviewService::class )
 			->onlyMethods( array( 'get_overview' ) )
 			->getMock();
-		$this->mock_runtime_arbiter       = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+		$this->mock_runtime_arbiter       = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_native_register' ) )
+			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
 		$this->mock_runtime_arbiter
-			->method( 'should_native_register' )
+			->method( 'is_builtin_owner' )
 			->willReturn( true );
 		$this->mock_account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
@@ -1489,12 +1489,12 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 		$wp_rest_server = new WP_REST_Server();
 		$this->server   = $wp_rest_server;
 
-		$runtime_arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+		$runtime_arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_native_register' ) )
+			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
 		$runtime_arbiter
-			->method( 'should_native_register' )
+			->method( 'is_builtin_owner' )
 			->willReturn( false );
 
 		$sut = new WooPaymentsMerchantRestController();
@@ -1539,12 +1539,12 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 		$wp_rest_server = new WP_REST_Server();
 		$this->server   = $wp_rest_server;
 
-		$runtime_arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+		$runtime_arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_native_register' ) )
+			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
 		$runtime_arbiter
-			->method( 'should_native_register' )
+			->method( 'is_builtin_owner' )
 			->willReturn( true );
 
 		$sut = new WooPaymentsMerchantRestController();

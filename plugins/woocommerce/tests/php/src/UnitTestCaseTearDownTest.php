@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 
 /**
  * Tests that WC_Unit_Test_Case clears the WC() singleton state that neither the per-test
@@ -51,11 +51,11 @@ class UnitTestCaseTearDownTest extends \WC_Unit_Test_Case {
 			)
 		);
 
-		$runtime_arbiter = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $runtime_arbiter->get_runtime_owner(), 'The initial runtime owner should be none.' );
+		$runtime_arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $runtime_arbiter->get_runtime_owner(), 'The initial runtime owner should be none.' );
 
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $runtime_arbiter->get_runtime_owner(), 'The runtime owner should remain memoized before cleanup.' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $runtime_arbiter->get_runtime_owner(), 'The runtime owner should remain memoized before cleanup.' );
 
 		$locale_filter = function ( $locale ) {
 			$locale['GB']['postcode']['label'] = self::LEAKED_LOCALE_LABEL;
@@ -98,7 +98,7 @@ class UnitTestCaseTearDownTest extends \WC_Unit_Test_Case {
 		$this->assertSame( 'shortcode', WC()->cart->cart_context, 'The cart context should be back to shortcode.' );
 		$this->assertSame( 0, wc_notice_count(), 'The notice queue should have been cleared.' );
 		$this->assertFalse( $clear_persistent_cart, 'Teardown should leave persistent cart cleanup to the database rollback.' );
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, $runtime_arbiter->get_runtime_owner(), 'The native runtime owner should be resolved again after cleanup.' );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $runtime_arbiter->get_runtime_owner(), 'The native runtime owner should be resolved again after cleanup.' );
 		$this->assertNotSame(
 			self::LEAKED_LOCALE_LABEL,
 			WC()->countries->get_country_locale()['GB']['postcode']['label'] ?? null,

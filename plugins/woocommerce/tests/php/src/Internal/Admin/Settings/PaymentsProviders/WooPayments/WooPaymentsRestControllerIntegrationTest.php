@@ -10,7 +10,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsRestController;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Testing\Tools\DependencyManagement\MockableLegacyProxy;
 use Automattic\WooCommerce\Testing\Tools\TestingContainer;
@@ -283,7 +283,7 @@ class WooPaymentsRestControllerIntegrationTest extends WC_Unit_Test_Case {
 				},
 				'get_option'   => function ( $option, $default_value = false ) {
 					if ( 'active_plugins' === $option ) {
-						return array( NativePaymentsRuntimeArbiter::PLUGIN_FILE );
+						return array( WooPaymentsRuntimeArbiter::PLUGIN_FILE );
 					}
 
 					return get_option( $option, $default_value );
@@ -314,12 +314,12 @@ class WooPaymentsRestControllerIntegrationTest extends WC_Unit_Test_Case {
 
 		// Register the REST controller routes again to make sure the dependency tree is using our mocks.
 		// Inject a runtime arbiter that owns the site so the native settings routes register under the fail-closed guard.
-		$runtime_arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+		$runtime_arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_native_register' ) )
+			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
 		$runtime_arbiter
-			->method( 'should_native_register' )
+			->method( 'is_builtin_owner' )
 			->willReturn( true );
 
 		$this->controller = new WooPaymentsRestController();

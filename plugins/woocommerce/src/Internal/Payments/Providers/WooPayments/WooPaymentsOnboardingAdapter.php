@@ -10,7 +10,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Throwable;
 use WC_Payment_Gateway;
 
@@ -55,9 +54,9 @@ class WooPaymentsOnboardingAdapter {
 	/**
 	 * Runtime ownership arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Initialize the class instance.
@@ -66,10 +65,10 @@ class WooPaymentsOnboardingAdapter {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsLegacyRuntime     $legacy_runtime WooPayments legacy runtime.
-	 * @param NativePaymentsRuntimeArbiter $arbiter        Runtime ownership arbiter.
+	 * @param WooPaymentsLegacyRuntime  $legacy_runtime WooPayments legacy runtime.
+	 * @param WooPaymentsRuntimeArbiter $arbiter        Runtime ownership arbiter.
 	 */
-	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, NativePaymentsRuntimeArbiter $arbiter ): void {
+	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsRuntimeArbiter $arbiter ): void {
 		$this->legacy_runtime = $legacy_runtime;
 		$this->arbiter        = $arbiter;
 	}
@@ -98,7 +97,7 @@ class WooPaymentsOnboardingAdapter {
 	 * @return bool
 	 */
 	public function is_native_onboarding_available(): bool {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return false;
 		}
 

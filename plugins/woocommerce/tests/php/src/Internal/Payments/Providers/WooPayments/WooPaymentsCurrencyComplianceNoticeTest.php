@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyComplianceNotice;
 use WC_Unit_Test_Case;
@@ -142,11 +142,11 @@ class WooPaymentsCurrencyComplianceNoticeTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsCurrencyComplianceNotice
 	 */
 	private function create_service( bool $native_register, array $supported_currencies = array() ): WooPaymentsCurrencyComplianceNotice {
-		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_native_register' ) )
+			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'should_native_register' )->willReturn( $native_register );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
 
 		$account = $this->createMock( WooPaymentsAccountService::class );
 		$account->method( 'get_customer_supported_currencies' )->willReturn( $supported_currencies );

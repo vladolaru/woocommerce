@@ -9,7 +9,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -31,9 +30,9 @@ class WooPaymentsCapitalRestController implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Native WooPayments API client.
@@ -47,10 +46,10 @@ class WooPaymentsCapitalRestController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter $arbiter    Runtime owner arbiter.
-	 * @param WooPaymentsApiClient         $api_client Native WooPayments API client.
+	 * @param WooPaymentsRuntimeArbiter $arbiter    Runtime owner arbiter.
+	 * @param WooPaymentsApiClient      $api_client Native WooPayments API client.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client ): void {
 		$this->arbiter    = $arbiter;
 		$this->api_client = $api_client;
 	}
@@ -59,7 +58,7 @@ class WooPaymentsCapitalRestController implements RegisterHooksInterface {
 	 * Register REST hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 
@@ -146,7 +145,7 @@ class WooPaymentsCapitalRestController implements RegisterHooksInterface {
 		if (
 			wp_doing_ajax()
 			|| ! current_user_can( 'manage_woocommerce' )
-			|| ! $this->arbiter->should_native_register()
+			|| ! $this->arbiter->is_builtin_owner()
 		) {
 			return;
 		}

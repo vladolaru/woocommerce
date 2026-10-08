@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 defined( 'ABSPATH' ) || exit;
@@ -168,9 +167,9 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Canonical-to-split gateway settings synchronizer.
@@ -184,10 +183,10 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter                $arbiter Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter                   $arbiter Runtime owner arbiter.
 	 * @param WooPaymentsGatewaySettingsSynchronizer|null $gateway_settings_synchronizer Optional gateway settings synchronizer.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, ?WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer = null ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, ?WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer = null ): void {
 		$this->arbiter                       = $arbiter;
 		$this->gateway_settings_synchronizer = $gateway_settings_synchronizer;
 	}
@@ -196,7 +195,7 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 	 * Register the one-shot normalization hook.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

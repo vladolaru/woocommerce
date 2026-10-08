@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
@@ -44,9 +43,9 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	/**
 	 * Native payments runtime arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter|null
+	 * @var WooPaymentsRuntimeArbiter|null
 	 */
-	private ?NativePaymentsRuntimeArbiter $runtime_arbiter = null;
+	private ?WooPaymentsRuntimeArbiter $runtime_arbiter = null;
 
 	/**
 	 * Constructor.
@@ -62,10 +61,10 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsSetupTier         $setup_tier Durable native payments state store.
-	 * @param NativePaymentsRuntimeArbiter $runtime_arbiter       Native payments runtime arbiter.
+	 * @param WooPaymentsSetupTier      $setup_tier Durable native payments state store.
+	 * @param WooPaymentsRuntimeArbiter $runtime_arbiter       Native payments runtime arbiter.
 	 */
-	final public function init( WooPaymentsSetupTier $setup_tier, NativePaymentsRuntimeArbiter $runtime_arbiter ): void { // phpcs:ignore Generic.CodeAnalysis.UnnecessaryFinalModifier.Found -- Required by WooCommerce injection method rules.
+	final public function init( WooPaymentsSetupTier $setup_tier, WooPaymentsRuntimeArbiter $runtime_arbiter ): void { // phpcs:ignore Generic.CodeAnalysis.UnnecessaryFinalModifier.Found -- Required by WooCommerce injection method rules.
 		$this->setup_tier      = $setup_tier;
 		$this->runtime_arbiter = $runtime_arbiter;
 	}
@@ -175,7 +174,7 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	 * The classic toggle and the payment gateways REST route write the option directly, without `persist()`.
 	 */
 	public function register(): void {
-		if ( null === $this->runtime_arbiter || ! $this->runtime_arbiter->should_native_register() ) {
+		if ( null === $this->runtime_arbiter || ! $this->runtime_arbiter->is_builtin_owner() ) {
 			return;
 		}
 
@@ -217,7 +216,7 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	 * @param mixed $value New settings.
 	 */
 	private function synchronize_after_direct_write( $value ): void {
-		if ( null === $this->runtime_arbiter || ! $this->runtime_arbiter->should_native_register() ) {
+		if ( null === $this->runtime_arbiter || ! $this->runtime_arbiter->is_builtin_owner() ) {
 			return;
 		}
 
@@ -234,7 +233,7 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 			return;
 		}
 
-		if ( ! $this->runtime_arbiter->is_native_runtime_enabled() ) {
+		if ( ! $this->runtime_arbiter->is_builtin_enabled() ) {
 			$this->setup_tier->write_tier( WooPaymentsSetupTier::DISABLED );
 			return;
 		}

@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
@@ -64,9 +63,9 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Action Scheduler service.
@@ -101,14 +100,14 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter      $arbiter                Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter         $arbiter                Runtime owner arbiter.
 	 * @param WooPaymentsActionSchedulerService $scheduler             Action Scheduler service.
 	 * @param WooPaymentsFailedEventStore       $failed_event_store     Failed event store.
 	 * @param WooPaymentsFailedEventsProvider   $failed_events_provider Failed events provider.
 	 * @param WooPaymentsEventIngestor          $event_ingestor         Event ingestor.
 	 */
 	final public function init(
-		NativePaymentsRuntimeArbiter $arbiter,
+		WooPaymentsRuntimeArbiter $arbiter,
 		WooPaymentsActionSchedulerService $scheduler,
 		WooPaymentsFailedEventStore $failed_event_store,
 		WooPaymentsFailedEventsProvider $failed_events_provider,
@@ -125,7 +124,7 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	 * Register preserved reliability queue consumers.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

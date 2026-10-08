@@ -9,7 +9,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsOverviewService;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
@@ -2715,11 +2715,11 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$class_name = WooPaymentsAdminNavigationController::class;
 		$this->assertTrue( class_exists( $class_name ), 'WooPayments admin navigation controller should exist.' );
 
-		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_native_register' ) )
+			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'should_native_register' )->willReturn( $native_register );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
 
 		$account_service = $this->create_account_service( $account_state );
 		$badge_service   = $this->create_badge_service( $badge_counts );
@@ -2742,11 +2742,11 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsAdminNavigationController
 	 */
 	private function create_controller_with_account_service( WooPaymentsAccountService $account_service, bool $connected ): WooPaymentsAdminNavigationController {
-		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_native_register' ) )
+			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'should_native_register' )->willReturn( true );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
 
 		$api_client = $this->createMock( WooPaymentsApiClient::class );
 		$api_client->method( 'is_available' )->willReturn( $connected );
@@ -2867,11 +2867,11 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsApplePayDomainService
 	 */
 	private function create_apple_pay_domain_service( bool $live_account ): WooPaymentsApplePayDomainService {
-		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_native_register' ) )
+			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'should_native_register' )->willReturn( true );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
 
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()

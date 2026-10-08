@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Enums\OrderStatus;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
@@ -97,9 +96,9 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter|null
+	 * @var WooPaymentsRuntimeArbiter|null
 	 */
-	private ?NativePaymentsRuntimeArbiter $arbiter = null;
+	private ?WooPaymentsRuntimeArbiter $arbiter = null;
 
 	/**
 	 * WooPayments order effect applier.
@@ -125,14 +124,14 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 * @param WooPaymentsApiClient               $api_client         Native WooPayments API client.
 	 * @param OrderPaymentLifecycleService       $lifecycle_service Native order payment lifecycle service.
 	 * @param WooPaymentsOrderDataService        $order_data_service WooPayments order data service.
-	 * @param NativePaymentsRuntimeArbiter|null  $arbiter            Optional runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter|null     $arbiter            Optional runtime owner arbiter.
 	 * @param WooPaymentsOrderEffectApplier|null $order_effect_applier Optional order effect applier.
 	 */
 	final public function init(
 		WooPaymentsApiClient $api_client,
 		OrderPaymentLifecycleService $lifecycle_service,
 		WooPaymentsOrderDataService $order_data_service,
-		?NativePaymentsRuntimeArbiter $arbiter = null,
+		?WooPaymentsRuntimeArbiter $arbiter = null,
 		?WooPaymentsOrderEffectApplier $order_effect_applier = null
 	): void {
 		$this->api_client           = $api_client;
@@ -148,7 +147,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 * @internal
 	 */
 	public function register() {
-		if ( ! $this->get_runtime_arbiter()->should_native_register() ) {
+		if ( ! $this->get_runtime_arbiter()->is_builtin_owner() ) {
 			return;
 		}
 
@@ -757,11 +756,11 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	/**
 	 * Get the runtime owner arbiter.
 	 *
-	 * @return NativePaymentsRuntimeArbiter
+	 * @return WooPaymentsRuntimeArbiter
 	 */
-	private function get_runtime_arbiter(): NativePaymentsRuntimeArbiter {
-		if ( ! $this->arbiter instanceof NativePaymentsRuntimeArbiter ) {
-			$this->arbiter = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
+	private function get_runtime_arbiter(): WooPaymentsRuntimeArbiter {
+		if ( ! $this->arbiter instanceof WooPaymentsRuntimeArbiter ) {
+			$this->arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
 		}
 
 		return $this->arbiter;

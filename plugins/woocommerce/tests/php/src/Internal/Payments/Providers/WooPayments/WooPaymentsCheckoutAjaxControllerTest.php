@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -20,7 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPay
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Order;
 use WC_Payment_Token;
 use WC_Payment_Token_CC;
@@ -279,7 +279,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			$account_service
 		);
 		$token_class_map = new WooPaymentsTokenClassMapController();
-		$token_class_map->init( new StaticNativeRuntimeArbiter( true ) );
+		$token_class_map->init( new StaticWooPaymentsRuntimeArbiter( true ) );
 		$token_class_map->register();
 		$sut = $this->create_controller( $api_client, null, $token_service, $account_service );
 		add_filter( 'woocommerce_woopayments_is_recurring_payment', '__return_true' );
@@ -2367,7 +2367,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		);
 		$sut             = $this->create_controller( $api_client, null, $token_service );
 		$token_class_map = new WooPaymentsTokenClassMapController();
-		$token_class_map->init( new StaticNativeRuntimeArbiter( true ) );
+		$token_class_map->init( new StaticWooPaymentsRuntimeArbiter( true ) );
 		$token_class_map->register();
 
 		$response = $sut->get_update_order_status_response(
@@ -3621,8 +3621,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsCheckoutAjaxController
 	 */
 	private function create_controller( WooPaymentsApiClient $api_client, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsAccountService $account_service = null, ?OrderPaymentLifecycleService $lifecycle_service = null ): WooPaymentsCheckoutAjaxController {
-		$arbiter = $this->createMock( NativePaymentsRuntimeArbiter::class );
-		$arbiter->method( 'should_native_register' )->willReturn( true );
+		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
 
 		if ( null === $customer_service ) {
 			$customer_service = $this->createMock( WooPaymentsCustomerService::class );
@@ -3738,7 +3738,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		};
 
 		$sut = new WooPaymentsTokenService();
-		$sut->init( $details_service, new StaticNativeRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), $account_service ?? wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$sut->init( $details_service, new StaticWooPaymentsRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), $account_service ?? wc_get_container()->get( WooPaymentsAccountService::class ) );
 
 		return $sut;
 	}

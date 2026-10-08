@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Enums\WooPaymentsCutoverState;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 defined( 'ABSPATH' ) || exit;
@@ -85,9 +84,9 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Persisted state store.
@@ -143,14 +142,14 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter          $arbiter          Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter             $arbiter          Runtime owner arbiter.
 	 * @param WooPaymentsCutoverStateStore          $state_store      Persisted state store.
 	 * @param WooPaymentsCutoverActionScheduler     $scheduler        Action Scheduler adapter.
 	 * @param WooPaymentsCutoverPreflightService    $preflight_service   Headless cutover facts.
 	 * @param WooPaymentsCutoverNormalizationRunner $normalization_runner Cutover normalization runner.
 	 * @param WooPaymentsAccountService             $account_service     WooPayments account state.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsCutoverStateStore $state_store, WooPaymentsCutoverActionScheduler $scheduler, WooPaymentsCutoverPreflightService $preflight_service, WooPaymentsCutoverNormalizationRunner $normalization_runner, WooPaymentsAccountService $account_service ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsCutoverStateStore $state_store, WooPaymentsCutoverActionScheduler $scheduler, WooPaymentsCutoverPreflightService $preflight_service, WooPaymentsCutoverNormalizationRunner $normalization_runner, WooPaymentsAccountService $account_service ): void {
 		$this->arbiter              = $arbiter;
 		$this->state_store          = $state_store;
 		$this->scheduler            = $scheduler;
@@ -231,7 +230,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @return bool True when durable work already exists or was scheduled.
 	 */
 	private function enqueue_with_context( string $source, ?string $origin_plugin_file, ?string $origin_plugin_scope ): bool {
-		if ( ! $this->arbiter->is_native_runtime_enabled() || ! $this->account_service->is_native_eligible() ) {
+		if ( ! $this->arbiter->is_builtin_enabled() || ! $this->account_service->is_native_eligible() ) {
 			return false;
 		}
 		if ( is_multisite() && ( 'network' === $origin_plugin_scope || $this->preflight_service->is_woopayments_network_active() ) ) {
@@ -299,7 +298,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @return bool True when the rollback was already recorded or a new generation was opened.
 	 */
 	public function record_plugin_activation( bool $network_wide = false ): bool {
-		if ( ! $this->arbiter->is_native_runtime_enabled() ) {
+		if ( ! $this->arbiter->is_builtin_enabled() ) {
 			return false;
 		}
 		if ( $network_wide && is_multisite() ) {
@@ -470,7 +469,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			return $this->state_store->get_record();
 		}
 		// Without the plugin there is no switch to offer, so the preflight scan would run on every admin page for nothing.
-		if ( ! $this->arbiter->is_native_runtime_enabled() || ! $this->arbiter->is_plugin_runtime_active() ) {
+		if ( ! $this->arbiter->is_builtin_enabled() || ! $this->arbiter->is_extension_owner() ) {
 			return $record;
 		}
 
@@ -811,7 +810,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @param int $attempt    Scheduled attempt.
 	 */
 	private function handle_reconcile_attempt( int $generation, int $attempt ): void {
-		if ( ! $this->arbiter->is_native_runtime_enabled() ) {
+		if ( ! $this->arbiter->is_builtin_enabled() ) {
 			return;
 		}
 
@@ -1034,7 +1033,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_expired_held_claim( array $claimed ): bool {
-		if ( time() - $claimed['started_at'] < self::FAST_RETRY_WINDOW || ! $this->arbiter->is_plugin_runtime_active() ) {
+		if ( time() - $claimed['started_at'] < self::FAST_RETRY_WINDOW || ! $this->arbiter->is_extension_owner() ) {
 			return false;
 		}
 
@@ -1583,7 +1582,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 */
 	private function verify_native_ownership_claim( array $claimed ): void {
 		try {
-			$plugin_active = $this->arbiter->is_plugin_runtime_active();
+			$plugin_active = $this->arbiter->is_extension_owner();
 		} catch ( \Throwable $error ) {
 			$this->log_error( 'WooPayments cutover could not verify native ownership.', array( 'error' => $error->getMessage() ) );
 			$this->defer( $claimed, array( 'builtin_ownership_verification_failed' ) );
@@ -2156,7 +2155,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * Repair missing actions and stale running records at bootstrap time.
 	 */
 	private function repair_schedule(): void {
-		if ( ! $this->arbiter->is_native_runtime_enabled() ) {
+		if ( ! $this->arbiter->is_builtin_enabled() ) {
 			return;
 		}
 
@@ -2407,7 +2406,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	private function can_reopen_terminal_record( array $record, bool $for_admin_notice = false ): bool {
 		if ( WooPaymentsCutoverState::DONE === $record['state'] ) {
 			try {
-				return $this->arbiter->is_plugin_runtime_active();
+				return $this->arbiter->is_extension_owner();
 			} catch ( \Throwable $error ) {
 				return false;
 			}

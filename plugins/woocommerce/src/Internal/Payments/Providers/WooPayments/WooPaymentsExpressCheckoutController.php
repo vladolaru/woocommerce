@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -25,9 +24,9 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Express checkout service.
@@ -62,12 +61,12 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter       $arbiter                  Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter          $arbiter                  Runtime owner arbiter.
 	 * @param WooPaymentsExpressCheckoutService  $express_checkout_service Express checkout service.
 	 * @param WooPaymentsFraudPreventionService  $fraud_prevention_service Fraud prevention service.
 	 * @param WooPaymentsWooPaySessionController $woopay_controller        WooPay controller.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsExpressCheckoutService $express_checkout_service, WooPaymentsFraudPreventionService $fraud_prevention_service, WooPaymentsWooPaySessionController $woopay_controller ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsExpressCheckoutService $express_checkout_service, WooPaymentsFraudPreventionService $fraud_prevention_service, WooPaymentsWooPaySessionController $woopay_controller ): void {
 		$this->arbiter                  = $arbiter;
 		$this->express_checkout_service = $express_checkout_service;
 		$this->fraud_prevention_service = $fraud_prevention_service;
@@ -78,7 +77,7 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	 * Register express checkout frontend hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

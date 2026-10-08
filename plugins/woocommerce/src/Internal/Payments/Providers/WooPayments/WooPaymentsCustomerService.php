@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -66,21 +65,21 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	/**
 	 * Native runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter|null
+	 * @var WooPaymentsRuntimeArbiter|null
 	 */
-	private ?NativePaymentsRuntimeArbiter $arbiter = null;
+	private ?WooPaymentsRuntimeArbiter $arbiter = null;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient              $api_client      Native API client.
-	 * @param WooPaymentsAccountService         $account_service WooPayments account service.
-	 * @param WooPaymentsSessionService         $session_service WooPayments session service.
-	 * @param NativePaymentsRuntimeArbiter|null $arbiter         Native runtime owner arbiter.
+	 * @param WooPaymentsApiClient           $api_client      Native API client.
+	 * @param WooPaymentsAccountService      $account_service WooPayments account service.
+	 * @param WooPaymentsSessionService      $session_service WooPayments session service.
+	 * @param WooPaymentsRuntimeArbiter|null $arbiter         Native runtime owner arbiter.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service, WooPaymentsSessionService $session_service, ?NativePaymentsRuntimeArbiter $arbiter = null ): void {
+	final public function init( WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service, WooPaymentsSessionService $session_service, ?WooPaymentsRuntimeArbiter $arbiter = null ): void {
 		$this->api_client      = $api_client;
 		$this->account_service = $account_service;
 		$this->session_service = $session_service;
@@ -97,7 +96,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	public function register() {
 		if (
 			null !== $this->arbiter
-			&& $this->arbiter->should_native_register()
+			&& $this->arbiter->is_builtin_owner()
 			&& false === has_action( 'woocommerce_created_customer', array( $this, 'handle_woocommerce_created_customer' ) )
 		) {
 			add_action( 'woocommerce_created_customer', array( $this, 'handle_woocommerce_created_customer' ) );

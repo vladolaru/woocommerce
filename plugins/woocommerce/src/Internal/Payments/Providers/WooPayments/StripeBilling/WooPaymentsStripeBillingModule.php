@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -38,9 +38,9 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 	/**
 	 * Runtime ownership arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Whether WooCommerce Subscriptions was active when the module decided to load.
@@ -61,9 +61,9 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter $arbiter Runtime ownership arbiter.
+	 * @param WooPaymentsRuntimeArbiter $arbiter Runtime ownership arbiter.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter ): void {
 		$this->arbiter = $arbiter;
 	}
 
@@ -71,7 +71,7 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 	 * Decide on `plugins_loaded` priority 11 when native owns payments, after WooCommerce Subscriptions has loaded.
 	 */
 	public function register(): void {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

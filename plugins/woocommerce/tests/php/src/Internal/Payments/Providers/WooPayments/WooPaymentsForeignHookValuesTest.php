@@ -17,7 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenizedCartSessionController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Payment_Token_CC;
 use WC_Unit_Test_Case;
 
@@ -103,7 +103,7 @@ class WooPaymentsForeignHookValuesTest extends WC_Unit_Test_Case {
 	 * @param string $hook Filter name.
 	 */
 	private function register_native_callback( string $hook ): void {
-		$arbiter   = new StaticNativeRuntimeArbiter( true );
+		$arbiter   = new StaticWooPaymentsRuntimeArbiter( true );
 		$container = wc_get_container();
 
 		switch ( $hook ) {

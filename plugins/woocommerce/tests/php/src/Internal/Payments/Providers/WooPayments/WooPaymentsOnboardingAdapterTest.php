@@ -10,7 +10,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
@@ -122,7 +122,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 		$legacy_runtime->init( $this->legacy_proxy );
 
 		$this->adapter = new WooPaymentsOnboardingAdapter();
-		$this->init_adapter( $this->adapter, $legacy_runtime, $this->provider, $this->native_gateway, $this->native_account_service, wc_get_container()->get( NativePaymentsRuntimeArbiter::class ) );
+		$this->init_adapter( $this->adapter, $legacy_runtime, $this->provider, $this->native_gateway, $this->native_account_service, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 	}
 
 	/**
@@ -133,7 +133,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_account_data' );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'wcpay_onboarding_test_mode' );
-		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
 		$this->legacy_proxy->reset();
 
 		parent::tearDown();
@@ -162,7 +162,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 				'class_exists' => fn() => false,
 			)
 		);
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$this->provider->method( 'can_manage_onboarding' )->willReturn( true );
 		$this->provider->method( 'can_process_payments' )->willReturn( true );
 
@@ -178,7 +178,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 				'class_exists' => fn() => false,
 			)
 		);
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_false' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_false' );
 		$this->provider->method( 'can_manage_onboarding' )->willReturn( true );
 		$this->provider->method( 'can_process_payments' )->willReturn( true );
 
@@ -194,7 +194,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 				'class_exists' => fn() => false,
 			)
 		);
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$this->provider->method( 'can_manage_onboarding' )->willReturn( true );
 		$this->provider->method( 'can_process_payments' )->willReturn( false );
 
@@ -210,7 +210,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 				'class_exists' => fn() => false,
 			)
 		);
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$this->provider->method( 'can_manage_onboarding' )->willReturn( true );
 		$this->provider->method( 'can_process_payments' )->willReturn( true );
 
@@ -226,7 +226,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 				'class_exists' => fn() => false,
 			)
 		);
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$this->provider->method( 'can_manage_onboarding' )->willReturn( true );
 		$this->provider->method( 'can_process_payments' )->willReturn( false );
 
@@ -242,7 +242,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 				'class_exists' => fn() => false,
 			)
 		);
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$this->provider->method( 'can_manage_onboarding' )->willReturn( false );
 		$this->provider->method( 'can_process_payments' )->willReturn( false );
 
@@ -322,7 +322,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 				'class_exists' => fn() => false,
 			)
 		);
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$this->provider->method( 'can_process_payments' )->willReturn( true );
 		$this->provider->method( 'can_manage_onboarding' )->willReturn( true );
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
@@ -363,7 +363,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 		$legacy_runtime       = new WooPaymentsLegacyRuntime();
 		$legacy_runtime->init( $legacy_runtime_proxy );
 		$adapter = new WooPaymentsOnboardingAdapter();
-		$this->init_adapter( $adapter, $legacy_runtime, $this->provider, $this->native_gateway, $this->native_account_service, wc_get_container()->get( NativePaymentsRuntimeArbiter::class ) );
+		$this->init_adapter( $adapter, $legacy_runtime, $this->provider, $this->native_gateway, $this->native_account_service, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 
 		$this->provider->method( 'can_process_payments' )->willReturn( true );
 
@@ -393,7 +393,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 		);
 
 		$adapter = new WooPaymentsOnboardingAdapter();
-		$this->init_adapter( $adapter, $runtime, $this->provider, new NativeWooPaymentsGateway(), $this->native_account_service, wc_get_container()->get( NativePaymentsRuntimeArbiter::class ) );
+		$this->init_adapter( $adapter, $runtime, $this->provider, new NativeWooPaymentsGateway(), $this->native_account_service, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 
 		$this->provider->method( 'can_process_payments' )->willReturn( false );
 		$this->account_service
@@ -425,7 +425,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 		$legacy_runtime = new WooPaymentsLegacyRuntime();
 		$legacy_runtime->init( $this->legacy_proxy );
 		$adapter = new WooPaymentsOnboardingAdapter();
-		$adapter->init( $legacy_runtime, wc_get_container()->get( NativePaymentsRuntimeArbiter::class ) );
+		$adapter->init( $legacy_runtime, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 
 		foreach ( array( 'provider', 'native_gateway', 'account_service' ) as $property ) {
 			$reflection = new \ReflectionProperty( WooPaymentsOnboardingAdapter::class, $property );
@@ -444,9 +444,9 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsProvider          $provider        The native provider.
 	 * @param NativeWooPaymentsGateway     $native_gateway  The native gateway.
 	 * @param WooPaymentsAccountService    $account_service The native account service.
-	 * @param NativePaymentsRuntimeArbiter $arbiter         The runtime arbiter.
+	 * @param WooPaymentsRuntimeArbiter    $arbiter         The runtime arbiter.
 	 */
-	private function init_adapter( WooPaymentsOnboardingAdapter $adapter, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsProvider $provider, NativeWooPaymentsGateway $native_gateway, WooPaymentsAccountService $account_service, NativePaymentsRuntimeArbiter $arbiter ): void {
+	private function init_adapter( WooPaymentsOnboardingAdapter $adapter, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsProvider $provider, NativeWooPaymentsGateway $native_gateway, WooPaymentsAccountService $account_service, WooPaymentsRuntimeArbiter $arbiter ): void {
 		$adapter->init( $legacy_runtime, $arbiter );
 
 		$collaborators = array(

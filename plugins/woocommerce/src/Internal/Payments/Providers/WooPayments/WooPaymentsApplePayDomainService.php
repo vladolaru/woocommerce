@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -54,9 +53,9 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Native WooPayments API client.
@@ -105,14 +104,14 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter               $arbiter         Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter                  $arbiter         Runtime owner arbiter.
 	 * @param WooPaymentsApiClient                       $api_client      Native WooPayments API client.
 	 * @param WooPaymentsAccountService                  $account_service Native WooPayments account service.
 	 * @param WooPaymentsActionSchedulerService          $scheduler                   Action Scheduler wrapper.
 	 * @param WooPaymentsFrontendTrackingController|null $frontend_tracking_controller Optional frontend tracking controller.
 	 */
 	final public function init(
-		NativePaymentsRuntimeArbiter $arbiter,
+		WooPaymentsRuntimeArbiter $arbiter,
 		WooPaymentsApiClient $api_client,
 		WooPaymentsAccountService $account_service,
 		WooPaymentsActionSchedulerService $scheduler,
@@ -129,7 +128,7 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	 * Register Apple Pay domain verification hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

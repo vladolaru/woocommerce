@@ -15,7 +15,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsRestController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -265,8 +265,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		unset( $_GET['wcpay-connection-success'] );
 		remove_all_filters( 'woocommerce_tracks_event_properties' );
 		remove_all_filters( 'wcpay_tracks_event_properties' );
-		remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		$this->clear_rest_server();
 
@@ -1100,8 +1100,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A store that leaves onboarding before an account exists stays in the available tier after the card gateway is enabled.
 	 */
 	public function test_kyc_session_without_an_account_keeps_the_store_out_of_the_active_tier(): void {
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		$state = wc_get_container()->get( WooPaymentsSetupTier::class );
 		$state->invalidate();
 		$this->assertTrue( $state->write_tier( WooPaymentsSetupTier::AVAILABLE ), 'The store starts native-owned without an account.' );
@@ -1907,8 +1907,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	 * @param string              $promo             Expected promo redirect param.
 	 */
 	public function test_native_kyc_finalize_route_enables_gateway_like_client( array $finalize_response, bool $is_live, string $promo ): void {
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		$state = wc_get_container()->get( WooPaymentsSetupTier::class );
 		$state->invalidate();
 		$this->assertTrue( $state->write_tier( WooPaymentsSetupTier::CONNECTED ), 'The store starts native-owned and connected.' );
@@ -3067,7 +3067,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$adapter         = new WooPaymentsOnboardingAdapter();
 		$account_service = new WooPaymentsAccountService();
 		$account_service->init( $this->mockable_proxy );
-		$this->init_adapter( $adapter, $this->create_legacy_runtime(), $provider, new NativeWooPaymentsGateway(), $account_service, wc_get_container()->get( NativePaymentsRuntimeArbiter::class ) );
+		$this->init_adapter( $adapter, $this->create_legacy_runtime(), $provider, new NativeWooPaymentsGateway(), $account_service, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 
 		return $adapter;
 	}
@@ -15315,9 +15315,9 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsProvider          $provider        The native provider.
 	 * @param NativeWooPaymentsGateway     $native_gateway  The native gateway.
 	 * @param WooPaymentsAccountService    $account_service The native account service.
-	 * @param NativePaymentsRuntimeArbiter $arbiter         The runtime arbiter.
+	 * @param WooPaymentsRuntimeArbiter    $arbiter         The runtime arbiter.
 	 */
-	private function init_adapter( WooPaymentsOnboardingAdapter $adapter, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsProvider $provider, NativeWooPaymentsGateway $native_gateway, WooPaymentsAccountService $account_service, NativePaymentsRuntimeArbiter $arbiter ): void {
+	private function init_adapter( WooPaymentsOnboardingAdapter $adapter, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsProvider $provider, NativeWooPaymentsGateway $native_gateway, WooPaymentsAccountService $account_service, WooPaymentsRuntimeArbiter $arbiter ): void {
 		$adapter->init( $legacy_runtime, $arbiter );
 
 		$collaborators = array(

@@ -8,7 +8,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProvider
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistrarInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\MultiCurrencyProviderAccountResolver;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsCurrencyRateProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsCurrencyRateProviderRegistrar;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsLegacyAccountAdapter;
@@ -107,14 +107,14 @@ class CurrencyRateProviderRegistryFactoryTest extends WC_Unit_Test_Case {
 				},
 				'get_option'   => function ( $option, $default_value = false ) use ( $class_loaded ) {
 					if ( 'active_plugins' === $option ) {
-						return $class_loaded ? array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) : array();
+						return $class_loaded ? array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) : array();
 					}
 
 					return get_option( $option, $default_value );
 				},
 			)
 		);
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 
 		if ( $class_loaded ) {
 			$this->register_legacy_proxy_static_mocks(
@@ -219,13 +219,13 @@ class CurrencyRateProviderRegistryFactoryTest extends WC_Unit_Test_Case {
 		$container          = wc_get_container();
 		$account_adapter    = $container->get( WooPaymentsLegacyAccountAdapter::class );
 		$api_client_adapter = $container->get( WooPaymentsLegacyApiClientAdapter::class );
-		$arbiter            = new class() extends NativePaymentsRuntimeArbiter {
+		$arbiter            = new class() extends WooPaymentsRuntimeArbiter {
 			/**
 			 * Tell whether native code may register.
 			 *
 			 * @return bool
 			 */
-			public function should_native_register(): bool {
+			public function is_builtin_owner(): bool {
 				return false;
 			}
 
@@ -234,7 +234,7 @@ class CurrencyRateProviderRegistryFactoryTest extends WC_Unit_Test_Case {
 			 *
 			 * @return bool
 			 */
-			public function is_plugin_runtime_active(): bool {
+			public function is_extension_owner(): bool {
 				return true;
 			}
 		};

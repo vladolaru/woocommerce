@@ -15,7 +15,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjecti
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
@@ -199,8 +199,8 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 				$this->format_controller = null;
 			}
 			delete_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
-			remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
-			wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+			remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
+			wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 			unset(
 				$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ],
 				$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ],
@@ -322,9 +322,9 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	 */
 	private function format_prices_in_selected_currency( string $selected_code ): void {
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		update_option( 'active_plugins', array() );
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		$this->assertTrue( wc_get_container()->get( MultiCurrencyRuntimeArbiter::class )->should_core_register() );
 
 		$localization = wc_get_container()->get( MultiCurrencyLocalizationService::class );

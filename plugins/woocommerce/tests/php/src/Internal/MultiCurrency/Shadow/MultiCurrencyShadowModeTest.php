@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBui
 use Automattic\WooCommerce\Internal\MultiCurrency\Shadow\MultiCurrencyShadowComparison;
 use Automattic\WooCommerce\Internal\MultiCurrency\Shadow\MultiCurrencyShadowMode;
 use Automattic\WooCommerce\Internal\MultiCurrency\Shadow\MultiCurrencySurfaceDiffer;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Order_Refund;
 use WC_Unit_Test_Case;
@@ -110,7 +110,7 @@ class MultiCurrencyShadowModeTest extends WC_Unit_Test_Case {
 		$this->remove_shadow_hooks();
 		remove_all_filters( MultiCurrencyShadowMode::FILTER_SHADOW_ENABLED );
 		remove_all_filters( MultiCurrencyShadowMode::FILTER_LOG_FULL_SURFACES );
-		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
 		$this->delete_shadow_options();
 		update_option( 'woocommerce_currency', $this->original_currency );
 		$this->reset_legacy_proxy_mocks();
@@ -132,7 +132,7 @@ class MultiCurrencyShadowModeTest extends WC_Unit_Test_Case {
 	 * @param bool $multi_currency_enabled Whether the WooPayments customer multi-currency feature is enabled.
 	 */
 	private function fake_plugin( bool $active, bool $multi_currency_enabled = true ): void {
-		$entry = NativePaymentsRuntimeArbiter::PLUGIN_FILE;
+		$entry = WooPaymentsRuntimeArbiter::PLUGIN_FILE;
 		$this->register_legacy_proxy_function_mocks(
 			array(
 				'get_option'      => function ( $name, $default_value = false ) use ( $active, $entry, $multi_currency_enabled ) {
@@ -265,7 +265,7 @@ class MultiCurrencyShadowModeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_does_not_register_hooks_when_core_owns_multi_currency(): void {
 		$this->fake_plugin( false );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		add_filter( MultiCurrencyShadowMode::FILTER_SHADOW_ENABLED, '__return_true' );
 
 		$this->sut->register();

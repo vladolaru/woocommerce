@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
@@ -26,14 +26,14 @@ class WooPaymentsSurfaceRenderSmokeTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 	}
 
 	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		wp_set_current_user( 0 );
 
@@ -45,7 +45,7 @@ class WooPaymentsSurfaceRenderSmokeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_native_runtime_is_enabled_for_these_assertions(): void {
 		$this->assertTrue(
-			$this->get_arbiter()->is_native_runtime_enabled(),
+			$this->get_arbiter()->is_builtin_enabled(),
 			'The native payments runtime must be enabled, otherwise the surface assertions in this class prove nothing about it.'
 		);
 	}
@@ -176,9 +176,9 @@ class WooPaymentsSurfaceRenderSmokeTest extends WC_Unit_Test_Case {
 	/**
 	 * Get the native payments runtime arbiter from the container.
 	 *
-	 * @return NativePaymentsRuntimeArbiter
+	 * @return WooPaymentsRuntimeArbiter
 	 */
-	private function get_arbiter(): NativePaymentsRuntimeArbiter {
-		return wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
+	private function get_arbiter(): WooPaymentsRuntimeArbiter {
+		return wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
 	}
 }

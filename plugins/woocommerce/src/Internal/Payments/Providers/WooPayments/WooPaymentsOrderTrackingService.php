@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -54,9 +53,9 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Action Scheduler service.
@@ -91,14 +90,14 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter      $arbiter         Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter         $arbiter         Runtime owner arbiter.
 	 * @param WooPaymentsActionSchedulerService $scheduler       Action Scheduler service.
 	 * @param WooPaymentsApiClient              $api_client      WooPayments API client.
 	 * @param WooPaymentsAccountService         $account_service WooPayments account service.
 	 * @param WooPaymentsFraudService           $fraud_service   WooPayments fraud service.
 	 */
 	final public function init(
-		NativePaymentsRuntimeArbiter $arbiter,
+		WooPaymentsRuntimeArbiter $arbiter,
 		WooPaymentsActionSchedulerService $scheduler,
 		WooPaymentsApiClient $api_client,
 		WooPaymentsAccountService $account_service,
@@ -115,7 +114,7 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 	 * Register preserved order tracking queue producers and consumers.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

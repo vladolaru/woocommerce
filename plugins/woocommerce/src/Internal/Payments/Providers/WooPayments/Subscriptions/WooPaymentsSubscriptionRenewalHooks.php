@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderMode;
@@ -39,9 +39,9 @@ class WooPaymentsSubscriptionRenewalHooks implements RegisterHooksInterface {
 	/**
 	 * Runtime ownership arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Card gateway, resolved when a renewal hook runs.
@@ -55,9 +55,9 @@ class WooPaymentsSubscriptionRenewalHooks implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter $arbiter Runtime ownership arbiter.
+	 * @param WooPaymentsRuntimeArbiter $arbiter Runtime ownership arbiter.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter ): void {
 		$this->arbiter = $arbiter;
 	}
 
@@ -68,7 +68,7 @@ class WooPaymentsSubscriptionRenewalHooks implements RegisterHooksInterface {
 	 * Subscriptions has loaded and before WooCommerce builds its emails.
 	 */
 	public function register(): void {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

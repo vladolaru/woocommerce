@@ -12,7 +12,7 @@ use ActionScheduler_QueueRunner;
 use ActionScheduler_Store;
 use Automattic\WooCommerce\Enums\WooPaymentsCutoverState;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverActionScheduler;
@@ -110,13 +110,13 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		if ( $this->state_store instanceof WooPaymentsCutoverStateStore ) {
 			$this->cleanup_state();
 		}
-		remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		delete_option( WooPaymentsSetupTier::OPTION_NAME );
 		delete_option( 'wcpay_account_data' );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'active_plugins' );
 		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 
 		parent::tearDown();
@@ -319,9 +319,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				return $this->run_count;
 			}
 		};
-		$arbiter       = new class() extends NativePaymentsRuntimeArbiter {
+		$arbiter       = new class() extends WooPaymentsRuntimeArbiter {
 			/** Return an enabled native runtime. */
-			public function is_native_runtime_enabled(): bool {
+			public function is_builtin_enabled(): bool {
 				return true;
 			}
 		};
@@ -413,7 +413,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'builtin_ineligible' ), $deferred['deferred_codes'] );
 		$this->assertContains( array( 'code' => 'eligibility_withdrawn' ), $deferred['informational_outcomes'] );
 		$this->assertSame( $deferred['action_id'], $this->require_scheduler()->get_scheduled_action_id( $deferred['generation'], 2 ) );
-		$this->assertSame( array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ), get_option( 'active_plugins' ), 'The plugin must keep the runtime while the store is ineligible.' );
+		$this->assertSame( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ), get_option( 'active_plugins' ), 'The plugin must keep the runtime while the store is ineligible.' );
 
 		$this->set_native_eligibility( true );
 		$this->require_scheduler()->cancel( $deferred['generation'], 2 );
@@ -450,7 +450,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'builtin_ineligible' ), $closed['deferred_codes'] );
 		$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $closed['generation'], 2 ) );
 		$this->assertSame( WooPaymentsSetupTier::DISABLED, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
-		$this->assertSame( array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ), get_option( 'active_plugins' ), 'Closing the switch must never leave the store without a payments runtime.' );
+		$this->assertSame( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ), get_option( 'active_plugins' ), 'Closing the switch must never leave the store without a payments runtime.' );
 	}
 
 	/**
@@ -496,7 +496,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$closed = $this->require_state_store()->get_record();
 		$this->assertIsArray( $closed );
 		$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $closed['state'] );
-		$this->assertSame( array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ), get_option( 'active_plugins' ), 'A claim held for eligibility past the window closes instead of switching the store.' );
+		$this->assertSame( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ), get_option( 'active_plugins' ), 'A claim held for eligibility past the window closes instead of switching the store.' );
 		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'The tier follows the account again, so the start notice can offer a fresh switch.' );
 	}
 
@@ -993,9 +993,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 		};
 		$sut           = new WooPaymentsCutoverReconciliationJob();
-		$arbiter       = new class() extends NativePaymentsRuntimeArbiter {
+		$arbiter       = new class() extends WooPaymentsRuntimeArbiter {
 			/** Return an enabled native runtime. */
-			public function is_native_runtime_enabled(): bool {
+			public function is_builtin_enabled(): bool {
 				return true;
 			}
 		};
@@ -1060,14 +1060,14 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$verification['next_attempt_at']      = time() + MINUTE_IN_SECONDS;
 		$verification['request_origin_token'] = 'previous-request-token';
 		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $queued, $verification ) );
-		$arbiter              = new class() extends NativePaymentsRuntimeArbiter {
+		$arbiter              = new class() extends WooPaymentsRuntimeArbiter {
 			/** Return an enabled native runtime. */
-			public function is_native_runtime_enabled(): bool {
+			public function is_builtin_enabled(): bool {
 				return true;
 			}
 
 			/** Throw while probing plugin ownership. */
-			public function is_plugin_runtime_active(): bool {
+			public function is_extension_owner(): bool {
 				throw new \RuntimeException( 'Expected ownership probe failure.' );
 			}
 		};
@@ -3703,7 +3703,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 		$main_site_id   = get_current_blog_id();
 		$second_site_id = $this->create_cutover_multisite_site( 'cutover-barrier-state.example.org' );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		foreach ( array( $main_site_id, $second_site_id ) as $site_id ) {
 			switch_to_blog( $site_id );
 			// The account cache envelope (data, fetched, errored, consecutive_errors): client 11.1.0 includes/class-database-cache.php:377-382; the account_id and is_live fields: includes/class-wc-payments-account.php:164-171, :757-759.
@@ -3724,7 +3724,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::AVAILABLE );
 			restore_current_blog();
 		}
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		$preflight     = new class() extends WooPaymentsCutoverPreflightService {
 			/** @return string[] */
@@ -5041,7 +5041,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 			// Capture post-attempt state before the cleanup below resets `active_plugins`.
 			$active_after_attempt = is_plugin_active( $plugin_file );
-			$arbiter              = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
+			$arbiter              = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
 			$arbiter->invalidate();
 			$owner_after_attempt = $arbiter->get_runtime_owner();
 			$arbiter->invalidate();
@@ -5081,7 +5081,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $active_at_pre_install, 'The plugin must still be active at the pre-install point: a deferred update must keep the plugin owning payments until a later attempt finalizes.' );
 		$this->assertTrue( $active_after_attempt, 'A deferred version-blocked update must leave the plugin active; only finalize() may deactivate it.' );
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_EXTENSION, $owner_after_attempt, 'The plugin must still own the runtime while the version blocker defers the cutover.' );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_EXTENSION, $owner_after_attempt, 'The plugin must still own the runtime while the version blocker defers the cutover.' );
 		$this->assertFalse( $maintenance_after_attempt, 'bulk_upgrade() must always turn maintenance mode back off, even though this attempt stops before install.' );
 	}
 
@@ -5669,8 +5669,8 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * Arrange a store that upgraded WooCommerce with WooPayments active and a connected, enabled account.
 	 */
 	private function arrange_plugin_era_store(): void {
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-		update_option( 'active_plugins', array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
 		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
 		// The account cache envelope (data, fetched, errored, consecutive_errors): client 11.1.0 includes/class-database-cache.php:377-382; the account_id and is_live fields: includes/class-wc-payments-account.php:164-171, :757-759.
 		update_option(
@@ -5688,9 +5688,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		);
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
 		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::AVAILABLE );
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
-		$this->assertTrue( wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->is_plugin_runtime_active() );
+		$this->assertTrue( wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_extension_owner() );
 	}
 
 	/**
@@ -5766,7 +5766,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				return false;
 			}
 		};
-		$preflight->init( wc_get_container()->get( NativePaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ) );
+		$preflight->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ) );
 
 		return $preflight;
 	}
@@ -5802,7 +5802,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$request_token = new \ReflectionProperty( WooPaymentsCutoverReconciliationJob::class, 'request_token' );
 		$request_token->setAccessible( true );
 		$request_token->setValue( null );
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		$this->require_scheduler()->cancel( $verification['generation'], $verification['attempt'] + 1 );
 
@@ -5817,7 +5817,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * Assert that a new shopper request resolves the active tier and bootstraps the native gateway registry.
 	 */
 	private function assert_next_front_request_registers_native_gateway(): void {
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		$state = wc_get_container()->get( WooPaymentsSetupTier::class );
 		$state->invalidate();
 		$effective_state = $state->get_effective_tier();
@@ -5839,7 +5839,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsCutoverReconciliationJob
 	 */
 	private function create_job( bool $native_enabled, ?WooPaymentsCutoverPreflightService $preflight_service = null, ?WooPaymentsCutoverReconciliationJob $job = null, bool $plugin_active = true, ?WooPaymentsCutoverNormalizationRunner $normalization_runner = null, bool $native_eligible = true, ?WooPaymentsAccountService $account_service = null ): WooPaymentsCutoverReconciliationJob {
-		$arbiter = new class( $native_enabled, $plugin_active ) extends NativePaymentsRuntimeArbiter {
+		$arbiter = new class( $native_enabled, $plugin_active ) extends WooPaymentsRuntimeArbiter {
 			/** @var bool */
 			private bool $native_enabled;
 
@@ -5858,12 +5858,12 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** Return the configured native feature state. */
-			public function is_native_runtime_enabled(): bool {
+			public function is_builtin_enabled(): bool {
 				return $this->native_enabled;
 			}
 
 			/** Return the configured plugin ownership state. */
-			public function is_plugin_runtime_active(): bool {
+			public function is_extension_owner(): bool {
 				return $this->plugin_active;
 			}
 		};

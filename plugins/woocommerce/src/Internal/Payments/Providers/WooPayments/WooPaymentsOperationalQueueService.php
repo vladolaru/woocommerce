@@ -13,7 +13,6 @@ use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Enums\OrderInternalStatus;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
@@ -194,9 +193,9 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Action Scheduler service.
@@ -238,7 +237,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter      $arbiter            Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter         $arbiter            Runtime owner arbiter.
 	 * @param WooPaymentsActionSchedulerService $scheduler          Action Scheduler service.
 	 * @param WooPaymentsApiClient              $api_client         WooPayments API client.
 	 * @param WooPaymentsAccountService         $account_service    WooPayments account service.
@@ -246,7 +245,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	 * @param WooPaymentsSettingsService|null   $settings_service   Optional WooPayments settings service.
 	 */
 	final public function init(
-		NativePaymentsRuntimeArbiter $arbiter,
+		WooPaymentsRuntimeArbiter $arbiter,
 		WooPaymentsActionSchedulerService $scheduler,
 		WooPaymentsApiClient $api_client,
 		WooPaymentsAccountService $account_service,
@@ -278,7 +277,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	 * Register preserved operational queue producers and consumers.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

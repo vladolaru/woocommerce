@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Payment_Tokens;
 use WC_Unit_Test_Case;
 
@@ -38,7 +38,7 @@ class WooPaymentsTokenClassMapControllerTest extends WC_Unit_Test_Case {
 		);
 		$sut      = new WooPaymentsTokenClassMapController();
 
-		$sut->init( new StaticNativeRuntimeArbiter( true ) );
+		$sut->init( new StaticWooPaymentsRuntimeArbiter( true ) );
 		$sut->register();
 
 		$token = WC_Payment_Tokens::get( $token_id );
@@ -65,7 +65,7 @@ class WooPaymentsTokenClassMapControllerTest extends WC_Unit_Test_Case {
 		);
 		$sut      = new WooPaymentsTokenClassMapController();
 
-		$sut->init( new StaticNativeRuntimeArbiter( true ) );
+		$sut->init( new StaticWooPaymentsRuntimeArbiter( true ) );
 		$sut->register();
 
 		$tokens = WC_Payment_Tokens::get_customer_tokens( $user_id, 'woocommerce_payments_sepa_debit' );
@@ -81,7 +81,7 @@ class WooPaymentsTokenClassMapControllerTest extends WC_Unit_Test_Case {
 	public function test_maps_legacy_woopayments_token_class_names_to_native_classes(): void {
 		$sut = new WooPaymentsTokenClassMapController();
 
-		$sut->init( new StaticNativeRuntimeArbiter( true ) );
+		$sut->init( new StaticWooPaymentsRuntimeArbiter( true ) );
 		$sut->register();
 
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the token class map filter directly.
@@ -94,7 +94,7 @@ class WooPaymentsTokenClassMapControllerTest extends WC_Unit_Test_Case {
 	public function test_does_not_register_mapping_when_native_does_not_own_runtime(): void {
 		$sut = new WooPaymentsTokenClassMapController();
 
-		$sut->init( new StaticNativeRuntimeArbiter( false ) );
+		$sut->init( new StaticWooPaymentsRuntimeArbiter( false ) );
 		$sut->register();
 
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test asserts the controller does not register this class-map filter.

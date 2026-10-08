@@ -10,7 +10,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Enums\OrderInternalStatus;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use WP_Error;
 
 /**
@@ -530,6 +529,6 @@ class WooPaymentsAdminNoticeService {
 	 * @return bool
 	 */
 	private function is_plugin_owner(): bool {
-		return wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->is_plugin_runtime_active();
+		return wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_extension_owner();
 	}
 }

@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use WC_Form_Handler;
 use WC_Payment_Gateway;
@@ -35,7 +35,7 @@ class WooPaymentsAddPaymentMethodIsolationTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'customer' ) ) );
 		wc_clear_notices();
 	}
@@ -44,7 +44,7 @@ class WooPaymentsAddPaymentMethodIsolationTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
 		remove_all_filters( 'woocommerce_available_payment_gateways' );
 		wc_clear_notices();
 		unset( $_POST['woocommerce_add_payment_method'], $_POST['payment_method'], $_POST['_wpnonce'], $_REQUEST['_wpnonce'] );

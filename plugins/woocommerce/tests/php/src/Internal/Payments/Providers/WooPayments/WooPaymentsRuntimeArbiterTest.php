@@ -1,23 +1,23 @@
 <?php
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Tests\Internal\Payments;
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the NativePaymentsRuntimeArbiter class.
+ * Tests for the WooPaymentsRuntimeArbiter class.
  *
  * The mutual-exclusion invariant: exactly one payments runtime (the WooPayments plugin or
  * core-native) owns a site, and the plugin wins whenever it is active.
  */
-class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
+class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 
 	/**
 	 * The System Under Test.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
 	private $sut;
 
@@ -26,7 +26,7 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	 */
 	public function setUp(): void {
 		parent::setUp();
-		$this->sut = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
+		$this->sut = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
 		$this->sut->invalidate();
 	}
 
@@ -36,7 +36,7 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	public function tearDown(): void {
 		delete_option( 'woocommerce_woopayments_builtin_enabled' );
 		delete_option( 'woocommerce_woopayments_builtin_kill_switch' );
-		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
 		remove_all_filters( 'option_woocommerce_woopayments_builtin_enabled' );
 		remove_all_filters( 'option_woocommerce_woopayments_builtin_kill_switch' );
 		$this->sut->invalidate();
@@ -57,7 +57,7 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	 * @param bool   $constant_defined Whether the WooPayments include-time constant is defined.
 	 * @param string $entry            The plugin's active-plugins entry.
 	 */
-	private function fake_plugin( bool $in_list = false, bool $network = false, bool $class_loaded = false, bool $constant_defined = false, string $entry = NativePaymentsRuntimeArbiter::PLUGIN_FILE ): void {
+	private function fake_plugin( bool $in_list = false, bool $network = false, bool $class_loaded = false, bool $constant_defined = false, string $entry = WooPaymentsRuntimeArbiter::PLUGIN_FILE ): void {
 		$this->register_legacy_proxy_function_mocks(
 			array(
 				'get_option'      => function ( $name, $default_value = false ) use ( $in_list, $entry ) {
@@ -95,7 +95,7 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	 * Enable the native runtime feature flag.
 	 */
 	private function enable_native_runtime(): void {
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 	}
 
 	/**
@@ -104,9 +104,9 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	public function test_owner_is_none_when_plugin_absent_and_native_disabled(): void {
 		$this->fake_plugin();
 
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner(), 'With no plugin and native off, nobody owns the runtime.' );
-		$this->assertFalse( $this->sut->should_native_register(), 'Native must not register when it does not own the runtime.' );
-		$this->assertFalse( $this->sut->is_plugin_runtime_active(), 'The plugin does not own the runtime when it is absent.' );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner(), 'With no plugin and native off, nobody owns the runtime.' );
+		$this->assertFalse( $this->sut->is_builtin_owner(), 'Native must not register when it does not own the runtime.' );
+		$this->assertFalse( $this->sut->is_extension_owner(), 'The plugin does not own the runtime when it is absent.' );
 	}
 
 	/**
@@ -115,9 +115,9 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	public function test_owner_is_plugin_when_plugin_active(): void {
 		$this->fake_plugin( true );
 
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'An active plugin owns the runtime.' );
-		$this->assertTrue( $this->sut->is_plugin_runtime_active(), 'The plugin owns the runtime when active.' );
-		$this->assertFalse( $this->sut->should_native_register(), 'Native must register nothing while the plugin owns the runtime.' );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'An active plugin owns the runtime.' );
+		$this->assertTrue( $this->sut->is_extension_owner(), 'The plugin owns the runtime when active.' );
+		$this->assertFalse( $this->sut->is_builtin_owner(), 'Native must register nothing while the plugin owns the runtime.' );
 	}
 
 	/**
@@ -126,9 +126,9 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	public function test_owner_is_plugin_when_network_active(): void {
 		$this->fake_plugin( false, true );
 
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'A network-activated plugin owns the runtime.' );
-		$this->assertTrue( $this->sut->is_plugin_runtime_active(), 'A network-activated plugin owns the runtime.' );
-		$this->assertFalse( $this->sut->should_native_register(), 'Native must not register while a network-activated plugin owns the runtime.' );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'A network-activated plugin owns the runtime.' );
+		$this->assertTrue( $this->sut->is_extension_owner(), 'A network-activated plugin owns the runtime.' );
+		$this->assertFalse( $this->sut->is_builtin_owner(), 'Native must not register while a network-activated plugin owns the runtime.' );
 	}
 
 	/**
@@ -154,7 +154,7 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner() );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner() );
 		$this->assertSame( 0, $network_reads );
 	}
 
@@ -165,8 +165,8 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 		$this->fake_plugin( false, false, false, true );
 		$this->enable_native_runtime();
 
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'The include-time constant detects a plugin outside the standard active-plugins entry.' );
-		$this->assertFalse( $this->sut->should_native_register(), 'Native must not register when the plugin is detected by the fallback signal.' );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'The include-time constant detects a plugin outside the standard active-plugins entry.' );
+		$this->assertFalse( $this->sut->is_builtin_owner(), 'Native must not register when the plugin is detected by the fallback signal.' );
 	}
 
 	/**
@@ -176,8 +176,8 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 		$this->fake_plugin( false, false, true, false );
 		$this->enable_native_runtime();
 
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner(), 'The legacy bootstrap class is not an ownership fallback.' );
-		$this->assertTrue( $this->sut->should_native_register(), 'Native should register when only the removed fallback signal is present.' );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner(), 'The legacy bootstrap class is not an ownership fallback.' );
+		$this->assertTrue( $this->sut->is_builtin_owner(), 'Native should register when only the removed fallback signal is present.' );
 	}
 
 	/**
@@ -187,8 +187,8 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 		$this->fake_plugin( true );
 		$this->enable_native_runtime();
 
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'Plugin-wins is the only allowed state while the plugin is active.' );
-		$this->assertFalse( $this->sut->should_native_register(), 'Native must not register even when enabled, as long as the plugin is active.' );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'Plugin-wins is the only allowed state while the plugin is active.' );
+		$this->assertFalse( $this->sut->is_builtin_owner(), 'Native must not register even when enabled, as long as the plugin is active.' );
 	}
 
 	/**
@@ -198,8 +198,8 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 		$this->fake_plugin( false, true );
 		$this->enable_native_runtime();
 
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'Network-active detection must keep plugin-wins even when native is enabled.' );
-		$this->assertFalse( $this->sut->should_native_register(), 'Native must not register on a network-activated-plugin site.' );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'Network-active detection must keep plugin-wins even when native is enabled.' );
+		$this->assertFalse( $this->sut->is_builtin_owner(), 'Native must not register on a network-activated-plugin site.' );
 	}
 
 	/**
@@ -209,9 +209,9 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 		$this->fake_plugin();
 		$this->enable_native_runtime();
 
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner(), 'Native owns the runtime when the plugin is gone and native is enabled.' );
-		$this->assertTrue( $this->sut->should_native_register(), 'Native must register when it owns the runtime.' );
-		$this->assertFalse( $this->sut->is_plugin_runtime_active(), 'The plugin does not own the runtime when absent.' );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner(), 'Native owns the runtime when the plugin is gone and native is enabled.' );
+		$this->assertTrue( $this->sut->is_builtin_owner(), 'Native must register when it owns the runtime.' );
+		$this->assertFalse( $this->sut->is_extension_owner(), 'The plugin does not own the runtime when absent.' );
 	}
 
 	/**
@@ -221,17 +221,17 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 		$this->fake_plugin();
 		$native_enabled_queries = 0;
 		add_filter(
-			NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED,
+			WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER,
 			static function () use ( &$native_enabled_queries ): bool {
 				++$native_enabled_queries;
 				return true;
 			}
 		);
 
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner() );
-		$this->assertTrue( $this->sut->should_native_register() );
-		$this->assertFalse( $this->sut->is_plugin_runtime_active() );
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner() );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner() );
+		$this->assertTrue( $this->sut->is_builtin_owner() );
+		$this->assertFalse( $this->sut->is_extension_owner() );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner() );
 		$this->assertSame( 1, $native_enabled_queries, 'The owner decision should be resolved once for all repeated owner and helper calls.' );
 	}
 
@@ -242,19 +242,19 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 		$this->fake_plugin();
 		$native_enabled = false;
 		add_filter(
-			NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED,
+			WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER,
 			static function () use ( &$native_enabled ): bool {
 				return $native_enabled;
 			}
 		);
 
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner() );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner() );
 		$native_enabled = true;
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner(), 'The current request keeps its first owner decision until explicitly invalidated.' );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner(), 'The current request keeps its first owner decision until explicitly invalidated.' );
 
 		$this->sut->invalidate();
 
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner() );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner() );
 	}
 
 	/**
@@ -267,21 +267,21 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 		$native_enabled_queries = 0;
 		$main_blog_id           = get_current_blog_id();
 		add_filter(
-			NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED,
+			WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER,
 			static function () use ( &$native_enabled_queries, $main_blog_id ): bool {
 				++$native_enabled_queries;
 				return get_current_blog_id() !== $main_blog_id;
 			}
 		);
 
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner() );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner() );
 		$blog_id = self::factory()->blog->create();
 		try {
 			switch_to_blog( $blog_id );
-			$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner() );
+			$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner() );
 			restore_current_blog();
 
-			$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner() );
+			$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner() );
 			$this->assertSame( 2, $native_enabled_queries, 'Each blog should resolve and retain its own owner decision.' );
 		} finally {
 			while ( ms_is_switched() ) {
@@ -299,7 +299,7 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 		$this->fake_plugin( true, false, false, false, 'woopayments/woocommerce-payments.php' );
 		$this->enable_native_runtime();
 
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'A copy in a renamed folder loads after WooCommerce, so only its list entry can keep native from registering too.' );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'A copy in a renamed folder loads after WooCommerce, so only its list entry can keep native from registering too.' );
 	}
 
 	/**
@@ -309,7 +309,7 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 		$this->fake_plugin( false, true, false, false, 'woopayments/woocommerce-payments.php' );
 		$this->enable_native_runtime();
 
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'The network list is matched by main file name as well.' );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'The network list is matched by main file name as well.' );
 	}
 
 	/**
@@ -319,20 +319,20 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 		$this->fake_plugin( true, false, false, false, 'woocommerce-payments-dev-tools/woocommerce-payments-dev-tools.php' );
 		$this->enable_native_runtime();
 
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner(), 'Only the WooPayments main file name marks the plugin as active.' );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner(), 'Only the WooPayments main file name marks the plugin as active.' );
 	}
 
 	/**
-	 * @testdox is_native_runtime_enabled reflects the feature flag independently of ownership.
+	 * @testdox is_builtin_enabled reflects the feature flag independently of ownership.
 	 */
-	public function test_is_native_runtime_enabled_reflects_flag(): void {
+	public function test_is_builtin_enabled_reflects_flag(): void {
 		$this->fake_plugin( true );
 
-		$this->assertFalse( $this->sut->is_native_runtime_enabled(), 'The native flag is off by default.' );
+		$this->assertFalse( $this->sut->is_builtin_enabled(), 'The native flag is off by default.' );
 
 		$this->enable_native_runtime();
 
-		$this->assertTrue( $this->sut->is_native_runtime_enabled(), 'The native flag reports enabled even while the plugin still owns the runtime.' );
+		$this->assertTrue( $this->sut->is_builtin_enabled(), 'The native flag reports enabled even while the plugin still owns the runtime.' );
 	}
 
 	/**
@@ -341,8 +341,8 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	public function test_absent_native_runtime_option_fails_closed(): void {
 		$this->fake_plugin();
 
-		$this->assertFalse( $this->sut->is_native_runtime_enabled(), 'An absent native runtime option must remain disabled until the upgrade enables it.' );
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner(), 'With no plugin and an absent native runtime option, nobody owns the runtime.' );
+		$this->assertFalse( $this->sut->is_builtin_enabled(), 'An absent native runtime option must remain disabled until the upgrade enables it.' );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner(), 'With no plugin and an absent native runtime option, nobody owns the runtime.' );
 	}
 
 	/**
@@ -352,8 +352,8 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 		$this->fake_plugin();
 		update_option( 'woocommerce_woopayments_builtin_enabled', 'yes' );
 
-		$this->assertTrue( $this->sut->is_native_runtime_enabled(), 'The native runtime option should enable native payments.' );
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner(), 'Native should own the runtime when the plugin is absent and the option is enabled.' );
+		$this->assertTrue( $this->sut->is_builtin_enabled(), 'The native runtime option should enable native payments.' );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner(), 'Native should own the runtime when the plugin is absent and the option is enabled.' );
 	}
 
 	/**
@@ -365,14 +365,14 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_woopayments_builtin_kill_switch', true );
 		$filter_default = null;
 		add_filter(
-			NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED,
+			WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER,
 			static function ( bool $enabled ) use ( &$filter_default ): bool {
 				$filter_default = $enabled;
 				return $enabled;
 			}
 		);
 
-		$this->assertFalse( $this->sut->is_native_runtime_enabled() );
+		$this->assertFalse( $this->sut->is_builtin_enabled() );
 		$this->assertFalse( $filter_default, 'The kill switch must hand the filter a false default even when the enabled option is on.' );
 	}
 
@@ -382,10 +382,10 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	public function test_native_enabled_filter_can_override_kill_switch_option(): void {
 		$this->fake_plugin();
 		update_option( 'woocommerce_woopayments_builtin_kill_switch', true );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 
-		$this->assertTrue( $this->sut->is_native_runtime_enabled() );
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner() );
+		$this->assertTrue( $this->sut->is_builtin_enabled() );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner() );
 	}
 
 	/**
@@ -402,7 +402,7 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_woopayments_builtin_enabled', 'yes' );
 		update_option( 'woocommerce_woopayments_builtin_kill_switch', $stored );
 
-		$this->assertTrue( $this->sut->is_native_runtime_enabled(), "A kill switch stored as '{$stored}' must leave native enabled." );
+		$this->assertTrue( $this->sut->is_builtin_enabled(), "A kill switch stored as '{$stored}' must leave native enabled." );
 	}
 
 	/**
@@ -418,7 +418,7 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_woopayments_builtin_enabled', 'yes' );
 		update_option( 'woocommerce_woopayments_builtin_kill_switch', $stored );
 
-		$this->assertFalse( $this->sut->is_native_runtime_enabled(), "A kill switch stored as '{$stored}' must disable native." );
+		$this->assertFalse( $this->sut->is_builtin_enabled(), "A kill switch stored as '{$stored}' must disable native." );
 	}
 
 	/**
@@ -430,10 +430,10 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 
 		update_option( 'woocommerce_woopayments_builtin_kill_switch', array( 'on' ) );
 		$this->assertTrue( $this->sut->is_kill_switch_active(), 'A non-empty array must read as on.' );
-		$this->assertFalse( $this->sut->is_native_runtime_enabled(), 'A non-empty array must disable native.' );
+		$this->assertFalse( $this->sut->is_builtin_enabled(), 'A non-empty array must disable native.' );
 
 		update_option( 'woocommerce_woopayments_builtin_kill_switch', array() );
 		$this->assertFalse( $this->sut->is_kill_switch_active(), 'An empty array must read as off.' );
-		$this->assertTrue( $this->sut->is_native_runtime_enabled(), 'An empty array must leave native enabled.' );
+		$this->assertTrue( $this->sut->is_builtin_enabled(), 'An empty array must leave native enabled.' );
 	}
 }

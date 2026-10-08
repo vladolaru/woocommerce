@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Exception;
 use Throwable;
@@ -37,20 +36,20 @@ class WooPaymentsPaymentMethodDetailsService {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsLegacyRuntime     $legacy_runtime WooPayments legacy runtime.
-	 * @param WooPaymentsApiClient         $api_client     Native WooPayments API client.
-	 * @param NativePaymentsRuntimeArbiter $arbiter        Runtime owner arbiter.
+	 * @param WooPaymentsLegacyRuntime  $legacy_runtime WooPayments legacy runtime.
+	 * @param WooPaymentsApiClient      $api_client     Native WooPayments API client.
+	 * @param WooPaymentsRuntimeArbiter $arbiter        Runtime owner arbiter.
 	 */
-	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, NativePaymentsRuntimeArbiter $arbiter ): void {
+	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsRuntimeArbiter $arbiter ): void {
 		$this->legacy_runtime = $legacy_runtime;
 		$this->api_client     = $api_client;
 		$this->arbiter        = $arbiter;
@@ -96,7 +95,7 @@ class WooPaymentsPaymentMethodDetailsService {
 		}
 
 		$plugin_runtime_loaded = $this->legacy_runtime->is_loaded();
-		if ( ! $plugin_runtime_loaded && ! $this->arbiter->should_native_register() ) {
+		if ( ! $plugin_runtime_loaded && ! $this->arbiter->is_builtin_owner() ) {
 			return array();
 		}
 

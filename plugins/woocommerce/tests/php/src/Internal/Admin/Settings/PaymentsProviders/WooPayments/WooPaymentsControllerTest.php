@@ -8,7 +8,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsOnboardingRedirect;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -96,11 +96,11 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 	 * @param int  $clears       Expected cache clears.
 	 */
 	public function test_woocommerce_update_clears_the_native_onboarding_fields_cache( bool $native_owner, int $clears ): void {
-		$arbiter = $this->createMock( NativePaymentsRuntimeArbiter::class );
-		$arbiter->method( 'should_native_register' )->willReturn( $native_owner );
+		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_owner );
 		$account_service = $this->createMock( WooPaymentsAccountService::class );
 		$account_service->expects( $this->exactly( $clears ) )->method( 'clear_onboarding_fields_cache' );
-		wc_get_container()->replace( NativePaymentsRuntimeArbiter::class, $arbiter );
+		wc_get_container()->replace( WooPaymentsRuntimeArbiter::class, $arbiter );
 		wc_get_container()->replace( WooPaymentsAccountService::class, $account_service );
 		$sut = $this->create_controller( $this->createMock( WooPaymentsService::class ) );
 
@@ -668,9 +668,9 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsOnboardingRedirect
 	 */
 	private function create_onboarding_redirect( WooPaymentsApiClient $api_client, bool $valid_account, bool $native_owner, bool $plugin_owner = false ): WooPaymentsOnboardingRedirect {
-		$arbiter = $this->createMock( NativePaymentsRuntimeArbiter::class );
-		$arbiter->method( 'should_native_register' )->willReturn( $native_owner );
-		$arbiter->method( 'is_plugin_runtime_active' )->willReturn( $plugin_owner );
+		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_owner );
+		$arbiter->method( 'is_extension_owner' )->willReturn( $plugin_owner );
 		$account_service = $this->createMock( WooPaymentsAccountService::class );
 		$account_service->method( 'has_valid_account_for_admin_navigation' )->willReturn( $valid_account );
 

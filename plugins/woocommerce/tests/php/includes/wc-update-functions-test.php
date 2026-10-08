@@ -17,7 +17,7 @@ use Automattic\WooCommerce\Internal\Admin\OrderTaxLookupMigrator;
 use Automattic\WooCommerce\Internal\BatchProcessing\BatchProcessingController;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
@@ -40,11 +40,11 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
 		delete_option( 'wcpay_multi_currency_setup_completed' );
 		delete_option( 'woocommerce_woopayments_setup_tier' );
-		delete_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION );
+		delete_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION );
 		delete_option( 'wcpay_account_data' );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'active_plugins' );
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		parent::tearDown();
 	}
@@ -737,11 +737,11 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 		$this->assertContains( 'wc_update_11205_seed_woopayments_setup_tier', $db_updates['11.2.0-5'] );
 
 		$container = wc_get_container();
-		$arbiter   = $container->get( NativePaymentsRuntimeArbiter::class );
+		$arbiter   = $container->get( WooPaymentsRuntimeArbiter::class );
 		$state     = $container->get( WooPaymentsSetupTier::class );
 		$matrix    = WooPaymentsProvider::get_classes_by_setup_tier();
 		update_option( 'woocommerce_woopayments_builtin_enabled', 'yes' );
-		update_option( 'active_plugins', array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
 		update_option(
 			'wcpay_account_data',
 			array(
@@ -795,9 +795,9 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 
 		update_option( 'woocommerce_woopayments_builtin_enabled', 'yes' );
 		if ( $kill_switch ) {
-			update_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION, true );
+			update_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION, true );
 		}
-		update_option( 'active_plugins', array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
 		update_option(
 			'wcpay_account_data',
 			array(
@@ -812,7 +812,7 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 			false
 		);
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 
 		wc_update_11205_seed_woopayments_setup_tier();

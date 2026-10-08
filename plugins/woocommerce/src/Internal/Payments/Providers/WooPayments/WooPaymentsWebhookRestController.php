@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use InvalidArgumentException;
 use Throwable;
@@ -26,9 +25,9 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Event ingestor.
@@ -56,12 +55,12 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter         $arbiter        Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter            $arbiter        Runtime owner arbiter.
 	 * @param WooPaymentsEventIngestor             $event_ingestor Event ingestor.
 	 * @param WooPaymentsLegacyRuntime             $legacy_runtime WooPayments legacy runtime.
 	 * @param WooPaymentsWebhookReliabilityService $reliability_service Webhook reliability service.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsEventIngestor $event_ingestor, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsWebhookReliabilityService $reliability_service ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsEventIngestor $event_ingestor, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsWebhookReliabilityService $reliability_service ): void {
 		$this->arbiter             = $arbiter;
 		$this->event_ingestor      = $event_ingestor;
 		$this->legacy_runtime      = $legacy_runtime;
@@ -72,7 +71,7 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 	 * Register REST hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

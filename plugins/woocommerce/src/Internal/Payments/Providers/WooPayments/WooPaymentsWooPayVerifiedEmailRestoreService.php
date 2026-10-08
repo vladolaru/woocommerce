@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
@@ -45,9 +44,9 @@ class WooPaymentsWooPayVerifiedEmailRestoreService implements RegisterHooksInter
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Blog IDs waiting for the order CRUD readiness callback.
@@ -61,9 +60,9 @@ class WooPaymentsWooPayVerifiedEmailRestoreService implements RegisterHooksInter
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter $arbiter Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter $arbiter Runtime owner arbiter.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter ): void {
 		$this->arbiter = $arbiter;
 	}
 
@@ -79,7 +78,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreService implements RegisterHooksInter
 		self::$registered_instance = $this;
 
 		add_action( self::RESTORE_CUSTOMER_ID_HOOK, array( $this, 'restore_order_customer_id' ), 10, 1 );
-		foreach ( array( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION ) as $option_name ) {
+		foreach ( array( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_OPTION, WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION ) as $option_name ) {
 			foreach ( array( 'add', 'update', 'delete' ) as $operation ) {
 				$hook_name = "{$operation}_option_{$option_name}";
 				add_action( $hook_name, array( $this, 'handle_native_runtime_option_change' ), 10, 0 );
@@ -99,7 +98,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreService implements RegisterHooksInter
 			return;
 		}
 
-		if ( NativePaymentsRuntimeArbiter::OWNER_EXTENSION === $this->arbiter->get_runtime_owner() ) {
+		if ( WooPaymentsRuntimeArbiter::OWNER_EXTENSION === $this->arbiter->get_runtime_owner() ) {
 			return;
 		}
 
@@ -138,7 +137,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreService implements RegisterHooksInter
 			}
 		}
 
-		if ( NativePaymentsRuntimeArbiter::OWNER_NONE !== $this->arbiter->get_runtime_owner() ) {
+		if ( WooPaymentsRuntimeArbiter::OWNER_NONE !== $this->arbiter->get_runtime_owner() ) {
 			return;
 		}
 
@@ -184,7 +183,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreService implements RegisterHooksInter
 		}
 
 		$this->arbiter->invalidate();
-		if ( NativePaymentsRuntimeArbiter::OWNER_NONE !== $this->arbiter->get_runtime_owner() ) {
+		if ( WooPaymentsRuntimeArbiter::OWNER_NONE !== $this->arbiter->get_runtime_owner() ) {
 			return;
 		}
 
@@ -280,7 +279,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreService implements RegisterHooksInter
 		remove_action( self::RESTORE_CUSTOMER_ID_HOOK, array( $this, 'restore_order_customer_id' ), 10 );
 		remove_action( self::ORDER_CRUD_READY_HOOK, array( $this, 'drain_current_blog' ), 10 );
 		$this->pending_drain_blog_ids = array();
-		foreach ( array( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION ) as $option_name ) {
+		foreach ( array( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_OPTION, WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION ) as $option_name ) {
 			foreach ( array( 'add', 'update', 'delete' ) as $operation ) {
 				remove_action( "{$operation}_option_{$option_name}", array( $this, 'handle_native_runtime_option_change' ), 10 );
 			}

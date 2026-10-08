@@ -9,7 +9,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
@@ -35,16 +35,16 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		update_option( 'active_plugins', array() );
 		delete_site_option( 'active_sitewide_plugins' );
-		delete_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION );
+		delete_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION );
 
 		$container                   = wc_get_container();
 		$this->state                 = $container->get( WooPaymentsSetupTier::class );
 		$this->account_service       = $container->get( WooPaymentsAccountService::class );
 		$this->settings_synchronizer = $container->get( WooPaymentsGatewaySettingsSynchronizer::class );
-		$container->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		$container->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		$this->state->invalidate();
 		$this->account_service->clear_cache();
 	}
@@ -53,17 +53,17 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
 		remove_all_filters( 'pre_update_option_' . WooPaymentsSetupTier::OPTION_NAME );
 		remove_all_filters( 'pre_update_option_wcpay_account_data' );
 		remove_all_filters( 'option_' . WooPaymentsSetupTier::OPTION_NAME );
 		delete_option( WooPaymentsSetupTier::OPTION_NAME );
-		delete_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION );
+		delete_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION );
 		delete_option( 'wcpay_account_data' );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'active_plugins' );
 		delete_site_option( 'active_sitewide_plugins' );
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		$this->state->invalidate();
 
 		parent::tearDown();
@@ -171,8 +171,8 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 		$this->state->invalidate();
 		$this->assertSame( $stored_state, $this->state->get_effective_tier() );
 
-		update_option( 'active_plugins', array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) );
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 
 		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->state->get_effective_tier() );
 	}
@@ -186,7 +186,7 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	public function test_get_effective_tier_returns_disabled_without_overwriting_the_stored_state_when_no_runtime_owns_the_site( string $stored_state ): void {
 		update_option( WooPaymentsSetupTier::OPTION_NAME, $stored_state );
 		$this->state->invalidate();
-		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
 
 		$this->assertSame( WooPaymentsSetupTier::DISABLED, $this->state->get_effective_tier() );
 		$this->assertSame( $stored_state, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
@@ -302,8 +302,8 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsSetupTier::DISABLED, $this->state->get_effective_tier() );
 
 		$this->state->write_tier( WooPaymentsSetupTier::ACTIVE );
-		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
-		update_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION, true );
+		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
+		update_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION, true );
 		$this->account_service->cache_account_data( array( 'account_id' => 'acct_456' ) );
 		$this->assertSame( WooPaymentsSetupTier::DISABLED, $this->state->get_effective_tier() );
 	}
@@ -370,8 +370,8 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	 * Mark the WooPayments plugin active so it owns the payments runtime.
 	 */
 	private function make_plugin_own_the_runtime(): void {
-		update_option( 'active_plugins', array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) );
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 	}
 
 	/**

@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use Automattic\Jetpack\Constants;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use WC_Data_Store;
 use WC_Payment_Token_CC;
@@ -41,12 +41,12 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 
 		$this->assertFalse(
 			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the bootstrap filter in a test.
-			(bool) apply_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, false ),
+			(bool) apply_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, false ),
 			'The test bootstrap must not change runtime ownership without the exact E2E constant.'
 		);
 		$this->assertTrue(
 			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the bootstrap filter in a test.
-			(bool) apply_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, true ),
+			(bool) apply_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, true ),
 			'The test bootstrap must preserve an existing rollout signal without the exact E2E constant.'
 		);
 	}
@@ -60,7 +60,7 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue(
 			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the bootstrap filter in a test.
-			(bool) apply_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, false ),
+			(bool) apply_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, false ),
 			'The mu-plugin filter must enable native payments before the arbiter resolves ownership.'
 		);
 	}
@@ -71,12 +71,12 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 	public function test_active_standalone_plugin_still_wins(): void {
 		$this->define_native_e2e_constant();
 		$this->load_bootstrap();
-		update_option( 'active_plugins', array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
 
-		$arbiter = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
+		$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
 
 		$this->assertSame(
-			NativePaymentsRuntimeArbiter::OWNER_EXTENSION,
+			WooPaymentsRuntimeArbiter::OWNER_EXTENSION,
 			$arbiter->get_runtime_owner(),
 			'Plugin-wins ownership must remain authoritative when the standalone plugin is active.'
 		);
@@ -89,12 +89,12 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 		$this->define_native_e2e_constant();
 		$this->load_bootstrap();
 		update_option( 'active_plugins', array() );
-		update_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION, true );
+		update_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION, true );
 
-		$arbiter = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
+		$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
 
 		$this->assertSame(
-			NativePaymentsRuntimeArbiter::OWNER_NONE,
+			WooPaymentsRuntimeArbiter::OWNER_NONE,
 			$arbiter->get_runtime_owner(),
 			'The host-controlled kill switch must disable E2E native ownership.'
 		);

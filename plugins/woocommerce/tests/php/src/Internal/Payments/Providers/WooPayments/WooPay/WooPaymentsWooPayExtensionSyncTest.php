@@ -8,7 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayExtensionSync;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Unit_Test_Case;
 
 /**
@@ -176,7 +176,7 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 			->getMock();
 		$api_client->method( 'get_woopay_compatibility' )->willThrowException( self::make_provider_error() );
 		$sync = new WooPaymentsWooPayExtensionSync();
-		$sync->init( new StaticNativeRuntimeArbiter( true ), $api_client );
+		$sync->init( new StaticWooPaymentsRuntimeArbiter( true ), $api_client );
 		$logger = RecordingWcLogger::install();
 
 		$sync->update_compatibility_and_maybe_show_incompatibility_warning();
@@ -252,7 +252,7 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 			->willReturn( $compatibility );
 
 		$sync = new WooPaymentsWooPayExtensionSync();
-		$sync->init( new StaticNativeRuntimeArbiter( $native_register ), $api_client );
+		$sync->init( new StaticWooPaymentsRuntimeArbiter( $native_register ), $api_client );
 
 		$this->syncs[] = $sync;
 

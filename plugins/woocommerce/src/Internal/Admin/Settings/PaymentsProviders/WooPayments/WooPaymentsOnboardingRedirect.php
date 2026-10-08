@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 
@@ -68,9 +68,9 @@ class WooPaymentsOnboardingRedirect {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * WooPayments API client.
@@ -98,11 +98,11 @@ class WooPaymentsOnboardingRedirect {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter $arbiter         Runtime owner arbiter.
-	 * @param WooPaymentsApiClient         $api_client      WooPayments API client.
-	 * @param WooPaymentsAccountService    $account_service WooPayments account service.
+	 * @param WooPaymentsRuntimeArbiter $arbiter         Runtime owner arbiter.
+	 * @param WooPaymentsApiClient      $api_client      WooPayments API client.
+	 * @param WooPaymentsAccountService $account_service WooPayments account service.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service ): void {
 		$this->arbiter         = $arbiter;
 		$this->api_client      = $api_client;
 		$this->account_service = $account_service;
@@ -219,11 +219,11 @@ class WooPaymentsOnboardingRedirect {
 
 		$this->decided = true;
 
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			// While the plugin owns the runtime the native routes are not served: a native settings link opens the plugin's
 			// settings page, the URL WooPayments::get_settings_url() gives there (client 11.1.0
 			// `class-wc-payments-admin-settings.php:32-36`). The section link itself carries no path, so it is left alone.
-			if ( self::PATH_SETTINGS === $guarded_path && str_starts_with( $requested_path, self::PATH_SETTINGS ) && $this->arbiter->is_plugin_runtime_active() ) {
+			if ( self::PATH_SETTINGS === $guarded_path && str_starts_with( $requested_path, self::PATH_SETTINGS ) && $this->arbiter->is_extension_owner() ) {
 				wp_safe_redirect( Utils::wc_payments_settings_url( null, array( 'section' => self::LEGACY_SETTINGS_SECTION ) ) );
 				exit;
 			}

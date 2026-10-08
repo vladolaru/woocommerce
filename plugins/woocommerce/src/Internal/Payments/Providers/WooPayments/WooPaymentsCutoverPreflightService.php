@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsLegacySubscriptionsGuard;
@@ -64,9 +63,9 @@ class WooPaymentsCutoverPreflightService {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Legacy proxy.
@@ -145,10 +144,10 @@ class WooPaymentsCutoverPreflightService {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter $arbiter      Runtime owner arbiter.
-	 * @param LegacyProxy                  $legacy_proxy Legacy proxy.
+	 * @param WooPaymentsRuntimeArbiter $arbiter      Runtime owner arbiter.
+	 * @param LegacyProxy               $legacy_proxy Legacy proxy.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy ): void {
 		$this->arbiter      = $arbiter;
 		$this->legacy_proxy = $legacy_proxy;
 	}
@@ -194,7 +193,7 @@ class WooPaymentsCutoverPreflightService {
 	 * @return string[] Failure codes.
 	 */
 	private function evaluate_failures(): array {
-		if ( ! $this->arbiter->is_native_runtime_enabled() ) {
+		if ( ! $this->arbiter->is_builtin_enabled() ) {
 			return array( 'builtin_runtime_disabled' );
 		}
 
@@ -527,7 +526,7 @@ class WooPaymentsCutoverPreflightService {
 	 * @return bool
 	 */
 	private function is_woopayments_plugin_file( string $plugin_file ): bool {
-		if ( NativePaymentsRuntimeArbiter::PLUGIN_FILE === $plugin_file ) {
+		if ( WooPaymentsRuntimeArbiter::PLUGIN_FILE === $plugin_file ) {
 			return true;
 		}
 		if ( ! function_exists( 'get_plugins' ) ) {

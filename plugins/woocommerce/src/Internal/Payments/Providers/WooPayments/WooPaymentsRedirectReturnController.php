@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
@@ -35,9 +34,9 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Shared intent confirmation owner.
@@ -86,7 +85,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter      $arbiter            Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter         $arbiter            Runtime owner arbiter.
 	 * @param WooPaymentsCheckoutAjaxController $confirmation_owner Shared intent confirmation owner.
 	 * @param WooPaymentsApiClient              $api_client         Native WooPayments API client.
 	 * @param WooPaymentsTokenService           $token_service      Native WooPayments token service.
@@ -94,7 +93,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * @param OrderPaymentLifecycleService      $lifecycle_service  Payment lifecycle service.
 	 * @param WooPaymentsOrderNoteService       $note_service       Native WooPayments order note service.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsCheckoutAjaxController $confirmation_owner, WooPaymentsApiClient $api_client, WooPaymentsTokenService $token_service, WooPaymentsCustomerService $customer_service, OrderPaymentLifecycleService $lifecycle_service, WooPaymentsOrderNoteService $note_service ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsCheckoutAjaxController $confirmation_owner, WooPaymentsApiClient $api_client, WooPaymentsTokenService $token_service, WooPaymentsCustomerService $customer_service, OrderPaymentLifecycleService $lifecycle_service, WooPaymentsOrderNoteService $note_service ): void {
 		$this->arbiter            = $arbiter;
 		$this->confirmation_owner = $confirmation_owner;
 		$this->api_client         = $api_client;
@@ -108,7 +107,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * Register the redirect-return callback.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 
@@ -123,7 +122,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function handle_wp(): void {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

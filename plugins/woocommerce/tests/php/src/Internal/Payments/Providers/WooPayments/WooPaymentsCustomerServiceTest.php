@@ -8,7 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -53,7 +53,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		$this->assertNotFalse( has_action( 'woocommerce_created_customer', array( $native_sut, 'handle_woocommerce_created_customer' ) ) );
 
 		$plugin_sut = new WooPaymentsCustomerService();
-		$plugin_sut->init( $this->create_customer_api_client( array() ), $this->create_account_service_stub( false ), new WooPaymentsSessionService(), new StaticNativeRuntimeArbiter( false ) );
+		$plugin_sut->init( $this->create_customer_api_client( array() ), $this->create_account_service_stub( false ), new WooPaymentsSessionService(), new StaticWooPaymentsRuntimeArbiter( false ) );
 		$plugin_sut->register();
 		$this->assertFalse( has_action( 'woocommerce_created_customer', array( $plugin_sut, 'handle_woocommerce_created_customer' ) ), 'The promotion hook must not register while the standalone plugin owns the runtime.' );
 	}
@@ -872,7 +872,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		$account_service->method( 'get_account_is_live' )->willReturn( $account_is_live );
 
 		$sut = new WooPaymentsCustomerService();
-		$sut->init( $api_client, $account_service, new WooPaymentsSessionService(), new StaticNativeRuntimeArbiter( true ) );
+		$sut->init( $api_client, $account_service, new WooPaymentsSessionService(), new StaticWooPaymentsRuntimeArbiter( true ) );
 
 		return $sut;
 	}

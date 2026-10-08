@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WP_Error;
 use WP_REST_Request;
@@ -31,9 +30,9 @@ class WooPaymentsDisputeReadinessRestController implements RegisterHooksInterfac
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Dispute readiness service.
@@ -47,10 +46,10 @@ class WooPaymentsDisputeReadinessRestController implements RegisterHooksInterfac
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter       $arbiter Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter          $arbiter Runtime owner arbiter.
 	 * @param WooPaymentsDisputeReadinessService $service Dispute readiness service.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsDisputeReadinessService $service ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsDisputeReadinessService $service ): void {
 		$this->arbiter = $arbiter;
 		$this->service = $service;
 	}
@@ -59,7 +58,7 @@ class WooPaymentsDisputeReadinessRestController implements RegisterHooksInterfac
 	 * Register REST hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

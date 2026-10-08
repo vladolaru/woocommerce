@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 use WP_Error;
@@ -32,9 +31,9 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * WooPay session service.
@@ -62,10 +61,10 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter    $arbiter         Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter       $arbiter         Runtime owner arbiter.
 	 * @param WooPaymentsWooPaySessionService $session_service WooPay session service.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsWooPaySessionService $session_service ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsWooPaySessionService $session_service ): void {
 		$this->arbiter         = $arbiter;
 		$this->session_service = $session_service;
 	}
@@ -74,7 +73,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 * Register WooPay REST and AJAX hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

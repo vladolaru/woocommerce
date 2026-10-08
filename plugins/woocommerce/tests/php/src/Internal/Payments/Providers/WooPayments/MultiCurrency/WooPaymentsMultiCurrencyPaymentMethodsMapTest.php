@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyPaymentMethodsMap;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use WC_Unit_Test_Case;
@@ -172,7 +172,7 @@ class WooPaymentsMultiCurrencyPaymentMethodsMapTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsMultiCurrencyPaymentMethodsMap
 	 */
 	private function create_sut( bool $native_owner = true, string $account_country = 'US' ): WooPaymentsMultiCurrencyPaymentMethodsMap {
-		$arbiter = new class( $native_owner ) extends NativePaymentsRuntimeArbiter {
+		$arbiter = new class( $native_owner ) extends WooPaymentsRuntimeArbiter {
 			/**
 			 * Whether native owns runtime.
 			 *
@@ -194,7 +194,7 @@ class WooPaymentsMultiCurrencyPaymentMethodsMapTest extends WC_Unit_Test_Case {
 			 *
 			 * @return bool
 			 */
-			public function should_native_register(): bool {
+			public function is_builtin_owner(): bool {
 				return $this->native_owner;
 			}
 		};

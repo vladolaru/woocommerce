@@ -11,7 +11,6 @@ use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Enums\WooPaymentsCutoverState;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Utilities\OrderUtil;
@@ -114,9 +113,9 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Legacy proxy.
@@ -151,14 +150,14 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter        $arbiter          Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter           $arbiter          Runtime owner arbiter.
 	 * @param LegacyProxy                         $legacy_proxy     Legacy proxy.
 	 * @param WooPaymentsCutoverPreflightService  $preflight_service Headless cutover facts.
 	 * @param WooPaymentsCutoverReconciliationJob $reconciliation_job Durable reconciliation workflow.
 	 * @param WooPaymentsAccountService           $account_service   WooPayments account state.
 	 */
 	final public function init(
-		NativePaymentsRuntimeArbiter $arbiter,
+		WooPaymentsRuntimeArbiter $arbiter,
 		LegacyProxy $legacy_proxy,
 		WooPaymentsCutoverPreflightService $preflight_service,
 		WooPaymentsCutoverReconciliationJob $reconciliation_job,
@@ -280,7 +279,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @return bool True when reconciliation was queued.
 	 */
 	public function disable_woopayments_plugin(): bool {
-		if ( ! $this->arbiter->is_native_runtime_enabled() || ! $this->account_service->is_native_eligible() || ! $this->arbiter->is_plugin_runtime_active() || ! $this->current_user_can_cutover() ) {
+		if ( ! $this->arbiter->is_builtin_enabled() || ! $this->account_service->is_native_eligible() || ! $this->arbiter->is_extension_owner() || ! $this->current_user_can_cutover() ) {
 			return false;
 		}
 		if ( $this->reconciliation_job->enqueue( 'merchant' ) ) {
@@ -306,7 +305,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		}
 		$this->maybe_forget_admin_classification( $plugin );
 		$active_plugin_file = $this->preflight_service->get_active_woopayments_plugin_file();
-		if ( NativePaymentsRuntimeArbiter::PLUGIN_FILE !== $plugin && $active_plugin_file !== $plugin ) {
+		if ( WooPaymentsRuntimeArbiter::PLUGIN_FILE !== $plugin && $active_plugin_file !== $plugin ) {
 			return;
 		}
 
@@ -327,7 +326,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		}
 		$this->maybe_forget_admin_classification( $plugin );
 		$active_plugin_file = $this->preflight_service->get_active_woopayments_plugin_file();
-		if ( NativePaymentsRuntimeArbiter::PLUGIN_FILE !== $plugin && $active_plugin_file !== $plugin ) {
+		if ( WooPaymentsRuntimeArbiter::PLUGIN_FILE !== $plugin && $active_plugin_file !== $plugin ) {
 			return;
 		}
 
@@ -360,7 +359,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( ! $this->arbiter->should_native_register() || $this->store_has_woopayments_plugin_evidence() ) {
+		if ( ! $this->arbiter->is_builtin_owner() || $this->store_has_woopayments_plugin_evidence() ) {
 			return;
 		}
 
@@ -461,7 +460,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	private function maybe_auto_deactivate_plugin(): void {
 		if (
 			! $this->is_mandatory_cutover_enabled() ||
-			! $this->arbiter->is_plugin_runtime_active() ||
+			! $this->arbiter->is_extension_owner() ||
 			Constants::is_true( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' )
 		) {
 			return;
@@ -598,7 +597,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 				}
 				return;
 			}
-			if ( WooPaymentsCutoverState::DONE === $record['state'] && ! $this->arbiter->is_plugin_runtime_active() ) {
+			if ( WooPaymentsCutoverState::DONE === $record['state'] && ! $this->arbiter->is_extension_owner() ) {
 				// Shown to store managers until they dismiss them; rendering claims nothing, since some screens hide notices.
 				if ( $this->legacy_proxy->call_function( 'current_user_can', 'manage_woocommerce' ) ) {
 					if ( $this->reconciliation_job->is_completion_notice_due( $record, WooPaymentsCutoverReconciliationJob::NOTICE_SUCCESS ) ) {
@@ -620,7 +619,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_start_eligible(): bool {
-		return $this->account_service->is_native_eligible() && $this->is_soft_cutover_enabled() && $this->arbiter->is_plugin_runtime_active() && $this->current_user_can_cutover();
+		return $this->account_service->is_native_eligible() && $this->is_soft_cutover_enabled() && $this->arbiter->is_extension_owner() && $this->current_user_can_cutover();
 	}
 
 	/**

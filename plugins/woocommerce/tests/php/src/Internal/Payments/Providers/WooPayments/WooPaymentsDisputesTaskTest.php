@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Admin\Features\OnboardingTasks\TaskList;
 use Automattic\WooCommerce\Admin\Features\OnboardingTasks\TaskLists;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
@@ -288,11 +288,11 @@ class WooPaymentsDisputesTaskTest extends WC_Unit_Test_Case {
 	public function test_registrar_adds_the_task_to_the_extended_list(): void {
 		$this->seed_cache( array( $this->dispute( 2000, 'eur', '+23 hours' ) ) );
 		$account_service = $this->create_account_service( $this->account() );
-		$arbiter         = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+		$arbiter         = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_native_register' ) )
+			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'should_native_register' )->willReturn( true );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
 
 		$sut = new WooPaymentsHomeTasks();
 		$sut->init( $arbiter, $account_service, $this->create_dispute_data_service( $account_service ) );

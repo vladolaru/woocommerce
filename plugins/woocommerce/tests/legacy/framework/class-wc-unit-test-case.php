@@ -5,7 +5,7 @@
  * @package WooCommerce\Tests
  */
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Testing\Tools\CodeHacking\CodeHacker;
 use Automattic\WooCommerce\Testing\Tools\EnvironmentIsolation;
@@ -215,7 +215,7 @@ class WC_Unit_Test_Case extends WP_HTTP_TestCase {
 		}
 
 		// The container keeps this arbiter instance across tests, but its memo only applies to one request.
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 	}
 
 	/**

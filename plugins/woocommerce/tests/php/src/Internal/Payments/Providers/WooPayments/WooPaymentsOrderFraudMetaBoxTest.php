@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderFraudMetaBox;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -539,7 +539,7 @@ class WooPaymentsOrderFraudMetaBoxTest extends WC_Unit_Test_Case {
 		$this->assertTrue( class_exists( WooPaymentsOrderFraudMetaBox::class ), 'WooPaymentsOrderFraudMetaBox should exist.' );
 
 		$meta_box = new WooPaymentsOrderFraudMetaBox();
-		$meta_box->init( new StaticNativeRuntimeArbiter( $native_register ) );
+		$meta_box->init( new StaticWooPaymentsRuntimeArbiter( $native_register ) );
 
 		$this->meta_boxes[] = $meta_box;
 

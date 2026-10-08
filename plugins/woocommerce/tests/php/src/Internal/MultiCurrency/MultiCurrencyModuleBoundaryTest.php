@@ -11,6 +11,16 @@ use WC_Unit_Test_Case;
 class MultiCurrencyModuleBoundaryTest extends WC_Unit_Test_Case {
 
 	/**
+	 * Multi-Currency files that may name the WooPayments provider, relative to `src/Internal/MultiCurrency/`.
+	 *
+	 * The Multi-Currency arbiter follows whoever owns WooPayments, because the WooPayments extension ships its own
+	 * Multi-Currency module, so it reads the WooPayments runtime arbiter; it is the one place Multi-Currency does.
+	 */
+	private const ALLOWED_FILES = array(
+		'MultiCurrencyRuntimeArbiter.php',
+	);
+
+	/**
 	 * @testdox Should keep WooPayments provider implementation details out of production Multi-Currency code.
 	 */
 	public function test_production_multi_currency_code_is_provider_neutral(): void {
@@ -23,9 +33,10 @@ class MultiCurrencyModuleBoundaryTest extends WC_Unit_Test_Case {
 			}
 
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads local production source for domain-boundary regression coverage.
-			$source = (string) file_get_contents( $file->getPathname() );
-			if ( false !== strpos( $source, 'Internal\\Payments\\Providers\\WooPayments' ) ) {
-				$offenders[] = substr( $file->getPathname(), strlen( $directory ) + 1 );
+			$source        = (string) file_get_contents( $file->getPathname() );
+			$relative_path = substr( $file->getPathname(), strlen( $directory ) + 1 );
+			if ( false !== strpos( $source, 'Internal\\Payments\\Providers\\WooPayments' ) && ! in_array( $relative_path, self::ALLOWED_FILES, true ) ) {
+				$offenders[] = $relative_path;
 			}
 		}
 

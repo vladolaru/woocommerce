@@ -8,7 +8,7 @@ use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLoanApprovedNote;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use PHPUnit\Framework\MockObject\MockObject;
 use WC_Unit_Test_Case;
 
@@ -195,7 +195,7 @@ class WooPaymentsLoanApprovedNoteTest extends WC_Unit_Test_Case {
 		$api_client = $this->createMock( WooPaymentsApiClient::class );
 		$api_client->expects( $this->never() )->method( 'get_capital_active_loan_summary' );
 		$sut = new WooPaymentsLoanApprovedNote();
-		$sut->init( new StaticNativeRuntimeArbiter( true ), $api_client );
+		$sut->init( new StaticWooPaymentsRuntimeArbiter( true ), $api_client );
 
 		$sut->handle_loan_approved_inbox_note( array() );
 
@@ -248,7 +248,7 @@ class WooPaymentsLoanApprovedNoteTest extends WC_Unit_Test_Case {
 	 */
 	private function create_sut( bool $native_owns_runtime ): WooPaymentsLoanApprovedNote {
 		$sut = new WooPaymentsLoanApprovedNote();
-		$sut->init( new StaticNativeRuntimeArbiter( $native_owns_runtime ), $this->api_client );
+		$sut->init( new StaticWooPaymentsRuntimeArbiter( $native_owns_runtime ), $this->api_client );
 
 		return $sut;
 	}

@@ -8,7 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPay
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Order;
 use WC_Payment_Token_CC;
 use WC_Unit_Test_Case;
@@ -43,7 +43,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	public function setUp(): void {
 		parent::setUp();
 		$this->token_class_map = new WooPaymentsTokenClassMapController();
-		$this->token_class_map->init( new StaticNativeRuntimeArbiter( true ) );
+		$this->token_class_map->init( new StaticWooPaymentsRuntimeArbiter( true ) );
 		$this->token_class_map->register();
 		$this->sut = new WooPaymentsSubscriptionAdminPaymentMethodHandler( wc_get_container()->get( WooPaymentsTokenService::class ) );
 	}

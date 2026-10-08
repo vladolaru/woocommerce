@@ -7,7 +7,7 @@ use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
@@ -73,7 +73,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->getMock();
 		$container = wc_get_container();
 		// Keep the real feature definition working if FeaturesController registers it while the mock is in place.
-		$arbiter->init( $container->get( NativePaymentsRuntimeArbiter::class ), $container->get( LegacyProxy::class ), $container->get( MultiCurrencyFeatureController::class ) );
+		$arbiter->init( $container->get( WooPaymentsRuntimeArbiter::class ), $container->get( LegacyProxy::class ), $container->get( MultiCurrencyFeatureController::class ) );
 		$arbiter->method( 'should_core_register' )->willReturn( $enabled );
 		wc_get_container()->replace( MultiCurrencyRuntimeArbiter::class, $arbiter );
 	}
@@ -82,8 +82,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * Make native the payments owner, which the renewal handlers require.
 	 */
 	private function make_native_own_payments(): void {
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 	}
 
 	/**
@@ -99,8 +99,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		remove_all_actions( 'woocommerce_checkout_subscription_created' );
 		remove_all_actions( 'woocommerce_scheduled_subscription_payment_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID );
@@ -7164,7 +7164,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$token_service = new WooPaymentsTokenService();
 		$token_service->init(
 			$container->get( WooPaymentsPaymentMethodDetailsService::class ),
-			new StaticNativeRuntimeArbiter( false ),
+			new StaticWooPaymentsRuntimeArbiter( false ),
 			$container->get( WooPaymentsApiClient::class ),
 			$container->get( WooPaymentsCustomerService::class ),
 			$container->get( WooPaymentsAccountService::class )
@@ -7577,10 +7577,10 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				}
 				// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
 			},
-			new StaticNativeRuntimeArbiter( true )
+			new StaticWooPaymentsRuntimeArbiter( true )
 		);
 		$token_service = new WooPaymentsTokenService();
-		$token_service->init( $details_service, new StaticNativeRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$token_service->init( $details_service, new StaticWooPaymentsRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
 		wc_get_container()->replace( WooPaymentsTokenService::class, $token_service );
 
 		$GLOBALS['wcpay_test_renewal_subscription_ids'] = array( $renewal->get_id() => array( $subscription->get_id() ) );

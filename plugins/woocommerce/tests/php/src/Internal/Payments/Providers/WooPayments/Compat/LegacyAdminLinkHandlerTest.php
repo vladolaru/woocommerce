@@ -7,7 +7,7 @@ use Automattic\Jetpack\Connection\Manager;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\LegacyAdminLinkHandler;
@@ -676,8 +676,8 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 	 * @testdox A KYC reminder link falls back to the overview with the plugin's `from=WCPAY_KYC_REMINDER` when no native route resolves.
 	 */
 	public function test_kyc_reminder_link_falls_back_to_overview_with_from(): void {
-		$arbiter = $this->createMock( NativePaymentsRuntimeArbiter::class );
-		$arbiter->method( 'should_native_register' )->willReturn( true );
+		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
 		$navigation = $this->createMock( WooPaymentsAdminNavigationController::class );
 		$navigation->method( 'get_legacy_payment_path_redirect_url' )->willReturn( '' );
 		$handler = new LegacyAdminLinkHandler();
@@ -1017,11 +1017,11 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 	 * @return LegacyAdminLinkHandler
 	 */
 	private function create_handler( bool $native_register ): LegacyAdminLinkHandler {
-		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_native_register' ) )
+			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'should_native_register' )->willReturn( $native_register );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
 
 		$navigation = $this->getMockBuilder( WooPaymentsAdminNavigationController::class )
 			->disableOriginalConstructor()

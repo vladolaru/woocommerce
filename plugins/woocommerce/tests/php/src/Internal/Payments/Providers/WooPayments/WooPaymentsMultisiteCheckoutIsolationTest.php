@@ -6,7 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Enums\WooPaymentsCutoverState;
 use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Utilities\OrderUtil;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
@@ -75,7 +75,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 			$account_service  = wc_get_container()->get( WooPaymentsAccountService::class );
 			$customer_service = wc_get_container()->get( WooPaymentsCustomerService::class );
 			$token_service    = wc_get_container()->get( WooPaymentsTokenService::class );
-			$runtime_arbiter  = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
+			$runtime_arbiter  = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
 			$cutover_store    = new WooPaymentsCutoverStateStore();
 
 			$this->assert_site_fixture(
@@ -267,7 +267,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 			delete_option( 'woocommerce_woocommerce_payments_settings' );
 			delete_option( 'wcpay_account_data' );
 			delete_option( 'woocommerce_currency' );
-			delete_option( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+			delete_option( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_OPTION );
 			delete_option( WooPaymentsSetupTier::OPTION_NAME );
 			wp_set_current_user( 0 );
 			wc_get_container()->reset_all_resolved();
@@ -286,14 +286,14 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 
 		$original_blog_id  = get_current_blog_id();
 		$secondary_blog_id = self::factory()->blog->create();
-		$runtime_arbiter   = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
+		$runtime_arbiter   = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
 		$account_service   = wc_get_container()->get( WooPaymentsAccountService::class );
 
 		$this->assertIsInt( $secondary_blog_id );
 
 		try {
-			update_option( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, 'yes' );
-			delete_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION );
+			update_option( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_OPTION, 'yes' );
+			delete_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION );
 			update_option( 'wcpay_account_data', $this->account_cache( 'primary', 'US' ) );
 			update_option( 'woocommerce_currency', 'USD' );
 			update_option(
@@ -317,7 +317,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 			$provider_property->setAccessible( true );
 			$provider_property->setValue( $gateway, $provider );
 
-			$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, $runtime_arbiter->get_runtime_owner(), 'Native should own the primary site once enabled there and the plugin is inactive.' );
+			$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $runtime_arbiter->get_runtime_owner(), 'Native should own the primary site once enabled there and the plugin is inactive.' );
 			$this->assertTrue( $gateway->is_available(), 'The gateway should be available for checkout on the primary site.' );
 			$this->assertSame( 'acct_primary', $account_service->get_account_id() );
 
@@ -328,10 +328,10 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 			// Before the secondary site enables native, it must resolve its own decision, not the
 			// primary site's memoized one: this is what a memo keyed by something other than the
 			// blog ID would get wrong.
-			$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $runtime_arbiter->get_runtime_owner(), 'The secondary site must not inherit the primary site\'s native ownership before it enables native itself.' );
+			$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $runtime_arbiter->get_runtime_owner(), 'The secondary site must not inherit the primary site\'s native ownership before it enables native itself.' );
 
-			update_option( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, 'yes' );
-			delete_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION );
+			update_option( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_OPTION, 'yes' );
+			delete_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION );
 			update_option( 'wcpay_account_data', $this->account_cache( 'secondary', 'GB' ) );
 			update_option( 'woocommerce_currency', 'GBP' );
 			update_option(
@@ -344,23 +344,23 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 			$this->make_native_active_on_current_site();
 			$runtime_arbiter->invalidate();
 
-			$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, $runtime_arbiter->get_runtime_owner(), 'Native should also own the secondary site once it enables native, independent of the primary site.' );
+			$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $runtime_arbiter->get_runtime_owner(), 'Native should also own the secondary site once it enables native, independent of the primary site.' );
 			$this->assertTrue( $gateway->is_available(), 'The gateway should be available for checkout on the secondary site, resolving its own account.' );
 			$this->assertSame( 'acct_secondary', $account_service->get_account_id() );
 
 			// The kill switch is a per-site option, not a network one: flipping it on the
 			// secondary site alone must disable native there without reaching the primary site.
-			update_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION, true );
+			update_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION, true );
 			$runtime_arbiter->invalidate();
-			$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $runtime_arbiter->get_runtime_owner(), 'The kill switch enabled on the secondary site alone must disable native there.' );
-			delete_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION );
+			$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $runtime_arbiter->get_runtime_owner(), 'The kill switch enabled on the secondary site alone must disable native there.' );
+			delete_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION );
 			$runtime_arbiter->invalidate();
 
 			restore_current_blog();
 			$this->assertSame( $original_blog_id, get_current_blog_id() );
 			$runtime_arbiter->invalidate();
 
-			$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, $runtime_arbiter->get_runtime_owner(), 'Restoring the primary site should keep native ownership there.' );
+			$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $runtime_arbiter->get_runtime_owner(), 'Restoring the primary site should keep native ownership there.' );
 			$this->assertTrue( $gateway->is_available() );
 			$this->assertSame( 'acct_primary', $account_service->get_account_id() );
 		} finally {
@@ -369,8 +369,8 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 				restore_current_blog();
 			}
 
-			delete_option( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
-			delete_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION );
+			delete_option( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_OPTION );
+			delete_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION );
 			delete_option( 'woocommerce_woocommerce_payments_settings' );
 			delete_option( 'wcpay_account_data' );
 			delete_option( 'woocommerce_currency' );
@@ -427,9 +427,9 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 	 * These tests write the account cache and gateway settings as raw options, which bypass that sync.
 	 */
 	private function make_native_active_on_current_site(): void {
-		update_option( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, 'yes' );
-		delete_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION );
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		update_option( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_OPTION, 'yes' );
+		delete_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->write_tier( WooPaymentsSetupTier::ACTIVE );
 	}
 
@@ -464,8 +464,8 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 	 * @return array<string,mixed>
 	 */
 	private function create_site_fixture( int $user_id, string $slug, string $country, int $generation, string $total ): array {
-		update_option( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, 'primary' === $slug ? 'yes' : 'no' );
-		delete_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION );
+		update_option( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_OPTION, 'primary' === $slug ? 'yes' : 'no' );
+		delete_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION );
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
@@ -540,7 +540,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsAccountService    $account_service Account service.
 	 * @param WooPaymentsCustomerService   $customer_service Customer service.
 	 * @param WooPaymentsTokenService      $token_service    Token service.
-	 * @param NativePaymentsRuntimeArbiter $runtime_arbiter Runtime arbiter.
+	 * @param WooPaymentsRuntimeArbiter    $runtime_arbiter Runtime arbiter.
 	 * @param WooPaymentsCutoverStateStore $cutover_store Cutover state store.
 	 */
 	private function assert_site_fixture(
@@ -549,12 +549,12 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 		WooPaymentsAccountService $account_service,
 		WooPaymentsCustomerService $customer_service,
 		WooPaymentsTokenService $token_service,
-		NativePaymentsRuntimeArbiter $runtime_arbiter,
+		WooPaymentsRuntimeArbiter $runtime_arbiter,
 		WooPaymentsCutoverStateStore $cutover_store
 	): void {
 		$slug = $fixture['slug'];
 
-		$this->assertSame( 'primary' === $slug ? NativePaymentsRuntimeArbiter::OWNER_BUILTIN : NativePaymentsRuntimeArbiter::OWNER_NONE, $runtime_arbiter->get_runtime_owner() );
+		$this->assertSame( 'primary' === $slug ? WooPaymentsRuntimeArbiter::OWNER_BUILTIN : WooPaymentsRuntimeArbiter::OWNER_NONE, $runtime_arbiter->get_runtime_owner() );
 		$this->assertSame( 'acct_' . $slug, $account_service->get_account_id() );
 		$this->assertSame( $fixture['country'], $account_service->get_account_country() );
 		$this->assertSame( 'live', $account_service->get_mode() );
@@ -613,8 +613,8 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 	 * Delete the current site's fixture options.
 	 */
 	private function delete_site_fixture_options(): void {
-		delete_option( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
-		delete_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION );
+		delete_option( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_OPTION );
+		delete_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'wcpay_account_data' );
 		delete_option( WooPaymentsCutoverStateStore::OPTION_NAME );

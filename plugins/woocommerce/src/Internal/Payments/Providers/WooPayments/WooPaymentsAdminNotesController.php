@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 
@@ -24,9 +23,9 @@ class WooPaymentsAdminNotesController implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Secure checkout note.
@@ -54,13 +53,13 @@ class WooPaymentsAdminNotesController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter           $arbiter                        Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter              $arbiter                        Runtime owner arbiter.
 	 * @param WooPaymentsSetHttpsForCheckoutNote     $https_note                     Secure checkout note.
 	 * @param WooPaymentsSetUpLinkNote               $link_note                      Link by Stripe note.
 	 * @param WooPaymentsCanceledAuthRemediationNote $canceled_auth_remediation_note Canceled-authorization fee remediation note.
 	 */
 	final public function init(
-		NativePaymentsRuntimeArbiter $arbiter,
+		WooPaymentsRuntimeArbiter $arbiter,
 		WooPaymentsSetHttpsForCheckoutNote $https_note,
 		WooPaymentsSetUpLinkNote $link_note,
 		WooPaymentsCanceledAuthRemediationNote $canceled_auth_remediation_note
@@ -75,7 +74,7 @@ class WooPaymentsAdminNotesController implements RegisterHooksInterface {
 	 * Register the admin note hook.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

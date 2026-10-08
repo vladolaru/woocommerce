@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use ActionScheduler_Store;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Helper_Order;
 use WC_Order;
 use WC_Order_Refund;
@@ -206,7 +206,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 				return false;
 			}
 		};
-		$service->init( new StaticNativeRuntimeArbiter( true ) );
+		$service->init( new StaticWooPaymentsRuntimeArbiter( true ) );
 		$this->create_order_fixture( array( 'status' => 'cancelled' ) );
 
 		$result = $service->ensure_scheduled();
@@ -231,7 +231,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 				return false;
 			}
 		};
-		$service->init( new StaticNativeRuntimeArbiter( true ) );
+		$service->init( new StaticWooPaymentsRuntimeArbiter( true ) );
 		$this->create_order_fixture( array( 'status' => 'cancelled' ) );
 
 		$this->assertFalse( $service->can_schedule_cutover_remediation() );
@@ -498,7 +498,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 	 */
 	private function create_service( bool $native ): WooPaymentsCanceledAuthorizationFeeRemediationService {
 		$service = new WooPaymentsCanceledAuthorizationFeeRemediationService();
-		$service->init( new StaticNativeRuntimeArbiter( $native ) );
+		$service->init( new StaticWooPaymentsRuntimeArbiter( $native ) );
 
 		return $service;
 	}

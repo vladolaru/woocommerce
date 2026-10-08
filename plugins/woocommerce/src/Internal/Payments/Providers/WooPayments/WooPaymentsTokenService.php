@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsAmazonPayToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
@@ -83,9 +82,9 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Native API client.
@@ -117,12 +116,12 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 * (`class-wc-payments-token-service.php:49-52`): a dependency that cannot be built fails this service's resolution.
 	 *
 	 * @param WooPaymentsPaymentMethodDetailsService $payment_method_details_service Payment method details service.
-	 * @param NativePaymentsRuntimeArbiter           $arbiter                        Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter              $arbiter                        Runtime owner arbiter.
 	 * @param WooPaymentsApiClient                   $api_client                     Native API client.
 	 * @param WooPaymentsCustomerService             $customer_service               Native customer service.
 	 * @param WooPaymentsAccountService              $account_service                Native account service.
 	 */
-	final public function init( WooPaymentsPaymentMethodDetailsService $payment_method_details_service, NativePaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsCustomerService $customer_service, WooPaymentsAccountService $account_service ): void {
+	final public function init( WooPaymentsPaymentMethodDetailsService $payment_method_details_service, WooPaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsCustomerService $customer_service, WooPaymentsAccountService $account_service ): void {
 		$this->payment_method_details_service = $payment_method_details_service;
 		$this->arbiter                        = $arbiter;
 		$this->api_client                     = $api_client;
@@ -144,7 +143,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 * @return void
 	 */
 	private function register_hooks(): void {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

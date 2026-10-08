@@ -1,92 +1,53 @@
 <?php
 /**
- * NativePaymentsRuntimeArbiter class file.
+ * WooPaymentsRuntimeArbiter class file.
  */
 
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Internal\Payments;
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 
 /**
- * Decides which payments runtime owns a site, guaranteeing exactly one is active.
+ * Decides per site whether the WooPayments extension, the built-in WooPayments or nothing owns payments.
  *
- * While WooPayments is being absorbed into core, a site can momentarily have two payment runtimes:
- * the standalone WooPayments **plugin** and the **core-native** runtime. If both register, the site
- * gets duplicate gateways/webhooks/assets and, worst case, a double charge. This arbiter is the
- * single per-request authority that prevents that.
- *
- * Rule: **the plugin wins whenever it is active.** While the WooPayments plugin is active the native
- * runtime registers no gateways, checkout, webhook or payment processing, and the plugin processes
- * payments exactly as before. The native payments bootstrap registers only what moves the store off the
- * plugin: the cutover controller and reconciliation job (admin and cron, once native is available), the
- * hooks that follow the plugin's account cache writes, and shadow mode when it is enabled. Outside that
- * bootstrap, WooCommerce also registers, for example, the status report and Site Health checks, the
- * restore-service option listeners, the CLI command and the legacy facade loaders while the plugin is
- * active. Native owns the site only once the plugin is no longer active and the native runtime is
- * enabled.
- * A merchant moves from plugin to native by **deactivating the plugin** — surfaced (and, at the
- * cutover release, performed automatically) by the migration-notice / auto-deactivation component,
- * which is modeled on WooCommerce's merged-package handling (`src/Packages.php`). This arbiter is the
- * per-request safety that keeps the unavoidable one-request deactivation overlap free of a dual
- * runtime: on the overlap request the plugin is still active so native stays dormant, and native
- * takes over from the next request once the plugin is gone.
- *
- * Every core-native registration (gateways, Blocks methods, REST controllers, webhook receiver,
- * assets, checkout hooks, ActionScheduler/WP-Cron handlers, migrations, admin notices, eager service
- * construction) MUST consult {@see self::should_native_register()} before doing anything mutating.
- *
- * Plugin detection uses the active-plugins lists (per-site + network), reliable in the early-boot
- * window and correct per-site under multisite. The plugin matches by its main file name in any folder,
- * so a copy in a renamed folder that loads after WooCommerce is still detected. `WCPAY_PLUGIN_FILE` is
- * the fallback for a plugin included before WooCommerce without an active-plugins entry.
- *
- * The arbiter is necessary but not sufficient for money-safety: the binding invariant — only one
- * runtime may submit a payment/refund/capture for a given site+order at a time — is additionally
- * backed by a shared order lock and provider idempotency keys in the processing path (introduced
- * with native processing, not here).
- *
- * Resolved as a single instance by the runtime DI container (auto-wired; the container caches one
- * instance), so all consumers share the same arbiter.
- *
- * Lifecycle — TRANSITIONAL, not permanent core API. It exists only while the standalone plugin can
- * coexist with native; once the plugin is sunset, the plugin-detection path is dead and this should
- * collapse to a plain "is native enabled" gate or be removed. The native payments bootstrap, the
- * gateway registry and the other native registrations consult it on every request.
+ * Exactly one WooPayments runtime registers on a site; the WooPayments extension wins while it is active. The extension is
+ * found by its main file name, in any folder, in the per-site and network active-plugins lists, with `WCPAY_PLUGIN_FILE` as
+ * the fallback for a copy included before WooCommerce. The owner is resolved once per blog and request.
  *
  * @since 11.0.0
- * @internal Transitional internal component (not a public API); slated to simplify/remove once the standalone plugin is sunset.
+ * @internal
  */
-class NativePaymentsRuntimeArbiter {
+class WooPaymentsRuntimeArbiter {
 
 	/**
 	 * Owner value: the standalone WooPayments plugin owns the runtime.
 	 *
 	 * @var string
 	 */
-	const OWNER_EXTENSION = 'extension';
+	public const OWNER_EXTENSION = 'extension';
 
 	/**
 	 * Owner value: the core-native payments runtime owns the runtime.
 	 *
 	 * @var string
 	 */
-	const OWNER_BUILTIN = 'builtin';
+	public const OWNER_BUILTIN = 'builtin';
 
 	/**
 	 * Owner value: no payments runtime is active for this site.
 	 *
 	 * @var string
 	 */
-	const OWNER_NONE = 'none';
+	public const OWNER_NONE = 'none';
 
 	/**
 	 * The WooPayments plugin's main file, as it appears in the active-plugins option.
 	 *
 	 * @var string
 	 */
-	const PLUGIN_FILE = 'woocommerce-payments/woocommerce-payments.php';
+	public const PLUGIN_FILE = 'woocommerce-payments/woocommerce-payments.php';
 
 	/**
 	 * The WooPayments main file name, matched in any plugin folder.
@@ -96,7 +57,14 @@ class NativePaymentsRuntimeArbiter {
 	private const PLUGIN_MAIN_FILE_NAME = 'woocommerce-payments.php';
 
 	/**
-	 * Filter that reports whether the core-native payments runtime is enabled for this site.
+	 * Option that enables the built-in WooPayments for this site ('yes' or 'no').
+	 *
+	 * @var string
+	 */
+	public const BUILTIN_ENABLED_OPTION = 'woocommerce_woopayments_builtin_enabled';
+
+	/**
+	 * Filter that reports whether the built-in WooPayments is enabled for this site.
 	 *
 	 * The stored option supplies the default. Even when enabled, the plugin still wins while it is
 	 * active.
@@ -108,7 +76,7 @@ class NativePaymentsRuntimeArbiter {
 	 *
 	 * @var string
 	 */
-	const FILTER_NATIVE_ENABLED = 'woocommerce_woopayments_builtin_enabled';
+	public const BUILTIN_ENABLED_FILTER = 'woocommerce_woopayments_builtin_enabled';
 
 	/**
 	 * Option that disables native payments in the rollout filter default.
@@ -117,7 +85,7 @@ class NativePaymentsRuntimeArbiter {
 	 *
 	 * @var string
 	 */
-	public const NATIVE_RUNTIME_KILL_SWITCH_OPTION = 'woocommerce_woopayments_builtin_kill_switch';
+	public const BUILTIN_KILL_SWITCH_OPTION = 'woocommerce_woopayments_builtin_kill_switch';
 
 	/**
 	 * The legacy proxy, used for mockable calls to global functions.
@@ -155,7 +123,7 @@ class NativePaymentsRuntimeArbiter {
 		$blog_id = get_current_blog_id();
 		if ( ! array_key_exists( $blog_id, $this->runtime_owners ) ) {
 			// Plugin-wins is the only allowed state while the plugin is active; native is dormant.
-			$this->runtime_owners[ $blog_id ] = $this->is_woopayments_plugin_active() ? self::OWNER_EXTENSION : ( $this->is_native_runtime_enabled() ? self::OWNER_BUILTIN : self::OWNER_NONE );
+			$this->runtime_owners[ $blog_id ] = $this->is_woopayments_plugin_active() ? self::OWNER_EXTENSION : ( $this->is_builtin_enabled() ? self::OWNER_BUILTIN : self::OWNER_NONE );
 		}
 
 		return $this->runtime_owners[ $blog_id ];
@@ -181,7 +149,7 @@ class NativePaymentsRuntimeArbiter {
 	 *
 	 * @return bool True only when the native runtime owns this site.
 	 */
-	public function should_native_register(): bool {
+	public function is_builtin_owner(): bool {
 		return self::OWNER_BUILTIN === $this->get_runtime_owner();
 	}
 
@@ -195,7 +163,7 @@ class NativePaymentsRuntimeArbiter {
 	 *
 	 * @return bool True when the plugin owns this site's payments runtime.
 	 */
-	public function is_plugin_runtime_active(): bool {
+	public function is_extension_owner(): bool {
 		return self::OWNER_EXTENSION === $this->get_runtime_owner();
 	}
 
@@ -209,8 +177,8 @@ class NativePaymentsRuntimeArbiter {
 	 *
 	 * @return bool True when the native runtime is enabled.
 	 */
-	public function is_native_runtime_enabled(): bool {
-		$option_enabled = 'yes' === get_option( self::FILTER_NATIVE_ENABLED, 'no' );
+	public function is_builtin_enabled(): bool {
+		$option_enabled = 'yes' === get_option( self::BUILTIN_ENABLED_OPTION, 'no' );
 		$filter_default = $this->is_kill_switch_active() ? false : $option_enabled;
 
 		/**
@@ -224,7 +192,7 @@ class NativePaymentsRuntimeArbiter {
 		 *
 		 * @param bool $enabled Whether the native runtime is enabled.
 		 */
-		return (bool) apply_filters( self::FILTER_NATIVE_ENABLED, $filter_default );
+		return (bool) apply_filters( self::BUILTIN_ENABLED_FILTER, $filter_default );
 	}
 
 	/**
@@ -237,7 +205,7 @@ class NativePaymentsRuntimeArbiter {
 	 * @return bool True when the kill switch option is on.
 	 */
 	public function is_kill_switch_active(): bool {
-		$stored = get_option( self::NATIVE_RUNTIME_KILL_SWITCH_OPTION, false );
+		$stored = get_option( self::BUILTIN_KILL_SWITCH_OPTION, false );
 
 		if ( ! is_scalar( $stored ) && null !== $stored ) {
 			return (bool) $stored;

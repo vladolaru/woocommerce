@@ -11,7 +11,6 @@ use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Throwable;
@@ -282,9 +281,9 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter|null
+	 * @var WooPaymentsRuntimeArbiter|null
 	 */
-	private ?NativePaymentsRuntimeArbiter $arbiter = null;
+	private ?WooPaymentsRuntimeArbiter $arbiter = null;
 
 	/**
 	 * Whether the aggregate classic checkout config has been localized.
@@ -318,7 +317,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 * @param WooPaymentsFraudPreventionService|null $fraud_prevention_service  Optional fraud-prevention service.
 	 * @param WooPaymentsPaymentMethodRegistry|null  $payment_method_registry   Optional payment method registry.
 	 * @param WooPaymentsCustomerService|null        $customer_service          Optional native customer service.
-	 * @param NativePaymentsRuntimeArbiter|null      $arbiter                   Optional runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter|null         $arbiter                   Optional runtime owner arbiter.
 	 */
 	final public function init(
 		WooPaymentsLegacyRuntime $legacy_runtime,
@@ -329,7 +328,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		?WooPaymentsFraudPreventionService $fraud_prevention_service = null,
 		?WooPaymentsPaymentMethodRegistry $payment_method_registry = null,
 		?WooPaymentsCustomerService $customer_service = null,
-		?NativePaymentsRuntimeArbiter $arbiter = null
+		?WooPaymentsRuntimeArbiter $arbiter = null
 	): void {
 		$this->legacy_runtime               = $legacy_runtime;
 		$this->account_service              = $account_service;
@@ -354,7 +353,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function register() {
-		if ( ! $this->get_runtime_arbiter()->should_native_register() ) {
+		if ( ! $this->get_runtime_arbiter()->is_builtin_owner() ) {
 			return;
 		}
 
@@ -963,11 +962,11 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	/**
 	 * Get the runtime owner arbiter.
 	 *
-	 * @return NativePaymentsRuntimeArbiter
+	 * @return WooPaymentsRuntimeArbiter
 	 */
-	private function get_runtime_arbiter(): NativePaymentsRuntimeArbiter {
-		if ( ! $this->arbiter instanceof NativePaymentsRuntimeArbiter ) {
-			$this->arbiter = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
+	private function get_runtime_arbiter(): WooPaymentsRuntimeArbiter {
+		if ( ! $this->arbiter instanceof WooPaymentsRuntimeArbiter ) {
+			$this->arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
 		}
 
 		return $this->arbiter;

@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 
@@ -24,7 +24,7 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 	/**
 	 * Payments arbiter used by the system under test.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
 	private $payments_arbiter;
 
@@ -35,7 +35,7 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 		parent::setUp();
 		delete_option( 'woocommerce_feature_multi_currency_enabled' );
 		delete_option( 'woocommerce_woopayments_builtin_enabled' );
-		$this->payments_arbiter = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
+		$this->payments_arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
 		$this->payments_arbiter->invalidate();
 		$this->sut = wc_get_container()->get( MultiCurrencyRuntimeArbiter::class );
 	}
@@ -44,7 +44,7 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
 		delete_option( 'woocommerce_feature_multi_currency_enabled' );
 		delete_option( 'woocommerce_woopayments_builtin_enabled' );
 		$this->payments_arbiter->invalidate();
@@ -91,7 +91,7 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 	 * @param bool $multi_currency_enabled Whether the WooPayments customer multi-currency feature is enabled.
 	 */
 	private function fake_plugin( bool $in_list = false, bool $network = false, bool $class_loaded = false, bool $multi_currency_enabled = true ): void {
-		$entry = NativePaymentsRuntimeArbiter::PLUGIN_FILE;
+		$entry = WooPaymentsRuntimeArbiter::PLUGIN_FILE;
 		$this->register_legacy_proxy_function_mocks(
 			array(
 				'get_option'      => function ( $name, $default_value = false ) use ( $in_list, $entry, $multi_currency_enabled ) {
@@ -124,7 +124,7 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 	 * Enable the native runtime feature flag.
 	 */
 	private function enable_native_runtime(): void {
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 	}
 
 	/**

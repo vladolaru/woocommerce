@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Enums\WooPaymentsCutoverState;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController;
 use Automattic\WooCommerce\Internal\DataStores\Orders\DataSynchronizer;
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsLegacySubscriptionsGuard;
@@ -350,11 +350,11 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
 		delete_option( 'wcpay_multi_currency_exchange_rate_gbp' );
 
-		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
 		remove_all_filters( WooPaymentsCutoverController::FILTER_SOFT_CUTOVER_ENABLED );
 		remove_all_filters( WooPaymentsCutoverController::FILTER_MANDATORY_CUTOVER_ENABLED );
 		remove_all_filters( 'wp_die_handler' );
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		if ( $this->registered_subscription_order_type ) {
 			global $wc_order_types;
 			unset( $wc_order_types['shop_subscription'] );
@@ -388,13 +388,13 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		try {
 			$this->assertSame( 10, has_action( 'admin_init', array( $this->sut, 'handle_admin_init' ) ) );
 			$this->assertSame( 10, has_action( 'admin_notices', array( $this->sut, 'output_admin_notices' ) ) );
-			$this->assertFalse( has_action( 'activate_' . NativePaymentsRuntimeArbiter::PLUGIN_FILE, array( $this->sut, 'guard_woopayments_activation' ) ) );
+			$this->assertFalse( has_action( 'activate_' . WooPaymentsRuntimeArbiter::PLUGIN_FILE, array( $this->sut, 'guard_woopayments_activation' ) ) );
 			$this->assertFalse( has_action( 'activated_plugin', array( $this->sut, 'handle_plugin_activated' ) ) );
 			$this->assertFalse( has_action( 'deactivated_plugin', array( $this->sut, 'handle_plugin_deactivated' ) ) );
 		} finally {
 			remove_action( 'admin_init', array( $this->sut, 'handle_admin_init' ) );
 			remove_action( 'admin_notices', array( $this->sut, 'output_admin_notices' ) );
-			remove_action( 'activate_' . NativePaymentsRuntimeArbiter::PLUGIN_FILE, array( $this->sut, 'guard_woopayments_activation' ) );
+			remove_action( 'activate_' . WooPaymentsRuntimeArbiter::PLUGIN_FILE, array( $this->sut, 'guard_woopayments_activation' ) );
 			remove_action( 'activated_plugin', array( $this->sut, 'handle_plugin_activated' ), 10 );
 			remove_action( 'deactivated_plugin', array( $this->sut, 'handle_plugin_deactivated' ), 10 );
 		}
@@ -435,7 +435,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_job_backed_notice_is_shown_while_preflight_is_blocked(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$job = new class() extends WooPaymentsCutoverReconciliationJob {
 			/** @return array<string,mixed>|null */
 			public function classify_for_admin_notice(): ?array {
@@ -502,7 +502,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_bundled_store_is_told_why_it_cannot_switch_until_dismissed(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$job        = $this->create_excluded_notice_job( 'bundled_stripe_billing_subscriptions_present' );
 		$controller = $this->create_cutover_controller( null, $job );
 		$this->register_exit_mock( static fn() => null );
@@ -528,7 +528,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_bundled_store_notice_follows_the_start_notice_eligibility(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 
 		$this->assertSame( '', trim( $this->render_admin_notices( $this->create_cutover_controller( null, $this->create_excluded_notice_job( 'some_other_exclusion' ) ) ) ) );
 
@@ -619,7 +619,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_blocked_plugin_update_explains_the_waiting_switch( bool $blocked ): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		add_filter(
 			'file_mod_allowed',
 			static function ( $allowed, $context ) use ( $blocked ) {
@@ -665,7 +665,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_active_job_states_show_only_progress( string $state ): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$job = new class( $state ) extends WooPaymentsCutoverReconciliationJob {
 			/** @var string */
 			private string $state;
@@ -704,7 +704,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_awaiting_generation_requires_start_notice_eligibility(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( false );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$job = new class() extends WooPaymentsCutoverReconciliationJob {
 			/** @return array<string,mixed>|null */
 			public function classify_for_admin_notice(): ?array {
@@ -815,7 +815,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$renamed_plugin_file = 'renamed-woocommerce-payments/woocommerce-payments.php';
 		$this->fake_plugin_active( true, false, $renamed_plugin_file );
 		$this->fake_current_user_caps( true );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$job        = new class() extends WooPaymentsCutoverReconciliationJob {
 			/** @var string[] */
 			public array $sources = array();
@@ -1003,8 +1003,8 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	/** @testdox Plugin activation remains available while native WooPayments does not own the runtime. */
 	public function test_native_activation_guard_allows_plugin_activation_when_native_does_not_own_the_runtime(): void {
 		delete_option( 'woocommerce_woocommerce_payments_version' );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_false' );
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_false' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 
 		$this->sut->guard_woopayments_activation();
 
@@ -1065,7 +1065,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_starting_the_switch_requires_the_capabilities_for_the_plugin_scope( string $scope, array $capabilities, array $expected ): void {
 		$this->fake_plugin_active( 'site' === $scope, 'network' === $scope );
 		$this->fake_current_user_capabilities( $capabilities );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$job        = new class() extends WooPaymentsCutoverReconciliationJob {
 			/** @var string[] */
 			public array $sources = array();
@@ -1139,14 +1139,14 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 * @testdox A valid merchant action queues idempotent durable work and redirects to the bare Plugins screen.
 	 */
 	public function test_valid_cutover_action_enqueues_idempotently_and_redirects_to_plugins(): void {
-		$arbiter      = new class() extends NativePaymentsRuntimeArbiter {
+		$arbiter      = new class() extends WooPaymentsRuntimeArbiter {
 			/** Return enabled native runtime. */
-			public function is_native_runtime_enabled(): bool {
+			public function is_builtin_enabled(): bool {
 				return true;
 			}
 
 			/** Return active plugin ownership. */
-			public function is_plugin_runtime_active(): bool {
+			public function is_extension_owner(): bool {
 				return true;
 			}
 		};
@@ -1218,7 +1218,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		unset( $label, $outcome );
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, $native_enabled ? '__return_true' : '__return_false' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $native_enabled ? '__return_true' : '__return_false' );
 		$this->fake_wp_die_handler();
 		$job        = new class() extends WooPaymentsCutoverReconciliationJob {
 			/**
@@ -1350,8 +1350,8 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Cutover preflight short-circuits expensive checks while native runtime is disabled.
 	 */
 	public function test_preflight_short_circuits_when_native_runtime_is_disabled(): void {
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_false' );
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_false' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 
 		$failures = $this->sut->get_preflight_failures();
 
@@ -1365,7 +1365,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Cutover preflight memoizes expensive checks for the current request.
 	 */
 	public function test_preflight_memoizes_expensive_checks_within_request(): void {
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$this->native_provider_ready = true;
 
 		$first_failures  = $this->sut->get_preflight_failures();
@@ -1444,7 +1444,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_preflight_blocks_when_admin_route_registry_cannot_resolve_allowed_route(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$this->native_provider_ready = true;
 		$sut                         = $this->create_cutover_controller( $this->create_admin_navigation_controller( false ) );
 
@@ -1457,7 +1457,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_preflight_defaults_admin_surfaces_ready_after_n12_parity_gate_passes(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$this->native_provider_ready = true;
 
 		$failures = $this->sut->get_preflight_failures();
@@ -1498,7 +1498,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_preflight_blocks_when_unknown_woopayments_action_is_pending(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$this->native_provider_ready = true;
 
 		$hook_name                      = 'wcpay_synthetic_cutover_probe';
@@ -1520,7 +1520,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_preflight_allows_pending_native_owned_operational_action( string $hook_name ): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$this->native_provider_ready = true;
 
 		$this->scheduled_action_hooks[] = $hook_name;
@@ -1576,7 +1576,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_preflight_closes_event_and_queue_blockers_by_default(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$this->native_provider_ready = true;
 
 		$failures = $this->sut->get_preflight_failures();
@@ -1686,7 +1686,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsCutoverController
 	 */
 	private function create_cutover_controller( ?WooPaymentsAdminNavigationController $admin_navigation_controller = null, ?WooPaymentsCutoverReconciliationJob $job = null, ?bool $native_eligible = null ): WooPaymentsCutoverController {
-		$arbiter           = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
+		$arbiter           = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
 		$legacy_proxy      = wc_get_container()->get( LegacyProxy::class );
 		$preflight_service = new WooPaymentsCutoverPreflightService();
 		$this->init_preflight_service(
@@ -1914,7 +1914,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 * Make the native cutover preflight ready.
 	 */
 	private function enable_ready_cutover(): void {
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$this->native_provider_ready = true;
 	}
 
@@ -1922,8 +1922,8 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 * Make the native runtime own the current site.
 	 */
 	private function enable_native_runtime_owner(): void {
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 	}
 
 	/**
@@ -2020,7 +2020,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->plugin_active         = $site_active;
 		$this->plugin_network_active = $network_active;
 		$this->plugin_class_loaded   = $site_active || $network_active;
-		$entry                       = $plugin_file ?? NativePaymentsRuntimeArbiter::PLUGIN_FILE;
+		$entry                       = $plugin_file ?? WooPaymentsRuntimeArbiter::PLUGIN_FILE;
 
 		$this->register_legacy_proxy_function_mocks(
 			array(
@@ -2084,7 +2084,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 */
 	private function fake_woopayments_class_unloaded(): void {
 		$this->plugin_class_loaded = false;
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 	}
 
 	/**
@@ -2276,7 +2276,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 * The service resolves them when a preflight runs, so the test doubles are set on the instance after init.
 	 *
 	 * @param WooPaymentsCutoverPreflightService                    $service                     The preflight service.
-	 * @param NativePaymentsRuntimeArbiter                          $arbiter                     The runtime arbiter.
+	 * @param WooPaymentsRuntimeArbiter                             $arbiter                     The runtime arbiter.
 	 * @param LegacyProxy                                           $legacy_proxy                The legacy proxy.
 	 * @param WooPaymentsProvider                                   $provider                    The native provider.
 	 * @param WooPaymentsLegacySubscriptionsGuard                   $legacy_subscriptions_guard  The legacy subscription data guard.
@@ -2286,7 +2286,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsNativeApiClientAdapter                     $native_rate_api_client      The native rate API client boundary.
 	 * @param WooPaymentsAdminNavigationController                  $admin_navigation_controller The native admin navigation owner.
 	 */
-	private function init_preflight_service( WooPaymentsCutoverPreflightService $service, NativePaymentsRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, WooPaymentsProvider $provider, WooPaymentsLegacySubscriptionsGuard $legacy_subscriptions_guard, WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service, WooPaymentsPlatformConnectionService $platform_connection_service, WooPaymentsNativeAccountAdapter $native_rate_account, WooPaymentsNativeApiClientAdapter $native_rate_api_client, WooPaymentsAdminNavigationController $admin_navigation_controller ): void {
+	private function init_preflight_service( WooPaymentsCutoverPreflightService $service, WooPaymentsRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, WooPaymentsProvider $provider, WooPaymentsLegacySubscriptionsGuard $legacy_subscriptions_guard, WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service, WooPaymentsPlatformConnectionService $platform_connection_service, WooPaymentsNativeAccountAdapter $native_rate_account, WooPaymentsNativeApiClientAdapter $native_rate_api_client, WooPaymentsAdminNavigationController $admin_navigation_controller ): void {
 		$service->init( $arbiter, $legacy_proxy );
 
 		$collaborators = array(

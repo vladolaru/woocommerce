@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\M
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\MultiCurrencyProviderAccountResolver;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsCurrencyRateProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsCurrencyRateProviderRegistrar;
@@ -99,7 +99,7 @@ class WooPaymentsMultiCurrencyProviderBootstrapTest extends WC_Unit_Test_Case {
 	 */
 	private function create_bootstrap_context( bool $native_owner, bool $plugin_owner ): array {
 		$account_resolver = new MultiCurrencyProviderAccountResolver();
-		$arbiter          = new class( $native_owner, $plugin_owner ) extends NativePaymentsRuntimeArbiter {
+		$arbiter          = new class( $native_owner, $plugin_owner ) extends WooPaymentsRuntimeArbiter {
 			/**
 			 * Whether native owns runtime.
 			 *
@@ -130,7 +130,7 @@ class WooPaymentsMultiCurrencyProviderBootstrapTest extends WC_Unit_Test_Case {
 			 *
 			 * @return bool
 			 */
-			public function should_native_register(): bool {
+			public function is_builtin_owner(): bool {
 				return $this->native_owner;
 			}
 
@@ -139,7 +139,7 @@ class WooPaymentsMultiCurrencyProviderBootstrapTest extends WC_Unit_Test_Case {
 			 *
 			 * @return bool
 			 */
-			public function is_plugin_runtime_active(): bool {
+			public function is_extension_owner(): bool {
 				return $this->plugin_owner;
 			}
 		};

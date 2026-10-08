@@ -35,7 +35,7 @@ use Automattic\WooCommerce\Blocks\Templates\ClassicTemplatesCompatibility;
 use Automattic\WooCommerce\StoreApi\RoutesController;
 use Automattic\WooCommerce\StoreApi\SchemaController;
 use Automattic\WooCommerce\StoreApi\StoreApi;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
@@ -543,7 +543,7 @@ class Bootstrap {
 			function ( Container $container ) {
 				$asset_api         = $container->get( AssetApi::class );
 				$core_container    = wc_get_container();
-				$arbiter           = $core_container->get( NativePaymentsRuntimeArbiter::class );
+				$arbiter           = $core_container->get( WooPaymentsRuntimeArbiter::class );
 				$checkout_bridge   = $core_container->get( WooPaymentsCheckoutBridge::class );
 				$payments_provider = $core_container->get( WooPaymentsProvider::class );
 				$woopay_service    = $core_container->get( WooPaymentsWooPaySessionService::class );

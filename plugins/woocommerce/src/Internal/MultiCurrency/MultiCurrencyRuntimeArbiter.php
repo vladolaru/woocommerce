@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 
 /**
@@ -47,9 +47,9 @@ class MultiCurrencyRuntimeArbiter {
 	/**
 	 * Payments runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $payments_arbiter;
+	private WooPaymentsRuntimeArbiter $payments_arbiter;
 
 	/**
 	 * Legacy proxy for mockable global calls.
@@ -63,10 +63,10 @@ class MultiCurrencyRuntimeArbiter {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter $payments_arbiter Payments runtime owner arbiter.
-	 * @param LegacyProxy                  $legacy_proxy Legacy proxy.
+	 * @param WooPaymentsRuntimeArbiter $payments_arbiter Payments runtime owner arbiter.
+	 * @param LegacyProxy               $legacy_proxy Legacy proxy.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $payments_arbiter, LegacyProxy $legacy_proxy ): void {
+	final public function init( WooPaymentsRuntimeArbiter $payments_arbiter, LegacyProxy $legacy_proxy ): void {
 		$this->payments_arbiter = $payments_arbiter;
 		$this->legacy_proxy     = $legacy_proxy;
 	}
@@ -89,7 +89,7 @@ class MultiCurrencyRuntimeArbiter {
 	 * @return bool
 	 */
 	public function is_payments_extension_owner(): bool {
-		return NativePaymentsRuntimeArbiter::OWNER_EXTENSION === $this->payments_arbiter->get_runtime_owner();
+		return WooPaymentsRuntimeArbiter::OWNER_EXTENSION === $this->payments_arbiter->get_runtime_owner();
 	}
 
 	/**
@@ -100,7 +100,7 @@ class MultiCurrencyRuntimeArbiter {
 	 * @return bool
 	 */
 	public function is_payments_builtin_owner(): bool {
-		return NativePaymentsRuntimeArbiter::OWNER_BUILTIN === $this->payments_arbiter->get_runtime_owner();
+		return WooPaymentsRuntimeArbiter::OWNER_BUILTIN === $this->payments_arbiter->get_runtime_owner();
 	}
 
 	/**

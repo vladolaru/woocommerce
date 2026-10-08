@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPluginLifecycleListener;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -60,9 +60,9 @@ class WooPaymentsCutoverPluginLifecycleListenerTest extends WC_Unit_Test_Case {
 	public function test_deactivation_reaches_the_controller(): void {
 		$this->controller->expects( $this->once() )
 			->method( 'handle_plugin_deactivated' )
-			->with( NativePaymentsRuntimeArbiter::PLUGIN_FILE, false );
+			->with( WooPaymentsRuntimeArbiter::PLUGIN_FILE, false );
 
-		do_action( 'deactivated_plugin', NativePaymentsRuntimeArbiter::PLUGIN_FILE, false );
+		do_action( 'deactivated_plugin', WooPaymentsRuntimeArbiter::PLUGIN_FILE, false );
 	}
 
 	/**
@@ -71,9 +71,9 @@ class WooPaymentsCutoverPluginLifecycleListenerTest extends WC_Unit_Test_Case {
 	public function test_network_deactivation_reaches_the_controller_as_network_wide(): void {
 		$this->controller->expects( $this->once() )
 			->method( 'handle_plugin_deactivated' )
-			->with( NativePaymentsRuntimeArbiter::PLUGIN_FILE, true );
+			->with( WooPaymentsRuntimeArbiter::PLUGIN_FILE, true );
 
-		do_action( 'deactivated_plugin', NativePaymentsRuntimeArbiter::PLUGIN_FILE, true );
+		do_action( 'deactivated_plugin', WooPaymentsRuntimeArbiter::PLUGIN_FILE, true );
 	}
 
 	/**
@@ -82,13 +82,13 @@ class WooPaymentsCutoverPluginLifecycleListenerTest extends WC_Unit_Test_Case {
 	public function test_one_argument_lifecycle_hooks_reach_the_controller_as_site_only(): void {
 		$this->controller->expects( $this->once() )
 			->method( 'handle_plugin_activated' )
-			->with( NativePaymentsRuntimeArbiter::PLUGIN_FILE, false );
+			->with( WooPaymentsRuntimeArbiter::PLUGIN_FILE, false );
 		$this->controller->expects( $this->once() )
 			->method( 'handle_plugin_deactivated' )
-			->with( NativePaymentsRuntimeArbiter::PLUGIN_FILE, false );
+			->with( WooPaymentsRuntimeArbiter::PLUGIN_FILE, false );
 
-		do_action( 'activated_plugin', NativePaymentsRuntimeArbiter::PLUGIN_FILE ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fires the core hook with one argument, as some callers do.
-		do_action( 'deactivated_plugin', NativePaymentsRuntimeArbiter::PLUGIN_FILE ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fires the core hook with one argument, as some callers do.
+		do_action( 'activated_plugin', WooPaymentsRuntimeArbiter::PLUGIN_FILE ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fires the core hook with one argument, as some callers do.
+		do_action( 'deactivated_plugin', WooPaymentsRuntimeArbiter::PLUGIN_FILE ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fires the core hook with one argument, as some callers do.
 	}
 
 	/**
@@ -97,9 +97,9 @@ class WooPaymentsCutoverPluginLifecycleListenerTest extends WC_Unit_Test_Case {
 	public function test_activation_reaches_the_controller(): void {
 		$this->controller->expects( $this->once() )
 			->method( 'handle_plugin_activated' )
-			->with( NativePaymentsRuntimeArbiter::PLUGIN_FILE, true );
+			->with( WooPaymentsRuntimeArbiter::PLUGIN_FILE, true );
 
-		do_action( 'activated_plugin', NativePaymentsRuntimeArbiter::PLUGIN_FILE, true );
+		do_action( 'activated_plugin', WooPaymentsRuntimeArbiter::PLUGIN_FILE, true );
 	}
 
 	/**
@@ -119,7 +119,7 @@ class WooPaymentsCutoverPluginLifecycleListenerTest extends WC_Unit_Test_Case {
 	 */
 	public function woopayments_plugin_files(): array {
 		return array(
-			'canonical folder' => array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ),
+			'canonical folder' => array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ),
 			'renamed folder'   => array( 'renamed-wcpay/woocommerce-payments.php' ),
 		);
 	}
@@ -141,7 +141,7 @@ class WooPaymentsCutoverPluginLifecycleListenerTest extends WC_Unit_Test_Case {
 		$this->controller->expects( $this->never() )->method( 'guard_woopayments_activation' );
 
 		// Called directly: core's own activate_plugin callbacks (Packages.php) do not accept a malformed value either.
-		$this->sut->guard_woopayments_activation( array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		$this->sut->guard_woopayments_activation( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
 	}
 
 	/**

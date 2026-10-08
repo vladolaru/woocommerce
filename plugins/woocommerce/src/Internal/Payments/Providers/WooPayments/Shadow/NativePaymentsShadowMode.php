@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow;
 
 use Automattic\WooCommerce\Container;
 use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -72,9 +72,9 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Payment-surface differ.
@@ -123,7 +123,7 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter     $arbiter             Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter        $arbiter             Runtime owner arbiter.
 	 * @param PaymentSurfaceDiffer             $differ              Payment-surface differ.
 	 * @param LegacyProxy                      $legacy_proxy        Legacy proxy.
 	 * @param WooPaymentsApiClient             $api_client           WooPayments API client.
@@ -132,7 +132,7 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	 * @param WooPaymentsOrderDataService      $order_data_service   WooPayments order data service.
 	 */
 	final public function init(
-		NativePaymentsRuntimeArbiter $arbiter,
+		WooPaymentsRuntimeArbiter $arbiter,
 		PaymentSurfaceDiffer $differ,
 		LegacyProxy $legacy_proxy,
 		WooPaymentsApiClient $api_client,
@@ -153,7 +153,7 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	 * Register read-only shadow hooks.
 	 *
 	 * Shadow hooks are allowed only while the WooPayments plugin owns processing and the explicit
-	 * shadow flag is enabled. This deliberately does not use should_native_register(), which remains
+	 * shadow flag is enabled. This deliberately does not use is_builtin_owner(), which remains
 	 * false in the plugin-owned state.
 	 */
 	public function register() {
@@ -191,7 +191,7 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	public function should_register_shadow_hooks(): bool {
-		return $this->is_shadow_mode_enabled() && $this->arbiter->is_plugin_runtime_active();
+		return $this->is_shadow_mode_enabled() && $this->arbiter->is_extension_owner();
 	}
 
 	/**

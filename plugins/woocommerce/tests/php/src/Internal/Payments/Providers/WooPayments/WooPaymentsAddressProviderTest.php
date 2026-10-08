@@ -9,7 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAddressProvider;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\StoreApi\Utilities\JsonWebToken;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Unit_Test_Case;
 use WP_Error;
 
@@ -276,7 +276,7 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_address_autocomplete_jwt', $preserved_jwt );
 
 		$provider = new WooPaymentsAddressProvider();
-		$provider->init( new StaticNativeRuntimeArbiter( true ), $token_api_client, $account_service );
+		$provider->init( new StaticWooPaymentsRuntimeArbiter( true ), $token_api_client, $account_service );
 		$this->providers[] = $provider;
 
 		$result     = $provider->get_jwt();
@@ -385,7 +385,7 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 		}
 
 		$provider = new WooPaymentsAddressProvider();
-		$provider->init( new StaticNativeRuntimeArbiter( $native_register ), $api_client, $account_service );
+		$provider->init( new StaticWooPaymentsRuntimeArbiter( $native_register ), $api_client, $account_service );
 
 		$this->providers[] = $provider;
 

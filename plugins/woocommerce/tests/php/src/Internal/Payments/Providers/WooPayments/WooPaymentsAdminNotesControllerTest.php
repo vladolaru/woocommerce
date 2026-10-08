@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthRemediationNote;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetHttpsForCheckoutNote;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetUpLinkNote;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Unit_Test_Case;
 
 /**
@@ -335,7 +335,7 @@ class WooPaymentsAdminNotesControllerTest extends WC_Unit_Test_Case {
 		$canceled_auth_remediation_note = $this->createMock( WooPaymentsCanceledAuthRemediationNote::class );
 		$canceled_auth_remediation_note->expects( $this->once() )->method( 'possibly_add_note' );
 		$sut = new WooPaymentsAdminNotesController();
-		$sut->init( new StaticNativeRuntimeArbiter( true ), new WooPaymentsSetHttpsForCheckoutNote(), $link_note, $canceled_auth_remediation_note );
+		$sut->init( new StaticWooPaymentsRuntimeArbiter( true ), new WooPaymentsSetHttpsForCheckoutNote(), $link_note, $canceled_auth_remediation_note );
 
 		$sut->add_woo_admin_notes();
 
@@ -358,11 +358,11 @@ class WooPaymentsAdminNotesControllerTest extends WC_Unit_Test_Case {
 		$link_note = $this->createMock( WooPaymentsSetUpLinkNote::class );
 		$link_note->method( 'possibly_add_note' )->willThrowException( new \RuntimeException( 'platform text' ) );
 		$remediation_service = new WooPaymentsCanceledAuthorizationFeeRemediationService();
-		$remediation_service->init( new StaticNativeRuntimeArbiter( true ) );
+		$remediation_service->init( new StaticWooPaymentsRuntimeArbiter( true ) );
 		$canceled_auth_remediation_note = new WooPaymentsCanceledAuthRemediationNote();
 		$canceled_auth_remediation_note->init( $remediation_service );
 		$sut = new WooPaymentsAdminNotesController();
-		$sut->init( new StaticNativeRuntimeArbiter( true ), new WooPaymentsSetHttpsForCheckoutNote(), $link_note, $canceled_auth_remediation_note );
+		$sut->init( new StaticWooPaymentsRuntimeArbiter( true ), new WooPaymentsSetHttpsForCheckoutNote(), $link_note, $canceled_auth_remediation_note );
 
 		$sut->add_woo_admin_notes();
 
@@ -392,12 +392,12 @@ class WooPaymentsAdminNotesControllerTest extends WC_Unit_Test_Case {
 		$link_note->init( $account_service, new WooPaymentsPaymentMethodRegistry() );
 
 		$remediation_service = new WooPaymentsCanceledAuthorizationFeeRemediationService();
-		$remediation_service->init( new StaticNativeRuntimeArbiter( $native_owns_runtime ) );
+		$remediation_service->init( new StaticWooPaymentsRuntimeArbiter( $native_owns_runtime ) );
 		$canceled_auth_remediation_note = new WooPaymentsCanceledAuthRemediationNote();
 		$canceled_auth_remediation_note->init( $remediation_service );
 
 		$sut = new WooPaymentsAdminNotesController();
-		$sut->init( new StaticNativeRuntimeArbiter( $native_owns_runtime ), new WooPaymentsSetHttpsForCheckoutNote(), $link_note, $canceled_auth_remediation_note );
+		$sut->init( new StaticWooPaymentsRuntimeArbiter( $native_owns_runtime ), new WooPaymentsSetHttpsForCheckoutNote(), $link_note, $canceled_auth_remediation_note );
 
 		return $sut;
 	}

@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Subscriptions;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
@@ -51,7 +51,7 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 		WC()->payment_gateways()->payment_gateways = $this->original_payment_gateways;
 		wc_get_container()->reset_all_replacements();
 		wc_get_container()->reset_all_resolved();
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		$GLOBALS['wp_rest_server'] = null;
 
@@ -526,14 +526,14 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 	 * @param string $state        Stored native tier.
 	 */
 	private function arrange_ownership( bool $plugin_owned, bool $native, string $state ): void {
-		$active_plugins = array_values( array_diff( (array) get_option( 'active_plugins', array() ), array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) ) );
+		$active_plugins = array_values( array_diff( (array) get_option( 'active_plugins', array() ), array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ) );
 		if ( $plugin_owned ) {
-			$active_plugins[] = NativePaymentsRuntimeArbiter::PLUGIN_FILE;
+			$active_plugins[] = WooPaymentsRuntimeArbiter::PLUGIN_FILE;
 		}
 		update_option( 'active_plugins', $active_plugins );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, $native ? '__return_true' : '__return_false' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $native ? '__return_true' : '__return_false' );
 		update_option( WooPaymentsSetupTier::OPTION_NAME, $state, true );
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 	}
 
@@ -547,7 +547,7 @@ class WooPaymentsSubscriptionRenewalHooksTest extends WC_Unit_Test_Case {
 		$before = isset( $wp_filter['init'] ) ? $wp_filter['init']->callbacks : array();
 		( new NativePaymentsBootstrap(
 			static fn( $container, string $request_type ): array => $container->get( WooPaymentsSetupTier::class )->get_classes_for_request( $request_type ),
-			static fn( $container ): bool => $container->get( NativePaymentsRuntimeArbiter::class )->should_native_register(),
+			static fn( $container ): bool => $container->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner(),
 			static fn(): array => array()
 		) )->register( wc_get_container(), '__return_false' );
 

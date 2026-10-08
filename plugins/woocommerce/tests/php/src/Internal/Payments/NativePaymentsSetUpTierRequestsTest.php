@@ -7,7 +7,7 @@ use ActionScheduler;
 use ActionScheduler_Store;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -389,9 +389,9 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	 * @testdox Writing the shared settings option on a plugin-owned store leaves native's stored tier untouched.
 	 */
 	public function test_plugin_owned_settings_write_leaves_the_native_tier_alone(): void {
-		update_option( 'active_plugins', array_merge( (array) get_option( 'active_plugins', array() ), array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) ) );
+		update_option( 'active_plugins', array_merge( (array) get_option( 'active_plugins', array() ), array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ) );
 		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::CONNECTED, true );
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		add_filter( 'wp_doing_ajax', '__return_true' );
 		$this->run_bootstrap( '__return_false' );
@@ -683,10 +683,10 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	 * @param string $state Stored native tier.
 	 */
 	private function arrange_native_owner( string $state ): void {
-		update_option( 'active_plugins', array_values( array_diff( (array) get_option( 'active_plugins', array() ), array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) ) ) );
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		update_option( 'active_plugins', array_values( array_diff( (array) get_option( 'active_plugins', array() ), array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ) ) );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		update_option( WooPaymentsSetupTier::OPTION_NAME, $state, true );
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 	}
 
@@ -698,7 +698,7 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	private function run_bootstrap( callable $is_rest_api_request ): void {
 		( new NativePaymentsBootstrap(
 			static fn( $container, string $request_type ): array => $container->get( WooPaymentsSetupTier::class )->get_classes_for_request( $request_type ),
-			static fn( $container ): bool => $container->get( NativePaymentsRuntimeArbiter::class )->should_native_register(),
+			static fn( $container ): bool => $container->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner(),
 			static fn(): array => array()
 		) )->register( wc_get_container(), $is_rest_api_request );
 	}

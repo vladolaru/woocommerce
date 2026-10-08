@@ -17,7 +17,7 @@ use Automattic\WooCommerce\Blocks\Payments\Integrations\Cheque;
 use Automattic\WooCommerce\Blocks\Payments\Integrations\PayPal;
 use Automattic\WooCommerce\Blocks\Payments\Integrations\WooPayments;
 use Automattic\WooCommerce\Blocks\Payments\PaymentMethodRegistry;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
@@ -39,7 +39,7 @@ class ApiTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$this->state = wc_get_container()->get( WooPaymentsSetupTier::class );
 		$this->state->invalidate();
 	}
@@ -50,7 +50,7 @@ class ApiTest extends WC_Unit_Test_Case {
 	public function tearDown(): void {
 		Package::container( true );
 		Package::init();
-		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
 		delete_option( WooPaymentsSetupTier::OPTION_NAME );
 		$this->state->invalidate();
 		parent::tearDown();
@@ -92,7 +92,7 @@ class ApiTest extends WC_Unit_Test_Case {
 		$woopayments_resolutions = 0;
 		$woopayments             = new WooPayments(
 			$this->createMock( AssetApi::class ),
-			$this->createMock( NativePaymentsRuntimeArbiter::class ),
+			$this->createMock( WooPaymentsRuntimeArbiter::class ),
 			$this->createMock( WooPaymentsCheckoutBridge::class ),
 			$this->createMock( WooPaymentsProvider::class ),
 			$this->createMock( WooPaymentsWooPaySessionService::class ),

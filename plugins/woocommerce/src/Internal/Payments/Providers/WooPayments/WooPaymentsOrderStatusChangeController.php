@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Admin\WCAdminAssets;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WC_Order;
 
@@ -59,9 +58,9 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Status-change confirmation projection service.
@@ -89,10 +88,10 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter                  $arbiter            Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter                     $arbiter            Runtime owner arbiter.
 	 * @param WooPaymentsOrderStatusChangeProjectionService $projection_service Status-change confirmation projection service.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsOrderStatusChangeProjectionService $projection_service ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsOrderStatusChangeProjectionService $projection_service ): void {
 		$this->arbiter            = $arbiter;
 		$this->projection_service = $projection_service;
 	}
@@ -123,7 +122,7 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 	 * Register order-edit screen hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Admin\Features\OnboardingTasks\TaskLists;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 defined( 'ABSPATH' ) || exit;
@@ -27,9 +26,9 @@ class WooPaymentsHomeTasks implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * WooPayments account service.
@@ -50,11 +49,11 @@ class WooPaymentsHomeTasks implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter     $arbiter              Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter        $arbiter              Runtime owner arbiter.
 	 * @param WooPaymentsAccountService        $account_service      WooPayments account service.
 	 * @param WooPaymentsAdminMenuBadgeService $dispute_data_service Service that owns the cached dispute data.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsAccountService $account_service, WooPaymentsAdminMenuBadgeService $dispute_data_service ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsAccountService $account_service, WooPaymentsAdminMenuBadgeService $dispute_data_service ): void {
 		$this->arbiter              = $arbiter;
 		$this->account_service      = $account_service;
 		$this->dispute_data_service = $dispute_data_service;
@@ -64,7 +63,7 @@ class WooPaymentsHomeTasks implements RegisterHooksInterface {
 	 * Register the task hook.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

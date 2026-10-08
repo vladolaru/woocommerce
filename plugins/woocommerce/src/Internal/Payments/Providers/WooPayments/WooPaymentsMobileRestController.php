@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
@@ -49,9 +48,9 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Native WooPayments API client.
@@ -93,14 +92,14 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter $arbiter            Runtime owner arbiter.
-	 * @param WooPaymentsApiClient         $api_client         Native WooPayments API client.
-	 * @param WooPaymentsAccountService    $account_service    WooPayments account service.
-	 * @param WooPaymentsCustomerService   $customer_service   WooPayments customer service.
-	 * @param WooPaymentsOrderDataService  $order_data_service WooPayments order data service.
-	 * @param WooPaymentsOrderNoteService  $note_service       WooPayments order note service.
+	 * @param WooPaymentsRuntimeArbiter   $arbiter            Runtime owner arbiter.
+	 * @param WooPaymentsApiClient        $api_client         Native WooPayments API client.
+	 * @param WooPaymentsAccountService   $account_service    WooPayments account service.
+	 * @param WooPaymentsCustomerService  $customer_service   WooPayments customer service.
+	 * @param WooPaymentsOrderDataService $order_data_service WooPayments order data service.
+	 * @param WooPaymentsOrderNoteService $note_service       WooPayments order note service.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service, WooPaymentsCustomerService $customer_service, WooPaymentsOrderDataService $order_data_service, WooPaymentsOrderNoteService $note_service ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service, WooPaymentsCustomerService $customer_service, WooPaymentsOrderDataService $order_data_service, WooPaymentsOrderNoteService $note_service ): void {
 		$this->arbiter            = $arbiter;
 		$this->api_client         = $api_client;
 		$this->account_service    = $account_service;
@@ -113,7 +112,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 	 * Register REST hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderCardInfo;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -257,7 +257,7 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 	 */
 	public function test_card_info_provider_registers_nothing_when_the_plugin_owns_the_runtime(): void {
 		$card_info = new WooPaymentsOrderCardInfo();
-		$card_info->init( new StaticNativeRuntimeArbiter( false ) );
+		$card_info->init( new StaticWooPaymentsRuntimeArbiter( false ) );
 
 		$card_info->register();
 
@@ -318,11 +318,11 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 		$legacy_runtime = new WooPaymentsLegacyRuntime();
 		$legacy_runtime->init( new LegacyRuntimeProxy( false ) );
 		$service = new WooPaymentsPaymentMethodDetailsService();
-		$service->init( $legacy_runtime, $client, new StaticNativeRuntimeArbiter( true ) );
+		$service->init( $legacy_runtime, $client, new StaticWooPaymentsRuntimeArbiter( true ) );
 		// The card info provider and the PaymentInfo fallback both ask the container's service.
 		wc_get_container()->replace( WooPaymentsPaymentMethodDetailsService::class, $service );
 		$card_info = new WooPaymentsOrderCardInfo();
-		$card_info->init( new StaticNativeRuntimeArbiter( true ) );
+		$card_info->init( new StaticWooPaymentsRuntimeArbiter( true ) );
 		$card_info->register();
 	}
 

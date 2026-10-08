@@ -3,7 +3,7 @@ declare( strict_types=1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Orders;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
@@ -101,14 +101,14 @@ class PaymentInfoTest extends WC_Unit_Test_Case {
 				},
 				'get_option'   => function ( $option, $default_value = false ) {
 					if ( 'active_plugins' === $option ) {
-						return array( NativePaymentsRuntimeArbiter::PLUGIN_FILE );
+						return array( WooPaymentsRuntimeArbiter::PLUGIN_FILE );
 					}
 
 					return get_option( $option, $default_value );
 				},
 			)
 		);
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		$this->register_legacy_proxy_static_mocks(
 			array(
 				'WC_Payments' => array(
@@ -180,14 +180,14 @@ class PaymentInfoTest extends WC_Unit_Test_Case {
 				},
 				'get_option'   => function ( $option, $default_value = false ) {
 					if ( 'active_plugins' === $option ) {
-						return array( NativePaymentsRuntimeArbiter::PLUGIN_FILE );
+						return array( WooPaymentsRuntimeArbiter::PLUGIN_FILE );
 					}
 
 					return get_option( $option, $default_value );
 				},
 			)
 		);
-		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		$this->register_legacy_proxy_static_mocks(
 			array(
 				'WC_Payments' => array(
@@ -262,11 +262,11 @@ class PaymentInfoTest extends WC_Unit_Test_Case {
 				},
 			)
 		);
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_false' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_false' );
 		$container = wc_get_container();
-		$arbiter   = $container->get( NativePaymentsRuntimeArbiter::class );
+		$arbiter   = $container->get( WooPaymentsRuntimeArbiter::class );
 		$arbiter->invalidate();
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $arbiter->get_runtime_owner() );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $arbiter->get_runtime_owner() );
 
 		$api_client      = new class() extends WooPaymentsApiClient {
 			/**
@@ -300,7 +300,7 @@ class PaymentInfoTest extends WC_Unit_Test_Case {
 			$card_info = $order->get_payment_card_info();
 		} finally {
 			$container->reset_all_replacements();
-			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_false' );
+			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_false' );
 			$arbiter->invalidate();
 		}
 

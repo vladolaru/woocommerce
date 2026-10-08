@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Internal\Admin\Suggestions;
 
 use Automattic\WooCommerce\Internal\Admin\Suggestions\Incentives\Incentive;
 use Automattic\WooCommerce\Internal\Admin\Suggestions\Incentives\WooPayments;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 
 defined( 'ABSPATH' ) || exit;
@@ -42,19 +42,19 @@ class PaymentsExtensionSuggestionIncentives {
 	/**
 	 * Payments runtime owner arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter|null
+	 * @var WooPaymentsRuntimeArbiter|null
 	 */
-	private ?NativePaymentsRuntimeArbiter $arbiter = null;
+	private ?WooPaymentsRuntimeArbiter $arbiter = null;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsLegacyRuntime          $woopayments_runtime WooPayments legacy runtime.
-	 * @param NativePaymentsRuntimeArbiter|null $arbiter             Payments runtime owner arbiter.
+	 * @param WooPaymentsLegacyRuntime       $woopayments_runtime WooPayments legacy runtime.
+	 * @param WooPaymentsRuntimeArbiter|null $arbiter             Payments runtime owner arbiter.
 	 */
-	final public function init( WooPaymentsLegacyRuntime $woopayments_runtime, ?NativePaymentsRuntimeArbiter $arbiter = null ): void {
+	final public function init( WooPaymentsLegacyRuntime $woopayments_runtime, ?WooPaymentsRuntimeArbiter $arbiter = null ): void {
 		$this->woopayments_runtime = $woopayments_runtime;
 		$this->arbiter             = $arbiter;
 	}

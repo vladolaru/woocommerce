@@ -7,8 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-
 /**
  * Stores the built-in WooPayments setup tier, reports the effective tier and lists the classes each request type loads for it.
  *
@@ -43,9 +41,9 @@ final class WooPaymentsSetupTier {
 	/**
 	 * Runtime ownership arbiter.
 	 *
-	 * @var NativePaymentsRuntimeArbiter
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private NativePaymentsRuntimeArbiter $runtime_arbiter;
+	private WooPaymentsRuntimeArbiter $runtime_arbiter;
 
 	/**
 	 * Request-local states keyed by blog ID.
@@ -66,9 +64,9 @@ final class WooPaymentsSetupTier {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter $runtime_arbiter Runtime ownership arbiter.
+	 * @param WooPaymentsRuntimeArbiter $runtime_arbiter Runtime ownership arbiter.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $runtime_arbiter ): void { // phpcs:ignore Generic.CodeAnalysis.UnnecessaryFinalModifier.Found -- Required by WooCommerce injection method rules.
+	final public function init( WooPaymentsRuntimeArbiter $runtime_arbiter ): void { // phpcs:ignore Generic.CodeAnalysis.UnnecessaryFinalModifier.Found -- Required by WooCommerce injection method rules.
 		$this->runtime_arbiter = $runtime_arbiter;
 	}
 
@@ -82,11 +80,11 @@ final class WooPaymentsSetupTier {
 	public function get_effective_tier(): string {
 		$tier  = $this->get_stored_tier();
 		$owner = $this->runtime_arbiter->get_runtime_owner();
-		if ( NativePaymentsRuntimeArbiter::OWNER_NONE === $owner ) {
+		if ( WooPaymentsRuntimeArbiter::OWNER_NONE === $owner ) {
 			return self::DISABLED;
 		}
 
-		if ( NativePaymentsRuntimeArbiter::OWNER_EXTENSION === $owner && in_array( $tier, array( self::CONNECTED, self::ACTIVE ), true ) ) {
+		if ( WooPaymentsRuntimeArbiter::OWNER_EXTENSION === $owner && in_array( $tier, array( self::CONNECTED, self::ACTIVE ), true ) ) {
 			return self::AVAILABLE;
 		}
 
@@ -107,7 +105,7 @@ final class WooPaymentsSetupTier {
 	 */
 	public function get_classes_for_request( string $request_type ): array {
 		$classes = array();
-		if ( $this->runtime_arbiter->is_plugin_runtime_active() ) {
+		if ( $this->runtime_arbiter->is_extension_owner() ) {
 			$classes[] = WooPaymentsSetupTierSyncController::class;
 		}
 

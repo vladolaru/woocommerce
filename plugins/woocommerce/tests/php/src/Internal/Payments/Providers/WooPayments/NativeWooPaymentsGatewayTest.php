@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
@@ -26,7 +26,7 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\Fak
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use Automattic\WooCommerce\Tests\Internal\Payments\RecordingPaymentProcessingService;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Order;
 use WC_Payment_Token;
 use WC_Unit_Test_Case;
@@ -220,12 +220,12 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @param int  $expected_enqueues    Expected fallback enqueue calls.
 	 */
 	public function test_classic_checkout_fallback_enqueues_only_when_account_can_take_payments( bool $can_process_payments, int $expected_enqueues ): void {
-		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_native_register' ) )
+			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'should_native_register' )->willReturn( true );
-		wc_get_container()->replace( NativePaymentsRuntimeArbiter::class, $arbiter );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
+		wc_get_container()->replace( WooPaymentsRuntimeArbiter::class, $arbiter );
 		$provider = $this->createMock( WooPaymentsProvider::class );
 		$provider->method( 'can_process_payments' )->willReturn( $can_process_payments );
 		$bridge = $this->createMock( WooPaymentsCheckoutBridge::class );
@@ -783,11 +783,11 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		WooCommerceSubscriptionsDoubles::load();
 		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, $toggle );
 
-		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_native_register' ) )
+			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'should_native_register' )->willReturn( true );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
 
 		$module = new WooPaymentsStripeBillingModule();
 		$module->init( $arbiter );
@@ -839,7 +839,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$token_service = new WooPaymentsTokenService();
 		$token_service->init(
 			$container->get( WooPaymentsPaymentMethodDetailsService::class ),
-			new StaticNativeRuntimeArbiter( false ),
+			new StaticWooPaymentsRuntimeArbiter( false ),
 			$container->get( WooPaymentsApiClient::class ),
 			$container->get( WooPaymentsCustomerService::class ),
 			$container->get( WooPaymentsAccountService::class )

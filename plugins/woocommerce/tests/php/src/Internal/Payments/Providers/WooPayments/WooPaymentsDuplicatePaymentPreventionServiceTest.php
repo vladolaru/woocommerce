@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -180,7 +180,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$order   = $this->create_order();
 		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $order->get_id() );
 		$enable_native = static fn(): bool => true;
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, $enable_native );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $enable_native );
 
 		$this->assertTrue( method_exists( $sut, 'register' ), 'The duplicate-payment service should own its completion hook.' );
 
@@ -193,7 +193,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 			$this->assertNull( $session->get( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER ) );
 		} finally {
 			remove_action( 'woocommerce_payment_complete', array( $sut, 'handle_woocommerce_payment_complete' ) );
-			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, $enable_native );
+			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $enable_native );
 		}
 	}
 
@@ -203,7 +203,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	public function test_register_skips_payment_complete_hook_when_native_does_not_own_runtime(): void {
 		$sut            = $this->create_service();
 		$disable_native = static fn(): bool => false;
-		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, $disable_native );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $disable_native );
 
 		try {
 			$sut->register();
@@ -211,7 +211,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 			$this->assertFalse( has_action( 'woocommerce_payment_complete', array( $sut, 'handle_woocommerce_payment_complete' ) ) );
 		} finally {
 			remove_action( 'woocommerce_payment_complete', array( $sut, 'handle_woocommerce_payment_complete' ) );
-			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, $disable_native );
+			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $disable_native );
 		}
 	}
 

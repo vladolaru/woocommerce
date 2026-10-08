@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionService;
 use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Helper_Order;
 use WC_Unit_Test_Case;
 use WC_Webhook;
@@ -743,7 +743,7 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$session_service->init( $this->account_service, new WooPaymentsFrontendStylesService(), new WooPaymentsFrontendTrackingController() );
 		$this->api_client = new Task25WooPayApiClient();
 		$sync             = new WooPaymentsWooPayOrderStatusSync();
-		$sync->init( new StaticNativeRuntimeArbiter( $native_register ), $session_service, $this->api_client, new TransientRowLock() );
+		$sync->init( new StaticWooPaymentsRuntimeArbiter( $native_register ), $session_service, $this->api_client, new TransientRowLock() );
 
 		$this->syncs[] = $sync;
 
