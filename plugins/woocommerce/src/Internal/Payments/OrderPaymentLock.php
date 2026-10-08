@@ -74,14 +74,16 @@ class OrderPaymentLock {
 	 *
 	 * @param WC_Order                               $order               Order being locked.
 	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
-	 * @param string|null                            $payment_reference   Payment reference being processed.
+	 * @param string|null                            $lock_value          What this claim processes, stored as the lock's value: a payment
+	 *                                                                    reference, an operation key or a provider event key; the provider's
+	 *                                                                    sentinel when null.
 	 * @param string                                 $operation           Operation claiming the lock, such as 'refund' or 'capture'.
 	 * @return string|null The claim token to release the lock with, or null when the lock is held.
 	 */
-	public function claim( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_vocabulary, ?string $payment_reference, string $operation ): ?string {
+	public function claim( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_vocabulary, ?string $lock_value, string $operation ): ?string {
 		$lock_key   = $persistence_vocabulary->get_order_lock_key( $order );
 		$holder_key = $this->get_lock_holder_key( $order, $persistence_vocabulary );
-		$value      = $this->get_lock_value( $persistence_vocabulary, $payment_reference );
+		$value      = $this->get_lock_value( $persistence_vocabulary, $lock_value );
 		$ttl        = $persistence_vocabulary->get_lock_ttl_seconds();
 		$token      = wp_generate_uuid4();
 		$holder     = array(
@@ -284,11 +286,13 @@ class OrderPaymentLock {
 	 * Get the value stored in the order payment lock for a payment reference.
 	 *
 	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
-	 * @param string|null                            $payment_reference   Payment reference being processed.
+	 * @param string|null                            $lock_value          What this claim processes, stored as the lock's value: a payment
+	 *                                                                    reference, an operation key or a provider event key; the provider's
+	 *                                                                    sentinel when null.
 	 * @return string
 	 */
-	private function get_lock_value( ProviderPersistenceVocabularyInterface $persistence_vocabulary, ?string $payment_reference ): string {
-		return empty( $payment_reference ) ? $persistence_vocabulary->get_lock_sentinel() : $payment_reference;
+	private function get_lock_value( ProviderPersistenceVocabularyInterface $persistence_vocabulary, ?string $lock_value ): string {
+		return empty( $lock_value ) ? $persistence_vocabulary->get_lock_sentinel() : $lock_value;
 	}
 
 	/**
