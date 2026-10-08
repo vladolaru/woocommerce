@@ -19,7 +19,7 @@ use WC_Order;
  * the application-level guards, not only the key. A provider may keep a charge's key on the order
  * when the outcome is ambiguous (the request may have reached it) and send that key on the next
  * attempt instead, until a definitive outcome retires it. Captures and cancels derive a key
- * (`derive_key()`), but only as the order payment lock token and log correlation ID: their
+ * (`derive_operation_key()`), but only as the order payment lock token and log correlation ID: their
  * provider requests carry a fresh key per call, so a retry after a failed capture reaches the
  * provider instead of replaying the stored failure.
  *
@@ -58,7 +58,7 @@ class PaymentOperationIdempotency {
 	 * @param string     $currency    Operation currency.
 	 * @return string
 	 */
-	public function derive_key( WC_Order $order, string $provider_id, string $operation, ?float $amount = null, string $currency = '' ): string {
+	public function derive_operation_key( WC_Order $order, string $provider_id, string $operation, ?float $amount = null, string $currency = '' ): string {
 		$site_id = get_current_blog_id();
 		$parts   = array(
 			'site'      => (string) $site_id,

@@ -709,12 +709,12 @@ class PaymentProcessingService {
 	 * @throws Throwable When applying an unreferenced unsuccessful provider outcome fails.
 	 */
 	private function run_provider_order_operation( PaymentContext $context, ProviderInterface $provider, string $operation ): PaymentOutcome {
-		$order           = $context->get_order();
-		$amount          = $context->get_amount() ?? (float) $order->get_total();
-		$idempotency_key = $this->idempotency->derive_key( $order, $provider->get_id(), $operation, $amount, (string) $order->get_currency() );
-		$vocabulary      = $provider->get_persistence_vocabulary();
+		$order         = $context->get_order();
+		$amount        = $context->get_amount() ?? (float) $order->get_total();
+		$operation_key = $this->idempotency->derive_operation_key( $order, $provider->get_id(), $operation, $amount, (string) $order->get_currency() );
+		$vocabulary    = $provider->get_persistence_vocabulary();
 
-		$lock_token = $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $vocabulary, $idempotency_key, $operation );
+		$lock_token = $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $vocabulary, $operation_key, $operation );
 		if ( null === $lock_token ) {
 			$this->order_payment_store->log_order_payment_lock_refusal( $order, $vocabulary, $operation );
 			return new PaymentOutcome(
@@ -730,11 +730,11 @@ class PaymentProcessingService {
 		try {
 			try {
 				$provider_outcome = 'capture' === $operation
-					? $provider->capture( $context, $idempotency_key )
-					: $provider->cancel( $context, $idempotency_key );
+					? $provider->capture( $context, $operation_key )
+					: $provider->cancel( $context, $operation_key );
 			} catch ( Throwable $exception ) {
 				$provider_outcome = $this->failed_outcome_from_throwable( $exception );
-				$this->log_provider_failure( $order, $operation, $idempotency_key, $exception );
+				$this->log_provider_failure( $order, $operation, $operation_key, $exception );
 			}
 			$outcome = $provider_outcome;
 

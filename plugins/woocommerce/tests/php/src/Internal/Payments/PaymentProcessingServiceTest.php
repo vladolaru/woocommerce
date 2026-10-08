@@ -554,13 +554,13 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				throw $this->exception;
 			}
 
-			public function capture( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
-				unset( $context, $idempotency_key );
+			public function capture( PaymentContext $context, string $operation_key ): PaymentOutcome {
+				unset( $context, $operation_key );
 				throw $this->exception;
 			}
 
-			public function cancel( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
-				unset( $context, $idempotency_key );
+			public function cancel( PaymentContext $context, string $operation_key ): PaymentOutcome {
+				unset( $context, $operation_key );
 				throw $this->exception;
 			}
 		};
@@ -600,14 +600,14 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 			case 'capture':
 				$outcome                  = $sut->capture( PaymentContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 4.25 ), $provider );
-				$expected_idempotency_key = $this->idempotency->derive_key( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'capture', 4.25, 'USD' );
+				$expected_idempotency_key = $this->idempotency->derive_operation_key( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'capture', 4.25, 'USD' );
 				$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 				$this->assertSame( 'https://pay.example.test/code', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null, 'The failed outcome carries the error code the exception provides.' );
 				break;
 
 			default:
 				$outcome                  = $sut->cancel( PaymentContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider );
-				$expected_idempotency_key = $this->idempotency->derive_key( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'cancel', 10.0, 'USD' );
+				$expected_idempotency_key = $this->idempotency->derive_operation_key( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'cancel', 10.0, 'USD' );
 				$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 				$this->assertSame( 'https://pay.example.test/code', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null, 'The failed outcome carries the error code the exception provides.' );
 		}
@@ -3049,12 +3049,12 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			/** @var callable|null */
 			public $during_capture = null;
 
-			public function capture( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+			public function capture( PaymentContext $context, string $operation_key ): PaymentOutcome {
 				if ( null !== $this->during_capture ) {
 					( $this->during_capture )();
 				}
 
-				return parent::capture( $context, $idempotency_key );
+				return parent::capture( $context, $operation_key );
 			}
 		};
 		// phpcs:enable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
@@ -3101,11 +3101,11 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$retry_key = $retry_provider->last_idempotency_key;
 
 		$this->assertSame(
-			$this->idempotency->derive_key( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'capture', 4.00, 'USD' ),
+			$this->idempotency->derive_operation_key( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'capture', 4.00, 'USD' ),
 			$first_key
 		);
 		$this->assertSame(
-			$this->idempotency->derive_key( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'capture', 5.00, 'USD' ),
+			$this->idempotency->derive_operation_key( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'capture', 5.00, 'USD' ),
 			$second_key
 		);
 		$this->assertNotSame( $first_key, $second_key );

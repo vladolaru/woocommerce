@@ -524,12 +524,12 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			}
 
 			/**
-			 * @param PaymentContext $context         Payment context.
-			 * @param string         $idempotency_key Idempotency key.
+			 * @param PaymentContext $context       Payment context.
+			 * @param string         $operation_key Idempotency key.
 			 * @return PaymentOutcome
 			 */
-			public function cancel( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
-				return $this->recorder->cancel( $context, $idempotency_key );
+			public function cancel( PaymentContext $context, string $operation_key ): PaymentOutcome {
+				return $this->recorder->cancel( $context, $operation_key );
 			}
 
 			/**
@@ -891,12 +891,12 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			/**
 			 * Return the fixed capture outcome.
 			 *
-			 * @param PaymentContext $context         Payment context.
-			 * @param string         $idempotency_key Idempotency key.
+			 * @param PaymentContext $context       Payment context.
+			 * @param string         $operation_key Idempotency key.
 			 * @return PaymentOutcome
 			 */
-			public function capture( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
-				unset( $context, $idempotency_key );
+			public function capture( PaymentContext $context, string $operation_key ): PaymentOutcome {
+				unset( $context, $operation_key );
 
 				return $this->fixed_outcome;
 			}
@@ -904,12 +904,12 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			/**
 			 * Return the fixed cancel outcome.
 			 *
-			 * @param PaymentContext $context         Payment context.
-			 * @param string         $idempotency_key Idempotency key.
+			 * @param PaymentContext $context       Payment context.
+			 * @param string         $operation_key Idempotency key.
 			 * @return PaymentOutcome
 			 */
-			public function cancel( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
-				unset( $context, $idempotency_key );
+			public function cancel( PaymentContext $context, string $operation_key ): PaymentOutcome {
+				unset( $context, $operation_key );
 
 				return $this->fixed_outcome;
 			}

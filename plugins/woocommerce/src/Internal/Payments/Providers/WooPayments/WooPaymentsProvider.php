@@ -485,12 +485,12 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	/**
 	 * Capture an authorized WooPayments charge.
 	 *
-	 * @param PaymentContext $context         Payment context.
-	 * @param string         $idempotency_key Operation lock key; not sent to the provider.
+	 * @param PaymentContext $context       Payment context.
+	 * @param string         $operation_key Operation lock key; not sent to the provider.
 	 * @return PaymentOutcome
 	 */
-	public function capture( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
-		$outcome = $this->get_gateway_adapter()->capture( $context, $idempotency_key );
+	public function capture( PaymentContext $context, string $operation_key ): PaymentOutcome {
+		$outcome = $this->get_gateway_adapter()->capture( $context, $operation_key );
 		// Plugin 11.1.0 records this after every capture attempt (`WC_Payment_Gateway_WCPay::capture_charge()`).
 		WooPaymentsTracks::record_wcadmin_event( 'wcpay_merchant_captured_auth' );
 
@@ -500,12 +500,12 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	/**
 	 * Cancel an authorized WooPayments charge.
 	 *
-	 * @param PaymentContext $context         Payment context.
-	 * @param string         $idempotency_key Operation lock key; not sent to the provider.
+	 * @param PaymentContext $context       Payment context.
+	 * @param string         $operation_key Operation lock key; not sent to the provider.
 	 * @return PaymentOutcome
 	 */
-	public function cancel( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
-		return $this->get_gateway_adapter()->cancel( $context, $idempotency_key );
+	public function cancel( PaymentContext $context, string $operation_key ): PaymentOutcome {
+		return $this->get_gateway_adapter()->cancel( $context, $operation_key );
 	}
 
 	/**
