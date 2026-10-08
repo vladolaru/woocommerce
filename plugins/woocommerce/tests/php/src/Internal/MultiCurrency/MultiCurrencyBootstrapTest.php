@@ -78,7 +78,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	public function test_plugin_owned_request_arms_the_handover(): void {
 		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_EXTENSION );
 
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_EXTENSION, get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION ) );
+		$this->assertSame( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_EXTENSION, get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION ) );
 		$this->assertArrayHasKey( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION, wp_load_alloptions(), 'Every request reads the marker, so it is autoloaded.' );
 	}
 
@@ -93,7 +93,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$container = $this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
 
 		$this->assertSame( 'yes', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION ) );
+		$this->assertSame( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_BUILTIN, get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION ) );
 		$this->assertSame( 'yes', $container->get( MultiCurrencyRuntimeArbiter::class )->feature_option_reads[0], 'The arbiter must read the handed-over value.' );
 	}
 
@@ -126,7 +126,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	public function test_first_native_request_without_marker_marks_the_store_native(): void {
 		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
 
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION ), 'Later requests then read the marker from the autoloaded options.' );
+		$this->assertSame( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_BUILTIN, get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION ), 'Later requests then read the marker from the autoloaded options.' );
 		$this->assertArrayHasKey( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION, wp_load_alloptions() );
 		$this->assertFalse( get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, false ) );
 	}
@@ -972,9 +972,14 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 				return $this->owner;
 			}
 
-			/** Return the configured payments owner. @return string Configured payments owner. */
-			public function get_payments_owner(): string {
-				return $this->payments_owner;
+			/** Tell whether the configured payments owner is the WooPayments extension. @return bool */
+			public function is_payments_extension_owner(): bool {
+				return NativePaymentsRuntimeArbiter::OWNER_EXTENSION === $this->payments_owner;
+			}
+
+			/** Tell whether the configured payments owner is the built-in WooPayments. @return bool */
+			public function is_payments_builtin_owner(): bool {
+				return NativePaymentsRuntimeArbiter::OWNER_BUILTIN === $this->payments_owner;
 			}
 
 			/** Tell whether core may register the configured owner. @return bool Whether core owns the runtime. */

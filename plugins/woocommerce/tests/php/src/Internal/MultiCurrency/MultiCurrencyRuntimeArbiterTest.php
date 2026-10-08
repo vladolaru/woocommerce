@@ -198,20 +198,23 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should report the payments owner the native payments arbiter resolves.
+	 * @testdox Should report which WooPayments runtime owns payments, as the payments arbiter resolves it.
 	 */
 	public function test_reports_the_payments_owner(): void {
 		$this->fake_plugin( true );
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_payments_owner() );
+		$this->assertTrue( $this->sut->is_payments_extension_owner() );
+		$this->assertFalse( $this->sut->is_payments_builtin_owner() );
 
 		$this->reset_legacy_proxy_mocks();
 		$this->payments_arbiter->invalidate();
 		$this->fake_plugin();
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_payments_owner() );
+		$this->assertFalse( $this->sut->is_payments_extension_owner() );
+		$this->assertFalse( $this->sut->is_payments_builtin_owner() );
 
 		$this->payments_arbiter->invalidate();
 		$this->enable_native_runtime();
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_payments_owner() );
+		$this->assertFalse( $this->sut->is_payments_extension_owner() );
+		$this->assertTrue( $this->sut->is_payments_builtin_owner() );
 	}
 
 	/**

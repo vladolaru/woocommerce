@@ -148,7 +148,7 @@ final class MultiCurrencyBootstrap {
 	public function register( $container, callable $is_rest_api_request ): void {
 		$arbiter = $container->get( MultiCurrencyRuntimeArbiter::class );
 		// Before the arbiter reads the feature option, so the first native-owned request after the plugin runs on the handed-over value.
-		MultiCurrencyFeatureController::track_payments_owner( $arbiter->get_payments_owner() );
+		MultiCurrencyFeatureController::track_payments_owner( $arbiter->is_payments_extension_owner(), $arbiter->is_payments_builtin_owner() );
 		$owner = $arbiter->get_runtime_owner();
 		if ( MultiCurrencyRuntimeArbiter::OWNER_NONE === $owner ) {
 			return;

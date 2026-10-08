@@ -10,7 +10,6 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use WC_Unit_Test_Case;
 
 /**
@@ -106,26 +105,26 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 	public function test_concurrent_first_native_requests_hand_over_once(): void {
 		$marker = MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION;
 		$option = MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION;
-		update_option( $marker, NativePaymentsRuntimeArbiter::OWNER_EXTENSION );
+		update_option( $marker, MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_EXTENSION );
 		// The plugin stores a list of currency codes (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`).
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 
 		// Request A hands over; the merchant then turns Multi-Currency off.
-		MultiCurrencyFeatureController::track_payments_owner( NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
+		MultiCurrencyFeatureController::track_payments_owner( false, true );
 		$this->assertSame( 'yes', get_option( $option ) );
 		update_option( $option, 'no' );
 
 		// Request B read the marker before A wrote it, so it still sees 'plugin'.
-		$stale_read = static fn() => NativePaymentsRuntimeArbiter::OWNER_EXTENSION;
+		$stale_read = static fn() => MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_EXTENSION;
 		add_filter( 'pre_option_' . $marker, $stale_read );
 		try {
-			MultiCurrencyFeatureController::track_payments_owner( NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
+			MultiCurrencyFeatureController::track_payments_owner( false, true );
 		} finally {
 			remove_filter( 'pre_option_' . $marker, $stale_read );
 		}
 
 		$this->assertSame( 'no', get_option( $option ), 'Only the request that claims the transition hands over.' );
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, get_option( $marker ) );
+		$this->assertSame( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_BUILTIN, get_option( $marker ) );
 	}
 
 	/**

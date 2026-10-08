@@ -10,7 +10,6 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 use Automattic\WooCommerce\Enums\FeaturePluginCompatibility;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 
 /**
  * Defines the native Multi-Currency feature and its safe disable presentation.
@@ -30,6 +29,16 @@ class MultiCurrencyFeatureController {
 	 * Per-blog option recording the payments owner this site last ran under ('extension' or 'builtin').
 	 */
 	public const LAST_PAYMENTS_OWNER_OPTION = 'woocommerce_multi_currency_last_payments_owner';
+
+	/**
+	 * Stored marker value: the site last ran with the WooPayments extension owning payments.
+	 */
+	public const LAST_PAYMENTS_OWNER_EXTENSION = 'extension';
+
+	/**
+	 * Stored marker value: the site last ran with the built-in WooPayments owning payments.
+	 */
+	public const LAST_PAYMENTS_OWNER_BUILTIN = 'builtin';
 
 	/**
 	 * Persisted Multi-Currency usage detector.
@@ -98,28 +107,29 @@ class MultiCurrencyFeatureController {
 	 *
 	 * @since 11.2.0
 	 *
-	 * @param string $payments_owner Current payments runtime owner.
+	 * @param bool $extension_owns_payments Whether the WooPayments extension owns payments on this request.
+	 * @param bool $builtin_owns_payments   Whether the built-in WooPayments owns payments on this request.
 	 */
-	public static function track_payments_owner( string $payments_owner ): void {
+	public static function track_payments_owner( bool $extension_owns_payments, bool $builtin_owns_payments ): void {
 		$last_owner = get_option( self::LAST_PAYMENTS_OWNER_OPTION );
-		if ( NativePaymentsRuntimeArbiter::OWNER_EXTENSION === $payments_owner ) {
-			if ( NativePaymentsRuntimeArbiter::OWNER_EXTENSION !== $last_owner ) {
-				update_option( self::LAST_PAYMENTS_OWNER_OPTION, NativePaymentsRuntimeArbiter::OWNER_EXTENSION, true );
+		if ( $extension_owns_payments ) {
+			if ( self::LAST_PAYMENTS_OWNER_EXTENSION !== $last_owner ) {
+				update_option( self::LAST_PAYMENTS_OWNER_OPTION, self::LAST_PAYMENTS_OWNER_EXTENSION, true );
 			}
 			return;
 		}
 
-		if ( NativePaymentsRuntimeArbiter::OWNER_BUILTIN !== $payments_owner ) {
+		if ( ! $builtin_owns_payments ) {
 			return;
 		}
 		if ( false === $last_owner ) {
 			// No plugin-owned request was recorded (a network site may get none before a network deactivation). Apply the upgrade seed,
 			// which never overwrites a stored choice, and mark the site so later requests read the autoloaded marker instead of a missing option.
 			self::seed_from_prior_use();
-			update_option( self::LAST_PAYMENTS_OWNER_OPTION, NativePaymentsRuntimeArbiter::OWNER_BUILTIN, true );
+			update_option( self::LAST_PAYMENTS_OWNER_OPTION, self::LAST_PAYMENTS_OWNER_BUILTIN, true );
 			return;
 		}
-		if ( NativePaymentsRuntimeArbiter::OWNER_EXTENSION === $last_owner && self::claim_handover() ) {
+		if ( self::LAST_PAYMENTS_OWNER_EXTENSION === $last_owner && self::claim_handover() ) {
 			self::hand_over_plugin_state();
 		}
 	}
@@ -138,10 +148,10 @@ class MultiCurrencyFeatureController {
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- An atomic compare-and-set; the caches are cleared below.
 		$claimed = $wpdb->update(
 			$wpdb->options,
-			array( 'option_value' => NativePaymentsRuntimeArbiter::OWNER_BUILTIN ),
+			array( 'option_value' => self::LAST_PAYMENTS_OWNER_BUILTIN ),
 			array(
 				'option_name'  => self::LAST_PAYMENTS_OWNER_OPTION,
-				'option_value' => NativePaymentsRuntimeArbiter::OWNER_EXTENSION,
+				'option_value' => self::LAST_PAYMENTS_OWNER_EXTENSION,
 			)
 		);
 		wp_cache_delete( self::LAST_PAYMENTS_OWNER_OPTION, 'options' );

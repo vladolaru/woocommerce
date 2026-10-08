@@ -82,14 +82,25 @@ class MultiCurrencyRuntimeArbiter {
 	}
 
 	/**
-	 * Get the payments runtime owner Multi-Currency ownership follows.
+	 * Tell whether the WooPayments extension owns payments, so its own Multi-Currency module may run.
 	 *
 	 * @since 11.2.0
 	 *
-	 * @return string One of the NativePaymentsRuntimeArbiter::OWNER_* values.
+	 * @return bool
 	 */
-	public function get_payments_owner(): string {
-		return $this->payments_arbiter->get_runtime_owner();
+	public function is_payments_extension_owner(): bool {
+		return NativePaymentsRuntimeArbiter::OWNER_EXTENSION === $this->payments_arbiter->get_runtime_owner();
+	}
+
+	/**
+	 * Tell whether the built-in WooPayments owns payments, so WooCommerce's Multi-Currency may run.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return bool
+	 */
+	public function is_payments_builtin_owner(): bool {
+		return NativePaymentsRuntimeArbiter::OWNER_BUILTIN === $this->payments_arbiter->get_runtime_owner();
 	}
 
 	/**
@@ -98,13 +109,11 @@ class MultiCurrencyRuntimeArbiter {
 	 * @return string One of self::OWNER_EXTENSION, self::OWNER_BUILTIN, self::OWNER_NONE.
 	 */
 	public function get_runtime_owner(): string {
-		$payments_owner = $this->get_payments_owner();
-
-		if ( NativePaymentsRuntimeArbiter::OWNER_EXTENSION === $payments_owner && $this->is_plugin_multi_currency_enabled() ) {
+		if ( $this->is_payments_extension_owner() && $this->is_plugin_multi_currency_enabled() ) {
 			return self::OWNER_EXTENSION;
 		}
 
-		if ( NativePaymentsRuntimeArbiter::OWNER_BUILTIN === $payments_owner && $this->feature_is_enabled() ) {
+		if ( $this->is_payments_builtin_owner() && $this->feature_is_enabled() ) {
 			return self::OWNER_BUILTIN;
 		}
 

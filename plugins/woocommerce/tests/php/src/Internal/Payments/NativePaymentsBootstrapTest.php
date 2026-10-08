@@ -657,9 +657,14 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 							return MultiCurrencyRuntimeArbiter::class === $this->class_name ? $this->multi_currency_owner : $this->owner;
 						}
 
-						/** Return the configured native payments owner. */
-						public function get_payments_owner(): string {
-							return $this->owner;
+						/** Tell whether the configured payments owner is the WooPayments extension. */
+						public function is_payments_extension_owner(): bool {
+							return NativePaymentsRuntimeArbiter::OWNER_EXTENSION === $this->owner;
+						}
+
+						/** Tell whether the configured payments owner is the built-in WooPayments. */
+						public function is_payments_builtin_owner(): bool {
+							return NativePaymentsRuntimeArbiter::OWNER_BUILTIN === $this->owner;
 						}
 
 						/** @var array<int,callable> Provider resolvers handed to the registry. */
