@@ -1295,12 +1295,12 @@ class WC_Install {
 		self::seed_autoloaded_option( 'woocommerce_woopayments_cutover_state', 'none' );
 
 		if ( self::is_new_install() ) {
-			$account_cache   = get_option( 'wcpay_account_data', array() );
-			$account_data    = is_array( $account_cache ) && is_array( $account_cache['data'] ?? null ) ? $account_cache['data'] : array();
-			$native_payments = $account_data['native_payments'] ?? null;
-			$native_eligible = ! is_array( $native_payments ) || false !== ( $native_payments['eligible'] ?? null );
+			$account_cache       = get_option( 'wcpay_account_data', array() );
+			$account_data        = is_array( $account_cache ) && is_array( $account_cache['data'] ?? null ) ? $account_cache['data'] : array();
+			$builtin_eligibility = $account_data['native_payments'] ?? null;
+			$builtin_eligible    = ! is_array( $builtin_eligibility ) || false !== ( $builtin_eligibility['eligible'] ?? null );
 
-			if ( $native_eligible ) {
+			if ( $builtin_eligible ) {
 				add_option( 'woocommerce_woopayments_builtin_enabled', 'yes', '', true );
 			}
 
