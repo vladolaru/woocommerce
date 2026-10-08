@@ -323,7 +323,9 @@ class SdkV6Manager {
 			'cart'      => $needs_payment && $this->settings_status->is_smart_button_enabled_for_location( 'cart' ),
 			'checkout'  => ( $needs_payment || $free_trial_checkout ) && $this->settings_status->is_smart_button_enabled_for_location( 'checkout' ),
 			'pay-now'   => $this->settings_status->is_smart_button_enabled_for_location( 'pay-now' ),
-			'mini-cart' => $needs_payment && $this->settings_status->is_smart_button_enabled_for_location( 'mini-cart' ),
+			// Not gated on the cart: an AJAX add-to-cart fills it after these hooks
+			// are placed, so render_mini_cart_wrapper() checks the cart itself.
+			'mini-cart' => $this->settings_status->is_smart_button_enabled_for_location( 'mini-cart' ),
 		);
 	}
 
@@ -355,6 +357,10 @@ class SdkV6Manager {
 	 * Renders the mini-cart button wrapper.
 	 */
 	public function render_mini_cart_wrapper(): void {
+		if ( ! $this->cart_needs_payment() ) {
+			return;
+		}
+
 		echo '<p class="woocommerce-mini-cart__buttons buttons">';
 		echo '<span id="' . esc_attr( self::MINI_CART_WRAPPER_ID ) . '"></span>';
 		echo '</p>';

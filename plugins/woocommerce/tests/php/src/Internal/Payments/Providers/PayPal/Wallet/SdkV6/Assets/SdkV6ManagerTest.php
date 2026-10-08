@@ -368,6 +368,26 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
+	 * The mini-cart fragments of an AJAX add-to-cart are rendered after the product is added, so the wrapper decides
+	 * from the cart at that moment.
+	 *
+	 * @testdox Should print the mini-cart wrapper only when the cart needs payment: $needs_payment.
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $needs_payment Whether the cart needs payment when the mini-cart renders.
+	 */
+	public function test_render_mini_cart_wrapper_checks_the_cart_when_it_renders( bool $needs_payment ): void {
+		$this->stub_cart( array( 'needs_payment' => $needs_payment ) );
+
+		ob_start();
+		$this->create_sut()->render_mini_cart_wrapper();
+		$html = (string) ob_get_clean();
+
+		$this->assertSame( $needs_payment, str_contains( $html, SdkV6Manager::MINI_CART_WRAPPER_ID ) );
+	}
+
+	/**
 	 * Scenarios of the cart's payment need.
 	 *
 	 * @return array
@@ -385,7 +405,9 @@ class SdkV6ManagerTest extends WalletTestCase {
 					'mini-cart' => true,
 				),
 			),
-			'zero-total cart suppresses cart, checkout and mini-cart'  => array(
+			// The mini-cart hook stays registered: an AJAX add-to-cart fills the
+			// cart after the hooks are placed, so the wrapper checks the cart itself.
+			'zero-total cart suppresses cart and checkout, not the mini-cart hook' => array(
 				'zero total',
 				false,
 				array(
@@ -393,7 +415,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 					'cart'      => false,
 					'checkout'  => false,
 					'pay-now'   => true,
-					'mini-cart' => false,
+					'mini-cart' => true,
 				),
 			),
 			'no cart present is treated as needing payment'            => array(
@@ -427,7 +449,7 @@ class SdkV6ManagerTest extends WalletTestCase {
 
 		$this->assertSame( $expected_checkout, $result['checkout'] );
 		$this->assertSame( $needs_payment, $result['cart'] );
-		$this->assertSame( $needs_payment, $result['mini-cart'] );
+		$this->assertTrue( $result['mini-cart'], 'The mini-cart hook follows its location; its wrapper checks the cart' );
 	}
 
 	/**
