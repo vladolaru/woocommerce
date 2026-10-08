@@ -38,7 +38,7 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 	 * A source scan, kept because the laziness shows only in which classes autoload while WooCommerce boots, and this
 	 * test process has loaded them all already. An array callable or a first-class callable would autoload the provider.
 	 *
-	 * @testdox Production composition passes the provider's class lists through closures, so building the bootstrap autoloads no provider class.
+	 * @testdox Production composition passes the provider's class lists and its built-in owner gateway check through closures, so building the bootstrap autoloads no provider class.
 	 */
 	public function test_production_composition_resolves_provider_roots_lazily(): void {
 		$method       = new ReflectionMethod( \WooCommerce::class, 'init_hooks' );
@@ -54,6 +54,11 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 			'/\b(?:fn|function)\s*\([^)]*\)[^;]*?WooPaymentsProvider::get_multi_currency_provider_roots\(\)/',
 			$method_body,
 			'WooPaymentsProvider::get_multi_currency_provider_roots() must be called from inside a closure.'
+		);
+		$this->assertMatchesRegularExpression(
+			'/PaymentsBootstrap\(\s*(?:static\s+)?fn\s*\([^)]*\)[^\n]*,\s*(?:static\s+)?fn\s*\([^)]*\)\s*:\s*bool\s*=>\s*\$container->get\(\s*[\w\\\\]*WooPaymentsRuntimeArbiter::class\s*\)->is_builtin_owner\(\),/',
+			$method_body,
+			'The gateway check must be WooPaymentsRuntimeArbiter::is_builtin_owner(), called from inside a closure.'
 		);
 	}
 

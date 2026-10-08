@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
 /**
  * Decides per site whether the WooPayments extension, the built-in WooPayments or nothing owns payments.
  *
- * Exactly one WooPayments runtime registers on a site; the WooPayments extension wins while it is active. The extension is
+ * At most one WooPayments runtime owns payments on a site; the WooPayments extension wins while it is active. The extension is
  * found by its main file name, in any folder, in the per-site and network active-plugins lists, with `WCPAY_PLUGIN_FILE` as
  * the fallback for a copy included before WooCommerce. The owner is resolved once per blog and request.
  *
