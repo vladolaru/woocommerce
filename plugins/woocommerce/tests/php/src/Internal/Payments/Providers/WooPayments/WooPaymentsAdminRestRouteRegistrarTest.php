@@ -231,10 +231,11 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 					/**
 					 * Accept the gateway registry's lazy provider without building it.
 					 *
-					 * @param callable $resolver Provider resolver.
+					 * @param callable $resolver                 Provider resolver.
+					 * @param callable $should_register_gateways Provider gateway check.
 					 */
-					public function register_provider_resolver( callable $resolver ): void {
-						unset( $resolver );
+					public function add_provider( callable $resolver, callable $should_register_gateways ): void {
+						unset( $resolver, $should_register_gateways );
 					}
 				};
 			}

@@ -19,67 +19,51 @@ use WC_Payment_Gateway;
 class NativePaymentsGatewayRegistry implements RegisterHooksInterface {
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var NativePaymentsRuntimeArbiter
-	 */
-	private NativePaymentsRuntimeArbiter $arbiter;
-
-	/**
-	 * Native payment gateway providers.
+	 * Resolved gateway providers, by provider ID.
 	 *
 	 * @var array<string,PaymentGatewayProviderContract>
 	 */
 	private array $providers = array();
 
 	/**
-	 * Provider resolvers, called the first time WooCommerce builds its gateway list.
+	 * Gateway checks of the resolved providers, by provider ID.
 	 *
-	 * @var array<int,callable>
+	 * @var array<string,callable>
 	 */
-	private array $provider_resolvers = array();
+	private array $provider_checks = array();
 
 	/**
-	 * Initialize the class instance.
+	 * Providers not resolved yet, each with its resolver and its gateway check.
 	 *
-	 * @internal
-	 *
-	 * @param NativePaymentsRuntimeArbiter $arbiter Runtime owner arbiter.
+	 * @var array<int,array{resolver:callable,should_register_gateways:callable}>
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter ): void {
-		$this->arbiter = $arbiter;
-	}
+	private array $pending_providers = array();
 
 	/**
-	 * Register a provider that publishes native payment gateways.
+	 * Add a gateway provider, resolved only when WooCommerce builds its gateway list while the provider's check passes.
 	 *
-	 * The composition root owns provider selection so this registry remains provider-neutral.
-	 *
-	 * @param PaymentGatewayProviderContract $provider Payment gateway provider.
-	 */
-	public function register_provider( PaymentGatewayProviderContract $provider ): void {
-		$this->providers[ $provider->get_id() ] = $provider;
-	}
-
-	/**
-	 * Register a provider that is resolved only when WooCommerce builds its gateway list.
-	 *
-	 * Most requests never build the gateway list, so they do not pay for the provider and its payment services.
+	 * Most requests never build the gateway list, so they do not pay for the provider and its payment services. The check
+	 * is consulted at registration and on every gateway list build, so the provider's gateways leave the list when it fails.
 	 *
 	 * @since 11.2.0
 	 *
-	 * @param callable $resolver Returns the payment gateway provider.
+	 * @param callable $resolver                 Returns the payment gateway provider.
+	 * @param callable $should_register_gateways Whether the provider's gateways belong in the gateway list now.
 	 * @phpstan-param callable(): PaymentGatewayProviderContract $resolver
+	 * @phpstan-param callable(): bool $should_register_gateways
 	 */
-	public function register_provider_resolver( callable $resolver ): void {
-		$this->provider_resolvers[] = $resolver;
+	public function add_provider( callable $resolver, callable $should_register_gateways ): void {
+		$this->pending_providers[] = array(
+			'resolver'                 => $resolver,
+			'should_register_gateways' => $should_register_gateways,
+		);
 	}
 
 	/**
-	 * Register gateway hooks.
+	 * Register gateway hooks while at least one provider's check passes.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() ) {
+		if ( ! $this->has_provider_with_passing_check() ) {
 			return;
 		}
 
@@ -101,20 +85,13 @@ class NativePaymentsGatewayRegistry implements RegisterHooksInterface {
 			$gateways = array();
 		}
 
-		if ( ! $this->arbiter->should_native_register() ) {
-			return $gateways;
-		}
+		$this->resolve_providers_with_passing_checks();
 
-		$resolvers                = $this->provider_resolvers;
-		$this->provider_resolvers = array();
-		foreach ( $resolvers as $resolver ) {
-			$provider = $resolver();
-			if ( $provider instanceof PaymentGatewayProviderContract ) {
-				$this->register_provider( $provider );
+		foreach ( $this->providers as $provider_id => $provider ) {
+			if ( ! ( $this->provider_checks[ $provider_id ] )() ) {
+				continue;
 			}
-		}
 
-		foreach ( $this->providers as $provider ) {
 			foreach ( $provider->get_payment_gateways() as $gateway ) {
 				if ( ! $gateway instanceof WC_Payment_Gateway || $this->has_gateway( $gateways, $gateway ) ) {
 					continue;
@@ -125,6 +102,47 @@ class NativePaymentsGatewayRegistry implements RegisterHooksInterface {
 		}
 
 		return $gateways;
+	}
+
+	/**
+	 * Resolve the pending providers whose check passes now; the others wait for a later gateway list build.
+	 */
+	private function resolve_providers_with_passing_checks(): void {
+		$pending                 = $this->pending_providers;
+		$this->pending_providers = array();
+		foreach ( $pending as $entry ) {
+			if ( ! ( $entry['should_register_gateways'] )() ) {
+				$this->pending_providers[] = $entry;
+				continue;
+			}
+
+			$provider = ( $entry['resolver'] )();
+			if ( $provider instanceof PaymentGatewayProviderContract ) {
+				$this->providers[ $provider->get_id() ]       = $provider;
+				$this->provider_checks[ $provider->get_id() ] = $entry['should_register_gateways'];
+			}
+		}
+	}
+
+	/**
+	 * Tell whether the check of any added provider, resolved or not, passes now.
+	 *
+	 * @return bool
+	 */
+	private function has_provider_with_passing_check(): bool {
+		foreach ( $this->provider_checks as $should_register_gateways ) {
+			if ( $should_register_gateways() ) {
+				return true;
+			}
+		}
+
+		foreach ( $this->pending_providers as $entry ) {
+			if ( ( $entry['should_register_gateways'] )() ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**

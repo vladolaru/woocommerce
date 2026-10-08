@@ -230,7 +230,7 @@ final class NativePaymentsBootstrap {
 				 */
 				$registry      = $container->get( $root );
 				$provider_root = $roots[ ++$index ];
-				$registry->register_provider_resolver(
+				$registry->add_provider(
 					static function () use ( $container, $provider_root ) {
 						/**
 						 * Native payment gateway provider.
@@ -239,7 +239,8 @@ final class NativePaymentsBootstrap {
 						 */
 						$provider = $container->get( $provider_root );
 						return $provider;
-					}
+					},
+					static fn(): bool => $container->get( NativePaymentsRuntimeArbiter::class )->should_native_register()
 				);
 				$registry->register();
 				continue;

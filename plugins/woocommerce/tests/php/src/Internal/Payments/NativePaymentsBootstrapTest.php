@@ -849,9 +849,11 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 						/**
 						 * Record a lazy provider without resolving it.
 						 *
-						 * @param callable $resolver Provider resolver.
+						 * @param callable $resolver                 Provider resolver.
+						 * @param callable $should_register_gateways Provider gateway check.
 						 */
-						public function register_provider_resolver( callable $resolver ): void {
+						public function add_provider( callable $resolver, callable $should_register_gateways ): void {
+							unset( $should_register_gateways );
 							$this->provider_resolvers[] = $resolver;
 							$this->events[]             = 'provider-resolver:' . $this->class_name;
 						}
