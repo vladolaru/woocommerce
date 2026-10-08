@@ -1,6 +1,6 @@
 <?php
 /**
- * OrderPaymentStore class file.
+ * OrderPaymentLock class file.
  */
 
 declare( strict_types = 1 );
@@ -16,7 +16,7 @@ use WC_Order;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class OrderPaymentStore {
+class OrderPaymentLock {
 
 	/**
 	 * Fixed prefix of the warning logged when the lock refuses an operation, so it can be found in logs.
@@ -63,8 +63,8 @@ class OrderPaymentStore {
 	 * Unlike WooPayments-compatible reference checks, native processing uses this as an order-wide
 	 * claim: any active lock value blocks checkout, refund, capture, and cancel from starting.
 	 * WooPayments 11.1.0 locks only intent-driven status updates; this stricter lock is owner-ratified
-	 * money-path hardening (inbox N-270), and log_order_payment_lock_refusal() records each refusal
-	 * the plugin would have allowed. Release the lock with release_order_payment_lock() and the returned token.
+	 * money-path hardening (inbox N-270), and log_refusal() records each refusal
+	 * the plugin would have allowed. Release the lock with release() and the returned token.
 	 *
 	 * The lock keeps the WooPayments-compatible value, the payment reference, so a plugin request still sees an
 	 * intent it is processing as locked. A holder record names the operation, for the refusal log, and carries a
@@ -79,7 +79,7 @@ class OrderPaymentStore {
 	 * @param string                                 $operation           Operation claiming the lock, such as 'refund' or 'capture'.
 	 * @return string|null The claim token to release the lock with, or null when the lock is held.
 	 */
-	public function claim_order_payment_lock_for_operation( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_vocabulary, ?string $payment_reference, string $operation ): ?string {
+	public function claim( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_vocabulary, ?string $payment_reference, string $operation ): ?string {
 		$lock_key   = $persistence_vocabulary->get_order_lock_key( $order );
 		$holder_key = $this->get_lock_holder_key( $order, $persistence_vocabulary );
 		$value      = $this->get_lock_value( $persistence_vocabulary, $payment_reference );
@@ -119,7 +119,7 @@ class OrderPaymentStore {
 	 * @param string|null                            $source              Log source, when the caller logs to its own file.
 	 * @param array<string,mixed>                    $extra_context       Caller-specific context added to the line.
 	 */
-	public function log_order_payment_lock_refusal( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_vocabulary, string $refused_operation, ?string $source = null, array $extra_context = array() ): void {
+	public function log_refusal( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_vocabulary, string $refused_operation, ?string $source = null, array $extra_context = array() ): void {
 		try {
 			$lock_value       = $this->read_lock_transient( $persistence_vocabulary->get_order_lock_key( $order ) );
 			$holder           = $this->read_lock_transient( $this->get_lock_holder_key( $order, $persistence_vocabulary ) );
@@ -196,7 +196,7 @@ class OrderPaymentStore {
 	/**
 	 * Release the order payment lock, but only while the caller's claim still holds it.
 	 *
-	 * The counterpart of claim_order_payment_lock_for_operation(): an operation that ran past the lock TTL must not
+	 * The counterpart of claim(): an operation that ran past the lock TTL must not
 	 * release a lock another claim has since taken over, even one with the same payment reference, so the holder
 	 * record must still carry this claim's token.
 	 *
@@ -206,7 +206,7 @@ class OrderPaymentStore {
 	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
 	 * @param string                                 $lock_token          Token the claim returned.
 	 */
-	public function release_order_payment_lock( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_vocabulary, string $lock_token ): void {
+	public function release( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_vocabulary, string $lock_token ): void {
 		global $wpdb;
 
 		$lock_key   = $persistence_vocabulary->get_order_lock_key( $order );

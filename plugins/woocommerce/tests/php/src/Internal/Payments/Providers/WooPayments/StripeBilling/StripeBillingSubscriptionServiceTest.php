@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling;
 
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingApi;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingInvoiceService;
@@ -828,7 +828,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $flag_while_paying, 'Paying must not count as a payment method change, or the subscription is not activated.' );
 		$this->assertTrue( \WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment, 'The change request flag is restored.' );
 		$this->assertSame( 1, wc_notice_count( 'success' ) );
-		$lock_token = wc_get_container()->get( OrderPaymentStore::class )->claim_order_payment_lock_for_operation( $saved_order, new WooPaymentsPersistenceVocabulary(), null, 'test' );
+		$lock_token = wc_get_container()->get( OrderPaymentLock::class )->claim( $saved_order, new WooPaymentsPersistenceVocabulary(), null, 'test' );
 		$this->assertNotNull( $lock_token, 'The order payment lock is released after the completion.' );
 	}
 
@@ -852,7 +852,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		$renewal_order->update_meta_data( '_wcpay_billing_invoice_id', self::MAIN_INVOICE_ID );
 		$renewal_order->set_status( 'failed' );
 		$renewal_order->save();
-		wc_get_container()->get( OrderPaymentStore::class )->claim_order_payment_lock_for_operation( $renewal_order, new WooPaymentsPersistenceVocabulary(), 'pi_webhookRecordingTheRenewal', 'payment operation' );
+		wc_get_container()->get( OrderPaymentLock::class )->claim( $renewal_order, new WooPaymentsPersistenceVocabulary(), 'pi_webhookRecordingTheRenewal', 'payment operation' );
 		$payments_completed = did_action( 'woocommerce_payment_complete' );
 
 		$this->sut->maybe_attempt_payment_for_subscription( $subscription, $this->create_token() );

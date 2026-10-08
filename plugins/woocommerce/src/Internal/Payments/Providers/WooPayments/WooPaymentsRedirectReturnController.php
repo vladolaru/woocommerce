@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
@@ -363,10 +363,10 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 */
 	private function fail_order_unless_settled( WC_Order $order, string $intent_id, ?string $exception_message, string $intent_status ): bool {
 		$persistence_vocabulary = new WooPaymentsPersistenceVocabulary();
-		$order_payment_store    = wc_get_container()->get( OrderPaymentStore::class );
-		$lock_token             = $order_payment_store->claim_order_payment_lock_for_operation( $order, $persistence_vocabulary, $intent_id, 'payment status update' );
+		$order_payment_store    = wc_get_container()->get( OrderPaymentLock::class );
+		$lock_token             = $order_payment_store->claim( $order, $persistence_vocabulary, $intent_id, 'payment status update' );
 		if ( null === $lock_token ) {
-			$order_payment_store->log_order_payment_lock_refusal(
+			$order_payment_store->log_refusal(
 				$order,
 				$persistence_vocabulary,
 				'redirect return failure',
@@ -404,7 +404,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 				)
 			);
 		} finally {
-			$order_payment_store->release_order_payment_lock( $order, $persistence_vocabulary, $lock_token );
+			$order_payment_store->release( $order, $persistence_vocabulary, $lock_token );
 		}
 
 		return true;

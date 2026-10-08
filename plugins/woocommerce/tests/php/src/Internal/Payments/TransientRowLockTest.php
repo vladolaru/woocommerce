@@ -9,7 +9,7 @@ use WC_Unit_Test_Case;
 /**
  * Tests for the TransientRowLock class.
  *
- * OrderPaymentStoreTest covers the same claim through the order payment lock, with a holder record and the race orderings.
+ * OrderPaymentLockTest covers the same claim through the order payment lock, with a holder record and the race orderings.
  */
 class TransientRowLockTest extends WC_Unit_Test_Case {
 

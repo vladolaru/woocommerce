@@ -10,7 +10,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -983,9 +983,9 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$container = wc_get_container();
 		if ( 'a webhook put on hold just before the lock' === $change ) {
 			// A webhook takes the order payment lock, writes on-hold and releases it right before this return claims it.
-			$webhook_first_store = new RedirectReturnWebhookFirstOrderPaymentStore();
+			$webhook_first_store = new RedirectReturnWebhookFirstOrderPaymentLock();
 			$webhook_first_store->init( new TransientRowLock() );
-			$container->replace( OrderPaymentStore::class, $webhook_first_store );
+			$container->replace( OrderPaymentLock::class, $webhook_first_store );
 		}
 		$this->sut = $this->create_controller( true, null, $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_held_during_fetch' );
@@ -993,7 +993,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		try {
 			$this->sut->handle_wp();
 		} finally {
-			$container->reset_replacement( OrderPaymentStore::class );
+			$container->reset_replacement( OrderPaymentLock::class );
 		}
 		$reloaded = wc_get_order( $order->get_id() );
 
@@ -1026,9 +1026,9 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$order                 = $this->create_order();
 		$api_client            = new RedirectReturnApiClientStub();
 		$api_client->exception = new WooPaymentsApiException( 'Request timed out.', 'wcpay_http_request_failed', 504 );
-		$store                 = wc_get_container()->get( OrderPaymentStore::class );
+		$store                 = wc_get_container()->get( OrderPaymentLock::class );
 		$vocabulary            = new WooPaymentsPersistenceVocabulary();
-		$lock_token            = $store->claim_order_payment_lock_for_operation( $order, $vocabulary, 'pi_locked_return', $holder );
+		$lock_token            = $store->claim( $order, $vocabulary, 'pi_locked_return', $holder );
 		$this->assertNotNull( $lock_token );
 		$logger = new RedirectReturnRecordingLogger();
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
@@ -1038,7 +1038,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		try {
 			$this->sut->handle_wp();
 		} finally {
-			$store->release_order_payment_lock( $order, $vocabulary, $lock_token );
+			$store->release( $order, $vocabulary, $lock_token );
 		}
 		$reloaded = wc_get_order( $order->get_id() );
 
@@ -1538,9 +1538,9 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 				'message' => 'Your card was declined.',
 			),
 		);
-		$store                      = wc_get_container()->get( OrderPaymentStore::class );
+		$store                      = wc_get_container()->get( OrderPaymentLock::class );
 		$vocabulary                 = new WooPaymentsPersistenceVocabulary();
-		$lock_token                 = $store->claim_order_payment_lock_for_operation( $order, $vocabulary, 'pi_error_locked', 'payment status update' );
+		$lock_token                 = $store->claim( $order, $vocabulary, 'pi_error_locked', 'payment status update' );
 		$this->assertNotNull( $lock_token );
 		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_error_locked' );
@@ -1548,7 +1548,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		try {
 			$location = $this->handle_wp_expecting_redirect();
 		} finally {
-			$store->release_order_payment_lock( $order, $vocabulary, $lock_token );
+			$store->release( $order, $vocabulary, $lock_token );
 		}
 
 		$this->assertSame( wc_get_checkout_url(), $location );
@@ -2671,7 +2671,7 @@ class RedirectReturnRedirectIntercepted extends \RuntimeException {
 /**
  * Order payment store where a webhook settles the order on hold just before the first claim made for the redirect return.
  */
-class RedirectReturnWebhookFirstOrderPaymentStore extends OrderPaymentStore {
+class RedirectReturnWebhookFirstOrderPaymentLock extends OrderPaymentLock {
 	/** @var bool */
 	private bool $webhook_ran = false;
 
@@ -2684,17 +2684,17 @@ class RedirectReturnWebhookFirstOrderPaymentStore extends OrderPaymentStore {
 	 * @param string                                 $operation           Operation claiming the lock.
 	 * @return string|null
 	 */
-	public function claim_order_payment_lock_for_operation( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_vocabulary, ?string $payment_reference, string $operation ): ?string {
+	public function claim( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_vocabulary, ?string $payment_reference, string $operation ): ?string {
 		if ( ! $this->webhook_ran ) {
 			$this->webhook_ran = true;
-			$webhook_token     = parent::claim_order_payment_lock_for_operation( $order, $persistence_vocabulary, $payment_reference, 'payment status update' );
+			$webhook_token     = parent::claim( $order, $persistence_vocabulary, $payment_reference, 'payment status update' );
 			if ( null !== $webhook_token ) {
 				wc_get_order( $order->get_id() )->update_status( 'on-hold' );
-				parent::release_order_payment_lock( $order, $persistence_vocabulary, $webhook_token );
+				parent::release( $order, $persistence_vocabulary, $webhook_token );
 			}
 		}
 
-		return parent::claim_order_payment_lock_for_operation( $order, $persistence_vocabulary, $payment_reference, $operation );
+		return parent::claim( $order, $persistence_vocabulary, $payment_reference, $operation );
 	}
 }
 

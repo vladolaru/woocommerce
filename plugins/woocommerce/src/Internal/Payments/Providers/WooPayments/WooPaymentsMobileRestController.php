@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
@@ -521,11 +521,11 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 			return new WP_Error( 'wcpay_missing_payment_intent_id', __( 'Payment intent ID is required.', 'woocommerce' ), array( 'status' => 400 ) );
 		}
 
-		$store      = wc_get_container()->get( OrderPaymentStore::class );
+		$store      = wc_get_container()->get( OrderPaymentLock::class );
 		$vocabulary = new WooPaymentsPersistenceVocabulary();
 		$lock_token = $this->claim_terminal_capture_lock( $store, $order, $vocabulary, $intent_id );
 		if ( null === $lock_token ) {
-			$store->log_order_payment_lock_refusal( $order, $vocabulary, 'terminal capture' );
+			$store->log_refusal( $order, $vocabulary, 'terminal capture' );
 
 			return new WP_Error( 'wcpay_capture_error', __( 'The payment is still being processed. Try again.', 'woocommerce' ), array( 'status' => 409 ) );
 		}
@@ -536,7 +536,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 
 			return $this->capture_terminal_payment_under_lock( $order, $intent_id );
 		} finally {
-			$store->release_order_payment_lock( $order, $vocabulary, $lock_token );
+			$store->release( $order, $vocabulary, $lock_token );
 		}
 	}
 
@@ -547,15 +547,15 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 	 * intent, which keeps the lock well under a second, and the merchant is waiting at the counter. Four attempts
 	 * 500 ms apart, all before the platform capture starts.
 	 *
-	 * @param OrderPaymentStore                $store     Order payment store.
+	 * @param OrderPaymentLock                 $store     Order payment store.
 	 * @param WC_Order                         $order     Order.
 	 * @param WooPaymentsPersistenceVocabulary $vocabulary   Persistence profile.
 	 * @param string                           $intent_id Intent ID, the lock value.
 	 * @return string|null Lock token, or null when the lock stayed held.
 	 */
-	private function claim_terminal_capture_lock( OrderPaymentStore $store, WC_Order $order, WooPaymentsPersistenceVocabulary $vocabulary, string $intent_id ): ?string {
+	private function claim_terminal_capture_lock( OrderPaymentLock $store, WC_Order $order, WooPaymentsPersistenceVocabulary $vocabulary, string $intent_id ): ?string {
 		for ( $attempt = 1; ; ++$attempt ) {
-			$lock_token = $store->claim_order_payment_lock_for_operation( $order, $vocabulary, $intent_id, 'terminal capture' );
+			$lock_token = $store->claim( $order, $vocabulary, $intent_id, 'terminal capture' );
 			if ( null !== $lock_token || self::LOCK_CLAIM_ATTEMPTS === $attempt ) {
 				return $lock_token;
 			}

@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use InvalidArgumentException;
 use RuntimeException;
 use WC_Order;
@@ -24,9 +24,9 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 	/**
 	 * Order payment store used to serialize writes.
 	 *
-	 * @var OrderPaymentStore|null
+	 * @var OrderPaymentLock|null
 	 */
-	private ?OrderPaymentStore $order_payment_store = null;
+	private ?OrderPaymentLock $order_payment_store = null;
 
 	/**
 	 * WooPayments persistence profile.
@@ -48,11 +48,11 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 	 * @internal
 	 * @since 11.2.0
 	 *
-	 * @param OrderPaymentStore|null                $order_payment_store Optional order payment store.
+	 * @param OrderPaymentLock|null                 $order_payment_store Optional order payment store.
 	 * @param WooPaymentsPersistenceVocabulary|null $persistence_vocabulary Optional WooPayments persistence profile.
 	 * @param WooPaymentsOrderNoteService|null      $note_service Optional WooPayments note service.
 	 */
-	final public function init( ?OrderPaymentStore $order_payment_store = null, ?WooPaymentsPersistenceVocabulary $persistence_vocabulary = null, ?WooPaymentsOrderNoteService $note_service = null ): void {
+	final public function init( ?OrderPaymentLock $order_payment_store = null, ?WooPaymentsPersistenceVocabulary $persistence_vocabulary = null, ?WooPaymentsOrderNoteService $note_service = null ): void {
 		$this->order_payment_store    = $order_payment_store;
 		$this->persistence_vocabulary = $persistence_vocabulary;
 		$this->note_service           = $note_service;
@@ -100,9 +100,9 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 			throw new RuntimeException( esc_html( sprintf( 'Could not find a WooPayments order for early fraud warning charge ID: %s', $warning['charge'] ) ) );
 		}
 
-		$lock_token = $this->get_order_payment_store()->claim_order_payment_lock_for_operation( $order, $this->get_persistence_vocabulary(), 'early_fraud_warning_' . $warning['id'], 'early fraud warning webhook' );
+		$lock_token = $this->get_order_payment_store()->claim( $order, $this->get_persistence_vocabulary(), 'early_fraud_warning_' . $warning['id'], 'early fraud warning webhook' );
 		if ( null === $lock_token ) {
-			$this->get_order_payment_store()->log_order_payment_lock_refusal( $order, $this->get_persistence_vocabulary(), 'early fraud warning webhook' );
+			$this->get_order_payment_store()->log_refusal( $order, $this->get_persistence_vocabulary(), 'early fraud warning webhook' );
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is built in the exception from an order ID and a fixed operation name, not HTML output.
 			throw new OrderPaymentLockRefusedException( $order->get_id(), 'early fraud warning webhook' );
 		}
@@ -146,7 +146,7 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 				throw new RuntimeException( esc_html( sprintf( 'Could not persist early fraud warning note for ID: %s', $warning['id'] ) ) );
 			}
 		} finally {
-			$this->get_order_payment_store()->release_order_payment_lock( $order, $this->get_persistence_vocabulary(), $lock_token );
+			$this->get_order_payment_store()->release( $order, $this->get_persistence_vocabulary(), $lock_token );
 		}
 	}
 
@@ -253,11 +253,11 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 	/**
 	 * Get the order payment store.
 	 *
-	 * @return OrderPaymentStore
+	 * @return OrderPaymentLock
 	 */
-	private function get_order_payment_store(): OrderPaymentStore {
+	private function get_order_payment_store(): OrderPaymentLock {
 		if ( null === $this->order_payment_store ) {
-			$this->order_payment_store = wc_get_container()->get( OrderPaymentStore::class );
+			$this->order_payment_store = wc_get_container()->get( OrderPaymentLock::class );
 		}
 
 		return $this->order_payment_store;

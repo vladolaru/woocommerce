@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
@@ -1821,7 +1821,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( $order->get_id(), $context['order_id'] );
 		$this->assertSame( 'pi_terminal', $context['intent_id'] );
 		$this->assertSame( 'RuntimeException', $context['exception'] );
-		$this->assertNotNull( wc_get_container()->get( OrderPaymentStore::class )->claim_order_payment_lock_for_operation( $order, new WooPaymentsPersistenceVocabulary(), 'pi_terminal', 'payment status update' ), 'A failed capture releases the lock.' );
+		$this->assertNotNull( wc_get_container()->get( OrderPaymentLock::class )->claim( $order, new WooPaymentsPersistenceVocabulary(), 'pi_terminal', 'payment status update' ), 'A failed capture releases the lock.' );
 	}
 
 	/**
@@ -1905,21 +1905,21 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	public function test_capture_terminal_payment_waits_for_the_order_payment_lock(): void {
 		$order = $this->create_order( 12.34, 'USD' );
 		$this->set_capturable_terminal_intent( $order );
-		$store        = wc_get_container()->get( OrderPaymentStore::class );
+		$store        = wc_get_container()->get( OrderPaymentLock::class );
 		$vocabulary   = new WooPaymentsPersistenceVocabulary();
-		$holder_token = $store->claim_order_payment_lock_for_operation( $order, $vocabulary, 'pi_terminal', 'payment status update' );
+		$holder_token = $store->claim( $order, $vocabulary, 'pi_terminal', 'payment status update' );
 		$this->assertNotNull( $holder_token );
 		$sut = $this->create_lock_waiting_controller(
 			static function ( int $wait ) use ( $store, $order, $vocabulary, $holder_token ): void {
 				if ( 2 === $wait ) {
-					$store->release_order_payment_lock( $order, $vocabulary, $holder_token );
+					$store->release( $order, $vocabulary, $holder_token );
 				}
 			}
 		);
 
 		$claims_during_capture        = array();
 		$claim                        = static function () use ( $store, $order, $vocabulary, &$claims_during_capture ): void {
-			$claims_during_capture[] = $store->claim_order_payment_lock_for_operation( $order, $vocabulary, 'pi_other', 'competing operation' );
+			$claims_during_capture[] = $store->claim( $order, $vocabulary, 'pi_other', 'competing operation' );
 		};
 		$this->api_client->on_capture = $claim;
 		add_action( 'woocommerce_order_status_completed', $claim );
@@ -1941,7 +1941,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 			$this->api_client->captures
 		);
 		$this->assertSame( 'completed', wc_get_order( $order->get_id() )->get_status() );
-		$this->assertNotNull( $store->claim_order_payment_lock_for_operation( $order, $vocabulary, 'pi_terminal', 'payment status update' ), 'The capture released the lock.' );
+		$this->assertNotNull( $store->claim( $order, $vocabulary, 'pi_terminal', 'payment status update' ), 'The capture released the lock.' );
 	}
 
 	/**
@@ -1954,13 +1954,13 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$logger = RecordingWcLogger::install();
 		$order  = $this->create_order( 12.34, 'USD' );
 		$this->set_capturable_terminal_intent( $order );
-		$store        = wc_get_container()->get( OrderPaymentStore::class );
+		$store        = wc_get_container()->get( OrderPaymentLock::class );
 		$vocabulary   = new WooPaymentsPersistenceVocabulary();
-		$holder_token = $store->claim_order_payment_lock_for_operation( $order, $vocabulary, 'pi_terminal', 'payment status update' );
+		$holder_token = $store->claim( $order, $vocabulary, 'pi_terminal', 'payment status update' );
 		$sut          = $this->create_lock_waiting_controller();
 
 		$response = $sut->capture_terminal_payment( $this->make_capture_request( $order ) );
-		$store->release_order_payment_lock( $order, $vocabulary, (string) $holder_token );
+		$store->release( $order, $vocabulary, (string) $holder_token );
 
 		$this->assertInstanceOf( WP_Error::class, $response );
 		$this->assertSame( 'wcpay_capture_error', $response->get_error_code() );
@@ -1979,16 +1979,16 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	public function test_capture_terminal_payment_rechecks_the_order_under_the_lock(): void {
 		$order = $this->create_order( 12.34, 'USD' );
 		$this->set_capturable_terminal_intent( $order );
-		$store        = wc_get_container()->get( OrderPaymentStore::class );
+		$store        = wc_get_container()->get( OrderPaymentLock::class );
 		$vocabulary   = new WooPaymentsPersistenceVocabulary();
-		$holder_token = $store->claim_order_payment_lock_for_operation( $order, $vocabulary, 'pi_terminal', 'payment status update' );
+		$holder_token = $store->claim( $order, $vocabulary, 'pi_terminal', 'payment status update' );
 		$order_id     = $order->get_id();
 		$sut          = $this->create_lock_waiting_controller(
 			static function () use ( $store, $order, $vocabulary, $holder_token, $order_id ): void {
 				$completed = wc_get_order( $order_id );
 				$completed->update_meta_data( '_intention_status', 'succeeded' );
 				$completed->save();
-				$store->release_order_payment_lock( $order, $vocabulary, $holder_token );
+				$store->release( $order, $vocabulary, $holder_token );
 			}
 		);
 

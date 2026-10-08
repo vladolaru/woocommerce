@@ -10,7 +10,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
@@ -631,7 +631,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_charge_refunded_looks_up_the_linked_refund_under_the_lock(): void {
 		$order   = $this->create_refundable_order();
-		$store   = new class() extends OrderPaymentStore {
+		$store   = new class() extends OrderPaymentLock {
 			/**
 			 * Whether the admin refund has been linked.
 			 *
@@ -648,7 +648,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			 * @param string                                 $operation Operation claiming the lock.
 			 * @return string|null
 			 */
-			public function claim_order_payment_lock_for_operation( WC_Order $order, ProviderPersistenceVocabularyInterface $vocabulary, ?string $reference, string $operation ): ?string {
+			public function claim( WC_Order $order, ProviderPersistenceVocabularyInterface $vocabulary, ?string $reference, string $operation ): ?string {
 				unset( $vocabulary, $reference, $operation );
 				if ( ! $this->admin_refund_linked ) {
 					$this->admin_refund_linked = true;
@@ -675,7 +675,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			 * @param ProviderPersistenceVocabularyInterface $vocabulary    Persistence profile.
 			 * @param string                                 $lock_token Claim token.
 			 */
-			public function release_order_payment_lock( WC_Order $order, ProviderPersistenceVocabularyInterface $vocabulary, string $lock_token ): void {
+			public function release( WC_Order $order, ProviderPersistenceVocabularyInterface $vocabulary, string $lock_token ): void {
 				unset( $order, $vocabulary, $lock_token );
 			}
 		};

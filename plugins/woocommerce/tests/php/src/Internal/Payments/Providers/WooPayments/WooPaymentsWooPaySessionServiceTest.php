@@ -6,7 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
@@ -1405,10 +1405,10 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( OrderStatus::PENDING, wc_get_order( $order_id )->get_status() );
 		$this->assertNull( WC()->session->get( 'store_api_draft_order' ) );
 		// The takeover released the order payment lock, so the checkout that follows can pay the order.
-		$store = wc_get_container()->get( OrderPaymentStore::class );
-		$token = $store->claim_order_payment_lock_for_operation( $draft, new WooPaymentsPersistenceVocabulary(), 'attempt-key', 'checkout' );
+		$store = wc_get_container()->get( OrderPaymentLock::class );
+		$token = $store->claim( $draft, new WooPaymentsPersistenceVocabulary(), 'attempt-key', 'checkout' );
 		$this->assertIsString( $token );
-		$store->release_order_payment_lock( $draft, new WooPaymentsPersistenceVocabulary(), $token );
+		$store->release( $draft, new WooPaymentsPersistenceVocabulary(), $token );
 	}
 
 	/**
@@ -1480,15 +1480,15 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$settled->save();
 		WC()->session->set( 'store_api_draft_order', $settled->get_id() );
 		WC()->session->set( 'order_awaiting_payment', null );
-		$store      = wc_get_container()->get( OrderPaymentStore::class );
+		$store      = wc_get_container()->get( OrderPaymentLock::class );
 		$vocabulary = new WooPaymentsPersistenceVocabulary();
-		$token      = $store->claim_order_payment_lock_for_operation( $settled, $vocabulary, 'refund-key', 'refund' );
+		$token      = $store->claim( $settled, $vocabulary, 'refund-key', 'refund' );
 		$this->assertIsString( $token );
 
 		try {
 			$order_id = $this->create_classic_checkout_order();
 		} finally {
-			$store->release_order_payment_lock( $settled, $vocabulary, $token );
+			$store->release( $settled, $vocabulary, $token );
 		}
 
 		$this->assertIsInt( $order_id );
@@ -1557,9 +1557,9 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$draft->save();
 		WC()->session->set( 'store_api_draft_order', $draft->get_id() );
 		WC()->session->set( 'order_awaiting_payment', null );
-		$store      = wc_get_container()->get( OrderPaymentStore::class );
+		$store      = wc_get_container()->get( OrderPaymentLock::class );
 		$vocabulary = new WooPaymentsPersistenceVocabulary();
-		$token      = $store->claim_order_payment_lock_for_operation( $draft, $vocabulary, 'attempt-key-of-another-request', 'checkout' );
+		$token      = $store->claim( $draft, $vocabulary, 'attempt-key-of-another-request', 'checkout' );
 		$new_orders = array();
 		$record     = static function ( $order_id ) use ( &$new_orders ): void {
 			$new_orders[] = $order_id;
@@ -1585,7 +1585,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 			$result = $this->create_classic_checkout_order();
 		} finally {
 			remove_action( 'woocommerce_new_order', $record );
-			$store->release_order_payment_lock( $draft, $vocabulary, $token );
+			$store->release( $draft, $vocabulary, $token );
 		}
 
 		$this->assertSame( $log_throws ? 1 : 0, $throws );
@@ -1646,9 +1646,9 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 			return (int) $wpdb->get_var( $wpdb->prepare( "SELECT SUM(stock_quantity) FROM {$wpdb->wc_reserved_stock} WHERE order_id = %d", $paying->get_id() ) );
 		};
 		$this->assertSame( 1, $reserved() );
-		$store      = wc_get_container()->get( OrderPaymentStore::class );
+		$store      = wc_get_container()->get( OrderPaymentLock::class );
 		$vocabulary = new WooPaymentsPersistenceVocabulary();
-		$token      = $store->claim_order_payment_lock_for_operation( $paying, $vocabulary, 'attempt-key-of-the-woopay-charge', 'checkout' );
+		$token      = $store->claim( $paying, $vocabulary, 'attempt-key-of-the-woopay-charge', 'checkout' );
 		$new_orders = array();
 		$record     = static function ( $order_id ) use ( &$new_orders ): void {
 			$new_orders[] = $order_id;
@@ -1677,7 +1677,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 			WC()->checkout()->process_checkout();
 		} finally {
 			remove_action( 'woocommerce_new_order', $record );
-			$store->release_order_payment_lock( $paying, $vocabulary, $token );
+			$store->release( $paying, $vocabulary, $token );
 			$_POST    = array();
 			$_REQUEST = array();
 		}
@@ -1758,16 +1758,16 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$draft_id = $draft->get_id();
 		WC()->session->set( 'store_api_draft_order', $draft_id );
 		WC()->session->set( 'order_awaiting_payment', null );
-		$store      = wc_get_container()->get( OrderPaymentStore::class );
+		$store      = wc_get_container()->get( OrderPaymentLock::class );
 		$vocabulary = new WooPaymentsPersistenceVocabulary();
 		$claims     = array();
 		$pay        = static function ( $order ) use ( $store, $vocabulary, $draft_id, &$claims ): void {
 			// The first save of the order is the takeover's; WC_Checkout::create_order() saves it again after the release.
 			if ( array() === $claims && $order instanceof \WC_Order && $draft_id === $order->get_id() && OrderStatus::PENDING === $order->get_status() ) {
-				$token    = $store->claim_order_payment_lock_for_operation( $order, $vocabulary, 'attempt-key-of-another-request', 'checkout' );
+				$token    = $store->claim( $order, $vocabulary, 'attempt-key-of-another-request', 'checkout' );
 				$claims[] = $token;
 				if ( null !== $token ) {
-					$store->release_order_payment_lock( $order, $vocabulary, $token );
+					$store->release( $order, $vocabulary, $token );
 				}
 			}
 		};
@@ -4142,11 +4142,11 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * @param string    $message Failure message.
 	 */
 	private function assert_order_payment_lock_is_free( \WC_Order $order, string $message ): void {
-		$store      = wc_get_container()->get( OrderPaymentStore::class );
+		$store      = wc_get_container()->get( OrderPaymentLock::class );
 		$vocabulary = new WooPaymentsPersistenceVocabulary();
-		$token      = $store->claim_order_payment_lock_for_operation( $order, $vocabulary, 'attempt-key', 'checkout' );
+		$token      = $store->claim( $order, $vocabulary, 'attempt-key', 'checkout' );
 		$this->assertIsString( $token, $message );
-		$store->release_order_payment_lock( $order, $vocabulary, $token );
+		$store->release( $order, $vocabulary, $token );
 	}
 
 	/**

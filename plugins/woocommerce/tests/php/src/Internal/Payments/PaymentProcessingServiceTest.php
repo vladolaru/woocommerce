@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationIdempotency;
@@ -57,7 +57,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Order payment store.
 	 *
-	 * @var OrderPaymentStore
+	 * @var OrderPaymentLock
 	 */
 	private $store;
 
@@ -81,7 +81,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 		$this->sut                    = wc_get_container()->get( PaymentProcessingService::class );
-		$this->store                  = wc_get_container()->get( OrderPaymentStore::class );
+		$this->store                  = wc_get_container()->get( OrderPaymentLock::class );
 		$this->idempotency            = wc_get_container()->get( PaymentOperationIdempotency::class );
 		$this->persistence_vocabulary = new WooPaymentsPersistenceVocabulary();
 	}
@@ -986,9 +986,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( RuntimeException::class, $thrown, 'The application failure must reach the caller.' );
 		$this->assertFalse( get_transient( $this->persistence_vocabulary->get_order_lock_key( $order ) ), 'A throwing outcome application must release the order payment lock.' );
-		$lock_token = $this->store->claim_order_payment_lock_for_operation( $order, $this->persistence_vocabulary, 'next_operation', 'payment operation' );
+		$lock_token = $this->store->claim( $order, $this->persistence_vocabulary, 'next_operation', 'payment operation' );
 		$this->assertNotNull( $lock_token, 'The next operation must be able to claim the lock.' );
-		$this->store->release_order_payment_lock( $order, $this->persistence_vocabulary, $lock_token );
+		$this->store->release( $order, $this->persistence_vocabulary, $lock_token );
 	}
 
 	/**

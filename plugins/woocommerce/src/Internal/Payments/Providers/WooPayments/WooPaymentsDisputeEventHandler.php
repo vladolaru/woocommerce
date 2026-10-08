@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use RuntimeException;
 use Throwable;
@@ -65,9 +65,9 @@ class WooPaymentsDisputeEventHandler {
 	/**
 	 * Order payment store.
 	 *
-	 * @var OrderPaymentStore|null
+	 * @var OrderPaymentLock|null
 	 */
-	private ?OrderPaymentStore $order_payment_store = null;
+	private ?OrderPaymentLock $order_payment_store = null;
 
 	/**
 	 * WooPayments persistence profile.
@@ -85,10 +85,10 @@ class WooPaymentsDisputeEventHandler {
 	 * @param WooPaymentsApiClient             $api_client            Native WooPayments API client.
 	 * @param WooPaymentsDisputeCacheService   $dispute_cache_service Dispute cache service.
 	 * @param WooPaymentsOrderNoteService      $order_note_service    WooPayments order note service.
-	 * @param OrderPaymentStore                $order_payment_store   Order payment store.
+	 * @param OrderPaymentLock                 $order_payment_store   Order payment store.
 	 * @param WooPaymentsPersistenceVocabulary $persistence_vocabulary   WooPayments persistence profile.
 	 */
-	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsDisputeCacheService $dispute_cache_service, ?WooPaymentsOrderNoteService $order_note_service = null, ?OrderPaymentStore $order_payment_store = null, ?WooPaymentsPersistenceVocabulary $persistence_vocabulary = null ): void {
+	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsDisputeCacheService $dispute_cache_service, ?WooPaymentsOrderNoteService $order_note_service = null, ?OrderPaymentLock $order_payment_store = null, ?WooPaymentsPersistenceVocabulary $persistence_vocabulary = null ): void {
 		$this->legacy_runtime         = $legacy_runtime;
 		$this->api_client             = $api_client;
 		$this->dispute_cache_service  = $dispute_cache_service;
@@ -780,7 +780,7 @@ class WooPaymentsDisputeEventHandler {
 		try {
 			return $change( wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order ) );
 		} finally {
-			$this->get_order_payment_store()->release_order_payment_lock( $order, $this->get_persistence_vocabulary(), $lock_token );
+			$this->get_order_payment_store()->release( $order, $this->get_persistence_vocabulary(), $lock_token );
 		}
 	}
 
@@ -793,9 +793,9 @@ class WooPaymentsDisputeEventHandler {
 	 * @throws OrderPaymentLockRefusedException When the order payment lock cannot be claimed; nothing has been written.
 	 */
 	private function claim_dispute_lock( WC_Order $order, string $dispute_id ): string {
-		$lock_token = $this->get_order_payment_store()->claim_order_payment_lock_for_operation( $order, $this->get_persistence_vocabulary(), 'dispute_webhook_' . $dispute_id, 'dispute webhook' );
+		$lock_token = $this->get_order_payment_store()->claim( $order, $this->get_persistence_vocabulary(), 'dispute_webhook_' . $dispute_id, 'dispute webhook' );
 		if ( null === $lock_token ) {
-			$this->get_order_payment_store()->log_order_payment_lock_refusal( $order, $this->get_persistence_vocabulary(), 'dispute webhook' );
+			$this->get_order_payment_store()->log_refusal( $order, $this->get_persistence_vocabulary(), 'dispute webhook' );
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is built in the exception from an order ID and a fixed operation name, not HTML output.
 			throw new OrderPaymentLockRefusedException( $order->get_id(), 'dispute webhook' );
 		}
@@ -904,11 +904,11 @@ class WooPaymentsDisputeEventHandler {
 	/**
 	 * Get the shared order payment store.
 	 *
-	 * @return OrderPaymentStore
+	 * @return OrderPaymentLock
 	 */
-	private function get_order_payment_store(): OrderPaymentStore {
+	private function get_order_payment_store(): OrderPaymentLock {
 		if ( null === $this->order_payment_store ) {
-			$this->order_payment_store = wc_get_container()->get( OrderPaymentStore::class );
+			$this->order_payment_store = wc_get_container()->get( OrderPaymentLock::class );
 		}
 
 		return $this->order_payment_store;

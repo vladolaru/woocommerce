@@ -10,7 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
@@ -453,10 +453,10 @@ class WooPaymentsEventIngestor {
 	public function record_succeeded_payment_intent( WC_Order $order, array $payment_intent ): void {
 		// One claim covers the payment meta, the token repair and the status update, so a refusal leaves the order untouched.
 		$vocabulary    = new WooPaymentsPersistenceVocabulary();
-		$payment_store = wc_get_container()->get( OrderPaymentStore::class );
-		$lock_token    = $payment_store->claim_order_payment_lock_for_operation( $order, $vocabulary, $this->get_object_id( $payment_intent ), 'payment status update' );
+		$payment_store = wc_get_container()->get( OrderPaymentLock::class );
+		$lock_token    = $payment_store->claim( $order, $vocabulary, $this->get_object_id( $payment_intent ), 'payment status update' );
 		if ( null === $lock_token ) {
-			$payment_store->log_order_payment_lock_refusal( $order, $vocabulary, 'payment status update' );
+			$payment_store->log_refusal( $order, $vocabulary, 'payment status update' );
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is built in the exception from an order ID and a fixed operation name, not HTML output.
 			throw new OrderPaymentLockRefusedException( $order->get_id(), 'payment status update' );
 		}
@@ -473,7 +473,7 @@ class WooPaymentsEventIngestor {
 			$this->repair_recurring_order_token( $order, $payment_intent );
 			$this->lifecycle_service->apply_unlocked( $order, $lifecycle_event, $vocabulary );
 		} finally {
-			$payment_store->release_order_payment_lock( $order, $vocabulary, $lock_token );
+			$payment_store->release( $order, $vocabulary, $lock_token );
 		}
 
 		$this->maybe_send_ipp_receipt_email( $order, $payment_intent );
@@ -1408,7 +1408,7 @@ class WooPaymentsEventIngestor {
 	 */
 	private function log_payment_method_mismatch( WC_Order $order, string $event_type ): void {
 		if ( ! $this->is_woopayments_order( $order ) ) {
-			wc_get_container()->get( OrderPaymentStore::class )->log_order_payment_method_mismatch( $order, $event_type );
+			wc_get_container()->get( OrderPaymentLock::class )->log_order_payment_method_mismatch( $order, $event_type );
 		}
 	}
 

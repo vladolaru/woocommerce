@@ -6,7 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments;
 use Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController;
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -34,7 +34,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Order payment store.
 	 *
-	 * @var OrderPaymentStore
+	 * @var OrderPaymentLock
 	 */
 	private $order_payment_store;
 
@@ -58,7 +58,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 		$this->sut                    = wc_get_container()->get( OrderPaymentLifecycleService::class );
-		$this->order_payment_store    = wc_get_container()->get( OrderPaymentStore::class );
+		$this->order_payment_store    = wc_get_container()->get( OrderPaymentLock::class );
 		$this->persistence_vocabulary = new WooPaymentsPersistenceVocabulary();
 	}
 
@@ -112,7 +112,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$order->set_customer_note( 'Checkout note saved with payment completion.' );
 		$order->update_meta_data( '_caller_owned_unsaved_meta', 'preserve this value' );
 
-		$this->assertNotNull( $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $this->persistence_vocabulary, 'pi_caller_changes', 'payment operation' ) );
+		$this->assertNotNull( $this->order_payment_store->claim( $order, $this->persistence_vocabulary, 'pi_caller_changes', 'payment operation' ) );
 		try {
 			$this->sut->apply_unlocked( $order, $this->completed_event( 'pi_caller_changes' ), $this->persistence_vocabulary );
 		} finally {
@@ -207,7 +207,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$fresh_order->update_meta_data( '_intention_status', 'requires_payment_method' );
 		$fresh_order->update_status( 'on-hold' );
 
-		$this->assertNotNull( $this->order_payment_store->claim_order_payment_lock_for_operation( $stale_order, $this->persistence_vocabulary, 'pi_stale_unlocked', 'payment operation' ) );
+		$this->assertNotNull( $this->order_payment_store->claim( $stale_order, $this->persistence_vocabulary, 'pi_stale_unlocked', 'payment operation' ) );
 		try {
 			$this->sut->apply_unlocked( $stale_order, $this->completed_event( 'pi_stale_unlocked' ), $this->persistence_vocabulary );
 		} finally {
@@ -237,7 +237,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 
 		$stale_order->set_status( 'processing' );
 		$stale_order->update_meta_data( '_wcpay_open_dispute_ids', array() );
-		$this->assertNotNull( $this->order_payment_store->claim_order_payment_lock_for_operation( $stale_order, $this->persistence_vocabulary, 'pi_stale_save', 'payment operation' ) );
+		$this->assertNotNull( $this->order_payment_store->claim( $stale_order, $this->persistence_vocabulary, 'pi_stale_save', 'payment operation' ) );
 		try {
 			$this->sut->apply_unlocked( $stale_order, $this->completed_event( 'pi_stale_save' ), $this->persistence_vocabulary );
 			$stale_order->save();
@@ -775,7 +775,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 
 		$stale_order->set_status( 'processing' );
 		$stale_order->update_meta_data( '_provider_open_dispute_ids', array() );
-		$this->assertNotNull( $this->order_payment_store->claim_order_payment_lock_for_operation( $stale_order, $vocabulary, 'pi_custom_stale_save', 'payment operation' ) );
+		$this->assertNotNull( $this->order_payment_store->claim( $stale_order, $vocabulary, 'pi_custom_stale_save', 'payment operation' ) );
 		try {
 			$this->sut->apply_unlocked( $stale_order, $this->completed_event( 'pi_custom_stale_save' ), $vocabulary );
 			$stale_order->save();
@@ -799,7 +799,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$vocabulary->method( 'get_order_lock_key' )->willReturn( 'provider_lifecycle_lock_' . $order->get_id() );
 		$vocabulary->method( 'get_lock_sentinel' )->willReturn( 'provider-lock' );
 		$vocabulary->method( 'get_lock_ttl_seconds' )->willReturn( 60 );
-		$lock_token = $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $this->persistence_vocabulary, 'woopayments_operation', 'payment operation' );
+		$lock_token = $this->order_payment_store->claim( $order, $this->persistence_vocabulary, 'woopayments_operation', 'payment operation' );
 		$this->assertNotNull( $lock_token );
 
 		$this->apply_event(
@@ -819,7 +819,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Provider payment started.' ), 'A lock held under another provider key must not block the event.' );
 		$this->assertFalse( get_transient( 'provider_lifecycle_lock_' . $order->get_id() ), 'The provider lock must be released after the event.' );
-		$this->order_payment_store->release_order_payment_lock( $order, $this->persistence_vocabulary, $lock_token );
+		$this->order_payment_store->release( $order, $this->persistence_vocabulary, $lock_token );
 	}
 
 	/**
@@ -1029,7 +1029,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_locked_order_is_not_mutated_or_unlocked_for_active_operation(): void {
 		$order = $this->create_woopayments_order();
-		$this->assertNotNull( $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $this->persistence_vocabulary, 'native_charge_operation', 'payment operation' ) );
+		$this->assertNotNull( $this->order_payment_store->claim( $order, $this->persistence_vocabulary, 'native_charge_operation', 'payment operation' ) );
 
 		$this->apply_event(
 			$order,
@@ -1084,9 +1084,9 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( \RuntimeException::class, $thrown, 'The application failure must reach the caller.' );
 		$this->assertFalse( get_transient( $this->persistence_vocabulary->get_order_lock_key( $order ) ), 'A throwing application must release the order payment lock.' );
-		$lock_token = $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $this->persistence_vocabulary, 'next_operation', 'payment operation' );
+		$lock_token = $this->order_payment_store->claim( $order, $this->persistence_vocabulary, 'next_operation', 'payment operation' );
 		$this->assertNotNull( $lock_token, 'The next operation must be able to claim the lock.' );
-		$this->order_payment_store->release_order_payment_lock( $order, $this->persistence_vocabulary, $lock_token );
+		$this->order_payment_store->release( $order, $this->persistence_vocabulary, $lock_token );
 	}
 
 	/**
@@ -1094,7 +1094,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_skipped_locked_event_is_logged_with_context(): void {
 		$order = $this->create_woopayments_order();
-		$this->assertNotNull( $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $this->persistence_vocabulary, 'native_charge_operation', 'payment operation' ) );
+		$this->assertNotNull( $this->order_payment_store->claim( $order, $this->persistence_vocabulary, 'native_charge_operation', 'payment operation' ) );
 
 		$this->apply_event(
 			$order,

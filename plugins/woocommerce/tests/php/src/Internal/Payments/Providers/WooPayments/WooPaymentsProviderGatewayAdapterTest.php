@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
@@ -1743,16 +1743,16 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$sut                    = $this->create_timeout_adapter( $http_client, 'cus_sent' );
 		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
 		$logger     = RecordingWcLogger::install();
-		$store      = wc_get_container()->get( OrderPaymentStore::class );
+		$store      = wc_get_container()->get( OrderPaymentLock::class );
 		$vocabulary = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
 		$refused    = array();
 		foreach ( array( 'key_second', 'key_third' ) as $attempt_key ) {
-			$token = $store->claim_order_payment_lock_for_operation( $order, $vocabulary, $attempt_key, 'checkout' );
+			$token = $store->claim( $order, $vocabulary, $attempt_key, 'checkout' );
 			$this->assertIsString( $token );
 			try {
 				$refused[] = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', $attempt_key );
 			} finally {
-				$store->release_order_payment_lock( $order, $vocabulary, $token );
+				$store->release( $order, $vocabulary, $token );
 			}
 		}
 		$kept = wc_get_order( $order->get_id() );
@@ -6210,11 +6210,11 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'GET intentions/' . self::CHALLENGE_COMPLETED_INTENT_ID ), self::platform_calls( $http_client ), 'Only the attached intent may be read; nothing may be charged.' );
 		$context = $this->get_logged_context( $logger, 'Failed to note the disputed payment attached to the order.' );
 		$this->assertSame( array( $order->get_id(), self::CHALLENGE_COMPLETED_INTENT_ID, $thrown ), array( $context['order_id'], $context['intent_id'], $context['exception'] ) );
-		$store      = wc_get_container()->get( OrderPaymentStore::class );
+		$store      = wc_get_container()->get( OrderPaymentLock::class );
 		$vocabulary = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
-		$token      = $store->claim_order_payment_lock_for_operation( $order, $vocabulary, 'refund_key', 'refund' );
+		$token      = $store->claim( $order, $vocabulary, 'refund_key', 'refund' );
 		$this->assertIsString( $token, 'The note must release the order payment lock it took.' );
-		$store->release_order_payment_lock( $order, $vocabulary, $token );
+		$store->release( $order, $vocabulary, $token );
 	}
 
 	/**

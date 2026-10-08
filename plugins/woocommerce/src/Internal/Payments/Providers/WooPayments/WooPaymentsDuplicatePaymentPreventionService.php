@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
@@ -408,18 +408,18 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 			return;
 		}
 
-		$store      = wc_get_container()->get( OrderPaymentStore::class );
+		$store      = wc_get_container()->get( OrderPaymentLock::class );
 		$vocabulary = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
-		$lock_token = $store->claim_order_payment_lock_for_operation( $order, $vocabulary, 'disputed_intent_note_' . $intent_id, 'disputed intent note' );
+		$lock_token = $store->claim( $order, $vocabulary, 'disputed_intent_note_' . $intent_id, 'disputed intent note' );
 		if ( null === $lock_token ) {
-			$store->log_order_payment_lock_refusal( $order, $vocabulary, 'disputed intent note' );
+			$store->log_refusal( $order, $vocabulary, 'disputed intent note' );
 			return;
 		}
 
 		try {
 			$this->write_disputed_intent_note_unless_noted( $this->get_lifecycle_service()->get_fresh_order_from_data_store( $order ), $intent_id );
 		} finally {
-			$store->release_order_payment_lock( $order, $vocabulary, $lock_token );
+			$store->release( $order, $vocabulary, $lock_token );
 		}
 	}
 

@@ -22,9 +22,9 @@ class OrderPaymentLifecycleService {
 	/**
 	 * Order payment store.
 	 *
-	 * @var OrderPaymentStore
+	 * @var OrderPaymentLock
 	 */
-	private OrderPaymentStore $order_payment_store;
+	private OrderPaymentLock $order_payment_store;
 
 	/**
 	 * WooPayments order note service.
@@ -38,10 +38,10 @@ class OrderPaymentLifecycleService {
 	 *
 	 * @internal
 	 *
-	 * @param OrderPaymentStore           $order_payment_store Order payment store.
+	 * @param OrderPaymentLock            $order_payment_store Order payment store.
 	 * @param WooPaymentsOrderNoteService $order_note_service  WooPayments order note service.
 	 */
-	final public function init( OrderPaymentStore $order_payment_store, ?WooPaymentsOrderNoteService $order_note_service = null ): void {
+	final public function init( OrderPaymentLock $order_payment_store, ?WooPaymentsOrderNoteService $order_note_service = null ): void {
 		$this->order_payment_store = $order_payment_store;
 		$this->order_note_service  = $order_note_service;
 	}
@@ -65,7 +65,7 @@ class OrderPaymentLifecycleService {
 		$lock_token        = null;
 
 		if ( null !== $payment_reference ) {
-			$lock_token = $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $persistence_vocabulary, $payment_reference, 'payment status update' );
+			$lock_token = $this->order_payment_store->claim( $order, $persistence_vocabulary, $payment_reference, 'payment status update' );
 			if ( null === $lock_token ) {
 				$this->log_skipped_locked_event( $order, $event, $payment_reference, $persistence_vocabulary );
 				return false;
@@ -76,7 +76,7 @@ class OrderPaymentLifecycleService {
 			$this->apply_unlocked( $order, $event, $persistence_vocabulary );
 		} finally {
 			if ( null !== $lock_token ) {
-				$this->order_payment_store->release_order_payment_lock( $order, $persistence_vocabulary, $lock_token );
+				$this->order_payment_store->release( $order, $persistence_vocabulary, $lock_token );
 			}
 		}
 
@@ -145,7 +145,7 @@ class OrderPaymentLifecycleService {
 	 */
 	private function log_skipped_locked_event( WC_Order $order, PaymentLifecycleEvent $event, string $payment_reference, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): void {
 		// Same line as every other lock refusal, so one search finds them all (inbox N-270).
-		$this->order_payment_store->log_order_payment_lock_refusal(
+		$this->order_payment_store->log_refusal(
 			$order,
 			$persistence_vocabulary,
 			'payment status update',
