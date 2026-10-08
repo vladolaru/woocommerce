@@ -31,9 +31,9 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 	/**
 	 * WooPayments persistence profile.
 	 *
-	 * @var WooPaymentsPersistenceProfile|null
+	 * @var WooPaymentsPersistenceVocabulary|null
 	 */
-	private ?WooPaymentsPersistenceProfile $persistence_profile = null;
+	private ?WooPaymentsPersistenceVocabulary $persistence_profile = null;
 
 	/**
 	 * WooPayments note service.
@@ -48,11 +48,11 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 	 * @internal
 	 * @since 11.2.0
 	 *
-	 * @param OrderPaymentStore|null             $order_payment_store Optional order payment store.
-	 * @param WooPaymentsPersistenceProfile|null $persistence_profile Optional WooPayments persistence profile.
-	 * @param WooPaymentsOrderNoteService|null   $note_service Optional WooPayments note service.
+	 * @param OrderPaymentStore|null                $order_payment_store Optional order payment store.
+	 * @param WooPaymentsPersistenceVocabulary|null $persistence_profile Optional WooPayments persistence profile.
+	 * @param WooPaymentsOrderNoteService|null      $note_service Optional WooPayments note service.
 	 */
-	final public function init( ?OrderPaymentStore $order_payment_store = null, ?WooPaymentsPersistenceProfile $persistence_profile = null, ?WooPaymentsOrderNoteService $note_service = null ): void {
+	final public function init( ?OrderPaymentStore $order_payment_store = null, ?WooPaymentsPersistenceVocabulary $persistence_profile = null, ?WooPaymentsOrderNoteService $note_service = null ): void {
 		$this->order_payment_store = $order_payment_store;
 		$this->persistence_profile = $persistence_profile;
 		$this->note_service        = $note_service;
@@ -123,7 +123,7 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 				'efw_type'       => $warning['fraud_type'],
 				'created'        => $warning['created'],
 			);
-			$fresh_order->update_meta_data( WooPaymentsPersistenceProfile::EARLY_FRAUD_WARNING_META_KEY, $state );
+			$fresh_order->update_meta_data( WooPaymentsPersistenceVocabulary::EARLY_FRAUD_WARNING_META_KEY, $state );
 			$fresh_order->save();
 			$persisted_order   = wc_get_order( $fresh_order->get_id() );
 			$persisted_warning = $persisted_order instanceof WC_Order ? $this->get_existing_warning( $persisted_order ) : null;
@@ -209,7 +209,7 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 	 * @return array{efw_id:string,efw_actionable:bool,efw_type:string,created:int}|null
 	 */
 	private function get_existing_warning( WC_Order $order ): ?array {
-		$warning = $order->get_meta( WooPaymentsPersistenceProfile::EARLY_FRAUD_WARNING_META_KEY, true );
+		$warning = $order->get_meta( WooPaymentsPersistenceVocabulary::EARLY_FRAUD_WARNING_META_KEY, true );
 		if (
 			! is_array( $warning )
 			|| array() !== array_diff( array( 'efw_id', 'efw_actionable', 'efw_type', 'created' ), array_keys( $warning ) )
@@ -266,11 +266,11 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 	/**
 	 * Get the WooPayments persistence profile.
 	 *
-	 * @return WooPaymentsPersistenceProfile
+	 * @return WooPaymentsPersistenceVocabulary
 	 */
-	private function get_persistence_profile(): WooPaymentsPersistenceProfile {
+	private function get_persistence_profile(): WooPaymentsPersistenceVocabulary {
 		if ( null === $this->persistence_profile ) {
-			$this->persistence_profile = wc_get_container()->get( WooPaymentsPersistenceProfile::class );
+			$this->persistence_profile = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
 		}
 
 		return $this->persistence_profile;

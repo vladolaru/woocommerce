@@ -10,7 +10,7 @@ use Automattic\WooCommerce\Internal\Payments\ProviderContract;
 use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 
 /**
  * Test provider that records operation calls.
@@ -104,7 +104,7 @@ class RecordingProvider implements ProviderContract, ProviderOutcomeMetadataMapp
 	 * @return ProviderPersistenceVocabulary
 	 */
 	public function get_persistence_profile(): ProviderPersistenceVocabulary {
-		return new WooPaymentsPersistenceProfile();
+		return new WooPaymentsPersistenceVocabulary();
 	}
 
 	/**

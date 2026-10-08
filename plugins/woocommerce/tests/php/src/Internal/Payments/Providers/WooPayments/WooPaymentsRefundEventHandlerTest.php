@@ -7,7 +7,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
@@ -680,7 +680,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			}
 		};
 		$handler = new WooPaymentsRefundEventHandler();
-		$handler->init( wc_get_container()->get( WooPaymentsLegacyRuntime::class ), $store, new WooPaymentsPersistenceProfile() );
+		$handler->init( wc_get_container()->get( WooPaymentsLegacyRuntime::class ), $store, new WooPaymentsPersistenceVocabulary() );
 
 		$handler->process( 'charge.refunded', $this->get_successful_refund_charge() );
 

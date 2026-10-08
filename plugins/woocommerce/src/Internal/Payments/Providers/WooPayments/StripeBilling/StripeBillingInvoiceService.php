@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use WC_Order;
 use WP_Http;
 
@@ -201,7 +201,7 @@ class StripeBillingInvoiceService {
 
 			if ( is_callable( array( $subscription, 'is_manual' ) ) && $subscription->is_manual() && is_callable( array( $subscription, 'set_requires_manual_renewal' ) ) ) {
 				$subscription->set_requires_manual_renewal( false );
-				$subscription->set_payment_method( WooPaymentsPersistenceProfile::GATEWAY_ID );
+				$subscription->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 
 				// The subscription renews with the payment method that paid this order.
 				wc_get_container()->get( NativeWooPaymentsGateway::class )->update_failing_payment_method( $subscription, $order );

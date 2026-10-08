@@ -21,7 +21,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsNotificationEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundEventHandler;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -191,7 +191,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_payment_method_id', 'pm_123' );
 		$order->save();
 		$store   = wc_get_container()->get( OrderPaymentStore::class );
-		$profile = new WooPaymentsPersistenceProfile();
+		$profile = new WooPaymentsPersistenceVocabulary();
 		// A checkout that died after the platform captured keeps the lock until its TTL runs out.
 		$store->lock_order_payment( $order, $profile, 'pi_123' );
 		$failed_overrides = array(
@@ -3817,7 +3817,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	public function test_charge_refunded_fails_closed_when_order_payment_is_locked(): void {
 		$order   = $this->create_refundable_woopayments_order( '10.00' );
 		$store   = wc_get_container()->get( OrderPaymentStore::class );
-		$profile = new WooPaymentsPersistenceProfile();
+		$profile = new WooPaymentsPersistenceVocabulary();
 		$store->lock_order_payment( $order, $profile, 'existing_operation' );
 
 		try {
@@ -3978,7 +3978,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$refund->update_meta_data( '_wcpay_refund_id', 're_123' );
 		$refund->save_meta_data();
 		$store   = wc_get_container()->get( OrderPaymentStore::class );
-		$profile = new WooPaymentsPersistenceProfile();
+		$profile = new WooPaymentsPersistenceVocabulary();
 		$store->lock_order_payment( $order, $profile, 'existing_operation' );
 
 		try {

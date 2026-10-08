@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
 use WC_Order_Refund;
 use WC_Order;
@@ -25,9 +25,9 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 	/**
 	 * WooPayments persistence profile.
 	 *
-	 * @var WooPaymentsPersistenceProfile
+	 * @var WooPaymentsPersistenceVocabulary
 	 */
-	private WooPaymentsPersistenceProfile $persistence_profile;
+	private WooPaymentsPersistenceVocabulary $persistence_profile;
 
 	/**
 	 * Set up test fixtures.
@@ -35,7 +35,7 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 		$this->sut                 = wc_get_container()->get( OrderPaymentStore::class );
-		$this->persistence_profile = new WooPaymentsPersistenceProfile();
+		$this->persistence_profile = new WooPaymentsPersistenceVocabulary();
 	}
 
 	/**

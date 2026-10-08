@@ -363,7 +363,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 *              locked by another holder.
 	 */
 	private function fail_order_unless_settled( WC_Order $order, string $intent_id, ?string $exception_message, string $intent_status ): bool {
-		$persistence_profile = new WooPaymentsPersistenceProfile();
+		$persistence_profile = new WooPaymentsPersistenceVocabulary();
 		$order_payment_store = wc_get_container()->get( OrderPaymentStore::class );
 		$lock_token          = $order_payment_store->claim_order_payment_lock_for_operation( $order, $persistence_profile, $intent_id, 'payment status update' );
 		if ( null === $lock_token ) {

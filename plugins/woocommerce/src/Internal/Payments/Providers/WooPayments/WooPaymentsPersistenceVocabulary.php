@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsPersistenceProfile class file.
+ * WooPaymentsPersistenceVocabulary class file.
  */
 
 declare( strict_types = 1 );
@@ -12,12 +12,12 @@ use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
 use WC_Order;
 
 /**
- * WooPayments persistence vocabulary used by the native payments runtime.
+ * Names the gateway ids, order payment lock and order meta keys that WooPayments payments are stored under.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
-class WooPaymentsPersistenceProfile implements ProviderPersistenceVocabulary {
+class WooPaymentsPersistenceVocabulary implements ProviderPersistenceVocabulary {
 
 	/**
 	 * Preserved WooPayments gateway ID.

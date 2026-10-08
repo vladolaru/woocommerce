@@ -15,7 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEv
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFailedEventStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFailedEventsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookReliabilityService;
 use WC_Unit_Test_Case;
 
@@ -455,7 +455,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$order->set_total( '10.00' );
 		$order->save();
 		$payment_store = wc_get_container()->get( OrderPaymentStore::class );
-		$profile       = new WooPaymentsPersistenceProfile();
+		$profile       = new WooPaymentsPersistenceVocabulary();
 		// A checkout that died after the platform captured keeps the lock until its TTL runs out.
 		$payment_store->lock_order_payment( $order, $profile, 'pi_lock_ttl' );
 		// Shape read by client 11.1.0 class-wc-payments-webhook-processing-service.php:494-519 (object id, currency,

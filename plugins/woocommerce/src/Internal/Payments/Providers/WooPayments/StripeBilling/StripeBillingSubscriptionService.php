@@ -13,7 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use WC_Coupon;
 use WC_Order;
 use WC_Order_Item;
@@ -162,7 +162,7 @@ class StripeBillingSubscriptionService {
 	 */
 	public function is_wcpay_subscription( WC_Order $subscription ): bool {
 		return ! WooPaymentsSubscriptionMethodPolicy::is_duplicate_site()
-			&& WooPaymentsPersistenceProfile::GATEWAY_ID === $subscription->get_payment_method()
+			&& WooPaymentsPersistenceVocabulary::GATEWAY_ID === $subscription->get_payment_method()
 			&& (bool) $this->get_wcpay_subscription_id( $subscription );
 	}
 
@@ -418,7 +418,7 @@ class StripeBillingSubscriptionService {
 	 */
 	public function create_subscription( $subscription ): void {
 		// Another gateway, or a free subscription bought without payment details, is not billed at Stripe.
-		if ( ! $subscription instanceof WC_Order || WooPaymentsPersistenceProfile::GATEWAY_ID !== $subscription->get_payment_method() ) {
+		if ( ! $subscription instanceof WC_Order || WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $subscription->get_payment_method() ) {
 			return;
 		}
 
@@ -493,7 +493,7 @@ class StripeBillingSubscriptionService {
 	 * @throws \Exception With the message to show the customer when the Stripe subscription cannot be created.
 	 */
 	public function maybe_create_subscription_from_update_payment_method( $subscription, $new_payment_method ): void {
-		if ( ! $subscription instanceof WC_Order || WooPaymentsPersistenceProfile::GATEWAY_ID !== $new_payment_method ) {
+		if ( ! $subscription instanceof WC_Order || WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $new_payment_method ) {
 			return;
 		}
 
@@ -718,7 +718,7 @@ class StripeBillingSubscriptionService {
 		// Charging the invoice also sends invoice.paid, whose webhook records the payment under the order payment lock.
 		// Completing the order here takes the same lock and reads the order again, so the two cannot both complete it;
 		// when the webhook holds the lock, it completes the order. Client 11.1.0 completes inline with no lock (:677-690).
-		$profile       = new WooPaymentsPersistenceProfile();
+		$profile       = new WooPaymentsPersistenceVocabulary();
 		$payment_store = wc_get_container()->get( OrderPaymentStore::class );
 		$lock_token    = $payment_store->claim_order_payment_lock_for_operation( $order, $profile, $wcpay_invoice_id, 'payment method change payment' );
 		if ( null === $lock_token ) {
@@ -882,7 +882,7 @@ class StripeBillingSubscriptionService {
 		}
 
 		$wcpay_subscription_id = $this->get_wcpay_subscription_id( $subscription );
-		if ( ! $wcpay_subscription_id || WooPaymentsPersistenceProfile::GATEWAY_ID === $new_payment_method ) {
+		if ( ! $wcpay_subscription_id || WooPaymentsPersistenceVocabulary::GATEWAY_ID === $new_payment_method ) {
 			return;
 		}
 

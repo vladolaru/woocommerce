@@ -8,7 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEarlyFraudWarningEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -393,7 +393,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 	public function test_rejects_lock_contention(): void {
 		$order   = $this->create_woopayments_order();
 		$store   = new OrderPaymentStore();
-		$profile = new WooPaymentsPersistenceProfile();
+		$profile = new WooPaymentsPersistenceVocabulary();
 		$store->init( new TransientRowLock() );
 		$this->assertNotNull( $store->claim_order_payment_lock( $order, $profile, 'other_operation' ) );
 		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
@@ -462,7 +462,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 			public function release_order_payment_lock( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $profile, string $lock_token ): void {}
 		};
 		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
-		$handler->init( $store, new WooPaymentsPersistenceProfile() );
+		$handler->init( $store, new WooPaymentsPersistenceVocabulary() );
 
 		$this->expectException( \RuntimeException::class );
 		$handler->process(
@@ -526,7 +526,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 		};
 		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
 		$store->init( new TransientRowLock() );
-		$handler->init( $store, new WooPaymentsPersistenceProfile() );
+		$handler->init( $store, new WooPaymentsPersistenceVocabulary() );
 
 		$handler->process(
 			'radar.early_fraud_warning.updated',
@@ -615,7 +615,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 			}
 		};
 		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
-		$handler->init( $store, new WooPaymentsPersistenceProfile(), $notes );
+		$handler->init( $store, new WooPaymentsPersistenceVocabulary(), $notes );
 
 		try {
 			$handler->process(
@@ -642,7 +642,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 	public function test_rejects_a_non_throwing_note_insertion_failure(): void {
 		$order   = $this->create_woopayments_order();
 		$store   = new OrderPaymentStore();
-		$profile = new WooPaymentsPersistenceProfile();
+		$profile = new WooPaymentsPersistenceVocabulary();
 		$notes   = new class() extends WooPaymentsOrderNoteService {
 			/**
 			 * {@inheritDoc}
@@ -716,7 +716,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 			}
 		};
 		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
-		$handler->init( $store, new WooPaymentsPersistenceProfile() );
+		$handler->init( $store, new WooPaymentsPersistenceVocabulary() );
 		add_action( 'woocommerce_before_order_object_save', $thrower );
 
 		$failure = null;
@@ -836,7 +836,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 				}
 			};
 			$handler = new WooPaymentsEarlyFraudWarningEventHandler();
-			$handler->init( $store, new WooPaymentsPersistenceProfile(), $notes );
+			$handler->init( $store, new WooPaymentsPersistenceVocabulary(), $notes );
 
 			try {
 				$handler->process( 'radar.early_fraud_warning.created', $this->valid_event_object() );

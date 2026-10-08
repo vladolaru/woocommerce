@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -157,7 +157,7 @@ class WooPaymentsMultiCurrencyPaymentMethodsMap implements RegisterHooksInterfac
 	 * @return WooPaymentsPaymentMethodDefinition[]
 	 */
 	private function get_currency_dependent_definitions(): array {
-		$settings    = get_option( 'woocommerce_' . WooPaymentsPersistenceProfile::GATEWAY_ID . '_settings', array() );
+		$settings    = get_option( 'woocommerce_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_settings', array() );
 		$enabled_ids = is_array( $settings ) && is_array( $settings['upe_enabled_payment_method_ids'] ?? null ) ? $settings['upe_enabled_payment_method_ids'] : array();
 		if ( empty( $enabled_ids ) ) {
 			return array();

@@ -14,7 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
 use InvalidArgumentException;
 use RuntimeException;
@@ -513,7 +513,7 @@ class StripeBillingEventHandler {
 	 * or a duplicate push). The renewal order lookup and creation, the payment recording, the notes and the subscription
 	 * status changes run under the lock, so a second delivery waits for none of it: it is refused. invoice.paid is
 	 * retried and finds the order paid; an invoice.payment_failed gets one attempt, so its refusal leaves a note on the
-	 * subscription. Like the order payment lock, this is a lease of WooPaymentsPersistenceProfile::LOCK_TTL_SECONDS: a
+	 * subscription. Like the order payment lock, this is a lease of WooPaymentsPersistenceVocabulary::LOCK_TTL_SECONDS: a
 	 * delivery that died cannot block the next one, and one that stalls past it can be overtaken (accepted, as for the
 	 * order payment lock). Client 11.1.0 takes no lock (class-wc-payments-subscriptions-event-handler.php:146-175, :254-307).
 	 *
@@ -528,7 +528,7 @@ class StripeBillingEventHandler {
 	private function run_under_invoice_lock( WC_Order $subscription, string $invoice_id, string $refusal_note, callable $callback ) {
 		$lock_key   = 'wcpay_stripe_billing_renewal_' . md5( $invoice_id );
 		$lock_token = wp_generate_uuid4();
-		if ( ! $this->row_lock->claim( $lock_key, $lock_token, WooPaymentsPersistenceProfile::LOCK_TTL_SECONDS ) ) {
+		if ( ! $this->row_lock->claim( $lock_key, $lock_token, WooPaymentsPersistenceVocabulary::LOCK_TTL_SECONDS ) ) {
 			if ( '' !== $refusal_note ) {
 				try {
 					$subscription->add_order_note( $refusal_note );
@@ -568,7 +568,7 @@ class StripeBillingEventHandler {
 			throw new StripeBillingException( $error_message, StripeBillingException::INVALID_EVENT_DATA );
 		}
 
-		$order->set_payment_method( WooPaymentsPersistenceProfile::GATEWAY_ID );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$this->invoice_service->set_order_invoice_id( $order, $invoice_id );
 
 		return $order;

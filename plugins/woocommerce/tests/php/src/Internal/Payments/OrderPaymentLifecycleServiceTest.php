@@ -9,7 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
 use Automattic\WooCommerce\RestApi\UnitTests\LoggerSpyTrait;
 use Automattic\WooCommerce\Utilities\OrderUtil;
@@ -40,9 +40,9 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * WooPayments persistence profile.
 	 *
-	 * @var WooPaymentsPersistenceProfile
+	 * @var WooPaymentsPersistenceVocabulary
 	 */
-	private WooPaymentsPersistenceProfile $persistence_profile;
+	private WooPaymentsPersistenceVocabulary $persistence_profile;
 
 	/**
 	 * Test-only gettext replacements.
@@ -58,7 +58,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		parent::setUp();
 		$this->sut                 = wc_get_container()->get( OrderPaymentLifecycleService::class );
 		$this->order_payment_store = wc_get_container()->get( OrderPaymentStore::class );
-		$this->persistence_profile = new WooPaymentsPersistenceProfile();
+		$this->persistence_profile = new WooPaymentsPersistenceVocabulary();
 	}
 
 	/**

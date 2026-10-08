@@ -11,7 +11,7 @@ use ActionScheduler_Store;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use RuntimeException;
 use WC_Order;
@@ -161,7 +161,7 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 
 			$this->update_wcpay_subscription_meta( $subscription );
 
-			if ( WooPaymentsPersistenceProfile::GATEWAY_ID === $subscription->get_payment_method() ) {
+			if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID === $subscription->get_payment_method() ) {
 				$subscription->add_order_note( __( 'This subscription has been successfully migrated to a WooPayments tokenized subscription.', 'woocommerce' ) );
 			}
 
@@ -550,7 +550,7 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 			}
 
 			$current_period_end = isset( $wcpay_subscription['current_period_end'] ) && is_numeric( $wcpay_subscription['current_period_end'] ) ? absint( $wcpay_subscription['current_period_end'] ) : 0;
-			if ( WooPaymentsPersistenceProfile::GATEWAY_ID === $subscription->get_payment_method() && $current_period_end > time() ) {
+			if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID === $subscription->get_payment_method() && $current_period_end > time() ) {
 				$new_next_payment = gmdate( 'Y-m-d H:i:s', $current_period_end );
 				$subscription->update_dates( array( 'next_payment' => $new_next_payment ) );
 				$this->migration_log->log( sprintf( '---- Next payment date updated to %1$s to match Stripe subscription record and to ensure subscription #%2$d has a pending scheduled payment.', $new_next_payment, $subscription->get_id() ) );
@@ -624,7 +624,7 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 	 * @param array<string,mixed> $wcpay_subscription Stripe subscription.
 	 */
 	private function verify_subscription_payment_token( WC_Order $subscription, array $wcpay_subscription ): void {
-		if ( WooPaymentsPersistenceProfile::GATEWAY_ID !== $subscription->get_payment_method() ) {
+		if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $subscription->get_payment_method() ) {
 			$this->migration_log->log( sprintf( '---- Skipped verifying the payment token. Subscription #%1$d has "%2$s" as the payment method.', $subscription->get_id(), $subscription->get_payment_method() ) );
 			return;
 		}
@@ -663,7 +663,7 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 		$customer_tokens = WC_Payment_Tokens::get_tokens(
 			array(
 				'user_id'    => $user_id,
-				'gateway_id' => WooPaymentsPersistenceProfile::GATEWAY_ID,
+				'gateway_id' => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'limit'      => self::CUSTOMER_TOKENS_LIMIT,
 			)
 		);

@@ -10,7 +10,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use WC_Order;
 use WC_Payment_Gateway;
 use WC_Unit_Test_Case;
@@ -600,7 +600,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$this->assertCount( 1, $this->get_disputed_intent_notes( $order ) );
 		// The second submit found the note already written; it must still release the lock it took.
 		$store   = wc_get_container()->get( OrderPaymentStore::class );
-		$profile = wc_get_container()->get( WooPaymentsPersistenceProfile::class );
+		$profile = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
 		$token   = $store->claim_order_payment_lock_for_operation( $order, $profile, 'refund_key', 'refund' );
 		$this->assertIsString( $token, 'The already-noted submit must release the order payment lock.' );
 		$store->release_order_payment_lock( $order, $profile, $token );
@@ -613,7 +613,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$order   = $this->create_order_with_disputed_attached_intent();
 		$sut     = $this->create_service( $this->create_session(), $this->create_api_client_answering( $this->create_charged_intent( $order, array( 'disputed' => true ) ) ) );
 		$store   = wc_get_container()->get( OrderPaymentStore::class );
-		$profile = wc_get_container()->get( WooPaymentsPersistenceProfile::class );
+		$profile = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
 		$token   = $store->claim_order_payment_lock_for_operation( $order, $profile, 'dispute_webhook_dp_held', 'dispute webhook' );
 		$this->assertIsString( $token );
 		$logger = RecordingWcLogger::install();

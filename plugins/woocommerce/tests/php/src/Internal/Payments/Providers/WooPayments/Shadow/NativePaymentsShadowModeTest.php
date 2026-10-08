@@ -9,7 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow\NativePaymentsShadowMode;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow\PaymentSurfaceDiffer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow\ShadowComparison;
@@ -690,7 +690,7 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 			new PaymentSurfaceDiffer(),
 			wc_get_container()->get( LegacyProxy::class ),
 			$api_client,
-			new WooPaymentsPersistenceProfile(),
+			new WooPaymentsPersistenceVocabulary(),
 			$this->create_account_service( $test_mode ),
 			new WooPaymentsOrderDataService()
 		);

@@ -20,7 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffects;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderMode;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Throwable;
@@ -105,9 +105,9 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	/**
 	 * WooPayments persistence profile.
 	 *
-	 * @var WooPaymentsPersistenceProfile
+	 * @var WooPaymentsPersistenceVocabulary
 	 */
-	private WooPaymentsPersistenceProfile $persistence_profile;
+	private WooPaymentsPersistenceVocabulary $persistence_profile;
 
 	/**
 	 * WooPayments account service.
@@ -128,14 +128,14 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter  $arbiter             Runtime owner arbiter.
-	 * @param OrderPaymentStore             $order_payment_store Order payment projection store.
-	 * @param PaymentSurfaceDiffer          $differ              Payment-surface differ.
-	 * @param LegacyProxy                   $legacy_proxy        Legacy proxy.
-	 * @param WooPaymentsApiClient          $api_client           WooPayments API client.
-	 * @param WooPaymentsPersistenceProfile $persistence_profile  WooPayments persistence profile.
-	 * @param WooPaymentsAccountService     $account_service      WooPayments account service.
-	 * @param WooPaymentsOrderDataService   $order_data_service   WooPayments order data service.
+	 * @param NativePaymentsRuntimeArbiter     $arbiter             Runtime owner arbiter.
+	 * @param OrderPaymentStore                $order_payment_store Order payment projection store.
+	 * @param PaymentSurfaceDiffer             $differ              Payment-surface differ.
+	 * @param LegacyProxy                      $legacy_proxy        Legacy proxy.
+	 * @param WooPaymentsApiClient             $api_client           WooPayments API client.
+	 * @param WooPaymentsPersistenceVocabulary $persistence_profile  WooPayments persistence profile.
+	 * @param WooPaymentsAccountService        $account_service      WooPayments account service.
+	 * @param WooPaymentsOrderDataService      $order_data_service   WooPayments order data service.
 	 */
 	final public function init(
 		NativePaymentsRuntimeArbiter $arbiter,
@@ -143,7 +143,7 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 		PaymentSurfaceDiffer $differ,
 		LegacyProxy $legacy_proxy,
 		WooPaymentsApiClient $api_client,
-		WooPaymentsPersistenceProfile $persistence_profile,
+		WooPaymentsPersistenceVocabulary $persistence_profile,
 		WooPaymentsAccountService $account_service,
 		WooPaymentsOrderDataService $order_data_service
 	): void {

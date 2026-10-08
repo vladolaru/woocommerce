@@ -48,20 +48,20 @@ class WooPaymentsRefundEventHandler {
 	/**
 	 * WooPayments persistence profile.
 	 *
-	 * @var WooPaymentsPersistenceProfile
+	 * @var WooPaymentsPersistenceVocabulary
 	 */
-	private WooPaymentsPersistenceProfile $persistence_profile;
+	private WooPaymentsPersistenceVocabulary $persistence_profile;
 
 	/**
 	 * Initialize the handler.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsLegacyRuntime      $legacy_runtime      WooPayments legacy runtime.
-	 * @param OrderPaymentStore             $order_payment_store Order payment store.
-	 * @param WooPaymentsPersistenceProfile $persistence_profile WooPayments persistence profile.
+	 * @param WooPaymentsLegacyRuntime         $legacy_runtime      WooPayments legacy runtime.
+	 * @param OrderPaymentStore                $order_payment_store Order payment store.
+	 * @param WooPaymentsPersistenceVocabulary $persistence_profile WooPayments persistence profile.
 	 */
-	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, OrderPaymentStore $order_payment_store, WooPaymentsPersistenceProfile $persistence_profile ): void {
+	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, OrderPaymentStore $order_payment_store, WooPaymentsPersistenceVocabulary $persistence_profile ): void {
 		$this->legacy_runtime      = $legacy_runtime;
 		$this->order_payment_store = $order_payment_store;
 		$this->persistence_profile = $persistence_profile;

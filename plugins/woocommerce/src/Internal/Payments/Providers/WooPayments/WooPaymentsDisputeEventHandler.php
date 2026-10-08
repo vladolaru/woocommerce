@@ -72,23 +72,23 @@ class WooPaymentsDisputeEventHandler {
 	/**
 	 * WooPayments persistence profile.
 	 *
-	 * @var WooPaymentsPersistenceProfile|null
+	 * @var WooPaymentsPersistenceVocabulary|null
 	 */
-	private ?WooPaymentsPersistenceProfile $persistence_profile = null;
+	private ?WooPaymentsPersistenceVocabulary $persistence_profile = null;
 
 	/**
 	 * Initialize the handler.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsLegacyRuntime       $legacy_runtime        WooPayments legacy runtime.
-	 * @param WooPaymentsApiClient           $api_client            Native WooPayments API client.
-	 * @param WooPaymentsDisputeCacheService $dispute_cache_service Dispute cache service.
-	 * @param WooPaymentsOrderNoteService    $order_note_service    WooPayments order note service.
-	 * @param OrderPaymentStore              $order_payment_store   Order payment store.
-	 * @param WooPaymentsPersistenceProfile  $persistence_profile   WooPayments persistence profile.
+	 * @param WooPaymentsLegacyRuntime         $legacy_runtime        WooPayments legacy runtime.
+	 * @param WooPaymentsApiClient             $api_client            Native WooPayments API client.
+	 * @param WooPaymentsDisputeCacheService   $dispute_cache_service Dispute cache service.
+	 * @param WooPaymentsOrderNoteService      $order_note_service    WooPayments order note service.
+	 * @param OrderPaymentStore                $order_payment_store   Order payment store.
+	 * @param WooPaymentsPersistenceVocabulary $persistence_profile   WooPayments persistence profile.
 	 */
-	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsDisputeCacheService $dispute_cache_service, ?WooPaymentsOrderNoteService $order_note_service = null, ?OrderPaymentStore $order_payment_store = null, ?WooPaymentsPersistenceProfile $persistence_profile = null ): void {
+	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsDisputeCacheService $dispute_cache_service, ?WooPaymentsOrderNoteService $order_note_service = null, ?OrderPaymentStore $order_payment_store = null, ?WooPaymentsPersistenceVocabulary $persistence_profile = null ): void {
 		$this->legacy_runtime        = $legacy_runtime;
 		$this->api_client            = $api_client;
 		$this->dispute_cache_service = $dispute_cache_service;
@@ -917,11 +917,11 @@ class WooPaymentsDisputeEventHandler {
 	/**
 	 * Get the WooPayments persistence profile.
 	 *
-	 * @return WooPaymentsPersistenceProfile
+	 * @return WooPaymentsPersistenceVocabulary
 	 */
-	private function get_persistence_profile(): WooPaymentsPersistenceProfile {
+	private function get_persistence_profile(): WooPaymentsPersistenceVocabulary {
 		if ( null === $this->persistence_profile ) {
-			$this->persistence_profile = wc_get_container()->get( WooPaymentsPersistenceProfile::class );
+			$this->persistence_profile = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
 		}
 
 		return $this->persistence_profile;

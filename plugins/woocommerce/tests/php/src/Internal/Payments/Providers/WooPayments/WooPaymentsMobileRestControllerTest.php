@@ -13,7 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsMo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
@@ -1821,7 +1821,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( $order->get_id(), $context['order_id'] );
 		$this->assertSame( 'pi_terminal', $context['intent_id'] );
 		$this->assertSame( 'RuntimeException', $context['exception'] );
-		$this->assertNotNull( wc_get_container()->get( OrderPaymentStore::class )->claim_order_payment_lock_for_operation( $order, new WooPaymentsPersistenceProfile(), 'pi_terminal', 'payment status update' ), 'A failed capture releases the lock.' );
+		$this->assertNotNull( wc_get_container()->get( OrderPaymentStore::class )->claim_order_payment_lock_for_operation( $order, new WooPaymentsPersistenceVocabulary(), 'pi_terminal', 'payment status update' ), 'A failed capture releases the lock.' );
 	}
 
 	/**
@@ -1906,7 +1906,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$order = $this->create_order( 12.34, 'USD' );
 		$this->set_capturable_terminal_intent( $order );
 		$store        = wc_get_container()->get( OrderPaymentStore::class );
-		$profile      = new WooPaymentsPersistenceProfile();
+		$profile      = new WooPaymentsPersistenceVocabulary();
 		$holder_token = $store->claim_order_payment_lock_for_operation( $order, $profile, 'pi_terminal', 'payment status update' );
 		$this->assertNotNull( $holder_token );
 		$sut = $this->create_lock_waiting_controller(
@@ -1955,7 +1955,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$order  = $this->create_order( 12.34, 'USD' );
 		$this->set_capturable_terminal_intent( $order );
 		$store        = wc_get_container()->get( OrderPaymentStore::class );
-		$profile      = new WooPaymentsPersistenceProfile();
+		$profile      = new WooPaymentsPersistenceVocabulary();
 		$holder_token = $store->claim_order_payment_lock_for_operation( $order, $profile, 'pi_terminal', 'payment status update' );
 		$sut          = $this->create_lock_waiting_controller();
 
@@ -1980,7 +1980,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$order = $this->create_order( 12.34, 'USD' );
 		$this->set_capturable_terminal_intent( $order );
 		$store        = wc_get_container()->get( OrderPaymentStore::class );
-		$profile      = new WooPaymentsPersistenceProfile();
+		$profile      = new WooPaymentsPersistenceVocabulary();
 		$holder_token = $store->claim_order_payment_lock_for_operation( $order, $profile, 'pi_terminal', 'payment status update' );
 		$order_id     = $order->get_id();
 		$sut          = $this->create_lock_waiting_controller(

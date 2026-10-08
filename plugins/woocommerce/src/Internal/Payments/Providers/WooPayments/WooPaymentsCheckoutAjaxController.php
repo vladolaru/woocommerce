@@ -337,7 +337,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		}
 
 		$event = $this->build_lifecycle_event_from_intent( $intent, $order, $zero_amount_plain_note );
-		$this->lifecycle_service->apply( $order, $event, new WooPaymentsPersistenceProfile() );
+		$this->lifecycle_service->apply( $order, $event, new WooPaymentsPersistenceVocabulary() );
 		if ( $this->is_authorized_intent_status( $status ) && ! $should_apply_display_details_before_lifecycle ) {
 			$this->apply_payment_method_display_details( $order, $intent );
 		}
@@ -532,7 +532,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 			$note_type        = null === $note ? null : PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_COMPLETE;
 		}
 
-		$profile = new WooPaymentsPersistenceProfile();
+		$profile = new WooPaymentsPersistenceVocabulary();
 		$meta    = $profile->get_outcome_meta( $outcome );
 		if ( ( $intent['status'] ?? '' ) !== $provider_status ) {
 			$meta['_intention_status'] = $provider_status;

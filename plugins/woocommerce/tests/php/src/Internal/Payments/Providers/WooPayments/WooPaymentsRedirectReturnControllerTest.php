@@ -23,7 +23,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRedirectReturnController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
@@ -1027,7 +1027,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$api_client            = new RedirectReturnApiClientStub();
 		$api_client->exception = new WooPaymentsApiException( 'Request timed out.', 'wcpay_http_request_failed', 504 );
 		$store                 = wc_get_container()->get( OrderPaymentStore::class );
-		$profile               = new WooPaymentsPersistenceProfile();
+		$profile               = new WooPaymentsPersistenceVocabulary();
 		$lock_token            = $store->claim_order_payment_lock_for_operation( $order, $profile, 'pi_locked_return', $holder );
 		$this->assertNotNull( $lock_token );
 		$logger = new RedirectReturnRecordingLogger();
@@ -1539,7 +1539,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			),
 		);
 		$store                      = wc_get_container()->get( OrderPaymentStore::class );
-		$profile                    = new WooPaymentsPersistenceProfile();
+		$profile                    = new WooPaymentsPersistenceVocabulary();
 		$lock_token                 = $store->claim_order_payment_lock_for_operation( $order, $profile, 'pi_error_locked', 'payment status update' );
 		$this->assertNotNull( $lock_token );
 		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client );

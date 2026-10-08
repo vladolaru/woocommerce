@@ -5,18 +5,18 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the WooPaymentsPersistenceProfile class.
+ * Tests for the WooPaymentsPersistenceVocabulary class.
  */
-class WooPaymentsPersistenceProfileTest extends WC_Unit_Test_Case {
+class WooPaymentsPersistenceVocabularyTest extends WC_Unit_Test_Case {
 
 	/**
 	 * The System Under Test.
 	 *
-	 * @var WooPaymentsPersistenceProfile
+	 * @var WooPaymentsPersistenceVocabulary
 	 */
 	private $sut;
 
@@ -25,7 +25,7 @@ class WooPaymentsPersistenceProfileTest extends WC_Unit_Test_Case {
 	 */
 	public function setUp(): void {
 		parent::setUp();
-		$this->sut = new WooPaymentsPersistenceProfile();
+		$this->sut = new WooPaymentsPersistenceVocabulary();
 	}
 
 	/**
@@ -34,13 +34,13 @@ class WooPaymentsPersistenceProfileTest extends WC_Unit_Test_Case {
 	public function test_preserves_woopayments_persistence_vocabulary(): void {
 		$order = wc_create_order();
 
-		$this->assertSame( 'woocommerce_payments', WooPaymentsPersistenceProfile::GATEWAY_ID );
-		$this->assertSame( 'woocommerce_payments_', WooPaymentsPersistenceProfile::GATEWAY_ID_PREFIX );
+		$this->assertSame( 'woocommerce_payments', WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$this->assertSame( 'woocommerce_payments_', WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX );
 		$this->assertSame( 'wcpay_processing_intent_' . $order->get_id(), $this->sut->get_order_lock_key( $order ) );
 		$this->assertSame( '-1', $this->sut->get_lock_sentinel() );
 		$this->assertSame( 300, $this->sut->get_lock_ttl_seconds() );
 		$this->assertSame( '_wcpay_refund_id', $this->sut->get_processed_refund_link_meta_key() );
-		$this->assertSame( '_wcpay_early_fraud_warning', WooPaymentsPersistenceProfile::EARLY_FRAUD_WARNING_META_KEY );
+		$this->assertSame( '_wcpay_early_fraud_warning', WooPaymentsPersistenceVocabulary::EARLY_FRAUD_WARNING_META_KEY );
 		$this->assertSame(
 			array(
 				'_intent_id',

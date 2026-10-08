@@ -410,7 +410,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		}
 
 		$store      = wc_get_container()->get( OrderPaymentStore::class );
-		$profile    = wc_get_container()->get( WooPaymentsPersistenceProfile::class );
+		$profile    = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
 		$lock_token = $store->claim_order_payment_lock_for_operation( $order, $profile, 'disputed_intent_note_' . $intent_id, 'disputed intent note' );
 		if ( null === $lock_token ) {
 			$store->log_order_payment_lock_refusal( $order, $profile, 'disputed intent note' );
@@ -663,7 +663,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		$note_equivalents = isset( $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] ) && is_array( $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] )
 			? $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ]
 			: array();
-		$profile          = new WooPaymentsPersistenceProfile();
+		$profile          = new WooPaymentsPersistenceVocabulary();
 
 		$this->get_lifecycle_service()->apply(
 			$order,

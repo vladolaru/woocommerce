@@ -384,7 +384,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	public function test_lock_refused_capture_keeps_one_audit_entry(): void {
 		$order   = $this->create_authorized_order( 'pi_auth' );
 		$store   = wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\OrderPaymentStore::class );
-		$profile = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile();
+		$profile = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary();
 		$holder  = $store->claim_order_payment_lock_for_operation( $order, $profile, 'pi_other', 'payment status update' );
 		$this->assertNotNull( $holder );
 		$controller = new WooPaymentsAuthorizationsRestController();

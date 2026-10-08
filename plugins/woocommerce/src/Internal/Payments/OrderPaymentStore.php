@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Throwable;
 use WC_Order;
 use WC_Order_Refund;
@@ -28,7 +28,7 @@ class OrderPaymentStore {
 	 *
 	 * @var string
 	 */
-	const GATEWAY_ID = WooPaymentsPersistenceProfile::GATEWAY_ID;
+	const GATEWAY_ID = WooPaymentsPersistenceVocabulary::GATEWAY_ID;
 
 	/**
 	 * Preserved WooPayments split-UPE gateway ID prefix.
@@ -37,7 +37,7 @@ class OrderPaymentStore {
 	 *
 	 * @var string
 	 */
-	const GATEWAY_ID_PREFIX = WooPaymentsPersistenceProfile::GATEWAY_ID_PREFIX;
+	const GATEWAY_ID_PREFIX = WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX;
 
 	/**
 	 * WooPayments-compatible order processing lock transient prefix.
@@ -46,7 +46,7 @@ class OrderPaymentStore {
 	 *
 	 * @var string
 	 */
-	const LOCK_TRANSIENT_PREFIX = WooPaymentsPersistenceProfile::LOCK_TRANSIENT_PREFIX;
+	const LOCK_TRANSIENT_PREFIX = WooPaymentsPersistenceVocabulary::LOCK_TRANSIENT_PREFIX;
 
 	/**
 	 * WooPayments-compatible sentinel used when the order is locked without a payment reference.
@@ -55,7 +55,7 @@ class OrderPaymentStore {
 	 *
 	 * @var string
 	 */
-	const LOCK_SENTINEL = WooPaymentsPersistenceProfile::LOCK_SENTINEL;
+	const LOCK_SENTINEL = WooPaymentsPersistenceVocabulary::LOCK_SENTINEL;
 
 	/**
 	 * WooPayments lock time-to-live, in seconds.
@@ -64,7 +64,7 @@ class OrderPaymentStore {
 	 *
 	 * @var int
 	 */
-	const LOCK_TTL_SECONDS = WooPaymentsPersistenceProfile::LOCK_TTL_SECONDS;
+	const LOCK_TTL_SECONDS = WooPaymentsPersistenceVocabulary::LOCK_TTL_SECONDS;
 
 	/**
 	 * Fixed prefix of the warning logged when the lock refuses an operation, so it can be found in logs.

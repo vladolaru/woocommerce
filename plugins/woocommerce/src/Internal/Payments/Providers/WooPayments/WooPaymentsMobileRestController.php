@@ -523,7 +523,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		}
 
 		$store      = wc_get_container()->get( OrderPaymentStore::class );
-		$profile    = new WooPaymentsPersistenceProfile();
+		$profile    = new WooPaymentsPersistenceVocabulary();
 		$lock_token = $this->claim_terminal_capture_lock( $store, $order, $profile, $intent_id );
 		if ( null === $lock_token ) {
 			$store->log_order_payment_lock_refusal( $order, $profile, 'terminal capture' );
@@ -548,13 +548,13 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 	 * intent, which keeps the lock well under a second, and the merchant is waiting at the counter. Four attempts
 	 * 500 ms apart, all before the platform capture starts.
 	 *
-	 * @param OrderPaymentStore             $store     Order payment store.
-	 * @param WC_Order                      $order     Order.
-	 * @param WooPaymentsPersistenceProfile $profile   Persistence profile.
-	 * @param string                        $intent_id Intent ID, the lock value.
+	 * @param OrderPaymentStore                $store     Order payment store.
+	 * @param WC_Order                         $order     Order.
+	 * @param WooPaymentsPersistenceVocabulary $profile   Persistence profile.
+	 * @param string                           $intent_id Intent ID, the lock value.
 	 * @return string|null Lock token, or null when the lock stayed held.
 	 */
-	private function claim_terminal_capture_lock( OrderPaymentStore $store, WC_Order $order, WooPaymentsPersistenceProfile $profile, string $intent_id ): ?string {
+	private function claim_terminal_capture_lock( OrderPaymentStore $store, WC_Order $order, WooPaymentsPersistenceVocabulary $profile, string $intent_id ): ?string {
 		for ( $attempt = 1; ; ++$attempt ) {
 			$lock_token = $store->claim_order_payment_lock_for_operation( $order, $profile, $intent_id, 'terminal capture' );
 			if ( null !== $lock_token || self::LOCK_CLAIM_ATTEMPTS === $attempt ) {
@@ -1187,7 +1187,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		$this->get_lifecycle_service()->apply_unlocked(
 			$order,
 			new PaymentLifecycleEvent( $status, $intent_id, $meta, array(), $candidates[0], $note_type, $candidates ),
-			new WooPaymentsPersistenceProfile()
+			new WooPaymentsPersistenceVocabulary()
 		);
 	}
 

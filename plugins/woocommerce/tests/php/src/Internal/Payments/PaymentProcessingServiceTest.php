@@ -28,7 +28,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
@@ -81,7 +81,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->sut                 = wc_get_container()->get( PaymentProcessingService::class );
 		$this->store               = wc_get_container()->get( OrderPaymentStore::class );
 		$this->idempotency         = wc_get_container()->get( PaymentOperationIdempotency::class );
-		$this->persistence_profile = new WooPaymentsPersistenceProfile();
+		$this->persistence_profile = new WooPaymentsPersistenceVocabulary();
 	}
 
 	/**

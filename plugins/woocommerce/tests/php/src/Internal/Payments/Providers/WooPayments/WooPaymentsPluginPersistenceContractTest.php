@@ -42,7 +42,7 @@ class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
 	 *
 	 * @var string
 	 */
-	private const PERSISTENCE_PROFILE_FILE = 'src/Internal/Payments/Providers/WooPayments/WooPaymentsPersistenceProfile.php';
+	private const PERSISTENCE_PROFILE_FILE = 'src/Internal/Payments/Providers/WooPayments/WooPaymentsPersistenceVocabulary.php';
 
 	/**
 	 * Calls whose key argument only reads a persisted value.

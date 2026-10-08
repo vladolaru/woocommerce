@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeB
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Order;
@@ -294,7 +294,7 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 		$this->attach( 'woocommerce_payments_changed_subscription_payment_method', StripeBillingSubscriptionService::class, 'maybe_attempt_payment_for_subscription', 10, 2 );
 		$this->attach( 'woocommerce_admin_order_data_after_billing_address', StripeBillingSubscriptionService::class, 'show_wcpay_subscription_id' );
 		$this->attach( 'admin_notices', StripeBillingPluginsScreenNotice::class, 'maybe_show_notice' );
-		$this->attach( 'woocommerce_subscription_payment_method_updated_from_' . WooPaymentsPersistenceProfile::GATEWAY_ID, StripeBillingSubscriptionService::class, 'maybe_cancel_subscription', 10, 2 );
+		$this->attach( 'woocommerce_subscription_payment_method_updated_from_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID, StripeBillingSubscriptionService::class, 'maybe_cancel_subscription', 10, 2 );
 		// The client sets this context before the filter runs, so it goes first here.
 		$this->attach( 'wcpay_metadata_from_order', StripeBillingSubscriptionService::class, 'set_stripe_billing_payment_context', 0, 2 );
 	}

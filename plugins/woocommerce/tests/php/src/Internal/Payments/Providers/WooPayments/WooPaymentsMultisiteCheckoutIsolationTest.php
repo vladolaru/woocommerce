@@ -16,7 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverStateStore;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\RestApi\UnitTests\Helpers\OrderHelper;
@@ -80,7 +80,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 			$runtime_arbiter  = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
 			$cutover_store    = new WooPaymentsCutoverStateStore();
 			$order_store      = new OrderPaymentStore();
-			$profile          = new WooPaymentsPersistenceProfile();
+			$profile          = new WooPaymentsPersistenceVocabulary();
 			$order_store->init( new TransientRowLock() );
 
 			$this->assert_site_fixture(
@@ -546,15 +546,15 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 	/**
 	 * Assert that shared services expose only the current site's fixture.
 	 *
-	 * @param array<string,mixed>           $fixture          Site fixture.
-	 * @param int                           $user_id          Network user ID.
-	 * @param WooPaymentsAccountService     $account_service Account service.
-	 * @param WooPaymentsCustomerService    $customer_service Customer service.
-	 * @param WooPaymentsTokenService       $token_service    Token service.
-	 * @param NativePaymentsRuntimeArbiter  $runtime_arbiter Runtime arbiter.
-	 * @param WooPaymentsCutoverStateStore  $cutover_store Cutover state store.
-	 * @param OrderPaymentStore             $order_store      Order payment store.
-	 * @param WooPaymentsPersistenceProfile $profile    Persistence profile.
+	 * @param array<string,mixed>              $fixture          Site fixture.
+	 * @param int                              $user_id          Network user ID.
+	 * @param WooPaymentsAccountService        $account_service Account service.
+	 * @param WooPaymentsCustomerService       $customer_service Customer service.
+	 * @param WooPaymentsTokenService          $token_service    Token service.
+	 * @param NativePaymentsRuntimeArbiter     $runtime_arbiter Runtime arbiter.
+	 * @param WooPaymentsCutoverStateStore     $cutover_store Cutover state store.
+	 * @param OrderPaymentStore                $order_store      Order payment store.
+	 * @param WooPaymentsPersistenceVocabulary $profile    Persistence profile.
 	 */
 	private function assert_site_fixture(
 		array $fixture,
@@ -565,7 +565,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 		NativePaymentsRuntimeArbiter $runtime_arbiter,
 		WooPaymentsCutoverStateStore $cutover_store,
 		OrderPaymentStore $order_store,
-		WooPaymentsPersistenceProfile $profile
+		WooPaymentsPersistenceVocabulary $profile
 	): void {
 		$slug = $fixture['slug'];
 

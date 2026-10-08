@@ -15,7 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeCacheService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use ReflectionClass;
 use RuntimeException;
 use WC_Order;
@@ -551,7 +551,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$event           = $this->get_created_event_object( 'dp_lock_contention', 'needs_response' );
 		$event['charge'] = 'ch_lock_contention';
 		$payment_store   = wc_get_container()->get( OrderPaymentStore::class );
-		$profile         = new WooPaymentsPersistenceProfile();
+		$profile         = new WooPaymentsPersistenceVocabulary();
 
 		$this->assertNotNull( $payment_store->claim_order_payment_lock( $order, $profile, 'pi_lock_holder' ) );
 
@@ -596,7 +596,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_locked_close' ) );
 		$order->save();
 		$payment_store = wc_get_container()->get( OrderPaymentStore::class );
-		$profile       = new WooPaymentsPersistenceProfile();
+		$profile       = new WooPaymentsPersistenceVocabulary();
 		$this->assertNotNull( $payment_store->claim_order_payment_lock( $order, $profile, 'pi_lock_holder' ) );
 
 		try {

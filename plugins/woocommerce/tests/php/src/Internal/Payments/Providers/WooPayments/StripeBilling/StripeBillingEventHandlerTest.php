@@ -31,7 +31,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
@@ -708,7 +708,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$order->set_payment_method( 'woocommerce_payments' );
 		$order->update_meta_data( '_wcpay_billing_invoice_id', self::RENEWAL_INVOICE_ID );
 		$order->save();
-		wc_get_container()->get( OrderPaymentStore::class )->claim_order_payment_lock( $order, new WooPaymentsPersistenceProfile(), 'pi_rec63CheckoutInFlight' );
+		wc_get_container()->get( OrderPaymentStore::class )->claim_order_payment_lock( $order, new WooPaymentsPersistenceVocabulary(), 'pi_rec63CheckoutInFlight' );
 		$this->queue_response( 200, $this->get_renewal_intent() );
 
 		try {

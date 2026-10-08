@@ -27,7 +27,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentType;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
@@ -1744,7 +1744,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
 		$logger  = RecordingWcLogger::install();
 		$store   = wc_get_container()->get( OrderPaymentStore::class );
-		$profile = wc_get_container()->get( WooPaymentsPersistenceProfile::class );
+		$profile = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
 		$refused = array();
 		foreach ( array( 'key_second', 'key_third' ) as $attempt_key ) {
 			$token = $store->claim_order_payment_lock_for_operation( $order, $profile, $attempt_key, 'checkout' );
@@ -6211,7 +6211,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$context = $this->get_logged_context( $logger, 'Failed to note the disputed payment attached to the order.' );
 		$this->assertSame( array( $order->get_id(), self::CHALLENGE_COMPLETED_INTENT_ID, $thrown ), array( $context['order_id'], $context['intent_id'], $context['exception'] ) );
 		$store   = wc_get_container()->get( OrderPaymentStore::class );
-		$profile = wc_get_container()->get( WooPaymentsPersistenceProfile::class );
+		$profile = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
 		$token   = $store->claim_order_payment_lock_for_operation( $order, $profile, 'refund_key', 'refund' );
 		$this->assertIsString( $token, 'The note must release the order payment lock it took.' );
 		$store->release_order_payment_lock( $order, $profile, $token );

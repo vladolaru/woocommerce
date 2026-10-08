@@ -378,7 +378,7 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 	 * @param string   $charge_id Provider charge ID.
 	 */
 	private function print_early_fraud_warning_block( WC_Order $order, string $charge_id ): void {
-		$warning = $order->get_meta( WooPaymentsPersistenceProfile::EARLY_FRAUD_WARNING_META_KEY, true );
+		$warning = $order->get_meta( WooPaymentsPersistenceVocabulary::EARLY_FRAUD_WARNING_META_KEY, true );
 		if (
 			! is_array( $warning )
 			|| array() !== array_diff( array( 'efw_id', 'efw_actionable', 'efw_type', 'created' ), array_keys( $warning ) )

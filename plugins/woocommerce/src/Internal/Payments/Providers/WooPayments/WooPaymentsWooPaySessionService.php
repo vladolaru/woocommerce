@@ -1732,7 +1732,7 @@ class WooPaymentsWooPaySessionService {
 			return $order_id;
 		}
 
-		$persistence_profile = new WooPaymentsPersistenceProfile();
+		$persistence_profile = new WooPaymentsPersistenceVocabulary();
 		$order_payment_store = wc_get_container()->get( OrderPaymentStore::class );
 		$lock_token          = $order_payment_store->claim_order_payment_lock_for_operation( $draft_order, $persistence_profile, null, self::DRAFT_REUSE_OPERATION );
 		if ( null === $lock_token ) {

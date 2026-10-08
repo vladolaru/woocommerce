@@ -433,7 +433,7 @@ class WooPaymentsEventIngestor {
 	 * @throws OrderPaymentLockRefusedException When another operation holds the order payment lock.
 	 */
 	private function apply_lifecycle_event( WC_Order $order, PaymentLifecycleEvent $lifecycle_event ): void {
-		if ( ! $this->lifecycle_service->apply( $order, $lifecycle_event, new WooPaymentsPersistenceProfile() ) ) {
+		if ( ! $this->lifecycle_service->apply( $order, $lifecycle_event, new WooPaymentsPersistenceVocabulary() ) ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is built in the exception from an order ID and a fixed operation name, not HTML output.
 			throw new OrderPaymentLockRefusedException( $order->get_id(), 'payment status update' );
 		}
@@ -452,7 +452,7 @@ class WooPaymentsEventIngestor {
 	 */
 	public function record_succeeded_payment_intent( WC_Order $order, array $payment_intent ): void {
 		// One claim covers the payment meta, the token repair and the status update, so a refusal leaves the order untouched.
-		$profile       = new WooPaymentsPersistenceProfile();
+		$profile       = new WooPaymentsPersistenceVocabulary();
 		$payment_store = wc_get_container()->get( OrderPaymentStore::class );
 		$lock_token    = $payment_store->claim_order_payment_lock_for_operation( $order, $profile, $this->get_object_id( $payment_intent ), 'payment status update' );
 		if ( null === $lock_token ) {
