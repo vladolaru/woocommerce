@@ -190,6 +190,17 @@ class WooPaymentsPersistenceVocabulary implements ProviderPersistenceVocabulary 
 	}
 
 	/**
+	 * Get the order meta key holding the open dispute IDs.
+	 *
+	 * @return string
+	 *
+	 * @since 11.2.0
+	 */
+	public function get_open_dispute_ids_meta_key(): string {
+		return WooPaymentsDisputeEventHandler::OPEN_DISPUTE_IDS_META_KEY;
+	}
+
+	/**
 	 * Map a neutral outcome to WooPayments order meta.
 	 *
 	 * @param PaymentOutcome $outcome Provider outcome.

@@ -810,6 +810,15 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 						return '';
 					}
 
+					/**
+					 * Get the order meta key holding open dispute IDs: this provider records none.
+					 *
+					 * @return string
+					 */
+					public function get_open_dispute_ids_meta_key(): string {
+						return '';
+					}
+
 				};
 			}
 

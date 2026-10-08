@@ -87,4 +87,17 @@ interface ProviderPersistenceVocabulary {
 	 * @since 11.2.0
 	 */
 	public function get_charge_idempotency_key_meta_key(): string;
+
+	/**
+	 * Get the order meta key holding the provider's open dispute IDs.
+	 *
+	 * The meta value is an array of the IDs of the disputes still open on the order's payment, empty or absent when
+	 * none is open. While it holds an ID, a completed payment event leaves the order status alone. Return '' when the
+	 * provider records no disputes on the order.
+	 *
+	 * @return string
+	 *
+	 * @since 11.2.0
+	 */
+	public function get_open_dispute_ids_meta_key(): string;
 }

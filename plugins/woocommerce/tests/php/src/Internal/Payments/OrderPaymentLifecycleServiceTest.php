@@ -734,6 +734,30 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Completed events keep the order on hold while the provider's own open dispute key holds an ID.
+	 */
+	public function test_success_keeps_on_hold_under_the_provider_open_dispute_key(): void {
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_provider_open_dispute_ids', array( 'dp_custom' ) );
+		$order->update_status( 'on-hold' );
+		$order->save();
+		$profile = $this->createMock( ProviderPersistenceVocabulary::class );
+		$profile->method( 'get_order_lock_key' )->willReturn( 'provider_lifecycle_lock_' . $order->get_id() );
+		$profile->method( 'get_lock_sentinel' )->willReturn( 'provider-lock' );
+		$profile->method( 'get_lock_ttl_seconds' )->willReturn( 60 );
+		$profile->method( 'get_open_dispute_ids_meta_key' )->willReturn( '_provider_open_dispute_ids' );
+
+		$this->sut->apply( $order, $this->completed_event( 'pi_custom' ), $profile );
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status(), 'An open dispute under the provider key must keep the order on hold.' );
+		$this->assertSame( array( 'dp_custom' ), $order->get_meta( '_provider_open_dispute_ids', true ), 'The provider dispute record must remain unchanged.' );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ), 'A skipped success event must not add a completion note.' );
+	}
+
+	/**
 	 * @testdox Lifecycle events lock the order with the supplied provider persistence vocabulary.
 	 */
 	public function test_apply_uses_provider_vocabulary_for_locks(): void {

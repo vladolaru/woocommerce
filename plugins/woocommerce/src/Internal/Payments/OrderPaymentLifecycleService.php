@@ -9,7 +9,6 @@ namespace Automattic\WooCommerce\Internal\Payments;
 
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeEventHandler;
 use WC_Order;
 
 /**
@@ -178,7 +177,7 @@ class OrderPaymentLifecycleService {
 		$note                        = $event->get_note();
 		$completed_event_skip_reason = $this->get_completed_event_skip_reason( $completed_event_order, $event, $persistence_profile );
 		if ( null !== $completed_event_skip_reason ) {
-			$this->synchronize_skipped_completed_event_order( $order, $completed_event_order, $completed_event_skip_reason );
+			$this->synchronize_skipped_completed_event_order( $order, $completed_event_order, $completed_event_skip_reason, $persistence_profile );
 			$this->log_skipped_completed_event( $order, $event, $completed_event_skip_reason );
 			return;
 		}
@@ -325,7 +324,7 @@ class OrderPaymentLifecycleService {
 			return null;
 		}
 
-		if ( $this->has_open_woopayments_dispute( $order, $persistence_profile ) ) {
+		if ( $this->has_open_dispute( $order, $persistence_profile ) ) {
 			return 'open_dispute';
 		}
 
@@ -349,33 +348,35 @@ class OrderPaymentLifecycleService {
 	/**
 	 * Synchronize state whose stale caller-side changes could overwrite a completed-event skip.
 	 *
-	 * @param WC_Order $order                    Caller-owned order object.
-	 * @param WC_Order $completed_event_order    Freshly read order used by the completed-event guard.
-	 * @param string   $completed_event_skip_reason Completed-event skip reason.
+	 * @param WC_Order                      $order                       Caller-owned order object.
+	 * @param WC_Order                      $completed_event_order       Freshly read order used by the completed-event guard.
+	 * @param string                        $completed_event_skip_reason Completed-event skip reason.
+	 * @param ProviderPersistenceVocabulary $persistence_profile         Provider persistence vocabulary.
 	 */
-	private function synchronize_skipped_completed_event_order( WC_Order $order, WC_Order $completed_event_order, string $completed_event_skip_reason ): void {
+	private function synchronize_skipped_completed_event_order( WC_Order $order, WC_Order $completed_event_order, string $completed_event_skip_reason, ProviderPersistenceVocabulary $persistence_profile ): void {
 		$order->set_status( $completed_event_order->get_status() );
 
 		if ( 'open_dispute' !== $completed_event_skip_reason ) {
 			return;
 		}
 
+		$open_dispute_ids_meta_key = $persistence_profile->get_open_dispute_ids_meta_key();
 		$order->update_meta_data(
-			WooPaymentsDisputeEventHandler::OPEN_DISPUTE_IDS_META_KEY,
-			$completed_event_order->get_meta( WooPaymentsDisputeEventHandler::OPEN_DISPUTE_IDS_META_KEY, true )
+			$open_dispute_ids_meta_key,
+			$completed_event_order->get_meta( $open_dispute_ids_meta_key, true )
 		);
 	}
 
 	/**
-	 * Tell whether the provider vocabulary marks this order as carrying an open WooPayments dispute.
+	 * Tell whether the order has an open dispute under the provider's open dispute key.
 	 *
 	 * @param WC_Order                      $order               Order object.
 	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
 	 * @return bool
 	 */
-	private function has_open_woopayments_dispute( WC_Order $order, ProviderPersistenceVocabulary $persistence_profile ): bool {
-		$open_dispute_ids_meta_key = WooPaymentsDisputeEventHandler::OPEN_DISPUTE_IDS_META_KEY;
-		if ( ! in_array( $open_dispute_ids_meta_key, $persistence_profile->get_preserved_payment_meta_keys(), true ) ) {
+	private function has_open_dispute( WC_Order $order, ProviderPersistenceVocabulary $persistence_profile ): bool {
+		$open_dispute_ids_meta_key = $persistence_profile->get_open_dispute_ids_meta_key();
+		if ( '' === $open_dispute_ids_meta_key ) {
 			return false;
 		}
 
