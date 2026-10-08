@@ -22,105 +22,105 @@ class PaymentLifecycleEvent {
 	 *
 	 * @var string
 	 */
-	const STATUS_COMPLETED = 'completed';
+	public const STATUS_COMPLETED = 'completed';
 
 	/**
 	 * Lifecycle status: payment authorized and awaiting capture.
 	 *
 	 * @var string
 	 */
-	const STATUS_AUTHORIZED = 'authorized';
+	public const STATUS_AUTHORIZED = 'authorized';
 
 	/**
 	 * Lifecycle status: payment failed.
 	 *
 	 * @var string
 	 */
-	const STATUS_FAILED = 'failed';
+	public const STATUS_FAILED = 'failed';
 
 	/**
 	 * Lifecycle status: payment canceled.
 	 *
 	 * @var string
 	 */
-	const STATUS_CANCELED = 'canceled';
+	public const STATUS_CANCELED = 'canceled';
 
 	/**
 	 * Lifecycle status: capture authorization expired.
 	 *
 	 * @var string
 	 */
-	const STATUS_CAPTURE_EXPIRED = 'capture_expired';
+	public const STATUS_CAPTURE_EXPIRED = 'capture_expired';
 
 	/**
 	 * Lifecycle status: payment was started but is not terminal.
 	 *
 	 * @var string
 	 */
-	const STATUS_STARTED = 'started';
+	public const STATUS_STARTED = 'started';
 
 	/**
 	 * Note type: generic payment completion.
 	 *
 	 * @var string
 	 */
-	const NOTE_TYPE_PAYMENT_COMPLETE = 'payment_complete';
+	public const NOTE_TYPE_PAYMENT_COMPLETE = 'payment_complete';
 
 	/**
 	 * Note type: payment success details.
 	 *
 	 * @var string
 	 */
-	const NOTE_TYPE_PAYMENT_SUCCESS = 'payment_success';
+	public const NOTE_TYPE_PAYMENT_SUCCESS = 'payment_success';
 
 	/**
 	 * Note type: payment authorization.
 	 *
 	 * @var string
 	 */
-	const NOTE_TYPE_PAYMENT_AUTHORIZED = 'payment_authorized';
+	public const NOTE_TYPE_PAYMENT_AUTHORIZED = 'payment_authorized';
 
 	/**
 	 * Note type: payment failure.
 	 *
 	 * @var string
 	 */
-	const NOTE_TYPE_PAYMENT_FAILED = 'payment_failed';
+	public const NOTE_TYPE_PAYMENT_FAILED = 'payment_failed';
 
 	/**
 	 * Note type: payment started.
 	 *
 	 * @var string
 	 */
-	const NOTE_TYPE_PAYMENT_STARTED = 'payment_started';
+	public const NOTE_TYPE_PAYMENT_STARTED = 'payment_started';
 
 	/**
 	 * Note type: capture success.
 	 *
 	 * @var string
 	 */
-	const NOTE_TYPE_CAPTURE_SUCCESS = 'capture_success';
+	public const NOTE_TYPE_CAPTURE_SUCCESS = 'capture_success';
 
 	/**
 	 * Note type: capture failure.
 	 *
 	 * @var string
 	 */
-	const NOTE_TYPE_CAPTURE_FAILED = 'capture_failed';
+	public const NOTE_TYPE_CAPTURE_FAILED = 'capture_failed';
 
 	/**
 	 * Note type: capture authorization canceled.
 	 *
 	 * @var string
 	 */
-	const NOTE_TYPE_CAPTURE_CANCELED = 'capture_canceled';
+	public const NOTE_TYPE_CAPTURE_CANCELED = 'capture_canceled';
 
 	/**
 	 * Note type: capture authorization expired.
 	 *
 	 * @var string
 	 */
-	const NOTE_TYPE_CAPTURE_EXPIRED = 'capture_expired';
+	public const NOTE_TYPE_CAPTURE_EXPIRED = 'capture_expired';
 
 	/**
 	 * Lifecycle status.

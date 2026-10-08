@@ -22,56 +22,56 @@ class PaymentOutcome {
 	 *
 	 * @var string
 	 */
-	const STATUS_COMPLETED = 'completed';
+	public const STATUS_COMPLETED = 'completed';
 
 	/**
 	 * Payment authorized but not captured.
 	 *
 	 * @var string
 	 */
-	const STATUS_AUTHORIZED = 'authorized';
+	public const STATUS_AUTHORIZED = 'authorized';
 
 	/**
 	 * Payment is pending asynchronous provider completion.
 	 *
 	 * @var string
 	 */
-	const STATUS_PENDING_ASYNC = 'pending_async';
+	public const STATUS_PENDING_ASYNC = 'pending_async';
 
 	/**
 	 * Customer must be redirected.
 	 *
 	 * @var string
 	 */
-	const STATUS_REQUIRES_REDIRECT = 'requires_redirect';
+	public const STATUS_REQUIRES_REDIRECT = 'requires_redirect';
 
 	/**
 	 * Customer action is required.
 	 *
 	 * @var string
 	 */
-	const STATUS_REQUIRES_CUSTOMER_ACTION = 'requires_customer_action';
+	public const STATUS_REQUIRES_CUSTOMER_ACTION = 'requires_customer_action';
 
 	/**
 	 * Payment failed.
 	 *
 	 * @var string
 	 */
-	const STATUS_FAILED = 'failed';
+	public const STATUS_FAILED = 'failed';
 
 	/**
 	 * Payment authorization was canceled.
 	 *
 	 * @var string
 	 */
-	const STATUS_CANCELED = 'canceled';
+	public const STATUS_CANCELED = 'canceled';
 
 	/**
 	 * No external payment was needed.
 	 *
 	 * @var string
 	 */
-	const STATUS_NO_EXTERNAL_PAYMENT = 'no_external_payment';
+	public const STATUS_NO_EXTERNAL_PAYMENT = 'no_external_payment';
 
 	/**
 	 * Additional data key: order/refund meta updates.
