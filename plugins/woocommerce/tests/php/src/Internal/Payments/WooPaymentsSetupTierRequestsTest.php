@@ -275,6 +275,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 		$order->save();
 		$this->arrange_native_owner( $state );
 		$api_client = $this->createMock( WooPaymentsApiClient::class );
+		// Client 11.1.0 includes/class-wc-payments-action-scheduler-service.php:195-201 reads only 'result' === 'success' from this response.
 		$api_client->expects( $this->once() )->method( 'track_order' )->willReturn( array( 'result' => 'success' ) );
 		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
 

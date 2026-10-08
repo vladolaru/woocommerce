@@ -534,6 +534,25 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A lock refusal logged without a source goes to the order-payments log.
+	 */
+	public function test_lock_refusal_without_a_source_logs_under_order_payments(): void {
+		$order   = wc_create_order();
+		$sources = array();
+		$capture = static function ( $message, $level, $context ) use ( &$sources ) {
+			$sources[] = $context['source'] ?? null;
+			return $message;
+		};
+		add_filter( 'woocommerce_logger_log_message', $capture, 10, 3 );
+
+		$this->sut->log_refusal( $order, $this->persistence_vocabulary, 'refund' );
+		remove_filter( 'woocommerce_logger_log_message', $capture, 10 );
+
+		// WC_Logger runs the filter once per log handler.
+		$this->assertSame( array( 'order-payments' ), array_values( array_unique( $sources ) ) );
+	}
+
+	/**
 	 * @testdox A lock refusal's log line never throws, even when the log filter throws $thrown.
 	 *
 	 * The logger is WooCommerce's own, so the line runs the woocommerce_logger_log_message filter (WC_Logger::log()). Every

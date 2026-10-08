@@ -95,8 +95,7 @@ class PaymentProcessingService {
 		$idempotency_key = $this->operation_keys->mint_attempt_key();
 		$vocabulary      = $provider->get_persistence_vocabulary();
 
-		// A refused checkout claim is not logged: checkout locking is long-standing, and only the stricter locks on
-		// the other operations log their refusals.
+		// A refused checkout claim returns the in-progress outcome without logging.
 		$lock_token = $this->order_payment_lock->claim( $order, $vocabulary, $idempotency_key, 'checkout' );
 		if ( null === $lock_token ) {
 			return $this->get_checkout_in_progress_outcome();

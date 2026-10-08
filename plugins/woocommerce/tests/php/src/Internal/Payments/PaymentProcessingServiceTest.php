@@ -1708,11 +1708,28 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$order->set_status( 'on-hold' );
 		$order->save();
 
-		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_second' ) );
-		$outcome  = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $loaded, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_second' ), $provider );
-		$order    = wc_get_order( $order->get_id() );
+		$provider    = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_second' ) );
+		$fake_logger = $this->create_fake_logger();
+		add_filter(
+			'woocommerce_logging_class',
+			function () use ( $fake_logger ) {
+				return $fake_logger;
+			}
+		);
+		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $loaded, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_second' ), $provider );
+		remove_all_filters( 'woocommerce_logging_class' );
+		$order = wc_get_order( $order->get_id() );
 
 		$this->assertSame( 0, $provider->charge_calls, 'An authorization held for capture must not be charged again.' );
+		$refusals = array_values(
+			array_filter(
+				$fake_logger->entries,
+				static fn( array $entry ): bool => \WC_Log_Levels::WARNING === $entry['level'] && 'order_status_changed' === ( $entry['context']['reason'] ?? null )
+			)
+		);
+		$this->assertCount( 1, $refusals, 'The refused charge must be logged once.' );
+		$this->assertSame( sprintf( 'Checkout charged nothing: order %d changed before this request claimed its payment lock.', $order->get_id() ), $refusals[0]['message'] );
+		$this->assertSame( 'order-payments', $refusals[0]['context']['source'] );
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( 'A payment operation is already in progress for this order.', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ] ?? null );
 		$this->assertInstanceOf( WC_Order::class, $order );
@@ -3341,6 +3358,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A German WooPayments extension cancellation note is not duplicated by the built-in cancellation lifecycle.
 	 */
 	public function test_cancel_deduplicates_german_woopayments_extension_note_through_builtin_effects(): void {
+		// The note markup is client 11.1.0 includes/class-wc-payments-order-service.php:2313-2329; the German string is synthetic test input.
 		$translation_filter = static function ( string $translation, string $text, string $domain ): string {
 			if ( 'woocommerce-payments' !== $domain ) {
 				return $translation;
