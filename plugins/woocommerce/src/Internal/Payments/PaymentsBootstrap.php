@@ -52,18 +52,18 @@ final class PaymentsBootstrap {
 	private $multi_currency_classes;
 
 	/**
-	 * Container for the cron roots this request registers when Action Scheduler first runs an action.
+	 * Container for the cron classes this request registers when Action Scheduler first runs an action.
 	 *
 	 * @var Container|RuntimeContainer|null
 	 */
 	private $on_demand_container = null;
 
 	/**
-	 * Cron roots this request lacks, registered when Action Scheduler first runs an action.
+	 * Cron classes this request lacks, registered when Action Scheduler first runs an action.
 	 *
 	 * @var array<int,class-string>
 	 */
-	private array $on_demand_cron_roots = array();
+	private array $on_demand_cron_classes = array();
 
 	/**
 	 * Create the bootstrap for WooCommerce's built-in payment provider.
@@ -108,126 +108,126 @@ final class PaymentsBootstrap {
 
 		( new MultiCurrencyBootstrap( $this->multi_currency_classes ) )->register( $container, $is_rest_api_request );
 
-		$request = MultiCurrencyBootstrap::classify_request( $is_rest_api_request );
-		$roots   = ( $this->classes_for_request )( $container, $request );
+		$request_type = MultiCurrencyBootstrap::classify_request( $is_rest_api_request );
+		$classes      = ( $this->classes_for_request )( $container, $request_type );
 
-		$this->register_roots( $container, $roots );
-		$this->register_cron_roots_on_demand( $container, $request, $roots );
+		$this->register_classes( $container, $classes );
+		$this->register_cron_classes_on_demand( $container, $request_type, $classes );
 	}
 
 	/**
-	 * Register the tier's cron roots that this request lacks once Action Scheduler runs an action in it.
+	 * Register the tier's cron classes that this request lacks once Action Scheduler runs an action in it.
 	 *
 	 * ALTERNATE_WP_CRON and the Tools > Scheduled Actions "Run" link run actions inside a front or admin request.
 	 * The client attaches its scheduled-action handlers on every request (client 11.1.0 `includes/class-wc-payments.php:603,657`).
 	 *
-	 * @param Container|RuntimeContainer $container  Runtime dependency container.
-	 * @param string                     $request    Request type.
-	 * @param array<int,class-string>    $registered Roots already registered for this request.
+	 * @param Container|RuntimeContainer $container    Runtime dependency container.
+	 * @param string                     $request_type Request type.
+	 * @param array<int,class-string>    $registered   Classes already registered for this request.
 	 */
-	private function register_cron_roots_on_demand( $container, string $request, array $registered ): void {
-		if ( 'cron' === $request || 'cli' === $request ) {
+	private function register_cron_classes_on_demand( $container, string $request_type, array $registered ): void {
+		if ( 'cron' === $request_type || 'cli' === $request_type ) {
 			return;
 		}
 
-		$missing = self::roots_missing_from( ( $this->classes_for_request )( $container, 'cron' ), $registered );
+		$missing = self::classes_missing_from( ( $this->classes_for_request )( $container, 'cron' ), $registered );
 		if ( empty( $missing ) ) {
 			return;
 		}
 
-		$this->on_demand_container  = $container;
-		$this->on_demand_cron_roots = $missing;
+		$this->on_demand_container    = $container;
+		$this->on_demand_cron_classes = $missing;
 		// Action Scheduler fires this before it checks the action has callbacks and runs it (`ActionScheduler_Abstract_QueueRunner::process_action()`).
 		add_action( 'action_scheduler_before_execute', array( $this, 'handle_action_scheduler_before_execute' ), 0 );
 	}
 
 	/**
-	 * Register the missing cron roots before Action Scheduler runs the first action of this request.
+	 * Register the missing cron classes before Action Scheduler runs the first action of this request.
 	 *
 	 * @internal
 	 */
 	public function handle_action_scheduler_before_execute(): void {
 		remove_action( 'action_scheduler_before_execute', array( $this, 'handle_action_scheduler_before_execute' ), 0 );
-		$roots                      = $this->on_demand_cron_roots;
-		$this->on_demand_cron_roots = array();
-		if ( empty( $roots ) || null === $this->on_demand_container ) {
+		$classes                      = $this->on_demand_cron_classes;
+		$this->on_demand_cron_classes = array();
+		if ( empty( $classes ) || null === $this->on_demand_container ) {
 			return;
 		}
 
-		$this->register_roots( $this->on_demand_container, $roots );
+		$this->register_classes( $this->on_demand_container, $classes );
 	}
 
 	/**
-	 * Get the roots not yet registered.
+	 * Get the classes not yet registered.
 	 *
-	 * @param array<int,class-string> $roots      Root class names in registration order.
-	 * @param array<int,class-string> $registered Roots already registered.
-	 * @return array<int,class-string> Missing roots in registration order.
+	 * @param array<int,class-string> $classes    Class names in registration order.
+	 * @param array<int,class-string> $registered Classes already registered.
+	 * @return array<int,class-string> Missing classes in registration order.
 	 */
-	private static function roots_missing_from( array $roots, array $registered ): array {
-		return array_values( array_diff( $roots, $registered ) );
+	private static function classes_missing_from( array $classes, array $registered ): array {
+		return array_values( array_diff( $classes, $registered ) );
 	}
 
 	/**
-	 * Resolve and register explicit roots once, handing payment gateway providers to ProviderGatewaysController.
+	 * Resolve and register the listed classes once, handing payment gateway providers to ProviderGatewaysController.
 	 *
 	 * @param Container|RuntimeContainer $container Runtime dependency container.
-	 * @param array<int,class-string>    $roots     Root class names.
+	 * @param array<int,class-string>    $classes   Class names.
 	 */
-	private function register_roots( $container, array $roots ): void {
-		foreach ( $roots as $root ) {
-			if ( is_a( $root, PaymentGatewayProviderInterface::class, true ) ) {
-				$this->add_gateway_provider( $container, $root );
-				if ( ! is_a( $root, RegisterHooksInterface::class, true ) ) {
+	private function register_classes( $container, array $classes ): void {
+		foreach ( $classes as $class_name ) {
+			if ( is_a( $class_name, PaymentGatewayProviderInterface::class, true ) ) {
+				$this->add_gateway_provider( $container, $class_name );
+				if ( ! is_a( $class_name, RegisterHooksInterface::class, true ) ) {
 					continue;
 				}
 			}
 
-			$this->register_root( $container, $root );
+			$this->register_class( $container, $class_name );
 		}
 	}
 
 	/**
 	 * Hand a payment gateway provider to ProviderGatewaysController, resolved only when WooCommerce builds its gateway list.
 	 *
-	 * @param Container|RuntimeContainer $container     Runtime dependency container.
-	 * @param class-string               $provider_root Payment gateway provider class name.
+	 * @param Container|RuntimeContainer $container      Runtime dependency container.
+	 * @param class-string               $provider_class Payment gateway provider class name.
 	 */
-	private function add_gateway_provider( $container, string $provider_root ): void {
+	private function add_gateway_provider( $container, string $provider_class ): void {
 		/**
 		 * Provider gateways controller.
 		 *
-		 * @var ProviderGatewaysController $registry
+		 * @var ProviderGatewaysController $gateways_controller
 		 */
-		$registry = $container->get( ProviderGatewaysController::class );
-		$registry->set_provider(
-			static function () use ( $container, $provider_root ) {
+		$gateways_controller = $container->get( ProviderGatewaysController::class );
+		$gateways_controller->set_provider(
+			static function () use ( $container, $provider_class ) {
 				/**
 				 * Payment gateway provider.
 				 *
 				 * @var PaymentGatewayProviderInterface $provider
 				 */
-				$provider = $container->get( $provider_root );
+				$provider = $container->get( $provider_class );
 				return $provider;
 			},
 			fn(): bool => ( $this->should_register_gateways )( $container )
 		);
-		$registry->register();
+		$gateways_controller->register();
 	}
 
 	/**
-	 * Resolve and register one explicit root.
+	 * Resolve and register one listed class.
 	 *
-	 * @param Container|RuntimeContainer $container Runtime dependency container.
-	 * @param class-string               $root      Root class name.
+	 * @param Container|RuntimeContainer $container  Runtime dependency container.
+	 * @param class-string               $class_name Class name.
 	 */
-	private function register_root( $container, string $root ): void {
+	private function register_class( $container, string $class_name ): void {
 		/**
-		 * Explicit registrar.
+		 * Registrar.
 		 *
 		 * @var RegisterHooksInterface $registrar
 		 */
-		$registrar = $container->get( $root );
+		$registrar = $container->get( $class_name );
 		$registrar->register();
 	}
 }

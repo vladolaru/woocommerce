@@ -50,23 +50,23 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 	public function test_registers_routes_for_internal_requests_with_admin_screen(): void {
 		global $current_screen;
 
-		$previous_screen = $current_screen;
-		$controller      = $this->create_payment_details_controller();
-		$fixture         = $this->create_container( WooPaymentsSetupTier::CONNECTED, $controller );
-		$container       = $fixture['container'];
-		$runtime         = $fixture['runtime'];
-		$bootstrap       = new PaymentsBootstrap(
+		$previous_screen  = $current_screen;
+		$controller       = $this->create_payment_details_controller();
+		$fixture          = $this->create_container( WooPaymentsSetupTier::CONNECTED, $controller );
+		$container        = $fixture['container'];
+		$runtime          = $fixture['runtime'];
+		$bootstrap        = new PaymentsBootstrap(
 			static fn( $container, string $request_type ): array => $container->get( WooPaymentsSetupTier::class )->get_classes_for_request( $request_type ),
 			static fn( $container ): bool => $container->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner(),
 			static fn(): array => array()
 		);
-		$register_roots  = new ReflectionMethod( PaymentsBootstrap::class, 'register_roots' );
-		$register_roots->setAccessible( true );
+		$register_classes = new ReflectionMethod( PaymentsBootstrap::class, 'register_classes' );
+		$register_classes->setAccessible( true );
 		set_current_screen( 'edit-page' );
 
 		try {
-			$roots = WooPaymentsProvider::get_classes_by_setup_tier()[ WooPaymentsSetupTier::CONNECTED ]['admin'];
-			$register_roots->invoke( $bootstrap, $container, $roots );
+			$classes = WooPaymentsProvider::get_classes_by_setup_tier()[ WooPaymentsSetupTier::CONNECTED ]['admin'];
+			$register_classes->invoke( $bootstrap, $container, $classes );
 			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising WordPress's internal REST initialization boundary.
 			do_action( 'rest_api_init', $this->server );
 
