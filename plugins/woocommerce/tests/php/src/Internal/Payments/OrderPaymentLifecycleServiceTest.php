@@ -344,9 +344,9 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A payment success event skips a plugin-rendered equivalent success note before lifecycle mutation.
+	 * @testdox A payment success event skips an equivalent success note rendered by the WooPayments extension before lifecycle mutation.
 	 */
-	public function test_payment_success_replay_with_a_plugin_equivalent_note_keeps_existing_order_state(): void {
+	public function test_payment_success_replay_with_a_woopayments_extension_equivalent_note_keeps_existing_order_state(): void {
 		// An additional currency makes the native (explicit-currency) and plugin (suffix-free) renderings differ.
 		update_option( '_wcpay_feature_customer_multi_currency', '1' );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
@@ -823,7 +823,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Current-locale payment-complete notes written by the extension are not duplicated by native replays.
+	 * @testdox Current-locale payment-complete notes written by the extension are not duplicated by built-in replays.
 	 */
 	public function test_current_locale_payment_complete_note_from_extension_is_not_duplicated(): void {
 		$this->install_woocommerce_test_translations(
@@ -858,7 +858,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox English payment-complete notes written by the extension are not duplicated by native replays.
+	 * @testdox English payment-complete notes written by the extension are not duplicated by built-in replays.
 	 */
 	public function test_english_payment_complete_note_from_extension_is_not_duplicated(): void {
 		$order = $this->create_woopayments_order();
@@ -886,7 +886,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native lifecycle note identities use stable note type instead of rendered note content.
+	 * @testdox Lifecycle note identities use stable note type instead of rendered note content.
 	 */
 	public function test_lifecycle_note_identity_uses_note_type_instead_of_rendered_note_content(): void {
 		$order = $this->create_woopayments_order();

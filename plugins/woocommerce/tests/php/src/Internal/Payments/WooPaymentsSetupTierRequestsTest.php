@@ -36,7 +36,7 @@ use WC_Unit_Test_Case;
  * Each case boots the native payments bootstrap for one request; tearDown undoes what that boot leaves for the rest of
  * the process.
  */
-class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
+class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Outbound HTTP requests attempted during the test.
@@ -262,12 +262,12 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An Action Scheduler run under WP-CLI on a $state store reaches the native order-tracking handler.
+	 * @testdox An Action Scheduler run under WP-CLI on a $state store reaches the order-tracking handler.
 	 * @dataProvider set_up_states
 	 *
 	 * @param string $state Stored native tier.
 	 */
-	public function test_action_scheduler_run_under_wp_cli_reaches_the_native_handler( string $state ): void {
+	public function test_action_scheduler_run_under_wp_cli_reaches_the_handler( string $state ): void {
 		Constants::set_constant( 'WP_CLI', true );
 		$order = new WC_Order();
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
@@ -287,14 +287,14 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox $label: a scheduled action that runs inside a page request reaches its native handler.
+	 * @testdox $label: a scheduled action that runs inside a page request reaches its handler.
 	 * @dataProvider page_request_action_runs
 	 *
 	 * @param string $label   Case label.
 	 * @param string $state   Stored native tier.
 	 * @param string $request How the action runs: 'alternate_wp_cron' on a front page, or 'admin_run' from Tools > Scheduled Actions.
 	 */
-	public function test_scheduled_action_run_inside_a_page_request_reaches_the_native_handler( string $label, string $state, string $request ): void {
+	public function test_scheduled_action_run_inside_a_page_request_reaches_the_handler( string $label, string $state, string $request ): void {
 		unset( $label );
 		$hook = WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_AFFECTED_ORDERS_HOOK;
 		delete_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY );
@@ -386,9 +386,9 @@ class NativePaymentsSetUpTierRequestsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Writing the shared settings option on a plugin-owned store leaves native's stored tier untouched.
+	 * @testdox Writing the shared settings option on an extension-owned store leaves the built-in's stored setup tier untouched.
 	 */
-	public function test_plugin_owned_settings_write_leaves_the_native_tier_alone(): void {
+	public function test_extension_owned_settings_write_leaves_the_setup_tier_alone(): void {
 		update_option( 'active_plugins', array_merge( (array) get_option( 'active_plugins', array() ), array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ) );
 		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::CONNECTED, true );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();

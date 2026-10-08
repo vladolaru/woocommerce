@@ -14,9 +14,9 @@ use WC_Unit_Test_Case;
 class PaymentOutcomeTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox PaymentOutcome exposes neutral provider result data.
+	 * @testdox PaymentOutcome exposes provider result data.
 	 */
-	public function test_exposes_neutral_provider_result_data(): void {
+	public function test_exposes_provider_result_data(): void {
 		$outcome = new PaymentOutcome(
 			PaymentOutcome::STATUS_REQUIRES_REDIRECT,
 			'pi_123',

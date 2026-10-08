@@ -38,7 +38,7 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native money-operation claims should block any active order payment lock.
+	 * @testdox Money-operation claims should block any active order payment lock.
 	 */
 	public function test_claim_order_payment_lock_blocks_any_active_lock(): void {
 		$order = wc_create_order();

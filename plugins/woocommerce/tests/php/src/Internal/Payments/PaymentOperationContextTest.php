@@ -13,9 +13,9 @@ use WC_Unit_Test_Case;
 class PaymentOperationContextTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox PaymentOperationContext exposes neutral order, gateway, payment, and provider payload data.
+	 * @testdox PaymentOperationContext exposes order, gateway, payment, and provider payload data.
 	 */
-	public function test_exposes_neutral_payment_context_data(): void {
+	public function test_exposes_payment_operation_context_data(): void {
 		$order = wc_create_order();
 
 		$context = new PaymentOperationContext(

@@ -22,9 +22,9 @@ class ProviderGatewaysControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not register the native gateway when native runtime does not own the site.
+	 * @testdox Should not register the built-in gateway when built-in runtime does not own the site.
 	 */
-	public function test_does_not_register_when_native_runtime_does_not_own_site(): void {
+	public function test_does_not_register_when_builtin_runtime_does_not_own_site(): void {
 		$sut = new ProviderGatewaysController();
 		$sut->add_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true ), static fn(): bool => false );
 
@@ -165,9 +165,9 @@ class ProviderGatewaysControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register contract-provided gateways when native runtime owns the site.
+	 * @testdox Should register contract-provided gateways when built-in runtime owns the site.
 	 */
-	public function test_registers_contract_provided_gateways_when_native_runtime_owns_site(): void {
+	public function test_registers_contract_provided_gateways_when_builtin_runtime_owns_site(): void {
 		$gateway = $this->create_gateway( 'woocommerce_payments' );
 		$sut     = new ProviderGatewaysController();
 		$sut->add_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true, array( $gateway ) ), static fn(): bool => true );
@@ -291,9 +291,9 @@ class ProviderGatewaysControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return an empty list for a non-array gateway list when native does not own the site.
+	 * @testdox Should return an empty list for a non-array gateway list when built-in does not own the site.
 	 */
-	public function test_add_provider_gateways_returns_an_empty_list_for_a_non_array_when_native_does_not_own_the_site(): void {
+	public function test_add_provider_gateways_returns_an_empty_list_for_a_non_array_when_builtin_does_not_own_the_site(): void {
 		$gateway = $this->create_gateway( 'woocommerce_payments' );
 		$sut     = new ProviderGatewaysController();
 		$sut->add_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true, array( $gateway ) ), static fn(): bool => false );

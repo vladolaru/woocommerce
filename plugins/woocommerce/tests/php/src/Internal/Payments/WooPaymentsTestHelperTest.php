@@ -15,7 +15,7 @@ use WP_REST_Request;
 /**
  * Tests for the native WooPayments E2E mu-plugin bootstrap.
  */
-class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
+class WooPaymentsTestHelperTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Clear what a case leaves for the rest of the process: the routes it registered on the global REST server, the
@@ -30,9 +30,9 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Missing E2E constant leaves native payments disabled.
+	 * @testdox Missing E2E constant leaves built-in WooPayments disabled.
 	 */
-	public function test_missing_constant_leaves_native_disabled(): void {
+	public function test_missing_constant_leaves_builtin_disabled(): void {
 		$this->load_bootstrap();
 
 		// wp-env defines the constant for every environment including this container; state the absent precondition on the
@@ -52,9 +52,9 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Exact true E2E constant enables native payments before owner resolution.
+	 * @testdox Exact true E2E constant enables built-in WooPayments before owner resolution.
 	 */
-	public function test_true_constant_enables_native_before_owner_resolution(): void {
+	public function test_true_constant_enables_builtin_before_owner_resolution(): void {
 		$this->define_native_e2e_constant();
 		$this->load_bootstrap();
 
@@ -66,9 +66,9 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Active standalone WooPayments plugin wins over the native E2E bootstrap.
+	 * @testdox Active WooPayments extension wins over the built-in E2E bootstrap.
 	 */
-	public function test_active_standalone_plugin_still_wins(): void {
+	public function test_active_woopayments_extension_still_wins(): void {
 		$this->define_native_e2e_constant();
 		$this->load_bootstrap();
 		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
@@ -83,9 +83,9 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native kill switch disables the E2E native owner.
+	 * @testdox Built-in kill switch disables the E2E built-in owner.
 	 */
-	public function test_kill_switch_disables_native_owner(): void {
+	public function test_kill_switch_disables_builtin_owner(): void {
 		$this->define_native_e2e_constant();
 		$this->load_bootstrap();
 		update_option( 'active_plugins', array() );

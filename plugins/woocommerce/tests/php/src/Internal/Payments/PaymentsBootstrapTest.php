@@ -62,8 +62,8 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 		);
 	}
 
-	/** @testdox Native Payments passes provider roots and REST classification into Multi-Currency registration. */
-	public function test_native_bootstrap_passes_provider_roots_and_rest_classifier_to_multi_currency_registration(): void {
+	/** @testdox PaymentsBootstrap passes provider roots and REST classification into Multi-Currency registration. */
+	public function test_bootstrap_passes_provider_roots_and_rest_classifier_to_multi_currency_registration(): void {
 		$container      = $this->make_container( WooPaymentsSetupTier::DISABLED, WooPaymentsRuntimeArbiter::OWNER_BUILTIN, MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
 		$provider_calls = 0;
 		$rest_calls     = 0;
@@ -233,9 +233,9 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 	 * The recording container clamps the stored tier with its own copy of the rule; the real clamp is checked by
 	 * WooPaymentsSetupTierTest::test_get_state_clamps_connected_tiers_while_plugin_is_active.
 	 *
-	 * @testdox A plugin-owned site with an available effective tier registers only the setup tier sync controller and the plugin lifecycle listener, not shadow mode.
+	 * @testdox An extension-owned site with an available effective tier registers only the setup tier sync controller and the plugin lifecycle listener, not shadow mode.
 	 */
-	public function test_plugin_owner_registers_no_shadow_mode_by_default(): void {
+	public function test_extension_owner_registers_no_shadow_mode_by_default(): void {
 		$container = $this->make_container( WooPaymentsSetupTier::ACTIVE, WooPaymentsRuntimeArbiter::OWNER_EXTENSION );
 		$sut       = $this->make_bootstrap();
 
@@ -262,8 +262,8 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertSame( $this->expected_events( array() ), $container->events );
 	}
 
-	/** @testdox The setup tier sync controller is registered, on a disabled tier too, only on sites the plugin owns. */
-	public function test_setup_tier_sync_controller_registers_only_for_the_plugin_owner(): void {
+	/** @testdox The setup tier sync controller is registered, on a disabled tier too, only on sites the WooPayments extension owns. */
+	public function test_setup_tier_sync_controller_registers_only_for_the_extension_owner(): void {
 		$owners = array(
 			WooPaymentsRuntimeArbiter::OWNER_EXTENSION => array( WooPaymentsSetupTierSyncController::class ),
 			WooPaymentsRuntimeArbiter::OWNER_BUILTIN   => array(),

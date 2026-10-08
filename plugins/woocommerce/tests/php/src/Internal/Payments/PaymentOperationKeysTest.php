@@ -25,7 +25,7 @@ class PaymentOperationKeysTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should mint attempt keys in the UUID v4 shape the platform-proven client sends.
+	 * @testdox Should mint attempt keys in the UUID v4 shape the platform-proven WooPayments extension sends.
 	 */
 	public function test_mints_attempt_keys_as_uuid4(): void {
 		$sut = new PaymentOperationKeys();

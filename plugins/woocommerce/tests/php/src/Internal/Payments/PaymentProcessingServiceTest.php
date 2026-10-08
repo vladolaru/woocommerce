@@ -125,7 +125,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should redirect a completed native checkout to the order's own order-received URL.
+	 * @testdox Should redirect a completed checkout to the order's own order-received URL.
 	 *
 	 * `format_checkout_result()` (`PaymentProcessingService.php`, the `STATUS_COMPLETED` branch around
 	 * line 1120) falls back to `$order->get_checkout_order_received_url()` whenever the outcome carries
@@ -3338,9 +3338,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A German plugin-era cancellation note is not duplicated by the native cancellation lifecycle.
+	 * @testdox A German WooPayments extension cancellation note is not duplicated by the built-in cancellation lifecycle.
 	 */
-	public function test_cancel_deduplicates_german_plugin_note_through_native_effects(): void {
+	public function test_cancel_deduplicates_german_woopayments_extension_note_through_builtin_effects(): void {
 		$translation_filter = static function ( string $translation, string $text, string $domain ): string {
 			if ( 'woocommerce-payments' !== $domain ) {
 				return $translation;
